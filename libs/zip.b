@@ -832,7 +832,7 @@ class ZipArchive {
 
       # Since some zip archive creators can have misleading records in 
       # the central directory, it is important that we decode the local 
-      # file header as well so we can fix any disrepancies.
+      # file header as well so we can fix any discrepancies.
 			var local_unpackeda = unpack(_local_file_head_unpack, filedata)
 
 			# Check for encryption

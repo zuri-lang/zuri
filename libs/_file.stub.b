@@ -76,7 +76,7 @@
  * true
  * ```
  * 
- * Now check your current directory and you should see the empty but valid gif image courtsey of 
+ * Now check your current directory and you should see the empty but valid gif image courtesy of
  * [Probably Programming](http://probablyprogramming.com/2009/03/15/the-tiniest-gif-ever).
  */
 
@@ -387,7 +387,7 @@ class file {
 
 
   /**
-   * Copies a file from the path sepcified in the original file to the given path.
+   * Copies a file from the path specified in the original file to the given path.
    * 
    * For example:
    * 
@@ -403,8 +403,8 @@ class file {
 
 
   /**
-   * Truncates the entire file if length is not given or truncates the file such that only length number of bytes is left 
-   * in it.
+   * Truncates the entire file if length is not given or truncates the file such that only length number of bytes
+   * is left in it.
    * 
    * For example:
    * 

@@ -2607,7 +2607,7 @@ class BigInt {
   }
 
   /**
-   * Subracts the given number _num_ from the current BigInt
+   * Subtracts the given number _num_ from the current BigInt
    * 
    * @param number num
    * @returns [[bigint.BigInt]]
@@ -2757,11 +2757,11 @@ class BigInt {
   #       2) 
   /**
    * Returns the quotient and modulus obtained when the current number is divided by 
-   * the given number as a dictionary containg the keys `mod` (modulus) and `div` 
+   * the given number as a dictionary containing the keys `mod` (modulus) and `div`
    * (quotient). 
    * 
-   * The second paramter of the function (`mode`) allows the customization of the 
-   * computation and accepts the values listed below to achive different results.
+   * The second parameter of the function (`mode`) allows the customization of the
+   * computation and accepts the values listed below to achieve different results.
    * 
    * - `mod` to request mod only,
    * - `div` to request div only, or be absent to
@@ -2988,7 +2988,7 @@ class BigInt {
   }
 
   /**
-   * Caculates the Greatest Common Divisor using the Extended Euclidean algorithm 
+   * Calculates the Greatest Common Divisor using the Extended Euclidean algorithm
    * (ax + by) where _x_ is the current number and returns a dictionary containing 
    * the results of `a`, `b`, and `gcd`.
    * 

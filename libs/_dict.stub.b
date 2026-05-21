@@ -1,13 +1,13 @@
 /**
  * # Dictionaries
  * 
- * Blade dictionaries are built on powerful hashtables with fast key lookups. Creating Blade dictionaries
+ * Blade dictionaries are built on a powerful hashtable with fast key lookups. Creating Blade dictionaries
  * are extremely similar to how you create objects in JavaScript and for developers coming from that
  * language will find Blade dictionaries very familiar.
  * 
  * ## Constructing a dictionary
  * 
- * Blade dictionaries are arbitary key-value pairs separated by colons (`:`) enclosed in braces (`{}`).
+ * Blade dictionaries are arbitrary key-value pairs separated by colons (`:`) enclosed in braces (`{}`).
  * 
  * For example:
  * 
@@ -51,7 +51,7 @@
  * ```
  * 
  * Because of how common and frequent developers do this, Blade has an automatic value assignment feature for 
- * dictionaries that allow you to assing variables to dictionary keys if they are already within scope without 
+ * dictionaries that allow you to assign variables to dictionary keys if they are already within scope without
  * rewriting them.
  * 
  * For example,
@@ -175,7 +175,7 @@ class dict {
 
 
   /**
-   * Sets the value of the given key to the given value in the dictionary. If there is no exisiting entry
+   * Sets the value of the given key to the given value in the dictionary. If there is no existing entry
    * for the key in the dictionary, a new entry will be added.<br>
    * 
    * For example:

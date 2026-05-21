@@ -72,14 +72,14 @@
  * |----------|---------|
  * | `\a` | Alert (Beep, Bell) |
  * | `\b` | Backspace |
- * | `\f` | Formfeed Page Break |
+ * | `\f` | Form-feed Page Break |
  * | `\n` | Newline |
  * | `\r` | Carriage Return |
  * | `\t` | Horizontal Tab |
  * | `\v` | Vertical Tab |
  * | `\\` | Backslash |
  * | `\'` | Single Quotation Mark |
- * | `\"` | Dobule Quotation Mark |
+ * | `\"` | Double Quotation Mark |
  * | `\0` | String terminator |
  * | `\$` | Escape for interpolated strings |
  * | `\xhh` | Hexadecimal number |
@@ -352,14 +352,14 @@
  * 
  * ## Regular Expressions
  * 
- * Regular expressions in Blade are simply special patterns expressed in a string following a few guidlines
+ * Regular expressions in Blade are simply special patterns expressed in a string following a few guidelines
  * that allow them to be distinguished by methods requiring them. We'll be using the term `regex` or `regexes` 
  * henceforth for the rest of this tutorial and most likely for the rest of the documentation.
  * 
  * Blade's _regex_ is built on-top the _PCRE2_ library, an excellent library that already powers regular 
  * expression in many programming languages and have been around for decades. It feels like a better choice
  * for now for Blade to depend on this library rather than invest years building one robust enough to match
- * the library's capabilites.
+ * the library's capabilities.
  * 
  * In simple words, Blade's _regex_ is PCRE compatible.
  * 
@@ -414,7 +414,7 @@
 class string {
 
   /**
-   * Returns the length of a string. Note that this method is UTF-8 compartible and will return the UTF-8 
+   * Returns the length of a string. Note that this method is UTF-8 compatible and will return the UTF-8
    * length for the string if the string contains UTF-8 characters whether written directly or via the
    * `\u` or `\U` escapes.
    * 
@@ -466,7 +466,7 @@ class string {
   lower() {}
 
   /**
-   * Returns `true` if all the characters in the string are all alphabeths and the string is not empty.,
+   * Returns `true` if all the characters in the string are all alphabets and the string is not empty.,
    * otherwise returns `false`.
    * 
    * For example:
@@ -486,7 +486,7 @@ class string {
 
 
   /**
-   * Returns `true` if all the characters in the string are either alphabeths or numbers and the string is 
+   * Returns `true` if all the characters in the string are either alphabets or numbers and the string is
    * not empty, otherwise returns `false`. This method is the same as `string.is_alpha() or string.is_number()`.
    * 
    * For example:
@@ -620,7 +620,7 @@ class string {
 
 
   /**
-   * Similar to the `trim()` method, except that this method only removes characters at the begining of 
+   * Similar to the `trim()` method, except that this method only removes characters at the beginning of
    * the string.
    * 
    * For example:
@@ -658,7 +658,7 @@ class string {
 
 
   /**
-   * Returns a stringwhich is a concatenation of the items in the iterable using the _string_ as the 
+   * Returns a string which is a concatenation of the items in the iterable using the _string_ as the
    * separator. If the iterable contains just one item or the _string_ is empty, the original element 
    * is returned. If the _iterable_ contains non-string items, the items are converted to their string 
    * representation before joining.
@@ -786,7 +786,7 @@ class string {
    * 
    * _For those coming from Python who may consider this method similar to Python's own, this 
    * method differs in that it does not allow specifying a start and end region for the operation. 
-   * Blade considers this unnessary as the same can be accomplished by slicing the string._
+   * Blade considers this unnecessary as the same can be accomplished by slicing the string._
    * 
    * For example:
    * 
@@ -850,7 +850,7 @@ class string {
   /**
    * Returns the content of the string as a stream of `bytes`. 
    * 
-   * > The Blade REPL _may_ trunctuate long bytes data when printing to console/terminal.
+   * > The Blade REPL _may_ truncate long bytes data when printing to console/terminal.
    * 
    * For example:
    * 
@@ -916,8 +916,10 @@ class string {
    * If the string _str_ is a regular string, this method returns `true` if the _string_ contains a
    * substring _str_. Otherwise, it returns `false`.
    * 
-   * If the string _str_ contains a valid [regular expression](#regular-expressions) (we'll get to that shortly below), it returns `false` if a match for the regex _str_ cannot be found in the string. Otherwise, it 
-   * returns a [dictionary](./dictionaries) containing all first matching substring.
+   * If the string _str_ contains a valid [regular expression](#regular-expressions) (we'll get to
+   * that shortly below), it returns `false` if a match for the regex _str_ cannot be found in the
+   * string. Otherwise, it returns a [dictionary](./dictionaries) containing all first matching
+   * substring.
    * 
    * If the _offset_ argument is specified, it becomes the offset in the _string_ at which to start matching.
    * 
@@ -969,7 +971,7 @@ class string {
    * using the syntax `$index`. Taking as an example, capture group `0` contains the entire match and 
    * can be used in the _replacement_ string as `$0`.
    * 
-   * > To escape the `$` sign in the _replacement_ string, use the double backslashed (`\\`).
+   * > To escape the `$` sign in the _replacement_ string, use the double backslashes (`\\`).
    * 
    * For example:
    * 
@@ -994,7 +996,7 @@ class string {
 
 
   /**
-   * Returns a copy of the string with all occurences or matches of *regex* replaced with the result 
+   * Returns a copy of the string with all occurrences or matches of *regex* replaced with the result
    * of the function *callback* which is invoked only if and after a match has occurred.
    * 
    * The callback function is defined as follows:

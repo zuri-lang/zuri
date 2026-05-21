@@ -22,7 +22,7 @@
  * var o = { a: 1, b: 2 }
  * my_set.add(o)
  * 
- * # o is referencing a different object, but contains the samr value
+ * # o is referencing a different object, but contains the same value
  * # so it will not be added
  * my_set.add({ a: 1, b: 2 })
  * 
@@ -94,7 +94,7 @@ class Set {
   Set(items) {
     if items != nil {
       if !is_list(items) and !is_dict(items) {
-        raise TypeError('expected list or dictionary, ${tyepof(items)} given')
+        raise TypeError('expected list or dictionary, ${typeof(items)} given')
       }
   
       if is_dict(items) {
@@ -181,7 +181,7 @@ class Set {
    * @param [[set.Set]] other
    * @returns [[set.Set]]
    */
-  symetric_difference(other) {
+  symmetric_difference(other) {
     if !instance_of(other, Set) {
       raise TypeError('instance of Set expected, ${typeof(other)} given')
     }

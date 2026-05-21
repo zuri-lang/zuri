@@ -140,7 +140,7 @@
  * different log levels. Every transport inherits the method [[log.Transport.set_level]] 
  * which allows us set the minimum level at which a transport is available.
  * 
- * There is also a gloabl [[log.set_level]] function that allows us to set the 
+ * There is also a global [[log.set_level]] function that allows us to set the
  * minimum log level at which all transports can start logging.
  * 
  * ```blade
@@ -160,8 +160,8 @@
  * 
  * For example, in the previous example, if we had wanted to serialize all logging 
  * irrespective of the transport into the JSON format, a more appropriate solution would 
- * have been to create a log format function and resuse it in all transports instead of 
- * implementing a `JsonConsoleTransport`. The next example shows one such impementation.
+ * have been to create a log format function and reuse it in all transports instead of
+ * implementing a `JsonConsoleTransport`. The next example shows one such implementation.
  * 
  * ```blade
  * import log
@@ -191,7 +191,7 @@
  * > **IMPORTANT!**
  * > 
  * > Because the `log` module exports the a function, if you are not interested in all 
- * > the shanengians of logging level and simply want to do some quick logging, you can 
+ * > the shenanigans of logging level and simply want to do some quick logging, you can
  * > ignore the whole logging levels altogether and log at level [[log.None]] by simply 
  * > calling the log module itself.
  * > 
@@ -293,7 +293,7 @@ class Transport {
   var _log_name = os.base_name(os.dir_name(__root__))
 
   # hidden at one more level to avoid accidental overrides.
-  # should this be overriden, it should be deliberate.
+  # should this be overridden, it should be deliberate.
   var __enabled = true
   var __time_format = 'c'
   var __max_level = LogLevel.Critical
@@ -305,7 +305,7 @@ class Transport {
 
   /**
    * Sets the threshold level for this transport to handle. Logging messages which are 
-   * less severe than level will be ignored. Unless overriden by the transport 
+   * less severe than level will be ignored. Unless overridden by the transport
    * implementation, when a handler is created, the level is set to [[log.None]] (which 
    * causes all messages to be processed).
    * 
@@ -333,7 +333,7 @@ class Transport {
   /**
    * Sets the maximum threshold level for this transport to handle. Logging 
    * messages which are more severe than level will be ignored. Unless 
-   * overriden by the transport implementation, when a handler is created, the 
+   * overridden by the transport implementation, when a handler is created, the
    * maximum level is set to [[log.Critical]] (which causes all messages to be 
    * processed).
    * 
@@ -375,8 +375,8 @@ class Transport {
   }
 
   /**
-   * Retuns the name of the current transport. By default, name will be equal to the 
-   * name of the directory containig the root file.
+   * Returns the name of the current transport. By default, name will be equal to the
+   * name of the directory containing the root file.
    * 
    * @returns string
    */
@@ -536,7 +536,7 @@ class Transport {
    * Formats the log records for the current level for writing to the transport's 
    * stream. The default implementation of this method is exactly as seen when using 
    * the [[log.default_transport]] which logs to the console. The method 
-   * should be overriden by subclasses to get a custom formatting.
+   * should be overridden by subclasses to get a custom formatting.
    * 
    * > __IMPORTANT!__
    * >
@@ -654,6 +654,16 @@ class FileTransport < Transport {
    * @constructor
    */
   FileTransport(path) {
+    if !is_string(path) {
+      raise Exception('path must be string')
+    }
+
+    # Create the parent log directory if it does not exist.
+    var dir_name = os.dir_name(path)
+    if !os.dir_exists(dir_name) {
+      os.create_dir(dir_name, 0c777, true)
+    }
+
     self.file = file(path, 'a')
   }
 
@@ -751,7 +761,7 @@ def default_transport() {
 }
 
 
-# Reuseable write function for the log level helpers.
+# Reusable write function for the log level helpers.
 def _write(level, args) {
   for trans in _transports {
     if trans.can_log(level) {

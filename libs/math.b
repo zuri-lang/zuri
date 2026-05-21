@@ -693,7 +693,7 @@ def sum(arg) {
 
   for i in arg {
     if !is_number(i) and !is_list(i) and !is_dict(i)
-      raise ValueError('invalid item in sumation iterable')
+      raise ValueError('invalid item in summation iterable')
 
     if is_list(i) or is_dict(i) 
       result += sum(i)

@@ -676,7 +676,7 @@ class Socket {
 
   /**
    * Initiates a connection to the given host on the specified port. If host is `nil`, it will 
-   * connect on to the current hostn specified on the socket.
+   * connect on to the current host specified on the socket.
    * 
    * @param string host
    * @param int port
@@ -712,7 +712,7 @@ class Socket {
   
   /**
    * Binds this socket to the given port on the given host. If host is `nil` or not specified, it will connect 
-   * on to the current hostn specified on the socket. 
+   * on to the current host specified on the socket.
    * 
    * @param int port
    * @param string? host

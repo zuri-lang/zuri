@@ -39,7 +39,7 @@
  * [Hello, World]
  * ```
  * 
- * Lists follow the same indexing and slicing rules as [Strings](./strings) so for breviety, we'll 
+ * Lists follow the same indexing and slicing rules as [Strings](./strings) so for brevity, we'll
  * not go into the whole academic stuffs anymore.
  * 
  * Just for a quick run-through, accessing indexes in _Lists_ will look like this:
@@ -70,7 +70,7 @@
  * [5, 6, 7]
  * ```
  * 
- * ## Looping thorugh Lists
+ * ## Looping through Lists
  * 
  * Lists can be iterated using any of the looping techniques available in Blade. However, the `iter` 
  * and the `for` loop are the recommended as they will require fewer moving parts, and Lists are 
@@ -79,13 +79,13 @@
  * For example, you can use the `iter` loop like this:
  * 
  * ```blade-repl
- * %> var users = ['Gabriel', 'Anna', 'Cindarella']
+ * %> var users = ['Gabriel', 'Anna', 'Cinderella']
  * %> iter var i = 0; i < users.length(); i++ {
  * ..   echo users[i]
  * .. }
  * 'Gabriel'
  * 'Anna'
- * 'Cindarella'
+ * 'Cinderella'
  * ```
  * 
  * The above example uses the `iter` loop to iterate through the list. Notice how the condition uses 
@@ -194,7 +194,7 @@ class list {
 
 
   /**
-   * Returns the number of times itesm _x_ occurs in the list.
+   * Returns the number of times item _x_ occurs in the list.
    *   
    * For example:
    * 
@@ -259,7 +259,7 @@ class list {
    * Inserts the item _x_ into the list at the specified _index_. By specifying an index of zero 
    * (`list.insert(x, 0)`), one can prepend the list and `list.insert(x, list.length())` is equivalent 
    * to `list.append(x)`. If the _index_ specified is greater than `list.length()`, the list will be 
-   * padded with `nil` up till the index preceeding the specified index. 
+   * padded with `nil` up till the index preceding the specified index.
    * 
    * For example:
    * 
@@ -312,7 +312,7 @@ class list {
    * > The square brackets (`[]`) around the _`count: number`_ in the method definition indicates that 
    * > the parameter is optional and does not mean you have to type the square brackets.
    * 
-   * If the number of items required to be shifted exceeeds the size of the list, the list is cleared
+   * If the number of items required to be shifted exceeds the size of the list, the list is cleared
    * and `nil` is returned.
    * 
    * For example:
@@ -423,8 +423,8 @@ class list {
    * [nil, false, 5, A, [13, 21, 46]]
    * ```
    * 
-   * > Notice how the boolean value preceeds the number and how the number in turn preceeds the string
-   * > and the strings in turn, preceeds the list in the result. Also, note that the items of the inner 
+   * > Notice how the boolean value precedes the number and how the number in turn precedes the string
+   * > and the strings in turn, precedes the list in the result. Also, note that the items of the inner
    * > list is sorted.
    * 
    * @return {list}

@@ -25,7 +25,7 @@
  * 
  * The above code creates a byte stream sequence corresponding to `HELLO` in memory.
  * 
- * Byte streams are like lists and they can be extended, conncatenated and more. They allow
+ * Byte streams are like lists and they can be extended, concatenated and more. They allow
  * us operate on binary data. 
  * 
  * One very important use-case for bytes are to create a file containing binary data, 
@@ -41,7 +41,7 @@
  * 'HELLO'
  * ```
  * 
- * In the above sample, we wrote the bytes we created ealier into a file and read its contents.
+ * In the above sample, we wrote the bytes we created earlier into a file and read its contents.
  * 
  * > When a byte stream is created using a list of numbers, the maximum number 
  * > that will be interpreted as is is 255. All numbers exceeding that amount 

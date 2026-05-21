@@ -60,7 +60,7 @@ def bytes_to_hex(data) {
 /**
  * Converts the given decimal based number to an hexadecimal string. If digits is 
  * provided and the length of the result is less than digits, the result will be 
- * padded with zeros on the left. If the lenght of the result is greater than 
+ * padded with zeros on the left. If the length of the result is greater than
  * digits, the result will be truncated to the least significant digits.
  * 
  * @param number n

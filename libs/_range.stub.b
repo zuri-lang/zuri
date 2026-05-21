@@ -69,7 +69,7 @@ class {
 
 
   /**
-   * Returns a number equal to the numbers betwwen the range.
+   * Returns a number equal to the numbers between the range.
    * 
    * For example:
    * 

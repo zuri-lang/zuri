@@ -298,7 +298,7 @@ def oct(x) {}
 
 
 /**
- * Returns the Unicode code point of the first Unicude character in the string x.
+ * Returns the Unicode code point of the first Unicode character in the string x.
  * 
  * @param {string} x The string to get the Unicode code point of.
  * @returns {number}

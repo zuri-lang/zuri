@@ -102,20 +102,28 @@ var DT_WHT = _os.DT_WHT
  * Executes the given shell (or command prompt for Windows) commands and 
  * returns the output as string.
  * 
+ * `exec()` accepts multiple string arguments and concatenates them together with a 
+ * space in between before executing.
+ * 
  * Example,
  * 
  * ```blade-repl
- * %> os.exec('ls -l')
+ * %> os.exec('ls', '-l')
  * 'total 48
  * -rw-r--r--@ 1 username  staff  705 Aug 27  2021 buggy.b
  * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.b'
  * ```
  * 
- * @param string cmd
+ * @param {...string} cmd
  * @returns string
  */
-def exec(cmd) {
-  return _os.exec(cmd)
+def exec(...) {
+  for arg in __args__ {
+    if !is_string(arg)
+      raise TypeError('string expected, ${typeof(arg)} given')
+  }
+
+  return _os.exec(' '.join(__args__))
 }
 
 /**

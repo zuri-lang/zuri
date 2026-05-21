@@ -325,7 +325,7 @@
  * 
  * ```blade
  * tpl.register_element('link', @(this, el) {
- *   return '<a href="${el.attributes[0].value}">${el.attributes[1].value}</a>'
+ *   return '<a href="${this.attr(el, 'href').value}">${this.attr(el, 'text').value}</a>'
  * })
  * ```
  * 
@@ -350,10 +350,10 @@
  *     type: 'element',
  *     name: 'a',
  *     attributes: [
- *       { name: 'href', value: el.attributes[0].value }
+ *       { name: 'href', value: this.attr(el, 'href').value }
  *     ],
  *     children: [
- *       { type: 'text', content: el.attributes[1].value }
+ *       { type: 'text', content: this.attr(el, 'text').value }
  *     ]
  *   }
  * })
@@ -385,7 +385,7 @@
  * The example above will return `https://localhost:8000`.
  * 
  * Like with the `{{` and `}}` pair for variables, if you really intend to write the `{!` and `!}` pair, 
- * you'll need to escape the first `{` with a `%` sign. For example, `%{! name !}` will render as
+ * you'll need to escape the first `{` with a `%` sign. For example, `%%{! name !}` will render as
  * `{! name !}` without processing.
  */
 
@@ -403,6 +403,40 @@ void_tags.append('include')
 var _default_html_config = {
   with_position: true,
   void_tags,
+}
+
+/**
+ * Returns the attribute of the given name from the given HTML element. If the attribute is not 
+ * found, `nil` is returned.
+ * 
+ * @param dict element
+ * @param string name
+ * @returns dict?
+ */
+def attr(element, name) {
+
+  # Ensure that the element is a valid HTML element as per the {{html}} module since we will be working 
+  # with them and we want to avoid unexpected errors. Also ensure that the name is a string.
+  if !(is_dict(element) and !element.contains('type') and element.type == 'element') {
+    raise Exception('html element expected')
+  }
+
+  if !is_string(name) {
+    raise Exception('string expected in argument 2 (name)')
+  }
+
+  # Normalize:
+  # 
+  # Convert attribute name to lowercase case since HTML attributes are case insensitive and the HTML 
+  # parser decodes all attributes to lowercase anyway.
+  name = name.lower()
+
+  for attr in element.attributes {
+    if attr.name.lower() == name 
+      return attr
+  }
+
+  return nil
 }
 
 /**
@@ -630,6 +664,24 @@ class Template {
     return self._replace_funcs(content.replace('%{\x01{', '{{', false), error)
   }
 
+  _get_template_content(path) {
+    var template_path = os.join_paths(self._root_dir, path)
+    if !template_path.match(constants.EXT_RE) template_path += constants.DEFAULT_EXT
+    var fl = file(template_path)
+
+    if fl.exists() {
+      return self._process(
+        template_path, 
+        html.decode(self._strip(fl.read()), _default_html_config), 
+        variables
+      )
+    } else {
+      error('template "${path}" not found')
+    }
+  }
+
+  _extend(base, element) {}
+
   _process(path, element, variables) {
     if !element return nil
   
@@ -656,29 +708,32 @@ class Template {
       # replace variables: {{var_name}}
       element.content = self._process(path, element.content, variables)
     } else {
+      
+      # --------------------- ELEMENT PROCESSING -----------------------------
+
       var attrs = self._get_attrs(element.attributes)
   
       if element {
 
-        # process elements
+        # Process <include /> element
         if element.name == constants.INCLUDE_TAG {
           if !attrs or !attrs.contains(constants.PATH_ATTR)
-            error('missing "${constants.PATH_ATTR}" attribute for include tag')
-  
-          var include_path = os.join_paths(self._root_dir, attrs[constants.PATH_ATTR])
-          if !include_path.match(constants.EXT_RE) include_path += constants.DEFAULT_EXT
-          var fl = file(include_path)
-          if fl.exists() {
-            element = self._process(
-              include_path, 
-              html.decode(self._strip(fl.read()), _default_html_config), 
-              variables
-            )
-          } else {
-            error('template "${attrs[constants.PATH_ATTR]}" not found')
-          }
-        } else if self._elements.contains(element.name) {
-          # process custom elements
+            error('missing "${constants.PATH_ATTR}" attribute for ${constants.INCLUDE_TAG} tag')
+
+          element = self._get_template_content(attrs[constants.PATH_ATTR])
+        } 
+        
+        # Process <extend /> element
+        else if element.name == constants.EXTEND_TAG {
+          if !attrs or !attrs.contains(constants.BASE_ATTR)
+            error('missing "${constants.BASE_ATTR}" attribute for ${constants.EXTEND_TAG} tag')
+
+          var base_element = self._get_template_content(attrs[constants.BASE_ATTR])
+          # TODO: COMPLETE
+        } 
+        
+        # Process custom elements
+        else if self._elements.contains(element.name) {
           var processed = self._elements[element.name](self, element)
           if processed {
             if !is_string(processed) {
@@ -699,10 +754,12 @@ class Template {
           }
         }
       }
+
+      # --------------------- ATTRIBUTE PROCESSING ----------------------------
   
       # process directives
       if attrs.contains(constants.IF_ATTR) {
-        # if tag
+        # if attribute
         var _var = self._extract_var(variables, attrs.get(constants.IF_ATTR), error)
         if _var {
           self._strip_attr(element, constants.IF_ATTR)
@@ -711,7 +768,7 @@ class Template {
           element = nil
         }
       } else if attrs.contains(constants.NOT_ATTR) {
-        # if not tag
+        # if not attribute
         var _var = self._extract_var(variables, attrs.get(constants.NOT_ATTR), error)
         if !_var {
           self._strip_attr(element, constants.NOT_ATTR)
@@ -720,7 +777,7 @@ class Template {
           element = nil
         }
       } else if attrs.contains(constants.FOR_ATTR) {
-        # for tag
+        # for attribute
         
         var data = self._extract_var(variables, attrs.get(constants.FOR_ATTR), error),
             key_name = attrs.get(constants.KEY_ATTR),
@@ -980,6 +1037,18 @@ class Template {
     }
   
     raise Exception('template "${path}" not found')
+  }
+
+  /**
+   * Same as [[template.attr]], but available as a method on the template instance for easier access 
+   * in custom element functions during element registration.
+   * 
+   * @param dict element
+   * @param string name
+   * @returns dict?
+   */
+  attr(element, name) {
+    return attr(element, name)
   }
 }
 
