@@ -16,7 +16,7 @@ class HttpClient {
   
   /**
    * The user agent of the client used to make the request. 
-   * Default value &mdash; `Blade HTTP Client/1.0`.
+   * Default value &mdash; `Zuri HTTP Client/1.0`.
    * @type string
    */
   var user_agent = defaults.user_agent

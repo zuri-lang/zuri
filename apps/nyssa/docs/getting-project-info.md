@@ -28,5 +28,5 @@ DEPENDENCIES
 
 SOURCES 
 ~~~~~~~
- • https://nyssa.bladelang.org
+ • https://nyssa.zurilang.org
 ```

@@ -16,20 +16,20 @@
  * on almost all terminals (Only Windows 10 version 1901+ supported. All linux and OSX
  * terminals are supported). Try it out!
  *
- * ```blade
+ * ```zuri
  * import colors
  * colors.text('Successful!', colors.text_color.green)
  * ```
  *
  * The `text()` function can be nested. For example,
  *
- * ```blade
+ * ```zuri
  * colors.text(colors.text('Successful!', colors.style.bold), colors.text_color.green)
  * ```
  *
  * The module also features multiple functions for color conversion. For example,
  *
- * ```blade-repl
+ * ```zuri-repl
  * %> import colors
  * %> colors.rgb_to_cmyk(103, 13, 69)
  * [0, 87.37864077669903, 33.00970873786409, 59.6078431372549]
@@ -39,12 +39,12 @@
  * from various color formats. For example, we can specify the color from the HTML
  * hexadecimal color.
  *
- * ```blade
+ * ```zuri
  * import colors
  * colors.text('Colored text!', colors.hex('#fc0'))
  * ```
  *
- * @copyright 2022, Richard Ore and Blade contributors
+ * @copyright 2022, Richard Ore and Zuri contributors
  */
 
 import os

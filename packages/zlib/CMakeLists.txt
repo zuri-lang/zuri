@@ -6,15 +6,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
-set(BLADE_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blade")
+set(ZURI_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/zuri")
 
-message(STATUS "Building zlib2 module to ${BLADE_ROOT}/dist")
+message(STATUS "Building zlib2 module to ${ZURI_ROOT}/dist")
 
-include_directories("${BLADE_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
+include_directories("${ZURI_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(zlib2 SHARED zlib.c)
-target_link_libraries(zlib2 libblade)
-add_dependencies(zlib2 blade)
+target_link_libraries(zlib2 libzuri)
+add_dependencies(zlib2 zuri)
 
 if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     set(ZLIB_USE_STATIC_LIBS ON)
@@ -37,9 +37,9 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 endif()
 
 add_custom_target(copy-zlib2-to-libs ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/zlib ${BLADE_ROOT}/libs/zlib
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/zlib ${ZURI_ROOT}/libs/zlib
         COMMENT "Exporting zlib source files to libs folder..."
         )
 
 add_custom_command(TARGET zlib2 POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:zlib2> ${BLADE_ROOT}/dist)
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:zlib2> ${ZURI_ROOT}/dist)

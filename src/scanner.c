@@ -9,17 +9,17 @@
 #include <asprintf.h>
 #endif
 
-void init_scanner(b_scanner *s, const char *source) {
+void init_scanner(z_scanner *s, const char *source) {
   s->current = source;
   s->start = source;
   s->line = 1;
   s->interpolating_count = -1;
 }
 
-bool is_at_end(b_scanner *s) { return *s->current == '\0'; }
+bool is_at_end(z_scanner *s) { return *s->current == '\0'; }
 
-static b_token make_token(b_scanner *s, b_tkn_type type) {
-  b_token t;
+static z_token make_token(z_scanner *s, z_tkn_type type) {
+  z_token t;
   t.type = type;
   t.start = s->start;
   t.length = (int) (s->current - s->start);
@@ -27,7 +27,7 @@ static b_token make_token(b_scanner *s, b_tkn_type type) {
   return t;
 }
 
-static b_token error_token(b_scanner *s, const char *message, ...) {
+static z_token error_token(z_scanner *s, const char *message, ...) {
 
   va_list args;
   va_start(args, message);
@@ -35,7 +35,7 @@ static b_token error_token(b_scanner *s, const char *message, ...) {
   int length = vasprintf(&err, message, args);
   va_end(args);
 
-  b_token t;
+  z_token t;
   t.type = ERROR_TOKEN;
   t.start = err;
   if (err != NULL) {
@@ -62,14 +62,14 @@ static bool is_hexadecimal(char c) {
          (c >= 'A' && c <= 'F');
 }
 
-static char advance(b_scanner *s) {
+static char advance(z_scanner *s) {
   s->current++;
   if (s->current[-1] == '\n')
     s->line++;
   return s->current[-1];
 }
 
-static bool match(b_scanner *s, char expected) {
+static bool match(z_scanner *s, char expected) {
   if (is_at_end(s))
     return false;
   if (*s->current != expected)
@@ -81,17 +81,17 @@ static bool match(b_scanner *s, char expected) {
   return true;
 }
 
-static char current(b_scanner *s) { return *s->current; }
+static char current(z_scanner *s) { return *s->current; }
 
-static char previous(b_scanner *s) { return s->current[-1]; }
+static char previous(z_scanner *s) { return s->current[-1]; }
 
-static char next(b_scanner *s) {
+static char next(z_scanner *s) {
   if (is_at_end(s))
     return '\0';
   return s->current[1];
 }
 
-b_token skip_block_comments(b_scanner *s) {
+z_token skip_block_comments(z_scanner *s) {
   int nesting = 1;
   while (nesting > 0) {
     if (is_at_end(s)) {
@@ -124,7 +124,7 @@ b_token skip_block_comments(b_scanner *s) {
   return make_token(s, UNDEFINED_TOKEN);
 }
 
-b_token skip_whitespace(b_scanner *s) {
+z_token skip_whitespace(z_scanner *s) {
   for (;;) {
     char c = current(s);
 
@@ -145,7 +145,7 @@ b_token skip_whitespace(b_scanner *s) {
         if (next(s) == '*') {
           advance(s);
           advance(s);
-          b_token result = skip_block_comments(s);
+          z_token result = skip_block_comments(s);
           if(result.type != UNDEFINED_TOKEN) {
             return result;
           }
@@ -161,7 +161,7 @@ b_token skip_whitespace(b_scanner *s) {
   }
 }
 
-static b_token string(b_scanner *s, char quote) {
+static z_token string(z_scanner *s, char quote) {
   while (current(s) != quote && !is_at_end(s)) {
 
     if (current(s) == '$' && next(s) == '{' &&
@@ -170,7 +170,7 @@ static b_token string(b_scanner *s, char quote) {
         s->interpolating_count++;
         s->interpolating[s->interpolating_count] = (int) quote;
         s->current++;
-        b_token tkn = make_token(s, INTERPOLATION_TOKEN);
+        z_token tkn = make_token(s, INTERPOLATION_TOKEN);
         s->current++;
         return tkn;
       }
@@ -193,7 +193,7 @@ static b_token string(b_scanner *s, char quote) {
   return make_token(s, LITERAL_TOKEN);
 }
 
-static b_token number(b_scanner *s) {
+static z_token number(z_scanner *s) {
   // handle binary, octal and hexadecimals
   if (previous(s) == '0') {
     if (match(s, 'b')) { // binary number
@@ -239,8 +239,8 @@ static b_token number(b_scanner *s) {
   return make_token(s, REG_NUMBER_TOKEN);
 }
 
-static b_tkn_type check_keyword(b_scanner *s, int start, int length,
-                                const char *rest, b_tkn_type type) {
+static z_tkn_type check_keyword(z_scanner *s, int start, int length,
+                                const char *rest, z_tkn_type type) {
   if ((int) (s->current - s->start) == start + length &&
       memcmp(s->start + start, rest, length) == 0) {
     return type;
@@ -248,7 +248,7 @@ static b_tkn_type check_keyword(b_scanner *s, int start, int length,
   return IDENTIFIER_TOKEN;
 }
 
-static b_tkn_type identifier_type(b_scanner *s) {
+static z_tkn_type identifier_type(z_scanner *s) {
   switch (s->start[0]) {
     case 'a':
       if (s->current - s->start > 1) {
@@ -383,20 +383,20 @@ static b_tkn_type identifier_type(b_scanner *s) {
   return IDENTIFIER_TOKEN;
 }
 
-static b_token identifier(b_scanner *s) {
+static z_token identifier(z_scanner *s) {
   while (is_alpha(current(s)) || is_digit(current(s)))
     advance(s);
   return make_token(s, identifier_type(s));
 }
 
-static b_token decorator(b_scanner *s) {
+static z_token decorator(z_scanner *s) {
   while (is_alpha(current(s)) || is_digit(current(s)))
     advance(s);
   return make_token(s, DECORATOR_TOKEN);
 }
 
-b_token scan_token(b_scanner *s) {
-  b_token tk = skip_whitespace(s);
+z_token scan_token(z_scanner *s) {
+  z_token tk = skip_whitespace(s);
   if (tk.type != UNDEFINED_TOKEN) {
     return tk;
   }
@@ -426,7 +426,7 @@ b_token scan_token(b_scanner *s) {
       return make_token(s, LBRACE_TOKEN);
     case '}':
       if (s->interpolating_count > -1) {
-        b_token token = string(s, (char) s->interpolating[s->interpolating_count]);
+        z_token token = string(s, (char) s->interpolating[s->interpolating_count]);
         s->interpolating_count--;
         return token;
       }

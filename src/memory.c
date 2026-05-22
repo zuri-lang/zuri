@@ -12,7 +12,7 @@
 #include <stdio.h>
 #endif
 
-void *c_allocate(b_vm *vm, size_t size, size_t length) {
+void *c_allocate(z_vm *vm, size_t size, size_t length) {
   if (vm == NULL) {
     return NULL;
   }
@@ -37,7 +37,7 @@ void *c_allocate(b_vm *vm, size_t size, size_t length) {
   return result;
 }
 
-void *allocate(b_vm *vm, size_t size) {
+void *allocate(z_vm *vm, size_t size) {
   if (vm == NULL) {
     return NULL;
   }
@@ -62,7 +62,7 @@ void *allocate(b_vm *vm, size_t size) {
   return result;
 }
 
-void *reallocate(b_vm *vm, void *pointer, size_t old_size, size_t new_size) {
+void *reallocate(z_vm *vm, void *pointer, size_t old_size, size_t new_size) {
   if (vm == NULL) {
     return NULL;
   }
@@ -88,7 +88,7 @@ void *reallocate(b_vm *vm, void *pointer, size_t old_size, size_t new_size) {
   return result;
 }
 
-void mark_object(b_vm *vm, b_obj *object) {
+void mark_object(z_vm *vm, z_obj *object) {
   if (object == NULL)
     return;
   if (object->mark == vm->mark_value || object->vm_id != vm->id)
@@ -104,7 +104,7 @@ void mark_object(b_vm *vm, b_obj *object) {
 
   if (vm->gray_capacity < vm->gray_count + 1) {
     vm->gray_capacity = GROW_CAPACITY(vm->gray_capacity);
-    vm->gray_stack = (b_obj **) realloc(vm->gray_stack, sizeof(b_obj *) * vm->gray_capacity);
+    vm->gray_stack = (z_obj **) realloc(vm->gray_stack, sizeof(z_obj *) * vm->gray_capacity);
 
     if (vm->gray_stack == NULL) {
       fflush(stdout); // flush out anything on stdout first
@@ -115,12 +115,12 @@ void mark_object(b_vm *vm, b_obj *object) {
   vm->gray_stack[vm->gray_count++] = object;
 }
 
-void mark_value(b_vm *vm, b_value value) {
+void mark_value(z_vm *vm, z_value value) {
   if (IS_OBJ(value))
     mark_object(vm, AS_OBJ(value));
 }
 
-static void mark_array(b_vm *vm, b_value_arr *array) {
+static void mark_array(z_vm *vm, z_value_arr *array) {
   if (array == NULL || array->values == NULL) {
     return;
   }
@@ -129,7 +129,7 @@ static void mark_array(b_vm *vm, b_value_arr *array) {
   }
 }
 
-void blacken_object(b_vm *vm, b_obj *object) {
+void blacken_object(z_vm *vm, z_obj *object) {
 #if defined(DEBUG_GC) && DEBUG_GC
   printf("%p blacken ", (void *)object);
   print_object(OBJ_VAL(object), false);
@@ -140,76 +140,76 @@ void blacken_object(b_vm *vm, b_obj *object) {
 
   switch (object->type) {
     case OBJ_MODULE: {
-      b_obj_module *module = (b_obj_module *) object;
+      z_obj_module *module = (z_obj_module *) object;
       mark_table(vm, &module->values);
       break;
     }
     case OBJ_SWITCH: {
-      b_obj_switch *sw = (b_obj_switch *) object;
+      z_obj_switch *sw = (z_obj_switch *) object;
       mark_table(vm, &sw->table);
       break;
     }
     case OBJ_FILE: {
-      b_obj_file *file = (b_obj_file *) object;
-      mark_object(vm, (b_obj *) file->mode);
-      mark_object(vm, (b_obj *) file->path);
+      z_obj_file *file = (z_obj_file *) object;
+      mark_object(vm, (z_obj *) file->mode);
+      mark_object(vm, (z_obj *) file->path);
       break;
     }
     case OBJ_DICT: {
-      b_obj_dict *dict = (b_obj_dict *) object;
+      z_obj_dict *dict = (z_obj_dict *) object;
       mark_array(vm, &dict->names);
       mark_table(vm, &dict->items);
       break;
     }
     case OBJ_LIST: {
-      b_obj_list *list = (b_obj_list *) object;
+      z_obj_list *list = (z_obj_list *) object;
       mark_array(vm, &list->items);
       break;
     }
 
     case OBJ_BOUND_METHOD: {
-      b_obj_bound *bound = (b_obj_bound *) object;
+      z_obj_bound *bound = (z_obj_bound *) object;
       mark_value(vm, bound->receiver);
-      mark_object(vm, (b_obj*)bound->method);
+      mark_object(vm, (z_obj*)bound->method);
       break;
     }
     case OBJ_CLASS: {
-      b_obj_class *klass = (b_obj_class *) object;
-      mark_object(vm, (b_obj *) klass->name);
+      z_obj_class *klass = (z_obj_class *) object;
+      mark_object(vm, (z_obj *) klass->name);
       mark_table(vm, &klass->methods);
       mark_table(vm, &klass->properties);
       mark_table(vm, &klass->static_properties);
       mark_value(vm, klass->initializer);
       if(klass->superclass != NULL) {
-        mark_object(vm, (b_obj *)klass->superclass);
+        mark_object(vm, (z_obj *)klass->superclass);
       }
       break;
     }
     case OBJ_CLOSURE: {
-      b_obj_closure *closure = (b_obj_closure *) object;
-      mark_object(vm, (b_obj *) closure->function);
+      z_obj_closure *closure = (z_obj_closure *) object;
+      mark_object(vm, (z_obj *) closure->function);
       for (int i = 0; i < closure->up_value_count; i++) {
-        mark_object(vm, (b_obj *) closure->up_values[i]);
+        mark_object(vm, (z_obj *) closure->up_values[i]);
       }
       break;
     }
 
     case OBJ_FUNCTION: {
-      b_obj_func *function = (b_obj_func *) object;
-      mark_object(vm, (b_obj *) function->name);
-      mark_object(vm, (b_obj *) function->module);
+      z_obj_func *function = (z_obj_func *) object;
+      mark_object(vm, (z_obj *) function->name);
+      mark_object(vm, (z_obj *) function->module);
       mark_array(vm, &function->blob.constants);
       break;
     }
     case OBJ_INSTANCE: {
-      b_obj_instance *instance = (b_obj_instance *) object;
-      mark_object(vm, (b_obj *) instance->klass);
+      z_obj_instance *instance = (z_obj_instance *) object;
+      mark_object(vm, (z_obj *) instance->klass);
       mark_table(vm, &instance->properties);
       break;
     }
 
     case OBJ_UP_VALUE: {
-      mark_value(vm, ((b_obj_up_value *) object)->closed);
+      mark_value(vm, ((z_obj_up_value *) object)->closed);
       break;
     }
 
@@ -222,7 +222,7 @@ void blacken_object(b_vm *vm, b_obj *object) {
   }
 }
 
-void free_object(b_vm *vm, b_obj *object) {
+void free_object(z_vm *vm, z_obj *object) {
 #if defined(DEBUG_GC) && DEBUG_GC
   printf("%p free type %d\n", (void *)object, object->type);
 #endif
@@ -232,109 +232,109 @@ void free_object(b_vm *vm, b_obj *object) {
 
   switch (object->type) {
     case OBJ_MODULE: {
-      b_obj_module *module = (b_obj_module *) object;
+      z_obj_module *module = (z_obj_module *) object;
       free_module(vm, module);
-      FREE(b_obj_module, object);
+      FREE(z_obj_module, object);
       break;
     }
     case OBJ_BYTES: {
-      b_obj_bytes *bytes = (b_obj_bytes *) object;
+      z_obj_bytes *bytes = (z_obj_bytes *) object;
       free_byte_arr(vm, &bytes->bytes);
-      FREE(b_obj_bytes, object);
+      FREE(z_obj_bytes, object);
       break;
     }
     case OBJ_FILE: {
-      b_obj_file *file = (b_obj_file *) object;
+      z_obj_file *file = (z_obj_file *) object;
       if (!file->is_std && file->file != NULL) {
         fclose(file->file);
       }
-      FREE(b_obj_file, object);
+      FREE(z_obj_file, object);
       break;
     }
     case OBJ_DICT: {
-      b_obj_dict *dict = (b_obj_dict *) object;
+      z_obj_dict *dict = (z_obj_dict *) object;
       free_value_arr(vm, &dict->names);
       free_table(vm, &dict->items);
-      FREE(b_obj_dict, object);
+      FREE(z_obj_dict, object);
       break;
     }
     case OBJ_LIST: {
-      b_obj_list *list = (b_obj_list *) object;
+      z_obj_list *list = (z_obj_list *) object;
       free_value_arr(vm, &list->items);
-      FREE(b_obj_list, object);
+      FREE(z_obj_list, object);
       break;
     }
 
     case OBJ_BOUND_METHOD: {
       // a closure may be bound to multiple instances
       // for this reason, we do not free closures when freeing bound methods
-      FREE(b_obj_bound, object);
+      FREE(z_obj_bound, object);
       break;
     }
     case OBJ_CLASS: {
-      b_obj_class *klass = (b_obj_class *) object;
+      z_obj_class *klass = (z_obj_class *) object;
       free_table(vm, &klass->methods);
       free_table(vm, &klass->properties);
       free_table(vm, &klass->static_properties);
       // We are not freeing the initializer because it's a closure and will still be freed accordingly later.
-      FREE(b_obj_class, object);
+      FREE(z_obj_class, object);
       break;
     }
     case OBJ_CLOSURE: {
-      b_obj_closure *closure = (b_obj_closure *) object;
-      FREE_ARRAY(b_obj_up_value *, closure->up_values, closure->up_value_count);
+      z_obj_closure *closure = (z_obj_closure *) object;
+      FREE_ARRAY(z_obj_up_value *, closure->up_values, closure->up_value_count);
       // there may be multiple closures that all reference the same function
       // for this reason, we do not free functions when freeing closures
-      FREE(b_obj_closure, object);
+      FREE(z_obj_closure, object);
       break;
     }
     case OBJ_FUNCTION: {
-      b_obj_func *function = (b_obj_func *) object;
+      z_obj_func *function = (z_obj_func *) object;
       free_blob(vm, &function->blob);
-      FREE(b_obj_func, object);
+      FREE(z_obj_func, object);
       break;
     }
     case OBJ_INSTANCE: {
-      b_obj_instance *instance = (b_obj_instance *) object;
+      z_obj_instance *instance = (z_obj_instance *) object;
       free_table(vm, &instance->properties);
-      FREE(b_obj_instance, object);
+      FREE(z_obj_instance, object);
       break;
     }
     case OBJ_NATIVE: {
-      FREE(b_obj_native, object);
+      FREE(z_obj_native, object);
       break;
     }
     case OBJ_UP_VALUE: {
-      FREE(b_obj_up_value, object);
+      FREE(z_obj_up_value, object);
       break;
     }
     case OBJ_RANGE: {
-      FREE(b_obj_range, object);
+      FREE(z_obj_range, object);
       break;
     }
     case OBJ_STRING: {
-      b_obj_string *string = (b_obj_string *) object;
+      z_obj_string *string = (z_obj_string *) object;
       FREE_ARRAY(char, string->chars, string->length + 1);
-      FREE(b_obj_string, object);
+      FREE(z_obj_string, object);
       break;
     }
 
     case OBJ_SWITCH: {
-      b_obj_switch *sw = (b_obj_switch *) object;
+      z_obj_switch *sw = (z_obj_switch *) object;
       free_table(vm, &sw->table);
-      FREE(b_obj_switch, object);
+      FREE(z_obj_switch, object);
       break;
     }
 
     case OBJ_PTR: {
-      b_obj_ptr *ptr = (b_obj_ptr *) object;
+      z_obj_ptr *ptr = (z_obj_ptr *) object;
       if(ptr->free_fn) {
         ptr->free_fn(ptr->pointer);
       }
       if (!ptr->name_is_static) {
         free(ptr->name);
       }
-      FREE(b_obj_ptr, object);
+      FREE(z_obj_ptr, object);
       break;
     }
 
@@ -343,29 +343,29 @@ void free_object(b_vm *vm, b_obj *object) {
   }
 }
 
-static void mark_roots(b_vm *vm) {
+static void mark_roots(z_vm *vm) {
   if (vm->stack != NULL && vm->stack_top != NULL) {
-    for (b_value *slot = vm->stack; slot < vm->stack_top; slot++) {
+    for (z_value *slot = vm->stack; slot < vm->stack_top; slot++) {
       mark_value(vm, *slot);
     }
   }
 
   for (int i = 0; i < vm->frame_count; i++) {
-    mark_object(vm, (b_obj *) vm->frames[i].closure);
+    mark_object(vm, (z_obj *) vm->frames[i].closure);
   }
 
   for(int i = 0; i < vm->error_count; i++) {
     if (vm->errors[i] != NULL) {
       mark_value(vm, vm->errors[i]->value);
       if (vm->errors[i]->frame != NULL) {
-        mark_object(vm, (b_obj *)vm->errors[i]->frame->closure);
+        mark_object(vm, (z_obj *)vm->errors[i]->frame->closure);
       }
     }
   }
 
-  for (b_obj_up_value *up_value = vm->open_up_values; up_value != NULL;
+  for (z_obj_up_value *up_value = vm->open_up_values; up_value != NULL;
        up_value = up_value->next) {
-    mark_object(vm, (b_obj *) up_value);
+    mark_object(vm, (z_obj *) up_value);
   }
 
   mark_table(vm, &vm->globals);
@@ -378,31 +378,31 @@ static void mark_roots(b_vm *vm) {
   mark_table(vm, &vm->methods_dict);
   mark_table(vm, &vm->methods_range);
 
-  mark_object(vm, (b_obj*)vm->exception_class);
+  mark_object(vm, (z_obj*)vm->exception_class);
   if (vm->current_frame != NULL) {
-    mark_object(vm, (b_obj *)vm->current_frame->closure);
+    mark_object(vm, (z_obj *)vm->current_frame->closure);
   }
 
   mark_compiler_roots(vm);
 }
 
-static void trace_references(b_vm *vm) {
+static void trace_references(z_vm *vm) {
   while (vm->gray_count > 0) {
-    b_obj *object = vm->gray_stack[--vm->gray_count];
+    z_obj *object = vm->gray_stack[--vm->gray_count];
     blacken_object(vm, object);
   }
 }
 
-static void sweep(b_vm *vm) {
-  b_obj *previous = NULL;
-  b_obj *object = vm->objects;
+static void sweep(z_vm *vm) {
+  z_obj *previous = NULL;
+  z_obj *object = vm->objects;
 
   while (object != NULL) {
     if (object->mark == vm->mark_value) {
       previous = object;
       object = object->next;
     } else {
-      b_obj *unreached = object;
+      z_obj *unreached = object;
 
       object = object->next;
       if (previous != NULL) {
@@ -418,10 +418,10 @@ static void sweep(b_vm *vm) {
   }
 }
 
-void free_objects(b_vm *vm) {
-  b_obj *object = vm->objects;
+void free_objects(z_vm *vm) {
+  z_obj *object = vm->objects;
   while (object != NULL) {
-    b_obj *next = object->next;
+    z_obj *next = object->next;
     free_object(vm, object);
     object = next;
   }
@@ -430,7 +430,7 @@ void free_objects(b_vm *vm) {
   vm->gray_stack = NULL;
 }
 
-void free_error_stacks(b_vm *vm) {
+void free_error_stacks(z_vm *vm) {
   if (vm == NULL) {
     return;
   }
@@ -441,7 +441,7 @@ void free_error_stacks(b_vm *vm) {
   }
 }
 
-void collect_garbage(b_vm *vm) {
+void collect_garbage(z_vm *vm) {
 #if defined(DEBUG_GC) && DEBUG_GC
   printf("-- gc begins for vm %llu\n", vm->id);
   size_t before = vm->bytes_allocated;

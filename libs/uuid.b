@@ -32,7 +32,7 @@
  *
  * ## Quick start
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * echo uuid.v4()           # e.g. '110e8400-e29b-41d4-a716-446655440000'
@@ -54,7 +54,7 @@
  * - `uuid.NAMESPACE_OID`  — for ISO OIDs
  * - `uuid.NAMESPACE_X500` — for X.500 distinguished names
  *
- * @copyright 2026, Richard Ore and Blade contributors
+ * @copyright 2026, Richard Ore and Zuri contributors
  * @license   MIT
  */
 
@@ -70,7 +70,7 @@ import convert
 
 # Returns a cryptographically-random hex string of `n` hex characters (n must
 # be even). Uses math.random() seeded with the current time at microsecond
-# resolution as Blade's best available entropy source.
+# resolution as Zuri's best available entropy source.
 def _random_hex(n) {
   var result = ''
   var i = 0
@@ -142,7 +142,7 @@ def _gregorian_timestamp() {
   # Offset in 100-ns intervals between 1582-10-15 and 1970-01-01:
   # 122192928000000000 (this is a well-known constant from RFC 4122).
   #
-  # Blade's date module gives milliseconds since Unix epoch.  We multiply by
+  # Zuri's date module gives milliseconds since Unix epoch.  We multiply by
   # 10 000 to convert ms → 100-ns intervals, then add the Gregorian offset.
   var unix_ms  = math.floor(date.Date().to_time() * 1000)
   var ts_100ns = unix_ms * 10000 + 122192928000000000
@@ -224,7 +224,7 @@ var MAX = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * var id = uuid.UUID('f47ac10b-58cc-4372-a567-0e02b2c3d479')
@@ -358,7 +358,7 @@ class UUID {
 
   /**
    * Returns the UUID as an integer (the numeric value of its 128 bits).
-   * Large values will be returned as a Blade number; for values exceeding
+   * Large values will be returned as a Zuri number; for values exceeding
    * safe integer precision use `hex()` and the `bigint` module.
    *
    * @return number
@@ -432,7 +432,7 @@ class UUID {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * uuid.is_valid('f47ac10b-58cc-4372-a567-0e02b2c3d479') # true
@@ -481,7 +481,7 @@ def version(str) {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  * echo uuid.v1()  # e.g. '6ba7b810-9dad-11d1-80b4-00c04fd430c8'
  * ```
@@ -512,7 +512,7 @@ def v1(node, clock_seq) {
   #   time_mid          (bits 32-47)  → 4 hex chars
   #   time_hi_version   (bits 48-59)  → 3 hex chars + 4-bit version nibble
 
-  # Blade integers lose precision beyond 2^53; we perform split arithmetic.
+  # Zuri integers lose precision beyond 2^53; we perform split arithmetic.
   # ts fits in ~57 bits at year 2024 so direct modulo is safe here.
   var time_low      = ts % 4294967296                        # lower 32 bits
   var time_upper    = math.floor(ts / 4294967296)            # upper bits
@@ -556,7 +556,7 @@ def v1(node, clock_seq) {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * echo uuid.v3(uuid.NAMESPACE_DNS, 'www.example.com')
@@ -606,7 +606,7 @@ def v3(namespace, name) {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * echo uuid.v4()  # e.g. 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
@@ -633,7 +633,7 @@ def v4() {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * echo uuid.v5(uuid.NAMESPACE_URL, 'https://www.example.com')
@@ -684,7 +684,7 @@ def v5(namespace, name) {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * echo uuid.v6()  # e.g. '1ef9e292-a7a4-6000-80b4-00c04fd430c8'
@@ -761,7 +761,7 @@ def v6(node, clock_seq) {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * echo uuid.v7()  # e.g. '018f5e1a-2b3c-7d4e-9f0a-1b2c3d4e5f6a'
@@ -820,7 +820,7 @@ def v7() {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * # Embed a shard ID (a), a type tag (b), and a sequence number (c).
@@ -892,7 +892,7 @@ def max_uuid() {
  *
  * ### Example
  *
- * ```blade
+ * ```zuri
  * import uuid
  *
  * var id = uuid.parse('urn:uuid:f47ac10b-58cc-4372-a567-0e02b2c3d479')
@@ -936,7 +936,7 @@ def from_bytes(bytes_list) {
  * into a canonical UUID string.
  *
  * For very large integers (> 2^53) the result may lose precision due to
- * Blade's floating-point number type.  In that case, prefer `from_bytes()`.
+ * Zuri's floating-point number type.  In that case, prefer `from_bytes()`.
  *
  * @param  number  int_val  The integer value of the UUID.
  * @return string  Canonical UUID string.

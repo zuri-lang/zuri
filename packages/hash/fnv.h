@@ -1,5 +1,5 @@
-#ifndef BLADE_MODULE_HASH_FNV_H
-#define BLADE_MODULE_HASH_FNV_H
+#ifndef ZURI_MODULE_HASH_FNV_H
+#define ZURI_MODULE_HASH_FNV_H
 
 #include <stdint.h>
 
@@ -155,4 +155,4 @@ static void FNV164Final(FNV164_CTX *context, unsigned char digest[8]) {
 #endif
 }
 
-#endif //BLADE_MODULE_HASH_FNV_H
+#endif //ZURI_MODULE_HASH_FNV_H

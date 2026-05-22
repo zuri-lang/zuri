@@ -1,9 +1,9 @@
 /**
  * # Lists
  * 
- * Lists in Blade are sequence types that is used to hold zero or more values in a single storage. 
+ * Lists in Zuri are sequence types that is used to hold zero or more values in a single storage.
  * Each item in a list is assigned a number (index) starting from zero (`0`) for the first item. 
- * Blade Lists are comma (`,`) separated list of different values of different or same type. For example, 
+ * Zuri Lists are comma (`,`) separated list of different values of different or same type. For example,
  * a list can contain only number, another can contain a mixture of numbers and strings and yet another 
  * can contain lists as well.
  * 
@@ -14,7 +14,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> [1, 2, 3]
  * [1, 2, 3]
  * %> ['Lane', 21, nil]
@@ -32,7 +32,7 @@
  * 
  * Working with Lists is a breeze. For example, adding two lists together looks like this:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> [1, 2] + [3, 4]
  * [1, 2, 3, 4]
  * %> ['Hello'] + ['World']
@@ -44,7 +44,7 @@
  * 
  * Just for a quick run-through, accessing indexes in _Lists_ will look like this:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var names = ['John', 'Wick', 'III']
  * %> names[1]
  * 'Wick'
@@ -54,7 +54,7 @@
  * 
  * And slicing _Lists_ just like [Strings](./strings#string-operations) will look like this:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]
  * %> numbers[,]
  * [1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -72,13 +72,13 @@
  * 
  * ## Looping through Lists
  * 
- * Lists can be iterated using any of the looping techniques available in Blade. However, the `iter` 
+ * Lists can be iterated using any of the looping techniques available in Zuri. However, the `iter`
  * and the `for` loop are the recommended as they will require fewer moving parts, and Lists are 
  * optimized for those looping techniques.
  * 
  * For example, you can use the `iter` loop like this:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var users = ['Gabriel', 'Anna', 'Cinderella']
  * %> iter var i = 0; i < users.length(); i++ {
  * ..   echo users[i]
@@ -94,7 +94,7 @@
  * 
  * We can do the same with the `for` loop using even fewer code schematics. For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> users = ['James', 'Lucy', 'Estonia']
  * %> for user in users {
  * ..   echo user
@@ -106,7 +106,7 @@
  * 
  * We can also use the `while` loop to iterate through a list. For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> users = ['Odin', 'Parker', 'Kent']
  * %> var i = 0
  * %> while i < users.length() {
@@ -127,7 +127,7 @@ class list {
    *   
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> ['A', 'B', 'C'].length()
    * 3
    * ```
@@ -142,7 +142,7 @@ class list {
    *   
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [1,2,3]
    * %> a.append(4)
    * %> a
@@ -160,7 +160,7 @@ class list {
    *   
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [1,2,3,4,5]
    * %> a
    * [1, 2, 3, 4, 5]
@@ -178,7 +178,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [1, 2, 3]
    * %> var b = a.clone()
    * %> a.append(4)
@@ -198,7 +198,7 @@ class list {
    *   
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> [1, 2, 1, 3, 2, 1, 1].count(1)
    * 4
    * ```
@@ -215,7 +215,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [1, 2, 3]
    * %> var b = [4, 5, 6]
    * %> a.extend(b)
@@ -237,7 +237,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> [1,2].index_of(3)
    * -1
    * %> [4,5,6,5].index_of(5)
@@ -263,7 +263,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [1,2,3]
    * %> a.insert(4, 0)
    * %> a
@@ -291,7 +291,7 @@ class list {
    *   
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [4, 5, 6]
    * %> a.pop()
    * 6
@@ -317,7 +317,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
    * %> a.shift()
    * 9
@@ -344,7 +344,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [1, 2, 3, 4, 5]
    * %> a.remove_at(3)
    * 4
@@ -371,7 +371,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = ['Kirk', 'Tasha', 'Emily', 'Kirk']
    * %> a.remove('Kirk')
    * %> a
@@ -391,7 +391,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = ['apple', 'mango', 'banana', 'orange', 'peach']
    * %> a.reverse()
    * [peach, orange, banana, mango, apple]
@@ -416,7 +416,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a  = ['A', 5, false, nil, [21, 13, 46]]
    * %> a.sort()
    * %> a
@@ -437,7 +437,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %>  ['dog', 'cat', 'wolf', 'tiger'].contains('cat')
    * true
    * %>  ['dog', 'cat', 'wolf', 'tiger'].contains('giraffe')
@@ -457,7 +457,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [1, 2, 3, 4, 5, 6, 7, 8, 9]
    * %> a.delete(3, 6)
    * 4
@@ -481,7 +481,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> ['c', 'd', 'a', 'b'].first()
    * 'c'
    * ```
@@ -496,7 +496,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> ['c', 'd', 'a', 'b'].last()
    * 'b'
    * ```
@@ -511,7 +511,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> [1, 2].is_empty()
    * false
    * %> [].is_empty()
@@ -529,7 +529,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
    * %> a.take(4)
    * [10, 11, 12, 13]
@@ -552,7 +552,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> [13, 14, 15, 16].get(1)
    * 14
    * %> [13, 14, 15, 16].get(6)
@@ -572,7 +572,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> [21, nil, 14, 'age', nil, nil, [], 11].compact()
    * [21, 14, age, [], 11]
    * ```
@@ -587,7 +587,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> [1, 1, 3, 5].unique()
    * [1, 3, 5]
    * ```
@@ -607,7 +607,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = [4, 5, 6]
    * %> var b = [7, 8, 9]
    * %> [1, 2, 3].zip(a, b)
@@ -636,7 +636,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> [1, 2].zip_from([[3, 4]])
    * [[1, 3], [2, 4]]
    * ```
@@ -652,7 +652,7 @@ class list {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> ['English', 'French', 'Spanish'].to_dict()
    * {0: English, 1: French, 2: Spanish}
    * ```

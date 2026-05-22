@@ -496,7 +496,7 @@ class TTY {
    * >  __NOTE__: 
    * > - _option_ must be one ot the TCSA options above (see their description above)
    * > - _attrs_ must be a dictionary of the TTY_ flags listed above
-   * > - one can safely omit any of the TTY_ flags listed above and Blade will
+   * > - one can safely omit any of the TTY_ flags listed above and Zuri will
    * >   fill in the default values as it exists.
    * > - This flags will be merged and not overwritten
    * @param number option

@@ -1,5 +1,5 @@
-#ifndef BLADE_UTF8_H
-#define BLADE_UTF8_H
+#ifndef ZURI_UTF8_H
+#define ZURI_UTF8_H
 
 #include <stdlib.h>
 #include <string.h>
@@ -7,15 +7,15 @@
 #include "util.h"
 
 #if defined(_MSC_VER)
-#define b_nonnull
-#define b_pure
-#define b_restrict __restrict
-#define b_weak __inline
+#define z_nonnull
+#define z_pure
+#define z_restrict __restrict
+#define z_weak __inline
 #elif defined(__clang__) || defined(__GNUC__)
-#define b_nonnull __attribute__((nonnull))
-#define b_pure __attribute__((pure))
-#define b_restrict __restrict__
-#define b_weak __attribute__((weak))
+#define z_nonnull __attribute__((nonnull))
+#define z_pure __attribute__((pure))
+#define z_restrict __restrict__
+#define z_weak __attribute__((weak))
 #else
 #error Non clang, non gcc, non MSVC compiler found!
 #endif
@@ -35,4 +35,4 @@ char *utf8_tolower(char *s, int length);
 char *utf8_strstr(const char *haystack, const char *needle);
 char *utf8_case_fold(char *str, int str_len, bool simple, size_t *out_length);
 
-#endif //BLADE_UTF8_H
+#endif //ZURI_UTF8_H

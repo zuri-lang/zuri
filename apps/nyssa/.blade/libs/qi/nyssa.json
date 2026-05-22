@@ -1,11 +1,11 @@
 {
   "name": "qi", 
   "version": "1.0.1", 
-  "description": "A testing framework for Blade programming language.", 
+  "description": "A testing framework for Zuri programming language.",
   "homepage": "https://github.com/mcfriend99/qi.git", 
   "tags": [
     "test", 
-    "blade", 
+    "zuri",
     "testing", 
     "tdd", 
     "test-driven"
@@ -13,6 +13,6 @@
   "author": "Richard Ore <eqliqandfriends@gmail.com>", 
   "license": "MIT", 
   "sources": [
-    "https://nyssa.bladelang.org"
+    "https://nyssa.zurilang.org"
   ]
 }

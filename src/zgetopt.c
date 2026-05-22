@@ -45,7 +45,7 @@ static char sccsid[] = "@(#)getopt.c	8.3 (Berkeley) 4/27/95";
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #else
-#include "bunistd.h"
+#include "zunistd.h"
 #endif /* HAVE_UNISTD_H */
 
 #ifdef _WIN32

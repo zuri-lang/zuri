@@ -1,18 +1,18 @@
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/blade-lang/blade/blob/master/LICENSE)
-[![Coverage Status](https://coveralls.io/repos/github/blade-lang/nyssa/badge.svg?branch=main)](https://coveralls.io/github/blade-lang/blade?branch=main)
-[![Version](https://img.shields.io/badge/version-0.1.4-green)](https://github.com/blade-lang/blade)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/zuri-lang/zuri/blob/master/LICENSE)
+[![Coverage Status](https://coveralls.io/repos/github/zuri-lang/nyssa/badge.svg?branch=main)](https://coveralls.io/github/zuri-lang/zuri?branch=main)
+[![Version](https://img.shields.io/badge/version-0.1.4-green)](https://github.com/zuri-lang/zuri)
 
 # Nyssa
 
-Nyssa is the official package manager for the Blade programming language. It is also a self-hostable repository server that allows you to easily manage and distribute packages for your Blade projects.
+Nyssa is the official package manager for the Zuri programming language. It is also a self-hostable repository server that allows you to easily manage and distribute packages for your Zuri projects.
 
 #### The CLI
 
-![Nyssa CLI](https://raw.githubusercontent.com/blade-lang/blade/main/apps/nyssa/nyssa-cli.png)
+![Nyssa CLI](https://raw.githubusercontent.com/zuri-lang/zuri/main/apps/nyssa/nyssa-cli.png)
 
 #### The browsable repository website.
 
-![Nyssa Repository](https://raw.githubusercontent.com/blade-lang/blade/main/apps/nyssa/nyssa.png)
+![Nyssa Repository](https://raw.githubusercontent.com/zuri-lang/zuri/main/apps/nyssa/nyssa.png)
 
 
 ## Features
@@ -42,7 +42,7 @@ Nyssa is the official package manager for the Blade programming language. It is 
 
 ## Documentation
 
-To read the documentation, see the [Getting started](https://nyssa.bladelang.org/docs) guide on the website.
+To read the documentation, see the [Getting started](https://nyssa.zurilang.org/docs) guide on the website.
 
 
 ## Contributing

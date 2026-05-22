@@ -5,7 +5,7 @@
  * decoding such encoded strings back into binary data based on the base64 
  * encoding specified in [RFC4648](https://datatracker.ietf.org/doc/html/rfc4648)
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _base64

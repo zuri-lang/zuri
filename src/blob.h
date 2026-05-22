@@ -1,5 +1,5 @@
-#ifndef BLADE_BLOB_H
-#define BLADE_BLOB_H
+#ifndef ZURI_BLOB_H
+#define ZURI_BLOB_H
 
 #include "common.h"
 #include "value.h"
@@ -97,22 +97,22 @@ typedef enum {
   // the break placeholder... it never gets to the vm
   // care should be taken to
   OP_BREAK_PL,
-} b_code;
+} z_code;
 
 typedef struct {
   int count;
   int capacity;
   uint8_t *code;
   int *lines;
-  b_value_arr constants;
-} b_blob;
+  z_value_arr constants;
+} z_blob;
 
-void init_blob(b_blob *blob);
+void init_blob(z_blob *blob);
 
-void free_blob(b_vm *vm, b_blob *blob);
+void free_blob(z_vm *vm, z_blob *blob);
 
-void write_blob(b_vm *vm, b_blob *blob, uint8_t byte, int line);
+void write_blob(z_vm *vm, z_blob *blob, uint8_t byte, int line);
 
-int add_constant(b_vm *vm, b_blob *blob, b_value value);
+int add_constant(z_vm *vm, z_blob *blob, z_value value);
 
 #endif

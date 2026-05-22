@@ -1,5 +1,5 @@
-#ifndef BLADE_FILE_H
-#define BLADE_FILE_H
+#ifndef ZURI_FILE_H
+#define ZURI_FILE_H
 
 #include "native.h"
 #include "object.h"

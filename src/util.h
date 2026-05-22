@@ -1,5 +1,5 @@
-#ifndef BLADE_UTIL_H
-#define BLADE_UTIL_H
+#ifndef ZURI_UTIL_H
+#define ZURI_UTIL_H
 
 #include "common.h"
 

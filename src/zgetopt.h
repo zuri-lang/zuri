@@ -36,8 +36,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef BLADE_GETOPT_H
-#define BLADE_GETOPT_H
+#ifndef ZURI_GETOPT_H
+#define ZURI_GETOPT_H
 
 #ifndef _GETOPT_DECLARED
 #define	_GETOPT_DECLARED
@@ -51,4 +51,4 @@ extern int optind, opterr, optopt;
 extern int optreset;			/* getopt(3) external variable */
 #endif
 
-#endif /* !BLADE_GETOPT_H */
+#endif /* !ZURI_GETOPT_H */

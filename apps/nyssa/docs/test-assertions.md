@@ -7,7 +7,7 @@ When writing tests you often need to check that a value meets certain criterias.
 
 The `expect` function is used every time you want to test a value. You will rarely call `expect` by itself. Instead, you will use `expect` along with a "matcher" function to assert something about a value. Let's say you have a method `name_of_app()` which is supposed to return the string `'qi'`. Here's how you would test that:
 
-```blade
+```zuri
 describe('Name of app test', @{
   it('should be qi', @{
     expect(name_of_app()).to_be('qi')
@@ -25,7 +25,7 @@ The argument to `expect` should be the value that your code produces, and any ar
 
 If you know how to test something, `.not()` lets you test its opposite. For example, this code tests that the name of the application is `not` `'qi'`.
 
-```blade
+```zuri
 describe('Name of app test', @{
   it('should be qi', @{
     expect(name_of_app()).not().to_be('qi')
@@ -39,7 +39,7 @@ describe('Name of app test', @{
 >
 > Matchers can be nested. For example,
 > 
-> ```blade
+> ```zuri
 > expect(10.5).to_be_number().to_be_less_than(20)
 > ```
 
@@ -48,7 +48,7 @@ describe('Name of app test', @{
 
 Use `.to_be` to compare primitive values or to check referential identity of object instances. For example, this code will validate some properties of the `can` object:
 
-```blade
+```zuri
 var can = {
   name: 'pamplemousse',
   ounces: 12,
@@ -69,7 +69,7 @@ describe('the can', @{
 
 `.to_be_nil()` is the same as `.to_be(nil)` but the error messages are a bit nicer. So use `.to_be_nil()` when you want to check that something is nil.
 
-```blade
+```zuri
 def bloop() {
   return nil
 }
@@ -83,7 +83,7 @@ it('should return nil', @{
 
 Use `.to_be_defined` to check that a variable is not `nil`. For example, if you want to check that a function `fetch_new_flavor_idea()` returns something, you can write:
 
-```blade
+```zuri
 expect(fetch_new_flavor_idea()).to_be_defined()
 ```
 
@@ -93,16 +93,16 @@ You could also write `expect(fetch_new_flavor_idea()).not().to_be_nil()` as they
 
 Use `.to_be_truthy` when you don't care what a value is and you want to ensure a value is true in a boolean context. For example, let's say you have some application code that looks like:
 
-```blade
+```zuri
 drink_some_lacroix()
 if thirsty() {
   drink_more_lacroix()
 }
 ```
 
-You may not care what `get_errors` returns, specifically - it might return `true`, `[1]`, or anything that's true in Blade, and your code would still work. So if you want to test you are thirsty before drinking some La Croix, you could write:
+You may not care what `get_errors` returns, specifically - it might return `true`, `[1]`, or anything that's true in Zuri, and your code would still work. So if you want to test you are thirsty before drinking some La Croix, you could write:
 
-```blade
+```zuri
 it('should be thirsty before drinking La Croix', @{
   drink_some_lacroix()
   expect(thirsty()).to_be_truthy()
@@ -113,7 +113,7 @@ it('should be thirsty before drinking La Croix', @{
 
 Use `.to_be_falsy` when you don't care what a value is and you want to ensure a value is false in a boolean context. For example, let's say you have some application code that looks like:
 
-```blade
+```zuri
 drink_some_lacroix()
 if !get_errors() {
   drink_more_lacroix()
@@ -122,7 +122,7 @@ if !get_errors() {
 
 You may not care what `get_errors` returns, specifically - it might return `false`, `nil`, or `-1`, and your code would still work. So if you want to test there are no errors after drinking some La Croix, you could write:
 
-```blade
+```zuri
 it('does not lead to errors when drinking La Croix', @{
   drink_some_lacroix()
   expect(get_errors()).to_be_falsy()
@@ -133,7 +133,7 @@ it('does not lead to errors when drinking La Croix', @{
 
 Use `.to_be_greater_than` to compare `received > expected` for number or `received.length() > expected` for string. For example, test that `ounces_per_can()` returns a value of more than 10 ounces:
 
-```blade
+```zuri
 it('is more than 10 ounces per can', @{
   expect(ounces_per_can()).to_be_greater_than(10)
 })
@@ -143,7 +143,7 @@ it('is more than 10 ounces per can', @{
 
 Use `.to_be_greater_than_or_equal` to compare `received >= expected` for number or `received.length() >= expected` for string. For example, test that `ounces_per_can()` returns a value of more than or equal to 10 ounces:
 
-```blade
+```zuri
 it('is more than or equal to 10 ounces per can', @{
   expect(ounces_per_can()).to_be_greater_than_or_equal(10)
 })
@@ -153,7 +153,7 @@ it('is more than or equal to 10 ounces per can', @{
 
 Use `.to_be_less_than` to compare `received < expected` for number or `received.length() < expected` for string. For example, test that `ounces_per_can()` returns a value of less than 10 ounces:
 
-```blade
+```zuri
 it('is less than 10 ounces per can', @{
   expect(ounces_per_can()).to_be_less_than(10)
 })
@@ -163,7 +163,7 @@ it('is less than 10 ounces per can', @{
 
 Use `.to_be_less_than_or_equal` to compare `received <= expected` for number or `received.length() <= expected` for string. For example, test that `ounces_per_can()` returns a value of less than or equal to 10 ounces:
 
-```blade
+```zuri
 it('is less than or equal to 10 ounces per can', @{
   expect(ounces_per_can()).to_be_less_than_or_equal(10)
 })
@@ -175,7 +175,7 @@ Use `.to_match` to check that a string matches a regular expression.
 
 For example, you might not know what exactly `essay_on_the_best_flavor()` returns, but you know it's a really long string, and the substring grapefruit should be in there somewhere. You can test this with:
 
-```blade
+```zuri
 describe('an essay on the best flavor', @{
   it('mentions grapefruit', @{
     expect(essay_on_the_best_flavor()).to_match('/grapefruit/i')
@@ -185,7 +185,7 @@ describe('an essay on the best flavor', @{
 
 This matcher also accepts a string, which it will try to match:
 
-```blade
+```zuri
 describe('grapefruits', @{
   it('should be a grape', @{
     expect('grapefruits').to_match('grape')
@@ -199,7 +199,7 @@ Use `.to_contain` when you want to check that an item is in an list or dictionar
 
 For example, if `get_all_flavors()` returns an list of flavors and you want to be sure that lime is in there, you can write:
 
-```blade
+```zuri
 it('should contain lime', @{
   expect(get_all_flavors()).to_contain('lime')
 })
@@ -209,7 +209,7 @@ it('should contain lime', @{
 
 Use `.to_throw` to test that a function throws when it is called. For example, if we want to test that `drink_flavor('octopus')` throws, because octopus flavor is too disgusting to drink, we could write:
 
-```blade
+```zuri
 it('throws on octopus', @{
   expect(@{
     drink_flavor('octopus')
@@ -230,7 +230,7 @@ You can provide an optional argument to test that a specific error is thrown:
 
 For example, let's say `drink_flavor()` looks like this:
 
-```blade
+```zuri
 def drink_flavor(flavor) {
   if flavor == 'octopus' {
     die DisgustingFlavorError('yuck, octopus flavor')
@@ -241,7 +241,7 @@ def drink_flavor(flavor) {
 
 We could test the error thrown in several ways:
 
-```blade
+```zuri
 it('throws on octopus', @{
   def drink_octopus() {
     drink_flavor('octopus')
@@ -264,7 +264,7 @@ it('throws on octopus', @{
 
 Use `.to_have_length` to check that an object has a .length property and it is set to a certain numeric value. For example:
 
-```blade
+```zuri
 expect([1, 2, 3]).to_have_length(3)
 expect('abc').to_have_length(3)
 expect('').not().to_have_length(5)
@@ -274,7 +274,7 @@ expect('').not().to_have_length(5)
 
 Use `.to_be_instance_of(class)` to check that an object is an instance of a class. This matcher uses `instance_of` underneath.
 
-```blade
+```zuri
 class A {}
 
 expect(A()).to_be_instance_of(A)
@@ -285,7 +285,7 @@ expect(A()).to_be_instance_of(Exception) # fails
 
 Use `.to_be_function` when you want to check if a value is a function or a closure. For example, if `do_something()` is a function looking like this:
 
-```blade
+```zuri
 def do_something(id) {
   if id == 1 return @{ do_another_thing() }
   else return @{ do_something_else() }
@@ -294,7 +294,7 @@ def do_something(id) {
 
 We can test that `do_something()` correctly returns a function.
 
-```blade
+```zuri
 expect(do_something(1)).to_be_function()
 ```
 
@@ -303,7 +303,7 @@ expect(do_something(1)).to_be_function()
 
 Use `.to_have_property` to check if an object has a given property. You can provide an optional value argument to compare the received property value against an expected value.
 
-```blade
+```zuri
 class A {
   var name = 'something'
 }
@@ -318,7 +318,7 @@ expect(A()).to_have_property('name', 'something')
 
 Use the `.to_have_method` to check if an object is an instance of a class having a particular method. For example, let's say you have a class `A` and `B` defined as follows:
 
-```blade
+```zuri
 class A {
   testing() {}
 }
@@ -330,7 +330,7 @@ class B {
 
 and you have a function `return_class()` that could return an instance of any of `A` or `B`, you can test the output of that method like,
 
-```blade
+```zuri
 expect(return_class()).to_have_method('testing')
 ```
 
@@ -338,7 +338,7 @@ expect(return_class()).to_have_method('testing')
 
 Use the `.to_have_decorator` to check if an object is an instance of a class having a particular decorator. For example, let's say you have a class `A` and `B` defined as follows:
 
-```blade
+```zuri
 class A {
   @testing() {}
 }
@@ -350,7 +350,7 @@ class B {
 
 and you have a function `return_class()` that could return an instance of any of `A` or `B`, you can test the output of that method like,
 
-```blade
+```zuri
 expect(return_class()).to_have_decorator('testing')
 ```
 
@@ -358,7 +358,7 @@ expect(return_class()).to_have_decorator('testing')
 
 Use `.to_be_boolean` to check for `true` or `false` values. For example, test that `user_is_admin()` returns a value of `true` or `false`:
 
-```blade
+```zuri
 it('should be true or false', @{
   expect(user_is_admin()).to_be_boolean()
 })
@@ -368,7 +368,7 @@ it('should be true or false', @{
 
 Use `.to_be_number` to check that a value is a number without requiring any specific number. For example, test that `number_of_cans()` returns a valid number:
 
-```blade
+```zuri
 it('should be a number', @{
   expect(number_of_cans()).to_be_number()
 })
@@ -378,7 +378,7 @@ it('should be a number', @{
 
 Use `.to_be_string` to check that a value is a string without requiring any specific content. For example, test that `name_of_king()` returns a valid string:
 
-```blade
+```zuri
 it('should be a string', @{
   expect(name_of_king()).to_be_string()
 })
@@ -388,7 +388,7 @@ it('should be a string', @{
 
 Use `.to_be_list` to check that a value is a list without requiring any specific content. For example, test that `fruits()` returns a valid list:
 
-```blade
+```zuri
 it('should be a string', @{
   expect(fruits()).to_be_list()
 })
@@ -398,7 +398,7 @@ it('should be a string', @{
 
 Use `.to_be_dict` to check that a value is a dictionary without requiring any specific content. For example, test that `{age: 10}` returns a valid dictionary:
 
-```blade
+```zuri
 it('should be a dictionary', @{
   expect({age: 10}).to_be_dict()
 })
@@ -408,7 +408,7 @@ it('should be a dictionary', @{
 
 Use `.to_be_class` to check that a value is a class and not an instance. For example, test that `Exception` is actually a class:
 
-```blade
+```zuri
 it('should be a list', @{
   expect(Exception).to_be_class()
 })
@@ -418,7 +418,7 @@ it('should be a list', @{
 
 Use `.to_be_iterable` to check that a value is an iterable whether its of basic types (e.g. String, List etc.) or an iterable class. For example, suppose we have a class `Set` defined ass follows:
 
-```blade
+```zuri
 class Set {
   @iter() {}
   @itern() {}
@@ -427,7 +427,7 @@ class Set {
 
 The following test will show that it's as much an iterable as a list or dictionary can be.
 
-```blade
+```zuri
 it('should be enumerable', @{
   expect([]).to_be_iterable()
   expect({}).to_be_iterable()
@@ -439,7 +439,7 @@ it('should be enumerable', @{
 
 Use `.to_be_file` to check that a value is a file object. For example, you can test that an handle `fh` returned by the function `get_config()` is actually a file like this:
 
-```blade
+```zuri
 var fh = get_config()
 
 expect(fh).to_be_file()
@@ -449,7 +449,7 @@ expect(fh).to_be_file()
 
 Use `.to_be_bytes` to check that a value is an array of bytes. For example,
 
-```blade
+```zuri
 expect(bytes(0)).to_be_bytes()
 ```
 

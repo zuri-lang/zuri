@@ -97,7 +97,7 @@ DECLARE_MODULE_METHOD(io_tty__tcgetattr) {
   ENFORCE_ARG_TYPE(tcsetattr, 1, IS_BOOL);
 
 #ifdef HAVE_TERMIOS_H
-  b_obj_file *file = AS_FILE(args[0]);
+  z_obj_file *file = AS_FILE(args[0]);
   bool original = AS_BOOL(args[1]);
 
   if (!file->is_std) {
@@ -114,7 +114,7 @@ DECLARE_MODULE_METHOD(io_tty__tcgetattr) {
   }
 
   // we have our attributes already
-  b_obj_dict *dict = (b_obj_dict *)GC(new_dict(vm));
+  z_obj_dict *dict = (z_obj_dict *)GC(new_dict(vm));
   dict_add_entry(vm, dict, NUMBER_VAL(0), NUMBER_VAL(raw_attr.c_iflag));
   dict_add_entry(vm, dict, NUMBER_VAL(1), NUMBER_VAL(raw_attr.c_oflag));
   dict_add_entry(vm, dict, NUMBER_VAL(2), NUMBER_VAL(raw_attr.c_cflag));
@@ -148,9 +148,9 @@ DECLARE_MODULE_METHOD(io_tty__tcsetattr) {
   ENFORCE_ARG_TYPE(tcsetattr, 2, IS_DICT);
 
 #ifdef HAVE_TERMIOS_H
-  b_obj_file *file = AS_FILE(args[0]);
+  z_obj_file *file = AS_FILE(args[0]);
   int type = AS_NUMBER(args[1]);
-  b_obj_dict *dict = AS_DICT(args[2]);
+  z_obj_dict *dict = AS_DICT(args[2]);
 
   if (!file->is_std) {
     RETURN_VALUE_ERROR("can only use tty on std objects");
@@ -169,7 +169,7 @@ DECLARE_MODULE_METHOD(io_tty__tcsetattr) {
         AS_NUMBER(dict->names.values[i]) > 5) { // ospeed
           RETURN_TYPE_ERROR("attributes must be one of io TTY flags");
     }
-    b_value value;
+    z_value value;
     if (dict_get_entry(dict, dict->names.values[i], &value)) {
       if (!IS_NUMBER(value)) {
         RETURN_TYPE_ERROR("TTY attribute cannot be %s", value_type(value));
@@ -215,7 +215,7 @@ DECLARE_MODULE_METHOD(io_tty__flush) {
 
 DECLARE_MODULE_METHOD(io_tty__getsize) {
   ENFORCE_ARG_COUNT(get_size, 1);
-  b_obj_file *file = AS_FILE(args[0]);
+  z_obj_file *file = AS_FILE(args[0]);
 
   int columns = 0, rows = 0;
 #ifdef _WIN32
@@ -232,7 +232,7 @@ DECLARE_MODULE_METHOD(io_tty__getsize) {
   }
 #endif
 
-  b_obj_list *list = (b_obj_list *)GC(new_list(vm));
+  z_obj_list *list = (z_obj_list *)GC(new_list(vm));
   write_list(vm, list, NUMBER_VAL(columns));
   write_list(vm, list, NUMBER_VAL(rows));
   RETURN_OBJ(list);
@@ -246,7 +246,7 @@ DECLARE_MODULE_METHOD(io_tty__getsize) {
 DECLARE_MODULE_METHOD(io_flush) {
   ENFORCE_ARG_COUNT(flush, 1);
   ENFORCE_ARG_TYPE(flush, 0, IS_FILE);
-  b_obj_file *file = AS_FILE(args[0]);
+  z_obj_file *file = AS_FILE(args[0]);
 
   if (file->is_open) {
     fflush(file->file);
@@ -304,7 +304,7 @@ DECLARE_MODULE_METHOD(io_putc) {
   ENFORCE_ARG_TYPES(putc, 0, IS_STRING, IS_NUMBER);
 
   if(IS_STRING(args[0])) {
-    b_obj_string *string = AS_STRING(args[0]);
+    z_obj_string *string = AS_STRING(args[0]);
     int count = string->length;
 #ifdef _WIN32
     if (count > 32767 && isatty(STDIN_FILENO)) {
@@ -330,8 +330,8 @@ DECLARE_MODULE_METHOD(io_putc) {
  *
  * returns the standard input
  */
-b_value io_module_stdin(b_vm *vm) {
-  b_obj_file *file =
+z_value io_module_stdin(z_vm *vm) {
+  z_obj_file *file =
       new_file(vm, copy_string(vm, "<stdin>", 7), copy_string(vm, "r", 1));
   file->file = stdin;
   file->is_open = true;
@@ -346,8 +346,8 @@ b_value io_module_stdin(b_vm *vm) {
  *
  * returns the standard output interface
  */
-b_value io_module_stdout(b_vm *vm) {
-  b_obj_file *file =
+z_value io_module_stdout(z_vm *vm) {
+  z_obj_file *file =
       new_file(vm, copy_string(vm, "<stdout>", 8), copy_string(vm, "wb", 2));
   file->file = stdout;
   file->is_open = true;
@@ -362,8 +362,8 @@ b_value io_module_stdout(b_vm *vm) {
  *
  * returns the standard error interface
  */
-b_value io_module_stderr(b_vm *vm) {
-  b_obj_file *file =
+z_value io_module_stderr(z_vm *vm) {
+  z_obj_file *file =
       new_file(vm, copy_string(vm, "<stderr>", 8), copy_string(vm, "wb", 2));
   file->file = stderr;
   file->is_open = true;
@@ -373,7 +373,7 @@ b_value io_module_stderr(b_vm *vm) {
   return OBJ_VAL(file);
 }
 
-void __io_module_unload(b_vm *vm) {
+void __io_module_unload(z_vm *vm) {
 #ifdef HAVE_TERMIOS_H
   if (set_attr_was_called) {
     disable_raw_mode();
@@ -381,7 +381,7 @@ void __io_module_unload(b_vm *vm) {
 #endif /* ifdef HAVE_TERMIOS_H */
 }
 
-void __io_module_preload(b_vm *vm) {
+void __io_module_preload(z_vm *vm) {
 #ifdef HAVE_TERMIOS_H
   tcgetattr(STDIN_FILENO, &orig_termios);
   atexit(disable_raw_mode);
@@ -389,14 +389,14 @@ void __io_module_preload(b_vm *vm) {
 }
 
 CREATE_MODULE_LOADER(io) {
-  static b_field_reg io_module_fields[] = {
+  static z_field_reg io_module_fields[] = {
       {"stdin",  false, io_module_stdin},
       {"stdout", false, io_module_stdout},
       {"stderr", false, io_module_stderr},
       {NULL,     false, NULL},
   };
 
-  static b_func_reg io_functions[] = {
+  static z_func_reg io_functions[] = {
       {"getc",  false, GET_MODULE_METHOD(io_getc)},
       {"getch",  false, GET_MODULE_METHOD(io_getch)},
       {"putc",  false, GET_MODULE_METHOD(io_putc)},
@@ -404,7 +404,7 @@ CREATE_MODULE_LOADER(io) {
       {NULL,    false, NULL},
   };
 
-  static b_func_reg tty_class_functions[] = {
+  static z_func_reg tty_class_functions[] = {
       {"tcgetattr", false, GET_MODULE_METHOD(io_tty__tcgetattr)},
       {"tcsetattr", false, GET_MODULE_METHOD(io_tty__tcsetattr)},
       {"getsize",     false, GET_MODULE_METHOD(io_tty__getsize)},
@@ -412,12 +412,12 @@ CREATE_MODULE_LOADER(io) {
       {NULL,        false, NULL},
   };
 
-  static b_class_reg classes[] = {
+  static z_class_reg classes[] = {
       {"TTY", NULL, tty_class_functions},
       {NULL,  NULL, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_io",
       .fields = io_module_fields,
       .functions = io_functions,

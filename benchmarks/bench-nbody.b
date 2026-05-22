@@ -1,7 +1,7 @@
 /* The Computer Language Benchmarks Game
  * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
  *
- * n-body Blade program
+ * n-body Zuri program
  *
  * based on work by Isaac Gouy
  * contributed by Richard Ore 

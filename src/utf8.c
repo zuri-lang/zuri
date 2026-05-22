@@ -2,9 +2,9 @@
 
 typedef struct {
   int val;
-} b_uf8_rule;
+} z_uf8_rule;
 
-b_uf8_rule utf8_lower_to_upper_rules[] = {
+z_uf8_rule utf8_lower_to_upper_rules[] = {
     [0x0061] = {0x0041},
     [0x0062] = {0x0042},
     [0x0063] = {0x0043},
@@ -673,7 +673,7 @@ b_uf8_rule utf8_lower_to_upper_rules[] = {
     [0xFF5A] = {0xFF3A},
 };
 
-b_uf8_rule utf8_upper_to_lower_rules[] = {
+z_uf8_rule utf8_upper_to_lower_rules[] = {
     [0x0041] = {0x0061},
     [0x0042] = {0x0062},
     [0x0043] = {0x0063},
@@ -2852,7 +2852,7 @@ int utf8_decode(const uint8_t *bytes, uint32_t length) {
   return value;
 }
 
-char *utf8_codepoint(const char *b_restrict str, int *b_restrict out_codepoint) {
+char *utf8_codepoint(const char *z_restrict str, int *z_restrict out_codepoint) {
   if (0xf0 == (0xf8 & str[0])) {
     /* 4 byte utf8 codepoint */
     *out_codepoint = ((0x07 & str[0]) << 18) | ((0x3f & (uint8_t)str[1]) << 12) |

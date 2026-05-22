@@ -127,7 +127,7 @@ DECLARE_MODULE_METHOD(base64__decode) {
   ENFORCE_ARG_COUNT(decode, 1);
   ENFORCE_ARG_TYPE(decode, 0, IS_STRING);
 
-  b_obj_string *string = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(args[0]);
 
   int output_length;
   unsigned char *data = base64_decode((const char *) string->chars,
@@ -135,7 +135,7 @@ DECLARE_MODULE_METHOD(base64__decode) {
 
   if (data == NULL) RETURN_NIL;
 
-  b_obj_bytes *bytes = new_bytes(vm, output_length);
+  z_obj_bytes *bytes = new_bytes(vm, output_length);
   memcpy(bytes->bytes.bytes, data, output_length);
   free(data);
 
@@ -146,7 +146,7 @@ DECLARE_MODULE_METHOD(base64__encode) {
   ENFORCE_ARG_COUNT(encode, 1);
   ENFORCE_ARG_TYPE(encode, 0, IS_BYTES);
 
-  b_obj_bytes *bytes = AS_BYTES(args[0]);
+  z_obj_bytes *bytes = AS_BYTES(args[0]);
 
   int output_length;
   char *data = base64_encode((const unsigned char *) bytes->bytes.bytes,
@@ -158,13 +158,13 @@ DECLARE_MODULE_METHOD(base64__encode) {
 }
 
 CREATE_MODULE_LOADER(base64) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"decode", false, GET_MODULE_METHOD(base64__decode)},
       {"encode", false, GET_MODULE_METHOD(base64__encode)},
       {NULL,     false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_base64",
       .fields = NULL,
       .functions = module_functions,

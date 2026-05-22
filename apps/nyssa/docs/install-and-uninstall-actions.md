@@ -4,7 +4,7 @@ Nyssa provides two installation hook (`post_install` and `cli`) and one uninstal
 
 ### `post_install`
 
-The `post_install` configuration allows package authors to specify a Blade script that should be run after the package has been extracted into its destination directory. To specify a script to run after installation, add the `post_install` option to the `nyssa.json` file.
+The `post_install` configuration allows package authors to specify a Zuri script that should be run after the package has been extracted into its destination directory. To specify a script to run after installation, add the `post_install` option to the `nyssa.json` file.
 
 ```json
 ...
@@ -24,11 +24,11 @@ The `pre_uninstall` configuration is much like the `post_install` configuration,
 
 ### `cli`
 
-The `cli` installation hook allows package authors to specify a script that serves as the CLI entry point to the application. When the _CLI_ script is specified, a CLI entry will be created at `.blade` for local installations or at the root of Blade for global installations. This files will be automatically removed during uninstallation.
+The `cli` installation hook allows package authors to specify a script that serves as the CLI entry point to the application. When the _CLI_ script is specified, a CLI entry will be created at `.zuri` for local installations or at the root of Zuri for global installations. This files will be automatically removed during uninstallation.
 
-For example, the testing framework `qi` specifies a CLI entry point. For this reason, when you install `qi` locally, you can run the Qi command by simply running the command `nyssa test` (or `.blade\qi` for Windows) to run your tests. This is made possible because during installation, Nyssa will automatically create the corresponding command-line entry file for you.
+For example, the testing framework `qi` specifies a CLI entry point. For this reason, when you install `qi` locally, you can run the Qi command by simply running the command `nyssa test` (or `.zuri\qi` for Windows) to run your tests. This is made possible because during installation, Nyssa will automatically create the corresponding command-line entry file for you.
 
-For applications installated globally, the application will become available on the user terminal **via the name** of the application provided that Blade has been added to path during installation.
+For applications installated globally, the application will become available on the user terminal **via the name** of the application provided that Zuri has been added to path during installation.
 
 For example,
 

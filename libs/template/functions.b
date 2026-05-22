@@ -183,7 +183,7 @@ def title(value) {
 
 /**
  * Template function to return a default string value if the value 
- * passed resolves to a Blade false expression. For example, when a 
+ * passed resolves to a Zuri false expression. For example, when a
  * string is empty or nil.
  * 
  * Example:

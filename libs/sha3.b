@@ -9,7 +9,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import sha3
  * %> 
  * %> sha3.sha3_256('hello')
@@ -21,7 +21,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import sha3
  * %> 
  * %> var h = sha3.Keccak(256, 1)
@@ -39,7 +39,7 @@
  *    on the processing as may be found useful for many applications especially
  *    those operating in the cryptocurrency/blockchain domain.
  *
- * @copyright 2024, Richard Ore and Blade contributors
+ * @copyright 2024, Richard Ore and Zuri contributors
  * @copyright Marco Paland (marco at paland dot com)
  * @copyright 2015-2018, PALANDesign Hannover, Germany
  */

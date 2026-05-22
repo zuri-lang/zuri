@@ -92,7 +92,7 @@ char *merge_paths(char *a, char *b) {
   final_path = append_strings(final_path, a);
 
   if(!(len_b == 2 && b[0] == '.' && b[1] == 'b')) {
-    final_path = append_strings(final_path, BLADE_PATH_SEPARATOR);
+    final_path = append_strings(final_path, ZURI_PATH_SEPARATOR);
   }
   final_path = append_strings(final_path, b);
   return final_path;
@@ -100,21 +100,21 @@ char *merge_paths(char *a, char *b) {
 
 bool file_exists(char *filepath) { return access(filepath, F_OK) == 0; }
 
-char *get_blade_filename(char *filename) {
-  return merge_paths(filename, BLADE_EXTENSION);
+char *get_zuri_filename(char *filename) {
+  return merge_paths(filename, ZURI_EXTENSION);
 }
 
 char *get_core_library_file_path(char *module_name) {
-  char *blade_file_name = get_blade_filename(module_name);
-  if (blade_file_name != NULL) {
+  char *zuri_file_name = get_zuri_filename(module_name);
+  if (zuri_file_name != NULL) {
     char *exe_dir = get_exe_dir();
 
     if (exe_dir != NULL) {
-      char *blade_directory = merge_paths(exe_dir, LIBRARY_DIRECTORY);
+      char *zuri_directory = merge_paths(exe_dir, LIBRARY_DIRECTORY);
 
-      // check blade libs directory for a matching module...
-      if (blade_directory != NULL) {
-        char *library_file = merge_paths(blade_directory, blade_file_name);
+      // check zuri libs directory for a matching module...
+      if (zuri_directory != NULL) {
+        char *library_file = merge_paths(zuri_directory, zuri_file_name);
 
         if (library_file != NULL) {
           if (file_exists(library_file)) {
@@ -123,26 +123,26 @@ char *get_core_library_file_path(char *module_name) {
 
             if (path1 != NULL) {
               free(library_file);
-              free(blade_directory);
+              free(zuri_directory);
               free(exe_dir);
-              free(blade_file_name);
+              free(zuri_file_name);
               return path1;
             }
           }
           free(library_file);
         }
-        free_tmp(blade_directory);
+        free_tmp(zuri_directory);
       }
       free(exe_dir);
     }
-    free(blade_file_name);
+    free(zuri_file_name);
   }
 
   return NULL;
 }
 
 char *resolve_import_path(char *module_name, const char *current_file, const char *root_file, bool is_relative) {
-  char *blade_file_name = get_blade_filename(module_name);
+  char *zuri_file_name = get_zuri_filename(module_name);
 
   // search system library if we are not looking for a relative module.
   if (!is_relative) {
@@ -167,7 +167,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
     }
 
     tmp_str = merge_paths(root_dir, LOCAL_PACKAGES_DIRECTORY LOCAL_SRC_DIRECTORY);
-    char *vendor_file = merge_paths(tmp_str, blade_file_name);
+    char *vendor_file = merge_paths(tmp_str, zuri_file_name);
     free(tmp_str);
     tmp_str = NULL;
     if (file_exists(vendor_file)) {
@@ -180,7 +180,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
           free(current_dir);
           free(path2);
           free(vendor_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
@@ -190,7 +190,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
     // or a matching package
     tmp_str = merge_paths(root_dir, LOCAL_PACKAGES_DIRECTORY LOCAL_SRC_DIRECTORY);
     char *merged_path = merge_paths(tmp_str, module_name);
-    char *vendor_index_file = merge_paths(merged_path, LIBRARY_DIRECTORY_INDEX BLADE_EXTENSION);
+    char *vendor_index_file = merge_paths(merged_path, LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
     free(merged_path);
     free(tmp_str);
     tmp_str = NULL;
@@ -204,7 +204,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
           free(current_dir);
           free(path2);
           free(vendor_index_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
@@ -212,7 +212,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
     free(vendor_index_file);
 
     tmp_str = merge_paths(current_dir, LOCAL_PACKAGES_DIRECTORY LOCAL_SRC_DIRECTORY);
-    char *current_vendor_file = merge_paths(tmp_str, blade_file_name);
+    char *current_vendor_file = merge_paths(tmp_str, zuri_file_name);
     free(tmp_str);
     tmp_str = NULL;
     if (file_exists(current_vendor_file)) {
@@ -225,7 +225,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
           free(current_dir);
           free(path2);
           free(current_vendor_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
@@ -235,7 +235,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
     // or a matching package
     tmp_str = merge_paths(current_dir, LOCAL_PACKAGES_DIRECTORY LOCAL_SRC_DIRECTORY);
     char *merged_path2 = merge_paths(tmp_str, module_name);
-    char *current_vendor_index_file = merge_paths(merged_path2, LIBRARY_DIRECTORY_INDEX BLADE_EXTENSION);
+    char *current_vendor_index_file = merge_paths(merged_path2, LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
     free(merged_path2);
     free(tmp_str);
     tmp_str = NULL;
@@ -249,7 +249,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
           free(current_dir);
           free(path2);
           free(current_vendor_index_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
@@ -257,12 +257,12 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
     free(current_vendor_index_file);
     free(current_dir);
 
-    // then, check in blade's default locations
+    // then, check in zuri's default locations
     char *exe_dir = get_exe_dir();
-    char *blade_directory = merge_paths(exe_dir, LIBRARY_DIRECTORY);
+    char *zuri_directory = merge_paths(exe_dir, LIBRARY_DIRECTORY);
 
-    // check blade libs directory for a matching module...
-    char *library_file = merge_paths(blade_directory, blade_file_name);
+    // check zuri libs directory for a matching module...
+    char *library_file = merge_paths(zuri_directory, zuri_file_name);
     if (file_exists(library_file)) {
       // stop a core library from importing itself
       char *path1 = realpath(library_file, NULL);
@@ -270,19 +270,19 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
 
       if (path1 != NULL) {
         if (path2 == NULL || memcmp(path1, path2, (int) strlen(path2)) != 0) {
-          free(blade_directory);
+          free(zuri_directory);
           free(path2);
           free(library_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
     }
     free(library_file);
 
-    // check blade libs directory for a matching package...
-    tmp_str = merge_paths(blade_directory, module_name);
-    char *library_index_file = merge_paths(tmp_str, LIBRARY_DIRECTORY_INDEX BLADE_EXTENSION);
+    // check zuri libs directory for a matching package...
+    tmp_str = merge_paths(zuri_directory, module_name);
+    char *library_index_file = merge_paths(tmp_str, LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
     free(tmp_str);
     tmp_str = NULL;
     if (file_exists(library_index_file)) {
@@ -291,19 +291,19 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
 
       if (path1 != NULL) {
         if (path2 == NULL || memcmp(path1, path2, (int) strlen(path2)) != 0) {
-          free(blade_directory);
+          free(zuri_directory);
           free(path2);
           free(library_index_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
     }
     free(library_index_file);
 
-    // check blade vendor directory installed module...
-    char *blade_package_directory = merge_paths(exe_dir, PACKAGES_DIRECTORY);
-    char *package_file = merge_paths(blade_package_directory, blade_file_name);
+    // check zuri vendor directory installed module...
+    char *zuri_package_directory = merge_paths(exe_dir, PACKAGES_DIRECTORY);
+    char *package_file = merge_paths(zuri_package_directory, zuri_file_name);
     if (file_exists(package_file)) {
       char *path1 = realpath(package_file, NULL);
       char *path2 = realpath(current_file, NULL);
@@ -312,16 +312,16 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
         if (path2 == NULL || memcmp(path1, path2, (int) strlen(path2)) != 0) {
           free(path2);
           free(package_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
     }
     free(package_file);
 
-    // check blade vendor directory installed package...
-    tmp_str = merge_paths(blade_package_directory, module_name);
-    char *package_index_file = merge_paths(tmp_str, LIBRARY_DIRECTORY_INDEX BLADE_EXTENSION);
+    // check zuri vendor directory installed package...
+    tmp_str = merge_paths(zuri_package_directory, module_name);
+    char *package_index_file = merge_paths(tmp_str, LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
     free(tmp_str);
     tmp_str = NULL;
     if (file_exists(package_index_file)) {
@@ -332,16 +332,16 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
         if (path2 == NULL || memcmp(path1, path2, (int) strlen(path2)) != 0) {
           free(path2);
           free(package_index_file);
-          free(blade_package_directory);
-          free(blade_directory);
-          free(blade_file_name);
+          free(zuri_package_directory);
+          free(zuri_directory);
+          free(zuri_file_name);
           return path1;
         }
       }
     }
 
-    free(blade_package_directory);
-    free(blade_directory);
+    free(zuri_package_directory);
+    free(zuri_directory);
   } else {
 
     // check relative to the current file...
@@ -356,7 +356,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
     }
 
     // otherwise, search the relative path for a matching module
-    char *relative_file = merge_paths(file_directory, blade_file_name);
+    char *relative_file = merge_paths(file_directory, zuri_file_name);
     if (file_exists(relative_file)) {
       // stop a user module from importing itself
       char *path1 = realpath(relative_file, NULL);
@@ -366,7 +366,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
         if (path2 == NULL || memcmp(path1, path2, (int) strlen(path2)) != 0) {
           free(path2);
           free(relative_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
@@ -375,7 +375,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
 
     // or a matching package
     tmp_str = merge_paths(file_directory, module_name);
-    char *relative_index_file = merge_paths(tmp_str, LIBRARY_DIRECTORY_INDEX BLADE_EXTENSION);
+    char *relative_index_file = merge_paths(tmp_str, LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
     free(tmp_str);
     tmp_str = NULL;
     if (file_exists(relative_index_file)) {
@@ -386,7 +386,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
         if (path2 == NULL || memcmp(path1, path2, (int) strlen(path2)) != 0) {
           free(path2);
           free(relative_index_file);
-          free(blade_file_name);
+          free(zuri_file_name);
           return path1;
         }
       }
@@ -394,7 +394,7 @@ char *resolve_import_path(char *module_name, const char *current_file, const cha
     free(relative_index_file);
   }
 
-  free(blade_file_name);
+  free(zuri_file_name);
   return NULL;
 }
 

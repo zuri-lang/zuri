@@ -6,15 +6,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
-set(BLADE_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blade")
+set(ZURI_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/zuri")
 
-message(STATUS "Building ssl module to ${BLADE_ROOT}/dist")
+message(STATUS "Building ssl module to ${ZURI_ROOT}/dist")
 
-include_directories("${BLADE_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
+include_directories("${ZURI_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(ssl SHARED ssl.h ssl.c)
-target_link_libraries(ssl libblade)
-add_dependencies(ssl blade)
+target_link_libraries(ssl libzuri)
+add_dependencies(ssl zuri)
 
 if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL "Linux" AND UNIX)
     set(OPENSSL_USE_STATIC_LIBS TRUE)
@@ -37,9 +37,9 @@ if(WIN32)
 endif()
 
 add_custom_target(copy-ssl-to-libs ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/ssl ${BLADE_ROOT}/libs/ssl
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/ssl ${ZURI_ROOT}/libs/ssl
         COMMENT "Exporting ssl source files to libs folder..."
         )
 
 add_custom_command(TARGET ssl POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ssl> ${BLADE_ROOT}/dist)
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ssl> ${ZURI_ROOT}/dist)

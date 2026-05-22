@@ -6,15 +6,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
-set(BLADE_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blade")
+set(ZURI_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/zuri")
 
-message(STATUS "Building imagine module to ${BLADE_ROOT}/dist")
+message(STATUS "Building imagine module to ${ZURI_ROOT}/dist")
 
-include_directories("${BLADE_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
+include_directories("${ZURI_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(imagine SHARED imagine.c)
-target_link_libraries(imagine libblade)
-add_dependencies(imagine blade)
+target_link_libraries(imagine libzuri)
+add_dependencies(imagine zuri)
 
 find_package(PkgConfig)
 pkg_check_modules(LIBGD REQUIRED IMPORTED_TARGET gdlib)
@@ -27,10 +27,10 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 endif()
 
 add_custom_target(copy-imagine-to-libs ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/imagine ${BLADE_ROOT}/libs/imagine
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/imagine ${ZURI_ROOT}/libs/imagine
         COMMENT "Exporting imagine source files to libs folder..."
         )
 
 add_custom_command(TARGET imagine POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:imagine> ${BLADE_ROOT}/dist
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:imagine> ${ZURI_ROOT}/dist
         COMMENT "imagine copy")

@@ -395,7 +395,7 @@ var _mimes = {
  * 
  * Example,
  * 
- * ```blade
+ * ```zuri
  * import mime
  * echo mime.detect_from_name('myimage.png')
  * ```
@@ -423,7 +423,7 @@ def detect_from_name(name) {
  * 
  * Example,
  * 
- * ```blade
+ * ```zuri
  * import mime
  * var f = file('my_file.ext', 'rb')
  * echo mime.detect_from_header(f)
@@ -486,7 +486,7 @@ def detect_from_header(file) {
  * 
  * Example,
  * 
- * ```blade
+ * ```zuri
  * import mime
  * var f = file('myfile', 'rb')
  * 
@@ -521,7 +521,7 @@ def detect(file) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import mime
  * %> mime.detect_from_name('myfile.ppk')
  * 'application/octet-stream'

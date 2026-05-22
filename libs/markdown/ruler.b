@@ -79,7 +79,7 @@ class Ruler {
    *
    * Replace existing typographer replacement rule with new one:
    *
-   * ```blade
+   * ```zuri
    * import markdown as md
    *
    * md.core.ruler.at('replacements', @(state) {
@@ -112,7 +112,7 @@ class Ruler {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown as md
    *
    * md.block.ruler.before('paragraph', 'my_rule', @(state) {
@@ -152,7 +152,7 @@ class Ruler {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown as md
    *
    * md.inline.ruler.after('text', 'my_rule', @(state) {
@@ -192,7 +192,7 @@ class Ruler {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown as md
    *
    * md.core.ruler.push('my_rule', @(state) {

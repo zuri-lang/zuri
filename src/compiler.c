@@ -14,11 +14,11 @@
 
 #include "debug.h"
 
-static b_blob* current_blob(b_parser* p) {
+static z_blob* current_blob(z_parser* p) {
   return &p->vm->compiler->function->blob;
 }
 
-static void error_at(b_parser* p, b_token* t, const char* message,
+static void error_at(z_parser* p, z_token* t, const char* message,
                      va_list args) {
   fflush(stdout); // flush out anything on stdout first
 
@@ -51,21 +51,21 @@ static void error_at(b_parser* p, b_token* t, const char* message,
   p->had_error = true;
 }
 
-static void error(b_parser* p, const char* message, ...) {
+static void error(z_parser* p, const char* message, ...) {
   va_list args;
   va_start(args, message);
   error_at(p, &p->previous, message, args);
   va_end(args);
 }
 
-static void error_at_current(b_parser* p, const char* message, ...) {
+static void error_at_current(z_parser* p, const char* message, ...) {
   va_list args;
   va_start(args, message);
   error_at(p, &p->current, message, args);
   va_end(args);
 }
 
-static void advance(b_parser* p) {
+static void advance(z_parser* p) {
   p->previous = p->current;
 
   for (;;) {
@@ -77,7 +77,7 @@ static void advance(b_parser* p) {
   }
 }
 
-static void consume(b_parser* p, b_tkn_type t, const char* message) {
+static void consume(z_parser* p, z_tkn_type t, const char* message) {
   if (p->current.type == t) {
     advance(p);
     return;
@@ -86,7 +86,7 @@ static void consume(b_parser* p, b_tkn_type t, const char* message) {
   error_at_current(p, message);
 }
 
-static void consume_or(b_parser* p, const char* message, const b_tkn_type ts[], int count) {
+static void consume_or(z_parser* p, const char* message, const z_tkn_type ts[], int count) {
   for (int i = 0; i < count; i++) {
     if (p->current.type == ts[i]) {
       advance(p);
@@ -97,7 +97,7 @@ static void consume_or(b_parser* p, const char* message, const b_tkn_type ts[], 
   error_at_current(p, message);
 }
 
-static bool check_number(b_parser* p) {
+static bool check_number(z_parser* p) {
   if (p->previous.type == REG_NUMBER_TOKEN ||
     p->previous.type == OCT_NUMBER_TOKEN ||
     p->previous.type == BIN_NUMBER_TOKEN ||
@@ -106,16 +106,16 @@ static bool check_number(b_parser* p) {
   return false;
 }
 
-static bool check(b_parser* p, b_tkn_type t) { return p->current.type == t; }
+static bool check(z_parser* p, z_tkn_type t) { return p->current.type == t; }
 
-static bool match(b_parser* p, b_tkn_type t) {
+static bool match(z_parser* p, z_tkn_type t) {
   if (!check(p, t))
     return false;
   advance(p);
   return true;
 }
 
-static void consume_statement_end(b_parser* p) {
+static void consume_statement_end(z_parser* p) {
   // allow block last statement to omit statement end
   if (p->block_count > 0 && check(p, RBRACE_TOKEN))
     return;
@@ -132,13 +132,13 @@ static void consume_statement_end(b_parser* p) {
   while (match(p, SEMICOLON_TOKEN) || match(p, NEWLINE_TOKEN));
 }
 
-static void ignore_whitespace(b_parser* p) {
+static void ignore_whitespace(z_parser* p) {
   while (match(p, NEWLINE_TOKEN));
 }
 
 static int get_code_args_count(const uint8_t* bytecode,
-                               const b_value* constants, int ip) {
-  b_code code = (b_code)bytecode[ip];
+                               const z_value* constants, int ip) {
+  z_code code = (z_code)bytecode[ip];
 
   switch (code) {
     case OP_EQUAL:
@@ -228,7 +228,7 @@ static int get_code_args_count(const uint8_t* bytecode,
 
     case OP_CLOSURE: {
       int constant = (bytecode[ip + 1] << 8) | bytecode[ip + 2];
-      b_obj_func* fn = AS_FUNCTION(constants[constant]);
+      z_obj_func* fn = AS_FUNCTION(constants[constant]);
 
       // There is two byte for the constant, then three for each up value.
       return 2 + (fn->up_value_count * 3);
@@ -240,34 +240,34 @@ static int get_code_args_count(const uint8_t* bytecode,
   return 0;
 }
 
-static void emit_byte(b_parser* p, uint8_t byte) {
+static void emit_byte(z_parser* p, uint8_t byte) {
   write_blob(p->vm, current_blob(p), byte, p->previous.line);
 }
 
-static void emit_short(b_parser* p, uint16_t byte) {
+static void emit_short(z_parser* p, uint16_t byte) {
   write_blob(p->vm, current_blob(p), (byte >> 8) & 0xff, p->previous.line);
   write_blob(p->vm, current_blob(p), byte & 0xff, p->previous.line);
 }
 
-static void emit_bytes(b_parser* p, uint8_t byte, uint8_t byte2) {
+static void emit_bytes(z_parser* p, uint8_t byte, uint8_t byte2) {
   write_blob(p->vm, current_blob(p), byte, p->previous.line);
   write_blob(p->vm, current_blob(p), byte2, p->previous.line);
 }
 
-static void emit_byte_and_short(b_parser* p, uint8_t byte, uint16_t byte2) {
+static void emit_byte_and_short(z_parser* p, uint8_t byte, uint16_t byte2) {
   write_blob(p->vm, current_blob(p), byte, p->previous.line);
   write_blob(p->vm, current_blob(p), (byte2 >> 8) & 0xff, p->previous.line);
   write_blob(p->vm, current_blob(p), byte2 & 0xff, p->previous.line);
 }
 
-/* static void emit_byte_and_long(b_parser *p, uint8_t byte, uint16_t byte2) {
+/* static void emit_byte_and_long(z_parser *p, uint8_t byte, uint16_t byte2) {
   write_blob(p->vm, current_blob(p), byte, p->previous.line);
   write_blob(p->vm, current_blob(p), (byte2 >> 16) & 0xff, p->previous.line);
   write_blob(p->vm, current_blob(p), (byte2 >> 8) & 0xff, p->previous.line);
   write_blob(p->vm, current_blob(p), byte2 & 0xff, p->previous.line);
 } */
 
-static void emit_loop(b_parser* p, int loop_start) {
+static void emit_loop(z_parser* p, int loop_start) {
   emit_byte(p, OP_LOOP);
 
   int offset = current_blob(p)->count - loop_start + 2;
@@ -278,7 +278,7 @@ static void emit_loop(b_parser* p, int loop_start) {
   emit_byte(p, offset & 0xff);
 }
 
-static void emit_return(b_parser* p) {
+static void emit_return(z_parser* p) {
   if (p->vm->compiler->type == TYPE_INITIALIZER) {
     emit_byte_and_short(p, OP_GET_LOCAL, 0);
   } else {
@@ -287,7 +287,7 @@ static void emit_return(b_parser* p) {
   emit_byte(p, OP_RETURN);
 }
 
-static int make_constant(b_parser* p, b_value value) {
+static int make_constant(z_parser* p, z_value value) {
   int constant = add_constant(p->vm, current_blob(p), value);
   if (constant >= UINT16_MAX) {
     error(p, "too many constants in current scope");
@@ -296,12 +296,12 @@ static int make_constant(b_parser* p, b_value value) {
   return constant;
 }
 
-static void emit_constant(b_parser* p, b_value value) {
+static void emit_constant(z_parser* p, z_value value) {
   int constant = make_constant(p, value);
   emit_byte_and_short(p, OP_CONSTANT, (uint16_t)constant);
 }
 
-static int emit_jump(b_parser* p, uint8_t instruction) {
+static int emit_jump(z_parser* p, uint8_t instruction) {
   emit_byte(p, instruction);
 
   // placeholders
@@ -311,7 +311,7 @@ static int emit_jump(b_parser* p, uint8_t instruction) {
   return current_blob(p)->count - 2;
 }
 
-static int emit_switch(b_parser* p) {
+static int emit_switch(z_parser* p) {
   emit_byte(p, OP_SWITCH);
 
   // placeholders
@@ -321,12 +321,12 @@ static int emit_switch(b_parser* p) {
   return current_blob(p)->count - 2;
 }
 
-static void patch_with_value(b_parser* p, int offset, int constant) {
+static void patch_with_value(z_parser* p, int offset, int constant) {
   current_blob(p)->code[offset] = (constant >> 8) & 0xff;
   current_blob(p)->code[offset + 1] = constant & 0xff;
 }
 
-static void patch_jump(b_parser* p, int offset) {
+static void patch_jump(z_parser* p, int offset) {
   // -2 to adjust the bytecode for the offset itself
   int jump = current_blob(p)->count - offset - 2;
 
@@ -338,7 +338,7 @@ static void patch_jump(b_parser* p, int offset) {
   current_blob(p)->code[offset + 1] = jump & 0xff;
 }
 
-static void init_compiler(b_parser* p, b_compiler* compiler, b_func_type type) {
+static void init_compiler(z_parser* p, z_compiler* compiler, z_func_type type) {
   compiler->enclosing = p->vm->compiler;
   compiler->function = NULL;
   compiler->type = type;
@@ -356,7 +356,7 @@ static void init_compiler(b_parser* p, b_compiler* compiler, b_func_type type) {
   }
 
   // claiming slot zero for use in class methods
-  b_local* local = &p->vm->compiler->locals[p->vm->compiler->local_count++];
+  z_local* local = &p->vm->compiler->locals[p->vm->compiler->local_count++];
   local->depth = 0;
   local->is_captured = false;
 
@@ -369,18 +369,18 @@ static void init_compiler(b_parser* p, b_compiler* compiler, b_func_type type) {
   }
 }
 
-static int identifier_constant(b_parser* p, b_token* name) {
+static int identifier_constant(z_parser* p, z_token* name) {
   return make_constant(p,
                        OBJ_VAL(copy_string(p->vm, name->start, name->length)));
 }
 
-static inline bool identifiers_equal(b_token* a, b_token* b) {
+static inline bool identifiers_equal(z_token* a, z_token* b) {
   return a->length == b->length && memcmp(a->start, b->start, a->length) == 0;
 }
 
-static int resolve_local(b_parser* p, b_compiler* compiler, b_token* name) {
+static int resolve_local(z_parser* p, z_compiler* compiler, z_token* name) {
   for (int i = compiler->local_count - 1; i >= 0; i--) {
-    b_local* local = &compiler->locals[i];
+    z_local* local = &compiler->locals[i];
     if (identifiers_equal(&local->name, name)) {
       if (local->depth == -1) {
         error(p, "cannot read local variable in it's own initializer");
@@ -391,12 +391,12 @@ static int resolve_local(b_parser* p, b_compiler* compiler, b_token* name) {
   return -1;
 }
 
-static int add_up_value(b_parser* p, b_compiler* compiler, uint16_t index,
+static int add_up_value(z_parser* p, z_compiler* compiler, uint16_t index,
                         bool is_local) {
   int up_value_count = compiler->function->up_value_count;
 
   for (int i = 0; i < up_value_count; i++) {
-    b_up_value* up_value = &compiler->up_values[i];
+    z_up_value* up_value = &compiler->up_values[i];
     if (up_value->index == index && up_value->is_local == is_local) {
       return i;
     }
@@ -412,7 +412,7 @@ static int add_up_value(b_parser* p, b_compiler* compiler, uint16_t index,
   return compiler->function->up_value_count++;
 }
 
-static int resolve_up_value(b_parser* p, b_compiler* compiler, b_token* name) {
+static int resolve_up_value(z_parser* p, z_compiler* compiler, z_token* name) {
   if (compiler->enclosing == NULL)
     return -1;
 
@@ -430,29 +430,29 @@ static int resolve_up_value(b_parser* p, b_compiler* compiler, b_token* name) {
   return -1;
 }
 
-static int add_local(b_parser* p, b_token name) {
+static int add_local(z_parser* p, z_token name) {
   if (p->vm->compiler->local_count == UINT8_COUNT) {
     // we've reached maximum local variables per scope
     error(p, "too many local variables in scope");
     return -1;
   }
 
-  b_local* local = &p->vm->compiler->locals[p->vm->compiler->local_count++];
+  z_local* local = &p->vm->compiler->locals[p->vm->compiler->local_count++];
   local->name = name;
   local->depth = -1;
   local->is_captured = false;
   return p->vm->compiler->local_count;
 }
 
-static void declare_variable(b_parser* p) {
+static void declare_variable(z_parser* p) {
   // global variables are implicitly declared...
   if (p->vm->compiler->scope_depth == 0)
     return;
 
-  b_token* name = &p->previous;
+  z_token* name = &p->previous;
 
   for (int i = p->vm->compiler->local_count - 1; i >= 0; i--) {
-    b_local* local = &p->vm->compiler->locals[i];
+    z_local* local = &p->vm->compiler->locals[i];
     if (local->depth != -1 && local->depth < p->vm->compiler->scope_depth) {
       break;
     }
@@ -466,7 +466,7 @@ static void declare_variable(b_parser* p) {
   add_local(p, *name);
 }
 
-static int parse_variable(b_parser* p, const char* message) {
+static int parse_variable(z_parser* p, const char* message) {
   consume(p, IDENTIFIER_TOKEN, message);
 
   declare_variable(p);
@@ -476,7 +476,7 @@ static int parse_variable(b_parser* p, const char* message) {
   return identifier_constant(p, &p->previous);
 }
 
-static void mark_initialized(b_parser* p) {
+static void mark_initialized(z_parser* p) {
   if (p->vm->compiler->scope_depth == 0)
     return;
 
@@ -484,7 +484,7 @@ static void mark_initialized(b_parser* p) {
     p->vm->compiler->scope_depth;
 }
 
-static void define_variable(b_parser* p, int global) {
+static void define_variable(z_parser* p, int global) {
   if (p->vm->compiler->scope_depth > 0) {
     // we are in a local scope...
     mark_initialized(p);
@@ -494,16 +494,16 @@ static void define_variable(b_parser* p, int global) {
   emit_byte_and_short(p, OP_DEFINE_GLOBAL, global);
 }
 
-static b_token synthetic_token(const char* name) {
-  b_token token;
+static z_token synthetic_token(const char* name) {
+  z_token token;
   token.start = name;
   token.length = (int)strlen(name);
   return token;
 }
 
-static b_obj_func* end_compiler(b_parser* p) {
+static z_obj_func* end_compiler(z_parser* p) {
   emit_return(p);
-  b_obj_func* function = p->vm->compiler->function;
+  z_obj_func* function = p->vm->compiler->function;
 
   if (!p->had_error && p->vm->should_print_bytecode) {
     disassemble_blob(current_blob(p), function->name == NULL
@@ -515,9 +515,9 @@ static b_obj_func* end_compiler(b_parser* p) {
   return function;
 }
 
-static void begin_scope(b_parser* p) { p->vm->compiler->scope_depth++; }
+static void begin_scope(z_parser* p) { p->vm->compiler->scope_depth++; }
 
-static void end_scope(b_parser* p) {
+static void end_scope(z_parser* p) {
   p->vm->compiler->scope_depth--;
 
   // remove all variables declared in scope while exiting...
@@ -533,7 +533,7 @@ static void end_scope(b_parser* p) {
   }
 }
 
-static int discard_locals(b_parser* p, int depth) {
+static int discard_locals(z_parser* p, int depth) {
   if (p->vm->compiler->scope_depth == -1) {
     error(p, "cannot exit top-level scope");
   }
@@ -551,7 +551,7 @@ static int discard_locals(b_parser* p, int depth) {
   return p->vm->compiler->local_count - local - 1;
 }
 
-static void end_loop(b_parser* p) {
+static void end_loop(z_parser* p) {
   // find all OP_BREAK_PL placeholder and replace with the appropriate jump...
   int i = p->innermost_loop_start;
 
@@ -569,25 +569,25 @@ static void end_loop(b_parser* p) {
 }
 
 // --> Forward declarations start
-static void expression(b_parser* p);
+static void expression(z_parser* p);
 
-static void statement(b_parser* p);
+static void statement(z_parser* p);
 
-static void declaration(b_parser* p);
+static void declaration(z_parser* p);
 
-static void anonymous(b_parser* p, bool can_assign);
+static void anonymous(z_parser* p, bool can_assign);
 
-static b_parse_rule* get_rule(b_tkn_type type);
+static z_parse_rule* get_rule(z_tkn_type type);
 
-static void parse_precedence(b_parser* p, b_precedence precedence);
+static void parse_precedence(z_parser* p, z_precedence precedence);
 // --> Forward declarations end
 
-static void binary(b_parser* p, b_token previous, bool can_assign) {
-  b_tkn_type op = p->previous.type;
+static void binary(z_parser* p, z_token previous, bool can_assign) {
+  z_tkn_type op = p->previous.type;
 
   // compile the right operand
-  b_parse_rule* rule = get_rule(op);
-  parse_precedence(p, (b_precedence)(rule->precedence + 1));
+  z_parse_rule* rule = get_rule(op);
+  parse_precedence(p, (z_precedence)(rule->precedence + 1));
 
   // emit the operator instruction
   switch (op) {
@@ -668,7 +668,7 @@ static void binary(b_parser* p, b_token previous, bool can_assign) {
   }
 }
 
-static uint8_t argument_list(b_parser* p) {
+static uint8_t argument_list(z_parser* p) {
   uint8_t arg_count = 0;
   if (!check(p, RPAREN_TOKEN)) {
     do {
@@ -686,12 +686,12 @@ static uint8_t argument_list(b_parser* p) {
   return arg_count;
 }
 
-static void call(b_parser* p, b_token previous, bool can_assign) {
+static void call(z_parser* p, z_token previous, bool can_assign) {
   uint8_t arg_count = argument_list(p);
   emit_bytes(p, OP_CALL, arg_count);
 }
 
-static void literal(b_parser* p, bool can_assign) {
+static void literal(z_parser* p, bool can_assign) {
   switch (p->previous.type) {
     case NIL_TOKEN:
       emit_byte(p, OP_NIL);
@@ -707,7 +707,7 @@ static void literal(b_parser* p, bool can_assign) {
   }
 }
 
-static void parse_assignment(b_parser* p, uint8_t real_op, uint8_t get_op, uint8_t set_op, int arg) {
+static void parse_assignment(z_parser* p, uint8_t real_op, uint8_t get_op, uint8_t set_op, int arg) {
   p->repl_can_echo = false;
   if (get_op == OP_GET_PROPERTY || get_op == OP_GET_SELF_PROPERTY) {
     emit_byte(p, OP_DUP);
@@ -728,7 +728,7 @@ static void parse_assignment(b_parser* p, uint8_t real_op, uint8_t get_op, uint8
   }
 }
 
-static void assignment(b_parser* p, uint8_t get_op, uint8_t set_op, int arg, bool can_assign) {
+static void assignment(z_parser* p, uint8_t get_op, uint8_t set_op, int arg, bool can_assign) {
   if (can_assign && match(p, EQUAL_TOKEN)) {
     p->repl_can_echo = false;
     expression(p);
@@ -806,7 +806,7 @@ static void assignment(b_parser* p, uint8_t get_op, uint8_t set_op, int arg, boo
   }
 }
 
-static void dot(b_parser* p, b_token previous, bool can_assign) {
+static void dot(z_parser* p, z_token previous, bool can_assign) {
   ignore_whitespace(p);
   consume(p, IDENTIFIER_TOKEN, "expected property name after '.'");
   int name = identifier_constant(p, &p->previous);
@@ -821,7 +821,7 @@ static void dot(b_parser* p, b_token previous, bool can_assign) {
     }
     emit_byte(p, arg_count);
   } else {
-    b_code get_op = OP_GET_PROPERTY, set_op = OP_SET_PROPERTY;
+    z_code get_op = OP_GET_PROPERTY, set_op = OP_SET_PROPERTY;
 
     if (p->current_class != NULL && (previous.type == SELF_TOKEN
       || identifiers_equal(&p->previous, &p->current_class->name))) {
@@ -832,7 +832,7 @@ static void dot(b_parser* p, b_token previous, bool can_assign) {
   }
 }
 
-static void named_variable(b_parser* p, b_token name, bool can_assign) {
+static void named_variable(z_parser* p, z_token name, bool can_assign) {
   uint8_t get_op, set_op;
   int arg = resolve_local(p, p->vm->compiler, &name);
   if (arg != -1) {
@@ -850,7 +850,7 @@ static void named_variable(b_parser* p, b_token name, bool can_assign) {
   assignment(p, get_op, set_op, arg, can_assign);
 }
 
-static void created_variable(b_parser* p, b_token name) {
+static void created_variable(z_parser* p, z_token name) {
   uint8_t get_op, set_op;
   int arg;
   if (p->vm->compiler->function->name != NULL) {
@@ -862,7 +862,7 @@ static void created_variable(b_parser* p, b_token name) {
   }
 }
 
-static void list(b_parser* p, bool can_assign) {
+static void list(z_parser* p, bool can_assign) {
   emit_byte(p, OP_NIL); // placeholder for the list
 
   int count = 0;
@@ -885,7 +885,7 @@ static void list(b_parser* p, bool can_assign) {
   emit_byte_and_short(p, OP_LIST, count);
 }
 
-static void dictionary(b_parser* p, bool can_assign) {
+static void dictionary(z_parser* p, bool can_assign) {
   emit_byte(p, OP_NIL); // placeholder for the dictionary
 
   int item_count = 0;
@@ -928,7 +928,7 @@ static void dictionary(b_parser* p, bool can_assign) {
   emit_byte_and_short(p, OP_DICT, item_count);
 }
 
-static void indexing(b_parser* p, b_token previous, bool can_assign) {
+static void indexing(z_parser* p, z_token previous, bool can_assign) {
   bool assignable = true, comma_match = false;
   uint8_t get_op = OP_GET_INDEX;
   if (match(p, COMMA_TOKEN)) {
@@ -960,11 +960,11 @@ static void indexing(b_parser* p, b_token previous, bool can_assign) {
   assignment(p, get_op, OP_SET_INDEX, -1, assignable);
 }
 
-static void variable(b_parser* p, bool can_assign) {
+static void variable(z_parser* p, bool can_assign) {
   named_variable(p, p->previous, can_assign);
 }
 
-static void self(b_parser* p, bool can_assign) {
+static void self(z_parser* p, bool can_assign) {
   if (p->current_class == NULL) {
     error(p, "cannot use keyword 'self' outside of a class");
     return;
@@ -972,7 +972,7 @@ static void self(b_parser* p, bool can_assign) {
   variable(p, false);
 }
 
-static void parent(b_parser* p, bool can_assign) {
+static void parent(z_parser* p, bool can_assign) {
   if (p->current_class == NULL) {
     error(p, "cannot use keyword 'parent' outside of a class");
   } else if (!p->current_class->has_superclass) {
@@ -1007,14 +1007,14 @@ static void parent(b_parser* p, bool can_assign) {
   }
 }
 
-static void grouping(b_parser* p, bool can_assign) {
+static void grouping(z_parser* p, bool can_assign) {
   ignore_whitespace(p);
   expression(p);
   ignore_whitespace(p);
   consume(p, RPAREN_TOKEN, "expected ')' after grouped expression");
 }
 
-static b_value compile_number(b_parser* p) {
+static z_value compile_number(z_parser* p) {
   if (p->previous.type == BIN_NUMBER_TOKEN) {
     long long value = strtoll(p->previous.start + 2, NULL, 2);
     return NUMBER_VAL(value);
@@ -1030,7 +1030,7 @@ static b_value compile_number(b_parser* p) {
   }
 }
 
-static void number(b_parser* p, bool can_assign) {
+static void number(z_parser* p, bool can_assign) {
   emit_constant(p, compile_number(p));
 }
 
@@ -1048,7 +1048,7 @@ static int read_hex_digit(char c) {
 }
 
 // Reads [digits] hex digits in a string literal and returns their number value.
-static int read_hex_escape(b_parser* p, char* str, int index, int count) {
+static int read_hex_escape(z_parser* p, char* str, int index, int count) {
   int value = 0;
   int i = 0, digit = 0;
   for (; i < count; i++) {
@@ -1064,7 +1064,7 @@ static int read_hex_escape(b_parser* p, char* str, int index, int count) {
   return value;
 }
 
-static int read_unicode_escape(b_parser* p, char* string, char* real_string,
+static int read_unicode_escape(z_parser* p, char* string, char* real_string,
                                int number_bytes, int real_index, int index) {
   int value = read_hex_escape(p, real_string, real_index, number_bytes);
   int count = utf8_number_bytes(value);
@@ -1087,7 +1087,7 @@ static int read_unicode_escape(b_parser* p, char* string, char* real_string,
   return count;
 }
 
-static char* compile_string(b_parser* p, int* length) {
+static char* compile_string(z_parser* p, int* length) {
   char* str = (char*)malloc((((size_t)p->previous.length - 2) + 1) * sizeof(char));
   char quote = p->previous.start[0];
   char* real = (char*)p->previous.start + 1;
@@ -1167,13 +1167,13 @@ static char* compile_string(b_parser* p, int* length) {
   return str;
 }
 
-static void string(b_parser* p, bool can_assign) {
+static void string(z_parser* p, bool can_assign) {
   int length;
   char* str = compile_string(p, &length);
   emit_constant(p, OBJ_VAL(take_string(p->vm, str, length)));
 }
 
-static void string_interpolation(b_parser* p, bool can_assign) {
+static void string_interpolation(z_parser* p, bool can_assign) {
   int count = 0;
   do {
     bool do_add = false;
@@ -1206,8 +1206,8 @@ static void string_interpolation(b_parser* p, bool can_assign) {
   }
 }
 
-static void unary(b_parser* p, bool can_assign) {
-  b_tkn_type op = p->previous.type;
+static void unary(z_parser* p, bool can_assign) {
+  z_tkn_type op = p->previous.type;
 
   // compile the expression
   parse_precedence(p, PREC_UNARY);
@@ -1229,7 +1229,7 @@ static void unary(b_parser* p, bool can_assign) {
   }
 }
 
-static void and_(b_parser* p, b_token previous, bool can_assign) {
+static void and_(z_parser* p, z_token previous, bool can_assign) {
   int end_jump = emit_jump(p, OP_JUMP_IF_FALSE);
 
   emit_byte(p, OP_POP);
@@ -1238,7 +1238,7 @@ static void and_(b_parser* p, b_token previous, bool can_assign) {
   patch_jump(p, end_jump);
 }
 
-static void or_(b_parser* p, b_token previous, bool can_assign) {
+static void or_(z_parser* p, z_token previous, bool can_assign) {
   int else_jump = emit_jump(p, OP_JUMP_IF_FALSE);
   int end_jump = emit_jump(p, OP_JUMP);
 
@@ -1249,7 +1249,7 @@ static void or_(b_parser* p, b_token previous, bool can_assign) {
   patch_jump(p, end_jump);
 }
 
-static void conditional(b_parser* p, b_token previous, bool can_assign) {
+static void conditional(z_parser* p, z_token previous, bool can_assign) {
   int then_jump = emit_jump(p, OP_JUMP_IF_FALSE);
   emit_byte(p, OP_POP);
 
@@ -1274,7 +1274,7 @@ static void conditional(b_parser* p, b_token previous, bool can_assign) {
   patch_jump(p, else_jump);
 }
 
-b_parse_rule parse_rules[] = {
+z_parse_rule parse_rules[] = {
   // symbols
   [NEWLINE_TOKEN] = {NULL, NULL, PREC_NONE}, // (
   [LPAREN_TOKEN] = {grouping, call, PREC_CALL}, // (
@@ -1380,12 +1380,12 @@ b_parse_rule parse_rules[] = {
   [UNDEFINED_TOKEN] = {NULL, NULL, PREC_NONE},
 };
 
-static bool next_meaningful_token_is_dot(b_parser* p) {
+static bool next_meaningful_token_is_dot(z_parser* p) {
   // Snapshot complete scanner and parser token state before skipping
   // newlines, so we can restore everything if no dot follows.
-  b_scanner saved_scanner  = *p->scanner;
-  b_token   saved_current  = p->current;
-  b_token   saved_previous = p->previous;
+  z_scanner saved_scanner  = *p->scanner;
+  z_token   saved_current  = p->current;
+  z_token   saved_previous = p->previous;
 
   ignore_whitespace(p);
   bool is_dot = p->current.type == DOT_TOKEN;
@@ -1399,8 +1399,8 @@ static bool next_meaningful_token_is_dot(b_parser* p) {
   return is_dot;
 }
 
-static void do_parse_precedence(b_parser* p, b_precedence precedence) {
-  b_parse_prefix_fn prefix_rule = get_rule(p->previous.type)->prefix;
+static void do_parse_precedence(z_parser* p, z_precedence precedence) {
+  z_parse_prefix_fn prefix_rule = get_rule(p->previous.type)->prefix;
 
   if (prefix_rule == NULL) {
     error(p, "expected expression");
@@ -1417,10 +1417,10 @@ static void do_parse_precedence(b_parser* p, b_precedence precedence) {
       next_meaningful_token_is_dot(p)
     )
   ) {
-    b_token previous = p->previous;
+    z_token previous = p->previous;
     ignore_whitespace(p);
     advance(p);
-    b_parse_infix_fn infix_rule = get_rule(p->previous.type)->infix;
+    z_parse_infix_fn infix_rule = get_rule(p->previous.type)->infix;
     infix_rule(p, previous, can_assign);
   }
 
@@ -1429,7 +1429,7 @@ static void do_parse_precedence(b_parser* p, b_precedence precedence) {
   }
 }
 
-static void parse_precedence(b_parser* p, b_precedence precedence) {
+static void parse_precedence(z_parser* p, z_precedence precedence) {
   if (is_at_end(p->scanner) && p->vm->is_repl)
     return;
 
@@ -1443,7 +1443,7 @@ static void parse_precedence(b_parser* p, b_precedence precedence) {
   do_parse_precedence(p, precedence);
 }
 
-static void parse_precedence_no_advance(b_parser* p, b_precedence precedence) {
+static void parse_precedence_no_advance(z_parser* p, z_precedence precedence) {
   if (is_at_end(p->scanner) && p->vm->is_repl)
     return;
 
@@ -1455,11 +1455,11 @@ static void parse_precedence_no_advance(b_parser* p, b_precedence precedence) {
   do_parse_precedence(p, precedence);
 }
 
-static b_parse_rule* get_rule(b_tkn_type type) { return &parse_rules[type]; }
+static z_parse_rule* get_rule(z_tkn_type type) { return &parse_rules[type]; }
 
-static void expression(b_parser* p) { parse_precedence(p, PREC_ASSIGNMENT); }
+static void expression(z_parser* p) { parse_precedence(p, PREC_ASSIGNMENT); }
 
-static void block(b_parser* p) {
+static void block(z_parser* p) {
   p->block_count++;
   ignore_whitespace(p);
   while (!check(p, RBRACE_TOKEN) && !check(p, EOF_TOKEN)) {
@@ -1469,7 +1469,7 @@ static void block(b_parser* p) {
   consume(p, RBRACE_TOKEN, "expected '}' after block");
 }
 
-static void return_statement(b_parser* p, bool is_inline) {
+static void return_statement(z_parser* p, bool is_inline) {
   p->is_returning = true;
   if (p->vm->compiler->type == TYPE_SCRIPT) {
     error(p, "cannot return from top-level code");
@@ -1492,7 +1492,7 @@ static void return_statement(b_parser* p, bool is_inline) {
   p->is_returning = false;
 }
 
-static int function_args(b_parser* p, bool is_operator) {
+static int function_args(z_parser* p, bool is_operator) {
   // compile argument list...
   int count = 0;
   do {
@@ -1523,7 +1523,7 @@ static int function_args(b_parser* p, bool is_operator) {
   return count;
 }
 
-static void function_body(b_parser* p, b_compiler* compiler, bool close_scope) {
+static void function_body(z_parser* p, z_compiler* compiler, bool close_scope) {
   // compile the body
   ignore_whitespace(p);
   consume(p, LBRACE_TOKEN, "expected '{' before function body");
@@ -1533,7 +1533,7 @@ static void function_body(b_parser* p, b_compiler* compiler, bool close_scope) {
   if (close_scope) {
     end_scope(p);
   }
-  b_obj_func* function = end_compiler(p);
+  z_obj_func* function = end_compiler(p);
 
   push(p->vm, OBJ_VAL(function));
   emit_byte_and_short(p, OP_CLOSURE, make_constant(p, OBJ_VAL(function)));
@@ -1546,7 +1546,7 @@ static void function_body(b_parser* p, b_compiler* compiler, bool close_scope) {
   pop(p->vm);
 }
 
-static void inline_function_body(b_parser* p, b_compiler* compiler, bool close_scope) {
+static void inline_function_body(z_parser* p, z_compiler* compiler, bool close_scope) {
   // compile the body
   ignore_whitespace(p);
   return_statement(p, true);
@@ -1555,7 +1555,7 @@ static void inline_function_body(b_parser* p, b_compiler* compiler, bool close_s
   if (close_scope) {
     end_scope(p);
   }
-  b_obj_func* function = end_compiler(p);
+  z_obj_func* function = end_compiler(p);
 
   push(p->vm, OBJ_VAL(function));
   emit_byte_and_short(p, OP_CLOSURE, make_constant(p, OBJ_VAL(function)));
@@ -1568,8 +1568,8 @@ static void inline_function_body(b_parser* p, b_compiler* compiler, bool close_s
   pop(p->vm);
 }
 
-static int function(b_parser* p, b_func_type type, bool is_operator) {
-  b_compiler compiler;
+static int function(z_parser* p, z_func_type type, bool is_operator) {
+  z_compiler compiler;
   init_compiler(p, &compiler, type);
   begin_scope(p);
 
@@ -1591,13 +1591,13 @@ static int function(b_parser* p, b_func_type type, bool is_operator) {
   return arg_count;
 }
 
-static void method(b_parser* p, b_token class_name, bool is_static) {
-  b_tkn_type tkns[] = {IDENTIFIER_TOKEN, DECORATOR_TOKEN};
+static void method(z_parser* p, z_token class_name, bool is_static) {
+  z_tkn_type tkns[] = {IDENTIFIER_TOKEN, DECORATOR_TOKEN};
 
   consume_or(p, "method name expected", tkns, 2);
   int constant = identifier_constant(p, &p->previous);
 
-  b_func_type type = is_static ? TYPE_STATIC : TYPE_METHOD;
+  z_func_type type = is_static ? TYPE_STATIC : TYPE_METHOD;
   if (p->previous.length == class_name.length &&
     memcmp(p->previous.start, class_name.start, class_name.length) == 0) {
     type = TYPE_INITIALIZER;
@@ -1609,9 +1609,9 @@ static void method(b_parser* p, b_token class_name, bool is_static) {
   emit_byte_and_short(p, OP_METHOD, constant);
 }
 
-static void operator_definition(b_parser* p, b_token class_name) {
-  // NOTE: ++, and -- are not primary operators in Blade.
-  b_tkn_type tkns[] = {
+static void operator_definition(z_parser* p, z_token class_name) {
+  // NOTE: ++, and -- are not primary operators in Zuri.
+  z_tkn_type tkns[] = {
     PLUS_TOKEN, // +
     MINUS_TOKEN, // -
     MULTIPLY_TOKEN, // *
@@ -1642,8 +1642,8 @@ static void operator_definition(b_parser* p, b_token class_name) {
   emit_byte_and_short(p, OP_METHOD, constant);
 }
 
-static void anonymous(b_parser* p, bool can_assign) {
-  b_compiler compiler;
+static void anonymous(z_parser* p, bool can_assign) {
+  z_compiler compiler;
   init_compiler(p, &compiler, TYPE_FUNCTION);
   begin_scope(p);
 
@@ -1663,7 +1663,7 @@ static void anonymous(b_parser* p, bool can_assign) {
   }
 }
 
-static void field(b_parser* p, bool is_static) {
+static void field(z_parser* p, bool is_static) {
   consume(p, IDENTIFIER_TOKEN, "class property name expected");
   int field_constant = identifier_constant(p, &p->previous);
 
@@ -1680,29 +1680,29 @@ static void field(b_parser* p, bool is_static) {
   ignore_whitespace(p);
 }
 
-static void function_declaration(b_parser* p) {
+static void function_declaration(z_parser* p) {
   int global = parse_variable(p, "function name expected");
   mark_initialized(p);
   function(p, TYPE_FUNCTION, false);
   define_variable(p, global);
 }
 
-static void class_declaration(b_parser* p) {
+static void class_declaration(z_parser* p) {
   consume(p, IDENTIFIER_TOKEN, "class name expected");
   int name_constant = identifier_constant(p, &p->previous);
-  b_token class_name = p->previous;
+  z_token class_name = p->previous;
   declare_variable(p);
 
   emit_byte_and_short(p, OP_CLASS, name_constant);
   define_variable(p, name_constant);
 
-  b_class_compiler class_compiler;
+  z_class_compiler class_compiler;
   class_compiler.name = p->previous;
   class_compiler.has_superclass = false;
   class_compiler.enclosing = p->current_class;
   p->current_class = &class_compiler;
 
-  b_token extending_class = {
+  z_token extending_class = {
     .length = 0,
     .line  = 0,
     .start = "",
@@ -1765,12 +1765,12 @@ static void class_declaration(b_parser* p) {
   }
 
   if (extending_class.type != UNDEFINED_TOKEN) {
-    b_token string_type = synthetic_token("string");
-    b_token list_type = synthetic_token("list");
-    b_token dict_type = synthetic_token("dict");
-    b_token bytes_type = synthetic_token("bytes");
-    b_token range_type = synthetic_token("range");
-    b_token file_type = synthetic_token("file");
+    z_token string_type = synthetic_token("string");
+    z_token list_type = synthetic_token("list");
+    z_token dict_type = synthetic_token("dict");
+    z_token bytes_type = synthetic_token("bytes");
+    z_token range_type = synthetic_token("range");
+    z_token file_type = synthetic_token("file");
 
     if (
       identifiers_equal(&string_type, &extending_class)
@@ -1793,7 +1793,7 @@ static void class_declaration(b_parser* p) {
   p->current_class = p->current_class->enclosing;
 }
 
-static void compile_var_declaration(b_parser* p, bool is_initializer) {
+static void compile_var_declaration(z_parser* p, bool is_initializer) {
   int total_parsed = 0;
 
   do {
@@ -1820,9 +1820,9 @@ static void compile_var_declaration(b_parser* p, bool is_initializer) {
   }
 }
 
-static void var_declaration(b_parser* p) { compile_var_declaration(p, false); }
+static void var_declaration(z_parser* p) { compile_var_declaration(p, false); }
 
-static void expression_statement(b_parser* p, bool is_initializer, bool semi) {
+static void expression_statement(z_parser* p, bool is_initializer, bool semi) {
   if (p->vm->is_repl && p->vm->compiler->scope_depth == 0) {
     p->repl_can_echo = true;
   }
@@ -1864,7 +1864,7 @@ static void expression_statement(b_parser* p, bool is_initializer, bool semi) {
  *    i = i + 1
  * }
  */
-static void iter_statement(b_parser* p) {
+static void iter_statement(z_parser* p) {
   begin_scope(p);
 
   // parse initializer...
@@ -1965,7 +1965,7 @@ static void iter_statement(b_parser* p) {
  *    }
  * }
  *
- * Every blade iterable must implement the @iter(x) and the @itern(x)
+ * Every zuri iterable must implement the @iter(x) and the @itern(x)
  * function.
  *
  * to make instances of a user created class iterable,
@@ -1977,7 +1977,7 @@ static void iter_statement(b_parser* p) {
  * @itern(x) function returns a false value. so the @iter(x) never needs
  * to return a false value
  */
-static void for_statement(b_parser* p) {
+static void for_statement(z_parser* p) {
   begin_scope(p);
 
   // define @iter and @itern constant
@@ -1985,7 +1985,7 @@ static void for_statement(b_parser* p) {
   int iter_n__ = make_constant(p, OBJ_VAL(copy_string(p->vm, "@itern", 6)));
 
   consume(p, IDENTIFIER_TOKEN, "expected variable name after 'for'");
-  b_token key_token, value_token;
+  z_token key_token, value_token;
 
   if (!check(p, COMMA_TOKEN)) {
     key_token = synthetic_token(" _ ");
@@ -2003,7 +2003,7 @@ static void for_statement(b_parser* p) {
 
   // The space in the variable name ensures it won't collide with a user-defined
   // variable.
-  b_token iterator_token = synthetic_token(" iterator ");
+  z_token iterator_token = synthetic_token(" iterator ");
 
   // Evaluate the sequence expression and store it in a hidden local variable.
   expression(p);
@@ -2087,7 +2087,7 @@ static void for_statement(b_parser* p) {
  *    ...
  * }
  */
-static void using_statement(b_parser* p) {
+static void using_statement(z_parser* p) {
   expression(p); // the expression
   consume(p, LBRACE_TOKEN, "expected '{' after using expression");
   ignore_whitespace(p);
@@ -2096,7 +2096,7 @@ static void using_statement(b_parser* p) {
   int case_ends[MAX_USING_CASES];
   int case_count = 0;
 
-  b_obj_switch* sw = new_switch(p->vm);
+  z_obj_switch* sw = new_switch(p->vm);
   push(p->vm, OBJ_VAL(sw));
 
   int switch_code = emit_switch(p);
@@ -2105,7 +2105,7 @@ static void using_statement(b_parser* p) {
 
   while (!match(p, RBRACE_TOKEN) && !check(p, EOF_TOKEN)) {
     if (match(p, WHEN_TOKEN) || match(p, DEFAULT_TOKEN)) {
-      b_tkn_type case_type = p->previous.type;
+      z_tkn_type case_type = p->previous.type;
 
       if (state == 2) {
         error(p, "cannot have another case after a default case");
@@ -2123,7 +2123,7 @@ static void using_statement(b_parser* p) {
 
           advance(p);
 
-          b_value jump = NUMBER_VAL((double) current_blob(p)->count - (double) start_offset);
+          z_value jump = NUMBER_VAL((double) current_blob(p)->count - (double) start_offset);
 
           if (p->previous.type == TRUE_TOKEN) {
             table_set(p->vm, &sw->table, TRUE_VAL, jump);
@@ -2132,7 +2132,7 @@ static void using_statement(b_parser* p) {
           } else if (p->previous.type == LITERAL_TOKEN) {
             int length;
             char* str = compile_string(p, &length);
-            b_obj_string* string = take_string(p->vm, str, length);
+            z_obj_string* string = take_string(p->vm, str, length);
             push(p->vm, OBJ_VAL(string)); // gc fix
             table_set(p->vm, &sw->table, OBJ_VAL(string), jump);
             pop(p->vm); // gc fix
@@ -2173,7 +2173,7 @@ static void using_statement(b_parser* p) {
   pop(p->vm); // pop the switch
 }
 
-static void if_statement(b_parser* p) {
+static void if_statement(z_parser* p) {
   expression(p);
 
   int then_jump = emit_jump(p, OP_JUMP_IF_FALSE);
@@ -2192,20 +2192,20 @@ static void if_statement(b_parser* p) {
   patch_jump(p, else_jump);
 }
 
-static void echo_statement(b_parser* p) {
+static void echo_statement(z_parser* p) {
   expression(p);
   emit_byte(p, OP_ECHO);
   consume_statement_end(p);
 }
 
-static void raise_statement(b_parser* p) {
+static void raise_statement(z_parser* p) {
 //  discard_locals(p, p->vm->compiler->scope_depth - 1);
   expression(p);
   emit_byte(p, OP_RAISE);
   consume_statement_end(p);
 }
 
-static void parse_specific_import(b_parser* p, char* module_name, int import_constant, bool was_renamed,
+static void parse_specific_import(z_parser* p, char* module_name, int import_constant, bool was_renamed,
                                   bool is_native) {
   if (match(p, LBRACE_TOKEN)) {
     if (was_renamed) {
@@ -2246,7 +2246,7 @@ static void parse_specific_import(b_parser* p, char* module_name, int import_con
   }
 }
 
-static void import_statement(b_parser* p) {
+static void import_statement(z_parser* p) {
 //  consume(p, LITERAL_TOKEN, "expected module name");
 //  int module_name_length;
 //  char *module_name = compile_string(p, &module_name_length);
@@ -2301,8 +2301,8 @@ static void import_statement(b_parser* p) {
     if (module_file == NULL) {
       module_file = strdup(module_name);
     } else {
-      if (module_file[strlen(module_file) - 1] != BLADE_PATH_SEPARATOR[0]) {
-        module_file = append_strings(module_file, BLADE_PATH_SEPARATOR);
+      if (module_file[strlen(module_file) - 1] != ZURI_PATH_SEPARATOR[0]) {
+        module_file = append_strings(module_file, ZURI_PATH_SEPARATOR);
       }
       module_file = append_strings(module_file, module_name);
     }
@@ -2330,8 +2330,8 @@ static void import_statement(b_parser* p) {
   if (module_path == NULL) {
     // check if there is one in the vm's registry
     // handle native modules
-    b_value md;
-    b_obj_string* final_module_name = copy_string(p->vm, module_name, (int)strlen(module_name));
+    z_value md;
+    z_obj_string* final_module_name = copy_string(p->vm, module_name, (int)strlen(module_name));
     if (table_get(&p->vm->modules, OBJ_VAL(final_module_name), &md)) {
       int module = make_constant(p, OBJ_VAL(final_module_name));
       push(p->vm, OBJ_VAL(final_module_name));
@@ -2363,7 +2363,7 @@ static void import_statement(b_parser* p) {
   }
 
   // prevent cyclic imports
-  b_obj_module* check_module = p->module;
+  z_obj_module* check_module = p->module;
   while (check_module->parent != NULL) {
     size_t path_length = strlen(check_module->parent->file);
     if (strlen(module_path) == path_length) {
@@ -2376,10 +2376,10 @@ static void import_statement(b_parser* p) {
     check_module = check_module->parent;
   }
 
-  b_obj_module* module = new_module(p->vm, module_name, module_path, p->module);
+  z_obj_module* module = new_module(p->vm, module_name, module_path, p->module);
 
   push(p->vm, OBJ_VAL(module));
-  b_obj_func* function = compile(p->vm, module, source);
+  z_obj_func* function = compile(p->vm, module, source);
   pop(p->vm);
 
   free(source);
@@ -2393,7 +2393,7 @@ static void import_statement(b_parser* p) {
   function->name = NULL;
 
   push(p->vm, OBJ_VAL(function));
-  b_obj_closure* closure = new_closure(p->vm, function);
+  z_obj_closure* closure = new_closure(p->vm, function);
   pop(p->vm);
 
   if (p->vm->compiler->scope_depth > 0) {
@@ -2415,7 +2415,7 @@ static void import_statement(b_parser* p) {
   }
 }
 
-static void assert_statement(b_parser* p) {
+static void assert_statement(z_parser* p) {
   expression(p);
   if (match(p, COMMA_TOKEN)) {
     ignore_whitespace(p);
@@ -2428,7 +2428,7 @@ static void assert_statement(b_parser* p) {
   consume_statement_end(p);
 }
 
-static void catch_statement(b_parser* p) {
+static void catch_statement(z_parser* p) {
   int jump = emit_jump(p, OP_BEGIN_CATCH);
 
   ignore_whitespace(p);
@@ -2460,7 +2460,7 @@ static void catch_statement(b_parser* p) {
   }
 }
 
-static void while_statement(b_parser* p) {
+static void while_statement(z_parser* p) {
   int surrounding_loop_start = p->innermost_loop_start;
   int surrounding_scope_depth = p->innermost_loop_scope_depth;
 
@@ -2487,7 +2487,7 @@ static void while_statement(b_parser* p) {
   p->innermost_loop_scope_depth = surrounding_scope_depth;
 }
 
-static void do_while_statement(b_parser* p) {
+static void do_while_statement(z_parser* p) {
   int surrounding_loop_start = p->innermost_loop_start;
   int surrounding_scope_depth = p->innermost_loop_scope_depth;
 
@@ -2516,7 +2516,7 @@ static void do_while_statement(b_parser* p) {
   p->innermost_loop_scope_depth = surrounding_scope_depth;
 }
 
-static void continue_statement(b_parser* p) {
+static void continue_statement(z_parser* p) {
   if (p->innermost_loop_start == -1) {
     error(p, "'continue' can only be used in a loop");
   }
@@ -2529,7 +2529,7 @@ static void continue_statement(b_parser* p) {
   consume_statement_end(p);
 }
 
-static void break_statement(b_parser* p) {
+static void break_statement(z_parser* p) {
   if (p->innermost_loop_start == -1) {
     error(p, "'break' can only be used in a loop");
   }
@@ -2539,7 +2539,7 @@ static void break_statement(b_parser* p) {
   consume_statement_end(p);
 }
 
-static void synchronize(b_parser* p) {
+static void synchronize(z_parser* p) {
   p->panic_mode = false;
 
   while (p->current.type != EOF_TOKEN) {
@@ -2577,7 +2577,7 @@ static void synchronize(b_parser* p) {
   }
 }
 
-static void declaration(b_parser* p) {
+static void declaration(z_parser* p) {
   ignore_whitespace(p);
 
   if (match(p, CLASS_TOKEN)) {
@@ -2606,7 +2606,7 @@ static void declaration(b_parser* p) {
   ignore_whitespace(p);
 }
 
-static void statement(b_parser* p) {
+static void statement(z_parser* p) {
   p->repl_can_echo = false;
   ignore_whitespace(p);
 
@@ -2649,11 +2649,11 @@ static void statement(b_parser* p) {
   ignore_whitespace(p);
 }
 
-b_obj_func* compile(b_vm* vm, b_obj_module* module, const char* source) {
-  b_scanner scanner;
+z_obj_func* compile(z_vm* vm, z_obj_module* module, const char* source) {
+  z_scanner scanner;
   init_scanner(&scanner, source);
 
-  b_parser parser;
+  z_parser parser;
 
   parser.vm = vm;
   parser.scanner = &scanner;
@@ -2668,7 +2668,7 @@ b_obj_func* compile(b_vm* vm, b_obj_module* module, const char* source) {
   parser.current_class = NULL;
   parser.module = module;
 
-  b_compiler compiler;
+  z_compiler compiler;
   init_compiler(&parser, &compiler, TYPE_SCRIPT);
 
   advance(&parser);
@@ -2678,15 +2678,15 @@ b_obj_func* compile(b_vm* vm, b_obj_module* module, const char* source) {
     declaration(&parser);
   }
 
-  b_obj_func* function = end_compiler(&parser);
+  z_obj_func* function = end_compiler(&parser);
 
   return parser.had_error ? NULL : function;
 }
 
-void mark_compiler_roots(b_vm* vm) {
-  b_compiler* compiler = vm->compiler;
+void mark_compiler_roots(z_vm* vm) {
+  z_compiler* compiler = vm->compiler;
   while (compiler != NULL) {
-    mark_object(vm, (b_obj*)compiler->function);
+    mark_object(vm, (z_obj*)compiler->function);
     compiler = compiler->enclosing;
   }
 }

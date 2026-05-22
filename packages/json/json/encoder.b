@@ -36,7 +36,7 @@ def _get_string(value) {
 }
 
 /**
- * Blade to JSON encoding class
+ * Zuri to JSON encoding class
  */
 class Encoder {
   var _max_depth = 1024

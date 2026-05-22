@@ -1,5 +1,5 @@
-#ifndef BLADE_COMMON_H
-#define BLADE_COMMON_H
+#ifndef ZURI_COMMON_H
+#define ZURI_COMMON_H
 
 // special definitions for Cygwin
 #define _DEFAULT_SOURCE 1
@@ -35,29 +35,29 @@
 #endif
 
 #include "config.h"
-#include "bendian.h"
+#include "zendian.h"
 
 // Branch prediction hints
 #if defined(__GNUC__) || defined(__clang__)
-#  define B_LIKELY(x)   __builtin_expect(!!(x), 1)
-#  define B_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#  define Z_LIKELY(x)   __builtin_expect(!!(x), 1)
+#  define Z_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #else
-#  define B_LIKELY(x)   (x)
-#  define B_UNLIKELY(x) (x)
+#  define Z_LIKELY(x)   (x)
+#  define Z_UNLIKELY(x) (x)
 #endif
 
 // Always-inline helper for hot tiny functions
 #if defined(__GNUC__) || defined(__clang__)
-#  define B_ALWAYS_INLINE inline __attribute__((always_inline))
+#  define Z_ALWAYS_INLINE inline __attribute__((always_inline))
 #else
-#  define B_ALWAYS_INLINE inline
+#  define Z_ALWAYS_INLINE inline
 #endif
 
 // Computed goto (threaded dispatch) support detection
 #if defined(__GNUC__) || defined(__clang__)
-#  define B_COMPUTED_GOTO_SUPPORTED 1
+#  define Z_COMPUTED_GOTO_SUPPORTED 1
 #else
-#  define B_COMPUTED_GOTO_SUPPORTED 0
+#  define Z_COMPUTED_GOTO_SUPPORTED 0
 #endif
 
 // --> debug mode options starts here...
@@ -132,6 +132,6 @@
 #define EXIT_RUNTIME 11
 #define EXIT_TERMINAL 12
 
-#define BLADE_COPYRIGHT "\tCopyright (c) Richard Ore"
+#define ZURI_COPYRIGHT "\tCopyright (c) Richard Ore"
 
 #endif

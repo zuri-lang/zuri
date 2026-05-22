@@ -11,13 +11,13 @@ DECLARE_MODULE_METHOD(reflect__hasprop) {
   ENFORCE_ARG_TYPES(has_prop, 0, IS_INSTANCE, IS_MODULE);
   ENFORCE_ARG_TYPE(has_prop, 1, IS_STRING);
 
-  b_table *table;
+  z_table *table;
   if(IS_INSTANCE(args[0])) {
     table = &AS_INSTANCE(args[0])->properties;
   } else {
     table = &AS_MODULE(args[0])->values;
   }
-  b_value dummy;
+  z_value dummy;
   RETURN_BOOL(table_get(table, args[1], &dummy));
 }
 
@@ -33,13 +33,13 @@ DECLARE_MODULE_METHOD(reflect__getprop) {
   ENFORCE_ARG_TYPES(has_prop, 0, IS_INSTANCE, IS_MODULE);
   ENFORCE_ARG_TYPE(get_prop, 1, IS_STRING);
 
-  b_table *table;
+  z_table *table;
   if(IS_INSTANCE(args[0])) {
     table = &AS_INSTANCE(args[0])->properties;
   } else {
     table = &AS_MODULE(args[0])->values;
   }
-  b_value value;
+  z_value value;
   if (table_get(table, args[1], &value)) {
     RETURN_VALUE(value);
   }
@@ -50,7 +50,7 @@ DECLARE_MODULE_METHOD(reflect__getprops) {
   ENFORCE_ARG_COUNT(get_props, 1);
   ENFORCE_ARG_TYPES(has_props, 0, IS_INSTANCE, IS_MODULE);
 
-  b_table *table;
+  z_table *table;
   if(IS_INSTANCE(args[0])) {
     table = &AS_INSTANCE(args[0])->properties;
   } else {
@@ -74,7 +74,7 @@ DECLARE_MODULE_METHOD(reflect__setprop) {
   ENFORCE_ARG_TYPE(set_prop, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(set_prop, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
   RETURN_BOOL(table_set(vm, &instance->properties, args[1], args[2]));
 }
 
@@ -89,7 +89,7 @@ DECLARE_MODULE_METHOD(reflect__delprop) {
   ENFORCE_ARG_TYPE(del_prop, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(del_prop, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
   RETURN_BOOL(table_delete(&instance->properties, args[1]));
 }
 
@@ -104,8 +104,8 @@ DECLARE_MODULE_METHOD(reflect__hasmethod) {
   ENFORCE_ARG_TYPE(has_method, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(has_method, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
-  b_value dummy;
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_value dummy;
   RETURN_BOOL(table_get(&instance->klass->methods, args[1], &dummy));
 }
 
@@ -121,8 +121,8 @@ DECLARE_MODULE_METHOD(reflect__getmethod) {
   ENFORCE_ARG_TYPE(get_method, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(get_method, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
-  b_value value;
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_value value;
   if (table_get(&instance->klass->methods, args[1], &value)) {
     RETURN_VALUE(value);
   }
@@ -135,11 +135,11 @@ DECLARE_MODULE_METHOD(reflect__call_method) {
   ENFORCE_ARG_TYPE(call_method, 1, IS_STRING);
   ENFORCE_ARG_TYPE(call_method, 2, IS_LIST);
 
-  b_value value;
+  z_value value;
   if (table_get(&AS_INSTANCE(args[0])->klass->methods, args[1], &value)) {
-    b_obj_bound *bound = (b_obj_bound*)GC(new_bound_method(vm, args[0], AS_CLOSURE(value)));
+    z_obj_bound *bound = (z_obj_bound*)GC(new_bound_method(vm, args[0], AS_CLOSURE(value)));
 
-    b_obj_list *list = AS_LIST(args[2]);
+    z_obj_list *list = AS_LIST(args[2]);
     int items_count = list->items.count;
 
     // remove the args list, the string name and the instance
@@ -152,7 +152,7 @@ DECLARE_MODULE_METHOD(reflect__call_method) {
       push(vm, list->items.values[i]);
     }
 
-    b_call_frame *frame = &vm->frames[vm->frame_count++];
+    z_call_frame *frame = &vm->frames[vm->frame_count++];
     frame->closure = bound->method;
     frame->ip = bound->method->function->blob.code;
 
@@ -168,8 +168,8 @@ DECLARE_MODULE_METHOD(reflect__call_function) {
   ENFORCE_ARG_TYPE(call_function, 0, IS_CLOSURE);
   ENFORCE_ARG_TYPE(call_function, 1, IS_LIST);
 
-  b_obj_closure *closure = AS_CLOSURE(args[0]);
-  b_obj_list *list = AS_LIST(args[1]);
+  z_obj_closure *closure = AS_CLOSURE(args[0]);
+  z_obj_list *list = AS_LIST(args[1]);
 
   RETURN_VALUE(call_closure(vm, closure, list));
 }
@@ -179,7 +179,7 @@ DECLARE_MODULE_METHOD(reflect__bindmethod) {
   ENFORCE_ARG_TYPE(delist, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(delist, 1, IS_CLOSURE);
 
-  b_obj_bound *bound = (b_obj_bound*)GC(new_bound_method(vm, args[0], AS_CLOSURE(args[1])));
+  z_obj_bound *bound = (z_obj_bound*)GC(new_bound_method(vm, args[0], AS_CLOSURE(args[1])));
   RETURN_OBJ(bound);
 }
 
@@ -188,10 +188,10 @@ DECLARE_MODULE_METHOD(reflect__getboundmethod) {
   ENFORCE_ARG_TYPE(get_method, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(get_method, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
-  b_value value;
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_value value;
   if (table_get(&instance->klass->methods, args[1], &value)) {
-    b_obj_bound *bound = (b_obj_bound*)GC(new_bound_method(vm, args[0], AS_CLOSURE(value)));
+    z_obj_bound *bound = (z_obj_bound*)GC(new_bound_method(vm, args[0], AS_CLOSURE(value)));
     RETURN_OBJ(bound);
   }
   RETURN_NIL;
@@ -216,9 +216,9 @@ DECLARE_MODULE_METHOD(reflect__valueatdistance) {
 DECLARE_MODULE_METHOD(reflect__get_class_metadata) {
   ENFORCE_ARG_COUNT(get_class_metadata, 1);
   ENFORCE_ARG_TYPE(get_class_metadata, 0, IS_CLASS);
-  b_obj_class *class = AS_CLASS(args[0]);
+  z_obj_class *class = AS_CLASS(args[0]);
 
-  b_obj_dict *result = (b_obj_dict *)GC(new_dict(vm));
+  z_obj_dict *result = (z_obj_dict *)GC(new_dict(vm));
   dict_set_entry(vm, result, GC_STRING("name"), OBJ_VAL(class->name));
   dict_set_entry(vm, result, GC_STRING("properties"), OBJ_VAL(table_get_keys(vm, &class->properties)));
   dict_set_entry(vm, result, GC_STRING("static_properties"), OBJ_VAL(table_get_keys(vm, &class->static_properties)));
@@ -231,9 +231,9 @@ DECLARE_MODULE_METHOD(reflect__get_class_metadata) {
 DECLARE_MODULE_METHOD(reflect__get_function_metadata) {
   ENFORCE_ARG_COUNT(get_function_metadata, 1);
   ENFORCE_ARG_TYPE(get_function_metadata, 0, IS_CLOSURE);
-  b_obj_closure *closure = AS_CLOSURE(args[0]);
+  z_obj_closure *closure = AS_CLOSURE(args[0]);
 
-  b_obj_dict *result = (b_obj_dict *)GC(new_dict(vm));
+  z_obj_dict *result = (z_obj_dict *)GC(new_dict(vm));
   dict_set_entry(vm, result, GC_STRING("name"), OBJ_VAL(closure->function->name));
   dict_set_entry(vm, result, GC_STRING("arity"), NUMBER_VAL(closure->function->arity));
   dict_set_entry(vm, result, GC_STRING("is_variadic"), NUMBER_VAL(closure->function->is_variadic));
@@ -247,9 +247,9 @@ DECLARE_MODULE_METHOD(reflect__get_function_metadata) {
 DECLARE_MODULE_METHOD(reflect__get_module_metadata) {
   ENFORCE_ARG_COUNT(get_module_metadata, 1);
   ENFORCE_ARG_TYPE(get_module_metadata, 0, IS_MODULE);
-  b_obj_module *module = AS_MODULE(args[0]);
+  z_obj_module *module = AS_MODULE(args[0]);
 
-  b_obj_dict *result = (b_obj_dict *)GC(new_dict(vm));
+  z_obj_dict *result = (z_obj_dict *)GC(new_dict(vm));
   dict_set_entry(vm, result, GC_STRING("name"), GC_STRING(module->name));
   dict_set_entry(vm, result, GC_STRING("file"), GC_STRING(module->file));
   dict_set_entry(vm, result, GC_STRING("has_preloader"), BOOL_VAL(module->preloader != NULL));
@@ -268,7 +268,7 @@ DECLARE_MODULE_METHOD(reflect__getclass) {
 DECLARE_MODULE_METHOD(reflect__setglobal) {
   ENFORCE_ARG_COUNT(set_global, 2);
 
-  b_obj_string *name;
+  z_obj_string *name;
   if(IS_NIL(args[1])) {
     if(IS_CLASS(args[0])) {
       name = AS_CLASS(args[0])->name;
@@ -293,16 +293,16 @@ DECLARE_MODULE_METHOD(reflect__runscript) {
   char *path = AS_C_STRING(args[0]);
   char *source = AS_C_STRING(args[1]);
 
-  b_obj_module *module = vm->current_frame->closure->function->module;
+  z_obj_module *module = vm->current_frame->closure->function->module;
   char *module_file = module->file;
 
   module->file = path;
-  b_obj_func *fn = compile(vm, module, source);
+  z_obj_func *fn = compile(vm, module, source);
   module->file = module_file;
 
   if(fn != NULL) {
     push(vm, OBJ_VAL(fn));
-    b_obj_closure *cls = new_closure(vm, fn);
+    z_obj_closure *cls = new_closure(vm, fn);
     pop(vm);
 
     queue_closure(vm, cls);
@@ -398,9 +398,9 @@ DECLARE_MODULE_METHOD(reflect__ptr_from_address) {
   typedef union {
     uintptr_t address;
     void *ptr;
-  } b_reflect_ptr_union;
+  } z_reflect_ptr_union;
 
-  b_reflect_ptr_union ptr_union;
+  z_reflect_ptr_union ptr_union;
   ptr_union.address = address;
 
   RETURN_PTR(ptr_union.ptr);
@@ -451,7 +451,7 @@ DECLARE_MODULE_METHOD(reflect__set_ptr_value) {
 }
 
 CREATE_MODULE_LOADER(reflect) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"hasprop",   true,  GET_MODULE_METHOD(reflect__hasprop)},
       {"getprop",   true,  GET_MODULE_METHOD(reflect__getprop)},
       {"getprops",   true,  GET_MODULE_METHOD(reflect__getprops)},
@@ -479,7 +479,7 @@ CREATE_MODULE_LOADER(reflect) {
       {NULL,        false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_reflect",
       .fields = NULL,
       .functions = module_functions,

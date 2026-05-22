@@ -16,7 +16,7 @@
 #endif
 
 #define DEFINE_ZLIB_CONSTANT(v) \
-  b_value __zlib_##v(b_vm *vm) { \
+  z_value __zlib_##v(z_vm *vm) { \
     return NUMBER_VAL(v); \
   }
 
@@ -72,7 +72,7 @@ DEFINE_ZLIB_CONSTANT(Z_DEFAULT_STRATEGY)
 
 // others
 DEFINE_ZLIB_CONSTANT(MAX_WBITS)
-b_value __zlib_Z_VERSION(b_vm *vm) {
+z_value __zlib_Z_VERSION(z_vm *vm) {
   const char* version = zlibVersion();
   return STRING_VAL(version);
 }
@@ -86,7 +86,7 @@ DECLARE_MODULE_METHOD(zlib_adler32) {
 
   uLong adler = (uLong) AS_NUMBER(args[1]); // default = 0
 
-  b_obj_bytes *bytes = AS_BYTES(args[0]);
+  z_obj_bytes *bytes = AS_BYTES(args[0]);
   RETURN_NUMBER(adler32(adler, (const Bytef *) bytes->bytes.bytes, (uInt) bytes->bytes.count));
 }
 
@@ -97,7 +97,7 @@ DECLARE_MODULE_METHOD(zlib_crc32) {
 
   uLong crc = (uLong) AS_NUMBER(args[1]);
 
-  b_obj_bytes *bytes = AS_BYTES(args[0]);
+  z_obj_bytes *bytes = AS_BYTES(args[0]);
   RETURN_NUMBER(crc32(crc, (const Bytef *) bytes->bytes.bytes, (uInt) bytes->bytes.count));
 }
 
@@ -120,7 +120,7 @@ DECLARE_MODULE_METHOD(zlib_deflate) {
   ENFORCE_ARG_TYPE(deflate, 3, IS_NUMBER);
   ENFORCE_ARG_TYPE(deflate, 4, IS_NUMBER);
 
-  b_obj_bytes *b = AS_BYTES(args[0]);
+  z_obj_bytes *b = AS_BYTES(args[0]);
   Byte * data = (Byte *)b->bytes.bytes;
   uInt data_length = b->bytes.count;
 
@@ -193,7 +193,7 @@ DECLARE_MODULE_METHOD(zlib_inflate) {
   ENFORCE_ARG_TYPE(inflate, 0, IS_BYTES);
   ENFORCE_ARG_TYPE(inflate, 1, IS_NUMBER);
 
-  b_obj_bytes *b = AS_BYTES(args[0]);
+  z_obj_bytes *b = AS_BYTES(args[0]);
   Byte * data = (Byte *)b->bytes.bytes;
   uInt data_length = b->bytes.count;
   int wbits = AS_NUMBER(args[1]);
@@ -315,7 +315,7 @@ DECLARE_MODULE_METHOD(zlib_gzwrite) {
   ENFORCE_ARG_TYPE(gzwrite, 1, IS_BYTES);
 
   gzFile *file = (gzFile *) AS_PTR(args[0])->pointer;
-  b_obj_bytes *bytes = AS_BYTES(args[1]);
+  z_obj_bytes *bytes = AS_BYTES(args[1]);
 
   RETURN_NUMBER(gzwrite(file[0], bytes->bytes.bytes, bytes->bytes.count));
 }
@@ -412,7 +412,7 @@ DECLARE_MODULE_METHOD(zlib_gzseek) {
 }
 
 CREATE_MODULE_LOADER(zlib2) {
-  static b_field_reg fields[] = {
+  static z_field_reg fields[] = {
       GET_ZLIB_CONSTANT(Z_NO_COMPRESSION),
       GET_ZLIB_CONSTANT(Z_BEST_SPEED),
       GET_ZLIB_CONSTANT(Z_BEST_COMPRESSION),
@@ -427,14 +427,14 @@ CREATE_MODULE_LOADER(zlib2) {
       GET_ZLIB_CONSTANT(MAX_WBITS),
 
       /**
-       * Blade extras...
+       * Zuri extras...
        */
       GET_ZLIB_CONSTANT(Z_VERSION),
 
       {NULL,       false, NULL},
   };
 
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"adler32", false, GET_MODULE_METHOD(zlib_adler32)},
       {"crc32", false, GET_MODULE_METHOD(zlib_crc32)},
       {"deflate", false, GET_MODULE_METHOD(zlib_deflate)},
@@ -454,7 +454,7 @@ CREATE_MODULE_LOADER(zlib2) {
       {NULL,     false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_zlib",
       .fields = fields,
       .functions = module_functions,

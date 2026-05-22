@@ -78,7 +78,7 @@ class HttpResponse {
     self.body = body ? body : bytes(0)
     self.headers = headers ? headers : {
       'Content-Type': 'text/html; charset=utf-8',
-      'X-Powered-By': 'Blade',
+      'X-Powered-By': 'Zuri',
       'Date': Date().format('r')
     }
     self.cookies = cookies ? cookies : []

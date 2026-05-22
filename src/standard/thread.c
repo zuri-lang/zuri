@@ -47,11 +47,11 @@ typedef struct {
 
 // Thread-local storage for the signal mask
 #if defined(_MSC_VER)
-#define BLADE_TLS __declspec(thread)
+#define ZURI_TLS __declspec(thread)
 #else
-#define BLADE_TLS __thread
+#define ZURI_TLS __thread
 #endif
-static BLADE_TLS sigset_t thread_sigmask;
+static ZURI_TLS sigset_t thread_sigmask;
 
 int sigemptyset(sigset_t *set) {
     if (set == NULL) return -1;
@@ -144,27 +144,27 @@ int pthread_sigmask2(int how, const sigset_t *set, sigset_t *oldset) {
 }
 #endif
 
-#define B_THREAD_MUTEX_NAME "Thread::Mutex"
-#define B_THREAD_CHANNEL_NAME "Thread::Channel"
-#define B_THREAD_SEMAPHORE_NAME "Thread::Semaphore"
+#define Z_THREAD_MUTEX_NAME "Thread::Mutex"
+#define Z_THREAD_CHANNEL_NAME "Thread::Channel"
+#define Z_THREAD_SEMAPHORE_NAME "Thread::Semaphore"
 
 typedef struct {
   pthread_t thread;
-  b_vm *vm;
-  b_obj_closure *closure;
-  b_obj_list *args;
-} b_thread_handle;
+  z_vm *vm;
+  z_obj_closure *closure;
+  z_obj_list *args;
+} z_thread_handle;
 
 typedef struct {
   pthread_mutex_t mu;
   int locked;          /* advisory flag for is_locked() */
-} b_thread_mutex;
+} z_thread_mutex;
 
 typedef struct {
   pthread_mutex_t  mu;
   pthread_cond_t   not_full;   /* signalled when an item is removed        */
   pthread_cond_t   not_empty;  /* signalled when an item is added          */
-  b_value         *buf;        /* ring buffer of b_value                   */
+  z_value         *buf;        /* ring buffer of z_value                   */
   int              cap;        /* capacity (0 = unbuffered)                */
   int              head;       /* index of oldest item                     */
   int              count;      /* number of items currently buffered       */
@@ -172,28 +172,28 @@ typedef struct {
   /* For unbuffered (rendezvous) channels we use a single-slot hand-off. */
   int              sender_waiting;
   int              receiver_waiting;
-  b_value          rendezvous_value;
+  z_value          rendezvous_value;
   int              rendezvous_taken;
-} b_thread_channel;
+} z_thread_channel;
 
 typedef struct {
   pthread_mutex_t mu;
   pthread_cond_t  cond;
   int             count;
   int             max;
-} b_thread_semaphore;
+} z_thread_semaphore;
 
-static void b_thread_mutex_finalizer(void *ptr) {
+static void z_thread_mutex_finalizer(void *ptr) {
   if (ptr) {
-    b_thread_mutex *m = (b_thread_mutex *)ptr;
+    z_thread_mutex *m = (z_thread_mutex *)ptr;
     pthread_mutex_destroy(&m->mu);
     free(m);
   }
 }
 
-static void b_thread_channel_finalizer(void *ptr) {
+static void z_thread_channel_finalizer(void *ptr) {
   if (ptr) {
-    b_thread_channel *c = (b_thread_channel *)ptr;
+    z_thread_channel *c = (z_thread_channel *)ptr;
     pthread_cond_destroy(&c->not_full);
     pthread_cond_destroy(&c->not_empty);
     pthread_mutex_destroy(&c->mu);
@@ -202,9 +202,9 @@ static void b_thread_channel_finalizer(void *ptr) {
   }
 }
 
-static void b_thread_semaphore_finalizer(void *ptr) {
+static void z_thread_semaphore_finalizer(void *ptr) {
   if (ptr) {
-    b_thread_semaphore *s = (b_thread_semaphore *)ptr;
+    z_thread_semaphore *s = (z_thread_semaphore *)ptr;
     pthread_cond_destroy(&s->cond);
     pthread_mutex_destroy(&s->mu);
     free(s);
@@ -214,18 +214,18 @@ static void b_thread_semaphore_finalizer(void *ptr) {
 
 static uint64_t last_thread_vm_id = 0;
 
-#define B_THREAD_PTR_NAME "<void *thread::thread>"
+#define Z_THREAD_PTR_NAME "<void *thread::thread>"
 
-b_vm *copy_vm(b_vm *src, uint64_t id) {
-  b_vm *vm = (b_vm *) malloc(sizeof(b_vm));
+z_vm *copy_vm(z_vm *src, uint64_t id) {
+  z_vm *vm = (z_vm *) malloc(sizeof(z_vm));
   if(!vm) {
     return NULL;
   }
 
-  memset(vm, 0, sizeof(b_vm));
+  memset(vm, 0, sizeof(z_vm));
 
   vm->parent_vm = src;
-  vm->stack = ALLOCATE(b_value, COPIED_STACK_MIN);
+  vm->stack = ALLOCATE(z_value, COPIED_STACK_MIN);
   vm->stack_capacity = COPIED_STACK_MIN;
 
   // reset stack
@@ -280,33 +280,33 @@ b_vm *copy_vm(b_vm *src, uint64_t id) {
   return vm;
 }
 
-static b_thread_handle *create_thread_handle(b_vm *vm, b_obj_closure *closure, b_obj_list *args) {
+static z_thread_handle *create_thread_handle(z_vm *vm, z_obj_closure *closure, z_obj_list *args) {
   if(last_thread_vm_id == UINT64_MAX) {
     // whatever makes us get here, due to resource constraint on devices,
     // the earlier threads definitely will no longer be in operation.
     last_thread_vm_id = 0;
   }
 
-  b_thread_handle *handle = ALLOCATE(b_thread_handle, 1);
+  z_thread_handle *handle = ALLOCATE(z_thread_handle, 1);
   if(handle != NULL) {
     handle->vm = copy_vm(vm, ++last_thread_vm_id);
 
     if(handle->vm == NULL) {
-      FREE(b_thread_handle, handle);
+      FREE(z_thread_handle, handle);
       return NULL;
     }
 
     handle->closure = closure;
     handle->args = args;
 
-    ((b_obj *)closure)->stale++;
-    ((b_obj *)args)->stale++;
+    ((z_obj *)closure)->stale++;
+    ((z_obj *)args)->stale++;
   }
 
   return handle;
 }
 
-static void free_thread_handle(b_thread_handle *thread) {
+static void free_thread_handle(z_thread_handle *thread) {
   if(thread != NULL && thread->vm != NULL) {
     // move the surviving items to the parent vm's object list.
     if(thread->vm->parent_vm != NULL) {
@@ -319,17 +319,17 @@ static void free_thread_handle(b_thread_handle *thread) {
     thread->closure = NULL;
     thread->args = NULL;
 
-    ((b_obj *)thread)->stale--;
+    ((z_obj *)thread)->stale--;
   }
 }
 
-static void b_free_thread_handle(void *data) {
-  b_thread_handle *handle = (b_thread_handle *) data;
+static void z_free_thread_handle(void *data) {
+  z_thread_handle *handle = (z_thread_handle *) data;
   free_thread_handle(handle);
   free(handle);
 }
 
-static void *b_thread_callback_function(void *data) {
+static void *z_thread_callback_function(void *data) {
   // Unblock SIGUSR2
   sigset_t mask;
   sigemptyset(&mask);
@@ -340,7 +340,7 @@ static void *b_thread_callback_function(void *data) {
   pthread_sigmask2(SIG_UNBLOCK, &mask, NULL);
 #endif
 
-  b_thread_handle *handle = (b_thread_handle *) data;
+  z_thread_handle *handle = (z_thread_handle *) data;
   if(handle == NULL || handle->vm == NULL) {
     pthread_exit(NULL);
   }
@@ -353,8 +353,8 @@ static void *b_thread_callback_function(void *data) {
     // do nothing for now...
   }
 
-  ((b_obj *)handle->closure)->stale--;
-  ((b_obj *)handle->args)->stale--;
+  ((z_obj *)handle->closure)->stale--;
+  ((z_obj *)handle->args)->stale--;
 
   free_thread_handle(handle);
   pthread_exit(NULL);
@@ -365,10 +365,10 @@ DECLARE_MODULE_METHOD(thread__new) {
   ENFORCE_ARG_TYPE(new, 0, IS_CLOSURE);
   ENFORCE_ARG_TYPE(new, 1, IS_LIST);
 
-  b_thread_handle *thread = create_thread_handle(vm, AS_CLOSURE(args[0]), AS_LIST(args[1]));
+  z_thread_handle *thread = create_thread_handle(vm, AS_CLOSURE(args[0]), AS_LIST(args[1]));
   if(thread != NULL) {
-    b_obj_ptr *ptr = new_closable_named_ptr(vm, thread, B_THREAD_PTR_NAME, b_free_thread_handle);
-    ((b_obj *)ptr)->stale++;
+    z_obj_ptr *ptr = new_closable_named_ptr(vm, thread, Z_THREAD_PTR_NAME, z_free_thread_handle);
+    ((z_obj *)ptr)->stale++;
     RETURN_OBJ(ptr);
   }
 
@@ -379,14 +379,14 @@ DECLARE_MODULE_METHOD(thread__start) {
   ENFORCE_ARG_COUNT(start, 2);
   ENFORCE_ARG_TYPE(start, 0, IS_PTR);
   ENFORCE_ARG_TYPE(start, 1, IS_NUMBER);
-  b_thread_handle *thread = AS_PTR(args[0])->pointer;
+  z_thread_handle *thread = AS_PTR(args[0])->pointer;
 
   if(thread != NULL) {
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, (size_t)AS_NUMBER(args[1]));
 
-    if(pthread_create(&thread->thread, &attr, b_thread_callback_function, thread) == 0) {
+    if(pthread_create(&thread->thread, &attr, z_thread_callback_function, thread) == 0) {
       pthread_attr_destroy(&attr);
       RETURN_TRUE;
     }
@@ -400,7 +400,7 @@ DECLARE_MODULE_METHOD(thread__start) {
 DECLARE_MODULE_METHOD(thread__cancel) {
   ENFORCE_ARG_COUNT(cancel, 1);
   ENFORCE_ARG_TYPE(cancel, 0, IS_PTR);
-  b_thread_handle *thread = AS_PTR(args[0])->pointer;
+  z_thread_handle *thread = AS_PTR(args[0])->pointer;
 
   if(thread != NULL && thread->vm != NULL) {
 #ifdef _WIN32
@@ -423,7 +423,7 @@ DECLARE_MODULE_METHOD(thread__cancel) {
 DECLARE_MODULE_METHOD(thread__await) {
   ENFORCE_ARG_COUNT(await, 1);
   ENFORCE_ARG_TYPE(await, 0, IS_PTR);
-  b_thread_handle *thread = AS_PTR(args[0])->pointer;
+  z_thread_handle *thread = AS_PTR(args[0])->pointer;
 
   if(thread != NULL && thread->vm != NULL) {
     RETURN_BOOL(pthread_join(thread->thread, NULL) == 0);
@@ -435,7 +435,7 @@ DECLARE_MODULE_METHOD(thread__await) {
 DECLARE_MODULE_METHOD(thread__detach) {
   ENFORCE_ARG_COUNT(detach, 1);
   ENFORCE_ARG_TYPE(detach, 0, IS_PTR);
-  b_thread_handle *thread = AS_PTR(args[0])->pointer;
+  z_thread_handle *thread = AS_PTR(args[0])->pointer;
 
   if(thread != NULL && thread->vm != NULL) {
     RETURN_BOOL(pthread_detach(thread->thread) == 0);
@@ -451,7 +451,7 @@ DECLARE_MODULE_METHOD(thread__set_name) {
 #ifdef __APPLE__
   RETURN_BOOL(pthread_setname_np(AS_C_STRING(args[1])) == 0);
 #else
-  b_thread_handle *thread = AS_PTR(args[0])->pointer;
+  z_thread_handle *thread = AS_PTR(args[0])->pointer;
   if(thread != NULL && thread->vm != NULL) {
 # if defined(PTHREAD_MAX_NAMELEN_NP) && PTHREAD_MAX_NAMELEN_NP == 16
     RETURN_BOOL(pthread_setname_np(thread->thread, AS_C_STRING(args[1]), NULL) == 0);
@@ -466,7 +466,7 @@ DECLARE_MODULE_METHOD(thread__set_name) {
 DECLARE_MODULE_METHOD(thread__get_name) {
   ENFORCE_ARG_COUNT(get_name, 1);
   ENFORCE_ARG_TYPE(get_name, 0, IS_PTR);
-  b_thread_handle *thread = AS_PTR(args[0])->pointer;
+  z_thread_handle *thread = AS_PTR(args[0])->pointer;
 
   if(thread != NULL && thread->vm != NULL) {
     char buffer[255];
@@ -512,7 +512,7 @@ DECLARE_MODULE_METHOD(thread__yield) {
 DECLARE_MODULE_METHOD(thread__is_alive) {
   ENFORCE_ARG_COUNT(is_alive, 1);
   ENFORCE_ARG_TYPE(get_name, 0, IS_PTR);
-  b_thread_handle *thread = AS_PTR(args[0])->pointer;
+  z_thread_handle *thread = AS_PTR(args[0])->pointer;
   RETURN_BOOL(thread != NULL && thread->vm != NULL);
 }
 
@@ -521,7 +521,7 @@ DECLARE_MODULE_METHOD(thread__is_alive) {
 DECLARE_MODULE_METHOD(thread__new_mutex) {
   ENFORCE_ARG_COUNT(new, 0);
 
-  b_thread_mutex *m = (b_thread_mutex *)malloc(sizeof(b_thread_mutex));
+  z_thread_mutex *m = (z_thread_mutex *)malloc(sizeof(z_thread_mutex));
   if (!m) RETURN_ERROR("out of memory");
 
   pthread_mutexattr_t attr;
@@ -537,12 +537,12 @@ DECLARE_MODULE_METHOD(thread__new_mutex) {
   }
 
   m->locked = 0;
-  RETURN_CLOSABLE_NAMED_PTR(m, B_THREAD_MUTEX_NAME, b_thread_mutex_finalizer);
+  RETURN_CLOSABLE_NAMED_PTR(m, Z_THREAD_MUTEX_NAME, z_thread_mutex_finalizer);
 }
 
 DECLARE_MODULE_METHOD(thread__mutex_lock) {
   ENFORCE_ARG_COUNT(lock, 1);
-  b_thread_mutex *m = (b_thread_mutex *)AS_PTR(args[0])->pointer;
+  z_thread_mutex *m = (z_thread_mutex *)AS_PTR(args[0])->pointer;
   if (!m) RETURN_ERROR("invalid instance");
 
   int rc = pthread_mutex_lock(&m->mu);
@@ -555,7 +555,7 @@ DECLARE_MODULE_METHOD(thread__mutex_lock) {
 
 DECLARE_MODULE_METHOD(thread__mutex_unlock) {
   ENFORCE_ARG_COUNT(unlock, 1);
-  b_thread_mutex *m = (b_thread_mutex *)AS_PTR(args[0])->pointer;
+  z_thread_mutex *m = (z_thread_mutex *)AS_PTR(args[0])->pointer;
   if (!m) RETURN_ERROR("invalid instance");
 
   m->locked = 0;
@@ -568,7 +568,7 @@ DECLARE_MODULE_METHOD(thread__mutex_unlock) {
 
 DECLARE_MODULE_METHOD(thread__mutex_try_lock) {
   ENFORCE_ARG_COUNT(try_lock, 1);
-  b_thread_mutex *m = (b_thread_mutex *)AS_PTR(args[0])->pointer;
+  z_thread_mutex *m = (z_thread_mutex *)AS_PTR(args[0])->pointer;
   if (!m) RETURN_ERROR("invalid instance");
 
   int rc = pthread_mutex_trylock(&m->mu);
@@ -584,7 +584,7 @@ DECLARE_MODULE_METHOD(thread__mutex_try_lock) {
 
 DECLARE_MODULE_METHOD(thread__mutex_is_locked) {
   ENFORCE_ARG_COUNT(is_locked, 1);
-  b_thread_mutex *m = (b_thread_mutex *)AS_PTR(args[0])->pointer;
+  z_thread_mutex *m = (z_thread_mutex *)AS_PTR(args[0])->pointer;
   if (!m) RETURN_ERROR("invalid instance");
   RETURN_BOOL(m->locked != 0);
 }
@@ -600,11 +600,11 @@ DECLARE_MODULE_METHOD(thread__new_channel) {
     if (cap < 0) RETURN_ERROR("capacity must be >= 0");
   }
 
-  b_thread_channel *c = (b_thread_channel *)calloc(1, sizeof(b_thread_channel));
+  z_thread_channel *c = (z_thread_channel *)calloc(1, sizeof(z_thread_channel));
   if (!c) RETURN_ERROR("out of memory");
 
   if (cap > 0) {
-    c->buf = (b_value *)malloc(sizeof(b_value) * cap);
+    c->buf = (z_value *)malloc(sizeof(z_value) * cap);
     if (!c->buf) {
       free(c);
       RETURN_ERROR("out of memory");
@@ -637,15 +637,15 @@ DECLARE_MODULE_METHOD(thread__new_channel) {
     RETURN_ERROR("ChannelStatus: %d", rc);
   }
 
-  RETURN_CLOSABLE_NAMED_PTR(c, B_THREAD_CHANNEL_NAME, b_thread_channel_finalizer);
+  RETURN_CLOSABLE_NAMED_PTR(c, Z_THREAD_CHANNEL_NAME, z_thread_channel_finalizer);
 }
 
 DECLARE_MODULE_METHOD(thread__channel_send) {
   ENFORCE_ARG_COUNT(send, 2);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
 
-  b_value val = args[1];
+  z_value val = args[1];
 
   pthread_mutex_lock(&c->mu);
 
@@ -687,10 +687,10 @@ DECLARE_MODULE_METHOD(thread__channel_send) {
 
 DECLARE_MODULE_METHOD(thread__channel_receive) {
   ENFORCE_ARG_COUNT(receive, 1);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
 
-  b_value result = NIL_VAL;
+  z_value result = NIL_VAL;
 
   pthread_mutex_lock(&c->mu);
 
@@ -728,13 +728,13 @@ DECLARE_MODULE_METHOD(thread__channel_receive) {
 
 DECLARE_MODULE_METHOD(thread__channel_try_send) {
   ENFORCE_ARG_COUNT(try_send, 2);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
 
   pthread_mutex_lock(&c->mu);
   int ok = 0;
   if (!c->closed) {
-    b_value val = args[1];
+    z_value val = args[1];
 
     if (c->cap == 0) {
       /* Unbuffered: only succeeds if a receiver is already waiting. */
@@ -760,10 +760,10 @@ DECLARE_MODULE_METHOD(thread__channel_try_send) {
 
 DECLARE_MODULE_METHOD(thread__channel_try_receive) {
   ENFORCE_ARG_COUNT(try_receive, 1);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
 
-  b_value result = NIL_VAL;
+  z_value result = NIL_VAL;
 
   pthread_mutex_lock(&c->mu);
   if (c->cap == 0) {
@@ -785,7 +785,7 @@ DECLARE_MODULE_METHOD(thread__channel_try_receive) {
 
 DECLARE_MODULE_METHOD(thread__channel_close) {
   ENFORCE_ARG_COUNT(close, 1);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
 
   pthread_mutex_lock(&c->mu);
@@ -799,14 +799,14 @@ DECLARE_MODULE_METHOD(thread__channel_close) {
 
 DECLARE_MODULE_METHOD(thread__channel_is_closed) {
   ENFORCE_ARG_COUNT(is_closed, 1);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
   RETURN_BOOL(c->closed != 0);
 }
 
 DECLARE_MODULE_METHOD(thread__channel_size) {
   ENFORCE_ARG_COUNT(size, 1);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
   pthread_mutex_lock(&c->mu);
   int n = c->count;
@@ -816,7 +816,7 @@ DECLARE_MODULE_METHOD(thread__channel_size) {
 
 DECLARE_MODULE_METHOD(thread__channel_capacity) {
   ENFORCE_ARG_COUNT(capacity, 1);
-  b_thread_channel *c = (b_thread_channel *)AS_PTR(args[0])->pointer;
+  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
   if (!c) RETURN_ERROR("invalid instance");
   RETURN_NUMBER(c->cap);
 }
@@ -841,7 +841,7 @@ DECLARE_MODULE_METHOD(thread__new_semaphore) {
     max = initial > 0 ? initial : 1;
   }
  
-  b_thread_semaphore *s = (b_thread_semaphore *)malloc(sizeof(b_thread_semaphore));
+  z_thread_semaphore *s = (z_thread_semaphore *)malloc(sizeof(z_thread_semaphore));
   if (!s) RETURN_ERROR("out of memory");
  
   int rc = pthread_mutex_init(&s->mu, NULL);
@@ -860,13 +860,13 @@ DECLARE_MODULE_METHOD(thread__new_semaphore) {
   s->count = initial;
   s->max   = max;
 
-  RETURN_CLOSABLE_NAMED_PTR(s, B_THREAD_SEMAPHORE_NAME, b_thread_semaphore_finalizer);
+  RETURN_CLOSABLE_NAMED_PTR(s, Z_THREAD_SEMAPHORE_NAME, z_thread_semaphore_finalizer);
 }
  
 /* .acquire() — blocks until count > 0, then decrements */
 DECLARE_MODULE_METHOD(thread__semaphore_acquire) {
   ENFORCE_ARG_COUNT(acquire, 1);
-  b_thread_semaphore *s = (b_thread_semaphore *)AS_PTR(args[0])->pointer;
+  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
   if (!s) RETURN_ERROR("invalid instance");
  
   pthread_mutex_lock(&s->mu);
@@ -881,7 +881,7 @@ DECLARE_MODULE_METHOD(thread__semaphore_acquire) {
 /* .release() — increments count and wakes one waiter */
 DECLARE_MODULE_METHOD(thread__semaphore_release) {
   ENFORCE_ARG_COUNT(release, 1);
-  b_thread_semaphore *s = (b_thread_semaphore *)AS_PTR(args[0])->pointer;
+  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
   if (!s) RETURN_ERROR("invalid instance");
  
   pthread_mutex_lock(&s->mu);
@@ -898,7 +898,7 @@ DECLARE_MODULE_METHOD(thread__semaphore_release) {
 /* .try_acquire() → bool */
 DECLARE_MODULE_METHOD(thread__semaphore_try_acquire) {
   ENFORCE_ARG_COUNT(try_acquire, 1);
-  b_thread_semaphore *s = (b_thread_semaphore *)AS_PTR(args[0])->pointer;
+  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
   if (!s) RETURN_ERROR("invalid instance");
  
   pthread_mutex_lock(&s->mu);
@@ -914,7 +914,7 @@ DECLARE_MODULE_METHOD(thread__semaphore_try_acquire) {
 /* .count() → number */
 DECLARE_MODULE_METHOD(thread__semaphore_count) {
   ENFORCE_ARG_COUNT(count, 1);
-  b_thread_semaphore *s = (b_thread_semaphore *)AS_PTR(args[0])->pointer;
+  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
   if (!s) RETURN_ERROR("invalid instance");
   pthread_mutex_lock(&s->mu);
   int n = s->count;
@@ -925,20 +925,20 @@ DECLARE_MODULE_METHOD(thread__semaphore_count) {
 /* .max() → number */
 DECLARE_MODULE_METHOD(thread__semaphore_max) {
   ENFORCE_ARG_COUNT(max, 1);
-  b_thread_semaphore *s = (b_thread_semaphore *)AS_PTR(args[0])->pointer;
+  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
   if (!s) RETURN_ERROR("invalid instance");
   RETURN_NUMBER(s->max);
 }
 
 
-void b_thread_SIGUSR2_signal_handler(int signum) {
+void z_thread_SIGUSR2_signal_handler(int signum) {
   pthread_exit(NULL);
 }
 
-void b_thread_init_function(b_vm *vm) {
+void z_thread_init_function(z_vm *vm) {
 #ifndef _WIN32
   struct sigaction sa;
-  sa.sa_handler = b_thread_SIGUSR2_signal_handler;
+  sa.sa_handler = z_thread_SIGUSR2_signal_handler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = 0;
   // Install handler for SIGUSR2 on POSIX
@@ -948,7 +948,7 @@ void b_thread_init_function(b_vm *vm) {
 #endif
 }
 
-void b_thread_unload_function(b_vm *vm) {
+void z_thread_unload_function(z_vm *vm) {
   // Unblock SIGUSR2
   sigset_t mask;
   sigemptyset(&mask);
@@ -962,7 +962,7 @@ void b_thread_unload_function(b_vm *vm) {
 }
 
 CREATE_MODULE_LOADER(thread) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"new", false, GET_MODULE_METHOD(thread__new)},
       {"start", false, GET_MODULE_METHOD(thread__start)},
       {"cancel", false, GET_MODULE_METHOD(thread__cancel)},
@@ -1003,20 +1003,20 @@ CREATE_MODULE_LOADER(thread) {
       {NULL,     false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_thread",
       .fields = NULL,
       .functions = module_functions,
       .classes = NULL,
-      .preloader = b_thread_init_function,
-      .unloader = b_thread_unload_function
+      .preloader = z_thread_init_function,
+      .unloader = z_thread_unload_function
   };
 
   return &module;
 }
 
-#undef B_THREAD_SEMAPHORE_NAME
-#undef B_THREAD_CHANNEL_NAME
-#undef B_THREAD_MUTEX_NAME
+#undef Z_THREAD_SEMAPHORE_NAME
+#undef Z_THREAD_CHANNEL_NAME
+#undef Z_THREAD_MUTEX_NAME
 
-#undef B_THREAD_PTR_NAME
+#undef Z_THREAD_PTR_NAME

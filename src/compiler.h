@@ -1,5 +1,5 @@
-#ifndef BLADE_COMPILER_H
-#define BLADE_COMPILER_H
+#ifndef ZURI_COMPILER_H
+#define ZURI_COMPILER_H
 
 #include "object.h"
 #include "scanner.h"
@@ -24,70 +24,70 @@ typedef enum {
   PREC_CALL,  // ., ()
   PREC_RANGE,       // ..
   PREC_PRIMARY
-} b_precedence;
+} z_precedence;
 
 typedef struct {
-  b_token name;
+  z_token name;
   int depth;
   bool is_captured;
-} b_local;
+} z_local;
 
 typedef struct {
   uint16_t index;
   bool is_local;
-} b_up_value;
+} z_up_value;
 
 struct s_compiler {
-  b_compiler *enclosing;
+  z_compiler *enclosing;
 
   // current function
-  b_obj_func *function;
-  b_func_type type;
+  z_obj_func *function;
+  z_func_type type;
 
-  b_local locals[UINT8_COUNT];
+  z_local locals[UINT8_COUNT];
   int local_count;
-  b_up_value up_values[UINT8_COUNT];
+  z_up_value up_values[UINT8_COUNT];
   int scope_depth;
 };
 
-typedef struct b_class_compiler {
-  struct b_class_compiler *enclosing;
-  b_token name;
+typedef struct z_class_compiler {
+  struct z_class_compiler *enclosing;
+  z_token name;
   bool has_superclass;
-} b_class_compiler;
+} z_class_compiler;
 
 typedef struct {
-  b_scanner *scanner;
-  b_vm *vm;
+  z_scanner *scanner;
+  z_vm *vm;
 
-  b_token current;
-  b_token previous;
+  z_token current;
+  z_token previous;
   bool had_error;
   bool panic_mode;
   int block_count;
   bool is_returning;
   bool repl_can_echo;
-  b_class_compiler *current_class;
+  z_class_compiler *current_class;
   const char *current_file;
 
   // used for tracking loops for the continue statement...
   int innermost_loop_start;
   int innermost_loop_scope_depth;
-  b_obj_module *module;
-} b_parser;
+  z_obj_module *module;
+} z_parser;
 
-typedef void (*b_parse_prefix_fn)(b_parser *, bool);
+typedef void (*z_parse_prefix_fn)(z_parser *, bool);
 
-typedef void (*b_parse_infix_fn)(b_parser *, b_token, bool);
+typedef void (*z_parse_infix_fn)(z_parser *, z_token, bool);
 
 typedef struct {
-  b_parse_prefix_fn prefix;
-  b_parse_infix_fn infix;
-  b_precedence precedence;
-} b_parse_rule;
+  z_parse_prefix_fn prefix;
+  z_parse_infix_fn infix;
+  z_precedence precedence;
+} z_parse_rule;
 
-b_obj_func *compile(b_vm *vm, b_obj_module *module, const char *source);
+z_obj_func *compile(z_vm *vm, z_obj_module *module, const char *source);
 
-void mark_compiler_roots(b_vm *vm);
+void mark_compiler_roots(z_vm *vm);
 
 #endif

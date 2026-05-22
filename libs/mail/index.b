@@ -4,7 +4,7 @@
  * The module provides interfaces for sending and reading electronic mails and provides 
  * implementation for the SMTP, IMAP and POP3 mail exchange protocols.
  * 
- * @copyright 2023, Richard Ore and Blade contributors
+ * @copyright 2023, Richard Ore and Zuri contributors
  */
 
 import .smtp
@@ -89,7 +89,7 @@ class Attachment {
 }
 
 /**
- * The Mail class represents a mail message as a blade object with the following 
+ * The Mail class represents a mail message as a zuri object with the following
  * properties.
  * 
  * @serializable

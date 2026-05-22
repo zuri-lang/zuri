@@ -29,7 +29,7 @@ def green(t) {
 def parse(parser) {
   parser.add_command(
     'install', 
-    'Installs a Blade package', 
+    'Installs a Zuri package',
     {
       type: args.STRING,
     }
@@ -63,11 +63,11 @@ def parse(parser) {
 def configure(config, repo, full_name, name, version, path, is_global, with_cache, progress, error) {
   log.info('Installing ${full_name}')
 
-  var blade_exe = os.args[0]
+  var zuri_exe = os.args[0]
 
   var destination
-  if !is_global destination = os.join_paths(os.cwd(), '.blade/libs/${name}')
-  else destination = os.join_paths(os.dir_name(blade_exe), 'vendor/${name}')
+  if !is_global destination = os.join_paths(os.cwd(), '.zuri/libs/${name}')
+  else destination = os.join_paths(os.dir_name(zuri_exe), 'vendor/${name}')
 
   # create the packages directory if not exists
   log.info('Creating package directory for ${full_name}')
@@ -110,7 +110,7 @@ def configure(config, repo, full_name, name, version, path, is_global, with_cach
       os.change_dir(destination)
 
       # run the script
-      os.exec('${blade_exe} ${package_config.post_install}')
+      os.exec('${zuri_exe} ${package_config.post_install}')
 
       # return to current directory
       os.change_dir(this_dir)

@@ -10,7 +10,7 @@
  *
  * ### Quick start
  *
- * ```blade
+ * ```zuri
  * import args
  *
  * var parser = args.Parser('myprogram')
@@ -27,8 +27,8 @@
  * 
  * Running the following command:
  * 
- * ```blade
- * blade myprogram.b -h
+ * ```zuri
+ * zuri myprogram.b -h
  * ```
  * 
  * Prints the following help output:
@@ -52,37 +52,37 @@
  * Typical invocations:
  *
  * ```sh
- * $ blade myprogram.b -h
- * $ blade myprogram.b --name Alice --count 3
- * $ blade myprogram.b call --verbose
- * $ blade myprogram.b call --help
+ * $ zuri myprogram.b -h
+ * $ zuri myprogram.b --name Alice --count 3
+ * $ zuri myprogram.b call --verbose
+ * $ zuri myprogram.b call --help
  * ```
  * 
  * If we change the last line of the program to `echo parser.parse()` so that we can see the result 
  * of the parsing, the following CLI call will yield the given result.
  * 
  * ```sh
- * $ blade myprogram.b --name "Kirk"
+ * $ zuri myprogram.b --name "Kirk"
  * {options: {name: Kirk, count: 1}, command: nil, indexes: []}
  * 
- * $ blade myprogram.b call
+ * $ zuri myprogram.b call
  * {options: {count: 1}, command: {name: call, value: nil}, indexes: []}
  * 
- * $ blade myprogram.b call -v
+ * $ zuri myprogram.b call -v
  * {options: {verbose: true, count: 1}, command: {name: call, value: nil}, indexes: []}
  * ```
  * 
  * Calling name without an option will yield the following result/error:
  * 
  * ```sh
- * $ blade myprogram.b --name   
+ * $ zuri myprogram.b --name
  * error: option --name expects a <VALUE>
  * ```
  * 
  * You may even get help on a command directly like below:
  *  
  * ```sh
- * $ blade myprogram.b --help call
+ * $ zuri myprogram.b --help call
  * Usage: myprogram call [OPTIONS]
  *  
  *   Make a phone call
@@ -106,7 +106,7 @@
  * }
  * ```
  *
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import os
@@ -161,7 +161,7 @@ var _type_name = {
 # ---------------------------------------------------------------------------
 
 # We emit ANSI only when: stdout looks like a tty AND NO_COLOR is not set.
-# Blade does not expose isatty() directly, so we use a best-effort env check.
+# Zuri does not expose isatty() directly, so we use a best-effort env check.
 var _use_color = os.get_env('NO_COLOR') == nil
 
 def _strip_ansi(text) {
@@ -520,7 +520,7 @@ class Parser < _Optionable {
    *
    * Returns the `_Command` object so you can chain `add_option` calls:
    *
-   * ```blade
+   * ```zuri
    * parser.add_command('push', 'Push changes').
    *        add_option('force', 'Force push', {short_name: 'f'})
    * ```

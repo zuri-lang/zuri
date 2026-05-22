@@ -14,7 +14,7 @@
  * 
  * ### Example
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import url
  * %> var link = url.Url('https', 'example.com', 9000)
  * %> link.absolute_url()
@@ -26,7 +26,7 @@
  * For example, we can use the `parse()` function to convert a URL string into a URL 
  * instance like below.
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> link = url.parse('https://example.com:9000')
  * %> link.scheme
  * 'https'
@@ -34,7 +34,7 @@
  * '9000'
  * ```
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import types

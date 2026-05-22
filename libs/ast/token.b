@@ -115,7 +115,7 @@ var TokenType = enum([
 
 
 /**
- * Blade source code token.
+ * Zuri source code token.
  * 
  * @serializable
  * @printable

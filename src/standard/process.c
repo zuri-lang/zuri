@@ -55,7 +55,7 @@ static int kill(int i, int j) {
 }
 #endif
 
-b_value __process_cpu_count(b_vm *vm) {
+z_value __process_cpu_count(z_vm *vm) {
 #if defined(HAVE_SYSCONF) && defined(_SC_NPROCESSORS_ONLN)
   return NUMBER_VAL((int)sysconf(_SC_NPROCESSORS_ONLN));
 #endif
@@ -95,7 +95,7 @@ typedef struct {
   int exectuable;
 } BProcessPaged;
 
-void b__free_paged_memory(void *data) {
+void z__free_paged_memory(void *data) {
   BProcessPaged *paged = (BProcessPaged *)data;
   munmap(paged->format, paged->format_length * sizeof(char));
   munmap(paged->get_format, paged->get_format_length * sizeof(char));
@@ -106,7 +106,7 @@ void b__free_paged_memory(void *data) {
 DECLARE_MODULE_METHOD(process_Process) {
   ENFORCE_ARG_RANGE(Process, 0, 1);
   BProcess *process = ALLOCATE(BProcess, 1);
-  b_obj_ptr *ptr = (b_obj_ptr *)GC(new_ptr(vm, process));
+  z_obj_ptr *ptr = (z_obj_ptr *)GC(new_ptr(vm, process));
   ptr->name = "<*Process::Process>";
   process->pid = -1;
   RETURN_OBJ(ptr);
@@ -204,9 +204,9 @@ DECLARE_MODULE_METHOD(process_new_paged) {
     paged->format = mmap(NULL, sizeof(char), protection, flags, -1, 0);
     paged->get_format = mmap(NULL, sizeof(char), protection, flags, -1, 0);
     paged->length = paged->get_format_length = paged->format_length = 0;
-    b_obj_ptr *ptr = (b_obj_ptr *)GC(new_ptr(vm, paged));
+    z_obj_ptr *ptr = (z_obj_ptr *)GC(new_ptr(vm, paged));
     ptr->name = "<*Process::PagedValue>";
-    ptr->free_fn = b__free_paged_memory;
+    ptr->free_fn = z__free_paged_memory;
     RETURN_OBJ(ptr);
   }
 
@@ -228,9 +228,9 @@ DECLARE_MODULE_METHOD(process_paged_write) {
 
   BProcessPaged *paged = (BProcessPaged *)AS_PTR(args[0])->pointer;
   if(!paged->locked) {
-    b_obj_string *format = AS_STRING(args[1]);
-    b_obj_string *get_format = AS_STRING(args[2]);
-    b_byte_arr bytes = AS_BYTES(args[3])->bytes;
+    z_obj_string *format = AS_STRING(args[1]);
+    z_obj_string *get_format = AS_STRING(args[2]);
+    z_byte_arr bytes = AS_BYTES(args[3])->bytes;
 
     memcpy(paged->format, format->chars, format->length);
     paged->format_length = format->length;
@@ -285,10 +285,10 @@ DECLARE_MODULE_METHOD(process_paged_read) {
   BProcessPaged *paged = (BProcessPaged *)AS_PTR(args[0])->pointer;
 
   if(paged->length > 0 || paged->format_length > 0) {
-    b_obj_bytes *bytes = (b_obj_bytes *) GC(copy_bytes(vm, paged->bytes, paged->length));
+    z_obj_bytes *bytes = (z_obj_bytes *) GC(copy_bytes(vm, paged->bytes, paged->length));
 
     // return [format, bytes]
-    b_obj_list *list = (b_obj_list *)GC(new_list(vm));
+    z_obj_list *list = (z_obj_list *)GC(new_list(vm));
     write_list(vm, list, STRING_L_VAL(paged->get_format, paged->get_format_length));
     write_list(vm, list, OBJ_VAL(bytes));
 
@@ -328,7 +328,7 @@ DECLARE_MODULE_METHOD(process_raw_pointer) {
 }
 
 CREATE_MODULE_LOADER(process) {
-  static b_func_reg os_module_functions[] = {
+  static z_func_reg os_module_functions[] = {
       {"Process",     false, GET_MODULE_METHOD(process_Process)},
       {"create",     false, GET_MODULE_METHOD(process_create)},
       {"is_alive",     false, GET_MODULE_METHOD(process_is_alive)},
@@ -344,12 +344,12 @@ CREATE_MODULE_LOADER(process) {
       {NULL,     false, NULL},
   };
 
-  static b_field_reg os_module_fields[] = {
+  static z_field_reg os_module_fields[] = {
       {"cpu_count", true, __process_cpu_count},
       {NULL,       false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_process",
       .fields = os_module_fields,
       .functions = os_module_functions,

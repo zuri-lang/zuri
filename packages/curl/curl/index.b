@@ -13,7 +13,7 @@
  * The following example shows the basic usage that visits a website 
  * and prints the output.
  * 
- * ```blade
+ * ```zuri
  * import curl
  * 
  * var c = curl.Curl()
@@ -27,7 +27,7 @@
  * See [Libcurl's official documentation](https://curl.se/libcurl/)
  * for more information.
  *
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import .options { Option }

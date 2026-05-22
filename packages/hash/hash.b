@@ -5,7 +5,7 @@
  *
  * Examples,
  *
- * ```blade-repl
+ * ```zuri-repl
  * %> import hash
  * %>
  * %> hash.md5('Hello, World')
@@ -21,7 +21,7 @@
  * 'd782079145a3476fd4e018d44dd024034fa91f626f7f30f2009200c5ac757723'
  * ```
  *
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _hash
@@ -675,7 +675,7 @@ def hmac_gost(key, str, as_bytes) {
  *
  * ### Password storage  (derive then verify)
  *
- * ```blade
+ * ```zuri
  * import hash
  *
  * var salt = 'f3a8c2b104d7e569'   # 16 random bytes in production
@@ -690,7 +690,7 @@ def hmac_gost(key, str, as_bytes) {
  *
  * ### Raw-bytes key for symmetric encryption
  *
- * ```blade
+ * ```zuri
  * import hash
  *
  * # 32-byte key for AES-256, returned as a bytes object.
@@ -699,7 +699,7 @@ def hmac_gost(key, str, as_bytes) {
  *
  * ### Longer key with SHA-512
  *
- * ```blade
+ * ```zuri
  * import hash
  *
  * # 64 bytes; dk_len == hLen so only one T block is needed.
@@ -709,7 +709,7 @@ def hmac_gost(key, str, as_bytes) {
  *
  * ### Key that spans multiple PRF blocks
  *
- * ```blade
+ * ```zuri
  * import hash
  *
  * # 40 bytes with SHA-1 (hLen = 20) requires two T blocks.
@@ -725,7 +725,7 @@ def hmac_gost(key, str, as_bytes) {
  * > - Tune `iterations` so that derivation takes ~100 ms on your target
  * >   hardware. Re-benchmark as server capacity increases over time.
  * > - For pure password storage where output size is not a concern,
- * >   consider `bcrypt` (built into Blade's `hash` module). PBKDF2 is
+ * >   consider `bcrypt` (built into Zuri's `hash` module). PBKDF2 is
  * >   most appropriate when you need an arbitrarily long output — symmetric
  * >   keys, key wrapping, or protocol key schedules.
  * > - When comparing derived keys, use a constant-time equality function

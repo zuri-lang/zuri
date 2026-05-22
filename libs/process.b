@@ -7,7 +7,7 @@
  * 
  * Example Usage:
  * 
- * ```blade
+ * ```zuri
  * var paged = PagedValue()
  * 
  * var pr = Process(@(p, s) {
@@ -36,7 +36,7 @@
  * {name: Richard, age: 3.142}
  * ```
  * 
- * @copyright 2022, Richard Ore and Blade contributors
+ * @copyright 2022, Richard Ore and Zuri contributors
  */
 
 import _process

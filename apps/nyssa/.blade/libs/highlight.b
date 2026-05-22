@@ -13,7 +13,7 @@ var default_classes = {
   error: 'e',
 }
 
-var blade_keywords = '|'.join([
+var zuri_keywords = '|'.join([
   'as', 'assert', 'break', 'catch', 'class', 'continue',
   'def', 'default', 'do', 'echo', 'else', 'for', 'if',
   'import', 'in', 'iter', 'raise', 'return', 'static',
@@ -26,7 +26,7 @@ var constant_keywords = '|'.join([
 
 var _quote_re = '/((?<![a-z])(\'(?:[^\'\\\\]|\\\\.)*\')|("(?:[^"\\\\]|\\\\.)*"))/m'
 
-def highlight_blade(text, classes) {
+def highlight_zuri(text, classes) {
   text = text.
     replace('<', '&lt;').replace('>', '&gt;').
     # operators
@@ -47,7 +47,7 @@ def highlight_blade(text, classes) {
     replace('/(?<!\.)([a-zA-Z_][a-zA-Z0-9_]*)[ ]*(?=[(])/', '<_f>$1</_f>').
 
     # keywords
-    replace('/\\b(${blade_keywords})\\b/', '<_k>$1</_k>').
+    replace('/\\b(${zuri_keywords})\\b/', '<_k>$1</_k>').
     # comments
     replace('/(#(?=[^"\']*(?:"[^"]*"[^"]*|\'[^\']*\'[^\']*)*$)[^\n]*)/', '<_w>$1</_w>'). # line comment
     replace('/(\/\*(?:(?!\/\*|\*\/).|(?R))*\*\/)/ms', '<_w1>$1</_w1>') # block comment
@@ -131,10 +131,10 @@ def highlight_json(text, classes) {
   return text.replace('/("(?:[^"\\\\]|\\.)*")/', '<span class="${classes.operator}">$1</span>')
 }
 
-def highlight_blade_repl(text, classes) {
+def highlight_zuri_repl(text, classes) {
   return '\n'.join(text.split('\n').map(@(line) {
     if line.starts_with('%> ') or line.starts_with('.. ') {
-      return '<span class="${classes.prompt}">${line[,3]}</span>' + highlight_blade(line[3,], classes)
+      return '<span class="${classes.prompt}">${line[,3]}</span>' + highlight_zuri(line[3,], classes)
     } else {
       line = line.replace('<', '&lt;').replace('>', '&gt;')
       var lower = line.lower()
@@ -165,10 +165,10 @@ def highlight(classes) {
 
   return @(text, lang) {
     using lang {
-      when 'blade'
-        return highlight_blade(text, classes)
-      when 'blade-repl'
-        return highlight_blade_repl(text, classes)
+      when 'zuri'
+        return highlight_zuri(text, classes)
+      when 'zuri-repl'
+        return highlight_zuri_repl(text, classes)
       when 'html', 'html5', 'wire'
         return highlight_html5(text, lang, classes)
       when 'json', 'json5'

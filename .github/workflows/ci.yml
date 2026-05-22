@@ -30,15 +30,15 @@ jobs:
           sudo apt-get install curl libpthread-stubs0-dev libcurl4-openssl-dev libgd-dev libavif-dev libffi-dev -y
           cmake -B .
           cmake --build . -- -j 12
-          chmod +x blade/blade
+          chmod +x zuri/zuri
       - name: Test
         run: ctest --rerun-failed --output-on-failure
       - name: Generate Artifacts
         if: '!cancelled()'
         uses: actions/upload-artifact@v4
         with:
-          name: blade-linux-${{ github.run_id }}
-          path: ${{github.workspace}}/blade
+          name: zuri-linux-${{ github.run_id }}
+          path: ${{github.workspace}}/zuri
   
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
@@ -60,15 +60,15 @@ jobs:
           sudo apt-get install curl libpthread-stubs0-dev libcurl4-openssl-dev libgd-dev libavif-dev libffi-dev -y
           cmake -B .
           cmake --build . -- -j 12
-          chmod +x blade/blade
+          chmod +x zuri/zuri
       - name: Test
         run: ctest --rerun-failed --output-on-failure
       - name: Generate Artifacts
         if: '!cancelled()'
         uses: actions/upload-artifact@v4
         with:
-          name: blade-linux-arm-${{ github.run_id }}
-          path: ${{github.workspace}}/blade
+          name: zuri-linux-arm-${{ github.run_id }}
+          path: ${{github.workspace}}/zuri
 
   build-macos:
     runs-on: macos-14
@@ -87,15 +87,15 @@ jobs:
         run: |
           cmake -B . -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl
           cmake --build . -- -j 12
-          chmod 755 blade/blade
+          chmod 755 zuri/zuri
       - name: Test
         run: ctest --rerun-failed --output-on-failure
       - name: Generate Artifacts
         if: '!cancelled()'
         uses: actions/upload-artifact@v4
         with:
-          name: blade-macos-${{ github.run_id }}
-          path: ${{github.workspace}}/blade
+          name: zuri-macos-${{ github.run_id }}
+          path: ${{github.workspace}}/zuri
 
   build-windows:
     runs-on: windows-latest
@@ -131,5 +131,5 @@ jobs:
         if: '!cancelled()'
         uses: actions/upload-artifact@v4
         with:
-          name: blade-windows-default-${{ github.run_id }}
-          path: ${{github.workspace}}/blade
+          name: zuri-windows-default-${{ github.run_id }}
+          path: ${{github.workspace}}/zuri

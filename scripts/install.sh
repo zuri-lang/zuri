@@ -21,7 +21,7 @@ OS="$(uname)"
 if [[ "${OS}" == "Linux" ]]; then
   IS_LINUX=1
 elif [[ "${OS}" != "Darwin" ]]; then
-  abort "Blade auto install is only supported on macOS and Linux."
+  abort "Zuri auto install is only supported on macOS and Linux."
 fi
 
 install_if_missing() {
@@ -113,13 +113,13 @@ remove_redundant_libraries() {
   fi
 }
 
-install_blade() {
+install_zuri() {
   if [[ -d "$1" ]]; then
     sudo mkdir -p "$1"
   fi
 
 	# removing old/stale/partial objects
-	STALE_PATHS=("$(pwd)/blade" "$1/.blade")
+	STALE_PATHS=("$(pwd)/zuri" "$1/.zuri")
 	for path in "${STALE_PATHS[@]}"
 	do
 	  if [[ -d "$path" ]]; then
@@ -129,9 +129,9 @@ install_blade() {
   done
 
 	# cloning
-	git clone https://github.com/blade-lang/blade.git
+	git clone https://github.com/zuri-lang/zuri.git
 #	git checkout v0.0.86
-	cd blade || exit
+	cd zuri || exit
 
 	# building
 	if [[ "${OS}" == "Darwin" ]]; then
@@ -141,19 +141,19 @@ install_blade() {
   fi
 	cmake --build . -- -j 16 || exit
 
-	# We are copying to .blade here instead of just moving it to
-	# blade directly in case the user runs this script from the
+	# We are copying to .zuri here instead of just moving it to
+	# zuri directly in case the user runs this script from the
 	# home directory.
-	cp -r blade "$1/.blade"
+	cp -r zuri "$1/.zuri"
 
 	cd ..
-	sudo rm -rf blade
+	sudo rm -rf zuri
 
-  ADD_TO_PATH="export PATH=\$PATH:\"$1/.blade\""
+  ADD_TO_PATH="export PATH=\$PATH:\"$1/.zuri\""
 
 	if ! grep -q "$ADD_TO_PATH" "$PROFILE_FILE"; then
-    # Now add the blade executable to path
-    echo "Adding Blade to path..."
+    # Now add the zuri executable to path
+    echo "Adding Zuri to path..."
 
     # export to bash profile
     echo "$ADD_TO_PATH" | sudo tee -a "$PROFILE_FILE" > /dev/null
@@ -162,10 +162,10 @@ install_blade() {
     exec "$SHELL" -l;
   fi
 
-  echo "Blade installed successfully!"
+  echo "Zuri installed successfully!"
 }
 
-echo "Beginning installation of Blade..."
+echo "Beginning installation of Zuri..."
 
 install_build_env
 remove_redundant_libraries
@@ -196,7 +196,7 @@ fi
 install_if_missing 'cmake'
 
 if [[ "${OS}" == "Darwin" ]]; then
-  install_blade "/Users/$USER"
+  install_zuri "/Users/$USER"
 else
-  install_blade "/home/$USER"
+  install_zuri "/home/$USER"
 fi

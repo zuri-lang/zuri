@@ -4,7 +4,7 @@
  * This module provides extra data conversion features between non-standard 
  * object types as well as different number bases.
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import math

@@ -82,7 +82,7 @@ def normalize_link_text(uri) {
  *
  * ##### Usage
  *
- * ```blade
+ * ```zuri
  * import markdown
  * 
  * var md = markdown()
@@ -91,7 +91,7 @@ def normalize_link_text(uri) {
  *
  * Single line rendering, without paragraph wrap:
  *
- * ```blade
+ * ```zuri
  * import markdown
  * 
  * var md = markdown()
@@ -136,7 +136,7 @@ class Markdown {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown
    * var md = markdown()
    *
@@ -148,7 +148,7 @@ class Markdown {
    * md.renderer.rules['my_token'] = my_token
    * ```
    *
-   * See [[markdown.Renderer]] docs and [source code](https://github.com/blade-lang/blade/blob/master/libs/markdown/renderer.b).
+   * See [[markdown.Renderer]] docs and [source code](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/renderer.b).
    * 
    * @type Renderer
    */
@@ -161,7 +161,7 @@ class Markdown {
    *
    * You can change this behaviour:
    *
-   * ```blade
+   * ```zuri
    * import markdown
    * var md = markdown()
    * 
@@ -196,7 +196,7 @@ class Markdown {
 
   /**
    * Assorted utility functions, useful to write plugins. See details
-   * [here](https://github.com/blade-lang/blade/blob/master/libs/markdown/common/utils.b).
+   * [here](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/common/utils.b).
    * 
    * @type module
    */
@@ -204,7 +204,7 @@ class Markdown {
 
   /**
    * Link components parser functions, useful to write plugins. See details
-   * [here](https://github.com/blade-lang/blade/blob/master/libs/markdown/helpers).
+   * [here](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/helpers).
    * 
    * @type dict
    */
@@ -241,7 +241,7 @@ class Markdown {
    *   Can be useful for external highlighters.
    * - __linkify__ - `false`. Set `true` to auto convert URL-like text to links.
    * - __typographer__  - `false`. Set `true` to enable [some language-neutral
-   *   replacement](https://github.com/blade-lang/blade/blob/master/libs/markdown/rules_core/replacements.b) +
+   *   replacement](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/rules_core/replacements.b) +
    *   quotes beautification (smart quotes).
    * - __quotes__ - `“”‘’`, String or Array. Double + single quotes replacement
    *   pairs, when typographer enabled and smart quotes on. For example, you can
@@ -254,7 +254,7 @@ class Markdown {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown
    * # commonmark mode
    * var md = markdown('commonmark')
@@ -272,7 +272,7 @@ class Markdown {
    *
    * ##### Syntax highlighting
    *
-   * ```blade
+   * ```zuri
    * var md = markdown({
    *   highlight: @(str, lang) {
    *     if lang and get_language(lang) {
@@ -286,7 +286,7 @@ class Markdown {
    *
    * Or with full wrapper override (if you need assign class to `<pre>`):
    *
-   * ```blade
+   * ```zuri
    * # Actual default values
    * var md = markdown({
    *   highlight: @(str, lang) {
@@ -329,7 +329,7 @@ class Markdown {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown
    * var md = markdown().
    *     set({ html: true, breaks: true }).
@@ -351,7 +351,7 @@ class Markdown {
   /**
    * Batch load of all options and component settings. This is internal method,
    * and you probably will not need it. But if you will - see available presets
-   * and data structure [here](https://github.com/blade-lang/blade/tree/master/libs/markdown/presets)
+   * and data structure [here](https://github.com/zuri-lang/zuri/tree/master/libs/markdown/presets)
    *
    * We strongly recommend to use presets instead of direct config loads. That
    * will give better compatibility with standard versions.
@@ -393,7 +393,7 @@ class Markdown {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown
    * var md = markdown().
    *    enable(['sub', 'sup']).
@@ -459,7 +459,7 @@ class Markdown {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown
    * import .markdown_custom_inline
    * 

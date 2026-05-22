@@ -1,4 +1,4 @@
-#include "bstring.h"
+#include "zstring.h"
 #include "utf8.h"
 #include "native.h"
 #include "debug.h"
@@ -13,7 +13,7 @@
 #endif /* ifndef HAVE_STRSEP */
 
 /**
- * a Blade regex must always start and end with the same delimiter e.g. /
+ * a Zuri regex must always start and end with the same delimiter e.g. /
  *
  * e.g.
  * /\d+/
@@ -31,7 +31,7 @@
  * negative value -> invalid delimiter where abs(value) is the character
  * positive value > 0 ? for compiled delimiters
  */
-int32_t is_regex(b_obj_string *string) {
+int32_t is_regex(z_obj_string *string) {
   char start = string->chars[0];
 
   // must be a valid delimiter
@@ -105,7 +105,7 @@ int32_t is_regex(b_obj_string *string) {
     return c_options;
 }
 
-char *remove_regex_delimiter(b_vm *vm, b_obj_string *string) {
+char *remove_regex_delimiter(z_vm *vm, z_obj_string *string) {
   if (string->length == 0)
     return string->chars;
 
@@ -125,20 +125,20 @@ char *remove_regex_delimiter(b_vm *vm, b_obj_string *string) {
 
 DECLARE_STRING_METHOD(length) {
   ENFORCE_ARG_COUNT(length, 0);
-  b_obj_string* string = AS_STRING(METHOD_OBJECT);
+  z_obj_string* string = AS_STRING(METHOD_OBJECT);
   RETURN_NUMBER(string->is_ascii ? string->length : string->utf8_length);
 }
 
 DECLARE_STRING_METHOD(upper) {
   ENFORCE_ARG_COUNT(upper, 0);
-  b_obj_string *str = AS_STRING(METHOD_OBJECT);
+  z_obj_string *str = AS_STRING(METHOD_OBJECT);
   char *string = utf8_toupper(str->chars, str->utf8_length);
   RETURN_TT_STRING(string);
 }
 
 DECLARE_STRING_METHOD(lower) {
   ENFORCE_ARG_COUNT(lower, 0);
-  b_obj_string *str = AS_STRING(METHOD_OBJECT);
+  z_obj_string *str = AS_STRING(METHOD_OBJECT);
   char *string = utf8_tolower(str->chars, str->utf8_length);
   RETURN_TT_STRING(string);
 }
@@ -152,7 +152,7 @@ DECLARE_STRING_METHOD(case_fold) {
     is_full = AS_BOOL(args[0]);
   }
 
-  b_obj_string *str = AS_STRING(METHOD_OBJECT);
+  z_obj_string *str = AS_STRING(METHOD_OBJECT);
   size_t out_length;
   char *string = utf8_case_fold(str->chars, str->utf8_length, !is_full, &out_length);
   RETURN_T_STRING(string, out_length);
@@ -160,7 +160,7 @@ DECLARE_STRING_METHOD(case_fold) {
 
 DECLARE_STRING_METHOD(is_alpha) {
   ENFORCE_ARG_COUNT(is_alpha, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   for (int i = 0; i < string->length; i++) {
     if (!isalpha((unsigned char) string->chars[i])) {
       RETURN_FALSE;
@@ -171,7 +171,7 @@ DECLARE_STRING_METHOD(is_alpha) {
 
 DECLARE_STRING_METHOD(is_alnum) {
   ENFORCE_ARG_COUNT(is_alnum, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   for (int i = 0; i < string->length; i++) {
     if (!isalnum((unsigned char) string->chars[i])) {
       RETURN_FALSE;
@@ -182,7 +182,7 @@ DECLARE_STRING_METHOD(is_alnum) {
 
 DECLARE_STRING_METHOD(is_number) {
   ENFORCE_ARG_COUNT(is_number, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   for (int i = 0; i < string->length; i++) {
     if (!isdigit((unsigned char) string->chars[i])) {
       RETURN_FALSE;
@@ -193,7 +193,7 @@ DECLARE_STRING_METHOD(is_number) {
 
 DECLARE_STRING_METHOD(is_lower) {
   ENFORCE_ARG_COUNT(is_lower, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   bool alpha_found = false;
 
   if(!string->is_ascii) {
@@ -221,7 +221,7 @@ DECLARE_STRING_METHOD(is_lower) {
 
 DECLARE_STRING_METHOD(is_upper) {
   ENFORCE_ARG_COUNT(is_upper, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   bool alpha_found = false;
 
   if(!string->is_ascii) {
@@ -249,7 +249,7 @@ DECLARE_STRING_METHOD(is_upper) {
 
 DECLARE_STRING_METHOD(is_space) {
   ENFORCE_ARG_COUNT(is_space, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   for (int i = 0; i < string->length; i++) {
     if (!isspace((unsigned char) string->chars[i])) {
       RETURN_FALSE;
@@ -362,8 +362,8 @@ DECLARE_STRING_METHOD(join) {
   ENFORCE_ARG_COUNT(join, 1);
   ENFORCE_ARG_TYPE(join, 0, IS_OBJ);
 
-  b_obj_string *method_obj = AS_STRING(METHOD_OBJECT);
-  b_value argument = args[0];
+  z_obj_string *method_obj = AS_STRING(METHOD_OBJECT);
+  z_value argument = args[0];
   int length = 0;
   char **array = NULL;
 
@@ -373,7 +373,7 @@ DECLARE_STRING_METHOD(join) {
       RETURN_VALUE(argument);
     }
 
-    b_obj_string *string = AS_STRING(argument);
+    z_obj_string *string = AS_STRING(argument);
 
     char *result = ALLOCATE(char, 2);
     result[0] = string->chars[0];
@@ -389,7 +389,7 @@ DECLARE_STRING_METHOD(join) {
 
     RETURN_TT_STRING(result);
   } else if (IS_LIST(argument) || IS_DICT(argument)) {
-    b_value *list;
+    z_value *list;
     int count = 0;
     if (IS_DICT(argument)) {
       list = AS_DICT(argument)->names.values;
@@ -403,7 +403,7 @@ DECLARE_STRING_METHOD(join) {
       RETURN_STRING("");
     }
 
-    b_obj_string *_str = value_to_string(vm, list[0]);
+    z_obj_string *_str = value_to_string(vm, list[0]);
     char *result = strdup(_str->chars);
     int result_length = _str->length;
 
@@ -413,7 +413,7 @@ DECLARE_STRING_METHOD(join) {
         result_length += method_obj->length;
       }
 
-      b_obj_string *str = value_to_string(vm, list[i]);
+      z_obj_string *str = value_to_string(vm, list[i]);
       result = append_strings_n(result, str->chars, str->length);
       result_length += str->length;
     }
@@ -427,8 +427,8 @@ DECLARE_STRING_METHOD(join) {
 DECLARE_STRING_METHOD(index_of) {
   ENFORCE_ARG_RANGE(index_of, 1, 2);
   ENFORCE_ARG_TYPE(index_of, 0, IS_STRING);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *needle = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *needle = AS_STRING(args[0]);
   int start_index = 0;
   if(arg_count == 2) {
     ENFORCE_ARG_TYPE(index_of, 1, IS_NUMBER);
@@ -459,8 +459,8 @@ DECLARE_STRING_METHOD(starts_with) {
   ENFORCE_ARG_COUNT(starts_with, 1);
   ENFORCE_ARG_TYPE(starts_with, 0, IS_STRING);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *substr = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *substr = AS_STRING(args[0]);
 
   if (string->length == 0 || substr->length == 0 ||
       substr->length > string->length) RETURN_FALSE;
@@ -472,8 +472,8 @@ DECLARE_STRING_METHOD(ends_with) {
   ENFORCE_ARG_COUNT(ends_with, 1);
   ENFORCE_ARG_TYPE(ends_with, 0, IS_STRING);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *substr = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *substr = AS_STRING(args[0]);
 
   if (string->length == 0 || substr->length == 0 ||
       substr->length > string->length) RETURN_FALSE;
@@ -487,8 +487,8 @@ DECLARE_STRING_METHOD(count) {
   ENFORCE_ARG_COUNT(count, 1);
   ENFORCE_ARG_TYPE(count, 0, IS_STRING);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *substr = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *substr = AS_STRING(args[0]);
 
   if (substr->length == 0 || string->length == 0) RETURN_NUMBER(0);
 
@@ -514,15 +514,15 @@ DECLARE_STRING_METHOD(ascii) {
     ENFORCE_ARG_TYPE(ascii, 0, IS_BOOL);
     is_ascii = AS_BOOL(args[0]);
   }
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   string->is_ascii = is_ascii;
   RETURN_OBJ(string);
 }
 
 DECLARE_STRING_METHOD(to_list) {
   ENFORCE_ARG_COUNT(to_list, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_list *list = (z_obj_list *) GC(new_list(vm));
   int length = string->is_ascii ? string->length : string->utf8_length;
 
   if (length > 0) {
@@ -543,7 +543,7 @@ DECLARE_STRING_METHOD(lpad) {
   ENFORCE_ARG_RANGE(lpad, 1, 2);
   ENFORCE_ARG_TYPE(lpad, 0, IS_NUMBER);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   int width = AS_NUMBER(args[0]);
   char fill_char = ' ';
 
@@ -569,7 +569,7 @@ DECLARE_STRING_METHOD(lpad) {
   str[final_size] = '\0';
   FREE_ARRAY(char, fill, fill_size + 1);
 
-  b_obj_string *result = take_string(vm, str, final_size);
+  z_obj_string *result = take_string(vm, str, final_size);
   result->utf8_length = final_utf8_size;
   result->length = final_size;
   RETURN_OBJ(result);
@@ -579,7 +579,7 @@ DECLARE_STRING_METHOD(rpad) {
   ENFORCE_ARG_RANGE(rpad, 1, 2);
   ENFORCE_ARG_TYPE(rpad, 0, IS_NUMBER);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   int width = AS_NUMBER(args[0]);
   char fill_char = ' ';
 
@@ -605,7 +605,7 @@ DECLARE_STRING_METHOD(rpad) {
   str[final_size] = '\0';
   FREE_ARRAY(char, fill, fill_size + 1);
 
-  b_obj_string *result = take_string(vm, str, final_size);
+  z_obj_string *result = take_string(vm, str, final_size);
   result->utf8_length = final_utf8_size;
   result->length = final_size;
   RETURN_OBJ(result);
@@ -620,8 +620,8 @@ DECLARE_STRING_METHOD(match) {
     start_offset = (PCRE2_SIZE)AS_NUMBER(args[1]);
   }
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *substr = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *substr = AS_STRING(args[0]);
 
   if (string->length == 0 && substr->length == 0) {
     RETURN_TRUE;
@@ -670,7 +670,7 @@ DECLARE_STRING_METHOD(match) {
   PCRE2_SIZE *o_vector = pcre2_get_ovector_pointer(match_data);
   uint32_t name_count;
 
-  b_obj_dict *result = (b_obj_dict *) GC(new_dict(vm));
+  z_obj_dict *result = (z_obj_dict *) GC(new_dict(vm));
   (void) pcre2_pattern_info(re, PCRE2_INFO_NAMECOUNT, &name_count);
 
   for (int i = 0; i < rc; i++) {
@@ -719,8 +719,8 @@ DECLARE_STRING_METHOD(matches) {
     start_offset = (PCRE2_SIZE)AS_NUMBER(args[1]);
   }
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *substr = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *substr = AS_STRING(args[0]);
 
   if (string->length == 0 && substr->length == 0) {
     RETURN_OBJ(new_list(vm)); // empty string matches empty string to empty list
@@ -777,7 +777,7 @@ DECLARE_STRING_METHOD(matches) {
   (void) pcre2_pattern_info(re, PCRE2_INFO_NAMECOUNT, &name_count);
   (void) pcre2_pattern_info(re, PCRE2_INFO_CAPTURECOUNT, &group_count);
 
-  b_obj_dict *result = (b_obj_dict *) GC(new_dict(vm));
+  z_obj_dict *result = (z_obj_dict *) GC(new_dict(vm));
 
   /*for (int i = 0; i < rc; i++) {
     dict_set_entry(vm, result, NUMBER_VAL(i), NIL_VAL);
@@ -785,7 +785,7 @@ DECLARE_STRING_METHOD(matches) {
 
   // add first set of matches to response
   for (int i = 0; i < rc; i++) {
-    b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+    z_obj_list *list = (z_obj_list *) GC(new_list(vm));
     PCRE2_SIZE substring_length = o_vector[2 * i + 1] - o_vector[2 * i];
     PCRE2_SPTR substring_start = subject + o_vector[2 * i];
     write_list(vm, list, STRING_L_VAL((char *) substring_start, (int) substring_length));
@@ -810,7 +810,7 @@ DECLARE_STRING_METHOD(matches) {
       char* _value = (char *)(subject + o_vector[2 * n]);
       while(_key[key_length - 1] == 0) key_length--;
 
-      b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+      z_obj_list *list = (z_obj_list *) GC(new_list(vm));
       write_list(vm, list, STRING_L_VAL(_value, value_length));
       dict_set_entry(vm, result, GC_L_STRING(_key, key_length), OBJ_VAL(list));
 
@@ -886,11 +886,11 @@ DECLARE_STRING_METHOD(matches) {
       PCRE2_SIZE substring_length = o_vector[2 * i + 1] - o_vector[2 * i];
       PCRE2_SPTR substring_start = subject + o_vector[2 * i];
 
-      b_value vlist;
+      z_value vlist;
       if (dict_get_entry(result, NUMBER_VAL(i), &vlist)) {
         write_list(vm, AS_LIST(vlist), STRING_L_VAL((char *) substring_start, (int) substring_length));
       } else {
-        b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+        z_obj_list *list = (z_obj_list *) GC(new_list(vm));
         write_list(vm, list, STRING_L_VAL((char *) substring_start, (int) substring_length));
         dict_set_entry(vm, result, NUMBER_VAL(i), OBJ_VAL(list));
       }
@@ -916,14 +916,14 @@ DECLARE_STRING_METHOD(matches) {
           if(_key[j] == 0) key_length--;
         }
 
-        b_obj_string *name = (b_obj_string *) AS_OBJ(GC_L_STRING(_key, key_length));
-        b_obj_string *value = (b_obj_string *) AS_OBJ(GC_L_STRING(_value, value_length));
+        z_obj_string *name = (z_obj_string *) AS_OBJ(GC_L_STRING(_key, key_length));
+        z_obj_string *value = (z_obj_string *) AS_OBJ(GC_L_STRING(_value, value_length));
 
-        b_value nlist;
+        z_value nlist;
         if (dict_get_entry(result, OBJ_VAL(name), &nlist)) {
           write_list(vm, AS_LIST(nlist), OBJ_VAL(value));
         } else {
-          b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+          z_obj_list *list = (z_obj_list *) GC(new_list(vm));
           write_list(vm, list, OBJ_VAL(value));
           dict_set_entry(vm, result, OBJ_VAL(name), OBJ_VAL(list));
         }
@@ -943,8 +943,8 @@ DECLARE_STRING_METHOD(split) {
   ENFORCE_ARG_RANGE(split, 1, 2);
   ENFORCE_ARG_TYPE(split, 0, IS_STRING);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *delimeter = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *delimeter = AS_STRING(args[0]);
   bool use_regex = true;
 
   if(arg_count == 2) {
@@ -956,7 +956,7 @@ DECLARE_STRING_METHOD(split) {
     RETURN_OBJ(new_list(vm)); // empty string matches empty string to empty list
   }
 
-  b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+  z_obj_list *list = (z_obj_list *) GC(new_list(vm));
 
   int32_t compile_options = use_regex ? is_regex(delimeter) : -1;
   if ((int)compile_options == -1) {
@@ -1110,9 +1110,9 @@ DECLARE_STRING_METHOD(replace) {
   ENFORCE_ARG_TYPE(replace, 0, IS_STRING);
   ENFORCE_ARG_TYPE(replace, 1, IS_STRING);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *substr = AS_STRING(args[0]);
-  b_obj_string *rep_substr = AS_STRING(args[1]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *substr = AS_STRING(args[0]);
+  z_obj_string *rep_substr = AS_STRING(args[1]);
   bool use_regex = true;
 
   if(arg_count == 3) {
@@ -1192,7 +1192,7 @@ DECLARE_STRING_METHOD(replace) {
   }
 
   output_buffer[output_length] = 0;
-  b_obj_string *response =
+  z_obj_string *response =
       take_string(vm, (char *) output_buffer, (int) output_length);
 
   pcre2_match_context_free(match_context);
@@ -1209,9 +1209,9 @@ DECLARE_STRING_METHOD(replace_with) {
   ENFORCE_ARG_TYPE(replace_with, 1, IS_CLOSURE);
   PCRE2_SIZE start_offset = 0;
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *pattern_string = AS_STRING(args[0]);
-  b_obj_closure *replacer = AS_CLOSURE(args[1]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *pattern_string = AS_STRING(args[0]);
+  z_obj_closure *replacer = AS_CLOSURE(args[1]);
 
   if (string->length == 0 && pattern_string->length == 0) {
     RETURN_VALUE(METHOD_OBJECT);
@@ -1265,7 +1265,7 @@ DECLARE_STRING_METHOD(replace_with) {
     uint32_t name_count;
     (void) pcre2_pattern_info(re, PCRE2_INFO_NAMECOUNT, &name_count);
 
-    b_obj_list *call_args = (b_obj_list *)GC(new_list(vm));
+    z_obj_list *call_args = (z_obj_list *)GC(new_list(vm));
     int call_args_count = 0;
 
     size_t index = 0, sub_length = 0;
@@ -1320,7 +1320,7 @@ DECLARE_STRING_METHOD(replace_with) {
     }
 
     // call the function
-    b_value call_result = call_closure(vm, replacer, call_args);
+    z_value call_result = call_closure(vm, replacer, call_args);
 
     if(!IS_STRING(call_result)) {
       RETURN_TYPE_ERROR("replace_with() function returned non-string");
@@ -1331,7 +1331,7 @@ DECLARE_STRING_METHOD(replace_with) {
     }
     start_offset = index + sub_length;
 
-    b_obj_string *result_string = AS_STRING(call_result);
+    z_obj_string *result_string = AS_STRING(call_result);
     result = append_strings_n(result, result_string->chars, result_string->length);
   } while(true);
 
@@ -1349,7 +1349,7 @@ DECLARE_STRING_METHOD(replace_with) {
 
 DECLARE_STRING_METHOD(to_bytes) {
   ENFORCE_ARG_COUNT(to_bytes, 0);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
 //  unsigned char* bytes = (unsigned char*) malloc(sizeof(unsigned char) * string->length);
 //  for(int i = 0; i < string->length; i++) {
 //    bytes[i] = (unsigned char)string->chars[i];
@@ -1361,8 +1361,8 @@ DECLARE_STRING_METHOD(to_bytes) {
 DECLARE_STRING_METHOD(compare) {
   ENFORCE_ARG_COUNT(compare, 1);
   ENFORCE_ARG_TYPE(compare, 0, IS_STRING);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
-  b_obj_string *other = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *other = AS_STRING(args[0]);
   RETURN_NUMBER(strcmp(string->chars, other->chars));
 }
 
@@ -1370,7 +1370,7 @@ DECLARE_STRING_METHOD(__iter__) {
   ENFORCE_ARG_COUNT(__iter__, 1);
   ENFORCE_ARG_TYPE(__iter__, 0, IS_NUMBER);
 
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   int length = string->is_ascii ? string->length : string->utf8_length;
   int index = AS_NUMBER(args[0]);
 
@@ -1383,7 +1383,7 @@ DECLARE_STRING_METHOD(__iter__) {
 
       RETURN_L_STRING(string->chars + start, (int) (end - start));
     } else {
-      b_obj_string *result = copy_string(vm, &string->chars[index], 1);
+      z_obj_string *result = copy_string(vm, &string->chars[index], 1);
       result->is_ascii = true;
       RETURN_OBJ(result);
     }
@@ -1394,7 +1394,7 @@ DECLARE_STRING_METHOD(__iter__) {
 
 DECLARE_STRING_METHOD(__itern__) {
   ENFORCE_ARG_COUNT(__itern__, 1);
-  b_obj_string *string = AS_STRING(METHOD_OBJECT);
+  z_obj_string *string = AS_STRING(METHOD_OBJECT);
   int length = string->is_ascii ? string->length : string->utf8_length;
 
   if (IS_NIL(args[0])) {

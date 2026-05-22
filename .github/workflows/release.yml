@@ -24,21 +24,21 @@ jobs:
           cmake --build . -- -j 12
       - name: Create ZIP Archive
         run: |
-          chmod +x blade/blade
-          zip -r9 --symlinks blade_linux.zip blade/
+          chmod +x zuri/zuri
+          zip -r9 --symlinks zuri_linux.zip zuri/
       - name: Generate Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: blade_linux.zip
+          path: zuri_linux.zip
       - name: Upload Artifact to Release
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: blade_linux.zip
-          asset_name: blade-linux-${{ github.event.release.tag_name }}.zip
+          asset_path: zuri_linux.zip
+          asset_name: zuri-linux-${{ github.event.release.tag_name }}.zip
           asset_content_type: application/zip
 
   build-linux-arm:
@@ -59,21 +59,21 @@ jobs:
           cmake --build . -- -j 12
       - name: Create ZIP Archive
         run: |
-          chmod +x blade/blade
-          zip -r9 --symlinks blade_linux-aarch64.zip blade/
+          chmod +x zuri/zuri
+          zip -r9 --symlinks zuri_linux-aarch64.zip zuri/
       - name: Generate Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: blade_linux-aarch64.zip
+          path: zuri_linux-aarch64.zip
       - name: Upload Artifact to Release
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: blade_linux-aarch64.zip
-          asset_name: blade-linux-aarch64-${{ github.event.release.tag_name }}.zip
+          asset_path: zuri_linux-aarch64.zip
+          asset_name: zuri-linux-aarch64-${{ github.event.release.tag_name }}.zip
           asset_content_type: application/zip
 
   build-macos:
@@ -95,21 +95,21 @@ jobs:
           cmake --build .
       - name: Create ZIP Archive
         run: |
-          chmod 755 blade/blade
-          zip -r9 --symlinks blade_macos.zip blade/
+          chmod 755 zuri/zuri
+          zip -r9 --symlinks zuri_macos.zip zuri/
       - name: Generate Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: blade_macos.zip
+          path: zuri_macos.zip
       - name: Upload Artifact to Release
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: blade_macos.zip
-          asset_name: blade-macos-${{ github.event.release.tag_name }}.zip
+          asset_path: zuri_macos.zip
+          asset_name: zuri-macos-${{ github.event.release.tag_name }}.zip
           asset_content_type: application/zip
 
   build-windows:
@@ -143,18 +143,18 @@ jobs:
       - name: Create ZIP Archive
         shell: cmd
         run: |
-          powershell Compress-Archive blade blade_windows.zip
+          powershell Compress-Archive zuri zuri_windows.zip
       - name: Generate Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: blade_windows.zip
+          path: zuri_windows.zip
       - name: Upload Artifact to Release
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: blade_windows.zip
-          asset_name: blade-windows-${{ github.event.release.tag_name }}.zip
+          asset_path: zuri_windows.zip
+          asset_name: zuri-windows-${{ github.event.release.tag_name }}.zip
           asset_content_type: application/zip

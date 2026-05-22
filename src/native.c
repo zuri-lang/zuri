@@ -20,7 +20,7 @@
 #include <basetsd.h>
 #endif
 
-static b_obj_string *bin_to_string(b_vm *vm, long n) {
+static z_obj_string *bin_to_string(z_vm *vm, long n) {
 
   char str[1024]; // assume maximum of 1024 bits
   int count = 0;
@@ -71,14 +71,14 @@ static b_obj_string *bin_to_string(b_vm *vm, long n) {
 //  return copy_string(vm, str, length);
 }
 
-static b_obj_string *number_to_oct(b_vm *vm, long long n, bool numeric) {
+static z_obj_string *number_to_oct(z_vm *vm, long long n, bool numeric) {
   char str[66]; // assume maximum of 64 bits + 2 octal indicators (0c)
   int length = sprintf(str, numeric ? "0c%llo" : "%llo", n);
 
   return copy_string(vm, str, length);
 }
 
-static b_obj_string *number_to_hex(b_vm *vm, long long n, bool numeric) {
+static z_obj_string *number_to_hex(z_vm *vm, long long n, bool numeric) {
   char str[66]; // assume maximum of 64 bits + 2 hex indicators (0x)
   int length = sprintf(str, numeric ? "0x%llx" : "%llx", n);
 
@@ -145,8 +145,8 @@ DECLARE_NATIVE(hasprop) {
   ENFORCE_ARG_TYPE(hasprop, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(hasprop, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
-  b_value dummy;
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_value dummy;
   RETURN_BOOL(table_get(&instance->properties, args[1], &dummy));
 }
 
@@ -162,8 +162,8 @@ DECLARE_NATIVE(getprop) {
   ENFORCE_ARG_TYPE(getprop, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(getprop, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
-  b_value value;
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_value value;
   if(table_get(&instance->properties, args[1], &value) ||
       table_get(&instance->klass->methods, args[1], &value)) {
     RETURN_VALUE(value);
@@ -185,7 +185,7 @@ DECLARE_NATIVE(setprop) {
   ENFORCE_ARG_TYPE(setprop, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(setprop, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
   RETURN_BOOL(table_set(vm, &instance->properties, args[1], args[2]));
 }
 
@@ -200,7 +200,7 @@ DECLARE_NATIVE(delprop) {
   ENFORCE_ARG_TYPE(delprop, 0, IS_INSTANCE);
   ENFORCE_ARG_TYPE(delprop, 1, IS_STRING);
 
-  b_obj_instance *instance = AS_INSTANCE(args[0]);
+  z_obj_instance *instance = AS_INSTANCE(args[0]);
   RETURN_BOOL(table_delete(&instance->properties, args[1]));
 }
 
@@ -408,7 +408,7 @@ DECLARE_NATIVE(to_number) {
     RETURN_NUMBER(-1);
   }
 
-  b_obj_string *v_string = value_to_string(vm, args[0]);
+  z_obj_string *v_string = value_to_string(vm, args[0]);
   const char *v = (const char *) v_string->chars;
   int length = v_string->length;
 
@@ -466,22 +466,22 @@ DECLARE_NATIVE(to_list) {
     RETURN_VALUE(args[0]);
   }
 
-  b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+  z_obj_list *list = (z_obj_list *) GC(new_list(vm));
 
   if (IS_DICT(args[0])) {
-    b_obj_dict *dict = AS_DICT(args[0]);
+    z_obj_dict *dict = AS_DICT(args[0]);
     for (int i = 0; i < dict->names.count; i++) {
-      b_obj_list *n_list = (b_obj_list *) GC(new_list(vm));
+      z_obj_list *n_list = (z_obj_list *) GC(new_list(vm));
       write_value_arr(vm, &n_list->items, dict->names.values[i]);
 
-      b_value value;
+      z_value value;
       table_get(&dict->items, dict->names.values[i], &value);
       write_value_arr(vm, &n_list->items, value);
 
       write_value_arr(vm, &list->items, OBJ_VAL(n_list));
     }
   } else if(IS_STRING(args[0])) {
-    b_obj_string *str = AS_STRING(args[0]);
+    z_obj_string *str = AS_STRING(args[0]);
     for(int i = 0; i < str->utf8_length; i++) {
       int start = i, end = i + 1;
       utf8slice(str->chars, &start, &end);
@@ -489,7 +489,7 @@ DECLARE_NATIVE(to_list) {
       write_list(vm, list, STRING_L_VAL(str->chars + start, (int) (end - start)));
     }
   } else if(IS_RANGE(args[0])) {
-    b_obj_range *range = AS_RANGE(args[0]);
+    z_obj_range *range = AS_RANGE(args[0]);
     if(range->upper > range->lower) {
       for(int i = range->lower; i < range->upper; i++) {
         write_list(vm, list, NUMBER_VAL(i));
@@ -522,7 +522,7 @@ DECLARE_NATIVE(to_dict) {
     RETURN_VALUE(args[0]);
   }
 
-  b_obj_dict *dict = (b_obj_dict *) GC(new_dict(vm));
+  z_obj_dict *dict = (z_obj_dict *) GC(new_dict(vm));
   dict_set_entry(vm, dict, NUMBER_VAL(0), args[0]);
 
   RETURN_OBJ(dict);
@@ -549,7 +549,7 @@ DECLARE_NATIVE(chr) {
 DECLARE_NATIVE(ord) {
   ENFORCE_ARG_COUNT(ord, 1);
   ENFORCE_ARG_TYPE(ord, 0, IS_STRING);
-  b_obj_string *string = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(args[0]);
 
   int length = string->is_ascii ? string->length : string->utf8_length;
   if (length > 1) {
@@ -769,8 +769,8 @@ DECLARE_NATIVE(is_iterable) {
   ENFORCE_ARG_COUNT(is_iterable, 1);
   bool is_iterable = IS_LIST(args[0]) || IS_DICT(args[0]) || IS_STRING(args[0]) || IS_BYTES(args[0]);
   if(!is_iterable && IS_INSTANCE(args[0])) {
-      b_obj_class *klass = AS_INSTANCE(args[0])->klass;
-      b_value dummy;
+      z_obj_class *klass = AS_INSTANCE(args[0])->klass;
+      z_value dummy;
       is_iterable = table_get(&klass->methods, STRING_VAL("@iter"), &dummy)
               && table_get(&klass->methods, STRING_VAL("@itern"), &dummy);
   }
@@ -836,10 +836,10 @@ DECLARE_NATIVE(print) {
         vm->is_repl ? "%.*s\n" : "%.*s"
       ) : "%.*s ";
 
-    b_value value = args[i];
+    z_value value = args[i];
 
     while(IS_INSTANCE(value)) {
-      b_value closure;
+      z_value closure;
       if(table_get(&AS_INSTANCE(value)->klass->methods, STRING_L_VAL("@to_string", 10), &closure)) {
         value = raw_closure_call(vm, AS_CLOSURE(closure), NULL, false);
       }
@@ -848,7 +848,7 @@ DECLARE_NATIVE(print) {
       break;
     }
 
-    b_obj_string *val = value_to_string(vm, value);
+    z_obj_string *val = value_to_string(vm, value);
     printf(format, val->length, val->chars);
   }
   RETURN;

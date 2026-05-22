@@ -1,5 +1,5 @@
-#ifndef BLADE_MEMORY_H
-#define BLADE_MEMORY_H
+#ifndef ZURI_MEMORY_H
+#define ZURI_MEMORY_H
 
 #include "common.h"
 #include "vm.h"
@@ -24,20 +24,20 @@
 #define N_ALLOCATE(type, count)                                                  \
   (type *)allocate(vm, (count))
 
-void *allocate(b_vm *vm, size_t size);
-void *c_allocate(b_vm *vm, size_t size, size_t length);
-void *reallocate(b_vm *vm, void *pointer, size_t old_size, size_t new_size);
+void *allocate(z_vm *vm, size_t size);
+void *c_allocate(z_vm *vm, size_t size, size_t length);
+void *reallocate(z_vm *vm, void *pointer, size_t old_size, size_t new_size);
 
-void free_object(b_vm *vm, b_obj *object);
-void free_objects(b_vm *vm);
+void free_object(z_vm *vm, z_obj *object);
+void free_objects(z_vm *vm);
 
-void mark_object(b_vm *vm, b_obj *object);
+void mark_object(z_vm *vm, z_obj *object);
 
-void mark_value(b_vm *vm, b_value value);
+void mark_value(z_vm *vm, z_value value);
 
-void collect_garbage(b_vm *vm);
+void collect_garbage(z_vm *vm);
 
-void blacken_object(b_vm *vm, b_obj *object);
+void blacken_object(z_vm *vm, z_obj *object);
 
 #define OUT_OF_MEMORY() fflush(stdout); \
   fprintf(stderr, "Exit: device out of memory\n"); \

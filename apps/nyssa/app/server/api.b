@@ -79,9 +79,9 @@ def create_package(req, res) {
     if !name or !version or !config or !source
       return res.fail(status.BAD_REQUEST)
 
-    # disallow creating a package named blade to avoid cli destruction
+    # disallow creating a package named zuri to avoid cli destruction
     # when doing a global installation.
-    if name.lower() == 'blade'
+    if name.lower() == 'zuri'
       return res.fail(status.BAD_REQUEST)
 
     config = json.decode(config)

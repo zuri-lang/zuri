@@ -1,7 +1,7 @@
 /**
  * @module clib
  *
- * The `clib` module exposes Blade capabilities to interact with C
+ * The `clib` module exposes Zuri capabilities to interact with C
  * shared libraries. The workflow follows a simple approach.
  *
  * - Load the library
@@ -13,7 +13,7 @@
  * For example, the following code `dirname()` and `cos()` function from the
  * standard C library on a Unix machine (Linux, OSX, FreeBSD etc).
  *
- * ```blade
+ * ```zuri
  * # Import clib
  * import clib
  *
@@ -40,7 +40,7 @@
  * > **NOT YET SUPPORTED:**
  * > - Variadic functions
  *
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import .types { * }
@@ -137,7 +137,7 @@ class Clib {
    * 
    * E.g.
    * 
-   * ```blade
+   * ```zuri
    * define('myfunc', int, int, ptr)
    * ```
    * 
@@ -292,7 +292,7 @@ def set_ptr_index(pointer, type, index, value) {
  * 
  * E.g.
  * 
- * ```blade
+ * ```zuri
  * function_handle(my_ptr, int, int, ptr)
  * ```
  * 
@@ -335,23 +335,23 @@ def function_handle(handle, return_type, ...) {
  * ```
  * 
  * To pass the callback (second parameter) to this function, you'll need to 
- * wrap a blade function with `create_callback()` to properly define the 
+ * wrap a zuri function with `create_callback()` to properly define the
  * callback return type and parameters.
  * 
  * The above function can be defined as:
  * 
- * ```blade
+ * ```zuri
  * var fn lib.define('ex_puts', clib.void, clib.char_ptr, clib.function)
  * ```
  * 
- * To call this function and pass a Blade function that can be called when C 
+ * To call this function and pass a Zuri function that can be called when C
  * triggers the callback, the second argument to the function will need to be 
  * wrapped in `create_callback()`. Thus, the above function can be called 
  * like this:
  * 
- * ```blade
+ * ```zuri
  * fn(
- *    'Blade Callbacks', 
+ *    'Zuri Callbacks',
  *    clib.create_callback(
  *      @(req, res) {
  *        echo 'Request is: ' + req

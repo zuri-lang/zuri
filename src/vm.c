@@ -12,7 +12,7 @@
 #include "dict.h"
 #include "file.h"
 #include "list.h"
-#include "bstring.h"
+#include "zstring.h"
 #include "range.h"
 
 #include <math.h>
@@ -26,24 +26,24 @@
 
 #define ERR_CANT_ASSIGN_EMPTY "empty cannot be assigned."
 
-static inline void reset_stack(b_vm *vm) {
+static inline void reset_stack(z_vm *vm) {
   vm->stack_top = vm->stack;
   vm->frame_count = 0;
   vm->error_count = 0;
   vm->open_up_values = NULL;
 }
 
-static b_value get_stack_trace(b_vm *vm) {
+static z_value get_stack_trace(z_vm *vm) {
   char *trace = calloc(0, sizeof(char));
 
   if (trace != NULL) {
 
     for (int i = vm->frame_count - 1; i >= 0; i--) {
-      b_call_frame *frame = &vm->frames[i];
+      z_call_frame *frame = &vm->frames[i];
       if (frame == NULL || frame->closure == NULL || frame->closure->function == NULL) {
         continue;
       }
-      b_obj_func *function = frame->closure->function;
+      z_obj_func *function = frame->closure->function;
 
       // -1 because the IP is sitting on the next instruction to be executed
       size_t instruction = frame->ip - function->blob.code - 1;
@@ -71,16 +71,16 @@ static b_value get_stack_trace(b_vm *vm) {
   return STRING_L_VAL("", 0);
 }
 
-bool print_exception(b_vm *vm, b_obj_instance *exception, bool is_assert) {
+bool print_exception(z_vm *vm, z_obj_instance *exception, bool is_assert) {
   if(vm->error_count > 0) {
-    b_error_frame *error = peek_error(vm);
+    z_error_frame *error = peek_error(vm);
     error->value = OBJ_VAL(exception);
     return true;
   }
 
   fflush(stdout); // flush out anything on stdout first
 
-  b_value message, trace;
+  z_value message, trace;
   if(!is_assert) {
     fprintf(stderr, "Unhandled %s", exception->klass->name->chars);
   } else {
@@ -108,7 +108,7 @@ bool print_exception(b_vm *vm, b_obj_instance *exception, bool is_assert) {
   return false;
 }
 
-bool do_throw_exception(b_vm *vm, const char *type, bool is_assert, const char *format, ...) {
+bool do_throw_exception(z_vm *vm, const char *type, bool is_assert, const char *format, ...) {
 
   va_list args;
   va_start(args, format);
@@ -116,10 +116,10 @@ bool do_throw_exception(b_vm *vm, const char *type, bool is_assert, const char *
   int length = vasprintf(&message, format, args);
   va_end(args);
 
-  b_obj_instance *instance = create_exception(vm, type, take_string(vm, message, length));
+  z_obj_instance *instance = create_exception(vm, type, take_string(vm, message, length));
   push(vm, OBJ_VAL(instance));
 
-  b_value stacktrace = get_stack_trace(vm);
+  z_value stacktrace = get_stack_trace(vm);
   push(vm, stacktrace);
   table_set(vm, &instance->properties, STRING_L_VAL("stacktrace", 10), stacktrace);
   table_set(vm, &instance->properties, STRING_L_VAL("type", 4),
@@ -132,7 +132,7 @@ bool do_throw_exception(b_vm *vm, const char *type, bool is_assert, const char *
   bool return_val = print_exception(vm, instance, is_assert);
   if(return_val) {
     // switch context immediately to the catch block
-    b_error_frame *error = peek_error(vm);
+    z_error_frame *error = peek_error(vm);
     vm->frame_count -= vm->current_frame - error->frame;
     vm->current_frame = error->frame;
     vm->current_frame->ip = &error->frame->closure->function->blob.code[error->offset];
@@ -142,10 +142,10 @@ bool do_throw_exception(b_vm *vm, const char *type, bool is_assert, const char *
   return return_val;
 }
 
-static void new_exception_class(b_vm * vm, b_obj_class *superclass, const char *name, int name_length) {
-  b_obj_string *class_name = copy_string(vm, name, name_length);
+static void new_exception_class(z_vm * vm, z_obj_class *superclass, const char *name, int name_length) {
+  z_obj_string *class_name = copy_string(vm, name, name_length);
   push(vm, OBJ_VAL(class_name));
-  b_obj_class *klass = new_class(vm, class_name);
+  z_obj_class *klass = new_class(vm, class_name);
   push(vm, OBJ_VAL(klass));
   klass->initializer = superclass->initializer;
   klass->superclass = superclass;
@@ -153,15 +153,15 @@ static void new_exception_class(b_vm * vm, b_obj_class *superclass, const char *
   pop_n(vm, 2);
 }
 
-static void initialize_exceptions(b_vm *vm, b_obj_module *module) {
-  b_obj_string *class_name = copy_string(vm, "Exception", 9);
+static void initialize_exceptions(z_vm *vm, z_obj_module *module) {
+  z_obj_string *class_name = copy_string(vm, "Exception", 9);
 
   push(vm, OBJ_VAL(class_name));
-  b_obj_class *klass = new_class(vm, class_name);
+  z_obj_class *klass = new_class(vm, class_name);
   pop(vm);
 
   push(vm, OBJ_VAL(klass));
-  b_obj_func *function = new_function(vm, module, TYPE_METHOD);
+  z_obj_func *function = new_function(vm, module, TYPE_METHOD);
 
   function->arity = 1;
   function->is_variadic = false;
@@ -191,7 +191,7 @@ static void initialize_exceptions(b_vm *vm, b_obj_module *module) {
   // ret
   write_blob(vm, &function->blob, OP_RETURN, 0);
 
-  b_obj_closure *closure = new_closure(vm, function);
+  z_obj_closure *closure = new_closure(vm, function);
   pop(vm);
 
   // set class constructor
@@ -223,11 +223,11 @@ static void initialize_exceptions(b_vm *vm, b_obj_module *module) {
   new_exception_class(vm, klass, "UndefinedError", 14);
 }
 
-static b_obj_class *get_exception(b_vm *vm, const char *name) {
+static z_obj_class *get_exception(z_vm *vm, const char *name) {
   if(!name) {
     return vm->exception_class;
   } else {
-    b_value exception_class;
+    z_value exception_class;
     if(table_get(&vm->globals, STRING_VAL(name), &exception_class)) {
       if(IS_CLASS(exception_class)) {
         return AS_CLASS(exception_class);
@@ -237,41 +237,41 @@ static b_obj_class *get_exception(b_vm *vm, const char *name) {
   }
 }
 
-inline b_obj_instance *create_exception(b_vm *vm, const char* type, b_obj_string *message) {
-  b_obj_instance *instance = new_instance(vm, get_exception(vm, type));
+inline z_obj_instance *create_exception(z_vm *vm, const char* type, z_obj_string *message) {
+  z_obj_instance *instance = new_instance(vm, get_exception(vm, type));
   push(vm, OBJ_VAL(instance));
   table_set(vm, &instance->properties, STRING_L_VAL("message", 7), OBJ_VAL(message));
   pop(vm);
   return instance;
 }
 
-static inline void grow_vm_stack(b_vm *vm, size_t new_capacity) {
-  b_value *new_stack = ALLOCATE(b_value, new_capacity);
+static inline void grow_vm_stack(z_vm *vm, size_t new_capacity) {
+  z_value *new_stack = ALLOCATE(z_value, new_capacity);
 
   size_t old_capacity = vm->stack_capacity;
   // Copy existing initialized region in a single pass
   if (old_capacity > 0) {
-    memcpy(new_stack, vm->stack, old_capacity * sizeof(b_value));
+    memcpy(new_stack, vm->stack, old_capacity * sizeof(z_value));
   }
   // Initialize only the newly added region to EMPTY_VAL
   for (size_t i = old_capacity; i < new_capacity; i++) {
     new_stack[i] = EMPTY_VAL;
   }
 
-  FREE_ARRAY(b_value, vm->stack, vm->stack_capacity);
+  FREE_ARRAY(z_value, vm->stack, vm->stack_capacity);
 
   vm->stack = new_stack;
   vm->stack_top = vm->stack + old_capacity;
   vm->stack_capacity = new_capacity;
 }
 
-B_ALWAYS_INLINE void push(b_vm *vm, b_value value) {
-  if (B_UNLIKELY(vm == NULL || vm->stack == NULL || vm->stack_top == NULL)) {
+Z_ALWAYS_INLINE void push(z_vm *vm, z_value value) {
+  if (Z_UNLIKELY(vm == NULL || vm->stack == NULL || vm->stack_top == NULL)) {
     fprintf(stderr, "Exit: Invalid VM state in push.\n");
     exit(EXIT_TERMINAL);
   }
 
-  if (B_UNLIKELY(vm->stack_top - vm->stack == vm->stack_capacity)) {
+  if (Z_UNLIKELY(vm->stack_top - vm->stack == vm->stack_capacity)) {
     size_t capacity = GROW_CAPACITY(vm->stack_capacity);
     grow_vm_stack(vm, capacity);
   }
@@ -280,7 +280,7 @@ B_ALWAYS_INLINE void push(b_vm *vm, b_value value) {
   vm->stack_top++;
 }
 
-inline void push_error(b_vm *vm, b_error_frame *frame) {
+inline void push_error(z_vm *vm, z_error_frame *frame) {
   if(vm->error_count >= ERRORS_MAX) {
     fprintf(stderr, "Exit: Maximum open catch blocks %d exceeded.\n", ERRORS_MAX);
     exit(EXIT_RUNTIME);
@@ -290,19 +290,19 @@ inline void push_error(b_vm *vm, b_error_frame *frame) {
   vm->error_count++;
 }
 
-inline b_error_frame* pop_error(b_vm *vm) {
+inline z_error_frame* pop_error(z_vm *vm) {
   if (vm->error_count == 0) {
     fprintf(stderr, "Exit: Error stack underflow.\n");
     exit(EXIT_TERMINAL);
   }
-  b_error_frame *error =  vm->errors[--vm->error_count];
+  z_error_frame *error =  vm->errors[--vm->error_count];
   error->frame = NULL;
   error->stack_head = NULL;
   error->offset = 0;
   return error;
 }
 
-inline b_error_frame* peek_error(b_vm *vm) {
+inline z_error_frame* peek_error(z_vm *vm) {
   if (vm->error_count == 0) {
     fprintf(stderr, "Exit: Error stack underflow in peek.\n");
     exit(EXIT_TERMINAL);
@@ -310,8 +310,8 @@ inline b_error_frame* peek_error(b_vm *vm) {
   return vm->errors[vm->error_count -1];
 }
 
-B_ALWAYS_INLINE b_value pop(b_vm *vm) {
-  if (B_UNLIKELY(vm->stack_top == vm->stack)) {
+Z_ALWAYS_INLINE z_value pop(z_vm *vm) {
+  if (Z_UNLIKELY(vm->stack_top == vm->stack)) {
     fprintf(stderr, "Exit: Stack integrity check at end of stack failed.\n");
     exit(EXIT_TERMINAL);
   }
@@ -320,8 +320,8 @@ B_ALWAYS_INLINE b_value pop(b_vm *vm) {
   return *vm->stack_top;
 }
 
-B_ALWAYS_INLINE b_value pop_n(b_vm *vm, int n) {
-  if (B_UNLIKELY(vm->stack_top - vm->stack < n)) {
+Z_ALWAYS_INLINE z_value pop_n(z_vm *vm, int n) {
+  if (Z_UNLIKELY(vm->stack_top - vm->stack < n)) {
     fprintf(stderr, "Exit: Stack integrity check at %ld failed.\n", vm->stack_top - vm->stack);
     exit(EXIT_TERMINAL);
   }
@@ -330,8 +330,8 @@ B_ALWAYS_INLINE b_value pop_n(b_vm *vm, int n) {
   return *vm->stack_top;
 }
 
-B_ALWAYS_INLINE b_value peek(b_vm *vm, int distance) {
-  if (B_UNLIKELY(vm->stack_top - vm->stack < distance + 1)) {
+Z_ALWAYS_INLINE z_value peek(z_vm *vm, int distance) {
+  if (Z_UNLIKELY(vm->stack_top - vm->stack < distance + 1)) {
     fprintf(stderr, "Exit: Stack integrity check at distance %d failed.\n", distance);
     exit(EXIT_TERMINAL);
   }
@@ -339,22 +339,22 @@ B_ALWAYS_INLINE b_value peek(b_vm *vm, int distance) {
   return vm->stack_top[-1 - distance]; 
 }
 
-static inline void define_native(b_vm *vm, const char *name, b_native_fn function) {
+static inline void define_native(z_vm *vm, const char *name, z_native_fn function) {
   push(vm, STRING_VAL(name));
   push(vm, OBJ_VAL(new_native(vm, function, name)));
   table_set(vm, &vm->globals, vm->stack[0], vm->stack[1]);
   pop_n(vm, 2);
 }
 
-void define_native_method(b_vm *vm, b_table *table, const char *name,
-                          b_native_fn function) {
+void define_native_method(z_vm *vm, z_table *table, const char *name,
+                          z_native_fn function) {
   push(vm, STRING_VAL(name));
   push(vm, OBJ_VAL(new_native(vm, function, name)));
   table_set(vm, table, vm->stack[0], vm->stack[1]);
   pop_n(vm, 2);
 }
 
-static void init_builtin_functions(b_vm *vm) {
+static void init_builtin_functions(z_vm *vm) {
   DEFINE_NATIVE(abs);
   DEFINE_NATIVE(bin);
   DEFINE_NATIVE(bytes);
@@ -400,7 +400,7 @@ static void init_builtin_functions(b_vm *vm) {
   DEFINE_NATIVE(typeof);
 }
 
-static void init_builtin_methods(b_vm *vm) {
+static void init_builtin_methods(z_vm *vm) {
 #define DEFINE_STRING_METHOD(name) DEFINE_METHOD(string, name)
 #define DEFINE_LIST_METHOD(name) DEFINE_METHOD(list, name)
 #define DEFINE_DICT_METHOD(name) DEFINE_METHOD(dict, name)
@@ -562,10 +562,10 @@ static void init_builtin_methods(b_vm *vm) {
 #undef DEFINE_RANGE_METHOD
 }
 
-void init_vm(b_vm *vm) {
+void init_vm(z_vm *vm) {
 
   vm->parent_vm = NULL;
-  vm->stack = ALLOCATE(b_value, STACK_MIN);
+  vm->stack = ALLOCATE(z_value, STACK_MIN);
   vm->stack_capacity = STACK_MIN;
 
   reset_stack(vm);
@@ -612,7 +612,7 @@ void init_vm(b_vm *vm) {
   init_builtin_methods(vm);
 }
 
-void free_vm(b_vm *vm) {
+void free_vm(z_vm *vm) {
   free_objects(vm);
 
   // since object in module can exist in globals,
@@ -643,11 +643,11 @@ void free_vm(b_vm *vm) {
   free(vm);
 }
 
-static inline bool is_private(b_obj_string *name) {
+static inline bool is_private(z_obj_string *name) {
   return name->length > 0 && name->chars[0] == '_';
 }
 
-static bool call(b_vm *vm, b_obj_closure *closure, int arg_count) {
+static bool call(z_vm *vm, z_obj_closure *closure, int arg_count) {
   // fill empty parameters if not variadic
   for (; !closure->function->is_variadic && arg_count < closure->function->arity; arg_count++) {
     push(vm, NIL_VAL);
@@ -656,7 +656,7 @@ static bool call(b_vm *vm, b_obj_closure *closure, int arg_count) {
   // handle variadic arguments...
   if (closure->function->is_variadic && arg_count >= closure->function->arity - 1) {
     int va_args_start = arg_count - closure->function->arity;
-    b_obj_list *args_list = new_list(vm);
+    z_obj_list *args_list = new_list(vm);
     push(vm, OBJ_VAL(args_list));
 
     for (int i = va_args_start; i >= 0; i--) {
@@ -690,7 +690,7 @@ static bool call(b_vm *vm, b_obj_closure *closure, int arg_count) {
     return throw_exception(vm, "stack overflow");
   }
 
-  b_call_frame *frame = &vm->frames[vm->frame_count++];
+  z_call_frame *frame = &vm->frames[vm->frame_count++];
   frame->closure = closure;
   frame->ip = closure->function->blob.code;
 
@@ -698,7 +698,7 @@ static bool call(b_vm *vm, b_obj_closure *closure, int arg_count) {
   return true;
 }
 
-static inline bool call_native_method(b_vm *vm, b_obj_native *native, int arg_count) {
+static inline bool call_native_method(z_vm *vm, z_obj_native *native, int arg_count) {
   if (native->function(vm, arg_count, vm->stack_top - arg_count)) {
     CLEAR_GC();
     pop_n(vm, arg_count);
@@ -708,17 +708,17 @@ static inline bool call_native_method(b_vm *vm, b_obj_native *native, int arg_co
   return true;
 }
 
-bool call_value(b_vm *vm, b_value callee, int arg_count) {
+bool call_value(z_vm *vm, z_value callee, int arg_count) {
   if (IS_OBJ(callee)) {
     switch (OBJ_TYPE(callee)) {
       case OBJ_BOUND_METHOD: {
-        b_obj_bound *bound = AS_BOUND(callee);
+        z_obj_bound *bound = AS_BOUND(callee);
         vm->stack_top[-arg_count - 1] = bound->receiver;
         return call(vm, bound->method, arg_count);
       }
 
       case OBJ_CLASS: {
-        b_obj_class *klass = AS_CLASS(callee);
+        z_obj_class *klass = AS_CLASS(callee);
         vm->stack_top[-arg_count - 1] = OBJ_VAL(new_instance(vm, klass));
         if (!IS_EMPTY(klass->initializer)) {
           return call(vm, AS_CLOSURE(klass->initializer), arg_count);
@@ -733,8 +733,8 @@ bool call_value(b_vm *vm, b_value callee, int arg_count) {
       }
 
       case OBJ_MODULE: {
-        b_obj_module *module = AS_MODULE(callee);
-        b_value callable;
+        z_obj_module *module = AS_MODULE(callee);
+        z_value callable;
         if(table_get(&module->values, STRING_VAL(module->name), &callable)) {
           return call_value(vm, callable, arg_count);
         }
@@ -758,7 +758,7 @@ bool call_value(b_vm *vm, b_value callee, int arg_count) {
   return throw_type_error(vm, "object of type %s is not callable", value_type(callee));
 }
 
-static inline b_func_type get_method_type(b_value method) {
+static inline z_func_type get_method_type(z_value method) {
   switch (OBJ_TYPE(method)) {
     case OBJ_NATIVE: return AS_NATIVE(method)->type;
     case OBJ_CLOSURE: return AS_CLOSURE(method)->function->type;
@@ -766,10 +766,10 @@ static inline b_func_type get_method_type(b_value method) {
   }
 }
 
-inline bool invoke_from_class(b_vm *vm, b_obj_class *klass, b_obj_string *name, int arg_count) {
-  b_value method;
+inline bool invoke_from_class(z_vm *vm, z_obj_class *klass, z_obj_string *name, int arg_count) {
+  z_value method;
   if (table_get(&klass->methods, OBJ_VAL(name), &method)) {
-    b_func_type type = get_method_type(method);
+    z_func_type type = get_method_type(method);
 
     if (type == TYPE_PRIVATE) {
       return throw_access_error(vm, "cannot call private method '%s' from instance of %s",
@@ -786,14 +786,14 @@ inline bool invoke_from_class(b_vm *vm, b_obj_class *klass, b_obj_string *name, 
   return throw_undefined_error(vm, "undefined method '%s' in %s", name->chars, klass->name->chars);
 }
 
-static bool invoke_self(b_vm *vm, b_obj_string *name, int arg_count) {
-  b_value receiver = peek(vm, arg_count);
-  b_value value;
+static bool invoke_self(z_vm *vm, z_obj_string *name, int arg_count) {
+  z_value receiver = peek(vm, arg_count);
+  z_value value;
 
   if (IS_OBJ(receiver)) {
     switch (AS_OBJ(receiver)->type) {
       case OBJ_INSTANCE: {
-        b_obj_instance *instance = AS_INSTANCE(receiver);
+        z_obj_instance *instance = AS_INSTANCE(receiver);
 
         if (table_get(&instance->klass->methods, OBJ_VAL(name), &value)) {
           if (get_method_type(value) != TYPE_STATIC) {
@@ -856,13 +856,13 @@ static bool invoke_self(b_vm *vm, b_obj_string *name, int arg_count) {
                          name->chars, value_type(receiver));
 }
 
-static bool invoke_operator(b_vm *vm, b_obj_string *name, int arg_count, bool is_binary) {
-  b_value receiver = peek(vm, arg_count);
-  b_value value;
-  b_obj_instance *instance = AS_INSTANCE(receiver);
+static bool invoke_operator(z_vm *vm, z_obj_string *name, int arg_count, bool is_binary) {
+  z_value receiver = peek(vm, arg_count);
+  z_value value;
+  z_obj_instance *instance = AS_INSTANCE(receiver);
   if (table_get(&instance->klass->methods, OBJ_VAL(name), &value)) {
     if (IS_CLOSURE(value)) {
-      b_obj_func *function = AS_CLOSURE(value)->function;
+      z_obj_func *function = AS_CLOSURE(value)->function;
       if (!function->is_variadic && function->arity == 1) {
         return call_value(vm, value, is_binary ? arg_count : 0);
       }
@@ -876,9 +876,9 @@ static bool invoke_operator(b_vm *vm, b_obj_string *name, int arg_count, bool is
   }
 }
 
-static bool invoke(b_vm *vm, b_obj_string *name, int arg_count) {
-  b_value receiver = peek(vm, arg_count);
-  b_value value;
+static bool invoke(z_vm *vm, z_obj_string *name, int arg_count) {
+  z_value receiver = peek(vm, arg_count);
+  z_value value;
 
   if (!IS_OBJ(receiver)) {
     // @TODO: have methods for non-objects as well.
@@ -886,7 +886,7 @@ static bool invoke(b_vm *vm, b_obj_string *name, int arg_count) {
   } else {
     switch (AS_OBJ(receiver)->type) {
       case OBJ_MODULE: {
-        b_obj_module *module = AS_MODULE(receiver);
+        z_obj_module *module = AS_MODULE(receiver);
         if (table_get(&module->values, OBJ_VAL(name), &value)) {
           if (is_private(name)) {
             return throw_access_error(vm, "cannot call private module method '%s'", name->chars);
@@ -911,7 +911,7 @@ static bool invoke(b_vm *vm, b_obj_string *name, int arg_count) {
         return throw_undefined_error(vm, "unknown method %s() in class %s", name->chars, AS_CLASS(receiver)->name->chars);
       }
       case OBJ_INSTANCE: {
-        b_obj_instance *instance = AS_INSTANCE(receiver);
+        z_obj_instance *instance = AS_INSTANCE(receiver);
 
         if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
           vm->stack_top[-arg_count - 1] = value;
@@ -971,14 +971,14 @@ static bool invoke(b_vm *vm, b_obj_string *name, int arg_count) {
   }
 }
 
-static inline bool bind_method(b_vm *vm, b_obj_class *klass, b_obj_string *name) {
-  b_value method;
+static inline bool bind_method(z_vm *vm, z_obj_class *klass, z_obj_string *name) {
+  z_value method;
   if (table_get(&klass->methods, OBJ_VAL(name), &method)) {
     if (get_method_type(method) == TYPE_PRIVATE) {
       return throw_access_error(vm, "cannot get private property '%s' from instance", name->chars);
     }
 
-    b_obj_bound *bound = new_bound_method(vm, peek(vm, 0), AS_CLOSURE(method));
+    z_obj_bound *bound = new_bound_method(vm, peek(vm, 0), AS_CLOSURE(method));
     pop(vm);
     push(vm, OBJ_VAL(bound));
     return true;
@@ -987,9 +987,9 @@ static inline bool bind_method(b_vm *vm, b_obj_class *klass, b_obj_string *name)
   return throw_undefined_error(vm, "undefined property '%s'", name->chars);
 }
 
-static b_obj_up_value *capture_up_value(b_vm *vm, b_value *local) {
-  b_obj_up_value *prev_up_value = NULL;
-  b_obj_up_value *up_value = vm->open_up_values;
+static z_obj_up_value *capture_up_value(z_vm *vm, z_value *local) {
+  z_obj_up_value *prev_up_value = NULL;
+  z_obj_up_value *up_value = vm->open_up_values;
 
   while (up_value != NULL && up_value->location > local) {
     prev_up_value = up_value;
@@ -999,7 +999,7 @@ static b_obj_up_value *capture_up_value(b_vm *vm, b_value *local) {
   if (up_value != NULL && up_value->location == local)
     return up_value;
 
-  b_obj_up_value *created_up_value = new_up_value(vm, local);
+  z_obj_up_value *created_up_value = new_up_value(vm, local);
   created_up_value->next = up_value;
 
   if (prev_up_value == NULL) {
@@ -1011,18 +1011,18 @@ static b_obj_up_value *capture_up_value(b_vm *vm, b_value *local) {
   return created_up_value;
 }
 
-static inline void close_up_values(b_vm *vm, const b_value *last) {
+static inline void close_up_values(z_vm *vm, const z_value *last) {
   while (vm->open_up_values != NULL && vm->open_up_values->location >= last) {
-    b_obj_up_value *up_value = vm->open_up_values;
+    z_obj_up_value *up_value = vm->open_up_values;
     up_value->closed = *up_value->location;
     up_value->location = &up_value->closed;
     vm->open_up_values = up_value->next;
   }
 }
 
-static inline void define_method(b_vm *vm, b_obj_string *name) {
-  b_value method = peek(vm, 0);
-  b_obj_class *klass = AS_CLASS(peek(vm, 1));
+static inline void define_method(z_vm *vm, z_obj_string *name) {
+  z_value method = peek(vm, 0);
+  z_obj_class *klass = AS_CLASS(peek(vm, 1));
 
   table_set(vm, &klass->methods, OBJ_VAL(name), method);
   if (get_method_type(method) == TYPE_INITIALIZER) {
@@ -1031,9 +1031,9 @@ static inline void define_method(b_vm *vm, b_obj_string *name) {
   pop(vm);
 }
 
-static inline void define_property(b_vm *vm, b_obj_string *name, bool is_static) {
-  b_value property = peek(vm, 0);
-  b_obj_class *klass = AS_CLASS(peek(vm, 1));
+static inline void define_property(z_vm *vm, z_obj_string *name, bool is_static) {
+  z_value property = peek(vm, 0);
+  z_obj_class *klass = AS_CLASS(peek(vm, 1));
 
   if (!is_static) {
     table_set(vm, &klass->properties, OBJ_VAL(name), property);
@@ -1043,10 +1043,10 @@ static inline void define_property(b_vm *vm, b_obj_string *name, bool is_static)
   pop(vm);
 }
 
-B_ALWAYS_INLINE bool is_false(b_value value) {
+Z_ALWAYS_INLINE bool is_false(z_value value) {
   // Fast-path checks first (common cases):
-  if (B_LIKELY(IS_BOOL(value))) return !AS_BOOL(value);
-  if (B_LIKELY(IS_NUMBER(value))) return AS_NUMBER(value) < 0; // -1 is false in Blade
+  if (Z_LIKELY(IS_BOOL(value))) return !AS_BOOL(value);
+  if (Z_LIKELY(IS_NUMBER(value))) return AS_NUMBER(value) < 0; // -1 is false in Zuri
 
   // Nil or Empty are falsey
   if (IS_NIL(value) || IS_EMPTY(value)) return true;
@@ -1061,7 +1061,7 @@ B_ALWAYS_INLINE bool is_false(b_value value) {
   return false;
 }
 
-bool is_instance_of(b_obj_class *klass1, b_obj_class *klass2) {
+bool is_instance_of(z_obj_class *klass1, z_obj_class *klass2) {
   while (klass1 != NULL) {
     // quick exit check
     if(klass1 == klass2) return true;
@@ -1082,23 +1082,23 @@ bool is_instance_of(b_obj_class *klass1, b_obj_class *klass2) {
   return false;
 }
 
-inline bool dict_set_entry(b_vm *vm, b_obj_dict *dict, b_value key, b_value value) {
-  b_value temp_value;
+inline bool dict_set_entry(z_vm *vm, z_obj_dict *dict, z_value key, z_value value) {
+  z_value temp_value;
   if (!table_get(&dict->items, key, &temp_value)) {
     write_value_arr(vm, &dict->names, key); // add key if it doesn't exist.
   }
   return table_set(vm, &dict->items, key, value);
 }
 
-inline void dict_add_entry(b_vm *vm, b_obj_dict *dict, b_value key, b_value value) {
+inline void dict_add_entry(z_vm *vm, z_obj_dict *dict, z_value key, z_value value) {
   dict_set_entry(vm, dict, key, value);
 }
 
-inline bool dict_get_entry(b_obj_dict *dict, b_value key, b_value *value) {
+inline bool dict_get_entry(z_obj_dict *dict, z_value key, z_value *value) {
   return table_get(&dict->items, key, value);
 }
 
-static b_obj_string *multiply_string(b_vm *vm, b_obj_string *str, double number) {
+static z_obj_string *multiply_string(z_vm *vm, z_obj_string *str, double number) {
   int times = (int) number;
 
   if (times <= 0) // 'str' * 0 == '', 'str' * -1 == ''
@@ -1116,8 +1116,8 @@ static b_obj_string *multiply_string(b_vm *vm, b_obj_string *str, double number)
   return take_string(vm, result, total_length);
 }
 
-static b_obj_list *add_list(b_vm *vm, b_obj_list *a, b_obj_list *b) {
-  b_obj_list *list = new_list(vm);
+static z_obj_list *add_list(z_vm *vm, z_obj_list *a, z_obj_list *b) {
+  z_obj_list *list = new_list(vm);
   push(vm, OBJ_VAL(list));
 
   for (int i = 0; i < a->items.count; i++) {
@@ -1132,8 +1132,8 @@ static b_obj_list *add_list(b_vm *vm, b_obj_list *a, b_obj_list *b) {
   return list;
 }
 
-static inline b_obj_bytes *add_bytes(b_vm *vm, b_obj_bytes *a, b_obj_bytes *b) {
-  b_obj_bytes *bytes = new_bytes(vm, a->bytes.count + b->bytes.count);
+static inline z_obj_bytes *add_bytes(z_vm *vm, z_obj_bytes *a, z_obj_bytes *b) {
+  z_obj_bytes *bytes = new_bytes(vm, a->bytes.count + b->bytes.count);
 
   memcpy(bytes->bytes.bytes, a->bytes.bytes, a->bytes.count);
   memcpy(bytes->bytes.bytes + a->bytes.count, b->bytes.bytes, b->bytes.count);
@@ -1141,7 +1141,7 @@ static inline b_obj_bytes *add_bytes(b_vm *vm, b_obj_bytes *a, b_obj_bytes *b) {
   return bytes;
 }
 
-static inline void multiply_list(b_vm *vm, b_obj_list *a, b_obj_list *new_list, int times) {
+static inline void multiply_list(z_vm *vm, z_obj_list *a, z_obj_list *new_list, int times) {
   for (int i = 0; i < times; i++) {
     for (int j = 0; j < a->items.count; j++) {
       write_value_arr(vm, &new_list->items, a->items.values[j]);
@@ -1149,10 +1149,10 @@ static inline void multiply_list(b_vm *vm, b_obj_list *a, b_obj_list *new_list, 
   }
 }
 
-static bool dict_get_index(b_vm *vm, b_obj_dict *dict, bool will_assign) {
-  b_value index = peek(vm, 0);
+static bool dict_get_index(z_vm *vm, z_obj_dict *dict, bool will_assign) {
+  z_value index = peek(vm, 0);
 
-  b_value result;
+  z_value result;
   if (dict_get_entry(dict, index, &result)) {
     if (!will_assign) {
       pop_n(vm, 2); // we can safely get rid of the index from the stack
@@ -1165,10 +1165,10 @@ static bool dict_get_index(b_vm *vm, b_obj_dict *dict, bool will_assign) {
   return throw_argument_error(vm, "invalid index %s", value_to_string(vm, index)->chars);
 }
 
-static bool module_get_index(b_vm *vm, b_obj_module *module, bool will_assign) {
-  b_value index = peek(vm, 0);
+static bool module_get_index(z_vm *vm, z_obj_module *module, bool will_assign) {
+  z_value index = peek(vm, 0);
 
-  b_value result;
+  z_value result;
   if (table_get(&module->values, index, &result)) {
     if (!will_assign) {
       pop_n(vm, 2); // we can safely get rid of the index from the stack
@@ -1181,8 +1181,8 @@ static bool module_get_index(b_vm *vm, b_obj_module *module, bool will_assign) {
   return throw_undefined_error(vm, "%s is undefined in module %s", value_to_string(vm, index)->chars, module->name);
 }
 
-static bool string_get_index(b_vm *vm, b_obj_string *string, bool will_assign) {
-  b_value lower = peek(vm, 0);
+static bool string_get_index(z_vm *vm, z_obj_string *string, bool will_assign) {
+  z_value lower = peek(vm, 0);
 
   if (!IS_NUMBER(lower)) {
     pop_n(vm, 1);
@@ -1215,9 +1215,9 @@ static bool string_get_index(b_vm *vm, b_obj_string *string, bool will_assign) {
   }
 }
 
-static bool string_get_ranged_index(b_vm *vm, b_obj_string *string, bool will_assign) {
-  b_value upper = peek(vm, 0);
-  b_value lower = peek(vm, 1);
+static bool string_get_ranged_index(z_vm *vm, z_obj_string *string, bool will_assign) {
+  z_value upper = peek(vm, 0);
+  z_value lower = peek(vm, 1);
 
   if (!(IS_NIL(lower) || IS_NUMBER(lower)) || !(IS_NUMBER(upper) || IS_NIL(upper))) {
     pop_n(vm, 2);
@@ -1256,8 +1256,8 @@ static bool string_get_ranged_index(b_vm *vm, b_obj_string *string, bool will_as
   return true;
 }
 
-static bool bytes_get_index(b_vm *vm, b_obj_bytes *bytes, bool will_assign) {
-  b_value lower = peek(vm, 0);
+static bool bytes_get_index(z_vm *vm, z_obj_bytes *bytes, bool will_assign) {
+  z_value lower = peek(vm, 0);
 
   if (!IS_NUMBER(lower)) {
     pop_n(vm, 1);
@@ -1283,9 +1283,9 @@ static bool bytes_get_index(b_vm *vm, b_obj_bytes *bytes, bool will_assign) {
   }
 }
 
-static bool bytes_get_ranged_index(b_vm *vm, b_obj_bytes *bytes, bool will_assign) {
-  b_value upper = peek(vm, 0);
-  b_value lower = peek(vm, 1);
+static bool bytes_get_ranged_index(z_vm *vm, z_obj_bytes *bytes, bool will_assign) {
+  z_value upper = peek(vm, 0);
+  z_value lower = peek(vm, 1);
 
   if (!(IS_NIL(lower) || IS_NUMBER(lower)) || !(IS_NUMBER(upper) || IS_NIL(upper))) {
     pop_n(vm, 2);
@@ -1319,8 +1319,8 @@ static bool bytes_get_ranged_index(b_vm *vm, b_obj_bytes *bytes, bool will_assig
   return true;
 }
 
-static bool list_get_index(b_vm *vm, b_obj_list *list, bool will_assign) {
-  b_value lower = peek(vm, 0);
+static bool list_get_index(z_vm *vm, z_obj_list *list, bool will_assign) {
+  z_value lower = peek(vm, 0);
 
   if (!IS_NUMBER(lower)) {
     pop(vm);
@@ -1346,9 +1346,9 @@ static bool list_get_index(b_vm *vm, b_obj_list *list, bool will_assign) {
   }
 }
 
-static bool list_get_ranged_index(b_vm *vm, b_obj_list *list, bool will_assign) {
-  b_value upper = peek(vm, 0);
-  b_value lower = peek(vm, 1);
+static bool list_get_ranged_index(z_vm *vm, z_obj_list *list, bool will_assign) {
+  z_value upper = peek(vm, 0);
+  z_value lower = peek(vm, 1);
 
   if (!(IS_NIL(lower) || IS_NUMBER(lower)) || !(IS_NUMBER(upper) || IS_NIL(upper))) {
     pop_n(vm, 2);
@@ -1373,7 +1373,7 @@ static bool list_get_ranged_index(b_vm *vm, b_obj_list *list, bool will_assign) 
   if (upper_index > list->items.count)
     upper_index = list->items.count;
 
-  b_obj_list *n_list = new_list(vm);
+  z_obj_list *n_list = new_list(vm);
   push(vm, OBJ_VAL(n_list)); // gc protect
 
   for (int i = lower_index; i < upper_index; i++) {
@@ -1388,7 +1388,7 @@ static bool list_get_ranged_index(b_vm *vm, b_obj_list *list, bool will_assign) 
   return true;
 }
 
-static inline void dict_set_index(b_vm *vm, b_obj_dict *dict, b_value index, b_value value) {
+static inline void dict_set_index(z_vm *vm, z_obj_dict *dict, z_value index, z_value value) {
   dict_set_entry(vm, dict, index, value);
   pop_n(vm, 3); // pop the value, index and dict out
 
@@ -1397,7 +1397,7 @@ static inline void dict_set_index(b_vm *vm, b_obj_dict *dict, b_value index, b_v
   push(vm, value);
 }
 
-static inline void module_set_index(b_vm *vm, b_obj_module *module, b_value index, b_value value) {
+static inline void module_set_index(z_vm *vm, z_obj_module *module, z_value index, z_value value) {
   table_set(vm, &module->values, index, value);
   pop_n(vm, 3); // pop the value, index and dict out
 
@@ -1406,7 +1406,7 @@ static inline void module_set_index(b_vm *vm, b_obj_module *module, b_value inde
   push(vm, value);
 }
 
-static bool list_set_index(b_vm *vm, b_obj_list *list, b_value index, b_value value) {
+static bool list_set_index(z_vm *vm, z_obj_list *list, z_value index, z_value value) {
   if (!IS_NUMBER(index)) {
     pop_n(vm, 3); // pop the value, index and list out
     return throw_argument_error(vm, "list are numerically indexed");
@@ -1429,7 +1429,7 @@ static bool list_set_index(b_vm *vm, b_obj_list *list, b_value index, b_value va
   return throw_range_error(vm, "lists index %d out of range", _position);
 }
 
-static bool bytes_set_index(b_vm *vm, b_obj_bytes *bytes, b_value index, b_value value) {
+static bool bytes_set_index(z_vm *vm, z_obj_bytes *bytes, z_value index, z_value value) {
   if (!IS_NUMBER(index)) {
     pop_n(vm, 3); // pop the value, index and bytes out
     return throw_argument_error(vm, "bytes are numerically indexed");
@@ -1457,9 +1457,9 @@ static bool bytes_set_index(b_vm *vm, b_obj_bytes *bytes, b_value index, b_value
   return throw_range_error(vm, "bytes index %d out of range", _position);
 }
 
-static bool concatenate(b_vm *vm) {
-  b_value _b = peek(vm, 0);
-  b_value _a = peek(vm, 1);
+static bool concatenate(z_vm *vm) {
+  z_value _b = peek(vm, 0);
+  z_value _a = peek(vm, 1);
 
   if (IS_NIL(_a)) {
     pop_n(vm, 2);
@@ -1472,7 +1472,7 @@ static bool concatenate(b_vm *vm) {
     int num_length = 0;
     char *num_str = number_to_string(vm, a, &num_length);
 
-    b_obj_string *b = AS_STRING(_b);
+    z_obj_string *b = AS_STRING(_b);
 
     int length = num_length + b->length;
     char *chars = ALLOCATE(char, (size_t) length + 1);
@@ -1481,7 +1481,7 @@ static bool concatenate(b_vm *vm) {
     chars[length] = '\0';
 
     int utf8len = utf8length(chars);
-    b_obj_string *result = take_string(vm, chars, length);
+    z_obj_string *result = take_string(vm, chars, length);
     result->utf8_length = utf8len;
 
     FREE(char, num_str);
@@ -1489,7 +1489,7 @@ static bool concatenate(b_vm *vm) {
     pop_n(vm, 2);
     push(vm, OBJ_VAL(result));
   } else if (IS_NUMBER(_b)) {
-    b_obj_string *a = AS_STRING(_a);
+    z_obj_string *a = AS_STRING(_a);
     double b = AS_NUMBER(_b);
 
     int num_length = 0;
@@ -1502,7 +1502,7 @@ static bool concatenate(b_vm *vm) {
     chars[length] = '\0';
 
     int utf8len = utf8length(chars);
-    b_obj_string *result = take_string(vm, chars, length);
+    z_obj_string *result = take_string(vm, chars, length);
     result->utf8_length = utf8len;
 
     FREE(char, num_str);
@@ -1510,8 +1510,8 @@ static bool concatenate(b_vm *vm) {
     pop_n(vm, 2);
     push(vm, OBJ_VAL(result));
   } else if (IS_STRING(_a) && IS_STRING(_b)) {
-    b_obj_string *b = AS_STRING(_b);
-    b_obj_string *a = AS_STRING(_a);
+    z_obj_string *b = AS_STRING(_b);
+    z_obj_string *a = AS_STRING(_a);
 
     int length = a->length + b->length;
     char *chars = ALLOCATE(char, length + 1);
@@ -1520,7 +1520,7 @@ static bool concatenate(b_vm *vm) {
     chars[length] = '\0';
 
     // int new_utf8_length = utf8length(chars);
-    b_obj_string *result = take_string(vm, chars, length);
+    z_obj_string *result = take_string(vm, chars, length);
     result->utf8_length = a->utf8_length + b->utf8_length;
     // result->utf8_length = new_utf8_length;
 
@@ -1546,7 +1546,7 @@ static inline double modulo(double a, double b) {
   return r;
 }
 
-static double b_int_bin_op(b_code op, double a, double b) {
+static double z_int_bin_op(z_code op, double a, double b) {
   int32_t ia = isnan(a) || isinf(a) ? 0 : (int32_t)(int64_t) a;
   int32_t ib = isnan(b) || isinf(b) ? 0 : (int32_t)(int64_t) b;
 
@@ -1569,7 +1569,7 @@ static double b_int_bin_op(b_code op, double a, double b) {
   return 0;
 }
 
-b_ptr_result run(b_vm *vm, int exit_frame) {
+z_ptr_result run(z_vm *vm, int exit_frame) {
   vm->current_frame = &vm->frames[vm->frame_count - 1];
 
 #define READ_BYTE() (*vm->current_frame->ip++)
@@ -1583,8 +1583,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
 #define READ_STRING() (AS_STRING(READ_CONSTANT()))
 
 #define PRE_BINARY_OP() \
-      b_value __b = peek(vm, 0); \
-      b_value __a = peek(vm, 1)
+      z_value __b = peek(vm, 0); \
+      z_value __a = peek(vm, 1)
 
 #define BINARY_ON_NON_NUMBERS() \
   (!IS_NUMBER(__b) && !IS_BOOL(__b)) || (!IS_NUMBER(__a) && !IS_BOOL(__a))
@@ -1595,7 +1595,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
 
 #define CLASS_BINARY_OPERATION(op) \
   if(IS_INSTANCE(__a)) {                               \
-    b_obj_instance *a_instance = AS_INSTANCE(__a); \
+    z_obj_instance *a_instance = AS_INSTANCE(__a); \
     if(!invoke_operator(vm, copy_string(vm, (op), strlen((op))), 1, true)) { \
       EXIT_VM();                                                       \
     }                                                                    \
@@ -1606,7 +1606,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
 
 #define CLASS_UNARY_OPERATION(op) \
   if(IS_INSTANCE(a)) {                               \
-    b_obj_instance *a_instance = AS_INSTANCE(a); \
+    z_obj_instance *a_instance = AS_INSTANCE(a); \
     if(!invoke_operator(vm, copy_string(vm, (op), strlen((op))), 0, false)) { \
       EXIT_VM();                                                       \
     }                                                                    \
@@ -1619,7 +1619,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
   do { \
     PRE_BINARY_OP();          \
     /* Fast path: both operands are numbers (most common). */ \
-    if (B_LIKELY(IS_NUMBER(__a) && IS_NUMBER(__b))) { \
+    if (Z_LIKELY(IS_NUMBER(__a) && IS_NUMBER(__b))) { \
       double b = AS_NUMBER(pop(vm)); \
       double a = AS_NUMBER(pop(vm)); \
       push(vm, type(a op b)); \
@@ -1629,9 +1629,9 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
     if (BINARY_ON_NON_NUMBERS()) { \
       CLASS_BINARY_OPERATION(#op);    \
     }                                                                          \
-    b_value _b = pop(vm);                                                      \
+    z_value _b = pop(vm);                                                      \
     double b = IS_BOOL(_b) ? (AS_BOOL(_b) ? 1 : 0) : AS_NUMBER(_b);            \
-    b_value _a = pop(vm);                                                      \
+    z_value _a = pop(vm);                                                      \
     double a = IS_BOOL(_a) ? (AS_BOOL(_a) ? 1 : 0) : AS_NUMBER(_a);            \
     push(vm, type(a op b));                                                    \
   } while (false)
@@ -1644,14 +1644,14 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
     }                                                                          \
     double b = AS_NUMBER(pop(vm));                                       \
     double a = AS_NUMBER(pop(vm));                        \
-    push(vm, NUMBER_VAL(b_int_bin_op(op, a, b)));                                          \
+    push(vm, NUMBER_VAL(z_int_bin_op(op, a, b)));                                          \
   } while (false)
 
 #define BINARY_MOD_OP(type, op, original_op)                                                \
   do {  \
     PRE_BINARY_OP();          \
     /* Fast path: both operands are numbers (most common). */ \
-    if (B_LIKELY(IS_NUMBER(__a) && IS_NUMBER(__b))) { \
+    if (Z_LIKELY(IS_NUMBER(__a) && IS_NUMBER(__b))) { \
       double b = AS_NUMBER(pop(vm)); \
       double a = AS_NUMBER(pop(vm)); \
       push(vm, type(op(a, b))); \
@@ -1660,15 +1660,15 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
     if (BINARY_ON_NON_NUMBERS()) { \
       CLASS_BINARY_OPERATION(original_op);    \
     }                                                    \
-    b_value _b = pop(vm);                                                      \
+    z_value _b = pop(vm);                                                      \
     double b = IS_BOOL(_b) ? (AS_BOOL(_b) ? 1 : 0) : AS_NUMBER(_b);            \
-    b_value _a = pop(vm);                                                      \
+    z_value _a = pop(vm);                                                      \
     double a = IS_BOOL(_a) ? (AS_BOOL(_a) ? 1 : 0) : AS_NUMBER(_a);            \
     push(vm, type(op(a, b)));                                                  \
   } while (false)
 
 #define TRY_STRING_OVERRIDE(val) if(IS_INSTANCE((val))) { \
-    b_value tmp_fn; \
+    z_value tmp_fn; \
     if(table_get(&AS_INSTANCE((val))->klass->methods, STRING_L_VAL("@to_string", 10), &tmp_fn)) { \
       vm->current_frame->ip--; \
       if(call_value(vm, tmp_fn, 0)) { \
@@ -1690,7 +1690,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
 
 #if defined(DEBUG_STACK) && DEBUG_STACK
       printf("          ");
-      for (b_value *slot = vm->stack; slot < vm->stack_top; slot++) {
+      for (z_value *slot = vm->stack; slot < vm->stack_top; slot++) {
         printf("[ ");
         print_value(*slot);
         printf(" ]");
@@ -1704,7 +1704,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
     switch (READ_BYTE()) {
 
       case OP_CONSTANT: {
-        b_value constant = READ_CONSTANT();
+        z_value constant = READ_CONSTANT();
         push(vm, constant);
         break;
       }
@@ -1716,12 +1716,12 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
             break;
           }
         } else if (IS_LIST(peek(vm, 0)) && IS_LIST(peek(vm, 1))) {
-          b_value result =
+          z_value result =
               OBJ_VAL(add_list(vm, AS_LIST(peek(vm, 1)), AS_LIST(peek(vm, 0))));
           pop_n(vm, 2);
           push(vm, result);
         } else if (IS_BYTES(peek(vm, 0)) && IS_BYTES(peek(vm, 1))) {
-          b_value result = OBJ_VAL(
+          z_value result = OBJ_VAL(
               add_bytes(vm, AS_BYTES(peek(vm, 1)), AS_BYTES(peek(vm, 0))));
           pop_n(vm, 2);
           push(vm, result);
@@ -1737,15 +1737,15 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       case OP_MULTIPLY: {
         if (IS_STRING(peek(vm, 1)) && IS_NUMBER(peek(vm, 0))) {
           double number = AS_NUMBER(peek(vm, 0));
-          b_obj_string *string = AS_STRING(peek(vm, 1));
-          b_value result = OBJ_VAL(multiply_string(vm, string, number));
+          z_obj_string *string = AS_STRING(peek(vm, 1));
+          z_value result = OBJ_VAL(multiply_string(vm, string, number));
           pop_n(vm, 2);
           push(vm, result);
           break;
         } else if (IS_LIST(peek(vm, 1)) && IS_NUMBER(peek(vm, 0))) {
           int number = (int) AS_NUMBER(pop(vm));
-          b_obj_list *list = AS_LIST(peek(vm, 0));
-          b_obj_list *n_list = new_list(vm);
+          z_obj_list *list = AS_LIST(peek(vm, 0));
+          z_obj_list *n_list = new_list(vm);
           push(vm, OBJ_VAL(n_list));
           multiply_list(vm, list, n_list, number);
           pop_n(vm, 2);
@@ -1772,7 +1772,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         break;
       }
       case OP_NEGATE: {
-        b_value a = peek(vm, 0);
+        z_value a = peek(vm, 0);
         if (!IS_NUMBER(a)) {
           CLASS_UNARY_OPERATION("-");
         }
@@ -1780,7 +1780,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         break;
       }
       case OP_BIT_NOT: {
-        b_value a = peek(vm, 0);
+        z_value a = peek(vm, 0);
         if (!IS_NUMBER(a)) {
           CLASS_UNARY_OPERATION("~");
         }
@@ -1821,7 +1821,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         PRE_BINARY_OP();
 
         if(IS_INSTANCE(__a)) {
-          b_value dummy;
+          z_value dummy;
           if(table_get(&AS_INSTANCE(__a)->klass->methods, STRING_VAL("="), &dummy)) {
             CLASS_BINARY_OPERATION("=");
           }
@@ -1875,7 +1875,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_ECHO: {
-        b_value val = peek(vm, 0);
+        z_value val = peek(vm, 0);
 
         // check if it's a class with @to_string() override first.
         TRY_STRING_OVERRIDE(val);
@@ -1893,12 +1893,12 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_STRINGIFY: {
-        b_value val = peek(vm, 0);
+        z_value val = peek(vm, 0);
         if (!IS_STRING(val) && !IS_NIL(val)) {
           // check if it's a class with @to_string() override first.
           TRY_STRING_OVERRIDE(val);
 
-          b_obj_string *value = value_to_string(vm, pop(vm));
+          z_obj_string *value = value_to_string(vm, pop(vm));
           if (value->length != 0) {
             push(vm, OBJ_VAL(value));
           } else {
@@ -1927,7 +1927,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_DEFINE_GLOBAL: {
-        b_obj_string *name = READ_STRING();
+        z_obj_string *name = READ_STRING();
         if(IS_EMPTY(peek(vm, 0))) {
           runtime_error(ERR_CANT_ASSIGN_EMPTY);
           break;
@@ -1942,8 +1942,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_GET_GLOBAL: {
-        b_obj_string *name = READ_STRING();
-        b_value value;
+        z_obj_string *name = READ_STRING();
+        z_value value;
         if (!table_get(&vm->current_frame->closure->function->module->values, OBJ_VAL(name), &value)) {
           if (!table_get(&vm->globals, OBJ_VAL(name), &value)) {
             dbg(printf("Name requested: '%s' with length %d\n", name->chars, name->length));
@@ -1963,8 +1963,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
           break;
         }
 
-        b_obj_string *name = READ_STRING();
-        b_table *table = &vm->current_frame->closure->function->module->values;
+        z_obj_string *name = READ_STRING();
+        z_table *table = &vm->current_frame->closure->function->module->values;
         if (table_set(vm, table, OBJ_VAL(name), peek(vm, 0))) {
           table_delete(table, OBJ_VAL(name));
           undefined_error("%s is undefined in this scope", name->chars);
@@ -1989,14 +1989,14 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_GET_PROPERTY: {
-        b_obj_string *name = READ_STRING();
+        z_obj_string *name = READ_STRING();
 
         if (IS_OBJ(peek(vm, 0))) {
-          b_value value;
+          z_value value;
 
           switch (AS_OBJ(peek(vm, 0))->type) {
             case OBJ_MODULE: {
-              b_obj_module *module = AS_MODULE(peek(vm, 0));
+              z_obj_module *module = AS_MODULE(peek(vm, 0));
               if (table_get(&module->values, OBJ_VAL(name), &value)) {
                 if (is_private(name)) {
                   access_error("cannot get private module property '%s'", name->chars);
@@ -2039,7 +2039,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
               break;
             }
             case OBJ_INSTANCE: {
-              b_obj_instance *instance = AS_INSTANCE(peek(vm, 0));
+              z_obj_instance *instance = AS_INSTANCE(peek(vm, 0));
               if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
                 if (is_private(name)) {
                   access_error("cannot call private property '%s' from instance of %s",
@@ -2139,11 +2139,11 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_GET_SELF_PROPERTY: {
-        b_obj_string *name = READ_STRING();
-        b_value value;
+        z_obj_string *name = READ_STRING();
+        z_value value;
 
         if (IS_INSTANCE(peek(vm, 0))) {
-          b_obj_instance *instance = AS_INSTANCE(peek(vm, 0));
+          z_obj_instance *instance = AS_INSTANCE(peek(vm, 0));
           if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
             pop(vm); // pop the instance...
             push(vm, value);
@@ -2158,7 +2158,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
                         AS_INSTANCE(peek(vm, 0))->klass->name->chars, name->chars);
           break;
         } else if (IS_CLASS(peek(vm, 0))) {
-          b_obj_class *klass = AS_CLASS(peek(vm, 0));
+          z_obj_class *klass = AS_CLASS(peek(vm, 0));
           if (table_get(&klass->methods, OBJ_VAL(name), &value)) {
             if (get_method_type(value) == TYPE_STATIC) {
               pop(vm); // pop the class...
@@ -2174,7 +2174,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
                         klass->name->chars, name->chars);
           break;
         } else if (IS_MODULE(peek(vm, 0))) {
-          b_obj_module *module = AS_MODULE(peek(vm, 0));
+          z_obj_module *module = AS_MODULE(peek(vm, 0));
           if (table_get(&module->values, OBJ_VAL(name), &value)) {
             pop(vm); // pop the module...
             push(vm, value);
@@ -2198,27 +2198,27 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
           break;
         }
 
-        b_obj_string *name = READ_STRING();
+        z_obj_string *name = READ_STRING();
 
         if (IS_INSTANCE(peek(vm, 1))) {
-          b_obj_instance *instance = AS_INSTANCE(peek(vm, 1));
+          z_obj_instance *instance = AS_INSTANCE(peek(vm, 1));
           table_set(vm, &instance->properties, OBJ_VAL(name), peek(vm, 0));
 
-          b_value value = pop(vm);
+          z_value value = pop(vm);
           pop(vm); // removing the instance object
           push(vm, value);
         } else if (IS_CLASS(peek(vm, 1))) {
-          b_obj_class *klass = AS_CLASS(peek(vm, 1));
+          z_obj_class *klass = AS_CLASS(peek(vm, 1));
           table_set(vm, &klass->static_properties, OBJ_VAL(name), peek(vm, 0));
 
-          b_value value = pop(vm);
+          z_value value = pop(vm);
           pop(vm); // removing the instance object
           push(vm, value);
         } else {
-          b_obj_dict *dict = AS_DICT(peek(vm, 1));
+          z_obj_dict *dict = AS_DICT(peek(vm, 1));
           dict_set_entry(vm, dict, OBJ_VAL(name), peek(vm, 0));
 
-          b_value value = pop(vm);
+          z_value value = pop(vm);
           pop(vm); // removing the dictionary object
           push(vm, value);
         }
@@ -2226,8 +2226,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_CLOSURE: {
-        b_obj_func *function = AS_FUNCTION(READ_CONSTANT());
-        b_obj_closure *closure = new_closure(vm, function);
+        z_obj_func *function = AS_FUNCTION(READ_CONSTANT());
+        z_obj_closure *closure = new_closure(vm, function);
         push(vm, OBJ_VAL(closure));
 
         for (int i = 0; i < closure->up_value_count; i++) {
@@ -2238,7 +2238,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
             closure->up_values[i] = capture_up_value(vm, vm->current_frame->slots + index);
           } else {
             closure->up_values[i] =
-                ((b_obj_closure *) vm->current_frame->closure)->up_values[index];
+                ((z_obj_closure *) vm->current_frame->closure)->up_values[index];
           }
         }
 
@@ -2246,7 +2246,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
       case OP_GET_UP_VALUE: {
         int index = READ_SHORT();
-        push(vm, *((b_obj_closure *) vm->current_frame->closure)->up_values[index]->location);
+        push(vm, *((z_obj_closure *) vm->current_frame->closure)->up_values[index]->location);
         break;
       }
       case OP_SET_UP_VALUE: {
@@ -2255,7 +2255,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
           runtime_error(ERR_CANT_ASSIGN_EMPTY);
           break;
         }
-        *((b_obj_closure *) vm->current_frame->closure)->up_values[index]->location =
+        *((z_obj_closure *) vm->current_frame->closure)->up_values[index]->location =
             peek(vm, 0);
         break;
       }
@@ -2269,7 +2269,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         break;
       }
       case OP_INVOKE: {
-        b_obj_string *method = READ_STRING();
+        z_obj_string *method = READ_STRING();
         int arg_count = READ_BYTE();
         if (!invoke(vm, method, arg_count)) {
           EXIT_VM();
@@ -2278,7 +2278,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         break;
       }
       case OP_INVOKE_SELF: {
-        b_obj_string *method = READ_STRING();
+        z_obj_string *method = READ_STRING();
         int arg_count = READ_BYTE();
         if (!invoke_self(vm, method, arg_count)) {
           EXIT_VM();
@@ -2288,17 +2288,17 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_CLASS: {
-        b_obj_string *name = READ_STRING();
+        z_obj_string *name = READ_STRING();
         push(vm, OBJ_VAL(new_class(vm, name)));
         break;
       }
       case OP_METHOD: {
-        b_obj_string *name = READ_STRING();
+        z_obj_string *name = READ_STRING();
         define_method(vm, name);
         break;
       }
       case OP_CLASS_PROPERTY: {
-        b_obj_string *name = READ_STRING();
+        z_obj_string *name = READ_STRING();
         int is_static = READ_BYTE();
         define_property(vm, name, is_static == 1);
         break;
@@ -2309,8 +2309,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
           break;
         }
 
-        b_obj_class *superclass = AS_CLASS(peek(vm, 1));
-        b_obj_class *subclass = AS_CLASS(peek(vm, 0));
+        z_obj_class *superclass = AS_CLASS(peek(vm, 1));
+        z_obj_class *subclass = AS_CLASS(peek(vm, 0));
         table_add_all(vm, &superclass->properties, &subclass->properties);
         table_add_all(vm, &superclass->methods, &subclass->methods);
         subclass->superclass = superclass;
@@ -2318,12 +2318,12 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         break;
       }
       case OP_EXTEND: {
-        b_obj_class *ext_class = AS_CLASS(peek(vm, 0));
+        z_obj_class *ext_class = AS_CLASS(peek(vm, 0));
 
         if (IS_STRING(peek(vm, 1))) {
-          b_obj_string *klass = AS_STRING(peek(vm, 1));
+          z_obj_string *klass = AS_STRING(peek(vm, 1));
 
-          b_table *table = NULL;
+          z_table *table = NULL;
           if (memcmp(klass->chars, "string", klass->length) == 0) {
             table = &vm->methods_string;
           } else if (memcmp(klass->chars, "list", klass->length) == 0) {
@@ -2349,23 +2349,23 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
           break;
         }
 
-        b_obj_class *actual_class = AS_CLASS(peek(vm, 1));
+        z_obj_class *actual_class = AS_CLASS(peek(vm, 1));
         table_copy_extensions(vm, &ext_class->methods, &actual_class->methods);
         pop(vm); // pop the subclass
         break;
       }
       case OP_GET_SUPER: {
-        b_obj_string *name = READ_STRING();
-        b_obj_class *klass = AS_CLASS(peek(vm, 0));
+        z_obj_string *name = READ_STRING();
+        z_obj_class *klass = AS_CLASS(peek(vm, 0));
         if (!bind_method(vm, klass->superclass, name)) {
           property_error("class %s does not define a function %s", klass->name->chars, name->chars);
         }
         break;
       }
       case OP_SUPER_INVOKE: {
-        b_obj_string *method = READ_STRING();
+        z_obj_string *method = READ_STRING();
         int arg_count = READ_BYTE();
-        b_obj_class *klass = AS_CLASS(pop(vm));
+        z_obj_class *klass = AS_CLASS(pop(vm));
         if (!invoke_from_class(vm, klass, method, arg_count)) {
           EXIT_VM();
         }
@@ -2374,7 +2374,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
       case OP_SUPER_INVOKE_SELF: {
         int arg_count = READ_BYTE();
-        b_obj_class *klass = AS_CLASS(pop(vm));
+        z_obj_class *klass = AS_CLASS(pop(vm));
         if (!invoke_from_class(vm, klass, klass->name, arg_count)) {
           EXIT_VM();
         }
@@ -2384,7 +2384,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
 
       case OP_LIST: {
         int count = READ_SHORT();
-        b_obj_list *list = new_list(vm);
+        z_obj_list *list = new_list(vm);
         vm->stack_top[-count - 1] = OBJ_VAL(list);
 
         for (int i = count - 1; i >= 0; i--) {
@@ -2394,7 +2394,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         break;
       }
       case OP_RANGE: {
-        b_value _upper = peek(vm, 0), _lower = peek(vm, 1);
+        z_value _upper = peek(vm, 0), _lower = peek(vm, 1);
 
         if (!IS_NUMBER(_upper) || !IS_NUMBER(_lower)) {
           range_error("invalid range boundaries");
@@ -2408,15 +2408,15 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
       case OP_DICT: {
         int count = READ_SHORT() * 2; // 1 for key, 1 for value
-        b_obj_dict *dict = new_dict(vm);
+        z_obj_dict *dict = new_dict(vm);
         vm->stack_top[-count - 1] = OBJ_VAL(dict);
 
         for (int i = 0; i < count; i += 2) {
-          b_value name = vm->stack_top[-count + i];
+          z_value name = vm->stack_top[-count + i];
           if(!IS_STRING(name) && !IS_NUMBER(name) && !IS_BOOL(name)) {
             type_error("dictionary key must be one of string, number or boolean");
           }
-          b_value value = vm->stack_top[-count + i + 1];
+          z_value value = vm->stack_top[-count + i + 1];
           dict_set_entry(vm, dict, name, value);
         }
         pop_n(vm, count);
@@ -2516,8 +2516,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         bool is_set = true;
         if (IS_OBJ(peek(vm, 2))) {
 
-          b_value value = peek(vm, 0);
-          b_value index = peek(vm, 1);
+          z_value value = peek(vm, 0);
+          z_value index = peek(vm, 1);
 
           if(IS_EMPTY(value)) {
             runtime_error(ERR_CANT_ASSIGN_EMPTY);
@@ -2565,7 +2565,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_RETURN: {
-        b_value result = pop(vm);
+        z_value result = pop(vm);
 
         close_up_values(vm, vm->current_frame->slots);
 
@@ -2592,9 +2592,9 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_CALL_IMPORT: {
-        b_obj_closure *closure = AS_CLOSURE(READ_CONSTANT());
+        z_obj_closure *closure = AS_CLOSURE(READ_CONSTANT());
 
-        b_value existing_module;
+        z_value existing_module;
         if(table_get(&vm->modules, STRING_VAL(closure->function->module->file), &existing_module)) {
           add_known_module(vm, AS_MODULE(existing_module), closure->function->module->name);
           // attach same module to import closure for selective import
@@ -2609,12 +2609,12 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_NATIVE_MODULE: {
-        b_obj_string *module_name = READ_STRING();
-        b_value value;
+        z_obj_string *module_name = READ_STRING();
+        z_value value;
         if (table_get(&vm->modules, OBJ_VAL(module_name), &value)) {
-          b_obj_module *module = AS_MODULE(value);
+          z_obj_module *module = AS_MODULE(value);
           if(module->preloader != NULL) {
-            ((b_module_loader)module->preloader)(vm);
+            ((z_module_loader)module->preloader)(vm);
           }
           module->imported = true;
           table_set(vm, &vm->current_frame->closure->function->module->values, OBJ_VAL(module_name), value);
@@ -2625,9 +2625,9 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_SELECT_IMPORT: {
-        b_obj_string *entry_name = READ_STRING();
-        b_obj_func *function = AS_CLOSURE(peek(vm, 0))->function;
-        b_value value;
+        z_obj_string *entry_name = READ_STRING();
+        z_obj_func *function = AS_CLOSURE(peek(vm, 0))->function;
+        z_value value;
         if (table_get(&function->module->values, OBJ_VAL(entry_name), &value)) {
           table_set(vm, &vm->current_frame->closure->function->module->values, OBJ_VAL(entry_name), value);
         } else {
@@ -2637,12 +2637,12 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_SELECT_NATIVE_IMPORT: {
-        b_obj_string *module_name = AS_STRING(peek(vm, 0));
-        b_obj_string *value_name = READ_STRING();
-        b_value mod;
+        z_obj_string *module_name = AS_STRING(peek(vm, 0));
+        z_obj_string *value_name = READ_STRING();
+        z_value mod;
         if (table_get(&vm->modules, OBJ_VAL(module_name), &mod)) {
-          b_obj_module *module = AS_MODULE(mod);
-          b_value value;
+          z_obj_module *module = AS_MODULE(mod);
+          z_value value;
           if (table_get(&module->values, OBJ_VAL(value_name), &value)) {
             table_set(vm, &vm->current_frame->closure->function->module->values, OBJ_VAL(value_name), value);
           } else {
@@ -2660,8 +2660,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_IMPORT_ALL_NATIVE: {
-        b_obj_string *name = AS_STRING(peek(vm, 0));
-        b_value mod;
+        z_obj_string *name = AS_STRING(peek(vm, 0));
+        z_value mod;
         if (table_get(&vm->modules, OBJ_VAL(name), &mod)) {
           table_import_all(vm, &AS_MODULE(mod)->values, &vm->current_frame->closure->function->module->values);
         }
@@ -2669,11 +2669,11 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_EJECT_IMPORT: {
-        b_obj_func *function = AS_CLOSURE(READ_CONSTANT())->function;
-        b_table *current_module = &vm->current_frame->closure->function->module->values;
-        b_value module_name = STRING_VAL(function->module->name);
+        z_obj_func *function = AS_CLOSURE(READ_CONSTANT())->function;
+        z_table *current_module = &vm->current_frame->closure->function->module->values;
+        z_value module_name = STRING_VAL(function->module->name);
 
-        b_value tmp;
+        z_value tmp;
         if(table_get(current_module, module_name, &tmp)) {
           if(!IS_MODULE(tmp)) {
             break;
@@ -2685,10 +2685,10 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_EJECT_NATIVE_IMPORT: {
-        b_value mod;
-        b_obj_string *name = READ_STRING();
+        z_value mod;
+        z_obj_string *name = READ_STRING();
         if (table_get(&vm->modules, OBJ_VAL(name), &mod)) {
-          b_table *current_module = &vm->current_frame->closure->function->module->values;
+          z_table *current_module = &vm->current_frame->closure->function->module->values;
 
           table_import_all(vm, &AS_MODULE(mod)->values, current_module);
           table_delete(current_module, OBJ_VAL(name));
@@ -2697,8 +2697,8 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_ASSERT: {
-        b_value message = pop(vm);
-        b_value expression = pop(vm);
+        z_value message = pop(vm);
+        z_value expression = pop(vm);
         if (is_false(expression)) {
           if (!IS_NIL(message)) {
             do_throw_exception(vm, NULL, true, value_to_string(vm, message)->chars);
@@ -2716,9 +2716,9 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
           break;
         }
 
-        b_value exception = peek(vm, 0);
-        b_value stacktrace = get_stack_trace(vm);
-        b_obj_instance *instance = AS_INSTANCE(exception);
+        z_value exception = peek(vm, 0);
+        z_value stacktrace = get_stack_trace(vm);
+        z_obj_instance *instance = AS_INSTANCE(exception);
         table_set(vm, &instance->properties, STRING_L_VAL("stacktrace", 10), stacktrace);
         table_set(vm, &instance->properties, STRING_L_VAL("type", 4),
           STRING_L_VAL(instance->klass->name->chars, instance->klass->name->length)
@@ -2726,7 +2726,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
         pop(vm); // pop the exception
 
         if(print_exception(vm, instance, false)) {
-          b_error_frame *error = peek_error(vm);
+          z_error_frame *error = peek_error(vm);
           vm->frame_count -= vm->current_frame - error->frame;
           vm->current_frame = error->frame;
           vm->current_frame->ip = &error->frame->closure->function->blob.code[error->offset];
@@ -2739,10 +2739,10 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_SWITCH: {
-        b_obj_switch *sw = AS_SWITCH(READ_CONSTANT());
-        b_value expr = peek(vm, 0);
+        z_obj_switch *sw = AS_SWITCH(READ_CONSTANT());
+        z_value expr = peek(vm, 0);
 
-        b_value value;
+        z_value value;
         if (table_get(&sw->table, expr, &value)) {
           vm->current_frame->ip += (int) AS_NUMBER(value);
         } else if (sw->default_jump != -1) {
@@ -2755,9 +2755,9 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_CHOICE: {
-        b_value _else = peek(vm, 0);
-        b_value _then = peek(vm, 1);
-        b_value _condition = peek(vm, 2);
+        z_value _else = peek(vm, 0);
+        z_value _then = peek(vm, 1);
+        z_value _condition = peek(vm, 2);
 
         pop_n(vm, 3);
         if (!is_false(_condition)) {
@@ -2771,7 +2771,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       case OP_BEGIN_CATCH: {
         uint16_t offset = READ_SHORT();
 
-        b_error_frame *error = ALLOCATE(b_error_frame, 1);
+        z_error_frame *error = ALLOCATE(z_error_frame, 1);
         error->frame = vm->current_frame;
         error->offset = offset;
         error->value = NIL_VAL;
@@ -2782,7 +2782,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
       }
 
       case OP_END_CATCH: {
-        b_error_frame *error = pop_error(vm);
+        z_error_frame *error = pop_error(vm);
         push(vm, error->value);
         error->value = NIL_VAL;
         break;
@@ -2804,7 +2804,7 @@ b_ptr_result run(b_vm *vm, int exit_frame) {
 #undef BINARY_MOD_OP
 }
 
-void register_module__FILE__(b_vm *vm, b_obj_module *module) {
+void register_module__FILE__(z_vm *vm, z_obj_module *module) {
   // register module __file__
   push(vm, STRING_L_VAL("__file__", 8));
   push(vm, STRING_VAL(module->file));
@@ -2812,7 +2812,7 @@ void register_module__FILE__(b_vm *vm, b_obj_module *module) {
   pop_n(vm, 2);
 }
 
-void register__ROOT__(b_vm *vm) {
+void register__ROOT__(z_vm *vm) {
   // register module __file__
   push(vm, STRING_L_VAL("__root__", 8));
   push(vm, STRING_VAL(vm->root_file));
@@ -2821,8 +2821,8 @@ void register__ROOT__(b_vm *vm) {
 }
 
 // helper function to access call outside the vm file.
-b_value raw_closure_call(b_vm *vm, b_obj_closure *closure, b_obj_list *args, bool must_push) {
-  b_value *stack_top = vm->stack_top;
+z_value raw_closure_call(z_vm *vm, z_obj_closure *closure, z_obj_list *args, bool must_push) {
+  z_value *stack_top = vm->stack_top;
 
   // set the closure before the args
   if(must_push) {
@@ -2837,14 +2837,14 @@ b_value raw_closure_call(b_vm *vm, b_obj_closure *closure, b_obj_list *args, boo
   }
 
   call(vm, closure, arg_count);
-  b_ptr_result vm_result = run(vm, vm->frame_count - 1);
+  z_ptr_result vm_result = run(vm, vm->frame_count - 1);
 
   if(vm_result != PTR_OK) {
     exit(EXIT_RUNTIME);
   }
 
 
-  b_value result = vm->stack_top[-1];
+  z_value result = vm->stack_top[-1];
   pop_n(vm, arg_count + 1);
 
   vm->stack_top = stack_top;
@@ -2852,7 +2852,7 @@ b_value raw_closure_call(b_vm *vm, b_obj_closure *closure, b_obj_list *args, boo
 }
 
 // helper function to access call outside the vm file.
-b_ptr_result run_closure_call(b_vm *vm, b_obj_closure *closure, b_obj_list *args) {
+z_ptr_result run_closure_call(z_vm *vm, z_obj_closure *closure, z_obj_list *args) {
   // set the closure before the args
   push(vm, OBJ_VAL(closure));
 
@@ -2867,23 +2867,23 @@ b_ptr_result run_closure_call(b_vm *vm, b_obj_closure *closure, b_obj_list *args
   return run(vm, vm->frame_count - 1);
 }
 
-b_value call_closure(b_vm *vm, b_obj_closure *closure, b_obj_list *args) {
+z_value call_closure(z_vm *vm, z_obj_closure *closure, z_obj_list *args) {
   return raw_closure_call(vm, closure, args, true);
 }
 
 // helper function to access call outside the vm file.
-bool queue_closure(b_vm *vm, b_obj_closure *closure) {
+bool queue_closure(z_vm *vm, z_obj_closure *closure) {
   return call(vm, closure, 0);
 }
 
-b_ptr_result interpret(b_vm *vm, b_obj_module *module, const char *source) {
+z_ptr_result interpret(z_vm *vm, z_obj_module *module, const char *source) {
   push(vm, OBJ_VAL(module));
 
   if(vm->exception_class == NULL) {
     initialize_exceptions(vm, module);
   }
 
-  b_obj_func *function = compile(vm, module, source);
+  z_obj_func *function = compile(vm, module, source);
   if(function == NULL) {
     return PTR_COMPILE_ERR;
   }
@@ -2893,7 +2893,7 @@ b_ptr_result interpret(b_vm *vm, b_obj_module *module, const char *source) {
   }
 
   push(vm, OBJ_VAL(function));
-  b_obj_closure *closure = new_closure(vm, function);
+  z_obj_closure *closure = new_closure(vm, function);
   pop(vm);
   push(vm, OBJ_VAL(closure));
 

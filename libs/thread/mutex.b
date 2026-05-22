@@ -1,4 +1,4 @@
-#!-- Part of the Blade Thread Library. See LICENSE for details. --!
+#!-- Part of the Zuri Thread Library. See LICENSE for details. --!
 import _thread
 
 
@@ -22,7 +22,7 @@ import _thread
  * 
  * Example:
  * 
- * ```blade
+ * ```zuri
  * import thread
  * 
  * var mu = thread.Mutex()
@@ -67,7 +67,7 @@ class Mutex {
    * 
    * Example:
    * 
-   * ```blade
+   * ```zuri
    *   var mu = thread.Mutex()
    * ```
    * 
@@ -90,7 +90,7 @@ class Mutex {
    * 
    * Example:
    * 
-   * ```blade
+   * ```zuri
    *   mu.lock()
    *   # ... critical section ...
    *   mu.unlock()
@@ -118,7 +118,7 @@ class Mutex {
    * 
    * Example:
    * 
-   * ```blade
+   * ```zuri
    *   mu.lock()
    *   do_work()
    *   mu.unlock()
@@ -138,7 +138,7 @@ class Mutex {
    * 
    * This is useful when you want to do alternative work rather than wait:
    * 
-   * ```blade
+   * ```zuri
    *   if mu.try_lock() {
    *     do_critical_work()
    *     mu.unlock()
@@ -163,7 +163,7 @@ class Mutex {
    * > 
    * > Do not use `is_locked()` as a substitute for `try_lock()` or `lock()`.
    * 
-   * ```blade
+   * ```zuri
    * if mu.is_locked() {
    *   echo 'lock is held'
    * }

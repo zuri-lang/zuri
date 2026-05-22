@@ -6,4 +6,4 @@ var ciphers = 'ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:' +
     'TLS_AES_128_CCM_SHA256:TLS_AES_128_CCM_8_SHA256' +
     '!aNULL:!MD5:!DSS'
 
-var user_agent = 'Blade HTTP Client/1.0'
+var user_agent = 'Zuri HTTP Client/1.0'

@@ -1,4 +1,4 @@
-#include <blade.h>
+#include <zuri.h>
 #ifdef _WIN32 // wrapping to disable annoying messages from getopt.h in ming2
 #define message(ignore)
 #endif
@@ -103,8 +103,8 @@ DECLARE_MODULE_METHOD(ssl_ctx_load_certs) {
   ENFORCE_ARG_TYPE(load_certs, 2, IS_STRING); // private key file
 
   SSL_CTX *ctx = (SSL_CTX*)AS_PTR(args[0])->pointer;
-  b_obj_string *cert_file = AS_STRING(args[1]);
-  b_obj_string *key_file = AS_STRING(args[2]);
+  z_obj_string *cert_file = AS_STRING(args[1]);
+  z_obj_string *key_file = AS_STRING(args[2]);
 
   if(SSL_CTX_use_certificate_file(ctx, cert_file->chars, SSL_FILETYPE_PEM) <= 0) {
     RETURN_FALSE;
@@ -154,7 +154,7 @@ DECLARE_MODULE_METHOD(ssl_set_ciphers) {
   ENFORCE_ARG_TYPE(set_ciphers, 1, IS_STRING);
 
   SSL_CTX *ctx = (SSL_CTX*)AS_PTR(args[0])->pointer;
-  b_obj_string *string = AS_STRING(args[1]);
+  z_obj_string *string = AS_STRING(args[1]);
 
   RETURN_BOOL(SSL_CTX_set_cipher_list(ctx, (const char*)string->chars) > 0);
 }
@@ -240,7 +240,7 @@ DECLARE_MODULE_METHOD(ssl_get_peer_certificate) {
     RETURN_NIL;
   }
 
-  b_obj_dict *dict = (b_obj_dict *)GC(new_dict(vm));
+  z_obj_dict *dict = (z_obj_dict *)GC(new_dict(vm));
 
   // Get certificate subject
   X509_NAME *subject = X509_get_subject_name(cert);
@@ -336,7 +336,7 @@ DECLARE_MODULE_METHOD(ssl_get_peer_certificate) {
   }
 
   // Get certificate extensions
-  b_obj_dict *extensions = (b_obj_dict *)GC(new_dict(vm));
+  z_obj_dict *extensions = (z_obj_dict *)GC(new_dict(vm));
   const STACK_OF(X509_EXTENSION) *exts = X509_get0_extensions(cert);
   if(exts) {
     for (int i = 0; i < sk_X509_EXTENSION_num(exts); i++) {
@@ -542,7 +542,7 @@ DECLARE_MODULE_METHOD(ssl_bio_write) {
   ENFORCE_ARG_TYPE(bio_write, 1, IS_STRING); // data
 
   BIO *bio = (BIO*)AS_PTR(args[0])->pointer;
-  b_obj_string *string = AS_STRING(args[1]);
+  z_obj_string *string = AS_STRING(args[1]);
   char *p = string->chars;
   int len = string->length;
 
@@ -572,7 +572,7 @@ DECLARE_MODULE_METHOD(ssl_write) {
   ENFORCE_ARG_TYPE(write, 1, IS_BYTES); // data
 
   SSL *ssl = (SSL*)AS_PTR(args[0])->pointer;
-  b_obj_bytes *bytes = AS_BYTES(args[1]);
+  z_obj_bytes *bytes = AS_BYTES(args[1]);
 
   SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
   ERR_clear_error();
@@ -899,7 +899,7 @@ DECLARE_MODULE_METHOD(ssl_shutdown) {
 }
 
 
-void __ssl_module_preloader(b_vm *vm) {
+void __ssl_module_preloader(z_vm *vm) {
 #ifdef WATT32
   dbug_init();
   sock_init();
@@ -913,11 +913,11 @@ void __ssl_module_preloader(b_vm *vm) {
 
 CREATE_MODULE_LOADER(ssl) {
 
-  static b_field_reg module_fields[] = {
+  static z_field_reg module_fields[] = {
       {NULL,       false, NULL},
   };
 
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       /**
        * constants
        */
@@ -1006,7 +1006,7 @@ CREATE_MODULE_LOADER(ssl) {
       {NULL,    false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_ssl",
       .fields = module_fields,
       .functions = module_functions,

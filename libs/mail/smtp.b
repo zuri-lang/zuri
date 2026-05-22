@@ -19,7 +19,7 @@ import .constants
  * 
  * ### Example
  * 
- * ```blade
+ * ```zuri
  * import mail
  * 
  * var msg = mail.Message()

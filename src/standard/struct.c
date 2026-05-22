@@ -3,7 +3,7 @@
  * pack/unpack which can be found at ext/standard/pack.c in the PHP source code.
  *
  * The original license has been maintained here for reference.
- * @copyright Ore Richard and Blade contributors.
+ * @copyright Ore Richard and Zuri contributors.
  */
 /*
    +----------------------------------------------------------------------+
@@ -75,7 +75,7 @@ static inline uint64_t reverse_int64(uint64_t arg) {
   return result.i;
 }
 
-static long to_long(b_vm *vm, b_value value) {
+static long to_long(z_vm *vm, z_value value) {
   if (IS_NUMBER(value)) {
     return (long)AS_NUMBER(value);
   } else if (IS_BOOL(value)) {
@@ -84,7 +84,7 @@ static long to_long(b_vm *vm, b_value value) {
     return -1L;
   }
 
-  b_obj_string *v_str = value_to_string(vm, value);
+  z_obj_string *v_str = value_to_string(vm, value);
   const char *v = (const char *) v_str->chars;
   int length = v_str->length;
 
@@ -114,7 +114,7 @@ static long to_long(b_vm *vm, b_value value) {
   return (long)strtod(v, NULL);
 }
 
-static double to_double(b_vm *vm, b_value value) {
+static double to_double(z_vm *vm, z_value value) {
   if (IS_NUMBER(value)) {
     return AS_NUMBER(value);
   } else if (IS_BOOL(value)) {
@@ -123,7 +123,7 @@ static double to_double(b_vm *vm, b_value value) {
     return -1;
   }
 
-  b_obj_string *v_str = value_to_string(vm, value);
+  z_obj_string *v_str = value_to_string(vm, value);
   const char *v = (const char *) v_str->chars;
   int length = v_str->length;
 
@@ -150,7 +150,7 @@ static double to_double(b_vm *vm, b_value value) {
   return strtod(v, NULL);
 }
 
-static void do_pack(b_vm *vm, b_value val, size_t size, const int *map, unsigned char *output) {
+static void do_pack(z_vm *vm, z_value val, size_t size, const int *map, unsigned char *output) {
   size_t i;
 
   long as_long = to_long(vm, val);
@@ -272,10 +272,10 @@ DECLARE_MODULE_METHOD(struct_pack) {
   ENFORCE_ARG_TYPE(pack, 0, IS_STRING);
   ENFORCE_ARG_TYPE(pack, 1, IS_LIST);
 
-  b_obj_string *string = AS_STRING(args[0]);
-  b_obj_list *params = AS_LIST(args[1]);
+  z_obj_string *string = AS_STRING(args[0]);
+  z_obj_list *params = AS_LIST(args[1]);
 
-  b_value *args_list = params->items.values;
+  z_value *args_list = params->items.values;
   int param_count = params->items.count;
 
   size_t i;
@@ -335,7 +335,7 @@ DECLARE_MODULE_METHOD(struct_pack) {
         }
 
         if (arg < 0) {
-          b_obj_string *as_string = value_to_string(vm, args_list[currentarg]);
+          z_obj_string *as_string = value_to_string(vm, args_list[currentarg]);
           arg = as_string->length;
           if (code == 'Z') {
             /* add one because Z is always NUL-terminated:
@@ -356,7 +356,7 @@ DECLARE_MODULE_METHOD(struct_pack) {
 #if !IS_64_BIT
         free(formatcodes);
         free(formatargs);
-        RETURN_ERROR("64-bit format codes are not available for 32-bit builds of Blade");
+        RETURN_ERROR("64-bit format codes are not available for 32-bit builds of Zuri");
 #endif
       case 'c':
       case 'C':
@@ -511,7 +511,7 @@ too_few_args:
       case 'H': {
         int nibbleshift = (code == 'h') ? 0 : 4;
         int first = 1;
-        b_obj_string *the_str = value_to_string(vm, args_list[currentarg++]);
+        z_obj_string *the_str = value_to_string(vm, args_list[currentarg++]);
         char *str = the_str->chars;
 
         outputpos--;
@@ -621,7 +621,7 @@ too_few_args:
           }
           break;
 #else
-          RETURN_ERROR("q, Q, J and P are only supported on 64-bit builds of Blade");
+          RETURN_ERROR("q, Q, J and P are only supported on 64-bit builds of Zuri");
 #endif
         }
 
@@ -709,7 +709,7 @@ too_few_args:
   free(formatargs);
   output[outputpos] = '\0';
 
-  b_obj_bytes *bytes = (b_obj_bytes *)GC(take_bytes(vm, output, outputpos));
+  z_obj_bytes *bytes = (z_obj_bytes *)GC(take_bytes(vm, output, outputpos));
   RETURN_OBJ(bytes);
 }
 
@@ -720,8 +720,8 @@ DECLARE_MODULE_METHOD(struct_unpack) {
   ENFORCE_ARG_TYPE(unpack, 2, IS_NUMBER);
 
   int i;
-  b_obj_string *string = AS_STRING(args[0]);
-  b_obj_bytes *data = AS_BYTES(args[1]);
+  z_obj_string *string = AS_STRING(args[0]);
+  z_obj_bytes *data = AS_BYTES(args[1]);
   int offset = AS_NUMBER(args[2]);
 
   char *format = string->chars;
@@ -737,7 +737,7 @@ DECLARE_MODULE_METHOD(struct_unpack) {
   input += offset;
   inputlen -= offset;
 
-  b_obj_dict *return_value = (b_obj_dict *)GC(new_dict(vm));
+  z_obj_dict *return_value = (z_obj_dict *)GC(new_dict(vm));
 
   while (formatlen-- > 0) {
     char type = *(format++);
@@ -844,7 +844,7 @@ DECLARE_MODULE_METHOD(struct_unpack) {
         size = 8;
         break;
 #else
-        RETURN_ERROR("64-bit format codes are not available for 32-bit Blade");
+        RETURN_ERROR("64-bit format codes are not available for 32-bit Zuri");
 #endif
 
         /* Use sizeof(float) bytes of input */
@@ -1100,7 +1100,7 @@ DECLARE_MODULE_METHOD(struct_unpack) {
               dict_set_entry(vm, return_value, UNPACK_REAL_NAME(), NUMBER_VAL((double)v));
               break;
 #else
-              RETURN_ERROR("q, Q, J and P are only valid on 64 bit build of Blade");
+              RETURN_ERROR("q, Q, J and P are only valid on 64 bit build of Zuri");
 #endif
             }
 
@@ -1191,7 +1191,7 @@ DECLARE_MODULE_METHOD(struct_unpack) {
   RETURN_OBJ(return_value);
 }
 
-void __struct_module_preloader(b_vm *vm) {
+void __struct_module_preloader(z_vm *vm) {
   int i;
 
 #if IS_LITTLE_ENDIAN
@@ -1308,13 +1308,13 @@ void __struct_module_preloader(b_vm *vm) {
 }
 
 CREATE_MODULE_LOADER(struct) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"pack", true,  GET_MODULE_METHOD(struct_pack)},
       {"unpack", true,  GET_MODULE_METHOD(struct_unpack)},
       {NULL,   false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_struct",
       .fields = NULL,
       .functions = module_functions,

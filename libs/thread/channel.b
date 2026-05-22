@@ -1,4 +1,4 @@
-#!-- Part of the Blade Thread Library. See LICENSE for details. --!
+#!-- Part of the Zuri Thread Library. See LICENSE for details. --!
 import _thread
 
 
@@ -26,7 +26,7 @@ import _thread
  * 
  * Example:
  * 
- * ```blade
+ * ```zuri
  * import thread
  * 
  * var ch = thread.Channel(4)
@@ -65,7 +65,7 @@ class Channel {
    * 
    * If the capacity is not a number or is a negative number, an exception will be thrown.
    * 
-   * ```blade
+   * ```zuri
    *   var unbuffered = thread.Channel()       # rendezvous
    *   var buffered   = thread.Channel(16)     # buffer up to 16 items
    * ```
@@ -98,7 +98,7 @@ class Channel {
    * 
    * Calling `send()` on a closed channel raises an exception.
    * 
-   * ```blade
+   * ```zuri
    *   ch.send('hello')
    *   ch.send(42)
    * ```
@@ -122,7 +122,7 @@ class Channel {
    * 
    * Calling `try_send()` method never blocks the calling thread.
    * 
-   * ```blade
+   * ```zuri
    *   if !ch.try_send(work_item) {
    *     handle_backpressure()
    *   }
@@ -147,7 +147,7 @@ class Channel {
    * If the channel is closed and no more values are buffered, returns `nil` as an end-of-stream 
    * sentinel.
    * 
-   * ```blade
+   * ```zuri
    *   var val = ch.receive()
    *   if val != nil {
    *     echo val
@@ -170,7 +170,7 @@ class Channel {
    * Because `nil` is also the end-of-stream value returned by a closed empty channel, use 
    * `is_closed()` together with `size()` to distinguish "nothing ready yet" from "channel is done".
    * 
-   * ```blade
+   * ```zuri
    *   var val = ch.try_receive()
    *   if val != nil {
    *     process(val)
@@ -210,7 +210,7 @@ class Channel {
    * is closed, no more values can be sent to it, but values can still be received until the 
    * buffer is empty.
    * 
-   * ```blade
+   * ```zuri
    *   while !ch.is_closed() {
    *     var val = ch.receive()
    *     if val != nil process(val)
@@ -232,7 +232,7 @@ class Channel {
    * The returned value is a snapshot; it may change immediately after this method returns if other 
    * threads are actively sending or receiving.
    * 
-   * ```blade
+   * ```zuri
    *   echo 'items waiting: ${ch.size()}'
    * ```
    * 
@@ -246,7 +246,7 @@ class Channel {
    * Returns the maximum number of items the channel can buffer, as set at construction time. 
    * Returns `0` for unbuffered channels.
    * 
-   ```blade
+   ```zuri
      echo 'buffer depth: ${ch.capacity()}'
      ```
    * 

@@ -233,7 +233,7 @@ def struct(...) {
  * ```
  *
  * This is how you'd create a named struct for it:
- * ```blade
+ * ```zuri
  * import clib
  *
  * var lib = clib.load('./custom-library.so')

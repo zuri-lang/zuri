@@ -25,7 +25,7 @@ var _list_regex = '/^[*] LIST \(\\\?([^)]*)\) "([^"]+)" (.*)$/'
  * 
  * ### Example
  * 
- * ```blade
+ * ```zuri
  * import mail
  * 
  * var client = mail.POP3('pop3.example.com', 995)

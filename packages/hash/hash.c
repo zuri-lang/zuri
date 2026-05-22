@@ -1,4 +1,4 @@
-#include <blade.h>
+#include <zuri.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>
 #include "fnv.h"
@@ -41,13 +41,13 @@ static void GOSTString(unsigned char *data, unsigned int data_len, unsigned char
   GOSTFinal(digest, &ctx);
 }
 
-void b__hash_module_preloader(b_vm* vm) {
+void z__hash_module_preloader(z_vm* vm) {
   OpenSSL_add_all_digests();
   default_provider = OSSL_PROVIDER_load(NULL, "default");
   legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
 }
 
-void b__hash_module_unloader(b_vm* vm) {
+void z__hash_module_unloader(z_vm* vm) {
   if (default_provider) OSSL_PROVIDER_unload(default_provider);
   if (legacy_provider) OSSL_PROVIDER_unload(legacy_provider);
   default_provider = legacy_provider = NULL;
@@ -72,10 +72,10 @@ DECLARE_MODULE_METHOD(hash__hash) {
   EVP_DigestInit_ex(ctx, md, NULL);
 
   if (IS_STRING(args[1])) {
-    const b_obj_string* data = AS_STRING(args[1]);
+    const z_obj_string* data = AS_STRING(args[1]);
     EVP_DigestUpdate(ctx, data->chars, data->length);
   } else {
-    const b_obj_bytes* data = AS_BYTES(args[1]);
+    const z_obj_bytes* data = AS_BYTES(args[1]);
     EVP_DigestUpdate(ctx, data->bytes.bytes, data->bytes.count);
   }
 
@@ -97,10 +97,10 @@ DECLARE_MODULE_METHOD(hash__fnv1) {
 
   unsigned char result[4];
   if (IS_STRING(args[0])) {
-    b_obj_string* string = AS_STRING(args[0]);
+    z_obj_string* string = AS_STRING(args[0]);
     FNV1((unsigned char*)string->chars, string->length, result);
   } else {
-    b_obj_bytes* bytes = AS_BYTES(args[0]);
+    z_obj_bytes* bytes = AS_BYTES(args[0]);
     FNV1(bytes->bytes.bytes, bytes->bytes.count, result);
   }
 
@@ -113,10 +113,10 @@ DECLARE_MODULE_METHOD(hash__fnv1a) {
 
   unsigned char result[4];
   if (IS_STRING(args[0])) {
-    b_obj_string* string = AS_STRING(args[0]);
+    z_obj_string* string = AS_STRING(args[0]);
     FNV1a((unsigned char*)string->chars, string->length, result);
   } else {
-    b_obj_bytes* bytes = AS_BYTES(args[0]);
+    z_obj_bytes* bytes = AS_BYTES(args[0]);
     FNV1a(bytes->bytes.bytes, bytes->bytes.count, result);
   }
 
@@ -129,10 +129,10 @@ DECLARE_MODULE_METHOD(hash__fnv1_64) {
 
   unsigned char result[8];
   if (IS_STRING(args[0])) {
-    b_obj_string* string = AS_STRING(args[0]);
+    z_obj_string* string = AS_STRING(args[0]);
     FNV164((unsigned char*)string->chars, string->length, result);
   } else {
-    b_obj_bytes* bytes = AS_BYTES(args[0]);
+    z_obj_bytes* bytes = AS_BYTES(args[0]);
     FNV164(bytes->bytes.bytes, bytes->bytes.count, result);
   }
 
@@ -145,10 +145,10 @@ DECLARE_MODULE_METHOD(hash__fnv1a_64) {
 
   unsigned char result[8];
   if (IS_STRING(args[0])) {
-    b_obj_string* string = AS_STRING(args[0]);
+    z_obj_string* string = AS_STRING(args[0]);
     FNV1a64((unsigned char*)string->chars, string->length, result);
   } else {
-    b_obj_bytes* bytes = AS_BYTES(args[0]);
+    z_obj_bytes* bytes = AS_BYTES(args[0]);
     FNV1a64(bytes->bytes.bytes, bytes->bytes.count, result);
   }
 
@@ -161,10 +161,10 @@ DECLARE_MODULE_METHOD(hash__gost) {
 
   unsigned char result[32];
   if (IS_STRING(args[0])) {
-    b_obj_string* string = AS_STRING(args[0]);
+    z_obj_string* string = AS_STRING(args[0]);
     GOSTString((unsigned char*)string->chars, string->length, result);
   } else {
-    b_obj_bytes* bytes = AS_BYTES(args[0]);
+    z_obj_bytes* bytes = AS_BYTES(args[0]);
     GOSTString(bytes->bytes.bytes, bytes->bytes.count, result);
   }
 
@@ -172,7 +172,7 @@ DECLARE_MODULE_METHOD(hash__gost) {
 }
 
 CREATE_MODULE_LOADER(hash) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
     {"hash", true, GET_MODULE_METHOD(hash__hash)},
     {"id", true, GET_MODULE_METHOD(hash__id)},
     {"fnv1", true, GET_MODULE_METHOD(hash__fnv1)},
@@ -183,13 +183,13 @@ CREATE_MODULE_LOADER(hash) {
     {NULL, false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
     .name = "_hash",
     .fields = NULL,
     .functions = module_functions,
     .classes = NULL,
-    .preloader = &b__hash_module_preloader,
-    .unloader = &b__hash_module_unloader
+    .preloader = &z__hash_module_preloader,
+    .unloader = &z__hash_module_unloader
   };
 
   return &module;

@@ -35,7 +35,7 @@
  * 
  * The following create a PNG image filled with color red.
  * 
- * ```blade
+ * ```zuri
  * import imagine { * }
  * 
  * # create empty image handle
@@ -60,7 +60,7 @@
  * 
  * The example below demonstrates the former example with `.use` pattern.
  * 
- * ```blade
+ * ```zuri
  * import imagine { * }
  * 
  * Image.new(100, 100, true).use(@(img) {
@@ -78,7 +78,7 @@
  * (for sake of continuity, we're using the image we just created but feel 
  * free to play around with your own images).
  * 
- * ```blade
+ * ```zuri
  * import imagine { * }
  * 
  * Image.from_png('image.png').use(@(img) {
@@ -90,7 +90,7 @@
  * The example below shows creates a simple transparent PNG image with the 
  * text `A simple text string` written in it. 
  * 
- * ```blade
+ * ```zuri
  * import imagine { * }
  * 
  * Image.new(130, 20, true).use(@(im) {
@@ -106,7 +106,7 @@
  * })
  * ```
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 

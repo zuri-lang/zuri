@@ -1,6 +1,6 @@
 /**
  * This example shows the implementation of a simple rudimentary vim
- * like editor for Blade with syntax highlighting.
+ * like editor for Zuri with syntax highlighting.
  */
 import io
 
@@ -29,10 +29,10 @@ io.stdout.write("\x1b[2J")
 io.stdout.write("\x1b[H")
 
 echo '\x1b[33m'
-echo 'A simple TTY based editor with syntax highlighting for Blade using the io module'
+echo 'A simple TTY based editor with syntax highlighting for Zuri using the io module'
 echo 'Note that your cursor can move left and right.'
 echo 'Nope! That\'s not how the terminal works by default.'
-echo 'That\'s the power of Blade!'
+echo 'That\'s the power of Zuri!'
 echo 'Press Ctrl+C to quit'
 echo '-------------------------------------------------------------'
 echo '\x1b[0m'

@@ -6,14 +6,14 @@ import ..setup
 import ..config { Config }
 import ..util { remove_cli }
 
-var blade_exe = os.args[0]
-var libs_dir = os.join_paths(os.cwd(), '.blade/libs')
+var zuri_exe = os.args[0]
+var libs_dir = os.join_paths(os.cwd(), '.zuri/libs')
 var global_dir = os.join_paths(os.dir_name(os.args[0]), 'vendor')
 
 def parse(parser) {
   parser.add_command(
     'uninstall', 
-    'Uninstalls a Blade package', 
+    'Uninstalls a Zuri package',
     {
       type: args.STRING,
     }
@@ -64,7 +64,7 @@ def run(value, options, success, error) {
             os.change_dir(package_dir)
 
             # run the script
-            os.exec('${blade_exe} ${package_config.pre_uninstall}')
+            os.exec('${zuri_exe} ${package_config.pre_uninstall}')
 
             # return to current directory
             os.change_dir(this_dir)

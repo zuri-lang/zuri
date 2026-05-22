@@ -1,25 +1,24 @@
-#include <blade.h>
+#include <zuri.h>
 #include "json.h"
 
-
-b_value get_blade_value(b_vm *vm, json_value * data) {
-  b_value value;
+z_value get_zuri_value(z_vm *vm, json_value * data) {
+  z_value value;
   switch (data->type) {
     case json_object: {
-      b_obj_dict *dict = (b_obj_dict*)GC(new_dict(vm));
+      z_obj_dict *dict = (z_obj_dict*)GC(new_dict(vm));
       value = OBJ_VAL(dict);
       for (int i = 0; i < data->u.object.length; i++) {
-        b_obj_string *name = (b_obj_string *)GC(copy_string(vm, data->u.object.values[i].name, strlen(data->u.object.values[i].name)));
-        b_value _value = get_blade_value(vm, data->u.object.values[i].value);
+        z_obj_string *name = (z_obj_string *)GC(copy_string(vm, data->u.object.values[i].name, strlen(data->u.object.values[i].name)));
+        z_value _value = get_zuri_value(vm, data->u.object.values[i].value);
         dict_set_entry(vm, dict, OBJ_VAL(name), _value);
       }
       break;
     }
     case json_array: {
-      b_obj_list *list = (b_obj_list*)GC(new_list(vm));
+      z_obj_list *list = (z_obj_list*)GC(new_list(vm));
       value = OBJ_VAL(list);
       for (int i = 0; i < data->u.array.length; i++) {
-        write_list(vm, list, get_blade_value(vm, data->u.array.values[i]));
+        write_list(vm, list, get_zuri_value(vm, data->u.array.values[i]));
       }
       break;
     }
@@ -52,7 +51,7 @@ b_value get_blade_value(b_vm *vm, json_value * data) {
 DECLARE_MODULE_METHOD(json__decode) {
   ENFORCE_ARG_RANGE(decode, 1, 2);
   ENFORCE_ARG_TYPE(decode, 0, IS_STRING);
-  b_obj_string *data = AS_STRING(args[0]);
+  z_obj_string *data = AS_STRING(args[0]);
 
   json_settings settings;
   memset(&settings, 0, sizeof (json_settings));
@@ -64,7 +63,7 @@ DECLARE_MODULE_METHOD(json__decode) {
   if (value == 0) {
     RETURN_ERROR(error);
   }
-  b_value converted = get_blade_value(vm, value);
+  z_value converted = get_zuri_value(vm, value);
   json_value_free(value);
 
   RETURN_VALUE(converted);
@@ -72,12 +71,12 @@ DECLARE_MODULE_METHOD(json__decode) {
 
 
 CREATE_MODULE_LOADER(json) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"_decode",   true,  GET_MODULE_METHOD(json__decode)},
       {NULL,    false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_json",
       .fields = NULL,
       .functions = module_functions,

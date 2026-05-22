@@ -1,5 +1,5 @@
-#ifndef BLADE_SCANNER_H
-#define BLADE_SCANNER_H
+#ifndef ZURI_SCANNER_H
+#define ZURI_SCANNER_H
 
 #include "common.h"
 
@@ -108,14 +108,14 @@ typedef enum {
   ERROR_TOKEN,
   EMPTY_TOKEN,
   UNDEFINED_TOKEN,
-} b_tkn_type;
+} z_tkn_type;
 
 typedef struct {
-  b_tkn_type type;
+  z_tkn_type type;
   const char *start;
   int length;
   int line;
-} b_token;
+} z_token;
 
 typedef struct {
   const char *start;
@@ -123,12 +123,12 @@ typedef struct {
   int line;
   int interpolating_count;
   int interpolating[MAX_INTERPOLATION_NESTING];
-} b_scanner;
+} z_scanner;
 
-void init_scanner(b_scanner *s, const char *source);
+void init_scanner(z_scanner *s, const char *source);
 
-b_token scan_token(b_scanner *s);
+z_token scan_token(z_scanner *s);
 
-bool is_at_end(b_scanner *s);
+bool is_at_end(z_scanner *s);
 
 #endif

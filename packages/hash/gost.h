@@ -1,5 +1,5 @@
-#ifndef BLADE_MODULE_HASH_GOST_H
-#define BLADE_MODULE_HASH_GOST_H
+#ifndef ZURI_MODULE_HASH_GOST_H
+#define ZURI_MODULE_HASH_GOST_H
 
 #include <string.h>
 #include <inttypes.h>
@@ -569,4 +569,4 @@ static void GOSTFinal(unsigned char digest[32], GOST_CTX *context) {
   memset(context, 0, sizeof(*context));
 }
 
-#endif //BLADE_MODULE_HASH_GOST_H
+#endif //ZURI_MODULE_HASH_GOST_H

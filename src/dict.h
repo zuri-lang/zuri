@@ -1,5 +1,5 @@
-#ifndef BLADE_DICTIONARY_H
-#define BLADE_DICTIONARY_H
+#ifndef ZURI_DICTIONARY_H
+#define ZURI_DICTIONARY_H
 
 #include "common.h"
 #include "native.h"

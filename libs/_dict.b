@@ -12,7 +12,7 @@ class _DictExtension > dict {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * var myDict = {a: 1, b: 2, c: 3}
    * myDict.each(@(value, key) {
    *   echo '${key}: ${value}'
@@ -45,7 +45,7 @@ class _DictExtension > dict {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * var myDict = {a: 1, b: 2, c: 3}
    * var filteredDict = myDict.filter(@(value, key) {
    *   return value > 1
@@ -83,7 +83,7 @@ class _DictExtension > dict {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * var myDict = {a: 1, b: 2, c: 3}
    * var hasGreaterThanTwo = myDict.some(@(value, key) {
    *   return value > 2
@@ -119,7 +119,7 @@ class _DictExtension > dict {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * var myDict = {a: 1, b: 2, c: 3}
    * var allGreaterThanZero = myDict.every(@(value, key) {
    *   return value > 0
@@ -156,7 +156,7 @@ class _DictExtension > dict {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * var myDict = {a: 1, b: 2, c: 3}
    * var sum = myDict.reduce(@(accumulator, value, key) {
    *   return accumulator + value

@@ -8,7 +8,7 @@ Before publishing a package, there are a few things you should consider when cho
 
 1. It must be unique. Package names are unique throughout a repository irrespective of who publishes them. 
   
-  It is advisable to first search the repository you want to publish to (such as [nyssa.bladelang.org](nyssa.bladelang.org)) for any package already using the name you want to choose. 
+  It is advisable to first search the repository you want to publish to (such as [nyssa.zurilang.org](nyssa.zurilang.org)) for any package already using the name you want to choose. 
   
   > It is also highly possible but not conventional to have the same package published under different names in different repositories.
 2. It should be descriptive.
@@ -51,12 +51,12 @@ cd sample
 - Run the command `nyssa install <package_name>`.
 - Open the file at `app/index.b` and insert code to import your package before every code in the file. E.g.
 
-```blade
+```zuri
 import <package_name>
 echo 'Welcome to Nyssa. Magic begins here!'
 ```
 
-- Run the application (`blade .`)
+- Run the application (`zuri .`)
 
 If all goes well without crashing, then your package can be imported without crashing the user's application. From here on, you can write more tests.
 

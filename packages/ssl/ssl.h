@@ -1,5 +1,5 @@
-#ifndef BLADE_SSL_MODULE_H
-#define BLADE_SSL_MODULE_H
+#ifndef ZURI_SSL_MODULE_H
+#define ZURI_SSL_MODULE_H
 
 #define DEFINE_SSL_CONSTANT(v) \
   DECLARE_MODULE_METHOD(ssl_const_##v) { \
@@ -32,4 +32,4 @@
 #include <openssl/asn1.h>
 #include <openssl/objects.h>
 
-#endif //BLADE_SSL_MODULE_H
+#endif //ZURI_SSL_MODULE_H

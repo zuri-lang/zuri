@@ -4,7 +4,7 @@
 
 #include <stdlib.h>
 
-void init_blob(b_blob *blob) {
+void init_blob(z_blob *blob) {
   blob->count = 0;
   blob->capacity = 0;
   blob->code = NULL;
@@ -12,7 +12,7 @@ void init_blob(b_blob *blob) {
   init_value_arr(&blob->constants);
 }
 
-void write_blob(b_vm *vm, b_blob *blob, uint8_t byte, int line) {
+void write_blob(z_vm *vm, z_blob *blob, uint8_t byte, int line) {
   if (blob->capacity < blob->count + 1) {
     int old_capacity = blob->capacity;
     blob->capacity = GROW_CAPACITY(old_capacity);
@@ -25,7 +25,7 @@ void write_blob(b_vm *vm, b_blob *blob, uint8_t byte, int line) {
   blob->count++;
 }
 
-void free_blob(b_vm *vm, b_blob *blob) {
+void free_blob(z_vm *vm, z_blob *blob) {
   if (blob->code != NULL) {
     FREE_ARRAY(uint8_t, blob->code, blob->capacity);
   }
@@ -36,7 +36,7 @@ void free_blob(b_vm *vm, b_blob *blob) {
   init_blob(blob);
 }
 
-int add_constant(b_vm *vm, b_blob *blob, b_value value) {
+int add_constant(z_vm *vm, z_blob *blob, z_value value) {
   push(vm, value); // fixing gc corruption
   write_value_arr(vm, &blob->constants, value);
   pop(vm); // fixing gc corruption

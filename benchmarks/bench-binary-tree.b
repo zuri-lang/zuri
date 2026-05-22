@@ -1,7 +1,7 @@
 /* The Computer Language Benchmarks Game
  * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
  *
- * binary-trees Blade #1 program
+ * binary-trees Zuri #1 program
  *
  * contributed by Richard Ore
  * *reset*

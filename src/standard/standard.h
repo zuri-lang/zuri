@@ -1,5 +1,5 @@
-#ifndef BLADE_STANDARD_H
-#define BLADE_STANDARD_H
+#ifndef ZURI_STANDARD_H
+#define ZURI_STANDARD_H
 
 extern CREATE_MODULE_LOADER(base64);
 extern CREATE_MODULE_LOADER(date);
@@ -15,4 +15,4 @@ extern CREATE_MODULE_LOADER(process);
 extern CREATE_MODULE_LOADER(struct);
 extern CREATE_MODULE_LOADER(thread);
 
-#endif // BLADE_STANDARD_H
+#endif // ZURI_STANDARD_H

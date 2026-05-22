@@ -31,7 +31,7 @@
 #include "bunistd.h"
 #endif /* HAVE_UNISTD_H */
 
-b_module_init modules[] = {
+z_module_init modules[] = {
     GET_MODULE_LOADER(os),         //
     GET_MODULE_LOADER(io),         //
     GET_MODULE_LOADER(base64), //
@@ -45,12 +45,12 @@ b_module_init modules[] = {
     NULL,
 };
 
-void free_module(b_vm *vm, b_obj_module *module) {
+void free_module(z_vm *vm, z_obj_module *module) {
   free_table(vm, &module->values);
   free(module->name);
   free(module->file);
   if (module->unloader != NULL && module->imported) {
-    ((b_module_loader)module->unloader)(vm);
+    ((z_module_loader)module->unloader)(vm);
   }
   if(module->handle != NULL) {
     close_dl_module(module->handle);  // free the shared library...
@@ -62,20 +62,20 @@ void free_module(b_vm *vm, b_obj_module *module) {
   module->handle = NULL;
 }
 
-bool load_module(b_vm *vm, b_module_init init_fn, char *import_name, char *source, void *handle) {
-  b_module_reg *module = init_fn(vm);
+bool load_module(z_vm *vm, z_module_init init_fn, char *import_name, char *source, void *handle) {
+  z_module_reg *module = init_fn(vm);
 
   if(module != NULL) {
-    b_obj_module *the_module = (b_obj_module*)GC(new_module(vm, (char *)module->name, source, NULL));
+    z_obj_module *the_module = (z_obj_module*)GC(new_module(vm, (char *)module->name, source, NULL));
     the_module->preloader = module->preloader;
     the_module->unloader = module->unloader;
 
     if (module->fields != NULL) {
       for (int j = 0; module->fields[j].name != NULL; j++) {
-        b_field_reg field = module->fields[j];
-        b_value field_name = GC_STRING(field.name);
+        z_field_reg field = module->fields[j];
+        z_value field_name = GC_STRING(field.name);
 
-        b_value v = field.field_value(vm);
+        z_value v = field.field_value(vm);
         push(vm, v);
         table_set(vm, &the_module->values, field_name, v);
         pop(vm);
@@ -84,10 +84,10 @@ bool load_module(b_vm *vm, b_module_init init_fn, char *import_name, char *sourc
 
     if (module->functions != NULL) {
       for (int j = 0; module->functions[j].name != NULL; j++) {
-        b_func_reg func = module->functions[j];
-        b_value func_name = GC_STRING(func.name);
+        z_func_reg func = module->functions[j];
+        z_value func_name = GC_STRING(func.name);
 
-        b_value func_real_value = OBJ_VAL(GC(new_native(vm, func.function, func.name)));
+        z_value func_real_value = OBJ_VAL(GC(new_native(vm, func.function, func.name)));
         push(vm, func_real_value);
         table_set(vm, &the_module->values, func_name, func_real_value);
         pop(vm);
@@ -96,20 +96,20 @@ bool load_module(b_vm *vm, b_module_init init_fn, char *import_name, char *sourc
 
     if (module->classes != NULL) {
       for (int j = 0; module->classes[j].name != NULL; j++) {
-        b_class_reg klass_reg = module->classes[j];
+        z_class_reg klass_reg = module->classes[j];
 
-        b_obj_string *class_name = (b_obj_string *)GC(copy_string(vm, klass_reg.name, (int)strlen(klass_reg.name)));
+        z_obj_string *class_name = (z_obj_string *)GC(copy_string(vm, klass_reg.name, (int)strlen(klass_reg.name)));
 
-        b_obj_class *klass = (b_obj_class *)GC(new_class(vm, class_name));
+        z_obj_class *klass = (z_obj_class *)GC(new_class(vm, class_name));
 
         if (klass_reg.functions != NULL) {
           for (int k = 0; klass_reg.functions[k].name != NULL; k++) {
 
-            b_func_reg func = klass_reg.functions[k];
+            z_func_reg func = klass_reg.functions[k];
 
-            b_value func_name = GC_STRING(func.name);
+            z_value func_name = GC_STRING(func.name);
 
-            b_obj_native *native = (b_obj_native*)GC(new_native(vm, func.function, func.name));
+            z_obj_native *native = (z_obj_native*)GC(new_native(vm, func.function, func.name));
 
             if (func.is_static) {
               native->type = TYPE_STATIC;
@@ -123,10 +123,10 @@ bool load_module(b_vm *vm, b_module_init init_fn, char *import_name, char *sourc
 
         if (klass_reg.fields != NULL) {
           for (int k = 0; klass_reg.fields[k].name != NULL; k++) {
-            b_field_reg field = klass_reg.fields[k];
-            b_value field_name = GC_STRING(field.name);
+            z_field_reg field = klass_reg.fields[k];
+            z_value field_name = GC_STRING(field.name);
 
-            b_value v = field.field_value(vm);
+            z_value v = field.field_value(vm);
             push(vm, v);
             table_set(vm,
                       field.is_static ? &klass->static_properties
@@ -154,18 +154,18 @@ bool load_module(b_vm *vm, b_module_init init_fn, char *import_name, char *sourc
   return false;
 }
 
-void add_native_module(b_vm *vm, b_obj_module *module, const char *as) {
+void add_native_module(z_vm *vm, z_obj_module *module, const char *as) {
   if(as != NULL) {
     module->name = strdup(as);
   }
-  b_value name = STRING_VAL(module->name);
+  z_value name = STRING_VAL(module->name);
   push(vm, name);
   push(vm, OBJ_VAL(module));
   table_set(vm, &vm->modules, name, OBJ_VAL(module));
   pop_n(vm, 2);
 }
 
-void bind_user_modules(b_vm *vm, char *pkg_root) {
+void bind_user_modules(z_vm *vm, char *pkg_root) {
   if(pkg_root == NULL) return;
 
   DIR *dir;
@@ -217,7 +217,7 @@ void bind_user_modules(b_vm *vm, char *pkg_root) {
   CLEAR_GC();
 }
 
-void bind_native_modules(b_vm *vm) {
+void bind_native_modules(z_vm *vm) {
   for (int i = 0; modules[i] != NULL; i++) {
     load_module(vm, modules[i], NULL, strdup("<__native__>"), NULL);
   }
@@ -226,15 +226,15 @@ void bind_native_modules(b_vm *vm) {
   bind_user_modules(vm, merge_paths(getcwd(NULL, 0), LOCAL_PACKAGES_DIRECTORY LOCAL_EXT_DIRECTORY));
 }
 
-char* load_user_module(b_vm *vm, const char *path, char *name) {
-  int length = (int)strlen(name) + 20; // 20 == strlen("blade_module_loader_")
+char* load_user_module(z_vm *vm, const char *path, char *name) {
+  int length = (int)strlen(name) + 20; // 20 == strlen("zuri_module_loader_")
   char *fn_name = ALLOCATE(char, length + 1);
 
   if(fn_name == NULL) {
     return "failed to load module";
   }
 
-  sprintf(fn_name, "blade_module_loader_%s", name);
+  sprintf(fn_name, "zuri_module_loader_%s", name);
   fn_name[length] = '\0'; // terminate the raw string
 
   void *handle;
@@ -243,7 +243,7 @@ char* load_user_module(b_vm *vm, const char *path, char *name) {
     return (char *)dlerror();
   }
 
-  b_module_init fn = dlsym(handle, fn_name);
+  z_module_init fn = dlsym(handle, fn_name);
   if(fn == NULL) {
     FREE_ARRAY(char, fn_name, length + 1);
     return (char *)dlerror();

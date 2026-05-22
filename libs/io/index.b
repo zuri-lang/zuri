@@ -5,7 +5,7 @@
  * as well as expose the operating system standard I/O for easy access.
  * 
  * Some I/O operations that should belong to this module have been merged as 
- * core features and offered as built-in functions for Blade. Specifically 
+ * core features and offered as built-in functions for Zuri. Specifically
  * file I/O features that can be accessed via the built-in `file()` function. 
  * 
  * The standard I/O streams are also files and you can call almost all file 
@@ -17,14 +17,14 @@
  * The following example shows how to use the `io` module for accepting user name 
  * and printing the result.
  * 
- * ```blade
+ * ```zuri
  * import io
  * 
  * var name = io.readline('What is your name?')
  * echo name
  * ```
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _io

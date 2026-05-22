@@ -95,7 +95,7 @@ class HttpResponse {
     self.body = body ? body : bytes(0)
     self.headers = headers ? headers : {
       'Content-Type': 'text/html; charset=utf-8',
-      'X-Powered-By': 'Blade',
+      'X-Powered-By': 'Zuri',
       'Date': Date().format('r')
     }
     self.cookies = cookies ? cookies : []
@@ -227,10 +227,10 @@ class HttpResponse {
   }
 
   /**
-   * A shorthand method that renders a template using  Blade's template
+   * A shorthand method that renders a template using  Zuri's template
    * module default settings.
    *
-   * Follow the [template module documentation](https://bladelang.org/standard/template)
+   * Follow the [template module documentation](https://zurilang.org/standard/template)
    * to know more about setting up your project to render from templates.
    *
    * > **NOTE**

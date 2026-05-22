@@ -8,18 +8,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-void init_value_arr(b_value_arr *array) {
+void init_value_arr(z_value_arr *array) {
   array->capacity = 0;
   array->count = 0;
   array->values = NULL;
 }
 
-void init_byte_arr(b_byte_arr *array, int length) {
+void init_byte_arr(z_byte_arr *array, int length) {
   array->count = length;
   array->bytes = NULL;
 }
 
-void write_value_arr(b_vm *vm, b_value_arr *array, b_value value) {
+void write_value_arr(z_vm *vm, z_value_arr *array, z_value value) {
   if (array == NULL) {
     return;
   }
@@ -28,7 +28,7 @@ void write_value_arr(b_vm *vm, b_value_arr *array, b_value value) {
     int old_capacity = array->capacity;
     array->capacity = GROW_CAPACITY(old_capacity);
     array->values =
-        GROW_ARRAY(b_value, array->values, old_capacity, array->capacity);
+        GROW_ARRAY(z_value, array->values, old_capacity, array->capacity);
     if (array->values == NULL) {
       return;
     }
@@ -38,7 +38,7 @@ void write_value_arr(b_vm *vm, b_value_arr *array, b_value value) {
   array->count++;
 }
 
-void insert_value_arr(b_vm *vm, b_value_arr *array, b_value value, int index) {
+void insert_value_arr(z_vm *vm, z_value_arr *array, z_value value, int index) {
   if (array == NULL || index < 0) {
     return;
   }
@@ -46,12 +46,12 @@ void insert_value_arr(b_vm *vm, b_value_arr *array, b_value value, int index) {
   if (array->capacity <= index) {
     array->capacity = GROW_CAPACITY(index);
     array->values =
-        GROW_ARRAY(b_value, array->values, array->count, array->capacity);
+        GROW_ARRAY(z_value, array->values, array->count, array->capacity);
   } else if (array->capacity < array->count + 2) {
     int capacity = array->capacity;
     array->capacity = GROW_CAPACITY(capacity);
     array->values =
-        GROW_ARRAY(b_value, array->values, capacity, array->capacity);
+        GROW_ARRAY(z_value, array->values, capacity, array->capacity);
   }
 
   if (array->values == NULL) {
@@ -73,12 +73,12 @@ void insert_value_arr(b_vm *vm, b_value_arr *array, b_value value, int index) {
   array->count++;
 }
 
-void free_value_arr(b_vm *vm, b_value_arr *array) {
-  FREE_ARRAY(b_value, array->values, array->capacity);
+void free_value_arr(z_vm *vm, z_value_arr *array) {
+  FREE_ARRAY(z_value, array->values, array->capacity);
   init_value_arr(array);
 }
 
-void free_byte_arr(b_vm *vm, b_byte_arr *array) {
+void free_byte_arr(z_vm *vm, z_byte_arr *array) {
   FREE_ARRAY(unsigned char, array->bytes, array->count);
   init_byte_arr(array, 0);
 }
@@ -91,7 +91,7 @@ static void print_number(const double x) {
   }
 }
 
-static inline void do_print_value(b_value value, bool fix_string) {
+static inline void do_print_value(z_value value, bool fix_string) {
 #if defined(USE_NAN_BOXING) && USE_NAN_BOXING
   if (IS_EMPTY(value)) return;
   else if (IS_NIL(value)) {
@@ -128,10 +128,10 @@ static inline void do_print_value(b_value value, bool fix_string) {
 #endif
 }
 
-void print_value(b_value value) { do_print_value(value, false); }
-void echo_value(b_value value) { do_print_value(value, true); }
+void print_value(z_value value) { do_print_value(value, false); }
+void echo_value(z_value value) { do_print_value(value, true); }
 
-char *number_to_string(b_vm *vm, double x, int *length) {
+char *number_to_string(z_vm *vm, double x, int *length) {
   if (x >= INT64_MIN && x <= INT64_MAX && x == (int64_t)x) {
     *length = snprintf(NULL, 0, INTEGER_PRINT_FORMAT, (long long)(int64_t)x);
     char *num_str = ALLOCATE(char, *length + 1);
@@ -153,7 +153,7 @@ char *number_to_string(b_vm *vm, double x, int *length) {
   return strdup("");
 }
 
-b_obj_string *value_to_string(b_vm *vm, b_value value) {
+z_obj_string *value_to_string(z_vm *vm, z_value value) {
 #if defined(USE_NAN_BOXING) && USE_NAN_BOXING
   if (IS_EMPTY(value))
     return copy_string(vm, "", 0);
@@ -184,7 +184,7 @@ b_obj_string *value_to_string(b_vm *vm, b_value value) {
 #endif
 }
 
-const char *value_type(b_value value) {
+const char *value_type(z_value value) {
   if (IS_EMPTY(value))
     return "empty";
   if (IS_NIL(value))
@@ -199,7 +199,7 @@ const char *value_type(b_value value) {
     return "unknown";
 }
 
-static inline bool bytes_equal(b_obj_bytes *a, b_obj_bytes *b) {
+static inline bool bytes_equal(z_obj_bytes *a, z_obj_bytes *b) {
   if(a->bytes.count != b->bytes.count) {
     return false;
   }
@@ -207,7 +207,7 @@ static inline bool bytes_equal(b_obj_bytes *a, b_obj_bytes *b) {
   return memcmp(a->bytes.bytes, b->bytes.bytes, a->bytes.count) == 0;
 }
 
-static inline bool list_equal(b_obj_list *a, b_obj_list *b) {
+static inline bool list_equal(z_obj_list *a, z_obj_list *b) {
   if(a->items.count != b->items.count) {
     return false;
   }
@@ -221,18 +221,18 @@ static inline bool list_equal(b_obj_list *a, b_obj_list *b) {
   return true;
 }
 
-static inline bool dict_equal(b_obj_dict *dict1, b_obj_dict *dict2) {
+static inline bool dict_equal(z_obj_dict *dict1, z_obj_dict *dict2) {
   if (dict1->names.count != dict2->names.count) {
     return false;
   }
 
   for (int i = 0; i < dict2->names.count; i++) {
-    b_value value1;
+    z_value value1;
     if(!table_get(&dict1->items, dict2->names.values[i], &value1)) {
       return false;
     }
 
-    b_value value2;
+    z_value value2;
     if(!table_get(&dict2->items, dict2->names.values[i], &value2)) {
       return false;
     }
@@ -245,7 +245,7 @@ static inline bool dict_equal(b_obj_dict *dict1, b_obj_dict *dict2) {
   return true;
 }
 
-static inline bool string_equal(b_obj_string *str1, b_obj_string *str2) {
+static inline bool string_equal(z_obj_string *str1, z_obj_string *str2) {
   if (str1->hash == str2->hash && str1->length == str2->length) {
     return true;
   } else if(str1->length != str2->length) {
@@ -255,7 +255,7 @@ static inline bool string_equal(b_obj_string *str1, b_obj_string *str2) {
   return memcmp(str1->chars, str2->chars, str1->length) == 0;
 }
 
-bool values_equal(b_value a, b_value b) {
+bool values_equal(z_value a, z_value b) {
 #if defined(USE_NAN_BOXING) && USE_NAN_BOXING
   if (IS_NUMBER(a) && IS_NUMBER(b))
     return AS_NUMBER(a) == AS_NUMBER(b);
@@ -312,7 +312,7 @@ static inline uint32_t hash_bits(uint64_t hash) {
 }
 
 uint32_t hash_double(double value) {
-  b_double_union bits;
+  z_double_union bits;
   bits.num = value;
   return hash_bits(bits.bits);
 }
@@ -334,28 +334,28 @@ uint32_t hash_string(const char *key, int length) {
 }
 
 // Generates a hash code for [object].
-static uint32_t hash_object(b_obj *object) {
+static uint32_t hash_object(z_obj *object) {
   if (!object) return 0;
 
   switch (object->type) {
     case OBJ_CLASS:
       // Classes just use their name.
-      return ((b_obj_class *) object)->name->hash;
+      return ((z_obj_class *) object)->name->hash;
 
       // Allow bare (non-closure) functions so that we can use a map to find
       // existing constants in a function's constant table. This is only used
       // internally. Since user code never sees a non-closure function, they
       // cannot use them as map keys.
     case OBJ_FUNCTION: {
-      b_obj_func *fn = (b_obj_func *) object;
+      z_obj_func *fn = (z_obj_func *) object;
       return hash_double(fn->arity) ^ hash_double(fn->blob.count);
     }
 
     case OBJ_STRING:
-      return ((b_obj_string *) object)->hash;
+      return ((z_obj_string *) object)->hash;
 
     case OBJ_BYTES: {
-      b_obj_bytes *bytes = ((b_obj_bytes *) object);
+      z_obj_bytes *bytes = ((z_obj_bytes *) object);
       return hash_string((const char *)bytes->bytes.bytes, bytes->bytes.count);
     }
 
@@ -364,7 +364,7 @@ static uint32_t hash_object(b_obj *object) {
   }
 }
 
-uint32_t hash_value(b_value value) {
+uint32_t hash_value(z_value value) {
 #if defined(USE_NAN_BOXING) && USE_NAN_BOXING
   if (IS_OBJ(value))
     return hash_object(AS_OBJ(value));
@@ -391,9 +391,9 @@ uint32_t hash_value(b_value value) {
 
 /**
  * returns the greater of the two values.
- * this function encapsulates Blade's object hierarchy
+ * this function encapsulates Zuri's object hierarchy
  */
-static b_value find_max_value(b_value a, b_value b) {
+static z_value find_max_value(z_value a, z_value b) {
   if (IS_NIL(a)) {
     return b;
   } else if (IS_BOOL(a)) {
@@ -444,11 +444,11 @@ static b_value find_max_value(b_value a, b_value b) {
 /**
  * sorts values in an array using the bubble-sort algorithm
  */
-void sort_values(b_value *values, int count) {
+void sort_values(z_value *values, int count) {
   for (int i = 0; i < count; i++) {
     for (int j = 0; j < count; j++) {
       if (values_equal(values[j], find_max_value(values[i], values[j]))) {
-        b_value temp = values[i];
+        z_value temp = values[i];
         values[i] = values[j];
         values[j] = temp;
 
@@ -464,20 +464,20 @@ void sort_values(b_value *values, int count) {
   }
 }
 
-b_value copy_value(b_vm *vm, b_value value) {
+z_value copy_value(z_vm *vm, z_value value) {
   if(IS_OBJ(value)) {
     switch (AS_OBJ(value)->type) {
       case OBJ_STRING: {
-        b_obj_string *string = AS_STRING(value);
+        z_obj_string *string = AS_STRING(value);
         return OBJ_VAL(copy_string(vm, string->chars, string->length));
       }
       case OBJ_BYTES: {
-        b_obj_bytes *bytes = AS_BYTES(value);
+        z_obj_bytes *bytes = AS_BYTES(value);
         return OBJ_VAL(copy_bytes(vm, bytes->bytes.bytes, bytes->bytes.count));
       }
       case OBJ_LIST: {
-        b_obj_list *list = AS_LIST(value);
-        b_obj_list *n_list = new_list(vm);
+        z_obj_list *list = AS_LIST(value);
+        z_obj_list *n_list = new_list(vm);
         push(vm, OBJ_VAL(n_list));
 
         for (int i = 0; i < list->items.count; i++) {
@@ -488,8 +488,8 @@ b_value copy_value(b_vm *vm, b_value value) {
         return OBJ_VAL(n_list);
       }
       case OBJ_DICT: {
-        b_obj_dict *dict = AS_DICT(value);
-        b_obj_dict *n_dict = new_dict(vm);
+        z_obj_dict *dict = AS_DICT(value);
+        z_obj_dict *n_dict = new_dict(vm);
         push(vm, OBJ_VAL(n_dict));
 
         // copy names

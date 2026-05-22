@@ -121,7 +121,7 @@ class SQLite3 {
    * 
    * For example,
    * 
-   * ```blade
+   * ```zuri
    * sqlite.query('SELECT * FROM users WHERE id = ? AND name = ?', [3, 'James'])
    * ```
 
@@ -129,7 +129,7 @@ class SQLite3 {
    * 
    * For Example,
    * 
-   * ```blade
+   * ```zuri
    * sqlite.query(
    *   'SELECT * FROM user WHERE id = :id AND name = :name', 
    *   {':id': 1, ':name': 'James'}

@@ -5,8 +5,8 @@ project(bundle C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
-set(BLADE_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blade")
-message(STATUS "Building Bundle support module to ${BLADE_ROOT}")
+set(ZURI_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/zuri")
+message(STATUS "Building Bundle support module to ${ZURI_ROOT}")
 
 add_executable(bundle 
     bundle.c 
@@ -39,7 +39,7 @@ else()
 endif()
 
 add_custom_target(finalize-bundle-archive ALL
-    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/bundle.zip" ${BLADE_ROOT}/bundle.zip
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/bundle.zip" ${ZURI_ROOT}/bundle.zip
     COMMENT "Exporting default bundler..."
 )
 add_dependencies(finalize-bundle-archive bundle)

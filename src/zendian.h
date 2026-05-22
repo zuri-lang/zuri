@@ -1,5 +1,5 @@
-#ifndef BLADE_ENDIAN_H
-#define BLADE_ENDIAN_H
+#ifndef ZURI_ENDIAN_H
+#define ZURI_ENDIAN_H
 
 #ifndef _WIN32
 #include <sys/param.h>
@@ -78,4 +78,4 @@
 #define IS_64_BIT 0
 #endif
 
-#endif //BLADE_ENDIAN_H
+#endif //ZURI_ENDIAN_H

@@ -15,7 +15,7 @@
  * a valid SQLite3 connection to a valid database. The following example shows how to
  * create a connection to a database.
  *
- * ```blade
+ * ```zuri
  * import sqlite
  * var con = sqlite.open('test.db')
  * ```
@@ -26,7 +26,7 @@
  * database (albeit relational). The following example shows how to open a that make SQLite
  * behave like an in-memory database.
  *
- * ```blade
+ * ```zuri
  * import sqlite
  * var con = sqlite.open()
  * ```
@@ -35,7 +35,7 @@
  * queries. For example, you can run queries that do not return a result set (for example,
  * a `CREATE TABLE` query) using the `exec()` function as shown in the example below.
  *
- * ```blade
+ * ```zuri
  * # Create a new table
  * con.exec('CREATE TABLE users (id integer primary key, name text, gender text)')
  *
@@ -51,7 +51,7 @@
  * You can retrieve the ID of the last insert query in the above command for example using
  * the `last_insert_id()` function. For example,
  *
- * ```blade
+ * ```zuri
  * con.last_insert_id()
  * # 2
  * ```
@@ -63,7 +63,7 @@
  * This function returns a `SQLite3Cursor` that allows you iterate through the dataset
  * and do as you wish with them. For example,
  *
- * ```blade
+ * ```zuri
  * var result = con.query('SELECT * FROM users')
  * ```
  *
@@ -71,7 +71,7 @@
  * function. This function automatically moves the cursor to the next datarow in the result set
  * and return `true` or `false` when there are no more rows in the result set.
  *
- * ```blade
+ * ```zuri
  * while result.has_next() {
  *   var name = result.get(1)
  *   var gender = result.get(2)
@@ -92,7 +92,7 @@
  * the class implements the _iterable_ decorators (as indicated in the class documentation below).
  * For example,
  *
- * ```blade
+ * ```zuri
  * for row in result {
  *   echo 'Name = ${row.name}, Gender = ${row.gender}'
  * }
@@ -115,7 +115,7 @@
  *
  * For example,
  *
- * ```blade
+ * ```zuri
  * con.fetch('SELECT * FROM users')
  *
  * # ---- result ---------
@@ -143,7 +143,7 @@
  * This module provides support for parameterized queries and as such offer protection against
  * SQL injection. An example of a parameterized query is show below.
  *
- * ```blade
+ * ```zuri
  * %> con.fetch('SELECT * FROM users WHERE name = ?', [ 'James' ])
  *
  * # ---- result ---------
@@ -160,7 +160,7 @@
  * queries. When you do this, the order or count of the parameters will not matter. Instead,
  * parameters will be matched based on their value in the dictionary. For example,
  *
- * ```blade
+ * ```zuri
  * con.fetch(
  *   'select * from users where name = :name and id = :id',
  *   {
@@ -182,13 +182,13 @@
  * It is also a very good practice to always close your connection once done with it.
  * This is really simple.
  *
- * ```blade
+ * ```zuri
  * con.close()
  * ```
  *
  * _See below for more info_
  *
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import .sqlite3 { * }

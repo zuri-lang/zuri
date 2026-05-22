@@ -1,7 +1,7 @@
 /* The Computer Language Benchmarks Game
  * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
  *
- * fannkuch-redux Blade program
+ * fannkuch-redux Zuri program
  * Based on the C solution by Jeremy Zerfas
  * that was based on the Ada program by Jonathan Parker and Georg Bauhaus which in turn
  * was based on code by Dave Fladebo, Eckehard Berns, Heiner Marxen, Hongwei Xi,

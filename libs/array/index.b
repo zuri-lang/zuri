@@ -5,7 +5,7 @@
  * integers in the platform byte order. The classes provided in this module complement
  * the _bytes()_ object and allow higher other binary data manipulation.
  * 
- * @copyright 2022, Richard Ore and Blade contributors
+ * @copyright 2022, Richard Ore and Zuri contributors
  */
 
 import .int16 { * }

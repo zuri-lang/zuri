@@ -8,18 +8,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-void init_table(b_table *table) {
+void init_table(z_table *table) {
   table->count = 0;
   table->capacity = 0;
   table->entries = NULL;
 }
 
-void free_table(b_vm *vm, b_table *table) {
-  FREE_ARRAY(b_entry, table->entries, table->capacity);
+void free_table(z_vm *vm, z_table *table) {
+  FREE_ARRAY(z_entry, table->entries, table->capacity);
   init_table(table);
 }
 
-static b_entry *find_entry(b_entry *entries, int capacity, b_value key) {
+static z_entry *find_entry(z_entry *entries, int capacity, z_value key) {
   uint32_t hash = hash_value(key);
 
 #if defined(DEBUG_TABLE) && DEBUG_TABLE
@@ -29,10 +29,10 @@ static b_entry *find_entry(b_entry *entries, int capacity, b_value key) {
 #endif
 
   uint32_t index = hash & (capacity - 1);
-  b_entry *tombstone = NULL;
+  z_entry *tombstone = NULL;
 
   for (;;) {
-    b_entry *entry = &entries[index];
+    z_entry *entry = &entries[index];
 
     if (IS_EMPTY(entry->key)) {
       if (IS_NIL(entry->value)) {
@@ -59,7 +59,7 @@ static b_entry *find_entry(b_entry *entries, int capacity, b_value key) {
   }
 }
 
-bool table_get(b_table *table, b_value key, b_value *value) {
+bool table_get(z_table *table, z_value key, z_value *value) {
   if (table->count == 0 || table->entries == NULL)
     return false;
 
@@ -67,7 +67,7 @@ bool table_get(b_table *table, b_value key, b_value *value) {
   printf("getting entry with hash %u...\n", hash_value(key));
 #endif
 
-  b_entry *entry = find_entry(table->entries, table->capacity, key);
+  z_entry *entry = find_entry(table->entries, table->capacity, key);
 
   if (IS_EMPTY(entry->key) || IS_NIL(entry->key))
     return false;
@@ -82,8 +82,8 @@ bool table_get(b_table *table, b_value key, b_value *value) {
   return true;
 }
 
-static void adjust_capacity(b_vm *vm, b_table *table, int capacity) {
-  b_entry *entries = ALLOCATE(b_entry, capacity);
+static void adjust_capacity(z_vm *vm, z_table *table, int capacity) {
+  z_entry *entries = ALLOCATE(z_entry, capacity);
   for (int i = 0; i < capacity; i++) {
     entries[i].key = EMPTY_VAL;
     entries[i].value = NIL_VAL;
@@ -92,29 +92,29 @@ static void adjust_capacity(b_vm *vm, b_table *table, int capacity) {
   // repopulate buckets
   table->count = 0;
   for (int i = 0; i < table->capacity; i++) {
-    b_entry *entry = &table->entries[i];
+    z_entry *entry = &table->entries[i];
     if (IS_EMPTY(entry->key))
       continue;
-    b_entry *dest = find_entry(entries, capacity, entry->key);
+    z_entry *dest = find_entry(entries, capacity, entry->key);
     dest->key = entry->key;
     dest->value = entry->value;
     table->count++;
   }
 
   // free the old entries...
-  FREE_ARRAY(b_entry, table->entries, table->capacity);
+  FREE_ARRAY(z_entry, table->entries, table->capacity);
 
   table->entries = entries;
   table->capacity = capacity;
 }
 
-bool table_set(b_vm *vm, b_table *table, b_value key, b_value value) {
+bool table_set(z_vm *vm, z_table *table, z_value key, z_value value) {
   if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
     int capacity = GROW_CAPACITY(table->capacity);
     adjust_capacity(vm, table, capacity);
   }
 
-  b_entry *entry = find_entry(table->entries, table->capacity, key);
+  z_entry *entry = find_entry(table->entries, table->capacity, key);
 
   bool is_new = IS_EMPTY(entry->key);
 
@@ -128,12 +128,12 @@ bool table_set(b_vm *vm, b_table *table, b_value key, b_value value) {
   return is_new;
 }
 
-bool table_delete(b_table *table, b_value key) {
+bool table_delete(z_table *table, z_value key) {
   if (table->count == 0)
     return false;
 
   // find the entry
-  b_entry *entry = find_entry(table->entries, table->capacity, key);
+  z_entry *entry = find_entry(table->entries, table->capacity, key);
   if (IS_EMPTY(entry->key))
     return false;
 
@@ -144,20 +144,20 @@ bool table_delete(b_table *table, b_value key) {
   return true;
 }
 
-void table_add_all(b_vm *vm, b_table *from, b_table *to) {
+void table_add_all(z_vm *vm, z_table *from, z_table *to) {
   for (int i = 0; i < from->capacity; i++) {
-    b_entry *entry = &from->entries[i];
+    z_entry *entry = &from->entries[i];
     if (!IS_EMPTY(entry->key)) {
       table_set(vm, to, entry->key, entry->value);
     }
   }
 }
 
-void table_copy_extensions(b_vm *vm, b_table *from, b_table *to) {
+void table_copy_extensions(z_vm *vm, z_table *from, z_table *to) {
   for (int i = 0; i < from->capacity; i++) {
-    b_entry *entry = &from->entries[i];
+    z_entry *entry = &from->entries[i];
     if (!IS_EMPTY(entry->key) && IS_CLOSURE(entry->value)) {
-      b_obj_closure *closure = AS_CLOSURE(entry->value);
+      z_obj_closure *closure = AS_CLOSURE(entry->value);
 
       // Make non-static
       closure->function->type = TYPE_METHOD;
@@ -167,9 +167,9 @@ void table_copy_extensions(b_vm *vm, b_table *from, b_table *to) {
   }
 }
 
-void table_import_all(b_vm *vm, b_table *from, b_table *to) {
+void table_import_all(z_vm *vm, z_table *from, z_table *to) {
   for (int i = 0; i < from->capacity; i++) {
-    b_entry *entry = &from->entries[i];
+    z_entry *entry = &from->entries[i];
     if (!IS_EMPTY(entry->key) && !IS_MODULE(entry->value)) {
       // Don't import private values
       if(IS_STRING(entry->key) && AS_STRING(entry->key)->chars[0] == '_') {
@@ -181,23 +181,23 @@ void table_import_all(b_vm *vm, b_table *from, b_table *to) {
   }
 }
 
-void table_copy(b_vm *vm, b_table *from, b_table *to) {
+void table_copy(z_vm *vm, z_table *from, z_table *to) {
   for (int i = 0; i < from->capacity; i++) {
-    b_entry *entry = &from->entries[i];
+    z_entry *entry = &from->entries[i];
     if (!IS_EMPTY(entry->key)) {
       table_set(vm, to, entry->key, copy_value(vm, entry->value));
     }
   }
 }
 
-b_obj_string *table_find_string(b_table *table, const char *chars, int length, uint32_t hash) {
+z_obj_string *table_find_string(z_table *table, const char *chars, int length, uint32_t hash) {
   if (table->count == 0)
     return NULL;
 
   uint32_t index = hash & (table->capacity - 1);
 
   for (;;) {
-    b_entry *entry = &table->entries[index];
+    z_entry *entry = &table->entries[index];
 
     if (IS_EMPTY(entry->key)) {
       /* // stop if we find an empty non-tombstone entry
@@ -205,7 +205,7 @@ b_obj_string *table_find_string(b_table *table, const char *chars, int length, u
       return NULL;
     }
 
-    b_obj_string *string = AS_STRING(entry->key);
+    z_obj_string *string = AS_STRING(entry->key);
     if (string->length == length && string->hash == hash &&
         memcmp(string->chars, chars, length) == 0) {
       // we found it
@@ -216,9 +216,9 @@ b_obj_string *table_find_string(b_table *table, const char *chars, int length, u
   }
 }
 
-b_value table_find_key(b_table *table, b_value value) {
+z_value table_find_key(z_table *table, z_value value) {
   for (int i = 0; i < table->capacity; i++) {
-    b_entry *entry = &table->entries[i];
+    z_entry *entry = &table->entries[i];
     if (!IS_NIL(entry->key) && !IS_EMPTY(entry->key)) {
       if (values_equal(entry->value, value))
         return entry->key;
@@ -227,11 +227,11 @@ b_value table_find_key(b_table *table, b_value value) {
   return NIL_VAL;
 }
 
-b_obj_list *table_get_keys(b_vm *vm, b_table *table) {
-  b_obj_list *list = (b_obj_list *)GC(new_list(vm));
+z_obj_list *table_get_keys(z_vm *vm, z_table *table) {
+  z_obj_list *list = (z_obj_list *)GC(new_list(vm));
 
   for (int i = 0; i < table->capacity; i++) {
-    b_entry *entry = &table->entries[i];
+    z_entry *entry = &table->entries[i];
     if (!IS_NIL(entry->key) && !IS_EMPTY(entry->key)) {
       write_value_arr(vm, &list->items, entry->key);
     }
@@ -240,10 +240,10 @@ b_obj_list *table_get_keys(b_vm *vm, b_table *table) {
   return list;
 }
 
-void table_print(b_table *table) {
+void table_print(z_table *table) {
   printf("<HashTable: {");
   for (int i = 0; i < table->capacity; i++) {
-    b_entry *entry = &table->entries[i];
+    z_entry *entry = &table->entries[i];
     if (!IS_EMPTY(entry->key)) {
       print_value(entry->key);
       if(IS_STRING(entry->key)) {
@@ -259,9 +259,9 @@ void table_print(b_table *table) {
   printf("}>\n");
 }
 
-void mark_table(b_vm *vm, b_table *table) {
+void mark_table(z_vm *vm, z_table *table) {
   for (int i = 0; i < table->capacity; i++) {
-    b_entry *entry = &table->entries[i];
+    z_entry *entry = &table->entries[i];
 
     if(entry != NULL) {
       mark_value(vm, entry->key);
@@ -270,9 +270,9 @@ void mark_table(b_vm *vm, b_table *table) {
   }
 }
 
-void table_remove_whites(b_vm *vm, b_table *table) {
+void table_remove_whites(z_vm *vm, z_table *table) {
   for (int i = 0; i < table->capacity; i++) {
-    b_entry *entry = &table->entries[i];
+    z_entry *entry = &table->entries[i];
     if (IS_OBJ(entry->key) && AS_OBJ(entry->key)->mark != vm->mark_value) {
       table_delete(table, entry->key);
     }

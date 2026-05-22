@@ -1,25 +1,25 @@
-#include <blade.h>
+#include <zuri.h>
 #include <curl/curl.h>
 #include <stdlib.h>
 #include <math.h>
 
 #define DEFINE_CURL_CONSTANT(v) \
-  b_value __curl_##v(b_vm *vm) { \
+  z_value __curl_##v(z_vm *vm) { \
     return NUMBER_VAL((double)(v)); \
   }
 
 #define DEFINE_CURL_CONSTANT_AS(v, x) \
-  b_value __curl_##v(b_vm *vm) { \
+  z_value __curl_##v(z_vm *vm) { \
     return NUMBER_VAL((double)(x)); \
   }
 
 #define DEFINE_CURL_STR_CONSTANT(v) \
-  b_value __curl_##v(b_vm *vm) { \
+  z_value __curl_##v(z_vm *vm) { \
     return STRING_VAL(v); \
   }
 
 #define DEFINE_CURL_PTR_CONSTANT(v, j) \
-  b_value __curl_##v(b_vm *vm) { \
+  z_value __curl_##v(z_vm *vm) { \
     return OBJ_VAL(new_ptr(vm, (void*)v j)); \
   }
 
@@ -30,11 +30,11 @@
 #define CURL_MAX_INPUT_LENGTH 8000000
 #endif
 
-void b__curl_module_preloader(b_vm *vm) {
+void z__curl_module_preloader(z_vm *vm) {
   curl_global_init(CURL_GLOBAL_ALL);
 }
 
-void b__curl_module_unloader(b_vm *vm) {
+void z__curl_module_unloader(z_vm *vm) {
   curl_global_cleanup();
 }
 
@@ -575,12 +575,12 @@ const char *get_error_message(CURLcode result) {
   }
 }
 
-struct b_curl_string {
+struct z_curl_string {
   unsigned char *ptr;
   size_t len;
 };
 
-void init_string(struct b_curl_string *s) {
+void init_string(struct z_curl_string *s) {
   s->len = 0;
   s->ptr = malloc(s->len+1);
   if (s->ptr == NULL) {
@@ -590,7 +590,7 @@ void init_string(struct b_curl_string *s) {
   s->ptr[0] = '\0';
 }
 
-size_t b_Curl_WriteFunction(void *ptr, size_t size, size_t nmemb, struct b_curl_string *s) {
+size_t z_Curl_WriteFunction(void *ptr, size_t size, size_t nmemb, struct z_curl_string *s) {
   size_t new_len = s->len + size*nmemb;
   s->ptr = realloc(s->ptr, new_len+1);
   if (s->ptr == NULL) {
@@ -604,7 +604,7 @@ size_t b_Curl_WriteFunction(void *ptr, size_t size, size_t nmemb, struct b_curl_
   return size*nmemb;
 }
 
-b_value __curl_version(b_vm *vm) {
+z_value __curl_version(z_vm *vm) {
   char *version = curl_version();
   return STRING_VAL(version);
 }
@@ -634,7 +634,7 @@ DECLARE_MODULE_METHOD(curl__easy_reset) {
   RETURN;
 }
 
-size_t b_Curl_ReadFunction(void* ptr, size_t size, size_t nmemb, void* user_data) {
+size_t z_Curl_ReadFunction(void* ptr, size_t size, size_t nmemb, void* user_data) {
   size_t total_size = size * nmemb;
   unsigned char* buffer = (unsigned char*)ptr;
   unsigned char* data = (unsigned char*)user_data;
@@ -651,14 +651,14 @@ DECLARE_MODULE_METHOD(curl__easy_setopt) {
 
   int result = CURLE_BAD_FUNCTION_ARGUMENT;
   if(IS_STRING(args[2])) {
-    b_obj_string *str = AS_STRING(args[2]);
+    z_obj_string *str = AS_STRING(args[2]);
     if(str->length > CURL_MAX_INPUT_LENGTH) {
       RETURN_VALUE_ERROR("string length exceeds maximum input length of %d", CURL_MAX_INPUT_LENGTH);
     }
 
     result = curl_easy_setopt(curl, opt, str->chars);
   } else if(IS_BYTES(args[2])) {
-    b_obj_bytes *bytes = AS_BYTES(args[2]);
+    z_obj_bytes *bytes = AS_BYTES(args[2]);
     if(bytes->bytes.count > CURL_MAX_INPUT_LENGTH) {
       RETURN_VALUE_ERROR("bytes length exceeds maximum input length of %d", CURL_MAX_INPUT_LENGTH);
     }
@@ -676,7 +676,7 @@ DECLARE_MODULE_METHOD(curl__easy_setopt) {
 
   if(result == CURLE_OK) {
     if(opt == CURLOPT_READDATA) {
-      RETURN_BOOL(curl_easy_setopt(curl, CURLOPT_READFUNCTION, b_Curl_ReadFunction) == CURLE_OK);
+      RETURN_BOOL(curl_easy_setopt(curl, CURLOPT_READFUNCTION, z_Curl_ReadFunction) == CURLE_OK);
     }
     RETURN_TRUE;
   }
@@ -689,21 +689,21 @@ DECLARE_MODULE_METHOD(curl__easy_perform) {
   ENFORCE_ARG_TYPE(easy_perform, 0, IS_PTR);
   CURL *curl = (CURL*)AS_PTR(args[0])->pointer;
 
-  struct b_curl_string body;
+  struct z_curl_string body;
   init_string(&body);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, b_Curl_WriteFunction);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, z_Curl_WriteFunction);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
 
-  struct b_curl_string headers;
+  struct z_curl_string headers;
   init_string(&headers);
-  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, b_Curl_WriteFunction);
+  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, z_Curl_WriteFunction);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &headers);
 
   CURLcode result = curl_easy_perform(curl);
   if(result == CURLE_OK) {
 
-    b_obj_dict *dict = (b_obj_dict*)GC(new_dict(vm));
-    b_obj_bytes *data = (b_obj_bytes*)GC(copy_bytes(vm, body.ptr, body.len));
+    z_obj_dict *dict = (z_obj_dict*)GC(new_dict(vm));
+    z_obj_bytes *data = (z_obj_bytes*)GC(copy_bytes(vm, body.ptr, body.len));
 
     dict_add_entry(vm, dict, GC_L_STRING("headers", 7), GC_STRING((char *)headers.ptr));
     dict_add_entry(vm, dict, GC_L_STRING("body", 4), OBJ_VAL(data));
@@ -786,10 +786,10 @@ DECLARE_MODULE_METHOD(curl__easy_getinfo) {
         result = curl_easy_getinfo(curl, CURLINFO_CERTINFO, &ci);
 
         if (result == CURLE_OK) {
-          b_obj_list *list = (b_obj_list*)GC(new_list(vm));
+          z_obj_list *list = (z_obj_list*)GC(new_list(vm));
 
           for(int i = 0; i < ci->num_of_certs; i++) {
-            b_obj_list *inner_list = (b_obj_list*)GC(new_list(vm));
+            z_obj_list *inner_list = (z_obj_list*)GC(new_list(vm));
             struct curl_slist *s_list;
 
             for(s_list = ci->certinfo[i]; s_list; s_list = s_list->next)
@@ -804,7 +804,7 @@ DECLARE_MODULE_METHOD(curl__easy_getinfo) {
         struct curl_slist *data = NULL;
         result = curl_easy_getinfo(curl, info, data);
         if(result == CURLE_OK) {
-          b_obj_list *list = (b_obj_list*)GC(new_list(vm));
+          z_obj_list *list = (z_obj_list*)GC(new_list(vm));
           while(data) {
             write_list(vm, list, STRING_VAL(data->data));
             data = data->next;
@@ -828,11 +828,11 @@ DECLARE_MODULE_METHOD(curl__easy_escape) {
   ENFORCE_ARG_TYPE(easy_escape, 0, IS_PTR);
   ENFORCE_ARG_TYPE(easy_escape, 1, IS_STRING);
   CURL *curl = (CURL*)AS_PTR(args[0])->pointer;
-  b_obj_string *string = AS_STRING(args[1]);
+  z_obj_string *string = AS_STRING(args[1]);
   char *result = curl_easy_escape(curl, string->chars, string->length);
 
   if(result != NULL) {
-    b_obj_string *n_string = copy_string(vm, result, (int)strlen(result));
+    z_obj_string *n_string = copy_string(vm, result, (int)strlen(result));
     curl_free(result);
     RETURN_OBJ(n_string);
   }
@@ -845,12 +845,12 @@ DECLARE_MODULE_METHOD(curl__easy_unescape) {
   ENFORCE_ARG_TYPE(easy_unescape, 0, IS_PTR);
   ENFORCE_ARG_TYPE(easy_unescape, 1, IS_STRING);
   CURL *curl = (CURL*)AS_PTR(args[0])->pointer;
-  b_obj_string *string = AS_STRING(args[1]);
+  z_obj_string *string = AS_STRING(args[1]);
   int out_length = 0;
   char *result = curl_easy_unescape(curl, string->chars, string->length, &out_length);
 
   if(result != NULL) {
-    b_obj_string *n_string = copy_string(vm, result, (int)strlen(result));
+    z_obj_string *n_string = copy_string(vm, result, (int)strlen(result));
     curl_free(result);
     RETURN_OBJ(n_string);
   }
@@ -961,12 +961,12 @@ DECLARE_MODULE_METHOD(curl__mime_subparts) {
 DECLARE_MODULE_METHOD(curl__slist_create) {
   ENFORCE_ARG_COUNT(slist_create, 1);
   ENFORCE_ARG_TYPE(slist_create, 0, IS_LIST);
-  b_obj_list *b_list = AS_LIST(args[0]);
+  z_obj_list *z_list = AS_LIST(args[0]);
 
   struct curl_slist *s_list = NULL;
 
-  for(int i = 0; i < b_list->items.count; i++) {
-    s_list = curl_slist_append(s_list, value_to_string(vm, b_list->items.values[i])->chars);
+  for(int i = 0; i < z_list->items.count; i++) {
+    s_list = curl_slist_append(s_list, value_to_string(vm, z_list->items.values[i])->chars);
   }
 
   if(s_list != NULL) {
@@ -988,7 +988,7 @@ DECLARE_MODULE_METHOD(curl__slist_free) {
 
 CREATE_MODULE_LOADER(curl) {
 
-  static b_field_reg module_fields[] = {
+  static z_field_reg module_fields[] = {
       // CURL OPTS
       GET_CURL_CONSTANT(CURLOPT_URL),
       GET_CURL_CONSTANT(CURLOPT_PORT),
@@ -1317,7 +1317,7 @@ CREATE_MODULE_LOADER(curl) {
       {NULL,    false, NULL},
   };
 
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"easy_init",   true,  GET_MODULE_METHOD(curl__easy_init)},
       {"easy_cleanup",   true,  GET_MODULE_METHOD(curl__easy_cleanup)},
       {"easy_reset",   true,  GET_MODULE_METHOD(curl__easy_reset)},
@@ -1340,13 +1340,13 @@ CREATE_MODULE_LOADER(curl) {
       {NULL,    false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_curl",
       .fields = module_fields,
       .functions = module_functions,
       .classes = NULL,
-      .preloader = &b__curl_module_preloader,
-      .unloader = &b__curl_module_unloader
+      .preloader = &z__curl_module_preloader,
+      .unloader = &z__curl_module_unloader
   };
 
   return &module;

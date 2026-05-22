@@ -4,7 +4,7 @@
  * This module provides functions for generating and verifying bcrypt 
  * hashes as well as functions for getting information from a bcrypt hash.
  * 
- * @copyright 2022, Richard Ore and Blade contributors
+ * @copyright 2022, Richard Ore and Zuri contributors
  */
 
 /**

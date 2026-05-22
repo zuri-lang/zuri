@@ -1,14 +1,14 @@
 # Testing
 
-Blade comes shipped with a test runner called `qi` designed to run tests are out the `tests` directory. Nyssa provides the default interface to the test runner via the `test` command allowing you to write and run tests for your Blade applications out of the box. For this reason, Nyssa considers all files in the `test` directory as test files and will automatically create the directory for you when you create a new project.
+Zuri comes shipped with a test runner called `qi` designed to run tests are out the `tests` directory. Nyssa provides the default interface to the test runner via the `test` command allowing you to write and run tests for your Zuri applications out of the box. For this reason, Nyssa considers all files in the `test` directory as test files and will automatically create the directory for you when you create a new project.
 
-Both _Nyssa_ and `Qi` ship with Blade allowing you write comprehensive tests without any third-party package.
+Both _Nyssa_ and `Qi` ship with Zuri allowing you write comprehensive tests without any third-party package.
 
 ### Writing a simple test
 
 Let's write a test for a hypothetical function that returns the product of two numbers. First, we'll create a file `prod.b` that contains the following code:
 
-```blade
+```zuri
 def prod(x, y) {
   return x * y
 }
@@ -16,7 +16,7 @@ def prod(x, y) {
 
 Now, let's create a test for it by creating a file `prod.test.b` in the `tests` directory and add the following code to it.
 
-```blade
+```zuri
 import ..prod
 
 describe('Product test suite', @{

@@ -1,5 +1,5 @@
-#ifndef BLADE_LIST_H
-#define BLADE_LIST_H
+#ifndef ZURI_LIST_H
+#define ZURI_LIST_H
 
 #include "common.h"
 #include "native.h"

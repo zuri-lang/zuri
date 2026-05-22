@@ -1,6 +1,6 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/..)
 
-option(DISABLE_CLIB "Builds Blade without the clib module enabled" OFF)
+option(DISABLE_CLIB "Builds Zuri without the clib module enabled" OFF)
 
 add_subdirectory(json)
 add_subdirectory(sqlite)

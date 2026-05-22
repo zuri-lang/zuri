@@ -62,26 +62,26 @@ def run(value, options, success, error) {
   var tf = file(test_ignore, 'w+')
   tf.open(); tf.close()
 
-  # increase Blade visibility by setting the attribute file properties
-  # to allow Github identify it as a Blade project.
+  # increase Zuri visibility by setting the attribute file properties
+  # to allow Github identify it as a Zuri project.
   var test_attr_file = file(attr_file)
-  var attr_content_test = '/\\*\\.b linguist\\-language=Blade/'
+  var attr_content_test = '/\\*\\.b linguist\\-language=Zuri/'
   if !test_attr_file.exists() or !test_attr_file.read().match(attr_content_test) {
     var start_line = test_attr_file.exists() ? '\n' : ''
     file(attr_file, 'w+').write(
       start_line +
       '*.b linguist-detectable\n' +
-      '*.b linguist-language=Blade\n'
+      '*.b linguist-language=Zuri\n'
     )
   }
 
   # create default gitignore file to disable popular editor extensions
-  # and the .blade directory.
+  # and the .zuri directory.
   # 
   # this will only happen if the file does not exist or does not contain 
-  # the blade default ignore definitions.
+  # the zuri default ignore definitions.
   var test_ingore_file = file(ignore_file)
-  var ignore_start_line = '# blade packages directory and files'
+  var ignore_start_line = '# zuri packages directory and files'
   if !test_ingore_file.exists() or !test_ingore_file.read().match(
     '/${ignore_start_line}/'
   ) {
@@ -91,7 +91,7 @@ def run(value, options, success, error) {
     file(ignore_file, 'w+').write(
       start_line +
       '${ignore_start_line}\n' +
-      '.blade/\n' +
+      '.zuri/\n' +
       '*.nyp\n' +   # nyssa package object file
       '\n' +
       '# popular editors\n' +

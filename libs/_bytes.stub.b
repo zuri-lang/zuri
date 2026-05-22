@@ -1,16 +1,16 @@
 /**
  * # Working with Binary data
  * 
- * Working with binary data in Blade is a simple as working with _lists_ and this can be 
+ * Working with binary data in Zuri is a simple as working with _lists_ and this can be
  * done using `bytes`. A `bytes` (meaning Byte stream) is an iterable in-memory contiguous 
- * list of numbers. Blade allows easily creating _bytes_ from strings and vice-versa and 
+ * list of numbers. Zuri allows easily creating _bytes_ from strings and vice-versa and
  * they are the primary medium of reading and writing binary data into and from the OS.
  * 
  * ## Creating a Byte stream
  * 
  * The built-in `bytes()` function can be used to create a byte stream. For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> bytes(5)
  * (0 0 0 0 0)
  * ```
@@ -18,7 +18,7 @@
  * The above code creates a byte stream containing five bytes all initialized to zero (0).
  * You can also create byte stream from a list of numbers as well. For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> bytes([72, 69, 76, 76, 79])
  * (48 45 4c 4c 4f)
  * ```
@@ -34,7 +34,7 @@
  * 
  * For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> file('dummy.txt', 'wb').write(bytes([72, 69, 76, 76, 79]))
  * true
  * %> file('dummy.txt').read()
@@ -48,7 +48,7 @@
  * > will be equal to `(number % 255) - 1`.
  * > 
  * > E.g.
- * > ```blade-repl
+ * > ```zuri-repl
  * > %> bytes([256])
  * > (0)
  * > %> bytes([386])
@@ -61,13 +61,13 @@
  * 
  * ## Byte stream indexing
  * 
- * Like _Lists_, _Strings_ and _Dictionaries_, Byte streams can also be indexed in Blade. We can 
+ * Like _Lists_, _Strings_ and _Dictionaries_, Byte streams can also be indexed in Zuri. We can
  * retrieve an index in a byte stream using the same operators as others (`[]`) and we can use this 
  * to access or modify the contents of a byte stream.
  * 
  * For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var g = bytes([31, 47, 83, 105, 72])
  * %> g
  * (1f 2f 53 69 48)
@@ -98,7 +98,7 @@ class bytes {
    * 
    * For example,
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes(5)
    * (0 0 0 0 0)
    * %> bytes([65, 66, 67, 68, 69])
@@ -110,7 +110,7 @@ class bytes {
    /**
    * Returns the number of bytes in the byte stream.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([25, 57]).length()
    * 2
    * ```
@@ -125,7 +125,7 @@ class bytes {
    *  
    * For example,
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = bytes([0x40, 0x75])
    * %> a.append(0x16)
    * %> echo a
@@ -143,7 +143,7 @@ class bytes {
    *  
    * For example,
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([19, 11]).clone()
    * (13 b)
    * ```
@@ -158,7 +158,7 @@ class bytes {
    * 
    * For example,
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = bytes([33, 91, 126])
    * %> var b = bytes([119, 42])
    * %> a
@@ -182,7 +182,7 @@ class bytes {
   /**
    * Returns the index of the first occurrence of the given byte in the byte stream.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([25, 57, 25]).index_of(57)
    * 1
    * %> bytes([25, 57, 25]).index_of(25, 1)
@@ -199,7 +199,7 @@ class bytes {
   /**
    * Removes the last item in a byte stream and returns it.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = bytes([79, 43, 9])
    * %> a.pop()
    * 9
@@ -215,7 +215,7 @@ class bytes {
   /**
    * Removes the item at the specified index in the byte stream and return the previous value at the specified index.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = bytes([25, 57, 25])
    * %> a.remove(1)
    * 57
@@ -232,7 +232,7 @@ class bytes {
   /**
    * Reverses the items in the byte stream.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([5, 4, 3, 2, 1]).reverse()
    * (1 2 3 4 5)
    * ```
@@ -245,7 +245,7 @@ class bytes {
   /**
    * Returns the first item in the byte stream or `nil` if the byte stream is empty.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([25, 57, 42]).first()
    * 25
    * ```
@@ -257,7 +257,7 @@ class bytes {
   /**
    * Returns the last item in the byte stream or `nil` if the byte stream is empty.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([25, 57, 42]).last()
    * 42
    * ```
@@ -281,7 +281,7 @@ class bytes {
    *  
    * For example,
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes(0).split(bytes(0))
    * []
    * %> echo 'test'.to_bytes().split(bytes(0))
@@ -303,7 +303,7 @@ class bytes {
    *  
    * For example,
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = bytes([13, 36])
    * %> a.dispose()
    * %> a
@@ -316,7 +316,7 @@ class bytes {
   /**
    * Returns `true` if the byte stream only contains alpha characters, `false` otherwise.
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([65, 66, 67]).is_alpha()
    * true
    * %> bytes([65, 66, 67, 128]).is_alpha()
@@ -331,7 +331,7 @@ class bytes {
   /**
    * Returns `true` if the byte stream only contains alpha characters and numbers, `false` otherwise.
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([65, 66, 67, 48, 49, 50]).is_alnum()
    * true
    * %> bytes([65, 66, 67, 48, 49, 50, 8]).is_alnum()
@@ -346,7 +346,7 @@ class bytes {
   /**
    * Returns `true` if the byte stream only contains numbers, `false` otherwise.
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([48, 49, 50]).is_number()
    * true
    * %> bytes([48, 49, 50, 68]).is_number()
@@ -361,7 +361,7 @@ class bytes {
   /**
    * Returns `true` if the byte stream only contains lower case characters, `false` otherwise.
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([97, 98, 99]).is_lower()
    * true
    * %> bytes([97, 98, 99, 68]).is_lower()
@@ -376,7 +376,7 @@ class bytes {
   /**
    * Returns `true` if the byte stream only contains upper case characters, `false` otherwise.
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([65, 66, 67]).is_upper()
    * true
    * %> bytes([65, 66, 67, 98]).is_upper()
@@ -391,7 +391,7 @@ class bytes {
   /**
    * Returns `true` if the byte stream only contains space characters, `false` otherwise.
    *  
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([32, 32, 32]).is_space()
    * true
    * %> bytes([32, 32, 32, 68]).is_space()
@@ -406,7 +406,7 @@ class bytes {
   /**
    * Returns the byte stream as a list of bytes.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([0x31, 0x55, 0x149, 0x215]).to_list()
    * [49, 85, 233, 33]
    * ```
@@ -419,7 +419,7 @@ class bytes {
   /**
    * Returns the byte stream as a string.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> bytes([65, 66, 67, 68, 69]).to_string()
    * 'ABCDE'
    * ```

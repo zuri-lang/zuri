@@ -1,7 +1,7 @@
-#include <blade.h>
+#include <zuri.h>
 #include <sqlite3.h>
 
-void sqlite_bind_params(sqlite3_stmt *stmt, int index, b_value value, int *error) {
+void sqlite_bind_params(sqlite3_stmt *stmt, int index, z_value value, int *error) {
   if(IS_NUMBER(value)) {
     double number = AS_NUMBER(value);
     if((int)number == number) {
@@ -10,10 +10,10 @@ void sqlite_bind_params(sqlite3_stmt *stmt, int index, b_value value, int *error
       sqlite3_bind_double(stmt, index, number);
     }
   } else if(IS_STRING(value)) {
-    b_obj_string *str = AS_STRING(value);
+    z_obj_string *str = AS_STRING(value);
     sqlite3_bind_text(stmt, index, str->chars, str->length, 0);
   } else if(IS_BYTES(value)) {
-    b_obj_bytes *blob = AS_BYTES(value);
+    z_obj_bytes *blob = AS_BYTES(value);
     sqlite3_bind_blob(stmt, index, blob->bytes.bytes, blob->bytes.count, SQLITE_STATIC);
   } else if(IS_NIL(value)) {
     sqlite3_bind_null(stmt, index);
@@ -25,7 +25,7 @@ void sqlite_bind_params(sqlite3_stmt *stmt, int index, b_value value, int *error
 DECLARE_MODULE_METHOD(sqlite__open) {
   ENFORCE_ARG_COUNT(_open, 1);
   ENFORCE_ARG_TYPE(_open, 0, IS_STRING);
-  b_obj_string *path = AS_STRING(args[0]);
+  z_obj_string *path = AS_STRING(args[0]);
   sqlite3 *db;
   int rc = sqlite3_open(path->chars, &db);
   if(rc != SQLITE_OK) {
@@ -33,7 +33,7 @@ DECLARE_MODULE_METHOD(sqlite__open) {
     sqlite3_close(db);
     RETURN_STRING(error);
   }
-  b_obj_ptr *ptr = new_ptr(vm, (void*)db);
+  z_obj_ptr *ptr = new_ptr(vm, (void*)db);
   ptr->name = "<SQLite3 *>";
   RETURN_OBJ(ptr);
 }
@@ -56,7 +56,7 @@ DECLARE_MODULE_METHOD(sqlite__exec) {
   ENFORCE_ARG_TYPE(_exec, 0, IS_PTR);
   ENFORCE_ARG_TYPE(_exec, 1, IS_STRING);
   sqlite3 *db = AS_PTR(args[0])->pointer;
-  b_obj_string *query = AS_STRING(args[1]);
+  z_obj_string *query = AS_STRING(args[1]);
 
   if(db != NULL) {
     if(IS_NIL(args[2])) {
@@ -74,7 +74,7 @@ DECLARE_MODULE_METHOD(sqlite__exec) {
       if(sqlite3_prepare_v2(db, query->chars, query->length, &stmt, 0) == SQLITE_OK) {
         int total_params_bindable = sqlite3_bind_parameter_count(stmt);
         if(IS_LIST(args[2])) {
-          b_obj_list *params = AS_LIST(args[2]);
+          z_obj_list *params = AS_LIST(args[2]);
 
           if(params->items.count != total_params_bindable) {
             RETURN_ARGUMENT_ERROR("expected %d params, %d given", total_params_bindable, params->items.count);
@@ -88,7 +88,7 @@ DECLARE_MODULE_METHOD(sqlite__exec) {
             }
           }
         } else if(IS_DICT(args[2])) {
-          b_obj_dict *params = AS_DICT(args[2]);
+          z_obj_dict *params = AS_DICT(args[2]);
 
           if(params->names.count != total_params_bindable) {
             RETURN_ARGUMENT_ERROR("expected %d params, %d given", total_params_bindable, params->names.count);
@@ -99,7 +99,7 @@ DECLARE_MODULE_METHOD(sqlite__exec) {
               RETURN_ARGUMENT_ERROR("SQL params dictionary key must be a string");
             }
             int index = sqlite3_bind_parameter_index(stmt, AS_C_STRING(params->names.values[i]));
-            b_value value;
+            z_value value;
             int error = 0;
             table_get(&params->items, params->names.values[i], &value);
             sqlite_bind_params(stmt, index, value, &error);
@@ -148,12 +148,12 @@ DECLARE_MODULE_METHOD(sqlite__query) {
 
   sqlite3 *db = AS_PTR(args[0])->pointer;
   if(db != NULL) {
-    b_obj_string *query = AS_STRING(args[1]);
+    z_obj_string *query = AS_STRING(args[1]);
     sqlite3_stmt *stmt;
     if(sqlite3_prepare_v2(db, query->chars, query->length, &stmt, 0) == SQLITE_OK) {
       int total_params_bindable = sqlite3_bind_parameter_count(stmt);
       if(IS_LIST(args[2])) {
-        b_obj_list *params = AS_LIST(args[2]);
+        z_obj_list *params = AS_LIST(args[2]);
 
         if(params->items.count != total_params_bindable) {
           RETURN_ARGUMENT_ERROR("expected %d params, %d given", total_params_bindable, params->items.count);
@@ -167,7 +167,7 @@ DECLARE_MODULE_METHOD(sqlite__query) {
           }
         }
       } else if(IS_DICT(args[2])) {
-        b_obj_dict *params = AS_DICT(args[2]);
+        z_obj_dict *params = AS_DICT(args[2]);
 
         if(params->names.count != total_params_bindable) {
           RETURN_ARGUMENT_ERROR("expected %d params, %d given", total_params_bindable, params->names.count);
@@ -178,7 +178,7 @@ DECLARE_MODULE_METHOD(sqlite__query) {
             RETURN_ARGUMENT_ERROR("SQL params dictionary key must be a string");
           }
           int index = sqlite3_bind_parameter_index(stmt, AS_C_STRING(params->names.values[i]));
-          b_value value;
+          z_value value;
           int error = 0;
           table_get(&params->items, params->names.values[i], &value);
           sqlite_bind_params(stmt, index, value, &error);
@@ -190,7 +190,7 @@ DECLARE_MODULE_METHOD(sqlite__query) {
         RETURN_ARGUMENT_ERROR("expected %d params, 0 given", total_params_bindable);
       }
 
-      b_obj_ptr *ptr = new_ptr(vm, (void*)stmt);
+      z_obj_ptr *ptr = new_ptr(vm, (void*)stmt);
       ptr->name = "<SQLiteCursor *>";
       RETURN_OBJ(ptr);
     } else {
@@ -215,7 +215,7 @@ DECLARE_MODULE_METHOD(sqlite__cursor_columns) {
   ENFORCE_ARG_COUNT(_cursor_colcount, 1);
   ENFORCE_ARG_TYPE(_cursor_colcount, 0, IS_PTR);
   sqlite3_stmt *stmt = AS_PTR(args[0])->pointer;
-  b_obj_list *list = (b_obj_list*)GC(new_list(vm));
+  z_obj_list *list = (z_obj_list*)GC(new_list(vm));
   if(stmt != NULL) {
     int count = sqlite3_column_count(stmt);
     for(int i = 0; i < count; i++) {
@@ -279,7 +279,7 @@ DECLARE_MODULE_METHOD(sqlite__cursor_get) {
       }
       case SQLITE_BLOB: {
         unsigned char *data = (unsigned char *)sqlite3_column_blob(stmt, index);
-        b_obj_bytes *bytes = new_bytes(vm, sizeof(data));
+        z_obj_bytes *bytes = new_bytes(vm, sizeof(data));
         bytes->bytes.bytes = data;
         RETURN_OBJ(bytes);
       }
@@ -290,7 +290,7 @@ DECLARE_MODULE_METHOD(sqlite__cursor_get) {
 }
 
 CREATE_MODULE_LOADER(sqlite) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"_open",   true,  GET_MODULE_METHOD(sqlite__open)},
       {"_close",   true,  GET_MODULE_METHOD(sqlite__close)},
       {"_exec",   true,  GET_MODULE_METHOD(sqlite__exec)},
@@ -304,7 +304,7 @@ CREATE_MODULE_LOADER(sqlite) {
       {NULL,    false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_sqlite",
       .fields = NULL,
       .functions = module_functions,

@@ -1,16 +1,16 @@
 # Qi
 
-A testing framework for Blade programming language.
+A testing framework for Zuri programming language.
 
 ### Package Information
 
 - **Name:** qi
 - **Version:** 1.0.0
 - **Homepage:** https://github.com/mcfriend99/qi.git
-- **Tags:** test, blade, testing, tdd, test-driven
+- **Tags:** test, zuri, testing, tdd, test-driven
 - **Author:** Richard Ore <eqliqandfriends@gmail.com>
 - **License:** MIT
-- **Requires:** Blade v0.0.86+
+- **Requires:** Zuri v0.0.86+
 
 ### Getting started
 

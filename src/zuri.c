@@ -27,12 +27,12 @@
 #include "pathinfo.h"
 #endif
 
-static void repl(b_vm *vm) {
+static void repl(z_vm *vm) {
   vm->is_repl = true;
   bool continue_repl = true;
 
-  printf("Blade %s (running on BladeVM %s), REPL/Interactive mode = ON\n",
-         BLADE_VERSION_STRING, BVM_VERSION);
+  printf("Zuri %s (running on ZuriVM %s), REPL/Interactive mode = ON\n",
+         ZURI_VERSION_STRING, BVM_VERSION);
   printf("%s, (Build time = %s, %s)\n", COMPILER, __DATE__, __TIME__);
   printf("Type \".exit\" to quit or \".credits\" for more information\n");
 
@@ -42,7 +42,7 @@ static void repl(b_vm *vm) {
   int brace_count = 0, paren_count = 0, bracket_count = 0, single_quote_count = 0, double_quote_count = 0;
 
   char *root_file = strdup("<repl>");
-  b_obj_module *module = new_module(vm, strdup(""), root_file, NULL);
+  z_obj_module *module = new_module(vm, strdup(""), root_file, NULL);
   add_module(vm, module);
   vm->root_file = root_file;
   register_module__FILE__(vm, module);
@@ -122,7 +122,7 @@ static void repl(b_vm *vm) {
 #endif // _WIN32
 
     if(strcmp(line, ".credits") == 0) {
-      printf(BLADE_COPYRIGHT "\n");
+      printf(ZURI_COPYRIGHT "\n");
       memset(source, 0, sizeof(char));
       continue;
     }
@@ -184,16 +184,16 @@ static void repl(b_vm *vm) {
   }
 }
 
-static void run_file(b_vm *vm, char *file) {
+static void run_file(z_vm *vm, char *file) {
   char *source = read_file(file);
   if (source == NULL) {
-    // check if it's a Blade library directory by attempting to read the index file.
+    // check if it's a Zuri library directory by attempting to read the index file.
     char *old_file = file;
-    file = append_strings((char *)strdup(file), "/" LIBRARY_DIRECTORY_INDEX BLADE_EXTENSION);
+    file = append_strings((char *)strdup(file), "/" LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
     source = read_file(file);
 
     if(source == NULL) {
-      fprintf(stderr, "(Blade):\n  Launch aborted for %s\n  Reason: %s\n", old_file, strerror(errno));
+      fprintf(stderr, "(Zuri):\n  Launch aborted for %s\n  Reason: %s\n", old_file, strerror(errno));
       exit(EXIT_FAILURE);
     }
   }
@@ -202,11 +202,11 @@ static void run_file(b_vm *vm, char *file) {
   vm->root_file = realpath(file, NULL);
   register__ROOT__(vm);
 
-  b_obj_module *module = new_module(vm, strdup(""), realpath(file, NULL), NULL);
+  z_obj_module *module = new_module(vm, strdup(""), realpath(file, NULL), NULL);
   add_module(vm, module);
   register_module__FILE__(vm, module);
 
-  b_ptr_result result = interpret(vm, module, source);
+  z_ptr_result result = interpret(vm, module, source);
   free(source);
 
   fflush(stdout);
@@ -217,16 +217,16 @@ static void run_file(b_vm *vm, char *file) {
     exit(EXIT_RUNTIME);
 }
 
-static void run_code(b_vm *vm, char *source) {
+static void run_code(z_vm *vm, char *source) {
   // set root file...
   vm->root_file = "";
   register__ROOT__(vm);
 
-  b_obj_module *module = new_module(vm, strdup(""), strdup("<script>"), NULL);
+  z_obj_module *module = new_module(vm, strdup(""), strdup("<script>"), NULL);
   add_module(vm, module);
   register_module__FILE__(vm, module);
 
-  b_ptr_result result = interpret(vm, module, source);
+  z_ptr_result result = interpret(vm, module, source);
   fflush(stdout);
 
   if (result == PTR_COMPILE_ERR)
@@ -285,7 +285,7 @@ int main(int argc, char *argv[]) {
           }
           break;
         case 'v': {
-          printf("Blade " BLADE_VERSION_STRING " (running on BladeVM " BVM_VERSION ")\n");
+          printf("Zuri " ZURI_VERSION_STRING " (running on ZuriVM " BVM_VERSION ")\n");
           return EXIT_SUCCESS;
         }
         case 'g': {
@@ -311,9 +311,9 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  b_vm *vm = (b_vm *) malloc(sizeof(b_vm));
+  z_vm *vm = (z_vm *) malloc(sizeof(z_vm));
   if (vm != NULL) {
-    memset(vm, 0, sizeof(b_vm));
+    memset(vm, 0, sizeof(z_vm));
     init_vm(vm);
 
     // set vm options...

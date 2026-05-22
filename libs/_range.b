@@ -11,7 +11,7 @@ class _RangeExtension > range {
    * 
    * Example:
    * 
-   * ```blade
+   * ```zuri
    * var r = 0..5 # 0, 1, 2, 3, 4
    * r.each(@(num, index) => {
    *   print(`Number at index ${index}: ${num}`)

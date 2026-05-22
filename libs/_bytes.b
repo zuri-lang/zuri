@@ -11,7 +11,7 @@ class _BytesExtension > bytes {
    * 
    * Example:
    * 
-   * ```blade
+   * ```zuri
    * var data = bytes([0x48, 0x65, 0x6C, 0x6C, 0x6F]) # "Hello" in bytes
    * data.each((byte, index) => {
    *   print(`Byte at index ${index}: ${byte}`)

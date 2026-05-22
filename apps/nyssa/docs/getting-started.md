@@ -1,8 +1,8 @@
 # Installing Nyssa
 
-Nyssa comes prepackaged with all Blade versions since `v0.0.86` and needs no further installation action. You'll need to upgrade your Blade installation you are on a Blade version lower than `v0.0.86`.
+Nyssa comes prepackaged with all Zuri versions since `v0.0.86` and needs no further installation action. You'll need to upgrade your Zuri installation you are on a Zuri version lower than `v0.0.86`.
 
-The best way to enjoy the power of Nyssa is to add your Blade installation path to your shell/terminal environment. Various operating systems provides different mechanisms for adding a path to the environment so the steps may vary for your specific operating system.
+The best way to enjoy the power of Nyssa is to add your Zuri installation path to your shell/terminal environment. Various operating systems provides different mechanisms for adding a path to the environment so the steps may vary for your specific operating system.
 
 Here's a few links for different operating systems showing how to do this.
 
@@ -14,13 +14,13 @@ Here's a few links for different operating systems showing how to do this.
 
 ### Testing your installation
 
-If you have installed Blade and successfully added Blade installation directory to system path, open a new terminal session (may be required) and run the command `nyssa --version`.
+If you have installed Zuri and successfully added Zuri installation directory to system path, open a new terminal session (may be required) and run the command `nyssa --version`.
 
 You should see an output similar to the below.
 
 ```
 Nyssa 0.2.0
-Blade 0.0.86 (running on BladeVM 0.1.1)
+Zuri 0.0.86 (running on ZuriVM 0.1.1)
 ```
 
 You can also run the `nyssa` command without any arguments to see the full help information.
@@ -45,11 +45,11 @@ COMMANDS:
   info                      Shows current project information
   init                      Creates a new package in current directory
     -n, --name <value>        the name of the package
-  install <value>           Installs a Blade package
+  install <value>           Installs a Zuri package
     -g, --global              installs the package globally
     -c, --use-cache           enables the cache
     -r, --repo <value>        the repository to install from
-  publish                   Publishes a Blade package to a repository
+  publish                   Publishes a Zuri package to a repository
     -r, --repo <value>        repository url
   restore                   Restores all project dependencies
     -x, --no-cache            disables the cache
@@ -57,7 +57,7 @@ COMMANDS:
     -p, --port <value>        port of the server (default: 3000)
     -n, --host <value>        the host ip (default: 127.0.0.1)
   test                      Run the tests
-  uninstall <value>         Uninstalls a Blade package
+  uninstall <value>         Uninstalls a Zuri package
     -g, --global              package is a global package
 ```
 

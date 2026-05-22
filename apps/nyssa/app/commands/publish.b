@@ -17,7 +17,7 @@ def italics(t) {
 def parse(parser) {
   parser.add_command(
     'publish', 
-    'Publishes a Blade package to a repository'
+    'Publishes a Zuri package to a repository'
   ).add_option(
     'repo', 
     'repository url', 

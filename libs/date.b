@@ -1,7 +1,7 @@
 /**
  * @module date
  * 
- * This modules provides Blade's implementation of date and time
+ * This modules provides Zuri's implementation of date and time
  * manipulation methods. This module implements civil dates as well as julian dates.
  * 
  * ### Definitions
@@ -12,7 +12,7 @@
  * - The Julian date number (`jd`) is in elapsed days and time since noon 
  * (Greenwich Mean Time) on January 1, 4713 BCE (in the Julian calendar).
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _date
@@ -186,7 +186,7 @@ def _dim(year, month) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> echo date.gmtime()
  * {year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 17, minute: 30, 
  * seconds: 55, microseconds: 620290, is_dst: false, zone: UTC, gmt_offset: 0}
@@ -204,7 +204,7 @@ def gmtime() {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> echo date.localtime()
  * {year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 18, minute: 18, 
  * seconds: 35, microseconds: 598166, is_dst: false, zone: WAT, gmt_offset: 3600}
@@ -224,7 +224,7 @@ def localtime() {
  * <br>
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import date
  * %> echo date.mktime(2021, 2, 12, 13, 43, 11, false)
  * 1613133791
@@ -255,7 +255,7 @@ def mktime(year, month, day, hour, minute, seconds, is_dst) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import date
  * %> var d = date(2021)
  * %> to_string(d)
@@ -341,7 +341,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date(2018).is_leap()
    * false
    * %> date(2020).is_leap()
@@ -360,7 +360,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date(2021, 5, 11).days_before_month(7)
    * 142
    * ```
@@ -399,7 +399,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date(2021, 5, 11).days_before_year(2024)
    * 811
    * ```
@@ -434,7 +434,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date(2021, 6).days_in_month()
    * 30
    * ```
@@ -450,7 +450,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date(2021, 5, 11).weekday()
    * 2
    * ```
@@ -472,7 +472,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date(2021, 5, 11).week_number()
    * 19
    * ```
@@ -500,7 +500,7 @@ class Date {
   /**
    * Formats the current date based on the specified string
    * 
-   * Blade's Date formatting table
+   * Zuri's Date formatting table
    * 
    * Character | Description                                               | Example
    * ----------|-----------------------------------------------------------|-----------------------------------
@@ -542,7 +542,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date().format('F d, Y g:i A')
    * 'March 05, 2022 6:24 PM'
    * ```
@@ -553,7 +553,7 @@ class Date {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date().format('l jS \o\\f F Y h:i:s A')
    * 'Wednesday 17th of May 2021 01:39:08 PM'
    * ```
@@ -723,7 +723,7 @@ class Date {
    * 
    * For example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date().http()
    * 'Sat, 05 Mar 2022 06:23:32 GMT'
    * ```
@@ -739,7 +739,7 @@ class Date {
    * 
    * Example,
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> date(2021, 5, 11).jd()
    * 2459345
    * ```
@@ -845,7 +845,7 @@ class Date {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> to_string(date.from_time(time()))
  * '<Date year: 2022, month: 3, day: 5, hour: 18, minute: 34, seconds: 1>'
  * ```
@@ -989,7 +989,7 @@ def from_time(time) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> to_string(date.from_jd(22063))
  * '<Date year: 2022, month: 3, day: 5, hour: 18, minute: 35, seconds: 0>'
  * ```

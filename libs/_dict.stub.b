@@ -1,29 +1,29 @@
 /**
  * # Dictionaries
  * 
- * Blade dictionaries are built on a powerful hashtable with fast key lookups. Creating Blade dictionaries
+ * Zuri dictionaries are built on a powerful hashtable with fast key lookups. Creating Zuri dictionaries
  * are extremely similar to how you create objects in JavaScript and for developers coming from that
- * language will find Blade dictionaries very familiar.
+ * language will find Zuri dictionaries very familiar.
  * 
  * ## Constructing a dictionary
  * 
- * Blade dictionaries are arbitrary key-value pairs separated by colons (`:`) enclosed in braces (`{}`).
+ * Zuri dictionaries are arbitrary key-value pairs separated by colons (`:`) enclosed in braces (`{}`).
  * 
  * For example:
  * 
- * ```blade-repl
- * %> {'name': 'Blade', 'version': 0.5}
- * {name: Blade, version: 0.5}
+ * ```zuri-repl
+ * %> {'name': 'Zuri', 'version': 0.5}
+ * {name: Zuri, version: 0.5}
  * %> {}    # empty dictionary
  * {}
  * ```
  * 
- * > While dictionary values can be any valid Blade object, keys can only be one of [String](./strings), 
+ * > While dictionary values can be any valid Zuri object, keys can only be one of [String](./strings),
  * > [Number](./numbers) or Boolean.
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> {0: 'number', false: 'boolean', 'key': 'string'}
  * {0: number, false: boolean, key: string}
  * ```
@@ -33,7 +33,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> {country: 'Nigeria', dial_code: 234, in_africa: true}
  * {country: Nigeria, dial_code: 234, in_africa: true}
  * ```
@@ -43,20 +43,20 @@
  * Sometimes when creating a dictionary, it is very common to have keys that already match the name of a 
  * variable that already exists in scope. For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var name = 'Paulina'
  * %> var my_dict = {name: name}
  * %> my_dict
  * {name: Paulina}
  * ```
  * 
- * Because of how common and frequent developers do this, Blade has an automatic value assignment feature for 
+ * Because of how common and frequent developers do this, Zuri has an automatic value assignment feature for
  * dictionaries that allow you to assign variables to dictionary keys if they are already within scope without
  * rewriting them.
  * 
  * For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var name = 'Kagawa'
  * %> {name}
  * {name: Kagawa}
@@ -69,28 +69,28 @@
  * 
  * For example:
  * 
- * ```blade-repl
- * %> var a = {name: 'Blade', version: 0.5}
+ * ```zuri-repl
+ * %> var a = {name: 'Zuri', version: 0.5}
  * %> a['name']
- * 'Blade'
+ * 'Zuri'
  * ```
  * 
  * And they also support property access whenever the key is a string. For example, the above `a['name']` 
  * could also be written as:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> a.name
- * 'Blade'
+ * 'Zuri'
  * ```
  * 
  * ## Looping through dictionaries
  * 
- * There are two ways to loop through a dictionary in Blade. We can loop through the dictionary itself 
+ * There are two ways to loop through a dictionary in Zuri. We can loop through the dictionary itself
  * using the specialized _for_ loop, of loop through its keys using any of the _while_ or _iter_ loop.
  * 
  * Below is an example looping through the dictionary itself using the _for_ loop.
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var person = {name: 'Ceaser', birth: '29AD', nation: 'Rome', position: 'Emperor'}
  * %> for x, y in person {
  * ..   print(x, '=', y)
@@ -110,7 +110,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> for x in person {
  * ..   echo x
  * .. }
@@ -122,7 +122,7 @@
  * 
  * The following example loops through the dictionary by looping through the keys of the dictionary. 
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var keys = person.keys()
  * %> iter var i = 0; i < keys.length(); i++ {
  * ..   print(keys[i], '=', person[keys[i]])
@@ -141,13 +141,13 @@
 class dict {
 
   /**
-   * Returns the length of the dictionary. The length of a Blade dictionary is equal to the number of
+   * Returns the length of the dictionary. The length of a Zuri dictionary is equal to the number of
    * keys it contains. i.e. `dict.length() == dict.keys().length()`.
    * 
    * For example:
    * 
-   * ```blade-repl
-   * %> {name: 'Blade', version: 1}.length()
+   * ```zuri-repl
+   * %> {name: 'Zuri', version: 1}.length()
    * 2
    * ```
    * 
@@ -161,11 +161,11 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var dict = {}
-   * %> dict.add('name', 'Blade')
+   * %> dict.add('name', 'Zuri')
    * %> dict
-   * {name: Blade}
+   * {name: Zuri}
    * ```
    * 
    * @param {string} key
@@ -180,17 +180,17 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
-   * %> dict.set('name', 'New Blade')
+   * ```zuri-repl
+   * %> dict.set('name', 'New Zuri')
    * %> dict
-   * {name: New Blade}
+   * {name: New Zuri}
    * %> dict.set('version', 1)
    * %> dict
-   * {name: New Blade, version: 1}
+   * {name: New Zuri, version: 1}
    * ```
    * 
-   * > **_@note_:** `dict.set(x, y)` is equivalent to the following Blade code.
-   * > ```blade-repl
+   * > **_@note_:** `dict.set(x, y)` is equivalent to the following Zuri code.
+   * > ```zuri-repl
    * > %> if dict.contains(x) {
    * > ..   dict[x] = 1
    * > .. } else {
@@ -209,10 +209,10 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
-   * %> var a = {name: 'Blade'}
+   * ```zuri-repl
+   * %> var a = {name: 'Zuri'}
    * %> a
-   * {name: Blade}
+   * {name: Zuri}
    * %> a.clear()
    * %> a
    * {}
@@ -226,10 +226,10 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var new_dict = dict.clone()
    * %> new_dict
-   * {name: New Blade, version: 1}
+   * {name: New Zuri, version: 1}
    * ```
    * 
    * @return {dict}
@@ -243,7 +243,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var dict2 = {name: 'James', age: 20, address: nil, country: nil}
    * %> dict2.compact()
    * {name: James, age: 20}
@@ -259,7 +259,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> dict2.contains('name')
    * true
    * %> dict2.contains('street')
@@ -277,11 +277,11 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
-   * %> var dict = {name: 'Blade'}
+   * ```zuri-repl
+   * %> var dict = {name: 'Zuri'}
    * %> dict.extend({version: 1})
    * %> dict
-   * {name: Blade, version: 1}
+   * {name: Zuri, version: 1}
    * ```
    * 
    * @param {dict} dict
@@ -296,7 +296,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> dict.get('version')   # value exists
    * 1
    * %> dict.get('age')   # value does not exist
@@ -318,7 +318,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> dict.keys()
    * [name, version]
    * ```
@@ -333,9 +333,9 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> dict.values()
-   * [Blade, 1]
+   * [Zuri, 1]
    * ```
    * 
    * @return {list}
@@ -349,7 +349,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> dict = {username: 'james', email: 'a@b.c', active: true}
    * %> dict.remove('active')
    * true
@@ -368,7 +368,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> dict.is_empty()
    * false
    * %> {}.is_empty()
@@ -385,7 +385,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> dict.find_key('james')
    * 'username'
    * %> dict.find_key('camel')
@@ -402,7 +402,7 @@ class dict {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var dict = {username: 'james', email: 'a@b.c'}
    * %> dict.to_list()
    * [[username, email], [james, a@b.c]]

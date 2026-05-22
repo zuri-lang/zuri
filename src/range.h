@@ -1,5 +1,5 @@
-#ifndef BLADE_RANGE_H
-#define BLADE_RANGE_H
+#ifndef ZURI_RANGE_H
+#define ZURI_RANGE_H
 
 #include "common.h"
 #include "native.h"

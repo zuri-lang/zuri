@@ -1,4 +1,4 @@
-#include <blade.h>
+#include <zuri.h>
 #include <errno.h>
 
 // gd
@@ -21,13 +21,13 @@
     RETURN_ERROR(strerror(errno)) \
 
 #define IMAGINE_CONST(v) \
-  b_value __imagine_const_##v(b_vm *vm) { \
+  z_value __imagine_const_##v(z_vm *vm) { \
     return NUMBER_VAL(GD_##v); \
   }
 
 #define IMAGINE_PTR(f, v, t) \
-  b_value __imagine_ptr_##f(b_vm *vm) { \
-    b_obj_ptr *ptr = (b_obj_ptr *)GC(new_ptr(vm, (v))); \
+  z_value __imagine_ptr_##f(z_vm *vm) { \
+    z_obj_ptr *ptr = (z_obj_ptr *)GC(new_ptr(vm, (v))); \
     ptr->name = "<void *imagine::type::" #t ">"; \
     return OBJ_VAL(ptr); \
   }
@@ -349,7 +349,7 @@ DECLARE_MODULE_METHOD(imagine__getclip) {
   int x1P = 0, y1P = 0, x2P = 0, y2P = 0;
   gdImageGetClip(image, &x1P, &y1P, &x2P, &y2P);
 
-  b_obj_list *list = (b_obj_list*)GC(new_list(vm));
+  z_obj_list *list = (z_obj_list*)GC(new_list(vm));
   write_list(vm, list, NUMBER_VAL(x1P));
   write_list(vm, list, NUMBER_VAL(y1P));
   write_list(vm, list, NUMBER_VAL(x2P));
@@ -606,12 +606,12 @@ DECLARE_MODULE_METHOD(imagine__polygon) {
   gdImagePtr image = (gdImagePtr)AS_PTR(args[0])->pointer;
   CHECK_IMAGE_PTR(image);
 
-  b_obj_list *points_given = AS_LIST(args[1]);
+  z_obj_list *points_given = AS_LIST(args[1]);
 
   gdPointPtr points = ALLOCATE(gdPoint, points_given->items.count);
 
   for(int i = 0; i < points_given->items.count; i++) {
-    b_obj_list *point = AS_LIST(points_given->items.values[i]);
+    z_obj_list *point = AS_LIST(points_given->items.values[i]);
     points[i] = (gdPoint){ .x = AS_NUMBER(point->items.values[0]), .y = AS_NUMBER(point->items.values[1]) };
   }
 
@@ -629,12 +629,12 @@ DECLARE_MODULE_METHOD(imagine__openpolygon) {
   gdImagePtr image = (gdImagePtr)AS_PTR(args[0])->pointer;
   CHECK_IMAGE_PTR(image);
 
-  b_obj_list *points_given = AS_LIST(args[1]);
+  z_obj_list *points_given = AS_LIST(args[1]);
 
   gdPointPtr points = ALLOCATE(gdPoint, points_given->items.count);
 
   for(int i = 0; i < points_given->items.count; i++) {
-    b_obj_list *point = AS_LIST(points_given->items.values[i]);
+    z_obj_list *point = AS_LIST(points_given->items.values[i]);
     points[i] = (gdPoint){ .x = AS_NUMBER(point->items.values[0]), .y = AS_NUMBER(point->items.values[1]) };
   }
 
@@ -652,12 +652,12 @@ DECLARE_MODULE_METHOD(imagine__filledpolygon) {
   gdImagePtr image = (gdImagePtr)AS_PTR(args[0])->pointer;
   CHECK_IMAGE_PTR(image);
 
-  b_obj_list *points_given = AS_LIST(args[1]);
+  z_obj_list *points_given = AS_LIST(args[1]);
 
   gdPointPtr points = ALLOCATE(gdPoint, points_given->items.count);
 
   for(int i = 0; i < points_given->items.count; i++) {
-    b_obj_list *point = AS_LIST(points_given->items.values[i]);
+    z_obj_list *point = AS_LIST(points_given->items.values[i]);
     points[i] = (gdPoint){ .x = AS_NUMBER(point->items.values[0]), .y = AS_NUMBER(point->items.values[1]) };
   }
 
@@ -1346,7 +1346,7 @@ DECLARE_MODULE_METHOD(imagine__scatter) {
   if(arg_count == 4 && !IS_NIL(args[3])) {
     ENFORCE_ARG_TYPE(scatter, 3, IS_LIST);
 
-    b_obj_list *color_list = AS_LIST(args[3]);
+    z_obj_list *color_list = AS_LIST(args[3]);
     int *colors = ALLOCATE(int, color_list->items.count);
     for(int i = 0; i < color_list->items.count; i++) {
       if(!IS_NUMBER(color_list->items.values[i])) {
@@ -1490,7 +1490,7 @@ DECLARE_MODULE_METHOD(imagine__meta) {
   int color_totals = gdImageColorsTotal(image);
   int true_colors = gdImageTrueColor(image);
   
-  b_obj_dict *dict = (b_obj_dict*)GC(new_dict(vm));
+  z_obj_dict *dict = (z_obj_dict*)GC(new_dict(vm));
   dict_set_entry(vm, dict, GC_L_STRING("width", 5), NUMBER_VAL(gdImageSX(image)));
   dict_set_entry(vm, dict, GC_L_STRING("height", 6), NUMBER_VAL(gdImageSY(image)));
   dict_set_entry(vm, dict, GC_L_STRING("colors", 6), NUMBER_VAL(color_totals > 0 ? color_totals : true_colors));
@@ -1718,7 +1718,7 @@ DECLARE_MODULE_METHOD(imagine__imagecompare) {
 }
 
 CREATE_MODULE_LOADER(imagine) {
-  static b_field_reg module_fields[] = {
+  static z_field_reg module_fields[] = {
       // Fonts
       GET_IMAGINE_PTR(tinyfont),
       GET_IMAGINE_PTR(smallfont),
@@ -1734,7 +1734,7 @@ CREATE_MODULE_LOADER(imagine) {
       {NULL, false, NULL}
   };
 
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       // create and destroy
       {"new",   true,  GET_MODULE_METHOD(imagine__new)},
       {"close",   true,  GET_MODULE_METHOD(imagine__close)},
@@ -1847,14 +1847,14 @@ CREATE_MODULE_LOADER(imagine) {
       {"truecolortopalette",   true,  GET_MODULE_METHOD(imagine__truecolortopalette)},
       {"palettetotruecolor",   true,  GET_MODULE_METHOD(imagine__palettetotruecolor)},
 
-      // Blade extras
+      // Zuri extras
       {"meta",   true,  GET_MODULE_METHOD(imagine__meta)},
 
       // Finalized...
       {NULL,    false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_imagine",
       .fields = module_fields,
       .functions = module_functions,

@@ -139,7 +139,7 @@ DECLARE_MODULE_METHOD(math__floor) {
 }
 
 CREATE_MODULE_LOADER(math) {
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"sin",   true,  GET_MODULE_METHOD(math__sin)},
       {"cos",   true,  GET_MODULE_METHOD(math__cos)},
       {"tan",   true,  GET_MODULE_METHOD(math__tan)},
@@ -165,7 +165,7 @@ CREATE_MODULE_LOADER(math) {
       {NULL,    false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_math",
       .fields = NULL,
       .functions = module_functions,

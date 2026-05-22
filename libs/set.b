@@ -10,7 +10,7 @@
  * 
  * The example below shows a brief introduction to working with sets.
  * 
- * ```blade
+ * ```zuri
  * import set
  * 
  * var my_set = set()
@@ -40,7 +40,7 @@
  * 
  * For example,
  * 
- * ```blade
+ * ```zuri
  * import set
  * 
  * var set_a = set([1, 2, 3, 4, 5])
@@ -54,7 +54,7 @@
  * 
  * For example:
  * 
- * ```blade
+ * ```zuri
  * import set
  * 
  * var set_a = set({

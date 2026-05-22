@@ -1,4 +1,4 @@
-#!-- Part of the Blade Thread Library. See LICENSE for details. --!
+#!-- Part of the Zuri Thread Library. See LICENSE for details. --!
 
 import _thread
 import _process
@@ -61,7 +61,7 @@ class Thread {
    * parameter _t_ in the delegate will receive the thread object 
    * itself.
    * 
-   * ```blade
+   * ```zuri
    * var th = Thread(@(t) {
    *   echo t.get_id()
    * })
@@ -75,7 +75,7 @@ class Thread {
    * that the start argument was received starting from the second 
    * argument.
    * 
-   * ```blade
+   * ```zuri
    * var th = Thread(@(t, balance) {
    *   echo balance
    * })

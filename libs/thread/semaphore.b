@@ -1,4 +1,4 @@
-#!-- Part of the Blade Thread Library. See LICENSE for details. --!
+#!-- Part of the Zuri Thread Library. See LICENSE for details. --!
 import _thread
 
 
@@ -14,7 +14,7 @@ import _thread
  * a `Mutex`), but unlike a `Mutex` it may be released by a *different* thread than the one that acquired 
  * it, making it suitable for producer/consumer signalling.
  * 
- * ```blade
+ * ```zuri
  * import thread
  * 
  * def do_limited_work(i) {
@@ -58,7 +58,7 @@ class Semaphore {
    * (for `initial == 0`), so `Semaphore(4)` gives a counting semaphore that allows 4 concurrent 
    * acquirers.
    * 
-   * ```blade
+   * ```zuri
    * var binary   = thread.Semaphore()      # initial=1, max=1
    * var counting = thread.Semaphore(4)     # initial=4, max=4
    * var custom   = thread.Semaphore(0, 8)  # starts locked, max=8
@@ -97,7 +97,7 @@ class Semaphore {
    * If the counter is zero the calling thread is suspended by the OS until another thread calls 
    * `release()`, at which point one waiting thread is woken and given the permit.
    * 
-   * ```blade
+   * ```zuri
    *   sem.acquire()
    *   # ... at most `max` threads are here simultaneously ...
    *   sem.release()
@@ -117,7 +117,7 @@ class Semaphore {
    * value set at construction. This catches common bugs where `release()` is called more times 
    * than `acquire()`.
    * 
-   * ```blade
+   * ```zuri
    *   sem.acquire()
    *   do_work()
    *   sem.release()
@@ -133,7 +133,7 @@ class Semaphore {
    * Decrements the counter and returns `true` if the counter was greater than zero. Returns 
    * `false` immediately if the counter is zero, without suspending the calling thread.
    * 
-   * ```blade
+   * ```zuri
    *   if sem.try_acquire() {
    *     do_work()
    *     sem.release()
@@ -157,7 +157,7 @@ class Semaphore {
    * The returned value is a snapshot and may be stale immediately after this method returns
    * if other threads are concurrently calling `acquire()` or `release()`.
    * 
-   * ```blade
+   * ```zuri
    *   echo 'permits available: ${sem.count()}'
    * ```
    * 
@@ -174,7 +174,7 @@ class Semaphore {
    * binary semaphore this is always `1`; for a counting semaphore it is the value passed 
    * as _max_ (or _initial_ when _max_ was omitted).
    * 
-   * ```blade
+   * ```zuri
    *   echo 'max concurrent permits: ${sem.max()}'
    * ```
    * 

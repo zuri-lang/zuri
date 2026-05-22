@@ -14,10 +14,10 @@
  * - They return `false` when tested with `is_number()`
  * - They return `BigInt` when passed to `typeof()`.
  * 
- * All Blade operators except `++`, `--`, and `>>>` works perfectly with BigInts 
+ * All Zuri operators except `++`, `--`, and `>>>` works perfectly with BigInts
  * are permit mixing with regular numbers.
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import bigint
  * %> 
  * %> bigint('9007199254740991')
@@ -34,7 +34,7 @@
  * '<BigInt v=8000000000000000000000>'
  * ```
  * 
- * @copyright 2025, Richard Ore and Blade contributors
+ * @copyright 2025, Richard Ore and Zuri contributors
  */
 
 import math
@@ -897,7 +897,7 @@ def _jumboMulTo(_this, num, out) {
  * shift (>>>). For this reason, they work in all contexts that numbers 
  * can be used. For example, the following code is completely valid:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import bigint
  * %> 
  * %> abs(bigint('-450'))
@@ -906,14 +906,14 @@ def _jumboMulTo(_this, num, out) {
  * 
  * As said earlier, BigInt defines arithemetic operations.
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> bigint('72672676789679863767863976783') * bigint('3679687870387890379')
  * '<BigInt v=267412767291604568032754996823951848184805070757>'
  * ```
  * 
  * Even bitwise operations
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> bigint('72672676789679863767863976783') & bigint('3679687870387890379')
  * '<BigInt v=72128620998467659>'
  * ```
@@ -1375,7 +1375,7 @@ class BigInt {
   }
 
   /**
-   * Converts the BigInt to a standard Blade number which has a 
+   * Converts the BigInt to a standard Zuri number which has a
    * precision of up to limited to 53 bits.
    * 
    * @return number

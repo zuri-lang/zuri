@@ -88,7 +88,7 @@ class _ListExtension > list {
    * 
    * Example:
    * 
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].empty()
    * echo [].empty()
    * 
@@ -114,7 +114,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [5, 2, 9, 1].isort()
    *
    * # Output: [1, 2, 5, 9]
@@ -123,7 +123,7 @@ class _ListExtension > list {
    * The `isort` method modifies the original list and returns it. If you want to keep the
    * original list unchanged, you can create a copy of it before sorting:
    *
-   * ```blade
+   * ```zuri
    * var original = [5, 2, 9, 1]
    * var sorted = original.isort()
    * echo sorted
@@ -138,7 +138,7 @@ class _ListExtension > list {
    * with equal keys.
    */
   static isort(comparator) {
-    # Timsort implementation in Blade
+    # Timsort implementation in Zuri
 
     if !comparator comparator = _default_comparator
     if comparator != nil and !is_function(comparator) {
@@ -183,7 +183,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * ['A', 'B', 'C'].each(@(r) {
    *   echo r
    * })
@@ -215,7 +215,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].map(@(x) {
    *   return x * 2
    * })
@@ -249,7 +249,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].filter(@(x) {
    *   return x % 2 == 0
    * })
@@ -286,7 +286,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].reduce(@(acc, x) {
    *   return acc + x
    * })
@@ -329,7 +329,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].some(@(x) {
    *   return x % 2 == 0
    * })
@@ -365,7 +365,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].every(@(x) {
    *   return x > 0
    * })
@@ -402,7 +402,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].find(@(x) {
    *   return x % 2 == 0
    * })
@@ -435,7 +435,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].find_index(@(x) {
    *   return x % 2 == 0
    * })
@@ -468,7 +468,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].find_last(@(x) {
    *   return x % 2 == 0
    * })
@@ -502,7 +502,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].find_last_index(@(x) {
    *   return x % 2 == 0
    * })
@@ -535,7 +535,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].find_all(@(x) {
    *   return x % 2 == 0
    * })
@@ -569,7 +569,7 @@ class _ListExtension > list {
    *
    * Example:
    *
-   * ```blade
+   * ```zuri
    * echo [1, 2, 3].partition(@(x) {
    *   return x % 2 == 0
    * })

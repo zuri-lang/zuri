@@ -7,7 +7,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> 0..10
  * <range 0..10, step=1>
  * %> 10..5
@@ -18,7 +18,7 @@
  * descend (start greater than end). They are also evaluated in order. They can also be constructed 
  * from variables or a mixture of constant number and variables as desired.
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var a = 20
  * %> 5..a
  * <range 5..20, step=1>
@@ -43,7 +43,7 @@ class {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> (10..100).lower()
    * 10
    * ```
@@ -58,7 +58,7 @@ class {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> (20..30).upper()
    * 30
    * ```
@@ -73,7 +73,7 @@ class {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> (21..93).range()
    * 72
    * ```
@@ -81,7 +81,7 @@ class {
    * The result of stays the same irrespective of the direction of the range. 
    * For example, swapping the upper and lower limit of our previous still returns the same result.
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> (21..93).range()
    * 72
    * ```
@@ -96,7 +96,7 @@ class {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> (93..21).within(103)
    * false
    * %> (93..21).within(57)
@@ -113,7 +113,7 @@ class {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var a = (10..100).step(20)
    * %> a
    * <range 10..100, step=20>

@@ -10,7 +10,7 @@
  * 
  * The example below shows making a GET request to fetch a webpage.
  * 
- * ```blade
+ * ```zuri
  * import http
  * 
  * echo http.get('http://example.com')
@@ -24,7 +24,7 @@
  * Below is an example of such implementation that sets the timeout for 
  * receiving response back from the server to 30 seconds.
  * 
- * ```blade
+ * ```zuri
  * import http
  * 
  * var client = http.HttpClient()
@@ -37,7 +37,7 @@
  * The example below shows an implementation of an HTTP API server listening on port 
  * 3000 and simple returns the JSON of the request object itself.
  * 
- * ```blade
+ * ```zuri
  * import http
  * import json
  * 
@@ -53,7 +53,7 @@
  * 
  * The following code creates a TLS version of the same server we created above.
  * 
- * ```blade
+ * ```zuri
  * import http
  * import json
  * 
@@ -89,7 +89,7 @@
  * 
  * That been said, it gives the tools required to craft any request body of your choice.
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import .response { HttpResponse }
@@ -108,7 +108,7 @@ _client.follow_redirect = true
  * This function returns HttpClient in order to allow for idiomatic 
  * chaining such as:
  * 
- * ```blade
+ * ```zuri
  * import http
  * echo http.set_headers({
  *   'Authorization': 'Bearer SomeAPIBearerToken',

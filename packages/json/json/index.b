@@ -11,9 +11,9 @@
  *
  * This implementation complies with [RFC 8259](https://datatracker.ietf.org/doc/html/rfc8259).
  *
- * ### JSON to Blade value mapping
+ * ### JSON to Zuri value mapping
  *
- * | JSON | Blade |
+ * | JSON | Zuri |
  * |------|-------|
  * | Null | Nil |
  * | String | String |
@@ -23,9 +23,9 @@
  * | Object | Dict |
  *
  *
- * ### Blade to JSON object mapping
+ * ### Zuri to JSON object mapping
  *
- * | Blade | JSON |
+ * | Zuri | JSON |
  * |-------|------|
  * | `nil` | Null |
  * | Integer | Number |
@@ -39,22 +39,22 @@
  *
  * Example,
  *
- * ```blade-repl
+ * ```zuri-repl
  * %> import json
  * %> json.encode([1, 2, 3])
  * '[1,2,3]'
  * %>
- * %> json.encode({name: 'Blade', version: '0.0.7'})
- * '{"name":"Blade","version":"0.0.7"}'
+ * %> json.encode({name: 'Zuri', version: '0.0.7'})
+ * '{"name":"Zuri","version":"0.0.7"}'
  * %>
- * %> json.encode({name: 'Blade', version: '0.0.7'}, false)
+ * %> json.encode({name: 'Zuri', version: '0.0.7'}, false)
  * '{
- *   "name": "Blade",
+ *   "name": "Zuri",
  *   "version": "0.0.7"
  * }'
  * ```
  *
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import .encoder { * }
@@ -80,7 +80,7 @@ def encode(value, compact, max_depth) {
 }
 
 /**
- * Decodes the input JSON string into Blade objects
+ * Decodes the input JSON string into Zuri objects
  * 
  * @param string value: The string to decode
  * @param bool? allow_comments: Can be set to enable/disable C-style comments in json [default = true]

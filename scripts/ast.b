@@ -1,8 +1,8 @@
 /**
- * This is an helper script for generating two AST modules that describe the Blade language
- * The first is the expr module that describes Blade expressions
- * Second is the stmt module that describes Blade statements
- * The third is the decl module that describes Blade declarations such as classes
+ * This is an helper script for generating two AST modules that describe the Zuri language
+ * The first is the expr module that describes Zuri expressions
+ * Second is the stmt module that describes Zuri statements
+ * The third is the decl module that describes Zuri declarations such as classes
  * 
  * This script was created to help with the ast module 
  * @copyright Richard Ore

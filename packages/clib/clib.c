@@ -1,4 +1,4 @@
-#include <blade.h>
+#include <zuri.h>
 #include <ffi.h>
 #include <math.h>
 
@@ -7,11 +7,11 @@
 #include <stdlib.h>
 
 #else
-#include "bdlfcn.h"
+#include "zdlfcn.h"
 #endif
 
 #define CLIB_RETURN_PTR(handle, u, cf, ...) \
-  b_obj_ptr *ptr = (b_obj_ptr *)GC(new_closable_ptr(vm, (handle), (u))); \
+  z_obj_ptr *ptr = (z_obj_ptr *)GC(new_closable_ptr(vm, (handle), (u))); \
   const char *format = #cf; \
   int length = snprintf(NULL, 0, format, ##__VA_ARGS__); \
   ptr->name = ALLOCATE(char, length + 1); \
@@ -24,29 +24,29 @@ typedef struct {
   int as_int;
   int *types;
   ffi_type *as_ffi;
-  b_obj_list *names;
-} b_ffi_type;
+  z_obj_list *names;
+} z_ffi_type;
 
 #define DEFINE_CLIB_TYPE(v) \
-  b_value __clib_type_##v(b_vm *vm) { \
-    b_ffi_type *f = ALLOCATE(b_ffi_type, 1); \
+  z_value __clib_type_##v(z_vm *vm) { \
+    z_ffi_type *f = ALLOCATE(z_ffi_type, 1); \
     f->as_ffi = &ffi_type_##v;        \
-    f->as_int = b_clib_type_##v;      \
+    f->as_int = z_clib_type_##v;      \
     f->types = NULL;        \
     f->length = 0; \
-    b_obj_ptr *ptr = (b_obj_ptr *)GC(new_ptr(vm, (void *)f)); \
+    z_obj_ptr *ptr = (z_obj_ptr *)GC(new_ptr(vm, (void *)f)); \
     ptr->name = "<void *clib::type::" #v ">"; \
     return OBJ_VAL(ptr); \
   }
 
 #define DEFINE_CLIB_CTYPE(v) \
-  b_value __clib_type_##v(b_vm *vm) { \
-    b_ffi_type *f = ALLOCATE(b_ffi_type, 1); \
+  z_value __clib_type_##v(z_vm *vm) { \
+    z_ffi_type *f = ALLOCATE(z_ffi_type, 1); \
     f->as_ffi = &ffi_type_pointer;        \
-    f->as_int = b_clib_type_##v;      \
+    f->as_int = z_clib_type_##v;      \
     f->types = NULL;         \
     f->length = 0;\
-    b_obj_ptr *ptr = (b_obj_ptr *)GC(new_ptr(vm, (void *)f)); \
+    z_obj_ptr *ptr = (z_obj_ptr *)GC(new_ptr(vm, (void *)f)); \
     ptr->name = "<void *clib::type::" #v ">"; \
     return OBJ_VAL(ptr); \
   }
@@ -59,54 +59,54 @@ typedef struct {
   unsigned int args_count;
   ffi_abi abi;
   ffi_cif *cif;
-  b_ffi_type *return_type;
-  b_ffi_type **arg_types;
+  z_ffi_type *return_type;
+  z_ffi_type **arg_types;
   void *function;
-} b_ffi_cif;
+} z_ffi_cif;
 
 typedef struct {
   bool is_variadic;
   unsigned int args_count;
   ffi_abi abi;
   ffi_cif *cif;
-  b_ffi_type *return_type;
-  b_ffi_type **arg_types;
+  z_ffi_type *return_type;
+  z_ffi_type **arg_types;
   void *code;
   void *closure;
-  b_obj_closure *blade_closure;
-  b_vm *vm;
-} b_ffi_cif_closure;
+  z_obj_closure *zuri_closure;
+  z_vm *vm;
+} z_ffi_cif_closure;
 
 // forward declare
-b_value get_blade_value(b_vm *vm, int type, size_t size, void *data, size_t *read_len);
+z_value get_zuri_value(z_vm *vm, int type, size_t size, void *data, size_t *read_len);
 
-#define b_clib_type_void					  (-1)
-#define b_clib_type_bool					  0
-#define b_clib_type_uint8					  1
-#define b_clib_type_sint8					  2
-#define b_clib_type_uint16					3
-#define b_clib_type_sint16					4
-#define b_clib_type_uint32					5
-#define b_clib_type_sint32					6
-#define b_clib_type_uint64					7
-#define b_clib_type_sint64					8
-#define b_clib_type_float					  9
-#define b_clib_type_double					10
-#define b_clib_type_uchar					  11
-#define b_clib_type_schar					  12
-#define b_clib_type_ushort					13
-#define b_clib_type_sshort					14
-#define b_clib_type_uint					  15
-#define b_clib_type_sint					  16
-#define b_clib_type_ulong					  17
-#define b_clib_type_slong					  18
-#define b_clib_type_longdouble		  19
-#define b_clib_type_char_ptr				20
-#define b_clib_type_uchar_ptr			  21
-#define b_clib_type_pointer					22
-#define b_clib_type_struct					23
+#define z_clib_type_void					  (-1)
+#define z_clib_type_bool					  0
+#define z_clib_type_uint8					  1
+#define z_clib_type_sint8					  2
+#define z_clib_type_uint16					3
+#define z_clib_type_sint16					4
+#define z_clib_type_uint32					5
+#define z_clib_type_sint32					6
+#define z_clib_type_uint64					7
+#define z_clib_type_sint64					8
+#define z_clib_type_float					  9
+#define z_clib_type_double					10
+#define z_clib_type_uchar					  11
+#define z_clib_type_schar					  12
+#define z_clib_type_ushort					13
+#define z_clib_type_sshort					14
+#define z_clib_type_uint					  15
+#define z_clib_type_sint					  16
+#define z_clib_type_ulong					  17
+#define z_clib_type_slong					  18
+#define z_clib_type_longdouble		  19
+#define z_clib_type_char_ptr				20
+#define z_clib_type_uchar_ptr			  21
+#define z_clib_type_pointer					22
+#define z_clib_type_struct					23
 #if FFI_CLOSURES
-#define b_clib_type_closure				  24
+#define z_clib_type_closure				  24
 #endif
 
 DEFINE_CLIB_TYPE(void);
@@ -136,11 +136,11 @@ DEFINE_CLIB_CTYPE(uchar_ptr);
 DEFINE_CLIB_CTYPE(closure);
 #endif
 
-UNUSED b_value __clib_type_bool(b_vm *vm) {
-  b_ffi_type *f = ALLOCATE(b_ffi_type, 1);
+UNUSED z_value __clib_type_bool(z_vm *vm) {
+  z_ffi_type *f = ALLOCATE(z_ffi_type, 1);
   f->as_ffi = &ffi_type_uint8;
-  f->as_int = b_clib_type_bool;
-  b_obj_ptr *ptr = (b_obj_ptr *)GC(new_ptr(vm, (void *)f));
+  f->as_int = z_clib_type_bool;
+  z_obj_ptr *ptr = (z_obj_ptr *)GC(new_ptr(vm, (void *)f));
   const char *format = "%s";
   const char *str = "<void *clib::type::bool>";
   ptr->name = ALLOCATE(char, 25);
@@ -155,11 +155,11 @@ UNUSED b_value __clib_type_bool(b_vm *vm) {
     return g; \
   }
 
-#define CLIB_GET_BLADE_VALUE(t, g) { \
+#define CLIB_GET_ZURI_VALUE(t, g) { \
     t v; \
     memcpy(&v, data + len, sizeof(t)); \
     len += sizeof(t); \
-    blade_value = g(v);      \
+    zuri_value = g(v);      \
     break; \
   }
 
@@ -177,9 +177,9 @@ typedef struct {
   size_t count;
   size_t capacity;
   void **values;
-} b_ffi_values;
+} z_ffi_values;
 
-static inline void add_value(b_vm *vm, b_ffi_values *values, void *object) {
+static inline void add_value(z_vm *vm, z_ffi_values *values, void *object) {
   if (object == NULL)
     return;
 
@@ -198,58 +198,58 @@ static inline void add_value(b_vm *vm, b_ffi_values *values, void *object) {
   values->values[values->count++] = object;
 }
 
-static inline int clib_type_from_blade_value(b_value v) {
+static inline int clib_type_from_zuri_value(z_value v) {
   if(IS_NIL(v)) {
     return 10000; // out of range -> void
   } else if(IS_BOOL(v)) {
-    return b_clib_type_bool;
+    return z_clib_type_bool;
   } else if(IS_NUMBER(v)) {
     if(trunc(AS_NUMBER(v)) != AS_NUMBER(v)) {
-      return b_clib_type_double;
+      return z_clib_type_double;
     } else if(AS_NUMBER(v) < 0) {
-      return b_clib_type_sint32;
+      return z_clib_type_sint32;
     }
-    return b_clib_type_sint32;
+    return z_clib_type_sint32;
   } else if(IS_STRING(v)) {
-    return b_clib_type_char_ptr;
+    return z_clib_type_char_ptr;
   } else if(IS_BYTES(v)) {
-    return b_clib_type_uchar_ptr;
+    return z_clib_type_uchar_ptr;
   } else  {
-    return b_clib_type_pointer;
+    return z_clib_type_pointer;
   }
 }
 
-static inline void *switch_c_values(b_vm *vm, int i, b_value value, size_t size) {
+static inline void *switch_c_values(z_vm *vm, int i, z_value value, size_t size) {
   switch(i) {
-    case b_clib_type_bool: {
+    case z_clib_type_bool: {
       bool* g = N_ALLOCATE(bool, size);
       *(bool *)g = AS_BOOL(value);
       return g;
     }
-    case b_clib_type_uint8: CLIB_GET_C_VALUE(uint8_t);
-    case b_clib_type_sint8: CLIB_GET_C_VALUE(int8_t);
-    case b_clib_type_uint16: CLIB_GET_C_VALUE(uint16_t);
-    case b_clib_type_sint16: CLIB_GET_C_VALUE(int16_t);
-    case b_clib_type_uint32: CLIB_GET_C_VALUE(uint32_t);
-    case b_clib_type_sint32: CLIB_GET_C_VALUE(int32_t);
-    case b_clib_type_uint64: CLIB_GET_C_VALUE(uint64_t);
-    case b_clib_type_sint64: CLIB_GET_C_VALUE(int64_t);
-    case b_clib_type_float: CLIB_GET_C_VALUE(float);
-    case b_clib_type_double: CLIB_GET_C_VALUE(double);
-    case b_clib_type_uchar: CLIB_GET_C_CH_VALUE(unsigned char);
-    case b_clib_type_schar: CLIB_GET_C_CH_VALUE(char);
-    case b_clib_type_ushort: CLIB_GET_C_VALUE(unsigned short);
-    case b_clib_type_sshort: CLIB_GET_C_VALUE(short);
-    case b_clib_type_uint: CLIB_GET_C_VALUE(unsigned int);
-    case b_clib_type_sint: CLIB_GET_C_VALUE(int);
-    case b_clib_type_ulong: CLIB_GET_C_VALUE(unsigned long);
-    case b_clib_type_slong: CLIB_GET_C_VALUE(long);
+    case z_clib_type_uint8: CLIB_GET_C_VALUE(uint8_t);
+    case z_clib_type_sint8: CLIB_GET_C_VALUE(int8_t);
+    case z_clib_type_uint16: CLIB_GET_C_VALUE(uint16_t);
+    case z_clib_type_sint16: CLIB_GET_C_VALUE(int16_t);
+    case z_clib_type_uint32: CLIB_GET_C_VALUE(uint32_t);
+    case z_clib_type_sint32: CLIB_GET_C_VALUE(int32_t);
+    case z_clib_type_uint64: CLIB_GET_C_VALUE(uint64_t);
+    case z_clib_type_sint64: CLIB_GET_C_VALUE(int64_t);
+    case z_clib_type_float: CLIB_GET_C_VALUE(float);
+    case z_clib_type_double: CLIB_GET_C_VALUE(double);
+    case z_clib_type_uchar: CLIB_GET_C_CH_VALUE(unsigned char);
+    case z_clib_type_schar: CLIB_GET_C_CH_VALUE(char);
+    case z_clib_type_ushort: CLIB_GET_C_VALUE(unsigned short);
+    case z_clib_type_sshort: CLIB_GET_C_VALUE(short);
+    case z_clib_type_uint: CLIB_GET_C_VALUE(unsigned int);
+    case z_clib_type_sint: CLIB_GET_C_VALUE(int);
+    case z_clib_type_ulong: CLIB_GET_C_VALUE(unsigned long);
+    case z_clib_type_slong: CLIB_GET_C_VALUE(long);
 #ifdef LONG_LONG_MAX
-    case b_clib_type_longdouble: CLIB_GET_C_VALUE(long long);
+    case z_clib_type_longdouble: CLIB_GET_C_VALUE(long long);
 #else
-    case b_clib_type_longdouble: CLIB_GET_C_VALUE(long);
+    case z_clib_type_longdouble: CLIB_GET_C_VALUE(long);
 #endif
-    case b_clib_type_char_ptr: {
+    case z_clib_type_char_ptr: {
       char **v = N_ALLOCATE(char *, 1);
       if(IS_STRING(value)) {
         v[0] = AS_C_STRING(value);
@@ -258,7 +258,7 @@ static inline void *switch_c_values(b_vm *vm, int i, b_value value, size_t size)
       }
       return v;
     }
-    case b_clib_type_uchar_ptr: {
+    case z_clib_type_uchar_ptr: {
       unsigned char **v = N_ALLOCATE(unsigned char *, size);
       if(IS_BYTES(value)) {
         v[0] = AS_BYTES(value)->bytes.bytes;
@@ -267,7 +267,7 @@ static inline void *switch_c_values(b_vm *vm, int i, b_value value, size_t size)
       }
       return v;
     }
-    case b_clib_type_pointer: {
+    case z_clib_type_pointer: {
       void **v = N_ALLOCATE(void *, size);
       if(IS_PTR(value)) {
         v[0] = AS_PTR(value)->pointer;
@@ -276,11 +276,11 @@ static inline void *switch_c_values(b_vm *vm, int i, b_value value, size_t size)
       } else if(IS_BYTES(value)) {
         v[0] = AS_BYTES(value)->bytes.bytes;
       } else if(IS_LIST(value)) {
-        b_obj_list *list = AS_LIST(value);
+        z_obj_list *list = AS_LIST(value);
         for(int i = 0; i < list->items.count; i++) {
           v[i] = switch_c_values(
             vm,
-            clib_type_from_blade_value(list->items.values[i]),
+            clib_type_from_zuri_value(list->items.values[i]),
             list->items.values[i],
             size / list->items.count // in C, items in an array have equal sizes
           );
@@ -293,9 +293,9 @@ static inline void *switch_c_values(b_vm *vm, int i, b_value value, size_t size)
       }
       return v;
     }
-    case b_clib_type_struct: {
+    case z_clib_type_struct: {
       if(IS_BYTES(value)) {
-        b_obj_bytes *bytes = AS_BYTES(value);
+        z_obj_bytes *bytes = AS_BYTES(value);
         void *v = N_ALLOCATE(void, bytes->bytes.count);
         memcpy(v, bytes->bytes.bytes, bytes->bytes.count);
         return v;
@@ -303,11 +303,11 @@ static inline void *switch_c_values(b_vm *vm, int i, b_value value, size_t size)
       return 0;
     }
 #if FFI_CLOSURES
-    case b_clib_type_closure: {
+    case z_clib_type_closure: {
       void **v = N_ALLOCATE(void *, size);
 
       if(IS_PTR(value)) {
-        b_ffi_cif_closure *closure = (b_ffi_cif_closure *)AS_PTR(value)->pointer;
+        z_ffi_cif_closure *closure = (z_ffi_cif_closure *)AS_PTR(value)->pointer;
         if(!closure || !closure->code) {
           v[0] = NULL;
         } else {
@@ -328,15 +328,15 @@ static inline void *switch_c_values(b_vm *vm, int i, b_value value, size_t size)
   return 0;
 }
 
-static inline b_ffi_values *get_c_values(b_vm *vm, b_ffi_cif *cif, b_obj_list *list) {
-  b_ffi_values *values = ALLOCATE(b_ffi_values, 1);
+static inline z_ffi_values *get_c_values(z_vm *vm, z_ffi_cif *cif, z_obj_list *list) {
+  z_ffi_values *values = ALLOCATE(z_ffi_values, 1);
   values->count = 0;
   values->capacity = 0;
   values->values = NULL;
 
   for(int i = 0; i < list->items.count; i++) {
-    b_ffi_type *type = cif->arg_types[i];
-    b_value value = list->items.values[i];
+    z_ffi_type *type = cif->arg_types[i];
+    z_value value = list->items.values[i];
 
     void *v = switch_c_values(vm, type->as_int, value, type->as_ffi->size);
     add_value(vm, values, v);
@@ -353,7 +353,7 @@ void clib_load_library_free_fn(void *data) {
 
 void clib_new_struct_free_fn(void *data) {
   if (data != NULL) {
-    b_ffi_type *type = (b_ffi_type *)data;
+    z_ffi_type *type = (z_ffi_type *)data;
     if (type != NULL) {
       // make name list available for freeing.
       type->names->obj.stale--;
@@ -363,7 +363,7 @@ void clib_new_struct_free_fn(void *data) {
 
 void clib_new_closure_free_fn(void *data) {
   if (data != NULL) {
-    b_ffi_cif_closure *ci = (b_ffi_cif_closure *)data;
+    z_ffi_cif_closure *ci = (z_ffi_cif_closure *)data;
     if (ci != NULL && ci->closure != NULL) {
       ffi_closure_free(ci->closure);
     }
@@ -374,7 +374,7 @@ DECLARE_MODULE_METHOD(clib_load_library) {
   ENFORCE_ARG_COUNT(load_library, 1);
   ENFORCE_ARG_TYPE(load_library, 0, IS_STRING);
 
-  b_obj_string *name = AS_STRING(args[0]);
+  z_obj_string *name = AS_STRING(args[0]);
 
   void *handle;
   if((handle = dlopen(name->chars, RTLD_LAZY)) == NULL) {
@@ -391,7 +391,7 @@ DECLARE_MODULE_METHOD(clib_get_function) {
   ENFORCE_ARG_TYPE(get_function, 1, IS_STRING);
 
   void *handle = AS_PTR(args[0])->pointer;
-  b_obj_string *name = AS_STRING(args[1]);
+  z_obj_string *name = AS_STRING(args[1]);
 
   if(handle) {
     void* fn = dlsym(handle, name->chars);
@@ -425,8 +425,8 @@ DECLARE_MODULE_METHOD(clib_new_struct) {
   ENFORCE_ARG_RANGE(new_struct, 1, 2);
   ENFORCE_ARG_TYPE(new_struct, 0, IS_LIST);
 
-  b_obj_list *args_list = AS_LIST(args[0]);
-  b_obj_list *names = NULL;
+  z_obj_list *args_list = AS_LIST(args[0]);
+  z_obj_list *names = NULL;
   if(arg_count == 2) {
     ENFORCE_ARG_TYPE(new_struct, 1, IS_LIST);
     names = AS_LIST(args[1]);
@@ -438,7 +438,7 @@ DECLARE_MODULE_METHOD(clib_new_struct) {
   int *clib_types = ALLOCATE(int, args_list->items.count);
 
   for(int i = 0; i < args_list->items.count; i++) {
-    b_ffi_type *t = AS_PTR(args_list->items.values[i])->pointer;
+    z_ffi_type *t = AS_PTR(args_list->items.values[i])->pointer;
     clib_types[i] = t->as_int;
     elements[i] = t->as_ffi;
   }
@@ -451,8 +451,8 @@ DECLARE_MODULE_METHOD(clib_new_struct) {
   size_t sizes[args_list->items.count];
   ffi_get_struct_offsets(FFI_DEFAULT_ABI, type, sizes);
 
-  b_ffi_type *struct_type = ALLOCATE(b_ffi_type, 1);
-  struct_type->as_int = b_clib_type_struct;
+  z_ffi_type *struct_type = ALLOCATE(z_ffi_type, 1);
+  struct_type->as_int = z_clib_type_struct;
   struct_type->as_ffi = type;
   struct_type->types = clib_types;
   struct_type->length = args_list->items.count;
@@ -462,19 +462,19 @@ DECLARE_MODULE_METHOD(clib_new_struct) {
 }
 
 void clib_closure_interface_trampoline(ffi_cif *cif, void *ret, void *args[], void *data) {
-  b_ffi_cif_closure *ci = (b_ffi_cif_closure *)data;
+  z_ffi_cif_closure *ci = (z_ffi_cif_closure *)data;
 
   if(ci) {
-    b_vm *vm = ci->vm;
+    z_vm *vm = ci->vm;
 
     int i = 0;
     size_t read_len = 0;
-    b_obj_list *blade_args = (b_obj_list *)GC(new_list(vm));
+    z_obj_list *zuri_args = (z_obj_list *)GC(new_list(vm));
 
     while(i < ci->args_count) {
-      b_ffi_type *type = ci->arg_types[i];
+      z_ffi_type *type = ci->arg_types[i];
 
-      b_value blade_value = get_blade_value(
+      z_value zuri_value = get_zuri_value(
         vm,
         type->as_int,
         type->as_ffi->size,
@@ -482,11 +482,11 @@ void clib_closure_interface_trampoline(ffi_cif *cif, void *ret, void *args[], vo
         &read_len
       );
 
-      write_list(vm, blade_args, blade_value);
+      write_list(vm, zuri_args, zuri_value);
       i++;
     }
 
-    b_value return_value = call_closure(vm, ci->blade_closure, blade_args);
+    z_value return_value = call_closure(vm, ci->zuri_closure, zuri_args);
     (*(void **)ret) = switch_c_values(vm, 0, return_value, ci->return_type->as_ffi->size);
   }
 }
@@ -497,19 +497,19 @@ DECLARE_MODULE_METHOD(clib_new_closure) {
   ENFORCE_ARG_TYPE(new_closure, 1, IS_PTR);
   ENFORCE_ARG_TYPE(new_closure, 2, IS_LIST);
 
-  b_obj_closure *blade_closure = AS_CLOSURE(args[0]);
-  b_ffi_type *return_type = (b_ffi_type *)AS_PTR(args[1])->pointer;
-  b_obj_list *args_list = AS_LIST(args[2]);
+  z_obj_closure *zuri_closure = AS_CLOSURE(args[0]);
+  z_ffi_type *return_type = (z_ffi_type *)AS_PTR(args[1])->pointer;
+  z_obj_list *args_list = AS_LIST(args[2]);
 
   if(return_type) {
     ffi_cif *cif = ALLOCATE(ffi_cif, 1);
-    b_ffi_cif_closure *ci = ALLOCATE(b_ffi_cif_closure, 1);
+    z_ffi_cif_closure *ci = ALLOCATE(z_ffi_cif_closure, 1);
 
     void *code;
     ffi_closure *closure = ffi_closure_alloc(sizeof(ffi_closure), &code);
     if(!closure) {
       FREE_ARRAY(ffi_cif, cif, 1);
-      FREE_ARRAY(b_ffi_cif_closure, ci, 1);
+      FREE_ARRAY(z_ffi_cif_closure, ci, 1);
       RETURN_ERROR("failed to allocate closure");
     }
 
@@ -521,15 +521,15 @@ DECLARE_MODULE_METHOD(clib_new_closure) {
     ci->is_variadic = false;
     ci->cif = cif;
     ci->code = code;
-    ci->blade_closure = blade_closure;
+    ci->zuri_closure = zuri_closure;
 
     // populate the argument types...
-    ci->arg_types = ALLOCATE(b_ffi_type *, args_list->items.count);
+    ci->arg_types = ALLOCATE(z_ffi_type *, args_list->items.count);
     ffi_type **types = ALLOCATE(ffi_type *, args_list->items.count);
 
-    // extract types out of b_ffi_type to ffi_type and into ci
+    // extract types out of z_ffi_type to ffi_type and into ci
     for (int i = 0; i < args_list->items.count; i++) {
-      b_ffi_type *type = (b_ffi_type *) AS_PTR(args_list->items.values[i])->pointer;
+      z_ffi_type *type = (z_ffi_type *) AS_PTR(args_list->items.values[i])->pointer;
       ci->arg_types[i] = type;
       types[i] = type->as_ffi;
     }
@@ -542,7 +542,7 @@ DECLARE_MODULE_METHOD(clib_new_closure) {
     }
 
     FREE_ARRAY(ffi_cif, cif, 1);
-    FREE_ARRAY(b_ffi_cif_closure, ci, 1);
+    FREE_ARRAY(z_ffi_cif_closure, ci, 1);
     ffi_closure_free(closure);
     RETURN_ERROR("failed to initialize closure interface");
   }
@@ -555,8 +555,8 @@ DECLARE_MODULE_METHOD(clib_new) {
   ENFORCE_ARG_TYPE(new, 0, IS_PTR);
   ENFORCE_ARG_TYPE(new, 1, IS_LIST);
 
-  b_ffi_type *type = (b_ffi_type *)AS_PTR(args[0])->pointer;
-  b_obj_list *values = AS_LIST(args[1]);
+  z_ffi_type *type = (z_ffi_type *)AS_PTR(args[0])->pointer;
+  z_obj_list *values = AS_LIST(args[1]);
 
   unsigned char* data = ALLOCATE(unsigned char, type->as_ffi->size);
   size_t write_length = 0;
@@ -574,36 +574,36 @@ DECLARE_MODULE_METHOD(clib_new) {
   RETURN_OBJ(take_bytes(vm, data, type->as_ffi->size));
 }
 
-b_value get_blade_value(b_vm *vm, int type, size_t size, void *data, size_t *read_len) {
+z_value get_zuri_value(z_vm *vm, int type, size_t size, void *data, size_t *read_len) {
   size_t len = *read_len;
 
-  b_value blade_value;
+  z_value zuri_value;
   switch(type) {
-    case b_clib_type_bool: CLIB_GET_BLADE_VALUE(bool, BOOL_VAL);
-    case b_clib_type_uint8: CLIB_GET_BLADE_VALUE(uint8_t, NUMBER_VAL);
-    case b_clib_type_sint8: CLIB_GET_BLADE_VALUE(int8_t, NUMBER_VAL);
-    case b_clib_type_uint16: CLIB_GET_BLADE_VALUE(uint16_t, NUMBER_VAL);
-    case b_clib_type_sint16: CLIB_GET_BLADE_VALUE(int16_t, NUMBER_VAL);
-    case b_clib_type_uint32: CLIB_GET_BLADE_VALUE(uint32_t, NUMBER_VAL);
-    case b_clib_type_sint32: CLIB_GET_BLADE_VALUE(int32_t, NUMBER_VAL);
-    case b_clib_type_uint64: CLIB_GET_BLADE_VALUE(uint64_t, NUMBER_VAL);
-    case b_clib_type_sint64: CLIB_GET_BLADE_VALUE(int64_t, NUMBER_VAL);
-    case b_clib_type_float: CLIB_GET_BLADE_VALUE(float, NUMBER_VAL);
-    case b_clib_type_double: CLIB_GET_BLADE_VALUE(double, NUMBER_VAL);
-    case b_clib_type_uchar: CLIB_GET_BLADE_VALUE(unsigned char, NUMBER_VAL);
-    case b_clib_type_schar: CLIB_GET_BLADE_VALUE(char, NUMBER_VAL);
-    case b_clib_type_ushort: CLIB_GET_BLADE_VALUE(unsigned short, NUMBER_VAL);
-    case b_clib_type_sshort: CLIB_GET_BLADE_VALUE(short, NUMBER_VAL);
-    case b_clib_type_uint: CLIB_GET_BLADE_VALUE(unsigned int, NUMBER_VAL);
-    case b_clib_type_sint: CLIB_GET_BLADE_VALUE(int, NUMBER_VAL);
-    case b_clib_type_ulong: CLIB_GET_BLADE_VALUE(unsigned long, NUMBER_VAL);
-    case b_clib_type_slong: CLIB_GET_BLADE_VALUE(long, NUMBER_VAL);
+    case z_clib_type_bool: CLIB_GET_ZURI_VALUE(bool, BOOL_VAL);
+    case z_clib_type_uint8: CLIB_GET_ZURI_VALUE(uint8_t, NUMBER_VAL);
+    case z_clib_type_sint8: CLIB_GET_ZURI_VALUE(int8_t, NUMBER_VAL);
+    case z_clib_type_uint16: CLIB_GET_ZURI_VALUE(uint16_t, NUMBER_VAL);
+    case z_clib_type_sint16: CLIB_GET_ZURI_VALUE(int16_t, NUMBER_VAL);
+    case z_clib_type_uint32: CLIB_GET_ZURI_VALUE(uint32_t, NUMBER_VAL);
+    case z_clib_type_sint32: CLIB_GET_ZURI_VALUE(int32_t, NUMBER_VAL);
+    case z_clib_type_uint64: CLIB_GET_ZURI_VALUE(uint64_t, NUMBER_VAL);
+    case z_clib_type_sint64: CLIB_GET_ZURI_VALUE(int64_t, NUMBER_VAL);
+    case z_clib_type_float: CLIB_GET_ZURI_VALUE(float, NUMBER_VAL);
+    case z_clib_type_double: CLIB_GET_ZURI_VALUE(double, NUMBER_VAL);
+    case z_clib_type_uchar: CLIB_GET_ZURI_VALUE(unsigned char, NUMBER_VAL);
+    case z_clib_type_schar: CLIB_GET_ZURI_VALUE(char, NUMBER_VAL);
+    case z_clib_type_ushort: CLIB_GET_ZURI_VALUE(unsigned short, NUMBER_VAL);
+    case z_clib_type_sshort: CLIB_GET_ZURI_VALUE(short, NUMBER_VAL);
+    case z_clib_type_uint: CLIB_GET_ZURI_VALUE(unsigned int, NUMBER_VAL);
+    case z_clib_type_sint: CLIB_GET_ZURI_VALUE(int, NUMBER_VAL);
+    case z_clib_type_ulong: CLIB_GET_ZURI_VALUE(unsigned long, NUMBER_VAL);
+    case z_clib_type_slong: CLIB_GET_ZURI_VALUE(long, NUMBER_VAL);
 #ifdef LONG_LONG_MAX
-    case b_clib_type_longdouble: CLIB_GET_BLADE_VALUE(long long, NUMBER_VAL);
+    case z_clib_type_longdouble: CLIB_GET_ZURI_VALUE(long long, NUMBER_VAL);
 #else
-    case b_clib_type_longdouble: CLIB_GET_BLADE_VALUE(long, NUMBER_VAL);
+    case z_clib_type_longdouble: CLIB_GET_ZURI_VALUE(long, NUMBER_VAL);
 #endif
-    case b_clib_type_char_ptr: {
+    case z_clib_type_char_ptr: {
       char **v;
       memcpy(&v, data + len, sizeof(char *));
 
@@ -611,36 +611,36 @@ b_value get_blade_value(b_vm *vm, int type, size_t size, void *data, size_t *rea
       int length = strlen(string);
 
       len += size;
-      blade_value = STRING_L_VAL(string, length);
+      zuri_value = STRING_L_VAL(string, length);
       break;
     }
-    case b_clib_type_pointer: CLIB_GET_BLADE_VALUE(void *, PTR_VAL);
-    case b_clib_type_uchar_ptr:
-    case b_clib_type_struct: {
+    case z_clib_type_pointer: CLIB_GET_ZURI_VALUE(void *, PTR_VAL);
+    case z_clib_type_uchar_ptr:
+    case z_clib_type_struct: {
       unsigned char * result = ALLOCATE(unsigned char, size);
       memcpy(result, data + len, size);
-      blade_value = OBJ_VAL(take_bytes(vm, result, size));
+      zuri_value = OBJ_VAL(take_bytes(vm, result, size));
       len += size;
       break;
     }
 #if FFI_CLOSURES
-    case b_clib_type_closure: {
-      b_ffi_cif_closure *v = ALLOCATE(b_ffi_cif_closure, size);
-      memcpy(v, data + len, sizeof(b_ffi_cif_closure));
-      len += sizeof(b_ffi_cif_closure);
-      blade_value = OBJ_VAL(v->blade_closure);
+    case z_clib_type_closure: {
+      z_ffi_cif_closure *v = ALLOCATE(z_ffi_cif_closure, size);
+      memcpy(v, data + len, sizeof(z_ffi_cif_closure));
+      len += sizeof(z_ffi_cif_closure);
+      zuri_value = OBJ_VAL(v->zuri_closure);
       break;
     }
 #endif
     default: {
-      blade_value = NIL_VAL;
+      zuri_value = NIL_VAL;
       len += size;
       break;
     }
   }
 
   *read_len = len;
-  return blade_value;
+  return zuri_value;
 }
 
 DECLARE_MODULE_METHOD(clib_get) {
@@ -648,7 +648,7 @@ DECLARE_MODULE_METHOD(clib_get) {
   ENFORCE_ARG_TYPE(get, 0, IS_PTR);
   ENFORCE_ARG_TYPES(get, 1, IS_BYTES, IS_PTR);
 
-  b_ffi_type *type = (b_ffi_type *)AS_PTR(args[0])->pointer;
+  z_ffi_type *type = (z_ffi_type *)AS_PTR(args[0])->pointer;
   if(type->as_ffi->elements == NULL) {
     RETURN_ARGUMENT_ERROR("get can only be used on derived types such as struct, union and arrays.");
   }
@@ -660,11 +660,11 @@ DECLARE_MODULE_METHOD(clib_get) {
     data = AS_BYTES(args[1])->bytes.bytes;
   }
 
-  b_obj_list *list = (b_obj_list *)GC(new_list(vm));
+  z_obj_list *list = (z_obj_list *)GC(new_list(vm));
 
   size_t read_len = 0;
   for(int i = 0; i < type->length; i++) {
-    b_value blade_value = get_blade_value(
+    z_value zuri_value = get_zuri_value(
       vm,
       type->types[i],
       type->as_ffi->elements[i]->size,
@@ -672,11 +672,11 @@ DECLARE_MODULE_METHOD(clib_get) {
       &read_len
     );
 
-    write_list(vm, list, blade_value);
+    write_list(vm, list, zuri_value);
   }
 
   if(type->names != NULL) {
-    b_obj_dict *dict = (b_obj_dict *)GC(new_dict(vm));
+    z_obj_dict *dict = (z_obj_dict *)GC(new_dict(vm));
     for(int i = 0; i < type->length; i++) {
       dict_add_entry(vm, dict, type->names->items.values[i], list->items.values[i]);
     }
@@ -692,7 +692,7 @@ DECLARE_MODULE_METHOD(clib_get_value) {
   ENFORCE_ARG_TYPE(get_value, 0, IS_PTR);
   ENFORCE_ARG_TYPES(get_value, 1, IS_BYTES, IS_PTR);
 
-  b_ffi_type *type = (b_ffi_type *)AS_PTR(args[0])->pointer;
+  z_ffi_type *type = (z_ffi_type *)AS_PTR(args[0])->pointer;
   if(type->as_ffi->elements != NULL) {
     RETURN_ARGUMENT_ERROR("get_value can only be used on non-derived types such as struct, union and arrays.");
   }
@@ -704,10 +704,10 @@ DECLARE_MODULE_METHOD(clib_get_value) {
     data = AS_BYTES(args[1])->bytes.bytes;
   }
 
-  b_obj_list *list = (b_obj_list *)GC(new_list(vm));
+  z_obj_list *list = (z_obj_list *)GC(new_list(vm));
 
   size_t read_len = 0;
-  RETURN_VALUE(get_blade_value(
+  RETURN_VALUE(get_zuri_value(
     vm,
     type->as_int,
     type->as_ffi->size,
@@ -724,14 +724,14 @@ DECLARE_MODULE_METHOD(clib_define) {
   ENFORCE_ARG_TYPE(define, 3, IS_LIST);
 
   void *function = AS_PTR(args[0])->pointer;
-  b_obj_string *fn_name = AS_STRING(args[1]);
-  b_ffi_type *return_type = (b_ffi_type *)AS_PTR(args[2])->pointer;
-  b_obj_list *args_list = AS_LIST(args[3]);
+  z_obj_string *fn_name = AS_STRING(args[1]);
+  z_ffi_type *return_type = (z_ffi_type *)AS_PTR(args[2])->pointer;
+  z_obj_list *args_list = AS_LIST(args[3]);
 
   if(function) {
     ffi_cif *cif = ALLOCATE(ffi_cif, 1);
 
-    b_ffi_cif *ci = ALLOCATE(b_ffi_cif, 1);
+    z_ffi_cif *ci = ALLOCATE(z_ffi_cif, 1);
     ci->function = function;
     ci->args_count = args_list->items.count;
     ci->abi = FFI_DEFAULT_ABI;
@@ -740,12 +740,12 @@ DECLARE_MODULE_METHOD(clib_define) {
     ci->cif = cif;
 
     // populate the argument types...
-    ci->arg_types = ALLOCATE(b_ffi_type *, args_list->items.count);
+    ci->arg_types = ALLOCATE(z_ffi_type *, args_list->items.count);
     ffi_type **types = ALLOCATE(ffi_type *, args_list->items.count + 1);
 
-    // extract types out of b_ffi_type to ffi_type and into ci
+    // extract types out of z_ffi_type to ffi_type and into ci
     for (int i = 0; i < args_list->items.count; i++) {
-      b_ffi_type *type = (b_ffi_type *) AS_PTR(args_list->items.values[i])->pointer;
+      z_ffi_type *type = (z_ffi_type *) AS_PTR(args_list->items.values[i])->pointer;
       ci->arg_types[i] = type;
       types[i] = type->as_ffi;
     }
@@ -756,7 +756,7 @@ DECLARE_MODULE_METHOD(clib_define) {
     }
 
     FREE_ARRAY(ffi_cif, cif, 1);
-    FREE_ARRAY(b_ffi_cif, ci, 1);
+    FREE_ARRAY(z_ffi_cif, ci, 1);
     RETURN_ERROR("failed to initialize call interface to %s()", fn_name->chars);
   }
 
@@ -781,64 +781,64 @@ DECLARE_MODULE_METHOD(clib_call) {
   ENFORCE_ARG_TYPE(call, 0, IS_PTR);
   ENFORCE_ARG_TYPE(call, 1, IS_LIST);
 
-  b_ffi_cif *handle = (b_ffi_cif *)AS_PTR(args[0])->pointer;
+  z_ffi_cif *handle = (z_ffi_cif *)AS_PTR(args[0])->pointer;
   if(handle) {
-    b_obj_list *args_list = AS_LIST(args[1]);
+    z_obj_list *args_list = AS_LIST(args[1]);
     if(args_list->items.count > handle->args_count && !handle->is_variadic) {
       RETURN_ARGUMENT_ERROR("invalid number of arguments");
     }
 
-    b_ffi_values *values = get_c_values(vm, handle, args_list);
+    z_ffi_values *values = get_c_values(vm, handle, args_list);
 
     switch (handle->return_type->as_int) {
-      case b_clib_type_void: {
+      case z_clib_type_void: {
         ffi_call(handle->cif, handle->function, NULL, values->values);
         RETURN;
       }
-      case b_clib_type_bool: {
+      case z_clib_type_bool: {
         int b;
         ffi_call(handle->cif, handle->function, &b, values->values);
         RETURN_BOOL(b > 0);
       }
-      case b_clib_type_uint8: CLIB_CALL(uint8_t, NUMBER);
-      case b_clib_type_sint8: CLIB_CALL(int8_t, NUMBER);
-      case b_clib_type_uint16: CLIB_CALL(uint16_t, NUMBER);
-      case b_clib_type_sint16: CLIB_CALL(int16_t, NUMBER);
-      case b_clib_type_uint32: CLIB_CALL(uint32_t, NUMBER);
-      case b_clib_type_sint32: CLIB_CALL(int32_t, NUMBER);
-      case b_clib_type_uint64: CLIB_CALL(uint64_t, NUMBER);
-      case b_clib_type_sint64: CLIB_CALL(int64_t, NUMBER);
-      case b_clib_type_float: CLIB_CALL(float, NUMBER);
-      case b_clib_type_double: CLIB_CALL(double, NUMBER);
-      case b_clib_type_uchar: CLIB_CALL(unsigned char, NUMBER);
-      case b_clib_type_schar: CLIB_CALL(char, NUMBER);
-      case b_clib_type_ushort: CLIB_CALL(unsigned short, NUMBER);
-      case b_clib_type_sshort: CLIB_CALL(short, NUMBER);
-      case b_clib_type_uint: CLIB_CALL(unsigned int, NUMBER);
-      case b_clib_type_sint: CLIB_CALL(int, NUMBER);
-      case b_clib_type_ulong: CLIB_CALL(unsigned long, NUMBER);
-      case b_clib_type_slong: CLIB_CALL(long, NUMBER);
+      case z_clib_type_uint8: CLIB_CALL(uint8_t, NUMBER);
+      case z_clib_type_sint8: CLIB_CALL(int8_t, NUMBER);
+      case z_clib_type_uint16: CLIB_CALL(uint16_t, NUMBER);
+      case z_clib_type_sint16: CLIB_CALL(int16_t, NUMBER);
+      case z_clib_type_uint32: CLIB_CALL(uint32_t, NUMBER);
+      case z_clib_type_sint32: CLIB_CALL(int32_t, NUMBER);
+      case z_clib_type_uint64: CLIB_CALL(uint64_t, NUMBER);
+      case z_clib_type_sint64: CLIB_CALL(int64_t, NUMBER);
+      case z_clib_type_float: CLIB_CALL(float, NUMBER);
+      case z_clib_type_double: CLIB_CALL(double, NUMBER);
+      case z_clib_type_uchar: CLIB_CALL(unsigned char, NUMBER);
+      case z_clib_type_schar: CLIB_CALL(char, NUMBER);
+      case z_clib_type_ushort: CLIB_CALL(unsigned short, NUMBER);
+      case z_clib_type_sshort: CLIB_CALL(short, NUMBER);
+      case z_clib_type_uint: CLIB_CALL(unsigned int, NUMBER);
+      case z_clib_type_sint: CLIB_CALL(int, NUMBER);
+      case z_clib_type_ulong: CLIB_CALL(unsigned long, NUMBER);
+      case z_clib_type_slong: CLIB_CALL(long, NUMBER);
 #ifdef LONG_LONG_MAX
-      case b_clib_type_longdouble: CLIB_CALL(long long, NUMBER);
+      case z_clib_type_longdouble: CLIB_CALL(long long, NUMBER);
 #else
-      case b_clib_type_longdouble: CLIB_CALL(long, NUMBER);
+      case z_clib_type_longdouble: CLIB_CALL(long, NUMBER);
 #endif
-      case b_clib_type_char_ptr: CLIB_CALL(char *, STRING);
-      case b_clib_type_uchar_ptr:
-      case b_clib_type_struct: {
+      case z_clib_type_char_ptr: CLIB_CALL(char *, STRING);
+      case z_clib_type_uchar_ptr:
+      case z_clib_type_struct: {
 //#ifndef __linux__
 //        ffi_arg result;
 //        ffi_call(handle->cif, handle->function, &result, values->values);
-//        b_obj_bytes *bytes = (b_obj_bytes *)GC(new_bytes(vm, handle->cif->rtype->size));
+//        z_obj_bytes *bytes = (z_obj_bytes *)GC(new_bytes(vm, handle->cif->rtype->size));
 //        memcpy(bytes->bytes.bytes, &result, handle->cif->rtype->size);
 //#else
         unsigned char * result = ALLOCATE(unsigned char, handle->cif->rtype->size);
         ffi_call(handle->cif, handle->function, result, values->values);
-        b_obj_bytes *bytes = (b_obj_bytes *)GC(take_bytes(vm, result, handle->cif->rtype->size));
+        z_obj_bytes *bytes = (z_obj_bytes *)GC(take_bytes(vm, result, handle->cif->rtype->size));
 //#endif
         RETURN_OBJ(bytes);
       }
-      case b_clib_type_pointer: CLIB_CALL(void *, PTR);
+      case z_clib_type_pointer: CLIB_CALL(void *, PTR);
       default: RETURN;
     }
   }
@@ -853,10 +853,10 @@ DECLARE_MODULE_METHOD(clib_get_ptr_index) {
   ENFORCE_ARG_TYPE(get_ptr_index, 2, IS_NUMBER);
 
   void *ptr = AS_PTR(args[0])->pointer;
-  b_ffi_type *type = (b_ffi_type *) AS_PTR(args[1])->pointer;
+  z_ffi_type *type = (z_ffi_type *) AS_PTR(args[1])->pointer;
   unsigned int index = AS_NUMBER(args[2]);
 
-  b_obj_bytes *bytes = (b_obj_bytes *)GC(new_bytes(vm, type->as_ffi->size));
+  z_obj_bytes *bytes = (z_obj_bytes *)GC(new_bytes(vm, type->as_ffi->size));
   memcpy(bytes->bytes.bytes, ptr + (type->as_ffi->size * index), type->as_ffi->size);
   RETURN_OBJ(bytes);
 }
@@ -868,7 +868,7 @@ DECLARE_MODULE_METHOD(clib_set_ptr_index) {
   ENFORCE_ARG_TYPE(set_ptr_index, 2, IS_NUMBER);
 
   void *ptr = AS_PTR(args[0])->pointer;
-  b_ffi_type *type = (b_ffi_type *) AS_PTR(args[1])->pointer;
+  z_ffi_type *type = (z_ffi_type *) AS_PTR(args[1])->pointer;
   unsigned int index = AS_NUMBER(args[2]);
 
   void *v = switch_c_values(vm, type->as_int, args[3], type->as_ffi->size);
@@ -877,7 +877,7 @@ DECLARE_MODULE_METHOD(clib_set_ptr_index) {
 }
 
 CREATE_MODULE_LOADER(clib) {
-  static b_field_reg module_fields[] = {
+  static z_field_reg module_fields[] = {
       GET_CLIB_TYPE(void),
       GET_CLIB_TYPE(bool),
       GET_CLIB_TYPE(uint8),
@@ -908,7 +908,7 @@ CREATE_MODULE_LOADER(clib) {
       {NULL, false, NULL}
   };
 
-  static b_func_reg module_functions[] = {
+  static z_func_reg module_functions[] = {
       {"new",   true,  GET_MODULE_METHOD(clib_new)},
       {"get",   true,  GET_MODULE_METHOD(clib_get)},
       {"get_value",   true,  GET_MODULE_METHOD(clib_get_value)},
@@ -924,7 +924,7 @@ CREATE_MODULE_LOADER(clib) {
       {NULL,    false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_clib",
       .fields = module_fields,
       .functions = module_functions,

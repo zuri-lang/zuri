@@ -1,10 +1,10 @@
 # Managing dependencies
 
-As a package manager, one of the core responsibilities of nyssa is to help you manage dependencies for your application. In Blade, there are three (3) scopes of libraries that exist.
+As a package manager, one of the core responsibilities of nyssa is to help you manage dependencies for your application. In Zuri, there are three (3) scopes of libraries that exist.
 
-- **Builtin libraries**: This libraries are the Blade core libraries from which all other libraries are built on and are not meant to be managed by any third party application. Managing or modifying this packages yourself can break your installation and/or make your installation incompartible with other installations.
-- **Global libraries**: This are packages located in Blade's global packages directory (typically `$BLADE_INSTALL_DIR/vendor`) and are available to all applications in Blade and can be imported in the same way as the core libraries, but not part of the core packages.
-- **Local libraries**: This are packages located in your application, package or library's local packages directory (typically `$APPLICATION_DIR/.blade/libs`) and are available to all modules in your application and can be imported in the same way as the core libraries.
+- **Builtin libraries**: This libraries are the Zuri core libraries from which all other libraries are built on and are not meant to be managed by any third party application. Managing or modifying this packages yourself can break your installation and/or make your installation incompartible with other installations.
+- **Global libraries**: This are packages located in Zuri's global packages directory (typically `$ZURI_INSTALL_DIR/vendor`) and are available to all applications in Zuri and can be imported in the same way as the core libraries, but not part of the core packages.
+- **Local libraries**: This are packages located in your application, package or library's local packages directory (typically `$APPLICATION_DIR/.zuri/libs`) and are available to all modules in your application and can be imported in the same way as the core libraries.
 
 Nyssa lets you install both global and local libraries for your application. The default behavior is to install a package locally.
 
@@ -16,7 +16,7 @@ To install a package locally into your application, open a terminal at the root 
 nyssa install <package_name>
 ```
 
-This will create the path `.blade/libs` in your current directory if it doesn't exist already and download the package into that directory. This will also update the `nyssa.json` file with the installed dependency uder the `deps` section.
+This will create the path `.zuri/libs` in your current directory if it doesn't exist already and download the package into that directory. This will also update the `nyssa.json` file with the installed dependency uder the `deps` section.
 
 > **NOTE:** nyssa does not install a local package outside of a nyssa project.
 
@@ -40,7 +40,7 @@ nyssa install --global <package_name>
 
 > **NOTE:** You can install a package globally from any directory on your device. A `nyssa.json` file will only be updated if it is ran inside a nyssa project.
 
-You can also choose to install a package from another repository other than [nyssa.bladelang.org](https://nyssa.bladelang.org) by specifying the `--repo` flag (or `-r` for short) like below.
+You can also choose to install a package from another repository other than [nyssa.zurilang.org](https://nyssa.zurilang.org) by specifying the `--repo` flag (or `-r` for short) like below.
 
 ```
 nyssa install --repo <repo_url> <package_name>
@@ -70,13 +70,13 @@ To upgrade Nyssa packages whether globally installed or locally installed, you o
 
 ### Restoring packages
 
-When nyssa creates a project, it includes a `.gitignore` file that tells it to ignore the `.blade` directory. This keeps source control light and easy to manage. To restore back all your packages when you move or copy your code across locations or devices, you can run the command
+When nyssa creates a project, it includes a `.gitignore` file that tells it to ignore the `.zuri` directory. This keeps source control light and easy to manage. To restore back all your packages when you move or copy your code across locations or devices, you can run the command
 
 ```
 nyssa restore
 ```
 
-This is also useful if you ever mistakenly delete the `.blade` directory or compress the project with archivers that ignore hidden file on Unix machines or somehow end up with a corrupted library. You can also use restore to reinstall all packages.
+This is also useful if you ever mistakenly delete the `.zuri` directory or compress the project with archivers that ignore hidden file on Unix machines or somehow end up with a corrupted library. You can also use restore to reinstall all packages.
 
 > Unlike package installation, restore uses a cache by default. Sometimes, this isn't exactly what you want. You can ask nyssa to not use any cached version by specifying the `--no-cache` flag (or `-x` for short).
 

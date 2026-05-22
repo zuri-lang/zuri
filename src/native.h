@@ -1,5 +1,5 @@
-#ifndef BLADE_NATIVE_H
-#define BLADE_NATIVE_H
+#ifndef ZURI_NATIVE_H
+#define ZURI_NATIVE_H
 
 #include "config.h"
 
@@ -11,13 +11,13 @@
 #include "pcre2.h"
 
 #define DECLARE_NATIVE(name)                                                   \
-  bool native_fn_##name(b_vm *vm, int arg_count, b_value *args)
+  bool native_fn_##name(z_vm *vm, int arg_count, z_value *args)
 
 #define DECLARE_METHOD(name)                                                   \
-  bool native_method_##name(b_vm *vm, int arg_count, b_value *args)
+  bool native_method_##name(z_vm *vm, int arg_count, z_value *args)
 
 #define DECLARE_MODULE_METHOD(name)                                            \
-  bool native_module_##name(b_vm *vm, int arg_count, b_value *args)
+  bool native_module_##name(z_vm *vm, int arg_count, z_value *args)
 
 #define GET_NATIVE(name) native_fn_##name
 #define GET_METHOD(name) native_method_##name
@@ -147,12 +147,12 @@
 #define METHOD_OVERRIDE(override, i)                                           \
   do {                                                                         \
     if (IS_INSTANCE(args[0])) {                                                \
-      b_obj_instance *instance = AS_INSTANCE(args[0]);                         \
-      b_value _tmp;                                                            \
-      b_obj_string *name = (b_obj_string *)GC(copy_string(vm, "@" #override, (i) + 1)); \
+      z_obj_instance *instance = AS_INSTANCE(args[0]);                         \
+      z_value _tmp;                                                            \
+      z_obj_string *name = (z_obj_string *)GC(copy_string(vm, "@" #override, (i) + 1)); \
       if(table_get(&instance->klass->methods, OBJ_VAL(name), &_tmp)) {         \
         CLEAR_GC(); \
-        b_value val = raw_closure_call(vm, AS_CLOSURE(_tmp), 0, false); \
+        z_value val = raw_closure_call(vm, AS_CLOSURE(_tmp), 0, false); \
         args[-1] = val;                                                   \
         return true; \
       } \
@@ -205,13 +205,13 @@
 #define GC_T_STRING(o, l) OBJ_VAL(GC(take_string(vm, (o), (l))))
 #define GC_TT_STRING(o) OBJ_VAL(GC(take_string(vm, (o), (int)strlen(o))))
 
-extern int32_t is_regex(b_obj_string *string);
+extern int32_t is_regex(z_obj_string *string);
 
-extern char *remove_regex_delimiter(b_vm *vm, b_obj_string *string);
+extern char *remove_regex_delimiter(z_vm *vm, z_obj_string *string);
 
-extern void write_list(b_vm *vm, b_obj_list *list, b_value value);
+extern void write_list(z_vm *vm, z_obj_list *list, z_value value);
 
-extern b_obj_list *copy_list(b_vm *vm, b_obj_list *list, int start, int length);
+extern z_obj_list *copy_list(z_vm *vm, z_obj_list *list, int start, int length);
 
 DECLARE_NATIVE(time);
 DECLARE_NATIVE(microtime);

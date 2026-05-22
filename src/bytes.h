@@ -1,5 +1,5 @@
-#ifndef BLADE_BYTES_H
-#define BLADE_BYTES_H
+#ifndef ZURI_BYTES_H
+#define ZURI_BYTES_H
 
 #include "common.h"
 #include "native.h"

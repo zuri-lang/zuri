@@ -1,12 +1,12 @@
-# Building Blade
+# Building Zuri
 
-Blade itself is a C11 application using the CMake build system, and therefore, building Blade should be no different to
+Zuri itself is a C11 application using the CMake build system, and therefore, building Zuri should be no different to
 any other application built using the same tools.
 
 ## Automated Build and Install (Works on all OSX and Linux)
 
 ```shell
-bash <(curl -s https://raw.githubusercontent.com/blade-lang/blade/main/scripts/install.sh)
+bash <(curl -s https://raw.githubusercontent.com/zuri-lang/zuri/main/scripts/install.sh)
 ```
 
 ## Prerequisites
@@ -63,19 +63,19 @@ Proceed to the [Configure](#configure) section to configure your CMake build.
 
 ### Windows
 
-> Starting from the 3rd of February 2021, Blade's officially supported compilers for the Windows environment is now the 
+> Starting from the 3rd of February 2021, Zuri's officially supported compilers for the Windows environment is now the 
 > WinLibs and TDM-GCC compiler. The decision to change the official compiler from Visual Studio and MSYS2 to WinLibs and TDM-GCC 
-> is to allow for minial configuration effort while installing Blade as well as to allow us to develop Blade faster as trying to 
+> is to allow for minial configuration effort while installing Zuri as well as to allow us to develop Zuri faster as trying to 
 > be cross-compatible with Visual Studio has proven to slow down the growth of the language and the ecosystem and setting up 
-> MSYS2 environment to compile Blade is more work than required for either WinLibs or TDM-GCC.
+> MSYS2 environment to compile Zuri is more work than required for either WinLibs or TDM-GCC.
 > 
-> This also allows us to build valid Blade C extensions on Windows with less hassle. 
-> Check out the [blade-ext-demo](https://github.com/blade-lang/blade-ext-demo) or any of the extension in the 
-> [packages](https://github.com/blade-lang/blade/packages) directory for more info on how to write a valid C extension for Blade.
+> This also allows us to build valid Zuri C extensions on Windows with less hassle. 
+> Check out the [zuri-ext-demo](https://github.com/zuri-lang/zuri-ext-demo) or any of the extension in the 
+> [packages](https://github.com/zuri-lang/zuri/packages) directory for more info on how to write a valid C extension for Zuri.
 
 #### Using WinLibs or TDM-GCC with vcpkg
 
-To install Blade with WinLibs or TDM-GCC, install 
+To install Zuri with WinLibs or TDM-GCC, install 
 [WinLibs](https://github.com/brechtsanders/winlibs_mingw/releases/download/11.2.0-9.0.0-msvcrt-r5/winlibs-x86_64-posix-seh-gcc-11.2.0-mingw-w64-9.0.0-r5.zip) 
 or [TDM-GCC](https://github.com/jmeubank/tdm-gcc/releases/download/v10.3.0-tdm64-2/tdm64-gcc-10.3.0-2.exe) 
 via the given links. Add WinLibs or TDM-GCC `bin` directory to your environment path. TDM-GCC also allows you to add to path during its installation. 
@@ -140,4 +140,4 @@ tool for you:
 cmake --build build
 ```
 
-Blade will be built into a directory called `blade` which will be located in the `build` folder.
+Zuri will be built into a directory called `zuri` which will be located in the `build` folder.

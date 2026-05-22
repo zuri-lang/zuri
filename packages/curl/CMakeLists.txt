@@ -6,15 +6,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
-set(BLADE_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/blade")
+set(ZURI_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/zuri")
 
-message(STATUS "Building curl module to ${BLADE_ROOT}/dist")
+message(STATUS "Building curl module to ${ZURI_ROOT}/dist")
 
-include_directories("${BLADE_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
+include_directories("${ZURI_ROOT}/includes" ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(curl SHARED curl.c)
-target_link_libraries(curl libblade)
-add_dependencies(curl blade)
+target_link_libraries(curl libzuri)
+add_dependencies(curl zuri)
 
 if(UNIX)
     target_link_libraries(curl m)
@@ -39,9 +39,9 @@ if(WIN32)
 endif()
 
 add_custom_target(copy-curl-to-libs ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/curl ${BLADE_ROOT}/libs/curl
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/curl ${ZURI_ROOT}/libs/curl
         COMMENT "Exporting curl source files to libs folder..."
         )
 
 add_custom_command(TARGET curl POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:curl> ${BLADE_ROOT}/dist)
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:curl> ${ZURI_ROOT}/dist)

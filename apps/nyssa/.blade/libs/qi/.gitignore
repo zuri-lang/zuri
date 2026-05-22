@@ -1,5 +1,5 @@
-# blade packages directory and files
-.blade/
+# zuri packages directory and files
+.zuri/
 *.nyp
 
 # popular editors

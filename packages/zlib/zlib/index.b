@@ -40,7 +40,7 @@
  * even in the case of corrupted input.
  *
  * @copyright 1995-2017 Jean-loup Gailly and Mark Adler
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _zlib

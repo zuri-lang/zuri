@@ -16,7 +16,7 @@ var _assigners_ = [
   TokenType.LSHIFT_EQ, TokenType.RSHIFT_EQ, TokenType.URSHIFT_EQ,
 ]
 
-# NOTE: ++, and -- are not primary operators in Blade.
+# NOTE: ++, and -- are not primary operators in Zuri.
 var _ops = [
   TokenType.PLUS, #  +
   TokenType.MINUS, #  -
@@ -44,7 +44,7 @@ def _get_doc_string(data) {
 
 
 /**
- * Parses raw Blade tokens and produces an Abstract Syntax Tree.
+ * Parses raw Zuri tokens and produces an Abstract Syntax Tree.
  * 
  * @printable
  */
@@ -849,7 +849,7 @@ class Parser {
   }
 
   /**
-   * parse Blade statements
+   * parse Zuri statements
    */
   _statement() {
     self._ignore_newline()
@@ -1094,7 +1094,7 @@ class Parser {
   }
 
   /**
-   * Blade's declarations
+   * Zuri's declarations
    */
   _declaration() {
     self._ignore_newline()

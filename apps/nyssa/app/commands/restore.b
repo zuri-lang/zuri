@@ -34,8 +34,8 @@ def parse(parser) {
 def configure(config, repo, full_name, name, version, path, progress, no_cache, error) {
   log.info('Installing ${full_name}')
 
-  var blade_exe = os.args[0],
-      destination = os.join_paths(os.cwd(), '.blade/libs/${name}')
+  var zuri_exe = os.args[0],
+      destination = os.join_paths(os.cwd(), '.zuri/libs/${name}')
 
   # create the packages directory if not exists
   log.info('Creating package directory for ${full_name}')
@@ -77,7 +77,7 @@ def configure(config, repo, full_name, name, version, path, progress, no_cache, 
       os.change_dir(destination)
 
       # run the script
-      os.exec('${blade_exe} ${package_config.post_install}')
+      os.exec('${zuri_exe} ${package_config.post_install}')
 
       # return to current directory
       os.change_dir(this_dir)

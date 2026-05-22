@@ -7,10 +7,10 @@
 int main(int argc, char *argv[]) {
 
 #if defined(_WIN32)
-  const char *blade_exe_path  = "runtime\\blade.exe";
+  const char *zuri_exe_path  = "runtime\\zuri.exe";
   const char *application_path = "app";
 #else
-  const char *blade_exe_path  = "runtime/blade";
+  const char *zuri_exe_path  = "runtime/zuri";
   const char *application_path = "app";
 #endif
 
@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
 
   char *root_dir = NULL;
   if(file_exists("./macos") && in_exe_dir == 0) {
-    blade_exe_path = "Resources/runtime/blade";
+    zuri_exe_path = "Resources/runtime/zuri";
     application_path = "Resources/app";
 
     root_dir = dirname(exe_dir);
@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
   const int in_root_dir = chdir(root_dir);
 
   /// PREPARATIONS
-  char *exe_path = merge_paths(root_dir, (char *)blade_exe_path);
+  char *exe_path = merge_paths(root_dir, (char *)zuri_exe_path);
   char *app_root = merge_paths(root_dir, (char *)application_path);
 
   // 1. Create arguments

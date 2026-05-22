@@ -16,9 +16,9 @@ DECLARE_DICT_METHOD(add) {
   ENFORCE_ARG_COUNT(add, 2);
   ENFORCE_VALID_DICT_KEY(add, 0);
 
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
 
-  b_value temp_value;
+  z_value temp_value;
   if (table_get(&dict->items, args[0], &temp_value)) {
     RETURN_ERROR("duplicate key %s at add()", value_to_string(vm, args[0])->chars);
   }
@@ -31,8 +31,8 @@ DECLARE_DICT_METHOD(set) {
     ENFORCE_ARG_COUNT(set, 2);
     ENFORCE_VALID_DICT_KEY(set, 0);
 
-    b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-    b_value value;
+    z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+    z_value value;
     if (!table_get(&dict->items, args[0], &value)) {
         dict_add_entry(vm, dict, args[0], args[1]);
     } else {
@@ -44,7 +44,7 @@ DECLARE_DICT_METHOD(set) {
 DECLARE_DICT_METHOD(clear) {
   ENFORCE_ARG_COUNT(dict, 0);
 
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
   free_value_arr(vm, &dict->names);
   free_table(vm, &dict->items);
   RETURN;
@@ -52,8 +52,8 @@ DECLARE_DICT_METHOD(clear) {
 
 DECLARE_DICT_METHOD(clone) {
   ENFORCE_ARG_COUNT(clone, 0);
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_obj_dict *n_dict = (b_obj_dict *) GC(new_dict(vm));
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_dict *n_dict = (z_obj_dict *) GC(new_dict(vm));
 
   table_copy(vm, &dict->items, &n_dict->items);
 
@@ -66,11 +66,11 @@ DECLARE_DICT_METHOD(clone) {
 
 DECLARE_DICT_METHOD(compact) {
   ENFORCE_ARG_COUNT(compact, 0);
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_obj_dict *n_dict = (b_obj_dict *) GC(new_dict(vm));
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_dict *n_dict = (z_obj_dict *) GC(new_dict(vm));
 
   for (int i = 0; i < dict->names.count; i++) {
-    b_value tmp_value;
+    z_value tmp_value;
     table_get(&dict->items, dict->names.values[i], &tmp_value);
     if (!values_equal(tmp_value, NIL_VAL)) {
       dict_add_entry(vm, n_dict, dict->names.values[i], tmp_value);
@@ -84,8 +84,8 @@ DECLARE_DICT_METHOD(contains) {
   ENFORCE_ARG_COUNT(contains, 1);
   ENFORCE_VALID_DICT_KEY(contains, 0);
 
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_value value;
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_value value;
   RETURN_BOOL(table_get(&dict->items, args[0], &value));
 }
 
@@ -93,11 +93,11 @@ DECLARE_DICT_METHOD(extend) {
   ENFORCE_ARG_COUNT(extend, 1);
   ENFORCE_ARG_TYPE(extend, 0, IS_DICT);
 
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_obj_dict *dict_cpy = AS_DICT(args[0]);
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_dict *dict_cpy = AS_DICT(args[0]);
 
   for (int i = 0; i < dict_cpy->names.count; i++) {
-    b_value tmp;
+    z_value tmp;
     if(!table_get(&dict->items, dict_cpy->names.values[i], &tmp)) {
       write_value_arr(vm, &dict->names, dict_cpy->names.values[i]);
     }
@@ -110,8 +110,8 @@ DECLARE_DICT_METHOD(get) {
   ENFORCE_ARG_RANGE(get, 1, 2);
   ENFORCE_VALID_DICT_KEY(get, 0);
 
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_value value;
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_value value;
   if (!dict_get_entry(dict, args[0], &value)) {
     if (arg_count == 1) {
       RETURN_NIL;
@@ -125,8 +125,8 @@ DECLARE_DICT_METHOD(get) {
 
 DECLARE_DICT_METHOD(keys) {
   ENFORCE_ARG_COUNT(keys, 0);
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_list *list = (z_obj_list *) GC(new_list(vm));
   for (int i = 0; i < dict->names.count; i++) {
     write_list(vm, list, dict->names.values[i]);
   }
@@ -135,10 +135,10 @@ DECLARE_DICT_METHOD(keys) {
 
 DECLARE_DICT_METHOD(values) {
   ENFORCE_ARG_COUNT(values, 0);
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_list *list = (z_obj_list *) GC(new_list(vm));
   for (int i = 0; i < dict->names.count; i++) {
-    b_value tmp_value;
+    z_value tmp_value;
     dict_get_entry(dict, dict->names.values[i], &tmp_value);
     write_list(vm, list, tmp_value);
   }
@@ -149,8 +149,8 @@ DECLARE_DICT_METHOD(remove) {
   ENFORCE_ARG_COUNT(remove, 1);
   ENFORCE_VALID_DICT_KEY(remove, 0);
 
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_value value;
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_value value;
   if (table_get(&dict->items, args[0], &value)) {
     table_delete(&dict->items, args[0]);
     int index = -1;
@@ -183,12 +183,12 @@ DECLARE_DICT_METHOD(find_key) {
 DECLARE_DICT_METHOD(to_list) {
   ENFORCE_ARG_COUNT(to_list, 0);
 
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
-  b_obj_list *name_list = (b_obj_list *) GC(new_list(vm));
-  b_obj_list *value_list = (b_obj_list *) GC(new_list(vm));
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_list *name_list = (z_obj_list *) GC(new_list(vm));
+  z_obj_list *value_list = (z_obj_list *) GC(new_list(vm));
   for (int i = 0; i < dict->names.count; i++) {
     write_list(vm, name_list, dict->names.values[i]);
-    b_value value;
+    z_value value;
     if (table_get(&dict->items, dict->names.values[i], &value)) {
       write_list(vm, value_list, value);
     } else { // theoretically impossible
@@ -196,7 +196,7 @@ DECLARE_DICT_METHOD(to_list) {
     }
   }
 
-  b_obj_list *list = (b_obj_list *) GC(new_list(vm));
+  z_obj_list *list = (z_obj_list *) GC(new_list(vm));
   write_list(vm, list, OBJ_VAL(name_list));
   write_list(vm, list, OBJ_VAL(value_list));
 
@@ -205,9 +205,9 @@ DECLARE_DICT_METHOD(to_list) {
 
 DECLARE_DICT_METHOD(__iter__) {
   ENFORCE_ARG_COUNT(__iter__, 1);
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
 
-  b_value result;
+  z_value result;
   if (table_get(&dict->items, args[0], &result)) {
     RETURN_VALUE(result);
   }
@@ -217,7 +217,7 @@ DECLARE_DICT_METHOD(__iter__) {
 
 DECLARE_DICT_METHOD(__itern__) {
   ENFORCE_ARG_COUNT(__itern__, 1);
-  b_obj_dict *dict = AS_DICT(METHOD_OBJECT);
+  z_obj_dict *dict = AS_DICT(METHOD_OBJECT);
 
   if (IS_NIL(args[0])) {
     if (dict->names.count == 0) RETURN_FALSE;

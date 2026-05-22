@@ -7,7 +7,7 @@
  * where applicable and does and return the same thing as the builtin
  * alternative.
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 

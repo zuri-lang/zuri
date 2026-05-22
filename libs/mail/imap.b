@@ -26,7 +26,7 @@ var _list_regex = '/^[*] LIST \(\\\?([^)]*)\) "([^"]+)" (.*)$/'
  * 
  * ### Example
  * 
- * ```blade
+ * ```zuri
  * import mail
  * 
  * var client = mail.IMAP('imap.example.com', 993)

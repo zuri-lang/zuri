@@ -1,5 +1,5 @@
-#ifndef BLADE_BLADE_DLFCN_H
-#define BLADE_BLADE_DLFCN_H
+#ifndef ZURI_ZURI_DLFCN_H
+#define ZURI_ZURI_DLFCN_H
 
 // Based on Stack Overflow answer at https://stackoverflow.com/a/53532799/5125586
 // @TODO: Make implementation thread safe...
@@ -106,4 +106,4 @@ static const char *dlerror(void) {
 }
 #endif
 
-#endif //BLADE_BLADE_DLFCN_H
+#endif //ZURI_ZURI_DLFCN_H

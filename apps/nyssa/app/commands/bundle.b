@@ -119,18 +119,18 @@ def copy_directory(src_dir, dest_dir) {
   }
 }
 
-def _get_blade_bundler(source_os, target_os, config) {
-  var blade_zip_target = os.join_paths(tmp_dir, '${config.name}-${config.version}')
-  if os.dir_exists(blade_zip_target) {
-    os.remove_dir(blade_zip_target, true)
+def _get_zuri_bundler(source_os, target_os, config) {
+  var zuri_zip_target = os.join_paths(tmp_dir, '${config.name}-${config.version}')
+  if os.dir_exists(zuri_zip_target) {
+    os.remove_dir(zuri_zip_target, true)
   }
 
-  var blade_zip_tmp_target = os.join_paths(tmp_dir, '__${config.name}-${config.version}')
-  if os.dir_exists(blade_zip_tmp_target) {
-    os.remove_dir(blade_zip_tmp_target, true)
+  var zuri_zip_tmp_target = os.join_paths(tmp_dir, '__${config.name}-${config.version}')
+  if os.dir_exists(zuri_zip_tmp_target) {
+    os.remove_dir(zuri_zip_tmp_target, true)
   }
 
-  var runtime_dir = os.join_paths(blade_zip_target, 'runtime')
+  var runtime_dir = os.join_paths(zuri_zip_target, 'runtime')
 
   # if we are generating for the same platform we are running on, we'll 
   # be using a copy of our local installation.
@@ -138,56 +138,56 @@ def _get_blade_bundler(source_os, target_os, config) {
     copy_directory(os.dir_name(os.exe_path), runtime_dir)
     log.info('Successfully copied bundler...')
   } else {
-    var blade_zip = os.join_paths(setup.CACHE_DIR, 'blade-${target_os}.zip')
+    var zuri_zip = os.join_paths(setup.CACHE_DIR, 'zuri-${target_os}.zip')
 
     # create/recreate temporary target directory
-    os.create_dir(blade_zip_tmp_target)
+    os.create_dir(zuri_zip_tmp_target)
 
-    # if we do not have a local copy of the Blade bundler, then we download a 
-    # Bundler for the current Blade version from Github.
-    if !file(blade_zip).exists() {
+    # if we do not have a local copy of the Zuri bundler, then we download a
+    # Bundler for the current Zuri version from Github.
+    if !file(zuri_zip).exists() {
       var version_response = os.exec('"${os.exe_path}" -v')
       if !version_response {
-        raise Exception('Failed to determine Blade version')
+        raise Exception('Failed to determine Zuri version')
       }
 
-      var blade_version = version_response.match('/(?<=Blade)\s*(\d+[.]\d+[.]\d+)/')
-      if !blade_version {
-        raise Exception('Failed to determine Blade version')
+      var zuri_version = version_response.match('/(?<=Zuri)\s*(\d+[.]\d+[.]\d+)/')
+      if !zuri_version {
+        raise Exception('Failed to determine Zuri version')
       }
 
-      var version = blade_version[1]
-      var download_link = 'https://github.com/blade-lang/blade/releases/download/v${version}/blade-${target_os}-v${version}.zip'
-      log.info('Getting Blade bundle from ${download_link}')
+      var version = zuri_version[1]
+      var download_link = 'https://github.com/zuri-lang/zuri/releases/download/v${version}/zuri-${target_os}-v${version}.zip'
+      log.info('Getting Zuri bundle from ${download_link}')
 
       var download_result = http.get(download_link)
 
       if download_result.status == 200 {
-        file(blade_zip, 'wb').write(download_result.body)
+        file(zuri_zip, 'wb').write(download_result.body)
         log.info('Saved downloaded bundler ${target_os}-${version}')
       } else if download_result.status == 404 {
-        raise Exception('Bundler for OS ${target_os} not found for current Blade version!')
+        raise Exception('Bundler for OS ${target_os} not found for current Zuri version!')
       } else  {
         raise Exception('Failed to get bundler for OS ${target_os}: ${download_result.as_text()}')
       }
     }
 
-    zip.extract(blade_zip, blade_zip_tmp_target)
+    zip.extract(zuri_zip, zuri_zip_tmp_target)
 
     # create/recreate target directory
-    if os.dir_exists(blade_zip_target) {
-      os.remove_dir(blade_zip_target, true)
+    if os.dir_exists(zuri_zip_target) {
+      os.remove_dir(zuri_zip_target, true)
     }
-    os.create_dir(blade_zip_target)
+    os.create_dir(zuri_zip_target)
 
-    # move blade to runtime directory
+    # move zuri to runtime directory
     os.rename(
-      os.real_path(os.join_paths(blade_zip_tmp_target, 'blade')),
+      os.real_path(os.join_paths(zuri_zip_tmp_target, 'zuri')),
       runtime_dir
     )
 
     # remove intermediate extraction directory
-    os.remove_dir(blade_zip_tmp_target, true)
+    os.remove_dir(zuri_zip_tmp_target, true)
     log.info('Successfully extracted bundler...')
   }
 
@@ -201,17 +201,17 @@ def _get_blade_bundler(source_os, target_os, config) {
   # we can use it later then remove the bundle.zip file.
   zip.extract(
     os.join_paths(runtime_dir, 'bundle.zip'),
-    os.join_paths(blade_zip_target, 'bundle')
+    os.join_paths(zuri_zip_target, 'bundle')
   )
   file(os.join_paths(runtime_dir, 'bundle.zip')).delete()
 
   log.info('Successfully streamlined bundler...')
 
-  return blade_zip_target
+  return zuri_zip_target
 }
 
 def bundle_app(source_os, target_os, config, dest_dir) {
-  var target_src = _get_blade_bundler(source_os, target_os, config)
+  var target_src = _get_zuri_bundler(source_os, target_os, config)
 
   # remove any existing application.
   if os.dir_exists(target_src + '.app') {
@@ -274,7 +274,7 @@ def bundle_app(source_os, target_os, config, dest_dir) {
   )
   file(os.join_paths(macos_dir, 'macos'), 'w') # we only need the file to exist.
   file(os.join_paths(macos_dir, config.name)).chmod(0c755)
-  file(os.join_paths(resources_dir, 'runtime', 'blade')).chmod(0c755)
+  file(os.join_paths(resources_dir, 'runtime', 'zuri')).chmod(0c755)
 
   log.info('Successfully packaged launcher')
 
@@ -288,10 +288,10 @@ def bundle_app(source_os, target_os, config, dest_dir) {
 }
 
 def bundle_zip(source_os, target_os, config, dest_dir) {
-  var target_src = _get_blade_bundler(source_os, target_os, config)
+  var target_src = _get_zuri_bundler(source_os, target_os, config)
 
   var bundle_name = target_os == 'windows' ? 'bundle.exe' : 'bundle'
-  var blade_exe_name = target_os == 'windows' ? 'blade.exe' : 'blade'
+  var zuri_exe_name = target_os == 'windows' ? 'zuri.exe' : 'zuri'
 
   var target_bundle_name = target_os == 'windows' ? config.name + '.exe' : config.name
   var bundle_dir = os.join_paths(target_src, 'bundle')
@@ -309,7 +309,7 @@ def bundle_zip(source_os, target_os, config, dest_dir) {
     os.join_paths(target_src, target_bundle_name)
   )
   file(os.join_paths(target_src, target_bundle_name)).chmod(0c755)
-  file(os.join_paths(target_src, 'runtime', blade_exe_name)).chmod(0c755)
+  file(os.join_paths(target_src, 'runtime', zuri_exe_name)).chmod(0c755)
 
   log.info('Successfully packaged launcher')
 

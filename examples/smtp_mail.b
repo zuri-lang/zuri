@@ -20,10 +20,10 @@ echo smtp.add_message(mail.message().
     '<br><br>'+
     'If you are receiving this mail, know that it was sent '+
     'with the <strong>mailer</strong> library for '+
-    '<a href="https://bladelang.org">Blade programming language</a>.' +
+    '<a href="https://zurilang.org">Zuri programming language</a>.' +
     '<br><br>' +
     'Sincerely,<br>' +
-    'The Blade Community'
+    'The Zuri Community'
   ).
   attachment(__file__, 'smtp_mail.b')
 ).send()

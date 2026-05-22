@@ -5,7 +5,7 @@
  * non-trigonometric mathematics a breeze. The module also defines a couple
  * of commonly used scientific and mathematical constants such as `PI`.
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _math
@@ -75,7 +75,7 @@ var NaN = 0/0
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import math
  * %> math.factorial(60)
  * 8.320987112741392e+81
@@ -103,7 +103,7 @@ def factorial(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.sin(46)
  * 0.9017883476488092
  * ```
@@ -121,7 +121,7 @@ def sin(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.cos(93)
  * 0.3174287015197017
  * ```
@@ -139,7 +139,7 @@ def cos(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.tan(11.43)
  * -2.155225644164932
  * ```
@@ -156,7 +156,7 @@ def tan(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.sinh(1.4)
  * 1.904301501451534
  * ```
@@ -173,7 +173,7 @@ def sinh(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.cosh(1.91)
  * 3.450584592563374
  * ```
@@ -190,7 +190,7 @@ def cosh(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.tanh(2.19)
  * 0.975
  * 
@@ -209,7 +209,7 @@ def tanh(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.asin(0.123)
  * 0.123312275191872
  * ```
@@ -228,7 +228,7 @@ def asin(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.acos(0.471)
  * 1.080372275769021
  * ```
@@ -245,7 +245,7 @@ def acos(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.atan(math.Infinity)
  * 1.570796326794897
  * ```
@@ -264,7 +264,7 @@ def atan(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.atan2(math.Infinity, -math.Infinity)
  * 2.356194490192345
  * %> math.atan2(1, 2)
@@ -286,7 +286,7 @@ def atan2(x, y) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.asinh(3.42)
  * 1.943507380182802
  * ```
@@ -303,7 +303,7 @@ def asinh(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.acosh(1.21)
  * 0.637237379754108
  * ```
@@ -320,7 +320,7 @@ def acosh(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.atanh(0.11)
  * 0.1104469157900971
  * ```
@@ -339,7 +339,7 @@ def atanh(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.exp(4)
  * 54.59815003314424
  * ```
@@ -357,7 +357,7 @@ def exp(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.expm1(1)
  * 1.718281828459045
  * ```
@@ -374,7 +374,7 @@ def expm1(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.ceil(1.65)
  * 2
  * %> math.ceil(1.01)
@@ -393,7 +393,7 @@ def ceil(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.round(103.51)
  * 104
  * %> math.round(103.49)
@@ -412,7 +412,7 @@ def round(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.log(45)
  * 3.80666248977032
  * ```
@@ -432,7 +432,7 @@ def log(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.log2(45)
  * 5.491853096329675
  * ```
@@ -450,7 +450,7 @@ def log2(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.log10(45)
  * 1.653212513775344
  * ```
@@ -484,7 +484,7 @@ def log10(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.log1p(45)
  * 3.828641396489095
  * ```
@@ -501,7 +501,7 @@ def log1p(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.cbrt(64)
  * 4
  * ```
@@ -526,7 +526,7 @@ def cbrt(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.sign(10)
  * 1
  * %> math.sign(-20)
@@ -554,7 +554,7 @@ def sign(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.floor(1.92)
  * 1
  * ```
@@ -584,7 +584,7 @@ def is_nan(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.is_inf(math.Infinity)
  * true
  * %> math.is_inf(-math.Infinity)
@@ -605,7 +605,7 @@ def is_inf(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.is_finite(0)
  * true
  * %> math.is_finite(math.NaN)
@@ -626,7 +626,7 @@ def is_finite(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.trunc(1.92)
  * 1
  * %> math.trunc(1.0)
@@ -653,7 +653,7 @@ def trunc(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.sqrt(100)
  * 10
  * ```
@@ -676,7 +676,7 @@ def sqrt(n) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.sum([1, 2, [3, 4, [5, 6]]])
  * 21
  * ```
@@ -710,7 +710,7 @@ def sum(arg) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.product([1, 2, [3, 4, [5, 6]]])
  * 720
  * ```
@@ -744,7 +744,7 @@ def product(arg) {
  * 
  * Example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> math.fraction(1.92)
  * 92
  * ```

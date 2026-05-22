@@ -2,7 +2,7 @@
 
 Nyssa is a self-hostable repository.
 
-This means that you can install and configure your own private or custom instance of [nyssa.bladelang.org](https://nyssa.bladelang.org) that people can publish to and install packages from. In fact, [nyssa.bladelang.org](https://nyssa.bladelang.org) is essentially just another private repository that is accessible to everyone in the Blade community and hosted on the public web.
+This means that you can install and configure your own private or custom instance of [nyssa.zurilang.org](https://nyssa.zurilang.org) that people can publish to and install packages from. In fact, [nyssa.zurilang.org](https://nyssa.zurilang.org) is essentially just another private repository that is accessible to everyone in the Zuri community and hosted on the public web.
 
 ### Starting the respository server
 
@@ -38,7 +38,7 @@ Repository URL: http://localhost:8000
 
 ### Customizing your installation
 
-You fully customize your own repository setup by modifying the `apps/nyssa/app/setup.b` file in your Blade installation. For example, you can change the host and port number from code by modifying the value of `REPOSITORY_HOST` and `REPOSITORY_PORT` respectively in the file `setup.b`.
+You fully customize your own repository setup by modifying the `apps/nyssa/app/setup.b` file in your Zuri installation. For example, you can change the host and port number from code by modifying the value of `REPOSITORY_HOST` and `REPOSITORY_PORT` respectively in the file `setup.b`.
 
 ### Production considerations
 

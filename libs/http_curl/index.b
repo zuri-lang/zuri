@@ -6,7 +6,7 @@
  * > THIS MODULE WAS FORMERLY THE `http` module.
  * >
  * > THIS MODULE IS DEPRECIATED AND WILL BE REMOVED FROM THE CORE
- * > LIBRARY AS SOON AS THE CLIENT OF THE PURE BLADE IMPLEMENTATION 
+ * > LIBRARY AS SOON AS THE CLIENT OF THE PURE ZURI IMPLEMENTATION
  * > IS STABLE.
  * >
  * > IT IS ONLY HERE FOR HISTORICAL REASONS AND TO SERVE AS A BASE
@@ -26,7 +26,7 @@
  *
  * The example below shows making a GET request to fetch a webpage.
  *
- * ```blade
+ * ```zuri
  * import http_curl
  *
  * echo http_curl.get('http://example.com')
@@ -40,7 +40,7 @@
  * Below is an example of such implementation that sets the timeout for
  * receiving response back from the server to 30 seconds.
  *
- * ```blade
+ * ```zuri
  * import http_curl
  *
  * var client = http_curl.HttpClient()
@@ -53,7 +53,7 @@
  * The example below shows an implementation of an HTTP API server listening on port
  * 3000 and simple returns the JSON of the request object itself.
  *
- * ```blade
+ * ```zuri
  * import http_curl
  * import json
  *
@@ -69,7 +69,7 @@
  * convert dictionaries into JSON objects or create multipart/form-data request for you.
  * Rather, it gives the tools required to craft any request body of your choice.
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import .response { HttpResponse }
@@ -86,7 +86,7 @@ var _client = HttpClient()
  * This function returns HttpClient in order to allow for idiomatic 
  * chaining such as:
  * 
- * ```blade
+ * ```zuri
  * import http_curl
  * echo http_curl.set_headers({
  *   'Authorization': 'Bearer SomeAPIBearerToken',

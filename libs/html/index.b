@@ -1,7 +1,7 @@
 /** 
  * @module html
  * 
- * The html module provides interfaces for converting HTML to Blade and vice-versa.
+ * The html module provides interfaces for converting HTML to Zuri and vice-versa.
  * 
  * ## Nodes: Simplifying HTML Representation
  * 
@@ -62,7 +62,7 @@
  * 
  * > Note: This applies to any function within the module that accepts an `options` argument.
  * 
- * @copyright 2023, Richard Ore and Blade contributors
+ * @copyright 2023, Richard Ore and Zuri contributors
  */
 
 import .tags { * }
@@ -91,7 +91,7 @@ var _parse_defaults = {
  * 
  * Example,
  * 
- * ```blade
+ * ```zuri
  * import html
  * echo html.decode('<p>Hello World!</p>')
  * ```
@@ -107,7 +107,7 @@ var _parse_defaults = {
  * 
  * For example:
  * 
- * ```blade
+ * ```zuri
  * import html
  * echo html.decode('<img>', {with_position: true})
  * ```

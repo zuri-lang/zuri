@@ -1,5 +1,5 @@
-#ifndef BLADE_BSTRING_H
-#define BLADE_BSTRING_H
+#ifndef ZURI_BSTRING_H
+#define ZURI_BSTRING_H
 
 #include "common.h"
 #include "native.h"

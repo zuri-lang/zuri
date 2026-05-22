@@ -3,7 +3,7 @@
  * 
  * The `zip` module contains classes and functions to make working with zip archives easy.
  *
- * @copyright 2022, Richard Ore and Blade contributors
+ * @copyright 2022, Richard Ore and Zuri contributors
  */
 
 import struct { pack, unpack }
@@ -604,7 +604,7 @@ class ZipArchive {
     var extract_version = self._is_64 ? _Z_64_VERSION : _Z_DEFAULT_VERSION
 
     # The ZIP spec stores the full Unix mode (including file-type bits) in the
-    # high 16 bits of external_attributes. stat.mode from Blade's file.stats()
+    # high 16 bits of external_attributes. stat.mode from Zuri's file.stats()
     # may return only the permission bits (e.g. 0o755) without the S_IFREG
     # file-type sentinel (0o100000). Without those bits, Unix extractors (macOS
     # unzip, Info-ZIP, etc.) cannot identify the entry as a regular file and

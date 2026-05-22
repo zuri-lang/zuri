@@ -1,10 +1,10 @@
 /**
  * # The `file` object.
  * 
- * The _file_ object makes it pretty easy to create, read and/or modify files in Blade and is accessible
+ * The _file_ object makes it pretty easy to create, read and/or modify files in Zuri and is accessible
  * via the built-in function `file()`.
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> file('sample.txt')
  * <file at sample.txt in mode r>
  * ```
@@ -31,7 +31,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> file('sample.txt').read()
  * 'This is a sample file.
  * If you can read this file, then your code worked.'
@@ -50,7 +50,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> file('test.txt', 'w').write('It works!')
  * true
  * %> file('test.txt').read()  # reading the file to confirm
@@ -64,7 +64,7 @@
  * 
  * For example:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> var data = bytes([
  * ..   0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x1, 0x0, 0x1, 0x0, 
  * ..   0x80, 0x1, 0x0, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x21, 
@@ -90,7 +90,7 @@ class file {
    * 
    * Valid modes include:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt', 'r')
    * <file at sample.txt in mode r>
    * %> file('sample.txt', 'w')
@@ -116,7 +116,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').exists()
    * true
    * ```
@@ -131,7 +131,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> var f = file('sample.txt')
    * %> f.close()
    * ```
@@ -148,7 +148,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> f.open()
    * ```
    * 
@@ -210,7 +210,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').number()
    * 6
    * ```
@@ -225,7 +225,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').is_tty()
    * false
    * %> import io
@@ -245,7 +245,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').is_open()
    * true
    * ```
@@ -260,7 +260,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').is_closed()
    * false
    * ```
@@ -276,7 +276,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> w.flush()
    * ```
    * 
@@ -290,7 +290,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').stats()
    * {is_readable: true, is_writable: true, is_executable: false, is_symbolic: false, size: 72, mode: 33188, dev: 16777230, 
    * ino: 4865113, nlink: 1, uid: 501, gid: 20, mtime: 1631395239, atime: 1631395271, ctime: 1631395239, blocks: 8, 
@@ -307,7 +307,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').symlink('sample2.txt')
    * true
    * ```
@@ -326,7 +326,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('test-2.b').delete()
    * true
    * ```
@@ -345,7 +345,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample copy.txt').rename('sample-2.txt')
    * true
    * ```
@@ -361,7 +361,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').path()
    * 'sample.txt'
    * ```
@@ -376,9 +376,9 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').abs_path()
-   * 'C:\Users\username\blade-docs\sample.txt'
+   * 'C:\Users\username\zuri-docs\sample.txt'
    * ```
    * 
    * @return {string}
@@ -391,7 +391,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('./sample.txt').copy('samp.txt')
    * true
    * ```
@@ -408,7 +408,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('./samp.txt').truncate()
    * true
    * ```
@@ -426,7 +426,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').chmod(0c755)
    * true
    * ```
@@ -445,7 +445,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').set_times(time(), time())
    * true
    * %> file('sample.txt').stats()
@@ -467,7 +467,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> f.seek(5, io.SEEK_SET)
    * true
    * ```
@@ -484,7 +484,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> import io
    * %> var f = file('sample.txt')
    * %> f.seek(5, io.SEEK_SET)
@@ -503,7 +503,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('sample.txt').mode()
    * 'r'
    * 
@@ -517,7 +517,7 @@ class file {
    * 
    * For example:
    * 
-   * ```blade-repl
+   * ```zuri-repl
    * %> file('./sample.txt').name()
    * 'sample.txt'
    * ```

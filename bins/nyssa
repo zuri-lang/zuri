@@ -3,6 +3,6 @@
 ROOT=$(dirname "$0")
 
 NYSSA_DIR="$ROOT/apps/nyssa/cli.b"
-BLADE_EXE="$ROOT/blade"
+ZURI_EXE="$ROOT/zuri"
 
-exec "$BLADE_EXE" "$NYSSA_DIR" "$@"
+exec "$ZURI_EXE" "$NYSSA_DIR" "$@"

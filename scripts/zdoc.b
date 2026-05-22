@@ -1,0 +1,578 @@
+import ast
+import os
+
+/**
+ * ZuriDoc - A documentation generator for Zuri.
+ */
+
+class ZuriDoc {
+  var modules = {} # path -> module_info
+  var dirs = {}    # dir_path -> {modules: [], subdirs: []}
+
+  ZuriDoc() {}
+
+  /**
+   * Scans a directory for Zuri files and parses them.
+   */
+  scan(dir, root) {
+    if !os.is_dir(dir) {
+        if dir.ends_with('.b') {
+            # Skip invalid stubs
+            if os.base_name(dir).starts_with('_') or os.base_name(dir).ends_with('.stub.b') {
+              return
+            }
+            self.parse_module(dir, root)
+        }
+        return
+    }
+
+    if !self.dirs.contains(dir) {
+      self.dirs[dir] = {modules: [], subdirs: []}
+    }
+
+    var entries = os.read_dir(dir)
+    for entry in entries {
+      if entry == '.' or entry == '..' continue
+      var path = dir.ends_with(os.path_separator) ? dir + entry : dir + os.path_separator + entry
+      if os.is_dir(path) {
+        self.dirs[dir].subdirs.append(path)
+        self.scan(path, root)
+      } else if path.ends_with('.b') {
+        var filename = os.base_name(path)
+        if filename.starts_with('_') {
+          if filename.ends_with('.stub.b') {
+            # Skip invalid stubs that use anonymous classes
+            # TODO: Do not continue if --with-stub flag is set.
+            continue
+          }
+
+          # TODO: Do not continue if --with-private flag is set.
+          continue
+        }
+
+        self.dirs[dir].modules.append(path)
+        self.parse_module(path, root)
+      }
+    }
+  }
+
+  /**
+   * Parses a single Zuri file.
+   */
+  parse_module(path, root) {
+    echo 'Parsing ${path}...'
+    var res = ast.parse_file(path)
+    var module_info = {
+      path: path,
+      root: root,
+      doc: nil,
+      classes: [],
+      functions: [],
+      variables: [],
+    }
+
+    var has_doc = false
+    for decl in res {
+      if instance_of(decl, ast.DocDefn) {
+        has_doc = true
+        var doc = self.parse_doc(decl.data)
+        if doc.module {
+          module_info.doc = doc
+        } else if module_info.doc == nil {
+          # Check if we have already encountered any meaningful declaration
+          if module_info.classes.length() == 0 and
+             module_info.functions.length() == 0 and
+             module_info.variables.length() == 0 {
+            module_info.doc = doc
+          }
+        }
+      } else if instance_of(decl, ast.ClassDecl) {
+        if !decl.name.starts_with('_') {
+          if decl.doc has_doc = true
+          module_info.classes.append(self.process_class(decl))
+        }
+      } else if instance_of(decl, ast.FunctionDecl) {
+        if decl.name != '' and !decl.name.starts_with('_') { # Skip anonymous and private
+          if decl.doc has_doc = true
+          module_info.functions.append(self.process_function(decl))
+        }
+      } else if instance_of(decl, ast.VarDecl) {
+        if !decl.name.starts_with('_') {
+          if decl.doc has_doc = true
+          module_info.variables.append(self.process_variable(decl))
+        }
+      }
+    }
+
+    if !has_doc return
+
+    # Use filename as module name if @module is missing
+    var filename = os.base_name(path)
+    var module_name = module_info.doc and module_info.doc.module ? module_info.doc.module : filename.replace('.b', '')
+
+    # Handle .stub.b naming requirement
+    if filename.starts_with('_') and filename.ends_with('.stub.b') {
+      module_name = filename[1,].replace('.stub.b', '')
+    }
+
+    # Identify default export
+    var default_export = nil
+    var target_name = module_name
+
+    # if it's an index file, the target name for default export might be the directory name
+    if filename == 'index.b' {
+      target_name = os.base_name(os.dir_name(path))
+      # Only override module_name if @module wasn't explicitly set
+      if !(module_info.doc and module_info.doc.module) {
+        module_name = target_name
+      }
+    }
+
+    for f in module_info.functions {
+      if f.name == target_name {
+        default_export = f
+        break
+      }
+    }
+
+    if default_export {
+      module_info.default_export = default_export
+    }
+
+    module_info.name = module_name
+    self.modules[path] = module_info
+  }
+
+  process_class(decl) {
+    var info = {
+      name: decl.name,
+      doc: decl.doc ? self.parse_doc(decl.doc) : nil,
+      superclass: decl.superclass,
+      is_extension: decl.is_extension,
+      properties: [],
+      methods: [],
+      operators: [],
+      decorators: [],
+    }
+
+    for prop in decl.properties {
+      if !prop.name.starts_with('_') {
+        info.properties.append({
+          name: prop.name,
+          doc: prop.doc ? self.parse_doc(prop.doc) : nil,
+          is_static: prop.is_static
+        })
+      }
+    }
+
+    for method in decl.methods {
+      if !method.name.starts_with('_') {
+        var is_constructor = method.name == decl.name
+        var method_doc = method.doc ? self.parse_doc(method.doc) : nil
+        if method_doc and method_doc.is_constructor {
+          is_constructor = true
+        }
+
+        if method.name.starts_with('@') {
+          info.decorators.append({
+            name: method.name,
+            params: method.params,
+            doc: method_doc,
+            is_static: method.is_static,
+            is_constructor: is_constructor
+          })
+        } else {
+          info.methods.append({
+            name: method.name,
+            params: method.params,
+            doc: method_doc,
+            is_static: method.is_static,
+            is_constructor: is_constructor
+          })
+        }
+      }
+    }
+
+    for op in decl.operators {
+      if !op.name.starts_with('_') {
+        info.operators.append({
+          name: op.name,
+          params: op.params,
+          doc: op.doc ? self.parse_doc(op.doc) : nil
+        })
+      }
+    }
+
+    return info
+  }
+
+  process_function(decl) {
+    return {
+      name: decl.name,
+      params: decl.params,
+      doc: decl.doc ? self.parse_doc(decl.doc) : nil
+    }
+  }
+
+  process_variable(decl) {
+    return {
+      name: decl.name,
+      doc: decl.doc ? self.parse_doc(decl.doc) : nil
+    }
+  }
+
+  is_blank(text) {
+    if text == nil return true
+    return text.trim() == ""
+  }
+
+  /**
+   * Checks if a directory or any of its subdirectories contains documented modules.
+   */
+  has_documented_content(dir_path) {
+    if !self.dirs.contains(dir_path) return false
+
+    var d = self.dirs[dir_path]
+    for m_path in d.modules {
+      if self.modules.contains(m_path) return true
+    }
+
+    for s_dir in d.subdirs {
+      if self.has_documented_content(s_dir) return true
+    }
+
+    return false
+  }
+
+  /**
+   * Naive docstring parser.
+   */
+  parse_doc(doc) {
+    if doc == nil return nil
+    var lines = doc.split('\n')
+    var info = {
+      description: [],
+      params: [],
+      returns: nil,
+      type: nil,
+      module: nil,
+      is_constructor: false,
+      examples: [],
+      notes: [],
+      copyright: nil
+    }
+
+    var current_tag = nil
+
+    for line in lines {
+      var trimmed = line.trim()
+      if trimmed.starts_with('@param') {
+        current_tag = 'param'
+        info.params.append(trimmed[7,].trim())
+      } else if trimmed.starts_with('@returns') {
+        current_tag = 'returns'
+        info.returns = trimmed[8,].trim()
+      } else if trimmed.starts_with('@type') {
+        current_tag = 'type'
+        info.type = trimmed[5,].trim()
+      } else if trimmed.starts_with('@module') {
+        current_tag = 'module'
+        info.module = trimmed[7,].trim()
+      } else if trimmed.index_of('@constructor') != -1 {
+        current_tag = nil
+        info.is_constructor = true
+      } else if trimmed.starts_with('@note') {
+        current_tag = 'note'
+        info.notes.append(trimmed[5,].trim())
+      } else if trimmed.starts_with('@copyright') {
+        current_tag = 'copyright'
+        info.copyright = trimmed[10,].trim()
+      } else if trimmed.starts_with('@') {
+        current_tag = nil
+          # Ignore other tags for now
+      } else {
+        if current_tag == 'param' {
+          info.params[info.params.length() - 1] += '\n' + line
+        } else if current_tag == 'returns' {
+          info.returns += '\n' + line
+        } else if current_tag == 'note' {
+          info.notes[info.notes.length() - 1] += '\n' + line
+        } else if current_tag == 'description' or current_tag == 'module' or current_tag == nil {
+          if info.description.length() == 0 and line == '' {
+            # skip leading empty lines
+          } else {
+            info.description.append(line)
+          }
+        }
+      }
+    }
+
+    info.description = '\n'.join(info.description).trim()
+    return info
+  }
+
+  generate(root_dir, out_dir) {
+    for dir_path in self.dirs.keys() {
+      if !self.has_documented_content(dir_path) continue
+
+      var rel_dir = ""
+      if dir_path.starts_with(root_dir) {
+        rel_dir = dir_path[root_dir.length(),]
+        if rel_dir.starts_with(os.path_separator) {
+          rel_dir = rel_dir[1,]
+        }
+      }
+
+      var current_out_dir = os.join_paths(out_dir, rel_dir)
+      if !os.dir_exists(current_out_dir) {
+        os.create_dir(current_out_dir, 0c777, true)
+      }
+
+      var index_content = []
+      var links = []
+      var index_module = nil
+
+      # Process modules in this directory
+      var modules_in_dir = self.dirs[dir_path].modules
+      var has_subdirs = !self.dirs[dir_path].subdirs.empty()
+
+      for m_path in modules_in_dir {
+        var m_info = self.modules.get(m_path)
+        if m_info == nil continue
+
+        var filename = os.base_name(m_path)
+
+        if filename == 'index.b' {
+          index_module = m_info
+        } else {
+          var out_name = filename.replace('.b', '.md')
+          if filename.starts_with('_') and filename.ends_with('.stub.b') {
+            out_name = filename[1,].replace('.stub.b', '.md')
+          }
+
+          # Only add to index.md if it's the root directory
+          if m_info.doc and (m_info.doc.description or m_info.doc.module) {
+            if !self.is_blank(m_info.doc.description) and !has_subdirs {
+              index_content.append('# ${m_info.name}\n')
+              index_content.append(m_info.doc.description + '\n')
+
+              index_content.append('[View API](${out_name})\n')
+            } else if has_subdirs {
+              links.append('- [${m_info.name}](${out_name})')
+            }
+          } else {
+            links.append('- [${m_info.name}](${out_name})')
+          }
+
+          self.write_module_md(m_info.name, m_info, os.join_paths(current_out_dir, out_name))
+        }
+      }
+
+      # If we have an index.b, its @module content goes to index.md
+      if index_module {
+        var header = '# ${index_module.name}\n'
+
+        if index_module.root.rtrim('/') != os.dir_name(index_module.path) {
+          header = '[⤌ Back](../index.md)\n\n${header}'
+        }
+
+        index_content.insert(header, 0)
+        if index_module.doc and !self.is_blank(index_module.doc.description) {
+          index_content.insert(index_module.doc.description + '\n', 1)
+        }
+
+        index_content.append('[View API](${index_module.name}.md)\n')
+        self.write_module_md(index_module.name, index_module, os.join_paths(current_out_dir, index_module.name + '.md'))
+      } else if rel_dir == "" and index_content.length() == 0 {
+        # For root dir if no index and no modules with docs,
+        # First we check to see if there is a readme file in the root_dir
+        # If none, we fall back to the default header.
+
+        var readme = os.read_dir(root_dir).find(@(x) {
+          var lower = x.lower()
+          return lower == 'readme.md' or lower == 'readme'
+        })
+
+        if readme != nil {
+          index_content.append(file(os.join_paths(root_dir, readme)).read() + '\n')
+        } else {
+          index_content.append('# Documentation\n')
+        }
+      }
+
+      # Process subdirs
+      var subdirs = self.dirs[dir_path].subdirs
+      for s_dir in subdirs {
+        if self.has_documented_content(s_dir) {
+          var s_name = os.base_name(s_dir)
+          links.append('- [${s_name}](${s_name}/index.md)')
+        }
+      }
+
+      if !links.empty() {
+        index_content.append('\n' + '\n'.join(links) + '\n')
+      }
+
+      if !index_content.empty() {
+        var index_path = os.join_paths(current_out_dir, 'index.md')
+        var f = file(index_path, 'w')
+        f.write('\n'.join(index_content))
+        f.close()
+      }
+    }
+  }
+
+  indent(text, count) {
+    if text == nil return nil
+    var lines = text.split('\n')
+    var indented = []
+    var spaces = ' ' * count
+    var last_was_blank = false
+    for line in lines {
+      if line.trim() == "" {
+        if !last_was_blank {
+          indented.append("")
+          last_was_blank = true
+        }
+      } else {
+        indented.append(spaces + line)
+        last_was_blank = false
+      }
+    }
+    # Ensure there's a trailing newline if the original text had one and we have content
+    if text.ends_with('\n') and !indented.empty() {
+      indented.append("")
+    }
+    return '\n'.join(indented)
+  }
+
+  write_module_md(name, info, path) {
+    var content = [
+      '[⤌ Back](./index.md)\n',
+      '# Module ${name}\n',
+    ]
+
+    if info.get('default_export') {
+      var default_export = info.default_export
+      content.append('This module exports: `${default_export.name}(${", ".join(default_export.params)})`.\n')
+    }
+
+    if info.doc and !self.is_blank(info.doc.description) {
+        content.append(info.doc.description + '\n')
+    }
+
+    # Module doc moved to index, but we can keep copyright here or a short link back
+    if info.doc and info.doc.copyright {
+      content.append('**Copyright:** ' + info.doc.copyright + '\n')
+    }
+
+    if !info.variables.empty() {
+      content.append('## Variables\n')
+      for v in info.variables {
+        content.append('### `${v.name}`\n')
+        if v.doc {
+          if !self.is_blank(v.doc.type) content.append('*Type: ${v.doc.type}*\n')
+          if !self.is_blank(v.doc.description) content.append(v.doc.description + '\n')
+        }
+      }
+    }
+
+    if !info.functions.empty() {
+      content.append('## Functions\n')
+      for f in info.functions {
+        content.append('### `${f.name}(${", ".join(f.params)})`\n')
+        if f.doc {
+          if !self.is_blank(f.doc.description) content.append(f.doc.description + '\n')
+          if !f.doc.params.empty() {
+            content.append('#### Parameters\n')
+            for p in f.doc.params content.append('- ${self.indent(p, 2).trim()}')
+            content.append('')
+          }
+          if !self.is_blank(f.doc.returns) content.append('#### Returns\n\n${f.doc.returns}\n')
+          if !f.doc.examples.empty() {
+              content.append('#### Examples\n')
+              for ex in f.doc.examples content.append(ex)
+              content.append('')
+          }
+        }
+      }
+    }
+
+    if !info.classes.empty() {
+      content.append('## Classes\n')
+      for c in info.classes {
+        var class_head = '### `class ${c.name}`'
+        if c.superclass class_head += ' < `${c.superclass}`'
+        content.append(class_head + '\n')
+
+        if c.doc {
+          if c.doc.description content.append(c.doc.description + '\n')
+        }
+
+        if !c.decorators.empty() {
+          var decorators = ', '.join(c.decorators.map(@(x) => '`${x.name}`'))
+          content.append('This module implements the following decorated functions: ${decorators}.\n')
+        }
+
+        if !c.properties.empty() {
+          content.append('#### Properties\n')
+          for p in c.properties {
+            var p_line = '- `${p.name}`'
+            if p.is_static p_line = '- static ' + p_line
+            if p.doc and p.doc.type p_line += ' (*${p.doc.type}*)'
+            content.append(p_line + '\n')
+            if p.doc {
+              if p.doc.description content.append(self.indent(p.doc.description, 2) + '\n')
+              if !p.doc.notes.empty() {
+                for note in p.doc.notes content.append('  > **Note:** ${self.indent(note, 2).trim()}\n')
+              }
+            }
+          }
+          content.append('')
+        }
+
+        if !c.methods.empty() {
+          content.append('#### Methods\n')
+          for m in c.methods {
+            var m_head = '- `${m.name}(${", ".join(m.params)})`'
+            if m.is_static m_head = '- static ' + m_head
+            if m.is_constructor m_head += ' (Constructor)'
+            content.append(m_head + '\n')
+            if m.doc {
+              if m.doc.description content.append(self.indent(m.doc.description, 2) + '\n')
+              if !m.doc.params.empty() {
+                content.append('  #### Parameters\n')
+                for p in m.doc.params content.append('  - ${self.indent(p, 4).trim()}\n')
+              }
+              if m.doc.returns content.append('  #### Returns\n\n${self.indent(m.doc.returns, 2)}\n')
+            }
+          }
+          content.append('')
+        }
+      }
+    }
+
+    var f = file(path, 'w')
+    f.write('\n'.join(content))
+    f.close()
+  }
+}
+
+def main(args) {
+  if args.length() < 2 {
+    echo 'Usage: zuri zuridoc.b <source_dir> <output_dir>'
+    return
+  }
+
+  var source_dir = args[2]
+  var output_dir = args[3]
+
+  var bd = ZuriDoc()
+  bd.scan(source_dir, source_dir)
+  bd.generate(source_dir, output_dir)
+  echo 'Done!'
+}
+
+if __root__ == __file__ {
+  main(os.args)
+}

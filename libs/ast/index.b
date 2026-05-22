@@ -1,9 +1,9 @@
 /**
  * @module ast
  *
- * Provides interface for parsing Blade code into Abstract Syntax Trees.
+ * Provides interface for parsing Zuri code into Abstract Syntax Trees.
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import json as js
@@ -19,7 +19,7 @@ import .token { * }
 
 
 /**
- * Parses a given source code and outputs Blade AST objects.
+ * Parses a given source code and outputs Zuri AST objects.
  * 
  * @param string source
  * @param string? path
@@ -41,7 +41,7 @@ def parse(source, path) {
 }
 
 /**
- * Parses the given file and outputs Blade AST objects.
+ * Parses the given file and outputs Zuri AST objects.
  * 
  * @param {file|string} source
  * @returns [[ast.ParseResult]]

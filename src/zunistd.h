@@ -1,5 +1,5 @@
-#ifndef blade_compart_unistd_h
-#define blade_compart_unistd_h
+#ifndef zuri_compart_unistd_h
+#define zuri_compart_unistd_h
 
 #include "common.h"
 
@@ -16,7 +16,7 @@
 #ifdef HAVE_GETOPT_H
 #include <getopt.h>
 #else
-#include "blade_getopt.h"
+#include "zuri_getopt.h"
 #endif /* HAVE_GETOPT_H */
 
 #include <io.h>

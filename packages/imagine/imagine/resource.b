@@ -1553,7 +1553,7 @@ class ImageResource {
    * 
    * For example,
    * 
-   * ```blade
+   * ```zuri
    * var result = image1.compare(image2)
    * 
    * var both_transparent = !(result & CMP_TRANSPARENT)

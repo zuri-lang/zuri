@@ -19,7 +19,7 @@ DECLARE_RANGE_METHOD(within) {
   ENFORCE_ARG_COUNT(within, 1);
   ENFORCE_ARG_TYPE(within, 0, IS_NUMBER);
 
-  const b_obj_range *range = AS_RANGE(METHOD_OBJECT);
+  const z_obj_range *range = AS_RANGE(METHOD_OBJECT);
   const double number = AS_NUMBER(args[0]);
   if (range->lower > range->upper) {
     RETURN_BOOL(number <= range->lower && number >= range->upper);
@@ -31,7 +31,7 @@ DECLARE_RANGE_METHOD(step) {
   ENFORCE_ARG_COUNT(step, 1);
   ENFORCE_ARG_TYPE(step, 0, IS_NUMBER);
 
-  b_obj_range *range = AS_RANGE(METHOD_OBJECT);
+  z_obj_range *range = AS_RANGE(METHOD_OBJECT);
   const int number = (int)AS_NUMBER(args[0]);
   range->step = number;
   RETURN_VALUE(METHOD_OBJECT);
@@ -46,7 +46,7 @@ DECLARE_RANGE_METHOD(__iter__) {
   ENFORCE_ARG_COUNT(__iter__, 1);
   ENFORCE_ARG_TYPE(__iter__, 0, IS_NUMBER);
 
-  b_obj_range *range = AS_RANGE(METHOD_OBJECT);
+  z_obj_range *range = AS_RANGE(METHOD_OBJECT);
 
   int index = AS_NUMBER(args[0]);
 
@@ -60,7 +60,7 @@ DECLARE_RANGE_METHOD(__iter__) {
 
 DECLARE_RANGE_METHOD(__itern__) {
   ENFORCE_ARG_COUNT(__itern__, 1);
-  b_obj_range *range = AS_RANGE(METHOD_OBJECT);
+  z_obj_range *range = AS_RANGE(METHOD_OBJECT);
 
   if (IS_NIL(args[0])) {
     if (range->range == 0) {

@@ -3,7 +3,7 @@
 import .token { * }
 
 /**
- * Blade source code scanner.
+ * Zuri source code scanner.
  * 
  * @printable
  */
@@ -84,7 +84,7 @@ class Scanner {
    */
   Scanner(source, file) {
     if !is_string(source)
-      raise TypeError('string expected for Blade source code expected')
+      raise TypeError('string expected for Zuri source code expected')
     
     # to track the quote that started an interpolation
     self._interpolating = []
@@ -292,7 +292,7 @@ class Scanner {
   }
 
   /**
-   * parses a valid Blade number
+   * parses a valid Zuri number
    */
   _number() {
     if self._previous() == '0' {

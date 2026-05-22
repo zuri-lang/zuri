@@ -51,7 +51,7 @@
 DECLARE_MODULE_METHOD(os_exec) {
   ENFORCE_ARG_COUNT(exec, 1);
   ENFORCE_ARG_TYPE(exec, 0, IS_STRING);
-  b_obj_string *string = AS_STRING(args[0]);
+  z_obj_string *string = AS_STRING(args[0]);
   if (string->length == 0) {
     RETURN_NIL;
   }
@@ -107,7 +107,7 @@ DECLARE_MODULE_METHOD(os_info) {
     RETURN_ERROR("could not access os information");
   }
 
-  b_obj_dict *dict = (b_obj_dict*)GC(new_dict(vm));
+  z_obj_dict *dict = (z_obj_dict*)GC(new_dict(vm));
 
   dict_add_entry(vm, dict, GC_L_STRING("sysname", 7), GC_STRING(os.sysname));
   dict_add_entry(vm, dict, GC_L_STRING("nodename", 8), GC_STRING(os.nodename));
@@ -128,7 +128,7 @@ DECLARE_MODULE_METHOD(os_sleep) {
   RETURN;
 }
 
-b_value get_os_platform(b_vm *vm) {
+z_value get_os_platform(z_vm *vm) {
 
 #if defined(_WIN32)
 #define PLATFORM_NAME "windows" // Windows
@@ -177,8 +177,8 @@ b_value get_os_platform(b_vm *vm) {
 #undef PLATFORM_NAME
 }
 
-b_value get_blade_os_args(b_vm *vm) {
-  b_obj_list *list = (b_obj_list*)GC(new_list(vm));
+z_value get_zuri_os_args(z_vm *vm) {
+  z_obj_list *list = (z_obj_list*)GC(new_list(vm));
   if(vm->std_args != NULL) {
     for(int i = 0; i < vm->std_args_count; i++) {
       write_list(vm, list, STRING_VAL(vm->std_args[i]));
@@ -188,11 +188,11 @@ b_value get_blade_os_args(b_vm *vm) {
   return OBJ_VAL(list);
 }
 
-b_value get_blade_os_path_separator(b_vm *vm) {
-  return STRING_L_VAL(BLADE_PATH_SEPARATOR, 1);
+z_value get_zuri_os_path_separator(z_vm *vm) {
+  return STRING_L_VAL(ZURI_PATH_SEPARATOR, 1);
 }
 
-b_value get_blade_os_exe_path(b_vm *vm) {
+z_value get_zuri_os_exe_path(z_vm *vm) {
   char *path = get_exe_path();
   if(path) {
     return STRING_TT_VAL(path);
@@ -239,11 +239,11 @@ DECLARE_MODULE_METHOD(os__createdir) {
   ENFORCE_ARG_TYPE(create_dir, 1, IS_NUMBER);
   ENFORCE_ARG_TYPE(create_dir, 2, IS_BOOL);
 
-  b_obj_string *path = AS_STRING(args[0]);
+  z_obj_string *path = AS_STRING(args[0]);
   int mode = AS_NUMBER(args[1]);
   bool is_recursive = AS_BOOL(args[2]);
 
-  char sep = BLADE_PATH_SEPARATOR[0];
+  char sep = ZURI_PATH_SEPARATOR[0];
   bool exists = false;
 
   if(is_recursive) {
@@ -295,11 +295,11 @@ DECLARE_MODULE_METHOD(os__createdir) {
 DECLARE_MODULE_METHOD(os__readdir) {
   ENFORCE_ARG_COUNT(read_dir, 1);
   ENFORCE_ARG_TYPE(read_dir, 0, IS_STRING);
-  b_obj_string *path = AS_STRING(args[0]);
+  z_obj_string *path = AS_STRING(args[0]);
 
   DIR *dir;
   if((dir = opendir(path->chars)) != NULL) {
-    b_obj_list *list = (b_obj_list *)GC(new_list(vm));
+    z_obj_list *list = (z_obj_list *)GC(new_list(vm));
     struct dirent *ent;
     while((ent = readdir(dir)) != NULL) {
       write_list(vm, list, STRING_VAL(ent->d_name));
@@ -362,7 +362,7 @@ DECLARE_MODULE_METHOD(os__removedir){
   ENFORCE_ARG_TYPE(remove_dir, 0, IS_STRING);
   ENFORCE_ARG_TYPE(remove_dir, 1, IS_BOOL);
 
-  b_obj_string *path = AS_STRING(args[0]);
+  z_obj_string *path = AS_STRING(args[0]);
   bool recursive = AS_BOOL(args[1]);
   if(remove_directory(path->chars, path->length, recursive) >= 0) {
     RETURN_TRUE;
@@ -375,7 +375,7 @@ DECLARE_MODULE_METHOD(os__chmod) {
   ENFORCE_ARG_TYPE(chmod, 0, IS_STRING);
   ENFORCE_ARG_TYPE(chmod, 1, IS_NUMBER);
 
-  b_obj_string *path = AS_STRING(args[0]);
+  z_obj_string *path = AS_STRING(args[0]);
   int mode = AS_NUMBER(args[1]);
   if(chmod(path->chars, mode) != 0) {
     RETURN_ERROR(strerror(errno));
@@ -386,7 +386,7 @@ DECLARE_MODULE_METHOD(os__chmod) {
 DECLARE_MODULE_METHOD(os__is_dir) {
   ENFORCE_ARG_COUNT(is_dir, 1);
   ENFORCE_ARG_TYPE(is_dir, 0, IS_STRING);
-  b_obj_string *path = AS_STRING(args[0]);
+  z_obj_string *path = AS_STRING(args[0]);
   struct stat sb;
   if(stat(path->chars, &sb) == 0) {
     RETURN_BOOL(S_ISDIR(sb.st_mode) > 0);
@@ -441,7 +441,7 @@ DECLARE_MODULE_METHOD(os__dirname) {
   ENFORCE_ARG_TYPE(dirname, 0, IS_STRING);
   char *str = strdup(AS_STRING(args[0])->chars);
   char *dir = dirname(str);
-  b_value result;
+  z_value result;
   if(!dir) {
     result = args[0];
   } else {
@@ -456,7 +456,7 @@ DECLARE_MODULE_METHOD(os__basename) {
   ENFORCE_ARG_TYPE(basename, 0, IS_STRING);
   char *str = strdup(AS_STRING(args[0])->chars);
   char *dir = basename(str);
-  b_value result;
+  z_value result;
   if(!dir) {
     result = args[0];
   } else {
@@ -492,39 +492,39 @@ DECLARE_MODULE_METHOD(os__rename) {
 
 /** DIR TYPES BEGIN */
 
-b_value __os_dir_DT_UNKNOWN(b_vm *vm){
+z_value __os_dir_DT_UNKNOWN(z_vm *vm){
   return NUMBER_VAL(DT_UNKNOWN);
 }
 
-b_value __os_dir_DT_REG(b_vm *vm){
+z_value __os_dir_DT_REG(z_vm *vm){
   return NUMBER_VAL(DT_REG);
 }
 
-b_value __os_dir_DT_DIR(b_vm *vm){
+z_value __os_dir_DT_DIR(z_vm *vm){
   return NUMBER_VAL(DT_DIR);
 }
 
-b_value __os_dir_DT_FIFO(b_vm *vm){
+z_value __os_dir_DT_FIFO(z_vm *vm){
   return NUMBER_VAL(DT_FIFO);
 }
 
-b_value __os_dir_DT_SOCK(b_vm *vm){
+z_value __os_dir_DT_SOCK(z_vm *vm){
   return NUMBER_VAL(DT_SOCK);
 }
 
-b_value __os_dir_DT_CHR(b_vm *vm){
+z_value __os_dir_DT_CHR(z_vm *vm){
   return NUMBER_VAL(DT_CHR);
 }
 
-b_value __os_dir_DT_BLK(b_vm *vm) {
+z_value __os_dir_DT_BLK(z_vm *vm) {
   return NUMBER_VAL(DT_BLK);
 }
 
-b_value __os_dir_DT_LNK(b_vm *vm) {
+z_value __os_dir_DT_LNK(z_vm *vm) {
   return NUMBER_VAL(DT_LNK);
 }
 
-b_value __os_dir_DT_WHT(b_vm *vm) {
+z_value __os_dir_DT_WHT(z_vm *vm) {
 #ifdef DT_WHT
   return NUMBER_VAL(DT_WHT);
 #else
@@ -532,7 +532,7 @@ b_value __os_dir_DT_WHT(b_vm *vm) {
 #endif
 }
 
-void __os_module_preloader(b_vm *vm) {
+void __os_module_preloader(z_vm *vm) {
 #if defined WIN32 || defined _WIN32 || defined WIN64 || defined _WIN64
   HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
   DWORD dwMode = 0;
@@ -552,7 +552,7 @@ void __os_module_preloader(b_vm *vm) {
 /** DIR TYPES ENDS */
 
 CREATE_MODULE_LOADER(os) {
-  static b_func_reg os_module_functions[] = {
+  static z_func_reg os_module_functions[] = {
       {"info",   true,  GET_MODULE_METHOD(os_info)},
       {"exec",   true,  GET_MODULE_METHOD(os_exec)},
       {"sleep",  true,  GET_MODULE_METHOD(os_sleep)},
@@ -574,11 +574,11 @@ CREATE_MODULE_LOADER(os) {
       {NULL,     false, NULL},
   };
 
-  static b_field_reg os_module_fields[] = {
+  static z_field_reg os_module_fields[] = {
       {"platform", true, get_os_platform},
-      {"args", true, get_blade_os_args},
-      {"path_separator", true, get_blade_os_path_separator},
-      {"exe_path", true, get_blade_os_exe_path},
+      {"args", true, get_zuri_os_args},
+      {"path_separator", true, get_zuri_os_path_separator},
+      {"exe_path", true, get_zuri_os_exe_path},
       {"DT_UNKNOWN", true, __os_dir_DT_UNKNOWN},
       {"DT_BLK", true, __os_dir_DT_BLK},
       {"DT_CHR", true, __os_dir_DT_CHR},
@@ -591,7 +591,7 @@ CREATE_MODULE_LOADER(os) {
       {NULL,       false, NULL},
   };
 
-  static b_module_reg module = {
+  static z_module_reg module = {
       .name = "_os",
       .fields = os_module_fields,
       .functions = os_module_functions,

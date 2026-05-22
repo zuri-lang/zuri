@@ -1,7 +1,7 @@
-#ifndef BLADE_VM_H
-#define BLADE_VM_H
+#ifndef ZURI_VM_H
+#define ZURI_VM_H
 
-typedef struct s_compiler b_compiler;
+typedef struct s_compiler z_compiler;
 
 #include "blob.h"
 #include "config.h"
@@ -13,62 +13,62 @@ typedef enum {
   PTR_OK,
   PTR_COMPILE_ERR,
   PTR_RUNTIME_ERR,
-} b_ptr_result;
+} z_ptr_result;
 
 typedef struct {
-  b_obj_closure *closure;
+  z_obj_closure *closure;
   uint8_t *ip;
-  b_value *slots;
+  z_value *slots;
   int gc_protected;
-} b_call_frame;
+} z_call_frame;
 
 typedef struct {
-  b_call_frame *frame;
+  z_call_frame *frame;
   uint16_t offset;
-  b_value *stack_head;
-  b_value value;
-} b_error_frame;
+  z_value *stack_head;
+  z_value value;
+} z_error_frame;
 
 struct s_vm {
-  b_call_frame frames[FRAMES_MAX];
-  b_call_frame *current_frame;
+  z_call_frame frames[FRAMES_MAX];
+  z_call_frame *current_frame;
   int frame_count;
 
-  b_blob *blob;
+  z_blob *blob;
   uint8_t *ip;
-  b_obj_up_value *open_up_values;
+  z_obj_up_value *open_up_values;
 
-  b_error_frame *errors[ERRORS_MAX];
+  z_error_frame *errors[ERRORS_MAX];
   int error_count;
 
   size_t stack_capacity;
-  b_value *stack;
-  b_value *stack_top;
+  z_value *stack;
+  z_value *stack_top;
 
-  b_obj *objects;
-  b_compiler *compiler;
-  b_obj_class *exception_class;
+  z_obj *objects;
+  z_compiler *compiler;
+  z_obj_class *exception_class;
   char *root_file;
 
   // gc
   int gray_count;
   int gray_capacity;
-  b_obj **gray_stack;
+  z_obj **gray_stack;
   size_t bytes_allocated;
   size_t next_gc;
 
   // objects tracker
-  b_table modules;
-  b_table strings;
-  b_table globals;
+  z_table modules;
+  z_table strings;
+  z_table globals;
 
   // object public methods
-  b_table methods_string;
-  b_table methods_list;
-  b_table methods_dict;
-  b_table methods_file;
-  b_table methods_bytes;
-  b_table methods_range;
+  z_table methods_string;
+  z_table methods_list;
+  z_table methods_dict;
+  z_table methods_file;
+  z_table methods_bytes;
+  z_table methods_range;
 
   char **std_args;
   int std_args_count;
@@ -83,25 +83,25 @@ struct s_vm {
 
   // id
   uint64_t id;
-  b_vm *parent_vm;
+  z_vm *parent_vm;
 };
 
-void init_vm(b_vm *vm);
-void free_vm(b_vm *vm);
-void register__ROOT__(b_vm *vm);
+void init_vm(z_vm *vm);
+void free_vm(z_vm *vm);
+void register__ROOT__(z_vm *vm);
 
-b_ptr_result interpret(b_vm *vm, b_obj_module *module, const char *source);
+z_ptr_result interpret(z_vm *vm, z_obj_module *module, const char *source);
 
-void push(b_vm *vm, b_value value);
-b_value pop(b_vm *vm);
-b_value pop_n(b_vm *vm, int n);
-b_value peek(b_vm *vm, int distance);
+void push(z_vm *vm, z_value value);
+z_value pop(z_vm *vm);
+z_value pop_n(z_vm *vm, int n);
+z_value peek(z_vm *vm, int distance);
 
-void push_error(b_vm *vm, b_error_frame *frame);
-b_error_frame* pop_error(b_vm *vm);
-b_error_frame* peek_error(b_vm *vm);
+void push_error(z_vm *vm, z_error_frame *frame);
+z_error_frame* pop_error(z_vm *vm);
+z_error_frame* peek_error(z_vm *vm);
 
-static inline void add_module(b_vm *vm, b_obj_module *module) {
+static inline void add_module(z_vm *vm, z_obj_module *module) {
   cond_dbg(vm->current_frame, printf("Adding module %s from %s to %s in %s\n", 
     module->name, 
     module->file, 
@@ -119,7 +119,7 @@ static inline void add_module(b_vm *vm, b_obj_module *module) {
   }
 }
 
-static inline void add_known_module(b_vm *vm, b_obj_module *module, char *name) {
+static inline void add_known_module(z_vm *vm, z_obj_module *module, char *name) {
   cond_dbg(vm->current_frame, printf("Adding known module %s from %s to %s in %s as %s\n", 
     module->name, 
     module->file, 
@@ -136,19 +136,19 @@ static inline void add_known_module(b_vm *vm, b_obj_module *module, char *name) 
   }
 }
 
-bool invoke_from_class(b_vm *vm, b_obj_class *klass, b_obj_string *name, int arg_count);
+bool invoke_from_class(z_vm *vm, z_obj_class *klass, z_obj_string *name, int arg_count);
 
-void dict_add_entry(b_vm *vm, b_obj_dict *dict, b_value key, b_value value);
-bool dict_get_entry(b_obj_dict *dict, b_value key, b_value *value);
-bool dict_set_entry(b_vm *vm, b_obj_dict *dict, b_value key, b_value value);
-void define_native_method(b_vm *vm, b_table *table, const char *name,
-                          b_native_fn function);
+void dict_add_entry(z_vm *vm, z_obj_dict *dict, z_value key, z_value value);
+bool dict_get_entry(z_obj_dict *dict, z_value key, z_value *value);
+bool dict_set_entry(z_vm *vm, z_obj_dict *dict, z_value key, z_value value);
+void define_native_method(z_vm *vm, z_table *table, const char *name,
+                          z_native_fn function);
 
-bool is_false(b_value value);
-bool is_instance_of(b_obj_class *klass1, b_obj_class *klass2);
+bool is_false(z_value value);
+bool is_instance_of(z_obj_class *klass1, z_obj_class *klass2);
 
-bool do_throw_exception(b_vm *vm, const char *type, bool is_assert, const char *format, ...);
-b_obj_instance *create_exception(b_vm *vm, const char* type, b_obj_string *message);
+bool do_throw_exception(z_vm *vm, const char *type, bool is_assert, const char *format, ...);
+z_obj_instance *create_exception(z_vm *vm, const char* type, z_obj_string *message);
 
 #define EXIT_VM() return PTR_RUNTIME_ERR
 
@@ -177,14 +177,14 @@ b_obj_instance *create_exception(b_vm *vm, const char* type, b_obj_string *messa
 #define throw_property_error(v, ...) do_throw_exception(v, "PropertyError", false, ##__VA_ARGS__)
 #define throw_undefined_error(v, ...) do_throw_exception(v, "UndefinedError", false, ##__VA_ARGS__)
 
-static inline b_obj *gc_protect(b_vm *vm, b_obj *object) {
+static inline z_obj *gc_protect(z_vm *vm, z_obj *object) {
   push(vm, OBJ_VAL(object));
   vm->frames[vm->frame_count > 0 ? vm->frame_count - 1 : 0].gc_protected++;
   return object;
 }
 
-static inline void gc_clear_protection(b_vm *vm) {
-  b_call_frame *frame = &vm->frames[vm->frame_count > 0 ? vm->frame_count - 1 : 0];
+static inline void gc_clear_protection(z_vm *vm) {
+  z_call_frame *frame = &vm->frames[vm->frame_count > 0 ? vm->frame_count - 1 : 0];
   if (frame->gc_protected > 0) {
     pop_n(vm, frame->gc_protected);
   }
@@ -198,14 +198,14 @@ static inline void gc_clear_protection(b_vm *vm) {
 // 2. The call to CLEAR_GC() will be automatic for native functions.
 // 3. METHOD_OBJECT must be retrieved before any call to GC() in a
 // native function.
-#define GC(o) gc_protect(vm, (b_obj*)(o))
+#define GC(o) gc_protect(vm, (z_obj*)(o))
 #define CLEAR_GC() gc_clear_protection(vm)
 
-bool call_value(b_vm *vm, b_value callee, int arg_count);
-b_value raw_closure_call(b_vm *vm, b_obj_closure *closure, b_obj_list *args, bool must_push);
-b_value call_closure(b_vm *vm, b_obj_closure *closure, b_obj_list *args);
-bool queue_closure(b_vm *vm, b_obj_closure *closure);
-b_ptr_result run_closure_call(b_vm *vm, b_obj_closure *closure, b_obj_list *args);
-void register_module__FILE__(b_vm *vm, b_obj_module *module);
+bool call_value(z_vm *vm, z_value callee, int arg_count);
+z_value raw_closure_call(z_vm *vm, z_obj_closure *closure, z_obj_list *args, bool must_push);
+z_value call_closure(z_vm *vm, z_obj_closure *closure, z_obj_list *args);
+bool queue_closure(z_vm *vm, z_obj_closure *closure);
+z_ptr_result run_closure_call(z_vm *vm, z_obj_closure *closure, z_obj_list *args);
+void register_module__FILE__(z_vm *vm, z_obj_module *module);
 
 #endif

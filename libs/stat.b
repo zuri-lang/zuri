@@ -3,7 +3,7 @@
  * 
  * The module provides constants and functions for interpreting results of file.stat().
  * 
- * @copyright 2022, Richard Ore and Blade contributors
+ * @copyright 2022, Richard Ore and Zuri contributors
  */
 
 # Indices for stat struct members in the tuple returned by file.stat()

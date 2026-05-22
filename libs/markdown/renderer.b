@@ -119,7 +119,7 @@ class Renderer {
    *
    * ##### Example
    *
-   * ```blade
+   * ```zuri
    * import markdown as md
    *
    * md.renderer.rules.strong_open  = @{ return '<b>' }
@@ -130,7 +130,7 @@ class Renderer {
    *
    * Each rule is called as independent static function with fixed signature:
    *
-   * ```blade
+   * ```zuri
    * def my_token_render(tokens, idx, options, env, renderer) {
    *   # ...
    *   return rendered_hTML

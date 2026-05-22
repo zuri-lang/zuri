@@ -17,10 +17,10 @@ class HttpClient {
   
   /**
    * The user agent of the client used to make the request. 
-   * Default value &mdash; `Blade HTTP Client/1.0`.
+   * Default value &mdash; `Zuri HTTP Client/1.0`.
    * @type string
    */
-  var user_agent = 'Blade HTTP Client/1.0'
+  var user_agent = 'Zuri HTTP Client/1.0'
 
   /**
    * Indicates if we receive a redirect from a server, this flag tells us whether 

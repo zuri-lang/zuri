@@ -2,7 +2,7 @@
  * @module log
  * 
  * This module implements a simple and flexible event logging system for all 
- * Blade applications and modules. With support for multiple transport systems 
+ * Zuri applications and modules. With support for multiple transport systems
  * as well as custom transports, this module allows easy application logging 
  * and log shipping.
  * 
@@ -12,7 +12,7 @@
  * 
  * Below is a very simple but powerful and complete usage of this module:
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import log
  * %> log.info('Starting my application...')
  * '2025-03-07T08:00:33+01:00 INFO [.]: Starting my application...'
@@ -42,7 +42,7 @@
  * disabled it. The example below shows how to enable the file transport to log to a 
  * file on disk.
  * 
- * ```blade
+ * ```zuri
  * import log
  * 
  * var transport = log.FileTransport('mylog.log')
@@ -63,7 +63,7 @@
  * 
  * Firstly, you can simple disable the default transport.
  * 
- * ```blade
+ * ```zuri
  * log.default_transport().disable()
  * ```
  * 
@@ -71,7 +71,7 @@
  * transport is still registered and you can simple enable it at any time during the 
  * lifetime of the application by doing the reverse:
  * 
- * ```blade
+ * ```zuri
  * log.default_transport().enable()
  * ```
  * 
@@ -81,7 +81,7 @@
  * The second approach is to completely remove the transport from the list of registered 
  * transports.
  * 
- * ```blade
+ * ```zuri
  * log.remove_transport(log.default_transport())
  * ```
  * 
@@ -95,7 +95,7 @@
  * The example below shows the creation of a custom transport that outputs structured 
  * JSON data to the console.
  * 
- * ```blade
+ * ```zuri
  * # my_custom_transport.b
  * 
  * import log { Transport }
@@ -121,7 +121,7 @@
  * }
  * ```
  * 
- * ```blade
+ * ```zuri
  * import log
  * import .my_custom_transport { JsonConsoleTransport }
  * 
@@ -143,7 +143,7 @@
  * There is also a global [[log.set_level]] function that allows us to set the
  * minimum log level at which all transports can start logging.
  * 
- * ```blade
+ * ```zuri
  * import log
  * 
  * log.set_level(log.Warning)
@@ -163,7 +163,7 @@
  * have been to create a log format function and reuse it in all transports instead of
  * implementing a `JsonConsoleTransport`. The next example shows one such implementation.
  * 
- * ```blade
+ * ```zuri
  * import log
  * import json
  * import date
@@ -195,13 +195,13 @@
  * > ignore the whole logging levels altogether and log at level [[log.None]] by simply 
  * > calling the log module itself.
  * > 
- * > ```blade
+ * > ```zuri
  * > import log
  * > 
  * > log('An anonymous log!')
  * > ```
  * 
- * @copyright 2025, Richard Ore and Blade contributors
+ * @copyright 2025, Richard Ore and Zuri contributors
  */
 import enum
 import io

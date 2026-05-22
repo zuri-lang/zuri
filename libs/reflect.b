@@ -9,7 +9,7 @@
  * 
  * We can call a decorator using the `reflect` module like this.
  * 
- * ```blade
+ * ```zuri
  * class A {
  *   @custom_decorator() {
  *     echo 'It works!'
@@ -31,7 +31,7 @@
  * 
  * Try it out!
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _reflect

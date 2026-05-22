@@ -3,7 +3,7 @@
  * 
  * This module provides functions for interfacing with the underlying operating system and directories.
  * 
- * @copyright 2021, Richard Ore and Blade contributors
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _os
@@ -15,7 +15,7 @@ import _os
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import os
  * %> os.platform
  * 'osx'
@@ -36,7 +36,7 @@ var args = _os.args
 var path_separator = _os.path_separator
 
 /**
- * The full path to the running Blade executable.
+ * The full path to the running Zuri executable.
  * @type string
  */
 var exe_path = _os.exe_path
@@ -107,7 +107,7 @@ var DT_WHT = _os.DT_WHT
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> os.exec('ls', '-l')
  * 'total 48
  * -rw-r--r--@ 1 username  staff  705 Aug 27  2021 buggy.b
@@ -138,7 +138,7 @@ def exec(...) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> os.info()
  * {sysname: Darwin, nodename: MacBook-Pro.local, version: Darwin Kernel Version 
  * 21.1.0: Wed Oct 13 17:33:24 PDT 2021; root:xnu-8019.41.5~1/RELEASE_ARM64_T8101, 
@@ -166,7 +166,7 @@ def sleep(duration) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> import os
  * %> os.get_env('ENV1')
  * '20'
@@ -186,7 +186,7 @@ def get_env(name, default_value) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> os.set_env('ENV1', 'New value')
  * true
  * %> os.get_env('ENV1')
@@ -200,7 +200,7 @@ def get_env(name, default_value) {
  * 
  * For example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> os.set_env('ENV1', 'New value again', true)
  * true
  * %> os.get_env('ENV1')
@@ -265,7 +265,7 @@ def create_dir(path, permission, recursive) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> os.read_dir('./tests')
  * [., .., myprogram.b, single_thread.b, test.b, buggy.b]
  * ```
@@ -350,7 +350,7 @@ def dir_exists(path) {
 }
 
 /**
- * Exit the current process and quits the Blade runtime.
+ * Exit the current process and quits the Zuri runtime.
  * 
  * @param number code
  * @returns
@@ -365,7 +365,7 @@ def exit(code) {
  * 
  * Example,
  * 
- * ```blade-repl
+ * ```zuri-repl
  * %> os.join_paths('/home/user', 'path/to/myfile.ext')
  * '/home/user/path/to/myfile.ext'
  * ```

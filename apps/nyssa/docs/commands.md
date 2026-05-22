@@ -19,7 +19,7 @@ Usage: `nyssa` [ [-h] | [-v] ] [COMMAND]
 - **info**                      Shows current project information
 - **init**                      Creates a new package in current directory
   -  *`-n`*, *`--name`* <_value_>   the name of the package
-- **install** <_value_>           Installs a Blade package
+- **install** <_value_>           Installs a Zuri package
   -  *`-g`*, *`--global`*           installs the package globally
   -  *`-c`*, *`--use-cache`*        enables the cache
   -  *`-r`*, *`--repo`* <*value*>   the repository to install from
@@ -31,5 +31,5 @@ Usage: `nyssa` [ [-h] | [-v] ] [COMMAND]
   -  *`-p`*, *`--port`* <*value*>   port of the server (default: 3000)
   -  *`-n`*, *`--host`* <*value*>   the host ip (default: 127.0.0.1)
 - **test**                      Run the tests
-- **uninstall** <*value*>       Uninstalls a Blade package
+- **uninstall** <*value*>       Uninstalls a Zuri package
   -  *`-g`*, *`--global`*           package is a global package

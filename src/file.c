@@ -65,7 +65,7 @@ char *ttyname(int fd) {
 
 #define SET_DICT_STRING(d, n, l, v) dict_add_entry(vm, d, GC_L_STRING(n, l), v)
 
-static int file_close(b_obj_file *file) {
+static int file_close(z_obj_file *file) {
   if (file->file != NULL && !file->is_std) {
     fflush(file->file);
     int result = fclose(file->file);
@@ -78,7 +78,7 @@ static int file_close(b_obj_file *file) {
   return -1;
 }
 
-static void file_open(b_obj_file *file) {
+static void file_open(z_obj_file *file) {
   if (file->file == NULL && !file->is_std) {
     file->file = fopen(file->path->chars, file->mode->chars);
     file->is_open = true;
@@ -95,22 +95,22 @@ static void file_open(b_obj_file *file) {
 DECLARE_NATIVE(file) {
   ENFORCE_ARG_RANGE(file, 1, 2);
   ENFORCE_ARG_TYPE(file, 0, IS_STRING);
-  b_obj_string *path = AS_STRING(args[0]);
+  z_obj_string *path = AS_STRING(args[0]);
 
   if (path->length == 0) {
     RETURN_ERROR("file path cannot be empty");
   }
 
-  b_obj_string *mode = NULL;
+  z_obj_string *mode = NULL;
 
   if (arg_count == 2) {
     ENFORCE_ARG_TYPE(file, 1, IS_STRING);
     mode = AS_STRING(args[1]);
   } else {
-    mode = (b_obj_string *) GC(copy_string(vm, "r", 1));
+    mode = (z_obj_string *) GC(copy_string(vm, "r", 1));
   }
 
-  b_obj_file *file = (b_obj_file*)GC(new_file(vm, path, mode));
+  z_obj_file *file = (z_obj_file*)GC(new_file(vm, path, mode));
   file_open(file);
 
   RETURN_OBJ(file);
@@ -118,7 +118,7 @@ DECLARE_NATIVE(file) {
 
 DECLARE_FILE_METHOD(exists) {
   ENFORCE_ARG_COUNT(exists, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
   RETURN_BOOL(file_exists(file->path->chars));
 }
@@ -136,12 +136,12 @@ DECLARE_FILE_METHOD(open) {
 }
 
 DECLARE_FILE_METHOD(is_open) {
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   RETURN_BOOL(file->is_std || file->is_open);
 }
 
 DECLARE_FILE_METHOD(is_closed) {
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   RETURN_BOOL(!file->is_std && !file->is_open);
 }
 
@@ -154,7 +154,7 @@ DECLARE_FILE_METHOD(read) {
     file_size = (size_t) AS_NUMBER(args[0]);
   }
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
 
   bool in_binary_mode = strstr(file->mode->chars, "b") != NULL;
 
@@ -247,7 +247,7 @@ DECLARE_FILE_METHOD(gets) {
     length = (size_t) AS_NUMBER(args[0]);
   }
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
 
   bool in_binary_mode = strstr(file->mode->chars, "b") != NULL;
 
@@ -322,19 +322,19 @@ DECLARE_FILE_METHOD(gets) {
 DECLARE_FILE_METHOD(write) {
   ENFORCE_ARG_COUNT(write, 1);
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   bool in_binary_mode = strstr(file->mode->chars, "b") != NULL;
   unsigned char *data;
   int length;
 
   if (!in_binary_mode || IS_STRING(args[0])) {
     ENFORCE_ARG_TYPE(write, 0, IS_STRING);
-    b_obj_string *string = AS_STRING(args[0]);
+    z_obj_string *string = AS_STRING(args[0]);
     data = (unsigned char *)string->chars;
     length = string->length;
   } else {
     ENFORCE_ARG_TYPE(write, 0, IS_BYTES);
-    b_obj_bytes *bytes = AS_BYTES(args[0]);
+    z_obj_bytes *bytes = AS_BYTES(args[0]);
     data = bytes->bytes.bytes;
     length = bytes->bytes.count;
   }
@@ -375,19 +375,19 @@ DECLARE_FILE_METHOD(write) {
 DECLARE_FILE_METHOD(puts) {
   ENFORCE_ARG_COUNT(puts, 1);
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   bool in_binary_mode = strstr(file->mode->chars, "b") != NULL;
   unsigned char *data;
   int length;
 
   if (!in_binary_mode || IS_STRING(args[0])) {
     ENFORCE_ARG_TYPE(write, 0, IS_STRING);
-    b_obj_string *string = AS_STRING(args[0]);
+    z_obj_string *string = AS_STRING(args[0]);
     data = (unsigned char *)string->chars;
     length = string->length;
   } else {
     ENFORCE_ARG_TYPE(write, 0, IS_BYTES);
-    b_obj_bytes *bytes = AS_BYTES(args[0]);
+    z_obj_bytes *bytes = AS_BYTES(args[0]);
     data = bytes->bytes.bytes;
     length = bytes->bytes.count;
   }
@@ -426,13 +426,13 @@ DECLARE_FILE_METHOD(number) {
 
 DECLARE_FILE_METHOD(is_tty) {
   ENFORCE_ARG_COUNT(is_tty, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   RETURN_BOOL(file->is_tty);
 }
 
 DECLARE_FILE_METHOD(flush) {
   ENFORCE_ARG_COUNT(flush, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
 
   if (!file->is_open) {
     RETURN_ERROR("I/O operation on closed file: %s", strerror(ENOTSUP));
@@ -457,8 +457,8 @@ DECLARE_FILE_METHOD(flush) {
 DECLARE_FILE_METHOD(stats) {
   ENFORCE_ARG_COUNT(stats, 0);
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
-  b_obj_dict *dict = (b_obj_dict *) GC(new_dict(vm));
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_dict *dict = (z_obj_dict *) GC(new_dict(vm));
 
   if (!file->is_std) {
     if (file_exists(file->path->chars)) {
@@ -537,14 +537,14 @@ DECLARE_FILE_METHOD(stats) {
 DECLARE_FILE_METHOD(symlink) {
   ENFORCE_ARG_COUNT(symlink, 1);
   ENFORCE_ARG_TYPE(symlink, 0, IS_STRING);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
 #ifdef _WIN32
   RETURN_ERROR("symlink not supported in windows");
 #else
   if (file_exists(file->path->chars)) {
-    b_obj_string *path = AS_STRING(args[0]);
+    z_obj_string *path = AS_STRING(args[0]);
     RETURN_BOOL(symlink(file->path->chars, path->chars) == 0);
   } else {
     RETURN_ERROR(strerror(ENOENT));
@@ -554,7 +554,7 @@ DECLARE_FILE_METHOD(symlink) {
 
 DECLARE_FILE_METHOD(delete) {
   ENFORCE_ARG_COUNT(delete, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
   if(file_close(file) != 0) {
@@ -567,11 +567,11 @@ DECLARE_FILE_METHOD(rename) {
   ENFORCE_ARG_COUNT(rename, 1);
   ENFORCE_ARG_TYPE(rename, 0, IS_STRING);
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
   if (file_exists(file->path->chars)) {
-    b_obj_string *new_name = AS_STRING(args[0]);
+    z_obj_string *new_name = AS_STRING(args[0]);
     if (new_name->length == 0) {
       RETURN_ERROR("file name cannot be empty: %s", strerror(ENOTSUP));
     }
@@ -584,20 +584,20 @@ DECLARE_FILE_METHOD(rename) {
 
 DECLARE_FILE_METHOD(path) {
   ENFORCE_ARG_COUNT(path, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
   RETURN_OBJ(file->path);
 }
 
 DECLARE_FILE_METHOD(mode) {
   ENFORCE_ARG_COUNT(mode, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   RETURN_OBJ(file->mode);
 }
 
 DECLARE_FILE_METHOD(name) {
   ENFORCE_ARG_COUNT(name, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   if(!file->is_std) {
     char *name = get_real_file_name(file->path->chars);
     RETURN_STRING(name);
@@ -612,7 +612,7 @@ DECLARE_FILE_METHOD(name) {
 
 DECLARE_FILE_METHOD(abs_path) {
   ENFORCE_ARG_COUNT(abs_path, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
   char *abs_path = realpath(file->path->chars, NULL);
@@ -624,7 +624,7 @@ DECLARE_FILE_METHOD(abs_path) {
 DECLARE_FILE_METHOD(copy) {
   ENFORCE_ARG_COUNT(copy, 1);
   ENFORCE_ARG_TYPE(copy, 0, IS_STRING);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
   file_open(file);
@@ -633,7 +633,7 @@ DECLARE_FILE_METHOD(copy) {
   }
 
   if (file_exists(file->path->chars)) {
-    b_obj_string *name = AS_STRING(args[0]);
+    z_obj_string *name = AS_STRING(args[0]);
 
     if (strstr(file->mode->chars, "r") == NULL) {
       file_close(file);
@@ -691,7 +691,7 @@ DECLARE_FILE_METHOD(truncate) {
     ENFORCE_ARG_TYPE(truncate, 0, IS_NUMBER);
     final_size = (off_t) AS_NUMBER(args[0]);
   }
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
 #ifndef _WIN32
@@ -705,7 +705,7 @@ DECLARE_FILE_METHOD(chmod) {
   ENFORCE_ARG_COUNT(chmod, 1);
   ENFORCE_ARG_TYPE(chmod, 0, IS_NUMBER);
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
   if (file_exists(file->path->chars)) {
@@ -727,7 +727,7 @@ DECLARE_FILE_METHOD(set_times) {
   ENFORCE_ARG_TYPE(set_times, 1, IS_NUMBER);
 
 #ifdef HAVE_UTIME
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
   if (file_exists(file->path->chars)) {
@@ -779,7 +779,7 @@ DECLARE_FILE_METHOD(seek) {
   ENFORCE_ARG_TYPE(seek, 0, IS_NUMBER);
   ENFORCE_ARG_TYPE(seek, 1, IS_NUMBER);
 
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
 
   long position = (long) AS_NUMBER(args[0]);
@@ -791,7 +791,7 @@ DECLARE_FILE_METHOD(seek) {
 
 DECLARE_FILE_METHOD(tell) {
   ENFORCE_ARG_COUNT(tell, 0);
-  b_obj_file *file = AS_FILE(METHOD_OBJECT);
+  z_obj_file *file = AS_FILE(METHOD_OBJECT);
   DENY_STD();
   RETURN_NUMBER(file->file != NULL ? ftell(file->file) : -1);
 }
