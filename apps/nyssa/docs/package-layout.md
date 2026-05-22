@@ -11,7 +11,7 @@ follows:
   installed packages and will only be available when at least one 
   or more package is installed.
 - `app`: The directory contains the main application/package code.
-- `index.b`: The default Zuri package index file.
+- `index.zu`: The default Zuri package index file.
 - `README.md`: The README.md file will be contain the main documentation 
   for your package.
   > **NOTE:**
@@ -26,7 +26,7 @@ follows:
 **!Important**
 
 You can create a Nyssa package without having to run `nyssa init`. Essentially,
-the only files required are the `index.b` and the `nyssa.json` files and they
+the only files required are the `index.zu` and the `nyssa.json` files and they
 can be manually created without losing Nyssa's ability to install, uninstall
 and configure packages.
 
@@ -57,9 +57,9 @@ package.json files. A typical sample of a complete `nyssa.json` file looks like 
     "dependecny2": "1.0.0",
     "dependecny3": "1.0.0"
   },
-  "post_install": "post-install-script.b",
-  "pre_uninstall": "pre-uninstall-script.b",
-  "cli": "cli-entry-script.b"
+  "post_install": "post-install-script.zu",
+  "pre_uninstall": "pre-uninstall-script.zu",
+  "cli": "cli-entry-script.zu"
 }
 ```
 

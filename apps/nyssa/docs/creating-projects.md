@@ -19,11 +19,11 @@ _When converting an existing application, your existing directory and files matc
 
 ### Where to write code
 
-Your code can go into any Zuri (`.b`) file in the created/generated directories and files. However, by default and by convention, your code should go into the `app` directory.
+Your code can go into any Zuri (`.zu`) file in the created/generated directories and files. However, by default and by convention, your code should go into the `app` directory.
 
 ### Running your application
 
 To run your application, run the command `zuri .` from the root of the application.
 
-When you create a new nyssa project, nyssa creates a simple Hello World like application for you as well. If you run `zuri .` from the root of your new nyssa project, you'll be greeted by the message `Welcome to Nyssa. Magic begins here!`. To modify this, you can open the file at `app/index.b` to change what the application does.
+When you create a new nyssa project, nyssa creates a simple Hello World like application for you as well. If you run `zuri .` from the root of your new nyssa project, you'll be greeted by the message `Welcome to Nyssa. Magic begins here!`. To modify this, you can open the file at `app/index.zu` to change what the application does.
 

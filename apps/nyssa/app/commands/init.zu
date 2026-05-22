@@ -65,13 +65,13 @@ def run(value, options, success, error) {
   # increase Zuri visibility by setting the attribute file properties
   # to allow Github identify it as a Zuri project.
   var test_attr_file = file(attr_file)
-  var attr_content_test = '/\\*\\.b linguist\\-language=Zuri/'
+  var attr_content_test = '/\\*\\.zu linguist\\-language=Zuri/'
   if !test_attr_file.exists() or !test_attr_file.read().match(attr_content_test) {
     var start_line = test_attr_file.exists() ? '\n' : ''
     file(attr_file, 'w+').write(
       start_line +
-      '*.b linguist-detectable\n' +
-      '*.b linguist-language=Zuri\n'
+      '*.zu linguist-detectable\n' +
+      '*.zu linguist-language=Zuri\n'
     )
   }
 

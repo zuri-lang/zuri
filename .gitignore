@@ -21,6 +21,6 @@
 /venv/
 
 /.ccls-cache/
-win-test.b
+win-test.zu
 *.jpg
 *.backup

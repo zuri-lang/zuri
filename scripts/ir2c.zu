@@ -5,7 +5,7 @@ var source = os.args.get(2) or 'ir.sh'
 
 if !file(source).exists() {
   io.stderr.write('IR file (${source}) not found.\n')
-  echo 'Usage: ir2c.b [ir_file]'
+  echo 'Usage: ir2c.zu [ir_file]'
   os.exit(1)
 }
 

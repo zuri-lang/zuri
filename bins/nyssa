@@ -2,7 +2,7 @@
 
 ROOT=$(dirname "$0")
 
-NYSSA_DIR="$ROOT/apps/nyssa/cli.b"
+NYSSA_DIR="$ROOT/apps/nyssa/cli.zu"
 ZURI_EXE="$ROOT/zuri"
 
 exec "$ZURI_EXE" "$NYSSA_DIR" "$@"

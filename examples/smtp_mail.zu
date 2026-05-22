@@ -25,5 +25,5 @@ echo smtp.add_message(mail.message().
     'Sincerely,<br>' +
     'The Zuri Community'
   ).
-  attachment(__file__, 'smtp_mail.b')
+  attachment(__file__, 'smtp_mail.zu')
 ).send()

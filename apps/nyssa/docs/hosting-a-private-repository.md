@@ -38,7 +38,7 @@ Repository URL: http://localhost:8000
 
 ### Customizing your installation
 
-You fully customize your own repository setup by modifying the `apps/nyssa/app/setup.b` file in your Zuri installation. For example, you can change the host and port number from code by modifying the value of `REPOSITORY_HOST` and `REPOSITORY_PORT` respectively in the file `setup.b`.
+You fully customize your own repository setup by modifying the `apps/nyssa/app/setup.zu` file in your Zuri installation. For example, you can change the host and port number from code by modifying the value of `REPOSITORY_HOST` and `REPOSITORY_PORT` respectively in the file `setup.zu`.
 
 ### Production considerations
 

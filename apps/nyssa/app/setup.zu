@@ -17,7 +17,7 @@ var DATABASE_DIR = os.join_paths(STORAGE_DIR, 'db')
 var CACHE_DIR = os.join_paths(STORAGE_DIR, 'cache')
 
 # files
-var INDEX_FILE = 'index.b'
+var INDEX_FILE = 'index.zu'
 var README_FILE = 'README.md'
 var CONFIG_FILE = 'nyssa.json'
 var DATABASE_FILE = os.join_paths(DATABASE_DIR, 'nyssa.db')

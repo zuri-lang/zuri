@@ -148,7 +148,7 @@ class Markdown {
    * md.renderer.rules['my_token'] = my_token
    * ```
    *
-   * See [[markdown.Renderer]] docs and [source code](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/renderer.b).
+   * See [[markdown.Renderer]] docs and [source code](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/renderer.zu).
    * 
    * @type Renderer
    */
@@ -196,7 +196,7 @@ class Markdown {
 
   /**
    * Assorted utility functions, useful to write plugins. See details
-   * [here](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/common/utils.b).
+   * [here](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/common/utils.zu).
    * 
    * @type module
    */
@@ -241,7 +241,7 @@ class Markdown {
    *   Can be useful for external highlighters.
    * - __linkify__ - `false`. Set `true` to auto convert URL-like text to links.
    * - __typographer__  - `false`. Set `true` to enable [some language-neutral
-   *   replacement](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/rules_core/replacements.b) +
+   *   replacement](https://github.com/zuri-lang/zuri/blob/master/libs/markdown/rules_core/replacements.zu) +
    *   quotes beautification (smart quotes).
    * - __quotes__ - `“”‘’`, String or Array. Double + single quotes replacement
    *   pairs, when typographer enabled and smart quotes on. For example, you can

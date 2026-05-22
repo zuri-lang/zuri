@@ -23,7 +23,7 @@ def run_test_files(files) {
 def run(value, options, success, error) {
   if os.dir_exists(setup.TEST_DIR) {
     var files = os.read_dir(setup.TEST_DIR).filter(@( x ) { 
-      return x != '.' and x != '..' and x.ends_with('.b') 
+      return x != '.' and x != '..' and x.ends_with('.zu')
     })
     if files {
       if !run_test_files(files) {

@@ -28,7 +28,7 @@
  * Running the following command:
  * 
  * ```zuri
- * zuri myprogram.b -h
+ * zuri myprogram.zu -h
  * ```
  * 
  * Prints the following help output:
@@ -52,37 +52,37 @@
  * Typical invocations:
  *
  * ```sh
- * $ zuri myprogram.b -h
- * $ zuri myprogram.b --name Alice --count 3
- * $ zuri myprogram.b call --verbose
- * $ zuri myprogram.b call --help
+ * $ zuri myprogram.zu -h
+ * $ zuri myprogram.zu --name Alice --count 3
+ * $ zuri myprogram.zu call --verbose
+ * $ zuri myprogram.zu call --help
  * ```
  * 
  * If we change the last line of the program to `echo parser.parse()` so that we can see the result 
  * of the parsing, the following CLI call will yield the given result.
  * 
  * ```sh
- * $ zuri myprogram.b --name "Kirk"
+ * $ zuri myprogram.zu --name "Kirk"
  * {options: {name: Kirk, count: 1}, command: nil, indexes: []}
  * 
- * $ zuri myprogram.b call
+ * $ zuri myprogram.zu call
  * {options: {count: 1}, command: {name: call, value: nil}, indexes: []}
  * 
- * $ zuri myprogram.b call -v
+ * $ zuri myprogram.zu call -v
  * {options: {verbose: true, count: 1}, command: {name: call, value: nil}, indexes: []}
  * ```
  * 
  * Calling name without an option will yield the following result/error:
  * 
  * ```sh
- * $ zuri myprogram.b --name
+ * $ zuri myprogram.zu --name
  * error: option --name expects a <VALUE>
  * ```
  * 
  * You may even get help on a command directly like below:
  *  
  * ```sh
- * $ zuri myprogram.b --help call
+ * $ zuri myprogram.zu --help call
  * Usage: myprogram call [OPTIONS]
  *  
  *   Make a phone call

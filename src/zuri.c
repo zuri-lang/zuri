@@ -354,7 +354,9 @@ int main(int argc, char *argv[]) {
 
     // Initialize core...
     char *core_module = get_core_library_file_path("_core");
-    run_file(vm, core_module);
+    if (core_module != NULL) {
+      run_file(vm, core_module);
+    }
 
     if (source != NULL) {
       run_code(vm, source);

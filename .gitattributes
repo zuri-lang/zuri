@@ -1,4 +1,4 @@
-*.b linguist-detectable
+*.zu linguist-detectable
 *.c linguist-language=C
 *.h linguist-language=C
-*.b linguist-language=Zuri
+*.zu linguist-language=Zuri

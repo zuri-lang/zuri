@@ -9,8 +9,6 @@ include(CheckFunctionExists)
 include(ExternalProject)
 include(GenerateExportHeader)
 
-subdirs(thirdparty packages)
-
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
@@ -37,37 +35,37 @@ if(UNIX)
 endif()
 
 set(ZURI_SOURCES
-		src/dict.c
-		src/file.c
-		src/list.c
-		src/zstring.c
-		src/range.c
-		src/blob.c
-		src/bytes.c
-		src/compiler.c
-		src/debug.c
-		src/memory.c
-		src/module.c
-		src/native.c
-		src/object.c
-		src/pathinfo.c
-		src/scanner.c
-		src/table.c
-		src/util.c
-		src/utf8.c
-		src/value.c
-		src/vm.c
-		# standard module
-		src/standard/base64.c
-		src/standard/date.c
-		src/standard/io.c
-		src/standard/math.c
-		src/standard/os.c
-		src/standard/socket.c
-		src/standard/process.c
-		src/standard/reflect.c
-		src/standard/struct.c
-    src/standard/thread.c
+	src/dict.c
+	src/file.c
+	src/list.c
+	src/zstring.c
+	src/range.c
+	src/blob.c
+	src/bytes.c
+	src/compiler.c
+	src/debug.c
+	src/memory.c
+	src/module.c
+	src/native.c
+	src/object.c
+	src/pathinfo.c
+	src/scanner.c
+	src/table.c
+	src/util.c
+	src/utf8.c
+	src/value.c
+	src/vm.c
+	# standard module
+	src/standard/base64.c
+	src/standard/date.c
+	src/standard/io.c
+	src/standard/math.c
+	src/standard/os.c
+	src/standard/socket.c
+	src/standard/process.c
+	src/standard/reflect.c
+	src/standard/struct.c
+	src/standard/thread.c
 )
 
 add_definitions(-DEXPORT_LIBS)
@@ -247,10 +245,10 @@ set(LIBRARY_FILE "${OUTPUT_DIR}/$<TARGET_NAME:libzuri>${CMAKE_SHARED_LIBRARY_SUF
 add_custom_command(TARGET zuri POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:zuri> ${EXE_FILE}
 		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libzuri> ${LIBRARY_FILE}
-		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/make_zuri.b" "${PROJECT_SOURCE_DIR}"
-		# The first one is useful for development purposes but doesn't in any way harm release.
-		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/ast.b" "${PROJECT_SOURCE_DIR}/libs/ast"
-		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/ast.b" "${OUTPUT_DIR}/libs/ast"
+		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/make_zuri.zu" "${PROJECT_SOURCE_DIR}"
+#		# The first one is useful for development purposes but doesn't in any way harm release.
+		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/ast.zu" "${PROJECT_SOURCE_DIR}/libs/ast"
+		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/ast.zu" "${OUTPUT_DIR}/libs/ast"
 		COMMENT "Generating Zuri header and copy output..."
 )
 
@@ -285,6 +283,9 @@ generate_export_header(libzuri           # generates the export header shared_EX
 
 enable_testing()
 add_subdirectory(tests)
+
+add_subdirectory(thirdparty)
+add_subdirectory(packages)
 
 # Replace install() with conditional installation.
 macro(install)

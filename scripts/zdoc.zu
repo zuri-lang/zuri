@@ -16,9 +16,9 @@ class ZuriDoc {
    */
   scan(dir, root) {
     if !os.is_dir(dir) {
-        if dir.ends_with('.b') {
+        if dir.ends_with('.zu') {
             # Skip invalid stubs
-            if os.base_name(dir).starts_with('_') or os.base_name(dir).ends_with('.stub.b') {
+            if os.base_name(dir).starts_with('_') or os.base_name(dir).ends_with('.stub.zu') {
               return
             }
             self.parse_module(dir, root)
@@ -37,10 +37,10 @@ class ZuriDoc {
       if os.is_dir(path) {
         self.dirs[dir].subdirs.append(path)
         self.scan(path, root)
-      } else if path.ends_with('.b') {
+      } else if path.ends_with('.zu') {
         var filename = os.base_name(path)
         if filename.starts_with('_') {
-          if filename.ends_with('.stub.b') {
+          if filename.ends_with('.stub.zu') {
             # Skip invalid stubs that use anonymous classes
             # TODO: Do not continue if --with-stub flag is set.
             continue
@@ -108,11 +108,11 @@ class ZuriDoc {
 
     # Use filename as module name if @module is missing
     var filename = os.base_name(path)
-    var module_name = module_info.doc and module_info.doc.module ? module_info.doc.module : filename.replace('.b', '')
+    var module_name = module_info.doc and module_info.doc.module ? module_info.doc.module : filename.replace('.zu', '')
 
-    # Handle .stub.b naming requirement
-    if filename.starts_with('_') and filename.ends_with('.stub.b') {
-      module_name = filename[1,].replace('.stub.b', '')
+    # Handle .stub.zu naming requirement
+    if filename.starts_with('_') and filename.ends_with('.stub.zu') {
+      module_name = filename[1,].replace('.stub.zu', '')
     }
 
     # Identify default export
@@ -120,7 +120,7 @@ class ZuriDoc {
     var target_name = module_name
 
     # if it's an index file, the target name for default export might be the directory name
-    if filename == 'index.b' {
+    if filename == 'index.zu' {
       target_name = os.base_name(os.dir_name(path))
       # Only override module_name if @module wasn't explicitly set
       if !(module_info.doc and module_info.doc.module) {
@@ -342,12 +342,12 @@ class ZuriDoc {
 
         var filename = os.base_name(m_path)
 
-        if filename == 'index.b' {
+        if filename == 'index.zu' {
           index_module = m_info
         } else {
-          var out_name = filename.replace('.b', '.md')
-          if filename.starts_with('_') and filename.ends_with('.stub.b') {
-            out_name = filename[1,].replace('.stub.b', '.md')
+          var out_name = filename.replace('.zu', '.md')
+          if filename.starts_with('_') and filename.ends_with('.stub.zu') {
+            out_name = filename[1,].replace('.stub.zu', '.md')
           }
 
           # Only add to index.md if it's the root directory
@@ -368,7 +368,7 @@ class ZuriDoc {
         }
       }
 
-      # If we have an index.b, its @module content goes to index.md
+      # If we have an index.zu, its @module content goes to index.md
       if index_module {
         var header = '# ${index_module.name}\n'
 
@@ -560,7 +560,7 @@ class ZuriDoc {
 
 def main(args) {
   if args.length() < 2 {
-    echo 'Usage: zuri zuridoc.b <source_dir> <output_dir>'
+    echo 'Usage: zuri zdoc.zu <source_dir> <output_dir>'
     return
   }
 

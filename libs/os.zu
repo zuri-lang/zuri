@@ -110,8 +110,8 @@ var DT_WHT = _os.DT_WHT
  * ```zuri-repl
  * %> os.exec('ls', '-l')
  * 'total 48
- * -rw-r--r--@ 1 username  staff  705 Aug 27  2021 buggy.b
- * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.b'
+ * -rw-r--r--@ 1 username  staff  705 Aug 27  2021 buggy.zu
+ * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.zu'
  * ```
  * 
  * @param {...string} cmd
@@ -267,7 +267,7 @@ def create_dir(path, permission, recursive) {
  * 
  * ```zuri-repl
  * %> os.read_dir('./tests')
- * [., .., myprogram.b, single_thread.b, test.b, buggy.b]
+ * [., .., myprogram.zu, single_thread.zu, test.zu, buggy.zu]
  * ```
  * 
  * @note `.` indicates current directory and can be used as argument to _os.path_ as well.

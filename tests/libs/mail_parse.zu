@@ -24,7 +24,7 @@ ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc
          oQag4MbzjvYUxJ3jW74ir/RYlXGwO2c7fw0C1q4/wRRQBwhIuOj6vZsUu7ffbwm+TAGv
          bLuQ==
 ARC-Authentication-Results: i=1; mx.google.com;
-       dkim=pass header.i=@google.com header.s=20210112 header.b=eE+DBZgF;
+       dkim=pass header.i=@google.com header.s=20210112 header.zu=eE+DBZgF;
        spf=pass (google.com: domain of 3f9guyxckakiftkxg-ujctgu-fo-pqtgrnaiqqing.eqo@doclist.bounces.google.com designates 209.85.220.69 as permitted sender) smtp.mailfrom=3F9guYxcKAKIFTKXG-UJCTGU-FO-PQTGRNaIQQING.EQO@doclist.bounces.google.com;
        dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=google.com
 Return-Path: <3F9guYxcKAKIFTKXG-UJCTGU-FO-PQTGRNaIQQING.EQO@doclist.bounces.google.com>
@@ -35,7 +35,7 @@ Received: from mail-sor-f69.google.com (mail-sor-f69.google.com. [209.85.220.69]
         Sat, 24 Sep 2022 03:12:40 -0700 (PDT)
 Received-SPF: pass (google.com: domain of 3f9guyxckakiftkxg-ujctgu-fo-pqtgrnaiqqing.eqo@doclist.bounces.google.com designates 209.85.220.69 as permitted sender) client-ip=209.85.220.69;
 Authentication-Results: mx.google.com;
-       dkim=pass header.i=@google.com header.s=20210112 header.b=eE+DBZgF;
+       dkim=pass header.i=@google.com header.s=20210112 header.zu=eE+DBZgF;
        spf=pass (google.com: domain of 3f9guyxckakiftkxg-ujctgu-fo-pqtgrnaiqqing.eqo@doclist.bounces.google.com designates 209.85.220.69 as permitted sender) smtp.mailfrom=3F9guYxcKAKIFTKXG-UJCTGU-FO-PQTGRNaIQQING.EQO@doclist.bounces.google.com;
        dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=google.com
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;

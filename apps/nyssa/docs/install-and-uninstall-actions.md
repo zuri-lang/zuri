@@ -8,7 +8,7 @@ The `post_install` configuration allows package authors to specify a Zuri script
 
 ```json
 ...
-"post_install": "my_cli_script.b"
+"post_install": "my_cli_script.zu"
 ```
 
 The _<scirpt_name>_ must be a path or filename relative to the root of the package.
@@ -19,7 +19,7 @@ The `pre_uninstall` configuration is much like the `post_install` configuration,
 
 ```json
 ...
-"pre_uninstall": "my_cli_script.b"
+"pre_uninstall": "my_cli_script.zu"
 ```
 
 ### `cli`
@@ -33,5 +33,5 @@ For applications installated globally, the application will become available on 
 For example,
 
 ```json
-"cli": "my_cli_script.b"
+"cli": "my_cli_script.zu"
 ```

@@ -91,7 +91,7 @@ char *merge_paths(char *a, char *b) {
 
   final_path = append_strings(final_path, a);
 
-  if(!(len_b == 2 && b[0] == '.' && b[1] == 'b')) {
+  if(!(len_b == 3 && memcmp(b, ZURI_EXTENSION, len_b) == 0)) {
     final_path = append_strings(final_path, ZURI_PATH_SEPARATOR);
   }
   final_path = append_strings(final_path, b);
@@ -104,6 +104,7 @@ char *get_zuri_filename(char *filename) {
   return merge_paths(filename, ZURI_EXTENSION);
 }
 
+#include <stdio.h>
 char *get_core_library_file_path(char *module_name) {
   char *zuri_file_name = get_zuri_filename(module_name);
   if (zuri_file_name != NULL) {

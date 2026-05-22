@@ -18,7 +18,7 @@ Qi is a Nyssa package that ships along with it and is designed to run tests are 
 
 ### Writing a simple test
 
-Let's write a test for a hypothetical function that returns the product of two numbers. First, we'll create a file `prod.b` that contains the following code:
+Let's write a test for a hypothetical function that returns the product of two numbers. First, we'll create a file `prod.zu` that contains the following code:
 
 ```py
 def prod(x, y) {
@@ -26,7 +26,7 @@ def prod(x, y) {
 }
 ```
 
-Now, let's create a test for it by creating a file `prod.test.b` in the `tests` directory and add the following code to it.
+Now, let's create a test for it by creating a file `prod.test.zu` in the `tests` directory and add the following code to it.
 
 ```py
 import ..prod
@@ -47,7 +47,7 @@ nyssa test
 You should get an output similar to this:
 
 ```
- PASS  tests/prod.test.b
+ PASS  tests/prod.test.zu
   Product test suite
     ✔ should return 6 for 2 and 3 (1.09ms)
       ✔ expect "6" to be "6"

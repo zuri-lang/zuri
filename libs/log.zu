@@ -96,7 +96,7 @@
  * JSON data to the console.
  * 
  * ```zuri
- * # my_custom_transport.b
+ * # my_custom_transport.zu
  * 
  * import log { Transport }
  * import json

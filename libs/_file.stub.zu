@@ -327,7 +327,7 @@ class file {
    * For example:
    * 
    * ```zuri-repl
-   * %> file('test-2.b').delete()
+   * %> file('test-2.zu').delete()
    * true
    * ```
    * 

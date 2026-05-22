@@ -228,7 +228,7 @@ nyssa build --extension my_c_lib
 **Built-in testing** — no test framework to install.
 
 ```zuri
-# --> tests/api.test.b
+# --> tests/api.test.zu
 
 describe('User API', @{
   it('creates a user', @{

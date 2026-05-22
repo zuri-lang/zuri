@@ -37,7 +37,7 @@ if(WIN32)
 endif()
 
 add_custom_target(copy-hash-to-libs ALL
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/hash.b ${ZURI_ROOT}/libs/hash.b
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/hash.zu ${ZURI_ROOT}/libs/hash.zu
         COMMENT "Exporting hash source files to libs folder..."
         )
 
