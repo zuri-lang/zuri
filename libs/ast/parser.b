@@ -5,7 +5,7 @@ import .expr { * }
 import .stmt { * }
 import .decl { * }
 import .defn { * }
-import .interface { * }
+import .result { * }
 import .exception { * }
 
 var _assigners_ = [

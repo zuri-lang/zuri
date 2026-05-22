@@ -1,89 +1,325 @@
 <div align="center">
-    <img height="96" alt="Blade Logo" src="https://raw.githubusercontent.com/blade-lang/blade/main/blade.png">
+  <img height="96" alt="Zuri Logo" src="https://raw.githubusercontent.com/zuri-lang/zuri/main/zuri.png">
+
+  <h1>Zuri</h1>
+
+  <p><strong>The self-sufficient backend language.</strong><br>
+  Build complete, production-ready backend services with nothing but Zuri —<br>
+  no framework hunting, no dependency hell, no third-party registry anxiety.</p>
+
+[![Build Status](https://github.com/zuri-lang/zuri/actions/workflows/ci.yml/badge.svg)](https://github.com/zuri-lang/zuri/actions)
+[![License](https://img.shields.io/badge/License-BSD_2--Clause-orange.svg)](https://github.com/zuri-lang/zuri/blob/master/LICENSE)
+[![Version](https://img.shields.io/badge/version-0.0.86-green)](https://github.com/zuri-lang/zuri)
+[![Gitter](https://badges.gitter.im/zuri-lang/community.svg)](https://gitter.im/zuri-lang/community)
+
+[Try Zuri Online](#) &nbsp;·&nbsp; [Documentation](#) &nbsp;·&nbsp; [Tutorial](#) &nbsp;·&nbsp; [Community](#)
 </div>
 
-# Blade Programming Language
+---
 
-[![Build Status](https://github.com/blade-lang/blade/actions/workflows/ci.yml/badge.svg)](https://github.com/blade-lang/blade/actions)
-[![Gitter](https://badges.gitter.im/blade-lang/community.svg)](https://gitter.im/blade-lang/community)
-[![License](https://img.shields.io/badge/License-BSD_2--Clause-orange.svg)](https://github.com/blade-lang/blade/blob/master/LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.86-green)](https://github.com/blade-lang/blade)
+## Everything you need is already here
 
-#### [Try Blade Online](https://play.bladelang.org)
+Most backend languages make you assemble a stack from dozens of third-party packages before you can do anything useful. Zuri takes a different philosophy: **the tools you need to build real backend services ship with the language itself.**
 
-Blade is a modern general-purpose programming language focused on enterprise Web, IoT, and secure application development. Blade offers a comprehensive set of tools and libraries out of the box leading to reduced reliance on third-party packages. 
+HTTP server. Routing. Database. Template engine. Mail. Cryptography. Image processing. A self-hostable private package registry. All built in. No installs required.
 
-Blade comes equipped with an integrated package management system, simplifying the management of both internal and external dependencies and a self-hostable repository server making it ideal for private organizational and personal use. Its intuitive syntax and gentle learning curve ensure an accessible experience for developers of all skill levels. Leveraging the best features from JavaScript, Python, Ruby, and Dart, Blade provides a familiar and robust ecosystem that enables developers to harness the strengths of these languages effortlessly.
-
-## Example
-
-The following code implements a simple backend API that runs on port 3000:
-
-```blade
+```zuri
 import http
+import sqlite
+import hash
 
+var db = sqlite.open('app.db')
 var server = http.server(3000)
-server.handle('GET', '/', @(req, res) {
-  res.json(req)
+
+server.handle('POST', '/users', @(req, res) {
+  var password_hash = hash.sha256(req.body.password)
+  db.exec('INSERT INTO users (email, password) VALUES (?, ?)',
+    [req.body.email, password_hash])
+  res.json({ status: 'created' })
 })
 
-echo 'Listening on Port 3000...'
+echo 'API running on port 3000...'
 server.listen()
 ```
 
-## What's interesting about Blade
+That's a working API endpoint — with a real database and password hashing — in 13 lines. No `pip install`, no `npm install`, no `composer require`. Just Zuri.
 
-- **Built-in package manager and repository server:** Package management is built into the language module system. Blade also comes with `Nyssa`. Nyssa is a package manager and self-hosted repository server highly suitable for private use.
-- **Zero-dependency full-stack web development**: Blade comes with a built-in web server and a rich set of tools and libraries that support it, making it easy to build composable full-stack web applications out of the box:
-  - Built-in Model-View-Template (MVT) based HTTP web server.
-  - Built-in testing framework.
-  - Built-in support for multiple databases.
-  - Built-in web template engine &mdash; `Wire`.
-  - Built-in routing library.
-  - Built-in mail library with SMTP, IMAP, and POP3 support.
-  - Built-in device integrations (such as support for COM/Ports, USB, etc.) &mdash; Planned!
-  - Built-in cryptography library.
-  - Built-in support for media processing (Image - Done, audio, video, etc.) &mdash; Planned!
-  - And more.
-- **Function promotion**: A feature of the Blade language that makes it easy to reuse any code from an imported module.
-- **Access modifiers**: Unlike JavaScript and Python, Blade supports access modifiers for variables, properties, functions, classes, modules, etc.
-- **Decorator functions**: Decorator functions are a set of class methods in Blade that makes extending the functionality of existing code super easy.
-- **Easy to extend with C modules**: Blade supports external extensions built in C with a built-in extension compiler via `Nyssa`. This feature makes it easy to extend language features with C modules.
+---
 
-## Showcase of other uses
+## Why Zuri
 
-While Blade focuses on Web and IoT, it is also great for general software development. Below are a few showcases of libraries using Blade for other impressive stuff:
+### The dependency problem is real
 
-- **[jsonrpc](https://github.com/mcfriend99/jsonrpc)**: A JSON-RPC library for Blade programming language.
-- **[tar](https://github.com/mcfriend99/tar)**: Pure Blade library for creating and extracting TAR archives.
+Modern backend development has a dependency problem. A simple Node.js project can pull in hundreds of packages just to serve HTTP requests. Every package is a potential security vulnerability, a breaking change waiting to happen, a maintainer who might abandon their work. The ecosystem becomes fragile, and you spend more time managing dependencies than building your product.
 
-## Installation
+Zuri was designed from the ground up to eliminate this problem. The standard library covers the full surface area of typical backend development, so you reach for a third-party package only when you're doing something genuinely unusual — not to serve a web request.
 
-To install Blade, please follow the instructions in the [Building](./BUILDING.md) guide.
+### Own your infrastructure completely
 
-## Usage
+Zuri ships with **Nyssa** — a package manager *and* a self-hostable private package registry in one. Your team can run its own registry on your own servers. No dependence on a central public registry. No exposure of proprietary internal packages. Full control over what code enters your supply chain.
 
-To start using Blade, please refer to the [Tutorial](https://bladelang.org/tutorial/) section of the online documentation.
+```sh
+# Install a package
+nyssa install package-name
 
-## API Documentation
+# Publish to your own private registry
+nyssa publish --registry https://packages.yourcompany.com
 
-API documentation for Blade is under active development and can be found at [bladelang.org](https://bladelang.org/standard/).
+# Run your own registry server
+nyssa serve
+
+# Distribute your app as a single runnable unit for Linux, Windows, and MacOS.
+nyssa bundle
+```
+
+This makes Zuri especially compelling for organizations with strict data sovereignty requirements, regulated industries, and teams that have been burned by public registry outages or supply chain attacks.
+
+---
+
+## What's built in
+
+Zuri's standard library covers everything a backend needs — production-ready, maintained as part of the language itself.
+
+| Capability                | Module           | Status     |
+|---------------------------|------------------|------------|
+| HTTP server & client      | `http`           | ✅ Ready    |
+| Sockets                   | `socket`         | ✅ Ready    |
+| WebSockets                | `websocket`      | 🔜 Planned |
+| SQLite database           | `sqlite`         | ✅ Ready    |
+| SSL / TLS                 | `ssl`            | ✅ Ready    |
+| Cryptography & Hashing    | `hash`, `crypto` | ✅ Ready    |
+| HTML templating (Wire)    | `template`       | ✅ Ready    |
+| HTML parsing & generation | `html`           | ✅ Ready    |
+| Markdown processing       | `markdown`       | ✅ Ready    |
+| Mail (SMTP, IMAP, POP3)   | `mail`           | ✅ Ready    |
+| Image processing          | `imagine`        | ✅ Ready    |
+| JSON                      | `json`           | ✅ Ready    |
+| File                      | `file`           | ✅ Ready    |
+| Input & Output (I/O)      | `io`             | ✅ Ready    |
+| HTTP compression          | `zlib`           | ✅ Ready    |
+| AST & metaprogramming     | `ast`            | ✅ Ready    |
+| Unit testing              | `test`           | ✅ Ready    |
+| URL / cURL bindings       | `url`, `curl`    | ✅ Ready    |
+| FFI/C interop             | `clib`           | ✅ Ready    |
+| Device I/O (COM, USB)     | `device`         | 🔜 Planned |
+| ORM                       | `orm`            | 🔜 Planned |
+| Audio / Video processing  | `media`          | 🔜 Planned |
+
+---
+
+## A taste of what Zuri looks like
+
+**Full-stack HTML server with Wire templates**
+
+```zuri
+import http
+import template
+
+var server = http.server(8080)
+
+server.handle('GET', '/', @(req, res) {
+  res.write(template.render('index', {
+    title: 'Welcome to Zuri',
+    user: req.session.get('user')
+  }))
+})
+
+server.listen()
+```
+
+**Sending mail**
+
+```zuri
+import mail
+
+var msg = mail.Message()
+    .from('someone@example.com')
+    .to('hello@domain.com')
+    .subject('Hello, World')
+    .text('Welcome to Zuri Mail!')
+
+var mailer = mail.smtp('smtp.yourhost.com', 587)
+    .auth('user@yourhost.com', 'password')
+    .add_message(msg)
+    .send()
+```
+
+**Image processing**
+
+```zuri
+import imagine { Image }
+
+Image.new(640, 640, true).use(@(im) {
+    var bg_color = im.allocate_color(0, 0, 0, 127)
+    im.fill(0, 0, bg_color)
+    
+    # Commenting this out till we find a way to fix WebP on all supported OS.
+    Image.from_png('image.png').use(@(im2) {
+      var meta = im2.meta()
+    
+      im.copy_resized(im2, 0, 0, 0, 0, 640, 640, meta.width, meta.height)
+    })
+    
+    im.export_jpeg('image2.jpg')
+})
+```
+
+**AST-powered tooling**
+
+```zuri
+import ast
+
+var tree = ast.parse(file('script.zuri').read())
+# Build linters, formatters, or code generators in pure Zuri
+```
+
+---
+
+## Language features
+
+Zuri draws from the best ideas in JavaScript, Python, Ruby, and Dart — so the syntax feels immediately familiar while remaining precise and expressive.
+
+**Access modifiers** — unlike JavaScript and Python, Zuri has first-class access control for variables, properties, functions, classes, and modules.
+
+```zuri
+class User {
+  var name        # public
+  var _id         # private
+
+  def greet() {
+    return 'Hello, ' + self.name
+  }
+}
+```
+
+**Function promotion** — use any module like a function if the module exports a default function.
+
+```zuri
+import template
+
+echo template() # Returns template instance
+```
+
+**Decorator methods** — customize how modules, libraries, and functions see your class.
+
+```zuri
+import json
+
+class X {
+  var prop = 1
+  
+  @to_json() {
+    return {
+      value: self.prop 
+    }
+  }
+}
+
+echo json.encode(X())
+# {"value":1}
+```
+
+**Easy C extension system** — wrap any C library as a Zuri package with the built-in extension compiler.
+
+```sh
+nyssa build --extension my_c_lib
+```
+
+**Built-in testing** — no test framework to install.
+
+```zuri
+# --> tests/api.test.b
+
+describe('User API', @{
+  it('creates a user', @{
+    var res = http.post('http://localhost:3000/users', { ... })
+    
+    test.expect(res.status).to_equal(201)
+  })
+})
+```
+
+```sh
+nyssa test
+```
+
+---
+
+## Get started in 60 seconds
+
+**Linux / macOS**
+
+```sh
+bash <(curl -s https://raw.githubusercontent.com/zuri-lang/zuri/main/scripts/install.sh)
+```
+
+**Windows** — see the [Releases page](https://github.com/zuri-lang/zuri/releases) to download a portable runtime.
+
+**Run your first server**
+
+```sh
+echo "import http
+var s = http.server(3000)
+s.handle('GET', '/', @(req, res) { res.json({hello: 'world'}) })
+s.listen()" > server.zuri
+
+zuri server.zuri
+# → Listening on port 3000
+```
+
+---
+
+## Who Zuri is built for
+
+**Solo developers and small teams** who want to ship backend services without managing a sprawling dependency tree.
+
+**Organizations with data sovereignty requirements** — run your full stack and your own package registry on your own infrastructure, with no external dependencies.
+
+**Developers in bandwidth-constrained environments** — because Zuri's zero-dependency philosophy means your project doesn't pull megabytes of transitive packages on every setup.
+
+**IoT and edge builders** — Zuri's lightweight runtime and planned device I/O support (COM ports, USB) make it a natural fit for embedded-adjacent scripting on Raspberry Pi–class hardware.
+
+**Tooling authors** — the built-in AST module makes Zuri an excellent host for building language tools, linters, formatters, and DSLs.
+
+---
+
+## Ecosystem
+
+| Project                                                 | Description                                        |
+|---------------------------------------------------------|----------------------------------------------------|
+| [Nyssa](https://github.com/zuri-lang/zuri)              | Package manager and self-hostable private registry |
+| [Wire](https://github.com/zuri-lang/zuri)               | Built-in HTML template engine                      |
+| [zuri-vscode](https://github.com/zuri-lang/zuri-vscode) | Visual Studio Code extension                       |
+| [jsonrpc](https://github.com/mcfriend99/jsonrpc)        | JSON-RPC library                                   |
+| [tar](https://github.com/mcfriend99/tar)                | Pure Zuri TAR archive library                      |
+| [mysql](https://github.com/mcfriend99/mysql)            | Pure Zuri MySQL/MariaDB client                     |
+| [postgres](https://github.com/mcfriend99/postgres)      | Pure Zuri PostgreSQL client                        |
+| [doka](https://github.com/mcfriend99/doka)              | Zuri documentation site server                     |
+| [dotenv](https://github.com/mcfriend99/dotenv)          | Zuri dotenv library                                |
+
+---
 
 ## Community
 
-- Join the conversation on [Gitter](https://gitter.im/blade-lang/community)
-- Submit a [feature request](https://github.com/blade-lang/blade/issues/new?labels=feature-request) or [bug report](https://github.com/blade-lang/blade/issues/new?labels=bug).
-<!-- - Follow us on Twitter -->
+Zuri is young, and that means the decisions made now — the libraries built, the patterns established, the conventions chosen — will shape the language for years. If you've been looking for a project where your contributions genuinely matter from day one, this is it.
 
-## Contributing
+- 💬 [Join the conversation on Gitter](https://gitter.im/zuri-lang/community)
+- 🐛 [Report a bug](https://github.com/zuri-lang/zuri/issues/new?labels=bug)
+- 💡 [Submit a feature request](https://github.com/zuri-lang/zuri/issues/new?labels=feature-request)
+- 📖 [Read the documentation](#)
+- 🤝 [Contributing guide](./CONTRIBUTING.md)
 
-We need your help to make Blade great! The Blade community is as friendly and welcoming as possible. All kinds of contributions like pull requests, suggestions, typo fixes in documentation, feature request, bug reports, and others are highly appreciated. Please refer to the [Contributing](./CONTRIBUTING.md) guide for more information.
-
-## License
-
-Blade is licensed under the [2-clause BSDL License](https://github.com/blade-lang/blade/blob/main/LICENSE).
+---
 
 ## Sponsors
 
-- [Jetbrains](https://www.jetbrains.com/)
-- [DigitalOcean](https://www.digitalocean.com/)
+[//]: # (Zuri's development is supported by:)
+
+Interested in sponsoring? [Get in touch](mailto:eqliqandfriends@gmail.com).
+
+---
+
+<div align="center">
+  <sub>Zuri is licensed under the <a href="./LICENSE">BSD 2-Clause License</a>.</sub><br>
+  <sub><em>Zuri</em> means <strong>good</strong> and <strong>beautiful</strong> in Swahili. We think code can be both.</sub>
+</div>

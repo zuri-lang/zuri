@@ -1948,6 +1948,8 @@ class Template {
   }
 }
 
+var _default_template_instance = Template()
+
 
 /**
  * Default function exporting the [[Template]] class that allows function 
@@ -1960,3 +1962,30 @@ def template(auto_init) {
   return Template(auto_init)
 }
 
+
+/**
+ * A shortcut to [[Template.render]] for easy top-level access from the module.
+ * 
+ * See [[Template.render]] for details.
+ * 
+ * @param string path
+ * @param dict? variables
+ * @returns string
+ */
+def render(path, variables) {
+  return _default_template_instance.render(path, variables)
+}
+
+/**
+ * A shortcut to [[Template.render_string]] for easy top-level access from the module.
+ * 
+ * See [[Template.render_string]] for details.
+ * 
+ * @param string path
+ * @param dict? variables
+ * @param string? path
+ * @returns string
+ */
+def render_string(source, variables, path) {
+  return _default_template_instance.render_string(source, variables, path)
+}

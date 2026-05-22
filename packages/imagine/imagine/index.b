@@ -55,10 +55,10 @@
  * While the above example works very fine, it is a very common thing 
  * from experience for people to forget to close file and image handles 
  * and this have real implications on the system. For this reason, the 
- * coventionally advice way to use `Image` instances is via 
+ * conventionally advice way to use `Image` instances is via
  * .[[imagine.ImageResource.use()]]. 
  * 
- * The example below demonstartes the former example with `.use` pattern.
+ * The example below demonstrates the former example with `.use` pattern.
  * 
  * ```blade
  * import imagine { * }
@@ -86,7 +86,7 @@
  * })
  * ```
  * 
- * Image can create transparent images as well as images containig texts. 
+ * Image can create transparent images as well as images containing texts.
  * The example below shows creates a simple transparent PNG image with the 
  * text `A simple text string` written in it. 
  * 

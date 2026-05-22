@@ -1380,6 +1380,25 @@ b_parse_rule parse_rules[] = {
   [UNDEFINED_TOKEN] = {NULL, NULL, PREC_NONE},
 };
 
+static bool next_meaningful_token_is_dot(b_parser* p) {
+  // Snapshot complete scanner and parser token state before skipping
+  // newlines, so we can restore everything if no dot follows.
+  b_scanner saved_scanner  = *p->scanner;
+  b_token   saved_current  = p->current;
+  b_token   saved_previous = p->previous;
+
+  ignore_whitespace(p);
+  bool is_dot = p->current.type == DOT_TOKEN;
+
+  // Always restore — the actual consumption happens in the loop body
+  // via the existing ignore_whitespace + advance sequence.
+  *p->scanner = saved_scanner;
+  p->current  = saved_current;
+  p->previous = saved_previous;
+
+  return is_dot;
+}
+
 static void do_parse_precedence(b_parser* p, b_precedence precedence) {
   b_parse_prefix_fn prefix_rule = get_rule(p->previous.type)->prefix;
 
@@ -1391,7 +1410,13 @@ static void do_parse_precedence(b_parser* p, b_precedence precedence) {
   bool can_assign = precedence <= PREC_ASSIGNMENT;
   prefix_rule(p, can_assign);
 
-  while (precedence <= get_rule(p->current.type)->precedence) {
+  while (
+    precedence <= get_rule(p->current.type)->precedence ||
+    (
+      p->current.type == NEWLINE_TOKEN && precedence <= PREC_CALL &&
+      next_meaningful_token_is_dot(p)
+    )
+  ) {
     b_token previous = p->previous;
     ignore_whitespace(p);
     advance(p);

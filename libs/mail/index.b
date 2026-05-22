@@ -9,6 +9,7 @@
 
 import .smtp
 import .message
+import .message
 import .imap
 import .pop3
 import .constants

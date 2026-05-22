@@ -4,69 +4,72 @@ import curl {
   Curl, 
   CurlList
 }
-import .message
+import .message {
+  Message
+}
 import .constants
 
 /**
- * Transport class can be used to send email messages through an SMTP server.
+ * SMTP class can be used to send email messages through an SMTP server.
  * 
- * The class constructor takes a single argument options, which should be a 
- * dictionary containing various options for the connection. If the options 
- * are not provided or are not a dictionary, the constructor will raise an 
- * exception. 
+ * Configuration is done via chainable setter methods rather than a constructor
+ * dictionary, keeping the constructor simple and explicit. Only the server
+ * __host__ and __port__ are accepted at construction time; all other options
+ * are applied through the dedicated methods below.
  * 
- * The class uses the options to set various properties such as the host and 
- * port of the SMTP server, the username and password for authentication, and 
- * various options for connecting to the server such as the use of TLS, and 
- * timeout.
+ * ### Example
+ * 
+ * ```blade
+ * import mail
+ * 
+ * var msg = mail.Message()
+ *    .from('someone@example.com')
+ *    .to('hello@domain.com')
+ *    .subject('Hello, World')
+ *    .text('Welcome to Zuri Mail!')
+ * 
+ * var client = mail.SMTP('smtp.example.com', 465)
+ *   .auth('user@example.com', 's3cr3t')
+ *   .tls(mail.TLS_ALL)
+ *   .debug(true)
+ * 
+ * client.add_message(msg).send()
+ * ```
  */
-class Transport {
+class SMTP {
+  var _username
+  var _password
+  var _tls = constants.TLS_TRY
+  var _debug = false
+  var _verify_peer = false
+  var _verify_host = false
+  var _proxy
+  var _proxy_user
+  var _proxy_pass
+  var _verify_proxy_peer = false
+  var _verify_proxy_host = false
+  var _timeout = 30000  # in milliseconds (default = 30s)
+  
   var messages = []
 
   /**
-   * The Transport class accepts a dictionary that can be used to configure how 
-   * it behaves. The dictionary can contain one or more of the following.
+   * Creates a new SMTP client that will connect to __host__ on __port__.
    * 
-   * - __host__: The host address of the SMTP server. (Default: localhost)
-   * - __port__: The port number of the SMTP server. (Default: 465)
-   * - __username__: The access username for the SMTP user.
-   * - __password__: The password for the connection user.
-   * - __tls__: The TLS mode of the connection. One of [[ssl.TLS_TRY]] (default), [[ssl.TLS_CONTROL]], 
-   *    [[ssl.TLS_ALL]] or [[ssl.TLS_NONE]].
-   * - __debug__: Whether to print debug information or not. (Default: false)
-   * - __verify_peer__: If the peer certificate should be verified or not. (Default: false)
-   * - __verify_host__: If the host certificate should be verified or not. (Default: false)
-   * - __proxy__: The address of the proxy server if any.
-   * - __proxy_username__: The username for the proxy connection.
-   * - __proxy_password__: The password for the user of the proxy connection.
-   * - __verify_proxy_peer__: If the peer certificate of the proxy should be verified or 
-   *    not. (Default: The value of __verify_peer__)
-   * - __verify_proxy_host__: If the host certificate of the proxy should be verified or 
-   *    not. (Default: The value of __verify_host__)
-   * - __timeout__: The request timeout in milliseconds. (Default: 30,000)
+   * All further configuration (credentials, TLS mode, proxy, timeouts, etc.)
+   * is applied via the chainable setter methods on this class.
    * 
-   * @param dict? options
+   * @param string host The hostname or IP address of the SMTP server. (Default: `'localhost'`)
+   * @param number port The port number of the SMTP server. (Default: `465`)
    * @constructor
    */
-  Transport(options) {
-    if options != nil and !is_dict(options)
-      raise TypeError('dictionary expected as argument to constructor')
-    if !options options = {}
+  SMTP(host, port) {
+    if host != nil and !is_string(host)
+      raise TypeError('string expected in argument 1 (host)')
+    if port != nil and !is_number(port)
+      raise TypeError('number expected in argument 2 (port)')
 
-    self._host = options.get('host', 'localhost')
-    self._port = options.get('port', 465)
-    self._username = options.get('username', nil)
-    self._password = options.get('password', nil)
-    self._tls = options.get('tls', constants.TLS_TRY)
-    self._debug = options.get('debug', false)
-    self._verify_peer = options.get('verify_peer', false)
-    self._verify_host = options.get('verify_host', false)
-    self._proxy = options.get('proxy', nil)
-    self._proxy_user = options.get('proxy_username', nil)
-    self._proxy_pass = options.get('proxy_password', nil)
-    self._verify_proxy_peer = options.get('verify_proxy_peer', self._verify_peer)
-    self._verify_proxy_host = options.get('verify_proxy_host', self._verify_host)
-    self._timeout = options.get('timeout', 30000)  # in milliseconds (default = 30s)
+    self._host = host ? host : 'localhost'
+    self._port = port ? port : 465
   }
 
   _init() {
@@ -91,18 +94,183 @@ class Transport {
   }
 
   /**
+   * Sets the credentials used to authenticate with the SMTP server.
+   * 
+   * @param string username The login username for the SMTP account.
+   * @param string password The password for the SMTP account.
+   * @returns SMTP
+   */
+  auth(username, password) {
+    if !is_string(username)
+      raise TypeError('string expected in argument 1 (username)')
+    if !is_string(password)
+      raise TypeError('string expected in argument 2 (password)')
+
+    self._username = username
+    self._password = password
+    return self
+  }
+
+  /**
+   * Sets the credentials used to authenticate with the proxy server.
+   * 
+   * This method has no effect unless a proxy address has been configured via
+   * [[SMTP.proxy]].
+   * 
+   * @param string username The login username for the proxy account.
+   * @param string password The password for the proxy account.
+   * @returns SMTP
+   */
+  proxy_auth(username, password) {
+    if !is_string(username)
+      raise TypeError('string expected in argument 1 (username)')
+    if !is_string(password)
+      raise TypeError('string expected in argument 2 (password)')
+
+    self._proxy_user = username
+    self._proxy_pass = password
+    return self
+  }
+
+  /**
+   * Sets the TLS mode for the SMTP connection.
+   * 
+   * Accepted values are the `TLS_*` constants exported by this module:
+   * [[mail.TLS_TRY]] (default), [[mail.TLS_CONTROL]], [[mail.TLS_ALL]], or
+   * [[mail.TLS_NONE]].
+   * 
+   * @param number mode One of the `mail.TLS_*` constants.
+   * @returns SMTP
+   */
+  tls(mode) {
+    if !is_number(mode)
+      raise TypeError('number expected in argument 1 (mode)')
+    self._tls = mode
+    return self
+  }
+
+  /**
+   * Enables or disables verbose debug output for the underlying transport.
+   * 
+   * When enabled, low-level connection details are printed to standard output,
+   * which is useful when diagnosing connectivity issues.
+   * 
+   * @param bool enabled `true` to enable debug output, `false` to disable it. (Default: `false`)
+   * @returns SMTP
+   */
+  debug(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._debug = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the remote server's SSL/TLS peer certificate is verified.
+   * 
+   * Disabling verification is not recommended in production environments as it
+   * opens the connection to man-in-the-middle attacks.
+   * 
+   * @param bool enabled `true` to verify the peer certificate. (Default: `false`)
+   * @returns SMTP
+   */
+  verify_peer(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_peer = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the remote server's SSL/TLS hostname is verified against
+   * the certificate's Common Name or Subject Alternative Names.
+   * 
+   * @param bool enabled `true` to verify the host certificate. (Default: `false`)
+   * @returns SMTP
+   */
+  verify_host(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_host = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Configures an HTTP or SOCKS proxy through which all SMTP traffic is routed.
+   * 
+   * Provide proxy credentials separately via [[SMTP.proxy_auth]].
+   * 
+   * @param string address The full proxy URL, e.g. `'http://proxy.example.com:8080'`.
+   * @returns SMTP
+   */
+  proxy(address) {
+    if !is_string(address)
+      raise TypeError('string expected in argument 1 (address)')
+    self._proxy = address
+    return self
+  }
+
+  /**
+   * Controls whether the proxy server's SSL/TLS peer certificate is verified.
+   * 
+   * When not explicitly set, this inherits the value of [[SMTP.verify_peer]].
+   * 
+   * @param bool enabled `true` to verify the proxy peer certificate.
+   * @returns SMTP
+   */
+  verify_proxy_peer(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_proxy_peer = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the proxy server's SSL/TLS hostname is verified.
+   * 
+   * When not explicitly set, this inherits the value of [[SMTP.verify_host]].
+   * 
+   * @param bool enabled `true` to verify the proxy host certificate.
+   * @returns SMTP
+   */
+  verify_proxy_host(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_proxy_host = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Sets the maximum time, in milliseconds, to wait for the server to respond
+   * before aborting the connection.
+   * 
+   * @param number ms Timeout duration in milliseconds. (Default: `30000`)
+   * @returns SMTP
+   */
+  timeout(ms) {
+    if !is_number(ms)
+      raise TypeError('number expected in argument 1 (ms)')
+    self._timeout = ms
+    return self
+  }
+
+  /**
    * Adds an email message to the list of messages to be sent.
    * 
    * @param Message message
-   * @returns Transport
+   * @returns SMTP
    */
   add_message(message) {
+    if !instance_of(message, Message) {
+      raise ValueError('instance of mail.Message expected')
+    }
+
     self.messages.append(message)
     return self
   }
 
   /**
-   * Tests the connection to the SMTP server
+   * Tests the connection to the SMTP server.
    * 
    * @returns bool
    */
@@ -117,7 +285,7 @@ class Transport {
   }
 
   /**
-   * Verifies an email address
+   * Verifies an email address against the SMTP server using the `VRFY` command.
    * 
    * @param string address
    * @returns bool
@@ -134,10 +302,13 @@ class Transport {
   }
 
   /**
-   * Send the email messages and returns `true` if the message was successfully 
-   * sent or `false` otherwise.
+   * Sends all queued email messages and returns the SMTP response code(s).
    * 
-   * @returns bool
+   * If only one message was queued the return value is a single number;
+   * if multiple messages were queued a list of response codes is returned,
+   * one per message in the order they were added.
+   * 
+   * @returns number|list[number]
    */
   send() {
     var response_codes = []
@@ -172,13 +343,14 @@ class Transport {
 
 
 /**
- * Returns a new instance of SMTP [[mail.Transport]] with the given __options__.
+ * Returns a new [[mail.SMTP]] instance configured to connect to __host__ on __port__.
  * 
- * @params {dict?} options See [[mail.Transport]]
- * @returns Transport
+ * This is a convenience factory equivalent to `SMTP(host, port)`.
+ * 
+ * @param string host The hostname or IP address of the SMTP server. (Default: `'localhost'`)
+ * @param number port The port number of the SMTP server. (Default: `465`)
+ * @returns SMTP
  */
-def smtp(options) {
-  if options != nil and !is_dict(options)
-    raise TypeError('dictionary expected as argument to constructor')
-  return Transport(options)
+def smtp(host, port) {
+  return SMTP(host, port)
 }

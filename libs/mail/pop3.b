@@ -14,63 +14,63 @@ var _flags_regex = '/\((\\\?([^)]+))?\)/'
 var _list_regex = '/^[*] LIST \(\\\?([^)]*)\) "([^"]+)" (.*)$/'
 
 /**
- * The POP3 class provides an interface for connecting to an POP3 (Post Office Protocol) server 
- * and interacting with the server via the POP3 protocol.
+ * The POP3 class provides an interface for connecting to a POP3 (Post Office Protocol)
+ * server and interacting with it via the POP3 protocol.
  * 
- * This class includes operations for creating, deleting, and renaming mailboxes, checking for new 
- * messages, permanently removing messages, setting and clearing flags searching, and selective 
- * fetching of message attributes, texts, and portions.
+ * This class includes operations for listing, retrieving and deleting messages,
+ * checking mailbox statistics, and performing keep-alive pings.
+ * 
+ * Configuration is applied through chainable setter methods. Only the server
+ * __host__ and __port__ are accepted at construction time.
+ * 
+ * ### Example
+ * 
+ * ```blade
+ * import mail
+ * 
+ * var client = mail.POP3('pop3.example.com', 995)
+ *   .auth('user@example.com', 's3cr3t')
+ *   .tls(mail.TLS_ALL)
+ * 
+ * echo client.stat()
+ * client.quit()
+ * ```
  */
 class POP3 {
+  var _username
+  var _password
+  var _tls = constants.TLS_TRY
+  var _debug = false
+  var _verify_peer = false
+  var _verify_host = false
+  var _proxy
+  var _proxy_user
+  var _proxy_pass
+  var _verify_proxy_peer = false
+  var _verify_proxy_host = false
+  var _timeout = 30000  # in milliseconds (default = 30s)
+
   var _curl
   var _base_url
 
   /**
-   * The POP3 class accepts a dictionary that can be used to configure how 
-   * it behaves. The dictionary can contain one or more of the following.
+   * Creates a new POP3 client that will connect to __host__ on __port__.
    * 
-   * - __host__: The host address of the POP3 server. (Default: localhost)
-   * - __port__: The port number of the POP3 server. (Default: 110)
-   * - __username__: The access username for the POP3 user.
-   * - __password__: The password for the connection user.
-   * - __tls__: The TLS mode of the connection. One of [[ssl.TLS_TRY]] (default), [[ssl.TLS_CONTROL]], 
-   *    [[ssl.TLS_ALL]] or [[ssl.TLS_NONE]].
-   * - __debug__: Whether to print debug information or not. (Default: false)
-   * - __verify_peer__: If the peer certificate should be verified or not. (Default: false)
-   * - __verify_host__: If the host certificate should be verified or not. (Default: false)
-   * - __proxy__: The address of the proxy server if any.
-   * - __proxy_username__: The username for the proxy connection.
-   * - __proxy_password__: The password for the user of the proxy connection.
-   * - __verify_proxy_peer__: If the peer certificate of the proxy should be verified or 
-   *    not. (Default: The value of __verify_peer__)
-   * - __verify_proxy_host__: If the host certificate of the proxy should be verified or 
-   *    not. (Default: The value of __verify_host__)
-   * - __timeout__: The request timeout in milliseconds. (Default: 30,000)
+   * All further configuration (credentials, TLS mode, proxy, timeouts, etc.)
+   * is applied via the chainable setter methods on this class.
    * 
-   * @param dict? options
+   * @param string host The hostname or IP address of the POP3 server. (Default: `'localhost'`)
+   * @param number port The port number of the POP3 server. (Default: `110`)
    * @constructor
    */
-  POP3(options) {
-    if options != nil and !is_dict(options)
-      raise TypeError('dictionary expected as argument to constructor')
-    if !options options = {}
+  POP3(host, port) {
+    if host != nil and !is_string(host)
+      raise TypeError('string expected in argument 1 (host)')
+    if port != nil and !is_number(port)
+      raise TypeError('number expected in argument 2 (port)')
 
-    
-    self._host = options.get('host', 'localhost')
-    self._port = options.get('port', 110)
-    self._username = options.get('username', nil)
-    self._password = options.get('password', nil)
-    self._tls = options.get('tls', constants.TLS_TRY)
-    self._debug = options.get('debug', false)
-    self._verify_peer = options.get('verify_peer', false)
-    self._verify_host = options.get('verify_host', false)
-    self._proxy = options.get('proxy', nil)
-    self._proxy_user = options.get('proxy_username', nil)
-    self._proxy_pass = options.get('proxy_password', nil)
-    self._verify_proxy_peer = options.get('verify_proxy_peer', self._verify_peer)
-    self._verify_proxy_host = options.get('verify_proxy_host', self._verify_host)
-    self._timeout = options.get('timeout', 30000)  # in milliseconds (default = 30s)
-
+    self._host = host ? host : 'localhost'
+    self._port = port ? port : 110
     self._base_url = '${self._tls == constants.TLS_ALL ? "pop3s" : "pop3"}://${self._host}:${self._port}'
   }
 
@@ -134,7 +134,169 @@ class POP3 {
   }
 
   /**
-   * Executes an POP3 command.
+   * Sets the credentials used to authenticate with the POP3 server.
+   * 
+   * @param string username The login username for the POP3 account.
+   * @param string password The password for the POP3 account.
+   * @returns POP3
+   */
+  auth(username, password) {
+    if !is_string(username)
+      raise TypeError('string expected in argument 1 (username)')
+    if !is_string(password)
+      raise TypeError('string expected in argument 2 (password)')
+
+    self._username = username
+    self._password = password
+    return self
+  }
+
+  /**
+   * Sets the credentials used to authenticate with the proxy server.
+   * 
+   * This method has no effect unless a proxy address has been configured via
+   * [[POP3.proxy]].
+   * 
+   * @param string username The login username for the proxy account.
+   * @param string password The password for the proxy account.
+   * @returns POP3
+   */
+  proxy_auth(username, password) {
+    if !is_string(username)
+      raise TypeError('string expected in argument 1 (username)')
+    if !is_string(password)
+      raise TypeError('string expected in argument 2 (password)')
+
+    self._proxy_user = username
+    self._proxy_pass = password
+    return self
+  }
+
+  /**
+   * Sets the TLS mode for the POP3 connection.
+   * 
+   * Accepted values are the `TLS_*` constants exported by this module:
+   * [[mail.TLS_TRY]] (default), [[mail.TLS_CONTROL]], [[mail.TLS_ALL]], or
+   * [[mail.TLS_NONE]].
+   * 
+   * @param number mode One of the `mail.TLS_*` constants.
+   * @returns POP3
+   */
+  tls(mode) {
+    if !is_number(mode)
+      raise TypeError('number expected in argument 1 (mode)')
+    self._tls = mode
+    self._base_url = '${self._tls == constants.TLS_ALL ? "pop3s" : "pop3"}://${self._host}:${self._port}'
+    return self
+  }
+
+  /**
+   * Enables or disables verbose debug output for the underlying transport.
+   * 
+   * When enabled, low-level connection details are printed to standard output,
+   * which is useful when diagnosing connectivity issues.
+   * 
+   * @param bool enabled `true` to enable debug output, `false` to disable it. (Default: `false`)
+   * @returns POP3
+   */
+  debug(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._debug = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the remote server's SSL/TLS peer certificate is verified.
+   * 
+   * Disabling verification is not recommended in production environments as it
+   * opens the connection to man-in-the-middle attacks.
+   * 
+   * @param bool enabled `true` to verify the peer certificate. (Default: `false`)
+   * @returns POP3
+   */
+  verify_peer(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_peer = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the remote server's SSL/TLS hostname is verified against
+   * the certificate's Common Name or Subject Alternative Names.
+   * 
+   * @param bool enabled `true` to verify the host certificate. (Default: `false`)
+   * @returns POP3
+   */
+  verify_host(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_host = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Configures an HTTP or SOCKS proxy through which all POP3 traffic is routed.
+   * 
+   * Provide proxy credentials separately via [[POP3.proxy_auth]].
+   * 
+   * @param string address The full proxy URL, e.g. `'http://proxy.example.com:8080'`.
+   * @returns POP3
+   */
+  proxy(address) {
+    if !is_string(address)
+      raise TypeError('string expected in argument 1 (address)')
+    self._proxy = address
+    return self
+  }
+
+  /**
+   * Controls whether the proxy server's SSL/TLS peer certificate is verified.
+   * 
+   * When not explicitly set, this inherits the value of [[POP3.verify_peer]].
+   * 
+   * @param bool enabled `true` to verify the proxy peer certificate.
+   * @returns POP3
+   */
+  verify_proxy_peer(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_proxy_peer = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the proxy server's SSL/TLS hostname is verified.
+   * 
+   * When not explicitly set, this inherits the value of [[POP3.verify_host]].
+   * 
+   * @param bool enabled `true` to verify the proxy host certificate.
+   * @returns POP3
+   */
+  verify_proxy_host(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_proxy_host = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Sets the maximum time, in milliseconds, to wait for the server to respond
+   * before aborting the connection.
+   * 
+   * @param number ms Timeout duration in milliseconds. (Default: `30000`)
+   * @returns POP3
+   */
+  timeout(ms) {
+    if !is_number(ms)
+      raise TypeError('number expected in argument 1 (ms)')
+    self._timeout = ms
+    return self
+  }
+
+  /**
+   * Executes a raw POP3 command.
    * 
    * @param string command The command to execute.
    * @param string? path The path segment of the request url.
@@ -238,7 +400,7 @@ class POP3 {
   }
 
   /**
-   * Does nothing. It merely ask the server to reply with a positive response.
+   * Does nothing. It merely asks the server to reply with a positive response.
    * 
    * @note It's useful for a keep-alive.
    */
@@ -247,7 +409,7 @@ class POP3 {
   }
 
   /**
-   * Instructs the server to unmark any messages have been marked as deleted.
+   * Instructs the server to unmark any messages that have been marked as deleted.
    */
   rset() {
     return self.exec('RSET', nil, true)
@@ -290,14 +452,15 @@ class POP3 {
 
 
 /**
- * Returns a new instance of the POP3 class with the given options (if any) passed 
- * to the constructor.
+ * Returns a new [[mail.POP3]] instance configured to connect to __host__ on __port__.
  * 
+ * This is a convenience factory equivalent to `POP3(host, port)`.
+ * 
+ * @param string host The hostname or IP address of the POP3 server. (Default: `'localhost'`)
+ * @param number port The port number of the POP3 server. (Default: `110`)
  * @returns POP3
  * @default
  */
-def pop3(options) {
-  if options != nil and !is_dict(options)
-    raise TypeError('dictionary expected as argument to constructor')
-  return POP3(options)
+def pop3(host, port) {
+  return POP3(host, port)
 }

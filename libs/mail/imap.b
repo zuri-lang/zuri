@@ -14,63 +14,64 @@ var _flags_regex = '/\((\\\?([^)]+))?\)/'
 var _list_regex = '/^[*] LIST \(\\\?([^)]*)\) "([^"]+)" (.*)$/'
 
 /**
- * The Imap class provides an interface for connecting to an IMAP (Internet Mail Access Protocol) 
- * server and interacting with the server via the IMAP protocol.
+ * The IMAP class provides an interface for connecting to an IMAP (Internet Mail Access Protocol)
+ * server and interacting with it via the IMAP protocol.
  * 
- * This class includes operations for creating, deleting, and renaming mailboxes, checking for new 
- * messages, permanently removing messages, setting and clearing flags searching, and selective 
+ * This class includes operations for creating, deleting, and renaming mailboxes, checking for new
+ * messages, permanently removing messages, setting and clearing flags, searching, and selective
  * fetching of message attributes, texts, and portions.
+ * 
+ * Configuration is applied through chainable setter methods. Only the server
+ * __host__ and __port__ are accepted at construction time.
+ * 
+ * ### Example
+ * 
+ * ```blade
+ * import mail
+ * 
+ * var client = mail.IMAP('imap.example.com', 993)
+ *   .auth('user@example.com', 's3cr3t')
+ *   .tls(mail.TLS_ALL)
+ * 
+ * var messages = client.search('UNSEEN', 'INBOX')
+ * client.quit()
+ * ```
  */
-class Imap {
+class IMAP {
+  var _username
+  var _password
+  var _tls = constants.TLS_TRY
+  var _debug = false
+  var _verify_peer = false
+  var _verify_host = false
+  var _proxy
+  var _proxy_user
+  var _proxy_pass
+  var _verify_proxy_peer = false
+  var _verify_proxy_host = false
+  var _timeout = 30000  # in milliseconds (default = 30s)
+
   var _curl
   var _base_url
 
   /**
-   * The Imap class accepts a dictionary that can be used to configure how 
-   * it behaves. The dictionary can contain one or more of the following.
+   * Creates a new IMAP client that will connect to __host__ on __port__.
    * 
-   * - __host__: The host address of the Imap server. (Default: localhost)
-   * - __port__: The port number of the Imap server. (Default: 143)
-   * - __username__: The access username for the Imap user.
-   * - __password__: The password for the connection user.
-   * - __tls__: The TLS mode of the connection. One of [[ssl.TLS_TRY]] (default), [[ssl.TLS_CONTROL]], 
-   *    [[ssl.TLS_ALL]] or [[ssl.TLS_NONE]].
-   * - __debug__: Whether to print debug information or not. (Default: false)
-   * - __verify_peer__: If the peer certificate should be verified or not. (Default: false)
-   * - __verify_host__: If the host certificate should be verified or not. (Default: false)
-   * - __proxy__: The address of the proxy server if any.
-   * - __proxy_username__: The username for the proxy connection.
-   * - __proxy_password__: The password for the user of the proxy connection.
-   * - __verify_proxy_peer__: If the peer certificate of the proxy should be verified or 
-   *    not. (Default: The value of __verify_peer__)
-   * - __verify_proxy_host__: If the host certificate of the proxy should be verified or 
-   *    not. (Default: The value of __verify_host__)
-   * - __timeout__: The request timeout in milliseconds. (Default: 30,000)
+   * All further configuration (credentials, TLS mode, proxy, timeouts, etc.)
+   * is applied via the chainable setter methods on this class.
    * 
-   * @param dict? options
+   * @param string host The hostname or IP address of the IMAP server. (Default: `'localhost'`)
+   * @param number port The port number of the IMAP server. (Default: `143`)
    * @constructor
    */
-  Imap(options) {
-    if options != nil and !is_dict(options)
-      raise TypeError('dictionary expected as argument to constructor')
-    if !options options = {}
+  IMAP(host, port) {
+    if host != nil and !is_string(host)
+      raise TypeError('string expected in argument 1 (host)')
+    if port != nil and !is_number(port)
+      raise TypeError('number expected in argument 2 (port)')
 
-    
-    self._host = options.get('host', 'localhost')
-    self._port = options.get('port', 143)
-    self._username = options.get('username', nil)
-    self._password = options.get('password', nil)
-    self._tls = options.get('tls', constants.TLS_TRY)
-    self._debug = options.get('debug', false)
-    self._verify_peer = options.get('verify_peer', false)
-    self._verify_host = options.get('verify_host', false)
-    self._proxy = options.get('proxy', nil)
-    self._proxy_user = options.get('proxy_username', nil)
-    self._proxy_pass = options.get('proxy_password', nil)
-    self._verify_proxy_peer = options.get('verify_proxy_peer', self._verify_peer)
-    self._verify_proxy_host = options.get('verify_proxy_host', self._verify_host)
-    self._timeout = options.get('timeout', 30000)  # in milliseconds (default = 30s)
-
+    self._host = host ? host : 'localhost'
+    self._port = port ? port : 143
     self._base_url = '${self._tls == constants.TLS_ALL ? "imaps" : "imap"}://${self._host}:${self._port}'
   }
 
@@ -130,7 +131,7 @@ class Imap {
             }
         }
         when 'search' {
-          line = line.replace('/\\r?\\n/', '').trim().replace('* SEARCH ', '', false)
+          line = line.replace('/\r?\n/', '').trim().replace('* SEARCH ', '', false)
           if line {
             list.extend(line.split(' '))
           }
@@ -142,7 +143,7 @@ class Imap {
   }
 
   _examine(data) {
-    var lines = data.split('/\\r?\\n/')
+    var lines = data.split('/\r?\n/')
 
     var result = {
       flags: [],
@@ -181,7 +182,169 @@ class Imap {
   }
 
   /**
-   * Executes an IMAP command.
+   * Sets the credentials used to authenticate with the IMAP server.
+   * 
+   * @param string username The login username for the IMAP account.
+   * @param string password The password for the IMAP account.
+   * @returns IMAP
+   */
+  auth(username, password) {
+    if !is_string(username)
+      raise TypeError('string expected in argument 1 (username)')
+    if !is_string(password)
+      raise TypeError('string expected in argument 2 (password)')
+
+    self._username = username
+    self._password = password
+    return self
+  }
+
+  /**
+   * Sets the credentials used to authenticate with the proxy server.
+   * 
+   * This method has no effect unless a proxy address has been configured via
+   * [[IMAP.proxy]].
+   * 
+   * @param string username The login username for the proxy account.
+   * @param string password The password for the proxy account.
+   * @returns IMAP
+   */
+  proxy_auth(username, password) {
+    if !is_string(username)
+      raise TypeError('string expected in argument 1 (username)')
+    if !is_string(password)
+      raise TypeError('string expected in argument 2 (password)')
+
+    self._proxy_user = username
+    self._proxy_pass = password
+    return self
+  }
+
+  /**
+   * Sets the TLS mode for the IMAP connection.
+   * 
+   * Accepted values are the `TLS_*` constants exported by this module:
+   * [[mail.TLS_TRY]] (default), [[mail.TLS_CONTROL]], [[mail.TLS_ALL]], or
+   * [[mail.TLS_NONE]].
+   * 
+   * @param number mode One of the `mail.TLS_*` constants.
+   * @returns IMAP
+   */
+  tls(mode) {
+    if !is_number(mode)
+      raise TypeError('number expected in argument 1 (mode)')
+    self._tls = mode
+    self._base_url = '${self._tls == constants.TLS_ALL ? "imaps" : "imap"}://${self._host}:${self._port}'
+    return self
+  }
+
+  /**
+   * Enables or disables verbose debug output for the underlying transport.
+   * 
+   * When enabled, low-level connection details are printed to standard output,
+   * which is useful when diagnosing connectivity issues.
+   * 
+   * @param bool enabled `true` to enable debug output, `false` to disable it. (Default: `false`)
+   * @returns IMAP
+   */
+  debug(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._debug = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the remote server's SSL/TLS peer certificate is verified.
+   * 
+   * Disabling verification is not recommended in production environments as it
+   * opens the connection to man-in-the-middle attacks.
+   * 
+   * @param bool enabled `true` to verify the peer certificate. (Default: `false`)
+   * @returns IMAP
+   */
+  verify_peer(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_peer = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the remote server's SSL/TLS hostname is verified against
+   * the certificate's Common Name or Subject Alternative Names.
+   * 
+   * @param bool enabled `true` to verify the host certificate. (Default: `false`)
+   * @returns IMAP
+   */
+  verify_host(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_host = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Configures an HTTP or SOCKS proxy through which all IMAP traffic is routed.
+   * 
+   * Provide proxy credentials separately via [[IMAP.proxy_auth]].
+   * 
+   * @param string address The full proxy URL, e.g. `'http://proxy.example.com:8080'`.
+   * @returns IMAP
+   */
+  proxy(address) {
+    if !is_string(address)
+      raise TypeError('string expected in argument 1 (address)')
+    self._proxy = address
+    return self
+  }
+
+  /**
+   * Controls whether the proxy server's SSL/TLS peer certificate is verified.
+   * 
+   * When not explicitly set, this inherits the value of [[IMAP.verify_peer]].
+   * 
+   * @param bool enabled `true` to verify the proxy peer certificate.
+   * @returns IMAP
+   */
+  verify_proxy_peer(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_proxy_peer = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Controls whether the proxy server's SSL/TLS hostname is verified.
+   * 
+   * When not explicitly set, this inherits the value of [[IMAP.verify_host]].
+   * 
+   * @param bool enabled `true` to verify the proxy host certificate.
+   * @returns IMAP
+   */
+  verify_proxy_host(enabled) {
+    if enabled != nil and !is_bool(enabled)
+      raise TypeError('boolean expected in argument 1 (enabled)')
+    self._verify_proxy_host = enabled == nil ? true : enabled
+    return self
+  }
+
+  /**
+   * Sets the maximum time, in milliseconds, to wait for the server to respond
+   * before aborting the connection.
+   * 
+   * @param number ms Timeout duration in milliseconds. (Default: `30000`)
+   * @returns IMAP
+   */
+  timeout(ms) {
+    if !is_number(ms)
+      raise TypeError('number expected in argument 1 (ms)')
+    self._timeout = ms
+    return self
+  }
+
+  /**
+   * Executes a raw IMAP command.
    * 
    * @param string command The command to execute.
    * @param string? path The path segment of the request url.
@@ -315,11 +478,11 @@ class Imap {
    * Zero or more dictionaries are returned, containing the name attributes, hierarchy delimiter, 
    * and name. 
    * 
-   * An empty ("" string) _name_ argument indicates that the mailbox name is interpreted 
+   * An empty (`""` string) _name_ argument indicates that the mailbox name is interpreted 
    * as by SELECT. A non-empty _name_ argument is the name of a mailbox or a level of mailbox 
    * hierarchy, and indicates the context in which the mailbox name is interpreted. 
    * 
-   * An empty ("" string) pattern argument is a special request to return the hierarchy delimiter 
+   * An empty (`""` string) pattern argument is a special request to return the hierarchy delimiter 
    * and the root name of the name given in the reference.
    * 
    * The pattern character `*` is a wildcard, and matches zero or more characters at this position.  
@@ -398,7 +561,7 @@ class Imap {
    * and returns `true` if it succeeds or `false` otherwise.
    * 
    * > NOTE:
-   *    This isn’t a copy/move command, you must supply a full message body to 
+   *    This isn't a copy/move command, you must supply a full message body to 
    *    append.
    * @param string folder
    * @param Message message
@@ -572,14 +735,15 @@ class Imap {
 
 
 /**
- * Returns a new instance of the Imap class with the given options (if any) passed 
- * to the constructor.
+ * Returns a new [[mail.IMAP]] instance configured to connect to __host__ on __port__.
  * 
- * @returns Imap
+ * This is a convenience factory equivalent to `IMAP(host, port)`.
+ * 
+ * @param string host The hostname or IP address of the IMAP server. (Default: `'localhost'`)
+ * @param number port The port number of the IMAP server. (Default: `143`)
+ * @returns IMAP
  * @default
  */
-def imap(options) {
-  if options != nil and !is_dict(options)
-    raise TypeError('dictionary expected as argument to constructor')
-  return Imap(options)
+def imap(host, port) {
+  return IMAP(host, port)
 }

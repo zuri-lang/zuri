@@ -240,7 +240,8 @@ class Scanner {
           while self._peek() != '\n' and !self._is_at_end()
             self._advance()
           self._add_token(TokenType.COMMENT)
-          self._advance()
+          if !self._is_at_end()
+            self._advance()
           self._start = self._current
         }
 
