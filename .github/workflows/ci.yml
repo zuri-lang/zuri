@@ -71,7 +71,7 @@ jobs:
           path: ${{github.workspace}}/blade
 
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - name: Setup cmake
         uses: lukka/get-cmake@v4.2.2

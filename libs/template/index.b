@@ -35,15 +35,36 @@
  * 
  * ### Comments
  * 
- * Wire inherits HTMLs comments using the same syntax `<!-- ... -->`. It is important to note 
+ * Wire inherits HTML's comments using the same syntax `<!-- ... -->`. It is important to note 
  * that Wire does not render comments in the output HTML. For web applications, this helps you 
- * to write server side comments in your Wire files without it getting to the frontend since 
+ * to write server side comments in your Wire files without them getting to the frontend since 
  * Wire is backend code.
  * 
  * For example, the code below should return an empty string.
  * 
  * ```blade
  * tpl.render_string('<!-- HTML or Wire comment? -->')
+ * ```
+ * 
+ * #### Multi-Line Comments
+ * 
+ * Comments can span multiple lines:
+ * 
+ * ```wire
+ * <!--
+ *   This is a multi-line comment.
+ *   It will not appear in the rendered output.
+ *   Useful for documenting template sections.
+ * -->
+ * ```
+ * 
+ * #### Comments with Variables
+ * 
+ * You can use variables and expressions in comments without them being evaluated:
+ * 
+ * ```wire
+ * <!-- This section displays user: {{ user.name }} -->
+ * <p>The comment above won't render, even though it has variables.</p>
  * ```
  * 
  * ### Variables
@@ -60,6 +81,8 @@
  * > - The `<div>` and `</div>` surround the variable and are not part of the variable.
  * > - The spaces around the variable are just formatting and are not required.
  * 
+ * #### Variables in Attributes
+ * 
  * The exception to this is when passing a variable to a reserved attribute such as `x-key`. 
  * In this case, you'll need to omit the surrounding braces. 
  * 
@@ -70,9 +93,47 @@
  * ```
  * 
  * As shown in the example above, variables can occur anywhere in a Wire template including in 
- * element attributes.
+ * element attributes. When used in regular HTML attributes (non-reserved), the `{{` and `}}` syntax 
+ * is still required:
  * 
- * To print the exact characters `{{ myvar }}` if that's what you actually mean and stop if from 
+ * ```wire
+ * <a href="/user/{{ user_id }}" title="{{ full_name }}">Link</a>
+ * ```
+ * 
+ * #### Nested Property Access
+ * 
+ * Wire supports accessing nested properties using dot notation. This allows you to access properties 
+ * of objects and nested dictionaries:
+ * 
+ * ```blade
+ * var user = {name: 'John', address: {city: 'New York', zip: '10001'}}
+ * tpl.render_string('{{ user.name }} lives in {{ user.address.city }}', {user})
+ * ```
+ * 
+ * Output:
+ * 
+ * ```wire
+ * John lives in New York
+ * ```
+ * 
+ * #### Array Index Access
+ * 
+ * You can also access array elements by index using numeric indices in dot notation:
+ * 
+ * ```blade
+ * var items = ['apple', 'banana', 'cherry']
+ * tpl.render_string('First: {{ items.0 }}, Last: {{ items.2 }}', {items})
+ * ```
+ * 
+ * Output:
+ * 
+ * ```wire
+ * First: apple, Last: cherry
+ * ```
+ * 
+ * #### Escaping Variables
+ * 
+ * To print the exact characters `{{ myvar }}` if that's what you actually mean and stop it from 
  * being interpreted as a variable, you'll need to escape the first `{` with the percent sign `%`. 
  * 
  * For example:
@@ -87,12 +148,27 @@
  * <div>{{ myvar }}</div>
  * ```
  * 
+ * #### Undefined Variables
+ * 
+ * If a variable is accessed that was not provided in the variables dictionary, Wire will not raise 
+ * an error. Instead, it will treat the undefined variable as an empty string in most contexts, or 
+ * as falsy when used in conditional expressions (like `x-if` or `x-not`). This allows you to safely 
+ * use optional variables in your templates:
+ * 
+ * ```blade
+ * tpl.render_string('<div>{{ optional_var }}</div>')
+ * ```
+ * 
+ * This will render as an empty div instead of throwing an error.
+ * 
  * ### Expressions and Modifiers
  * 
  * Expressions in Wire are a feature that allows modification of value directly in the template. 
- * An __Expression__ is value that has been modified by passing it through a functions called 
+ * An __Expression__ is value that has been modified by passing it through functions called 
  * __Modifiers__ using the pipe (`|`) character. Wire comes with a lot of built-in functions for 
- * creating expressions and they are all described at below.
+ * creating expressions and they are all described below.
+ * 
+ * #### Basic Usage
  * 
  * For example:
  * 
@@ -100,11 +176,23 @@
  * <div>{{ name|length }}</div>
  * ```
  * 
- * In the example above, the name variable was expressed as its length by passing it into through 
- * the _length_ modifier function. If _name_ contains the value `John Doe`, then the value printed 
+ * In the example above, the name variable was expressed as its length by passing it through the 
+ * _length_ modifier function. If _name_ contains the value `John Doe`, then the value printed 
  * will be `8`.
  * 
- * The built-in modifiers are documented under [Template Functions](#template-functions).
+ * #### Chaining Modifiers
+ * 
+ * Multiple modifiers can be chained together by using multiple pipe (`|`) characters. The output 
+ * of the first modifier becomes the input to the next:
+ * 
+ * ```wire
+ * <div>{{ text|lower|length }}</div>
+ * ```
+ * 
+ * In this example, if `text` is `Hello World`, it will be converted to lowercase first (`hello world`), 
+ * and then the length modifier will return `11`.
+ * 
+ * #### Modifiers with Arguments
  * 
  * Some expression modifiers require that a value is passed. To pass value to a modifier, use the 
  * equal (`=`) sign. For example:
@@ -122,21 +210,44 @@
  * {{ age|is=30.5 }}
  * ```
  * 
+ * #### The Built-in Modifiers
+ * 
+ * The built-in modifiers are documented under [Template Functions](#template-functions).
+ * 
+ * 
  * ### If... and If not...
  * 
  * Wire implements conditionals via the `x-if` and `x-not` attribute that can be attached to any HTML 
- * element. This attributes are never returned in the compiled HTML output and decides whether an
+ * element. These attributes are never returned in the compiled HTML output and decides whether an
  * element will be printed or not. The `x-if` attribute evaluates a variable or expression and will only
  * print the element to which it is attached and its children if the result of the expression or variable 
  * evaluation returns a value that is boolean `true` in Blade. The `x-not` attribute does the reverse of
  * this (i.e. it only prints if the evaluation returns Blade boolean `false`).
  * 
+ * #### Using x-if
+ * 
  * ```blade
  * tpl.render_string('<div x-if="name">Hello</div>')
  * ```
  * 
- * The example above will return an empty string since the variable name was never declared. However, the 
- * reverse is the case if the attribute was `x-not`. 
+ * The example above will return an empty string since the variable name was never declared and therefore 
+ * evaluates to a falsy value.
+ * 
+ * When the variable is provided and truthy:
+ * 
+ * ```blade
+ * tpl.render_string('<div x-if="name">Hello</div>', {name: true})
+ * ```
+ * 
+ * This will return:
+ * 
+ * ```wire
+ * <div>Hello</div>
+ * ```
+ * 
+ * #### Using x-not
+ * 
+ * However, the reverse is the case if the attribute was `x-not`. 
  * 
  * For example:
  * 
@@ -144,7 +255,36 @@
  * tpl.render_string('<div x-not="name">Hello</div>')
  * ```
  * 
- * The example above will return `<div>Hello</div>`.
+ * The example above will return `<div>Hello</div>` since the variable name is undefined and therefore 
+ * falsy, which satisfies the `x-not` condition.
+ * 
+ * #### Conditionals with Expressions
+ * 
+ * Both `x-if` and `x-not` support expressions with modifiers, allowing you to create more complex conditions:
+ * 
+ * ```blade
+ * tpl.render_string(
+ *   '<div x-if="items|length">Items found</div>',
+ *   {items: ['a', 'b', 'c']}
+ * )
+ * ```
+ * 
+ * This will check if the length of items is truthy (i.e., greater than 0).
+ * 
+ * #### Combining with Other Attributes
+ * 
+ * The `x-if` and `x-not` attributes can be combined with other Wire attributes like `x-for`:
+ * 
+ * ```blade
+ * tpl.render_string(
+ *   '<div x-for="items" x-value="item" x-if="item|is=active">
+ *     {{ item }}
+ *   </div>',
+ *   {items: [{name: 'Home', active: true}, {name: 'About', active: false}]}
+ * )
+ * ```
+ * 
+ * In this case, the conditional is evaluated on each iteration.
  * 
  * ### Loops
  * 
@@ -155,6 +295,8 @@
  * 
  * The _x-for_ attribute must declare a variable or expression that evaluates into an iterable (such as a 
  * string, list, dictionary etc.).
+ * 
+ * #### Basic Loop
  * 
  * For example:
  * 
@@ -171,6 +313,8 @@
  * > The original `<div>` was replicated three times without the `x-for` attribute. 
  * > __Wire attributes are applied to an element and their children not the children only.__
  * 
+ * #### Accessing Loop Values
+ * 
  * Here is an example using the `x-value` attribute to print the items in a list.
  * 
  * ```blade
@@ -182,6 +326,8 @@
  * ```wire
  * <div>apple</div><div>mango</div>
  * ```
+ * 
+ * #### Accessing Loop Index/Key
  * 
  * We could decide to print the index as well by adding a new variable using the `x-key` attribute.
  * 
@@ -204,6 +350,44 @@
  * </div>
  * ```
  * 
+ * #### Looping Over Dictionaries
+ * 
+ * When looping over a dictionary, the `x-key` attribute receives the dictionary key and the 
+ * `x-value` attribute receives the dictionary value:
+ * 
+ * ```blade
+ * tpl.render_string(
+ *   '<div x-for="user" x-key="key" x-value="val">
+ *     <span>{{ key }}</span>: <span>{{ val }}</span>
+ *   </div>',
+ *   {user: {name: 'John', age: 30}}
+ * )
+ * ```
+ * 
+ * Output:
+ * 
+ * ```wire
+ * <div>
+ *   <span>name</span>: <span>John</span>
+ * </div><div>
+ *   <span>age</span>: <span>30</span>
+ * </div>
+ * ```
+ * 
+ * #### Looping Over Strings
+ * 
+ * You can also loop over strings, iterating over each character:
+ * 
+ * ```blade
+ * tpl.render_string('<span x-for="text" x-value="char">{{ char }}</span>', {text: 'Hello'})
+ * ```
+ * 
+ * Output:
+ * 
+ * ```wire
+ * <span>H</span><span>e</span><span>l</span><span>l</span><span>o</span>
+ * ```
+ * 
  * ### Wiring templates
  * 
  * While most of the examples here use the `render_string()` function to give a practical approach 
@@ -211,15 +395,23 @@
  * files is a more powerful and conventional method of using Wire templates. Not only because they 
  * allow loading templates from files, but also because they allow including other template files in 
  * a template file via the builtin `<include />` tag. The `include` tag allows wiring multiple Wires 
- * together to create a comprehensive UI layout hierarchy and is quite intuitive to use. 
+ * together to create a comprehensive UI layout hierarchy and is quite intuitive to use.
+ * 
+ * #### Template Composition with `<include />`
+ * 
+ * The `<include />` tag enables template composition by inlining other template files at the point 
+ * where the tag appears. This is useful for breaking large templates into smaller, reusable components. 
+ * This approach is best used for small reusable fragments (like headers, navigation bars, sidebars, etc.) 
+ * rather than page-level organization, where template inheritance (see [[#template-inheritance]]) is 
+ * more appropriate.
  * 
  * Let's consider a simple use case: 
  * 
- * In a website for a client all pages UTF-8 enabled and are mobile first. This leaves room for a set 
+ * In a website for a client all pages are UTF-8 enabled and are mobile first. This leaves room for a set 
  * of `<meta>` tags that will need to be on every page of the website and in practice it will soon 
  * become burdensome to have to keep repeating the `meta` tags across all page templates. To reduce
  * this code duplication, we can have a file located at the template root directory (See 
- * [[Template.set_root]]) that contains all shared `meta` tags as shown in the sample below and include 
+ * [[Template.set_root]]) that contains all shared `meta>` tags as shown in the sample below and include 
  * this file in every other template.
  * 
  * ```wire
@@ -229,7 +421,7 @@
  * <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
  * ```
  * 
- * This template can the be imported in another file with the `include` tag.
+ * This template can then be imported in another file with the `include` tag.
  * 
  * ```wire
  * <!-- templates/layout.html -->
@@ -242,15 +434,307 @@
  * example above the `path` argument did not start with "templates/". This is because when decoding the 
  * include path, the library first searches for files in the template root directory and if a matching 
  * file is found, that file will be rendered. If none is found, it will interpret the path as a relative 
- * path first then as an absolute path if no match is found. 
+ * path first then as an absolute path if no match is found.
  * 
- * See [[Template.render]] for more information.
+ * #### Include vs Extend
+ * 
+ * It's important to understand the difference between `<include />` and `<extend>`:
+ * 
+ * - **`<include />`** - Includes the content of another template inline at the point where the tag 
+ *   appears. The included template is rendered and its output is inserted in place of the `<include />` 
+ *   tag. Use this for including reusable fragments or components.
+ * 
+ * - **`<extend>`** - Establishes an inheritance relationship where a child template extends a base 
+ *   template's structure and provides overrides for named slots. The child template's structure replaces 
+ *   the parent's structure, with specific sections overridden by the child. Use this for organizing 
+ *   page layouts and avoiding repetition of page-level HTML structure.
+ * 
+ * For more information on template inheritance, see [[#template-inheritance]].
+ * 
+ * 
+ * ### Template Inheritance
+ * 
+ * Wire templates support template inheritance, which is a powerful mechanism for building template 
+ * hierarchies and avoiding code duplication across multiple templates. Template inheritance allows you 
+ * to define a base layout template that child templates can extend, override specific sections, and reuse 
+ * common structure.
+ * 
+ * #### How It Works
+ * 
+ * Template inheritance in Wire uses three key components:
+ * 
+ * 1. **Base Templates** - Templates that define the overall structure and declare content slots
+ * 2. **Child Templates** - Templates that extend base templates and provide content for the slots
+ * 3. **Slots** - Named sections in the base template that can be overridden by child templates
+ * 
+ * #### The `<declare>` Tag
+ * 
+ * The `<declare>` tag is used in base templates to define named content slots that can be overridden 
+ * by child templates. A `<declare>` tag must have a `name` attribute that uniquely identifies the slot 
+ * within the template.
+ * 
+ * Example of a base template:
+ * 
+ * ```wire
+ * <!-- templates/layout.html -->
+ * <!DOCTYPE html>
+ * <html>
+ * <head>
+ *   <title>My Website</title>
+ *   <declare name="head"></declare>
+ * </head>
+ * <body>
+ *   <header>
+ *     <declare name="header">
+ *       <h1>Welcome</h1>
+ *     </declare>
+ *   </header>
+ *   <main>
+ *     <declare name="content"></declare>
+ *   </main>
+ *   <footer>
+ *     <declare name="footer">
+ *       <p>&copy; 2026 My Website</p>
+ *     </declare>
+ *   </footer>
+ * </body>
+ * </html>
+ * ```
+ * 
+ * In the example above, the base template declares four slots:
+ * - `head` - For additional head content (currently empty, will use default)
+ * - `header` - For custom header content (has default: `<h1>Welcome</h1>`)
+ * - `content` - For page content (empty, must be defined by child)
+ * - `footer` - For footer content (has default: copyright text)
+ * 
+ * #### The `<define>` Tag
+ * 
+ * The `<define>` tag is used in child templates to provide content for slots declared in the base 
+ * template. A `<define>` tag must have a `name` attribute that matches the name of a `<declare>` 
+ * tag in the base template.
+ * 
+ * Example of a child template:
+ * 
+ * ```wire
+ * <!-- templates/home.html -->
+ * <extend base="layout.html">
+ *   <define name="head">
+ *     <meta name="description" content="Welcome to our home page">
+ *   </define>
+ *   <define name="content">
+ *     <h2>Hello, {{ name }}!</h2>
+ *     <p>This is the home page.</p>
+ *   </define>
+ * </extend>
+ * ```
+ * 
+ * #### The `<extend>` Tag
+ * 
+ * The `<extend>` tag is used in a child template to specify the base template it extends. The `base` 
+ * attribute is required and must point to a valid template file. The `<extend>` tag should be the root 
+ * element of the child template and must contain `<define>` tags for the slots you want to override.
+ * 
+ * ```blade
+ * tpl.render('home.html', {name: 'Alice'})
+ * ```
+ * 
+ * The code above will render with the structure of `layout.html`, but with the content slots replaced 
+ * by the definitions in `home.html`. The output would be:
+ * 
+ * ```html
+ * <!DOCTYPE html>
+ * <html>
+ * <head>
+ *   <title>My Website</title>
+ *   <meta name="description" content="Welcome to our home page">
+ * </head>
+ * <body>
+ *   <header>
+ *     <h1>Welcome</h1>
+ *   </header>
+ *   <main>
+ *     <h2>Hello, Alice!</h2>
+ *     <p>This is the home page.</p>
+ *   </main>
+ *   <footer>
+ *     <p>&copy; 2026 My Website</p>
+ *   </footer>
+ * </body>
+ * </html>
+ * ```
+ * 
+ * #### Partial Overrides
+ * 
+ * You don't need to define content for every declared slot. Slots that are not defined in the child 
+ * template will use their default content from the base template (or be empty if no default was provided):
+ * 
+ * ```wire
+ * <!-- templates/special.html -->
+ * <extend base="layout.html">
+ *   <define name="content">
+ *     <p>This is a special page that only defines content.</p>
+ *   </define>
+ * </extend>
+ * ```
+ * 
+ * In this example, the `head`, `header`, and `footer` slots will retain their defaults from the base 
+ * template, while only the `content` slot is customized.
+ * 
+ * #### Handling Duplicate Definitions
+ * 
+ * Wire enforces strict naming conventions for slot definitions to prevent accidental errors. If you 
+ * accidentally define the same slot twice in a child template, an exception will be raised:
+ * 
+ * ```blade
+ * # This will raise an exception
+ * tpl.render_string(
+ *   '<extend base="layout.html">
+ *     <define name="content"><p>First</p></define>
+ *     <define name="content"><p>Second</p></define>
+ *   </extend>'
+ * )
+ * ```
+ * 
+ * **Exception:** `Duplicate definition found for "content". Layout definitions must be unique within a single scope.`
+ * 
+ * To intentionally override a previously defined slot, use the `override` attribute:
+ * 
+ * ```wire
+ * <extend base="layout.html">
+ *   <define name="content"><p>First</p></define>
+ *   <define name="content" override="true"><p>Second</p></define>
+ *   <!-- Or simply override without any argument as is valid in html -->
+ * </extend>
+ * ```
+ * 
+ * With the `override` attribute, the second definition will completely replace the first.
+ * 
+ * #### Multi-Level Inheritance
+ * 
+ * Wire supports multi-level template inheritance where a child template can itself be extended by another 
+ * template. For example:
+ * 
+ * ```wire
+ * <!-- templates/base.html -->
+ * <html>
+ *   <body>
+ *     <declare name="main">
+ *       <p>Default content</p>
+ *     </declare>
+ *   </body>
+ * </html>
+ * ```
+ * 
+ * ```wire
+ * <!-- templates/middle.html -->
+ * <extend base="base.html">
+ *   <define name="main">
+ *     <section>
+ *       <declare name="section-content"></declare>
+ *     </section>
+ *   </define>
+ * </extend>
+ * ```
+ * 
+ * ```wire
+ * <!-- templates/child.html -->
+ * <extend base="middle.html">
+ *   <define name="section-content">
+ *     <h1>Final Content</h1>
+ *   </define>
+ * </extend>
+ * ```
+ * 
+ * When you render `child.html`, it will extend `middle.html`, which extends `base.html`, creating a 
+ * complete inheritance chain.
+ * 
+ * #### Important Notes
+ * 
+ * - **Placement:** It is NOT required that the root element of a child template must be the `<extend>` tag. 
+ *    The `<extend>` tag can appear anywhere in the child template and can appear multiple times in the same 
+ *    template.
+ * - **Extra Content:** Any other content inside the `<extend>` tag in a child template is appended to the 
+ *    content of the parent template.
+ * - **Slot Names:** Slot names are case-sensitive and must exactly match between `<declare>` and 
+ *   `<define>` tags.
+ * - **Variable Access:** Both base and child templates have access to the same variables passed to 
+ *   the [[Template.render]] method. Variables can be used throughout slot definitions.
+ * - **Include Within Inheritance:** You can use `<include>` tags within both base templates and 
+ *   slot definitions to further modularize your templates.
+ * - **Declare Without Default:** If a `<declare>` tag is empty (has no child elements), child templates 
+ *   must define content for it, otherwise it will render as empty.
+ * 
+ * #### Complete Example
+ * 
+ * Here's a complete working example demonstrating template inheritance:
+ * 
+ * ```blade
+ * import template
+ * 
+ * var tpl = template(true)  # auto_init enables directory creation
+ * tpl.set_root('./templates')
+ * 
+ * # Define a base template
+ * var base_template = '
+ * <!DOCTYPE html>
+ * <html>
+ * <head>
+ *   <meta charset="UTF-8">
+ *   <title>{{ title }}</title>
+ *   <declare name="extra_head"></declare>
+ * </head>
+ * <body>
+ *   <nav>
+ *     <a href="/">Home</a>
+ *   </nav>
+ *   <main>
+ *     <declare name="page_content"></declare>
+ *   </main>
+ *   <footer>
+ *     <p>Page generated on {{ date }}</p>
+ *   </footer>
+ * </body>
+ * </html>'
+ * 
+ * # Define a child template
+ * var child_template = '
+ * <extend base="base.html">
+ *   <define name="extra_head">
+ *     <meta name="keywords" content="home, welcome">
+ *   </define>
+ *   <define name="page_content">
+ *     <h1>Welcome, {{ user }}!</h1>
+ *     <p>This is your dashboard.</p>
+ *   </define>
+ * </extend>'
+ * 
+ * # Render the child template
+ * var output = tpl.render_string(
+ *   child_template,
+ *   {
+ *     title: 'Dashboard',
+ *     user: 'John',
+ *     date: '2026-05-22'
+ *   }
+ * )
+ * 
+ * echo output
+ * ```
+ * 
+ * This will output a fully rendered HTML document with the base structure and customized content.
  * 
  * ### Custom Modifiers
  * 
  * Apart from the built-in value modifiers, Wire templates allow you to add custom modifiers in a 
- * simple manner by registering them with the `register_function()` method. The example below 
- * shows an example custom modifier __reverse__ that reverses the original value as a string.
+ * simple manner by registering them with the `register_function()` method. This enables you to 
+ * encapsulate common data transformation logic in reusable template functions. Custom modifiers 
+ * accept a minimum of one argument (the value being modified) and optionally a second argument 
+ * (the modifier argument).
+ * 
+ * #### Creating a Simple Modifier
+ * 
+ * The example below shows an example custom modifier __reverse__ that reverses the original value 
+ * as a string.
  * 
  * ```blade
  * tpl.register_function('reverse', @(value) {
@@ -269,6 +753,8 @@
  * ```wire
  * <div>ognam</div>
  * ```
+ * 
+ * #### Modifiers with Arguments
  * 
  * Modifier functions can also take a second argument which will receive any argument passed to the
  * modifier. This is best expressed with an example.
@@ -295,6 +781,8 @@
  * <p>Reversed: ognam</p>
  * ```
  * 
+ * #### Nil Arguments
+ * 
  * Like regular Blade code, the argument will be `nil` if not passed and this is 
  * important information if you intend to leverage this for a library that will be used by other 
  * people. 
@@ -306,19 +794,54 @@
  * <p>: ognam</p>
  * ```
  * 
+ * To handle this gracefully, you can check for nil in your modifier function:
+ * 
+ * ```blade
+ * tpl.register_function('reverse_pretty', @(value, arg) {
+ *   var reversed = ''.join(to_list(value).reverse())
+ *   if arg
+ *     return '${arg}: ${reversed}'
+ *   else
+ *     return reversed
+ * })
+ * ```
+ * 
+ * #### Practical Example: Formatting
+ * 
+ * Here's a practical example creating a modifier for formatting prices:
+ * 
+ * ```blade
+ * tpl.register_function('price', @(value, currency) {
+ *   var fmt = currency == nil ? '$' : currency
+ *   return '${fmt}%.2f' % to_number(value)
+ * })
+ * ```
+ * 
+ * Usage in template:
+ * 
+ * ```wire
+ * <span>Price: {{ item_cost|price }}</span>
+ * <span>Price in EUR: {{ item_cost|price='€' }}</span>
+ * ```
+ * 
  * ### Custom Tags
  * 
- * As with custom modifiers the template library allows you to create and process custom tags. 
- * An example of a custom tag is the `<include />` tag previously discussed. To declare a custom 
- * element and its behavior, you need to create a function that accepts two arguments and 
- * register it with the `register_element()` method. When your custom element is matched in a 
- * template, the registered function will be called with an instance of [[template.Template]] in the first 
- * argument and the {{html}} decoded template as the second argument. Your function must then 
- * return a string representing the processed tag or a valid HTML element Blade representation as 
- * defined by the {{html}} module. 
+ * As with custom modifiers, the template library allows you to create and process custom tags 
+ * (also called custom elements). An example of a custom tag is the `<include />` tag previously 
+ * discussed. To declare a custom element and its behavior, you need to create a function that 
+ * accepts two arguments and register it with the `register_element()` method. When your custom 
+ * element is matched in a template, the registered function will be called with an instance of 
+ * the [[Template]] class in the first argument and the HTML decoded template as the second argument 
+ * (as per the {{html}} module). Your function must then return either:
+ * 
+ * 1. A string representing the processed output, or
+ * 2. A valid HTML element dictionary representation as defined by the {{html}} module, or
+ * 3. `nil` to remove the element from the output
  * 
  * > NOTE: It's more memory efficient to modify and return the same element when returning an HTML
- *    representation.
+ *    representation rather than creating a new one.
+ * 
+ * #### Creating a Simple Custom Element
  * 
  * The example below defines a custom tag _`link`_ that will always be rendered as an anchor 
  * (`<a>`) element with the class `link`.
@@ -342,7 +865,10 @@
  * <a href="bladelang.com">Blade Website</a>
  * ```
  * 
- * Below is a more complex example that returns an HTML representation in Blade instead of a string.
+ * #### Returning HTML Dictionary Representation
+ * 
+ * Below is a more complex example that returns an HTML representation as a dictionary instead of 
+ * a string. This approach is more flexible and programmatic.
  * 
  * ```blade
  * tpl.register_element('link', @(this, el) {
@@ -359,14 +885,79 @@
  * })
  * ```
  * 
- * Both code achieve the same thing. However, the later format allows for a more flexible and programmatic 
- * output that the former and is the recommended approach wherever possible.
+ * Both code achieve the same thing. However, the later format allows for a more flexible and 
+ * programmatic output that the former and is the recommended approach wherever possible.
+ * 
+ * #### Accessing Element Attributes
+ * 
+ * Use the `this.attr(element, name)` method to safely retrieve attribute values from your custom 
+ * element. This method returns the attribute value or `nil` if not found, preventing errors from 
+ * missing attributes:
+ * 
+ * ```blade
+ * tpl.register_element('badge', @(this, el) {
+ *   var type = this.attr(el, 'type')
+ *   var text = this.attr(el, 'text')
+ *   
+ *   var class_name = type ? 'badge-${type}' : 'badge-default'
+ *   
+ *   return {
+ *     type: 'element',
+ *     name: 'span',
+ *     attributes: [
+ *       { name: 'class', value: class_name }
+ *     ],
+ *     children: [
+ *       { type: 'text', content: text }
+ *     ]
+ *   }
+ * })
+ * ```
+ * 
+ * #### Conditional Element Removal
+ * 
+ * Return `nil` from a custom element function to remove the element from the output:
+ * 
+ * ```blade
+ * tpl.register_element('debug-only', @(this, el) {
+ *   # Only render in development mode
+ *   if DEBUG_MODE
+ *     return el  # Return the element as-is
+ *   else
+ *     return nil  # Remove from output
+ * })
+ * ```
+ * 
+ * #### Working with Template Variables
+ * 
+ * Custom elements can access and use template variables through the first argument (the Template 
+ * instance). You can also use nested custom elements:
+ * 
+ * ```blade
+ * tpl.register_element('greeting', @(this, el) {
+ *   # Custom elements receive the parsed HTML element
+ *   # For more advanced manipulation, see the html module documentation
+ *   return {
+ *     type: 'element',
+ *     name: 'div',
+ *     attributes: [
+ *       { name: 'class', value: 'greeting' }
+ *     ],
+ *     children: el.children  # Can reuse children from original element
+ *   }
+ * })
+ * ```
  * 
  * ### Template Functions
  * 
- * Template functions in Wire are simply modifiers that do not process any value nor accept any argument 
- * (i.e. stand-alone modifiers) and are created in the same way as we create modifiers. However, they are 
- * invoked quite differently. To invoke a template function, you need to wrap them in a `{!` and `!}` pair. 
+ * Template functions in Wire are zero-argument functions (i.e. stand-alone modifiers) that are invoked 
+ * directly without processing an input value. They are created in the same way as custom modifiers using 
+ * the `register_function()` method, but are invoked quite differently using a special syntax.
+ * 
+ * #### Basic Template Function
+ * 
+ * To invoke a template function, you need to wrap it in a `{!` and `!}` pair (similar to how variables 
+ * use `{{` and `}}`).
  * 
  * For example, consider the following template function defined to return the base url of a website.
  * 
@@ -384,9 +975,59 @@
  * 
  * The example above will return `https://localhost:8000`.
  * 
- * Like with the `{{` and `}}` pair for variables, if you really intend to write the `{!` and `!}` pair, 
- * you'll need to escape the first `{` with a `%` sign. For example, `%%{! name !}` will render as
- * `{! name !}` without processing.
+ * #### Template Functions in HTML
+ * 
+ * Template functions can be used anywhere in your template, including in element content and attributes:
+ * 
+ * ```wire
+ * <div class="container">
+ *   <a href="{! base_url !}/about">About</a>
+ *   <p>Welcome to {! site_name !}</p>
+ * </div>
+ * ```
+ * 
+ * #### Common Use Cases
+ * 
+ * Template functions are useful for:
+ * 
+ * - **Dynamic Configuration** - Return environment-specific values (URLs, API endpoints, feature flags)
+ * - **Current Time/Date** - Provide the current date or time for page generation
+ * - **Authentication Status** - Check if a user is logged in
+ * - **System Information** - Provide build version, environment name, etc.
+ * 
+ * Example combining multiple use cases:
+ * 
+ * ```blade
+ * tpl.register_function('app_version', @{ return '1.2.3' })
+ * tpl.register_function('current_year', @{ return date().year })
+ * tpl.register_function('site_url', @{ return 'https://example.com' })
+ * ```
+ * 
+ * Used in template:
+ * 
+ * ```wire
+ * <footer>
+ *   <p>&copy; {! current_year !} Example Inc. | App v{! app_version !}</p>
+ *   <p>Visit us at <a href="{! site_url !}">{! site_url !}</a></p>
+ * </footer>
+ * ```
+ * 
+ * #### Escaping Function Invocation
+ * 
+ * Like with the `{{` and `}}` pair for variables, if you really intend to write the `{!` and `!}` pair 
+ * literally without it being processed, you'll need to escape the first `{` with a `%` sign. 
+ * 
+ * For example:
+ * 
+ * ```wire
+ * <p>To call a function, use %{! function_name !}</p>
+ * ```
+ * 
+ * This will render as:
+ * 
+ * ```wire
+ * <p>To call a function, use {! function_name !}</p>
+ * ```
  */
 
 import os
@@ -399,10 +1040,156 @@ import .constants
 # create the default html config
 var void_tags = html.void_tags
 void_tags.append('include')
+void_tags.append('declare')
 
 var _default_html_config = {
   with_position: true,
   void_tags,
+}
+
+def _find_element(root, target) {
+    var results = []
+
+    # If we have a single element as the root, then we convert it to a list of elements for simplicity.
+    if is_dict(root) root = [root]
+
+    for data in root {
+      if is_list(data) {
+        results.extend(_find_element(data, target))
+        continue
+      }
+
+      # Check if data is a dict (and not nil)
+      if is_dict(data) and data.contains('type') and data.type == 'element' {
+
+        # If it's of type target
+        if data.name == target {
+          results.append(data)
+        }
+
+        # Recursively search through all children (works for both list and dicts)
+        if data.contains('children') {
+          data.children.each(@(value) {
+              results.extend(_find_element(value, target))
+          })
+        }
+      }
+    }
+
+    return results
+}
+
+def _replace_declarations(root, search, replacement) {
+  # If we have a single element as the root, then we convert it to a list of elements for simplicity.
+  if is_dict(root) root = [root]
+
+  for index, data in root {
+    if is_list(data) {
+      _replace_declarations(data, search, replacement)
+      continue
+    }
+
+    # Check if data is a dict (and not nil)
+    if is_dict(data) and data.contains('type') and data.type == search.type {
+
+      # If it's of type target
+      if data.name  == search.name and attr(data, constants.NAME_ATTR) == attr(search, constants.NAME_ATTR) {
+        # If the replacement is empty and allow_default is true, then we skip this element and 
+        # leave it represented by its children only
+        if replacement.length() == 0 {
+          if data.contains('children') and data.children.length() > 0 {
+            
+            root[index] = data.children
+            continue
+          }
+        }
+
+        root[index] = replacement
+      }
+
+      # Recursively search through all children (works for both list and dicts)
+      if data.contains('children') {
+        _replace_declarations(data.children, search, replacement)
+      }
+    }
+  }
+}
+
+def _strip_definitions(root) {
+  # If we have a single element as the root, then we convert it to a list of elements for simplicity.
+  if is_dict(root) root = [root]
+
+  var removables = []
+
+  for data in root {
+    if is_list(data) {
+      _strip_definitions(data)
+      continue
+    }
+
+    # Check if data is a dict (and not nil)
+    if is_dict(data) {
+      if data.type == 'element' {
+        if data.name == constants.DEFINE_TAG {
+          removables.append(data)
+        }
+
+        # Recursively search through all children (works for both list and dicts)
+        else if data.contains('children') {
+          _strip_definitions(data.children)
+        }
+      } 
+      
+      # Since this function will only ever be called when striping definitions from an extend tag,
+      # it is absolutely permissible and a good idea to strip out empty text nodes.
+      # This saves us a few dispatches down the line and will be extremely beneficial to large templates.
+      else if data.type == 'text' and data.content.trim() == '' {
+        removables.append(data)
+      }
+    }
+  }
+
+  for removable in removables {
+    root.remove(removable)
+  }
+
+  return root
+}
+
+def _strip_declarations(root) {
+  # If we have a single element as the root, then we convert it to a list of elements for simplicity.
+  if is_dict(root) root = [root]
+
+  var removables = []
+
+  for data in root {
+    if is_list(data) {
+      _strip_declarations(data)
+      continue
+    }
+
+    # Check if data is a dict (and not nil)
+    if is_dict(data) {
+      if data.type == 'element' {
+        # Since we strip declarations at the end of all processing, it only makes sense
+        # to strip any redundant definitions at this point too.
+        if data.name == constants.DECLARE_TAG or data.name == constants.DEFINE_TAG {
+          removables.append(data)
+        }
+
+        # Recursively search through all children (works for both list and dicts)
+        else if data.contains('children') {
+          _strip_declarations(data.children)
+        }
+      }
+    }
+  }
+
+  for removable in removables {
+    root.remove(removable)
+  }
+
+  return root
 }
 
 /**
@@ -417,7 +1204,7 @@ def attr(element, name) {
 
   # Ensure that the element is a valid HTML element as per the {{html}} module since we will be working 
   # with them and we want to avoid unexpected errors. Also ensure that the name is a string.
-  if !(is_dict(element) and !element.contains('type') and element.type == 'element') {
+  if !(is_dict(element) and element.contains('type') and element.type == 'element') {
     raise Exception('html element expected')
   }
 
@@ -433,7 +1220,7 @@ def attr(element, name) {
 
   for attr in element.attributes {
     if attr.name.lower() == name 
-      return attr
+      return attr.value == nil ? '' : attr.value
   }
 
   return nil
@@ -510,6 +1297,8 @@ class Template {
 
   # template file extension
   var _file_ext = constants.DEFAULT_EXT
+
+  var _compact = false
 
   /**
    * The constructor of the Template class.
@@ -630,7 +1419,7 @@ class Template {
       iter var i = 0; i < fn_vars.fn.length(); i++ {
         var fn
         if (fn = self._functions.get(fn_vars.fn[i], nil)) and fn {
-          content = content.replace(fn_vars[0][i], fn(), false)
+          content = content.replace(fn_vars[0][i], to_string(fn()), false)
         }
       }
     }
@@ -664,7 +1453,7 @@ class Template {
     return self._replace_funcs(content.replace('%{\x01{', '{{', false), error)
   }
 
-  _get_template_content(path) {
+  _get_template_content(path, variables) {
     var template_path = os.join_paths(self._root_dir, path)
     if !template_path.match(constants.EXT_RE) template_path += constants.DEFAULT_EXT
     var fl = file(template_path)
@@ -680,7 +1469,80 @@ class Template {
     }
   }
 
-  _extend(base, element) {}
+  _extend(base, element) {
+    var declared_nodes = _find_element(base, constants.DECLARE_TAG)
+    var defined_nodes = _find_element(element, constants.DEFINE_TAG)
+
+    if is_dict(base) base = [base]
+
+    var definitions = {}
+
+    for defined_node in defined_nodes {
+      var name = attr(defined_node, constants.NAME_ATTR)
+      var override = attr(defined_node, constants.OVERRIDE_ATTR)
+
+      if !name {
+        raise Exception('<${constants.DEFINE_TAG}> tag is missing the required "${constants.NAME_ATTR}" attribute.')
+      }
+
+      # While it is completely valid to declare the same name as many times as you want,
+      # it is forbidden to define them multiple times without an explicit override directive.
+      #
+      # In a script file, variable reassignment is normal. In a 500-line HTML template,
+      # repeating a <define> tag is usually an accident (e.g., two developers working on the
+      # same file merge their code poorly). If it silently overwrites, it leads to painful
+      # debugging.
+      #
+      # If we find more than one <define name="xyz"> tags in the same scope, we halts
+      # compilation and throws a syntax error unless the new tag specifies the `override`
+      # attribute in which case it completely replaces the existing data in the slot.
+      if definitions.contains(name) and override == nil {
+        raise Exception(
+          'Duplicate definition found for "${name}". Layout definitions must be unique within a single scope.'
+        )
+      }
+
+      # Store the node if it's unique
+      definitions[name] = defined_node
+    }
+
+    var undefined_nodes = []
+
+    for declared_node in declared_nodes {
+      var name = attr(declared_node, constants.NAME_ATTR)
+
+      if definitions.contains(name) {
+        var target_define = definitions[name]
+
+        # If the root node is same as the declared node, the we simply override base and exit
+        # This is because it would no longer be possible to have any other value except the target node.
+        # 
+        # This should be nearly impossible, but some extremely rare cases might end up here...
+        if declared_node == base {
+          base = target_define.children
+          break
+        }
+
+        _replace_declarations(base, declared_node, target_define.children)
+      } else {
+        undefined_nodes.append(declared_node)
+      }
+    }
+
+    if is_dict(element) {
+      base.extend(_strip_definitions(element.children))
+    } else {
+      base.extend(_strip_definitions(element))
+    }
+
+    # For nodes that were not defined in the child template, simply set their value to empty.
+    # This is inline with the programmatic definition of a variable that was declared, but not defined.
+    for node in undefined_nodes {
+      _replace_declarations(base, node, [])
+    }
+
+    return base
+  }
 
   _process(path, element, variables) {
     if !element return nil
@@ -705,6 +1567,10 @@ class Template {
     }
     
     if element.type == 'text' {
+
+      if self._compact and element.content.is_space()
+        return nil
+      
       # replace variables: {{var_name}}
       element.content = self._process(path, element.content, variables)
     } else {
@@ -720,17 +1586,32 @@ class Template {
           if !attrs or !attrs.contains(constants.PATH_ATTR)
             error('missing "${constants.PATH_ATTR}" attribute for ${constants.INCLUDE_TAG} tag')
 
-          element = self._get_template_content(attrs[constants.PATH_ATTR])
+          element = self._get_template_content(attrs[constants.PATH_ATTR], variables)
         } 
         
+        # Process <declare /> element
+        else if element.name == constants.DECLARE_TAG {
+          if !attrs or !attrs.contains(constants.NAME_ATTR)
+            error('missing "${constants.NAME_ATTR}" attribute for ${constants.DECLARE_TAG} tag')
+
+          # Fallthrough...
+          # No need to replace the value of element yet.
+          # <declare /> tags are only replaced after all processing has been done.
+        }
+
         # Process <extend /> element
         else if element.name == constants.EXTEND_TAG {
           if !attrs or !attrs.contains(constants.BASE_ATTR)
             error('missing "${constants.BASE_ATTR}" attribute for ${constants.EXTEND_TAG} tag')
 
-          var base_element = self._get_template_content(attrs[constants.BASE_ATTR])
-          # TODO: COMPLETE
-        } 
+          var base_element = self._get_template_content(attrs[constants.BASE_ATTR], variables)
+          
+          element = self._process(
+            path, 
+            self._extend(base_element, element), 
+            variables
+          )
+        }
         
         # Process custom elements
         else if self._elements.contains(element.name) {
@@ -862,6 +1743,19 @@ class Template {
   }
 
   /**
+   * Sets the compaction flag for the template. When compaction is on, the template output 
+   * will be compact and void of all unnecessary whitespaces.
+   * 
+   * @param bool compact
+   */
+  set_compact(compact) {
+    if !is_bool(compact)
+      raise Exception('boolean expected in argument 1 (compact)')
+
+    self._compact = compact
+  }
+
+  /**
    * Registers a function that can be used to process variables in the template. 
    * The given function must accept a minimum of one argument which will receive
    * the value of the value to be processed and at most two arguments, the second of 
@@ -978,10 +1872,12 @@ class Template {
     else path = to_string(path)
   
     return html.encode(
-      self._process(
-        path,
-        html.decode(self._strip(source), _default_html_config),
-        variables
+      _strip_declarations(
+        self._process(
+          path,
+          html.decode(self._strip(source), _default_html_config),
+          variables
+        )
       )
     ).trim()
   }
