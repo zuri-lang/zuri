@@ -130,7 +130,7 @@ install_zuri() {
 
 	# cloning
 	git clone https://github.com/zuri-lang/zuri.git
-#	git checkout v0.0.86
+#	git checkout v0.1.0
 	cd zuri || exit
 
 	# building

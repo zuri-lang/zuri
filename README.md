@@ -10,12 +10,12 @@
 [//]: # (  <h1>Zuri</h1>)
 
   <p><strong>The self-sufficient full-stack language.</strong><br>
-  Build complete, production-ready full-stack services with nothing but Zuri —<br>
+  Build complete, production-ready full-stack services with nothing but Zuri &mdash;<br>
   no framework hunting, no dependency hell, no third-party registry anxiety.</p>
 
 [![Build Status](https://github.com/zuri-lang/zuri/actions/workflows/ci.yml/badge.svg)](https://github.com/zuri-lang/zuri/actions)
 [![License](https://img.shields.io/badge/License-BSD_2--Clause-orange.svg)](https://github.com/zuri-lang/zuri/blob/master/LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.86-green)](https://github.com/zuri-lang/zuri)
+[![Version](https://img.shields.io/badge/version-0.1.0-green)](https://github.com/zuri-lang/zuri)
 [![Gitter](https://badges.gitter.im/zuri-lang/community.svg)](https://gitter.im/zuri-lang/community)
 
 [Try Zuri Online](#) &nbsp;·&nbsp; [Documentation](#) &nbsp;·&nbsp; [Tutorial](#) &nbsp;·&nbsp; [Community](#)
@@ -48,7 +48,7 @@ echo 'API running on port 3000...'
 server.listen()
 ```
 
-That's a working API endpoint — with a real database and password hashing — in 13 lines. No `pip install`, no `npm install`, no `composer require`. Just Zuri.
+That's a working API endpoint &mdash; with a real database and password hashing &mdash; in 13 lines. No `pip install`, no `npm install`, no `composer require`. Just Zuri.
 
 ---
 
@@ -58,11 +58,11 @@ That's a working API endpoint — with a real database and password hashing — 
 
 Modern full-stack development has a dependency problem. A simple Node.js project can pull in hundreds of packages just to serve HTTP requests. Every package is a potential security vulnerability, a breaking change waiting to happen, a maintainer who might abandon their work. The ecosystem becomes fragile, and you spend more time managing dependencies than building your product.
 
-Zuri was designed from the ground up to eliminate this problem. The standard library covers the full surface area of typical full-stack development, so you reach for a third-party package only when you're doing something genuinely unusual — not to serve a web request.
+Zuri was designed from the ground up to eliminate this problem. The standard library covers the full surface area of typical full-stack development, so you reach for a third-party package only when you're doing something genuinely unusual &mdash; not to serve a web request.
 
 ### Own your infrastructure completely
 
-Zuri ships with **Nyssa** — a package manager *and* a self-hostable private package registry in one. Your team can run its own registry on your own servers. No dependence on a central public registry. No exposure of proprietary internal packages. Full control over what code enters your supply chain.
+Zuri ships with **Nyssa** &mdash; a package manager *and* a self-hostable private package registry in one. Your team can run its own registry on your own servers. No dependence on a central public registry. No exposure of proprietary internal packages. Full control over what code enters your supply chain.
 
 ```sh
 # Install a package
@@ -84,7 +84,7 @@ This makes Zuri especially compelling for organizations with strict data soverei
 
 ## What's built in
 
-Zuri's standard library covers everything a full-stack needs — production-ready, maintained as part of the language itself.
+Zuri's standard library covers everything a full-stack needs &mdash; production-ready, maintained as part of the language itself.
 
 | Capability                | Module           | Status     |
 |---------------------------|------------------|------------|
@@ -183,9 +183,9 @@ var tree = ast.parse(file('script.zuri').read())
 
 ## Language features
 
-Zuri draws from the best ideas in JavaScript, Python, Ruby, and Dart — so the syntax feels immediately familiar while remaining precise and expressive.
+Zuri draws from the best ideas in JavaScript, Python, Ruby, and Dart &mdash; so the syntax feels immediately familiar while remaining precise and expressive.
 
-**Access modifiers** — unlike JavaScript and Python, Zuri has first-class access control for variables, properties, functions, classes, and modules.
+**Access modifiers** &mdash; unlike JavaScript and Python, Zuri has first-class access control for variables, properties, functions, classes, and modules.
 
 ```zuri
 class User {
@@ -198,7 +198,7 @@ class User {
 }
 ```
 
-**Function promotion** — use any module like a function if the module exports a default function.
+**Function promotion** &mdash; use any module like a function if the module exports a default function.
 
 ```zuri
 import template
@@ -206,7 +206,7 @@ import template
 echo template() # Returns template instance
 ```
 
-**Decorator methods** — customize how modules, libraries, and functions see your class.
+**Decorator methods** &mdash; customize how modules, libraries, and functions see your class.
 
 ```zuri
 import json
@@ -225,13 +225,13 @@ echo json.encode(X())
 # {"value":1}
 ```
 
-**Easy C extension system** — wrap any C library as a Zuri package with the built-in extension compiler.
+**Easy C extension system** &mdash; wrap any C library as a Zuri package with the built-in extension compiler.
 
 ```sh
 nyssa build --extension my_c_lib
 ```
 
-**Built-in testing** — no test framework to install.
+**Built-in testing** &mdash; no test framework to install.
 
 ```zuri
 # --> tests/api.test.zu
@@ -259,7 +259,7 @@ nyssa test
 bash <(curl -s https://raw.githubusercontent.com/zuri-lang/zuri/main/scripts/install.sh)
 ```
 
-**Windows** — see the [Releases page](https://github.com/zuri-lang/zuri/releases) to download a portable runtime.
+**Windows** &mdash; see the [Releases page](https://github.com/zuri-lang/zuri/releases) to download a portable runtime.
 
 **Run your first server**
 
@@ -279,13 +279,13 @@ zuri server.zuri
 
 **Solo developers and small teams** who want to ship full-stack services without managing a sprawling dependency tree.
 
-**Organizations with data sovereignty requirements** — run your full stack and your own package registry on your own infrastructure, with no external dependencies.
+**Organizations with data sovereignty requirements** &mdash; run your full stack and your own package registry on your own infrastructure, with no external dependencies.
 
-**Developers in bandwidth-constrained environments** — because Zuri's zero-dependency philosophy means your project doesn't pull megabytes of transitive packages on every setup.
+**Developers in bandwidth-constrained environments** &mdash; because Zuri's zero-dependency philosophy means your project doesn't pull megabytes of transitive packages on every setup.
 
-**IoT and edge builders** — Zuri's lightweight runtime and planned device I/O support (COM ports, USB) make it a natural fit for embedded-adjacent scripting on Raspberry Pi–class hardware.
+**IoT and edge builders** &mdash; Zuri's lightweight runtime and planned device I/O support (COM ports, USB) make it a natural fit for embedded-adjacent scripting on Raspberry Pi–class hardware.
 
-**Tooling authors** — the built-in AST module makes Zuri an excellent host for building language tools, linters, formatters, and DSLs.
+**Tooling authors** &mdash; the built-in AST module makes Zuri an excellent host for building language tools, linters, formatters, and DSLs.
 
 ---
 
@@ -307,7 +307,7 @@ zuri server.zuri
 
 ## Community
 
-Zuri is young, and that means the decisions made now — the libraries built, the patterns established, the conventions chosen — will shape the language for years. If you've been looking for a project where your contributions genuinely matter from day one, this is it.
+Zuri is young, and that means the decisions made now &mdash; the libraries built, the patterns established, the conventions chosen &mdash; will shape the language for years. If you've been looking for a project where your contributions genuinely matter from day one, this is it.
 
 - 💬 [Join the conversation on Gitter](https://gitter.im/zuri-lang/community)
 - 🐛 [Report a bug](https://github.com/zuri-lang/zuri/issues/new?labels=bug)

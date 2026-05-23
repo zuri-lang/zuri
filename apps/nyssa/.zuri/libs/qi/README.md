@@ -10,7 +10,6 @@ A testing framework for Zuri programming language.
 - **Tags:** test, zuri, testing, tdd, test-driven
 - **Author:** Richard Ore <eqliqandfriends@gmail.com>
 - **License:** MIT
-- **Requires:** Zuri v0.0.86+
 
 ### Getting started
 

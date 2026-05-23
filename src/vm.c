@@ -943,7 +943,6 @@ static bool invoke(z_vm *vm, z_obj_string *name, int arg_count) {
           return call_value(vm, value, arg_count);
         }
 
-        // NEW in v0.0.84, dictionaries can declare extra methods as part of their entries.
         else if(table_get(&AS_DICT(receiver)->items, OBJ_VAL(name), &value)) {
           if(IS_CLOSURE(value)) {
             return call_value(vm, value, arg_count);

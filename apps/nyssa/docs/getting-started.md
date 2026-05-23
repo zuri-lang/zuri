@@ -1,26 +1,26 @@
 # Installing Nyssa
 
-Nyssa comes prepackaged with all Zuri versions since `v0.0.86` and needs no further installation action. You'll need to upgrade your Zuri installation you are on a Zuri version lower than `v0.0.86`.
+Nyssa comes prepackaged with all Zuri distributions and needs no further installation action. You'll need to upgrade your Zuri installation you are on a Zuri version lower than `v0.1.0`.
 
-The best way to enjoy the power of Nyssa is to add your Zuri installation path to your shell/terminal environment. Various operating systems provides different mechanisms for adding a path to the environment so the steps may vary for your specific operating system.
+The best way to enjoy the power of Nyssa is to add your Zuri installation path to your shell/terminal environment. Various operating systems provide different mechanisms for adding a path to the environment, so the steps may vary for your specific operating system.
 
-Here's a few links for different operating systems showing how to do this.
+Here are a few links for different operating systems showing how to do this.
 
-| Operating systems | Instruction Link |
-|------------------|------------------|
-| Linux, macOS | [https://opensource.com/article/17/6/set-path-linux](https://opensource.com/article/17/6/set-path-linux) |
-| Windows | [https://www.wikihow.com/Change-the-PATH-Environment-Variable-on-Windows](https://www.wikihow.com/Change-the-PATH-Environment-Variable-on-Windows) |
+| Operating systems | Instruction Link                                                                                                                                   |
+|-------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| Linux, macOS      | [https://opensource.com/article/17/6/set-path-linux](https://opensource.com/article/17/6/set-path-linux)                                           |
+| Windows           | [https://www.wikihow.com/Change-the-PATH-Environment-Variable-on-Windows](https://www.wikihow.com/Change-the-PATH-Environment-Variable-on-Windows) |
 
 
 ### Testing your installation
 
-If you have installed Zuri and successfully added Zuri installation directory to system path, open a new terminal session (may be required) and run the command `nyssa --version`.
+If you have installed Zuri and successfully added Zuri installation directory to a system path, open a new terminal session (this may be required) and run the command `nyssa --version`.
 
 You should see an output similar to the below.
 
 ```
-Nyssa 0.2.0
-Zuri 0.0.86 (running on ZuriVM 0.1.1)
+Nyssa 0.1.0
+Zuri 0.1.0 (running on ZuriVM 0.1.0)
 ```
 
 You can also run the `nyssa` command without any arguments to see the full help information.

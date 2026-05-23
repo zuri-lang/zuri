@@ -1,12 +1,13 @@
 {
   "name": "nyssa", 
-  "version": "0.2.0", 
+  "version": "0.1.0",
   "description": "A package manager and repository for the Zuri programming language.",
   "homepage": "", 
   "tags": [
     "nyssa", 
     "zuri",
     "package-manager",
+    "repository",
     "tools"
   ], 
   "author": "Richard Ore <eqliqandfriends@gmail.com>", 
