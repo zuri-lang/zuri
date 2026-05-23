@@ -3,8 +3,9 @@ import template
 import log
 import .setup
 
+var is_windows = os.platform == 'windows'
+
 def setup_cli(name, base_path, cli_path) {
-  var is_windows = os.platform == 'windows'
   var path = os.join_paths(base_path, '../../', name) + (is_windows ? '.cmd' : '')
 
   var cmd
@@ -56,7 +57,6 @@ def setup_cli(name, base_path, cli_path) {
 }
 
 def remove_cli(name, base_path) {
-  var is_windows = os.platform == 'windows'
   var path = os.join_paths(base_path, '../../', name) + (is_windows ? '.cmd' : '')
   var fh = file(path)
   if fh.exists()
@@ -67,4 +67,99 @@ def setup_template() {
   var tpl = template()
   tpl.set_root(os.join_paths(setup.NYSSA_DIR, setup.TEMPLATES_DIR))
   return tpl.render
+}
+
+def find_app_in_system_path(name) {
+  var paths = []
+
+  if is_windows {
+    paths.extend([
+      'C:\\Windows\\system32',
+      'C:\\Windows',
+    ])
+
+    # If the name given by the user doesn't end with any of the known windows executable, program, or
+    # script extension, we'll default to checking if its an executable file.
+    if !['.exe', '.msi', '.bat', '.cmd'].some(@(x) => name.ends_with(x)) {
+      name += '.exe'
+    }
+  } else {
+    paths.extend([
+      '/usr/bin',
+      '/bin',
+      '/usr/local/bin',
+    ])
+  }
+
+  if os.platform == 'macos' {
+    paths.append(
+      '/opt/homebrew/bin' # Standard modern macOS ARM pathway
+    )
+  }
+
+  for path in paths {
+    var full_path = os.join_paths(path, name)
+
+    if os.dir_exists(path) and file(full_path).exists() {
+      return full_path
+    }
+  }
+
+  if is_windows {
+    # We haven't found anything so far. It's time we traverse the program files directories.
+    paths = [
+      'C:\\Program Files',
+      'C:\\Program Files (x86)',
+    ]
+
+    for path in paths {
+      var sub_dirs = os.read_dir(path)
+
+      for dir in sub_dirs {
+        # In the Windows ecosystem, virtually every standard software installer adheres to a predictable
+        # pattern: it creates a single vendor or application folder right at the root of Program Files
+        # (e.g., ...\Program Files\Git), and places its executables inside that root folder or exactly one
+        # level deeper inside a /bin or /cmd folder.
+        #
+        # By sweeping only the top-level directory names, you successfully gain 100% of the benefits of
+        # recursive scanning while avoiding the risks.
+
+        var base_dir = os.join_paths(path, dir)
+
+        var base_path = os.join_paths(base_dir, name)
+        var bin_path = os.join_paths(base_dir, 'bin', name)
+        var cmd_path = os.join_paths(base_dir, 'cmd', name)
+
+        if file(base_path).exists() {
+          return base_path
+        } else if file(bin_path).exists() {
+          return bin_path
+        } else if file(cmd_path).exists() {
+          return cmd_path
+        }
+      }
+    }
+  }
+
+  return nil
+}
+
+def find_app_in_path(name) {
+  var raw_paths = os.get_env('PATH', nil)
+
+  if raw_paths == nil {
+    return find_app_in_system_path(name)
+  }
+
+  var paths = raw_paths.split(is_windows ? ';' : ':')
+
+  for path in paths {
+    var full_path = os.join_paths(path, name)
+
+    if os.dir_exists(path) and file(full_path).exists() {
+      return full_path
+    }
+  }
+
+  return nil
 }

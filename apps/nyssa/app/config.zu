@@ -9,7 +9,7 @@ class Config {
   var author
   var license
   var deps = {}
-  var cvs_deps = []
+  var cvs_deps = {}
   var post_install
   var pre_uninstall
   var cli

@@ -35,6 +35,7 @@ Nyssa is the official package manager for the Zuri programming language. It is a
   - [x] Account Recovery.
 - [x] Custom Post-Installation script support.
 - [x] Custom Pre-Uninstallation script support.
+- [ ] Fetch packages from CVS sources.
 - [ ] Generate application/library documentation.
 - [x] Test Runner.
 - [ ] C Extension compiler.

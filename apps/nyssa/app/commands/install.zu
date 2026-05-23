@@ -60,14 +60,14 @@ def parse(parser) {
  * - Support for running custom setup script on installation.
  * - Add support for copying binary files to bin directory.
  */
-def configure(config, repo, full_name, name, version, path, is_global, with_cache, progress, error) {
+def configure(config, repo, full_name, name, version, path, is_global, with_cache, progress, error, skip_extract) {
   log.info('Installing ${full_name}')
 
   var zuri_exe = os.args[0]
 
   var destination
-  if !is_global destination = os.join_paths(os.cwd(), '.zuri/libs/${name}')
-  else destination = os.join_paths(os.dir_name(zuri_exe), 'vendor/${name}')
+  if !is_global destination = os.join_paths(os.cwd(), '.zuri', 'libs', name)
+  else destination = os.join_paths(os.dir_name(zuri_exe), 'vendor', name)
 
   # create the packages directory if not exists
   log.info('Creating package directory for ${full_name}')
@@ -240,16 +240,15 @@ def run(value, options, success, error) {
         file(config_file, 'w').write(json.encode(config, false))
       }
     }
-  } as e
-
-  if e {
+  } as e {
     echo colors.text(
       'Dependency state update failed!\n' + 
-      'You can manually fix it by adding the following to the dependency section of you ' + setup.CONFIG_FILE + ' file.\n' +
+      'You can manually fix it by adding the following to the dependency section of your ' + setup.CONFIG_FILE + ' file.\n' +
       '\n\t"${name}": ' + (version ? '"${version}"' : "null") +  '\n\n' +
       'If the section is not empty add a comma (,) and press ENTER before adding the fix.\n', 
       colors.text_color.orange
     )
+
     error(e.message)
   }
 
