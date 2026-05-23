@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   viewBox="0 0 520 200"
+   viewBox="0 0 470 200"
    role="img"
    version="1.1"
    id="svg3"
-   width="520"
+   width="470"
    height="200"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg"
@@ -42,11 +42,11 @@
      id="g6"
      transform="matrix(1.1275434,0,0,1.1275434,-16.57432,-36.432749)">
     <g
-       id="g8"
-       transform="translate(-4.6520132)">
+       id="g11"
+       transform="translate(0.61892294)">
       <g
          id="g5"
-         transform="matrix(0.98827515,0,0,0.98827515,1.2193836,1.4187055)">
+         transform="matrix(0.98827515,0,0,0.98827515,-3.4326296,1.4187055)">
         <circle
            cx="104"
            cy="120.22297"
@@ -67,7 +67,7 @@
              id="rect1"
              style="stroke-width:0.777031" />
           <polygon
-             points="52,166 34,166 124,44 142,44 "
+             points="34,166 124,44 142,44 52,166 "
              fill="#0f766e"
              id="polygon1"
              transform="matrix(0.77703089,0,0,0.77703089,32.513158,42.51988)" />
@@ -90,22 +90,24 @@
         </g>
       </g>
       <g
-         id="g3"
-         transform="translate(-17.773768,-9.3159203)">
-        <g
-           id="g7"
-           transform="translate(-1.7737676)">
-          <text
-             x="200"
-             y="140"
-             class="wordmark"
-             id="text2">zuri</text>
-          <text
-             x="202"
-             y="172"
-             class="tagline"
-             id="text3">SELF-SUFFICIENT FULL-STACK APPS</text>
-        </g>
+         id="g10"
+         transform="translate(0,-8.7500023)">
+        <text
+           x="175.80045"
+           y="130.68408"
+           class="wordmark"
+           id="text2">zuri</text>
+        <text
+           x="177.80045"
+           y="162.68408"
+           class="tagline"
+           id="text3"><tspan
+             id="tspan9"
+             x="177.80045"
+             y="162.68408">BUILD SELF-SUFFICIENT</tspan><tspan
+             id="tspan10"
+             x="177.80045"
+             y="180.18408">FULL-STACK APPS</tspan></text>
       </g>
     </g>
   </g>
