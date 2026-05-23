@@ -2,3 +2,6 @@
 *.c linguist-language=C
 *.h linguist-language=C
 *.zu linguist-language=Zuri
+*.zu linguist-documentation=false
+*.zu linguist-generated=false
+*.zu linguist-vendored=false
