@@ -1,10 +1,16 @@
 <div align="center">
-  <img height="96" alt="Zuri Logo" src="https://raw.githubusercontent.com/zuri-lang/zuri/main/zuri.png">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="./zuri-dark.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="./zuri-light.svg">
+    <img alt="The Zuri Programming Language: The self-sufficient full-stack language"
+         src="./zuri-light.svg"
+         width="50%">
+  </picture>
 
-  <h1>Zuri</h1>
+[//]: # (  <h1>Zuri</h1>)
 
-  <p><strong>The self-sufficient backend language.</strong><br>
-  Build complete, production-ready backend services with nothing but Zuri —<br>
+  <p><strong>The self-sufficient full-stack language.</strong><br>
+  Build complete, production-ready full-stack services with nothing but Zuri —<br>
   no framework hunting, no dependency hell, no third-party registry anxiety.</p>
 
 [![Build Status](https://github.com/zuri-lang/zuri/actions/workflows/ci.yml/badge.svg)](https://github.com/zuri-lang/zuri/actions)
@@ -19,7 +25,7 @@
 
 ## Everything you need is already here
 
-Most backend languages make you assemble a stack from dozens of third-party packages before you can do anything useful. Zuri takes a different philosophy: **the tools you need to build real backend services ship with the language itself.**
+Most full-stack languages make you assemble a stack from dozens of third-party packages before you can do anything useful. Zuri takes a different philosophy: **the tools you need to build real full-stack services ship with the language itself.**
 
 HTTP server. Routing. Database. Template engine. Mail. Cryptography. Image processing. A self-hostable private package registry. All built in. No installs required.
 
@@ -50,9 +56,9 @@ That's a working API endpoint — with a real database and password hashing — 
 
 ### The dependency problem is real
 
-Modern backend development has a dependency problem. A simple Node.js project can pull in hundreds of packages just to serve HTTP requests. Every package is a potential security vulnerability, a breaking change waiting to happen, a maintainer who might abandon their work. The ecosystem becomes fragile, and you spend more time managing dependencies than building your product.
+Modern full-stack development has a dependency problem. A simple Node.js project can pull in hundreds of packages just to serve HTTP requests. Every package is a potential security vulnerability, a breaking change waiting to happen, a maintainer who might abandon their work. The ecosystem becomes fragile, and you spend more time managing dependencies than building your product.
 
-Zuri was designed from the ground up to eliminate this problem. The standard library covers the full surface area of typical backend development, so you reach for a third-party package only when you're doing something genuinely unusual — not to serve a web request.
+Zuri was designed from the ground up to eliminate this problem. The standard library covers the full surface area of typical full-stack development, so you reach for a third-party package only when you're doing something genuinely unusual — not to serve a web request.
 
 ### Own your infrastructure completely
 
@@ -78,7 +84,7 @@ This makes Zuri especially compelling for organizations with strict data soverei
 
 ## What's built in
 
-Zuri's standard library covers everything a backend needs — production-ready, maintained as part of the language itself.
+Zuri's standard library covers everything a full-stack needs — production-ready, maintained as part of the language itself.
 
 | Capability                | Module           | Status     |
 |---------------------------|------------------|------------|
@@ -271,7 +277,7 @@ zuri server.zuri
 
 ## Who Zuri is built for
 
-**Solo developers and small teams** who want to ship backend services without managing a sprawling dependency tree.
+**Solo developers and small teams** who want to ship full-stack services without managing a sprawling dependency tree.
 
 **Organizations with data sovereignty requirements** — run your full stack and your own package registry on your own infrastructure, with no external dependencies.
 
