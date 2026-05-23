@@ -1,7 +1,7 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="./zuri-dark.svg">
-    <source media="(prefers-color-scheme: dark)" srcset="./zuri-light.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="./zuri-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="./zuri-light.svg">
     <img alt="The Zuri Programming Language: The self-sufficient full-stack language"
          src="./zuri-light.svg"
          width="50%">
