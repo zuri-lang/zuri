@@ -134,12 +134,14 @@ static void repl(z_vm *vm) {
     // find count of { and }, ( and ), [ and ], " and '
     for (int i = 0; i < line_length; i++) {
       // scope openers...
-      if (line[i] == '{')
-        brace_count++;
-      if (line[i] == '(')
-        paren_count++;
-      if (line[i] == '[')
-        bracket_count++;
+      if (single_quote_count == 0 && double_quote_count == 0) {
+        if (line[i] == '{')
+          brace_count++;
+        if (line[i] == '(')
+          paren_count++;
+        if (line[i] == '[')
+          bracket_count++;
+      }
 
       // quotes
       if (line[i] == '\'' && double_quote_count == 0) {
@@ -154,12 +156,14 @@ static void repl(z_vm *vm) {
       if (line[i] == '\\' && (single_quote_count > 0 || double_quote_count > 0)) i++;
 
       // scope closers...
-      if (line[i] == '}' && brace_count > 0)
-        brace_count--;
-      if (line[i] == ')' && paren_count > 0)
-        paren_count--;
-      if (line[i] == ']' && bracket_count > 0)
-        bracket_count--;
+      if (single_quote_count == 0 && double_quote_count == 0) {
+        if (line[i] == '}' && brace_count > 0)
+          brace_count--;
+        if (line[i] == ')' && paren_count > 0)
+          paren_count--;
+        if (line[i] == ']' && bracket_count > 0)
+          bracket_count--;
+      }
     }
 
     source = append_strings(source, line);
