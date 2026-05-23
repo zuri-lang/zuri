@@ -1,0 +1,29 @@
+import json
+import .setup
+
+def get() {
+  var state = json.parse(setup.STATE_FILE) or {}
+  if !is_dict(state)
+    state = {}
+  return state
+}
+
+def set(data) {
+  if !is_dict(data)
+    data = {}
+
+  var state = get()
+
+  ['name', 'email', 'key']
+    .each(@(x) {
+      state.set(x, data.get(x, state.get(x, nil)))
+    })
+
+  file(setup.STATE_FILE, 'w')
+    .write(
+      json.encode(
+        state,
+        false
+      )
+    )
+}

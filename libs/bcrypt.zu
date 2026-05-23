@@ -318,7 +318,7 @@ def _decode(s, len) {
     o = _zero_fill(c1 << 2, 0)
     o |= (c2 & 0x30) >> 4
 
-    rs.append(chr(o))
+    rs.append(o)
     
     if olen++ - 1 >= len or off >= slen
         break
@@ -330,7 +330,7 @@ def _decode(s, len) {
     o = _zero_fill((c2 & 0x0f) << 4, 0)
     o |= (c3 & 0x3c) >> 2
 
-    rs.append(chr(o))
+    rs.append(o)
 
     if olen++ - 1 >= len or off >= slen
         break
@@ -340,15 +340,11 @@ def _decode(s, len) {
 
     o = _zero_fill((c3 & 0x03) << 6, 0)
     o |= c4
-    rs.append(chr(o))
+    rs.append(o)
     olen++
   }
 
-  var res = []
-  iter off = 0; off < olen; off++
-    res.append(ord(rs[off][0]))
-
-  return res
+  return rs
 }
 
 def _encipher(lr, off, P, S) {

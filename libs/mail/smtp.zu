@@ -22,7 +22,7 @@ import .constants
  * ```zuri
  * import mail
  * 
- * var msg = mail.Message()
+ * var msg = mail.message()
  *    .from('someone@example.com')
  *    .to('hello@domain.com')
  *    .subject('Hello, World')

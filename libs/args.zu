@@ -277,7 +277,7 @@ def _get_real_value(item, value) {
   } else if item.type == LIST {
     return is_list(value) ? value : [value]
   } else if item.type == CHOICE {
-    if is_list(item.choices) {
+    if is_list(item.choices) or instance_of(item, _Command) {
       return value  # validation happens separately
     } else if is_dict(item.choices) {
       return item.choices.contains(value) ? item.choices[value] : value
@@ -772,6 +772,7 @@ class Parser < _Optionable {
                   i++
                   lst.append(cli_args[i])
                 }
+
                 parsed_args.command = {name: command.name, value: lst}
               } else {
                 parsed_args.command = {name: command.name, value: v}
@@ -876,12 +877,7 @@ class Parser < _Optionable {
     # Execute command action if provided
     # -----------------------------------------------------------------------
     if command_found and command and command.action and is_function(command.action) {
-      var arity = reflect.get_function_metadata(command.action).arity
-      using arity {
-        when 0 command.action()
-        when 1 command.action(parsed_args.options)
-        default command.action(parsed_args.options, parsed_args.command ? parsed_args.command.value : nil)
-      }
+      command.action(parsed_args.options, parsed_args.command ? parsed_args.command.value : nil)
     }
 
     # -----------------------------------------------------------------------
@@ -1255,7 +1251,7 @@ class Parser < _Optionable {
           echo _vpad('  ' + _italic(k), cw + 4) + v
         }
       } else {
-        echo '  ' + '{${"', '".join(command.choices)}}'
+        echo '  ' + ', '.join(command.choices)
       }
       echo ''
     }

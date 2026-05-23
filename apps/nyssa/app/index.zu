@@ -40,7 +40,7 @@ import .commands.info
 import .commands.init
 import .commands.install
 import .commands.restore
-import .commands.doc
+import .commands.fetch
 import .commands.uninstall
 import .commands.publish
 import .commands.serve
@@ -56,7 +56,7 @@ var commands = {
   account,
   bundle,
   clean,
-  doc,
+  fetch,
   info,
   init,
   install,

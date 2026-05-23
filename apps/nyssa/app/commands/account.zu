@@ -5,10 +5,10 @@ import http
 import json
 import log
 import ..setup
+import ..state as st
 
 # read the state file
-var state = json.parse(setup.STATE_FILE) or {}
-if !is_dict(state) state = {}
+var state = st.get()
 
 def parse(parser) {
   parser.add_command(
@@ -16,7 +16,7 @@ def parse(parser) {
     'Manages a Nyssa publisher account',
     {
       type: args.CHOICE,
-      # choices: ['create', 'login', 'logout'],
+#       choices: ['create', 'login', 'logout'],
       choices: {
         create: 'Creates a new publisher account',
         login: 'Login to a publisher account',
@@ -34,6 +34,7 @@ def parse(parser) {
 }
 
 def create(repo, success, error) {
+
   # warn about account overwrite
   if state.get('name', nil) and state.get('key', nil) {
     var name = state['name']
@@ -60,7 +61,8 @@ def create(repo, success, error) {
       state['name'] = details.name
       state['email'] = details.email
       state['key'] = body.key
-      file(state_file, 'w').write(json.encode(state, false))
+
+      st.set(state)
 
       success(
         'Account created successfully!\n' +
@@ -71,9 +73,7 @@ def create(repo, success, error) {
     } else {
       error('Account creation failed:\n  ${body.error}')
     }
-  } as e
-
-  if e {
+  } as e {
     error('Account creation failed:\n  ${e.message}')
   }
 }
@@ -104,8 +104,9 @@ def login(repo, success, error) {
       state['name'] = body.username
       state['email'] = body.email
       state['key'] = body.key
-      
-      file(state_file, 'w').write(json.encode(state, false))
+
+      st.set(state)
+
       success(
         'Logged in as ${body.username} successfully!\n' +
         'Publisher Key: ${body.key}'
@@ -127,7 +128,7 @@ def logout(repo, success, error) {
     state.remove('key')
 
   catch {
-    if file(state_file, 'w').write(json.encode(state, false))
+    if file(setup.STATE_FILE, 'w').write(json.encode(state, false))
       success('Logged out of publisher account!')
   } as e
 
