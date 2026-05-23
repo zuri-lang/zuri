@@ -29,9 +29,9 @@ Nyssa is the official package manager for the Zuri programming language. It is a
 - [x] Nyssa repository server public API.
 - [x] Nyssa repository server searchable frontend website.
 - [x] Manage publisher accounts.
-  - [x] Create publisher account.
-  - [x] Login to publisher account.
-  - [x] Logout from publisher account.
+  - [x] Create a publisher account.
+  - [x] Login to a publisher account.
+  - [x] Logout from the publisher account.
   - [x] Account Recovery.
 - [x] Custom Post-Installation script support.
 - [x] Custom Pre-Uninstallation script support.
