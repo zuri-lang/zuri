@@ -348,7 +348,7 @@ static void *z_thread_callback_function(void *data) {
   }
 
 #ifdef _WIN32
-  pthread_cleanup_push(free_thread_handle, (void *)handle);
+  pthread_cleanup_push((void *)free_thread_handle, handle);
   pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 #endif
 
