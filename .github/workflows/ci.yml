@@ -117,6 +117,7 @@ jobs:
         uses: johnwason/vcpkg-action@v8
         with:
           pkgs: pkgconf curl libffi openssl libgd
+          extra-args: --disable-metrics
           revision: master
           triplet: x64-windows-release
           token: ${{ github.token }}
