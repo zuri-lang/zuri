@@ -4,6 +4,9 @@ on:
   release:
     types: [published]
 
+env:
+  CMAKE_TLS_VERIFY: 0
+
 jobs:
 
   build-linux:

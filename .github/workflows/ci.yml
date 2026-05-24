@@ -8,6 +8,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  CMAKE_TLS_VERIFY: 0
+
 jobs:
 
   build-linux:
