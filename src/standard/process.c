@@ -21,7 +21,7 @@
 #include <sys/wait.h>
 #endif
 #else
-#include "bunistd.h"
+#include "zunistd.h"
 #endif /* HAVE_UNISTD_H */
 
 #if defined(__OpenBSD__) && defined(__powerpc__)

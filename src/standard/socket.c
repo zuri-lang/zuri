@@ -13,7 +13,7 @@
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #else
-# include "bunistd.h"
+# include "zunistd.h"
 #endif /* HAVE_UNISTD_H */
 
 #ifdef _WIN32
@@ -21,7 +21,7 @@
 # include <sdkddkver.h>
 # include <ws2tcpip.h>
 # include <winsock2.h>
-# include <bunistd.h>
+# include <zunistd.h>
 
 # define sleep			_sleep
 # ifndef strcasecmp

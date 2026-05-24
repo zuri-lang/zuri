@@ -2,7 +2,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #else
-#include "bunistd.h"
+#include "zunistd.h"
 #endif /* ifdef HAVE_UNISTD_H */
 #include "pathinfo.h"
 

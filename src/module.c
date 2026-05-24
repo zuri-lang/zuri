@@ -12,7 +12,7 @@
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>
 #else
-#include "bdlfcn.h"
+#include "zdlfcn.h"
 #endif
 
 #if !defined(HAVE_DIRENT_H) || defined(_WIN32)
@@ -28,7 +28,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #else
-#include "bunistd.h"
+#include "zunistd.h"
 #endif /* HAVE_UNISTD_H */
 
 z_module_init modules[] = {

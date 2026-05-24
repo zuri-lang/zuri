@@ -13,7 +13,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #else
-#include "bunistd.h"
+#include "zunistd.h"
 #endif /* HAVE_UNISTD_H */
 
 #ifdef _WIN32

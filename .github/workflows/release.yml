@@ -6,6 +6,7 @@ on:
 
 env:
   CMAKE_TLS_VERIFY: 0
+  VCPKG_DISABLE_METRICS: 1
 
 jobs:
 

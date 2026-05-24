@@ -30,7 +30,7 @@ char *get_real_file_name(char *path);
 #if defined(HAVE_UNISTD_H)
 #include <unistd.h>
 #else
-#include "bunistd.h"
+#include "zunistd.h"
 #endif /* HAVE_UNISTD_H */
 #include "util.h"
 
