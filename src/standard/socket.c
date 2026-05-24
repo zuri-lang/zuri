@@ -103,6 +103,92 @@ static inline int is_timed_out(int se) {
 #endif
 }
 
+#ifdef _WIN32
+static const char *strerror_socket(int err) {
+  switch (err) {
+    case WSAEWOULDBLOCK:   return "Resource temporarily unavailable (would block)";
+    case WSAEINPROGRESS:   return "Operation now in progress";
+    case WSAEALREADY:      return "Operation already in progress";
+    case WSAENOTSOCK:      return "Socket operation on non-socket";
+    case WSAEDESTADDRREQ:  return "Destination address required";
+    case WSAEMSGSIZE:      return "Message too long";
+    case WSAEPROTOTYPE:    return "Protocol wrong type for socket";
+    case WSAENOPROTOOPT:   return "Protocol not available";
+    case WSAEPROTONOSUPPORT: return "Protocol not supported";
+    case WSAESOCKTNOSUPPORT: return "Socket type not supported";
+    case WSAEOPNOTSUPP:    return "Operation not supported";
+    case WSAEPFNOSUPPORT:  return "Protocol family not supported";
+    case WSAEAFNOSUPPORT:  return "Address family not supported by protocol family";
+    case WSAEADDRINUSE:    return "Address already in use";
+    case WSAEADDRNOTAVAIL: return "Cannot assign requested address";
+    case WSAENETDOWN:      return "Network is down";
+    case WSAENETUNREACH:   return "Network is unreachable";
+    case WSAENETRESET:     return "Network dropped connection on reset";
+    case WSAECONNABORTED:  return "Software caused connection abort";
+    case WSAECONNRESET:    return "Connection reset by peer";
+    case WSAENOBUFS:       return "No buffer space available";
+    case WSAEISCONN:       return "Socket is already connected";
+    case WSAENOTCONN:      return "Socket is not connected";
+    case WSAESHUTDOWN:     return "Cannot send after socket shutdown";
+    case WSAETOOMANYREFS:  return "Too many references: cannot splice";
+    case WSAETIMEDOUT:     return "Connection timed out";
+    case WSAECONNREFUSED:  return "Connection refused";
+    case WSAELOOP:         return "Too many levels of symbolic links";
+    case WSAENAMETOOLONG:  return "File name too long";
+    case WSAEHOSTDOWN:     return "Host is down";
+    case WSAEHOSTUNREACH:  return "No route to host";
+    case WSAENOTEMPTY:     return "Directory not empty";
+    case WSAEPROCLIM:      return "Too many processes";
+    case WSAEUSERS:        return "Too many users";
+    case WSAEDQUOT:        return "Disc quota exceeded";
+    case WSAESTALE:        return "Stale NFS file handle";
+    case WSAEREMOTE:       return "Too many levels of remote in path";
+    case WSAEDISCON:       return "Graceful shutdown in progress";
+#ifdef HOST_NOT_FOUND
+    case HOST_NOT_FOUND:   return "Host not found";
+#endif
+#ifdef TRY_AGAIN
+    case TRY_AGAIN:        return "Non-authoritative host not found";
+#endif
+#ifdef NO_RECOVERY
+    case NO_RECOVERY:      return "Non-recoverable keyboard/system error";
+#endif
+#ifdef NO_DATA
+    case NO_DATA:          return "Valid name, no data record of requested type";
+#endif
+    case EWOULDBLOCK:      return "Operation would block";
+    case EINPROGRESS:      return "Operation now in progress";
+    case EINTR:            return "Interrupted system call";
+    case ETIMEDOUT:        return "Connection timed out";
+    case ECONNREFUSED:     return "Connection refused";
+    case ECONNRESET:       return "Connection reset by peer";
+    case EADDRINUSE:       return "Address already in use";
+    case EADDRNOTAVAIL:    return "Cannot assign requested address";
+    case ENETUNREACH:      return "Network is unreachable";
+    case EHOSTUNREACH:     return "No route to host";
+    case EIO:              return "Input/output error";
+    default: {
+      static __thread char msgbuf[256];
+      DWORD len = FormatMessageA(
+          FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+          NULL,
+          err,
+          MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+          msgbuf,
+          sizeof(msgbuf) - 1,
+          NULL);
+      if (len > 0) {
+        while (len > 0 && (msgbuf[len - 1] == '\r' || msgbuf[len - 1] == '\n' || msgbuf[len - 1] == ' ' || msgbuf[len - 1] == '.')) {
+          msgbuf[--len] = '\0';
+        }
+        return msgbuf;
+      }
+      return "Unknown socket error";
+    }
+  }
+}
+#endif
+
 static void socket_configure_fd(int sock) {
 #ifndef _WIN32
 # ifdef SO_NOSIGPIPE
@@ -131,8 +217,10 @@ DECLARE_MODULE_METHOD(socket__error) {
     if (!is_in_progress(se) && !is_would_block(se)) {
 #ifdef _WIN32
       errno = map_sock_err_to_errno(se);
-#endif
+      const char *msg = strerror_socket(se);
+#else
       const char *msg = strerror(errno);
+#endif
       RETURN_STRING(msg);
     }
   }
@@ -248,11 +336,15 @@ DECLARE_MODULE_METHOD(socket__connect) {
 #endif
             if (so_error == 0) { result = 0; break; }
 #ifdef _WIN32
+            WSASetLastError(so_error);
             last_errno = map_sock_err_to_errno(so_error);
 #else
             last_errno = so_error;
 #endif
           } else if (sel == 0) {
+#ifdef _WIN32
+            WSASetLastError(WSAETIMEDOUT);
+#endif
             last_errno = ETIMEDOUT;
           } else {
 #ifdef _WIN32
@@ -506,7 +598,14 @@ DECLARE_MODULE_METHOD(socket__send) {
           fd_set wfds; FD_ZERO(&wfds); FD_SET(sock, &wfds);
           int sel = select(sock + 1, NULL, &wfds, NULL, &tv);
           if (sel > 0) continue;   // socket writable; retry send
-          if (sel == 0) { errno = ETIMEDOUT; break; }
+          if (sel == 0) {
+#ifdef _WIN32
+            WSASetLastError(WSAETIMEDOUT);
+#else
+            errno = ETIMEDOUT;
+#endif
+            break;
+          }
           // select error: fall through to return error
         } else {
           // Non-blocking socket with no timeout: surface WOULDBLOCK to caller
@@ -533,21 +632,30 @@ DECLARE_MODULE_METHOD(socket__recv) {
   int length = AS_NUMBER(args[1]);
   int flags = AS_NUMBER(args[2]);
 
+#ifndef _WIN32
   struct timeval timeout;
   int option_length = sizeof(timeout);
-
-#ifndef _WIN32
   int rc = getsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, (socklen_t *)&option_length);
-#else
-  int rc = getsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, (socklen_t *)&option_length);
-#endif
-
   if (rc != 0 || (int)sizeof(timeout) != option_length ||
       (timeout.tv_sec == 0 && timeout.tv_usec == 0)) {
     // Default: 0.5 second wait for data to arrive
     timeout.tv_sec = 0;
     timeout.tv_usec = 500000;
   }
+#else
+  DWORD tv_ms = 0;
+  int option_length = sizeof(tv_ms);
+  int rc = getsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv_ms, (socklen_t *)&option_length);
+  struct timeval timeout;
+  if (rc != 0 || option_length != sizeof(tv_ms) || tv_ms == 0) {
+    // Default: 0.5 second wait for data to arrive
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 500000;
+  } else {
+    timeout.tv_sec = tv_ms / 1000;
+    timeout.tv_usec = (tv_ms % 1000) * 1000;
+  }
+#endif
 
   fd_set read_set;
   FD_ZERO(&read_set);
@@ -568,7 +676,7 @@ DECLARE_MODULE_METHOD(socket__recv) {
 #endif
 
     if (content_length > 0) {
-    // Honour caller's length cap if provided
+    // Honor caller's length cap if provided
       if (length != -1 && length < content_length)
         content_length = length;
 
@@ -592,7 +700,14 @@ DECLARE_MODULE_METHOD(socket__recv) {
             fd_set rs; FD_ZERO(&rs); FD_SET(sock, &rs);
             int sel2 = select(sock + 1, &rs, NULL, NULL, &tv);
             if (sel2 > 0) continue;
-            if (sel2 == 0) { errno = ETIMEDOUT; break; }
+            if (sel2 == 0) {
+#ifdef _WIN32
+              WSASetLastError(WSAETIMEDOUT);
+#else
+              errno = ETIMEDOUT;
+#endif
+              break;
+            }
           }
         }
         break; // some other error
@@ -601,7 +716,11 @@ DECLARE_MODULE_METHOD(socket__recv) {
       RETURN_T_STRING(response, total_length);
     }
   } else if (status == 0) {
+#ifdef _WIN32
+    WSASetLastError(WSAETIMEDOUT);
+#else
     errno = ETIMEDOUT;
+#endif
     RETURN_NUMBER(-1);
   }
 
@@ -704,7 +823,11 @@ DECLARE_MODULE_METHOD(socket__getsockopt) {
       getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&so_error, &len);
 #endif
       if (so_error == 0) RETURN_NIL;
+#ifdef _WIN32
+      RETURN_STRING(strerror_socket(so_error));
+#else
       RETURN_STRING(strerror(so_error));
+#endif
     }
 
     case SO_SNDTIMEO:
