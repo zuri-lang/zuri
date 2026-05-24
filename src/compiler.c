@@ -1022,8 +1022,8 @@ static z_value compile_number(z_parser* p) {
     long value = strtol(p->previous.start + 2, NULL, 8);
     return NUMBER_VAL(value);
   } else if (p->previous.type == HEX_NUMBER_TOKEN) {
-    long value = strtol(p->previous.start, NULL, 16);
-    return NUMBER_VAL(value);
+    unsigned long long value = strtoull(p->previous.start, NULL, 16);  // always 64-bit
+    return NUMBER_VAL((double)value);
   } else {
     double value = strtod(p->previous.start, NULL);
     return NUMBER_VAL(value);

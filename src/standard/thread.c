@@ -337,6 +337,7 @@ static void *z_thread_callback_function(void *data) {
 #ifndef _WIN32
   pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 #else
+  pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   pthread_sigmask2(SIG_UNBLOCK, &mask, NULL);
 #endif
 
@@ -406,15 +407,14 @@ DECLARE_MODULE_METHOD(thread__cancel) {
 #ifdef _WIN32
     // On Windows, avoid signal emulation; use pthread_cancel when available
     if (pthread_cancel(thread->thread) == 0) {
-      free_thread_handle(thread);
-      RETURN_TRUE;
-    }
 #else
     if(pthread_kill(thread->thread, SIGUSR2) == 0) {
+#endif
+      // Ensure that the thread fully exits before freeing the thread handle!
+      pthread_join(thread->thread, NULL);
       free_thread_handle(thread);
       RETURN_TRUE;
     }
-#endif
   }
 
   RETURN_FALSE;
