@@ -306,14 +306,16 @@ static z_thread_handle *create_thread_handle(z_vm *vm, z_obj_closure *closure, z
   return handle;
 }
 
-static void free_thread_handle(z_thread_handle *thread) {
+static void free_thread_handle(z_thread_handle *thread, bool release_vm) {
   if(thread != NULL && thread->vm != NULL) {
     // move the surviving items to the parent vm's object list.
     if(thread->vm->parent_vm != NULL) {
       migrate_objects(thread->vm, thread->vm->parent_vm);
     }
 
-    free_vm(thread->vm);
+    if (release_vm) {
+      free_vm(thread->vm);
+    }
 
     thread->vm = NULL;
     thread->closure = NULL;
@@ -325,7 +327,7 @@ static void free_thread_handle(z_thread_handle *thread) {
 
 static void z_free_thread_handle(void *data) {
   z_thread_handle *handle = (z_thread_handle *) data;
-  free_thread_handle(handle);
+  free_thread_handle(handle, true);
   free(handle);
 }
 
@@ -356,7 +358,7 @@ static void *z_thread_callback_function(void *data) {
   ((z_obj *)handle->closure)->stale--;
   ((z_obj *)handle->args)->stale--;
 
-  free_thread_handle(handle);
+  free_thread_handle(handle, true);
   pthread_exit(NULL);
 }
 
@@ -403,18 +405,18 @@ DECLARE_MODULE_METHOD(thread__cancel) {
   z_thread_handle *thread = AS_PTR(args[0])->pointer;
 
   if(thread != NULL && thread->vm != NULL) {
-// #ifdef _WIN32
-//     // On Windows, avoid signal emulation; use pthread_cancel when available
-//     if (pthread_cancel(thread->thread) == 0) {
-//       free_thread_handle(thread);
-//       RETURN_TRUE;
-//     }
-// #else
-    if(pthread_kill(thread->thread, SIGUSR2) == 0) {
-      free_thread_handle(thread);
+#ifdef _WIN32
+    // On Windows, avoid signal emulation; use pthread_cancel when available
+    if (pthread_cancel(thread->thread) == 0) {
+      free_thread_handle(thread, false);
       RETURN_TRUE;
     }
-// #endif
+#else
+    if(pthread_kill(thread->thread, SIGUSR2) == 0) {
+      free_thread_handle(thread, true);
+      RETURN_TRUE;
+    }
+#endif
   }
 
   RETURN_FALSE;
