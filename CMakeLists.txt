@@ -268,7 +268,7 @@ message(STATUS "  C compiler flags ................ : ${${CMAKE_C_FLAGS}${cfsp}}
 if(NOT ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
 	include(CheckIPOSupported)
 	check_ipo_supported(RESULT LTOSupported OUTPUT LTOSupportError)
-	if(LTOSupported)
+	if(LTOSupported AND NOT APPLE)
 		message(STATUS "  IPO/LTO ......................... : enabled")
 		set_property(TARGET libzuri PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 	else()
