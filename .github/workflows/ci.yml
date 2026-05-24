@@ -17,7 +17,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup cmake
         uses: lukka/get-cmake@v4.2.2
         with:
@@ -47,7 +47,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup cmake
         uses: lukka/get-cmake@v4.2.2
         with:
@@ -78,7 +78,7 @@ jobs:
         with:
           useLocalCache: true
           useCloudCache: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup dependencies
         run: |
           brew uninstall pkg-config --ignore-dependencies
@@ -110,17 +110,16 @@ jobs:
         uses: bwoodsend/setup-winlibs-action@v1.8
         with:
           add_to_path: true
-          tag: 14.2.0posix-18.1.8-12.0.0-msvcrt-r1
+          tag: 14.2.0posix-19.1.7-12.0.0-msvcrt-r3
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install dependencies
-        uses: johnwason/vcpkg-action@v6
+        uses: johnwason/vcpkg-action@v8
         with:
           pkgs: pkgconf curl libffi openssl libgd
           revision: master
           triplet: x64-windows-release
           token: ${{ github.token }}
-          github-binarycache: true
       - name: Compile
         run: |
           cmake -B . -G "Unix Makefiles" -DVCPKG_TARGET_TRIPLET=x64-windows-release -DCMAKE_MAKE_PROGRAM=mingw32-make -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"

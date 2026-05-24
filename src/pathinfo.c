@@ -108,7 +108,11 @@ char *get_zuri_filename(char *filename) {
 char *get_core_library_file_path(char *module_name) {
   char *zuri_file_name = get_zuri_filename(module_name);
   if (zuri_file_name != NULL) {
+#ifdef __APPLE__
     char *exe_dir = strdup(get_exe_dir());
+#else
+    char *exe_dir = get_exe_dir();
+#endif
 
     if (exe_dir != NULL) {
       char *zuri_directory = merge_paths(exe_dir, LIBRARY_DIRECTORY);
