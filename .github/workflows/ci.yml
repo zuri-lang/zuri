@@ -71,7 +71,7 @@ jobs:
           path: ${{github.workspace}}/zuri
 
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - name: Setup cmake
         uses: lukka/get-cmake@v4.2.2

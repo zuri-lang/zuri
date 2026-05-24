@@ -108,7 +108,7 @@ char *get_zuri_filename(char *filename) {
 char *get_core_library_file_path(char *module_name) {
   char *zuri_file_name = get_zuri_filename(module_name);
   if (zuri_file_name != NULL) {
-    char *exe_dir = get_exe_dir();
+    char *exe_dir = strdup(get_exe_dir());
 
     if (exe_dir != NULL) {
       char *zuri_directory = merge_paths(exe_dir, LIBRARY_DIRECTORY);
@@ -125,7 +125,7 @@ char *get_core_library_file_path(char *module_name) {
             if (path1 != NULL) {
               free(library_file);
               free(zuri_directory);
-              free(exe_dir);
+              // free(exe_dir);
               free(zuri_file_name);
               return path1;
             }
