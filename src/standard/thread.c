@@ -338,19 +338,12 @@ static void *z_thread_callback_function(void *data) {
   pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 #else
   pthread_sigmask2(SIG_UNBLOCK, &mask, NULL);
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-  pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 #endif
 
   z_thread_handle *handle = (z_thread_handle *) data;
   if(handle == NULL || handle->vm == NULL) {
     pthread_exit(NULL);
   }
-
-#ifdef _WIN32
-  pthread_cleanup_push((void *)free_thread_handle, handle);
-  pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-#endif
 
   for(int i = 0; i < handle->args->items.count; i++) {
     push(handle->vm, handle->args->items.values[i]);
@@ -363,11 +356,7 @@ static void *z_thread_callback_function(void *data) {
   ((z_obj *)handle->closure)->stale--;
   ((z_obj *)handle->args)->stale--;
 
-#ifndef _WIN32
   free_thread_handle(handle);
-#else
-  pthread_cleanup_pop(1);
-#endif
   pthread_exit(NULL);
 }
 
@@ -414,18 +403,18 @@ DECLARE_MODULE_METHOD(thread__cancel) {
   z_thread_handle *thread = AS_PTR(args[0])->pointer;
 
   if(thread != NULL && thread->vm != NULL) {
-#ifdef _WIN32
-    // On Windows, avoid signal emulation; use pthread_cancel when available
-    if (pthread_cancel(thread->thread) == 0) {
-      pthread_join(thread->thread, NULL);
-      RETURN_TRUE;
-    }
-#else
+// #ifdef _WIN32
+//     // On Windows, avoid signal emulation; use pthread_cancel when available
+//     if (pthread_cancel(thread->thread) == 0) {
+//       free_thread_handle(thread);
+//       RETURN_TRUE;
+//     }
+// #else
     if(pthread_kill(thread->thread, SIGUSR2) == 0) {
       free_thread_handle(thread);
       RETURN_TRUE;
     }
-#endif
+// #endif
   }
 
   RETURN_FALSE;
