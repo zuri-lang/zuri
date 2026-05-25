@@ -1,0 +1,70 @@
+import csv
+import io
+
+def test_reader() {
+  var data = "name,age,city\nJohn Doe,30,New York\nJane Smith,25,Los Angeles"
+  var b = io.BytesIO(data.to_bytes())
+  var r = csv.Reader(b)
+
+  var row1 = r.read_record()
+  assert row1 == ["name", "age", "city"]
+
+  var row2 = r.read_record()
+  assert row2 == ["John Doe", "30", "New York"]
+
+  var row3 = r.read_record()
+  assert row3 == ["Jane Smith", "25", "Los Angeles"]
+
+  var row4 = r.read_record()
+  assert row4 == nil
+  echo "test_reader passed"
+}
+
+def test_reader_quoted() {
+  var data = 'name,notes\n"Doe, John","Lives in ""New York"""'
+  var b = io.BytesIO(data.to_bytes())
+  var r = csv.Reader(b)
+
+  var row1 = r.read_record()
+  assert row1 == ["name", "notes"]
+
+  var row2 = r.read_record()
+  assert row2 == ["Doe, John", 'Lives in "New York"']
+  echo "test_reader_quoted passed"
+}
+
+def test_reader_multiline() {
+  var data = 'name,bio\nJohn,"Line 1\nLine 2"'
+  var b = io.BytesIO(data.to_bytes())
+  var r = csv.Reader(b)
+
+  r.read_record() # skip header
+  var row = r.read_record()
+  assert row == ["John", "Line 1\nLine 2"]
+  echo "test_reader_multiline passed"
+}
+
+def test_writer() {
+  var b = io.BytesIO(bytes(0), "w+")
+  var w = csv.Writer(b)
+  w.write_row(["name", "age"])
+  w.write_row(["John", 30])
+
+  assert b.read().to_string().count('\n') == 2
+  w.close()
+
+  echo "test_writer passed"
+}
+
+def test_parse() {
+  var data = "a,b,c\nd,e,f"
+  var rows = csv.parse(data)
+  assert rows == [["a", "b", "c"], ["d", "e", "f"]]
+  echo "test_parse passed"
+}
+
+test_reader()
+test_reader_quoted()
+test_reader_multiline()
+test_writer()
+test_parse()

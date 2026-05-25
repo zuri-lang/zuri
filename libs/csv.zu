@@ -1,0 +1,1279 @@
+/**
+ * @module CSV
+ *
+ * A complete, RFC 4180-compliant library for reading and writing
+ * Comma-Separated Values (CSV) data.
+ *
+ * This module implements the format defined in RFC 4180 — "Common Format
+ * and MIME Type for Comma-Separated Values (CSV) Files" — and extends it
+ * with the practical accommodations required by real-world CSV data,
+ * including configurable delimiters, optional quoting strategies, BOM
+ * detection, and lenient parsing of files that deviate from the strict spec.
+ *
+ * ## Key CSV rules
+ *
+ * - Records are separated by CRLF (`\r\n`). The last record may omit the
+ *   trailing line break.
+ * - Fields containing the delimiter, a double-quote, CR, or LF **must** be
+ *   enclosed in double-quotes.
+ * - A double-quote inside a quoted field is escaped by doubling it (`""`).
+ * - An optional header record may appear as the first line.
+ * - All records must contain the same number of fields.
+ *
+ * ## Extensions beyond RFC 4180
+ *
+ * - **Configurable delimiter** — any single character (tab for TSV, pipe, etc.)
+ * - **Configurable quote character** — defaults to `"`.
+ * - **LF-only and CR-only line endings** — accepted on input; CRLF on output.
+ * - **BOM stripping** — UTF-8 BOM (`\xEF\xBB\xBF`) is silently removed.
+ * - **Empty last line** — a trailing newline after the last record is ignored.
+ * - **Quoting strategies** — `QUOTE_MINIMAL` (default), `QUOTE_ALL`,
+ *   `QUOTE_NONNUMERIC`, `QUOTE_NONE`.
+ * - **Lenient mode** — tolerate unquoted fields containing the delimiter and
+ *   other minor deviations common in real-world CSV files.
+ *
+ * ## Quick start
+ *
+ * ### Reading
+ *
+ * ```blade
+ * import csv
+ *
+ * # Parse a CSV string directly.
+ * var table = csv.parse('name,age\r\nAlice,30\r\nBob,25')
+ * echo table[0]   # { name: 'Alice', age: '30' }
+ * echo table[1]   # { name: 'Bob',   age: '25' }
+ *
+ * # Stream a file row by row.
+ * var reader = csv.Reader(file('data.csv'))
+ * for row in reader {
+ *   echo row
+ * }
+ * reader.close()
+ * ```
+ *
+ * ### Writing
+ *
+ * ```blade
+ * import csv
+ *
+ * # Encode a list of dicts to a CSV string.
+ * var data = [
+ *   { name: 'Alice', age: 30 },
+ *   { name: 'Bob',   age: 25 },
+ * ]
+ * echo csv.stringify(data)
+ * # name,age\r\nAlice,30\r\nBob,25\r\n
+ *
+ * # Stream rows to a file.
+ * var writer = csv.Writer(file('out.csv', 'w'))
+ * writer.write_header(['name', 'age'])
+ * writer.write_row(['Alice', 30])
+ * writer.write_row(['Bob', 25])
+ * writer.close()
+ * ```
+ *
+ * @copyright 2024, The Zuri Contributors
+ */
+
+import io
+
+
+# ---------------------------------------------------------------------------
+# Constants — quoting strategies
+# ---------------------------------------------------------------------------
+
+/**
+ * Quote only fields that contain the delimiter, the quote character, or a
+ * line break. This is the default and produces the most compact output.
+ * Compliant with RFC 4180 §2 rule 6.
+ */
+var QUOTE_MINIMAL = 0
+
+/**
+ * Quote every field unconditionally, regardless of content.
+ * Produces the most portable output; useful when the consumer is known to
+ * require quoted fields.
+ */
+var QUOTE_ALL = 1
+
+/**
+ * Quote all non-numeric fields. Fields whose string representation is a
+ * valid integer or floating-point number are written unquoted.
+ */
+var QUOTE_NONNUMERIC = 2
+
+/**
+ * Never quote fields. If a field contains the delimiter or a line break,
+ * a `CsvError` is raised (in strict mode) or the character is written as-is
+ * (in lenient mode). Use only when you are certain the data contains no
+ * special characters.
+ */
+var QUOTE_NONE = 3
+
+
+# ---------------------------------------------------------------------------
+# Error class
+# ---------------------------------------------------------------------------
+
+/**
+ * Exception raised when a CSV parsing or encoding error is encountered.
+ *
+ * @property string  message  Human-readable description of the error.
+ * @property number  line     1-based line number where the error occurred
+ *                            (parsing errors only; -1 for encoding errors).
+ * @property number  column   1-based column (character) position within the
+ *                            line where the error occurred (-1 if unknown).
+ */
+class CsvError < Exception {
+  var line   = -1
+  var column = -1
+
+  /**
+   * @param string  message  Error description.
+   * @param number  line     Line number (1-based).
+   * @param number  column   Column number (1-based).
+   * @constructor
+   */
+  CsvError(message, line, column) {
+    parent(message)
+    if line   != nil { 
+      self.line   = line 
+    }
+    if column != nil { 
+      self.column = column 
+    }
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Dialect — bundles all format options
+# ---------------------------------------------------------------------------
+
+/**
+ * Encapsulates the formatting parameters that govern how CSV data is read
+ * or written.  Pass a `Dialect` instance to `Reader` or `Writer` to
+ * override the defaults.
+ *
+ * ### Example — tab-separated values (TSV)
+ *
+ * ```blade
+ * import csv
+ *
+ * var tsv = csv.Dialect()
+ * tsv.delimiter = '\t'
+ * var reader = csv.Reader(file, tsv)
+ * ```
+ *
+ * ### Example — pipe-delimited, quote-all
+ *
+ * ```blade
+ * var d = csv.Dialect()
+ * d.delimiter    = '|'
+ * d.quoting      = csv.QUOTE_ALL
+ * var writer = csv.Writer(file, d)
+ * ```
+ */
+class Dialect {
+  /**
+   * The single-character field delimiter. Default: `','`.
+   * @type string
+   */
+  var delimiter = ','
+
+  /**
+   * The character used to quote fields. Default: `'"'` (double-quote).
+   * @type string
+   */
+  var quote_char = '"'
+
+  /**
+   * The line terminator written between records. Default: `'\r\n'` (CRLF),
+   * as required by RFC 4180.  Set to `'\n'` for Unix-style output.
+   * @type string
+   */
+  var line_terminator = '\r\n'
+
+  /**
+   * Quoting strategy. One of `QUOTE_MINIMAL`, `QUOTE_ALL`,
+   * `QUOTE_NONNUMERIC`, or `QUOTE_NONE`. Default: `QUOTE_MINIMAL`.
+   * @type number
+   */
+  var quoting = QUOTE_MINIMAL
+
+  /**
+   * When `true` (default), leading and trailing whitespace is stripped from
+   * unquoted fields during reading. Quoted fields are never stripped.
+   * @type bool
+   */
+  var trim = false
+
+  /**
+   * When `true`, the parser accepts minor deviations from RFC 4180 such as
+   * a quote character that appears in the middle of an unquoted field.
+   * When `false` (default), such deviations raise a `CsvError`.
+   * @type bool
+   */
+  var lenient = false
+
+  /**
+   * When `true`, reading expects the first record to be a header row and
+   * returns subsequent records as dicts keyed by header name.
+   * When `false` (default), all records are returned as lists.
+   * @type bool
+   */
+  var has_header = false
+
+  /**
+   * Maximum number of characters allowed in a single field. `0` means no
+   * limit (default). Raises `CsvError` if exceeded.
+   * @type number
+   */
+  var max_field_size = 0
+
+  /**
+   * Validates that all dialect fields hold consistent, legal values.
+   *
+   * @throws CsvError  If any field is invalid.
+   */
+  validate() {
+    if self.delimiter.length() != 1 {
+      raise CsvError('Dialect.delimiter must be exactly one character', nil, nil)
+    }
+    if self.quote_char.length() != 1 {
+      raise CsvError('Dialect.quote_char must be exactly one character', nil, nil)
+    }
+    if self.delimiter == self.quote_char {
+      raise CsvError('Dialect.delimiter and quote_char must differ', nil, nil)
+    }
+    if self.quoting < QUOTE_MINIMAL or self.quoting > QUOTE_NONE {
+      raise CsvError('Dialect.quoting must be one of the QUOTE_* constants', nil, nil)
+    }
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Internal parser state machine
+# ---------------------------------------------------------------------------
+
+# Parser states.
+var _ST_START        = 0   # beginning of a field
+var _ST_FIELD        = 1   # inside an unquoted field
+var _ST_QUOTED       = 2   # inside a quoted field
+var _ST_QUOTE_END    = 3   # just saw a closing quote — next must be delimiter/EOL/EOF
+var _ST_QUOTE_ESCAPE = 4   # just saw "" inside a quoted field — potential escape or close
+
+/**
+ * Parses a single CSV record (row) from a character buffer starting at
+ * `start` within `text`, returning `{ fields, next_pos }`.
+ *
+ * `next_pos` is the index immediately after the consumed record terminator,
+ * or `text.length()` when the last record has no trailing newline.
+ * Returns `nil` when `start` is already at end-of-input.
+ *
+ * This is the core parsing function.  All public API ultimately calls this.
+ *
+ * @internal
+ */
+def _parse_record(text, start, dialect, line_num) {
+  var n         = text.length()
+  if start >= n { 
+    return nil 
+  }
+
+  var fields    = []
+  var field     = ''
+  var state     = _ST_START
+  var i         = start
+  var field_col = 1        # column at which current field began (for errors)
+  var col       = 1
+
+  var delim  = dialect.delimiter
+  var qchar  = dialect.quote_char
+  var lenient = dialect.lenient
+  var max_fs  = dialect.max_field_size
+
+  while i < n {
+    var ch = text[i]
+
+    # ---- max field size guard ----
+    if max_fs > 0 and field.length() > max_fs {
+      raise CsvError(
+        'field exceeds maximum size of ' + max_fs + ' characters',
+        line_num, field_col
+      )
+    }
+
+    if state == _ST_START {
+      # Beginning of a new field.
+      if ch == qchar {
+        # Opening quote — enter quoted mode.
+        state     = _ST_QUOTED
+        field_col = col
+        i++; col++
+      } else if ch == delim {
+        # Empty field followed immediately by delimiter.
+        fields.append('')
+        i++; col++
+        state = _ST_START
+      } else if ch == '\r' {
+        # CR: may be CRLF or bare CR used as a line ending.
+        fields.append('')
+        i++; col = 1
+        if i < n and text[i] == '\n' { i++ }
+        return { fields: fields, next_pos: i, line: line_num }
+      } else if ch == '\n' {
+        # LF: bare LF line ending.
+        fields.append('')
+        i++; col = 1
+        return { fields: fields, next_pos: i, line: line_num }
+      } else {
+        # Start of an unquoted field.
+        state     = _ST_FIELD
+        field_col = col
+        field    += ch
+        i++; col++
+      }
+
+    } else if state == _ST_FIELD {
+      # Inside an unquoted field.
+      if ch == delim {
+        # End of field.
+        if dialect.trim { 
+          field = field.trim() 
+        }
+        fields.append(field)
+        field = ''
+        state = _ST_START
+        i++; col++
+      } else if ch == '\r' {
+        # End of record (CRLF or bare CR).
+        if dialect.trim { 
+          field = field.trim() 
+        }
+        fields.append(field)
+        i++; col = 1
+        if i < n and text[i] == '\n' { i++ }
+        return { fields: fields, next_pos: i, line: line_num }
+      } else if ch == '\n' {
+        # End of record (bare LF).
+        if dialect.trim { 
+          field = field.trim() 
+        }
+        fields.append(field)
+        i++; col = 1
+        return { fields: fields, next_pos: i, line: line_num }
+      } else if ch == qchar {
+        # Quote in the middle of an unquoted field.
+        if lenient {
+          field += ch
+          i++; col++
+        } else {
+          raise CsvError(
+            'unexpected quote character in unquoted field; ' +
+            'use lenient mode to allow this',
+            line_num, col
+          )
+        }
+      } else {
+        field += ch
+        i++; col++
+      }
+
+    } else if state == _ST_QUOTED {
+      # Inside a quoted field.
+      if ch == qchar {
+        # Could be closing quote or escaped quote ("").
+        state = _ST_QUOTE_ESCAPE
+        i++; col++
+      } else if ch == '\r' {
+        # CR inside a quoted field — literal part of field content.
+        field += ch
+        i++
+        if i < n and text[i] == '\n' {
+          field += '\n'
+          i++
+        }
+        line_num++; col = 1
+      } else if ch == '\n' {
+        # LF inside a quoted field — literal part of field content.
+        field += ch
+        i++; line_num++; col = 1
+      } else {
+        field += ch
+        i++; col++
+      }
+
+    } else if state == _ST_QUOTE_ESCAPE {
+      # We just saw a quote inside a quoted field.
+      # If the next character is also a quote, it is an escaped quote ("").
+      # Otherwise the first quote was the closing quote.
+      if ch == qchar {
+        # Escaped double-quote — add a literal quote to the field.
+        field += qchar
+        state  = _ST_QUOTED
+        i++; col++
+      } else if ch == delim {
+        # Closing quote followed by delimiter — end of field.
+        fields.append(field)
+        field = ''
+        state = _ST_START
+        i++; col++
+      } else if ch == '\r' {
+        # Closing quote followed by CR — end of record.
+        fields.append(field)
+        i++; col = 1
+        if i < n and text[i] == '\n' { i++ }
+        return { fields: fields, next_pos: i, line: line_num }
+      } else if ch == '\n' {
+        # Closing quote followed by LF — end of record.
+        fields.append(field)
+        i++; col = 1
+        return { fields: fields, next_pos: i, line: line_num }
+      } else {
+        # Character after closing quote is neither delimiter nor line end.
+        if lenient {
+          # Treat as end-of-quoted-field; continue as unquoted.
+          field += ch
+          state  = _ST_FIELD
+          i++; col++
+        } else {
+          raise CsvError(
+            'unexpected character after closing quote: \'' + ch + '\'',
+            line_num, col
+          )
+        }
+      }
+
+    }
+    # _ST_QUOTE_END is unused in this implementation; _ST_QUOTE_ESCAPE
+    # handles the same logic inline.
+  }
+
+  # End of input reached.
+  if state == _ST_QUOTED {
+    if lenient {
+      # Unterminated quoted field — accept it as-is.
+      fields.append(field)
+    } else {
+      raise CsvError('unterminated quoted field at end of input', line_num, field_col)
+    }
+  } else if state == _ST_QUOTE_ESCAPE {
+    # Input ended immediately after a closing quote — valid.
+    fields.append(field)
+  } else if state == _ST_FIELD {
+    if dialect.trim { field = field.trim() }
+    fields.append(field)
+  } else if state == _ST_START and fields.length() == 0 {
+    # Truly empty input — return nil so the caller knows there is nothing.
+    return nil
+  } else if state == _ST_START {
+    # Trailing delimiter with no field after it — append empty field.
+    fields.append('')
+  }
+
+  return { fields: fields, next_pos: n, line: line_num }
+}
+
+/**
+ * Encodes a single field value according to the dialect's quoting rules.
+ *
+ * @internal
+ */
+def _encode_field(value, dialect) {
+
+  # Adjust for sensible Zuri data
+  if is_bytes(value) {
+    value = value.to_string()
+  } else if is_list(value) {
+    value = ','.join(value)
+  } 
+
+  var s      = to_string(value)
+  var qchar  = dialect.quote_char
+  var delim  = dialect.delimiter
+  var term   = dialect.line_terminator
+
+  if dialect.quoting == QUOTE_NONE {
+    # No quoting at all. Raise if the field contains special characters.
+    if s.contains(delim) or s.contains('\n') or s.contains('\r') {
+      raise CsvError(
+        'field contains delimiter or line break but quoting is QUOTE_NONE; ' +
+        'change the quoting strategy or sanitise the data',
+        -1, -1
+      )
+    }
+    return s
+  }
+
+  var needs_quoting = false
+
+  if dialect.quoting == QUOTE_ALL {
+    needs_quoting = true
+  } else if dialect.quoting == QUOTE_NONNUMERIC {
+    # Quote unless the value is an integer or float.
+    var is_numeric = s.matches('/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$/')
+    needs_quoting = !is_numeric
+  } else {
+    # QUOTE_MINIMAL: quote only when necessary.
+    needs_quoting = s.contains(delim) or
+              s.contains(qchar) or
+              s.contains('\r') or
+              s.contains('\n')
+  }
+
+  if !needs_quoting { 
+    return s
+  }
+
+  # Build the quoted representation.
+  # Escape every quote character by doubling it (RFC 4180 §2 rule 7).
+  var escaped = s.replace('/' + qchar + '/g', qchar + qchar)
+  return qchar + escaped + qchar
+}
+
+/**
+ * Returns `true` if `text` begins with a UTF-8 BOM (`\xEF\xBB\xBF`).
+ *
+ * @internal
+ */
+def _has_bom(text) {
+  return text.length() >= 3 and
+    ord(text[0]) == 0xef and
+    ord(text[1]) == 0xbb and
+    ord(text[2]) == 0xbf
+}
+
+
+# ---------------------------------------------------------------------------
+# Reader
+# ---------------------------------------------------------------------------
+
+/**
+ * An incremental, row-by-row CSV reader that wraps a Zuri `io.file` object
+ * (or any object implementing `.read()` and `.close()`).
+ *
+ * `Reader` implements the iterator protocol so it can be used directly in
+ * a `for` loop.
+ *
+ * ### Example — reading a file with a header row
+ *
+ * ```blade
+ * import csv
+ * import io
+ *
+ * var d = csv.Dialect()
+ * d.has_header = true
+ *
+ * var reader = csv.Reader(file('employees.csv'), d)
+ * for row in reader {
+ *   echo row['name'] + ' earns ' + row['salary']
+ * }
+ * reader.close()
+ * ```
+ *
+ * ### Example — tab-separated file, no header
+ *
+ * ```blade
+ * import csv
+ * import io
+ *
+ * var d = csv.Dialect()
+ * d.delimiter = '\t'
+ *
+ * var reader = csv.Reader(file('data.tsv'), d)
+ * for row in reader {
+ *   echo row   # list: ['field1', 'field2', ...]
+ * }
+ * reader.close()
+ * ```
+ *
+ * ### Notes
+ *
+ * - The file is read all at once into memory. For very large files (> a few
+ *   hundred MB), consider streaming line by line using `read_record()`.
+ * - When `dialect.has_header` is `true`, the first record is consumed as
+ *   the header and is accessible via the `headers` property.
+ * - When `dialect.has_header` is `true` and a data row has fewer fields
+ *   than the header, the missing fields are set to `nil`.
+ * - When `dialect.has_header` is `true` and a row has *more* fields than
+ *   the header, the extra fields are silently discarded (lenient mode) or
+ *   raise `CsvError` (strict mode).
+ */
+class Reader {
+  /**
+   * The dialect governing parsing behaviour.
+   * @type Dialect
+   */
+  var dialect
+
+  /**
+   * The header row, as a list of strings, once the first record has been
+   * consumed. `nil` when `dialect.has_header` is `false`.
+   * @type list | nil
+   */
+  var headers = nil
+
+  /**
+   * The 1-based index of the most recently returned record (not counting the
+   * header row).
+   * @type number
+   */
+  var record_num = 0
+
+  var _text    = ''    # full source text
+  var _pos     = 0    # current parse position
+  var _line    = 1    # current 1-based line counter
+  var _file    = nil  # underlying file object (may be nil if parsing a string)
+  var _done    = false
+
+  /**
+   * Creates a `Reader` from a file object.
+   *
+   * @param file     file     An open, readable Zuri file object.
+   * @param Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+   * @throws CsvError  If dialect validation fails.
+   */
+  Reader(file, dialect) {
+    self._file = file
+    self.dialect = dialect != nil ? dialect : Dialect()
+    self.dialect.validate()
+
+    # Read the entire file at once so the parser has a single contiguous buffer.
+    self._text = file.read()
+    if is_bytes(self._text) {
+      self._text = self._text.to_string()
+    }
+
+    # Strip UTF-8 BOM if present.
+    if _has_bom(self._text) {
+      self._text = self._text[3, self._text.length()]
+    }
+
+    self._pos  = 0
+    self._line = 1
+
+    # Consume the header row immediately.
+    if self.dialect.has_header {
+      var result = _parse_record(self._text, self._pos, self.dialect, self._line)
+      if result != nil {
+        self.headers = result.fields
+        self._pos    = result.next_pos
+        self._line   = result.line + 1
+        # Skip a blank line that may follow the header on some exports.
+        self._skip_blank_lines()
+      }
+    }
+  }
+
+  # Skip empty lines (lines containing only CR/LF).
+  _skip_blank_lines() {
+    while self._pos < self._text.length() {
+      var ch = self._text[self._pos]
+      if ch == '\r' {
+        self._pos++
+        if self._pos < self._text.length() and self._text[self._pos] == '\n' {
+          self._pos++
+        }
+        self._line++
+      } else if ch == '\n' {
+        self._pos++; self._line++
+      } else {
+        break
+      }
+    }
+  }
+
+  /**
+   * Reads and returns the next record, or `nil` when all records have been
+   * consumed.
+   *
+   * When `dialect.has_header` is `true`, returns a dict keyed by header
+   * name.  Otherwise returns a list of field strings.
+   *
+   * @return list | dict | nil
+   * @throws CsvError  On parse error in strict mode.
+   */
+  read_record() {
+    if self._done { return nil }
+
+    # Skip the empty trailing line that many generators append.
+    self._skip_blank_lines()
+
+    if self._pos >= self._text.length() {
+      self._done = true
+      return nil
+    }
+
+    var result = _parse_record(self._text, self._pos, self.dialect, self._line)
+    if result == nil {
+      self._done = true
+      return nil
+    }
+
+    self._pos   = result.next_pos
+    self._line  = result.line + 1
+    self.record_num++
+
+    var fields = result.fields
+
+    if self.dialect.has_header and self.headers != nil {
+      return self._to_dict(fields)
+    }
+    return fields
+  }
+
+  # Convert a field list to a dict using the stored headers.
+  _to_dict(fields) {
+    var row = {}
+    var h   = self.headers
+    var hlen = h.length()
+    var flen = fields.length()
+
+    iter var i = 0; i < hlen; i++ {
+      row[h[i]] = i < flen ? fields[i] : nil
+    }
+
+    if flen > hlen and !self.dialect.lenient {
+      raise CsvError(
+        'record ' + self.record_num + ' has ' + flen + ' fields but ' +
+        'header defines ' + hlen,
+        self._line - 1, -1
+      )
+    }
+
+    return row
+  }
+
+  /**
+   * Reads all remaining records into a list and returns it.
+   *
+   * @return list  A list of lists (or dicts when `dialect.has_header` is `true`).
+   */
+  read_all() {
+    var rows = []
+    var row  = self.read_record()
+    while row != nil {
+      rows.append(row)
+      row = self.read_record()
+    }
+    return rows
+  }
+
+  /**
+   * Iterator protocol — returns the next record, enabling `for row in reader`.
+   *
+   * @return list | dict | nil
+   */
+  @iter(n) {
+    return self.read_record()
+  }
+
+  /**
+   * Iterator termination — returns `false` when all records are exhausted.
+   */
+  @itern(n) {
+    return !self._done and self._pos < self._text.length()
+  }
+
+  /**
+   * Closes the underlying file object.
+   * Always call `close()` when done, even if an error occurred.
+   */
+  close() {
+    if self._file != nil {
+      self._file.close()
+    }
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Writer
+# ---------------------------------------------------------------------------
+
+/**
+ * An incremental, row-by-row CSV writer that wraps a Zuri `io.file` object
+ * (or any object implementing `.write()` and `.close()`).
+ *
+ * ### Example — writing dicts (with header)
+ *
+ * ```blade
+ * import csv
+ * import io
+ *
+ * var writer = csv.Writer(file('out.csv', 'w'))
+ * writer.write_header(['id', 'name', 'score'])
+ * writer.write_row([1, 'Alice', 98.5])
+ * writer.write_row([2, 'Bob',   72.0])
+ * writer.close()
+ * ```
+ *
+ * ### Example — QUOTE_ALL with tab delimiter
+ *
+ * ```blade
+ * import csv
+ * import io
+ *
+ * var d = csv.Dialect()
+ * d.delimiter = '\t'
+ * d.quoting   = csv.QUOTE_ALL
+ *
+ * var writer = csv.Writer(file('out.tsv', 'w'), d)
+ * writer.write_row(['Alice', 'Engineer', 'New York'])
+ * writer.close()
+ * ```
+ *
+ * ### Notes
+ *
+ * - `write_row()` accepts a list of any values; each is converted to a
+ *   string with `.to_string()` before encoding.
+ * - `write_dict()` accepts a dict and a `keys` list that controls the field
+ *   order and which keys are written.
+ * - The writer does **not** buffer: every call to `write_row()` immediately
+ *   writes to the underlying file.
+ */
+class Writer {
+  /**
+   * The dialect governing encoding behaviour.
+   * @type Dialect
+   */
+  var dialect
+
+  /**
+   * The number of records written so far (not counting the header row).
+   * @type number
+   */
+  var record_num = 0
+
+  var _file    = nil
+
+  /**
+   * Creates a `Writer` targeting a file object.
+   *
+   * @param file     file     An open, writable Zuri file object.
+   * @param Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+   * @throws CsvError  If dialect validation fails.
+   */
+  Writer(file, dialect) {
+    self._file   = file
+    self.dialect = dialect != nil ? dialect : Dialect()
+    self.dialect.validate()
+  }
+
+  /**
+   * Encodes and writes a single record from a list of values.
+   *
+   * Each element of `row` is converted to a string via `.to_string()` and
+   * then encoded according to the dialect's quoting strategy.
+   *
+   * @param  list  row  The field values for this record.
+   * @throws CsvError   On encoding error (e.g. QUOTE_NONE with special chars).
+   */
+  write_row(row) {
+    var parts = []
+    for value in row {
+      parts.append(_encode_field(value, self.dialect))
+    }
+    self._file.puts(self.dialect.delimiter.join(parts) + self.dialect.line_terminator)
+    self.record_num++
+  }
+
+  /**
+   * Encodes and writes a header record from a list of column name strings.
+   *
+   * Functionally identical to `write_row()` but does not increment
+   * `record_num`, making it semantically clear that this is metadata.
+   *
+   * @param  list  headers  The column names.
+   * @throws CsvError  On encoding error.
+   */
+  write_header(headers) {
+    var parts = []
+    for name in headers {
+      parts.append(_encode_field(name, self.dialect))
+    }
+    self._file.write(parts.join(self.dialect.delimiter) + self.dialect.line_terminator)
+  }
+
+  /**
+   * Encodes and writes a single record from a dict, using `keys` to
+   * determine field order.  Missing keys produce empty fields.
+   *
+   * ```blade
+   * writer.write_dict({ name: 'Alice', age: 30 }, ['name', 'age'])
+   * ```
+   *
+   * @param  dict  row   The record as a key-value dict.
+   * @param  list  keys  Ordered list of keys to extract from `row`.
+   * @throws CsvError  On encoding error.
+   */
+  write_dict(row, keys) {
+    var parts = []
+    for key in keys {
+      var value = row.get(key, '')
+      parts.append(_encode_field(value, self.dialect))
+    }
+    self._file.write(parts.join(self.dialect.delimiter) + self.dialect.line_terminator)
+    self.record_num++
+  }
+
+  /**
+   * Writes a list of records from a list of dicts, preceded by a header row
+   * whose columns are derived from the keys of the first record.
+   *
+   * If `keys` is provided it controls column order; otherwise the keys of
+   * the first row are used in their natural iteration order.
+   *
+   * ```blade
+   * writer.write_dicts([
+   *   { name: 'Alice', age: 30 },
+   *   { name: 'Bob',   age: 25 },
+   * ])
+   * ```
+   *
+   * @param  list  rows  List of dicts, each representing one record.
+   * @param  list  keys  Optional ordered key list.  Inferred from the first
+   *                     row when omitted.
+   * @throws CsvError  On encoding error.
+   */
+  write_dicts(rows, keys) {
+    if rows.length() == 0 { return }
+
+    if keys == nil {
+      keys = rows[0].keys()
+    }
+
+    self.write_header(keys)
+    for row in rows {
+      self.write_dict(row, keys)
+    }
+  }
+
+  /**
+   * Closes the underlying file object.
+   * Always call `close()` when done, even if an error occurred.
+   */
+  close() {
+    if self._file != nil {
+      self._file.close()
+    }
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Convenience functions
+# ---------------------------------------------------------------------------
+
+/**
+ * Parses a CSV string and returns all records as a list.
+ *
+ * When `dialect.has_header` is `true` (or `has_header` is passed as `true`),
+ * the first record is treated as a header and every subsequent record is
+ * returned as a dict keyed by column name.  Otherwise, records are returned
+ * as lists of strings.
+ *
+ * This function is the simplest way to parse a complete CSV document that
+ * already resides in memory.
+ *
+ * ### Examples
+ *
+ * ```blade
+ * import csv
+ *
+ * # No header — returns list of lists.
+ * var rows = csv.parse('a,b,c\r\n1,2,3\r\n4,5,6')
+ * echo rows[0]   # ['a', 'b', 'c']
+ * echo rows[1]   # ['1', '2', '3']
+ *
+ * # With header — returns list of dicts.
+ * var d = csv.Dialect()
+ * d.has_header = true
+ * rows = csv.parse('name,age\r\nAlice,30\r\nBob,25', d)
+ * echo rows[0]   # { name: 'Alice', age: '30' }
+ * echo rows[1]   # { name: 'Bob',   age: '25' }
+ *
+ * # Tab-separated, no header.
+ * var td = csv.Dialect()
+ * td.delimiter = '\t'
+ * rows = csv.parse('x\t1\ny\t2', td)
+ * echo rows[0]   # ['x', '1']
+ * ```
+ *
+ * @param  string   text     The CSV text to parse.
+ * @param  Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+ * @return list              List of lists or dicts depending on `has_header`.
+ * @throws CsvError          On parse error in strict mode.
+ */
+def parse(text, dialect) {
+  if dialect == nil { dialect = Dialect() }
+  dialect.validate()
+
+  # Strip UTF-8 BOM.
+  if _has_bom(text) {
+    text = text[3, text.length()]
+  }
+
+  var rows     = []
+  var pos      = 0
+  var line_num = 1
+  var headers  = nil
+  var first    = true
+
+  while pos < text.length() {
+    var result = _parse_record(text, pos, dialect, line_num)
+    if result == nil { break }
+
+    pos      = result.next_pos
+    line_num = result.line + 1
+    var fields = result.fields
+
+    # Skip completely empty records (blank lines).
+    if fields.length() == 1 and fields[0] == '' { continue }
+
+    if first and dialect.has_header {
+      headers = fields
+      first   = false
+      continue
+    }
+    first = false
+
+    if dialect.has_header and headers != nil {
+      var row  = {}
+      var hlen = headers.length()
+      var flen = fields.length()
+
+      iter var i = 0; i < hlen; i++ {
+        row[headers[i]] = i < flen ? fields[i] : nil
+      }
+
+      if flen > hlen and !dialect.lenient {
+        raise CsvError(
+          'record has ' + flen + ' fields but header defines ' + hlen,
+          line_num - 1, -1
+        )
+      }
+
+      rows.append(row)
+    } else {
+      rows.append(fields)
+    }
+  }
+
+  return rows
+}
+
+/**
+ * Encodes a list of records into a CSV string and returns it.
+ *
+ * Each element of `rows` may be either a list (field values in order) or a
+ * dict.  When `rows` contains dicts, `keys` controls the column order; if
+ * omitted, the keys of the first dict determine the order.  A header row is
+ * written automatically when `rows` contains dicts.
+ *
+ * ### Examples
+ *
+ * ```blade
+ * import csv
+ *
+ * # From lists — no header.
+ * echo csv.stringify([['Alice', 30], ['Bob', 25]])
+ * # Alice,30\r\nBob,25\r\n
+ *
+ * # From dicts — header inferred.
+ * echo csv.stringify([
+ *   { name: 'Alice', age: 30 },
+ *   { name: 'Bob',   age: 25 },
+ * ])
+ * # name,age\r\nAlice,30\r\nBob,25\r\n
+ *
+ * # Custom dialect.
+ * var d = csv.Dialect()
+ * d.quoting = csv.QUOTE_ALL
+ * echo csv.stringify([['hello, world', 42]], d)
+ * # "hello, world","42"\r\n
+ * ```
+ *
+ * @param  list     rows     List of lists or dicts to encode.
+ * @param  Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+ * @param  list     keys     Optional column key order when `rows` are dicts.
+ * @return string            The encoded CSV text.
+ * @throws CsvError          On encoding error.
+ */
+def stringify(rows, dialect, keys) {
+  if dialect == nil { dialect = Dialect() }
+  dialect.validate()
+
+  if rows.length() == 0 { return '' }
+
+  var result = ''
+  var term   = dialect.line_terminator
+
+  # Detect row type from first element.
+  var first_row = rows[0]
+
+  if is_dict(first_row) {
+    if keys == nil { keys = first_row.keys() }
+    # Write header.
+    var header_parts = []
+    for key in keys {
+      header_parts.append(_encode_field(key, dialect))
+    }
+    result += header_parts.join(dialect.delimiter) + term
+
+    # Write data rows.
+    for row in rows {
+      var parts = []
+      for key in keys {
+        parts.append(_encode_field(row.get(key, ''), dialect))
+      }
+      result += parts.join(dialect.delimiter) + term
+    }
+  } else {
+    for row in rows {
+      var parts = []
+      for value in row {
+        parts.append(_encode_field(value, dialect))
+      }
+      result += parts.join(dialect.delimiter) + term
+    }
+  }
+
+  return result
+}
+
+/**
+ * Parses a single CSV record string and returns the fields as a list.
+ *
+ * This is a lightweight utility for parsing a single line when you already
+ * have it isolated (e.g. from a line-buffered reader).  No record separator
+ * detection is performed.
+ *
+ * ```blade
+ * import csv
+ *
+ * csv.parse_record('"hello, world",42,true')
+ * # ['hello, world', '42', 'true']
+ *
+ * csv.parse_record('"He said ""hi""",ok')
+ * # ['He said "hi"', 'ok']
+ * ```
+ *
+ * @param  string   line     A single CSV record (with or without line ending).
+ * @param  Dialect  dialect  Optional dialect.
+ * @return list              The parsed field values.
+ * @throws CsvError          On parse error.
+ */
+def parse_record(line, dialect) {
+  if dialect == nil { dialect = Dialect() }
+  dialect.validate()
+  var result = _parse_record(line, 0, dialect, 1)
+  if result == nil { return [] }
+  return result.fields
+}
+
+/**
+ * Encodes a single list of values as one CSV record and returns the string
+ * (including the line terminator).
+ *
+ * ```blade
+ * import csv
+ *
+ * csv.format_record(['Alice', 'New York, NY', 'She said "hello"'])
+ * # 'Alice,"New York, NY","She said ""hello"""\r\n'
+ * ```
+ *
+ * @param  list     row      Field values to encode.
+ * @param  Dialect  dialect  Optional dialect.
+ * @return string            The encoded record with line terminator.
+ * @throws CsvError          On encoding error.
+ */
+def format_record(row, dialect) {
+  if dialect == nil { dialect = Dialect() }
+  dialect.validate()
+  var parts = []
+  for value in row {
+    parts.append(_encode_field(value, dialect))
+  }
+  return parts.join(dialect.delimiter) + dialect.line_terminator
+}
+
+/**
+ * Reads a CSV file and returns all records as a list.
+ *
+ * Convenience wrapper around `Reader` that opens, reads, and closes in one
+ * call.  Use `Reader` directly when you need streaming or finer control.
+ *
+ * ```blade
+ * import csv
+ *
+ * var d = csv.Dialect()
+ * d.has_header = true
+ * var rows = csv.read_file('employees.csv', d)
+ * echo rows[0]['name']
+ * ```
+ *
+ * @param  string   path     Filesystem path to the CSV file.
+ * @param  Dialect  dialect  Optional dialect.
+ * @return list              All records as lists or dicts.
+ * @throws CsvError          On parse error.
+ * @throws Exception         On file I/O error.
+ */
+def read_file(path, dialect) {
+  var f      = file(path)
+  var reader = Reader(f, dialect)
+  var rows   = reader.read_all()
+  reader.close()
+  return rows
+}
+
+/**
+ * Encodes a list of records and writes them to a CSV file, creating or
+ * overwriting the file at `path`.
+ *
+ * Convenience wrapper around `Writer`.  Use `Writer` directly when you need
+ * streaming or finer control.
+ *
+ * ```blade
+ * import csv
+ *
+ * csv.write_file('out.csv', [
+ *   { name: 'Alice', score: 98 },
+ *   { name: 'Bob',   score: 72 },
+ * ])
+ * ```
+ *
+ * @param  string   path     Filesystem path to write to.
+ * @param  list     rows     List of lists or dicts.
+ * @param  Dialect  dialect  Optional dialect.
+ * @param  list     keys     Optional column key order for dict rows.
+ * @throws CsvError          On encoding error.
+ * @throws Exception         On file I/O error.
+ */
+def write_file(path, rows, dialect, keys) {
+  var f      = file(path, 'w')
+  var writer = Writer(f, dialect)
+
+  if rows.length() == 0 {
+    writer.close()
+    return
+  }
+
+  var first = rows[0]
+  if is_dict(first) {
+    if keys == nil { keys = first.keys() }
+    writer.write_header(keys)
+    for row in rows {
+      writer.write_dict(row, keys)
+    }
+  } else {
+    for row in rows {
+      writer.write_row(row)
+    }
+  }
+
+  writer.close()
+}
