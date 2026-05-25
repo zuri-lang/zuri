@@ -73,7 +73,7 @@
  * writer.close()
  * ```
  *
- * @copyright 2024, The Zuri Contributors
+ * @copyright 2024, Richard Ore and The Zuri Contributors
  */
 
 import io
@@ -633,10 +633,18 @@ class Reader {
    * Creates a `Reader` from a file object.
    *
    * @param file     file     An open, readable Zuri file object.
-   * @param Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+   * @param Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
    * @throws CsvError  If dialect validation fails.
    */
   Reader(file, dialect) {
+    if !is_file(file) and !instance_of(file, io.BytesIO) {
+      raise ArgumentError('file-like object expected in argument 1 (file)')
+    }
+
+    if dialect != nil and !instance_of(dialect, Dialect) {
+      raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+    }
+
     self._file = file
     self.dialect = dialect != nil ? dialect : Dialect()
     self.dialect.validate()
@@ -854,10 +862,18 @@ class Writer {
    * Creates a `Writer` targeting a file object.
    *
    * @param file     file     An open, writable Zuri file object.
-   * @param Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+   * @param Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
    * @throws CsvError  If dialect validation fails.
    */
   Writer(file, dialect) {
+    if !is_file(file) and !instance_of(file, io.BytesIO) {
+      raise ArgumentError('file-like object expected in argument 1 (file)')
+    }
+
+    if dialect != nil and !instance_of(dialect, Dialect) {
+      raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+    }
+
     self._file   = file
     self.dialect = dialect != nil ? dialect : Dialect()
     self.dialect.validate()
@@ -873,6 +889,10 @@ class Writer {
    * @throws CsvError   On encoding error (e.g. QUOTE_NONE with special chars).
    */
   write_row(row) {
+    if !is_list(row) {
+      raise ArgumentError('list expected')
+    }
+
     var parts = []
     for value in row {
       parts.append(_encode_field(value, self.dialect))
@@ -891,6 +911,10 @@ class Writer {
    * @throws CsvError  On encoding error.
    */
   write_header(headers) {
+    if !is_list(headers) {
+      raise ArgumentError('list expected')
+    }
+
     var parts = []
     for name in headers {
       parts.append(_encode_field(name, self.dialect))
@@ -911,6 +935,14 @@ class Writer {
    * @throws CsvError  On encoding error.
    */
   write_dict(row, keys) {
+    if !is_dict(row) {
+      raise ArgumentError('dictionary expected in argument 1 (row)')
+    }
+
+    if !is_list(keys) {
+      raise ArgumentError('list expected in argument 2 (keys)')
+    }
+
     var parts = []
     for key in keys {
       var value = row.get(key, '')
@@ -935,11 +967,19 @@ class Writer {
    * ```
    *
    * @param  list  rows  List of dicts, each representing one record.
-   * @param  list  keys  Optional ordered key list.  Inferred from the first
-   *                     row when omitted.
+   * @param  list?  keys  Optional ordered key list.  Inferred from the first
+   *     row when omitted.
    * @throws CsvError  On encoding error.
    */
   write_dicts(rows, keys) {
+    if !is_list(rows) {
+      raise ArgumentError('dictionary expected in argument 1 (rows)')
+    }
+
+    if keys != nil and !is_list(keys) {
+      raise ArgumentError('list expected in argument 2 (keys)')
+    }
+
     if rows.length() == 0 { return }
 
     if keys == nil {
@@ -1004,12 +1044,23 @@ class Writer {
  * ```
  *
  * @param  string   text     The CSV text to parse.
- * @param  Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+ * @param  Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
  * @return list              List of lists or dicts depending on `has_header`.
  * @throws CsvError          On parse error in strict mode.
  */
 def parse(text, dialect) {
-  if dialect == nil { dialect = Dialect() }
+  if !is_string(text) {
+    raise ArgumentError('string expected in argument 1 (text)')
+  }
+
+  if dialect != nil and !instance_of(dialect, Dialect) {
+    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+  }
+
+  if dialect == nil { 
+    dialect = Dialect() 
+  }
+
   dialect.validate()
 
   # Strip UTF-8 BOM.
@@ -1098,13 +1149,27 @@ def parse(text, dialect) {
  * ```
  *
  * @param  list     rows     List of lists or dicts to encode.
- * @param  Dialect  dialect  Optional dialect (defaults to `Dialect()`).
- * @param  list     keys     Optional column key order when `rows` are dicts.
+ * @param  Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
+ * @param  list?     keys     Optional column key order when `rows` are dicts.
  * @return string            The encoded CSV text.
  * @throws CsvError          On encoding error.
  */
 def stringify(rows, dialect, keys) {
-  if dialect == nil { dialect = Dialect() }
+  if !is_list(rows) {
+    raise ArgumentError('list expected in argument 1 (rows)')
+  }
+
+  if dialect != nil and !instance_of(dialect, Dialect) {
+    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+  }
+
+  if keys != nil and !is_list(keys) {
+    raise ArgumentError('list expected in argument 3 (keys)')
+  }
+
+  if dialect == nil { 
+    dialect = Dialect() 
+  }
   dialect.validate()
 
   if rows.length() == 0 { return '' }
@@ -1163,12 +1228,22 @@ def stringify(rows, dialect, keys) {
  * ```
  *
  * @param  string   line     A single CSV record (with or without line ending).
- * @param  Dialect  dialect  Optional dialect.
+ * @param  Dialect?  dialect  Optional dialect.
  * @return list              The parsed field values.
  * @throws CsvError          On parse error.
  */
 def parse_record(line, dialect) {
-  if dialect == nil { dialect = Dialect() }
+  if !is_string(line) {
+    raise ArgumentError('string expected in argument 1 (line)')
+  }
+
+  if dialect != nil and !instance_of(dialect, Dialect) {
+    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+  }
+
+  if dialect == nil { 
+    dialect = Dialect() 
+  }
   dialect.validate()
   var result = _parse_record(line, 0, dialect, 1)
   if result == nil { return [] }
@@ -1187,12 +1262,22 @@ def parse_record(line, dialect) {
  * ```
  *
  * @param  list     row      Field values to encode.
- * @param  Dialect  dialect  Optional dialect.
+ * @param  Dialect?  dialect  Optional dialect.
  * @return string            The encoded record with line terminator.
  * @throws CsvError          On encoding error.
  */
 def format_record(row, dialect) {
-  if dialect == nil { dialect = Dialect() }
+  if !is_list(row) {
+    raise ArgumentError('list expected in argument 1 (row)')
+  }
+
+  if dialect != nil and !instance_of(dialect, Dialect) {
+    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+  }
+
+  if dialect == nil { 
+    dialect = Dialect() 
+  }
   dialect.validate()
   var parts = []
   for value in row {
@@ -1217,16 +1302,25 @@ def format_record(row, dialect) {
  * ```
  *
  * @param  string   path     Filesystem path to the CSV file.
- * @param  Dialect  dialect  Optional dialect.
+ * @param  Dialect?  dialect  Optional dialect.
  * @return list              All records as lists or dicts.
  * @throws CsvError          On parse error.
  * @throws Exception         On file I/O error.
  */
 def read_file(path, dialect) {
+  if !is_string(path) {
+    raise ArgumentError('string expected in argument 1 (path)')
+  }
+
+  if dialect != nil and !instance_of(dialect, Dialect) {
+    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+  }
+
   var f      = file(path)
   var reader = Reader(f, dialect)
   var rows   = reader.read_all()
   reader.close()
+  f.close()
   return rows
 }
 
@@ -1248,12 +1342,28 @@ def read_file(path, dialect) {
  *
  * @param  string   path     Filesystem path to write to.
  * @param  list     rows     List of lists or dicts.
- * @param  Dialect  dialect  Optional dialect.
- * @param  list     keys     Optional column key order for dict rows.
+ * @param  Dialect?  dialect  Optional dialect.
+ * @param  list?     keys     Optional column key order for dict rows.
  * @throws CsvError          On encoding error.
  * @throws Exception         On file I/O error.
  */
 def write_file(path, rows, dialect, keys) {
+  if !is_string(path) {
+    raise ArgumentError('string expected in argument 1 (path)')
+  }
+
+  if !is_list(rows) {
+    raise ArgumentError('list expected in argument 2 (rows)')
+  }
+
+  if dialect != nil and !instance_of(dialect, Dialect) {
+    raise ArgumentError('instance of csv.Dialect expected in argument 3 (dialect)')
+  }
+
+  if keys != nil and !is_list(keys) {
+    raise ArgumentError('list expected in argument 3 (keys)')
+  }
+
   var f      = file(path, 'w')
   var writer = Writer(f, dialect)
 
@@ -1276,4 +1386,5 @@ def write_file(path, rows, dialect, keys) {
   }
 
   writer.close()
+  f.close()
 }
