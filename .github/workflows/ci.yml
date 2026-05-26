@@ -86,7 +86,7 @@ jobs:
       - name: Setup dependencies
         run: |
           brew uninstall pkg-config --ignore-dependencies
-          brew install pkg-config gd libffi libargon2
+          brew install pkg-config gd libffi argon2
       - name: Compile
         run: |
           cmake -B . -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl
