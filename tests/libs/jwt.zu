@@ -9,4 +9,4 @@ var payload = jwt.verify(token, 'secret')
 echo payload
 
 assert payload.user_id  == 42
-assert payload.role = 'admin'
+assert payload.role == 'admin'
