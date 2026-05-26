@@ -1,0 +1,8 @@
+class X {
+  @to_index(x) {
+    return x * 2
+  }
+}
+
+var x = X()
+echo x[3]

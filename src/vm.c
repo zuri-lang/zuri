@@ -2496,6 +2496,13 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
               }
               break;
             }
+            case OBJ_INSTANCE: {
+              if (!invoke_self(vm, copy_string(vm, "@to_index", 9), 1)) {
+                EXIT_VM();
+              }
+              vm->current_frame = &vm->frames[vm->frame_count - 1];
+              break;
+            }
             default: {
               is_gotten = false;
               break;

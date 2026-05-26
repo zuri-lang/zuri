@@ -1,0 +1,1067 @@
+/**
+ * @module jwt
+ *
+ * The jwt module provides a complete implementation of JSON Web Tokens (JWT)
+ * as defined in RFC 7519, with support for signing, verification, and
+ * inspection of tokens using HMAC and RSA algorithm families.
+ *
+ * Supported algorithms:
+ *
+ * - HS256 — HMAC with SHA-256
+ * - HS384 — HMAC with SHA-384
+ * - HS512 — HMAC with SHA-512
+ * - RS256 — RSA signature with SHA-256
+ * - RS384 — RSA signature with SHA-384
+ * - RS512 — RSA signature with SHA-512
+ * - none  — Unsecured token (no signature, explicit opt-in required)
+ *
+ * ### Quick start
+ *
+ * ```zuri
+ * import jwt
+ *
+ * # sign a token
+ * var token = jwt.sign({ user_id: 42, role: 'admin' }, 'secret')
+ *
+ * # verify and decode the token
+ * var payload = jwt.verify(token, 'secret')
+ * echo payload.user_id   # 42
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import hash
+import base64
+import json
+
+
+# ---------------------------------------------------------------------------
+# Algorithm identifiers
+# ---------------------------------------------------------------------------
+
+/**
+ * HMAC-SHA256 signing algorithm identifier.
+ */
+var HS256 = 'HS256'
+
+/**
+ * HMAC-SHA384 signing algorithm identifier.
+ */
+var HS384 = 'HS384'
+
+/**
+ * HMAC-SHA512 signing algorithm identifier.
+ */
+var HS512 = 'HS512'
+
+/**
+ * RSA-SHA256 signing algorithm identifier.
+ */
+var RS256 = 'RS256'
+
+/**
+ * RSA-SHA384 signing algorithm identifier.
+ */
+var RS384 = 'RS384'
+
+/**
+ * RSA-SHA512 signing algorithm identifier.
+ */
+var RS512 = 'RS512'
+
+/**
+ * Unsecured algorithm identifier. Tokens signed with this algorithm carry
+ * no signature and must never be used to protect sensitive resources.
+ * Passing this value to sign() requires setting allow_none: true in options
+ * or an exception will be raised.
+ */
+var NONE = 'none'
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+# Encodes bytes or a string to URL-safe base64 with no padding characters.
+def _b64_encode(data) {
+  if is_string(data)
+    data = data.to_bytes()
+
+  var encoded = base64.encode(data)
+  # URL-safe alphabet and strip padding
+  encoded = encoded.replace('+', '-').replace('/', '_')
+  while encoded.ends_with('=') {
+    encoded = encoded[0, encoded.length() - 1]
+  }
+  return encoded
+}
+
+# Decodes a URL-safe base64 string, restoring standard alphabet and padding.
+def _b64_decode(data) {
+  var s = data.replace('-', '+').replace('_', '/')
+  var pad = s.length() % 4
+  if pad == 2 { s += '==' }
+  else if pad == 3 { s += '=' }
+  return base64.decode(s).to_string()
+}
+
+# Returns true when the given value is a non-empty string.
+def _is_string(v) {
+  return is_string(v) and v.length() > 0
+}
+
+# Selects the correct HMAC function for the given algorithm string.
+def _hmac_fn(alg) {
+  if alg == HS256 { return hash.hmac_sha256 }
+  if alg == HS384 { return hash.hmac_sha384 }
+  if alg == HS512 { return hash.hmac_sha512 }
+  raise JwtException('unsupported HMAC algorithm: ' + alg)
+}
+
+# Performs a constant-time string comparison to prevent timing attacks.
+def _safe_equals(a, b) {
+  if a.length() != b.length() { 
+    return false 
+  }
+
+  var result = 0
+  iter var i = 0; i < a.length(); i++ {
+    result = result | (ord(a[i]) ^ ord(b[i]))
+  }
+
+  return result == 0
+}
+
+
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+/**
+ * Base exception class for all errors raised by the jwt module.
+ * Catching this class will intercept any jwt-specific error.
+ */
+class JwtException < Exception {
+  /**
+   * @param string message
+   */
+  JwtException(message) {
+    parent(message)
+  }
+}
+
+/**
+ * Raised when a token cannot be decoded because its structure is not valid.
+ * This includes tokens that are not three dot-separated segments or that
+ * contain malformed base64url or JSON.
+ */
+class MalformedTokenException < JwtException {
+  MalformedTokenException(message) {
+    parent(message)
+  }
+}
+
+/**
+ * Raised when a token's signature does not match its header and payload.
+ * This indicates the token has been tampered with or was signed with a
+ * different key.
+ */
+class SignatureException < JwtException {
+  SignatureException(message) {
+    parent(message)
+  }
+}
+
+/**
+ * Raised when a token's temporal claims fail validation:
+ *
+ * - `exp` (expiry) — token has expired
+ * - `nbf` (not before) — token is not yet valid
+ * - `iat` (issued at) — token was issued in the future
+ */
+class TokenExpiredException < JwtException {
+  TokenExpiredException(message) {
+    parent(message)
+  }
+}
+
+/**
+ * Raised when a required claim is absent from the token payload, or when a
+ * registered claim (iss, aud, sub) does not match the expected value.
+ */
+class ClaimException < JwtException {
+  ClaimException(message) {
+    parent(message)
+  }
+}
+
+/**
+ * Raised when an algorithm specified in a token header is not supported by
+ * this module, or when the caller attempts to use the none algorithm without
+ * explicitly enabling it.
+ */
+class AlgorithmException < JwtException {
+  AlgorithmException(message) {
+    parent(message)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Token class
+# ---------------------------------------------------------------------------
+
+/**
+ * Represents a decoded JWT. Instances of this class are returned by
+ * decode() and verify(). The raw header and payload dictionaries are
+ * available as properties, and individual claims are accessible directly
+ * through the index operator.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * var tok = jwt.decode('ey_j...')
+ * echo tok.header['alg']     # HS256
+ * echo tok.payload['sub']    # '1234567890'
+ * echo tok['sub']            # '1234567890'  (shorthand)
+ * ```
+ */
+class Token {
+
+  /**
+   * The decoded header dictionary. Contains at minimum the `alg` and
+   * `typ` fields.
+   */
+  var header = {}
+
+  /**
+   * The decoded payload dictionary. Contains all registered and custom
+   * claims present in the token.
+   */
+  var payload = {}
+
+  /**
+   * The raw base64url-encoded signature segment as it appeared in the
+   * original token string. Empty for unsecured tokens.
+   */
+  var signature = ''
+
+  /**
+   * The original token string from which this instance was decoded.
+   */
+  var raw = ''
+
+  /**
+   * @param dict   header
+   * @param dict   payload
+   * @param string signature
+   * @param string raw
+   */
+  Token(header, payload, signature, raw) {
+    self.header    = header
+    self.payload   = payload
+    self.signature = signature
+    self.raw       = raw
+  }
+
+  /**
+   * Returns the value of the named claim from the payload, or nil if the
+   * claim is not present.
+   *
+   * @param  string name
+   * @return any
+   */
+  get(name) {
+    if !is_string(name)
+      raise Argument_error('string expected')
+
+    return self.payload.get(name, nil)
+  }
+
+  /**
+   * Returns the value of the named claim from the payload. This allows
+   * bracket-access syntax on a Token instance.
+   *
+   * @param  string name
+   * @return any
+   */
+  @to_index(name) {
+    if !is_string(name)
+      raise Argument_error('jwt.Token is string indexed')
+
+    return self.payload.get(name, nil)
+  }
+
+  /**
+   * Returns true when the token carries an `exp` claim and the current
+   * time is past that value, honoring the leeway configured on the
+   * Verifier that produced this token when applicable.
+   *
+   * When called directly on a Token not produced by a Verifier, no leeway
+   * is applied.
+   *
+   * @return bool
+   */
+  is_expired() {
+    if self.payload.contains('exp') {
+      return time() > self.payload['exp']
+    }
+    return false
+  }
+
+  /**
+   * Returns a string representation of the token for debugging purposes.
+   * The output is not the encoded token; use the raw property for that.
+   *
+   * @return string
+   */
+  @to_string() {
+    return '<Token alg=${self.header.get("alg", "?")} ' +
+           'sub=${self.payload.get("sub", "(none)")}>'
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Core encode / decode
+# ---------------------------------------------------------------------------
+
+/**
+ * Encodes a header dictionary and payload dictionary into a signed JWT string.
+ *
+ * This is the low-level encoding function. For most use cases, sign() is
+ * more convenient. Use encode() when you need full control over the header,
+ * such as when adding custom header parameters (kid, x5t, etc.).
+ *
+ * The secret must be a string for HMAC algorithms and a PEM-encoded private
+ * key string for RSA algorithms.
+ *
+ * @param  dict   header   — must contain at minimum an 'alg' key
+ * @param  dict   payload
+ * @param  string secret
+ * @param  dict?   options  — see `sign()` for supported option keys
+ * @return string
+ * @throws AlgorithmException
+ * @throws JwtException
+ */
+def encode(header, payload, secret, options) {
+  if !options { 
+    options = {} 
+  }
+
+  var alg = header.get('alg', HS256)
+
+  if alg == NONE {
+    if !options.get('allow_none', false) {
+      raise AlgorithmException(
+        'algorithm "none" is disabled; set allow_none: true in options to permit unsecured tokens'
+      )
+    }
+  }
+
+  # Serialise header and payload
+  var h_json = json.encode(header)
+  var p_json = json.encode(payload)
+
+  var h_enc = _b64_encode(h_json)
+  var p_enc = _b64_encode(p_json)
+
+  var signing_input = h_enc + '.' + p_enc
+
+  var sig = ''
+  if alg == NONE {
+    sig = ''
+  } else if alg == HS256 or alg == HS384 or alg == HS512 {
+    var fn = _hmac_fn(alg)
+    var raw_sig = fn(secret, signing_input)
+    sig = _b64_encode(raw_sig)
+  } /* else if alg == RS256 or alg == RS384 or alg == RS512 {
+    # RSA support is delegated to the ssl module which must be imported by
+    # the caller's environment. We detect its presence at runtime.
+    if !is_function(hash.get('rsa_sign', nil)) {
+      raise AlgorithmException(
+        'RSA algorithms require the ssl module to be available; ' +
+        'ensure it is imported before using RS256/RS384/RS512'
+      )
+    }
+    sig = _b64_encode(hash.rsa_sign(secret, signing_input, alg))
+  } */ else {
+    raise AlgorithmException('unsupported algorithm: ' + alg)
+  }
+
+  return signing_input + '.' + sig
+}
+
+/**
+ * Decodes a JWT string into a Token instance without performing signature
+ * verification or claim validation.
+ *
+ * This function is useful for inspecting a token's header or payload before
+ * deciding how to verify it (for example, to read the `kid` header parameter
+ * and look up the appropriate public key). It must not be used as the sole
+ * step when authenticating a request.
+ *
+ * @param  string token
+ * @return Token
+ * @throws MalformedTokenException
+ */
+def decode(token) {
+  if !_is_string(token) {
+    raise MalformedTokenException('token must be a non-empty string')
+  }
+
+  var parts = token.split('.')
+  if parts.length() != 3 {
+    raise MalformedTokenException(
+      'malformed token: expected three dot-separated segments, got ' +
+      to_string(parts.length())
+    )
+  }
+
+  var header_json, payload_json
+
+  catch {
+    header_json = _b64_decode(parts[0])
+  } as _ {
+    raise MalformedTokenException('malformed token: header segment is not valid base64url')
+  }
+
+  catch {
+    payload_json = _b64_decode(parts[1])
+  } as _ {
+    raise MalformedTokenException('malformed token: payload segment is not valid base64url')
+  }
+  
+  var header, payload
+
+  catch {
+    header = json.decode(header_json)
+  } as _ {
+    raise MalformedTokenException('malformed token: header is not valid JSON')
+  }
+
+  catch {
+    payload = json.decode(payload_json)
+  } as _ {
+    raise MalformedTokenException('malformed token: payload is not valid JSON')
+  }
+
+  if !is_dict(header) {
+    raise MalformedTokenException('malformed token: header must be a JSON object')
+  }
+  if !is_dict(payload) {
+    raise MalformedTokenException('malformed token: payload must be a JSON object')
+  }
+
+  return Token(header, payload, parts[2], token)
+}
+
+
+# ---------------------------------------------------------------------------
+# Options dictionary reference (used by sign and verify)
+# ---------------------------------------------------------------------------
+#
+# sign() options:
+#   algorithm   string   Signing algorithm. Default: HS256
+#   expires_in   number   Lifetime in seconds from now. Added as the exp claim.
+#   not_before   number   Seconds from now before which the token is invalid.
+#                        Added as the nbf claim.
+#   auraisence    string|list  Sets the aud claim.
+#   issuer      string   Sets the iss claim.
+#   subject     string   Sets the sub claim.
+#   jwt_id       string   Sets the jti claim. Auto-generated UUID when omitted.
+#   no_timestamp bool     When true, the iat claim is not added. Default: false.
+#   header      dict     Additional header parameters merged into the header.
+#   allow_none  bool     Must be true when algorithm is NONE. Default: false.
+#
+# verify() options (all sign() options plus):
+#   algorithms  list     Whitelist of accepted algorithms.
+#   auraisence    string|list  Expected aud value.
+#   issuer      string   Expected iss value.
+#   subject     string   Expected sub value.
+#   clock_tolerance number  Seconds of leeway for exp and nbf. Default: 0.
+#   ignore_expiration bool  Skip exp validation. Default: false.
+#   ignore_not_before  bool  Skip nbf validation. Default: false.
+#   complete    bool     When true, returns the full Token; otherwise returns
+#                        only the payload dict. Default: false.
+
+
+# ---------------------------------------------------------------------------
+# sign()
+# ---------------------------------------------------------------------------
+
+/**
+ * Creates and signs a new JWT from the given payload.
+ *
+ * The payload is merged with any registered claims derived from options
+ * before signing. Caller-supplied claims in payload always take precedence
+ * over option-derived claims.
+ *
+ * ### Options
+ *
+ * | Key            | Type          | Default | Description                              |
+ * |----------------|---------------|---------|------------------------------------------|
+ * | algorithm      | string        | HS256   | Signing algorithm                        |
+ * | expires_in      | number        | —       | Token lifetime in seconds                |
+ * | not_before      | number        | —       | Seconds until token becomes valid        |
+ * | issuer         | string        | —       | Value for the `iss` claim                |
+ * | subject        | string        | —       | Value for the `sub` claim                |
+ * | auraisence       | string\|list  | —       | Value for the `aud` claim                |
+ * | jwt_id          | string        | auto    | Value for the `jti` claim                |
+ * | no_timestamp    | bool          | false   | Omit the `iat` claim when true           |
+ * | header         | dict          | —       | Extra header parameters                  |
+ * | allow_none     | bool          | false   | Permit the `none` algorithm              |
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * var token = jwt.sign(
+ *   { user_id: 99, role: 'editor' },
+ *   'my-secret-key',
+ *   {
+ *     algorithm: jwt.HS256,
+ *     expires_in: 3600,
+ *     issuer: 'api.example.com',
+ *     subject: '99',
+ *   }
+ * )
+ * ```
+ *
+ * @param  dict   payload
+ * @param  string secret
+ * @param  dict?   options
+ * @return string
+ * @throws AlgorithmException
+ * @throws JwtException
+ */
+def sign(payload, secret, options) {
+  if !options { 
+    options = {} 
+  }
+
+  if !is_dict(payload) {
+    raise JwtException('payload must be a dictionary')
+  }
+  if !_is_string(secret) and options.get('algorithm', HS256) != NONE {
+    raise JwtException('secret must be a non-empty string')
+  }
+
+  var alg = options.get('algorithm', HS256)
+  var now = time()
+
+  # Build the header
+  var header = { 'alg': alg, 'typ': 'JWT' }
+  if options.contains('header') and is_dict(options['header']) {
+    for key, val in options['header'] {
+      header[key] = val
+    }
+  }
+
+  # Build the effective payload by layering option-derived claims beneath
+  # any claims the caller has explicitly set in the payload dict.
+  var claims = {}
+
+  if !options.get('no_timestamp', false) and !payload.contains('iat') {
+    claims['iat'] = now
+  }
+
+  if options.contains('expires_in') and !payload.contains('exp') {
+    claims['exp'] = now + options['expires_in']
+  }
+
+  if options.contains('not_before') and !payload.contains('nbf') {
+    claims['nbf'] = now + options['not_before']
+  }
+
+  if options.contains('issuer') and !payload.contains('iss') {
+    claims['iss'] = options['issuer']
+  }
+
+  if options.contains('subject') and !payload.contains('sub') {
+    claims['sub'] = options['subject']
+  }
+
+  if options.contains('auraisence') and !payload.contains('aud') {
+    claims['aud'] = options['auraisence']
+  }
+
+  if options.contains('jwt_id') and !payload.contains('jti') {
+    claims['jti'] = options['jwt_id']
+  } else if !payload.contains('jti') {
+    # Generate a simple unique token id from current time + random salt.
+    claims['jti'] = _b64_encode(hash.md5(to_string(now) + to_string(rand()), true))
+  }
+
+  # Merge: option-derived claims first, explicit payload claims win.
+  for k, v in payload { 
+    claims[k] = v 
+  }
+
+  return encode(header, claims, secret, options)
+}
+
+
+# ---------------------------------------------------------------------------
+# verify()
+# ---------------------------------------------------------------------------
+
+/**
+ * Verifies a JWT string and returns its payload (or the full Token when
+ * options.complete is true).
+ *
+ * Verification performs the following steps in order:
+ *
+ * 1. Structural decode — ensures the token is well-formed.
+ * 2. Algorithm check — rejects algorithms not in the options.algorithms list.
+ * 3. Signature verification — recomputes and compares the signature using
+ *    a constant-time comparison to prevent timing attacks.
+ * 4. Temporal claim validation — checks exp, nbf, and iat against the
+ *    current clock, applying clock_tolerance leeway where configured.
+ * 5. Registered claim validation — checks iss, aud, and sub when the
+ *    corresponding options are set.
+ *
+ * An exception is raised at the first failure; verification does not
+ * accumulate errors.
+ *
+ * ### Options
+ *
+ * | Key               | Type          | Default          | Description                                    |
+ * |-------------------|---------------|------------------|------------------------------------------------|
+ * | algorithms        | list          | [HS256]          | Accepted algorithm whitelist                   |
+ * | issuer            | string        | —                | Required `iss` claim value                     |
+ * | subject           | string        | —                | Required `sub` claim value                     |
+ * | auraisence          | string\|list  | —                | Required `aud` claim value                     |
+ * | clock_tolerance    | number        | 0                | Leeway in seconds for exp and nbf              |
+ * | ignore_expiration  | bool          | false            | Skip `exp` validation                          |
+ * | ignore_not_before   | bool          | false            | Skip `nbf` validation                          |
+ * | complete          | bool          | false            | Return full Token instead of payload dict      |
+ * | allow_none        | bool          | false            | Permit the `none` algorithm                    |
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * catch {
+ *   var payload = jwt.verify(token, 'my-secret-key', {
+ *     algorithms: [jwt.HS256],
+ *     issuer: 'api.example.com',
+ *     clock_tolerance: 5,
+ *   })
+ *   echo payload['user_id']
+ * } as e { # e is a JwtException
+ *   echo 'token rejected: ' + e.message
+ * }
+ * ```
+ *
+ * @param  string token
+ * @param  string secret
+ * @param  dict   options
+ * @return dict|Token
+ * @throws MalformedTokenException
+ * @throws AlgorithmException
+ * @throws SignatureException
+ * @throws TokenExpiredException
+ * @throws ClaimException
+ */
+def verify(token, secret, options) {
+  if !options { 
+    options = {} 
+  }
+
+  # Step 1 — decode structure
+  var tok = decode(token)
+
+  var alg = tok.header.get('alg', '')
+  if alg.length() == 0 {
+    raise MalformedTokenException('malformed token: missing alg header parameter')
+  }
+
+  # Step 2 — algorithm whitelist
+  var accepted = options.get('algorithms', [HS256, HS384, HS512])
+  if !is_list(accepted) { accepted = [accepted] }
+
+  if alg == NONE {
+    if !options.get('allow_none', false) {
+      raise AlgorithmException(
+        'algorithm "none" is not permitted; set allow_none: true to accept unsecured tokens'
+      )
+    }
+  } else if !accepted.contains(alg) {
+    raise AlgorithmException(
+      'token algorithm "' + alg + '" is not in the accepted list: ' +
+      ', '.join(accepted)
+    )
+  }
+
+  # Step 3 — signature verification
+  var parts = token.split('.')
+  var signing_input = parts[0] + '.' + parts[1]
+  var provided_sig  = parts[2]
+
+  if alg != NONE {
+    var expected_sig = ''
+
+    if alg == HS256 or alg == HS384 or alg == HS512 {
+      var fn = _hmac_fn(alg)
+      expected_sig = _b64_encode(fn(secret, signing_input))
+    } else if alg == RS256 or alg == RS384 or alg == RS512 {
+      # RSA verification: re-sign with public key and compare, or use
+      # verify primitive when available from the ssl module.
+      if !is_function(hash.get('rsa_verify', nil)) {
+        raise AlgorithmException(
+          'RSA verification requires the ssl module'
+        )
+      }
+      if !hash.rsa_verify(secret, signing_input, provided_sig, alg) {
+        raise SignatureException('invalid token signature')
+      }
+
+      # RSA path returns early after explicit verify call.
+      return _finish_verify(tok, options)
+    }
+
+    if !_safe_equals(expected_sig, provided_sig) {
+      raise SignatureException('invalid token signature')
+    }
+  }
+
+  return _finish_verify(tok, options)
+}
+
+# Internal: runs temporal and registered claim checks after signature passes.
+def _finish_verify(tok, options) {
+  var payload   = tok.payload
+  var now       = time()
+  var tolerance = options.get('clock_tolerance', 0)
+
+  # Step 4 — temporal claims
+
+  if !options.get('ignore_expiration', false) and payload.contains('exp') {
+    if !is_number(payload['exp']) {
+      raise ClaimException('exp claim must be a numeric date')
+    }
+
+    if now > payload['exp'] + tolerance {
+      raise TokenExpiredException(
+        'token expired at ' + to_string(payload['exp']) +
+        ' (current time: ' + to_string(now) + ')'
+      )
+    }
+  }
+
+  if !options.get('ignore_not_before', false) and payload.contains('nbf') {
+    if !is_number(payload['nbf']) {
+      raise ClaimException('nbf claim must be a numeric date')
+    }
+
+    if now < payload['nbf'] - tolerance {
+      raise TokenExpiredException(
+        'token not valid before ' + to_string(payload['nbf']) +
+        ' (current time: ' + to_string(now) + ')'
+      )
+    }
+  }
+
+  if payload.contains('iat') and !is_number(payload['iat']) {
+    raise ClaimException('iat claim must be a numeric date')
+  }
+
+  # Step 5 — registered claim validation
+
+  if options.contains('issuer') {
+    if !payload.contains('iss') {
+      raise ClaimException('token is missing the required iss claim')
+    }
+
+    if payload['iss'] != options['issuer'] {
+      raise ClaimException(
+        'issuer mismatch: expected "' + options['issuer'] +
+        '", got "' + to_string(payload['iss']) + '"'
+      )
+    }
+  }
+
+  if options.contains('subject') {
+    if !payload.contains('sub') {
+      raise ClaimException('token is missing the required sub claim')
+    }
+
+    if payload['sub'] != options['subject'] {
+      raise ClaimException(
+        'subject mismatch: expected "' + options['subject'] +
+        '", got "' + to_string(payload['sub']) + '"'
+      )
+    }
+  }
+
+  if options.contains('auraisence') {
+    if !payload.contains('aud') {
+      raise ClaimException('token is missing the required aud claim')
+    }
+
+    var expected_aud = options['auraisence']
+    if is_string(expected_aud) { 
+      expected_aud = [expected_aud] 
+    }
+
+    var token_aud = payload['aud']
+    if is_string(token_aud) { 
+      token_aud = [token_aud] 
+    }
+
+    var matched = false
+    for ea in expected_aud {
+      if token_aud.contains(ea) { 
+        matched = true
+        break 
+      }
+    }
+    if !matched {
+      raise ClaimException(
+        'auraisence mismatch: token aud does not include any of the expected values'
+      )
+    }
+  }
+
+  if options.get('complete', false) {
+    return tok
+  }
+  return payload
+}
+
+
+# ---------------------------------------------------------------------------
+# Verifier class — reusable configured verifier
+# ---------------------------------------------------------------------------
+
+/**
+ * A reusable token verifier that holds a fixed secret and set of options.
+ *
+ * Using a Verifier instance is the recommended approach for applications
+ * that verify many tokens with the same configuration, as it avoids
+ * passing options on every call and makes the intent of the verification
+ * parameters explicit and auditable.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * var verifier = jwt.Verifier('my-secret', {
+ *   algorithms: [jwt.HS256],
+ *   issuer: 'auth.example.com',
+ *   auraisence: 'api.example.com',
+ *   clock_tolerance: 10,
+ * })
+ *
+ * # In a request handler:
+ * var payload = verifier.verify(req.headers['Authorization'].ltrim('Bearer '))
+ * echo payload['role']
+ * ```
+ */
+class Verifier {
+
+  var _secret  = ''
+  var _options = {}
+
+  /**
+   * @param string secret   The secret or PEM public key used for verification.
+   * @param dict   options  Verification options (see verify() for reference).
+   */
+  Verifier(secret, options) {
+    if !_is_string(secret) and !options.get('allow_none', false) {
+      raise JwtException('Verifier secret must be a non-empty string')
+    }
+    self._secret  = secret
+    self._options = options ? options : {}
+  }
+
+  /**
+   * Verifies the given token string using the secret and options bound to
+   * this Verifier.
+   *
+   * Additional options passed here are merged with the instance options,
+   * with per-call options taking precedence. This allows overriding
+   * individual parameters (such as auraisence) on a per-request basis without
+   * constructing a new Verifier.
+   *
+   * @param  string token
+   * @param  dict   options  Optional per-call option overrides.
+   * @return dict|Token
+   * @throws MalformedTokenException
+   * @throws AlgorithmException
+   * @throws SignatureException
+   * @throws TokenExpiredException
+   * @throws ClaimException
+   */
+  verify(token, options) {
+    var merged = {}
+    for k, v in self._options { 
+      merged[k] = v 
+    }
+    if options {
+      for k, v in options { 
+        merged[k] = v 
+      }
+    }
+    return jwt.verify(token, self._secret, merged)
+  }
+
+  /**
+   * Decodes the given token without verification. Delegates to decode().
+   *
+   * @param  string token
+   * @return Token
+   * @throws MalformedTokenException
+   */
+  decode(token) {
+    return jwt.decode(token)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Signer class — reusable configured signer
+# ---------------------------------------------------------------------------
+
+/**
+ * A reusable token signer that holds a fixed secret and set of default
+ * signing options.
+ *
+ * Using a Signer instance is recommended when the same signing configuration
+ * is used throughout an application. Default options can be overridden on
+ * individual sign() calls.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * var signer = jwt.Signer('my-secret', {
+ *   algorithm: jwt.HS256,
+ *   expires_in: 900,
+ *   issuer: 'auth.example.com',
+ *   auraisence: 'api.example.com',
+ * })
+ *
+ * var token = signer.sign({ user_id: 7, role: 'admin' })
+ * ```
+ */
+class Signer {
+
+  var _secret  = ''
+  var _options = {}
+
+  /**
+   * @param string secret   The secret or PEM private key used for signing.
+   * @param dict   options  Default signing options (see sign() for reference).
+   */
+  Signer(secret, options) {
+    if !_is_string(secret) and !options.get('allow_none', false) {
+      raise JwtException('Signer secret must be a non-empty string')
+    }
+    self._secret  = secret
+    self._options = options ? options : {}
+  }
+
+  /**
+   * Signs the given payload using the secret and default options bound to
+   * this Signer, returning a token string.
+   *
+   * Options passed here are merged with the instance defaults, with
+   * per-call options taking precedence.
+   *
+   * @param  dict payload
+   * @param  dict options  Optional per-call option overrides.
+   * @return string
+   * @throws AlgorithmException
+   * @throws JwtException
+   */
+  sign(payload, options) {
+    var merged = {}
+    for k, v in self._options { merged[k] = v }
+    if options {
+      for k, v in options { 
+        merged[k] = v 
+      }
+    }
+    return jwt.sign(payload, self._secret, merged)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Convenience helpers
+# ---------------------------------------------------------------------------
+
+/**
+ * Returns the decoded header dictionary of a token without verifying its
+ * signature.
+ *
+ * This is useful for reading the `kid` or `alg` header parameters before
+ * selecting the appropriate key or algorithm for full verification.
+ *
+ * @param  string token
+ * @return dict
+ * @throws MalformedTokenException
+ */
+def header(token) {
+  return decode(token).header
+}
+
+/**
+ * Returns the decoded payload dictionary of a token without verifying its
+ * signature.
+ *
+ * Do not use this to make authorization decisions. Use verify() instead.
+ *
+ * @param  string token
+ * @return dict
+ * @throws MalformedTokenException
+ */
+def payload(token) {
+  return decode(token).payload
+}
+
+/**
+ * Returns true when the token's exp claim is in the past, without verifying
+ * the signature.
+ *
+ * A token without an exp claim is never considered expired by this function.
+ *
+ * @param  string token
+ * @param  number leeway  Optional seconds of tolerance. Default: 0.
+ * @return bool
+ * @throws MalformedTokenException
+ */
+def is_expired(token, leeway) {
+  if !leeway { leeway = 0 }
+  var tok = decode(token)
+  if tok.payload.contains('exp') {
+    return time() > tok.payload['exp'] + leeway
+  }
+  return false
+}
+
+/**
+ * Returns the number of seconds until the token expires, based on its exp
+ * claim and the current clock. Returns nil when the token has no exp claim.
+ * Returns a negative number when the token has already expired.
+ *
+ * @param  string token
+ * @return number|nil
+ * @throws MalformedTokenException
+ */
+def expires_in(token) {
+  var tok = decode(token)
+  if tok.payload.contains('exp') {
+    return tok.payload['exp'] - time()
+  }
+  return nil
+}

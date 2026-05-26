@@ -96,7 +96,7 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | Cryptography & Hashing    | `hash`, `crypto` | ✅ Ready    |
 | HTML templating (Wire)    | `template`       | ✅ Ready    |
 | HTML parsing & generation | `html`           | ✅ Ready    |
-| Configuration             | `env`            | ✅ Ready    |
+| Configuration             | `env` (dotenv)   | ✅ Ready    |
 | Markdown processing       | `markdown`       | ✅ Ready    |
 | Mail (SMTP, IMAP, POP3)   | `mail`           | ✅ Ready    |
 | Image processing          | `imagine`        | ✅ Ready    |
@@ -111,6 +111,8 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | Device I/O (COM, USB)     | `device`         | 🔜 Planned |
 | ORM                       | `orm`            | 🔜 Planned |
 | Audio / Video processing  | `media`          | 🔜 Planned |
+
+And many more.
 
 ---
 
@@ -302,7 +304,6 @@ zuri server.zuri
 | [mysql](https://github.com/mcfriend99/mysql)            | Pure Zuri MySQL/MariaDB client                     |
 | [postgres](https://github.com/mcfriend99/postgres)      | Pure Zuri PostgreSQL client                        |
 | [doka](https://github.com/mcfriend99/doka)              | Zuri documentation site server                     |
-| [dotenv](https://github.com/mcfriend99/dotenv)          | Zuri dotenv library                                |
 
 ---
 
