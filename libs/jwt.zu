@@ -32,6 +32,7 @@
  */
 
 import hash
+import crypto
 import base64
 import json
 
@@ -145,6 +146,7 @@ def _safe_equals(a, b) {
 class JwtException < Exception {
   /**
    * @param string message
+   * @constructor
    */
   JwtException(message) {
     parent(message)
@@ -378,17 +380,9 @@ def encode(header, payload, secret, options) {
     var fn = _hmac_fn(alg)
     var raw_sig = fn(secret, signing_input)
     sig = _b64_encode(raw_sig)
-  } /* else if alg == RS256 or alg == RS384 or alg == RS512 {
-    # RSA support is delegated to the ssl module which must be imported by
-    # the caller's environment. We detect its presence at runtime.
-    if !is_function(hash.get('rsa_sign', nil)) {
-      raise AlgorithmException(
-        'RSA algorithms require the ssl module to be available; ' +
-        'ensure it is imported before using RS256/RS384/RS512'
-      )
-    }
-    sig = _b64_encode(hash.rsa_sign(secret, signing_input, alg))
-  } */ else {
+  } else if alg == RS256 or alg == RS384 or alg == RS512 {
+    sig = _b64_encode(crypto.rsa.sign(secret, signing_input, alg))
+  } else {
     raise AlgorithmException('unsupported algorithm: ' + alg)
   }
 
@@ -711,14 +705,7 @@ def verify(token, secret, options) {
       var fn = _hmac_fn(alg)
       expected_sig = _b64_encode(fn(secret, signing_input))
     } else if alg == RS256 or alg == RS384 or alg == RS512 {
-      # RSA verification: re-sign with public key and compare, or use
-      # verify primitive when available from the ssl module.
-      if !is_function(hash.get('rsa_verify', nil)) {
-        raise AlgorithmException(
-          'RSA verification requires the ssl module'
-        )
-      }
-      if !hash.rsa_verify(secret, signing_input, provided_sig, alg) {
+      if !crypto.rsa.verify(secret, signing_input, provided_sig, alg) {
         raise SignatureException('invalid token signature')
       }
 

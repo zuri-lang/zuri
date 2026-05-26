@@ -86,31 +86,32 @@ This makes Zuri especially compelling for organizations with strict data soverei
 
 Zuri's standard library covers everything a full-stack needs &mdash; production-ready, maintained as part of the language itself.
 
-| Capability                | Module           | Status     |
-|---------------------------|------------------|------------|
-| HTTP server & client      | `http`           | ✅ Ready    |
-| Sockets                   | `socket`         | ✅ Ready    |
-| WebSockets                | `websocket`      | 🔜 Planned |
-| SQLite database           | `sqlite`         | ✅ Ready    |
-| SSL / TLS                 | `ssl`            | ✅ Ready    |
-| Cryptography & Hashing    | `hash`, `crypto` | ✅ Ready    |
-| HTML templating (Wire)    | `template`       | ✅ Ready    |
-| HTML parsing & generation | `html`           | ✅ Ready    |
-| Configuration             | `env` (dotenv)   | ✅ Ready    |
-| Markdown processing       | `markdown`       | ✅ Ready    |
-| Mail (SMTP, IMAP, POP3)   | `mail`           | ✅ Ready    |
-| Image processing          | `imagine`        | ✅ Ready    |
-| JSON                      | `json`           | ✅ Ready    |
-| File                      | `file`           | ✅ Ready    |
-| Input & Output (I/O)      | `io`             | ✅ Ready    |
-| HTTP compression          | `zlib`           | ✅ Ready    |
-| AST & metaprogramming     | `ast`            | ✅ Ready    |
-| Unit testing              | `test`           | ✅ Ready    |
-| URL / cURL bindings       | `url`, `curl`    | ✅ Ready    |
-| FFI/C interop             | `clib`           | ✅ Ready    |
-| Device I/O (COM, USB)     | `device`         | 🔜 Planned |
-| ORM                       | `orm`            | 🔜 Planned |
-| Audio / Video processing  | `media`          | 🔜 Planned |
+| Capability                | Module                     | Status     |
+|---------------------------|----------------------------|------------|
+| HTTP server & client      | `http`                     | ✅ Ready    |
+| Sockets                   | `socket`                   | ✅ Ready    |
+| WebSockets                | `websocket`                | 🔜 Planned |
+| SQLite database           | `sqlite`                   | ✅ Ready    |
+| SSL / TLS                 | `ssl`                      | ✅ Ready    |
+| Cryptography & Hashing    | `hash`, `crypto`, `bcrypt` | ✅ Ready    |
+| HTML templating (Wire)    | `template`                 | ✅ Ready    |
+| HTML parsing & generation | `html`                     | ✅ Ready    |
+| Configuration             | `env` (dotenv)             | ✅ Ready    |
+| Authentication            | `jwt`                      | ✅ Ready    |
+| Markdown processing       | `markdown`                 | ✅ Ready    |
+| Mail (SMTP, IMAP, POP3)   | `mail`                     | ✅ Ready    |
+| Image processing          | `imagine`                  | ✅ Ready    |
+| JSON                      | `json`                     | ✅ Ready    |
+| File                      | `file`                     | ✅ Ready    |
+| Input & Output (I/O)      | `io`                       | ✅ Ready    |
+| Compression               | `zlib`, `zip`              | ✅ Ready    |
+| AST & metaprogramming     | `ast`                      | ✅ Ready    |
+| Unit testing              | `nyssa test`               | ✅ Ready    |
+| URL / cURL bindings       | `url`, `curl`              | ✅ Ready    |
+| FFI/C interop             | `clib`                     | ✅ Ready    |
+| Device I/O (COM, USB)     | `device`                   | 🔜 Planned |
+| ORM                       | `orm`                      | 🔜 Planned |
+| Audio / Video processing  | `media`                    | 🔜 Planned |
 
 And many more.
 

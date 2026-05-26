@@ -1,0 +1,889 @@
+/**
+ * @module crypto
+ *
+ * Comprehensive cryptographic primitives for Zuri applications.
+ *
+ * This module exposes symmetric encryption, authenticated encryption,
+ * asymmetric key operations, digital signatures, key exchange, and
+ * password hashing through a clean, opinionated API.
+ *
+ * ---
+ *
+ * ### Algorithm summary
+ *
+ * | Family       | Algorithms                               |
+ * |--------------|------------------------------------------|
+ * | Symmetric    | AES-128/192/256-GCM, AES-128/192/256-CBC |
+ * | Stream AEAD  | ChaCha20-Poly1305                        |
+ * | Asymmetric   | RSA-2048/4096 (OAEP + PSS)               |
+ * | Signatures   | ECDSA P-256/P-384, Ed25519               |
+ * | Key exchange | X25519 (Diffie-Hellman)                  |
+ * | Password KDF | Argon2id                                 |
+ * | Key stretch  | HKDF-SHA256                              |
+ * | Randomness   | OS CSPRNG                                |
+ *
+ * ---
+ *
+ * ### Choosing the right primitive
+ *
+ * **Encrypting data at rest or in transit** — prefer `aes_gcm` (authenticated
+ * encryption with associated data).  Use `chacha20` on platforms where AES
+ * hardware acceleration is absent.  Avoid `aes_cbc` in new designs; it is
+ * included for interoperability with legacy systems.
+ *
+ * **Signing and verifying messages** — use `ed25519` for modern systems
+ * (fastest, no hash to choose, deterministic).  Use `ecdsa` when
+ * interoperating with systems that require NIST curves.  Use `rsa` only
+ * when constrained by a protocol that demands it.
+ *
+ * **Asymmetric encryption** — use `rsa` with OAEP.  For larger payloads,
+ * use a hybrid scheme: exchange a symmetric key with RSA-OAEP, then
+ * encrypt the payload with `aes_gcm`.
+ *
+ * **Key agreement** — use `x25519_exchange` followed by `hkdf` to derive
+ * a symmetric key from the shared secret.
+ *
+ * **Password storage** — always use `argon2_hash`.  Never use raw hashes
+ * (SHA-*, MD5) to store passwords.
+ *
+ * ---
+ *
+ * ### Quick start
+ *
+ * ```zuri
+ * import crypto
+ *
+ * # --- Symmetric (AES-GCM) -----------------------------------------------
+ * var key = crypto.random_bytes(32)              # AES-256
+ * var iv  = crypto.random_bytes(12)              # 96-bit GCM nonce
+ * var ct  = crypto.aes_gcm.encrypt(key, iv, bytes('hello world'))
+ * var pt  = crypto.aes_gcm.decrypt(key, iv, ct)
+ * echo string(pt)  # hello world
+ *
+ * # --- Password hashing (Argon2id) ----------------------------------------
+ * var salt = crypto.random_bytes(16)
+ * var hash = crypto.argon2.hash('my password', salt)
+ * echo crypto.argon2.verify(hash, 'my password')  # true
+ *
+ * # --- Ed25519 signature --------------------------------------------------
+ * var kp  = crypto.ed25519.generate()
+ * var sig = crypto.ed25519.sign(kp.private_pem, bytes('payload'))
+ * echo crypto.ed25519.verify(kp.public_pem, bytes('payload'), sig)  # true
+ * ```
+ *
+ * @copyright 2024, Zuri Project
+ * @license   BSD 2-Clause
+ * @module    crypto
+ */
+
+import _crypto
+
+
+# ---------------------------------------------------------------------------
+# CryptoException
+# ---------------------------------------------------------------------------
+
+/**
+ * Raised by crypto operations that fail due to invalid input, key material
+ * errors, or authentication failures.  Always catch this class when
+ * decrypting untrusted data.
+ */
+class CryptoException < Exception {
+  /**
+   * @param string message
+   * @constructor
+   */
+  CryptoException(message) {
+    parent(message)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+/**
+ * Returns n cryptographically secure random bytes from the operating
+ * system's entropy source (OpenSSL RAND_bytes, which seeds from /dev/urandom
+ * or the OS equivalent).
+ *
+ * Use this to generate keys, IVs, nonces, and salts.  Never use `math.random`
+ * for these purposes.
+ *
+ * ```zuri
+ * var key = crypto.random_bytes(32)  # 256-bit AES key
+ * var iv  = crypto.random_bytes(12)  # 96-bit GCM nonce
+ * ```
+ *
+ * @param  number n  Number of bytes to generate. Must be between 1 and 65536.
+ * @return bytes
+ * @throws CryptoException
+ */
+def random_bytes(n) {
+  return _crypto.random_bytes(n)
+}
+
+
+# ---------------------------------------------------------------------------
+# aes_gcm — AES-GCM authenticated encryption
+# ---------------------------------------------------------------------------
+
+/**
+ * AES-GCM authenticated encryption.
+ *
+ * AES-GCM is the recommended general-purpose symmetric encryption scheme.
+ * It provides both confidentiality and integrity in a single pass.  The
+ * 16-byte Poly1305-style authentication tag is appended to the ciphertext
+ * by `encrypt` and consumed transparently by `decrypt`.
+ *
+ * **Key sizes:** 16 bytes (AES-128), 24 bytes (AES-192), 32 bytes (AES-256).
+ *
+ * **IV/nonce:** 12 bytes is the standard GCM nonce size and strongly
+ * recommended.  Generate a fresh random nonce for every encryption operation
+ * and transmit it alongside the ciphertext — it does not need to be secret.
+ *
+ * **AAD:** Additional authenticated data (AAD) is optional metadata that is
+ * authenticated but not encrypted.  Useful for binding ciphertext to context
+ * such as a record identifier, a user ID, or a protocol version header.
+ * The exact same AAD must be supplied to `decrypt`.
+ *
+ * ### Security notes
+ *
+ * - Never reuse an (key, IV) pair.  Nonce reuse catastrophically breaks
+ *   GCM confidentiality.  Always generate the IV with `random_bytes(12)`.
+ * - Do not truncate the authentication tag.  The full 16 bytes are always
+ *   appended and verified.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var key = crypto.random_bytes(32)
+ * var iv  = crypto.random_bytes(12)
+ *
+ * var ct = crypto.aes_gcm.encrypt(key, iv, bytes('secret message'))
+ * var pt = crypto.aes_gcm.decrypt(key, iv, ct)
+ * echo string(pt)  # secret message
+ *
+ * # With AAD
+ * var aad = bytes('record-id:99')
+ * var ct2 = crypto.aes_gcm.encrypt(key, iv, bytes('secret'), aad)
+ * var pt2 = crypto.aes_gcm.decrypt(key, iv, ct2, aad)
+ * ```
+ */
+class _AesGcm {
+
+  /**
+   * Encrypts plaintext with AES-GCM.
+   *
+   * @param  bytes  key        16, 24, or 32 bytes.
+   * @param  bytes  iv         12 bytes (strongly recommended).
+   * @param  bytes  plaintext
+   * @param  bytes?  aad        Optional additional authenticated data.
+   * @return bytes             Ciphertext with 16-byte auth tag appended.
+   * @throws CryptoException
+   */
+  encrypt(key, iv, plaintext, aad) {
+    return _crypto.aes_gcm_encrypt(key, iv, plaintext, aad)
+  }
+
+  /**
+   * Decrypts and authenticates AES-GCM ciphertext.
+   *
+   * Raises a `CryptoException` if the authentication tag does not match.
+   * The plaintext is never returned on authentication failure.
+   *
+   * @param  bytes  key        The same key used to encrypt.
+   * @param  bytes  iv         The same IV used to encrypt.
+   * @param  bytes  ciphertext Ciphertext as returned by `encrypt`.
+   * @param  bytes?  aad        The same AAD used to encrypt, if any.
+   * @return bytes             Decrypted plaintext.
+   * @throws CryptoException
+   */
+  decrypt(key, iv, ciphertext, aad) {
+    return _crypto.aes_gcm_decrypt(key, iv, ciphertext, aad)
+  }
+}
+
+/**
+ * AES-GCM authenticated encryption namespace.
+ * @see _AesGcm
+ */
+var aes_gcm = _AesGcm()
+
+
+# ---------------------------------------------------------------------------
+# aes_cbc — AES-CBC encryption (interoperability)
+# ---------------------------------------------------------------------------
+
+/**
+ * AES-CBC encryption with PKCS#7 padding.
+ *
+ * AES-CBC provides confidentiality only.  It does not authenticate the
+ * ciphertext.  For new systems, prefer `aes_gcm`.  Use `aes_cbc` when
+ * interoperating with existing systems or protocols that mandate it.
+ *
+ * **Key sizes:** 16, 24, or 32 bytes.
+ *
+ * **IV:** exactly 16 bytes.  Must be unpredictable (generated with
+ * `random_bytes`) and unique per message.  Transmit alongside ciphertext.
+ *
+ * ### Security notes
+ *
+ * - `aes_cbc` is unauthenticated.  An attacker who can modify ciphertext
+ *   in transit can potentially corrupt or forge plaintext without detection.
+ *   Always add a separate MAC (e.g. HMAC-SHA256) when using CBC, or switch
+ *   to `aes_gcm` which bundles authentication.
+ * - PKCS#7 padding is applied automatically by `encrypt` and stripped by
+ *   `decrypt`.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var key = crypto.random_bytes(32)
+ * var iv  = crypto.random_bytes(16)
+ *
+ * var ct = crypto.aes_cbc.encrypt(key, iv, bytes('legacy payload'))
+ * var pt = crypto.aes_cbc.decrypt(key, iv, ct)
+ * echo string(pt)  # legacy payload
+ * ```
+ */
+class _AesCbc {
+
+  /**
+   * Encrypts plaintext with AES-CBC and PKCS#7 padding.
+   *
+   * @param  bytes  key        16, 24, or 32 bytes.
+   * @param  bytes  iv         Exactly 16 bytes.
+   * @param  bytes  plaintext
+   * @return bytes
+   * @throws CryptoException
+   */
+  encrypt(key, iv, plaintext) {
+    return _crypto.aes_cbc_encrypt(key, iv, plaintext)
+  }
+
+  /**
+   * Decrypts AES-CBC ciphertext and strips PKCS#7 padding.
+   *
+   * @param  bytes  key        The same key used to encrypt.
+   * @param  bytes  iv         The same IV used to encrypt.
+   * @param  bytes  ciphertext
+   * @return bytes
+   * @throws CryptoException
+   */
+  decrypt(key, iv, ciphertext) {
+    return _crypto.aes_cbc_decrypt(key, iv, ciphertext)
+  }
+}
+
+/**
+ * AES-CBC encryption namespace.
+ * @see _AesCbc
+ */
+var aes_cbc = _AesCbc()
+
+
+# ---------------------------------------------------------------------------
+# chacha20 — ChaCha20-Poly1305 AEAD
+# ---------------------------------------------------------------------------
+
+/**
+ * ChaCha20-Poly1305 authenticated encryption (RFC 8439).
+ *
+ * A modern AEAD cipher that is the recommended alternative to AES-GCM on
+ * platforms that lack AES hardware acceleration (e.g. older ARM devices and
+ * some IoT targets).  It provides equivalent security guarantees: both
+ * confidentiality and integrity in a single pass, with a 16-byte
+ * Poly1305 authentication tag appended to the ciphertext.
+ *
+ * **Key:** exactly 32 bytes.
+ *
+ * **Nonce:** exactly 12 bytes.  Generate fresh with `random_bytes(12)` for
+ * every encryption.  Like GCM, nonce reuse is catastrophic.
+ *
+ * **AAD:** same semantics as `aes_gcm` — authenticated but not encrypted.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var key = crypto.random_bytes(32)
+ * var iv  = crypto.random_bytes(12)
+ *
+ * var ct = crypto.chacha20.encrypt(key, iv, bytes('plaintext'))
+ * var pt = crypto.chacha20.decrypt(key, iv, ct)
+ * echo string(pt)  # plaintext
+ * ```
+ */
+class _ChaCha20 {
+
+  /**
+   * Encrypts plaintext with ChaCha20-Poly1305.
+   *
+   * @param  bytes  key        Exactly 32 bytes.
+   * @param  bytes  iv         Exactly 12 bytes.
+   * @param  bytes  plaintext
+   * @param  bytes?  aad        Optional additional authenticated data.
+   * @return bytes             Ciphertext with 16-byte Poly1305 tag appended.
+   * @throws CryptoException
+   */
+  encrypt(key, iv, plaintext, aad) {
+    return _crypto.chacha20_encrypt(key, iv, plaintext, aad)
+  }
+
+  /**
+   * Decrypts ChaCha20-Poly1305 ciphertext.
+   *
+   * Raises a `CryptoException` if authentication fails.
+   *
+   * @param  bytes  key        The same key used to encrypt.
+   * @param  bytes  iv         The same IV used to encrypt.
+   * @param  bytes  ciphertext Ciphertext as returned by `encrypt`.
+   * @param  bytes?  aad        The same AAD used to encrypt, if any.
+   * @return bytes
+   * @throws CryptoException
+   */
+  decrypt(key, iv, ciphertext, aad) {
+    return _crypto.chacha20_decrypt(key, iv, ciphertext, aad)
+  }
+}
+
+/**
+ * ChaCha20-Poly1305 AEAD namespace.
+ * @see _ChaCha20
+ */
+var chacha20 = _ChaCha20()
+
+
+# ---------------------------------------------------------------------------
+# rsa — RSA-OAEP encryption and RSA-PSS signing
+# ---------------------------------------------------------------------------
+
+/**
+ * RSA asymmetric encryption (OAEP) and signing (PSS).
+ *
+ * RSA is widely deployed and required by many protocols.  This module
+ * always uses strong modern padding:
+ *
+ * - **Encryption:** RSA-OAEP with SHA-256 digest and MGF1-SHA-256 mask.
+ *   PKCS#1 v1.5 padding is not available — it is vulnerable to padding
+ *   oracle attacks and must not be used in new code.
+ * - **Signing:** RSA-PSS with SHA-256 digest, MGF1-SHA-256 mask, and
+ *   salt length equal to digest size.  PKCS#1 v1.5 signatures (RSASSA-PKCS1)
+ *   are not available.
+ *
+ * **Key sizes:** 2048 or 4096 bits.  Use 2048 for most applications and
+ * 4096 for long-lived keys or high-security environments.
+ *
+ * **Key format:** PEM-encoded PKCS#8 private key / SubjectPublicKeyInfo
+ * public key.  These are the standard formats produced by OpenSSL and
+ * accepted everywhere.
+ *
+ * ### Hybrid encryption pattern
+ *
+ * RSA-OAEP can only encrypt data smaller than the key modulus minus padding
+ * overhead (~190 bytes for a 2048-bit key).  For larger payloads, use
+ * hybrid encryption:
+ *
+ * ```zuri
+ * import crypto
+ *
+ * # Sender:
+ * var sym_key = crypto.random_bytes(32)
+ * var enc_key = crypto.rsa.encrypt(recipient_pub_pem, sym_key)
+ * var iv      = crypto.random_bytes(12)
+ * var ct      = crypto.aes_gcm.encrypt(sym_key, iv, payload)
+ * # transmit: enc_key + iv + ct
+ *
+ * # Recipient:
+ * var sym_key = crypto.rsa.decrypt(recipient_priv_pem, enc_key)
+ * var pt      = crypto.aes_gcm.decrypt(sym_key, iv, ct)
+ * ```
+ *
+ * ### Key generation
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var kp = crypto.rsa.generate(2048)
+ * echo kp.private_pem
+ * echo kp.public_pem
+ * ```
+ */
+class _Rsa {
+
+  /**
+   * Generates an RSA key pair and returns a dictionary with `private_pem`
+   * and `public_pem` strings.
+   *
+   * Key generation is expensive, especially at 4096 bits.  Generate keys
+   * once and persist them; do not generate fresh keys per request.
+   *
+   * @param  number bits  2048 or 4096.
+   * @return dict{private_pem: string, public_pem: string}
+   * @throws CryptoException
+   */
+  generate(bits) {
+    if bits != 2048 and bits != 4096 {
+      raise CryptoException('rsa.generate(): bits must be 2048 or 4096')
+    }
+    return _crypto.rsa_generate(bits)
+  }
+
+  /**
+   * Encrypts plaintext with RSA-OAEP (SHA-256).
+   *
+   * @param  string public_pem  PEM-encoded public key.
+   * @param  bytes  plaintext   Must fit within the key's OAEP capacity.
+   * @return bytes              Encrypted ciphertext.
+   * @throws CryptoException
+   */
+  encrypt(public_pem, plaintext) {
+    return _crypto.rsa_encrypt(public_pem, plaintext)
+  }
+
+  /**
+   * Decrypts RSA-OAEP ciphertext.
+   *
+   * @param  string private_pem  PEM-encoded private key.
+   * @param  bytes  ciphertext
+   * @return bytes               Decrypted plaintext.
+   * @throws CryptoException
+   */
+  decrypt(private_pem, ciphertext) {
+    return _crypto.rsa_decrypt(private_pem, ciphertext)
+  }
+
+  /**
+   * Signs message with RSA-PSS (SHA-256 / MGF1-SHA-256).
+   *
+   * @param  string private_pem  PEM-encoded private key.
+   * @param  bytes  message      The raw bytes to sign.
+   * @return bytes               DER-encoded signature.
+   * @throws CryptoException
+   */
+  sign(private_pem, message) {
+    return _crypto.rsa_sign(private_pem, message)
+  }
+
+  /**
+   * Verifies an RSA-PSS signature.
+   *
+   * Returns `true` on a valid signature and `false` on any mismatch.
+   * Unlike `decrypt`, this never raises for a bad signature — only for
+   * malformed arguments or an unparseable key.
+   *
+   * @param  string public_pem  PEM-encoded public key.
+   * @param  bytes  message     The message that was signed.
+   * @param  bytes  signature   DER-encoded signature from `sign`.
+   * @return bool
+   * @throws CryptoException
+   */
+  verify(public_pem, message, signature) {
+    return _crypto.rsa_verify(public_pem, message, signature)
+  }
+}
+
+/**
+ * RSA encryption and signing namespace.
+ * @see _Rsa
+ */
+var rsa = _Rsa()
+
+
+# ---------------------------------------------------------------------------
+# ecdsa — ECDSA signatures (P-256 / P-384)
+# ---------------------------------------------------------------------------
+
+/**
+ * ECDSA digital signatures over NIST curves P-256 and P-384.
+ *
+ * ECDSA produces much smaller keys and signatures than RSA for equivalent
+ * security:
+ *
+ * | Curve | Security | Private key | Signature |
+ * |-------|----------|-------------|-----------|
+ * | P-256 | ~128-bit | 32 bytes    | ~72 bytes |
+ * | P-384 | ~192-bit | 48 bytes    | ~104 bytes|
+ *
+ * ECDSA is widely deployed in TLS, JWT (ES256/ES384), and code signing.
+ * For new systems with no interoperability requirement, prefer `ed25519`
+ * which is faster, has no hash-choice foot-gun, and produces deterministic
+ * signatures.
+ *
+ * Signatures are DER-encoded and use SHA-256 as the digest.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var kp  = crypto.ecdsa.generate('P-256')
+ * var msg = bytes('document to sign')
+ * var sig = crypto.ecdsa.sign(kp.private_pem, msg)
+ *
+ * echo crypto.ecdsa.verify(kp.public_pem, msg, sig)  # true
+ * ```
+ */
+class _Ecdsa {
+
+  /**
+   * Generates an ECDSA key pair.
+   *
+   * @param  string curve  `"P-256"` or `"P-384"`.
+   * @return dict{private_pem: string, public_pem: string}
+   * @throws CryptoException
+   */
+  generate(curve) {
+    if curve != 'P-256' and curve != 'P-384' {
+      raise CryptoException('ecdsa.generate(): curve must be "P-256" or "P-384"')
+    }
+    return _crypto.ecdsa_generate(curve)
+  }
+
+  /**
+   * Signs message with ECDSA-SHA256.
+   *
+   * @param  string private_pem
+   * @param  bytes  message
+   * @return bytes              DER-encoded signature.
+   * @throws CryptoException
+   */
+  sign(private_pem, message) {
+    return _crypto.ecdsa_sign(private_pem, message)
+  }
+
+  /**
+   * Verifies an ECDSA-SHA256 signature.
+   *
+   * @param  string public_pem
+   * @param  bytes  message
+   * @param  bytes  signature  DER-encoded signature from `sign`.
+   * @return bool
+   * @throws CryptoException
+   */
+  verify(public_pem, message, signature) {
+    return _crypto.ecdsa_verify(public_pem, message, signature)
+  }
+}
+
+/**
+ * ECDSA signing namespace.
+ * @see _Ecdsa
+ */
+var ecdsa = _Ecdsa()
+
+
+# ---------------------------------------------------------------------------
+# ed25519 — Ed25519 (EdDSA) signatures
+# ---------------------------------------------------------------------------
+
+/**
+ * Ed25519 digital signatures (EdDSA over Curve25519).
+ *
+ * Ed25519 is the recommended algorithm for new digital signature use cases.
+ * It is fast, produces small 64-byte signatures, has no hash-choice
+ * parameter, and generates deterministic signatures — the same message
+ * always produces the same signature for a given key, which eliminates
+ * the class of vulnerabilities caused by weak random number generators in
+ * ECDSA signing.
+ *
+ * Keys are stored as PEM-encoded PKCS#8 (private) / SPKI (public) strings,
+ * the same format used by the rest of the `crypto` module.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var kp  = crypto.ed25519.generate()
+ * var sig = crypto.ed25519.sign(kp.private_pem, bytes('hello'))
+ * echo crypto.ed25519.verify(kp.public_pem, bytes('hello'), sig)  # true
+ * echo crypto.ed25519.verify(kp.public_pem, bytes('world'), sig)  # false
+ * ```
+ */
+class _Ed25519 {
+
+  /**
+   * Generates an Ed25519 key pair.
+   *
+   * @return dict{private_pem: string, public_pem: string}
+   * @throws CryptoException
+   */
+  generate() {
+    return _crypto.ed25519_generate()
+  }
+
+  /**
+   * Signs message with Ed25519.
+   *
+   * @param  string private_pem  PEM-encoded Ed25519 private key.
+   * @param  bytes  message
+   * @return bytes               64-byte raw Ed25519 signature.
+   * @throws CryptoException
+   */
+  sign(private_pem, message) {
+    return _crypto.ed25519_sign(private_pem, message)
+  }
+
+  /**
+   * Verifies an Ed25519 signature.
+   *
+   * @param  string public_pem  PEM-encoded Ed25519 public key.
+   * @param  bytes  message
+   * @param  bytes  signature   64-byte signature from `sign`.
+   * @return bool
+   * @throws CryptoException
+   */
+  verify(public_pem, message, signature) {
+    return _crypto.ed25519_verify(public_pem, message, signature)
+  }
+}
+
+/**
+ * Ed25519 signing namespace.
+ * @see _Ed25519
+ */
+var ed25519 = _Ed25519()
+
+
+# ---------------------------------------------------------------------------
+# x25519 — X25519 Diffie-Hellman key exchange
+# ---------------------------------------------------------------------------
+
+/**
+ * X25519 elliptic-curve Diffie-Hellman key exchange.
+ *
+ * X25519 allows two parties to establish a shared secret over an untrusted
+ * channel without transmitting the secret itself.  The resulting 32-byte
+ * raw shared secret must be passed through `hkdf` before use as a
+ * symmetric key — the raw output has a non-uniform distribution that
+ * makes it unsuitable for direct use as key material.
+ *
+ * ### Protocol sketch
+ *
+ * ```
+ * Alice                          Bob
+ * ──────────────────────────     ──────────────────────────
+ * kp_a = x25519.generate()      kp_b = x25519.generate()
+ *
+ *          ← exchange public keys →
+ *
+ * secret = x25519.exchange(      secret = x25519.exchange(
+ *   kp_a.private_pem,              kp_b.private_pem,
+ *   kp_b.public_pem)               kp_a.public_pem)
+ *
+ * key = hkdf(secret, salt, info, 32)   # same on both sides
+ * ```
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var alice = crypto.x25519.generate()
+ * var bob   = crypto.x25519.generate()
+ *
+ * var alice_secret = crypto.x25519.exchange(alice.private_pem, bob.public_pem)
+ * var bob_secret   = crypto.x25519.exchange(bob.private_pem, alice.public_pem)
+ *
+ * # Both secrets are identical — derive a symmetric key:
+ * var salt = crypto.random_bytes(32)
+ * var key  = crypto.hkdf(alice_secret, salt, bytes('app-context'), 32)
+ * ```
+ */
+class _X25519 {
+
+  /**
+   * Generates an X25519 key pair.
+   *
+   * @return dict{private_pem: string, public_pem: string}
+   * @throws CryptoException
+   */
+  generate() {
+    return _crypto.x25519_generate()
+  }
+
+  /**
+   * Performs the X25519 Diffie-Hellman operation and returns the 32-byte
+   * raw shared secret.
+   *
+   * Always derive a symmetric key from the result using `hkdf` before
+   * using it for encryption.
+   *
+   * @param  string private_pem       Your X25519 private key (PEM).
+   * @param  string peer_public_pem   The other party's X25519 public key (PEM).
+   * @return bytes                    32-byte raw shared secret.
+   * @throws CryptoException
+   */
+  exchange(private_pem, peer_public_pem) {
+    return _crypto.x25519_exchange(private_pem, peer_public_pem)
+  }
+}
+
+/**
+ * X25519 key exchange namespace.
+ * @see _X25519
+ */
+var x25519 = _X25519()
+
+
+# ---------------------------------------------------------------------------
+# argon2 — Argon2id password hashing
+# ---------------------------------------------------------------------------
+
+/**
+ * Argon2id password hashing (RFC 9106).
+ *
+ * Argon2id is the current standard for password hashing and is the
+ * recommended algorithm for storing user passwords.  It is memory-hard
+ * and compute-hard, making brute-force and GPU attacks expensive.
+ *
+ * The `hash` function returns a self-contained encoded string that includes
+ * the algorithm, parameters, salt, and hash.  Store this string as-is.
+ * The `verify` function extracts all parameters from the encoded string,
+ * so you do not need to store parameters separately.
+ *
+ * ### Default parameters
+ *
+ * The defaults follow the OWASP password storage recommendations:
+ *
+ * | Parameter | Default | Meaning                         |
+ * |-----------|---------|----------------------------------|
+ * | t_cost    | 3       | 3 iterations                    |
+ * | m_cost    | 65536   | 64 MiB memory                   |
+ * | threads   | 4       | 4 parallel lanes                |
+ * | hash_len  | 32      | 32-byte output hash             |
+ *
+ * Tune upward for higher security on hardware that supports it, or
+ * downward if you measure unacceptable latency on resource-constrained
+ * targets.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * var salt = crypto.random_bytes(16)
+ * var hash = crypto.argon2.hash('correct horse battery staple', salt)
+ *
+ * # Store `hash` in your database.  Never store the password or salt separately.
+ *
+ * echo crypto.argon2.verify(hash, 'correct horse battery staple')  # true
+ * echo crypto.argon2.verify(hash, 'wrong password')                # false
+ * ```
+ *
+ * ### Increasing cost over time
+ *
+ * As hardware improves, re-hash passwords on next successful login:
+ *
+ * ```zuri
+ * if crypto.argon2.verify(stored_hash, submitted_password) {
+ *   var new_hash = crypto.argon2.hash(submitted_password,
+ *                    crypto.random_bytes(16), { t_cost: 4, m_cost: 131072 })
+ *   db.update_password_hash(user_id, new_hash)
+ * }
+ * ```
+ */
+class _Argon2 {
+
+  /**
+   * Hashes a password with Argon2id.
+   *
+   * Generates a complete encoded hash string, including the algorithm,
+   * all parameters, the salt, and the derived hash.
+   *
+   * ### Options
+   *
+   * | Key      | Type   | Default | Description                          |
+   * |----------|--------|---------|--------------------------------------|
+   * | t_cost   | number | 3       | Number of iterations                 |
+   * | m_cost   | number | 65536   | Memory usage in KiB (min 8)          |
+   * | threads  | number | 4       | Degree of parallelism                |
+   * | hash_len | number | 32      | Length of the raw output hash        |
+   *
+   * @param  string password
+   * @param  bytes  salt     At least 8 bytes. Generate with `random_bytes(16)`.
+   * @param  dict   options  Optional tuning parameters (see table above).
+   * @return string          Encoded Argon2id hash string.
+   * @throws CryptoException
+   */
+  hash(password, salt, options) {
+    return _crypto.argon2_hash(password, salt, options)
+  }
+
+  /**
+   * Verifies a password against an Argon2id encoded hash string.
+   *
+   * All parameters are extracted from the encoded string; no options
+   * need to be passed.
+   *
+   * @param  string encoded   Hash string from `hash`.
+   * @param  string password  Password to verify.
+   * @return bool             `true` if the password matches.
+   * @throws CryptoException
+   */
+  verify(encoded, password) {
+    return _crypto.argon2_verify(encoded, password)
+  }
+}
+
+/**
+ * Argon2id password hashing namespace.
+ * @see _Argon2
+ */
+var argon2 = _Argon2()
+
+
+# ---------------------------------------------------------------------------
+# hkdf — HKDF-SHA256 key derivation
+# ---------------------------------------------------------------------------
+
+/**
+ * Derives cryptographic key material from a high-entropy input using
+ * HKDF-SHA256 (RFC 5869).
+ *
+ * HKDF is not a password hashing function — it does not strengthen
+ * low-entropy inputs.  Use `argon2` for passwords.  HKDF is appropriate
+ * for:
+ *
+ * - Expanding X25519 shared secrets into symmetric keys.
+ * - Deriving multiple purpose-specific sub-keys from a single master key.
+ * - Stretching random key material to the required length.
+ *
+ * The `info` parameter binds the derived key to a specific context and
+ * prevents key reuse across different purposes.  It does not need to be
+ * secret.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * # Derive an AES-256 encryption key and a separate HMAC key from a
+ * # shared secret, binding each to its intended purpose.
+ *
+ * var secret = crypto.x25519.exchange(my_priv, peer_pub)
+ * var salt   = crypto.random_bytes(32)
+ *
+ * var enc_key  = crypto.hkdf(secret, salt, bytes('encryption'), 32)
+ * var hmac_key = crypto.hkdf(secret, salt, bytes('authentication'), 32)
+ * ```
+ *
+ * @param  bytes  ikm     Input key material (high entropy required).
+ * @param  bytes  salt    Random salt. Use `random_bytes(32)` or a fixed
+ *                        well-known value if no random salt is available.
+ * @param  bytes  info    Context string binding the key to its purpose.
+ * @param  number length  Number of output bytes. Maximum 8160.
+ * @return bytes
+ * @throws CryptoException
+ */
+def hkdf(ikm, salt, info, length) {
+  return _crypto.hkdf(ikm, salt, info, length)
+}

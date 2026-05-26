@@ -83,6 +83,7 @@
 #define RETURN_L_STRING(v, l) do { args[-1] = OBJ_VAL(copy_string(vm, v, l)); return true; } while(0)
 #define RETURN_T_STRING(v, l) do { args[-1] = OBJ_VAL(take_string(vm, v, l)); return true; } while(0)
 #define RETURN_TT_STRING(v) do { args[-1] = OBJ_VAL(take_string(vm, v, (int)strlen(v))); return true; } while(0)
+#define RETURN_BYTES(v, n) do { args[-1] = OBJ_VAL(copy_bytes(vm, v, n)); return true; } while(0)
 #define RETURN_VALUE(v) do { args[-1] = v; return true; } while(0)
 
 #define WARN(...) do { \

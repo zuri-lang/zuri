@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get remove libgd3 
-          sudo apt-get install curl libpthread-stubs0-dev libcurl4-openssl-dev libgd-dev libavif-dev libffi-dev -y
+          sudo apt-get install curl libpthread-stubs0-dev libcurl4-openssl-dev libgd-dev libavif-dev libffi-dev libargon2-dev -y
           cmake -B .
           cmake --build . -- -j 12
           chmod +x zuri/zuri
@@ -61,7 +61,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get remove libgd3 
-          sudo apt-get install curl libpthread-stubs0-dev libcurl4-openssl-dev libgd-dev libavif-dev libffi-dev -y
+          sudo apt-get install curl libpthread-stubs0-dev libcurl4-openssl-dev libgd-dev libavif-dev libffi-dev libargon2-dev -y
           cmake -B .
           cmake --build . -- -j 12
           chmod +x zuri/zuri
@@ -86,7 +86,7 @@ jobs:
       - name: Setup dependencies
         run: |
           brew uninstall pkg-config --ignore-dependencies
-          brew install pkg-config gd libffi
+          brew install pkg-config gd libffi libargon2
       - name: Compile
         run: |
           cmake -B . -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl
@@ -120,7 +120,7 @@ jobs:
       - name: Install dependencies
         uses: johnwason/vcpkg-action@v8
         with:
-          pkgs: pkgconf curl libffi openssl libgd
+          pkgs: pkgconf curl libffi openssl libgd argon2
           extra-args: --disable-metrics
           revision: master
           triplet: x64-windows-release
