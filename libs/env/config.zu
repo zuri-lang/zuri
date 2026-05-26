@@ -1,0 +1,12 @@
+import .index as app
+import .env_options
+
+var options = {}
+options.extend(env_options())
+
+app.config(options)
+
+/**
+ * Re-export of [[env.get]] to allow easily accessing environment variable from config.
+ */
+var get = app.get

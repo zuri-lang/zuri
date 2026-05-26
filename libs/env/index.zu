@@ -1,0 +1,520 @@
+/**
+ * @module env
+ * 
+ * 
+ * Env is a zero-dependency module that loads environment variables from a `.env` file into [[os.get_env]].
+ * 
+ * 
+ * @note This is a largely a port of the awesome work already done on the 
+ *    [JS npm env package](https://github.com/motdotla/dotenv) by [@motdotla](https://github.com/motdotla).
+ * 
+ * ## 🏗️ Usage (.env)
+ * 
+ * Create a `.env` file in the root of your project:
+ * 
+ * ```dosini
+ * S3_BUCKET="YOURS3BUCKET"
+ * SECRET_KEY="YOURSECRETKEYGOESHERE"
+ * ```
+ * 
+ * As early as possible in your application, import and configure env:
+ * 
+ * ```zuri
+ * import env
+ * 
+ * env.config()
+ * 
+ * echo env.get('S3_BUCKET') # YOURS3BUCKET
+ * echo env.get('SECRET_KEY') # YOURSECRETKEYGOESHERE
+ * ```
+ * 
+ * Because this is the most common pattern of usage, a one-line shortcut is provided via the config sub-module:
+ * 
+ * ```zuri
+ * import env.config
+ * ```
+ * 
+ * That's it. Your environment now has the keys and values you defined in your .env file and you can access all 
+ * your environment variables as usual.
+ * 
+ * ```zuri
+ * import os
+ * 
+ * echo os.get_env('S3_BUCKET') # YOURS3BUCKET
+ * ```
+ * 
+ * Or directly from the config sub-module itself:
+ * 
+ * ```zuri
+ * import env.config
+ * 
+ * echo config.get('S3_BUCKET') # YOURS3BUCKET
+ * echo config.get('SECRET_KEY') # YOURSECRETKEYGOESHERE
+ * ```
+ * 
+ * ### Multiline values
+ * 
+ * If you need multiline variables, for example private keys, those are supported with line breaks:
+ * 
+ * ```dosini
+ * PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+ * ...
+ * Kh9NV...
+ * ...
+ * -----END RSA PRIVATE KEY-----"
+ * ```
+ * 
+ * Alternatively, you can double quote strings and use the `\n` character:
+ * 
+ * ```dosini
+ * PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nKh9NV...\n-----END RSA PRIVATE KEY-----\n"
+ * ```
+ * 
+ * ### Comments
+ * 
+ * Comments may be added to your file on their own line or inline:
+ * 
+ * ```dosini
+ * # This is a comment
+ * SECRET_KEY=YOURSECRETKEYGOESHERE # comment
+ * SECRET_HASH="something-with-a-#-hash"
+ * ```
+ * 
+ * Comments begin where a `#` exists, so if your value contains a `#` please wrap it in quotes.
+ * 
+ * ### Parsing
+ * 
+ * The engine which parses the contents of your file containing environment variables is available to use. 
+ * It accepts a string or bytes and will return a dictionary with the parsed keys and values.
+ * 
+ * ```zuri
+ * import env
+ * 
+ * var config = env.parse('BASIC=basic') # will return an object
+ * echo typeof(config) # dict
+ * echo config # {BASIC : 'basic'}
+ * ```
+ * 
+ * ### Configuration
+ * 
+ * You can configure how the `env` module behaves for your application on production without having to 
+ * redeploy anything using environment variables to set configuration options.
+ * 
+ * ```bash
+ * $ ZURI_ENV_CONFIG_<OPTION>=value blade your_script.zu
+ * ```
+ * 
+ * ```bash
+ * $ ZURI_ENV_CONFIG_ENCODING=latin1 ZURI_ENV_CONFIG_DEBUG=true blade your_script.zu
+ * ```
+ * 
+ * Zuri maintains a dictionary based configuration for the `env` module for sake of familiarity. This helps 
+ * developers coming from other sources onboard quickly since they're most likely already familiar with that 
+ * pattern of configuration for env modules.
+ * 
+ * ### Variable Expansion
+ * 
+ * Variable expansion is supported by the library and is enabled by default when you import `env.config` or 
+ * call the `config()` function.
+ * 
+ * You can turn it off when calling the `config()` function by setting the `expand` option to false like in 
+ * the following example:
+ * 
+ * ```zuri
+ * import env
+ * env.config({
+ *   expand: false
+ * })
+ * ```
+ * 
+ * However, for parsing, the variable expansion is turned off by default as parsing prioritizes correctness 
+ * of input data over actual value. To enable variable expansion for the `parse()` function, you can pass a 
+ * second parameter (`expand_vars`) to true. For example:
+ * 
+ * ```
+ * import env
+ * echo env.parse('FOO=\${BAR}', true)
+ * ```
+ * 
+ * In the above example, _FOO_ will be empty of the environment variable `BAR` has not been set either on the 
+ * system or via env previously, but will take the value of `BAR` if it exists.
+ * 
+ * ### Should I commit my `.env` file?
+ * 
+ * No. We **strongly** recommend against committing your `.env` file to version control. It should only include 
+ * environment-specific values such as database passwords or API keys. Your production database should have a 
+ * different password than your development database.
+ * 
+ * ### Should I have multiple `.env` files?
+ * 
+ * No. We **strongly** recommend against having a "main" `.env` file and an "environment" `.env` file like 
+ * `.env.test`. Your config should vary between deploys, and you should not be sharing values between 
+ * environments.
+ * 
+ * > In a twelve-factor app, env vars are granular controls, each fully orthogonal to other env vars. They are 
+ * > never grouped together as “environments”, but instead are independently managed for each deploy. This is a 
+ * > model that scales up smoothly as the app naturally expands into more deploys over its lifetime.
+ * >
+ * > – [The Twelve-Factor App](http://12factor.net/config)
+ * 
+ * ### What rules does the parsing engine follow?
+ * 
+ * The parsing engine currently supports the following rules:
+ * 
+ * - `BASIC=basic` becomes `{BASIC: 'basic'}`
+ * - empty lines are skipped
+ * - lines beginning with `#` are treated as comments
+ * - `#` marks the beginning of a comment (unless when the value is wrapped in quotes)
+ * - empty values become empty strings (`EMPTY=` becomes `{EMPTY: ''}`)
+ * - inner quotes are maintained (think JSON) (`JSON={"foo": "bar"}` becomes `{JSON:"{\"foo\": \"bar\"}"`)
+ * - whitespace is removed from both ends of unquoted values (see more on 
+ *    [`trim`](https://bladelang.org/tutorial/strings#trimchr-char)) (`FOO=  some value  ` becomes 
+ *    `{FOO: 'some value'}`)
+ * - single and double quoted values are escaped (`SINGLE_QUOTE='quoted'` becomes `{SINGLE_QUOTE: "quoted"}`)
+ * - single and double quoted values maintain whitespace from both ends (`FOO="  some value  "` becomes 
+ *    `{FOO: '  some value  '}`)
+ * - double quoted values expand new lines (`MULTILINE="new\nline"` becomes
+ * 
+ * ```
+ * {MULTILINE: 'new
+ * line'}
+ * ```
+ * 
+ * - backticks are supported (`` BACKTICK_KEY=`This has 'single' and "double" quotes inside of it.` ``)
+ * 
+ * ### What happens to environment variables that were already set?
+ * 
+ * By default, we will never modify any environment variables that have already been set. In particular, if there 
+ * is a variable in your `.env` file which collides with one that already exists in your environment, then that 
+ * variable will be skipped.
+ * 
+ * If instead, you want to override the OS environment variable use the `override` option.
+ * 
+ * ```zuri
+ * import env
+ * env.config({ override: true })
+ * ```
+ * 
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import os
+import json
+
+var _LINE = '/
+  (?: ^ | ^ )             # Start of line anchor (duplicated in original)
+  \s*                     # Optional leading whitespace
+  (?: export \s+ )?       # Optional "export " keyword
+  ( [\w.-]+ )             # Group 1: The variable key name
+  (?:                     # Match the assignment separator:
+        \s* = \s*?        #   Either an equals sign with optional spaces
+
+      | : \s+?            #   Or a colon followed by spaces
+  )                       #
+  (                       # Group 2: The variable value (Optional)
+        \s* \' (?: \\\\\' | [^\'] )* \'  # Single-quoted string
+      | \s* "  (?: \\\\"  | [^"]  )* "   # Double-quoted string
+      | \s* `  (?: \\\\`  | [^` ] )* `   # Backtick string
+      | [^\#\r\n]+                       # Anything else except newlines or literal #
+  )?                      # 
+  \s*                     # Optional trailing whitespace
+  (?: \# .* )?            # Optional trailing comment (escaped #)
+  (?: $ | $ )             # End of line anchor (duplicated in original)
+  /mx'
+
+def _resolve_escape_sequences(value) {
+  return value.replace('/\\\\\$/', '$')
+}
+
+def _expand_value(value, running_parsed) {
+  var env = {}
+  env.extend(running_parsed)
+
+  var regex = '/(?<!\\\\)\\\${([^{}]+)}|(?<!\\\\)\\\$([A-Za-z_][A-Za-z0-9_]*)/'
+
+  var result = value
+  var match
+  var seen = [] # self-referential checker
+
+  while match = result.match(regex) {
+    if !seen.contains(result) {
+      seen.append(result)
+    }
+
+    var template = match[0]
+    var braced_expression = match.get(1)
+    var unbraced_expression = match.get(2)
+    var expression = braced_expression or unbraced_expression
+
+    # match the operators `:+`, `+`, `:-`, and `-`
+    var op_regex = '/(:\+|\+|:-|-)/'
+    # find first match
+    var op_match = expression.match(op_regex)
+    var splitter = op_match ? op_match[0] : ''
+
+    var r = splitter ? expression.split(splitter) : [expression]
+
+    var default_value
+    var value
+
+    var key = r.shift()
+
+    if [':+', '+'].contains(splitter) {
+      default_value = env.contains(key) or os.get_env(key) ? splitter.join(r) : ''
+      value = nil
+    } else {
+      default_value = splitter.join(r)
+      value = os.get_env(key) or env.get(key)
+    }
+
+    if value {
+      # self-referential check
+      if seen.contains(value) {
+        result = result.replace(template, default_value)
+      } else {
+        result = result.replace(template, value)
+      }
+    } else {
+      result = result.replace(template, default_value)
+    }
+
+    # if the result equaled what was in os.get_env and running_parsed then stop expanding
+    if result == running_parsed.get(key) {
+      break
+    }
+  }
+
+  return result
+}
+
+def _resolve_home(env_path) {
+  return env_path.get(0) == '~' ? os.join_paths(os.home_dir(), env_path[1,]) : env_path
+}
+
+/**
+ * Parse env source string into a dictionary.
+ * 
+ * Example:
+ * 
+ * ```zuri
+ * import env
+ * 
+ * var config = env.parse('BASIC=basic') # will return a dictionary
+ * 
+ * echo typeof(config) # dict
+ * echo config # { BASIC : 'basic' }
+ * ```
+ * 
+ * When expand is set to true, variables in the env source string will be expanded with existing environment 
+ * variables and/or other declared variables.
+ * 
+ * Example:
+ * 
+ * ```zuri
+ * import env
+ * 
+ * var config = env.parse('BASIC=${USERNAME}', true)
+ * 
+ * echo typeof(config) # dict
+ * echo config # e.g. { BASIC : 'myusername' }
+ * ```
+ * 
+ * @param {string|bytes} source The source string to parse.
+ * @param bool? expand Whether to expand environment variables.
+ * @returns dict A dictionary of environment variables.
+ * @throws ArgumentError
+ */
+def parse(source, expand) {
+
+  if !is_string(source) and !is_bytes(source) {
+    raise ArgumentError('string or bytes expected in argument 1 (source)')
+  }
+
+  if !expand expand = false
+
+  var obj = {}
+
+  # Convert buffer to string
+  var lines = is_bytes(source) ? source.to_string() : source
+
+  # Convert line breaks to same format
+  lines = lines.replace('/\r\n?/m', '\n')
+
+  var match
+  while match = lines.match(_LINE) {
+    var matched_env = match.get(0)
+    lines = lines[lines.index_of(matched_env) + matched_env.length(),]
+
+    var key = match.get(1)
+
+    # Default nil to empty string and remove whitespace
+    var value = match.get(2, '').trim()
+
+    # Check if double quoted
+    var maybe_quote = value ? value[0] : ''
+
+    # Remove surrounding quotes
+    value = value.replace('/^([\'"`])([\s\S]*)\1$/m', '$2')
+
+    # Expand newlines if double quoted
+    if maybe_quote == '"' {
+      value = value.replace('/\\\\n/', '\n')
+      value = value.replace('/\\\\r/', '\r')
+    }
+
+    var current_value = os.get_env(key)
+    if current_value != nil and current_value != value {
+      value = current_value
+    } else {
+      value = !expand ? value : _resolve_escape_sequences(
+        _expand_value(value, obj)
+      )
+    }
+
+    # Add to dictionary
+    obj.set(key, value)
+  }
+
+  return obj
+}
+
+/**
+ * Populates `os.get_env` from .env file. 
+ * 
+ * The function accepts a dictionary of options that can include:
+ * 
+ * - bool `override`: Whether to override existing environment variables (Default = false).
+ * - bool `expand`: Whether to expand environment variables (Default = true).
+ * - string `path`: Path to the .env file (Default is `.env` file in current working directory).
+ * - bool `debug`: Whether to enable debug mode (Default = false).
+ * 
+ * Example:
+ * 
+ * ```zuri
+ * import env
+ * 
+ * var result = env.config()
+ * 
+ * if result.error {
+ *   raise result.error
+ * }
+ * 
+ * echo result.parsed
+ * ```
+ * 
+ * Default: `false`
+ * 
+ * You can turn on the debug mode by setting `debug: true` in the options dictionary to help the `debug` option. 
+ * When debug is true, an exception will be raised if the .env file cannot be loaded or contains invalid 
+ * environment variables.
+ * 
+ * Example:
+ * 
+ * ```zuri
+ * import env
+ * env.config({ debug: true })
+ * 
+ * You can also override any environment variables that have already been set on your machine with values from your 
+ * .env file by setting the `override` option to true.
+ * 
+ * ```zuri
+ * import env
+ * env.config({ override: true })
+ * ```
+ * 
+ * You can also specify a custom path if your file containing environment variables is located elsewhere using the 
+ * `path` option.
+ * 
+ * ```zuri
+ * import env
+ * env.config({ path: '/custom/path/to/.env' })
+ * ```
+ * 
+ * @param dict? options Optional configuration options.
+ * @returns dict A dictionary of environment variables.
+ * @throws ArgumentError If the options parameter is not a dictionary or contains invalid options.
+ */
+def config(options) {
+  if options == nil options = {}
+
+  if !is_dict(options) {
+    raise ArgumentError('dictionary expected')
+  }
+
+  var env_path = os.join_paths(os.cwd(), '.env')
+  var override = options.get('override', false)
+  var expand = options.get('expand', true)
+  var debug = options.get('debug', false)
+
+  if options {
+    if options.get('path') != nil {
+      if !is_string(options.path)
+        raise ValueError('options.path must be a string')
+
+      env_path = _resolve_home(options.path)
+    }
+  }
+
+  catch {
+    var parsed = parse(file(env_path).read(), expand)
+
+    for key, value in parsed {
+      if !os.get_env(key) {
+        os.set_env(key, value)
+      } else {
+        if override == true {
+          os.set_env(key, value)
+        }
+      }
+    }
+
+    return { parsed }
+  } as error {
+    if debug {
+      raise Exception('Failed to load ${env_path}: ${error.message}')
+    }
+
+    return { error }
+  }
+}
+
+
+/**
+ * Loads environment variables from a specified file path.
+ * 
+ * This function is a convenience wrapper around `config()` that allows you to specify
+ * the path to your .env file as the first parameter, rather than including it in the
+ * options dictionary.
+ * 
+ * @param string path Path to the environment file to load.
+ * @param dict? options Optional configuration options (same as `config()`).
+ * @returns dict A dictionary of environment variables parsed from the file.
+ * @throws ArgumentError If the options parameter is not a dictionary.
+ */
+def load(path, options) {
+  if options == nil options = {}
+
+  if !is_dict(options) {
+    raise ArgumentError('dictionary expected')
+  }
+
+  options.extend({ path })
+
+  return config(options)
+}
+
+
+/**
+ * Retrieves the value of an environment variable.
+ * 
+ * This function is a convenience wrapper around `os.get_env()` that allows you to
+ * access environment variables directly from the env module without needing to
+ * import the os module.
+ * 
+ * @param string name The name of the environment variable to retrieve.
+ * @param any? default_value Optional default value to return if the variable is not set.
+ * @returns any The value of the environment variable, or the default value if not found.
+ */
+def get(name, default_value) {
+  return os.get_env(name, default_value)
+}

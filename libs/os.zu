@@ -477,3 +477,14 @@ def base_name(path) {
 def rename(old_name, new_name) {
   return _os.rename(old_name, new_name)
 }
+
+
+/**
+ * Returns the current machine user's home directory. If the home directory cannot be detected, 
+ * it returns `nil`.
+ * 
+ * @returns string
+ */
+def home_dir() {
+  return _os.homedir()
+}

@@ -1,0 +1,34 @@
+import os
+
+# config.zu accepts options via environment variables
+var options = {}
+
+var _ENV_CONFIG_ENCODING = os.get_env('ZURI_ENV_CONFIG_ENCODING')
+var _ENV_CONFIG_PATH = os.get_env('ZURI_ENV_CONFIG_PATH')
+var _ENV_CONFIG_OVERRIDE = os.get_env('ZURI_ENV_CONFIG_OVERRIDE')
+
+if _ENV_CONFIG_ENCODING != nil {
+  options.set('encoding', _ENV_CONFIG_ENCODING)
+}
+
+if _ENV_CONFIG_PATH != nil {
+  options.set('path', _ENV_CONFIG_PATH)
+}
+
+if _ENV_CONFIG_OVERRIDE != nil {
+  options.set('override', _ENV_CONFIG_OVERRIDE)
+}
+
+/**
+ * Parses environment variables to get configuration options for the env module.
+ * 
+ * Reads ZURI_ENV_CONFIG_* environment variables:
+ * - `ZURI_ENV_CONFIG_ENCODING`: Sets file encoding for .env file
+ * - `ZURI_ENV_CONFIG_PATH`: Sets custom path to .env file
+ * - `ZURI_ENV_CONFIG_OVERRIDE`: Enables overriding existing environment variables
+ * 
+ * @returns dict A dictionary of configuration options parsed from environment variables.
+ */
+def env_options() {
+  return options
+}

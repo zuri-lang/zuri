@@ -20,6 +20,7 @@
 #include <sdkddkver.h>
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <shlobj.h>
 
 #ifndef sleep
 #define sleep(s) Sleep((DWORD)s)
@@ -47,6 +48,10 @@
 #else
 #include <errno.h>
 #endif /* HAVE_SYS_ERRNO_H */
+
+#ifndef _WIN32
+#include <pwd.h>
+#endif
 
 DECLARE_MODULE_METHOD(os_exec) {
   ENFORCE_ARG_COUNT(exec, 1);
@@ -490,6 +495,52 @@ DECLARE_MODULE_METHOD(os__rename) {
 #endif
 }
 
+DECLARE_MODULE_METHOD(os__homedir) {
+  ENFORCE_ARG_COUNT(home_dir, 0);
+
+#ifdef _WIN32
+    // 1. Try the official Windows API
+    PWSTR wide_path = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, 0, NULL, &wide_path))) {
+        // Query the exact size needed for the UTF-8 narrow string (including null terminator)
+        int required_bytes = WideCharToMultiByte(CP_UTF8, 0, wide_path, -1,
+                                                NULL, 0, NULL, NULL);
+        if (required_bytes > 0) {
+            char* result = (char*)malloc(required_bytes);
+            if (result) {
+                WideCharToMultiByte(CP_UTF8, 0, wide_path, -1,
+                                    result, required_bytes, NULL, NULL);
+                CoTaskMemFree(wide_path);
+
+                RETURN_TT_STRING(result);
+            }
+        }
+        CoTaskMemFree(wide_path); // Cleanup if malloc failed
+    }
+
+    // 2. Fallback to Windows Environment Variable
+    const char* win_env = getenv("USERPROFILE");
+    if (win_env) {
+        RETURN_STRING(win_env);
+    }
+
+#else
+    // 1. Try POSIX Environment Variable
+    const char* unix_env = getenv("HOME");
+    if (unix_env) {
+        RETURN_STRING(unix_env);
+    }
+
+    // 2. Fallback to POSIX Password Database (System Query)
+    struct passwd* pw = getpwuid(getuid());
+    if (pw && pw->pw_dir) {
+        RETURN_STRING(pw->pw_dir);
+    }
+#endif
+
+    RETURN_NIL;
+}
+
 /** DIR TYPES BEGIN */
 
 z_value __os_dir_DT_UNKNOWN(z_vm *vm){
@@ -571,6 +622,7 @@ CREATE_MODULE_LOADER(os) {
       {"dirname", true,  GET_MODULE_METHOD(os__dirname)},
       {"basename", true,  GET_MODULE_METHOD(os__basename)},
       {"rename", true,  GET_MODULE_METHOD(os__rename)},
+      {"homedir", true,  GET_MODULE_METHOD(os__homedir)},
       {NULL,     false, NULL},
   };
 

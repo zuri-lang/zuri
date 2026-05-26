@@ -36,7 +36,7 @@
  *
  * ### Reading
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * # Parse a CSV string directly.
@@ -54,7 +54,7 @@
  *
  * ### Writing
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * # Encode a list of dicts to a CSV string.
@@ -73,7 +73,7 @@
  * writer.close()
  * ```
  *
- * @copyright 2024, Richard Ore and The Zuri Contributors
+ * @copyright 2026, Richard Ore and The Zuri Contributors
  */
 
 import io
@@ -158,7 +158,7 @@ class CsvError < Exception {
  *
  * ### Example — tab-separated values (TSV)
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * var tsv = csv.Dialect()
@@ -168,7 +168,7 @@ class CsvError < Exception {
  *
  * ### Example — pipe-delimited, quote-all
  *
- * ```blade
+ * ```zuri
  * var d = csv.Dialect()
  * d.delimiter    = '|'
  * d.quoting      = csv.QUOTE_ALL
@@ -560,7 +560,7 @@ def _has_bom(text) {
  *
  * ### Example — reading a file with a header row
  *
- * ```blade
+ * ```zuri
  * import csv
  * import io
  *
@@ -576,7 +576,7 @@ def _has_bom(text) {
  *
  * ### Example — tab-separated file, no header
  *
- * ```blade
+ * ```zuri
  * import csv
  * import io
  *
@@ -808,7 +808,7 @@ class Reader {
  *
  * ### Example — writing dicts (with header)
  *
- * ```blade
+ * ```zuri
  * import csv
  * import io
  *
@@ -821,7 +821,7 @@ class Reader {
  *
  * ### Example — QUOTE_ALL with tab delimiter
  *
- * ```blade
+ * ```zuri
  * import csv
  * import io
  *
@@ -926,7 +926,7 @@ class Writer {
    * Encodes and writes a single record from a dict, using `keys` to
    * determine field order.  Missing keys produce empty fields.
    *
-   * ```blade
+   * ```zuri
    * writer.write_dict({ name: 'Alice', age: 30 }, ['name', 'age'])
    * ```
    *
@@ -959,7 +959,7 @@ class Writer {
    * If `keys` is provided it controls column order; otherwise the keys of
    * the first row are used in their natural iteration order.
    *
-   * ```blade
+   * ```zuri
    * writer.write_dicts([
    *   { name: 'Alice', age: 30 },
    *   { name: 'Bob',   age: 25 },
@@ -1021,7 +1021,7 @@ class Writer {
  *
  * ### Examples
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * # No header — returns list of lists.
@@ -1127,7 +1127,7 @@ def parse(text, dialect) {
  *
  * ### Examples
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * # From lists — no header.
@@ -1217,7 +1217,7 @@ def stringify(rows, dialect, keys) {
  * have it isolated (e.g. from a line-buffered reader).  No record separator
  * detection is performed.
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * csv.parse_record('"hello, world",42,true')
@@ -1254,7 +1254,7 @@ def parse_record(line, dialect) {
  * Encodes a single list of values as one CSV record and returns the string
  * (including the line terminator).
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * csv.format_record(['Alice', 'New York, NY', 'She said "hello"'])
@@ -1292,7 +1292,7 @@ def format_record(row, dialect) {
  * Convenience wrapper around `Reader` that opens, reads, and closes in one
  * call.  Use `Reader` directly when you need streaming or finer control.
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * var d = csv.Dialect()
@@ -1331,7 +1331,7 @@ def read_file(path, dialect) {
  * Convenience wrapper around `Writer`.  Use `Writer` directly when you need
  * streaming or finer control.
  *
- * ```blade
+ * ```zuri
  * import csv
  *
  * csv.write_file('out.csv', [
