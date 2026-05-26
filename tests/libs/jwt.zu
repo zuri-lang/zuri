@@ -1,0 +1,12 @@
+import jwt
+
+# sign a token
+var token = jwt.sign({ user_id: 42, role: 'admin' }, 'secret')
+echo token
+
+# verify and decode the token
+var payload = jwt.verify(token, 'secret')
+echo payload
+
+assert payload.user_id  == 42
+assert payload.role = 'admin'
