@@ -96,6 +96,7 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | Cryptography & Hashing    | `hash`, `crypto` | ✅ Ready    |
 | HTML templating (Wire)    | `template`       | ✅ Ready    |
 | HTML parsing & generation | `html`           | ✅ Ready    |
+| Configuration             | `env`            | ✅ Ready    |
 | Markdown processing       | `markdown`       | ✅ Ready    |
 | Mail (SMTP, IMAP, POP3)   | `mail`           | ✅ Ready    |
 | Image processing          | `imagine`        | ✅ Ready    |
