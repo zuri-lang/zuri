@@ -201,7 +201,7 @@
  * > log('An anonymous log!')
  * > ```
  * 
- * @copyright 2025, Richard Ore and Zuri contributors
+ * @copyright 2025, Richard Ore and The Zuri Contributors
  */
 import enum
 import io

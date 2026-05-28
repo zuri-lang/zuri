@@ -1,0 +1,1125 @@
+/**
+ * # validate.validator
+ *
+ * Provides the `Validator` fluent builder.  Each method appends one rule
+ * class (and its constructor arguments) to an internal chain.  The chain
+ * is later resolved by `Schema` — it instantiates each rule with the
+ * field name injected, then calls `validate(value)` in order.
+ *
+ * Rules stop executing for a field the moment one fails, unless
+ * `bail(false)` has been explicitly disabled.  When `sometimes()` is set
+ * and the field is absent or nil, the entire rule chain is skipped.
+ *
+ * @module validate.validator
+ */
+
+import .rules
+
+
+/**
+ * Fluent rule chain builder for a single field.
+ *
+ * Every method returns `self` so calls can be chained:
+ *
+ * ```zuri
+ * validate.string().email().max_length(254).required()
+ * ```
+ *
+ * The order of chained rules is the order in which they are evaluated.
+ * Put `required()` first so that a missing value is caught before
+ * type-specific rules run against a nil.
+ *
+ * ### Custom rules
+ *
+ * Provide an inline anonymous function via `custom()`:
+ *
+ * ```zuri
+ * validate.string().custom(@(value) {
+ *   return value.starts_with('zuri-')
+ * }, 'Must start with "zuri-".')
+ * ```
+ *
+ * Or subclass `Rule` and add it via `use()`:
+ *
+ * ```zuri
+ * import validate { Rule, Validator }
+ *
+ * class Palindrome < Rule {
+ *   validate(value) {
+ *     if !is_string(value) return false
+ *     var s = value.lower()
+ *     return s == s.reverse()
+ *   }
+ *   error() { return '${self.name} must be a palindrome.' }
+ * }
+ *
+ * var v = Validator().string().use(Palindrome)
+ * ```
+ */
+class Validator {
+
+  # Internal list of [rule_class, ...constructor_args] entries.
+  var _rules = []
+
+  # When true, validation stops on the first failing rule for this field.
+  var _bail = true
+
+  # When true, skip the entire chain if the field is absent / nil.
+  var _sometimes = false
+
+  # Optional human-readable label override used in error messages.
+  var _label = nil
+
+
+  # -------------------------------------------------------------------------
+  # Configuration
+  # -------------------------------------------------------------------------
+
+  /**
+   * Sets a human-readable label for this field.  When set, error messages
+   * substitute `label` for the raw field key.
+   *
+   * ```zuri
+   * validate.string().label('Email address').email()
+   * # → "The Email address field must be a valid email address."
+   * ```
+   *
+   * @param  string label
+   * @returns Validator
+   */
+  label(label) {
+    self._label = label
+    return self
+  }
+
+  /**
+   * Skips the entire rule chain when the field is absent from the data
+   * dictionary or its value is nil / blank.  Use this to mark fields as
+   * optional while still validating them when they are present.
+   *
+   * ```zuri
+   * # "bio" is optional; when provided, it must be a string ≤ 500 chars.
+   * bio: validate.string().max_length(500).sometimes()
+   * ```
+   *
+   * @returns Validator
+   */
+  sometimes() {
+    self._sometimes = true
+    return self
+  }
+
+  /**
+   * Controls whether validation stops at the first failing rule for this
+   * field.  Defaults to `true`.  Set to `false` to collect all errors.
+   *
+   * @param  bool enabled  Pass `false` to disable early stopping.
+   * @returns Validator
+   */
+  bail(enabled) {
+    if enabled == nil { self._bail = true }
+    else { self._bail = enabled }
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Presence / type rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The field must be present, non-nil, and non-empty.
+   *
+   * @returns Validator
+   */
+  required() {
+    self._rules.append([rules.Required])
+    return self
+  }
+
+  /**
+   * Marks the field as nullable.  A nil value will pass all subsequent
+   * rules without evaluation.  Combine with `sometimes()` for a fully
+   * optional-nullable field.
+   *
+   * @returns Validator
+   */
+  nullable() {
+    self._rules.append([rules.Nullable])
+    return self
+  }
+
+  /**
+   * The field value must be a string.
+   *
+   * @returns Validator
+   */
+  string() {
+    self._rules.append([rules.StringRule])
+    return self
+  }
+
+  /**
+   * The field value must be a number (integer or float).
+   *
+   * @returns Validator
+   */
+  number() {
+    self._rules.append([rules.NumberRule])
+    return self
+  }
+
+  /**
+   * The field value must be an integer (no fractional part).  Also accepts
+   * string representations of integers.
+   *
+   * @returns Validator
+   */
+  integer() {
+    self._rules.append([rules.IntegerRule])
+    return self
+  }
+
+  /**
+   * The field value must be boolean or a boolean-like string/number.
+   * Accepts: `true`, `false`, `"true"`, `"false"`, `"1"`, `"0"`, `1`, `0`.
+   *
+   * @returns Validator
+   */
+  boolean() {
+    self._rules.append([rules.BooleanRule])
+    return self
+  }
+
+  /**
+   * The field value must be a list.
+   *
+   * @returns Validator
+   */
+  list() {
+    self._rules.append([rules.ListRule])
+    return self
+  }
+
+  /**
+   * The field value must be a dictionary.
+   *
+   * @returns Validator
+   */
+  dict() {
+    self._rules.append([rules.DictRule])
+    return self
+  }
+
+  /**
+   * The field value must be numeric — either a number type, or a string
+   * that converts cleanly to a number.
+   *
+   * @returns Validator
+   */
+  numeric() {
+    self._rules.append([rules.NumericRule])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Size / length rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The value's size must equal `n`.
+   *
+   * Size is: character count for strings, item count for lists/dicts,
+   * and numeric value for numbers.
+   *
+   * @param  number n
+   * @returns Validator
+   */
+  size(n) {
+    self._rules.append([rules.Size, n])
+    return self
+  }
+
+  /**
+   * The value's size must be at least `min`.
+   *
+   * @param  number min
+   * @returns Validator
+   */
+  min(min) {
+    self._rules.append([rules.Min, min])
+    return self
+  }
+
+  /**
+   * The value's size must be at most `max`.
+   *
+   * @param  number max
+   * @returns Validator
+   */
+  max(max) {
+    self._rules.append([rules.Max, max])
+    return self
+  }
+
+  /**
+   * The value's size must be between `min` and `max` (inclusive).
+   *
+   * @param  number min
+   * @param  number max
+   * @returns Validator
+   */
+  between(min, max) {
+    self._rules.append([rules.Between, min, max])
+    return self
+  }
+
+  /**
+   * The string's character count must equal exactly `n`.
+   *
+   * @param  number n
+   * @returns Validator
+   */
+  length(n) {
+    self._rules.append([rules.Length, n])
+    return self
+  }
+
+  /**
+   * The string must be at least `min` characters long.
+   *
+   * @param  number min
+   * @returns Validator
+   */
+  min_length(min) {
+    self._rules.append([rules.MinLength, min])
+    return self
+  }
+
+  /**
+   * The string must be at most `max` characters long.
+   *
+   * @param  number max
+   * @returns Validator
+   */
+  max_length(max) {
+    self._rules.append([rules.MaxLength, max])
+    return self
+  }
+
+  /**
+   * The string's length must be between `min` and `max` characters
+   * (inclusive).
+   *
+   * @param  number min
+   * @param  number max
+   * @returns Validator
+   */
+  length_between(min, max) {
+    self._rules.append([rules.LengthBetween, min, max])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Numeric comparison rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The numeric value must be greater than `n`.
+   *
+   * @param  number n
+   * @returns Validator
+   */
+  gt(n) {
+    self._rules.append([rules.Gt, n])
+    return self
+  }
+
+  /**
+   * The numeric value must be greater than or equal to `n`.
+   *
+   * @param  number n
+   * @returns Validator
+   */
+  gte(n) {
+    self._rules.append([rules.Gte, n])
+    return self
+  }
+
+  /**
+   * The numeric value must be less than `n`.
+   *
+   * @param  number n
+   * @returns Validator
+   */
+  lt(n) {
+    self._rules.append([rules.Lt, n])
+    return self
+  }
+
+  /**
+   * The numeric value must be less than or equal to `n`.
+   *
+   * @param  number n
+   * @returns Validator
+   */
+  lte(n) {
+    self._rules.append([rules.Lte, n])
+    return self
+  }
+
+  /**
+   * The numeric value must be strictly positive (greater than zero).
+   *
+   * @returns Validator
+   */
+  positive() {
+    self._rules.append([rules.Positive])
+    return self
+  }
+
+  /**
+   * The numeric value must be strictly negative (less than zero).
+   *
+   * @returns Validator
+   */
+  negative() {
+    self._rules.append([rules.Negative])
+    return self
+  }
+
+  /**
+   * The numeric value must be zero or positive.
+   *
+   * @returns Validator
+   */
+  positive_or_zero() {
+    self._rules.append([rules.PositiveOrZero])
+    return self
+  }
+
+  /**
+   * The numeric value must be zero or negative.
+   *
+   * @returns Validator
+   */
+  negative_or_zero() {
+    self._rules.append([rules.NegativeOrZero])
+    return self
+  }
+
+  /**
+   * The numeric value must be a multiple of `n`.
+   *
+   * @param  number n
+   * @returns Validator
+   */
+  multiple_of(n) {
+    self._rules.append([rules.MultipleOf, n])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # String content rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The string must contain only ASCII alphabetic characters (a-z, A-Z).
+   *
+   * @returns Validator
+   */
+  alpha() {
+    self._rules.append([rules.Alpha])
+    return self
+  }
+
+  /**
+   * The string must contain only ASCII alphanumeric characters.
+   *
+   * @returns Validator
+   */
+  alpha_num() {
+    self._rules.append([rules.AlphaNum])
+    return self
+  }
+
+  /**
+   * The string must contain only ASCII alphanumeric characters, hyphens,
+   * and underscores.
+   *
+   * @returns Validator
+   */
+  alpha_dash() {
+    self._rules.append([rules.AlphaDash])
+    return self
+  }
+
+  /**
+   * The string must start with one of the given prefixes.
+   *
+   * @param  string|list prefixes
+   * @returns Validator
+   */
+  starts_with(prefixes) {
+    self._rules.append([rules.StartsWith, prefixes])
+    return self
+  }
+
+  /**
+   * The string must not start with any of the given prefixes.
+   *
+   * @param  string|list prefixes
+   * @returns Validator
+   */
+  doesnt_start_with(prefixes) {
+    self._rules.append([rules.DoesntStartWith, prefixes])
+    return self
+  }
+
+  /**
+   * The string must end with one of the given suffixes.
+   *
+   * @param  string|list suffixes
+   * @returns Validator
+   */
+  ends_with(suffixes) {
+    self._rules.append([rules.EndsWith, suffixes])
+    return self
+  }
+
+  /**
+   * The string must not end with any of the given suffixes.
+   *
+   * @param  string|list suffixes
+   * @returns Validator
+   */
+  doesnt_end_with(suffixes) {
+    self._rules.append([rules.DoesntEndWith, suffixes])
+    return self
+  }
+
+  /**
+   * The string must contain the given substring.
+   *
+   * @param  string needle
+   * @returns Validator
+   */
+  contains(needle) {
+    self._rules.append([rules.Contains, needle])
+    return self
+  }
+
+  /**
+   * The string must not contain the given substring.
+   *
+   * @param  string needle
+   * @returns Validator
+   */
+  doesnt_contain(needle) {
+    self._rules.append([rules.DoesntContain, needle])
+    return self
+  }
+
+  /**
+   * The string must match the given regular expression pattern.
+   *
+   * @param  string pattern
+   * @returns Validator
+   */
+  regex(pattern) {
+    self._rules.append([rules.Regex, pattern])
+    return self
+  }
+
+  /**
+   * The string must not match the given regular expression pattern.
+   *
+   * @param  string pattern
+   * @returns Validator
+   */
+  not_regex(pattern) {
+    self._rules.append([rules.NotRegex, pattern])
+    return self
+  }
+
+  /**
+   * The string must be entirely lowercase.
+   *
+   * @returns Validator
+   */
+  lowercase() {
+    self._rules.append([rules.Lowercase])
+    return self
+  }
+
+  /**
+   * The string must be entirely uppercase.
+   *
+   * @returns Validator
+   */
+  uppercase() {
+    self._rules.append([rules.Uppercase])
+    return self
+  }
+
+  /**
+   * The string must not consist entirely of whitespace characters.
+   *
+   * @returns Validator
+   */
+  not_blank() {
+    self._rules.append([rules.NotBlank])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Format / pattern rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The value must be a syntactically valid email address.
+   *
+   * @returns Validator
+   */
+  email() {
+    self._rules.append([rules.Email])
+    return self
+  }
+
+  /**
+   * The value must be a valid HTTP or HTTPS URL.
+   *
+   * @returns Validator
+   */
+  url() {
+    self._rules.append([rules.Url])
+    return self
+  }
+
+  /**
+   * The value must be a valid IPv4 address.
+   *
+   * @returns Validator
+   */
+  ipv4() {
+    self._rules.append([rules.Ipv4])
+    return self
+  }
+
+  /**
+   * The value must be a valid IPv6 address.
+   *
+   * @returns Validator
+   */
+  ipv6() {
+    self._rules.append([rules.Ipv6])
+    return self
+  }
+
+  /**
+   * The value must be a valid IPv4 or IPv6 address.
+   *
+   * @returns Validator
+   */
+  ip() {
+    self._rules.append([rules.Ip])
+    return self
+  }
+
+  /**
+   * The value must be a valid canonical UUID
+   * (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+   *
+   * @returns Validator
+   */
+  uuid() {
+    self._rules.append([rules.Uuid])
+    return self
+  }
+
+  /**
+   * The value must be a valid JSON string.
+   *
+   * @returns Validator
+   */
+  json() {
+    self._rules.append([rules.Json])
+    return self
+  }
+
+  /**
+   * The value must be a valid date string parseable by the `date` module.
+   *
+   * @returns Validator
+   */
+  date() {
+    self._rules.append([rules.DateRule])
+    return self
+  }
+
+  /**
+   * The value must be a date after `ref`.
+   *
+   * @param  string ref  A date string parseable by the `date` module.
+   * @returns Validator
+   */
+  after(ref) {
+    self._rules.append([rules.After, ref])
+    return self
+  }
+
+  /**
+   * The value must be a date after or equal to `ref`.
+   *
+   * @param  string ref
+   * @returns Validator
+   */
+  after_or_equal(ref) {
+    self._rules.append([rules.AfterOrEqual, ref])
+    return self
+  }
+
+  /**
+   * The value must be a date before `ref`.
+   *
+   * @param  string ref
+   * @returns Validator
+   */
+  before(ref) {
+    self._rules.append([rules.Before, ref])
+    return self
+  }
+
+  /**
+   * The value must be a date before or equal to `ref`.
+   *
+   * @param  string ref
+   * @returns Validator
+   */
+  before_or_equal(ref) {
+    self._rules.append([rules.BeforeOrEqual, ref])
+    return self
+  }
+
+  /**
+   * The value must be a valid timezone identifier recognised by the `date`
+   * module (e.g. `"UTC"`, `"Africa/Lagos"`).
+   *
+   * @returns Validator
+   */
+  timezone() {
+    self._rules.append([rules.Timezone])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Inclusion / exclusion rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The value must be one of the given allowed values (strict comparison).
+   *
+   * @param  list values
+   * @returns Validator
+   */
+  is_in(values) {
+    self._rules.append([rules.In, values])
+    return self
+  }
+
+  /**
+   * The value must not be one of the given forbidden values.
+   *
+   * @param  list values
+   * @returns Validator
+   */
+  not_in(values) {
+    self._rules.append([rules.NotIn, values])
+    return self
+  }
+
+  /**
+   * Every item in the list value must be contained in `values`.
+   *
+   * @param  list values
+   * @returns Validator
+   */
+  in_list(values) {
+    self._rules.append([rules.InList, values])
+    return self
+  }
+
+  /**
+   * The value must be one of the accepted truthy representations:
+   * `true`, `"true"`, `"yes"`, `"on"`, `"1"`, `1`.
+   *
+   * @returns Validator
+   */
+  accepted() {
+    self._rules.append([rules.Accepted])
+    return self
+  }
+
+  /**
+   * The value must be one of the declined falsy representations:
+   * `false`, `"false"`, `"no"`, `"off"`, `"0"`, `0`.
+   *
+   * @returns Validator
+   */
+  declined() {
+    self._rules.append([rules.Declined])
+    return self
+  }
+
+  /**
+   * The value must strictly equal `expected`.
+   *
+   * @param  any expected
+   * @returns Validator
+   */
+  equals(expected) {
+    self._rules.append([rules.Equals, expected])
+    return self
+  }
+
+  /**
+   * The value must not equal `forbidden`.
+   *
+   * @param  any forbidden
+   * @returns Validator
+   */
+  not_equals(forbidden) {
+    self._rules.append([rules.NotEquals, forbidden])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Cross-field rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The value must match the value of `other_field` in the same data
+   * dictionary.  Commonly used to confirm passwords.
+   *
+   * @param  string other_field
+   * @returns Validator
+   */
+  same(other_field) {
+    self._rules.append([rules.Same, other_field])
+    return self
+  }
+
+  /**
+   * The value must differ from the value of `other_field`.
+   *
+   * @param  string other_field
+   * @returns Validator
+   */
+  different(other_field) {
+    self._rules.append([rules.Different, other_field])
+    return self
+  }
+
+  /**
+   * The value must match the `{field_name}_confirmation` sibling field.
+   *
+   * @returns Validator
+   */
+  confirmed() {
+    self._rules.append([rules.Confirmed])
+    return self
+  }
+
+  /**
+   * The field becomes required when `other_field` equals any value in
+   * `other_values`.
+   *
+   * @param  string      other_field
+   * @param  any|list    other_values
+   * @returns Validator
+   */
+  required_if(other_field, other_values) {
+    self._rules.append([rules.RequiredIf, other_field, other_values])
+    return self
+  }
+
+  /**
+   * The field becomes required unless `other_field` equals any value in
+   * `other_values`.
+   *
+   * @param  string      other_field
+   * @param  any|list    other_values
+   * @returns Validator
+   */
+  required_unless(other_field, other_values) {
+    self._rules.append([rules.RequiredUnless, other_field, other_values])
+    return self
+  }
+
+  /**
+   * The field becomes required when any of the listed sibling fields are
+   * present and non-blank.
+   *
+   * @param  string|list fields
+   * @returns Validator
+   */
+  required_with(fields) {
+    self._rules.append([rules.RequiredWith, fields])
+    return self
+  }
+
+  /**
+   * The field becomes required when all of the listed sibling fields are
+   * present and non-blank.
+   *
+   * @param  string|list fields
+   * @returns Validator
+   */
+  required_with_all(fields) {
+    self._rules.append([rules.RequiredWithAll, fields])
+    return self
+  }
+
+  /**
+   * The field becomes required when any of the listed sibling fields are
+   * absent or blank.
+   *
+   * @param  string|list fields
+   * @returns Validator
+   */
+  required_without(fields) {
+    self._rules.append([rules.RequiredWithout, fields])
+    return self
+  }
+
+  /**
+   * The field becomes required when all of the listed sibling fields are
+   * absent or blank.
+   *
+   * @param  string|list fields
+   * @returns Validator
+   */
+  required_without_all(fields) {
+    self._rules.append([rules.RequiredWithoutAll, fields])
+    return self
+  }
+
+  /**
+   * When this field is present, none of the listed sibling fields may also
+   * be present.
+   *
+   * @param  string|list fields
+   * @returns Validator
+   */
+  prohibits(fields) {
+    self._rules.append([rules.Prohibits, fields])
+    return self
+  }
+
+  /**
+   * This field must be absent or nil — it is never allowed.
+   *
+   * @returns Validator
+   */
+  prohibited() {
+    self._rules.append([rules.Prohibited])
+    return self
+  }
+
+  /**
+   * The field must be absent when `other_field` equals any of `other_values`.
+   *
+   * @param  string   other_field
+   * @param  any|list other_values
+   * @returns Validator
+   */
+  prohibited_if(other_field, other_values) {
+    self._rules.append([rules.ProhibitedIf, other_field, other_values])
+    return self
+  }
+
+  /**
+   * The field must be absent unless `other_field` equals any of
+   * `other_values`.
+   *
+   * @param  string   other_field
+   * @param  any|list other_values
+   * @returns Validator
+   */
+  prohibited_unless(other_field, other_values) {
+    self._rules.append([rules.ProhibitedUnless, other_field, other_values])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # List / dict content rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The list must not contain duplicate values.
+   *
+   * @returns Validator
+   */
+  distinct() {
+    self._rules.append([rules.Distinct])
+    return self
+  }
+
+  /**
+   * The list must have at least `min` items.
+   *
+   * @param  number min
+   * @returns Validator
+   */
+  min_items(min) {
+    self._rules.append([rules.MinItems, min])
+    return self
+  }
+
+  /**
+   * The list must have at most `max` items.
+   *
+   * @param  number max
+   * @returns Validator
+   */
+  max_items(max) {
+    self._rules.append([rules.MaxItems, max])
+    return self
+  }
+
+  /**
+   * Every item in the list must pass the given `Validator` chain.
+   *
+   * ```zuri
+   * # A list of valid email strings, 1–10 items.
+   * recipients: validate.list()
+   *   .min_items(1).max_items(10)
+   *   .each(validate.string().email())
+   * ```
+   *
+   * @param  Validator validator
+   * @returns Validator
+   */
+  each(validator) {
+    self._rules.append([rules.Each, validator])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Miscellaneous rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * The value must be nil.
+   *
+   * @returns Validator
+   */
+  is_nil() {
+    self._rules.append([rules.Nil])
+    return self
+  }
+
+  /**
+   * The value must not be nil.
+   *
+   * @returns Validator
+   */
+  not_nil() {
+    self._rules.append([rules.NotNil])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Custom rules
+  # -------------------------------------------------------------------------
+
+  /**
+   * Adds a custom inline validation rule backed by an anonymous function.
+   *
+   * The function receives the field value and must return `true` to pass.
+   * An optional `message` overrides the default error text.
+   *
+   * ```zuri
+   * var v = validate.string().custom(@(value) {
+   *   return value.starts_with('zuri-')
+   * }, 'Must be a valid Zuri identifier.')
+   * ```
+   *
+   * @param  function fn       `@(value) -> bool`
+   * @param  string   message  Optional custom error message.
+   * @returns Validator
+   */
+  custom(fn, message) {
+    self._rules.append([rules.CustomRule, fn, message])
+    return self
+  }
+
+  /**
+   * Adds a custom inline rule whose function also receives the full data
+   * dictionary, allowing cross-field validation logic.
+   *
+   * ```zuri
+   * var v = validate.number().custom_with_data(@(value, data) {
+   *   return value < data.get('max_price', 0)
+   * }, 'Must be less than max_price.')
+   * ```
+   *
+   * @param  function fn       `@(value, data) -> bool`
+   * @param  string   message  Optional custom error message.
+   * @returns Validator
+   */
+  custom_with_data(fn, message) {
+    self._rules.append([rules.CustomRuleWithData, fn, message])
+    return self
+  }
+
+  /**
+   * Adds a pre-constructed `Rule` subclass (the class itself, not an
+   * instance) to the chain.  Use this to attach custom `Rule` subclasses
+   * that require no constructor arguments beyond the field name.
+   *
+   * ```zuri
+   * import validate { Rule, Validator }
+   *
+   * class Palindrome < Rule {
+   *   validate(value) { ... }
+   *   error()         { return '${self.name} must be a palindrome.' }
+   * }
+   *
+   * var v = Validator().string().use(Palindrome)
+   * ```
+   *
+   * @param  class rule_class  A class that extends `Rule`.
+   * @returns Validator
+   */
+  use(rule_class) {
+    self._rules.append([rule_class])
+    return self
+  }
+
+
+  # -------------------------------------------------------------------------
+  # Iteration protocol — consumed by Schema
+  # -------------------------------------------------------------------------
+
+  @iter(index) {
+    return self._rules[index]
+  }
+
+  @itern(index) {
+    if index == nil return 0
+    if !is_number(index)
+      raise ArgumentError('Validator is numerically indexed')
+    if index < self._rules.length() - 1 return index + 1
+    return nil
+  }
+}

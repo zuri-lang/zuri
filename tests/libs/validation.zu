@@ -1,0 +1,1063 @@
+/**
+ * @test validate
+ *
+ * Comprehensive test suite for the validate standard library module.
+ *
+ * Run:
+ *   zuri test_validate.zu
+ *
+ * Test groups:
+ *   1.  Presence / type rules
+ *   2.  Size and length rules
+ *   3.  Numeric comparison rules
+ *   4.  String content rules
+ *   5.  Format / pattern rules
+ *   6.  Inclusion / exclusion rules
+ *   7.  Cross-field rules
+ *   8.  List / dict content rules
+ *   9.  Nil rules
+ *   10. Custom rules
+ *   11. Validator modifiers (bail, sometimes, nullable, label)
+ *   12. Schema — basic field checking
+ *   13. Schema — absent field / required detection
+ *   14. Schema — dot-notation nested fields
+ *   15. Schema — wildcard list fields
+ *   16. Schema — check_or_raise / ValidationError
+ *   17. Schema — group_errors, first_error, field_errors, has_error
+ *   18. Schema — extend, only, except
+ *   19. Integration — realistic HTTP request body
+ */
+
+import validate { ValidationError, Rule, Validator }
+import validate
+
+
+# ---------------------------------------------------------------------------
+# Minimal test runner
+# ---------------------------------------------------------------------------
+
+var _pass = 0
+var _fail = 0
+
+def expect_valid(label, result) {
+  if result.valid {
+    _pass++
+    echo '  [PASS] ' + label
+  } else {
+    _fail++
+    echo '  [FAIL] ' + label
+    for e in result.errors {
+      echo '         ! ${e.field}: ${e.message}'
+    }
+  }
+}
+
+def expect_invalid(label, result) {
+  if !result.valid {
+    _pass++
+    echo '  [PASS] ' + label
+  } else {
+    _fail++
+    echo '  [FAIL] ' + label + ' (expected invalid, got valid)'
+  }
+}
+
+def expect_error_on(label, result, field) {
+  var found = false
+  for e in result.errors {
+    if e.field == field { found = true; break }
+  }
+  if found {
+    _pass++
+    echo '  [PASS] ' + label
+  } else {
+    _fail++
+    echo '  [FAIL] ' + label + ' (expected error on field "${field}")'
+  }
+}
+
+def section(name) {
+  echo ''
+  echo '── ' + name + ' ──'
+}
+
+
+echo '════════════════════════════════════════════════════════'
+echo '  validate module — test suite'
+echo '════════════════════════════════════════════════════════'
+
+
+# ===========================================================================
+# 1. Presence / type rules
+# ===========================================================================
+section('1. Presence / type rules')
+
+var s = validate.schema({ f: validate.required() })
+expect_valid('required — non-empty string',   s.check({ f: 'hello' }))
+expect_valid('required — number',             s.check({ f: 0 }))
+expect_invalid('required — nil value',        s.check({ f: nil }))
+expect_invalid('required — empty string',     s.check({ f: '' }))
+expect_invalid('required — empty list',       s.check({ f: [] }))
+expect_invalid('required — absent field',     s.check({}))
+
+s = validate.schema({ f: validate.string() })
+expect_valid('string — valid string',         s.check({ f: 'ok' }))
+expect_valid('string — empty string',         s.check({ f: '' }))
+expect_invalid('string — number',             s.check({ f: 42 }))
+expect_invalid('string — list',               s.check({ f: [] }))
+
+s = validate.schema({ f: validate.number() })
+expect_valid('number — integer',              s.check({ f: 7 }))
+expect_valid('number — float',                s.check({ f: 3.14 }))
+expect_invalid('number — string',             s.check({ f: '7' }))
+
+s = validate.schema({ f: validate.integer() })
+expect_valid('integer — whole number',        s.check({ f: 5 }))
+expect_valid('integer — string integer',      s.check({ f: '5' }))
+expect_invalid('integer — float',             s.check({ f: 5.5 }))
+expect_invalid('integer — string float',      s.check({ f: '5.5' }))
+
+s = validate.schema({ f: validate.boolean() })
+expect_valid('boolean — true',                s.check({ f: true }))
+expect_valid('boolean — false',               s.check({ f: false }))
+expect_valid('boolean — "true"',              s.check({ f: 'true' }))
+expect_valid('boolean — "false"',             s.check({ f: 'false' }))
+expect_valid('boolean — "1"',                 s.check({ f: '1' }))
+expect_valid('boolean — "0"',                 s.check({ f: '0' }))
+expect_valid('boolean — 1',                   s.check({ f: 1 }))
+expect_valid('boolean — 0',                   s.check({ f: 0 }))
+expect_invalid('boolean — arbitrary string',  s.check({ f: 'yes' }))
+
+s = validate.schema({ f: validate.list() })
+expect_valid('list — empty list',             s.check({ f: [] }))
+expect_valid('list — non-empty list',         s.check({ f: [1, 2] }))
+expect_invalid('list — dict',                 s.check({ f: {} }))
+expect_invalid('list — string',               s.check({ f: 'hi' }))
+
+s = validate.schema({ f: validate.dict() })
+expect_valid('dict — empty dict',             s.check({ f: {} }))
+expect_valid('dict — populated dict',         s.check({ f: { a: 1 } }))
+expect_invalid('dict — list',                 s.check({ f: [] }))
+
+s = validate.schema({ f: validate.numeric() })
+expect_valid('numeric — number',              s.check({ f: 3 }))
+expect_valid('numeric — numeric string',      s.check({ f: '3.14' }))
+expect_invalid('numeric — non-numeric string',s.check({ f: 'abc' }))
+
+
+# ===========================================================================
+# 2. Size and length rules
+# ===========================================================================
+section('2. Size and length rules')
+
+s = validate.schema({ f: validate.size(3) })
+expect_valid('size — string len 3',           s.check({ f: 'abc' }))
+expect_valid('size — list len 3',             s.check({ f: [1,2,3] }))
+expect_valid('size — number == 3',            s.check({ f: 3 }))
+expect_invalid('size — string len 4',         s.check({ f: 'abcd' }))
+
+s = validate.schema({ f: validate.min(2) })
+expect_valid('min — string len 3',            s.check({ f: 'abc' }))
+expect_valid('min — number 2',                s.check({ f: 2 }))
+expect_invalid('min — string len 1',          s.check({ f: 'a' }))
+expect_invalid('min — number 1',              s.check({ f: 1 }))
+
+s = validate.schema({ f: validate.max(5) })
+expect_valid('max — string len 5',            s.check({ f: 'abcde' }))
+expect_valid('max — number 5',                s.check({ f: 5 }))
+expect_invalid('max — string len 6',          s.check({ f: 'abcdef' }))
+expect_invalid('max — number 6',              s.check({ f: 6 }))
+
+s = validate.schema({ f: validate.between(2, 4) })
+expect_valid('between — number 2',            s.check({ f: 2 }))
+expect_valid('between — number 4',            s.check({ f: 4 }))
+expect_invalid('between — number 1',          s.check({ f: 1 }))
+expect_invalid('between — number 5',          s.check({ f: 5 }))
+
+s = validate.schema({ f: validate.length(4) })
+expect_valid('length — exactly 4 chars',      s.check({ f: 'abcd' }))
+expect_invalid('length — 3 chars',            s.check({ f: 'abc' }))
+expect_invalid('length — non-string',         s.check({ f: 4 }))
+
+s = validate.schema({ f: validate.min_length(3) })
+expect_valid('min_length — len 3',            s.check({ f: 'abc' }))
+expect_valid('min_length — len 10',           s.check({ f: 'abcdefghij' }))
+expect_invalid('min_length — len 2',          s.check({ f: 'ab' }))
+
+s = validate.schema({ f: validate.max_length(5) })
+expect_valid('max_length — len 5',            s.check({ f: 'abcde' }))
+expect_invalid('max_length — len 6',          s.check({ f: 'abcdef' }))
+
+s = validate.schema({ f: validate.length_between(2, 5) })
+expect_valid('length_between — len 2',        s.check({ f: 'ab' }))
+expect_valid('length_between — len 5',        s.check({ f: 'abcde' }))
+expect_invalid('length_between — len 1',      s.check({ f: 'a' }))
+expect_invalid('length_between — len 6',      s.check({ f: 'abcdef' }))
+
+
+# ===========================================================================
+# 3. Numeric comparison rules
+# ===========================================================================
+section('3. Numeric comparison rules')
+
+s = validate.schema({ f: validate.gt(5) })
+expect_valid('gt — 6 > 5',                    s.check({ f: 6 }))
+expect_invalid('gt — 5 not > 5',              s.check({ f: 5 }))
+expect_invalid('gt — 4 not > 5',              s.check({ f: 4 }))
+
+s = validate.schema({ f: validate.gte(5) })
+expect_valid('gte — 5 >= 5',                  s.check({ f: 5 }))
+expect_valid('gte — 6 >= 5',                  s.check({ f: 6 }))
+expect_invalid('gte — 4 not >= 5',            s.check({ f: 4 }))
+
+s = validate.schema({ f: validate.lt(10) })
+expect_valid('lt — 9 < 10',                   s.check({ f: 9 }))
+expect_invalid('lt — 10 not < 10',            s.check({ f: 10 }))
+
+s = validate.schema({ f: validate.lte(10) })
+expect_valid('lte — 10 <= 10',                s.check({ f: 10 }))
+expect_valid('lte — 9 <= 10',                 s.check({ f: 9 }))
+expect_invalid('lte — 11 not <= 10',          s.check({ f: 11 }))
+
+s = validate.schema({ f: validate.positive() })
+expect_valid('positive — 1',                  s.check({ f: 1 }))
+expect_valid('positive — 0.01',               s.check({ f: 0.01 }))
+expect_invalid('positive — 0',               s.check({ f: 0 }))
+expect_invalid('positive — -1',              s.check({ f: -1 }))
+
+s = validate.schema({ f: validate.negative() })
+expect_valid('negative — -1',                 s.check({ f: -1 }))
+expect_invalid('negative — 0',               s.check({ f: 0 }))
+expect_invalid('negative — 1',               s.check({ f: 1 }))
+
+s = validate.schema({ f: validate.positive_or_zero() })
+expect_valid('positive_or_zero — 0',          s.check({ f: 0 }))
+expect_valid('positive_or_zero — 5',          s.check({ f: 5 }))
+expect_invalid('positive_or_zero — -1',      s.check({ f: -1 }))
+
+s = validate.schema({ f: validate.negative_or_zero() })
+expect_valid('negative_or_zero — 0',          s.check({ f: 0 }))
+expect_valid('negative_or_zero — -5',         s.check({ f: -5 }))
+expect_invalid('negative_or_zero — 1',       s.check({ f: 1 }))
+
+s = validate.schema({ f: validate.multiple_of(3) })
+expect_valid('multiple_of — 9',               s.check({ f: 9 }))
+expect_valid('multiple_of — 0',               s.check({ f: 0 }))
+expect_invalid('multiple_of — 7',             s.check({ f: 7 }))
+
+
+# ===========================================================================
+# 4. String content rules
+# ===========================================================================
+section('4. String content rules')
+
+s = validate.schema({ f: validate.alpha() })
+expect_valid('alpha — "Hello"',               s.check({ f: 'Hello' }))
+expect_invalid('alpha — "Hello1"',            s.check({ f: 'Hello1' }))
+expect_invalid('alpha — ""',                  s.check({ f: '' }))
+
+s = validate.schema({ f: validate.alpha_num() })
+expect_valid('alpha_num — "abc123"',          s.check({ f: 'abc123' }))
+expect_invalid('alpha_num — "abc-123"',       s.check({ f: 'abc-123' }))
+
+s = validate.schema({ f: validate.alpha_dash() })
+expect_valid('alpha_dash — "abc-123_X"',      s.check({ f: 'abc-123_X' }))
+expect_invalid('alpha_dash — "abc 123"',      s.check({ f: 'abc 123' }))
+
+s = validate.schema({ f: validate.starts_with(['http', 'ftp']) })
+expect_valid('starts_with — "http://x"',      s.check({ f: 'http://x' }))
+expect_valid('starts_with — "ftp://x"',       s.check({ f: 'ftp://x' }))
+expect_invalid('starts_with — "smtp://x"',   s.check({ f: 'smtp://x' }))
+
+s = validate.schema({ f: validate.doesnt_start_with('admin') })
+expect_valid('doesnt_start_with — "user"',    s.check({ f: 'user' }))
+expect_invalid('doesnt_start_with — "admin"', s.check({ f: 'admin_panel' }))
+
+s = validate.schema({ f: validate.ends_with(['.jpg', '.png']) })
+expect_valid('ends_with — "photo.jpg"',       s.check({ f: 'photo.jpg' }))
+expect_valid('ends_with — "icon.png"',        s.check({ f: 'icon.png' }))
+expect_invalid('ends_with — "doc.pdf"',       s.check({ f: 'doc.pdf' }))
+
+s = validate.schema({ f: validate.doesnt_end_with('.exe') })
+expect_valid('doesnt_end_with — "file.zip"',  s.check({ f: 'file.zip' }))
+expect_invalid('doesnt_end_with — "run.exe"', s.check({ f: 'run.exe' }))
+
+s = validate.schema({ f: validate.contains('@') })
+expect_valid('contains — has "@"',            s.check({ f: 'a@b' }))
+expect_invalid('contains — missing "@"',      s.check({ f: 'ab' }))
+
+s = validate.schema({ f: validate.doesnt_contain('--') })
+expect_valid('doesnt_contain — no "--"',      s.check({ f: 'valid-slug' }))
+expect_invalid('doesnt_contain — has "--"',   s.check({ f: 'bad--slug' }))
+
+s = validate.schema({ f: validate.lowercase() })
+expect_valid('lowercase — "hello"',           s.check({ f: 'hello' }))
+expect_invalid('lowercase — "Hello"',         s.check({ f: 'Hello' }))
+
+s = validate.schema({ f: validate.uppercase() })
+expect_valid('uppercase — "HELLO"',           s.check({ f: 'HELLO' }))
+expect_invalid('uppercase — "Hello"',         s.check({ f: 'Hello' }))
+
+s = validate.schema({ f: validate.not_blank() })
+expect_valid('not_blank — "  x  "',           s.check({ f: '  x  ' }))
+expect_invalid('not_blank — "   "',           s.check({ f: '   ' }))
+
+
+# ===========================================================================
+# 5. Format / pattern rules
+# ===========================================================================
+section('5. Format / pattern rules')
+
+s = validate.schema({ f: validate.email() })
+expect_valid('email — valid address',         s.check({ f: 'user@example.com' }))
+expect_valid('email — subdomain',             s.check({ f: 'a@b.co.uk' }))
+expect_invalid('email — missing @',           s.check({ f: 'userexample.com' }))
+expect_invalid('email — missing domain',      s.check({ f: 'user@' }))
+expect_invalid('email — missing tld dot',     s.check({ f: 'user@localhost' }))
+expect_invalid('email — double @',            s.check({ f: 'a@@b.com' }))
+
+s = validate.schema({ f: validate.url() })
+expect_valid('url — https',                   s.check({ f: 'https://zuri-lang.org' }))
+expect_valid('url — http with path',          s.check({ f: 'http://x.com/path?q=1' }))
+expect_invalid('url — ftp scheme',            s.check({ f: 'ftp://x.com' }))
+expect_invalid('url — no scheme',             s.check({ f: 'zuri-lang.org' }))
+
+s = validate.schema({ f: validate.ipv4() })
+expect_valid('ipv4 — "192.168.1.1"',          s.check({ f: '192.168.1.1' }))
+expect_valid('ipv4 — "0.0.0.0"',              s.check({ f: '0.0.0.0' }))
+expect_valid('ipv4 — "255.255.255.255"',       s.check({ f: '255.255.255.255' }))
+expect_invalid('ipv4 — "256.0.0.1"',          s.check({ f: '256.0.0.1' }))
+expect_invalid('ipv4 — "1.2.3"',              s.check({ f: '1.2.3' }))
+expect_invalid('ipv4 — leading zeros',        s.check({ f: '01.02.03.04' }))
+
+s = validate.schema({ f: validate.ip() })
+expect_valid('ip — ipv4',                     s.check({ f: '10.0.0.1' }))
+expect_valid('ip — ipv6 full',                s.check({ f: '2001:0db8:85a3:0000:0000:8a2e:0370:7334' }))
+expect_invalid('ip — invalid',               s.check({ f: 'not-an-ip' }))
+
+s = validate.schema({ f: validate.uuid() })
+expect_valid('uuid — valid v4',               s.check({ f: '550e8400-e29b-41d4-a716-446655440000' }))
+expect_invalid('uuid — missing segment',      s.check({ f: '550e8400-e29b-41d4-a716' }))
+expect_invalid('uuid — wrong separators',     s.check({ f: '550e8400e29b41d4a716446655440000' }))
+
+s = validate.schema({ f: validate.json() })
+expect_valid('json — object',                 s.check({ f: '{"a":1}' }))
+expect_valid('json — array',                  s.check({ f: '[1,2,3]' }))
+expect_valid('json — string',                 s.check({ f: '"hello"' }))
+expect_invalid('json — bare word',            s.check({ f: 'hello' }))
+expect_invalid('json — unquoted key',         s.check({ f: '{a:1}' }))
+
+s = validate.schema({ f: validate.date() })
+expect_valid('date — ISO 8601',               s.check({ f: '2024-06-15' }))
+expect_invalid('date — invalid string',       s.check({ f: 'not-a-date' }))
+
+s = validate.schema({ f: validate.after('2020-01-01') })
+expect_valid('after — 2021',                  s.check({ f: '2021-06-01' }))
+expect_invalid('after — 2019',               s.check({ f: '2019-06-01' }))
+expect_invalid('after — exactly equal',      s.check({ f: '2020-01-01' }))
+
+s = validate.schema({ f: validate.after_or_equal('2020-01-01') })
+expect_valid('after_or_equal — exactly equal',s.check({ f: '2020-01-01' }))
+expect_valid('after_or_equal — later',        s.check({ f: '2021-01-01' }))
+expect_invalid('after_or_equal — before',    s.check({ f: '2019-01-01' }))
+
+s = validate.schema({ f: validate.before('2030-01-01') })
+expect_valid('before — 2025',                 s.check({ f: '2025-01-01' }))
+expect_invalid('before — 2030',             s.check({ f: '2030-01-01' }))
+
+s = validate.schema({ f: validate.before_or_equal('2030-01-01') })
+expect_valid('before_or_equal — exactly equal',s.check({ f: '2030-01-01' }))
+expect_invalid('before_or_equal — after',    s.check({ f: '2031-01-01' }))
+
+
+# ===========================================================================
+# 6. Inclusion / exclusion rules
+# ===========================================================================
+section('6. Inclusion / exclusion rules')
+
+s = validate.schema({ f: validate.is_in(['red', 'green', 'blue']) })
+expect_valid('is_in — "red"',                 s.check({ f: 'red' }))
+expect_invalid('is_in — "yellow"',            s.check({ f: 'yellow' }))
+
+s = validate.schema({ f: validate.not_in([1, 2, 3]) })
+expect_valid('not_in — 4',                    s.check({ f: 4 }))
+expect_invalid('not_in — 2',                  s.check({ f: 2 }))
+
+s = validate.schema({ f: validate.in_list(['a', 'b', 'c']) })
+expect_valid('in_list — all valid',           s.check({ f: ['a', 'b'] }))
+expect_invalid('in_list — one invalid item',  s.check({ f: ['a', 'z'] }))
+expect_invalid('in_list — not a list',        s.check({ f: 'a' }))
+
+s = validate.schema({ f: validate.accepted() })
+expect_valid('accepted — true',               s.check({ f: true }))
+expect_valid('accepted — "yes"',              s.check({ f: 'yes' }))
+expect_valid('accepted — "on"',               s.check({ f: 'on' }))
+expect_valid('accepted — 1',                  s.check({ f: 1 }))
+expect_invalid('accepted — false',            s.check({ f: false }))
+expect_invalid('accepted — "no"',             s.check({ f: 'no' }))
+
+s = validate.schema({ f: validate.declined() })
+expect_valid('declined — false',              s.check({ f: false }))
+expect_valid('declined — "no"',               s.check({ f: 'no' }))
+expect_valid('declined — 0',                  s.check({ f: 0 }))
+expect_invalid('declined — true',             s.check({ f: true }))
+
+s = validate.schema({ f: validate.equals(42) })
+expect_valid('equals — 42',                   s.check({ f: 42 }))
+expect_invalid('equals — 43',                 s.check({ f: 43 }))
+expect_invalid('equals — "42" (type mismatch)', s.check({ f: '42' }))
+
+s = validate.schema({ f: validate.not_equals(0) })
+expect_valid('not_equals — 1',                s.check({ f: 1 }))
+expect_invalid('not_equals — 0',              s.check({ f: 0 }))
+
+
+# ===========================================================================
+# 7. Cross-field rules
+# ===========================================================================
+section('7. Cross-field rules')
+
+s = validate.schema({
+  password:              validate.required().string(),
+  password_confirmation: validate.required().string().same('password'),
+})
+expect_valid('same — matching passwords',
+  s.check({ password: 'secret', password_confirmation: 'secret' }))
+expect_invalid('same — mismatched passwords',
+  s.check({ password: 'secret', password_confirmation: 'wrong' }))
+
+s = validate.schema({
+  username: validate.required().string(),
+  email:    validate.required().string().different('username'),
+})
+expect_valid('different — distinct values',
+  s.check({ username: 'ada', email: 'ada@x.com' }))
+expect_invalid('different — same values',
+  s.check({ username: 'ada', email: 'ada' }))
+
+s = validate.schema({
+  password:              validate.required().string().min_length(8).confirmed(),
+  password_confirmation: validate.required().string(),
+})
+expect_valid('confirmed — matching confirmation',
+  s.check({ password: 'secret99', password_confirmation: 'secret99' }))
+expect_invalid('confirmed — wrong confirmation',
+  s.check({ password: 'secret99', password_confirmation: 'different' }))
+
+# required_if
+s = validate.schema({
+  role:       validate.required().string(),
+  admin_code: validate.required_if('role', 'admin').string(),
+})
+expect_valid('required_if — role=user, no admin_code',
+  s.check({ role: 'user' }))
+expect_valid('required_if — role=admin, code present',
+  s.check({ role: 'admin', admin_code: 'XYZ' }))
+expect_invalid('required_if — role=admin, code absent',
+  s.check({ role: 'admin' }))
+
+# required_unless
+s = validate.schema({
+  subscribe: validate.boolean().sometimes(),
+  email:     validate.required_unless('subscribe', false).string().email(),
+})
+expect_valid('required_unless — subscribe=false, email absent',
+  s.check({ subscribe: false }))
+expect_invalid('required_unless — subscribe=true, email absent',
+  s.check({ subscribe: true }))
+
+# required_with
+s = validate.schema({
+  first_name: validate.string().sometimes(),
+  last_name:  validate.required_with('first_name').string(),
+})
+expect_valid('required_with — both absent',     s.check({}))
+expect_valid('required_with — both present',    s.check({ first_name: 'Ada', last_name: 'L' }))
+expect_invalid('required_with — first present, last absent',
+  s.check({ first_name: 'Ada' }))
+
+# required_with_all
+s = validate.schema({
+  a: validate.string().sometimes(),
+  b: validate.string().sometimes(),
+  c: validate.required_with_all(['a', 'b']).string(),
+})
+expect_valid('required_with_all — only a present', s.check({ a: 'x' }))
+expect_valid('required_with_all — a,b,c present',  s.check({ a: 'x', b: 'y', c: 'z' }))
+expect_invalid('required_with_all — a,b present, c absent',
+  s.check({ a: 'x', b: 'y' }))
+
+# required_without
+s = validate.schema({
+  phone:  validate.string().sometimes(),
+  mobile: validate.required_without('phone').string(),
+})
+expect_valid('required_without — phone present', s.check({ phone: '123' }))
+expect_invalid('required_without — phone absent, mobile absent',
+  s.check({}))
+
+# required_without_all
+s = validate.schema({
+  a: validate.string().sometimes(),
+  b: validate.string().sometimes(),
+  c: validate.required_without_all(['a', 'b']).string(),
+})
+expect_valid('required_without_all — a present',     s.check({ a: 'x' }))
+expect_invalid('required_without_all — both absent', s.check({}))
+
+# prohibited
+s = validate.schema({ secret: validate.prohibited() })
+expect_valid('prohibited — absent field',     s.check({}))
+expect_valid('prohibited — nil value',        s.check({ secret: nil }))
+expect_invalid('prohibited — present value',  s.check({ secret: 'x' }))
+
+# prohibited_if
+s = validate.schema({
+  role:        validate.required().string(),
+  super_token: validate.prohibited_if('role', 'user').string(),
+})
+expect_valid('prohibited_if — role=user, token absent',
+  s.check({ role: 'user' }))
+expect_valid('prohibited_if — role=admin, token present',
+  s.check({ role: 'admin', super_token: 'abc' }))
+expect_invalid('prohibited_if — role=user, token present',
+  s.check({ role: 'user', super_token: 'abc' }))
+
+# prohibited_unless
+s = validate.schema({
+  role:       validate.required().string(),
+  priv_field: validate.prohibited_unless('role', 'admin').string(),
+})
+expect_valid('prohibited_unless — role=admin, field present',
+  s.check({ role: 'admin', priv_field: 'yes' }))
+expect_valid('prohibited_unless — role=user, field absent',
+  s.check({ role: 'user' }))
+expect_invalid('prohibited_unless — role=user, field present',
+  s.check({ role: 'user', priv_field: 'yes' }))
+
+# prohibits
+s = validate.schema({
+  card_number: validate.string().sometimes(),
+  iban:        validate.string().prohibits('card_number').sometimes(),
+})
+expect_valid('prohibits — iban only',         s.check({ iban: 'DE89...' }))
+expect_valid('prohibits — card only',         s.check({ card_number: '4242...' }))
+expect_invalid('prohibits — both present',    s.check({ iban: 'DE89', card_number: '4242' }))
+
+
+# ===========================================================================
+# 8. List / dict content rules
+# ===========================================================================
+section('8. List / dict content rules')
+
+s = validate.schema({ f: validate.distinct() })
+expect_valid('distinct — unique items',       s.check({ f: [1, 2, 3] }))
+expect_invalid('distinct — duplicate items',  s.check({ f: [1, 2, 1] }))
+expect_invalid('distinct — not a list',       s.check({ f: 'abc' }))
+
+s = validate.schema({ f: validate.min_items(2) })
+expect_valid('min_items — 3 items',           s.check({ f: [1, 2, 3] }))
+expect_invalid('min_items — 1 item',          s.check({ f: [1] }))
+
+s = validate.schema({ f: validate.max_items(3) })
+expect_valid('max_items — 3 items',           s.check({ f: [1, 2, 3] }))
+expect_invalid('max_items — 4 items',         s.check({ f: [1, 2, 3, 4] }))
+
+s = validate.schema({ f: validate.each(validate.integer().positive()) })
+expect_valid('each — all positive integers',  s.check({ f: [1, 2, 3] }))
+expect_invalid('each — contains zero',        s.check({ f: [1, 0, 3] }))
+expect_invalid('each — contains string',      s.check({ f: [1, 'x', 3] }))
+expect_invalid('each — not a list',           s.check({ f: 42 }))
+
+
+# ===========================================================================
+# 9. Nil rules
+# ===========================================================================
+section('9. Nil rules')
+
+s = validate.schema({ f: validate.is_nil() })
+expect_valid('is_nil — nil value',            s.check({ f: nil }))
+expect_invalid('is_nil — string value',       s.check({ f: 'x' }))
+expect_invalid('is_nil — 0',                  s.check({ f: 0 }))
+
+s = validate.schema({ f: validate.not_nil() })
+expect_valid('not_nil — string value',        s.check({ f: 'x' }))
+expect_valid('not_nil — 0',                   s.check({ f: 0 }))
+expect_invalid('not_nil — nil value',         s.check({ f: nil }))
+
+
+# ===========================================================================
+# 10. Custom rules
+# ===========================================================================
+section('10. Custom rules')
+
+# Inline function
+s = validate.schema({
+  code: validate.required().string().custom(@(value) {
+    return value.starts_with('ZURI-') and value.length() == 8
+  }, 'Must be a 8-character ZURI- code.'),
+})
+expect_valid('custom fn — valid code',        s.check({ code: 'ZURI-123' }))
+expect_invalid('custom fn — bad prefix',      s.check({ code: 'NOPE-123' }))
+expect_invalid('custom fn — wrong length',    s.check({ code: 'ZURI-12' }))
+
+# Inline function with data
+s = validate.schema({
+  min_price: validate.required().number(),
+  max_price: validate.required().number().custom_with_data(@(value, data) {
+    return value > data.get('min_price', 0)
+  }, 'max_price must exceed min_price.'),
+})
+expect_valid('custom_with_data — max > min',  s.check({ min_price: 10, max_price: 20 }))
+expect_invalid('custom_with_data — max < min',s.check({ min_price: 20, max_price: 10 }))
+expect_invalid('custom_with_data — max == min',s.check({ min_price: 10, max_price: 10 }))
+
+# Rule subclass via use()
+class Palindrome < Rule {
+  validate(value) {
+    if !is_string(value) return false
+    var s = value.lower()
+    var r = ''
+    iter var i = s.length() - 1; i >= 0; i-- {
+      r = r + s[i]
+    }
+    return s == r
+  }
+  error() { return 'The ${self.name} field must be a palindrome.' }
+}
+
+s = validate.schema({ f: validate.string().use(Palindrome) })
+expect_valid('use(Rule) — "racecar"',         s.check({ f: 'racecar' }))
+expect_valid('use(Rule) — "Aba" (case-fold)', s.check({ f: 'Aba' }))
+expect_invalid('use(Rule) — "hello"',         s.check({ f: 'hello' }))
+
+
+# ===========================================================================
+# 11. Validator modifiers — bail, sometimes, nullable, label
+# ===========================================================================
+section('11. Validator modifiers')
+
+# bail: default true — stops at first error
+s = validate.schema({
+  f: validate.required().string().min_length(100).bail(true),
+})
+var r = s.check({ f: 42 })
+assert !r.valid
+# With bail=true, only one error should be reported for field 'f'
+assert r.errors.length() == 1, 'bail=true must stop at first failing rule'
+echo '  [PASS] bail=true stops at first error'
+
+# bail: false — collects all errors
+s = validate.schema({
+  f: Validator().required().string().min_length(100).bail(false),
+})
+r = s.check({ f: 42 })
+assert !r.valid
+assert r.errors.length() > 1, 'bail=false must collect all errors'
+echo '  [PASS] bail=false collects multiple errors'
+
+# sometimes — skip when absent
+s = validate.schema({
+  f: validate.string().email().sometimes(),
+})
+expect_valid('sometimes — field absent',      s.check({}))
+expect_valid('sometimes — field nil',         s.check({ f: nil }))
+expect_valid('sometimes — valid when present',s.check({ f: 'a@b.com' }))
+expect_invalid('sometimes — invalid when present', s.check({ f: 'not-an-email' }))
+
+# nullable — nil passes, non-nil is validated
+s = validate.schema({
+  f: validate.nullable().string().min_length(3),
+})
+expect_valid('nullable — nil passes',         s.check({ f: nil }))
+expect_valid('nullable — valid string',       s.check({ f: 'hello' }))
+expect_invalid('nullable — too short string', s.check({ f: 'hi' }))
+
+# label — custom label in error messages
+s = validate.schema({
+  email_address: Validator().required().string().email().label('Email Address'),
+})
+r = s.check({ email_address: 'bad' })
+assert !r.valid
+assert r.errors[0].message.contains('Email Address'),
+  'label must appear in error message'
+echo '  [PASS] label appears in error message'
+
+
+# ===========================================================================
+# 12. Schema — basic field checking
+# ===========================================================================
+section('12. Schema — basic field checking')
+
+s = validate.schema({
+  name:  validate.required().string().max_length(100),
+  email: validate.required().string().email(),
+  age:   validate.required().integer().gte(18).lte(120),
+})
+
+expect_valid('basic schema — all valid',
+  s.check({ name: 'Ada Lovelace', email: 'ada@example.com', age: 36 }))
+
+expect_invalid('basic schema — invalid email',
+  s.check({ name: 'Ada', email: 'not-an-email', age: 36 }))
+
+expect_error_on('basic schema — error on email field',
+  s.check({ name: 'Ada', email: 'bad', age: 36 }),
+  'email')
+
+expect_invalid('basic schema — age below min',
+  s.check({ name: 'Ada', email: 'a@b.com', age: 17 }))
+
+expect_error_on('basic schema — error on age field',
+  s.check({ name: 'Ada', email: 'a@b.com', age: 17 }),
+  'age')
+
+# Extra keys in data are ignored
+expect_valid('basic schema — extra keys ignored',
+  s.check({ name: 'Ada', email: 'a@b.com', age: 20, extra: 'ignored' }))
+
+
+# ===========================================================================
+# 13. Schema — absent field / required detection
+# ===========================================================================
+section('13. Schema — absent field / required detection')
+
+s = validate.schema({
+  name:  validate.required().string(),
+  email: validate.required().string().email(),
+})
+
+expect_invalid('absent required field — name missing',
+  s.check({ email: 'a@b.com' }))
+expect_error_on('absent required field — error on name',
+  s.check({ email: 'a@b.com' }),
+  'name')
+
+expect_invalid('absent required field — both missing',
+  s.check({}))
+
+r = s.check({})
+assert r.errors.length() == 2, 'Both absent required fields must produce errors'
+echo '  [PASS] both absent required fields reported'
+
+
+# ===========================================================================
+# 14. Schema — dot-notation nested fields
+# ===========================================================================
+section('14. Schema — dot-notation nested fields')
+
+s = validate.schema({
+  'address.street':  validate.required().string(),
+  'address.city':    validate.required().string(),
+  'address.country': validate.required().string().length(2).uppercase(),
+})
+
+expect_valid('dot-notation — valid nested data',
+  s.check({ address: { street: '1 Main St', city: 'Lagos', country: 'NG' } }))
+
+expect_invalid('dot-notation — country too long',
+  s.check({ address: { street: '1 Main St', city: 'Lagos', country: 'NGA' } }))
+
+expect_error_on('dot-notation — error keyed with dot path',
+  s.check({ address: { street: '1 Main St', city: 'Lagos', country: 'NGA' } }),
+  'address.country')
+
+expect_invalid('dot-notation — nested field absent',
+  s.check({ address: { street: '1 Main St' } }))
+
+expect_error_on('dot-notation — missing nested city',
+  s.check({ address: { street: '1 Main St', country: 'NG' } }),
+  'address.city')
+
+expect_invalid('dot-notation — parent key absent',
+  s.check({}))
+
+
+# ===========================================================================
+# 15. Schema — wildcard list fields
+# ===========================================================================
+section('15. Schema — wildcard list fields')
+
+s = validate.schema({
+  'tags.*': validate.required().string().max_length(32).alpha_dash(),
+})
+
+expect_valid('wildcard — all valid tags',
+  s.check({ tags: ['zuri', 'backend', 'fast'] }))
+
+expect_invalid('wildcard — one tag too long',
+  s.check({ tags: ['zuri', 'a-very-long-tag-that-exceeds-max-length-limit'] }))
+
+expect_invalid('wildcard — one tag invalid chars',
+  s.check({ tags: ['ok', 'bad tag!'] }))
+
+expect_error_on('wildcard — error key includes index',
+  s.check({ tags: ['ok', 'bad tag!'] }),
+  'tags.1')
+
+# Empty list — no items to validate, should pass
+expect_valid('wildcard — empty list passes',
+  s.check({ tags: [] }))
+
+
+# ===========================================================================
+# 16. Schema — check_or_raise / ValidationError
+# ===========================================================================
+section('16. Schema — check_or_raise / ValidationError')
+
+s = validate.schema({
+  name: validate.required().string(),
+  age:  validate.required().integer().gte(0),
+})
+
+# Should not raise when valid
+var raised = false
+catch {
+  s.check_or_raise({ name: 'Ada', age: 30 })
+} as e {
+  raised = true
+}
+assert !raised, 'check_or_raise must not raise on valid data'
+echo '  [PASS] check_or_raise does not raise on valid data'
+
+# Should raise ValidationError when invalid
+var caught_errors = nil
+catch {
+  s.check_or_raise({ name: 'Ada', age: -1 })
+} as e {
+  caught_errors = e.errors
+}
+assert caught_errors != nil, 'check_or_raise must raise ValidationError on invalid data'
+echo '  [PASS] check_or_raise raises ValidationError on invalid data'
+assert is_list(caught_errors), 'ValidationError.errors must be a list'
+echo '  [PASS] ValidationError.errors is a list'
+
+var has_age_error = false
+for e in caught_errors {
+  if e.field == 'age' { has_age_error = true; break }
+}
+assert has_age_error, 'ValidationError.errors must contain age field error'
+echo '  [PASS] ValidationError.errors contains age error'
+
+
+# ===========================================================================
+# 17. Schema — group_errors, first_error, field_errors, has_error
+# ===========================================================================
+section('17. Schema — helper methods')
+
+s = validate.schema({
+  name:  validate.required().string().min_length(2),
+  email: validate.required().string().email(),
+})
+r = s.check({ name: 'A', email: 'bad' })
+assert !r.valid
+
+var grouped = s.group_errors(r.errors)
+assert is_dict(grouped), 'group_errors must return a dict'
+assert grouped.contains('name'),  'grouped must have name key'
+assert grouped.contains('email'), 'grouped must have email key'
+assert is_list(grouped['name']),  'grouped name must be a list'
+echo '  [PASS] group_errors returns correctly keyed dict'
+
+var first = s.first_error(r.errors, 'email')
+assert first != nil,          'first_error must return a string for existing field'
+assert is_string(first),      'first_error must be a string'
+echo '  [PASS] first_error returns string for existing field'
+
+assert s.first_error(r.errors, 'nonexistent') == nil,
+  'first_error must return nil for missing field'
+echo '  [PASS] first_error returns nil for missing field'
+
+var ferrs = s.field_errors(r.errors, 'name')
+assert is_list(ferrs),        'field_errors must return a list'
+assert ferrs.length() >= 1,   'field_errors must have at least one entry'
+echo '  [PASS] field_errors returns list for existing field'
+
+assert s.field_errors(r.errors, 'nonexistent').length() == 0,
+  'field_errors must return empty list for missing field'
+echo '  [PASS] field_errors returns empty list for missing field'
+
+assert s.has_error(r.errors, 'name'),  'has_error must be true for errored field'
+assert !s.has_error(r.errors, 'xyz'),  'has_error must be false for clean field'
+echo '  [PASS] has_error returns correct bool'
+
+
+# ===========================================================================
+# 18. Schema — extend, only, except
+# ===========================================================================
+section('18. Schema — extend, only, except')
+
+var base = validate.schema({
+  name:  validate.required().string(),
+  email: validate.required().string().email(),
+})
+
+var extended = base.extend({
+  age: validate.required().integer().gte(18),
+})
+
+expect_valid('extend — original fields still work',
+  extended.check({ name: 'Ada', email: 'a@b.com', age: 25 }))
+expect_invalid('extend — new field validated',
+  extended.check({ name: 'Ada', email: 'a@b.com', age: 17 }))
+expect_error_on('extend — new field error keyed correctly',
+  extended.check({ name: 'Ada', email: 'a@b.com', age: 17 }),
+  'age')
+
+var partial = base.only(['email'])
+expect_valid('only — passes when only email present',
+  partial.check({ email: 'a@b.com' }))
+# name rule is excluded — only email is checked
+expect_valid('only — name rule not enforced',
+  partial.check({ email: 'a@b.com' }))
+expect_invalid('only — email still enforced',
+  partial.check({ email: 'not-an-email' }))
+
+var without_email = base.except(['email'])
+expect_valid('except — name-only data passes',
+  without_email.check({ name: 'Ada' }))
+# email is no longer in schema so even bad email is not checked
+expect_valid('except — removed field not validated',
+  without_email.check({ name: 'Ada', email: 'bad' }))
+expect_invalid('except — remaining field still enforced',
+  without_email.check({ name: '' }))
+
+
+# ===========================================================================
+# 19. Integration — realistic HTTP request body
+# ===========================================================================
+section('19. Integration — realistic HTTP request body')
+
+var registration_schema = validate.schema({
+  username:              validate.required().string().alpha_dash().length_between(3, 30),
+  email:                 validate.required().string().email().max_length(254),
+  password:              validate.required().string().min_length(8),
+  password_confirmation: validate.required().string().confirmed(),
+  age:                   validate.required().integer().gte(18).lte(120),
+  website:               validate.string().url().sometimes(),
+  role:                  validate.required().string().is_in(['user', 'moderator', 'admin']),
+  referral_code:         validate.string().length(8).alpha_num().sometimes(),
+  tags:                  validate.list().max_items(5).sometimes(),
+  'address.country':     validate.required().string().length(2).uppercase(),
+})
+
+expect_valid('integration — complete valid registration',
+  registration_schema.check({
+    username:              'ada_lovelace',
+    email:                 'ada@example.com',
+    password:              'SecurePass1',
+    password_confirmation: 'SecurePass1',
+    age:                   36,
+    role:                  'user',
+    address:               { country: 'NG' },
+  }))
+
+expect_invalid('integration — passwords do not match',
+  registration_schema.check({
+    username:              'ada_lovelace',
+    email:                 'ada@example.com',
+    password:              'SecurePass1',
+    password_confirmation: 'WrongPass1',
+    age:                   36,
+    role:                  'user',
+    address:               { country: 'NG' },
+  }))
+
+expect_invalid('integration — underage user',
+  registration_schema.check({
+    username:              'young_user',
+    email:                 'young@example.com',
+    password:              'SecurePass1',
+    password_confirmation: 'SecurePass1',
+    age:                   16,
+    role:                  'user',
+    address:               { country: 'NG' },
+  }))
+
+expect_invalid('integration — invalid role',
+  registration_schema.check({
+    username:              'ada_lovelace',
+    email:                 'ada@example.com',
+    password:              'SecurePass1',
+    password_confirmation: 'SecurePass1',
+    age:                   36,
+    role:                  'superuser',
+    address:               { country: 'NG' },
+  }))
+
+expect_valid('integration — optional website provided and valid',
+  registration_schema.check({
+    username:              'ada_lovelace',
+    email:                 'ada@example.com',
+    password:              'SecurePass1',
+    password_confirmation: 'SecurePass1',
+    age:                   36,
+    role:                  'user',
+    website:               'https://ada.dev',
+    address:               { country: 'NG' },
+  }))
+
+expect_invalid('integration — optional website provided but invalid',
+  registration_schema.check({
+    username:              'ada_lovelace',
+    email:                 'ada@example.com',
+    password:              'SecurePass1',
+    password_confirmation: 'SecurePass1',
+    age:                   36,
+    role:                  'user',
+    website:               'not-a-url',
+    address:               { country: 'NG' },
+  }))
+
+expect_invalid('integration — missing required nested country',
+  registration_schema.check({
+    username:              'ada_lovelace',
+    email:                 'ada@example.com',
+    password:              'SecurePass1',
+    password_confirmation: 'SecurePass1',
+    age:                   36,
+    role:                  'user',
+  }))
+
+# Collect all errors for a badly formed body
+var bad_body = registration_schema.check({
+  username: '!!',
+  email:    'not-an-email',
+  password: 'short',
+  password_confirmation: 'mismatch',
+  age:      10,
+  role:     'hacker',
+  address:  { country: 'ngr' },
+})
+assert !bad_body.valid
+assert bad_body.errors.length() >= 7,
+  'Badly formed body must produce at least 7 errors'
+echo '  [PASS] badly formed body produces expected number of errors'
+
+var g = registration_schema.group_errors(bad_body.errors)
+assert g.contains('username')
+assert g.contains('email')
+assert g.contains('password')
+assert g.contains('password_confirmation')
+assert g.contains('age')
+assert g.contains('role')
+assert g.contains('address.country')
+echo '  [PASS] group_errors keys all expected fields'
+
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+
+echo ''
+echo '════════════════════════════════════════════════════════'
+if _fail == 0 {
+  echo '  All ${_pass} assertions passed.'
+} else {
+  echo '  ${_pass} passed, ${_fail} FAILED.'
+}
+echo '════════════════════════════════════════════════════════'
+
+if _fail > 0 {
+  raise Exception('Test suite failed with ${_fail} failure(s).')
+}

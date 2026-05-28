@@ -4,7 +4,7 @@
  * This module provides functions for converting between Zuri values and C
  * structs and vice-versa in the binary format.
  * 
- * @copyright 2022, Richard Ore and Zuri contributors
+ * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
 import _struct

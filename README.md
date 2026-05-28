@@ -93,22 +93,24 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | WebSockets                | `websocket`                | 🔜 Planned |
 | SQLite database           | `sqlite`                   | ✅ Ready    |
 | SSL / TLS                 | `ssl`                      | ✅ Ready    |
+| Validation                | `validate`                 | ✅ Ready    |
 | Cryptography & Hashing    | `hash`, `crypto`, `bcrypt` | ✅ Ready    |
 | HTML templating (Wire)    | `template`                 | ✅ Ready    |
-| HTML parsing & generation | `html`                     | ✅ Ready    |
 | Configuration             | `env` (dotenv)             | ✅ Ready    |
 | Authentication            | `jwt`                      | ✅ Ready    |
-| Markdown processing       | `markdown`                 | ✅ Ready    |
 | Mail (SMTP, IMAP, POP3)   | `mail`                     | ✅ Ready    |
 | Image processing          | `imagine`                  | ✅ Ready    |
 | JSON                      | `json`                     | ✅ Ready    |
-| File                      | `file`                     | ✅ Ready    |
+| File                      | `file`, `csv`              | ✅ Ready    |
 | Input & Output (I/O)      | `io`                       | ✅ Ready    |
 | Compression               | `zlib`, `zip`              | ✅ Ready    |
 | AST & metaprogramming     | `ast`                      | ✅ Ready    |
 | Unit testing              | `nyssa test`               | ✅ Ready    |
+| Distribution              | `nyssa bundle`             | ✅ Ready    |
 | URL / cURL bindings       | `url`, `curl`              | ✅ Ready    |
 | FFI/C interop             | `clib`                     | ✅ Ready    |
+| HTML parsing & generation | `html`                     | ✅ Ready    |
+| Markdown processing       | `markdown`                 | ✅ Ready    |
 | Device I/O (COM, USB)     | `device`                   | 🔜 Planned |
 | ORM                       | `orm`                      | 🔜 Planned |
 | Audio / Video processing  | `media`                    | 🔜 Planned |

@@ -36,7 +36,7 @@
  * {name: Richard, age: 3.142}
  * ```
  * 
- * @copyright 2022, Richard Ore and Zuri contributors
+ * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
 import _process

@@ -1,0 +1,948 @@
+/**
+ * # validate.validators
+ *
+ * Top-level convenience functions that create a fresh `Validator` instance
+ * with one rule pre-applied.  Every rule exposed by the `Validator` class
+ * has a corresponding function here so callers never need to import
+ * `Validator` directly for common cases.
+ *
+ * Every function returns a `Validator`, so additional rules can be chained
+ * immediately:
+ *
+ * ```zuri
+ * import validate
+ *
+ * validate.required().string().email().max_length(254)
+ * validate.integer().gte(0).lte(150)
+ * validate.list().min_items(1).each(validate.string())
+ * validate.string().starts_with('ZURI-').length(12)
+ * ```
+ */
+
+import .validator { Validator }
+
+
+# ---------------------------------------------------------------------------
+# Bare constructor — no pre-applied rule
+# ---------------------------------------------------------------------------
+
+/**
+ * Returns a bare `Validator` with no rules pre-applied.  Useful when you
+ * want to compose rules manually or start with a custom rule.
+ *
+ * @returns Validator
+ */
+def value() {
+  return Validator()
+}
+
+
+# ---------------------------------------------------------------------------
+# Presence / type
+# ---------------------------------------------------------------------------
+
+/**
+ * The field must be present, non-nil, and non-empty.
+ *
+ * @returns Validator
+ */
+def required() {
+  return Validator().required()
+}
+
+/**
+ * A nil value passes all subsequent rules without evaluation.
+ * Combine with `sometimes()` for a fully optional-nullable field.
+ *
+ * @returns Validator
+ */
+def nullable() {
+  return Validator().nullable()
+}
+
+/**
+ * Skips the entire rule chain when the field is absent from the data
+ * dictionary or its value is nil / blank.  Use this to mark fields as
+ * optional while still validating them when they are present.
+ *
+ * @returns Validator
+ */
+def sometimes() {
+  return Validator().sometimes()
+}
+
+/**
+ * The value must be a string.
+ *
+ * @returns Validator
+ */
+def string() {
+  return Validator().string()
+}
+
+/**
+ * The value must be a number (integer or float).
+ *
+ * @returns Validator
+ */
+def number() {
+  return Validator().number()
+}
+
+/**
+ * The value must be an integer (no fractional part).  Also accepts
+ * string representations of integers.
+ *
+ * @returns Validator
+ */
+def integer() {
+  return Validator().integer()
+}
+
+/**
+ * The value must be boolean-like: `true`, `false`, `"true"`, `"false"`,
+ * `"1"`, `"0"`, `1`, or `0`.
+ *
+ * @returns Validator
+ */
+def boolean() {
+  return Validator().boolean()
+}
+
+/**
+ * The value must be a list.
+ *
+ * @returns Validator
+ */
+def list() {
+  return Validator().list()
+}
+
+/**
+ * The value must be a dictionary.
+ *
+ * @returns Validator
+ */
+def dict() {
+  return Validator().dict()
+}
+
+/**
+ * The value must be numeric — either a number type or a string that
+ * converts cleanly to a number.
+ *
+ * @returns Validator
+ */
+def numeric() {
+  return Validator().numeric()
+}
+
+
+# ---------------------------------------------------------------------------
+# Size / length
+# ---------------------------------------------------------------------------
+
+/**
+ * The value's size must equal exactly `n`.
+ *
+ * Size is: character count for strings, item count for lists/dicts,
+ * and numeric value for numbers.
+ *
+ * @param  number n
+ * @returns Validator
+ */
+def size(n) {
+  return Validator().size(n)
+}
+
+/**
+ * The value's size must be at least `min`.
+ *
+ * @param  number min
+ * @returns Validator
+ */
+def min(min) {
+  return Validator().min(min)
+}
+
+/**
+ * The value's size must be at most `max`.
+ *
+ * @param  number max
+ * @returns Validator
+ */
+def max(max) {
+  return Validator().max(max)
+}
+
+/**
+ * The value's size must be between `min` and `max` (inclusive).
+ *
+ * @param  number min
+ * @param  number max
+ * @returns Validator
+ */
+def between(min, max) {
+  return Validator().between(min, max)
+}
+
+/**
+ * The string's character count must equal exactly `n`.
+ *
+ * @param  number n
+ * @returns Validator
+ */
+def length(n) {
+  return Validator().length(n)
+}
+
+/**
+ * The string must be at least `min` characters long.
+ *
+ * @param  number min
+ * @returns Validator
+ */
+def min_length(min) {
+  return Validator().min_length(min)
+}
+
+/**
+ * The string must be at most `max` characters long.
+ *
+ * @param  number max
+ * @returns Validator
+ */
+def max_length(max) {
+  return Validator().max_length(max)
+}
+
+/**
+ * The string's length must be between `min` and `max` characters
+ * (inclusive).
+ *
+ * @param  number min
+ * @param  number max
+ * @returns Validator
+ */
+def length_between(min, max) {
+  return Validator().length_between(min, max)
+}
+
+
+# ---------------------------------------------------------------------------
+# Numeric comparison
+# ---------------------------------------------------------------------------
+
+/**
+ * The numeric value must be greater than `n`.
+ *
+ * @param  number n
+ * @returns Validator
+ */
+def gt(n) {
+  return Validator().gt(n)
+}
+
+/**
+ * The numeric value must be greater than or equal to `n`.
+ *
+ * @param  number n
+ * @returns Validator
+ */
+def gte(n) {
+  return Validator().gte(n)
+}
+
+/**
+ * The numeric value must be less than `n`.
+ *
+ * @param  number n
+ * @returns Validator
+ */
+def lt(n) {
+  return Validator().lt(n)
+}
+
+/**
+ * The numeric value must be less than or equal to `n`.
+ *
+ * @param  number n
+ * @returns Validator
+ */
+def lte(n) {
+  return Validator().lte(n)
+}
+
+/**
+ * The numeric value must be strictly positive (greater than zero).
+ *
+ * @returns Validator
+ */
+def positive() {
+  return Validator().positive()
+}
+
+/**
+ * The numeric value must be strictly negative (less than zero).
+ *
+ * @returns Validator
+ */
+def negative() {
+  return Validator().negative()
+}
+
+/**
+ * The numeric value must be zero or positive.
+ *
+ * @returns Validator
+ */
+def positive_or_zero() {
+  return Validator().positive_or_zero()
+}
+
+/**
+ * The numeric value must be zero or negative.
+ *
+ * @returns Validator
+ */
+def negative_or_zero() {
+  return Validator().negative_or_zero()
+}
+
+/**
+ * The numeric value must be a multiple of `n`.
+ *
+ * @param  number n
+ * @returns Validator
+ */
+def multiple_of(n) {
+  return Validator().multiple_of(n)
+}
+
+
+# ---------------------------------------------------------------------------
+# String content
+# ---------------------------------------------------------------------------
+
+/**
+ * The string must contain only ASCII alphabetic characters (a-z, A-Z).
+ *
+ * @returns Validator
+ */
+def alpha() {
+  return Validator().alpha()
+}
+
+/**
+ * The string must contain only ASCII alphanumeric characters.
+ *
+ * @returns Validator
+ */
+def alpha_num() {
+  return Validator().alpha_num()
+}
+
+/**
+ * The string must contain only ASCII alphanumeric characters, hyphens,
+ * and underscores.
+ *
+ * @returns Validator
+ */
+def alpha_dash() {
+  return Validator().alpha_dash()
+}
+
+/**
+ * The string must start with one of the given prefixes.
+ *
+ * @param  string|list prefixes
+ * @returns Validator
+ */
+def starts_with(prefixes) {
+  return Validator().starts_with(prefixes)
+}
+
+/**
+ * The string must not start with any of the given prefixes.
+ *
+ * @param  string|list prefixes
+ * @returns Validator
+ */
+def doesnt_start_with(prefixes) {
+  return Validator().doesnt_start_with(prefixes)
+}
+
+/**
+ * The string must end with one of the given suffixes.
+ *
+ * @param  string|list suffixes
+ * @returns Validator
+ */
+def ends_with(suffixes) {
+  return Validator().ends_with(suffixes)
+}
+
+/**
+ * The string must not end with any of the given suffixes.
+ *
+ * @param  string|list suffixes
+ * @returns Validator
+ */
+def doesnt_end_with(suffixes) {
+  return Validator().doesnt_end_with(suffixes)
+}
+
+/**
+ * The string must contain the given substring.
+ *
+ * @param  string needle
+ * @returns Validator
+ */
+def contains(needle) {
+  return Validator().contains(needle)
+}
+
+/**
+ * The string must not contain the given substring.
+ *
+ * @param  string needle
+ * @returns Validator
+ */
+def doesnt_contain(needle) {
+  return Validator().doesnt_contain(needle)
+}
+
+/**
+ * The string must match the given regular expression pattern.
+ *
+ * @param  string pattern
+ * @returns Validator
+ */
+def regex(pattern) {
+  return Validator().regex(pattern)
+}
+
+/**
+ * The string must not match the given regular expression pattern.
+ *
+ * @param  string pattern
+ * @returns Validator
+ */
+def not_regex(pattern) {
+  return Validator().not_regex(pattern)
+}
+
+/**
+ * The string must be entirely lowercase.
+ *
+ * @returns Validator
+ */
+def lowercase() {
+  return Validator().lowercase()
+}
+
+/**
+ * The string must be entirely uppercase.
+ *
+ * @returns Validator
+ */
+def uppercase() {
+  return Validator().uppercase()
+}
+
+/**
+ * The string must not consist entirely of whitespace.
+ *
+ * @returns Validator
+ */
+def not_blank() {
+  return Validator().not_blank()
+}
+
+
+# ---------------------------------------------------------------------------
+# Format / pattern
+# ---------------------------------------------------------------------------
+
+/**
+ * The value must be a syntactically valid email address.
+ *
+ * @returns Validator
+ */
+def email() {
+  return Validator().string().email()
+}
+
+/**
+ * The value must be a valid HTTP or HTTPS URL.
+ *
+ * @returns Validator
+ */
+def url() {
+  return Validator().string().url()
+}
+
+/**
+ * The value must be a valid IPv4 address.
+ *
+ * @returns Validator
+ */
+def ipv4() {
+  return Validator().string().ipv4()
+}
+
+/**
+ * The value must be a valid IPv6 address.
+ *
+ * @returns Validator
+ */
+def ipv6() {
+  return Validator().string().ipv6()
+}
+
+/**
+ * The value must be a valid IPv4 or IPv6 address.
+ *
+ * @returns Validator
+ */
+def ip() {
+  return Validator().string().ip()
+}
+
+/**
+ * The value must be a valid canonical UUID
+ * (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+ *
+ * @returns Validator
+ */
+def uuid() {
+  return Validator().string().uuid()
+}
+
+/**
+ * The value must be a valid JSON string.
+ *
+ * @returns Validator
+ */
+def json() {
+  return Validator().string().json()
+}
+
+/**
+ * The value must be a valid date string parseable by the `date` module.
+ *
+ * @returns Validator
+ */
+def date() {
+  return Validator().string().date()
+}
+
+/**
+ * The value must be a date string after `ref`.
+ *
+ * @param  string ref  A date string parseable by the `date` module.
+ * @returns Validator
+ */
+def after(ref) {
+  return Validator().string().after(ref)
+}
+
+/**
+ * The value must be a date string after or equal to `ref`.
+ *
+ * @param  string ref
+ * @returns Validator
+ */
+def after_or_equal(ref) {
+  return Validator().string().after_or_equal(ref)
+}
+
+/**
+ * The value must be a date string before `ref`.
+ *
+ * @param  string ref
+ * @returns Validator
+ */
+def before(ref) {
+  return Validator().string().before(ref)
+}
+
+/**
+ * The value must be a date string before or equal to `ref`.
+ *
+ * @param  string ref
+ * @returns Validator
+ */
+def before_or_equal(ref) {
+  return Validator().string().before_or_equal(ref)
+}
+
+/**
+ * The value must be a valid timezone identifier recognised by the `date`
+ * module (e.g. `"UTC"`, `"Africa/Lagos"`, `"America/New_York"`).
+ *
+ * @returns Validator
+ */
+def timezone() {
+  return Validator().string().timezone()
+}
+
+
+# ---------------------------------------------------------------------------
+# Inclusion / exclusion
+# ---------------------------------------------------------------------------
+
+/**
+ * The value must be one of the given allowed values (strict comparison).
+ *
+ * @param  list values
+ * @returns Validator
+ */
+def is_in(values) {
+  return Validator().is_in(values)
+}
+
+/**
+ * The value must not be one of the given forbidden values.
+ *
+ * @param  list values
+ * @returns Validator
+ */
+def not_in(values) {
+  return Validator().not_in(values)
+}
+
+/**
+ * Every item in the list value must be contained in `values`.
+ *
+ * @param  list values
+ * @returns Validator
+ */
+def in_list(values) {
+  return Validator().in_list(values)
+}
+
+/**
+ * The value must be one of the accepted truthy representations:
+ * `true`, `"true"`, `"yes"`, `"on"`, `"1"`, `1`.
+ *
+ * @returns Validator
+ */
+def accepted() {
+  return Validator().accepted()
+}
+
+/**
+ * The value must be one of the declined falsy representations:
+ * `false`, `"false"`, `"no"`, `"off"`, `"0"`, `0`.
+ *
+ * @returns Validator
+ */
+def declined() {
+  return Validator().declined()
+}
+
+/**
+ * The value must strictly equal `expected`.
+ *
+ * @param  any expected
+ * @returns Validator
+ */
+def equals(expected) {
+  return Validator().equals(expected)
+}
+
+/**
+ * The value must not equal `forbidden`.
+ *
+ * @param  any forbidden
+ * @returns Validator
+ */
+def not_equals(forbidden) {
+  return Validator().not_equals(forbidden)
+}
+
+
+# ---------------------------------------------------------------------------
+# Cross-field
+# ---------------------------------------------------------------------------
+
+/**
+ * The value must match the value of `other_field` in the same data
+ * dictionary.  Commonly used to confirm passwords.
+ *
+ * @param  string other_field
+ * @returns Validator
+ */
+def same(other_field) {
+  return Validator().same(other_field)
+}
+
+/**
+ * The value must differ from the value of `other_field`.
+ *
+ * @param  string other_field
+ * @returns Validator
+ */
+def different(other_field) {
+  return Validator().different(other_field)
+}
+
+/**
+ * The value must match the `{field_name}_confirmation` sibling field.
+ *
+ * @returns Validator
+ */
+def confirmed() {
+  return Validator().confirmed()
+}
+
+/**
+ * The field becomes required when `other_field` equals any value in
+ * `other_values`.
+ *
+ * @param  string   other_field
+ * @param  any|list other_values
+ * @returns Validator
+ */
+def required_if(other_field, other_values) {
+  return Validator().required_if(other_field, other_values).nullable()
+}
+
+/**
+ * The field becomes required unless `other_field` equals any value in
+ * `other_values`.
+ *
+ * @param  string   other_field
+ * @param  any|list other_values
+ * @returns Validator
+ */
+def required_unless(other_field, other_values) {
+  return Validator().required_unless(other_field, other_values).nullable()
+}
+
+/**
+ * The field becomes required when any of the listed sibling fields are
+ * present and non-blank.
+ *
+ * @param  string|list fields
+ * @returns Validator
+ */
+def required_with(fields) {
+  return Validator().required_with(fields).nullable()
+}
+
+/**
+ * The field becomes required when all of the listed sibling fields are
+ * present and non-blank.
+ *
+ * @param  string|list fields
+ * @returns Validator
+ */
+def required_with_all(fields) {
+  return Validator().required_with_all(fields).nullable()
+}
+
+/**
+ * The field becomes required when any of the listed sibling fields are
+ * absent or blank.
+ *
+ * @param  string|list fields
+ * @returns Validator
+ */
+def required_without(fields) {
+  return Validator().required_without(fields).nullable()
+}
+
+/**
+ * The field becomes required when all of the listed sibling fields are
+ * absent or blank.
+ *
+ * @param  string|list fields
+ * @returns Validator
+ */
+def required_without_all(fields) {
+  return Validator().required_without_all(fields).nullable()
+}
+
+/**
+ * When this field is present, none of the listed sibling fields may also
+ * be present.
+ *
+ * @param  string|list fields
+ * @returns Validator
+ */
+def prohibits(fields) {
+  return Validator().prohibits(fields)
+}
+
+/**
+ * This field must be absent or nil — it is never permitted.
+ *
+ * @returns Validator
+ */
+def prohibited() {
+  return Validator().prohibited()
+}
+
+/**
+ * The field must be absent when `other_field` equals any of `other_values`.
+ *
+ * @param  string   other_field
+ * @param  any|list other_values
+ * @returns Validator
+ */
+def prohibited_if(other_field, other_values) {
+  return Validator().prohibited_if(other_field, other_values).nullable()
+}
+
+/**
+ * The field must be absent unless `other_field` equals any of `other_values`.
+ *
+ * @param  string   other_field
+ * @param  any|list other_values
+ * @returns Validator
+ */
+def prohibited_unless(other_field, other_values) {
+  return Validator().prohibited_unless(other_field, other_values).nullable()
+}
+
+
+# ---------------------------------------------------------------------------
+# List / dict content
+# ---------------------------------------------------------------------------
+
+/**
+ * The list must not contain duplicate values.
+ *
+ * @returns Validator
+ */
+def distinct() {
+  return Validator().distinct()
+}
+
+/**
+ * The list must have at least `min` items.
+ *
+ * @param  number min
+ * @returns Validator
+ */
+def min_items(min) {
+  return Validator().min_items(min)
+}
+
+/**
+ * The list must have at most `max` items.
+ *
+ * @param  number max
+ * @returns Validator
+ */
+def max_items(max) {
+  return Validator().max_items(max)
+}
+
+/**
+ * Every item in the list must pass the given `Validator` chain.
+ *
+ * ```zuri
+ * validate.each(validate.string().email())
+ * # Equivalent to: validate.list().each(validate.string().email())
+ * ```
+ *
+ * @param  Validator validator
+ * @returns Validator
+ */
+def each(validator) {
+  return Validator().list().each(validator)
+}
+
+
+# ---------------------------------------------------------------------------
+# Nil checks
+# ---------------------------------------------------------------------------
+
+/**
+ * The value must be nil.
+ *
+ * @returns Validator
+ */
+def is_nil() {
+  return Validator().is_nil()
+}
+
+/**
+ * The value must not be nil.
+ *
+ * @returns Validator
+ */
+def not_nil() {
+  return Validator().not_nil()
+}
+
+
+# ---------------------------------------------------------------------------
+# Custom rules
+# ---------------------------------------------------------------------------
+
+/**
+ * Validates with an inline anonymous function.  The function receives the
+ * field value and must return `true` to pass.
+ *
+ * ```zuri
+ * validate.custom(@(value) {
+ *   return value.starts_with('ZURI-')
+ * }, 'Must be a valid Zuri identifier.')
+ * ```
+ *
+ * @param  function fn       `@(value) -> bool`
+ * @param  string   message  Optional custom error message.
+ * @returns Validator
+ */
+def custom(fn, message) {
+  return Validator().custom(fn, message)
+}
+
+/**
+ * Validates with an inline function that also receives the full data
+ * dictionary, enabling cross-field logic without subclassing `Rule`.
+ *
+ * ```zuri
+ * validate.custom_with_data(@(value, data) {
+ *   return value < data.get('max_price', 0)
+ * }, 'Must be less than max_price.')
+ * ```
+ *
+ * @param  function fn       `@(value, data) -> bool`
+ * @param  string   message  Optional custom error message.
+ * @returns Validator
+ */
+def custom_with_data(fn, message) {
+  return Validator().custom_with_data(fn, message)
+}
+
+/**
+ * Attaches a pre-defined `Rule` subclass (the class itself, not an
+ * instance) directly.  The class must extend `Rule` and accept only
+ * `name` as its constructor argument.
+ *
+ * ```zuri
+ * import validate { Rule }
+ *
+ * class Palindrome < Rule {
+ *   validate(value) {
+ *     if !is_string(value) return false
+ *     var s = value.lower()
+ *     return s == s.reverse()
+ *   }
+ *   error() { return 'The ${self.name} field must be a palindrome.' }
+ * }
+ *
+ * validate.use(Palindrome).string()
+ * ```
+ *
+ * @param  class rule_class  A class that extends `Rule`.
+ * @returns Validator
+ */
+def use(rule_class) {
+  return Validator().use(rule_class)
+}

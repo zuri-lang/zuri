@@ -364,7 +364,7 @@ class Set {
    */
   each(callback) {
     if !is_function(callback) {
-      raise ArgumentError('callback function expected, ${typeof(callback)} given')
+      raise TypeError('callback function expected, ${typeof(callback)} given')
     }
 
     var fn_meta = _reflect.getfunctionmetadata(function)

@@ -54,7 +54,7 @@
  * - `uuid.NAMESPACE_OID`  — for ISO OIDs
  * - `uuid.NAMESPACE_X500` — for X.500 distinguished names
  *
- * @copyright 2026, Richard Ore and Zuri contributors
+ * @copyright 2026, Richard Ore and The Zuri Contributors
  * @license   MIT
  */
 

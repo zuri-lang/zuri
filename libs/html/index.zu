@@ -62,7 +62,7 @@
  * 
  * > Note: This applies to any function within the module that accepts an `options` argument.
  * 
- * @copyright 2023, Richard Ore and Zuri contributors
+ * @copyright 2023, Richard Ore and The Zuri Contributors
  */
 
 import .tags { * }

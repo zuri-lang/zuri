@@ -322,12 +322,12 @@ def _resolve_home(env_path) {
  * @param {string|bytes} source The source string to parse.
  * @param bool? expand Whether to expand environment variables.
  * @returns dict A dictionary of environment variables.
- * @throws ArgumentError
+ * @throws TypeError
  */
 def parse(source, expand) {
 
   if !is_string(source) and !is_bytes(source) {
-    raise ArgumentError('string or bytes expected in argument 1 (source)')
+    raise TypeError('string or bytes expected in argument 1 (source)')
   }
 
   if !expand expand = false
@@ -432,13 +432,13 @@ def parse(source, expand) {
  * 
  * @param dict? options Optional configuration options.
  * @returns dict A dictionary of environment variables.
- * @throws ArgumentError If the options parameter is not a dictionary or contains invalid options.
+ * @throws TypeError If the options parameter is not a dictionary or contains invalid options.
  */
 def config(options) {
   if options == nil options = {}
 
   if !is_dict(options) {
-    raise ArgumentError('dictionary expected')
+    raise TypeError('dictionary expected')
   }
 
   var env_path = os.join_paths(os.cwd(), '.env')
@@ -489,13 +489,13 @@ def config(options) {
  * @param string path Path to the environment file to load.
  * @param dict? options Optional configuration options (same as `config()`).
  * @returns dict A dictionary of environment variables parsed from the file.
- * @throws ArgumentError If the options parameter is not a dictionary.
+ * @throws TypeError If the options parameter is not a dictionary.
  */
 def load(path, options) {
   if options == nil options = {}
 
   if !is_dict(options) {
-    raise ArgumentError('dictionary expected')
+    raise TypeError('dictionary expected')
   }
 
   options.extend({ path })

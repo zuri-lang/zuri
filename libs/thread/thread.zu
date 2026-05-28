@@ -421,7 +421,7 @@ def await_list(threads) {
 
   for thread in threads {
     if !instance_of(thread, Thread)
-      raise ValueError('list of threads expected')
+      raise TypeError('list of threads expected')
 
     thread.await()
   }

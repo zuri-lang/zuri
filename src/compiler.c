@@ -2443,17 +2443,23 @@ static void catch_statement(z_parser* p) {
 
   if (match(p, AS_TOKEN)) {
     consume(p, IDENTIFIER_TOKEN, "missing exception variable name");
-    created_variable(p, p->previous);
+    z_token id = p->previous;
+    created_variable(p, id);
 
     ignore_whitespace(p);
 
     if (match(p, LBRACE_TOKEN)) {
+      named_variable(p, id, false);
       int exit_jump = emit_jump(p, OP_JUMP_IF_FALSE);
+      emit_byte_and_short(p, OP_POP_N, 2); // var and false
+
       begin_scope(p);
       block(p);
       end_scope(p);
       ignore_whitespace(p);
       patch_jump(p, exit_jump);
+
+      // emit_byte(p, OP_POP);
     }
   } else {
     emit_byte(p, OP_POP);

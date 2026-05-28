@@ -1,0 +1,1872 @@
+/**
+ * # validate.rules
+ *
+ * All built-in validation rule implementations.  Rules are plain classes
+ * that extend `Rule`.  They are not intended to be constructed directly;
+ * the `Validator` fluent builder and `Schema` handle construction and
+ * injection automatically.
+ */
+
+import .rule { Rule }
+import date
+import json
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers (module-private)
+# ---------------------------------------------------------------------------
+
+# Returns true when value is nil, an empty string, or an empty list.
+def _is_blank(value) {
+  return !value
+}
+
+# Returns the character count of a string, or item count of a list, or the
+# numeric value itself.  Used by size-related rules.
+def _size(value) {
+  if is_string(value)  return value.length()
+  if is_bytes(value)  return value.length()
+  if is_list(value)    return value.length()
+  if is_dict(value)    return value.length()
+  if is_number(value)  return value
+  return 0
+}
+
+# Returns true when value is a syntactically valid email address.
+# Implements the subset of RFC 5321 that covers >99.9% of real addresses.
+def _is_email(value) {
+  if !is_string(value) return false
+  var parts = value.split('@')
+  if parts.length() != 2 return false
+  var local  = parts[0]
+  var domain = parts[1]
+  if local.length() == 0 or local.length() > 64   return false
+  if domain.length() == 0 or domain.length() > 253 return false
+  if !domain.contains('.') return false
+  # domain must not start or end with a dot or hyphen
+  if domain.starts_with('.') or domain.ends_with('.') return false
+  if domain.starts_with('-') or domain.ends_with('-') return false
+  return true
+}
+
+# Returns true when value is a syntactically valid URL (http or https).
+def _is_url(value) {
+  if !is_string(value) return false
+  var v = value.lower()
+  if !v.starts_with('http://') and !v.starts_with('https://') return false
+  # Must have something after the scheme+://
+  var rest = value[value.index_of('://') + 3, ]
+  if rest.length() < 1 return false
+  return true
+}
+
+# Returns true when value is a valid IPv4 address.
+def _is_ipv4(value) {
+  if !is_string(value) return false
+  var parts = value.split('.')
+  if parts.length() != 4 return false
+  for part in parts {
+    if part.length() == 0 return false
+    var n = to_number(part)
+    if n == nil return false
+    if n < 0 or n > 255 return false
+    if to_string(int(n)) != part return false   # reject leading zeros
+  }
+  return true
+}
+
+# Returns true when value is a valid IPv6 address (simplified check).
+def _is_ipv6(value) {
+  if !is_string(value) return false
+  # Allow compressed forms — split on ':' and count groups
+  var s = value
+  if s.starts_with('[') and s.ends_with(']') {
+    s = s[1, s.length() - 1]
+  }
+  if s.contains(':::') return false
+  var double_colon = s.contains('::')
+  var parts = s.split(':')
+  if double_colon {
+    if parts.length() > 8 return false
+  } else {
+    if parts.length() != 8 return false
+  }
+  for part in parts {
+    if part.length() == 0 continue   # from ::
+    if part.length() > 4  return false
+    # Each group must be hex
+    var hex = '0123456789abcdefABCDEF'
+    for ch in part {
+      if !hex.contains(ch) return false
+    }
+  }
+  return true
+}
+
+# Returns true when value is a valid UUID v4 (or any canonical UUID).
+def _is_uuid(value) {
+  if !is_string(value) return false
+  if value.length() != 36 return false
+  var hex = '0123456789abcdefABCDEF'
+  var expected_dashes = [8, 13, 18, 23]
+  iter var i = 0; i < 36; i++ {
+    if expected_dashes.contains(i) {
+      if value[i] != '-' return false
+    } else {
+      if !hex.contains(value[i]) return false
+    }
+  }
+  return true
+}
+
+# Returns true when value is a valid JSON string.
+def _is_json(value) {
+  if !is_string(value) return false
+  catch {
+    json.decode(value)
+    return true
+  }
+  return false
+}
+
+# Returns true when the string contains only ASCII alpha characters.
+def _is_alpha(value) {
+  if !is_string(value) or value.length() == 0 return false
+  var alpha = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  for ch in value {
+    if !alpha.contains(ch) return false
+  }
+  return true
+}
+
+# Returns true when the string contains only ASCII alphanumeric characters.
+def _is_alnum(value) {
+  if !is_string(value) or value.length() == 0 return false
+  var alnum = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  for ch in value {
+    if !alnum.contains(ch) return false
+  }
+  return true
+}
+
+# Returns true when the string contains only ASCII alphanumeric chars and dashes.
+def _is_alnum_dash(value) {
+  if !is_string(value) or value.length() == 0 return false
+  var allowed = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_'
+  for ch in value {
+    if !allowed.contains(ch) return false
+  }
+  return true
+}
+
+# Returns true when value is a valid date string parseable by the date module.
+def _is_date(value) {
+  if !is_string(value) return false
+  catch {
+    date.parse(value)
+    return true
+  }
+  return false
+}
+
+# Returns true when value matches the given regex pattern string.
+def _matches(value, pattern) {
+  if !is_string(value) return false
+  catch {
+    return value.match(pattern) != nil
+  }
+  return false
+}
+
+
+# ===========================================================================
+# Presence / type rules
+# ===========================================================================
+
+/**
+ * Fails when the field is absent, nil, an empty string, or an empty list.
+ */
+class Required < Rule {
+  validate(value) {
+    return !!value
+  }
+
+  error() {
+    return 'The ${self.name} field is required.'
+  }
+}
+
+/**
+ * Passes when the field is absent or nil.  Use this to mark a field as
+ * optional while still attaching other rules that run only when a value
+ * is present.  Pair with `sometimes` on the `Validator`.
+ */
+class Nullable < Rule {
+  validate(value) {
+    return true   # always passes; signals the chain to skip on nil
+  }
+
+  error() {
+    return ''
+  }
+}
+
+/**
+ * Passes only when the value is a string.
+ */
+class StringRule < Rule {
+  validate(value) {
+    return is_string(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a string.'
+  }
+}
+
+/**
+ * Passes only when the value is a number (integer or float).
+ */
+class NumberRule < Rule {
+  validate(value) {
+    return is_number(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a number.'
+  }
+}
+
+/**
+ * Passes only when the value is an integer (no fractional part).
+ */
+class IntegerRule < Rule {
+  validate(value) {
+    if is_number(value) return value == int(value)
+    if is_string(value) {
+      var n = to_number(value)
+      if n == nil return false
+      return n == int(n)
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be an integer.'
+  }
+}
+
+/**
+ * Passes only when the value is a boolean (`true` or `false`).
+ * Also accepts the strings `"true"`, `"false"`, `"1"`, `"0"`, and the
+ * integers `1` and `0`.
+ */
+class BooleanRule < Rule {
+  validate(value) {
+    if is_bool(value) return true
+    if is_number(value) return value == 0 or value == 1
+    if is_string(value) {
+      var v = value.lower()
+      return v == 'true' or v == 'false' or v == '1' or v == '0'
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be true or false.'
+  }
+}
+
+/**
+ * Passes only when the value is a list.
+ */
+class ListRule < Rule {
+  validate(value) {
+    return is_list(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a list.'
+  }
+}
+
+/**
+ * Passes only when the value is a dictionary.
+ */
+class DictRule < Rule {
+  validate(value) {
+    return is_dict(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a dictionary.'
+  }
+}
+
+/**
+ * Passes only when the value is numeric (a number, or a string that can
+ * be losslessly converted to a number).
+ */
+class NumericRule < Rule {
+  validate(value) {
+    if is_number(value) return true
+    if is_string(value) return to_number(value) != 0
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be numeric.'
+  }
+}
+
+
+# ===========================================================================
+# Size / length rules
+# ===========================================================================
+
+/**
+ * Passes when the value's size equals `n`.
+ *
+ * Size is measured as: character count for strings, item count for lists
+ * and dicts, and numeric value for numbers.
+ */
+class Size < Rule {
+  var _n
+
+  Size(name, n) {
+    parent(name)
+    self._n = n
+  }
+
+  validate(value) {
+    return _size(value) == self._n
+  }
+
+  error() {
+    return 'The ${self.name} field must be ${self._n}.'
+  }
+}
+
+/**
+ * Passes when the value's size is at least `min`.
+ */
+class Min < Rule {
+  var _min
+
+  Min(name, min) {
+    parent(name)
+    self._min = min
+  }
+
+  validate(value) {
+    return _size(value) >= self._min
+  }
+
+  error() {
+    return 'The ${self.name} field must be at least ${self._min}.'
+  }
+}
+
+/**
+ * Passes when the value's size is at most `max`.
+ */
+class Max < Rule {
+  var _max
+
+  Max(name, max) {
+    parent(name)
+    self._max = max
+  }
+
+  validate(value) {
+    return _size(value) <= self._max
+  }
+
+  error() {
+    return 'The ${self.name} field must not be greater than ${self._max}.'
+  }
+}
+
+/**
+ * Passes when the value's size is between `min` and `max` (inclusive).
+ */
+class Between < Rule {
+  var _min
+  var _max
+
+  Between(name, min, max) {
+    parent(name)
+    self._min = min
+    self._max = max
+  }
+
+  validate(value) {
+    var s = _size(value)
+    return s >= self._min and s <= self._max
+  }
+
+  error() {
+    return 'The ${self.name} field must be between ${self._min} and ${self._max}.'
+  }
+}
+
+/**
+ * Passes when a string's length is exactly `n` characters.
+ */
+class Length < Rule {
+  var _n
+
+  Length(name, n) {
+    parent(name)
+    self._n = n
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    return value.length() == self._n
+  }
+
+  error() {
+    return 'The ${self.name} field must be ${self._n} characters.'
+  }
+}
+
+/**
+ * Passes when a string's length is at least `min` characters.
+ */
+class MinLength < Rule {
+  var _min
+
+  MinLength(name, min) {
+    parent(name)
+    self._min = min
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    return value.length() >= self._min
+  }
+
+  error() {
+    return 'The ${self.name} field must be at least ${self._min} characters.'
+  }
+}
+
+/**
+ * Passes when a string's length is at most `max` characters.
+ */
+class MaxLength < Rule {
+  var _max
+
+  MaxLength(name, max) {
+    parent(name)
+    self._max = max
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    return value.length() <= self._max
+  }
+
+  error() {
+    return 'The ${self.name} field must not exceed ${self._max} characters.'
+  }
+}
+
+/**
+ * Passes when a string's length is between `min` and `max` characters
+ * (inclusive).
+ */
+class LengthBetween < Rule {
+  var _min
+  var _max
+
+  LengthBetween(name, min, max) {
+    parent(name)
+    self._min = min
+    self._max = max
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    var l = value.length()
+    return l >= self._min and l <= self._max
+  }
+
+  error() {
+    return 'The ${self.name} field must be between ${self._min} and ${self._max} characters.'
+  }
+}
+
+
+# ===========================================================================
+# Numeric comparison rules
+# ===========================================================================
+
+/**
+ * Passes when the numeric value is greater than `n`.
+ */
+class Gt < Rule {
+  var _n
+
+  Gt(name, n) {
+    parent(name)
+    self._n = n
+  }
+
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v > self._n
+  }
+
+  error() {
+    return 'The ${self.name} field must be greater than ${self._n}.'
+  }
+}
+
+/**
+ * Passes when the numeric value is greater than or equal to `n`.
+ */
+class Gte < Rule {
+  var _n
+
+  Gte(name, n) {
+    parent(name)
+    self._n = n
+  }
+
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v >= self._n
+  }
+
+  error() {
+    return 'The ${self.name} field must be greater than or equal to ${self._n}.'
+  }
+}
+
+/**
+ * Passes when the numeric value is less than `n`.
+ */
+class Lt < Rule {
+  var _n
+
+  Lt(name, n) {
+    parent(name)
+    self._n = n
+  }
+
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v < self._n
+  }
+
+  error() {
+    return 'The ${self.name} field must be less than ${self._n}.'
+  }
+}
+
+/**
+ * Passes when the numeric value is less than or equal to `n`.
+ */
+class Lte < Rule {
+  var _n
+
+  Lte(name, n) {
+    parent(name)
+    self._n = n
+  }
+
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v <= self._n
+  }
+
+  error() {
+    return 'The ${self.name} field must be less than or equal to ${self._n}.'
+  }
+}
+
+/**
+ * Passes when the numeric value is positive (strictly greater than zero).
+ */
+class Positive < Rule {
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v > 0
+  }
+
+  error() {
+    return 'The ${self.name} field must be a positive number.'
+  }
+}
+
+/**
+ * Passes when the numeric value is negative (strictly less than zero).
+ */
+class Negative < Rule {
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v < 0
+  }
+
+  error() {
+    return 'The ${self.name} field must be a negative number.'
+  }
+}
+
+/**
+ * Passes when the numeric value is positive or zero.
+ */
+class PositiveOrZero < Rule {
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v >= 0
+  }
+
+  error() {
+    return 'The ${self.name} field must be zero or a positive number.'
+  }
+}
+
+/**
+ * Passes when the numeric value is negative or zero.
+ */
+class NegativeOrZero < Rule {
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    return v <= 0
+  }
+
+  error() {
+    return 'The ${self.name} field must be zero or a negative number.'
+  }
+}
+
+/**
+ * Passes when the numeric value is a multiple of `n`.
+ */
+class MultipleOf < Rule {
+  var _n
+
+  MultipleOf(name, n) {
+    parent(name)
+    self._n = n
+  }
+
+  validate(value) {
+    var v = is_number(value) ? value : to_number(value)
+    if v == nil return false
+    if self._n == 0 return false
+    return v % self._n == 0
+  }
+
+  error() {
+    return 'The ${self.name} field must be a multiple of ${self._n}.'
+  }
+}
+
+
+# ===========================================================================
+# String content rules
+# ===========================================================================
+
+/**
+ * Passes when the string contains only ASCII alphabetic characters (a-z, A-Z).
+ */
+class Alpha < Rule {
+  validate(value) {
+    return is_string(value) and value.is_alpha()
+  }
+
+  error() {
+    return 'The ${self.name} field must only contain letters.'
+  }
+}
+
+/**
+ * Passes when the string contains only ASCII alphanumeric characters.
+ */
+class AlphaNum < Rule {
+  validate(value) {
+    return is_string(value) and value.is_alnum()
+  }
+
+  error() {
+    return 'The ${self.name} field must only contain letters and numbers.'
+  }
+}
+
+/**
+ * Passes when the string contains only ASCII alphanumeric characters,
+ * hyphens (`-`), and underscores (`_`).
+ */
+class AlphaDash < Rule {
+  validate(value) {
+    return _is_alnum_dash(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must only contain letters, numbers, hyphens, and underscores.'
+  }
+}
+
+/**
+ * Passes when the string starts with one of the given prefixes.
+ */
+class StartsWith < Rule {
+  var _prefixes
+
+  StartsWith(name, prefixes) {
+    parent(name)
+    self._prefixes = is_list(prefixes) ? prefixes : [prefixes]
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    for prefix in self._prefixes {
+      if value.starts_with(prefix) return true
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must start with one of: ${", ".join(self._prefixes)}.'
+  }
+}
+
+/**
+ * Passes when the string does not start with any of the given prefixes.
+ */
+class DoesntStartWith < Rule {
+  var _prefixes
+
+  DoesntStartWith(name, prefixes) {
+    parent(name)
+    self._prefixes = is_list(prefixes) ? prefixes : [prefixes]
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    for prefix in self._prefixes {
+      if value.starts_with(prefix) return false
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field must not start with one of: ${", ".join(self._prefixes)}.'
+  }
+}
+
+/**
+ * Passes when the string ends with one of the given suffixes.
+ */
+class EndsWith < Rule {
+  var _suffixes
+
+  EndsWith(name, suffixes) {
+    parent(name)
+    self._suffixes = is_list(suffixes) ? suffixes : [suffixes]
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    for suffix in self._suffixes {
+      if value.ends_with(suffix) return true
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must end with one of: ${", ".join(self._suffixes)}.'
+  }
+}
+
+/**
+ * Passes when the string does not end with any of the given suffixes.
+ */
+class DoesntEndWith < Rule {
+  var _suffixes
+
+  DoesntEndWith(name, suffixes) {
+    parent(name)
+    self._suffixes = is_list(suffixes) ? suffixes : [suffixes]
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    for suffix in self._suffixes {
+      if value.ends_with(suffix) return false
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field must not end with one of: ${", ".join(self._suffixes)}.'
+  }
+}
+
+/**
+ * Passes when the string contains the given substring.
+ */
+class Contains < Rule {
+  var _needle
+
+  Contains(name, needle) {
+    parent(name)
+    self._needle = needle
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    return value.contains(self._needle)
+  }
+
+  error() {
+    return 'The ${self.name} field must contain "${self._needle}".'
+  }
+}
+
+/**
+ * Passes when the string does not contain the given substring.
+ */
+class DoesntContain < Rule {
+  var _needle
+
+  DoesntContain(name, needle) {
+    parent(name)
+    self._needle = needle
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    return !value.contains(self._needle)
+  }
+
+  error() {
+    return 'The ${self.name} field must not contain "${self._needle}".'
+  }
+}
+
+/**
+ * Passes when the string value matches the given regular expression.
+ */
+class Regex < Rule {
+  var _pattern
+
+  Regex(name, pattern) {
+    parent(name)
+    self._pattern = pattern
+  }
+
+  validate(value) {
+    return _matches(value, self._pattern)
+  }
+
+  error() {
+    return 'The ${self.name} field format is invalid.'
+  }
+}
+
+/**
+ * Passes when the string value does not match the given regular expression.
+ */
+class NotRegex < Rule {
+  var _pattern
+
+  NotRegex(name, pattern) {
+    parent(name)
+    self._pattern = pattern
+  }
+
+  validate(value) {
+    if !is_string(value) return false
+    return !_matches(value, self._pattern)
+  }
+
+  error() {
+    return 'The ${self.name} field format is invalid.'
+  }
+}
+
+/**
+ * Passes when the string value contains only lowercase characters.
+ */
+class Lowercase < Rule {
+  validate(value) {
+    if !is_string(value) or value.length() == 0 return false
+    return value == value.lower()
+  }
+
+  error() {
+    return 'The ${self.name} field must be lowercase.'
+  }
+}
+
+/**
+ * Passes when the string value contains only uppercase characters.
+ */
+class Uppercase < Rule {
+  validate(value) {
+    if !is_string(value) or value.length() == 0 return false
+    return value == value.upper()
+  }
+
+  error() {
+    return 'The ${self.name} field must be uppercase.'
+  }
+}
+
+/**
+ * Passes when the value does not consist solely of whitespace.
+ * Use on string fields to prevent inputs like `"   "`.
+ */
+class NotBlank < Rule {
+  validate(value) {
+    if !is_string(value) return true   # non-strings pass (not our concern here)
+    return value.trim().length() > 0
+  }
+
+  error() {
+    return 'The ${self.name} field must not be blank.'
+  }
+}
+
+
+# ===========================================================================
+# Format / pattern rules
+# ===========================================================================
+
+/**
+ * Passes when the value is a syntactically valid email address.
+ *
+ * Validates the structure `local@domain.tld` per a practical subset of
+ * RFC 5321.  Does not perform DNS MX lookup.
+ */
+class Email < Rule {
+  validate(value) {
+    return _is_email(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid email address.'
+  }
+}
+
+/**
+ * Passes when the value is a syntactically valid HTTP or HTTPS URL.
+ */
+class Url < Rule {
+  validate(value) {
+    return _is_url(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid URL.'
+  }
+}
+
+/**
+ * Passes when the value is a valid IPv4 address.
+ */
+class Ipv4 < Rule {
+  validate(value) {
+    return _is_ipv4(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid IPv4 address.'
+  }
+}
+
+/**
+ * Passes when the value is a valid IPv6 address.
+ */
+class Ipv6 < Rule {
+  validate(value) {
+    return _is_ipv6(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid IPv6 address.'
+  }
+}
+
+/**
+ * Passes when the value is a valid IPv4 or IPv6 address.
+ */
+class Ip < Rule {
+  validate(value) {
+    return _is_ipv4(value) or _is_ipv6(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid IP address.'
+  }
+}
+
+/**
+ * Passes when the value is a valid canonical UUID
+ * (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+ */
+class Uuid < Rule {
+  validate(value) {
+    return _is_uuid(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid UUID.'
+  }
+}
+
+/**
+ * Passes when the value is a valid JSON string.
+ */
+class Json < Rule {
+  validate(value) {
+    return _is_json(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid JSON string.'
+  }
+}
+
+/**
+ * Passes when the value is a valid date string parseable by the `date`
+ * module (e.g. `"2024-06-15"`, `"2024-06-15T12:00:00Z"`).
+ */
+class DateRule < Rule {
+  validate(value) {
+    return _is_date(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid date.'
+  }
+}
+
+/**
+ * Passes when the value is a date string after the given reference date.
+ *
+ * Both the value and the reference must be parseable by the `date` module.
+ */
+class After < Rule {
+  var _ref
+
+  After(name, ref) {
+    parent(name)
+    self._ref = ref
+  }
+
+  validate(value) {
+    if !_is_date(value) return false
+    catch {
+      return date.parse(value).unix_time() > date.parse(self._ref).unix_time()
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be a date after ${self._ref}.'
+  }
+}
+
+/**
+ * Passes when the value is a date string after or equal to the given
+ * reference date.
+ */
+class AfterOrEqual < Rule {
+  var _ref
+
+  AfterOrEqual(name, ref) {
+    parent(name)
+    self._ref = ref
+  }
+
+  validate(value) {
+    if !_is_date(value) return false
+    catch {
+      return date.parse(value).unix_time() >= date.parse(self._ref).unix_time()
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be a date after or equal to ${self._ref}.'
+  }
+}
+
+/**
+ * Passes when the value is a date string before the given reference date.
+ */
+class Before < Rule {
+  var _ref
+
+  Before(name, ref) {
+    parent(name)
+    self._ref = ref
+  }
+
+  validate(value) {
+    if !_is_date(value) return false
+    catch {
+      return date.parse(value).unix_time() < date.parse(self._ref).unix_time()
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be a date before ${self._ref}.'
+  }
+}
+
+/**
+ * Passes when the value is a date string before or equal to the given
+ * reference date.
+ */
+class BeforeOrEqual < Rule {
+  var _ref
+
+  BeforeOrEqual(name, ref) {
+    parent(name)
+    self._ref = ref
+  }
+
+  validate(value) {
+    if !_is_date(value) return false
+    catch {
+      return date.parse(value).unix_time() <= date.parse(self._ref).unix_time()
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be a date before or equal to ${self._ref}.'
+  }
+}
+
+/**
+ * Passes when the value is a timezone identifier string recognised by the
+ * `date` module (e.g. `"UTC"`, `"Africa/Lagos"`, `"America/New_York"`).
+ */
+class Timezone < Rule {
+  validate(value) {
+    if !is_string(value) return false
+    catch {
+      date.Date(value)
+      return true
+    }
+    return false
+  }
+
+  error() {
+    return 'The ${self.name} field must be a valid timezone.'
+  }
+}
+
+
+# ===========================================================================
+# Inclusion / exclusion rules
+# ===========================================================================
+
+/**
+ * Passes when the value is contained in the given list of allowed values.
+ * Comparison is strict (type-sensitive).
+ */
+class In < Rule {
+  var _values
+
+  In(name, values) {
+    parent(name)
+    self._values = is_list(values) ? values : [values]
+  }
+
+  validate(value) {
+    return self._values.contains(value)
+  }
+
+  error() {
+    return 'The selected ${self.name} is invalid.'
+  }
+}
+
+/**
+ * Passes when the value is not contained in the given list of values.
+ */
+class NotIn < Rule {
+  var _values
+
+  NotIn(name, values) {
+    parent(name)
+    self._values = is_list(values) ? values : [values]
+  }
+
+  validate(value) {
+    return !self._values.contains(value)
+  }
+
+  error() {
+    return 'The selected ${self.name} is invalid.'
+  }
+}
+
+/**
+ * Passes when every item in the value list is contained in the allowed list.
+ * The field value must be a list.
+ */
+class InList < Rule {
+  var _values
+
+  InList(name, values) {
+    parent(name)
+    self._values = is_list(values) ? values : [values]
+  }
+
+  validate(value) {
+    if !is_list(value) return false
+    for item in value {
+      if !self._values.contains(item) return false
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field contains an invalid selection.'
+  }
+}
+
+/**
+ * Passes when the value equals one of the specified accepted values:
+ * `true`, `"true"`, `"yes"`, `"on"`, `"1"`, or `1`.
+ */
+class Accepted < Rule {
+  validate(value) {
+    var accepted = [true, 'true', 'yes', 'on', '1', 1]
+    return accepted.contains(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be accepted.'
+  }
+}
+
+/**
+ * Passes when the value equals one of the specified declined values:
+ * `false`, `"false"`, `"no"`, `"off"`, `"0"`, or `0`.
+ */
+class Declined < Rule {
+  validate(value) {
+    var declined = [false, 'false', 'no', 'off', '0', 0]
+    return declined.contains(value)
+  }
+
+  error() {
+    return 'The ${self.name} field must be declined.'
+  }
+}
+
+/**
+ * Passes when the field value is strictly equal to the given expected value.
+ */
+class Equals < Rule {
+  var _expected
+
+  Equals(name, expected) {
+    parent(name)
+    self._expected = expected
+  }
+
+  validate(value) {
+    return value == self._expected
+  }
+
+  error() {
+    return 'The ${self.name} field must equal ${self._expected}.'
+  }
+}
+
+/**
+ * Passes when the field value is not equal to the given forbidden value.
+ */
+class NotEquals < Rule {
+  var _forbidden
+
+  NotEquals(name, forbidden) {
+    parent(name)
+    self._forbidden = forbidden
+  }
+
+  validate(value) {
+    return value != self._forbidden
+  }
+
+  error() {
+    return 'The ${self.name} field must not equal ${self._forbidden}.'
+  }
+}
+
+
+# ===========================================================================
+# Cross-field rules
+# ===========================================================================
+
+/**
+ * Passes when the field's value matches the value of another field in the
+ * same data dictionary.  Commonly used for password confirmation.
+ *
+ * Requires `needs_data() == true` so that the Schema injects `_data`.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import validate
+ *
+ * var schema = validate.schema({
+ *   password:              validate.string().min_length(8),
+ *   password_confirmation: validate.string().same('password'),
+ * })
+ * ```
+ */
+class Same < Rule {
+  var _other_field
+
+  Same(name, other_field) {
+    parent(name)
+    self._other_field = other_field
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    return value == self._data.get(self._other_field, nil)
+  }
+
+  error() {
+    return 'The ${self.name} field must match ${self._other_field}.'
+  }
+}
+
+/**
+ * Passes when the field's value does not match the value of another field.
+ */
+class Different < Rule {
+  var _other_field
+
+  Different(name, other_field) {
+    parent(name)
+    self._other_field = other_field
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    return value != self._data.get(self._other_field, nil)
+  }
+
+  error() {
+    return 'The ${self.name} field and ${self._other_field} must be different.'
+  }
+}
+
+/**
+ * Passes when the field's value matches `{name}_confirmation` in the data.
+ *
+ * This is the canonical Zuri spelling of Laravel's `confirmed` rule.
+ */
+class Confirmed < Rule {
+  needs_data() { return true }
+
+  validate(value) {
+    var confirmation_key = self.name.ends_with('_confirmation') ? 
+      self.name[,-13] : 
+      self.name + '_confirmation'
+
+    return value == self._data.get(confirmation_key, nil)
+  }
+
+  error() {
+    return 'The ${self.name} field confirmation does not match.'
+  }
+}
+
+/**
+ * Passes when this field is present and non-nil only if another field in
+ * the data satisfies a given condition.  If the other field equals any of
+ * the given values, this field becomes required.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * # "shipping_address" is required when "has_delivery" is true
+ * shipping_address: validate.string().required_if('has_delivery', true)
+ * ```
+ */
+class RequiredIf < Rule {
+  var _other_field
+  var _other_values
+
+  RequiredIf(name, other_field, other_values) {
+    parent(name)
+    self._other_field  = other_field
+    self._other_values = is_list(other_values) ? other_values : [other_values]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    var other = self._data.get(self._other_field, nil)
+    if self._other_values.contains(other) {
+      return !_is_blank(value)
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field is required.'
+  }
+}
+
+/**
+ * Passes when this field is present and non-nil unless another field equals
+ * any of the given values.
+ */
+class RequiredUnless < Rule {
+  var _other_field
+  var _other_values
+
+  RequiredUnless(name, other_field, other_values) {
+    parent(name)
+    self._other_field  = other_field
+    self._other_values = is_list(other_values) ? other_values : [other_values]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    var other = self._data.get(self._other_field, nil)
+    if self._other_values.contains(other) return true
+    return !_is_blank(value)
+  }
+
+  error() {
+    return 'The ${self.name} field is required.'
+  }
+}
+
+/**
+ * Passes when this field is present and non-nil if any of the listed
+ * sibling fields are also present and non-nil.
+ */
+class RequiredWith < Rule {
+  var _fields
+
+  RequiredWith(name, fields) {
+    parent(name)
+    self._fields = is_list(fields) ? fields : [fields]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    for field in self._fields {
+      if !_is_blank(self._data.get(field, nil)) {
+        return !_is_blank(value)
+      }
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field is required when ${", ".join(self._fields)} is present.'
+  }
+}
+
+/**
+ * Passes when this field is present and non-nil if all of the listed
+ * sibling fields are present and non-nil.
+ */
+class RequiredWithAll < Rule {
+  var _fields
+
+  RequiredWithAll(name, fields) {
+    parent(name)
+    self._fields = is_list(fields) ? fields : [fields]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    var all_present = true
+    for field in self._fields {
+      if _is_blank(self._data.get(field, nil)) {
+        all_present = false
+        break
+      }
+    }
+    if all_present return !_is_blank(value)
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field is required when ${", ".join(self._fields)} are all present.'
+  }
+}
+
+/**
+ * Passes when this field is present and non-nil if any of the listed
+ * sibling fields are absent or nil.
+ */
+class RequiredWithout < Rule {
+  var _fields
+
+  RequiredWithout(name, fields) {
+    parent(name)
+    self._fields = is_list(fields) ? fields : [fields]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    for field in self._fields {
+      if _is_blank(self._data.get(field, nil)) {
+        return !_is_blank(value)
+      }
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field is required when ${", ".join(self._fields)} is not present.'
+  }
+}
+
+/**
+ * Passes when this field is present and non-nil if all of the listed
+ * sibling fields are absent or nil.
+ */
+class RequiredWithoutAll < Rule {
+  var _fields
+
+  RequiredWithoutAll(name, fields) {
+    parent(name)
+    self._fields = is_list(fields) ? fields : [fields]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    var all_absent = true
+    for field in self._fields {
+      if !_is_blank(self._data.get(field, nil)) {
+        all_absent = false
+        break
+      }
+    }
+    if all_absent return !_is_blank(value)
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field is required when none of ${", ".join(self._fields)} are present.'
+  }
+}
+
+/**
+ * Passes when both this field and the listed sibling fields are either all
+ * present (non-nil) or all absent (nil / blank).
+ */
+class Prohibits < Rule {
+  var _fields
+
+  Prohibits(name, fields) {
+    parent(name)
+    self._fields = is_list(fields) ? fields : [fields]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    if _is_blank(value) return true
+    for field in self._fields {
+      if !_is_blank(self._data.get(field, nil)) return false
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field prohibits ${", ".join(self._fields)} from being present.'
+  }
+}
+
+/**
+ * Passes when this field is absent or nil.  Useful to explicitly forbid a
+ * field from being submitted.
+ */
+class Prohibited < Rule {
+  validate(value) {
+    return _is_blank(value)
+  }
+
+  error() {
+    return 'The ${self.name} field is prohibited.'
+  }
+}
+
+/**
+ * Passes when this field is absent or nil if another field equals one of
+ * the given values.
+ */
+class ProhibitedIf < Rule {
+  var _other_field
+  var _other_values
+
+  ProhibitedIf(name, other_field, other_values) {
+    parent(name)
+    self._other_field  = other_field
+    self._other_values = is_list(other_values) ? other_values : [other_values]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    var other = self._data.get(self._other_field, nil)
+    if self._other_values.contains(other) return _is_blank(value)
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field is prohibited.'
+  }
+}
+
+/**
+ * Passes when this field is absent or nil unless another field equals one
+ * of the given values.
+ */
+class ProhibitedUnless < Rule {
+  var _other_field
+  var _other_values
+
+  ProhibitedUnless(name, other_field, other_values) {
+    parent(name)
+    self._other_field  = other_field
+    self._other_values = is_list(other_values) ? other_values : [other_values]
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    var other = self._data.get(self._other_field, nil)
+    if self._other_values.contains(other) return true
+    return _is_blank(value)
+  }
+
+  error() {
+    return 'The ${self.name} field is prohibited.'
+  }
+}
+
+
+# ===========================================================================
+# List / dict content rules
+# ===========================================================================
+
+/**
+ * Passes when the list field contains no duplicate values.
+ */
+class Distinct < Rule {
+  validate(value) {
+    if !is_list(value) return false
+    iter var i = 0; i < value.length(); i++ {
+      iter var j = i + 1; j < value.length(); j++ {
+        if value[i] == value[j] return false
+      }
+    }
+    return true
+  }
+
+  error() {
+    return 'The ${self.name} field must not have duplicate values.'
+  }
+}
+
+/**
+ * Passes when the list field has at least `min` items.
+ */
+class MinItems < Rule {
+  var _min
+
+  MinItems(name, min) {
+    parent(name)
+    self._min = min
+  }
+
+  validate(value) {
+    if !is_list(value) return false
+    return value.length() >= self._min
+  }
+
+  error() {
+    return 'The ${self.name} field must have at least ${self._min} items.'
+  }
+}
+
+/**
+ * Passes when the list field has at most `max` items.
+ */
+class MaxItems < Rule {
+  var _max
+
+  MaxItems(name, max) {
+    parent(name)
+    self._max = max
+  }
+
+  validate(value) {
+    if !is_list(value) return false
+    return value.length() <= self._max
+  }
+
+  error() {
+    return 'The ${self.name} field must not have more than ${self._max} items.'
+  }
+}
+
+/**
+ * Passes when every item in the list satisfies the given `Validator` chain.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import validate
+ *
+ * var schema = validate.schema({
+ *   tags: validate.list().each(validate.string().max_length(32)),
+ * })
+ * ```
+ */
+class Each < Rule {
+  var _validator
+
+  Each(name, validator) {
+    parent(name)
+    self._validator = validator
+  }
+
+  validate(value) {
+    if !is_list(value) return false
+    iter var i = 0; i < value.length(); i++ {
+      for validator in self._validator {
+        for rule_class in validator {
+          var rule = rule_class('${self.name}[${i}]')
+          if !rule.validate(value[i]) {
+            self._error = rule.error()
+            return false
+          }
+        }
+      }
+    }
+    return true
+  }
+
+  var _error = ''
+
+  error() {
+    return self._error.length() > 0 ?
+      self._error :
+      'The ${self.name} field contains an invalid item.'
+  }
+}
+
+
+# ===========================================================================
+# Miscellaneous rules
+# ===========================================================================
+
+/**
+ * Passes when the value is nil.  Useful for asserting a field is absent.
+ */
+class Nil < Rule {
+  validate(value) {
+    return value == nil
+  }
+
+  error() {
+    return 'The ${self.name} field must be nil.'
+  }
+}
+
+/**
+ * Passes when the value is not nil.
+ */
+class NotNil < Rule {
+  validate(value) {
+    return value != nil
+  }
+
+  error() {
+    return 'The ${self.name} field must not be nil.'
+  }
+}
+
+/**
+ * Custom rule backed by a caller-supplied function.
+ *
+ * Used internally by `Validator.custom()`.  The function receives the
+ * field value and must return `true` to pass.
+ */
+class CustomRule < Rule {
+  var _fn
+  var _message
+
+  CustomRule(name, fn, message) {
+    parent(name)
+    self._fn      = fn
+    self._message = message
+  }
+
+  validate(value) {
+    return self._fn(value)
+  }
+
+  error() {
+    return self._message ? self._message : 'The ${self.name} field is invalid.'
+  }
+}
+
+/**
+ * Custom rule that also receives the full data dictionary.
+ *
+ * Used internally by `Validator.custom_with_data()`.  The function receives
+ * `(value, data)` and must return `true` to pass.
+ */
+class CustomRuleWithData < Rule {
+  var _fn
+  var _message
+
+  CustomRuleWithData(name, fn, message) {
+    parent(name)
+    self._fn      = fn
+    self._message = message
+  }
+
+  needs_data() { return true }
+
+  validate(value) {
+    return self._fn(value, self._data)
+  }
+
+  error() {
+    return self._message ? self._message : 'The ${self.name} field is invalid.'
+  }
+}

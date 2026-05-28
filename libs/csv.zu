@@ -638,11 +638,11 @@ class Reader {
    */
   Reader(file, dialect) {
     if !is_file(file) and !instance_of(file, io.BytesIO) {
-      raise ArgumentError('file-like object expected in argument 1 (file)')
+      raise TypeError('file-like object expected in argument 1 (file)')
     }
 
     if dialect != nil and !instance_of(dialect, Dialect) {
-      raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+      raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
     }
 
     self._file = file
@@ -867,11 +867,11 @@ class Writer {
    */
   Writer(file, dialect) {
     if !is_file(file) and !instance_of(file, io.BytesIO) {
-      raise ArgumentError('file-like object expected in argument 1 (file)')
+      raise TypeError('file-like object expected in argument 1 (file)')
     }
 
     if dialect != nil and !instance_of(dialect, Dialect) {
-      raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+      raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
     }
 
     self._file   = file
@@ -890,7 +890,7 @@ class Writer {
    */
   write_row(row) {
     if !is_list(row) {
-      raise ArgumentError('list expected')
+      raise TypeError('list expected')
     }
 
     var parts = []
@@ -912,7 +912,7 @@ class Writer {
    */
   write_header(headers) {
     if !is_list(headers) {
-      raise ArgumentError('list expected')
+      raise TypeError('list expected')
     }
 
     var parts = []
@@ -936,11 +936,11 @@ class Writer {
    */
   write_dict(row, keys) {
     if !is_dict(row) {
-      raise ArgumentError('dictionary expected in argument 1 (row)')
+      raise TypeError('dictionary expected in argument 1 (row)')
     }
 
     if !is_list(keys) {
-      raise ArgumentError('list expected in argument 2 (keys)')
+      raise TypeError('list expected in argument 2 (keys)')
     }
 
     var parts = []
@@ -973,11 +973,11 @@ class Writer {
    */
   write_dicts(rows, keys) {
     if !is_list(rows) {
-      raise ArgumentError('dictionary expected in argument 1 (rows)')
+      raise TypeError('dictionary expected in argument 1 (rows)')
     }
 
     if keys != nil and !is_list(keys) {
-      raise ArgumentError('list expected in argument 2 (keys)')
+      raise TypeError('list expected in argument 2 (keys)')
     }
 
     if rows.length() == 0 { return }
@@ -1050,11 +1050,11 @@ class Writer {
  */
 def parse(text, dialect) {
   if !is_string(text) {
-    raise ArgumentError('string expected in argument 1 (text)')
+    raise TypeError('string expected in argument 1 (text)')
   }
 
   if dialect != nil and !instance_of(dialect, Dialect) {
-    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+    raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
   }
 
   if dialect == nil { 
@@ -1156,15 +1156,15 @@ def parse(text, dialect) {
  */
 def stringify(rows, dialect, keys) {
   if !is_list(rows) {
-    raise ArgumentError('list expected in argument 1 (rows)')
+    raise TypeError('list expected in argument 1 (rows)')
   }
 
   if dialect != nil and !instance_of(dialect, Dialect) {
-    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+    raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
   }
 
   if keys != nil and !is_list(keys) {
-    raise ArgumentError('list expected in argument 3 (keys)')
+    raise TypeError('list expected in argument 3 (keys)')
   }
 
   if dialect == nil { 
@@ -1234,11 +1234,11 @@ def stringify(rows, dialect, keys) {
  */
 def parse_record(line, dialect) {
   if !is_string(line) {
-    raise ArgumentError('string expected in argument 1 (line)')
+    raise TypeError('string expected in argument 1 (line)')
   }
 
   if dialect != nil and !instance_of(dialect, Dialect) {
-    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+    raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
   }
 
   if dialect == nil { 
@@ -1268,11 +1268,11 @@ def parse_record(line, dialect) {
  */
 def format_record(row, dialect) {
   if !is_list(row) {
-    raise ArgumentError('list expected in argument 1 (row)')
+    raise TypeError('list expected in argument 1 (row)')
   }
 
   if dialect != nil and !instance_of(dialect, Dialect) {
-    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+    raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
   }
 
   if dialect == nil { 
@@ -1309,11 +1309,11 @@ def format_record(row, dialect) {
  */
 def read_file(path, dialect) {
   if !is_string(path) {
-    raise ArgumentError('string expected in argument 1 (path)')
+    raise TypeError('string expected in argument 1 (path)')
   }
 
   if dialect != nil and !instance_of(dialect, Dialect) {
-    raise ArgumentError('instance of csv.Dialect expected in argument 2 (dialect)')
+    raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
   }
 
   var f      = file(path)
@@ -1349,19 +1349,19 @@ def read_file(path, dialect) {
  */
 def write_file(path, rows, dialect, keys) {
   if !is_string(path) {
-    raise ArgumentError('string expected in argument 1 (path)')
+    raise TypeError('string expected in argument 1 (path)')
   }
 
   if !is_list(rows) {
-    raise ArgumentError('list expected in argument 2 (rows)')
+    raise TypeError('list expected in argument 2 (rows)')
   }
 
   if dialect != nil and !instance_of(dialect, Dialect) {
-    raise ArgumentError('instance of csv.Dialect expected in argument 3 (dialect)')
+    raise TypeError('instance of csv.Dialect expected in argument 3 (dialect)')
   }
 
   if keys != nil and !is_list(keys) {
-    raise ArgumentError('list expected in argument 3 (keys)')
+    raise TypeError('list expected in argument 3 (keys)')
   }
 
   var f      = file(path, 'w')

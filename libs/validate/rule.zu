@@ -1,0 +1,111 @@
+/**
+ * # validate.rule
+ *
+ * Defines the base `Rule` class that all built-in and custom validation
+ * rules extend.  To create a custom rule, subclass `Rule` and implement
+ * `validate(value)` and `error()`.
+ *
+ * ### Custom rule example
+ *
+ * ```zuri
+ * import validate { Rule, Validator }
+ *
+ * class Palindrome < Rule {
+ *   validate(value) {
+ *     if !is_string(value) return false
+ *     var s = value.lower()
+ *     return s == s.reverse()
+ *   }
+ *
+ *   error() {
+ *     return '${self.name} must be a palindrome'
+ *   }
+ * }
+ *
+ * # Use directly on a Validator:
+ * var v = Validator().use(Palindrome)
+ * ```
+ */
+
+/**
+ * Abstract base class for all validation rules.
+ *
+ * Subclass this to create custom rules.  The `name` property is injected
+ * by the `Schema` before validation runs, so error messages can reference
+ * the field name without the rule needing to know it at construction time.
+ *
+ * Only `validate` and `error` need to be overridden.  Rules that require
+ * constructor parameters should define their own constructor and call
+ * `parent(name)` — or accept parameters before `name` and forward it.
+ *
+ * The `_data` property is injected by the `Schema` before each field is
+ * validated when `needs_data` returns `true`.  Rules that must compare
+ * against sibling fields (e.g. `same`, `different`, `confirmed`) should
+ * override `needs_data()` to return `true` and read `self._data` inside
+ * `validate`.
+ */
+class Rule {
+
+  /**
+   * The name of the field being validated.  Injected by Schema before
+   * `validate` is called.
+   */
+  var name = ''
+
+  /**
+   * The full data dictionary being validated.  Only populated when
+   * `needs_data()` returns `true`.
+   */
+  var _data = {}
+
+  /**
+   * @param string name  Field name — injected automatically by Schema.
+   */
+  Rule(name) {
+    self.name = name
+  }
+
+  /**
+   * Returns `true` when the value satisfies this rule, `false` otherwise.
+   *
+   * @param  any  value  The value of the field being validated.
+   * @returns bool
+   */
+  validate(value) {
+    return false
+  }
+
+  /**
+   * Returns the human-readable error message for this rule when validation
+   * fails.  The message should reference `self.name` for the field label.
+   *
+   * @returns string
+   */
+  error() {
+    return '${self.name} is invalid'
+  }
+
+  /**
+   * Override and return `true` when this rule needs access to the full
+   * data dictionary (e.g. to compare against another field).  When `true`,
+   * the Schema injects the data dictionary into `self._data` before calling
+   * `validate`.
+   *
+   * @returns bool
+   */
+  needs_data() {
+    return false
+  }
+
+  /**
+   * Override and return `true` when this rule should bail out of all validation
+   * chains whether it fails or not, instead of continuing to the next rule.  
+   * When `true`, the Schema will stop validating the field but will not raise a 
+   * `ValidationError`.
+   * 
+   * @returns bool
+   */
+  bails_all() {
+    return false
+  }
+}

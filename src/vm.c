@@ -1533,8 +1533,9 @@ static bool concatenate(z_vm *vm) {
 }
 
 static inline int floor_div(double a, double b) {
-  int d = (int) a / (int) b;
-  return d - ((d * b == a) & ((a < 0) ^ (b < 0)));
+  return floor(a / b);
+  // int d = (int) a / (int) b;
+  // return d - ((d * b == a) & ((a < 0) ^ (b < 0)));
 }
 
 static inline double modulo(double a, double b) {

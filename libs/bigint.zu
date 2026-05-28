@@ -34,7 +34,7 @@
  * '<BigInt v=8000000000000000000000>'
  * ```
  * 
- * @copyright 2025, Richard Ore and Zuri contributors
+ * @copyright 2025, Richard Ore and The Zuri Contributors
  */
 
 import math

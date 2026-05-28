@@ -44,7 +44,7 @@
  * colors.text('Colored text!', colors.hex('#fc0'))
  * ```
  *
- * @copyright 2022, Richard Ore and Zuri contributors
+ * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
 import os
@@ -301,7 +301,7 @@ def hex(color) {
  */
 def rgb(r, g, b) {
   if !is_int(r) or !is_int(g) or !is_int(b)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
   return ansi256_to_ansi(rgb_to_ansi256(r, g, b))
 }
 
@@ -315,7 +315,7 @@ def rgb(r, g, b) {
  */
 def hsl(h, s, l) {
   if !is_number(h) or !is_number(s) or !is_number(l)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   var rgb = hsl_to_rgb(h, s, l)
 
@@ -332,7 +332,7 @@ def hsl(h, s, l) {
  */
 def hsv(h, s, v) {
   if !is_number(h) or !is_number(s) or !is_number(v)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   var rgb = hsv_to_rgb(h, s, v)
 
@@ -349,7 +349,7 @@ def hsv(h, s, v) {
  */
 def hwb(h, w, b) {
   if !is_number(h) or !is_number(w) or !is_number(b)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   var rgb = hwb_to_rgb(h, w, b)
 
@@ -384,7 +384,7 @@ def cmyk(c, m, y, k) {
  */
 def xyz(x, y, z) {
   if !is_number(x) or !is_number(y) or !is_number(z)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   var rgb = xyz_to_rgb(x, y, z)
 
@@ -417,7 +417,7 @@ def rgb_to_hex(r, g, b, a) {
  */
 def rgb_to_hsl(r, g, b) {
   if !is_int(r) or !is_int(g) or !is_int(b)
-    raise ArgumentError('integer expected')
+    raise TypeError('integer expected')
 
   r /= 255
   g /= 255
@@ -457,7 +457,7 @@ def rgb_to_hsl(r, g, b) {
  */
 def rgb_to_hsv(r, g, b) {
   if !is_int(r) or !is_int(g) or !is_int(b)
-    raise ArgumentError('integer expected')
+    raise TypeError('integer expected')
 
   r /= 255
   g /= 255
@@ -490,7 +490,7 @@ def rgb_to_hsv(r, g, b) {
  */
 def rgb_to_hwb(r, g, b) {
   if !is_int(r) or !is_int(g) or !is_int(b)
-    raise ArgumentError('integer expected')
+    raise TypeError('integer expected')
 
   var h = rgb_to_hsl(r, g, b)[0]
   var w = 1 / 255 * min(r, min(g, b))
@@ -508,7 +508,7 @@ def rgb_to_hwb(r, g, b) {
  */
 def rgb_to_cmyk(r, g, b) {
   if !is_int(r) or !is_int(g) or !is_int(b)
-    raise ArgumentError('integer expected')
+    raise TypeError('integer expected')
 
   r /= 255
   g /= 255
@@ -532,7 +532,7 @@ def rgb_to_cmyk(r, g, b) {
  */
 def rgb_to_xyz(r, g, b) {
   if !is_int(r) or !is_int(g) or !is_int(b)
-    raise ArgumentError('integer expected')
+    raise TypeError('integer expected')
 
   r /= 255
 	g /= 255
@@ -559,7 +559,7 @@ def rgb_to_xyz(r, g, b) {
  */
 def rgb_to_lab(r, g, b) {
   if !is_int(r) or !is_int(g) or !is_int(b)
-    raise ArgumentError('integer expected')
+    raise TypeError('integer expected')
 
   var xyz = rgb_to_xyz(r, g, b)
 
@@ -590,7 +590,7 @@ def rgb_to_lab(r, g, b) {
  */
 def hsl_to_rgb(h, s, l) {
   if !is_number(h) or !is_number(s) or !is_number(l)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   # For HSL, 0 <= H < 360, 0 <= S <= 1 and 0 <= L <= 1
   if h < 0 or h > 360 or s < 0 or l < 0 or s > 100 or l > 100
@@ -645,7 +645,7 @@ def hsl_to_rgb(h, s, l) {
  */
 def hsl_to_hsv(h, s, l) {
   if !is_number(h) or !is_number(s) or !is_number(l)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   s /= 100
   l /= 100
@@ -664,7 +664,7 @@ def hsl_to_hsv(h, s, l) {
  */
 def hsv_to_rgb(h, s, v) {
   if !is_number(h) or !is_number(s) or !is_number(v)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   h /= 60
   s /= 100
@@ -698,7 +698,7 @@ def hsv_to_rgb(h, s, v) {
  */
 def hsv_to_hsl(h, s, v) {
   if !is_number(h) or !is_number(s) or !is_number(v)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   s /= 100
   v /= 100
@@ -725,7 +725,7 @@ def hsv_to_hsl(h, s, v) {
  */
 def hwb_to_rgb(h, w, b) {
   if !is_number(h) or !is_number(w) or !is_number(b)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   h /= 360
   w /= 100
@@ -771,7 +771,7 @@ def hwb_to_rgb(h, w, b) {
  */
 def cmyk_to_rgb(c, m, y, k) {
   if !is_number(c) or !is_number(m) or !is_number(y) or !is_number(k)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   c /= 100
   m /= 100
@@ -795,7 +795,7 @@ def cmyk_to_rgb(c, m, y, k) {
  */
 def xyz_to_rgb(x, y, z) {
   if !is_number(x) or !is_number(y) or !is_number(z)
-    raise ArgumentError('number expected')
+    raise TypeError('number expected')
 
   x /= 100
   y /= 100

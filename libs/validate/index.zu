@@ -1,0 +1,209 @@
+/**
+ * @module validate
+ *
+ * Schema-based input validation for Zuri applications.
+ *
+ * The `validate` module provides a fluent, chainable API for defining
+ * field-level validation rules, composing them into schemas, and checking
+ * arbitrary data dictionaries against those schemas.
+ *
+ * ---
+ *
+ * ### Quick start
+ *
+ * ```zuri
+ * import validate
+ *
+ * var schema = validate.schema({
+ *   name:     validate.required().string().max_length(100),
+ *   email:    validate.required().string().email(),
+ *   age:      validate.required().integer().between(18, 120),
+ *   website:  validate.string().url().sometimes(),
+ * })
+ *
+ * var result = schema.check({
+ *   name:  'Ada Lovelace',
+ *   email: 'ada@example.com',
+ *   age:   36,
+ * })
+ *
+ * if result.valid {
+ *   echo 'All good.'
+ * } else {
+ *   for err in result.errors {
+ *     echo '${err.field}: ${err.message}'
+ *   }
+ * }
+ * ```
+ *
+ * ---
+ *
+ * ### Rule chaining
+ *
+ * Every top-level function returns a `Validator` instance.  Rules are
+ * evaluated in the order they are chained.  By default, evaluation stops
+ * at the first failing rule for each field (bail mode).  Pass
+ * `.bail(false)` to collect all errors for a field.
+ *
+ * ```zuri
+ * # Collects every error for "password" rather than stopping at the first.
+ * password: validate.required().string()
+ *   .min_length(8)
+ *   .regex('/[A-Z]/')
+ *   .regex('/[0-9]/')
+ *   .bail(false)
+ * ```
+ *
+ * ---
+ *
+ * ### Optional fields
+ *
+ * ```zuri
+ * # bio is optional; when present it must be ≤ 500 chars.
+ * bio: validate.string().max_length(500).sometimes()
+ *
+ * # nickname is optional and may be nil.
+ * nickname: validate.nullable().string().max_length(30).sometimes()
+ * ```
+ *
+ * ---
+ *
+ * ### Cross-field validation
+ *
+ * ```zuri
+ * var schema = validate.schema({
+ *   password:              validate.required().string().min_length(8),
+ *   password_confirmation: validate.required().string().confirmed(),
+ *   role:                  validate.required().string().in(['user', 'admin']),
+ *   admin_code:            validate.string().required_if('role', 'admin'),
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### Nested fields (dot-notation)
+ *
+ * ```zuri
+ * var schema = validate.schema({
+ *   'address.street':  validate.required().string(),
+ *   'address.city':    validate.required().string(),
+ *   'address.country': validate.required().string().length(2).uppercase(),
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### List items (wildcard)
+ *
+ * ```zuri
+ * var schema = validate.schema({
+ *   'tags.*': validate.required().string().max_length(32).alpha_dash(),
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### Custom rules
+ *
+ * Inline function:
+ *
+ * ```zuri
+ * var schema = validate.schema({
+ *   code: validate.required().string().custom(@(value) {
+ *     return value.starts_with('ZURI-') and value.length() == 12
+ *   }, 'Must be a valid Zuri code (ZURI-XXXXXXX).')
+ * })
+ * ```
+ *
+ * Subclassing `Rule`:
+ *
+ * ```zuri
+ * import validate { Rule, Validator }
+ *
+ * class Slug < Rule {
+ *   validate(value) {
+ *     if !is_string(value) return false
+ *     return value.match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/') != nil
+ *   }
+ *   error() { return 'The ${self.name} field must be a valid slug.' }
+ * }
+ *
+ * var schema = validate.schema({
+ *   slug: Validator().required().use(Slug),
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### Raising on failure
+ *
+ * ```zuri
+ * import validate { ValidationError }
+ *
+ * catch {
+ *   schema.check_or_raise(req.body)
+ * } as e {
+ *   return res.json({ errors: schema.group_errors(e.errors) }, 422)
+ * }
+ * ```
+ *
+ * ---
+ *
+ * ### HTTP handler pattern
+ *
+ * ```zuri
+ * import http
+ * import validate
+ * import validate { ValidationError }
+ *
+ * var create_user_schema = validate.schema({
+ *   name:     validate.required().string().max_length(100),
+ *   email:    validate.required().string().email(),
+ *   password: validate.required().string().min_length(8),
+ *   role:     validate.required().string().in(['user', 'admin']).sometimes(),
+ * })
+ *
+ * server.handle('POST', '/users', @(req, res) {
+ *   catch {
+ *     create_user_schema.check_or_raise(req.body)
+ *   } as e {
+ *     return res.json({ errors: create_user_schema.group_errors(e.errors) }, 422)
+ *   }
+ *   # ... create user
+ *   res.json({ status: 'created' }, 201)
+ * })
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import .validators { * }
+import .schema { Schema, ValidationError }
+import .validator { Validator }
+import .rule { Rule }
+
+
+/**
+ * Creates a new `Schema` from the given ruleset dictionary.
+ *
+ * This is the primary entry point for defining a validation schema.
+ * Each key is a field name (supports dot-notation and `.*` wildcards)
+ * and each value must be a `Validator` instance.
+ *
+ * ```zuri
+ * import validate
+ *
+ * var schema = validate.schema({
+ *   username: validate.required().string().alpha_dash().max_length(30),
+ *   email:    validate.required().string().email(),
+ * })
+ * ```
+ *
+ * @param  dict ruleset
+ * @returns Schema
+ * @throws ArgumentError
+ * @throws ValueError
+ */
+def schema(ruleset) {
+  return Schema(ruleset)
+}

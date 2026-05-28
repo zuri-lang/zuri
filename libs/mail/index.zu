@@ -4,7 +4,7 @@
  * The module provides interfaces for sending and reading electronic mails and provides 
  * implementation for the SMTP, IMAP and POP3 mail exchange protocols.
  * 
- * @copyright 2023, Richard Ore and Zuri contributors
+ * @copyright 2023, Richard Ore and The Zuri Contributors
  */
 
 import .smtp

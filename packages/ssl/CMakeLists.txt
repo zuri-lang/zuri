@@ -26,7 +26,7 @@ if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL "Linux" AND UNIX)
     set(OPENSSL_USE_STATIC_LIBS TRUE)
 endif()
 
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 3 REQUIRED)
 if(NOT OPENSSL_FOUND)
     message(FATAL_ERROR "OpenSSL not found!")
 else()

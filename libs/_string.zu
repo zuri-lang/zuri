@@ -3,6 +3,15 @@
 class _StringExtension > string {
 
   /**
+   * Returns true if the string is empty, false otherwise.
+   *
+   * @return {boolean}
+   */
+  static is_empty() {
+    return self.length() == 0
+  }
+
+  /**
    * Returns true if the string contains the specified substring, false otherwise.
    *
    * @param {string} str The substring to search for.
@@ -55,5 +64,27 @@ class _StringExtension > string {
     iter var i = 0; i < self.length(); i++ {
       callback(self[i], i)
     }
+  }
+
+  /**
+   * Returns a new string with the first character capitalized and the rest in lowercase.
+   *
+   * @return {string}
+   */
+  static capitalize() {
+    if self.length() == 0 
+      return self
+    
+    return self[0].upper() + self[1,].lower()
+  }
+
+  /**
+   * Returns a new string with each word capitalized.
+   *
+   * @return {string}
+   */
+  static title() {
+    return ' '.join(self.split(' ')
+      .map(@(x) => x.capitalize()))
   }
 }

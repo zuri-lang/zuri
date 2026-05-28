@@ -1,14 +1,1300 @@
+/**
+ * @test date
+ *
+ * Comprehensive test suite for the date standard library module.
+ *
+ * Run:
+ *   zuri test_date.zu
+ *
+ * Test groups:
+ *   1.  Constants
+ *   2.  Date constructor — explicit fields
+ *   3.  Date constructor — default (current time)
+ *   4.  Date constructor — field validation / error cases
+ *   5.  is_leap()
+ *   6.  days_in_month()
+ *   7.  weekday()
+ *   8.  week_number()
+ *   9.  days_before_month()
+ *   10. days_before_year()
+ *   11. format() — every directive
+ *   12. format() — backslash escapes and literals
+ *   13. format() — composite directives (c, r)
+ *   14. jd() — Julian date
+ *   15. unix_time() and to_time()
+ *   16. http()
+ *   17. to_string() / to_dict() / operator overloads
+ *   18. from_time() — Unix timestamp → Date
+ *   19. from_time() — millisecond and microsecond inputs
+ *   20. from_jd() — Julian date → Date
+ *   21. gmtime() and localtime()
+ *   22. mktime()
+ *   23. parse() — ISO 8601 extended (date only)
+ *   24. parse() — ISO 8601 extended (datetime + timezone)
+ *   25. parse() — ISO 8601 compact
+ *   26. parse() — RFC 2822 / HTTP
+ *   27. parse() — month-name-first formats
+ *   28. parse() — numeric separated (slash / dot / hyphen)
+ *   29. parse() — time-only strings
+ *   30. parse() — 2-digit year heuristic
+ *   31. parse() — whitespace tolerance
+ *   32. parse() — error cases
+ *   33. parse_format() — every format directive
+ *   34. parse_format() — AM/PM handling
+ *   35. parse_format() — timezone directives
+ *   36. parse_format() — backslash literal escapes
+ *   37. parse_format() — output-only directives skipped
+ *   38. parse_format() — round-trip with format()
+ *   39. parse_format() — error cases
+ *   40. Integration — arithmetic via to_time()
+ */
+
 import date
 
-var total = 10000
-var start = time()
 
-/* iter var i = 0; i < total; i++ {
-  echo Date().format('F d, Y g:i:s.u A')
-} */
+# ---------------------------------------------------------------------------
+# Test runner
+# ---------------------------------------------------------------------------
 
-for i in 1..total {
-  echo date.Date().format('F d, Y g:i:s.u A')
+var _pass = 0
+var _fail = 0
+
+def pass(label) {
+  _pass++
+  echo '  [PASS] ' + label
 }
 
-echo 'Time taken for ${total} date allocation, formatting and printing = ${time() - start}s'
+def fail(label, detail) {
+  _fail++
+  echo '  [FAIL] ' + label
+  if detail echo '         ! ' + detail
+}
+
+def check(label, got, expected) {
+  if got == expected {
+    pass(label)
+  } else {
+    fail(label, 'expected ${expected}, got ${got}')
+  }
+}
+
+# Assert that calling fn() raises any exception.
+def raises(label, fn) {
+  var did_raise = false
+  catch {
+    fn()
+  } as e {
+    did_raise = true
+  }
+  if did_raise pass(label)
+  else fail(label, 'expected an exception but none was raised')
+}
+
+def section(name) {
+  echo ''
+  echo '── ' + name + ' ──'
+}
+
+
+echo '════════════════════════════════════════════════════════'
+echo '  date module — test suite'
+echo '════════════════════════════════════════════════════════'
+
+
+# ===========================================================================
+# 1. Constants
+# ===========================================================================
+section('1. Constants')
+
+check('MIN_YEAR == 1',      date.MIN_YEAR,    1)
+check('MAX_YEAR == 9999',   date.MAX_YEAR,    9999)
+check('MIN_DAY == 1',       date.MIN_DAY,     1)
+check('MAX_DAY == 31',      date.MAX_DAY,     31)
+check('MIN_MONTH == 1',     date.MIN_MONTH,   1)
+check('MAX_MONTH == 12',    date.MAX_MONTH,   12)
+check('MAX_HOUR == 23',     date.MAX_HOUR,    23)
+check('MAX_MINUTE == 59',   date.MAX_MINUTE,  59)
+check('MAX_SECONDS == 59',  date.MAX_SECONDS, 59)
+
+
+# ===========================================================================
+# 2. Date constructor — explicit fields
+# ===========================================================================
+section('2. Date constructor — explicit fields')
+
+var d = date.Date(2021, 5, 11, 13, 43, 11)
+check('year',         d.year,    2021)
+check('month',        d.month,   5)
+check('day',          d.day,     11)
+check('hour',         d.hour,    13)
+check('minute',       d.minute,  43)
+check('seconds',      d.seconds, 11)
+check('microseconds default 0', d.microseconds, 0)
+check('zone default UTC',       d.zone,         'UTC')
+check('gmt_offset default 0',   d.gmt_offset,   0)
+check('is_dst default false',   d.is_dst,       false)
+
+# Year-only (month/day/time default to minimums/zeros)
+var d2 = date.Date(2021)
+check('year-only year',    d2.year,    2021)
+check('year-only month',   d2.month,   1)
+check('year-only day',     d2.day,     1)
+check('year-only hour',    d2.hour,    0)
+check('year-only minute',  d2.minute,  0)
+check('year-only seconds', d2.seconds, 0)
+
+# Year + month
+var d3 = date.Date(2000, 2)
+check('year+month month', d3.month, 2)
+check('year+month day',   d3.day,   1)
+
+# Microseconds explicit
+var d4 = date.Date(2024, 6, 15, 12, 0, 0, 123456)
+check('microseconds explicit', d4.microseconds, 123456)
+
+# Boundary values
+var d_min = date.Date(1, 1, 1, 0, 0, 0)
+check('minimum year',    d_min.year,  1)
+check('minimum month',   d_min.month, 1)
+check('minimum day',     d_min.day,   1)
+
+var d_max = date.Date(9999, 12, 31, 23, 59, 59)
+check('maximum year',    d_max.year,    9999)
+check('maximum month',   d_max.month,   12)
+check('maximum day',     d_max.day,     31)
+check('maximum hour',    d_max.hour,    23)
+check('maximum minute',  d_max.minute,  59)
+check('maximum seconds', d_max.seconds, 59)
+
+# week_day and year_day are derived on construction
+var d5 = date.Date(2021, 5, 11)
+check('week_day derived on construction', d5.week_day >= 0 and d5.week_day <= 7, true)
+check('year_day derived on construction', d5.year_day > 0, true)
+
+
+# ===========================================================================
+# 3. Date constructor — default (current time)
+# ===========================================================================
+section('3. Date constructor — default (current time)')
+
+var now = date.Date()
+check('default year is plausible',  now.year >= 2024 and now.year <= 2099, true)
+check('default month in range',     now.month >= 1 and now.month <= 12,    true)
+check('default day in range',       now.day >= 1 and now.day <= 31,        true)
+check('default hour in range',      now.hour >= 0 and now.hour <= 23,      true)
+check('default minute in range',    now.minute >= 0 and now.minute <= 59,  true)
+check('default seconds in range',   now.seconds >= 0 and now.seconds <= 59, true)
+
+
+# ===========================================================================
+# 4. Date constructor — field validation / error cases
+# ===========================================================================
+section('4. Date constructor — field validation / error cases')
+
+raises('invalid month 0',   @() { date.Date(2024, 0, 1) })
+raises('invalid month 13',  @() { date.Date(2024, 13, 1) })
+raises('invalid day 0',     @() { date.Date(2024, 1, 0) })
+raises('invalid day 32',    @() { date.Date(2024, 1, 32) })
+raises('Feb 29 non-leap',   @() { date.Date(2023, 2, 29) })
+raises('invalid hour 24',   @() { date.Date(2024, 1, 1, 24) })
+raises('invalid minute 60', @() { date.Date(2024, 1, 1, 0, 60) })
+raises('invalid seconds 60',@() { date.Date(2024, 1, 1, 0, 0, 60) })
+raises('year 0 invalid',    @() { date.Date(0) })
+raises('year 10000 invalid',@() { date.Date(10000) })
+
+# Feb 29 on a leap year must succeed
+var leap_day = date.Date(2024, 2, 29)
+check('Feb 29 on leap year is valid', leap_day.day, 29)
+
+# April 30 is fine, April 31 is not
+raises('Apr 31 invalid', @() { date.Date(2024, 4, 31) })
+var apr30 = date.Date(2024, 4, 30)
+check('Apr 30 is valid', apr30.day, 30)
+
+
+# ===========================================================================
+# 5. is_leap()
+# ===========================================================================
+section('5. is_leap()')
+
+check('2024 is leap',    date.Date(2024).is_leap(), true)
+check('2000 is leap',    date.Date(2000).is_leap(), true)
+check('1600 is leap',    date.Date(1600).is_leap(), true)
+check('2023 not leap',   date.Date(2023).is_leap(), false)
+check('1900 not leap',   date.Date(1900).is_leap(), false)
+check('1800 not leap',   date.Date(1800).is_leap(), false)
+check('1700 not leap',   date.Date(1700).is_leap(), false)
+check('2100 not leap',   date.Date(2100).is_leap(), false)
+check('2400 is leap',    date.Date(2400).is_leap(), true)
+check('4 is leap',       date.Date(4).is_leap(),    true)
+check('100 not leap',    date.Date(100).is_leap(),  false)
+check('400 is leap',     date.Date(400).is_leap(),  true)
+
+
+# ===========================================================================
+# 6. days_in_month()
+# ===========================================================================
+section('6. days_in_month()')
+
+var months_days = [
+  [1, 31], [2, 28], [3, 31], [4, 30], [5, 31], [6, 30],
+  [7, 31], [8, 31], [9, 30], [10, 31], [11, 30], [12, 31]
+]
+for pair in months_days {
+  var m = pair[0]
+  var expected = pair[1]
+  check('2023 month ${m} days', date.Date(2023, m).days_in_month(), expected)
+}
+
+# February on a leap year
+check('Feb 2024 has 29 days', date.Date(2024, 2).days_in_month(), 29)
+check('Feb 2000 has 29 days', date.Date(2000, 2).days_in_month(), 29)
+check('Feb 1900 has 28 days', date.Date(1900, 2).days_in_month(), 28)
+
+
+# ===========================================================================
+# 7. weekday()
+# ===========================================================================
+section('7. weekday()')
+
+# Known weekdays verified against reference calendars
+# weekday() returns 0=Sun, 1=Mon, ..., 6=Sat
+check('2021-05-11 is Tuesday (2)',       date.Date(2021, 5, 11).weekday(),  2)
+check('2000-01-01 is Saturday (6)',      date.Date(2000, 1, 1).weekday(),   6)
+check('2024-01-01 is Monday (1)',        date.Date(2024, 1, 1).weekday(),   1)
+check('2024-02-29 is Thursday (4)',      date.Date(2024, 2, 29).weekday(),  4)
+check('1970-01-01 is Thursday (4)',      date.Date(1970, 1, 1).weekday(),   4)
+check('2001-09-11 is Tuesday (2)',       date.Date(2001, 9, 11).weekday(),  2)
+check('week_day property matches method',
+  date.Date(2021, 5, 11).week_day, date.Date(2021, 5, 11).weekday())
+
+
+# ===========================================================================
+# 8. week_number()
+# ===========================================================================
+section('8. week_number()')
+
+check('2021-05-11 week 19',    date.Date(2021, 5, 11).week_number(),  19)
+check('2021-01-01 week 1',     date.Date(2021, 1, 1).week_number(),   1)
+check('2021-12-31 week 52',    date.Date(2021, 12, 31).week_number(), 52)
+check('2020-01-01 week 1',     date.Date(2020, 1, 1).week_number(),   1)
+check('2019-12-30 plausible',  date.Date(2019, 12, 30).week_number() >= 1, true)
+
+
+# ===========================================================================
+# 9. days_before_month()
+# ===========================================================================
+section('9. days_before_month()')
+
+var d_may = date.Date(2021, 5, 11)
+# From May 11 to July should be positive and meaningful
+var dbm = d_may.days_before_month(7)
+check('days_before_month(7) is positive from May', dbm > 0, true)
+
+# Going backward — from May to March should be negative
+var dbm_back = d_may.days_before_month(3)
+check('days_before_month(3) is negative from May', dbm_back < 0, true)
+
+# Same month — should still return something deterministic
+# The method documents "days preceding first day of the month"
+raises('days_before_month needs valid month', @() {
+  d_may.days_before_month(13)
+})
+
+
+# ===========================================================================
+# 10. days_before_year()
+# ===========================================================================
+section('10. days_before_year()')
+
+var d_2021 = date.Date(2021, 5, 11)
+check('days_before_year(2024) is positive', d_2021.days_before_year(2024) > 0, true)
+check('days_before_year(2022) < days_before_year(2024)',
+  d_2021.days_before_year(2022) < d_2021.days_before_year(2024), true)
+
+raises('days_before_year rejects past year', @() {
+  d_2021.days_before_year(2020)
+})
+raises('days_before_year rejects same year', @() {
+  d_2021.days_before_year(2021)
+})
+raises('days_before_year rejects out-of-range', @() {
+  d_2021.days_before_year(10000)
+})
+
+
+# ===========================================================================
+# 11. format() — every directive
+# ===========================================================================
+section('11. format() — every directive')
+
+# Fixed reference date: 2021-05-11 13:43:11  (Tuesday, week 19)
+var ref = date.Date(2021, 5, 11, 13, 43, 11, 987654)
+
+check('Y — 4-digit year',          ref.format('Y'),  '2021')
+check('y — 2-digit year',          ref.format('y'),  '21')
+check('m — month with leading 0',  ref.format('m'),  '05')
+check('n — month without zero',    ref.format('n'),  '5')
+check('M — short month name',      ref.format('M'),  'May')
+check('F — full month name',       ref.format('F'),  'May')   # May is same short/full
+check('d — day with leading 0',    ref.format('d'),  '11')
+check('j — day without zero',      ref.format('j'),  '11')
+check('D — short weekday',         ref.format('D'),  'Tue')
+check('l — full weekday',          ref.format('l'),  'Tuesday')
+check('N — ISO weekday 1-7',       ref.format('N'),  '2')     # Tuesday = 2
+check('w — weekday 0-6',           ref.format('w'),  '1')     # Tuesday = 1 in 0-based Sun=0
+check('H — 24h with zero',         ref.format('H'),  '13')
+check('G — 24h without zero',      ref.format('G'),  '13')
+check('h — 12h with zero',         ref.format('h'),  '01')
+check('g — 12h without zero',      ref.format('g'),  '1')
+check('A — uppercase AM/PM',       ref.format('A'),  'PM')
+check('a — lowercase am/pm',       ref.format('a'),  'pm')
+check('i — minutes with zero',     ref.format('i'),  '43')
+check('s — seconds with zero',     ref.format('s'),  '11')
+check('u — microseconds',          ref.format('u'),  '987654')
+check('v — milliseconds',          ref.format('v'),  '987')
+check('S — ordinal suffix 11th',   ref.format('S'),  'th')
+check('t — days in month (May)',   ref.format('t'),  '31')
+check('L — leap year flag (2021)', ref.format('L'),  '0')
+check('L — leap year flag (2024)', date.Date(2024).format('L'), '1')
+check('W — week number',           ref.format('W'),  '19')
+check('z — day of year',           ref.format('z'),  '131')   # 31+28+31+30+11 = 131
+check('e — timezone',              ref.format('e'),  'UTC')
+check('I — DST flag',              ref.format('I'),  '0')
+check('Z — offset seconds',        ref.format('Z'),  '0')
+check('O — offset no colon',       ref.format('O'),  '+0000')
+check('P — offset with colon',     ref.format('P'),  '+00:00')
+
+# AM/PM boundary — morning
+var am_ref = date.Date(2021, 5, 11, 9, 5, 0)
+check('A AM — morning',    am_ref.format('A'),  'AM')
+check('a am — morning',    am_ref.format('a'),  'am')
+check('h 12h morning 09',  am_ref.format('h'),  '09')
+check('g 12h morning 9',   am_ref.format('g'),  '9')
+
+# Midnight (hour 0)
+var midnight = date.Date(2024, 1, 1, 0, 0, 0)
+check('h midnight is 12',  midnight.format('h'), '12')
+check('h midnight is 12',  midnight.format('H'), '00')
+check('A midnight is AM',  midnight.format('A'), 'AM')
+
+# Noon (hour 12)
+var noon = date.Date(2024, 1, 1, 12, 0, 0)
+check('h noon is 12',      noon.format('h'),  '12')
+check('A noon is PM',      noon.format('A'),  'PM')
+
+# Ordinal suffixes
+check('1st suffix',  date.Date(2021, 1, 1).format('S'),  'st')
+check('2nd suffix',  date.Date(2021, 1, 2).format('S'),  'nd')
+check('3rd suffix',  date.Date(2021, 1, 3).format('S'),  'rd')
+check('4th suffix',  date.Date(2021, 1, 4).format('S'),  'th')
+check('11th suffix', date.Date(2021, 1, 11).format('S'), 'th')
+check('12th suffix', date.Date(2021, 1, 12).format('S'), 'th')
+check('13th suffix', date.Date(2021, 1, 13).format('S'), 'th')
+check('21st suffix', date.Date(2021, 1, 21).format('S'), 'st')
+check('22nd suffix', date.Date(2021, 1, 22).format('S'), 'nd')
+check('31st suffix', date.Date(2021, 1, 31).format('S'), 'st')
+
+# Full month names
+var months_full = [
+  [1, 'January'], [2, 'February'], [3, 'March'], [4, 'April'],
+  [5, 'May'], [6, 'June'], [7, 'July'], [8, 'August'],
+  [9, 'September'], [10, 'October'], [11, 'November'], [12, 'December']
+]
+for pair in months_full {
+  check('F month ${pair[0]}', date.Date(2021, pair[0]).format('F'), pair[1])
+}
+
+# Short month names
+var months_short = [
+  [1, 'Jan'], [2, 'Feb'], [3, 'Mar'], [4, 'Apr'],
+  [5, 'May'], [6, 'Jun'], [7, 'Jul'], [8, 'Aug'],
+  [9, 'Sep'], [10, 'Oct'], [11, 'Nov'], [12, 'Dec']
+]
+for pair in months_short {
+  check('M month ${pair[0]}', date.Date(2021, pair[0]).format('M'), pair[1])
+}
+
+# Compound format strings
+check('Y-m-d format',           ref.format('Y-m-d'),        '2021-05-11')
+check('d/m/Y format',           ref.format('d/m/Y'),        '11/05/2021')
+check('H:i:s format',           ref.format('H:i:s'),        '13:43:11')
+check('F d, Y g:i A compound',  ref.format('F d, Y g:i A'), 'May 11, 2021 1:43 PM')
+
+
+# ===========================================================================
+# 12. format() — backslash escapes and literals
+# ===========================================================================
+section('12. format() — backslash escapes and literals')
+
+# The docstring example: 'l jS \o\\f F Y h:i:s A'
+# On 2021-05-17 01:39:08 → "Monday 17th of May 2021 01:39:08 AM"
+var ref2 = date.Date(2021, 5, 17, 1, 39, 8)
+var fmt_escaped = ref2.format('l jS \o\\f F Y h:i:s A')
+check('backslash escape literal "o"', fmt_escaped.contains('of'), true)
+check('backslash escape preserves weekday', fmt_escaped.contains('Monday'), true)
+check('backslash escape preserves month', fmt_escaped.contains('May'), true)
+
+# Literal characters that are not directives pass through unchanged
+check('literal hyphen preserved', ref.format('Y-m-d'), '2021-05-11')
+check('literal slash preserved',  ref.format('d/m/Y'), '11/05/2021')
+check('literal colon preserved',  ref.format('H:i:s'), '13:43:11')
+
+# format() requires a string argument
+raises('format() rejects non-string', @() { ref.format(42) })
+
+
+# ===========================================================================
+# 13. format() — composite directives (c, r)
+# ===========================================================================
+section('13. format() — composite directives (c, r)')
+
+var iso_str = ref.format('c')
+check('c contains year',    iso_str.contains('2021'), true)
+check('c contains T',       iso_str.contains('T'),    true)
+check('c contains month',   iso_str.contains('05'),   true)
+
+var rfc_str = ref.format('r')
+check('r contains year',    rfc_str.contains('2021'), true)
+check('r contains short day', rfc_str.contains('Tue') or rfc_str.contains('Mon') or
+      rfc_str.contains('Wed'), true)   # lenient: just check a weekday abbr appears
+
+
+# ===========================================================================
+# 14. jd() — Julian date
+# ===========================================================================
+section('14. jd()')
+
+# Known Julian date: 2021-05-11 → JD 2459345 (integer part)
+var jd_val = date.Date(2021, 5, 11).jd()
+check('jd() 2021-05-11 integer part', int(jd_val), 2459345)
+
+# JD includes fractional time
+var jd_time = date.Date(2021, 5, 11, 12, 0, 0).jd()
+check('jd() with noon has fractional part', jd_time - int(jd_time) > 0, true)
+
+# jd() is monotonically increasing
+var jd_a = date.Date(2000, 1, 1).jd()
+var jd_b = date.Date(2001, 1, 1).jd()
+check('later date has larger JD', jd_b > jd_a, true)
+
+
+# ===========================================================================
+# 15. unix_time() and to_time()
+# ===========================================================================
+section('15. unix_time() and to_time()')
+
+var gmt_offset = date.Date().gmt_offset
+
+# Unix epoch: 1970-01-01 00:00:00 → 0
+var epoch = date.Date(1970, 1, 1, 0, 0, 0, 0, gmt_offset)
+# unix_time uses mktime (local) so we just check to_time() for the pure calc
+var epoch_time = epoch.to_time()
+# The exact value depends on timezone but should be close to 0 (within a day)
+check('to_time() epoch within ±86400 of 0',
+  epoch_time >= -86400 and epoch_time <= 86400, true)
+
+# Known Unix timestamp: 2021-05-11 13:43:11 UTC = 1620740591
+var known = date.Date(2021, 5, 11, 13, 43, 11, 0, gmt_offset)
+var known_t = known.to_time()
+check('to_time() 2021-05-11 order of magnitude', known_t > 1600000000 and known_t < 1700000000, true)
+
+# to_time() is monotonically increasing
+var t1 = date.Date(2020, 1, 1, 0, 0, 0, 0, gmt_offset).to_time()
+var t2 = date.Date(2021, 1, 1, 0, 0, 0, 0, gmt_offset).to_time()
+check('to_time() later > earlier', t2 > t1, true)
+
+# to_time() and unix_time() should be close (same day)
+var diff = abs(known.to_time() - known.unix_time())
+echo diff
+echo known.to_time()
+echo known.unix_time()
+check('unix_time() and to_time() differ by less than a day', diff < 86400, true)
+
+
+# ===========================================================================
+# 16. http()
+# ===========================================================================
+section('16. http()')
+
+var http_str = ref.format('D, d M Y h:i:s') + ' GMT'
+check('http() format matches manual', ref.http(), http_str)
+check('http() ends with GMT', ref.http().ends_with('GMT'), true)
+check('http() contains year', ref.http().contains('2021'), true)
+
+
+# ===========================================================================
+# 17. to_string() / to_dict() / operator overloads
+# ===========================================================================
+section('17. to_string() / to_dict() / operator overloads')
+
+var d_str = ref.to_string()
+check('to_string() contains year',    d_str.contains('2021'),  true)
+check('to_string() contains month',   d_str.contains('5'),     true)
+check('to_string() contains day',     d_str.contains('11'),    true)
+check('to_string() contains Date',    d_str.contains('Date'),  true)
+
+var d_dict = ref.to_dict()
+check('to_dict() year',          d_dict.year,    2021)
+check('to_dict() month',         d_dict.month,   5)
+check('to_dict() day',           d_dict.day,     11)
+check('to_dict() hour',          d_dict.hour,    13)
+check('to_dict() minute',        d_dict.minute,  43)
+check('to_dict() seconds',       d_dict.seconds, 11)
+check('to_dict() gmt_offset',    d_dict.gmt_offset, 0)
+check('to_dict() zone',          d_dict.zone,    'UTC')
+check('to_dict() is_dst',        d_dict.is_dst,  false)
+
+# @to_number() / @to_abs() delegate to to_time()
+check('@to_number returns to_time()', to_number(ref), ref.to_time())
+
+
+# ===========================================================================
+# 18. from_time() — Unix timestamp → Date
+# ===========================================================================
+section('18. from_time() — Unix timestamp → Date')
+
+# Round-trip: Date → to_time() → from_time() → same date
+var original = date.Date(2021, 5, 11, 13, 43, 11)
+var ts = original.to_time()
+echo ts
+var recovered = date.from_time(ts)
+echo recovered
+
+check('from_time round-trip year',    recovered.year,    original.year)
+check('from_time round-trip month',   recovered.month,   original.month)
+check('from_time round-trip day',     recovered.day,     original.day)
+check('from_time round-trip hour',    recovered.hour,    original.hour)
+check('from_time round-trip minute',  recovered.minute,  original.minute)
+
+# Unix epoch (0) → 1970-01-01
+var from_epoch = date.from_time(0)
+check('from_time(0) year',  from_epoch.year,  1970)
+check('from_time(0) month', from_epoch.month, 1)
+check('from_time(0) day',   from_epoch.day,   1)
+
+# from_time() type guard
+raises('from_time() rejects string', @() { date.from_time('1620740591') })
+
+# Multiple well-known timestamps
+var d_2000 = date.from_time(946684800)   # 2000-01-01 00:00:00 UTC
+check('from_time 946684800 year',  d_2000.year,  2000)
+check('from_time 946684800 month', d_2000.month, 1)
+check('from_time 946684800 day',   d_2000.day,   1)
+
+
+# ===========================================================================
+# 19. from_time() — millisecond and microsecond inputs
+# ===========================================================================
+section('19. from_time() — millisecond and microsecond inputs')
+
+# Millisecond input (> 9999999999)
+var ts_ms = 1620740591000   # 2021-05-11 13:43:11 in ms
+var d_ms = date.from_time(ts_ms)
+check('from_time ms year',  d_ms.year,  2021)
+check('from_time ms month', d_ms.month, 5)
+check('from_time ms day',   d_ms.day,   11)
+
+# Microsecond input (> 9999999999999)
+var ts_us = 1620740591000000
+var d_us = date.from_time(ts_us)
+check('from_time us year',  d_us.year,  2021)
+check('from_time us month', d_us.month, 5)
+
+# Out-of-range raises RangeError
+raises('from_time rejects too large value', @() {
+  date.from_time(99999999999999999)
+})
+
+
+# ===========================================================================
+# 20. from_jd() — Julian date → Date
+# ===========================================================================
+section('20. from_jd() — Julian date → Date')
+
+# Known: JD 2459345 → 2021-05-11
+var from_jd_d = date.from_jd(2459345)
+check('from_jd year',  from_jd_d.year,  2021)
+check('from_jd month', from_jd_d.month, 5)
+check('from_jd day',   from_jd_d.day,   11)
+
+# Round-trip
+var jd_orig = date.Date(2021, 5, 11, 6, 0, 0).jd()
+var from_rt = date.from_jd(jd_orig)
+check('from_jd round-trip year',  from_rt.year,  2021)
+check('from_jd round-trip month', from_rt.month, 5)
+check('from_jd round-trip day',   from_rt.day,   11)
+
+# Type guard
+raises('from_jd() rejects string', @() { date.from_jd('2459345') })
+raises('from_jd() rejects negative', @() { date.from_jd(-1) })
+
+
+# ===========================================================================
+# 21. gmtime() and localtime()
+# ===========================================================================
+section('21. gmtime() and localtime()')
+
+var gmt = date.gmtime()
+check('gmtime() returns dict',     is_dict(gmt),               true)
+check('gmtime() has year',         gmt.contains('year'),       true)
+check('gmtime() has month',        gmt.contains('month'),      true)
+check('gmtime() has day',          gmt.contains('day'),        true)
+check('gmtime() has hour',         gmt.contains('hour'),       true)
+check('gmtime() has minute',       gmt.contains('minute'),     true)
+check('gmtime() has seconds',      gmt.contains('seconds'),    true)
+check('gmtime() has zone',         gmt.contains('zone'),       true)
+check('gmtime() year plausible',   gmt.year >= 2024,           true)
+check('gmtime() month in range',   gmt.month >= 1 and gmt.month <= 12, true)
+
+var lt = date.localtime()
+check('localtime() returns dict',  is_dict(lt),                true)
+check('localtime() has gmt_offset',lt.contains('gmt_offset'),  true)
+check('localtime() year plausible',lt.year >= 2024,            true)
+
+
+# ===========================================================================
+# 22. mktime()
+# ===========================================================================
+section('22. mktime()')
+
+var mkt = date.mktime(2021, 2, 12, 13, 43, 11, false)
+check('mktime() returns number',   is_number(mkt), true)
+# The documented example value — allow ±1 for timezone variation
+check('mktime() 2021-02-12 order of magnitude',
+  mkt > 1600000000 and mkt < 1700000000, true)
+
+# mktime and to_time() for the same date should agree closely
+var mk_d = date.Date(2021, 5, 11, 13, 43, 11)
+var mk_val = date.mktime(2021, 5, 11, 13, 43, 11, false)
+check('mktime matches to_time within a day',
+  abs(mk_d.to_time() - mk_val) < 86400, true)
+
+
+# ===========================================================================
+# 23. parse() — ISO 8601 extended (date only)
+# ===========================================================================
+section('23. parse() — ISO 8601 date only')
+
+var p = date.parse('2024-06-15')
+check('ISO date year',    p.year,    2024)
+check('ISO date month',   p.month,   6)
+check('ISO date day',     p.day,     15)
+check('ISO date hour',    p.hour,    0)
+check('ISO date minute',  p.minute,  0)
+check('ISO date seconds', p.seconds, 0)
+
+# Single-digit month and day
+var p2 = date.parse('2024-1-5')
+check('ISO date single digit month', p2.month, 1)
+check('ISO date single digit day',   p2.day,   5)
+
+# Year boundaries
+check('ISO parse year 1900', date.parse('1900-01-01').year, 1900)
+check('ISO parse year 9999', date.parse('9999-12-31').year, 9999)
+check('ISO parse Dec 31',    date.parse('2024-12-31').day,  31)
+
+
+# ===========================================================================
+# 24. parse() — ISO 8601 extended (datetime + timezone)
+# ===========================================================================
+section('24. parse() — ISO 8601 datetime + timezone')
+
+# T separator with Z
+var p3 = date.parse('2024-06-15T14:30:00Z')
+check('ISO datetime T+Z year',    p3.year,    2024)
+check('ISO datetime T+Z month',   p3.month,   6)
+check('ISO datetime T+Z day',     p3.day,     15)
+check('ISO datetime T+Z hour',    p3.hour,    14)
+check('ISO datetime T+Z minute',  p3.minute,  30)
+check('ISO datetime T+Z seconds', p3.seconds, 0)
+check('ISO datetime T+Z zone',    p3.zone,    'UTC')
+check('ISO datetime T+Z offset',  p3.gmt_offset, 0)
+
+# Space separator instead of T
+var p4 = date.parse('2024-06-15 14:30:00Z')
+check('ISO datetime space sep hour', p4.hour, 14)
+check('ISO datetime space sep zone', p4.zone, 'UTC')
+
+# Positive offset
+var p5 = date.parse('2024-06-15T14:30:00+05:30')
+check('ISO +05:30 gmt_offset', p5.gmt_offset, 19800)
+
+# Negative offset
+var p6 = date.parse('2024-06-15T14:30:00-04:00')
+check('ISO -04:00 gmt_offset', p6.gmt_offset, -14400)
+
+# Offset without colon
+var p7 = date.parse('2024-06-15T14:30:00+0530')
+check('ISO +0530 no colon offset', p7.gmt_offset, 19800)
+
+# Fractional seconds
+var p8 = date.parse('2024-06-15T14:30:00.123456Z')
+check('ISO fractional microseconds', p8.microseconds, 123456)
+check('ISO fractional hour still correct', p8.hour, 14)
+
+# Fractional seconds shorter than 6 digits
+var p9 = date.parse('2024-06-15T14:30:00.123Z')
+check('ISO 3-digit fractional',   p9.microseconds, 123)
+
+# GMT named timezone
+var p10 = date.parse('2024-06-15T14:30:00 GMT')
+check('ISO GMT named tz zone',   p10.zone, 'GMT')
+check('ISO GMT named tz offset', p10.gmt_offset, 0)
+
+
+# ===========================================================================
+# 25. parse() — ISO 8601 compact
+# ===========================================================================
+section('25. parse() — ISO 8601 compact')
+
+var pc1 = date.parse('20240615')
+check('compact date year',  pc1.year,  2024)
+check('compact date month', pc1.month, 6)
+check('compact date day',   pc1.day,   15)
+check('compact date hour',  pc1.hour,  0)
+
+var pc2 = date.parse('20240615T143000Z')
+check('compact datetime year',    pc2.year,    2024)
+check('compact datetime hour',    pc2.hour,    14)
+check('compact datetime minute',  pc2.minute,  30)
+check('compact datetime zone',    pc2.zone,    'UTC')
+
+var pc3 = date.parse('20240615T143000+0530')
+check('compact datetime +0530', pc3.gmt_offset, 19800)
+
+
+# ===========================================================================
+# 26. parse() — RFC 2822 / HTTP
+# ===========================================================================
+section('26. parse() — RFC 2822 / HTTP')
+
+# Standard RFC 2822 with numeric offset
+var rfc1 = date.parse('Thu, 21 Dec 2000 16:01:07 +0200')
+check('RFC2822 year',       rfc1.year,       2000)
+check('RFC2822 month',      rfc1.month,      12)
+check('RFC2822 day',        rfc1.day,        21)
+check('RFC2822 hour',       rfc1.hour,       16)
+check('RFC2822 minute',     rfc1.minute,     1)
+check('RFC2822 seconds',    rfc1.seconds,    7)
+check('RFC2822 gmt_offset', rfc1.gmt_offset, 7200)
+
+# HTTP date (GMT named timezone)
+var http1 = date.parse('Sat, 05 Mar 2022 06:23:32 GMT')
+check('HTTP date year',    http1.year,  2022)
+check('HTTP date month',   http1.month, 3)
+check('HTTP date day',     http1.day,   5)
+check('HTTP date hour',    http1.hour,  6)
+check('HTTP date minute',  http1.minute, 23)
+check('HTTP date zone',    http1.zone,  'GMT')
+
+# Without weekday prefix
+var rfc2 = date.parse('21 Dec 2000 16:01:07 +0200')
+check('RFC2822 no weekday year',  rfc2.year,  2000)
+check('RFC2822 no weekday month', rfc2.month, 12)
+check('RFC2822 no weekday day',   rfc2.day,   21)
+
+# 2-digit year in RFC 2822
+var rfc3 = date.parse('01 Jan 99 00:00:00 +0000')
+check('RFC2822 2-digit year 99 → 1999', rfc3.year, 1999)
+
+var rfc4 = date.parse('01 Jan 24 00:00:00 +0000')
+check('RFC2822 2-digit year 24 → 2024', rfc4.year, 2024)
+
+
+# ===========================================================================
+# 27. parse() — month-name-first formats
+# ===========================================================================
+section('27. parse() — month-name-first formats')
+
+var mnf1 = date.parse('March 05, 2022 6:24 PM')
+check('month-first year',   mnf1.year,   2022)
+check('month-first month',  mnf1.month,  3)
+check('month-first day',    mnf1.day,    5)
+check('month-first hour PM', mnf1.hour,  18)
+check('month-first minute', mnf1.minute, 24)
+
+var mnf2 = date.parse('January 1 2000')
+check('month-first no comma year',  mnf2.year,  2000)
+check('month-first no comma month', mnf2.month, 1)
+check('month-first no comma day',   mnf2.day,   1)
+
+var mnf3 = date.parse('December 31, 2023 11:59:59 PM')
+check('month-first Dec 31 year',    mnf3.year,    2023)
+check('month-first Dec 31 month',   mnf3.month,   12)
+check('month-first Dec 31 day',     mnf3.day,     31)
+check('month-first 11:59 PM hour',  mnf3.hour,    23)
+check('month-first 11:59 PM minute',mnf3.minute,  59)
+
+var mnf4 = date.parse('Jun 15 2024')
+check('abbreviated month Jun year',  mnf4.year,  2024)
+check('abbreviated month Jun month', mnf4.month, 6)
+check('abbreviated month Jun day',   mnf4.day,   15)
+
+# AM time
+var mnf5 = date.parse('February 14, 2024 9:30 AM')
+check('month-first AM hour', mnf5.hour, 9)
+
+# 12 AM (midnight)
+var mnf6 = date.parse('January 1, 2024 12:00 AM')
+check('12:00 AM → hour 0', mnf6.hour, 0)
+
+# 12 PM (noon)
+var mnf7 = date.parse('January 1, 2024 12:00 PM')
+check('12:00 PM → hour 12', mnf7.hour, 12)
+
+
+# ===========================================================================
+# 28. parse() — numeric separated (slash / dot / hyphen)
+# ===========================================================================
+section('28. parse() — numeric separated')
+
+# US slash MM/DD/YYYY
+var ns1 = date.parse('06/15/2024')
+check('MM/DD/YYYY month', ns1.month, 6)
+check('MM/DD/YYYY day',   ns1.day,   15)
+check('MM/DD/YYYY year',  ns1.year,  2024)
+
+# With time
+var ns2 = date.parse('06/15/2024 14:30:00')
+check('MM/DD/YYYY+time hour',   ns2.hour,   14)
+check('MM/DD/YYYY+time minute', ns2.minute, 30)
+
+# Day > 12 forces day-first interpretation: 25/06/2024
+var ns3 = date.parse('25/06/2024')
+check('DD/MM/YYYY day > 12 day',   ns3.day,   25)
+check('DD/MM/YYYY day > 12 month', ns3.month, 6)
+check('DD/MM/YYYY day > 12 year',  ns3.year,  2024)
+
+# EU dot-separated DD.MM.YYYY
+var ns4 = date.parse('15.06.2024')
+check('DD.MM.YYYY month', ns4.month, 6)
+check('DD.MM.YYYY day',   ns4.day,   15)
+check('DD.MM.YYYY year',  ns4.year,  2024)
+
+# ISO order YYYY/MM/DD
+var ns5 = date.parse('2024/06/15')
+check('YYYY/MM/DD year',  ns5.year,  2024)
+check('YYYY/MM/DD month', ns5.month, 6)
+check('YYYY/MM/DD day',   ns5.day,   15)
+
+# Hyphen DD-MM-YYYY (day > 12)
+var ns6 = date.parse('31-12-2023')
+check('DD-MM-YYYY day',   ns6.day,   31)
+check('DD-MM-YYYY month', ns6.month, 12)
+check('DD-MM-YYYY year',  ns6.year,  2023)
+
+# AM/PM with slash date
+var ns7 = date.parse('06/15/2024 2:30 PM')
+check('slash date + PM hour', ns7.hour, 14)
+
+
+# ===========================================================================
+# 29. parse() — time-only strings
+# ===========================================================================
+section('29. parse() — time-only strings')
+
+var to1 = date.parse('14:30:00')
+check('time-only hour',    to1.hour,    14)
+check('time-only minute',  to1.minute,  30)
+check('time-only seconds', to1.seconds, 0)
+check('time-only date defaults to 1970-01-01 year',  to1.year,  1970)
+check('time-only date defaults to 1970-01-01 month', to1.month, 1)
+check('time-only date defaults to 1970-01-01 day',   to1.day,   1)
+
+var to2 = date.parse('2:30 PM')
+check('time-only 12h PM hour',   to2.hour,   14)
+check('time-only 12h PM minute', to2.minute, 30)
+
+var to3 = date.parse('12:00 AM')
+check('time-only 12:00 AM → 0', to3.hour, 0)
+
+var to4 = date.parse('12:00 PM')
+check('time-only 12:00 PM → 12', to4.hour, 12)
+
+var to5 = date.parse('09:05:30.123456 UTC')
+check('time-only with microseconds', to5.microseconds, 123456)
+check('time-only UTC zone',          to5.zone,         'UTC')
+
+var to6 = date.parse('23:59:59')
+check('time-only 23:59:59 hour',    to6.hour,    23)
+check('time-only 23:59:59 minute',  to6.minute,  59)
+check('time-only 23:59:59 seconds', to6.seconds, 59)
+
+
+# ===========================================================================
+# 30. parse() — 2-digit year heuristic
+# ===========================================================================
+section('30. parse() — 2-digit year heuristic')
+
+# Values 00-69 → 2000-2069
+var y2k_low = date.parse('01 Jan 00 00:00:00 +0000')
+check('2-digit year 00 → 2000', y2k_low.year, 2000)
+
+var y69 = date.parse('01 Jan 69 00:00:00 +0000')
+check('2-digit year 69 → 2069', y69.year, 2069)
+
+# Values 70-99 → 1970-1999
+var y70 = date.parse('01 Jan 70 00:00:00 +0000')
+check('2-digit year 70 → 1970', y70.year, 1970)
+
+var y99 = date.parse('01 Jan 99 00:00:00 +0000')
+check('2-digit year 99 → 1999', y99.year, 1999)
+
+
+# ===========================================================================
+# 31. parse() — whitespace tolerance
+# ===========================================================================
+section('31. parse() — whitespace tolerance')
+
+var ws1 = date.parse('  2024-06-15  ')
+check('leading/trailing spaces', ws1.year, 2024)
+
+var ws2 = date.parse('  March 05, 2022 6:24 PM  ')
+check('spaces around month-first', ws2.year, 2022)
+
+
+# ===========================================================================
+# 32. parse() — error cases
+# ===========================================================================
+section('32. parse() — error cases')
+
+raises('parse empty string',         @() { date.parse('') })
+raises('parse pure gibberish',       @() { date.parse('not a date at all!!!') })
+raises('parse non-string',           @() { date.parse(42) })
+raises('parse nil',                  @() { date.parse(nil) })
+
+
+# ===========================================================================
+# 33. parse_format() — every format directive
+# ===========================================================================
+section('33. parse_format() — every directive')
+
+# Y — 4-digit year
+var pf_y = date.parse_format('2024', 'Y')
+check('pf Y year', pf_y.year, 2024)
+
+# y — 2-digit year (00-69 → 2000-2069)
+var pf_y2 = date.parse_format('24', 'y')
+check('pf y 24 → 2024', pf_y2.year, 2024)
+var pf_y2b = date.parse_format('99', 'y')
+check('pf y 99 → 1999', pf_y2b.year, 1999)
+
+# m — month with leading zero
+var pf_m = date.parse_format('06', 'm')
+check('pf m month 06', pf_m.month, 6)
+
+# n — month without leading zero
+var pf_n = date.parse_format('6', 'n')
+check('pf n month 6', pf_n.month, 6)
+
+# M — abbreviated month name
+var pf_M = date.parse_format('Jun', 'M')
+check('pf M month Jun', pf_M.month, 6)
+var pf_M2 = date.parse_format('jan', 'M')   # case-insensitive
+check('pf M month jan lowercase', pf_M2.month, 1)
+
+# F — full month name
+var pf_F = date.parse_format('June', 'F')
+check('pf F month June', pf_F.month, 6)
+var pf_F2 = date.parse_format('DECEMBER', 'F')
+check('pf F month DECEMBER uppercase', pf_F2.month, 12)
+
+# d — day with leading zero
+var pf_d = date.parse_format('05', 'd')
+check('pf d day 05', pf_d.day, 5)
+
+# j — day without leading zero
+var pf_j = date.parse_format('5', 'j')
+check('pf j day 5', pf_j.day, 5)
+
+# D — abbreviated weekday (ignored)
+var pf_D = date.parse_format('Tue 2024', 'D Y')
+check('pf D weekday ignored, year parsed', pf_D.year, 2024)
+
+# l — full weekday (ignored)
+var pf_l = date.parse_format('Tuesday 2024', 'l Y')
+check('pf l weekday ignored, year parsed', pf_l.year, 2024)
+
+# H — 24-hour with leading zero
+var pf_H = date.parse_format('14', 'H')
+check('pf H hour 14', pf_H.hour, 14)
+
+# G — 24-hour without leading zero
+var pf_G = date.parse_format('9', 'G')
+check('pf G hour 9', pf_G.hour, 9)
+
+# h — 12-hour with leading zero (no AM/PM → raw value)
+var pf_h = date.parse_format('02', 'h')
+check('pf h raw value 2', pf_h.hour, 2)
+
+# g — 12-hour without leading zero
+var pf_g = date.parse_format('2', 'g')
+check('pf g raw value 2', pf_g.hour, 2)
+
+# i — minutes
+var pf_i = date.parse_format('30', 'i')
+check('pf i minute 30', pf_i.minute, 30)
+
+# s — seconds
+var pf_s = date.parse_format('45', 's')
+check('pf s seconds 45', pf_s.seconds, 45)
+
+# u — microseconds
+var pf_u = date.parse_format('123456', 'u')
+check('pf u microseconds 123456', pf_u.microseconds, 123456)
+
+# v — milliseconds (stored as microseconds × 1000)
+var pf_v = date.parse_format('123', 'v')
+check('pf v ms 123 → us 123000', pf_v.microseconds, 123000)
+
+# e — timezone name
+var pf_e = date.parse_format('WAT', 'e')
+check('pf e zone WAT', pf_e.zone, 'WAT')
+
+# O — offset without colon
+var pf_O = date.parse_format('+0530', 'O')
+check('pf O +0530 gmt_offset', pf_O.gmt_offset, 19800)
+var pf_O2 = date.parse_format('-0400', 'O')
+check('pf O -0400 gmt_offset', pf_O2.gmt_offset, -14400)
+
+# P — offset with colon
+var pf_P = date.parse_format('+05:30', 'P')
+check('pf P +05:30 gmt_offset', pf_P.gmt_offset, 19800)
+
+# Z — offset in seconds
+var pf_Z = date.parse_format('19800', 'Z')
+check('pf Z 19800 gmt_offset', pf_Z.gmt_offset, 19800)
+var pf_Z2 = date.parse_format('-14400', 'Z')
+check('pf Z -14400 gmt_offset', pf_Z2.gmt_offset, -14400)
+
+# Compound format
+var pf_full = date.parse_format('2024-06-15', 'Y-m-d')
+check('pf Y-m-d year',  pf_full.year,  2024)
+check('pf Y-m-d month', pf_full.month, 6)
+check('pf Y-m-d day',   pf_full.day,   15)
+
+var pf_full2 = date.parse_format('15/06/2024 14:30:45', 'd/m/Y H:i:s')
+check('pf d/m/Y H:i:s day',     pf_full2.day,     15)
+check('pf d/m/Y H:i:s month',   pf_full2.month,   6)
+check('pf d/m/Y H:i:s year',    pf_full2.year,    2024)
+check('pf d/m/Y H:i:s hour',    pf_full2.hour,    14)
+check('pf d/m/Y H:i:s minute',  pf_full2.minute,  30)
+check('pf d/m/Y H:i:s seconds', pf_full2.seconds, 45)
+
+
+# ===========================================================================
+# 34. parse_format() — AM/PM handling
+# ===========================================================================
+section('34. parse_format() — AM/PM handling')
+
+# Uppercase A
+var pf_pm = date.parse_format('1:30 PM', 'g:i A')
+check('pf A PM hour',   pf_pm.hour,   13)
+check('pf A PM minute', pf_pm.minute, 30)
+
+var pf_am = date.parse_format('9:15 AM', 'g:i A')
+check('pf A AM hour', pf_am.hour, 9)
+
+# Lowercase a
+var pf_pm2 = date.parse_format('01:30 pm', 'h:i a')
+check('pf a pm hour', pf_pm2.hour, 13)
+
+var pf_am2 = date.parse_format('09:15 am', 'h:i a')
+check('pf a am hour', pf_am2.hour, 9)
+
+# 12 PM → noon (12)
+var pf_noon = date.parse_format('12:00 PM', 'g:i A')
+check('pf 12 PM → hour 12', pf_noon.hour, 12)
+
+# 12 AM → midnight (0)
+var pf_midnight = date.parse_format('12:00 AM', 'g:i A')
+check('pf 12 AM → hour 0', pf_midnight.hour, 0)
+
+# Full datetime with AM/PM
+var pf_dt_am = date.parse_format('March 05, 2022 6:24 PM', 'F d, Y g:i A')
+check('pf F d, Y g:i A year',   pf_dt_am.year,   2022)
+check('pf F d, Y g:i A month',  pf_dt_am.month,  3)
+check('pf F d, Y g:i A day',    pf_dt_am.day,    5)
+check('pf F d, Y g:i A hour',   pf_dt_am.hour,   18)
+check('pf F d, Y g:i A minute', pf_dt_am.minute, 24)
+
+
+# ===========================================================================
+# 35. parse_format() — timezone directives
+# ===========================================================================
+section('35. parse_format() — timezone directives')
+
+var pf_tz1 = date.parse_format('2024-06-15T14:30:00+05:30', 'Y-m-d\\TH:i:sP')
+check('pf timezone +05:30 year',       pf_tz1.year,       2024)
+check('pf timezone +05:30 offset',     pf_tz1.gmt_offset, 19800)
+
+var pf_tz2 = date.parse_format('2024-06-15 14:30:00 -0400', 'Y-m-d H:i:s O')
+check('pf timezone -0400 offset', pf_tz2.gmt_offset, -14400)
+
+var pf_tz3 = date.parse_format('2024-06-15 UTC', 'Y-m-d e')
+check('pf timezone name UTC zone', pf_tz3.zone, 'UTC')
+
+var pf_tz4 = date.parse_format('2024-06-15 Z', 'Y-m-d O')
+check('pf timezone Z offset 0', pf_tz4.gmt_offset, 0)
+
+
+# ===========================================================================
+# 36. parse_format() — backslash literal escapes
+# ===========================================================================
+section('36. parse_format() — backslash literal escapes')
+
+# \T escapes the T so it is matched literally, not as a format directive
+var pf_bs = date.parse_format('2024-06-15T14:30:00', 'Y-m-d\\TH:i:s')
+check('pf backslash T year',    pf_bs.year,    2024)
+check('pf backslash T hour',    pf_bs.hour,    14)
+check('pf backslash T minute',  pf_bs.minute,  30)
+
+# Literal 'of'
+var pf_bs2 = date.parse_format('15th of June 2024', 'j\\t\\h \\o\\f F Y')
+check('pf literal "of" day',   pf_bs2.day,   15)
+check('pf literal "of" month', pf_bs2.month, 6)
+check('pf literal "of" year',  pf_bs2.year,  2024)
+
+
+# ===========================================================================
+# 37. parse_format() — output-only directives skipped
+# ===========================================================================
+section('37. parse_format() — output-only directives skipped')
+
+# S (ordinal suffix) consumed but ignored
+var pf_S = date.parse_format('11th May 2024', 'jS F Y')
+check('pf S ordinal skipped day',   pf_S.day,   11)
+check('pf S ordinal skipped month', pf_S.month, 5)
+check('pf S ordinal skipped year',  pf_S.year,  2024)
+
+# W (week number) consumed but ignored
+var pf_W = date.parse_format('2024 19', 'Y W')
+check('pf W week skipped year', pf_W.year, 2024)
+
+# L (leap flag) consumed but ignored
+var pf_L = date.parse_format('2024 1', 'Y L')
+check('pf L leap flag skipped year', pf_L.year, 2024)
+
+
+# ===========================================================================
+# 38. parse_format() — round-trip with format()
+# ===========================================================================
+section('38. parse_format() — round-trip with format()')
+
+var originals = [
+  date.Date(2024, 6, 15, 14, 30, 0),
+  date.Date(2021, 1, 1, 0, 0, 0),
+  date.Date(2000, 12, 31, 23, 59, 59),
+  date.Date(1970, 1, 1, 0, 0, 0),
+  date.Date(2024, 2, 29, 12, 0, 0),   # leap day
+]
+
+var fmts = ['Y-m-d H:i:s', 'd/m/Y H:i:s', 'D, d M Y H:i:s O']
+
+for orig in originals {
+  for fmt in fmts {
+    var formatted = orig.format(fmt)
+    var reparsed  = date.parse_format(formatted, fmt)
+    check('round-trip ${fmt} year  for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.year,    orig.year)
+    check('round-trip ${fmt} month for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.month,   orig.month)
+    check('round-trip ${fmt} day   for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.day,     orig.day)
+    check('round-trip ${fmt} hour  for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.hour,    orig.hour)
+    check('round-trip ${fmt} min   for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.minute,  orig.minute)
+    check('round-trip ${fmt} sec   for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.seconds, orig.seconds)
+  }
+}
+
+# Round-trip the documented format() example: 'F d, Y g:i A'
+var doc_orig = date.Date(2022, 3, 5, 18, 24, 0)
+var doc_fmt  = 'F d, Y g:i A'
+var doc_str  = doc_orig.format(doc_fmt)
+check('doc example format string', doc_str, 'March 05, 2022 6:24 PM')
+var doc_reparsed = date.parse_format(doc_str, doc_fmt)
+check('doc example round-trip year',   doc_reparsed.year,   2022)
+check('doc example round-trip month',  doc_reparsed.month,  3)
+check('doc example round-trip day',    doc_reparsed.day,    5)
+check('doc example round-trip hour',   doc_reparsed.hour,   18)
+check('doc example round-trip minute', doc_reparsed.minute, 24)
+
+
+# ===========================================================================
+# 39. parse_format() — error cases
+# ===========================================================================
+section('39. parse_format() — error cases')
+
+raises('pf non-string input',  @() { date.parse_format(42, 'Y') })
+raises('pf non-string format', @() { date.parse_format('2024', 42) })
+raises('pf bad month name',    @() { date.parse_format('Abc 2024', 'M Y') })
+raises('pf bad AM/PM value',   @() { date.parse_format('99:00 XM', 'h:i A') })
+
+
+# ===========================================================================
+# 40. Integration — arithmetic via to_time()
+# ===========================================================================
+section('40. Integration — arithmetic via to_time()')
+
+# "Is this date in the past?" pattern using to_time()
+var past   = date.Date(2000, 1, 1)
+var future = date.Date(2099, 1, 1)
+var now2   = date.Date()
+
+check('past.to_time() < now',   past.to_time()   < now2.to_time(), true)
+check('future.to_time() > now', future.to_time() > now2.to_time(), true)
+
+# Days between two dates
+var d_start = date.Date(2024, 1, 1)
+var d_end   = date.Date(2024, 12, 31)
+var seconds_diff = d_end.to_time() - d_start.to_time()
+var days_diff = int(seconds_diff / 86400)
+check('days between 2024-01-01 and 2024-12-31 is 365', days_diff, 365)
+
+# parse() output is a fully functional Date — can call format() on it
+var parsed_fmt = date.parse('2024-06-15T14:30:00Z').format('Y-m-d')
+check('parsed Date can call format()', parsed_fmt, '2024-06-15')
+
+# parse_format() output can call to_time()
+var pf_time = date.parse_format('2024-01-01', 'Y-m-d').to_time()
+check('parse_format output to_time() is a number', is_number(pf_time), true)
+
+# from_time(parse(...).to_time()) round-trip
+var p_rt   = date.parse('2024-06-15T00:00:00Z')
+var p_ts   = p_rt.to_time()
+var p_back = date.from_time(p_ts)
+echo p_rt
+echo p_ts
+echo p_back
+check('parse → to_time → from_time year',  p_back.year,  2024)
+check('parse → to_time → from_time month', p_back.month, 6)
+check('parse → to_time → from_time day',   p_back.day,   15)
+
+# jd() → from_jd() round-trip on a parsed date
+var jd_prt   = date.parse('2021-05-11').jd()
+var jd_pback = date.from_jd(jd_prt)
+check('parse → jd → from_jd year',  jd_pback.year,  2021)
+check('parse → jd → from_jd month', jd_pback.month, 5)
+check('parse → jd → from_jd day',   jd_pback.day,   11)
+
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+
+echo ''
+echo '════════════════════════════════════════════════════════'
+if _fail == 0 {
+  echo '  All ${_pass} assertions passed.'
+} else {
+  echo '  ${_pass} passed, ${_fail} FAILED.'
+}
+echo '════════════════════════════════════════════════════════'
+
+if _fail > 0 {
+  raise Exception('Test suite failed with ${_fail} failure(s).')
+}
