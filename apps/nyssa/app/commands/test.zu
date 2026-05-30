@@ -1,7 +1,6 @@
 import os
 import io
 import args
-# import qi
 import test.conductor
 import log
 import ..setup
@@ -13,36 +12,10 @@ def parse(parser) {
   )
 }
 
-# def run_test_files(files) {
-#   for f in files {
-#     f = os.join_paths(setup.TEST_DIR, f)
-#     qi.run(f)
-#   }
-#   return qi.show_tests_results()
-# }
-
 def run(value, options, success, error) {
-#   if os.dir_exists(setup.TEST_DIR) {
-#     var files = os.read_dir(setup.TEST_DIR).filter(@( x ) {
-#       return x != '.' and x != '..' and x.ends_with('.zu')
-#     })
-#     if files {
-#       if !run_test_files(files) {
-#         os.exit(1)
-#       }
-#     } else {
-#       error('No test files found.')
-#     }
-#   } else {
-#     error('"${setup.TEST_DIR}" directory not found.')
-#   }
-#
-#   os.exit(0)
-
   catch {
     conductor.conduct(setup.TEST_DIR)
   } as error {
     echo error.message
-    echo error.stacktrace
   }
 }
