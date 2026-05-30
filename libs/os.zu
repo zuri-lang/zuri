@@ -260,8 +260,7 @@ def create_dir(path, permission, recursive) {
 }
 
 /**
- * Scans the given directory and returns a list of all matched files
- * @returns list[string]
+ * Scans the given directory and returns a list of all matched files.
  * 
  * Example,
  * 
@@ -270,13 +269,21 @@ def create_dir(path, permission, recursive) {
  * [., .., myprogram.zu, single_thread.zu, test.zu, buggy.zu]
  * ```
  * 
- * @note `.` indicates current directory and can be used as argument to _os.path_ as well.
- * @note `..` indicates parent directory and can be used as argument to _os.path_ as well.
+ * When the recursive argument is set to `true`, the function returns all matched files as well 
+ * files in sub-directories within the path.
+ * 
+ * @note `.` indicates current directory and can be used as argument to _os.read_dir_ as well.
+ * @note `..` indicates parent directory and can be used as argument to _os.read_dir_ as well.
+ * 
  * @param string path
- * @returns List[string]
+ * @param bool? recursive
+ * @returns list[string]
  */
-def read_dir(path) {
-  return _os.readdir(path)
+def read_dir(path, recursive) {
+  if recursive == nil 
+    recursive = false
+
+  return _os.readdir(path, recursive)
 }
 
 /**

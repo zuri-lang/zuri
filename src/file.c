@@ -440,7 +440,7 @@ DECLARE_FILE_METHOD(flush) {
 
   if(file->file != NULL) {
 #if defined(IS_UNIX)
-    // using fflush on stdin have undesired effect on unix environments
+    // using fflush on stdin has undesired effect on unix environments
     if (fileno(stdin) == file->number) {
       while ((getchar()) != '\n')
         ;

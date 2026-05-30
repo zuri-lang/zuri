@@ -207,5 +207,7 @@ z_value call_closure(z_vm *vm, z_obj_closure *closure, z_obj_list *args);
 bool queue_closure(z_vm *vm, z_obj_closure *closure);
 z_ptr_result run_closure_call(z_vm *vm, z_obj_closure *closure, z_obj_list *args);
 void register_module__FILE__(z_vm *vm, z_obj_module *module);
+void run_code(z_vm *vm, char *source, bool can_exit);
+void run_file(z_vm *vm, char *file, bool can_exit);
 
 #endif

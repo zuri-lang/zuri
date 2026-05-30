@@ -29,9 +29,14 @@
 
 import _io
 import _os
+import _reflect
 
 import .tty { TTY }
 import .bytesio { BytesIO }
+
+#------------------------------------------------------------------------------------------------
+# Seek constants
+#------------------------------------------------------------------------------------------------
 
 /**
  * Set I/O position from the beginning.
@@ -55,6 +60,10 @@ var SEEK_CUR = 1
 var SEEK_END = 2
 
 
+#------------------------------------------------------------------------------------------------
+# Standard I/O streams
+#------------------------------------------------------------------------------------------------
+
 /** 
  * Stdin is a file handle to the standard input file of the system.
  * @type file
@@ -74,10 +83,35 @@ var stdout = _io.stdout
 var stderr = _io.stderr
 
 /**
+ * Returns `true` if the current environment is the Zuri REPL, `false` otherwise.
+ * @type bool
+ */
+var is_repl = _io.isrepl
+
+
+#------------------------------------------------------------------------------------------------
+# Capture constants
+#------------------------------------------------------------------------------------------------
+
+/**
+ * Capture stdout stream.
+ */
+var CAPTURE_STDOUT = 0
+
+/**
+ * Capture stderr stream.
+ */
+var CAPTURE_STDERR = 1
+
+
+/**
  * Flushes the content of the given file handle
  */
 def flush(file) {
-  _io.flush(file)
+  if !is_file(file)
+    raise TypeError('file expected in argument 1 (file)')
+  
+  file.flush()
 }
 
 /**
@@ -86,7 +120,16 @@ def flush(file) {
  * @param char|number c
  */
 def putc(c) {
-  _io.putc(c)
+  if is_number(c) {
+    if c < 0 or c > 255
+      raise ValueError('character code must be in within range 0..255')
+    
+    c = chr(c)
+  } else if !is_string(c) or c.length() != 1 {
+    raise TypeError('a single character expected in argument 1 (c)')
+  }
+
+  stdout.puts(c)
 }
 
 /**
@@ -97,15 +140,23 @@ def putc(c) {
  * 
  * @returns char|string
  */
-def getc() {
-  return _io.getc()
+def getc(length) {
+  if length == nil
+    length = 1
+
+  if !is_number(length) or length < 0
+    raise TypeError('non-negative number expected in argument 1 (length)')
+
+  var input = stdin.read(length)
+
+  # Clear the input buffer to prevent unwanted characters from being read in subsequent calls
+  stdin.flush()
+
+  return input
 }
 
 /**
- * Reads character(s) from standard input without printing to standard output
- *
- * When length is given, gets `length` number of characters
- * else, gets a single character.
+ * Reads a single character from standard input without printing to standard output.
  * 
  * @returns char|string
  */
@@ -162,3 +213,34 @@ def readline(message, secure, obscure_text) {
   return result
 }
 
+/**
+ * Captures the output of the given stream (stdout or stderr) and returns a
+ * `CaptureStream` resource that contains the captured content.  The capture
+ * continues until `stop_capture()` is called with the returned object.
+ *
+ * @param int id  Capture ID: `CAPTURE_STDOUT` or `CAPTURE_STDERR`
+ * @return CaptureStream
+ */
+def start_capture(id) {
+  if !is_number(id)
+    raise TypeError('number expected in argument 1 (id)')
+
+  if id != CAPTURE_STDOUT and id != CAPTURE_STDERR
+    raise ValueError('invalid capture id: ${id}')
+  
+  return _io.start_capture(id)
+}
+
+/**
+ * Stops the capture associated with the given `CaptureStream` and returns the
+ * captured content as a string.
+ *
+ * @param CaptureStream capture
+ * @return string
+ */
+def stop_capture(capture) {
+  if !_reflect.isptr(capture)
+    raise TypeError('CaptureStream expected in argument 1 (capture)')
+  
+  return _io.stop_capture(capture)
+}

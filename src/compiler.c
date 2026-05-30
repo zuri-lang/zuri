@@ -2193,8 +2193,17 @@ static void if_statement(z_parser* p) {
 }
 
 static void echo_statement(z_parser* p) {
+  emit_byte_and_short(p, OP_GET_GLOBAL, make_constant(p, OBJ_VAL(copy_string(p->vm, "print", 5))));
   expression(p);
-  emit_byte(p, OP_ECHO);
+
+  if (p->vm->is_repl) {
+    emit_bytes(p, OP_CALL, 1);
+  } else {
+    emit_constant(p, OBJ_VAL(copy_string(p->vm, "\n", 1)));
+    emit_bytes(p, OP_CALL, 2);
+  }
+
+  emit_byte(p, OP_POP);
   consume_statement_end(p);
 }
 
@@ -2444,6 +2453,13 @@ static void catch_statement(z_parser* p) {
   if (match(p, AS_TOKEN)) {
     consume(p, IDENTIFIER_TOKEN, "missing exception variable name");
     z_token id = p->previous;
+
+    bool has_scope = false;
+    if (check(p, LBRACE_TOKEN)) {
+      begin_scope(p);
+      has_scope = true;
+    }
+
     created_variable(p, id);
 
     ignore_whitespace(p);
@@ -2451,15 +2467,15 @@ static void catch_statement(z_parser* p) {
     if (match(p, LBRACE_TOKEN)) {
       named_variable(p, id, false);
       int exit_jump = emit_jump(p, OP_JUMP_IF_FALSE);
-      emit_byte_and_short(p, OP_POP_N, 2); // var and false
+      emit_byte(p, OP_POP); // var and false
 
-      begin_scope(p);
       block(p);
-      end_scope(p);
       ignore_whitespace(p);
       patch_jump(p, exit_jump);
+    }
 
-      // emit_byte(p, OP_POP);
+    if (has_scope) {
+      end_scope(p);
     }
   } else {
     emit_byte(p, OP_POP);

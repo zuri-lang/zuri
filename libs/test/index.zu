@@ -1,0 +1,387 @@
+/**
+ * # test
+ *
+ * A complete, enterprise-grade unit and integration testing framework for
+ * Zuri.  Provides a clean `describe` / `it` / `expect` API with rich
+ * terminal output, structured diffs, lifecycle hooks, and `.only` / `.skip`
+ * / `.todo` modifiers.
+ *
+ * ---
+ *
+ * ### Quick start
+ *
+ * ```zuri
+ * import test { describe, it, expect }
+ *
+ * describe('Math utilities', @{
+ *
+ *   it('should multiply two numbers', @{
+ *     expect(2 * 3).to_be(6)
+ *   })
+ *
+ *   it('should handle floats', @{
+ *     expect(0.1 + 0.2).to_be_close_to(0.3)
+ *   })
+ *
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### Nested suites
+ *
+ * ```zuri
+ * describe('User module', @{
+ *
+ *   describe('create()', @{
+ *     it('returns a user dict', @{
+ *       var u = User.create('Ada')
+ *       expect(u).to_match_object({ name: 'Ada', active: true })
+ *     })
+ *   })
+ *
+ *   describe('delete()', @{
+ *     it('removes the user', @{
+ *       expect(User.delete(1)).to_be_true()
+ *     })
+ *   })
+ *
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### Lifecycle hooks
+ *
+ * ```zuri
+ * describe('Database', @{
+ *
+ *   before_all(@{
+ *     db.connect()
+ *   })
+ *
+ *   after_all(@{
+ *     db.disconnect()
+ *   })
+ *
+ *   before_each(@{
+ *     db.begin_transaction()
+ *   })
+ *
+ *   after_each(@{
+ *     db.rollback()
+ *   })
+ *
+ *   it('inserts a row', @{
+ *     expect(db.insert({ name: 'test' })).to_be_truthy()
+ *   })
+ *
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### Modifiers
+ *
+ * ```zuri
+ * describe('Feature X', @{
+ *
+ *   it.skip('not implemented yet', @{
+ *     expect(true).to_be(false)    # never runs
+ *   })
+ *
+ *   it.todo('add edge case for nil input')
+ *
+ *   it.only('focus on this test', @{
+ *     expect(1 + 1).to_be(2)
+ *   })
+ *
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### All matchers
+ *
+ * ```zuri
+ * # Equality
+ * expect(value).to_be(expected)
+ * expect(value).to_equal(expected)           # deep equality
+ * expect(value).not.to_be(expected)
+ * expect(value).not.to_equal(expected)
+ *
+ * # Truthiness
+ * expect(value).to_be_true()
+ * expect(value).to_be_false()
+ * expect(value).to_be_nil()
+ * expect(value).to_be_truthy()
+ * expect(value).to_be_falsy()
+ *
+ * # Types
+ * expect(value).to_be_string()
+ * expect(value).to_be_number()
+ * expect(value).to_be_integer()
+ * expect(value).to_be_bool()
+ * expect(value).to_be_list()
+ * expect(value).to_be_dict()
+ * expect(value).to_be_function()
+ * expect(value).to_be_class()
+ * expect(value).to_be_instance()
+ * expect(value).to_be_instance_of(MyClass)
+ *
+ * # Numeric
+ * expect(n).to_be_greater_than(5)
+ * expect(n).to_be_less_than(10)
+ * expect(n).to_be_greater_than_or_equal(5)
+ * expect(n).to_be_less_than_or_equal(10)
+ * expect(n).to_be_between(5, 10)
+ * expect(n).to_be_close_to(3.14, 2)         # precision decimal places
+ * expect(n).to_be_positive()
+ * expect(n).to_be_negative()
+ * expect(n).to_be_zero()
+ * expect(n).to_be_nan()
+ * expect(n).to_be_finite()
+ *
+ * # String / collection
+ * expect(s).to_contain('substr')
+ * expect(s).to_start_with('pre')
+ * expect(s).to_end_with('suf')
+ * expect(s).to_match('/regex/')
+ * expect(s).to_have_length(10)
+ * expect(s).to_be_empty()
+ *
+ * # Dict
+ * expect(d).to_have_key('id')
+ * expect(d).to_match_object({ name: 'Ada' })  # subset match
+ *
+ * # List
+ * expect(l).to_contain(item)
+ * expect(l).to_contain_equal(item)            # deep equality search
+ * expect(l).to_contain_all([a, b, c])
+ *
+ * # Exceptions
+ * expect(@() { raise Exception('!') }).to_throw()
+ * expect(@() { raise Exception('!') }).to_throw_with_message('!')
+ * expect(@() { raise ValueError('!') }).to_throw_instance_of(ValueError)
+ * expect(@() { safe_fn() }).to_not_throw()
+ *
+ * # Custom
+ * expect(7).to_satisfy(@(n) { return n % 2 != 0 }, 'to be odd')
+ * ```
+ *
+ * ---
+ *
+ * ### Manual summary
+ *
+ * When running test files from a script that does not have a natural exit
+ * point, call `test.done()` to print the summary banner:
+ *
+ * ```zuri
+ * import test
+ * # ... tests ...
+ * test.done()
+ * ```
+ *
+ * @copyright 2024, Zuri Project
+ * @license   BSD 2-Clause
+ * @module    test
+ */
+
+import ._runner
+import ._assertion
+import ._printer
+
+
+# Exported imports
+import .describe
+import .it
+
+
+# ---------------------------------------------------------------------------
+# expect()
+# ---------------------------------------------------------------------------
+
+/**
+ * Creates a fluent assertion wrapper around `value`.
+ *
+ * The returned `Expect` instance exposes all matchers.  Access `.not` to
+ * negate any matcher.
+ *
+ * ```zuri
+ * expect(result).to_be(42)
+ * expect(list).to_contain('item')
+ * expect(fn).to_throw()
+ * expect(value).not.to_be(nil)
+ * ```
+ *
+ * @param  any    value  The value under test.
+ * @param  string label  Optional label shown in failure messages.
+ * @return Expect
+ */
+def expect(value, label) {
+  return _assertion.Expect(value, label)
+}
+
+
+# ---------------------------------------------------------------------------
+# Aliases — xdescribe / xit (Jasmine/Mocha convention)
+# ---------------------------------------------------------------------------
+
+/**
+ * Alias for `describe.skip`.
+ *
+ * @param string   name
+ * @param function fn
+ */
+def xdescribe(name, fn) {
+  _runner.run_describe(name, fn, false, true)
+}
+
+/**
+ * Alias for `it.skip`.
+ *
+ * @param string   name
+ * @param function fn
+ */
+def xit(name, fn) {
+  _runner.run_it(name, fn, false, true, false)
+}
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle hooks
+# ---------------------------------------------------------------------------
+
+/**
+ * Registers a function to run once before any test in the enclosing suite.
+ *
+ * ```zuri
+ * describe('DB tests', @{
+ *   before_all(@{ db.connect() })
+ *   after_all(@{  db.disconnect() })
+ * })
+ * ```
+ *
+ * @param function fn
+ */
+def before_all(fn) {
+  _runner.register_before_all(fn)
+}
+
+/**
+ * Registers a function to run once after all tests in the enclosing suite.
+ *
+ * @param function fn
+ */
+def after_all(fn) {
+  _runner.register_after_all(fn)
+}
+
+/**
+ * Registers a function to run before every test in the enclosing suite
+ * (and all nested suites).
+ *
+ * @param function fn
+ */
+def before_each(fn) {
+  _runner.register_before_each(fn)
+}
+
+/**
+ * Registers a function to run after every test in the enclosing suite
+ * (and all nested suites).
+ *
+ * @param function fn
+ */
+def after_each(fn) {
+  _runner.register_after_each(fn)
+}
+
+
+# ---------------------------------------------------------------------------
+# Unconditional failure helper
+# ---------------------------------------------------------------------------
+
+/**
+ * Unconditionally fails the current test with the given message.
+ *
+ * ```zuri
+ * if edge_case {
+ *   fail('This branch should never be reached')
+ * }
+ * ```
+ *
+ * @param string message
+ */
+def fail(message) {
+  _assertion.fail(message)
+}
+
+
+# ---------------------------------------------------------------------------
+# Manual summary trigger
+# ---------------------------------------------------------------------------
+
+/**
+ * Prints the test summary banner.
+ *
+ * Call this at the end of your test file when you need to control the
+ * exact moment the summary is printed, or when running multiple test
+ * files in sequence.
+ *
+ * ```zuri
+ * import test
+ * 
+ * # ... tests ...
+ * test.done()
+ * ```
+ */
+def done() {
+  _runner.print_summary()
+}
+
+
+# ---------------------------------------------------------------------------
+# Exit-code helper
+# ---------------------------------------------------------------------------
+
+/**
+ * Returns `0` when all tests passed, `1` when any failed.
+ *
+ * Useful for driving CI exit codes:
+ *
+ * ```zuri
+ * import os
+ * import test
+ * 
+ * # ... tests ...
+ * test.done()
+ * os.exit(test.exit_code())
+ * ```
+ *
+ * @return number
+ */
+def exit_code() {
+  return _runner.exit_code()
+}
+
+
+# ---------------------------------------------------------------------------
+# Re-exports for direct import
+# ---------------------------------------------------------------------------
+
+/**
+ * The `AssertionError` class, re-exported so callers can catch it when
+ * running the test framework itself:
+ *
+ * ```zuri
+ * import test { AssertionError }
+ * 
+ * catch {  
+ *   raise AssertionError('') 
+ * } as e { 
+ *   # ... 
+ * }
+ * ```
+ */
+var AssertionError = _assertion.AssertionError

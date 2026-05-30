@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# The Test Conductor
+# 
+# The test conductor is responsible for running a test suite.
+# ---------------------------------------------------------------------------
+
+import .index as test
+import ._runner
+import os
+import reflect
+
+def conduct(directory) {
+  if !os.dir_exists(directory) {
+    raise Exception('${os.base_name(directory)} directory not found')
+  }
+
+  # Load all test files in the directory
+  var test_files = os.read_dir(directory, true)
+    .filter(@(x) => x.ends_with('.zu'))
+
+  if test_files.is_empty() {
+    test.done()
+    os.exit(0)
+  }
+
+  # Register globals
+  reflect.set_global(test.describe, 'describe')
+  reflect.set_global(test.it, 'it')
+  reflect.set_global(test.expect, 'expect')
+  reflect.set_global(test.before_each, 'before_each')
+  reflect.set_global(test.before_all, 'before_all')
+  reflect.set_global(test.after_each, 'after_each')
+  reflect.set_global(test.after_all, 'after_all')
+  reflect.set_global(test.fail, 'fail')
+  reflect.set_global(test.xdescribe, 'xdescribe')
+  reflect.set_global(test.xit, 'xit')
+  reflect.set_global(test.done, 'done')
+
+  for file in test_files {
+    catch {
+      reflect.run_script(
+        os.join_paths(directory, file)
+      )
+    }
+  }
+
+  # Unregister globals
+  reflect.unset_global('describe')
+  reflect.unset_global('it')
+  reflect.unset_global('expect')
+  reflect.unset_global('before_each')
+  reflect.unset_global('before_all')
+  reflect.unset_global('after_each')
+  reflect.unset_global('after_all')
+  reflect.unset_global('fail')
+  reflect.unset_global('xdescribe')
+  reflect.unset_global('xit')
+  reflect.unset_global('done')
+  
+  test.done()
+
+  # Exit with the correct exit code
+  os.exit(test.exit_code())
+}

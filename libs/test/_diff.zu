@@ -1,0 +1,225 @@
+/**
+ * # test._diff
+ *
+ * Structural differ used by the assertion engine to produce meaningful
+ * "expected / received" messages on failure.
+ *
+ * The differ operates on arbitrary Zuri values.  For scalars it returns a
+ * simple two-line block.  For lists and dictionaries it walks the structure
+ * and highlights the first point of divergence, which is almost always the
+ * most useful thing to show.
+ *
+ * All public functions return a list of pre-formatted strings ready to be
+ * joined with newline and printed.  Colour is applied via the `_printer`
+ * module so that colour-disable propagates automatically.
+ *
+ * @module test._diff
+ */
+
+import ._printer as _p
+
+
+# ---------------------------------------------------------------------------
+# Type category helper
+# ---------------------------------------------------------------------------
+
+def _type_of(v) {
+  if v == nil        return 'nil'
+  if is_bool(v)      return 'bool'
+  if is_number(v)    return 'number'
+  if is_string(v)    return 'string'
+  if is_list(v)      return 'list'
+  if is_dict(v)      return 'dict'
+  if is_function(v)  return 'function'
+  if is_class(v)     return 'class'
+  if is_instance(v)  return 'instance'
+  return 'unknown'
+}
+
+
+# ---------------------------------------------------------------------------
+# Deep equality check
+# ---------------------------------------------------------------------------
+
+/**
+ * Returns `true` when `a` and `b` are deeply equal.
+ *
+ * - Scalars (nil, bool, number, string) use `==`.
+ * - Lists are equal when every element is deeply equal and lengths match.
+ * - Dicts are equal when they have the same keys and every value is deeply
+ *   equal.
+ * - All other types fall back to `==`.
+ *
+ * @param  any a
+ * @param  any b
+ * @return bool
+ */
+def deep_equal(a, b) {
+  if _type_of(a) != _type_of(b) return false
+
+  if is_list(a) {
+    if a.length() != b.length() return false
+    iter var i = 0; i < a.length(); i++ {
+      if !deep_equal(a[i], b[i]) return false
+    }
+    return true
+  }
+
+  if is_dict(a) {
+    if a.length() != b.length() return false
+    for k, v in a {
+      if !b.contains(k)          return false
+      if !deep_equal(v, b[k])   return false
+    }
+    return true
+  }
+
+  return a == b
+}
+
+
+# ---------------------------------------------------------------------------
+# Partial / subset equality (for to_match_object / to_contain_subset)
+# ---------------------------------------------------------------------------
+
+/**
+ * Returns `true` when every key in `subset` exists in `obj` and the
+ * corresponding values are deeply equal.
+ *
+ * @param  dict subset
+ * @param  dict obj
+ * @return bool
+ */
+def subset_equal(subset, obj) {
+  if !is_dict(subset) or !is_dict(obj) return false
+  for k, v in subset {
+    if !obj.contains(k)        return false
+    if !deep_equal(v, obj[k]) return false
+  }
+  return true
+}
+
+
+# ---------------------------------------------------------------------------
+# Diff string builder
+# ---------------------------------------------------------------------------
+
+# Maximum number of list items or dict entries shown in a diff.
+var _MAX_ITEMS = 10
+
+def _pad(n) {
+  if n < 10 return '  ' + to_string(n)
+  if n < 100 return ' ' + to_string(n)
+  return to_string(n)
+}
+
+# Produces a list of annotated diff lines for two lists.
+def _diff_list(expected, received, indent) {
+  var lines = []
+  var max_len = max(expected.length(), received.length())
+  var shown = 0
+
+  iter var i = 0; i < max_len and shown < _MAX_ITEMS; i++ {
+    shown++
+    var has_e = i < expected.length()
+    var has_r = i < received.length()
+
+    if has_e and has_r and deep_equal(expected[i], received[i]) {
+      lines.append(indent + _p.grey('  [${_pad(i)}]  ' + _p.pretty(expected[i])))
+    } else {
+      if has_e lines.append(indent + _p._green('- [${_pad(i)}]  ' + _p.pretty(expected[i])))
+      if has_r lines.append(indent + _p.red(  '+ [${_pad(i)}]  ' + _p.pretty(received[i])))
+    }
+  }
+
+  if max_len > _MAX_ITEMS {
+    lines.append(indent + _p.grey('  ... (${max_len - _MAX_ITEMS} more items)'))
+  }
+
+  return lines
+}
+
+# Produces a list of annotated diff lines for two dicts.
+def _diff_dict(expected, received, indent) {
+  var lines = []
+  var shown = 0
+
+  # Keys in expected
+  for k, ev in expected {
+    if shown >= _MAX_ITEMS { lines.append(indent + _p.grey('  ...')); break }
+    shown++
+    if received.contains(k) {
+      var rv = received[k]
+      if deep_equal(ev, rv) {
+        lines.append(indent + _p.grey('  ${k}: ${_p.pretty(ev)}'))
+      } else {
+        lines.append(indent + _p._green('- ${k}: ${_p.pretty(ev)}'))
+        lines.append(indent + _p.red(  '+ ${k}: ${_p.pretty(rv)}'))
+      }
+    } else {
+      lines.append(indent + _p._green('- ${k}: ${_p.pretty(ev)}') + _p.grey(' (missing in received)'))
+    }
+  }
+
+  # Keys only in received
+  for k, rv in received {
+    if !expected.contains(k) {
+      if shown >= _MAX_ITEMS { lines.append(indent + _p.grey('  ...')); break }
+      shown++
+      lines.append(indent + _p.red('+ ${k}: ${_p.pretty(rv)}') + _p.grey(' (unexpected)'))
+    }
+  }
+
+  return lines
+}
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+/**
+ * Produces a list of formatted diff lines comparing `expected` and
+ * `received`.  The caller joins them with newlines and prints.
+ *
+ * For scalars, returns the standard two-line expected/received block.
+ * For lists and dicts, returns an annotated structural diff.
+ *
+ * @param  any expected
+ * @param  any received
+ * @return list<string>
+ */
+def diff(expected, received) {
+  var lines = []
+  var indent = '     '
+
+  var te = _type_of(expected)
+  var tr = _type_of(received)
+
+  # Type mismatch — just show the two-line block
+  if te != tr {
+    lines.append(indent + _p._green('Expected  ' + _p.pretty(expected) + ' (' + te + ')'))
+    lines.append(indent + _p.red(  'Received  ' + _p.pretty(received) + ' (' + tr + ')'))
+    return lines
+  }
+
+  if is_list(expected) {
+    lines.append(indent + _p.grey('─ list diff ─'))
+    var dl = _diff_list(expected, received, indent)
+    for l in dl { lines.append(l) }
+    return lines
+  }
+
+  if is_dict(expected) {
+    lines.append(indent + _p.grey('─ dict diff ─'))
+    var dd = _diff_dict(expected, received, indent)
+    for d in dd { lines.append(d) }
+    return lines
+  }
+
+  # Scalar / everything else
+  lines.append(indent + _p._green('Expected  ' + _p.pretty(expected)))
+  lines.append(indent + _p.red(  'Received  ' + _p.pretty(received)))
+  return lines
+}
+

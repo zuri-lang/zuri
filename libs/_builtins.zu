@@ -1,0 +1,133 @@
+import io as _io
+import os as _os
+import _reflect
+
+
+var _is_windows = _os.platform == 'windows'
+var _is_repl = _io.is_repl
+var _line_ending = _is_windows ? '\r\n' : '\n'
+
+
+
+#--------------------------------------------------------------------------------------
+# I/O Functions
+#--------------------------------------------------------------------------------------
+
+/**
+ * Prints the given arguments to standard output, separated by spaces.  In the REPL, 
+ * it also appends a newline at the end.
+ * 
+ * @param ...args  Any number of arguments to print
+ * @return void
+ */
+def print(...) {
+
+  # You may wonder why we don't just cache the `_io.stdout.write` function in a local 
+  # variable and call it directly.  The reason is that we want to allow users to 
+  # monkey-patch `io.stdout.write` and have `print()` use the patched version.  
+  # 
+  # If we cached the function, it would bypass any monkey-patching and always call the 
+  # original version.  By accessing it through `_io.stdout.write` on each call, we 
+  # ensure that any changes to `io.stdout.write` are respected by `print()`.
+  # 
+  # This is the most important reason why print is implemented in the userland instead 
+  # of C language.  It allows for greater flexibility and extensibility,
+
+  var len = __args__.length()
+
+  iter var i = 0; i < len; i++ {
+    if i > 0 {
+      _io.stdout.puts(' ')
+    }
+
+    _io.stdout.puts(to_string(__args__[i]))
+  }
+
+  if _is_repl {
+    _io.stdout.puts(_line_ending)
+  }
+}
+
+# #--------------------------------------------------------------------------------------
+# # Mathematical Functions
+# #--------------------------------------------------------------------------------------
+
+# /**
+#  * Returns the sum of all the given numbers.
+#  * 
+#  * @note This method expects at least two arguments.
+#  * @param {...number} numbers The numbers to sum.
+#  * @returns {number}
+#  */
+# def sum(...) {
+#   var sum = 0
+
+#   var len = __args__.length()
+#   iter var i = 0; i < len; i++ {
+#     sum += __args__[i]
+#   }
+
+#   return sum
+# }
+
+
+# /**
+#  * Returns the least of the given numbers.
+#  * 
+#  * @note This method expects at least two arguments.
+#  * @param {...number} numbers The numbers to compare.
+#  * @returns {number}
+#  */
+# def min(...) {
+#   var len = __args__.length()
+
+#   if len == 0 {
+#     raise ValueError('min() expected at least one argument')
+#   }
+
+#   var min = to_number(__args__[0])
+
+#   iter var i = 1; i < len; i++ {
+#     var num = to_number(__args__[i])
+
+#     if num < min {
+#       min = num
+#     }
+#   }
+
+#   return min
+# }
+
+
+# /**
+#  * Returns the greatest of the given numbers.
+#  * 
+#  * @note This method expects at least two arguments.
+#  * @param {...number} numbers The numbers to compare.
+#  * @returns {number}
+#  */
+# def max(...) {
+#   var len = __args__.length()
+
+#   if len == 0 {
+#     raise ValueError('max() expected at least one argument')
+#   }
+
+#   var max = to_number(__args__[0])
+
+#   iter var i = 1; i < len; i++ {
+#     var num = to_number(__args__[i])
+
+#     if num > max {
+#       max = num
+#     }
+#   }
+
+#   return max
+# }
+
+#--------------------------------------------------------------------------------------
+# Functions Registered as Built-ins
+#--------------------------------------------------------------------------------------
+
+_reflect.setglobal(print, 'print')

@@ -85,7 +85,7 @@ void free_byte_arr(z_vm *vm, z_byte_arr *array) {
 
 static void print_number(const double x) {
   if (x >= INT64_MIN && x <= INT64_MAX && x == (int64_t)x) {
-    printf(INTEGER_PRINT_FORMAT, (long long)(int64_t)x);
+    printf("%" PRId64, (int64_t)x);
   } else {
     printf(DOUBLE_PRINT_FORMAT, x);
   }
@@ -133,10 +133,10 @@ void echo_value(z_value value) { do_print_value(value, true); }
 
 char *number_to_string(z_vm *vm, double x, int *length) {
   if (x >= INT64_MIN && x <= INT64_MAX && x == (int64_t)x) {
-    *length = snprintf(NULL, 0, INTEGER_PRINT_FORMAT, (long long)(int64_t)x);
+    *length = snprintf(NULL, 0, "%" PRId64, (int64_t)x);
     char *num_str = ALLOCATE(char, *length + 1);
     if (num_str != NULL) {
-      sprintf(num_str, INTEGER_PRINT_FORMAT, (long long)(int64_t)x);
+      sprintf(num_str, "%" PRId64, (int64_t)x);
       num_str[*length] = '\0';
       return num_str;
     }

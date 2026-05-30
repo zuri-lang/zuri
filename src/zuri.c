@@ -10,9 +10,6 @@
 #include "module.h"
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
 
 #if !defined(_WIN32) && !defined(__CYGWIN__)
 #include "linenoise.h"
@@ -188,57 +185,6 @@ static void repl(z_vm *vm) {
   }
 }
 
-static void run_file(z_vm *vm, char *file) {
-  char *source = read_file(file);
-  if (source == NULL) {
-    // check if it's a Zuri library directory by attempting to read the index file.
-    char *old_file = file;
-    file = append_strings((char *)strdup(file), "/" LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
-    source = read_file(file);
-
-    if(source == NULL) {
-      fprintf(stderr, "(Zuri):\n  Launch aborted for %s\n  Reason: %s\n", old_file, strerror(errno));
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  // set root file...
-  vm->root_file = realpath(file, NULL);
-  register__ROOT__(vm);
-
-  z_obj_module *module = new_module(vm, strdup(""), realpath(file, NULL), NULL);
-  add_module(vm, module);
-  register_module__FILE__(vm, module);
-
-  z_ptr_result result = interpret(vm, module, source);
-  free(source);
-
-  fflush(stdout);
-
-  if (result == PTR_COMPILE_ERR)
-    exit(EXIT_COMPILE);
-  if (result == PTR_RUNTIME_ERR)
-    exit(EXIT_RUNTIME);
-}
-
-static void run_code(z_vm *vm, char *source) {
-  // set root file...
-  vm->root_file = "";
-  register__ROOT__(vm);
-
-  z_obj_module *module = new_module(vm, strdup(""), strdup("<script>"), NULL);
-  add_module(vm, module);
-  register_module__FILE__(vm, module);
-
-  z_ptr_result result = interpret(vm, module, source);
-  fflush(stdout);
-
-  if (result == PTR_COMPILE_ERR)
-    exit(EXIT_COMPILE);
-  if (result == PTR_RUNTIME_ERR)
-    exit(EXIT_RUNTIME);
-}
-
 void show_usage(char *argv[], bool fail) {
   FILE *out = fail ? stderr : stdout;
   fprintf(out, "Usage: %s [-[h | c | d | e | v | g | w]] [filename]\n", argv[0]);
@@ -353,21 +299,17 @@ int main(int argc, char *argv[]) {
       vm->std_args_count = opt_deviation;
     }
 
+    vm->is_repl = argc == 1 || argc <= optind;
+
     // always do this last so that we can have access to everything else
     bind_native_modules(vm);
 
-    // Initialize core...
-    char *core_module = get_core_library_file_path("_core");
-    if (core_module != NULL) {
-      run_file(vm, core_module);
-    }
-
     if (source != NULL) {
-      run_code(vm, source);
-    } else if (argc == 1 || argc <= optind) {
+      run_code(vm, source, true);
+    } else if (vm->is_repl) {
       repl(vm);
     } else {
-      run_file(vm, argv[optind]);
+      run_file(vm, argv[optind], true);
     }
 
     free_vm(vm);

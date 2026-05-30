@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# describe()
+# ---------------------------------------------------------------------------
+
+import ._runner
+
+
+/**
+ * Defines a named test suite.  Suites may be nested arbitrarily.
+ *
+ * ```zuri
+ * describe('Calculator', @{
+ *   it('adds numbers', @{
+ *     expect(1 + 1).to_be(2)
+ *   })
+ * })
+ * ```
+ *
+ * @param string   name  Suite label shown in the report.
+ * @param function fn    Suite body containing `it()`, hooks, and nested
+ *                       `describe()` calls.
+ */
+def describe(name, fn) {
+  _runner.run_describe(name, fn, false, false)
+}
+
+/**
+ * Marks an entire suite to be skipped.  The suite header is printed but
+ * its tests do not run.
+ *
+ * ```zuri
+ * describe.skip('Legacy code', @{ ... })
+ * ```
+ *
+ * @param string   name
+ * @param function fn
+ */
+def skip(name, fn) {
+  _runner.run_describe(name, fn, false, true)
+}
+
+/**
+ * Runs only this suite (and any other suites/tests also marked `.only`).
+ * All other top-level suites are bypassed.
+ *
+ * ```zuri
+ * describe.only('Focused suite', @{ ... })
+ * ```
+ *
+ * @param string   name
+ * @param function fn
+ */
+def only(name, fn) {
+  _runner.run_describe(name, fn, true, false)
+}

@@ -1,0 +1,66 @@
+# ---------------------------------------------------------------------------
+# it()
+# ---------------------------------------------------------------------------
+
+import ._runner
+
+
+/**
+ * Defines a single test case inside a `describe` block.
+ *
+ * ```zuri
+ * it('returns the correct value', @{
+ *   expect(compute()).to_be(42)
+ * })
+ * ```
+ *
+ * @param string   name  Test label.
+ * @param function fn    Test body.
+ */
+def it(name, fn) {
+  _runner.run_it(name, fn, false, false, fn == nil)
+}
+
+/**
+ * Skips this test.  The test is listed in the report as skipped.
+ *
+ * ```zuri
+ * it.skip('not ready yet', @{ ... })
+ * ```
+ *
+ * @param string   name
+ * @param function fn
+ */
+def skip(name, fn) {
+  _runner.run_it(name, fn, false, true, false)
+}
+
+/**
+ * Marks a test as "todo" (no body required).  It is listed in the report
+ * as a reminder without affecting the pass/fail count.
+ *
+ * ```zuri
+ * it.todo('handle empty list edge case')
+ * ```
+ *
+ * @param string name
+ */
+def todo(name) {
+  _runner.run_it(name, nil, false, false, true)
+}
+
+/**
+ * Runs only this test (and any others also marked `.only`).
+ *
+ * ```zuri
+ * it.only('focused test', @{
+ *   expect(1).to_be(1)
+ * })
+ * ```
+ *
+ * @param string   name
+ * @param function fn
+ */
+def only(name, fn) {
+  _runner.run_it(name, fn, true, false, false)
+}

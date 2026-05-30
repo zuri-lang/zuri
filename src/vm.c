@@ -20,9 +20,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
 
 // for debugging...
 #include "debug.h"
+#include "pathinfo.h"
 
 #define ERR_CANT_ASSIGN_EMPTY "empty cannot be assigned."
 
@@ -386,7 +388,7 @@ static void init_builtin_functions(z_vm *vm) {
   DEFINE_NATIVE(min);
   DEFINE_NATIVE(oct);
   DEFINE_NATIVE(ord);
-  DEFINE_NATIVE(print);
+  // DEFINE_NATIVE(print);
   DEFINE_NATIVE(rand);
   DEFINE_NATIVE(setprop);
   DEFINE_NATIVE(sum);
@@ -755,7 +757,7 @@ bool call_value(z_vm *vm, z_value callee, int arg_count) {
     }
   }
 
-  return throw_type_error(vm, "object of type %s is not callable", value_type(callee));
+  return throw_type_error(vm, "object of type %s (%s) is not callable", value_type(callee), value_to_string(vm, callee));
 }
 
 static inline z_func_type get_method_type(z_value method) {
@@ -1532,10 +1534,8 @@ static bool concatenate(z_vm *vm) {
   return true;
 }
 
-static inline int floor_div(double a, double b) {
+static inline double floor_div(double a, double b) {
   return floor(a / b);
-  // int d = (int) a / (int) b;
-  // return d - ((d * b == a) & ((a < 0) ^ (b < 0)));
 }
 
 static inline double modulo(double a, double b) {
@@ -2190,7 +2190,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
 
       case OP_SET_PROPERTY: {
-        if (!IS_INSTANCE(peek(vm, 1)) && !IS_DICT(peek(vm, 1)) && !IS_CLASS(peek(vm, 1))) {
+        if (!IS_INSTANCE(peek(vm, 1)) && !IS_DICT(peek(vm, 1)) && !IS_CLASS(peek(vm, 1)) && !IS_MODULE(peek(vm, 1))) {
           type_error("object of type %s can not carry properties", value_type(peek(vm, 1)));
           break;
         } else  if(IS_EMPTY(peek(vm, 0))) {
@@ -2210,6 +2210,13 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         } else if (IS_CLASS(peek(vm, 1))) {
           z_obj_class *klass = AS_CLASS(peek(vm, 1));
           table_set(vm, &klass->static_properties, OBJ_VAL(name), peek(vm, 0));
+
+          z_value value = pop(vm);
+          pop(vm); // removing the instance object
+          push(vm, value);
+        } else if (IS_MODULE(peek(vm, 1))) {
+          z_obj_module *module = AS_MODULE(peek(vm, 1));
+          table_set(vm, &module->values, OBJ_VAL(name), peek(vm, 0));
 
           z_value value = pop(vm);
           pop(vm); // removing the instance object
@@ -2822,7 +2829,7 @@ void register_module__FILE__(z_vm *vm, z_obj_module *module) {
 void register__ROOT__(z_vm *vm) {
   // register module __file__
   push(vm, STRING_L_VAL("__root__", 8));
-  push(vm, STRING_VAL(vm->root_file));
+  push(vm, vm->root_file == NULL ? NIL_VAL : STRING_VAL(vm->root_file));
   table_set(vm, &vm->globals, peek(vm, 1), peek(vm, 0));
   pop_n(vm, 2);
 }
@@ -2908,6 +2915,67 @@ z_ptr_result interpret(z_vm *vm, z_obj_module *module, const char *source) {
 
   call(vm, closure, 0);
   return run(vm, 0);
+}
+
+void run_code(z_vm *vm, char *source, bool can_exit) {
+  // set root file...
+  vm->root_file = NULL;
+  register__ROOT__(vm);
+
+  z_obj_module *module = new_module(vm, strdup(""), strdup("<script>"), NULL);
+  add_module(vm, module);
+  register_module__FILE__(vm, module);
+
+  z_ptr_result result = interpret(vm, module, source);
+  fflush(stdout);
+
+  if (can_exit) {
+    if (result == PTR_COMPILE_ERR)
+      exit(EXIT_COMPILE);
+    if (result == PTR_RUNTIME_ERR)
+      exit(EXIT_RUNTIME);
+  }
+}
+
+void run_file(z_vm *vm, char *file, bool can_exit) {
+  char *source = read_file(file);
+  if (source == NULL) {
+    // check if it's a Zuri library directory by attempting to read the index file.
+    char *old_file = file;
+    file = merge_paths(strdup(file), LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION);
+    source = read_file(file);
+
+    if(source == NULL) {
+      fprintf(
+        stderr,
+        "(Zuri):\n"
+        "  Launch aborted for %s\n"
+        "  Reason: %s\n",
+        old_file, strerror(errno)
+      );
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  // set root file...
+  vm->root_file = realpath(file, NULL);
+  register__ROOT__(vm);
+
+  z_obj_module *module = new_module(vm, strdup(""), realpath(file, NULL), NULL);
+  add_module(vm, module);
+  register_module__FILE__(vm, module);
+
+  z_ptr_result result = interpret(vm, module, source);
+  free(source);
+
+  fflush(stdout);
+
+  if (can_exit) {
+    if (result == PTR_COMPILE_ERR)
+      exit(EXIT_COMPILE);
+    if (result == PTR_RUNTIME_ERR)
+      exit(EXIT_RUNTIME);
+  }
 }
 
 #undef ERR_CANT_ASSIGN_EMPTY

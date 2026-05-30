@@ -362,18 +362,37 @@ def ptr_from_address(address) {
  * @param string? name
  */
 def set_global(value, name) {
-  if typeof(value) == 'module'
-    raise TypeError('modules cannot be set as global')
+  # if typeof(value) == 'module'
+  #   raise TypeError('modules cannot be set as global')
   if name != nil and !is_string(name)
     raise TypeError('string expected in argument 2 (name)')
   _reflect.setglobal(value, name)
 }
 
 /**
+ * Unsets a value previously set to be globally accessible in all modules, functions, 
+ * and scopes with the given name.
+ * 
+ * @param string name
+ * @returns any
+ * */
+def unset_global(name) {
+  if !is_string(name)
+    raise TypeError('string expected in argument 1 (name)')
+  return _reflect.unsetglobal(name)
+}
+
+/**
  * Runs the content of a given script in-place as if it were part of the 
  * current module.
  * 
+ * If the script runs fine without any compilation error, it returns  nil`. If the script 
+ * throws an exception, the exception is cascaded to the current context. However, should a 
+ * compilation error occur (such as a syntax error), the error will be returned as string.
+ * 
+ * @note Script will only run if compilation is successful!
  * @param string path
+ * @return string?
  */
 def run_script(path) {
   if !is_string(path)
@@ -383,10 +402,7 @@ def run_script(path) {
   if !fh.exists()
     raise Exception('cannot find script at "${path}"')
 
-  var content = fh.read()
-
-  # for now, returning the call without assigning to a variable is failing.
-  _reflect.runscript(path,  content)
+  return _reflect.runscript(path,  fh.read())
 }
 
 /**

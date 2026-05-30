@@ -1,0 +1,339 @@
+/**
+ * # test._printer
+ *
+ * Internal terminal output engine for the test module.
+ *
+ * Handles all ANSI color emission, Unicode box-drawing, progress
+ * symbols, and the final summary banner.  Nothing in this file is
+ * part of the public API — every visible symbol is prefixed with an
+ * underscore or is a module-level `var` read only by `_runner`.
+ *
+ * Color support is detected once at module load time and cached in
+ * `_USE_COLOR`.  When color is unavailable (redirected output, Windows
+ * without ANSI support) every `c_*` helper falls back to plain text.
+ *
+ * @module test._printer
+ */
+
+import colors
+import os
+
+
+# ---------------------------------------------------------------------------
+# Color / capability detection
+# ---------------------------------------------------------------------------
+
+# True when the process stdout appears to be an interactive terminal that
+# honours ANSI escape sequences.  We check the NO_COLOR environment variable
+# (https://no-color.org) and fall back to the OS module's isatty where
+# available.
+var _USE_COLOR = true
+
+var _no_color = os.get_env('NO_COLOR')
+if _no_color != nil and _no_color != '' {
+  _USE_COLOR = false
+}
+
+
+# ---------------------------------------------------------------------------
+# Low-level color helpers
+# ---------------------------------------------------------------------------
+
+# Apply a colors.text_color or colors.style value to a string, or return
+# the string unchanged when color is disabled.
+def _c(text, color_code, bg_code) {
+  if !_USE_COLOR return text
+  if bg_code return colors.text(text, color_code, bg_code)
+  return colors.text(text, color_code)
+}
+
+# Convenience wrappers for every colour role used by the reporter.
+def _green(s)        { return _c(s, colors.text_color.green) }
+def red(s)          { return _c(s, colors.text_color.light_red) }
+def yellow(s)       { return _c(s, colors.text_color.yellow) }
+def _cyan(s)         { return _c(s, colors.text_color.cyan) }
+def _blue(s)         { return _c(s, colors.text_color.blue) }
+def grey(s)         { return _c(s, colors.text_color.dark_grey) }
+def black(s)         { return _c(s, colors.text_color.black) }
+def lightgrey(s)         { return _c(s, colors.text_color.light_grey) }
+def white(s)        { return _c(s, colors.text_color.white) }
+def orange(s)        { return _c(s, colors.text_color.orange) }
+def pink(s)        { return _c(s, colors.text_color.pink) }
+def bold(s)         { return _c(s, colors.style.bold) }
+def reverse(s)         { return _c(s, colors.style.reverse) }
+def dim(s)          { return _c(s, colors.style.disable) }
+
+def greenbold(s)   { return bold(_green(s)) }
+def redbold(s)     { return bold(red(s)) }
+def orangebold(s)     { return bold(orange(s)) }
+def pinkbold(s)     { return bold(pink(s)) }
+def yellowbold(s)  { return bold(yellow(s)) }
+def greybold(s)  { return bold(grey(s)) }
+def cyanbold(s)    { return bold(_cyan(s)) }
+def bluereverse(s)   { return reverse(bold(_blue(s))) }
+def whitebold(s)   { return bold(white(s)) }
+def dimbold(s)   { return bold(dim(s)) }
+
+# Highlighted backgrounds used in the summary banner.
+def _pass_badge(s)   { return _c(' ' + s + ' ', colors.text_color.white, colors.background.green) }
+def _fail_badge(s)   { return _c(' ' + s + ' ', colors.text_color.white, colors.background.red) }
+def _skip_badge(s)   { return _c(' ' + s + ' ', colors.text_color.white, colors.background.orange) }
+def _todo_badge(s)   { return _c(' ' + s + ' ', colors.text_color.white, colors.background.blue) }
+
+
+# ---------------------------------------------------------------------------
+# Symbols
+# ---------------------------------------------------------------------------
+
+# We use Unicode tick / cross when the terminal is likely to support them.
+# The ASCII fallbacks ensure CI pipelines with basic terminals still look clean.
+var SYM_PASS  = _USE_COLOR ? '✓' : 'v'
+var SYM_FAIL  = _USE_COLOR ? '✗' : 'x'
+var SYM_SKIP  = _USE_COLOR ? '○' : '-'
+var SYM_TODO  = _USE_COLOR ? '◎' : '*'
+var SYM_ARROW = _USE_COLOR ? '→' : '->'
+var SYM_DOT   = _USE_COLOR ? '·' : '.'
+var SYM_PIPE  = _USE_COLOR ? '│' : '|'
+var SYM_DASH  = '─'
+
+
+# ---------------------------------------------------------------------------
+# Indentation helpers
+# ---------------------------------------------------------------------------
+
+def _indent(depth) {
+  var s = ''
+  iter var i = 0; i < depth; i++ {
+    s += '  '
+  }
+  return s
+}
+
+
+# ---------------------------------------------------------------------------
+# Value pretty-printer
+# ---------------------------------------------------------------------------
+
+# Converts any Zuri value to a compact, human-readable representation for
+# use in assertion failure messages.
+def pretty(value) {
+  if value == nil    return _cyan('nil')
+  if is_bool(value)  return _cyan(to_string(value))
+  if is_number(value) return yellow(to_string(value))
+  if is_string(value) return _green('"' + value + '"')
+  if is_list(value) {
+    if value.length() == 0 return grey('[]')
+    if value.length() <= 6 {
+      var items = []
+      for item in value { items.append(pretty(item)) }
+      return '[' + ', '.join(items) + ']'
+    }
+    var items = []
+    iter var i = 0; i < 3; i++ { items.append(pretty(value[i])) }
+    return '[' + ', '.join(items) + grey(', ... (${value.length()} items)') + ']'
+  }
+  if is_dict(value) {
+    if value.length() == 0 return grey('{}')
+    var pairs = []
+    var count = 0
+    for k, v in value {
+      if count >= 4 { pairs.append(grey('...')); break }
+      pairs.append(white(to_string(k)) + ': ' + pretty(v))
+      count++
+    }
+    return '{ ' + ', '.join(pairs) + ' }'
+  }
+  if is_function(value) return _cyan('<function>')
+  if is_class(value)    return _cyan('<class ${typeof(value)}>')
+  if is_instance(value) return _cyan('<${typeof(value)}>')
+  return grey(to_string(value))
+}
+
+
+# ---------------------------------------------------------------------------
+# Diff rendering
+# ---------------------------------------------------------------------------
+
+# Produces a two-line "expected / received" block for assertion failures.
+def _diff_lines(expected, received) {
+  return [
+    '  ' + _green('  expected  ') + greenbold(pretty(expected)),
+    '  ' + red(  '  received  ') + redbold(pretty(received)),
+  ]
+}
+
+
+# ---------------------------------------------------------------------------
+# Suite header
+# ---------------------------------------------------------------------------
+
+def print_suite_header(name, depth) {
+  var indent = _indent(depth)
+  echo ''
+  echo indent + bluereverse(' ${name} ')
+}
+
+
+# ---------------------------------------------------------------------------
+# Test result lines
+# ---------------------------------------------------------------------------
+
+def print_pass(name, depth, elapsed_ms) {
+  var indent = _indent(depth)
+  var time_str = elapsed_ms != nil ? dim(' (${elapsed_ms}ms)') : ''
+  echo indent + _green(SYM_PASS + ' ') + dim(name) + time_str
+}
+
+def print_fail(name, depth, elapsed_ms) {
+  var indent = _indent(depth)
+  var time_str = elapsed_ms != nil ? dim(' (${elapsed_ms}ms)') : ''
+  echo indent + redbold(SYM_FAIL + ' ' + name) + time_str
+}
+
+def print_skip(name, depth) {
+  var indent = _indent(depth)
+  echo indent + yellow(SYM_SKIP + ' ') + dim(name) + yellow(' [skipped]')
+}
+
+def print_todo(name, depth) {
+  var indent = _indent(depth)
+  echo indent + _cyan(SYM_TODO + ' ') + dim(name) + _cyan(' [todo]')
+}
+
+
+# ---------------------------------------------------------------------------
+# Failure detail block
+# ---------------------------------------------------------------------------
+
+# Prints the formatted detail block for a single failing assertion.
+# `failure` is a dict: { message, expected, received, has_diff, trace }
+def print_failure_detail(index, test_name, suite_path, failure) {
+  var num = redbold('  ' + to_string(index) + ') ')
+  var path = suite_path.length() > 0 ?
+    dim(suite_path + ' ' + SYM_ARROW + ' ') + redbold(test_name) :
+    redbold(test_name)
+
+  echo ''
+  echo num + path
+  echo ''
+  echo '     ' + red(failure.message)
+
+  if failure.has_diff {
+    var lines = _diff_lines(failure.expected, failure.received)
+    for line in lines { echo line }
+  }
+
+  if failure.trace != nil and failure.trace.length() > 0 {
+    echo ''
+    echo grey('     at ' + failure.trace)
+  }
+
+  echo ''
+}
+
+
+# ---------------------------------------------------------------------------
+# Horizontal rule
+# ---------------------------------------------------------------------------
+
+def _rule(width, char) {
+  var s = ''
+  iter var i = 0; i < width; i++ { s += char }
+  return s
+}
+
+def print_rule() {
+  echo lightgrey(_rule(60, SYM_DASH))
+}
+
+
+# ---------------------------------------------------------------------------
+# Summary banner
+# ---------------------------------------------------------------------------
+
+def print_summary(stats) {
+  echo ''
+  print_rule()
+  echo ''
+
+  # Result badges
+  var badges = ''
+
+  if stats.failed > 0 {
+    badges += _fail_badge('FAIL') + '  '
+  }
+  if stats.passed > 0 {
+    badges += _pass_badge('PASS') + '  '
+  }
+  if stats.skipped > 0 {
+    badges += _skip_badge('SKIP') + '  '
+  }
+  if stats.todo > 0 {
+    badges += _todo_badge('TODO') + '  '
+  }
+
+  if badges.length() > 0 echo badges
+
+  # Numeric counts
+  var parts = []
+
+  if stats.suites > 0 {
+    parts.append(bold(to_string(stats.suites)) + ' suite(s)')
+  }
+  if stats.failed > 0 {
+    parts.append(redbold(to_string(stats.failed) + ' failed'))
+  }
+  if stats.passed > 0 {
+    parts.append(greenbold(to_string(stats.passed) + ' passed'))
+  }
+  if stats.skipped > 0 {
+    parts.append(yellowbold(to_string(stats.skipped) + ' skipped'))
+  }
+  if stats.todo > 0 {
+    parts.append(cyanbold(to_string(stats.todo) + ' todo'))
+  }
+
+  var total = stats.passed + stats.failed + stats.skipped
+  parts.append(dim(to_string(total) + ' total'))
+
+  echo grey('  ·  ').join(parts)
+
+  # Duration
+  if stats.duration_ms != nil {
+    echo bold('Time:  ') + to_string(stats.duration_ms) + 'ms'
+  }
+
+  echo ''
+}
+
+
+# ---------------------------------------------------------------------------
+# "All tests passed" celebration line
+# ---------------------------------------------------------------------------
+
+def print_all_passed() {
+  echo ''
+  echo greenbold('  All tests passed! ' + (  _USE_COLOR ? '🎉' : ''))
+  echo ''
+}
+
+
+# ---------------------------------------------------------------------------
+# Verbose only-mode notice
+# ---------------------------------------------------------------------------
+
+def print_only_notice() {
+  echo ''
+  echo yellow('  Notice: ') + grey('.only() was used — a subset of tests ran.')
+}
+
+
+# ---------------------------------------------------------------------------
+# Error formatting (unexpected exceptions thrown inside a test body)
+# ---------------------------------------------------------------------------
+
+def print_unexpected_error(name, depth, err) {
+  var indent = _indent(depth)
+  echo indent + redbold(SYM_FAIL + ' ' + name)
+  echo indent + '  ' + red('Unexpected error: ') + yellow(to_string(err))
+}

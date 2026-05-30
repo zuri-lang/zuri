@@ -1,5 +1,6 @@
 #include "module.h"
 #include "compiler.h"
+#include "capture.h"
 
 /**
  * hasprop(object: instance | module, name: string)
@@ -286,6 +287,13 @@ DECLARE_MODULE_METHOD(reflect__setglobal) {
   RETURN;
 }
 
+DECLARE_MODULE_METHOD(reflect__unsetglobal) {
+  ENFORCE_ARG_COUNT(unset_global, 1);
+  ENFORCE_ARG_TYPE(unset_global, 0, IS_STRING);
+  z_obj_string *name = AS_STRING(args[0]);
+  RETURN_BOOL(table_delete(&vm->globals, OBJ_VAL(name)));
+}
+
 DECLARE_MODULE_METHOD(reflect__runscript) {
   ENFORCE_ARG_COUNT(run_script, 2);
   ENFORCE_ARG_TYPE(run_script, 0, IS_STRING);
@@ -296,9 +304,13 @@ DECLARE_MODULE_METHOD(reflect__runscript) {
   z_obj_module *module = vm->current_frame->closure->function->module;
   char *module_file = module->file;
 
+  z_capture_t *err_capture = capture_start(Z_CAPTURE_STDERR);
+
   module->file = path;
   z_obj_func *fn = compile(vm, module, source);
   module->file = module_file;
+
+  char *captured_output = capture_stop(err_capture);
 
   if(fn != NULL) {
     push(vm, OBJ_VAL(fn));
@@ -306,9 +318,11 @@ DECLARE_MODULE_METHOD(reflect__runscript) {
     pop(vm);
 
     queue_closure(vm, cls);
+  } else if (captured_output != NULL) {
+    RETURN_TT_STRING(captured_output);
   }
 
-  RETURN;
+  RETURN_NIL;
 }
 
 DECLARE_MODULE_METHOD(reflect__getptr) {
@@ -470,6 +484,7 @@ CREATE_MODULE_LOADER(reflect) {
       {"getmodulemetadata", true,  GET_MODULE_METHOD(reflect__get_module_metadata)},
       {"getclass", true,  GET_MODULE_METHOD(reflect__getclass)},
       {"setglobal", true,  GET_MODULE_METHOD(reflect__setglobal)},
+      {"unsetglobal", true,  GET_MODULE_METHOD(reflect__unsetglobal)},
       {"runscript", true,  GET_MODULE_METHOD(reflect__runscript)},
       {"valueatdistance", true,  GET_MODULE_METHOD(reflect__valueatdistance)},
       {"getaddress", true,  GET_MODULE_METHOD(reflect__getaddress)},

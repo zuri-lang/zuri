@@ -1,0 +1,978 @@
+/**
+ * # test._assertion
+ *
+ * Provides the `Expect` class — the fluent assertion builder returned by
+ * every call to `expect(value)`.
+ *
+ * Matchers are grouped into:
+ *
+ * - **Equality**     — `to_be`, `to_equal`, `not_to_be`, `not_to_equal`
+ * - **Truthiness**   — `to_be_true`, `to_be_false`, `to_be_nil`,
+ *                      `to_be_truthy`, `to_be_falsy`
+ * - **Type**         — `to_be_string`, `to_be_number`, `to_be_bool`,
+ *                      `to_be_list`, `to_be_dict`, `to_be_function`,
+ *                      `to_be_instance`, `to_be_class`
+ * - **Numeric**      — `to_be_greater_than`, `to_be_less_than`,
+ *                      `to_be_greater_than_or_equal`, `to_be_less_than_or_equal`,
+ *                      `to_be_between`, `to_be_close_to`, `to_be_nan`,
+ *                      `to_be_positive`, `to_be_negative`
+ * - **String**       — `to_contain`, `to_start_with`, `to_end_with`,
+ *                      `to_match`, `to_have_length`
+ * - **Collection**   — `to_contain` (list/dict), `to_have_length`,
+ *                      `to_be_empty`, `to_have_key`, `to_match_object`,
+ *                      `to_contain_equal`
+ * - **Exceptions**   — `to_throw`, `to_throw_with_message`
+ * - **Custom**       — `to_satisfy`
+ *
+ * Every matcher has a negation sibling via `.not` — e.g.
+ * `expect(x).not.to_be(42)`.
+ *
+ * @module test._assertion
+ */
+
+import ._diff as diff_mod
+import ._printer as _p
+
+
+# ---------------------------------------------------------------------------
+# AssertionError — raised when a matcher fails
+# ---------------------------------------------------------------------------
+
+/**
+ * Raised when an assertion fails inside a test body.
+ * Carries structured data consumed by the runner to build the failure report.
+ */
+class AssertionError < Exception {
+
+  /** Human-readable failure message. */
+  var message = ''
+
+  /** The expected value (may be nil for type-only assertions). */
+  var expected = nil
+
+  /** The received value. */
+  var received = nil
+
+  /** Whether the runner should render a structured diff. */
+  var has_diff = false
+
+  /** Optional pre-rendered diff lines (list of strings). */
+  var diff_lines = []
+
+  AssertionError(message, expected, received, has_diff, diff_lines) {
+    parent(message)
+    self.message   = message
+    self.expected  = expected
+    self.received  = received
+    self.has_diff  = has_diff
+    self.diff_lines = diff_lines ? diff_lines : []
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Internal: assertion primitive
+# ---------------------------------------------------------------------------
+
+# Raises AssertionError when `condition` is false.
+# `msg` is a short description; `expected` and `received` are the values.
+# Pass `show_diff: true` to have the runner render a structural diff.
+def _assert(condition, msg, expected, received, show_diff) {
+  if !condition {
+    var dl = []
+    if show_diff {
+      dl = diff_mod.diff(expected, received)
+    }
+    raise AssertionError(msg, expected, received, show_diff, dl)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Negation wrapper
+# ---------------------------------------------------------------------------
+
+# Forward-declare Expect so _Negation can reference it.
+class _Negation {
+
+  var _value
+  var _label
+
+  _Negation(value, label) {
+    self._value = value
+    self._label = label
+  }
+
+  # ------- Equality -------
+
+  /**
+   * Asserts the value is not identical to `expected` (strict, uses `==`).
+   * @param any expected
+   */
+  to_be(expected) {
+    _assert(
+      self._value != expected,
+      'Expected ${_p.pretty(self._value)} not to be ${_p.pretty(expected)}',
+      expected, self._value, false
+    )
+  }
+
+  /**
+   * Asserts the value is not deeply equal to `expected`.
+   * @param any expected
+   */
+  to_equal(expected) {
+    _assert(
+      !diff_mod.deep_equal(self._value, expected),
+      'Expected value not to equal ${_p.pretty(expected)}, but it did',
+      expected, self._value, false
+    )
+  }
+
+  # ------- Truthiness -------
+
+  /** Asserts the value is not `true`. */
+  to_be_true() {
+    _assert(self._value != true,
+      'Expected ${_p.pretty(self._value)} not to be true',
+      true, self._value, false)
+  }
+
+  /** Asserts the value is not `false`. */
+  to_be_false() {
+    _assert(self._value != false,
+      'Expected ${_p.pretty(self._value)} not to be false',
+      false, self._value, false)
+  }
+
+  /** Asserts the value is not `nil`. */
+  to_be_nil() {
+    _assert(self._value != nil,
+      'Expected value not to be nil, but it was',
+      nil, self._value, false)
+  }
+
+  /** Asserts the value is falsy (nil or false). */
+  to_be_truthy() {
+    _assert(!self._value,
+      'Expected ${_p.pretty(self._value)} not to be truthy',
+      false, self._value, false)
+  }
+
+  /** Asserts the value is truthy (not nil and not false). */
+  to_be_falsy() {
+    _assert(!!self._value,
+      'Expected ${_p.pretty(self._value)} not to be falsy',
+      true, self._value, false)
+  }
+
+  # ------- Type -------
+
+  /** Asserts the value is not a string. */
+  to_be_string() {
+    _assert(!is_string(self._value),
+      'Expected ${_p.pretty(self._value)} not to be a string',
+      '<non-string>', self._value, false)
+  }
+
+  /** Asserts the value is not a number. */
+  to_be_number() {
+    _assert(!is_number(self._value),
+      'Expected ${_p.pretty(self._value)} not to be a number',
+      '<non-number>', self._value, false)
+  }
+
+  /** Asserts the value is not a boolean. */
+  to_be_bool() {
+    _assert(!is_bool(self._value),
+      'Expected ${_p.pretty(self._value)} not to be a boolean',
+      '<non-bool>', self._value, false)
+  }
+
+  /** Asserts the value is not a list. */
+  to_be_list() {
+    _assert(!is_list(self._value),
+      'Expected value not to be a list',
+      '<non-list>', self._value, false)
+  }
+
+  /** Asserts the value is not a dict. */
+  to_be_dict() {
+    _assert(!is_dict(self._value),
+      'Expected value not to be a dict',
+      '<non-dict>', self._value, false)
+  }
+
+  /** Asserts the value is not a function. */
+  to_be_function() {
+    _assert(!is_function(self._value),
+      'Expected value not to be a function',
+      '<non-function>', self._value, false)
+  }
+
+  /** Asserts the value is not an instance. */
+  to_be_instance() {
+    _assert(!is_instance(self._value),
+      'Expected value not to be an instance',
+      '<non-instance>', self._value, false)
+  }
+
+  /** Asserts the value is not an instance of `klass`. */
+  to_be_instance_of(klass) {
+    _assert(!instance_of(self._value, klass),
+      'Expected value not to be an instance of ${typeof(klass)}',
+      '<non-instance-of>', self._value, false)
+  }
+
+  # ------- String / collection -------
+
+  /** Asserts the string/list/dict does not contain `item`. */
+  to_contain(item) {
+    var v = self._value
+    var result = false
+    if is_string(v) result = v.contains(item)
+    else if is_list(v) result = v.contains(item)
+    else if is_dict(v) result = v.contains(item)
+
+    _assert(!result,
+      'Expected ${_p.pretty(v)} not to contain ${_p.pretty(item)}',
+      item, v, false)
+  }
+
+  /** Asserts the string does not start with `prefix`. */
+  to_start_with(prefix) {
+    _assert(!is_string(self._value) or !self._value.starts_with(prefix),
+      'Expected ${_p.pretty(self._value)} not to start with ${_p.pretty(prefix)}',
+      prefix, self._value, false)
+  }
+
+  /** Asserts the string does not end with `suffix`. */
+  to_end_with(suffix) {
+    _assert(!is_string(self._value) or !self._value.ends_with(suffix),
+      'Expected ${_p.pretty(self._value)} not to end with ${_p.pretty(suffix)}',
+      suffix, self._value, false)
+  }
+
+  /** Asserts the string does not match `pattern`. */
+  to_match(pattern) {
+    var matched = is_string(self._value) and self._value.match(pattern) != nil
+    _assert(!matched,
+      'Expected ${_p.pretty(self._value)} not to match pattern ${_p.pretty(pattern)}',
+      pattern, self._value, false)
+  }
+
+  /** Asserts the collection/string does not have length `n`. */
+  to_have_length(n) {
+    var v = self._value
+    var actual = is_string(v) or is_list(v) or is_dict(v) ? v.length() : nil
+    _assert(actual != n,
+      'Expected length not to be ${n}, but it was',
+      n, actual, false)
+  }
+
+  /** Asserts the dict does not have key `key`. */
+  to_have_key(key) {
+    _assert(!is_dict(self._value) or !self._value.contains(key),
+      'Expected dict not to have key ${_p.pretty(key)}',
+      key, self._value, false)
+  }
+
+  /** Asserts the collection is not empty. */
+  to_be_empty() {
+    var v = self._value
+    var empty = (is_string(v) or is_list(v) or is_dict(v)) and v.length() == 0
+    _assert(!empty,
+      'Expected ${_p.pretty(v)} not to be empty, but it was',
+      '<non-empty>', v, false)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Expect
+# ---------------------------------------------------------------------------
+
+/**
+ * Fluent assertion wrapper returned by `expect(value)`.
+ *
+ * Access `.not` to negate any matcher:
+ *
+ * ```zuri
+ * expect(result).to_be(42)
+ * expect(result).not.to_be(0)
+ * expect(list).to_contain('item')
+ * expect(fn).to_throw()
+ * ```
+ */
+class Expect {
+
+  var _value
+  var _label
+
+  /**
+   * The negation proxy.  Every matcher on this object asserts the
+   * opposite condition.
+   */
+  var not
+
+  Expect(value, label) {
+    self._value = value
+    self._label = label
+    self.not    = _Negation(value, label)
+  }
+
+
+  # =========================================================================
+  # Equality matchers
+  # =========================================================================
+
+  /**
+   * Asserts strict identity (`==`).
+   *
+   * Use for primitives (numbers, strings, booleans, nil).  For structural
+   * equality of lists and dicts use `to_equal`.
+   *
+   * @param any expected
+   */
+  to_be(expected) {
+    _assert(
+      self._value == expected,
+      'Expected ${_p.pretty(expected)} but received ${_p.pretty(self._value)}',
+      expected, self._value, true
+    )
+  }
+
+  /**
+   * Asserts deep structural equality.
+   *
+   * Recursively compares lists and dictionaries.  For primitive values
+   * this is equivalent to `to_be`.
+   *
+   * @param any expected
+   */
+  to_equal(expected) {
+    _assert(
+      diff_mod.deep_equal(self._value, expected),
+      'Expected deep equality but values differ',
+      expected, self._value, true
+    )
+  }
+
+  /**
+   * Asserts the value is not identical to `expected`.
+   * Shorthand for `.not.to_be(expected)`.
+   *
+   * @param any expected
+   */
+  not_to_be(expected) {
+    self.not.to_be(expected)
+  }
+
+  /**
+   * Asserts the value is not deeply equal to `expected`.
+   * Shorthand for `.not.to_equal(expected)`.
+   *
+   * @param any expected
+   */
+  not_to_equal(expected) {
+    self.not.to_equal(expected)
+  }
+
+
+  # =========================================================================
+  # Truthiness matchers
+  # =========================================================================
+
+  /** Asserts the value is exactly `true`. */
+  to_be_true() {
+    _assert(self._value == true,
+      'Expected true but received ${_p.pretty(self._value)}',
+      true, self._value, false)
+  }
+
+  /** Asserts the value is exactly `false`. */
+  to_be_false() {
+    _assert(self._value == false,
+      'Expected false but received ${_p.pretty(self._value)}',
+      false, self._value, false)
+  }
+
+  /** Asserts the value is `nil`. */
+  to_be_nil() {
+    _assert(self._value == nil,
+      'Expected nil but received ${_p.pretty(self._value)}',
+      nil, self._value, false)
+  }
+
+  /**
+   * Asserts the value is truthy (anything except `nil` and `false`).
+   */
+  to_be_truthy() {
+    _assert(!!self._value,
+      'Expected a truthy value but received ${_p.pretty(self._value)}',
+      '<truthy>', self._value, false)
+  }
+
+  /**
+   * Asserts the value is falsy (`nil` or `false`).
+   */
+  to_be_falsy() {
+    _assert(!self._value,
+      'Expected a falsy value but received ${_p.pretty(self._value)}',
+      '<falsy>', self._value, false)
+  }
+
+
+  # =========================================================================
+  # Type matchers
+  # =========================================================================
+
+  /** Asserts the value is a string. */
+  to_be_string() {
+    _assert(is_string(self._value),
+      'Expected a string but received ${typeof(self._value)}',
+      '<string>', self._value, false)
+  }
+
+  /** Asserts the value is a number. */
+  to_be_number() {
+    _assert(is_number(self._value),
+      'Expected a number but received ${typeof(self._value)}',
+      '<number>', self._value, false)
+  }
+
+  /** Asserts the value is an integer (number with no fractional part). */
+  to_be_integer() {
+    _assert(is_number(self._value) and self._value == int(self._value),
+      'Expected an integer but received ${_p.pretty(self._value)}',
+      '<integer>', self._value, false)
+  }
+
+  /** Asserts the value is a boolean. */
+  to_be_bool() {
+    _assert(is_bool(self._value),
+      'Expected a boolean but received ${typeof(self._value)}',
+      '<bool>', self._value, false)
+  }
+
+  /** Asserts the value is a list. */
+  to_be_list() {
+    _assert(is_list(self._value),
+      'Expected a list but received ${typeof(self._value)}',
+      '<list>', self._value, false)
+  }
+
+  /** Asserts the value is a dictionary. */
+  to_be_dict() {
+    _assert(is_dict(self._value),
+      'Expected a dict but received ${typeof(self._value)}',
+      '<dict>', self._value, false)
+  }
+
+  /** Asserts the value is a function. */
+  to_be_function() {
+    _assert(is_function(self._value),
+      'Expected a function but received ${typeof(self._value)}',
+      '<function>', self._value, false)
+  }
+
+  /** Asserts the value is a class. */
+  to_be_class() {
+    _assert(is_class(self._value),
+      'Expected a class but received ${typeof(self._value)}',
+      '<class>', self._value, false)
+  }
+
+  /** Asserts the value is an instance (of any class). */
+  to_be_instance() {
+    _assert(is_instance(self._value),
+      'Expected an instance but received ${typeof(self._value)}',
+      '<instance>', self._value, false)
+  }
+
+  /**
+   * Asserts the value is an instance of `klass`.
+   *
+   * @param class klass
+   */
+  to_be_instance_of(klass) {
+    _assert(instance_of(self._value, klass),
+      'Expected instance of ${typeof(klass)} but received ${typeof(self._value)}',
+      typeof(klass), typeof(self._value), false)
+  }
+
+
+  # =========================================================================
+  # Numeric matchers
+  # =========================================================================
+
+  /**
+   * Asserts the numeric value is greater than `n`.
+   *
+   * @param number n
+   */
+  to_be_greater_than(n) {
+    _assert(is_number(self._value) and self._value > n,
+      'Expected ${_p.pretty(self._value)} to be greater than ${_p.pretty(n)}',
+      n, self._value, false)
+  }
+
+  /**
+   * Asserts the numeric value is less than `n`.
+   *
+   * @param number n
+   */
+  to_be_less_than(n) {
+    _assert(is_number(self._value) and self._value < n,
+      'Expected ${_p.pretty(self._value)} to be less than ${_p.pretty(n)}',
+      n, self._value, false)
+  }
+
+  /**
+   * Asserts the numeric value is greater than or equal to `n`.
+   *
+   * @param number n
+   */
+  to_be_greater_than_or_equal(n) {
+    _assert(is_number(self._value) and self._value >= n,
+      'Expected ${_p.pretty(self._value)} to be >= ${_p.pretty(n)}',
+      n, self._value, false)
+  }
+
+  /**
+   * Asserts the numeric value is less than or equal to `n`.
+   *
+   * @param number n
+   */
+  to_be_less_than_or_equal(n) {
+    _assert(is_number(self._value) and self._value <= n,
+      'Expected ${_p.pretty(self._value)} to be <= ${_p.pretty(n)}',
+      n, self._value, false)
+  }
+
+  /**
+   * Asserts the numeric value falls within `[min, max]` (inclusive).
+   *
+   * @param number min
+   * @param number max
+   */
+  to_be_between(min, max) {
+    _assert(is_number(self._value) and self._value >= min and self._value <= max,
+      'Expected ${_p.pretty(self._value)} to be between ${_p.pretty(min)} and ${_p.pretty(max)}',
+      '[${min}, ${max}]', self._value, false)
+  }
+
+  /**
+   * Asserts the numeric value is within `precision` decimal places of
+   * `expected`.  Useful for floating-point comparison.
+   *
+   * Default precision is 2 (i.e. within ±0.005).
+   *
+   * @param number expected
+   * @param number precision  Number of decimal places (default 2).
+   */
+  to_be_close_to(expected, precision) {
+    if precision == nil precision = 2
+    var tolerance = 0.5 / (10 ** precision)
+    var diff = (self._value - expected).abs()
+    _assert(is_number(self._value) and diff < tolerance,
+      'Expected ${_p.pretty(self._value)} to be close to ${_p.pretty(expected)} (±${tolerance})',
+      expected, self._value, false)
+  }
+
+  /**
+   * Asserts the value is positive (greater than zero).
+   */
+  to_be_positive() {
+    _assert(is_number(self._value) and self._value > 0,
+      'Expected a positive number but received ${_p.pretty(self._value)}',
+      '<positive>', self._value, false)
+  }
+
+  /**
+   * Asserts the value is negative (less than zero).
+   */
+  to_be_negative() {
+    _assert(is_number(self._value) and self._value < 0,
+      'Expected a negative number but received ${_p.pretty(self._value)}',
+      '<negative>', self._value, false)
+  }
+
+  /**
+   * Asserts the value is zero.
+   */
+  to_be_zero() {
+    _assert(self._value == 0,
+      'Expected 0 but received ${_p.pretty(self._value)}',
+      0, self._value, false)
+  }
+
+  /**
+   * Asserts the value is NaN (not a number in the IEEE sense — i.e. a
+   * number whose string representation is "nan").
+   */
+  to_be_nan() {
+    var is_nan = is_number(self._value) and to_string(self._value) == 'nan'
+    _assert(is_nan,
+      'Expected NaN but received ${_p.pretty(self._value)}',
+      'nan', self._value, false)
+  }
+
+  /**
+   * Asserts the value is a finite number (not infinite and not NaN).
+   */
+  to_be_finite() {
+    var s = is_number(self._value) ? to_string(self._value) : ''
+    _assert(is_number(self._value) and s != 'nan' and s != 'inf' and s != '-inf',
+      'Expected a finite number but received ${_p.pretty(self._value)}',
+      '<finite>', self._value, false)
+  }
+
+
+  # =========================================================================
+  # String matchers
+  # =========================================================================
+
+  /**
+   * Asserts the string contains `substring`, or the list/dict contains
+   * `item`.
+   *
+   * @param any item
+   */
+  to_contain(item) {
+    var v = self._value
+    var result = false
+    if is_string(v)  result = v.contains(item)
+    else if is_list(v) result = v.contains(item)
+    else if is_dict(v) result = v.contains(item)
+
+    _assert(result,
+      'Expected ${_p.pretty(v)} to contain ${_p.pretty(item)}',
+      item, v, false)
+  }
+
+  /**
+   * Asserts the string starts with `prefix`.
+   *
+   * @param string prefix
+   */
+  to_start_with(prefix) {
+    _assert(is_string(self._value) and self._value.starts_with(prefix),
+      'Expected ${_p.pretty(self._value)} to start with ${_p.pretty(prefix)}',
+      prefix, self._value, false)
+  }
+
+  /**
+   * Asserts the string ends with `suffix`.
+   *
+   * @param string suffix
+   */
+  to_end_with(suffix) {
+    _assert(is_string(self._value) and self._value.ends_with(suffix),
+      'Expected ${_p.pretty(self._value)} to end with ${_p.pretty(suffix)}',
+      suffix, self._value, false)
+  }
+
+  /**
+   * Asserts the string matches the regular expression `pattern`.
+   *
+   * @param string pattern  A regex pattern string (e.g. `'/^hello/'`).
+   */
+  to_match(pattern) {
+    _assert(is_string(self._value) and self._value.match(pattern) != nil,
+      'Expected ${_p.pretty(self._value)} to match ${_p.pretty(pattern)}',
+      pattern, self._value, false)
+  }
+
+  /**
+   * Asserts the string, list, or dict has length `n`.
+   *
+   * @param number n
+   */
+  to_have_length(n) {
+    var v = self._value
+    var actual = nil
+    if is_string(v) or is_list(v) or is_dict(v) { actual = v.length() }
+    _assert(actual == n,
+      'Expected length ${_p.pretty(n)} but received length ${_p.pretty(actual)}',
+      n, actual, false)
+  }
+
+  /**
+   * Asserts the string, list, or dict is empty (length == 0).
+   */
+  to_be_empty() {
+    var v = self._value
+    var empty = (is_string(v) or is_list(v) or is_dict(v)) and v.length() == 0
+    _assert(empty,
+      'Expected an empty value but received ${_p.pretty(v)}',
+      '<empty>', v, false)
+  }
+
+
+  # =========================================================================
+  # Dictionary matchers
+  # =========================================================================
+
+  /**
+   * Asserts the dict contains key `key`.
+   *
+   * @param any key
+   */
+  to_have_key(key) {
+    _assert(is_dict(self._value) and self._value.contains(key),
+      'Expected dict to have key ${_p.pretty(key)}',
+      key, self._value, false)
+  }
+
+  /**
+   * Asserts the dict contains a subset of key-value pairs matching `subset`.
+   *
+   * @param dict subset
+   */
+  to_match_object(subset) {
+    _assert(diff_mod.subset_equal(subset, self._value),
+      'Expected dict to match object',
+      subset, self._value, true)
+  }
+
+
+  # =========================================================================
+  # List matchers
+  # =========================================================================
+
+  /**
+   * Asserts the list contains at least one element that is deeply equal
+   * to `item`.  Unlike `to_contain` (which uses `==`), this uses deep
+   * equality.
+   *
+   * @param any item
+   */
+  to_contain_equal(item) {
+    var found = false
+    if is_list(self._value) {
+      for el in self._value {
+        if diff_mod.deep_equal(el, item) { found = true; break }
+      }
+    }
+    _assert(found,
+      'Expected list to contain an element deeply equal to ${_p.pretty(item)}',
+      item, self._value, false)
+  }
+
+  /**
+   * Asserts the list contains all items in `items` (order-independent,
+   * uses deep equality).
+   *
+   * @param list items
+   */
+  to_contain_all(items) {
+    var v = self._value
+    var all_found = true
+    var missing = []
+    for item in items {
+      var found = false
+      if is_list(v) {
+        for el in v {
+          if diff_mod.deep_equal(el, item) { found = true; break }
+        }
+      }
+      if !found { all_found = false; missing.append(item) }
+    }
+    _assert(all_found,
+      'Expected list to contain all items. Missing: ${_p.pretty(missing)}',
+      items, v, false)
+  }
+
+
+  # =========================================================================
+  # Exception matchers
+  # =========================================================================
+
+  /**
+   * Asserts that calling `self._value` (which must be a zero-argument
+   * function) raises any exception.
+   *
+   * ```zuri
+   * expect(@() { raise Exception('oops') }).to_throw()
+   * ```
+   */
+  to_throw() {
+    if !is_function(self._value) {
+      raise AssertionError(
+        'to_throw() requires a function value — received ${typeof(self._value)}',
+        nil, nil, false, []
+      )
+    }
+
+    var threw = false
+
+    catch {
+      self._value()
+    } as _e 
+    
+    if _e {
+      threw = true
+    }
+
+    _assert(threw,
+      'Expected function to throw but it did not',
+      '<exception>', nil, false
+    )
+  }
+
+  /**
+   * Asserts that calling the function raises an exception whose message
+   * contains `message_part`.
+   *
+   * @param string message_part
+   */
+  to_throw_with_message(message_part) {
+    if !is_function(self._value) {
+      raise AssertionError(
+        'to_throw_with_message() requires a function — received ${typeof(self._value)}',
+        nil, nil, false, []
+      )
+    }
+
+    var threw = false
+    var actual_msg = nil
+
+    catch {
+      self._value()
+    } as e 
+    
+    if e {
+      threw = true
+      actual_msg = e.message
+    }
+
+    _assert(threw,
+      'Expected function to throw but it did not',
+      message_part, nil, false
+    )
+    _assert(is_string(actual_msg) and actual_msg.contains(message_part),
+      'Expected exception message to contain ${_p.pretty(message_part)} but got ${_p.pretty(actual_msg)}',
+      message_part, actual_msg, false
+    )
+  }
+
+  /**
+   * Asserts that calling the function raises an exception that is an
+   * instance of `error_class`.
+   *
+   * @param class error_class
+   */
+  to_throw_instance_of(error_class) {
+    if !is_function(self._value) {
+      raise AssertionError(
+        'to_throw_instance_of() requires a function — received ${typeof(self._value)}',
+        nil, nil, false, []
+      )
+    }
+
+    var threw = false
+    var correct_type = false
+
+    catch {
+      self._value()
+    } as e 
+    
+    if e {
+      threw = true
+      correct_type = instance_of(e, error_class)
+    }
+
+    _assert(threw,
+      'Expected function to throw but it did not',
+      typeof(error_class), nil, false
+    )
+    _assert(correct_type,
+      'Expected function to throw instance of ${typeof(error_class)}',
+      typeof(error_class), nil, false
+    )
+  }
+
+  /**
+   * Asserts that calling the function does NOT throw any exception.
+   */
+  to_not_throw() {
+    if !is_function(self._value) {
+      raise AssertionError(
+        'to_not_throw() requires a function — received ${typeof(self._value)}',
+        nil, nil, false, []
+      )
+    }
+
+    var threw = false
+    var err_msg = nil
+
+    catch {
+      self._value()
+    } as e 
+    
+    if e {
+      threw = true
+      err_msg = e.message
+    }
+
+    _assert(!threw,
+      'Expected function not to throw, but it raised: ${_p.pretty(err_msg)}',
+      nil, err_msg, false)
+  }
+
+
+  # =========================================================================
+  # Custom / escape-hatch matchers
+  # =========================================================================
+
+  /**
+   * Asserts that `predicate(value)` returns truthy.
+   *
+   * ```zuri
+   * expect(7).to_satisfy(@(n) { return n % 2 != 0 }, 'to be odd')
+   * ```
+   *
+   * @param function predicate  A function `@(value) -> bool`.
+   * @param string   label      Optional description used in failure messages.
+   */
+  to_satisfy(predicate, label) {
+    var description = label ? label : 'to satisfy custom predicate'
+    _assert(predicate(self._value),
+      'Expected ${_p.pretty(self._value)} ${description}',
+      description, self._value, false)
+  }
+
+  /**
+   * Unconditionally fails the current test with `message`.
+   *
+   * Useful as a sentinel inside branches that should never be reached:
+   *
+   * ```zuri
+   * if some_condition {
+   *   expect.fail('this branch should not execute')
+   * }
+   * ```
+   *
+   * @param string message
+   */
+  fail(message) {
+    raise AssertionError(message ? message : 'Test failed unconditionally',
+      nil, nil, false, [])
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Module-level fail() — can be called without an Expect instance
+# ---------------------------------------------------------------------------
+
+/**
+ * Unconditionally fails the current test with `message`.
+ *
+ * @param string message
+ */
+def fail(message) {
+  raise AssertionError(message ? message : 'Test failed unconditionally',
+    nil, nil, false, [])
+}

@@ -224,6 +224,12 @@ void bind_native_modules(z_vm *vm) {
 
   bind_user_modules(vm, merge_paths(get_exe_dir(), "dist"));
   bind_user_modules(vm, merge_paths(getcwd(NULL, 0), LOCAL_PACKAGES_DIRECTORY LOCAL_EXT_DIRECTORY));
+
+  // Initialize core...
+  char *core_module = get_core_library_file_path("_core");
+  if (core_module != NULL) {
+    run_file(vm, core_module, true);
+  }
 }
 
 char* load_user_module(z_vm *vm, const char *path, char *name) {

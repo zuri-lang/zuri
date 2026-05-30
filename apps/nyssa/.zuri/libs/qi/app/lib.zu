@@ -79,8 +79,8 @@ def _red(txt) {
 
 def _report(text, state) {
   return state ? 
-  colors.text(text, colors.text_color.green) :
-  colors.text(text, colors.text_color.light_red)
+    colors.text(text, colors.text_color.green) :
+    colors.text(text, colors.text_color.light_red)
 }
 
 def _time(time) {

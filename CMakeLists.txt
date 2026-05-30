@@ -54,6 +54,7 @@ set(ZURI_SOURCES
 	src/util.c
 	src/utf8.c
 	src/value.c
+	src/capture.c
 	src/vm.c
 	# standard module
 	src/standard/base64.c

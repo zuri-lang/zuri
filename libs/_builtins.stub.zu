@@ -259,31 +259,11 @@ def instance_of(x, y) {}
 
 
 /**
- * Returns the greatest of the given numbers.
- * 
- * @note This method expects at least two arguments.
- * @param {...number} numbers The numbers to compare.
- * @returns {number}
- */
-def max(...) {}
-
-
-/**
  * Returns the current epoch time to the microseconds resolution.
  * 
  * @returns {number}
  */
 def microtime() {}
-
-
-/**
- * Returns the least of the given numbers.
- * 
- * @note This method expects at least two arguments.
- * @param {...number} numbers The numbers to compare.
- * @returns {number}
- */
-def min(...) {}
 
 
 /**
@@ -307,15 +287,6 @@ def ord(x) {}
 
 
 /**
- * Prints the given values joined by spaces to standard output.
- * 
- * @param {...any} values The values to print.
- * @note This function does not terminate the line.
- */
-def print(...) {}
-
-
-/**
  * If no argument is given, returns a random number between 0 and 1. If x is given, returns a 
  * random number between 0 and x. If y is given, returns a random number between x and y.
  * 
@@ -336,16 +307,6 @@ def rand(x, y) {}
  * @returns {boolean}
  */
 def setprop(obj, prop, value) {}
-
-
-/**
- * Returns the sum of all the given numbers.
- * 
- * @note This method expects at least two arguments.
- * @param {...number} numbers The numbers to sum.
- * @returns {number}
- */
-def sum(...) {}
 
 
 /**

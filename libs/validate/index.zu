@@ -173,6 +173,41 @@
  *   res.json({ status: 'created' }, 201)
  * })
  * ```
+ * 
+ * ### Sequential Validation
+ * 
+ * The validation mode is sequential, meaning that each field is validated in turn.
+ * This is the behavior you expect from a form submission. It is important to keep 
+ * this in mind when using this module.
+ * 
+ * Consider the example below:
+ * 
+ * ```zuri
+ * var schema = validate.schema({
+ *   name: validate.required_if('age', 30).string().max_length(100),
+ *   age:  validate.required().integer().between(18, 120),
+ * })
+ * ```
+ * 
+ * If the `age` field is empty, the validation of `name` will not raise any error. This is 
+ * because the required_if rule is only applied if the `age` field is 30 or greater and the 
+ * entire chain exists before the next rule `string()`.
+ * 
+ * However, if the validation rules were modified like this:
+ * 
+ * ```zuri
+ * var schema = validate.schema({
+ *   name: validate.string().required_if('age', 30).max_length(100),
+ *   age:  validate.required().integer().between(18, 120),
+ * })
+ * ```
+ * 
+ * Even when the `age` field is empty, the validation of `name` will raise an error if it is empty. 
+ * This is because the `string` rule comes before the `required_if` rule.
+ * 
+ * With this behavior in mind, it is advised that optional rules such as `sometimes`, `nullable`, 
+ * `*_if`, `*_unless` rules are applied early in the chain unless you absolutely want them to fail 
+ * irrespective.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */

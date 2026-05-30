@@ -19,6 +19,8 @@
 #include <sys/ioctl.h>
 #endif
 
+#include "capture.h"
+
 #ifdef HAVE_TERMIOS_H
 #include <termios.h>
 #include <stdlib.h>
@@ -239,45 +241,6 @@ DECLARE_MODULE_METHOD(io_tty__getsize) {
 }
 
 /**
- * flush()
- * flushes the given file handle
- * @return nil
- */
-DECLARE_MODULE_METHOD(io_flush) {
-  ENFORCE_ARG_COUNT(flush, 1);
-  ENFORCE_ARG_TYPE(flush, 0, IS_FILE);
-  z_obj_file *file = AS_FILE(args[0]);
-
-  if (file->is_open) {
-    fflush(file->file);
-  }
-  RETURN;
-}
-
-/**
- * getc()
- *
- * reads character(s) from standard input
- *
- * when length is given, gets `length` number of characters
- * else, gets a single character
- * @return char
- */
-DECLARE_MODULE_METHOD(io_getc) {
-  ENFORCE_ARG_RANGE(getc, 0, 1);
-
-  int length = 1;
-  if (arg_count == 1) {
-    ENFORCE_ARG_TYPE(getc, 0, IS_NUMBER);
-    length = AS_NUMBER(args[0]);
-  }
-
-  char *result = ALLOCATE(char, (size_t) length + 2);
-  read_line(result, length + 1);
-  RETURN_L_STRING(result, length);
-}
-
-/**
  * getch()
  *
  * reads character(s) from standard input without printing to standard output
@@ -294,35 +257,23 @@ DECLARE_MODULE_METHOD(io_getch) {
   RETURN_L_STRING(result, 1);
 }
 
-/**
- * putc(c: char | number)
- * writes character c to the screen
- * @return nil
- */
-DECLARE_MODULE_METHOD(io_putc) {
-  ENFORCE_ARG_COUNT(putc, 1);
-  ENFORCE_ARG_TYPES(putc, 0, IS_STRING, IS_NUMBER);
+DECLARE_MODULE_METHOD(io_startcapture) {
+  ENFORCE_ARG_COUNT(start_capture, 1);
+  ENFORCE_ARG_TYPE(start_capture, 0, IS_NUMBER);
+  z_capture_t *capture = capture_start(AS_NUMBER(args[0]) == 0 ? Z_CAPTURE_STDOUT : Z_CAPTURE_STDERR);
+  RETURN_NAMED_PTR(capture, "CaptureStream");
+}
 
-  if(IS_STRING(args[0])) {
-    z_obj_string *string = AS_STRING(args[0]);
-    int count = string->length;
-#ifdef _WIN32
-    if (count > 32767 && isatty(STDIN_FILENO)) {
-      /* Issue #11395: the Windows console returns an error (12: not
-         enough space error) on writing into stdout if stdout mode is
-         binary and the length is greater than 66,000 bytes (or less,
-         depending on heap usage). */
-      count = 32767;
-    }
-#endif
-
-    if (write(STDOUT_FILENO, string->chars, count) != -1) {
-      fflush(stdout);
-    }
-  } else {
-    putc(AS_NUMBER(args[0]), stdout);
+DECLARE_MODULE_METHOD(io_stopcapture) {
+  ENFORCE_ARG_COUNT(stop_capture, 1);
+  ENFORCE_ARG_TYPE(stop_capture, 0, IS_PTR);
+  z_capture_t *capture = (z_capture_t *)AS_PTR(args[0])->pointer;
+  if (capture == NULL) {
+    RETURN_ERROR("Invalid capture stream");
   }
-  RETURN;
+
+  char *output = capture_stop(capture);
+  RETURN_TT_STRING(output);
 }
 
 /**
@@ -355,6 +306,10 @@ z_value io_module_stdout(z_vm *vm) {
   file->number = STDOUT_FILENO;
   file->is_tty = isatty(STDOUT_FILENO);
   return OBJ_VAL(file);
+}
+
+z_value io_module_is_repl(z_vm *vm) {
+  return BOOL_VAL(vm->is_repl);
 }
 
 /**
@@ -393,14 +348,14 @@ CREATE_MODULE_LOADER(io) {
       {"stdin",  false, io_module_stdin},
       {"stdout", false, io_module_stdout},
       {"stderr", false, io_module_stderr},
+      {"isrepl", false, io_module_is_repl},
       {NULL,     false, NULL},
   };
 
   static z_func_reg io_functions[] = {
-      {"getc",  false, GET_MODULE_METHOD(io_getc)},
       {"getch",  false, GET_MODULE_METHOD(io_getch)},
-      {"putc",  false, GET_MODULE_METHOD(io_putc)},
-      {"flush", false, GET_MODULE_METHOD(io_flush)},
+      {"startcapture", false, GET_MODULE_METHOD(io_startcapture)},
+      {"stopcapture", false, GET_MODULE_METHOD(io_stopcapture)},
       {NULL,    false, NULL},
   };
 

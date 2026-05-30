@@ -297,21 +297,77 @@ DECLARE_MODULE_METHOD(os__createdir) {
   RETURN_BOOL(!exists);
 }
 
-DECLARE_MODULE_METHOD(os__readdir) {
-  ENFORCE_ARG_COUNT(read_dir, 1);
-  ENFORCE_ARG_TYPE(read_dir, 0, IS_STRING);
-  z_obj_string *path = AS_STRING(args[0]);
-
+static int read_directory(z_vm *vm, char *path, int original_path_length, z_obj_list *out, bool recursive, bool has_parent, bool has_current) {
   DIR *dir;
-  if((dir = opendir(path->chars)) != NULL) {
-    z_obj_list *list = (z_obj_list *)GC(new_list(vm));
+  if((dir = opendir(path)) != NULL) {
+
     struct dirent *ent;
     while((ent = readdir(dir)) != NULL) {
-      write_list(vm, list, STRING_VAL(ent->d_name));
+
+      // skip duplicate `.` and `..` in path
+      if (memcmp(ent->d_name, ".", (int)strlen(ent->d_name)) == 0) {
+        if (has_current)
+          continue;
+
+        write_list(vm, out, GC_STRING("."));
+        has_current = true;
+        continue;
+      }
+
+      if (memcmp(ent->d_name, "..", (int)strlen(ent->d_name)) == 0) {
+        if (has_parent)
+          continue;
+
+        write_list(vm, out, GC_STRING(".."));
+        has_parent = true;
+        continue;
+      }
+
+      char *path_string = merge_paths(path, ent->d_name);
+      if(path_string == NULL) return -1;
+
+      int path_string_length = (int)strlen(path_string);
+
+      struct stat sb;
+      if(stat(path_string, &sb) == 0) {
+        if(S_ISDIR(sb.st_mode) > 0 && recursive) {
+          // recurse
+          read_directory(vm, path_string, original_path_length, out, recursive, has_parent, has_current);
+        } else {
+          char *new_str = path_string;
+          new_str += original_path_length + 1;
+          int new_string_length = path_string_length - original_path_length - 1;
+
+          write_list(vm, out, GC_L_STRING(new_str, new_string_length));
+        }
+
+        free(path_string);
+      } else {
+        free(path_string);
+        return errno;
+      }
     }
+
     closedir(dir);
+    return 0;
+  }
+
+  return errno;
+}
+
+DECLARE_MODULE_METHOD(os__readdir) {
+  ENFORCE_ARG_COUNT(read_dir, 2);
+  ENFORCE_ARG_TYPE(read_dir, 0, IS_STRING);
+  ENFORCE_ARG_TYPE(read_dir, 1, IS_BOOL);
+
+  z_obj_string *path = AS_STRING(args[0]);
+  bool recursive = AS_BOOL(args[1]);
+
+  z_obj_list *list = (z_obj_list *)GC(new_list(vm));
+  if (read_directory(vm, path->chars, path->length, list, recursive, false, false) == 0) {
     RETURN_OBJ(list);
   }
+
   RETURN_ERROR(strerror(errno));
 }
 
@@ -349,7 +405,7 @@ static int remove_directory(char *path, int path_length, bool recursive) {
             return -1;
           }
         }
-        
+
         free(path_string);
       } else {
         free(path_string);

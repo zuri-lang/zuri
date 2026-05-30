@@ -1,0 +1,561 @@
+/**
+ * # test._runner
+ *
+ * Execution engine for the test module.
+ *
+ * Maintains a stack of active suites, accumulates results, fires lifecycle
+ * hooks (`before_each`, `after_each`, `before_all`, `after_all`), and
+ * drives the printer at each stage.  A single global `_State` instance
+ * holds everything — tests are always top-level scripts, so global state
+ * is safe and expected here.
+ *
+ * ### Execution model
+ *
+ * 1. `describe(name, fn)` pushes a Suite onto `_state.suite_stack`, calls
+ *    `fn()` synchronously, then pops the suite.  Nested `describe` calls
+ *    create child suites.
+ * 2. `it(name, fn)` registers a Test inside the current suite and runs it
+ *    immediately — there is no deferred collection phase.
+ * 3. After the outermost `describe` returns, the printer emits the summary
+ *    banner automatically via an atexit-style hook registered on first use.
+ *
+ * ### Concurrency
+ *
+ * Zuri is single-threaded.  There is no async concern.
+ *
+ * @module test._runner
+ */
+
+import io
+import ._printer as _p
+import ._assertion { AssertionError }
+
+
+# ---------------------------------------------------------------------------
+# Internal result structures
+# ---------------------------------------------------------------------------
+
+class _TestResult {
+  var name        = ''
+  var status      = 'pass'    # 'pass' | 'fail' | 'skip' | 'todo'
+  var failures    = []        # list of failure dicts
+  var duration_ms = 0
+  var depth       = 0
+  var suite_path  = ''
+
+  _TestResult(name, depth, suite_path) {
+    self.name       = name
+    self.depth      = depth
+    self.suite_path = suite_path
+    self.failures   = []
+  }
+}
+
+class _SuiteResult {
+  var name     = ''
+  var depth    = 0
+  var children = []    # list of _TestResult | _SuiteResult
+  var logs = []
+
+  _SuiteResult(name, depth) {
+    self.name     = name
+    self.depth    = depth
+    self.children = []
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Log capture
+# ---------------------------------------------------------------------------
+
+class _StdoutInterceptor {
+
+  _StdoutInterceptor(stdout) {
+    self.original_stdout = stdout
+    self.captured = []
+  }
+
+  write(str) {
+    self.captured.append(str)
+  }
+
+  puts(str) {
+    self.write(str)
+  }
+
+  flush() {
+    self.original_stdout.flush()
+  }
+
+  clear() {
+    self.captured.clear()
+  }
+}
+
+var _log_interceptor = _StdoutInterceptor(io.stdout)
+
+
+# ---------------------------------------------------------------------------
+# Global state
+# ---------------------------------------------------------------------------
+
+class _State {
+  # Stack of active _SuiteResult objects (outermost first)
+  var suite_stack = []
+
+  # Flat lists accumulated for the final report
+  var all_results = []      # all _TestResult objects in execution order
+  var failures    = []      # only failing _TestResult objects
+
+  # Aggregate counters
+  var passed   = 0
+  var failed   = 0
+  var skipped  = 0
+  var todo     = 0
+  var suites   = 0
+
+  # Timing
+  var start_ms     = nil
+  var end_ms       = nil
+
+  # only() mode — when any test or suite uses only(), all others are skipped
+  var only_mode    = false
+  var only_targets = []    # list of ids (names) that should run
+
+  # Has the summary already been printed?
+  var summary_printed = false
+
+  _State() {}
+
+  # Returns the current (innermost) suite, or nil when called outside a describe.
+  current_suite() {
+    if self.suite_stack.length() == 0 return nil
+    return self.suite_stack[self.suite_stack.length() - 1]
+  }
+
+  # Returns the dot-joined path of all active suite names.
+  suite_path() {
+    var parts = []
+    for s in self.suite_stack { parts.append(s.name) }
+    return ' > '.join(parts)
+  }
+
+  # Depth of nesting (0 = top-level inside describe).
+  depth() {
+    return self.suite_stack.length()
+  }
+}
+
+var _state = _State()
+
+
+# ---------------------------------------------------------------------------
+# Timing helper
+# ---------------------------------------------------------------------------
+
+# We use os.time() if available, otherwise fall back to a monotonic counter.
+
+def _now_ms() {
+  return microtime() // 1000
+}
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle hook storage
+# ---------------------------------------------------------------------------
+
+# Hooks are stored per suite depth level.  Each entry is a dict:
+# { before_all: list, after_all: list, before_each: list, after_each: list }
+var _hooks = []
+
+def _hooks_for_depth(depth) {
+  while _hooks.length() <= depth {
+    _hooks.append({
+      before_all:  [],
+      after_all:   [],
+      before_each: [],
+      after_each:  [],
+      before_all_ran: false,
+    })
+  }
+  return _hooks[depth]
+}
+
+def _push_hook_level() {
+  _hooks.append({
+    before_all:  [],
+    after_all:   [],
+    before_each: [],
+    after_each:  [],
+    before_all_ran: false,
+  })
+}
+
+def _pop_hook_level() {
+  if _hooks.length() > 0 {
+    var h = _hooks[_hooks.length() - 1]
+    # Run after_all hooks for this suite
+    for fn in h.after_all {
+      catch {
+        fn()
+      } as e 
+      
+      if e {
+        _p.print_unexpected_error('after_all hook', _state.depth(), e.message)
+      }
+    }
+    _hooks = _hooks[0, _hooks.length() - 1]
+  }
+}
+
+def _run_before_each() {
+  for h in _hooks {
+    for fn in h.before_each {
+      catch {
+        fn()
+      } as e 
+      
+      if e {
+        raise e   # propagate so the test itself is marked failed
+      }
+    }
+  }
+}
+
+def _run_after_each() {
+  for h in _hooks {
+    for fn in h.after_each {
+      catch {
+        fn()
+      } as e 
+      
+      if e {
+        # after_each errors are reported but do not change test status
+        _p.print_unexpected_error('after_each hook', _state.depth(), e.message)
+      }
+    }
+  }
+}
+
+def _run_before_all_if_needed() {
+  if _hooks.length() == 0 return
+  var h = _hooks[_hooks.length() - 1]
+  if !h.before_all_ran {
+    h.before_all_ran = true
+    for fn in h.before_all {
+      catch {
+        fn()
+      } as e 
+      
+      if e {
+        raise e
+      }
+    }
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Core execution functions
+# ---------------------------------------------------------------------------
+
+/**
+ * Starts capturing stdout.  Captured output is stored in the current test's
+ * `logs` property, or in the interceptor's `captured` list if no test is running.
+ */
+def start_capture() {
+  _log_interceptor.clear()
+  io.stdout = _log_interceptor
+}
+
+/**
+ * Stops the capture started by `start_capture()` and returns the captured output 
+ * as a string.  If called during a test, the captured output is returned and cleared 
+ * from the current test's `logs` property.  If called outside a test, the captured 
+ * output is returned and cleared from the interceptor's `captured` list.
+ * 
+ * @return string The captured output since the last `start_capture()` call.
+ */
+def stop_capture() {
+  io.stdout = _log_interceptor.original_stdout
+  _log_interceptor.flush()
+
+  var captured = _log_interceptor.captured
+  _log_interceptor.clear()
+
+  return ''.join(captured)
+}
+
+/**
+ * Opens a test suite.  Nested calls create child suites.
+ *
+ * @param string   name  Suite label displayed in the report.
+ * @param function fn    Synchronous function containing `it()` calls.
+ */
+def run_describe(name, fn, is_only, is_skip) {
+  if _state.start_ms == nil _state.start_ms = _now_ms()
+
+  _state.suites++
+
+  var suite = _SuiteResult(name, _state.depth())
+  _state.suite_stack.append(suite)
+  _push_hook_level()
+
+  _p.print_suite_header(name, _state.depth() - 1)
+
+  if is_skip {
+    # Skip entire suite — print it as skipped, don't execute body
+    _state.skipped++
+    _p.print_skip('(suite skipped)', _state.depth())
+    _state.suite_stack = _state.suite_stack[0, _state.suite_stack.length() - 1]
+    _pop_hook_level()
+    return
+  }
+
+  catch {
+    fn()
+  } as e
+
+  _log_interceptor.test_logs = nil  # clear test log capture after suite body
+  
+  if e {
+    # Unexpected error in suite body — report and continue
+    _p.print_unexpected_error('describe body', _state.depth() - 1, e.message)
+    _state.suite_stack = _state.suite_stack[0, _state.suite_stack.length() - 1]
+    _pop_hook_level()
+    return
+  }
+
+  suite.logs = _log_interceptor.test_logs  # store test logs in suite
+  _state.suite_stack = _state.suite_stack[0, _state.suite_stack.length() - 1]
+  _pop_hook_level()
+}
+
+/**
+ * Registers and immediately runs a single test.
+ *
+ * @param string   name     Test label.
+ * @param function fn       Test body.  Receives no arguments.
+ * @param bool     is_only  True when `.only` variant was used.
+ * @param bool     is_skip  True when `.skip` variant was used.
+ * @param bool     is_todo  True when no body was supplied.
+ */
+def run_it(name, fn, is_only, is_skip, is_todo) {
+  var depth      = _state.depth()
+  var suite_path = _state.suite_path()
+  var result     = _TestResult(name, depth, suite_path)
+
+  if is_todo or fn == nil {
+    result.status = 'todo'
+    _state.todo++
+    _p.print_todo(name, depth)
+    _state.all_results.append(result)
+    return
+  }
+
+  if is_skip {
+    result.status = 'skip'
+    _state.skipped++
+    _p.print_skip(name, depth)
+    _state.all_results.append(result)
+    return
+  }
+
+  # Run before_all for this suite level (once per suite)
+  catch {
+    _run_before_all_if_needed()
+  } as ba_err
+  
+  if ba_err {
+    result.status = 'fail'
+    _state.failed++
+    result.failures.append({
+      message:  'before_all hook failed: ' + ba_err.message,
+      expected: nil,
+      received: nil,
+      has_diff: false,
+      trace:    nil,
+    })
+    _p.print_fail(name, depth, nil)
+    _state.all_results.append(result)
+    _state.failures.append(result)
+    return
+  }
+
+  # before_each
+  catch {
+    _run_before_each()
+  } as be_err 
+  
+  if be_err {
+    result.status = 'fail'
+    _state.failed++
+    result.failures.append({
+      message:  'before_each hook failed: ' + be_err.message,
+      expected: nil,
+      received: nil,
+      has_diff: false,
+      trace:    nil,
+    })
+    _p.print_fail(name, depth, nil)
+    _state.all_results.append(result)
+    _state.failures.append(result)
+    return
+  }
+
+  # Run the test body
+  var t_start = _now_ms()
+
+  start_capture()
+
+  catch {
+    fn()
+  } as ae 
+
+  var logged = stop_capture()
+  
+  if ae {
+    result.status = 'fail'
+
+    if instance_of(ae, AssertionError) {
+      result.failures.append({
+        message:  ae.message,
+        expected: ae.expected,
+        received: ae.received,
+        has_diff: ae.has_diff,
+        diff_lines: ae.diff_lines,
+        trace:    nil,
+      })
+    } else {
+      result.failures.append({
+        message:  'Unexpected exception: ' + ae.message,
+        expected: nil,
+        received: nil,
+        has_diff: false,
+        trace:    nil,
+      })
+    }
+  }
+
+  var t_end = _now_ms()
+  result.duration_ms = t_end - t_start
+
+  # after_each (always runs, even on failure)
+  _run_after_each()
+
+  # Record result
+  if result.status == 'fail' {
+    _state.failed++
+    _p.print_fail(name, depth, result.duration_ms)
+
+    if !logged.is_empty() {
+      echo logged
+    }
+
+    _state.failures.append(result)
+  } else {
+    result.status = 'pass'
+    _state.passed++
+    _p.print_pass(name, depth, result.duration_ms)
+  }
+
+  _state.all_results.append(result)
+}
+
+
+# ---------------------------------------------------------------------------
+# Hook registration
+# ---------------------------------------------------------------------------
+
+def register_before_each(fn) {
+  if _hooks.length() == 0 _push_hook_level()
+  _hooks[_hooks.length() - 1].before_each.append(fn)
+}
+
+def register_after_each(fn) {
+  if _hooks.length() == 0 _push_hook_level()
+  _hooks[_hooks.length() - 1].after_each.append(fn)
+}
+
+def register_before_all(fn) {
+  if _hooks.length() == 0 _push_hook_level()
+  _hooks[_hooks.length() - 1].before_all.append(fn)
+}
+
+def register_after_all(fn) {
+  if _hooks.length() == 0 _push_hook_level()
+  _hooks[_hooks.length() - 1].after_all.append(fn)
+}
+
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+/**
+ * Prints the final summary banner and all failure detail blocks.
+ * Called automatically after the last top-level describe() returns, or
+ * can be called manually at the end of a test file.
+ */
+def print_summary() {
+  if _state.summary_printed return
+  _state.summary_printed = true
+
+  _state.end_ms = _now_ms()
+  var duration = _state.start_ms != nil ?
+    _state.end_ms - _state.start_ms :
+    nil
+
+  # Failure detail blocks
+  if _state.failures.length() > 0 {
+    echo ''
+    echo _p.redbold('  Failures:')
+
+    iter var i = 0; i < _state.failures.length(); i++ {
+      var fr = _state.failures[i]
+      for failure in fr.failures {
+        _p.print_failure_detail(i + 1, fr.name, fr.suite_path, failure)
+        # Print structured diff lines if present
+        if failure.contains('diff_lines') and failure.diff_lines.length() > 0 {
+          for line in failure.diff_lines { echo line }
+        }
+      }
+    }
+  }
+
+  _p.print_summary({
+    suites:      _state.suites,
+    passed:      _state.passed,
+    failed:      _state.failed,
+    skipped:     _state.skipped,
+    todo:        _state.todo,
+    duration_ms: duration,
+  })
+
+  if _state.failed == 0 and _state.passed > 0 {
+    _p.print_all_passed()
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Exit code helper
+# ---------------------------------------------------------------------------
+
+/**
+ * Returns 0 when all tests passed, 1 when any test failed.
+ * Useful for CI pipelines that check the process exit code.
+ */
+def exit_code() {
+  return _state.failed > 0 ? 1 : 0
+}
+
+
+# ---------------------------------------------------------------------------
+# Reset (for testing the test framework itself)
+# ---------------------------------------------------------------------------
+
+def reset() {
+  _state       = _State()
+  _hooks       = []
+}
