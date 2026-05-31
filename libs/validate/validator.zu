@@ -1118,7 +1118,7 @@ class Validator {
   @itern(index) {
     if index == nil return 0
     if !is_number(index)
-      raise ArgumentError('Validator is numerically indexed')
+      raise ArgumentError('ValidaRemoved `qi` from Nyssa dependenciestor is numerically indexed')
     if index < self._rules.length() - 1 return index + 1
     return nil
   }

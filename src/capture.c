@@ -30,12 +30,12 @@ static unsigned __stdcall win_pipe_reader(void *arg) {
   char chunk;
   int bytes_read;
 
-  while ((bytes_read = _read(ctx->read_fd, chunk, sizeof(chunk))) > 0) {
+  while ((bytes_read = _read(ctx->read_fd, &chunk, sizeof(chunk))) > 0) {
     char *new_buf = realloc(ctx->buffer, ctx->size + bytes_read + 1);
     if (!new_buf) break; // Out of memory, break and return what we have
 
     ctx->buffer = new_buf;
-    memcpy(ctx->buffer + ctx->size, chunk, bytes_read);
+    memcpy(ctx->buffer + ctx->size, &chunk, bytes_read);
     ctx->size += bytes_read;
     ctx->buffer[ctx->size] = '\0';
   }
@@ -50,7 +50,7 @@ z_capture_t* capture_start(z_capture_stream_t stream) {
   z_capture_t *ctx = malloc(sizeof(z_capture_t));
   if (!ctx) return NULL;
 
-  int pipe_fds;
+  int pipe_fds[2];
   if (_pipe(pipe_fds, 4096, _O_BINARY) == -1) {
     free(ctx);
     return NULL;
@@ -58,9 +58,9 @@ z_capture_t* capture_start(z_capture_stream_t stream) {
 
   ctx->target_stream = target_fp;
   ctx->old_std_fd = _dup(fileno(target_fp));
-  ctx->pipe_write_fd = pipe_fds;
+  ctx->pipe_write_fd = pipe_fds[1];
 
-  ctx->reader_ctx.read_fd = pipe_fds;
+  ctx->reader_ctx.read_fd = pipe_fds[0];
   ctx->reader_ctx.buffer = NULL;
   ctx->reader_ctx.size = 0;
 
