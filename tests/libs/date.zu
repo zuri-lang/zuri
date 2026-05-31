@@ -83,7 +83,8 @@ def raises(label, fn) {
   var did_raise = false
   catch {
     fn()
-  } as e {
+  } as e
+  if e {
     did_raise = true
   }
   if did_raise pass(label)

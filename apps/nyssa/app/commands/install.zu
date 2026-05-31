@@ -240,7 +240,9 @@ def run(value, options, success, error) {
         file(config_file, 'w').write(json.encode(config, false))
       }
     }
-  } as e {
+  } as e
+
+  if e {
     echo colors.text(
       'Dependency state update failed!\n' + 
       'You can manually fix it by adding the following to the dependency section of your ' + setup.CONFIG_FILE + ' file.\n' +

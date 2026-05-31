@@ -469,7 +469,9 @@ def config(options) {
     }
 
     return { parsed }
-  } as error {
+  } as error
+
+  if error {
     if debug {
       raise Exception('Failed to load ${env_path}: ${error.message}')
     }

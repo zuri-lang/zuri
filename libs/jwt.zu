@@ -419,13 +419,15 @@ def decode(token) {
 
   catch {
     header_json = _b64_decode(parts[0])
-  } as _ {
+  } as _
+  if _ {
     raise MalformedTokenException('malformed token: header segment is not valid base64url')
   }
 
   catch {
     payload_json = _b64_decode(parts[1])
-  } as _ {
+  } as _
+  if _ {
     raise MalformedTokenException('malformed token: payload segment is not valid base64url')
   }
   
@@ -433,13 +435,15 @@ def decode(token) {
 
   catch {
     header = json.decode(header_json)
-  } as _ {
+  } as _
+  if _ {
     raise MalformedTokenException('malformed token: header is not valid JSON')
   }
 
   catch {
     payload = json.decode(payload_json)
-  } as _ {
+  } as _
+  if _ {
     raise MalformedTokenException('malformed token: payload is not valid JSON')
   }
 
@@ -648,7 +652,10 @@ def sign(payload, secret, options) {
  *     clock_tolerance: 5,
  *   })
  *   echo payload['user_id']
- * } as e { # e is a JwtException
+ * } as e
+ *
+ * if e {
+ *   # e is a JwtException
  *   echo 'token rejected: ' + e.message
  * }
  * ```

@@ -39,7 +39,9 @@ import reflect { get_prop, set_prop }
  * ```zuri
  * catch {
  *   schema.check_or_raise(req.body)
- * } as e {
+ * } as e
+ *
+ * if e {
  *   echo e.message   # "Validation failed"
  *   echo e.errors    # [{ field: 'email', message: '...' }, ...]
  * }
@@ -223,7 +225,9 @@ def _run_chain(validator, field_name, value, data) {
  * ```zuri
  * catch {
  *   schema.check_or_raise(data)
- * } as e {
+ * } as e
+ *
+ * if e {
  *   # e.errors is a list of { field, message } dicts
  *   for err in e.errors {
  *     echo '${err.field}: ${err.message}'
@@ -379,7 +383,9 @@ class Schema {
    * ```zuri
    * catch {
    *   schema.check_or_raise(req.body)
-   * } as e {
+   * } as e
+   *
+   * if e {
    *   return res.json({ errors: e.errors }, 422)
    * }
    * ```

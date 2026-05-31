@@ -142,7 +142,9 @@
  *
  * catch {
  *   schema.check_or_raise(req.body)
- * } as e {
+ * } as e
+ *
+ * if e {
  *   return res.json({ errors: schema.group_errors(e.errors) }, 422)
  * }
  * ```
@@ -166,7 +168,9 @@
  * server.handle('POST', '/users', @(req, res) {
  *   catch {
  *     create_user_schema.check_or_raise(req.body)
- *   } as e {
+ *   } as e
+ *
+ *   if e {
  *     return res.json({ errors: create_user_schema.group_errors(e.errors) }, 422)
  *   }
  *   # ... create user

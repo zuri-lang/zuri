@@ -681,7 +681,8 @@ class Parser < _Optionable {
               var v
               catch {
                 v = _get_real_value(option, cli_args[i])
-              } as e {
+              } as e
+              if e {
                 self._option_error(option.long_name, e.message)
               }
               _validate_choice(option, cli_args[i], '--${option.long_name}')
@@ -725,7 +726,8 @@ class Parser < _Optionable {
             var coerced
             catch {
               coerced = _get_real_value(option, raw_val)
-            } as e {
+            } as e
+            if e {
               self._option_error(option.long_name, e.message)
             }
             _validate_choice(option, raw_val, '--${option.long_name}')
@@ -753,7 +755,8 @@ class Parser < _Optionable {
               var v
               catch {
                 v = _get_real_value(command, raw_val)
-              } as e {
+              } as e
+              if e {
                 self._command_error(command.name, e.message)
               }
 
@@ -800,7 +803,8 @@ class Parser < _Optionable {
           var v
           catch {
             v = _get_real_value(idx, arg)
-          } as e {
+          } as e
+          if e {
             self._option_error(idx.name, e.message)
           }
           _validate_choice(idx, arg, idx.name)

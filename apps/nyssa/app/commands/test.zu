@@ -15,7 +15,8 @@ def parse(parser) {
 def run(value, options, success, error) {
   catch {
     conductor.conduct(setup.TEST_DIR)
-  } as error {
+  } as error
+  if error {
     echo error.message
   }
 }

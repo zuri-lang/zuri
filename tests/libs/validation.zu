@@ -814,7 +814,8 @@ s = validate.schema({
 var raised = false
 catch {
   s.check_or_raise({ name: 'Ada', age: 30 })
-} as e {
+} as e
+if e {
   raised = true
 }
 assert !raised, 'check_or_raise must not raise on valid data'
@@ -824,7 +825,8 @@ echo '  [PASS] check_or_raise does not raise on valid data'
 var caught_errors = nil
 catch {
   s.check_or_raise({ name: 'Ada', age: -1 })
-} as e {
+} as e
+if e {
   caught_errors = e.errors
 }
 assert caught_errors != nil, 'check_or_raise must raise ValidationError on invalid data'

@@ -73,7 +73,8 @@ def create(repo, success, error) {
     } else {
       error('Account creation failed:\n  ${body.error}')
     }
-  } as e {
+  } as e
+  if e {
     error('Account creation failed:\n  ${e.message}')
   }
 }
