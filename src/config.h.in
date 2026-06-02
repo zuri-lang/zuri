@@ -35,7 +35,7 @@
 #define ZURI_PACKAGE_ROOT_ENV "ZURI_PKG_ROOT"
 
 #define INTEGER_PRINT_FORMAT "%lld"
-#define DOUBLE_PRINT_FORMAT "%.17g"
+#define DOUBLE_PRINT_FORMAT "%.16g"
 
 #cmakedefine HAVE_GETOPT_H
 #cmakedefine HAVE_TERMIOS_H

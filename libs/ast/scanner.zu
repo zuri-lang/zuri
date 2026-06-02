@@ -323,20 +323,30 @@ class Scanner {
     if self._peek() == '.' and self._is_digit(self._next()) {
       self._advance()
 
+      if !self._is_digit(self._peek()) {
+        raise Exception('invalid number format')
+      }
+
       while self._is_digit(self._peek())
         self._advance()
+    }
 
-      # E or e are only valid when followed by a digit and
-      # occurring after a dot.
-      if (self._peek() == 'e' or self._peek() == 'E') and
-          (self._next() == '+' or self._next() == '-') {
-        
-        self._advance()
-        self._advance()
+    # E or e are only valid when followed by a digit and
+    # occurring after a dot.
+    if self._peek() == 'e' or self._peek() == 'E' {
 
-        while self._is_digit(self._peek())
-          self._advance()
+      if self._next() == '+' or self._next() == '-' {
+        self._advance()
       }
+      
+      self._advance()
+
+      if !self._is_digit(self._peek()) {
+        raise Exception('invalid exponential number format')
+      }
+
+      while self._is_digit(self._peek())
+        self._advance()
     }
 
     self._add_token(TokenType.REG_NUMBER)

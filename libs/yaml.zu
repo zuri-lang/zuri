@@ -483,7 +483,9 @@ class _Parser {
       var doc = self._parse_document()
       docs.append(doc)
 
-      self._skip_document_suffix()
+      if !self._skip_document_suffix() {
+        self._error('unexpected content after end of document: ' + self._sc.peek())
+      }
     }
 
     return docs
@@ -493,7 +495,10 @@ class _Parser {
   parse_one() {
     self._skip_document_prefix()
     var val = self._parse_document()
-    self._skip_document_suffix()
+    if !self._skip_document_suffix() {
+      self._error('unexpected content after end of document: ' + self._sc.peek())
+    }
+
     return val
   }
 
@@ -541,9 +546,11 @@ class _Parser {
         # Next document starts here — stop suffix skipping.
         break
       } else {
-        break
+        return false
       }
     }
+
+    return true
   }
 
   # Parse a %YAML or %TAG directive.
@@ -666,17 +673,19 @@ class _Parser {
       return self._parse_block_mapping(indent, tag)
     }
 
-    # Double-quoted scalar.
-    if ch == '"' { return self._parse_double_quoted(tag) }
-
-    # Single-quoted scalar.
-    if ch == '\'' { return self._parse_single_quoted(tag) }
-
     # Try block mapping: key followed by ':' + space/newline.
     # We lookahead to detect `key:` at the current indent level.
     if self._could_be_block_mapping(indent) {
       return self._parse_block_mapping(indent, tag)
     }
+
+    # Double-quoted scalar.
+    if ch == '"' { 
+      return self._parse_double_quoted(tag) 
+    }
+
+    # Single-quoted scalar.
+    if ch == '\'' { return self._parse_single_quoted(tag) }
 
     # Fallback: plain scalar.
     return self._parse_plain_scalar(indent, in_flow, tag)
@@ -690,20 +699,32 @@ class _Parser {
     var src   = self._sc.src
     var n     = self._sc.len
     var depth = 0
+    var in_single_quote = false
+    var in_double_quote = false
 
     while i < n {
       var ch = src[i]
-      if ch == '[' or ch == '{' { depth++ }
-      else if ch == ']' or ch == '}' {
-        if depth == 0 { return false }
-        depth--
-      } else if ch == ':' and depth == 0 {
-        var nx = i + 1 < n ? src[i + 1] : ''
-        if nx == ' ' or nx == '\t' or nx == '\n' or nx == '' {
-          return true
+
+      # Track quote states to ignore colons inside quoted strings
+      if ch == '"' and !in_single_quote {
+        in_double_quote = !in_double_quote
+      } else if ch == "'" and !in_double_quote {
+        in_single_quote = !in_single_quote
+      }
+
+      if !in_single_quote and !in_double_quote {
+        if ch == '[' or ch == '{' { depth++ }
+        else if ch == ']' or ch == '}' {
+          if depth == 0 { return false }
+          depth--
+        } else if ch == ':' and depth == 0 {
+          var nx = i + 1 < n ? src[i + 1] : ''
+          if nx == ' ' or nx == '\t' or nx == '\n' or nx == '' {
+            return true
+          }
+        } else if ch == '\n' {
+          return false
         }
-      } else if ch == '\n' {
-        return false
       }
       i++
     }
@@ -963,12 +984,18 @@ class _Parser {
            self._sc.peek(2) == '.' { break }
         if nx == '' { break }
 
+        # Fold this newline to a single space and skip the leading indentation
+        # spaces of the continuation line — they are not content.
         if blank_lines > 0 {
           space_buf = ''
           iter var i = 0; i < blank_lines; i++ {
             result += '\n'
           }
         } else {
+          # Skip leading spaces of the continuation line (indentation, not content).
+          while self._sc.peek() == ' ' or self._sc.peek() == '\t' {
+            self._sc.advance()
+          }
           space_buf = ' '
         }
         continue
@@ -1031,8 +1058,14 @@ class _Parser {
     # Up to two header characters: one digit, one of '-' '+', in any order.
     iter var _h = 0; _h < 2; _h++ {
       var ch = self._sc.peek()
-      if ch == '-' { chomp = _CHOMP_STRIP; self._sc.advance() }
-      else if ch == '+' { chomp = _CHOMP_KEEP; self._sc.advance() }
+      if ch == '-' { 
+        chomp = _CHOMP_STRIP
+        self._sc.advance() 
+      }
+      else if ch == '+' { 
+        chomp = _CHOMP_KEEP
+        self._sc.advance() 
+      }
       else if ord(ch) >= 49 and ord(ch) <= 57 {  # '1'-'9'
         explicit_indent = ord(ch) - 48
         self._sc.advance()
@@ -1076,7 +1109,8 @@ class _Parser {
       var line_indent = 0
       var idx         = self._sc.pos()
       while idx < self._sc.len and self._sc.src[idx] == ' ' {
-        line_indent++; idx++
+        line_indent++
+        idx++
       }
 
       # Blank line (only spaces then newline).
@@ -1102,28 +1136,46 @@ class _Parser {
       lines.append({ text: line_text, blank: false })
     }
 
-    # Build the scalar value.
+    # Build the scalar value — every line contributes its text plus a newline,
+    # including blank lines. Chomping then trims the trailing newlines as needed.
     var result = ''
 
     if literal {
-      # Literal style: every line break is preserved as-is.
-      iter var i = 0; i < lines.length(); i++ {
-        var ln = lines[i]
-        result += ln.text
-        if i < lines.length() - 1 { result += '\n' }
+      for ln in lines {
+        result += ln.text + '\n'
       }
     } else {
-      # Folded style: newlines within non-blank lines fold to spaces;
-      # blank lines and lines with extra indentation are preserved.
-      iter var i = 0; i < lines.length(); i++ {
+      # Folded: newlines between non-blank lines fold to spaces;
+      # blank lines produce a literal newline; leading newline before first
+      # non-blank line is preserved.
+      var keep_blanks = chomp != _CHOMP_KEEP,
+          len = lines.length()
+
+      iter var i = 0; i < len; i++ {
         var ln = lines[i]
         if ln.blank {
           result += '\n'
         } else {
-          if i > 0 and !lines[i - 1].blank { result += ' ' }
           result += ln.text
-          if i < lines.length() - 1 and !lines[i + 1].blank { }
-          # trailing newline will be handled by chomping
+          
+          # Determine what follows this non-blank line.
+          if i < len - 1 {
+            if lines[i + 1].blank {
+              # Blank follows — the newline will be added by the blank entry.
+              result += '\n'
+
+              if keep_blanks {
+                # Skip blank lines but preserve their newlines.
+                i++
+              }
+            } else {
+              # Non-blank follows — fold to space.
+              result += ' '
+            }
+          } else {
+            # Last line.
+            result += '\n'
+          }
         }
       }
     }
@@ -1134,7 +1186,7 @@ class _Parser {
     } else if chomp == _CHOMP_CLIP {
       result = result.replace('/\n+$/', '') + '\n'
     }
-    # CHOMP_KEEP: keep all trailing newlines as-is — already in result.
+    # CHOMP_KEEP: preserve all trailing newlines already in result.
 
     if tag != nil { return _apply_tag(tag, result) }
     return result
@@ -1165,11 +1217,22 @@ class _Parser {
       self._sc.advance()  # '-'
 
       if self._sc.peek() == '\n' or self._sc.at_end() {
-        # '- \n' — value is the next indented block.
+        # Dash with no inline content. The item is nil unless the next
+        # non-empty line is indented deeper than the sequence itself.
         self._sc.consume_newline()
         self._skip_ws_and_comments()
-        var item = self._parse_node(seq_indent + 1, false)
-        items.append(item)
+
+        if self._sc.at_end() {
+          items.append(nil)
+        } else {
+          var next_col = self._sc.col() - 1
+          if next_col > seq_indent {
+            var item = self._parse_node(seq_indent + 1, false)
+            items.append(item)
+          } else {
+            items.append(nil)
+          }
+        }
       } else {
         self._sc.skip_spaces()
         if self._sc.peek() == '\n' or self._sc.at_end() {
@@ -1478,14 +1541,16 @@ class _Emitter {
     if value == false { return 'false' }
 
     if is_number(value) {
-      if value != value { return '.nan' }   # NaN test: NaN != NaN
-      if value == math.Infinity  { return '.inf'  }
-      if value == -math.Infinity { return '-.inf' }
       var s = to_string(value)
-      # Ensure floats always have a decimal point.
-      if is_number(value) and !s.contains('.') and !s.contains('e') and
-         !s.contains('n') and !s.contains('i') {
-        # it's an integer-valued number — emit as integer
+      if s == 'nan' or s == '-nan' { return '.nan' }
+      if s == 'inf'  { return '.inf'  }
+      if s == '-inf' { return '-.inf' }
+      # If to_string produces excess precision (>15 significant digits),
+      # the value round-trips through parse correctly anyway, but for
+      # clean output we truncate trailing noise digits.
+      if s.contains('.') and s.length() > 17 {
+        # Trim to 15 significant digits using rounding.
+        s = to_string(math.round(value * 1e14) / 1e14)
       }
       return s
     }
@@ -1597,22 +1662,11 @@ class _Emitter {
 
   # Emit a list as a YAML block sequence.
   _emit_sequence(items, depth, in_flow) {
-    if items.length() == 0 { 
-      return '[]' 
-    }
+    if items.length() == 0 { return '[]' }
 
-    var pad    = self._spaces(depth * self._indent)
+    var pad = self._spaces(depth * self._indent)
 
-    # Small flat sequences: try flow style.
-    if depth > 0 and items.length() <= 5 and self._all_scalars(items) {
-      var flow = '[' + self._flow_items(items) + ']'
-      if flow.length() <= self._width { 
-        return pad + flow 
-      }
-    }
-
-    var lines  = ''
-
+    var lines = ''
     for item in items {
       var child_str = self._emit_node(item, depth + 1, false)
       if is_list(item) or is_dict(item) {

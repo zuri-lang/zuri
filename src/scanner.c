@@ -221,19 +221,29 @@ static z_token number(z_scanner *s) {
   if (current(s) == '.' && is_digit(next(s))) {
     advance(s);
 
+    if (!is_digit(current(s))) {
+      return error_token(s, "invalid number format");
+    }
+
     while (is_digit(current(s)))
       advance(s);
+  }
 
-    // E or e are only valid here when followed by a digit and occurring after a
-    // dot
-    if ((current(s) == 'e' || current(s) == 'E') &&
-        (next(s) == '+' || next(s) == '-')) {
-      advance(s);
+  // E or e are only valid here when followed by a digit and/or occurring after a dot
+  if (current(s) == 'e' || current(s) == 'E') {
+    // + and - are optional here...
+    if(next(s) == '+' || next(s) == '-')
       advance(s);
 
-      while (is_digit(current(s)))
-        advance(s);
+    advance(s);
+
+    // Exponential number must always be followed by a digit
+    if (!is_digit(current(s))) {
+      return error_token(s, "invalid exponential number format");
     }
+
+    while (is_digit(current(s)))
+      advance(s);
   }
 
   return make_token(s, REG_NUMBER_TOKEN);
