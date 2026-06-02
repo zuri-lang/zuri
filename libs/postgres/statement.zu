@@ -1,0 +1,158 @@
+/**
+ * `PreparedStatement` — a named prepared statement for optimised, repeatable
+ * query execution.
+ *
+ * Prepared statements are parsed by the server once and cached for the
+ * lifetime of the connection.  Repeated executions skip the parse phase and
+ * go straight to the bind/execute cycle, significantly reducing latency for
+ * hot-path queries.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import postgres { Connection, DataTypeOIDs }
+ *
+ * var conn = Connection('postgres://localhost/mydb')
+ * conn.connect()
+ *
+ * var stmt = conn.prepare(
+ *   'insert into events (user_id, action) values ($1, $2)',
+ *   { param_types: [DataTypeOIDs.Int4, DataTypeOIDs.Text] }
+ * )
+ *
+ * iter var i = 0; i < 1000; i++ {
+ *   stmt.execute({ params: [i, 'click'] })
+ * }
+ *
+ * stmt.close()
+ * conn.close()
+ * ```
+ */
+
+import .errors { ClosedError, QueryError }
+import .result { QueryResult, Cursor }
+
+/**
+ * Represents a named prepared statement on a PostgreSQL connection.
+ *
+ * Obtain an instance via `Connection.prepare()` rather than constructing
+ * directly.
+ */
+class PreparedStatement {
+  /**
+   * The server-side statement name.
+   * @type string
+   */
+  var name
+
+  /**
+   * List of parameter OIDs as reported by the server after parsing.
+   * @type list
+   */
+  var param_oids
+
+  /**
+   * Column descriptors of the result set (empty for non-SELECT statements).
+   * @type list
+   */
+  var columns
+
+  var _protocol
+  var _closed   = false
+  var _exec_seq = 0  # used to generate unique portal names
+
+  /**
+   * @internal — created by `Connection.prepare()`.
+   */
+  PreparedStatement(protocol, name, param_oids, columns) {
+    self._protocol  = protocol
+    self.name       = name
+    self.param_oids = param_oids ? param_oids : []
+    self.columns    = columns ? columns : []
+  }
+
+  # -------------------------------------------------------------------------
+  # Execution
+  # -------------------------------------------------------------------------
+
+  /**
+   * Executes the prepared statement with the given parameters and returns a
+   * `QueryResult`.
+   *
+   * ### Options
+   *
+   * | Key         | Type   | Default | Description                        |
+   * |-------------|--------|---------|------------------------------------|
+   * | `params`    | list   | `[]`    | Parameter values ($1, $2, …).      |
+   * | `cursor`    | bool   | `false` | Return a streaming `Cursor`.       |
+   * | `fetch_size` | number | `100`   | Rows per batch when `cursor:true`. |
+   *
+   * @param  dict    options  Execution options.
+   * @return QueryResult | Cursor
+   * @throws ClosedError  If the statement has been closed.
+   * @throws QueryError   If the server returns an error.
+   */
+  execute(options) {
+    if self._closed { raise ClosedError('PreparedStatement is already closed') }
+    if !options { options = {} }
+
+    var params     = options.get('params',    [])
+    var use_cursor = options.get('cursor',    false)
+    var fetch_size = options.get('fetch_size', 100)
+
+    if use_cursor {
+      return self._execute_cursor(params, fetch_size)
+    }
+    return self._execute_all(params)
+  }
+
+  _execute_all(params) {
+    var res = self._protocol.execute_prepared(
+      self.name, params, self.param_oids, '', 0
+    )
+    return QueryResult(res.rows, res.columns ? res.columns : self.columns,
+                       res.tag, res.notices)
+  }
+
+  _execute_cursor(params, fetch_size) {
+    self._exec_seq++
+    var portal = self.name + '_c' + self._exec_seq
+
+    # Bind the portal without executing (max_rows = 0 fetches all, but we use
+    # the portal name for the Cursor which will call execute with a row limit).
+    self._protocol.execute_prepared(
+      self.name, params, self.param_oids, portal, fetch_size
+    )
+
+    var cursor = Cursor(self._protocol, portal, self.columns, fetch_size)
+    return cursor
+  }
+
+  # -------------------------------------------------------------------------
+  # Lifecycle
+  # -------------------------------------------------------------------------
+
+  /**
+   * Closes the prepared statement on the server, freeing its resources.
+   * After closing, any attempt to `execute()` will raise a `ClosedError`.
+   */
+  close() {
+    if self._closed { 
+      return 
+    }
+    
+    catch { self._protocol.close_statement(self.name) } as _e
+    self._closed = true
+  }
+
+  /**
+   * Returns `true` if the statement has been closed.
+   *
+   * @return bool
+   */
+  is_closed() { return self._closed }
+
+  @to_string() {
+    return '<PreparedStatement name="' + self.name + '" closed=' + self._closed + '>'
+  }
+}

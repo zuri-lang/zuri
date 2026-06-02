@@ -1,0 +1,511 @@
+/**
+ * `Connection` — a single, direct PostgreSQL database connection.
+ *
+ * `Connection` manages a TCP (optionally TLS) socket to a PostgreSQL server,
+ * drives the authentication handshake, and exposes a high-level API for
+ * query execution, prepared statements, cursors, and notifications.
+ *
+ * For connection pooling, use `Pool` instead.
+ *
+ * ## Example
+ *
+ * ```zuri
+ * import postgres { Connection, DataTypeOIDs }
+ *
+ * var conn = Connection('postgres://alice:secret@localhost:5432/mydb')
+ * conn.connect()
+ *
+ * # Simple query
+ * var result = conn.query('select version()')
+ * echo result.rows[0]
+ *
+ * # Parameterised query
+ * var res = conn.query(
+ *   'select * from orders where status = $1 and total > $2',
+ *   { params: ['open', 100.0] }
+ * )
+ *
+ * conn.close()
+ * ```
+ */
+
+import socket
+import math
+import ssl
+
+import ._url      { parse_dsn }
+import .protocol  { Protocol }
+import .types     { DefaultRegistry }
+import .result    { QueryResult, Cursor }
+import .statement { PreparedStatement }
+import .notify    { NotificationListener }
+import .errors    { ConnectionError, ClosedError }
+
+var _stmt_counter = 0  # global counter for unique statement names
+
+/**
+ * A single connection to a PostgreSQL database server.
+ *
+ * ### Connection string formats
+ *
+ * ```
+ * Connection('postgres://user:pass@host:5432/database')
+ * Connection('host=localhost port=5432 dbname=mydb user=alice')
+ * Connection({ host: 'localhost', database: 'mydb', user: 'alice' })
+ * ```
+ */
+class Connection {
+  /**
+   * The parsed connection options dict.
+   * Keys: `host`, `port`, `user`, `password`, `database`, `ssl`.
+   * @type dict
+   */
+  var options
+
+  /**
+   * The `TypeRegistry` used to encode / decode values on this connection.
+   * Defaults to `DefaultRegistry`.  Assign a custom registry before calling
+   * `connect()` to override type behaviour for this connection only.
+   * @type TypeRegistry
+   */
+  var type_registry
+
+  /**
+   * The application name sent to PostgreSQL in the startup message.
+   * Defaults to `'zuri-postgres'`.
+   * @type string
+   */
+  var application_name = 'zuri-postgres'
+
+  /**
+   * Send / receive timeout in milliseconds.  Default: 30 000 (30 s).
+   * @type number
+   */
+  var timeout = 30000
+
+  var _socket    = nil
+  var _ssl       = nil
+  var _protocol  = nil
+  var _closed    = true
+
+  # -------------------------------------------------------------------------
+  # Construction
+  # -------------------------------------------------------------------------
+
+  /**
+   * Creates a `Connection` from a DSN string or options dict.
+   *
+   * @param string | dict  dsn  Connection string or options dict.
+   *                            See module-level docs for formats.
+   */
+  Connection(dsn) {
+    self.options       = parse_dsn(dsn)
+    self.type_registry = DefaultRegistry
+  }
+
+  # -------------------------------------------------------------------------
+  # Lifecycle
+  # -------------------------------------------------------------------------
+
+  /**
+   * Opens the TCP (or TLS) connection to the server and completes the
+   * PostgreSQL authentication handshake.
+   *
+   * @throws ConnectionError  If the socket cannot be opened or auth fails.
+   * @throws AuthenticationError  If credentials are rejected.
+   */
+  connect() {
+    var host = self.options.host
+    var port = self.options.port
+
+    # Open TCP socket.
+    self._socket = socket.Socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._socket.receive_timeout = self.timeout
+    self._socket.send_timeout    = self.timeout
+
+    catch {
+      self._socket.connect(host, port)
+    } as err {
+      raise ConnectionError(
+        'Cannot connect to ' + host + ':' + port + ' — ' + err.message
+      )
+    }
+
+    var ssl_obj = nil
+
+    # Optional TLS upgrade (SSLRequest).
+    if self.options.ssl {
+      ssl_obj = self._upgrade_tls()
+    }
+
+    # Build protocol handler.
+    self._protocol = Protocol(self._socket, self.type_registry, ssl_obj)
+
+    # Startup message + auth.
+    var startup_opts = {
+      application_name: self.application_name,
+    }
+
+    if self.options.options {
+      for k, v in self.options.options {
+        startup_opts[k] = v
+      }
+    }
+
+    self._protocol.startup(
+      self.options.user,
+      self.options.database,
+      self.options.password,
+      startup_opts
+    )
+
+    self._closed = false
+  }
+
+  # Send PostgreSQL SSLRequest and upgrade to TLS.
+  _upgrade_tls() {
+    # SSLRequest: length=8, magic=80877103
+    var req = bytes([0,0,0,8,  4,210,22,47])
+    self._socket.send(req)
+
+    var resp = self._socket.receive(1)
+    if !resp or resp.length() == 0 or resp[0] != 'S'.ascii() {
+      raise ConnectionError('Server does not support SSL/TLS')
+    }
+
+    var ctx     = ssl.TLSClientContext()
+    var ssl_obj = ssl.TLSSocket(self._socket, ctx)
+    ssl_obj.connect()
+    return ssl_obj
+  }
+
+  /**
+   * Closes the connection to the server, sending the Terminate message
+   * and closing the underlying socket.  Idempotent.
+   */
+  close() {
+    if self._closed { return }
+    catch { self._protocol.terminate() } as _e
+    self._closed = true
+  }
+
+  /**
+   * Returns `true` if the connection is open.
+   *
+   * @return bool
+   */
+  is_open() { return !self._closed }
+
+  # -------------------------------------------------------------------------
+  # Query execution
+  # -------------------------------------------------------------------------
+
+  /**
+   * Executes a SQL query and returns the result.
+   *
+   * When `options.cursor` is `false` (the default), all rows are fetched
+   * eagerly and returned in a `QueryResult`.
+   *
+   * When `options.cursor` is `true`, the query is executed via a server-side
+   * portal and a `Cursor` is returned for streaming access.
+   *
+   * ### Options
+   *
+   * | Key          | Type   | Default  | Description                                |
+   * |--------------|--------|----------|--------------------------------------------|
+   * | `params`     | list   | `[]`     | Positional parameter values ($1, $2, …).   |
+   * | `param_types` | list   | `[]`     | OID for each parameter (server infers if omitted). |
+   * | `cursor`     | bool   | `false`  | Return a streaming `Cursor`.               |
+   * | `fetch_size`  | number | `100`    | Rows per batch when `cursor: true`.        |
+   * | `simple`     | bool   | `false`  | Use simple-query protocol (text only).     |
+   *
+   * ### Example — cursor
+   *
+   * ```zuri
+   * var result = conn.query(
+   *   'select * from large_table',
+   *   { cursor: true, fetch_size: 500 }
+   * )
+   * var row
+   * while ((row = result.cursor.next())) {
+   *   process(row)
+   * }
+   * result.cursor.close()
+   * ```
+   *
+   * @param  string  sql      The SQL statement.  Use $1, $2, … placeholders.
+   * @param  dict    options  Query options (see table above).
+   * @return QueryResult | dict  `{ cursor: Cursor }` when cursor mode.
+   * @throws ClosedError  If the connection is closed.
+   * @throws QueryError   If the server returns an error response.
+   */
+  query(sql, options) {
+    self._assert_open()
+    if !options { options = {} }
+
+    var params      = options.get('params',     [])
+    var param_types = options.get('param_types', [])
+    var use_cursor  = options.get('cursor',     false)
+    var fetch_size  = options.get('fetch_size',  100)
+    var simple_mode = options.get('simple',     false)
+
+    if simple_mode {
+      var res = self._protocol.simple_query(sql)
+      return QueryResult(res.rows, res.columns, res.tag, res.notices)
+    }
+
+    if use_cursor {
+      return self._query_cursor(sql, params, param_types, fetch_size)
+    }
+
+    var res = self._protocol.extended_query(sql, params, param_types, '', '', 0)
+    return QueryResult(res.rows, res.columns, res.tag, res.notices)
+  }
+
+  _query_cursor(sql, params, param_types, fetch_size) {
+    # Create a unique portal name for this cursor.
+    _stmt_counter++
+    var portal_name = '_postgres_portal_' + _stmt_counter
+
+    # Use extended query but cap rows to fetch_size per round-trip.
+    var res = self._protocol.extended_query(
+      sql, params, param_types, portal_name, '', fetch_size
+    )
+
+    var cursor = Cursor(
+      self._protocol, portal_name, res.columns, fetch_size
+    )
+    # Pre-load first batch into cursor cache.
+    for row in res.rows {
+      cursor._tail
+    }
+    # Inject the already-fetched rows into the cursor cache.
+    cursor._inject_rows(res.rows, res.suspended)
+
+    return { cursor: cursor }
+  }
+
+  /**
+   * Executes a SQL statement and returns the command tag string.
+   * Useful for DDL (`CREATE TABLE …`) or DML (`INSERT`, `UPDATE`, `DELETE`)
+   * where you don't need the result rows.
+   *
+   * @param  string  sql      The SQL statement.
+   * @param  dict    options  Same options as `query()`.
+   * @return string  The command completion tag (e.g. `'INSERT 0 5'`).
+   */
+  execute(sql, options) {
+    var result = self.query(sql, options)
+    return result.command_tag
+  }
+
+  # -------------------------------------------------------------------------
+  # Prepared statements
+  # -------------------------------------------------------------------------
+
+  /**
+   * Creates and returns a named `PreparedStatement` for the given SQL.
+   *
+   * The statement is parsed by the server once; subsequent `execute()` calls
+   * skip the parse phase.
+   *
+   * ### Options
+   *
+   * | Key          | Type  | Default | Description                                   |
+   * |--------------|-------|---------|-----------------------------------------------|
+   * | `param_types` | list  | `[]`    | OID hints for each parameter.                 |
+   * | `name`       | string| auto    | Explicit statement name (must be unique).     |
+   *
+   * ### Example
+   *
+   * ```zuri
+   * var stmt = conn.prepare(
+   *   'select * from users where id = $1',
+   *   { param_types: [DataTypeOIDs.Int4] }
+   * )
+   *
+   * var result = stmt.execute({ params: [42] })
+   * stmt.close()
+   * ```
+   *
+   * @param  string  sql      Parameterised SQL.
+   * @param  dict    options  Options dict.
+   * @return PreparedStatement
+   * @throws ClosedError  If the connection is closed.
+   * @throws QueryError   If the server rejects the SQL.
+   */
+  prepare(sql, options) {
+    self._assert_open()
+    if !options { options = {} }
+
+    var param_types = options.get('param_types', [])
+    var name = options.get('name', nil)
+    if !name {
+      _stmt_counter++
+      name = '_postgres_stmt_' + _stmt_counter
+    }
+
+    var meta = self._protocol.prepare(name, sql, param_types)
+    return PreparedStatement(
+      self._protocol, meta.name, meta.param_oids, meta.columns
+    )
+  }
+
+  # -------------------------------------------------------------------------
+  # Notifications
+  # -------------------------------------------------------------------------
+
+  /**
+   * Creates a `NotificationListener` subscribed to the given channel(s).
+   *
+   * @param  string | list  channels  Channel name or list of channel names.
+   * @return NotificationListener
+   * @throws ClosedError  If the connection is closed.
+   */
+  listen(channels) {
+    self._assert_open()
+    if is_string(channels) { channels = [channels] }
+    var listener = NotificationListener(self._protocol, [])
+    for ch in channels {
+      listener.subscribe(ch)
+    }
+    return listener
+  }
+
+  /**
+   * Sends a `NOTIFY` command to the given channel with an optional payload.
+   *
+   * @param  string  channel  The channel to notify.
+   * @param  string  payload  Optional payload string (default `''`).
+   */
+  notify(channel, payload) {
+    self._assert_open()
+    if !payload { payload = '' }
+    if payload.length() > 0 {
+      self.execute("NOTIFY " + channel + ", '" + payload.replace("/'/", "''") + "'")
+    } else {
+      self.execute('NOTIFY ' + channel)
+    }
+  }
+
+  # -------------------------------------------------------------------------
+  # Transaction helpers
+  # -------------------------------------------------------------------------
+
+  /**
+   * Begins a transaction.
+   *
+   * @param  string  isolation  Isolation level (e.g. `'SERIALIZABLE'`).
+   */
+  begin(isolation) {
+    self._assert_open()
+    var sql = 'BEGIN'
+    if isolation { sql += ' ISOLATION LEVEL ' + isolation }
+    self.execute(sql)
+  }
+
+  /**
+   * Commits the current transaction.
+   */
+  commit() {
+    self._assert_open()
+    self.execute('COMMIT')
+  }
+
+  /**
+   * Rolls back the current transaction.
+   */
+  rollback() {
+    self._assert_open()
+    self.execute('ROLLBACK')
+  }
+
+  /**
+   * Runs `fn` inside a transaction, automatically committing on success and
+   * rolling back on any exception.
+   *
+   * ```zuri
+   * conn.transaction(@() {
+   *   conn.execute('insert into log values ($1)', { params: ['event'] })
+   *   conn.execute('update counters set n = n + 1')
+   * })
+   * ```
+   *
+   * @param  function  fn   The function to run inside the transaction.
+   * @param  string    isolation  Optional isolation level.
+   */
+  transaction(fn, isolation) {
+    self.begin(isolation)
+    catch { fn() } as err
+    if err {
+      catch { self.rollback() } as _e
+      raise err
+    }
+    self.commit()
+  }
+
+  # -------------------------------------------------------------------------
+  # Server information
+  # -------------------------------------------------------------------------
+
+  /**
+   * Returns the server-reported parameters (PostgreSQL version, encoding,
+   * date style, etc.) as a dict.
+   *
+   * @return dict
+   */
+  server_params() {
+    return self._protocol._params
+  }
+
+  /**
+   * Returns the backend PID for this connection, as reported during startup.
+   *
+   * @return number
+   */
+  backend_pid() {
+    return self._protocol._server_pid
+  }
+
+  # -------------------------------------------------------------------------
+  # Escaping helpers
+  # -------------------------------------------------------------------------
+
+  /**
+   * Escapes a string literal for safe embedding in SQL.
+   * Prefer parameterised queries ($1, $2) over this method.
+   *
+   * @param  string  s  The string to escape.
+   * @return string  A single-quoted, escaped SQL string literal.
+   */
+  escape_literal(s) {
+    return "'" + s.replace("/'/", "''") + "'"
+  }
+
+  /**
+   * Escapes an identifier (table name, column name, etc.) by double-quoting
+   * it and escaping any embedded double-quotes.
+   *
+   * @param  string  s  The identifier to escape.
+   * @return string  A double-quoted SQL identifier.
+   */
+  escape_identifier(s) {
+    return '"' + s.replace('/"/', '""') + '"'
+  }
+
+  # -------------------------------------------------------------------------
+  # Internal helpers
+  # -------------------------------------------------------------------------
+
+  _assert_open() {
+    if self._closed {
+      raise ClosedError('Connection is closed')
+    }
+  }
+
+  @to_string() {
+    return '<Connection ' + self.options.user + '@' +
+           self.options.host + ':' + self.options.port + '/' +
+           self.options.database + ' open=${!self._closed}>'
+  }
+}

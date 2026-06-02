@@ -1,0 +1,353 @@
+/**
+ * `QueryResult` and `Cursor` — result containers for executed queries.
+ *
+ * `QueryResult` holds all rows of a completed (non-cursor) query.
+ * `Cursor` is a doubly-linked, cacheable forward/backward iterator over a
+ * server-side portal, fetching rows in batches to minimise memory pressure.
+ */
+
+import .errors { ClosedError, QueryError }
+
+# ---------------------------------------------------------------------------
+# QueryResult
+# ---------------------------------------------------------------------------
+
+/**
+ * Holds the complete result of a query executed without cursor mode.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * var result = conn.query('select id, name from users')
+ * echo result.row_count()      # number of rows
+ * echo result.rows[0]        # first row as a dict
+ * echo result.columns[0]     # first column descriptor dict
+ * echo result.command_tag    # e.g. 'SELECT 3'
+ * ```
+ */
+class QueryResult {
+  /**
+   * List of row dicts.  Each dict key is the column name.
+   * @type list
+   */
+  var rows
+
+  /**
+   * List of column descriptor dicts, each with keys:
+   * `name`, `type_oid`, `format`, `table_oid`, `col_attr`.
+   * @type list
+   */
+  var columns
+
+  /**
+   * The command completion tag returned by the server, e.g. `'SELECT 5'`.
+   * @type string
+   */
+  var command_tag
+
+  /**
+   * List of notice/warning dicts from the server, if any.
+   * @type list
+   */
+  var notices
+
+  /**
+   * Returns the number of rows in the result.
+   * @type number
+   */
+  row_count() { 
+    return self.rows.length() 
+  }
+
+  QueryResult(rows, columns, tag, notices) {
+    self.rows        = rows ? rows : []
+    self.columns     = columns ? columns : []
+    self.command_tag = tag ? tag : ''
+    self.notices     = notices ? notices : []
+  }
+
+  /**
+   * Returns the first row, or `nil` if the result is empty.
+   *
+   * @return dict | nil
+   */
+  first() {
+    if self.rows.length() == 0 { return nil }
+    return self.rows[0]
+  }
+
+  /**
+   * Returns the last row, or `nil` if the result is empty.
+   *
+   * @return dict | nil
+   */
+  last() {
+    var n = self.rows.length()
+    if n == 0 { return nil }
+    return self.rows[n - 1]
+  }
+
+  /**
+   * Returns the value of column `col_name` from the first row, or `default`
+   * if the result is empty.
+   *
+   * @param  string  col_name  Column name.
+   * @param  any     default   Default value when result is empty.
+   * @return any
+   */
+  scalar(col_name, default_value) {
+    var row = self.first()
+    if !row { 
+      return default_value 
+    }
+    return row.get(col_name, default_value)
+  }
+
+  /**
+   * Iterates rows, calling `fn(row, index)` for each.
+   *
+   * @param function fn  Callback receiving `(row_dict, index)`.
+   */
+  each(fn) {
+    iter var i = 0; i < self.rows.length(); i++ {
+      fn(self.rows[i], i)
+    }
+  }
+
+  /**
+   * Returns a new list containing `fn(row)` for each row.
+   *
+   * @param  function fn  Transform function receiving a row dict.
+   * @return list
+   */
+  map(fn) {
+    var result = []
+    for row in self.rows { result.append(fn(row)) }
+    return result
+  }
+
+  # Decorator: pretty string representation.
+  @to_string() {
+    return '<QueryResult rows=' + self.rows.length() + ' tag="' + self.command_tag + '">'
+  }
+}
+
+# ---------------------------------------------------------------------------
+# CursorNode  —  doubly-linked list node for cursor cache
+# ---------------------------------------------------------------------------
+
+class _CursorNode {
+  var value
+  var prev = nil
+  var next = nil
+
+  _CursorNode(value) {
+    self.value = value
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Cursor
+# ---------------------------------------------------------------------------
+
+/**
+ * A server-side cursor backed by a PostgreSQL portal.
+ *
+ * Rows are fetched from the server in batches (`fetch_size`), cached in a
+ * doubly-linked list, and exposed through `next()` / `prev()` navigation.
+ * This minimises both memory usage and round-trips.
+ *
+ * ### Usage
+ *
+ * ```zuri
+ * var result = conn.query(sql, { cursor: true })
+ * var cursor = result.cursor
+ *
+ * var row
+ * while ((row = cursor.next())) {
+ *   echo row
+ * }
+ * cursor.close()
+ * ```
+ *
+ * ### Bidirectional navigation
+ *
+ * ```zuri
+ * cursor.next()   # advance and return the next row (nil at end)
+ * cursor.prev()   # move back and return the previous row (nil at start)
+ * cursor.reset()  # rewind to before the first row
+ * ```
+ */
+class Cursor {
+  /**
+   * The cursor name (portal name on the PostgreSQL server).
+   * @type string
+   */
+  var name
+
+  /**
+   * Column descriptors (same format as `QueryResult.columns`).
+   * @type list
+   */
+  var columns
+
+  /**
+   * Number of rows to fetch per batch.  Default: 100.
+   * @type number
+   */
+  var fetch_size = 100
+
+  var _protocol      # Protocol object
+  var _closed = false
+
+  # Doubly-linked cache.
+  var _head     = nil   # first cached node
+  var _tail     = nil   # last cached node
+  var _current  = nil   # current navigation position (node before returned row)
+  var _cache_size = 0
+  var _exhausted = false  # no more rows from server
+  var _fetched   = 0      # total rows fetched from server
+
+  /**
+   * @internal — created by `Connection.query()` when `cursor: true`.
+   */
+  Cursor(protocol, name, columns, fetch_size) {
+    self._protocol  = protocol
+    self.name       = name
+    self.columns    = columns ? columns : []
+    if fetch_size { self.fetch_size = fetch_size }
+  }
+
+  # -------------------------------------------------------------------------
+  # Navigation
+  # -------------------------------------------------------------------------
+
+  /**
+   * Advances to and returns the next row, or `nil` when exhausted.
+   *
+   * Fetches the next batch from the server when the local cache is depleted.
+   *
+   * @return dict | nil
+   */
+  next() {
+    if self._closed { raise ClosedError('Cursor is already closed') }
+
+    # Try to advance within cached nodes.
+    var next_node
+    if self._current == nil {
+      next_node = self._head
+    } else {
+      next_node = self._current.next
+    }
+
+    # Cache miss — fetch more from server if available.
+    if next_node == nil and !self._exhausted {
+      self._fetch_batch()
+      next_node = self._current == nil ? self._head : self._current.next
+    }
+
+    if next_node == nil { return nil }
+    self._current = next_node
+    return next_node.value
+  }
+
+  /**
+   * Moves back to and returns the previous row, or `nil` when at the start.
+   *
+   * @return dict | nil
+   */
+  prev() {
+    if self._closed { raise ClosedError('Cursor is already closed') }
+    if self._current == nil { return nil }
+    var prev_node = self._current.prev
+    if prev_node == nil {
+      self._current = nil
+      return nil
+    }
+    self._current = prev_node
+    return prev_node.value
+  }
+
+  /**
+   * Rewinds the cursor position to before the first cached row.
+   * Does **not** re-execute the query; previously fetched rows remain cached.
+   */
+  reset() {
+    self._current = nil
+  }
+
+  /**
+   * Returns the total number of rows fetched from the server so far.
+   *
+   * @return number
+   */
+  fetched_count() {
+    return self._fetched
+  }
+
+  # -------------------------------------------------------------------------
+  # Cursor lifecycle
+  # -------------------------------------------------------------------------
+
+  /**
+   * Closes the cursor, releasing the server-side portal and returning the
+   * connection to its pool (if pool-managed).
+   */
+  close() {
+    if self._closed { 
+      return 
+    }
+
+    catch {
+      self._protocol.close_portal(self.name)
+    } as _e
+    self._closed = true
+    self._head   = nil
+    self._tail   = nil
+    self._current = nil
+    if self._on_close { self._on_close() }
+  }
+
+  # Callback invoked by Pool when connection should be returned.
+  var _on_close = nil
+
+  # -------------------------------------------------------------------------
+  # Internal fetch
+  # -------------------------------------------------------------------------
+
+  _fetch_batch() {
+    if self._exhausted { 
+      return 
+    }
+
+    # Execute the portal with our fetch_size limit.
+    var res = self._protocol.execute_prepared(
+      self.name, [], [], self.name, self.fetch_size
+    )
+    var batch = res.rows
+
+    if !res.suspended { self._exhausted = true }
+    if batch.length() == 0 { 
+      return 
+    }
+
+    self._fetched += batch.length()
+
+    for row in batch {
+      var node = _CursorNode(row)
+      if self._tail == nil {
+        self._head = node
+        self._tail = node
+      } else {
+        node.prev        = self._tail
+        self._tail.next  = node
+        self._tail       = node
+      }
+      self._cache_size++
+    }
+  }
+
+  @to_string() {
+    return '<Cursor name="' + self.name + '" fetched=' + self._fetched + '>'
+  }
+}

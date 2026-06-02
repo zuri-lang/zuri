@@ -1,0 +1,155 @@
+/**
+ * # postgres._url  (internal)
+ *
+ * Parses PostgreSQL connection strings (DSNs) in both URI form and key=value
+ * form into a normalised options dictionary.
+ *
+ * ## Supported URI forms
+ *
+ * ```
+ * postgres://[user[:password]@][host][:port][/database][?key=value&...]
+ * postgresql://...
+ * ```
+ *
+ * ## Supported key=value form
+ *
+ * ```
+ * host=localhost port=5432 dbname=mydb user=alice password=secret
+ * ```
+ *
+ * @internal
+ */
+
+import url as url_module
+
+/**
+ * Parses a connection string or options dict into a canonical options dict.
+ *
+ * @param  string | dict  dsn  The DSN string or already-parsed options dict.
+ * @return dict  Keys: host, port, user, password, database, ssl, options
+ */
+def parse_dsn(dsn) {
+  if is_dict(dsn) {
+    return _normalise(dsn)
+  }
+  if is_string(dsn) {
+    var s = dsn.trim()
+    if s.starts_with('postgres://') or s.starts_with('postgresql://') {
+      return _parse_uri(s)
+    }
+    return _parse_keyval(s)
+  }
+  raise Exception('postgres: connection string must be a string or dict')
+}
+
+def _normalise(d) {
+  return {
+    host:     d.get('host',     '127.0.0.1'),
+    port:     d.get('port',     5432),
+    user:     d.get('user',     d.get('username', 'postgres')),
+    password: d.get('password', nil),
+    database: d.get('database', d.get('dbname', d.get('user', 'postgres'))),
+    ssl:      d.get('ssl',      false),
+    options:  d.get('options',  {}),
+  }
+}
+
+def _parse_uri(uri_str) {
+  # Strip scheme.
+  var s = uri_str
+  if s.starts_with('postgresql://') { s = s[13, s.length()] }
+  else { s = s[11, s.length()] }   # postgres://
+
+  var user     = 'postgres'
+  var password = nil
+  var host     = '127.0.0.1'
+  var port     = 5432
+  var database = 'postgres'
+  var ssl      = false
+  var options  = {}
+
+  # Split off query string.
+  var query_str = ''
+  var q_idx = s.index_of('?')
+  if q_idx >= 0 {
+    query_str = s[q_idx + 1, s.length()]
+    s = s[0, q_idx]
+  }
+
+  # Split user info from host.
+  var at_idx = s.index_of('@')
+  if at_idx >= 0 {
+    var userinfo = s[0, at_idx]
+    s = s[at_idx + 1, s.length()]
+    var colon = userinfo.index_of(':')
+    if colon >= 0 {
+      user     = _url_decode(userinfo[0, colon])
+      password = _url_decode(userinfo[colon + 1, userinfo.length()])
+    } else {
+      user = _url_decode(userinfo)
+    }
+  }
+
+  # Split host:port from /database.
+  var slash_idx = s.index_of('/')
+  var hostport
+  if slash_idx >= 0 {
+    hostport = s[0, slash_idx]
+    database = _url_decode(s[slash_idx + 1, s.length()])
+    if database == '' { database = user }
+  } else {
+    hostport = s
+  }
+
+  # Parse host:port.
+  var colon_idx = hostport.index_of(':')
+  if colon_idx >= 0 {
+    host = hostport[0, colon_idx]
+    port = hostport[colon_idx + 1, hostport.length()].to_number()
+  } else if hostport.length() > 0 {
+    host = hostport
+  }
+
+  if host == '' { host = '127.0.0.1' }
+
+  # Parse query parameters.
+  if query_str.length() > 0 {
+    for pair in query_str.split('&') {
+      var eq = pair.index_of('=')
+      if eq >= 0 {
+        var k = _url_decode(pair[0, eq])
+        var v = _url_decode(pair[eq + 1, pair.length()])
+        if k == 'sslmode' or k == 'ssl' {
+          ssl = (v == 'require' or v == 'verify-ca' or v == 'verify-full' or v == 'true')
+        } else {
+          options[k] = v
+        }
+      }
+    }
+  }
+
+  return {
+    host: host, port: port, user: user, password: password,
+    database: database, ssl: ssl, options: options,
+  }
+}
+
+def _parse_keyval(s) {
+  var opts = {}
+  for pair in s.split(' ') {
+    pair = pair.trim()
+    if pair.length() == 0 { continue }
+    var eq = pair.index_of('=')
+    if eq >= 0 {
+      opts[pair[0, eq].trim()] = pair[eq + 1, pair.length()].trim()
+    }
+  }
+  return _normalise(opts)
+}
+
+# Minimal percent-decode.
+def _url_decode(s) {
+  return s.replace_with('/%([0-9A-Fa-f]{2})/', @(m) {
+    return chr(('0x' + m[1, 3]).to_number())
+  })
+}

@@ -1,0 +1,86 @@
+/**
+ * Exception hierarchy for the postgres client library.
+ *
+ * All postgres exceptions extend `PostgresError` which itself extends the
+ * built-in `Exception`, so callers can catch the entire family with a single
+ * `catch` block while still being able to discriminate finer-grained types.
+ *
+ * ```zuri
+ * catch {
+ *   conn.query('bad sql')
+ * } as e
+ * if isinstance(e, PostgresError) {
+ *   echo 'postgres error: ' + e.message
+ * }
+ * ```
+ */
+
+/**
+ * Base class for all errors raised by the postgres client library.
+ *
+ * @property string message   Human-readable error description.
+ * @property string code      PostgreSQL SQLSTATE code, when available.
+ * @property string severity  Severity string from the server (ERROR, FATAL…).
+ * @property string detail    Optional extended detail message from the server.
+ * @property string hint      Optional hint message from the server.
+ * @property string position  Character position within the query string.
+ */
+class PostgresError < Exception {
+  var code     = nil
+  var severity = nil
+  var detail   = nil
+  var hint     = nil
+  var position = nil
+
+  /**
+   * Creates a PostgresError.
+   *
+   * @param string message  The primary error description.
+   * @param dict   fields   Optional dict of additional server error fields.
+   */
+  PostgresError(message, fields) {
+    parent(message)
+    if fields {
+      self.code     = fields.get('C', nil)
+      self.severity = fields.get('S', nil)
+      self.detail   = fields.get('D', nil)
+      self.hint     = fields.get('H', nil)
+      self.position = fields.get('P', nil)
+    }
+  }
+}
+
+/**
+ * Raised when a network or socket-level failure prevents communication with
+ * the PostgreSQL server (connection refused, broken pipe, timeout, etc.).
+ */
+class ConnectionError < PostgresError {}
+
+/**
+ * Raised when the server returns an error response to a query or command.
+ * The `code` field will contain the SQLSTATE code from the server.
+ */
+class QueryError < PostgresError {}
+
+/**
+ * Raised when authentication with the PostgreSQL server fails, including
+ * wrong credentials, unsupported auth method, or SASL negotiation failure.
+ */
+class AuthenticationError < PostgresError {}
+
+/**
+ * Raised when the client receives an unexpected or malformed message from
+ * the server, indicating a protocol-level disagreement.
+ */
+class ProtocolError < PostgresError {}
+
+/**
+ * Raised when an operation is attempted on a closed connection or cursor.
+ */
+class ClosedError < PostgresError {}
+
+/**
+ * Raised when a connection pool is exhausted and `max` connections are all
+ * in use and the caller did not opt into waiting.
+ */
+class PoolExhaustedError < PostgresError {}

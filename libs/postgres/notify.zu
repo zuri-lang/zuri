@@ -1,0 +1,212 @@
+/**
+ * High-level LISTEN / NOTIFY support for real-time PostgreSQL notifications.
+ *
+ * PostgreSQL's `NOTIFY` mechanism allows one database session to signal other
+ * listening sessions asynchronously, enabling lightweight pub/sub patterns
+ * without polling.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import postgres { Connection }
+ *
+ * var conn = Connection('postgres://localhost/mydb')
+ * conn.connect()
+ *
+ * var listener = conn.listen('chat_messages')
+ *
+ * # Register a callback for incoming notifications.
+ * listener.on(@(notification) {
+ *   echo 'Channel: ' + notification.channel
+ *   echo 'Payload: ' + notification.payload
+ *   echo 'PID:     ' + notification.pid
+ * })
+ *
+ * # Poll for notifications (non-blocking check).
+ * listener.poll()
+ *
+ * # Stop listening and free resources.
+ * listener.close()
+ * conn.close()
+ * ```
+ */
+
+import .errors { ClosedError }
+
+/**
+ * Subscribes to one or more PostgreSQL NOTIFY channels on a connection and
+ * delivers incoming notifications to registered callback functions.
+ *
+ * `NotificationListener` is obtained via `Connection.listen()`, not by
+ * constructing directly.
+ */
+class NotificationListener {
+  /**
+   * The channels this listener is subscribed to.
+   * @type list
+   */
+  var channels
+
+  var _protocol
+  var _callbacks = []
+  var _closed    = false
+
+  /**
+   * @internal — created by `Connection.listen()`.
+   */
+  NotificationListener(protocol, channels) {
+    self._protocol = protocol
+    self.channels  = channels
+  }
+
+  # -------------------------------------------------------------------------
+  # Subscription management
+  # -------------------------------------------------------------------------
+
+  /**
+   * Subscribes to an additional channel.
+   *
+   * @param string channel  The PostgreSQL channel name to listen on.
+   * @throws ClosedError    If the listener has been closed.
+   */
+  subscribe(channel) {
+    if self._closed { raise ClosedError('NotificationListener is closed') }
+    self._protocol.listen(channel)
+    if !self.channels.contains(channel) {
+      self.channels.append(channel)
+    }
+  }
+
+  /**
+   * Unsubscribes from a specific channel.
+   *
+   * @param string channel  The channel to stop listening on.
+   */
+  unsubscribe(channel) {
+    if self._closed { raise ClosedError('NotificationListener is closed') }
+    self._protocol.unlisten(channel)
+    var idx = self.channels.index_of(channel)
+    if idx >= 0 { self.channels.remove_at(idx) }
+  }
+
+  # -------------------------------------------------------------------------
+  # Callback registration
+  # -------------------------------------------------------------------------
+
+  /**
+   * Registers a callback function to be invoked when a notification arrives.
+   *
+   * The callback receives a single dict argument with keys:
+   * - `channel` — the channel name (string)
+   * - `payload` — the notification payload (string, may be empty)
+   * - `pid`     — the notifying backend's process ID (number)
+   *
+   * Multiple callbacks may be registered; they are called in order.
+   *
+   * ```zuri
+   * listener.on(@(n) {
+   *   echo n.channel + ': ' + n.payload
+   * })
+   * ```
+   *
+   * @param  function fn  The callback to register.
+   * @return NotificationListener  (for chaining)
+   */
+  on(fn) {
+    self._callbacks.append(fn)
+    return self
+  }
+
+  # -------------------------------------------------------------------------
+  # Polling
+  # -------------------------------------------------------------------------
+
+  /**
+   * Performs a single non-blocking poll of the connection for pending
+   * notifications.  Any notifications found are dispatched to all registered
+   * callbacks.
+   *
+   * Call this in an event loop or from a timer to process notifications.
+   *
+   * @return number  The number of notifications dispatched in this call.
+   */
+  poll() {
+    if self._closed { return 0 }
+    var count = 0
+    var notif = self._protocol.poll_notification()
+    while notif != nil {
+      self._dispatch(notif)
+      count++
+      notif = self._protocol.poll_notification()
+    }
+    return count
+  }
+
+  /**
+   * Blocks, polling for notifications every `interval_ms` milliseconds until
+   * `stop()` is called or `max_count` notifications have been received
+   * (0 = no limit).
+   *
+   * **Note:** This is a simple busy-wait loop.  For production use consider
+   * running the listener in a dedicated thread using Zuri's `thread` module.
+   *
+   * @param number interval_ms  Poll interval in milliseconds (default 200).
+   * @param number max_count    Stop after receiving this many notifications
+   *                            (0 = run forever, default).
+   */
+  wait(interval_ms, max_count) {
+    if !interval_ms { interval_ms = 200 }
+    if !max_count   { max_count   = 0   }
+
+    var total = 0
+    self._running = true
+    while self._running and !self._closed {
+      total += self.poll()
+      if max_count > 0 and total >= max_count { break }
+      # Simple sleep approximation via a tight loop — replace with
+      # os.sleep(interval_ms) if available in your Zuri version.
+      var deadline = microtime() + interval_ms * 1000
+      while microtime() < deadline {}
+    }
+  }
+
+  var _running = false
+
+  /**
+   * Signals an in-progress `wait()` call to stop.
+   */
+  stop() {
+    self._running = false
+  }
+
+  # -------------------------------------------------------------------------
+  # Lifecycle
+  # -------------------------------------------------------------------------
+
+  /**
+   * Unsubscribes from all channels and releases the listener.
+   * The underlying connection remains open.
+   */
+  close() {
+    if self._closed { return }
+    catch { self._protocol.unlisten('*') } as _e
+    self._closed    = true
+    self._callbacks = []
+    self.channels   = []
+  }
+
+  # -------------------------------------------------------------------------
+  # Internal
+  # -------------------------------------------------------------------------
+
+  _dispatch(notification) {
+    for fn in self._callbacks {
+      catch { fn(notification) } as err
+      # Swallow callback errors to prevent one bad handler from blocking others.
+    }
+  }
+
+  @to_string() {
+    return '<NotificationListener channels=[' + self.channels.join(', ') + ']>'
+  }
+}

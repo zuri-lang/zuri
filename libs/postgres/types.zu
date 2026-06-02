@@ -1,0 +1,689 @@
+/**
+ * PostgreSQL data type OIDs and the extensible type codec registry.
+ *
+ * ## Built-in OID constants (`DataTypeOIDs`)
+ *
+ * Every PostgreSQL built-in type has a stable numeric OID. The `DataTypeOIDs`
+ * dict provides named constants so user code never needs to hard-code raw
+ * numbers:
+ *
+ * ```zuri
+ * import postgres { DataTypeOIDs }
+ * echo DataTypeOIDs.Int4   # 23
+ * echo DataTypeOIDs.Uuid   # 2950
+ * ```
+ *
+ * ## Type codec registry (`TypeRegistry`)
+ *
+ * The `TypeRegistry` maps OIDs to encoder / decoder function pairs.  The
+ * singleton `DefaultRegistry` is pre-loaded with codecs for every type listed
+ * in the type-mapping table.  Custom types can be registered with
+ * `TypeRegistry.register()`.
+ *
+ * ```zuri
+ * import postgres { TypeRegistry }
+ *
+ * # Register a custom "money" OID → Zuri number codec
+ * TypeRegistry.register(790, @(buf) {   # decode binary → number
+ *   return buf_to_int64(buf) / 100.0
+ * }, @(value) {                          # encode number → binary
+ *   return int64_to_buf(value * 100)
+ * })
+ * ```
+ */
+
+import struct
+import json
+import math
+import convert
+
+# ---------------------------------------------------------------------------
+# OID constants
+# ---------------------------------------------------------------------------
+
+/**
+ * Named constants for every PostgreSQL built-in type OID that the library
+ * supports.  Use these instead of raw integers in `prepare()` calls.
+ *
+ * Array-type OIDs follow the PostgreSQL convention of being the scalar OID
+ * minus a well-known offset; they are listed as `<Type>Array`.
+ */
+var DataTypeOIDs = {
+  # Scalar numeric
+  Bool:        16,
+  Int2:        21,
+  Int4:        23,
+  Int8:        20,
+  Float4:      700,
+  Float8:      701,
+  Numeric:     1700,
+  Oid:         26,
+
+  # Character types
+  Char:        18,
+  BpChar:      1042,
+  Varchar:     1043,
+  Text:        25,
+  Name:        19,
+
+  # Binary
+  Bytea:       17,
+
+  # Date / time
+  Date:        1082,
+  Time:        1083,
+  Timestamp:   1114,
+  Timestamptz: 1184,
+  Interval:    1186,
+
+  # Network
+  Inet:        869,
+  Cidr:        650,
+  Macaddr:     829,
+
+  # Geometric
+  Point:       600,
+  Lseg:        601,
+  Box:         603,
+  Circle:      718,
+  Path:        602,
+  Polygon:     604,
+
+  # Text search
+  Tsvector:    3614,
+  Tsquery:     3615,
+
+  # JSON
+  Json:        114,
+  Jsonb:       3802,
+
+  # XML
+  Xml:         142,
+
+  # UUID
+  Uuid:        2950,
+
+  # Bit
+  Bit:         1560,
+  Varbit:      1562,
+
+  # Special
+  Int2Vector:  22,
+  Void:        2278,
+  Unknown:     705,
+  Unspecified: 0,
+
+  # Array counterparts  (PostgreSQL OID = scalar OID + 1 for most, or specific)
+  BoolArray:        1000,
+  Int2Array:        1005,
+  Int4Array:        1007,
+  Int8Array:        1016,
+  Float4Array:      1021,
+  Float8Array:      1022,
+  CharArray:        1002,
+  BpCharArray:      1014,
+  VarcharArray:     1015,
+  TextArray:        1009,
+  ByteaArray:       1001,
+  DateArray:        1182,
+  TimeArray:        1183,
+  TimestampArray:   1115,
+  TimestamptzArray: 1185,
+  OidArray:         1028,
+  UuidArray:        2951,
+  JsonArray:        199,
+  JsonbArray:       3807,
+  XmlArray:         143,
+  PointArray:       1017,
+  LsegArray:        1018,
+  BoxArray:         1020,
+  CircleArray:      719,
+  Int2VectorArray:  1006,
+}
+
+# ---------------------------------------------------------------------------
+# Internal binary helpers
+# ---------------------------------------------------------------------------
+
+# Read big-endian int16 from bytes at offset.
+def _read_int16(buf, offset) {
+  var hi = buf[offset]
+  var lo = buf[offset + 1]
+  var v = hi * 256 + lo
+  if v >= 32768 { v -= 65536 }
+  return v
+}
+
+# Read big-endian uint16 from bytes at offset.
+def _read_uint16(buf, offset) {
+  return buf[offset] * 256 + buf[offset + 1]
+}
+
+# Read big-endian int32 from bytes at offset.
+def _read_int32(buf, offset) {
+  var b0 = buf[offset], b1 = buf[offset+1], b2 = buf[offset+2], b3 = buf[offset+3]
+  var v = b0 * 16777216 + b1 * 65536 + b2 * 256 + b3
+  if v >= 2147483648 { v -= 4294967296 }
+  return v
+}
+
+# Read big-endian uint32 from bytes at offset.
+def _read_uint32(buf, offset) {
+  return buf[offset] * 16777216 + buf[offset+1] * 65536 +
+         buf[offset+2] * 256 + buf[offset+3]
+}
+
+# Read big-endian int64 from bytes at offset (returns Zuri number; may lose
+# precision for values > 2^53).
+def _read_int64(buf, offset) {
+  var hi = _read_int32(buf, offset)
+  var lo = _read_uint32(buf, offset + 4)
+  return hi * 4294967296 + lo
+}
+
+# Write big-endian int16 into a byte list.
+def _write_int16(v) {
+  if v < 0 { v += 65536 }
+  return [math.floor(v / 256) & 0xff, v & 0xff]
+}
+
+# Write big-endian int32 into a byte list.
+def _write_int32(v) {
+  if v < 0 { v += 4294967296 }
+  return [
+    math.floor(v / 16777216) & 0xff,
+    math.floor(v / 65536) & 0xff,
+    math.floor(v / 256) & 0xff,
+    v & 0xff,
+  ]
+}
+
+# Write big-endian int64 into a byte list (number precision caveat applies).
+def _write_int64(v) {
+  var lo = v % 4294967296
+  var hi = math.floor(v / 4294967296)
+  return _write_int32(hi) + _write_int32(lo)
+}
+
+# Convert a Zuri string to a list of UTF-8 byte values.
+def _str_to_bytes(s) {
+  var result = []
+  for ch in s {
+    var cp = ord(ch)
+    if cp < 0x80 {
+      result.append(cp)
+    } else if cp < 0x800 {
+      result.append(0xc0 | (cp >> 6))
+      result.append(0x80 | (cp & 0x3f))
+    } else if cp < 0x10000 {
+      result.append(0xe0 | (cp >> 12))
+      result.append(0x80 | ((cp >> 6) & 0x3f))
+      result.append(0x80 | (cp & 0x3f))
+    } else {
+      result.append(0xf0 | (cp >> 18))
+      result.append(0x80 | ((cp >> 12) & 0x3f))
+      result.append(0x80 | ((cp >> 6) & 0x3f))
+      result.append(0x80 | (cp & 0x3f))
+    }
+  }
+  return result
+}
+
+# Convert a list of UTF-8 byte values to a Zuri string.
+def _bytes_to_str(buf) {
+  # Zuri strings are UTF-8 internally; build via chr accumulation.
+  var result = ''
+  var i = 0
+  while i < buf.length() {
+    var b = buf[i]
+    var cp
+    if b < 0x80 {
+      cp = b
+      i++
+    } else if (b & 0xe0) == 0xc0 {
+      cp = ((b & 0x1f) << 6) | (buf[i+1] & 0x3f)
+      i += 2
+    } else if (b & 0xf0) == 0xe0 {
+      cp = ((b & 0x0f) << 12) | ((buf[i+1] & 0x3f) << 6) | (buf[i+2] & 0x3f)
+      i += 3
+    } else {
+      cp = ((b & 0x07) << 18) | ((buf[i+1] & 0x3f) << 12) |
+           ((buf[i+2] & 0x3f) << 6) | (buf[i+3] & 0x3f)
+      i += 4
+    }
+    result += chr(cp)
+  }
+  return result
+}
+
+# The PostgreSQL epoch for timestamps: 2000-01-01 00:00:00 UTC in Unix µs.
+var _PG_EPOCH_OFFSET_US = 946684800 * 1000000
+
+# ---------------------------------------------------------------------------
+# Binary type decoders  (bytes list → Zuri value)
+# ---------------------------------------------------------------------------
+
+def _decode_bool(buf, _oid)   { return buf[0] != 0 }
+def _decode_int2(buf, _oid)   { return _read_int16(buf, 0) }
+def _decode_int4(buf, _oid)   { return _read_int32(buf, 0) }
+def _decode_int8(buf, _oid)   { return _read_int64(buf, 0) }
+
+def _decode_float4(buf, _oid) {
+  # Unpack IEEE 754 single from big-endian 4 bytes using struct.
+  var v = struct.unpack('G', buf)
+  return v[1]
+}
+
+def _decode_float8(buf, _oid) {
+  var v = struct.unpack('E', buf)
+  return v[1]
+}
+
+def _decode_text(buf, _oid)   { return _bytes_to_str(buf) }
+def _decode_bytea(buf, _oid)  { return bytes(buf) }
+
+def _decode_json(buf, _oid) {
+  return json.decode(_bytes_to_str(buf))
+}
+
+def _decode_jsonb(buf, _oid) {
+  # JSONB has a 1-byte version prefix (always 0x01).
+  return json.decode(_bytes_to_str(buf[1,buf.length()]))
+}
+
+def _decode_uuid(buf, _oid) {
+  # 16 raw bytes → xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  var hex = ''
+  for b in buf {
+    var hi = math.floor(b / 16)
+    var lo = b % 16
+    hex += '0123456789abcdef'[hi] + '0123456789abcdef'[lo]
+  }
+  return hex[0,8] + '-' + hex[8,12] + '-' + hex[12,16] +
+         '-' + hex[16,20] + '-' + hex[20,32]
+}
+
+def _decode_timestamp(buf, _oid) {
+  # Microseconds since 2000-01-01.
+  var us = _read_int64(buf, 0)
+  return (us + _PG_EPOCH_OFFSET_US) / 1000  # → Unix ms for date.Date()
+}
+
+def _decode_date(buf, _oid) {
+  # Days since 2000-01-01 → Unix ms.
+  var days = _read_int32(buf, 0)
+  return (days * 86400 + 946684800) * 1000
+}
+
+def _decode_time(buf, _oid) {
+  return _read_int64(buf, 0)  # Microseconds since midnight.
+}
+
+def _decode_oid(buf, _oid) { return _read_uint32(buf, 0) }
+
+def _decode_point(buf, _oid) {
+  var v = struct.unpack('E1x/E2y', bytes(buf))
+  return { x: v['1x'], y: v['2y'] }
+}
+
+def _decode_lseg(buf, _oid) {
+  var v = struct.unpack('E1x1/E2y1/E3x2/E4y2', bytes(buf))
+  return { x1: v['1x1'], y1: v['2y1'], x2: v['3x2'], y2: v['4y2'] }
+}
+
+def _decode_box(buf, _oid) {
+  var v = struct.unpack('E1x1/E2y1/E3x2/E4y2', bytes(buf))
+  return { x1: v['1x1'], y1: v['2y1'], x2: v['3x2'], y2: v['4y2'] }
+}
+
+def _decode_circle(buf, _oid) {
+  var v = struct.unpack('E1x/E2y/E3r', bytes(buf))
+  return { x: v['1x'], y: v['2y'], r: v['3r'] }
+}
+
+# Generic binary array decoder.
+# Wire format: int32 ndim, int32 flags, int32 element_oid,
+#              then per-dim: int32 size, int32 lbound,
+#              then elements: int32 len (-1 = NULL), <len bytes data>.
+def _decode_array(buf, registry) {
+  var off = 0
+  var ndim   = _read_int32(buf, off); off += 4
+  var _flags = _read_int32(buf, off); off += 4
+  var elem_oid = _read_uint32(buf, off); off += 4
+
+  var dims = []
+  iter var i = 0; i < ndim; i++ {
+    dims.append(_read_int32(buf, off)); off += 4
+    off += 4  # lbound
+  }
+
+  # Flatten then reshape.
+  def read_elements(depth) {
+    if depth >= dims.length() {
+      var elen = _read_int32(buf, off)
+      off += 4
+      if elen == -1 { return nil }
+      var elem_buf = buf[off, off + elen]
+      off += elen
+      return registry.decode(elem_buf, elem_oid)
+    }
+    var count = dims[depth]
+    var result = []
+    iter var i = 0; i < count; i++ {
+      result.append(read_elements(depth + 1))
+    }
+    return result
+  }
+
+  if ndim == 0 { return [] }
+  return read_elements(0)
+}
+
+# ---------------------------------------------------------------------------
+# Binary type encoders  (Zuri value → bytes list)
+# ---------------------------------------------------------------------------
+
+def _encode_bool(v)   { return [v ? 1 : 0] }
+def _encode_int2(v)   { return _write_int16(v) }
+def _encode_int4(v)   { return _write_int32(v) }
+def _encode_int8(v)   { return _write_int64(v) }
+
+def _encode_float4(v) {
+  return struct.pack('G', v)
+}
+
+def _encode_float8(v) {
+  return struct.pack('E', v)
+}
+
+def _encode_text(v) { return _str_to_bytes(v) }
+def _encode_oid(v)  { return _write_int32(v) }
+
+def _encode_bytea(v) {
+  if is_bytes(v) {
+    var result = []
+    for b in v { result.append(b) }
+    return result
+  }
+  return _str_to_bytes(v)
+}
+
+def _encode_json(v) {
+  return _str_to_bytes(json.encode(v))
+}
+
+def _encode_jsonb(v) {
+  # Prefix with JSONB version byte 0x01.
+  return [0x01] + _str_to_bytes(json.encode(v))
+}
+
+def _encode_uuid(v) {
+  var hex = v.replace('/-/', '').lower()
+  var result = []
+  iter var i = 0; i < 32; i += 2 {
+    result.append(('0x' + hex[i, i+2]).to_number())
+  }
+  return result
+}
+
+def _encode_timestamp(unix_ms) {
+  var us = unix_ms * 1000 - _PG_EPOCH_OFFSET_US
+  return _write_int64(us)
+}
+
+def _encode_date(unix_ms) {
+  var days = math.floor(unix_ms / 1000 / 86400) - 10957  # days since PG epoch
+  return _write_int32(days)
+}
+
+def _encode_point(v) {
+  return struct.pack('EE', v.x, v.y)
+}
+
+def _encode_lseg(v) {
+  return struct.pack('EEEE', v.x1, v.y1, v.x2, v.y2)
+}
+
+def _encode_box(v) {
+  return struct.pack('EEEE', v.x1, v.y1, v.x2, v.y2)
+}
+
+def _encode_circle(v) {
+  return struct.pack('EEE', v.x, v.y, v.r)
+}
+
+# Binary array encoder.
+def _encode_array(v, elem_oid, registry) {
+  if !is_list(v) { raise Exception('Expected list for array encoding') }
+
+  # Determine dimensions recursively.
+  def get_dims(arr) {
+    if !is_list(arr) or arr.length() == 0 { return [] }
+    return [arr.length()] + get_dims(arr[0])
+  }
+  var dims = get_dims(v)
+  var ndim = dims.length()
+
+  # Flatten to element list.
+  var elements = []
+  def flatten(arr, depth) {
+    if depth >= ndim - 1 {
+      for elem in arr { elements.append(elem) }
+    } else {
+      for sub in arr { flatten(sub, depth + 1) }
+    }
+  }
+  if ndim > 0 { flatten(v, 0) }
+
+  # Header: ndim, flags=0, elem_oid, then per-dim (size, lbound=1).
+  var header = _write_int32(ndim) + _write_int32(0) + _write_int32(elem_oid)
+  for d in dims {
+    header += _write_int32(d) + _write_int32(1)
+  }
+
+  # Encode each element.
+  var body = []
+  for elem in elements {
+    if elem == nil {
+      body += _write_int32(-1)
+    } else {
+      var encoded = registry.encode(elem, elem_oid)
+      body += _write_int32(encoded.length()) + encoded
+    }
+  }
+
+  return header + body
+}
+
+# ---------------------------------------------------------------------------
+# TypeRegistry
+# ---------------------------------------------------------------------------
+
+/**
+ * Registry that maps PostgreSQL type OIDs to binary encode / decode function
+ * pairs.  A singleton instance (`DefaultRegistry`) is pre-populated with
+ * every built-in type listed in the type-mapping table.
+ *
+ * Call `register()` to add support for custom types, or to override the
+ * default behaviour of a built-in type.
+ *
+ * ### Example — custom money type
+ *
+ * ```zuri
+ * import postgres { TypeRegistry }
+ *
+ * TypeRegistry.register(
+ *   790,
+ *   @(buf) => _read_int64(buf, 0) / 100.0,  # decode
+ *   @(v)   => _write_int64(int(v * 100))  # encode
+ * )
+ * ```
+ */
+class TypeRegistry {
+  var _decoders = {}
+  var _encoders = {}
+
+  TypeRegistry() {
+    self._register_defaults()
+  }
+
+  # -------------------------------------------------------------------------
+  # Public API
+  # -------------------------------------------------------------------------
+
+  /**
+   * Registers a custom codec for the given OID.
+   *
+   * @param number   oid      The PostgreSQL OID to handle.
+   * @param function decoder  `@(buf_list) → value` — binary → Zuri value.
+   * @param function encoder  `@(value)    → list`  — Zuri value → byte list.
+   */
+  register(oid, decoder, encoder) {
+    self._decoders[oid] = decoder
+    self._encoders[oid] = encoder
+  }
+
+  /**
+   * Decodes a binary buffer `buf` (list of bytes) using the codec for `oid`.
+   * Returns `nil` if no decoder is registered for the OID (text fallback).
+   *
+   * @param  list   buf  Raw bytes from the PostgreSQL binary wire format.
+   * @param  number oid  The PostgreSQL OID of the value.
+   * @return any
+   */
+  decode(buf, oid) {
+    var fn = self._decoders.get(oid, nil)
+    if fn { return fn(buf, oid) }
+    # Fallback: treat unknown OIDs as text.
+    return _bytes_to_str(buf)
+  }
+
+  /**
+   * Encodes `value` to a byte list using the codec for `oid`.
+   *
+   * @param  any    value  The Zuri value to encode.
+   * @param  number oid    The PostgreSQL OID for the target column / param.
+   * @return list
+   */
+  encode(value, oid) {
+    var fn = self._encoders.get(oid, nil)
+    if fn { return fn(value) }
+    # Fallback: convert to string and encode as text.
+    return _encode_text(value.to_string())
+  }
+
+  # -------------------------------------------------------------------------
+  # Default codec registrations
+  # -------------------------------------------------------------------------
+
+  _register_defaults() {
+    var OID = DataTypeOIDs
+
+    # Scalar numeric
+    self._decoders[OID.Bool]        = _decode_bool
+    self._encoders[OID.Bool]        = _encode_bool
+    self._decoders[OID.Int2]        = _decode_int2
+    self._encoders[OID.Int2]        = _encode_int2
+    self._decoders[OID.Int4]        = _decode_int4
+    self._encoders[OID.Int4]        = _encode_int4
+    self._decoders[OID.Int8]        = _decode_int8
+    self._encoders[OID.Int8]        = _encode_int8
+    self._decoders[OID.Float4]      = _decode_float4
+    self._encoders[OID.Float4]      = _encode_float4
+    self._decoders[OID.Float8]      = _decode_float8
+    self._encoders[OID.Float8]      = _encode_float8
+    self._decoders[OID.Oid]         = _decode_oid
+    self._encoders[OID.Oid]         = _encode_oid
+
+    # Text / character types
+    for oid in [OID.Char, OID.BpChar, OID.Varchar, OID.Text, OID.Name, OID.Unknown, OID.Xml] {
+      self._decoders[oid] = _decode_text
+      self._encoders[oid] = _encode_text
+    }
+
+    self._encoders[OID.Xml] = _encode_text
+
+    # Bytea
+    self._decoders[OID.Bytea]       = _decode_bytea
+    self._encoders[OID.Bytea]       = _encode_bytea
+
+    # Date / time
+    self._decoders[OID.Date]        = _decode_date
+    self._encoders[OID.Date]        = _encode_date
+    self._decoders[OID.Time]        = _decode_time
+    self._encoders[OID.Time]        = @(v) { return _write_int64(v) }
+    self._decoders[OID.Timestamp]   = _decode_timestamp
+    self._encoders[OID.Timestamp]   = _encode_timestamp
+    self._decoders[OID.Timestamptz] = _decode_timestamp
+    self._encoders[OID.Timestamptz] = _encode_timestamp
+
+    # JSON / JSONB
+    self._decoders[OID.Json]        = _decode_json
+    self._encoders[OID.Json]        = _encode_json
+    self._decoders[OID.Jsonb]       = _decode_jsonb
+    self._encoders[OID.Jsonb]       = _encode_jsonb
+
+    # UUID
+    self._decoders[OID.Uuid]        = _decode_uuid
+    self._encoders[OID.Uuid]        = _encode_uuid
+
+    # Geometric
+    self._decoders[OID.Point]       = _decode_point
+    self._encoders[OID.Point]       = _encode_point
+    self._decoders[OID.Lseg]        = _decode_lseg
+    self._encoders[OID.Lseg]        = _encode_lseg
+    self._decoders[OID.Box]         = _decode_box
+    self._encoders[OID.Box]         = _encode_box
+    self._decoders[OID.Circle]      = _decode_circle
+    self._encoders[OID.Circle]      = _encode_circle
+
+    # Arrays — share a single factory that captures elem_oid.
+    var arr_map = [
+      [OID.BoolArray,         OID.Bool],
+      [OID.Int2Array,         OID.Int2],
+      [OID.Int4Array,         OID.Int4],
+      [OID.Int8Array,         OID.Int8],
+      [OID.Float4Array,       OID.Float4],
+      [OID.Float8Array,       OID.Float8],
+      [OID.CharArray,         OID.Char],
+      [OID.BpCharArray,       OID.BpChar],
+      [OID.VarcharArray,      OID.Varchar],
+      [OID.TextArray,         OID.Text],
+      [OID.ByteaArray,        OID.Bytea],
+      [OID.DateArray,         OID.Date],
+      [OID.TimeArray,         OID.Time],
+      [OID.TimestampArray,    OID.Timestamp],
+      [OID.TimestamptzArray,  OID.Timestamptz],
+      [OID.OidArray,          OID.Oid],
+      [OID.UuidArray,         OID.Uuid],
+      [OID.JsonArray,         OID.Json],
+      [OID.JsonbArray,        OID.Jsonb],
+      [OID.XmlArray,          OID.Xml],
+      [OID.PointArray,        OID.Point],
+      [OID.LsegArray,         OID.Lseg],
+      [OID.BoxArray,          OID.Box],
+      [OID.CircleArray,       OID.Circle],
+      [OID.Int2VectorArray,   OID.Int2Array],
+    ]
+
+    for item in arr_map {
+      var arr_oid = item[0]
+      var _elem_oid = item[1]   # capture
+
+      var _self = self
+      self._decoders[arr_oid] = @(buf, _oid) {
+        return _decode_array(buf, _self)
+      }
+
+      self._encoders[arr_oid] = @(v) {
+        return _encode_array(v, _elem_oid, _self)
+      }
+    }
+  }
+}
+
+/**
+ * The shared default type registry used by all connections unless overridden.
+ * Mutate this to add global custom type support across the entire process.
+ */
+var DefaultRegistry = TypeRegistry()

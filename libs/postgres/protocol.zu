@@ -1,0 +1,975 @@
+/**
+ * Low-level PostgreSQL frontend/backend wire protocol (version 3.0)
+ * implementation.
+ *
+ * This module is an internal implementation detail.  Application code should
+ * use `Connection` or `Pool` rather than this module directly.
+ *
+ * ## Protocol overview (RFC 9522 / PostgreSQL documentation)
+ *
+ * The PostgreSQL wire protocol uses a simple message framing scheme:
+ *
+ * **Backend → Frontend messages** (server responses):
+ *   - 1 byte  message type tag
+ *   - 4 bytes big-endian int32 length (includes these 4 bytes, not the tag)
+ *   - (length - 4) bytes payload
+ *
+ * **Frontend → Backend messages** (client requests):
+ *   - Same layout, except the StartupMessage has no tag byte.
+ *
+ * All multi-byte integers are big-endian (network byte order).
+ *
+ * ## References
+ *
+ * - https://www.postgresql.org/docs/current/protocol.html
+ * - https://www.postgresql.org/docs/current/protocol-message-formats.html
+ */
+
+import socket
+import struct
+import hash
+import math
+import convert
+import base64
+
+import .errors  { ConnectionError, ProtocolError, AuthenticationError,
+                  QueryError }
+import .types   { DefaultRegistry, DataTypeOIDs, _str_to_bytes, _bytes_to_str,
+                  _read_int32, _read_uint32, _read_int16, _read_uint16,
+                  _write_int32, _write_int16 }
+
+# ---------------------------------------------------------------------------
+# Message type constants (backend → frontend)
+# ---------------------------------------------------------------------------
+
+var MSG_AUTHENTICATION         = 'R'
+var MSG_BACKEND_KEY_DATA       = 'K'
+var MSG_BIND_COMPLETE          = '2'
+var MSG_CLOSE_COMPLETE         = '3'
+var MSG_COMMAND_COMPLETE       = 'C'
+var MSG_COPY_IN_RESPONSE       = 'G'
+var MSG_COPY_OUT_RESPONSE      = 'H'
+var MSG_DATA_ROW               = 'D'
+var MSG_EMPTY_QUERY_RESPONSE   = 'I'
+var MSG_ERROR_RESPONSE         = 'E'
+var MSG_NO_DATA                = 'n'
+var MSG_NOTICE_RESPONSE        = 'N'
+var MSG_NOTIFICATION_RESPONSE  = 'A'
+var MSG_PARAMETER_DESCRIPTION  = 't'
+var MSG_PARAMETER_STATUS       = 'S'
+var MSG_PARSE_COMPLETE         = '1'
+var MSG_PORTAL_SUSPENDED       = 's'
+var MSG_READY_FOR_QUERY        = 'Z'
+var MSG_ROW_DESCRIPTION        = 'T'
+
+# Auth sub-types
+var AUTH_OK                    = 0
+var AUTH_KERBEROS_V5           = 2
+var AUTH_CLEARTEXT_PASSWORD    = 3
+var AUTH_MD5_PASSWORD          = 5
+var AUTH_SCM_CREDENTIAL        = 6
+var AUTH_GSS                   = 7
+var AUTH_GSS_CONTINUE          = 8
+var AUTH_SSPI                  = 9
+var AUTH_SASL                  = 10
+var AUTH_SASL_CONTINUE         = 11
+var AUTH_SASL_FINAL            = 12
+
+# ---------------------------------------------------------------------------
+# MessageBuffer — accumulates outgoing bytes for a single message
+# ---------------------------------------------------------------------------
+
+class MessageBuffer {
+  var _bytes = []
+
+  MessageBuffer() {}
+
+  # Append a single byte.
+  write_byte(b) {
+    self._bytes.append(b & 0xff)
+  }
+
+  # Append big-endian int16.
+  write_int16(v) {
+    self._bytes += _write_int16(v)
+  }
+
+  # Append big-endian int32.
+  write_int32(v) {
+    self._bytes += _write_int32(v)
+  }
+
+  # Append a null-terminated C string.
+  write_cstring(s) {
+    self._bytes += _str_to_bytes(s)
+    self._bytes.append(0)
+  }
+
+  # Append raw bytes (list of integers).
+  write_bytes(b) {
+    self._bytes += b
+  }
+
+  # Return the accumulated byte list.
+  to_list() {
+    return self._bytes
+  }
+
+  # Reset for reuse.
+  clear() {
+    self._bytes = []
+  }
+}
+
+# Build a complete framed frontend message.
+# tag: single char string or nil for startup messages.
+# body: list of byte integers (the payload, NOT including the 4-byte length).
+def _frame(tag, body) {
+  var length = body.length() + 4   # length field includes itself
+  var framed = []
+  if tag != nil {
+    framed.append(ord(tag))
+  }
+  framed += _write_int32(length)
+  framed += body
+  return bytes(framed)
+}
+
+# ---------------------------------------------------------------------------
+# MessageReader — wraps a socket and reads framed backend messages
+# ---------------------------------------------------------------------------
+
+/**
+ * Reads and parses framed messages from a PostgreSQL backend socket.
+ *
+ * @internal
+ */
+class MessageReader {
+  var _sock
+  var _ssl   # nil or SSL object when using TLS
+
+  MessageReader(sock, ssl) {
+    self._sock = sock
+    self._ssl  = ssl
+  }
+
+  # Read exactly `n` bytes from the socket, retrying on short reads.
+  _read_exact(n) {
+    var buf = bytes(0)
+    var remaining = n
+    while remaining > 0 {
+      var chunk
+      if self._ssl {
+        chunk = self._ssl.read(remaining).ascii().to_bytes()
+      } else {
+        chunk = self._sock.receive(remaining).ascii().to_bytes()
+      }
+      
+      if !chunk or chunk.length() == 0 {
+        raise ConnectionError('Connection closed unexpectedly by server')
+      }
+      
+      buf.extend(chunk)
+      remaining -= chunk.length()
+      chunk.dispose()
+    }
+
+    return buf.to_list()
+  }
+
+  /**
+   * Reads the next complete message from the backend.
+   *
+   * @return dict  `{ type: string, payload: list }`
+   */
+  read_message() {
+    # Read tag (1 byte) + length (4 bytes)
+    var header = self._read_exact(5)
+    var tag    = chr(header[0])
+    var length = _read_uint32(header, 1)  # includes the 4-byte length field
+    var payload_len = length - 4
+    var payload = bytes(0)
+
+    if payload_len > 0 {
+      payload = bytes(self._read_exact(payload_len))
+    }
+
+    return { type: tag, payload: payload }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Protocol  —  the core wire-protocol state machine
+# ---------------------------------------------------------------------------
+
+/**
+ * Implements the PostgreSQL frontend/backend wire protocol version 3.0.
+ *
+ * Manages a single socket connection to a PostgreSQL server and exposes
+ * methods corresponding to each frontend message type.
+ *
+ * @internal — use `Connection` for the public API.
+ */
+class Protocol {
+  var _sock       = nil
+  var _ssl        = nil
+  var _reader     = nil
+  var _registry   = nil
+  var _server_pid = nil
+  var _server_key = nil
+  var _params     = {}   # server-reported ParameterStatus values
+  var _connected  = false
+
+  /**
+   * @param socket.Socket sock      The connected TCP socket.
+   * @param TypeRegistry  registry  Type codec registry to use.
+   * @param ssl|nil       ssl_obj   Optional SSL object (from ssl module).
+   */
+  Protocol(sock, registry, ssl_obj) {
+    self._sock     = sock
+    self._ssl      = ssl_obj
+    self._registry = registry
+    self._reader   = MessageReader(sock, ssl_obj)
+  }
+
+  # -------------------------------------------------------------------------
+  # Connection startup
+  # -------------------------------------------------------------------------
+
+  /**
+   * Sends the StartupMessage and drives the authentication exchange.
+   *
+   * @param string user      PostgreSQL username.
+   * @param string database  Database name.
+   * @param string password  Password (may be nil).
+   * @param dict   options   Extra startup parameters (application_name, etc.).
+   */
+  startup(user, database, password, options) {
+    var buf = MessageBuffer()
+    # Protocol version 3.0 = (3 << 16) | 0
+    buf.write_int32(196608)
+    buf.write_cstring('user')
+    buf.write_cstring(user)
+    buf.write_cstring('database')
+    buf.write_cstring(database)
+    if options {
+      for k, v in options {
+        buf.write_cstring(k)
+        buf.write_cstring(v)
+      }
+    }
+    buf.write_byte(0)  # terminating zero byte
+
+    # Startup message has no tag byte.
+    self._send_raw(_frame(nil, buf.to_list()))
+    self._auth_loop(user, password)
+  }
+
+  # Authentication exchange loop.
+  _auth_loop(user, password) {
+    while true {
+      var msg = self._reader.read_message()
+
+      if msg.type == MSG_AUTHENTICATION {
+        var auth_type = _read_uint32(msg.payload, 0)
+
+        if auth_type == AUTH_OK {
+          # Authentication successful — wait for ReadyForQuery.
+          self._finish_startup()
+          return
+        } else if auth_type == AUTH_CLEARTEXT_PASSWORD {
+          if !password { raise AuthenticationError('Server requires a password') }
+          self._send_password(password)
+        } else if auth_type == AUTH_MD5_PASSWORD {
+          if !password { raise AuthenticationError('Server requires a password') }
+          var salt = msg.payload[4, 8]
+          var md5_pass = self._md5_password(user, password, salt)
+          self._send_password(md5_pass)
+        } else if auth_type == AUTH_SASL {
+          # SASL (SCRAM-SHA-256) — send client-first-message.
+          if !password { raise AuthenticationError('Server requires a password') }
+          self._sasl_authenticate(msg.payload[4,msg.payload.length()], password)
+          self._finish_startup()
+          return
+        } else {
+          raise AuthenticationError(
+            'Unsupported authentication method: ' + auth_type
+          )
+        }
+
+      } else if msg.type == MSG_ERROR_RESPONSE {
+        raise AuthenticationError(self._parse_error(msg.payload).message)
+      } else {
+        raise ProtocolError('Unexpected message during auth: ' + msg.type)
+      }
+    }
+  }
+
+  # Consume ParameterStatus, BackendKeyData, then ReadyForQuery.
+  _finish_startup() {
+    while true {
+      var msg = self._reader.read_message()
+      if msg.type == MSG_READY_FOR_QUERY {
+        self._connected = true
+        return
+      } else if msg.type == MSG_PARAMETER_STATUS {
+        self._handle_param_status(msg.payload)
+      } else if msg.type == MSG_BACKEND_KEY_DATA {
+        self._server_pid = _read_uint32(msg.payload, 0)
+        self._server_key = _read_uint32(msg.payload, 4)
+      } else if msg.type == MSG_ERROR_RESPONSE {
+        raise ConnectionError(self._parse_error(msg.payload).message)
+      }
+      # NOTICE — ignore during startup
+    }
+  }
+
+  # MD5 password authentication helper.
+  _md5_password(user, password, salt) {
+    # concat('md5', md5(md5(password + user) + salt))
+    var inner = hash.md5(password + user)
+    var salt_str = ''
+    for b in salt { 
+      salt_str += chr(b) 
+    }
+    return 'md5' + hash.md5(inner + salt_str)
+  }
+
+  # SASL (SCRAM-SHA-256) — minimal implementation.
+  _sasl_authenticate(mechanisms_payload, password) {
+    # mechanisms_payload is a null-terminated list of mechanism names.
+    # We look for SCRAM-SHA-256.
+    var mechanism_str = _bytes_to_str(mechanisms_payload)
+    if !mechanism_str.contains('SCRAM-SHA-256') {
+      raise AuthenticationError('Server SASL mechanism not supported')
+    }
+    var mechanism = 'SCRAM-SHA-256'
+
+    # Client-first-message-bare.
+    var client_nonce = self._generate_nonce(24)
+    var cfm_bare     = 'n=' + 'user' + ',r=' + client_nonce
+    var client_first = 'n,,' + cfm_bare  # gs2-header: no channel binding
+
+    # Send SASLInitialResponse.
+    var cfm_bytes = _str_to_bytes(client_first)
+    var buf = MessageBuffer()
+    buf.write_cstring(mechanism)
+    buf.write_int32(cfm_bytes.length())
+    buf.write_bytes(cfm_bytes)
+    self._send_message('p', buf.to_list())
+
+    # Receive server-first-message.
+    var msg = self._reader.read_message()
+    if msg.type != MSG_AUTHENTICATION or _read_uint32(msg.payload, 0) != AUTH_SASL_CONTINUE {
+      raise ProtocolError('Expected SASL continue')
+    }
+    var sfm = _bytes_to_str(msg.payload[4, msg.payload.length()])
+
+    # Parse server-first-message.
+    var sfm_parts = self._parse_scram_msg(sfm)
+    var server_nonce   = sfm_parts.get('r', '')
+    var server_salt_b64 = sfm_parts.get('s', '')
+    var iterations     = sfm_parts.get('i', '4096').to_number()
+
+    if !server_nonce.starts_with(client_nonce) {
+      raise AuthenticationError('SCRAM: server nonce does not contain client nonce')
+    }
+
+    # Derive salted password using PBKDF2 (Hi() in SCRAM terminology).
+    var salt_bytes = base64.decode(server_salt_b64)
+    var salted_pass = self._scram_hi(password, salt_bytes, iterations)
+
+    # Client key, stored key, auth message, client signature, client proof.
+    var client_key   = hash.hmac_sha256(salted_pass, 'Client Key', true)
+    var stored_key   = hash.sha256(client_key, true)
+    var channel_bind = base64.encode('n,,'.to_bytes())  # gs2-header
+    var client_final_no_proof = 'c=' + channel_bind + ',r=' + server_nonce
+    var auth_message = cfm_bare + ',' + sfm + ',' + client_final_no_proof
+    var client_sig   = hash.hmac_sha256(stored_key, auth_message, true)
+    var client_proof = self._xor_bytes(client_key, client_sig)
+    var proof_b64    = base64.encode(client_proof)
+
+    var client_final = client_final_no_proof + ',p=' + proof_b64
+
+    # Send SASLResponse.
+    var cf_bytes = _str_to_bytes(client_final)
+    var cf_buf = MessageBuffer()
+    cf_buf.write_bytes(cf_bytes)
+    self._send_message('p', cf_buf.to_list())
+
+    # Receive server-final (AuthenticationSASLFinal then AuthenticationOK).
+    var sfinal_msg = self._reader.read_message()
+    if sfinal_msg.type == MSG_ERROR_RESPONSE {
+      raise AuthenticationError(self._parse_error(sfinal_msg.payload).message)
+    }
+  }
+
+  # SCRAM key derivation (PBKDF2-HMAC-SHA256).
+  _scram_hi(password, salt, iterations) {
+    return hash.pbkdf2('sha256', password, salt, iterations, 32, true)
+  }
+
+  # XOR two byte lists of equal length.
+  _xor_bytes(a, b) {
+    var result = []
+    iter var i = 0; i < a.length(); i++ {
+      result.append(a[i] ^ b[i])
+    }
+    return bytes(result)
+  }
+
+  # Parse SCRAM attribute=value pairs.
+  _parse_scram_msg(s) {
+    var result = {}
+    for part in s.split(',') {
+      var eq = part.index_of('=')
+      if eq >= 0 {
+        result[part[0, eq]] = part[eq + 1, part.length()]
+      }
+    }
+    return result
+  }
+
+  # Generate a random nonce string.
+  _generate_nonce(length) {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    var result = ''
+    iter var i = 0; i < length; i++ {
+      result += chars[rand(chars.length())]
+    }
+    return result
+  }
+
+  # -------------------------------------------------------------------------
+  # Simple query (text protocol)
+  # -------------------------------------------------------------------------
+
+  /**
+   * Executes a plain-text query and collects all results.
+   * Uses the "simple query" protocol sub-protocol.
+   *
+   * @param  string  sql  The SQL statement to execute.
+   * @return dict    `{ rows, columns, tag, notices }`
+   */
+  simple_query(sql) {
+    var buf = MessageBuffer()
+    buf.write_cstring(sql)
+    self._send_message('Q', buf.to_list())
+    return self._collect_results(nil)
+  }
+
+  # -------------------------------------------------------------------------
+  # Extended query (binary protocol)
+  # -------------------------------------------------------------------------
+
+  /**
+   * Executes a query using the extended query protocol with binary parameter
+   * binding and binary result decoding.
+   *
+   * @param  string  sql          Parameterised SQL ($1, $2, …).
+   * @param  list    params       Zuri parameter values.
+   * @param  list    param_oids   OIDs for each parameter (may be empty list).
+   * @param  string  portal       Portal name ('' for unnamed).
+   * @param  string  stmt_name    Prepared statement name ('' for unnamed).
+   * @param  number  max_rows     0 = fetch all; >0 = cursor row limit.
+   * @return dict    `{ rows, columns, tag, notices, suspended }`
+   */
+  extended_query(sql, params, param_oids, portal, stmt_name, max_rows) {
+    if !params   { params = [] }
+    if !portal   { portal = '' }
+    if !stmt_name { stmt_name = '' }
+    if !max_rows  { max_rows = 0 }
+    if !param_oids { param_oids = [] }
+
+    # --- Parse ---
+    if stmt_name == '' or !self._stmt_cache.contains(stmt_name) {
+      self._send_parse(stmt_name, sql, param_oids)
+    }
+
+    # --- Bind ---
+    self._send_bind(portal, stmt_name, params, param_oids)
+
+    # --- Describe portal (to get column info) ---
+    self._send_describe_portal(portal)
+
+    # --- Execute ---
+    self._send_execute(portal, max_rows)
+
+    # --- Sync ---
+    self._send_sync()
+
+    return self._collect_extended_results(portal)
+  }
+
+  # -------------------------------------------------------------------------
+  # Prepared statement protocol
+  # -------------------------------------------------------------------------
+
+  /**
+   * Sends a Parse message to create a named prepared statement.
+   *
+   * @param string name       Statement name (''' for unnamed).
+   * @param string sql        The parameterised SQL.
+   * @param list   param_oids OID list (may be empty; server will infer types).
+   */
+  prepare(name, sql, param_oids) {
+    if !param_oids { param_oids = [] }
+    self._send_parse(name, sql, param_oids)
+    self._send_describe_statement(name)
+    self._send_sync()
+    return self._read_prepare_response(name)
+  }
+
+  /**
+   * Executes a previously prepared statement bound to named portal `portal`.
+   *
+   * @param string stmt_name Statement name.
+   * @param list   params    Parameter values.
+   * @param list   param_oids OID for each parameter.
+   * @param string portal    Portal name.
+   * @param number max_rows  0 = all rows.
+   * @return dict  `{ rows, columns, tag, notices, suspended }`
+   */
+  execute_prepared(stmt_name, params, param_oids, portal, max_rows) {
+    if !params    { params = [] }
+    if !portal    { portal = '' }
+    if !max_rows  { max_rows = 0 }
+    if !param_oids { param_oids = [] }
+
+    self._send_bind(portal, stmt_name, params, param_oids)
+    self._send_describe_portal(portal)
+    self._send_execute(portal, max_rows)
+    self._send_sync()
+    return self._collect_extended_results(portal)
+  }
+
+  /**
+   * Closes a named prepared statement on the server.
+   *
+   * @param string name  The statement name.
+   */
+  close_statement(name) {
+    self._send_close('S', name)
+    self._send_sync()
+    self._flush_until_ready()
+  }
+
+  /**
+   * Closes a named portal on the server.
+   *
+   * @param string name  The portal name.
+   */
+  close_portal(name) {
+    self._send_close('P', name)
+    self._send_sync()
+    self._flush_until_ready()
+  }
+
+  # -------------------------------------------------------------------------
+  # LISTEN / NOTIFY
+  # -------------------------------------------------------------------------
+
+  /**
+   * Sends a LISTEN command for the given channel.
+   *
+   * @param string channel  The notification channel name.
+   */
+  listen(channel) {
+    self.simple_query('LISTEN ' + channel)
+  }
+
+  /**
+   * Sends an UNLISTEN command.
+   *
+   * @param string channel  The channel name, or '*' for all channels.
+   */
+  unlisten(channel) {
+    self.simple_query('UNLISTEN ' + channel)
+  }
+
+  /**
+   * Checks for an available notification without blocking.
+   * Returns nil if no notification is available, or a dict
+   * `{ channel, payload, pid }` if one is present.
+   *
+   * @return dict | nil
+   */
+  poll_notification() {
+    # Set very short receive timeout, poll for data.
+    self._sock.receive_timeout = 1
+    var msg
+    catch {
+      msg = self._reader.read_message()
+    } as _e
+    self._sock.receive_timeout = 30000
+    if msg and msg.type == MSG_NOTIFICATION_RESPONSE {
+      return self._parse_notification(msg.payload)
+    }
+    return nil
+  }
+
+  # -------------------------------------------------------------------------
+  # Internal framing & message senders
+  # -------------------------------------------------------------------------
+
+  _send_raw(data) {
+    var sent = 0
+    var total = data.length()
+    while sent < total {
+      var n
+      if self._ssl {
+        n = self._ssl.write(data[sent, total])
+      } else {
+        n = self._sock.send(data[sent, total])
+      }
+      if n < 0 { raise ConnectionError('Failed to send data to server') }
+      sent += n
+    }
+  }
+
+  _send_message(tag, body) {
+    self._send_raw(_frame(tag, body))
+  }
+
+  _send_password(password) {
+    var buf = MessageBuffer()
+    buf.write_cstring(password)
+    self._send_message('p', buf.to_list())
+  }
+
+  _send_parse(name, sql, param_oids) {
+    var buf = MessageBuffer()
+    buf.write_cstring(name)
+    buf.write_cstring(sql)
+    buf.write_int16(param_oids.length())
+    for oid in param_oids {
+      buf.write_int32(oid)
+    }
+    self._send_message('P', buf.to_list())
+  }
+
+  _send_bind(portal, stmt_name, params, param_oids) {
+    var buf = MessageBuffer()
+    buf.write_cstring(portal)
+    buf.write_cstring(stmt_name)
+
+    # Per-parameter format codes: text (0) when no OID supplied, binary (1) when explicit.
+    buf.write_int16(params.length())
+    iter var i = 0; i < params.length(); i++ {
+      var oid = param_oids.length() > i ? param_oids[i] : DataTypeOIDs.Unspecified
+      buf.write_int16(oid == DataTypeOIDs.Unspecified ? 0 : 1)
+    }
+
+    buf.write_int16(params.length())
+    iter var i = 0; i < params.length(); i++ {
+      var v   = params[i]
+      var oid = param_oids.length() > i ? param_oids[i] : DataTypeOIDs.Unspecified
+      if v == nil {
+        buf.write_int32(-1)  # NULL
+      } else if oid == DataTypeOIDs.Unspecified {
+        var encoded = _str_to_bytes(to_string(v))
+        buf.write_int32(encoded.length())
+        buf.write_bytes(encoded)
+      } else {
+        var encoded = self._registry.encode(v, oid)
+        buf.write_int32(encoded.length())
+        buf.write_bytes(encoded)
+      }
+    }
+
+    # All result columns in binary format.
+    buf.write_int16(1)
+    buf.write_int16(1)
+
+    self._send_message('B', buf.to_list())
+  }
+
+  _send_describe_portal(portal) {
+    var buf = MessageBuffer()
+    buf.write_byte(ord('P'))
+    buf.write_cstring(portal)
+    self._send_message('D', buf.to_list())
+  }
+
+  _send_describe_statement(name) {
+    var buf = MessageBuffer()
+    buf.write_byte(ord('S'))
+    buf.write_cstring(name)
+    self._send_message('D', buf.to_list())
+  }
+
+  _send_execute(portal, max_rows) {
+    var buf = MessageBuffer()
+    buf.write_cstring(portal)
+    buf.write_int32(max_rows)
+    self._send_message('E', buf.to_list())
+  }
+
+  _send_sync() {
+    self._send_message('S', [])
+  }
+
+  _send_close(kind, name) {
+    var buf = MessageBuffer()
+    buf.write_byte(ord(kind))
+    buf.write_cstring(name)
+    self._send_message('C', buf.to_list())
+  }
+
+  _send_terminate() {
+    self._send_message('X', [])
+  }
+
+  # -------------------------------------------------------------------------
+  # Response collection
+  # -------------------------------------------------------------------------
+
+  _collect_results(columns) {
+    var rows    = []
+    var notices = []
+    var tag     = ''
+
+    while true {
+      var msg = self._reader.read_message()
+      if msg.type == MSG_ROW_DESCRIPTION {
+        columns = self._parse_row_description(msg.payload)
+      } else if msg.type == MSG_DATA_ROW {
+        rows.append(self._parse_data_row(msg.payload, columns))
+      } else if msg.type == MSG_COMMAND_COMPLETE {
+        tag = _bytes_to_str(msg.payload[0, msg.payload.length() - 1])
+      } else if msg.type == MSG_EMPTY_QUERY_RESPONSE {
+        # no-op
+      } else if msg.type == MSG_READY_FOR_QUERY {
+        return { rows: rows, columns: columns, tag: tag, notices: notices }
+      } else if msg.type == MSG_ERROR_RESPONSE {
+        var err = self._parse_error(msg.payload)
+        self._flush_until_ready()
+        raise QueryError(err.message, err.fields)
+      } else if msg.type == MSG_NOTICE_RESPONSE {
+        notices.append(self._parse_error(msg.payload))
+      } else if msg.type == MSG_NOTIFICATION_RESPONSE {
+        # Queue for listener; ignore in result collection.
+      }
+    }
+  }
+
+  _collect_extended_results(portal) {
+    var rows      = []
+    var columns   = nil
+    var notices   = []
+    var tag       = ''
+    var suspended = false
+
+    while true {
+      var msg = self._reader.read_message()
+      if msg.type == MSG_PARSE_COMPLETE {
+        # ok
+      } else if msg.type == MSG_BIND_COMPLETE {
+        # ok
+      } else if msg.type == MSG_ROW_DESCRIPTION {
+        columns = self._parse_row_description(msg.payload)
+      } else if msg.type == MSG_NO_DATA {
+        # No columns (e.g. INSERT/UPDATE).
+      } else if msg.type == MSG_PARAMETER_DESCRIPTION {
+        # Ignore for now (used by describe statement).
+      } else if msg.type == MSG_DATA_ROW {
+        rows.append(self._parse_data_row(msg.payload, columns))
+      } else if msg.type == MSG_COMMAND_COMPLETE {
+        tag = _bytes_to_str(msg.payload[0, msg.payload.length() - 1])
+      } else if msg.type == MSG_PORTAL_SUSPENDED {
+        suspended = true
+      } else if msg.type == MSG_EMPTY_QUERY_RESPONSE {
+        # no-op
+      } else if msg.type == MSG_READY_FOR_QUERY {
+        return {
+          rows: rows, columns: columns, tag: tag,
+          notices: notices, suspended: suspended
+        }
+      } else if msg.type == MSG_ERROR_RESPONSE {
+        var err = self._parse_error(msg.payload)
+        self._flush_until_ready()
+        raise QueryError(err.message, err.fields)
+      } else if msg.type == MSG_NOTICE_RESPONSE {
+        notices.append(self._parse_error(msg.payload))
+      } else if msg.type == MSG_PARAMETER_STATUS {
+        self._handle_param_status(msg.payload)
+      } else if msg.type == MSG_CLOSE_COMPLETE {
+        # ok
+      }
+    }
+  }
+
+  _read_prepare_response(name) {
+    var param_oids = []
+    var columns    = []
+
+    while true {
+      var msg = self._reader.read_message()
+      if msg.type == MSG_PARSE_COMPLETE {
+        # ok
+      } else if msg.type == MSG_PARAMETER_DESCRIPTION {
+        var count = _read_uint16(msg.payload, 0)
+        iter var i = 0; i < count; i++ {
+          param_oids.append(_read_uint32(msg.payload, 2 + i * 4))
+        }
+      } else if msg.type == MSG_ROW_DESCRIPTION {
+        columns = self._parse_row_description(msg.payload)
+      } else if msg.type == MSG_NO_DATA {
+        # ok — statement returns no rows
+      } else if msg.type == MSG_READY_FOR_QUERY {
+        return { param_oids: param_oids, columns: columns, name: name }
+      } else if msg.type == MSG_ERROR_RESPONSE {
+        var err = self._parse_error(msg.payload)
+        self._flush_until_ready()
+        raise QueryError(err.message, err.fields)
+      }
+    }
+  }
+
+  _flush_until_ready() {
+    catch {
+      while true {
+        var msg = self._reader.read_message()
+        if msg.type == MSG_READY_FOR_QUERY { 
+          return 
+        }
+      }
+    } as _e
+    # Socket error during flush — ignore, connection is likely dead.
+  }
+
+  # -------------------------------------------------------------------------
+  # Message parsers
+  # -------------------------------------------------------------------------
+
+  _parse_row_description(payload) {
+    var count = _read_uint16(payload, 0)
+    var off   = 2
+    var columns = []
+    iter var i = 0; i < count; i++ {
+      # Read null-terminated column name.
+      var name_bytes = []
+      while payload[off] != 0 {
+        name_bytes.append(payload[off])
+        off++
+      }
+      off++  # skip null
+      var col_name  = _bytes_to_str(name_bytes)
+      var table_oid = _read_uint32(payload, off); off += 4
+      var col_attr  = _read_uint16(payload, off); off += 2
+      var type_oid  = _read_uint32(payload, off); off += 4
+      var type_size = _read_int16(payload, off);  off += 2
+      var type_mod  = _read_int32(payload, off);  off += 4
+      var fmt_code  = _read_uint16(payload, off); off += 2
+      columns.append({
+        name:      col_name,
+        table_oid: table_oid,
+        col_attr:  col_attr,
+        type_oid:  type_oid,
+        type_size: type_size,
+        type_mod:  type_mod,
+        format:    fmt_code,  # 0=text, 1=binary
+      })
+    }
+    return columns
+  }
+
+  _parse_data_row(payload, columns) {
+    var num_cols = _read_uint16(payload, 0)
+    var off      = 2
+    var row      = {}
+    iter var i = 0; i < num_cols; i++ {
+      var col_len = _read_int32(payload, off); off += 4
+      var col_name = columns and i < columns.length() ? columns[i].name : ('col' + i)
+      if col_len == -1 {
+        row[col_name] = nil
+      } else {
+        var col_buf = payload[off, off + col_len]; off += col_len
+        var oid = columns and i < columns.length() ? columns[i].type_oid : 0
+        var fmt = columns and i < columns.length() ? columns[i].format   : 0
+        if fmt == 1 {
+          row[col_name] = self._registry.decode(col_buf, oid)
+        } else {
+          row[col_name] = _bytes_to_str(col_buf)
+        }
+      }
+    }
+    return row
+  }
+
+  _parse_error(payload) {
+    var fields = {}
+    var off    = 0
+    while off < payload.length() {
+      var code = payload[off]; off++
+      if code == 0 { break }
+      var val_bytes = []
+      while off < payload.length() and payload[off] != 0 {
+        val_bytes.append(payload[off]); off++
+      }
+      off++  # skip null
+      fields[chr(code)] = _bytes_to_str(val_bytes)
+    }
+    var primary = fields.get('M', 'Unknown PostgreSQL error')
+    return { message: primary, fields: fields }
+  }
+
+  _parse_notification(payload) {
+    var off   = 0
+    var pid   = _read_uint32(payload, off); off += 4
+    var chan_bytes = []
+    while payload[off] != 0 {
+      chan_bytes.append(payload[off]); 
+      off++
+    }
+    off++
+    var payload_bytes = []
+    while off < payload.length() and payload[off] != 0 {
+      payload_bytes.append(payload[off])
+      off++
+    }
+    return {
+      pid:     pid,
+      channel: _bytes_to_str(chan_bytes),
+      payload: _bytes_to_str(payload_bytes),
+    }
+  }
+
+  _handle_param_status(payload) {
+    var parts = payload.split(bytes(1))
+    if parts.length() >= 2 {
+      self._params[parts[0].to_string()] = parts[1].to_string()
+    }
+  }
+
+  # -------------------------------------------------------------------------
+  # OID inference from Zuri value type
+  # -------------------------------------------------------------------------
+
+  _infer_oid(v) {
+    if is_bool(v)   { return DataTypeOIDs.Bool }
+    if is_int(v)    { return DataTypeOIDs.Int8 }
+    if is_number(v) { return DataTypeOIDs.Float8 }
+    if is_string(v) { return DataTypeOIDs.Text }
+    if is_bytes(v)  { return DataTypeOIDs.Bytea }
+    if is_list(v)   { return DataTypeOIDs.TextArray }
+    if is_dict(v)   { return DataTypeOIDs.Jsonb }
+    return DataTypeOIDs.Text
+  }
+
+  # -------------------------------------------------------------------------
+  # Termination
+  # -------------------------------------------------------------------------
+
+  /**
+   * Sends the Terminate message and closes the underlying socket.
+   */
+  terminate() {
+    catch { self._send_terminate() } as _e
+    catch { self._sock.close() }     as _e
+    self._connected = false
+  }
+
+  # Statement cache (set of statement names we have already sent Parse for).
+  var _stmt_cache = {}
+}

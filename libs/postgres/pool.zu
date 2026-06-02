@@ -1,0 +1,358 @@
+/**
+ * `Pool` — a managed connection pool for high-throughput PostgreSQL access.
+ *
+ * The pool maintains a set of pre-opened `Connection` objects and lends them
+ * to callers on demand.  When a query completes (or a cursor is closed), the
+ * connection is automatically returned to the pool rather than being closed.
+ *
+ * ## Design
+ *
+ * - **Min connections** — `pool.min` connections are created eagerly at
+ *   startup and kept alive indefinitely.
+ * - **Max connections** — the pool will never open more than `pool.max`
+ *   connections simultaneously.
+ * - **Idle eviction** — connections idle for longer than
+ *   `pool.idle_timeout_millis` are closed and removed from the pool.
+ * - **Acquire timeout** — if no connection is available within
+ *   `pool.acquire_timeout_millis`, a `PoolExhaustedError` is raised.
+ *
+ * ## Example
+ *
+ * ```zuri
+ * import postgres { Pool }
+ *
+ * var db = Pool({
+ *   host:     'localhost',
+ *   database: 'mydb',
+ *   user:     'alice',
+ *   password: 'secret',
+ *   pool: {
+ *     min:                  2,
+ *     max:                  10,
+ *     idle_timeout_millis:    30000,
+ *     acquire_timeout_millis: 5000,
+ *   }
+ * })
+ *
+ * var result = db.query('select count(*) from events')
+ * echo result.rows[0]
+ *
+ * db.close()
+ * ```
+ */
+
+import .connection  { Connection }
+import ._url        { parse_dsn }
+import .errors      { PoolExhaustedError, ClosedError }
+import .result      { QueryResult, Cursor }
+
+/**
+ * A connection pool that manages a set of `Connection` objects.
+ */
+class Pool {
+  /**
+   * Minimum number of connections kept open in the pool.
+   * @type number
+   */
+  var min_size
+
+  /**
+   * Maximum number of connections the pool may open simultaneously.
+   * @type number
+   */
+  var max_size
+
+  /**
+   * Milliseconds a connection may sit idle before being closed.
+   * 0 = never evict.
+   * @type number
+   */
+  var idle_timeout
+
+  /**
+   * Milliseconds to wait for an available connection before raising
+   * `PoolExhaustedError`.
+   * @type number
+   */
+  var acquire_timeout
+
+  var _dsn_options
+  var _idle    = []   # list of { conn, last_used }
+  var _active  = {}   # connection id → conn
+  var _size    = 0    # total open connections
+  var _closed  = false
+
+  # -------------------------------------------------------------------------
+  # Construction
+  # -------------------------------------------------------------------------
+
+  /**
+   * Creates a connection pool.
+   *
+   * @param dict options  Connection options merged with pool-specific options.
+   *
+   * ### Pool-specific options (nested under `pool` key)
+   *
+   * | Key                  | Type   | Default | Description                        |
+   * |----------------------|--------|---------|------------------------------------|
+   * | `min`                | number | `1`     | Minimum connections.               |
+   * | `max`                | number | `10`    | Maximum connections.               |
+   * | `idle_timeout_millis`  | number | `30000` | Idle eviction timeout (ms).       |
+   * | `acquire_timeout_millis` | number | `5000` | Max wait for a connection (ms).  |
+   */
+  Pool(options) {
+    var pool_opts = {}
+    if is_dict(options) and options.contains('pool') {
+      pool_opts = options.get('pool', {})
+    }
+
+    self.min_size        = pool_opts.get('min',                  1)
+    self.max_size        = pool_opts.get('max',                  10)
+    self.idle_timeout    = pool_opts.get('idle_timeout_millis',    30000)
+    self.acquire_timeout = pool_opts.get('acquire_timeout_millis', 5000)
+
+    # Strip the 'pool' key before passing to DSN parser.
+    var conn_opts = {}
+    if is_dict(options) {
+      for k, v in options {
+        if k != 'pool' { conn_opts[k] = v }
+      }
+    } else {
+      conn_opts = options
+    }
+    self._dsn_options = parse_dsn(conn_opts)
+
+    # Open minimum connections eagerly.
+    iter var i = 0; i < self.min_size; i++ {
+      catch {
+        var conn = self._open_connection()
+        self._idle.append({ conn: conn, last_used: microtime() })
+      } as err
+      # Non-fatal — pool starts with however many we can open.
+    }
+  }
+
+  # -------------------------------------------------------------------------
+  # Public query API
+  # -------------------------------------------------------------------------
+
+  /**
+   * Acquires a connection from the pool, executes the query, then returns
+   * the connection to the pool.
+   *
+   * Supports the same `options` dict as `Connection.query()`.
+   *
+   * When `options.cursor` is `true`, the returned cursor's `close()` method
+   * triggers the connection return.  **You must call `cursor.close()`.**
+   *
+   * @param  string  sql      The SQL statement.
+   * @param  dict    options  Query options.
+   * @return QueryResult | dict  `{ cursor: Cursor }` when `cursor: true`.
+   * @throws PoolExhaustedError  If no connection is available in time.
+   */
+  query(sql, options) {
+    self._assert_open()
+    if !options { options = {} }
+
+    var use_cursor = options.get('cursor', false)
+
+    if use_cursor {
+      var conn = self._acquire()
+      var result
+      catch {
+        result = conn.query(sql, options)
+      } as err
+      if err {
+        self._release(conn)
+        raise err
+      }
+      # Arrange for release on cursor close.
+      var _self = self
+      result.cursor._on_close = @() { _self._release(conn) }
+      return result
+    }
+
+    # Non-cursor: acquire → query → release.
+    var conn = self._acquire()
+    var result
+    catch {
+      result = conn.query(sql, options)
+    } as err
+    self._release(conn)
+    if err { raise err }
+    return result
+  }
+
+  /**
+   * Acquires a connection, executes a statement, and releases the connection.
+   *
+   * @param  string  sql      SQL statement.
+   * @param  dict    options  Query options.
+   * @return string  Command completion tag.
+   */
+  execute(sql, options) {
+    self._assert_open()
+    var conn = self._acquire()
+    var tag
+    catch {
+      tag = conn.execute(sql, options)
+    } as err
+    self._release(conn)
+    if err { raise err }
+    return tag
+  }
+
+  /**
+   * Runs `fn(connection)` with an acquired connection, automatically releasing
+   * it afterwards.  Useful for multi-statement transactions.
+   *
+   * ```zuri
+   * db.with_connection(@(conn) {
+   *   conn.begin()
+   *   conn.execute('update accounts set balance = balance - 100 where id = $1',
+   *                { params: [42] })
+   *   conn.execute('update accounts set balance = balance + 100 where id = $1',
+   *                { params: [99] })
+   *   conn.commit()
+   * })
+   * ```
+   *
+   * @param  function fn   Callback receiving the `Connection` object.
+   */
+  with_connection(fn) {
+    self._assert_open()
+    var conn = self._acquire()
+    catch { fn(conn) } as err
+    self._release(conn)
+    if err { raise err }
+  }
+
+  # -------------------------------------------------------------------------
+  # Pool lifecycle
+  # -------------------------------------------------------------------------
+
+  /**
+   * Closes all connections in the pool (both idle and active) and shuts the
+   * pool down.  Any in-flight queries will complete normally; subsequent
+   * calls to `query()` will raise `ClosedError`.
+   */
+  close() {
+    if self._closed { return }
+    self._closed = true
+
+    for entry in self._idle {
+      catch { entry.conn.close() } as _e
+    }
+    self._idle = []
+
+    for id, conn in self._active {
+      catch { conn.close() } as _e
+    }
+    self._active = {}
+    self._size   = 0
+  }
+
+  /**
+   * Returns a snapshot of pool statistics.
+   *
+   * @return dict  `{ total, idle, active, max }`
+   */
+  stats() {
+    return {
+      total:  self._size,
+      idle:   self._idle.length(),
+      active: self._size - self._idle.length(),
+      max:    self.max_size,
+    }
+  }
+
+  # -------------------------------------------------------------------------
+  # Internal connection management
+  # -------------------------------------------------------------------------
+
+  # Acquire a connection from the idle pool, creating one if needed.
+  _acquire() {
+    self._evict_idle()
+
+    # Return an idle connection.
+    if self._idle.length() > 0 {
+      var entry = self._idle.remove_at(self._idle.length() - 1)
+      self._active[entry.conn._socket.id] = entry.conn
+      return entry.conn
+    }
+
+    # Open a new one if under limit.
+    if self._size < self.max_size {
+      var conn = self._open_connection()
+      self._active[conn._socket.id] = conn
+      return conn
+    }
+
+    # Pool is full — busy-wait up to acquire_timeout.
+    var deadline = microtime() + self.acquire_timeout * 1000
+    while microtime() < deadline {
+      self._evict_idle()
+      if self._idle.length() > 0 {
+        var entry = self._idle.remove_at(self._idle.length() - 1)
+        self._active[entry.conn._socket.id] = entry.conn
+        return entry.conn
+      }
+    }
+
+    raise PoolExhaustedError(
+      'Connection pool exhausted: all ' + self.max_size +
+      ' connections are in use'
+    )
+  }
+
+  # Return a connection to the idle list.
+  _release(conn) {
+    var id = conn._socket ? conn._socket.id : nil
+    if id != nil { self._active.remove(id) }
+
+    if self._closed or !conn.is_open() {
+      catch { conn.close() } as _e
+      self._size--
+      return
+    }
+
+    # Rollback any open transaction so the connection is clean.
+    catch { conn.execute('ROLLBACK') } as _e
+
+    self._idle.append({ conn: conn, last_used: microtime() })
+  }
+
+  # Open and authenticate a new connection.
+  _open_connection() {
+    var conn = Connection(self._dsn_options)
+    conn.connect()
+    self._size++
+    return conn
+  }
+
+  # Close connections that have exceeded the idle timeout.
+  _evict_idle() {
+    if self.idle_timeout <= 0 { return }
+    var now      = microtime()
+    var limit_us = self.idle_timeout * 1000
+    var surviving = []
+    for entry in self._idle {
+      if (now - entry.last_used) > limit_us {
+        catch { entry.conn.close() } as _e
+        self._size--
+      } else {
+        surviving.append(entry)
+      }
+    }
+    self._idle = surviving
+  }
+
+  _assert_open() {
+    if self._closed { raise ClosedError('Connection pool is closed') }
+  }
+
+  @to_string() {
+    return '<Pool size=' + self._size + '/' + self.max_size +
+           ' idle=' + self._idle.length() + '>'
+  }
+}

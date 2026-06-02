@@ -1,0 +1,73 @@
+/**
+ * @module postgres
+ *
+ * An enterprise-grade PostgreSQL client library for the Zuri programming
+ * language, implementing the PostgreSQL Frontend/Backend wire protocol
+ * (version 3.0) in pure Zuri with full binary type encoding and decoding.
+ *
+ * ## Features
+ *
+ * - **Single connections** via `Connection` for straightforward use-cases.
+ * - **Connection pooling** via `Pool` for high-throughput applications.
+ * - **Full binary wire protocol** for all built-in PostgreSQL data types.
+ * - **Named prepared statements** for optimised, repeatable query execution.
+ * - **Doubly-linked cache cursors** for memory-efficient result streaming.
+ * - **LISTEN / NOTIFY** for real-time async notifications.
+ * - **Extensible type system** — register custom OID ↔ Zuri type mappings.
+ * - **Array support** — multidimensional arrays with fast binary encode/decode.
+ * - **SASL / MD5 / clear-text** authentication.
+ * - **SSL/TLS** upgrade via the `ssl` module.
+ * - **Auto resource cleanup** with `close()` on all disposable objects.
+ *
+ * ## Quick start
+ *
+ * ```zuri
+ * import postgres { Connection }
+ *
+ * var conn = Connection('postgres://localhost/mydb')
+ * conn.connect()
+ *
+ * var result = conn.query(
+ *   'select id, name from users where active = $1',
+ *   { params: [true] }
+ * )
+ * for row in result.rows {
+ *   echo row
+ * }
+ *
+ * conn.close()
+ * ```
+ *
+ * ## Supported Connection String forms
+ * 
+ * URI form:
+ *
+ * ```
+ * postgres://[user[:password]@][host][:port][/database][?key=value&...]
+ * postgresql://...
+ * ```
+ *
+ * Key=Value form:
+ *
+ * ```
+ * host=localhost port=5432 dbname=mydb user=alice password=secret
+ * ```
+ *
+ * @copyright 2024, The Zuri Authors
+ * @license   MIT
+ */
+
+# Re-export the public surface of the library so users can write either:
+#   import postgres                   → postgres.Connection(...)
+#   import postgres { Connection }    → Connection(...)
+
+import .connection  { Connection }
+import .pool        { Pool }
+import .types       { DataTypeOIDs, TypeRegistry }
+import .result      { QueryResult, Cursor }
+import .statement   { PreparedStatement }
+import .notify      { NotificationListener }
+import .errors      { 
+  PostgresError, ConnectionError, QueryError,
+  AuthenticationError, ProtocolError 
+}

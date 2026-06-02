@@ -87,4 +87,13 @@ class _StringExtension > string {
     return ' '.join(self.split(' ')
       .map(@(x) => x.capitalize()))
   }
+
+  /**
+   * Converts the string to a number if possible, otherwise returns NaN.
+   * 
+   * @returns {number}
+   */
+  static to_number() {
+    return to_number(self)
+  }
 }

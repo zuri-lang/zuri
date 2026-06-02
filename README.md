@@ -91,12 +91,12 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | HTTP server & client      | `http`                     | ✅ Ready    |
 | Sockets                   | `socket`                   | ✅ Ready    |
 | WebSockets                | `websocket`                | 🔜 Planned |
-| SQLite database           | `sqlite`                   | ✅ Ready    |
+| Database                  | `sqlite`, `postgres`       | ✅ Ready    |
 | SSL / TLS                 | `ssl`                      | ✅ Ready    |
 | Validation                | `validate`                 | ✅ Ready    |
 | Cryptography & Hashing    | `hash`, `crypto`, `bcrypt` | ✅ Ready    |
 | HTML templating (Wire)    | `template`                 | ✅ Ready    |
-| Configuration             | `env` (dotenv)             | ✅ Ready    |
+| Configuration             | `env` (dotenv), `yaml`     | ✅ Ready    |
 | Authentication            | `jwt`                      | ✅ Ready    |
 | Mail (SMTP, IMAP, POP3)   | `mail`                     | ✅ Ready    |
 | Image processing          | `imagine`                  | ✅ Ready    |
@@ -105,7 +105,7 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | Input & Output (I/O)      | `io`                       | ✅ Ready    |
 | Compression               | `zlib`, `zip`              | ✅ Ready    |
 | AST & metaprogramming     | `ast`                      | ✅ Ready    |
-| Unit testing              | `nyssa test`               | ✅ Ready    |
+| Unit testing              | `nyssa test`, `test`       | ✅ Ready    |
 | Distribution              | `nyssa bundle`             | ✅ Ready    |
 | URL / cURL bindings       | `url`, `curl`              | ✅ Ready    |
 | FFI/C interop             | `clib`                     | ✅ Ready    |
