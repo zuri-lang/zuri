@@ -46,7 +46,7 @@
  * - Octal integers `0o[0-7]+` → number
  * - Hexadecimal integers `0x[0-9A-Fa-f]+` → number
  * - Decimal floats (with exponent) → number
- * - `.inf` / `.Inf` / `.INF` / `±.inf` → `math.huge` / `-math.huge`
+ * - `.inf` / `.Inf` / `.INF` / `±.inf` → `math.Infinity` / `-math.Infinity`
  * - `.nan` / `.NaN` / `.NAN` → `0/0` (NaN)
  * - Everything else → string
  *
@@ -249,10 +249,10 @@ def _resolve_scalar(s) {
   # Float: infinity
   if s == '.inf' or s == '.Inf' or s == '.INF' or
      s == '+.inf' or s == '+.Inf' or s == '+.INF' {
-    return math.huge
+    return math.Infinity
   }
   if s == '-.inf' or s == '-.Inf' or s == '-.INF' {
-    return -math.huge
+    return -math.Infinity
   }
 
   # Float: NaN

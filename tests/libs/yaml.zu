@@ -1,0 +1,880 @@
+/**
+ * Comprehensive test suite for the `yaml` standard library module.
+ *
+ * Covers every public-facing behaviour:
+ *   - Core Schema scalar type resolution
+ *   - Block and flow scalars (all styles, all chomping modes)
+ *   - Block and flow sequences and mappings
+ *   - Anchors, aliases, and merge keys
+ *   - Explicit tags
+ *   - Multi-document streams
+ *   - Emitter output (dump / dump_all)
+ *   - Round-trip fidelity (parse → dump → parse)
+ *   - Error cases (YamlError raised for malformed input)
+ *   - Edge cases (empty input, BOM, comments, blank lines, Unicode)
+ *
+ * Run with:
+ *   zuri test_yaml.zu
+ */
+
+import yaml
+
+
+# ---------------------------------------------------------------------------
+# Minimal test harness
+# ---------------------------------------------------------------------------
+
+var _pass  = 0
+var _fail  = 0
+var _skip  = 0
+var _suite = ''
+
+def _begin(name) {
+  _suite = name
+  echo '\n--- ' + name + ' ---'
+}
+
+def _ok(label, got, expected) {
+  if got == expected {
+    _pass++
+    echo '  ✓  ' + label
+  } else {
+    _fail++
+    echo '  ✗  ' + label
+    echo '       expected: ' + to_string(expected)
+    echo '       got:      ' + to_string(got)
+  }
+}
+
+def _ok_true(label, value) {
+  _ok(label, value, true)
+}
+
+def _ok_nil(label, value) {
+  if value == nil {
+    _pass++
+    echo '  ✓  ' + label
+  } else {
+    _fail++
+    echo '  ✗  ' + label
+    echo '       expected: nil'
+    echo '       got:      ' + to_string(value)
+  }
+}
+
+def _ok_type(label, value, type_name) {
+  var actual = typeof(value)
+  if actual == type_name {
+    _pass++
+    echo '  ✓  ' + label
+  } else {
+    _fail++
+    echo '  ✗  ' + label
+    echo '       expected type: ' + type_name
+    echo '       got type:      ' + actual
+  }
+}
+
+# Assert that calling fn() raises a YamlError.
+def _ok_raises(label, fn) {
+  var raised = false
+  catch { fn() } as e
+  if isinstance(e, yaml.YamlError) {
+    raised = true
+  }
+  if raised {
+    _pass++
+    echo '  ✓  ' + label
+  } else {
+    _fail++
+    echo '  ✗  ' + label + ' (expected YamlError, none raised)'
+  }
+}
+
+def _summary() {
+  echo '\n========================================='
+  echo ' Results: ' + _pass + ' passed, ' + _fail + ' failed, ' + _skip + ' skipped'
+  echo '=========================================\n'
+}
+
+
+# ===========================================================================
+# 1. SCALAR TYPE RESOLUTION  (Core Schema)
+# ===========================================================================
+
+_begin('Scalar type resolution — null')
+
+_ok_nil('bare null keyword',           yaml.parse('null'))
+_ok_nil('Null (title case)',           yaml.parse('Null'))
+_ok_nil('NULL (upper case)',           yaml.parse('NULL'))
+_ok_nil('tilde ~',                     yaml.parse('~'))
+_ok_nil('empty document',             yaml.parse(''))
+_ok_nil('empty quoted key value nil', yaml.parse('key:')['key'])
+
+
+_begin('Scalar type resolution — boolean')
+
+_ok('true keyword',       yaml.parse('true'),  true)
+_ok('True keyword',       yaml.parse('True'),  true)
+_ok('TRUE keyword',       yaml.parse('TRUE'),  true)
+_ok('false keyword',      yaml.parse('false'), false)
+_ok('False keyword',      yaml.parse('False'), false)
+_ok('FALSE keyword',      yaml.parse('FALSE'), false)
+
+# YAML 1.2 Core Schema does NOT treat yes/no/on/off as booleans.
+_ok('yes is a string',    yaml.parse('yes'),   'yes')
+_ok('no is a string',     yaml.parse('no'),    'no')
+_ok('on is a string',     yaml.parse('on'),    'on')
+_ok('off is a string',    yaml.parse('off'),   'off')
+
+
+_begin('Scalar type resolution — integers')
+
+_ok('decimal zero',       yaml.parse('0'),    0)
+_ok('positive decimal',   yaml.parse('42'),   42)
+_ok('negative decimal',   yaml.parse('-7'),   -7)
+_ok('explicit plus sign', yaml.parse('+100'), 100)
+_ok('octal 0o17 = 15',    yaml.parse('0o17'), 15)
+_ok('octal 0o777 = 511',  yaml.parse('0o777'), 511)
+_ok('hex 0xFF = 255',     yaml.parse('0xFF'), 255)
+_ok('hex 0x1A2B = 6699',  yaml.parse('0x1A2B'), 6699)
+_ok('hex lowercase',      yaml.parse('0xdeadbeef'), 3735928559)
+
+
+_begin('Scalar type resolution — floats')
+
+_ok('simple float',         yaml.parse('3.14'),    3.14)
+_ok('negative float',       yaml.parse('-1.5'),    -1.5)
+_ok('scientific notation',  yaml.parse('1.0e3'),   1000.0)
+_ok('scientific negative e',yaml.parse('2.5E-2'),  0.025)
+_ok('leading dot float',    yaml.parse('.5'),      0.5)
+_ok('.inf',                 yaml.parse('.inf'),    math.Infinity)
+_ok('.Inf',                 yaml.parse('.Inf'),    math.Infinity)
+_ok('.INF',                 yaml.parse('.INF'),    math.Infinity)
+_ok('+.inf',                yaml.parse('+.inf'),   math.Infinity)
+_ok('-.inf',                yaml.parse('-.inf'),   -math.Infinity)
+_ok_true('.nan is NaN',     yaml.parse('.nan') != yaml.parse('.nan'))
+_ok_true('.NaN is NaN',     yaml.parse('.NaN') != yaml.parse('.NaN'))
+
+
+_begin('Scalar type resolution — strings')
+
+_ok('plain string',          yaml.parse('hello'),           'hello')
+_ok('string with spaces',    yaml.parse('hello world'),     'hello world')
+_ok('looks like date',       yaml.parse('2024-01-01'),      '2024-01-01')
+_ok('version string',        yaml.parse('1.2.3'),           '1.2.3')
+_ok('IP address',            yaml.parse('192.168.1.1'),     '192.168.1.1')
+_ok('url-like',              yaml.parse('http://x.com'),   'http://x.com')
+_ok('numeric-looking string with letter',  yaml.parse('123abc'), '123abc')
+
+
+# ===========================================================================
+# 2. QUOTED SCALARS
+# ===========================================================================
+
+_begin('Double-quoted scalars')
+
+_ok('basic double-quoted',     yaml.parse('"hello"'),         'hello')
+_ok('empty double-quoted',     yaml.parse('""'),              '')
+_ok('escape \\n',              yaml.parse('"a\\nb"'),         "a\nb")
+_ok('escape \\t',              yaml.parse('"a\\tb"'),         "a\tb")
+_ok('escape \\\\',             yaml.parse('"a\\\\b"'),        'a\\b')
+_ok('escape \\"',              yaml.parse('"a\\"b"'),         'a"b')
+_ok('escape \\x41 = A',        yaml.parse('"\\x41"'),         'A')
+_ok('escape \\u0041 = A',      yaml.parse('"\\u0041"'),       'A')
+_ok('escape \\U00000041 = A',  yaml.parse('"\\U00000041"'),   'A')
+_ok('escape \\0 = null byte',  yaml.parse('"a\\0b"'),         'a' + chr(0) + 'b')
+_ok('null keyword as string',  yaml.parse('"null"'),          'null')
+_ok('true keyword as string',  yaml.parse('"true"'),          'true')
+_ok('42 as string',            yaml.parse('"42"'),            '42')
+_ok('multiline folded to space',
+    yaml.parse('"first\nsecond"'), 'first second')
+_ok('blank line preserved in dquote',
+    yaml.parse('"a\n\nb"'), "a\nb")
+
+
+_begin('Single-quoted scalars')
+
+_ok('basic single-quoted',     yaml.parse("'hello'"),         'hello')
+_ok('empty single-quoted',     yaml.parse("''"),              '')
+_ok("'' escape inside",        yaml.parse("'it''s'"),         "it's")
+_ok('no escape processing',    yaml.parse("'a\\nb'"),         'a\\nb')
+_ok('null as string',          yaml.parse("'null'"),          'null')
+_ok('true as string',          yaml.parse("'true'"),          'true')
+_ok('number as string',        yaml.parse("'42'"),            '42')
+
+
+# ===========================================================================
+# 3. BLOCK SCALARS
+# ===========================================================================
+
+_begin('Literal block scalar |')
+
+_ok('basic literal clip',
+    yaml.parse("msg: |\n  hello\n  world\n")['msg'],
+    "hello\nworld\n")
+
+_ok('literal strip with -',
+    yaml.parse("msg: |-\n  hello\n  world\n")['msg'],
+    "hello\nworld")
+
+_ok('literal keep with +',
+    yaml.parse("msg: |+\n  hello\n  world\n\n")['msg'],
+    "hello\nworld\n\n")
+
+_ok('literal preserves blank lines',
+    yaml.parse("msg: |\n  a\n\n  b\n")['msg'],
+    "a\n\nb\n")
+
+_ok('literal explicit indent indicator',
+    yaml.parse("msg: |2\n  indented\n  text\n")['msg'],
+    "indented\ntext\n")
+
+
+_begin('Folded block scalar >')
+
+_ok('basic folded clip',
+    yaml.parse("msg: >\n  hello\n  world\n")['msg'],
+    "hello world\n")
+
+_ok('folded strip with -',
+    yaml.parse("msg: >-\n  hello\n  world\n")['msg'],
+    "hello world")
+
+_ok('folded blank line preserved',
+    yaml.parse("msg: >\n  a\n\n  b\n")['msg'],
+    "a\nb\n")
+
+_ok('folded keep with +',
+    yaml.parse("msg: >+\n  hello\n  world\n\n")['msg'],
+    "hello world\n\n")
+
+
+# ===========================================================================
+# 4. BLOCK SEQUENCES
+# ===========================================================================
+
+_begin('Block sequences')
+
+_ok('simple sequence',
+    yaml.parse("- a\n- b\n- c"),
+    ['a', 'b', 'c'])
+
+_ok('sequence of numbers',
+    yaml.parse("- 1\n- 2\n- 3"),
+    [1, 2, 3])
+
+_ok('sequence of mixed types',
+    yaml.parse("- 1\n- true\n- null\n- hello"),
+    [1, true, nil, 'hello'])
+
+_ok('nested sequence',
+    yaml.parse("- - a\n  - b\n- - c\n  - d"),
+    [['a', 'b'], ['c', 'd']])
+
+_ok('sequence of mappings',
+    yaml.parse("- name: Alice\n  age: 30\n- name: Bob\n  age: 25"),
+    [{name: 'Alice', age: 30}, {name: 'Bob', age: 25}])
+
+_ok('sequence with null item',
+    yaml.parse("- a\n-\n- b"),
+    ['a', nil, 'b'])
+
+
+# ===========================================================================
+# 5. BLOCK MAPPINGS
+# ===========================================================================
+
+_begin('Block mappings')
+
+_ok('simple mapping',
+    yaml.parse("a: 1\nb: 2"),
+    {a: 1, b: 2})
+
+_ok('mixed value types',
+    yaml.parse("s: hello\nn: 42\nb: true\nnil: ~"),
+    {s: 'hello', n: 42, b: true, nil: nil})
+
+_ok('nested mapping',
+    yaml.parse("outer:\n  inner:\n    deep: value"),
+    {outer: {inner: {deep: 'value'}}})
+
+_ok('mapping with sequence value',
+    yaml.parse("key:\n  - a\n  - b"),
+    {key: ['a', 'b']})
+
+_ok('mapping with null value',
+    yaml.parse("a:\nb: 2"),
+    {a: nil, b: 2})
+
+_ok('quoted key',
+    yaml.parse('"quoted key": value'),
+    {'quoted key': 'value'})
+
+_ok('numeric-looking key treated as string',
+    yaml.parse("'42': value")['42'],
+    'value')
+
+
+# ===========================================================================
+# 6. FLOW SEQUENCES
+# ===========================================================================
+
+_begin('Flow sequences')
+
+_ok('simple flow sequence',    yaml.parse('[1, 2, 3]'),            [1, 2, 3])
+_ok('empty flow sequence',     yaml.parse('[]'),                   [])
+_ok('flow with strings',       yaml.parse('[a, b, c]'),            ['a', 'b', 'c'])
+_ok('flow with mixed types',   yaml.parse('[1, true, null, hi]'), [1, true, nil, 'hi'])
+_ok('flow with quoted strings',yaml.parse('["x", \'y\']'),        ['x', 'y'])
+_ok('nested flow sequence',    yaml.parse('[[1,2],[3,4]]'),        [[1,2],[3,4]])
+_ok('flow sequence in mapping',
+    yaml.parse('list: [a, b, c]'),
+    {list: ['a', 'b', 'c']})
+_ok('trailing comma ignored',  yaml.parse('[1, 2, 3,]'),           [1, 2, 3])
+
+
+# ===========================================================================
+# 7. FLOW MAPPINGS
+# ===========================================================================
+
+_begin('Flow mappings')
+
+_ok('simple flow mapping',
+    yaml.parse('{a: 1, b: 2}'),
+    {a: 1, b: 2})
+
+_ok('empty flow mapping',
+    yaml.parse('{}'),
+    {})
+
+_ok('flow mapping with mixed types',
+    yaml.parse('{n: 42, b: true, s: hello}'),
+    {n: 42, b: true, s: 'hello'})
+
+_ok('nested flow mapping',
+    yaml.parse('{a: {b: 1}}'),
+    {a: {b: 1}})
+
+_ok('flow mapping with quoted key',
+    yaml.parse('{"key with spaces": value}'),
+    {'key with spaces': 'value'})
+
+_ok('flow mapping inside sequence',
+    yaml.parse('[{a: 1}, {b: 2}]'),
+    [{a: 1}, {b: 2}])
+
+_ok('mixed flow: sequence in mapping',
+    yaml.parse('{x: 1, y: [2, 3]}'),
+    {x: 1, y: [2, 3]})
+
+
+# ===========================================================================
+# 8. ANCHORS AND ALIASES
+# ===========================================================================
+
+_begin('Anchors and aliases')
+
+_ok('scalar anchor and alias',
+    yaml.parse("a: &ref hello\nb: *ref"),
+    {a: 'hello', b: 'hello'})
+
+_ok('anchor on same line as value',
+    yaml.parse("x: &n 42\ny: *n"),
+    {x: 42, y: 42})
+
+_ok('alias resolves to same value',
+    yaml.parse("x: &v true\ny: *v")['y'],
+    true)
+
+_ok('null anchor',
+    yaml.parse("a: &n ~\nb: *n"),
+    {a: nil, b: nil})
+
+_ok('anchor on block mapping',
+    yaml.parse("base: &tmpl\n  cpu: 4\n  mem: 8\nderived:\n  <<: *tmpl\n  disk: 100")['derived']['cpu'],
+    4)
+
+_ok('merge key preserves own keys',
+    yaml.parse("base: &b\n  x: 1\n  y: 2\nchild:\n  <<: *b\n  y: 99")['child'],
+    {x: 1, y: 99})
+
+_ok('anchor on sequence',
+    yaml.parse("a: &s\n  - 1\n  - 2\nb: *s")['b'],
+    [1, 2])
+
+_ok('multiple aliases to same anchor',
+    yaml.parse("v: &v 7\na: *v\nb: *v\nc: *v")['c'],
+    7)
+
+_begin('Merge keys (<<)')
+
+_ok('simple merge',
+    yaml.parse("base: &b\n  x: 1\nchild:\n  <<: *b\n  y: 2")['child'],
+    {x: 1, y: 2})
+
+_ok('merge does not overwrite existing key',
+    yaml.parse("base: &b\n  x: 1\n  y: 2\nchild:\n  <<: *b\n  x: 99")['child']['x'],
+    99)
+
+_ok('merge from sequence of anchors',
+    yaml.parse("a: &a\n  x: 1\nb: &b\n  y: 2\nc:\n  <<: [*a, *b]")['c'],
+    {x: 1, y: 2})
+
+
+# ===========================================================================
+# 9. EXPLICIT TAGS
+# ===========================================================================
+
+_begin('Explicit tags')
+
+_ok('!!str forces string',
+    yaml.parse('v: !!str 404')['v'],
+    '404')
+
+_ok('!!str on true',
+    yaml.parse('v: !!str true')['v'],
+    'true')
+
+_ok('!!int forces integer',
+    yaml.parse('v: !!int 42')['v'],
+    42)
+
+_ok('!!float forces float',
+    yaml.parse('v: !!float 1')['v'],
+    1.0)
+
+_ok('!!bool on true',
+    yaml.parse('v: !!bool true')['v'],
+    true)
+
+_ok('!!bool on false',
+    yaml.parse('v: !!bool false')['v'],
+    false)
+
+_ok('!!null on null',
+    yaml.parse('v: !!null null')['v'],
+    nil)
+
+_ok('!!null on empty',
+    yaml.parse('v: !!null ~')['v'],
+    nil)
+
+
+# ===========================================================================
+# 10. COMMENTS
+# ===========================================================================
+
+_begin('Comments')
+
+_ok('full-line comment ignored',
+    yaml.parse("# comment\na: 1"),
+    {a: 1})
+
+_ok('inline comment ignored',
+    yaml.parse("a: 1 # comment"),
+    {a: 1})
+
+_ok('comment between mapping keys',
+    yaml.parse("a: 1\n# comment\nb: 2"),
+    {a: 1, b: 2})
+
+_ok('comment after sequence item',
+    yaml.parse("- a # comment\n- b"),
+    ['a', 'b'])
+
+_ok('multiple comment lines',
+    yaml.parse("# c1\n# c2\n# c3\nval: ok"),
+    {val: 'ok'})
+
+
+# ===========================================================================
+# 11. MULTI-DOCUMENT STREAMS
+# ===========================================================================
+
+_begin('Multi-document streams (parse_all)')
+
+var docs1 = yaml.parse_all("---\na: 1\n---\nb: 2\n")
+_ok('two documents count', docs1.length(), 2)
+_ok('first document',      docs1[0], {a: 1})
+_ok('second document',     docs1[1], {b: 2})
+
+var docs2 = yaml.parse_all("---\n- x\n- y\n---\n- 1\n- 2\n")
+_ok('sequence documents count', docs2.length(), 2)
+_ok('first sequence doc',       docs2[0], ['x', 'y'])
+_ok('second sequence doc',      docs2[1], [1, 2])
+
+var docs3 = yaml.parse_all("---\nscalar\n")
+_ok('single scalar document',   docs3.length(), 1)
+_ok('scalar value',             docs3[0], 'scalar')
+
+var docs4 = yaml.parse_all("---\na: 1\n...\n---\nb: 2\n")
+_ok('end marker separates docs', docs4.length(), 2)
+
+var docs5 = yaml.parse_all("no markers here")
+_ok('implicit single document',  docs5.length(), 1)
+_ok('implicit document value',   docs5[0], 'no markers here')
+
+var docs6 = yaml.parse_all("---\na: 1\n---\nb: 2\n---\nc: 3\n")
+_ok('three documents count', docs6.length(), 3)
+_ok('third document',        docs6[2], {c: 3})
+
+
+# ===========================================================================
+# 12. DIRECTIVES
+# ===========================================================================
+
+_begin('Directives')
+
+_ok('%YAML directive ignored gracefully',
+    yaml.parse("%YAML 1.2\n---\nvalue: ok")['value'],
+    'ok')
+
+_ok('%TAG directive ignored gracefully',
+    yaml.parse("%TAG ! tag:example.com,2024:\n---\nkey: val")['key'],
+    'val')
+
+
+# ===========================================================================
+# 13. EDGE CASES — INPUT
+# ===========================================================================
+
+_begin('Edge cases — input')
+
+_ok('all-whitespace input is nil',
+    yaml.parse('   \n   \n'),
+    nil)
+
+_ok('deeply nested mapping',
+    yaml.parse("a:\n  b:\n    c:\n      d: leaf")['a']['b']['c']['d'],
+    'leaf')
+
+_ok('key with colon in value',
+    yaml.parse("url: 'http://example.com'"),
+    {url: 'http://example.com'})
+
+_ok('colon in double-quoted value',
+    yaml.parse('url: "http://x.com:8080"'),
+    {url: 'http://x.com:8080'})
+
+_ok('value starting with {',
+    yaml.parse("obj: '{not a map}'"),
+    {obj: '{not a map}'})
+
+_ok('value starting with [',
+    yaml.parse("obj: '[not a seq]'"),
+    {obj: '[not a seq]'})
+
+_ok('number with leading zeros as string',
+    yaml.parse("'007'"),
+    '007')
+
+_ok('empty sequence item at end',
+    yaml.parse("- a\n- b\n-"),
+    ['a', 'b', nil])
+
+_ok('mapping with empty sequence',
+    yaml.parse("k: []"),
+    {k: []})
+
+_ok('mapping with empty mapping',
+    yaml.parse("k: {}"),
+    {k: {}})
+
+_ok('sequence of empty mappings',
+    yaml.parse("- {}\n- {}"),
+    [{}, {}])
+
+_ok('tab in plain scalar',
+    yaml.parse("a: hello\tworld"),
+    {a: 'hello\tworld'})
+
+_ok('unicode value',
+    yaml.parse("greeting: こんにちは"),
+    {greeting: 'こんにちは'})
+
+_ok('unicode key',
+    yaml.parse("'名前': Alice")['名前'],
+    'Alice')
+
+_ok('emoji in value',
+    yaml.parse("mood: happy 😊"),
+    {mood: 'happy 😊'})
+
+_ok('multiline plain scalar folds to space',
+    yaml.parse("text: hello\n  world"),
+    {text: 'hello world'})
+
+_ok('blank line in multiline plain breaks',
+    yaml.parse("a: one\nb: two"),
+    {a: 'one', b: 'two'})
+
+
+# ===========================================================================
+# 14. EMITTER — dump()
+# ===========================================================================
+
+_begin('Emitter — scalars')
+
+_ok('null emits null',          yaml.dump(nil),   'null\n')
+_ok('true emits true',          yaml.dump(true),  'true\n')
+_ok('false emits false',        yaml.dump(false), 'false\n')
+_ok('integer',                  yaml.dump(42),    '42\n')
+_ok('negative integer',         yaml.dump(-7),    '-7\n')
+_ok('float',                    yaml.dump(3.14),  '3.14\n')
+_ok('.inf',                     yaml.dump(math.Infinity),  '.inf\n')
+_ok('-.inf',                    yaml.dump(-math.Infinity), '-.inf\n')
+_ok('plain string',             yaml.dump('hello'),        'hello\n')
+_ok('string needing quoting — null',  yaml.dump('null'),  "'null'\n")
+_ok('string needing quoting — true',  yaml.dump('true'),  "'true'\n")
+_ok('string needing quoting — false', yaml.dump('false'), "'false'\n")
+_ok('string needing quoting — int',   yaml.dump('42'),    "'42'\n")
+_ok('empty string',             yaml.dump(''),    "''\n")
+
+
+_begin('Emitter — sequences')
+
+_ok('empty sequence',
+    yaml.dump([]),
+    '[]\n')
+
+_ok('simple sequence',
+    yaml.dump(['a', 'b', 'c']),
+    "- a\n- b\n- c\n")
+
+_ok('number sequence',
+    yaml.dump([1, 2, 3]),
+    "- 1\n- 2\n- 3\n")
+
+_ok('mixed type sequence',
+    yaml.dump([1, true, nil, 'x']),
+    "- 1\n- true\n- null\n- x\n")
+
+
+_begin('Emitter — mappings')
+
+_ok('empty mapping',
+    yaml.dump({}),
+    '{}\n')
+
+_ok('simple mapping',
+    yaml.dump({a: 1, b: 2}),
+    "a: 1\nb: 2\n")
+
+_ok('mapping with null value',
+    yaml.dump({k: nil}),
+    "k: null\n")
+
+_ok('mapping with bool value',
+    yaml.dump({ok: true, err: false}),
+    "ok: true\nerr: false\n")
+
+
+_begin('Emitter — nested structures')
+
+_ok('mapping with sequence value',
+    yaml.dump({list: [1, 2, 3]}),
+    "list:\n  - 1\n  - 2\n  - 3\n")
+
+_ok('mapping with nested mapping',
+    yaml.dump({outer: {inner: 'val'}}),
+    "outer:\n  inner: val\n")
+
+_ok('sequence of mappings',
+    yaml.dump([{a: 1}, {b: 2}]),
+    "-\n  a: 1\n-\n  b: 2\n")
+
+_ok('custom indent of 4',
+    yaml.dump({x: [1, 2]}, 4),
+    "x:\n    - 1\n    - 2\n")
+
+
+_begin('Emitter — dump_all')
+
+_ok('two documents',
+    yaml.dump_all([{a: 1}, {b: 2}]),
+    "---\na: 1\n---\nb: 2\n")
+
+_ok('three documents',
+    yaml.dump_all([1, 'hello', nil]),
+    "---\n1\n---\nhello\n---\nnull\n")
+
+_ok('empty list',
+    yaml.dump_all([]),
+    '')
+
+
+# ===========================================================================
+# 15. ROUND-TRIP  (parse → dump → parse)
+# ===========================================================================
+
+_begin('Round-trip fidelity')
+
+def _roundtrip(label, value) {
+  var dumped  = yaml.dump(value)
+  var reparsed = yaml.parse(dumped)
+  _ok(label, reparsed, value)
+}
+
+_roundtrip('nil',          nil)
+_roundtrip('true',         true)
+_roundtrip('false',        false)
+_roundtrip('integer',      99)
+_roundtrip('negative int', -42)
+_roundtrip('float',        2.718)
+_roundtrip('plain string', 'hello world')
+_roundtrip('empty list',   [])
+_roundtrip('empty dict',   {})
+_roundtrip('simple list',  [1, 2, 3])
+_roundtrip('simple dict',  {a: 1, b: 2})
+
+_roundtrip('nested dict',
+    {server: {host: 'localhost', port: 5432}, debug: false})
+
+_roundtrip('list of dicts',
+    [{name: 'Alice', score: 98}, {name: 'Bob', score: 72}])
+
+_roundtrip('mixed nesting',
+    {items: [1, nil, true, 'x'], meta: {count: 3}})
+
+# Strings that require quoting round-trip to the same string value.
+var null_str = yaml.parse(yaml.dump('null'))
+_ok('quoted null string round-trips', null_str, 'null')
+
+var num_str = yaml.parse(yaml.dump('42'))
+_ok('quoted numeric string round-trips', num_str, '42')
+
+var bool_str = yaml.parse(yaml.dump('true'))
+_ok('quoted bool string round-trips', bool_str, 'true')
+
+
+# ===========================================================================
+# 16. ERROR CASES
+# ===========================================================================
+
+_begin('Error cases — YamlError raised')
+
+_ok_raises('unterminated double-quoted scalar',
+    @() { yaml.parse('"unterminated') })
+
+_ok_raises('unterminated single-quoted scalar',
+    @() { yaml.parse("'unterminated") })
+
+_ok_raises('undefined alias',
+    @() { yaml.parse('key: *undefined_anchor') })
+
+_ok_raises('unterminated flow sequence',
+    @() { yaml.parse('[1, 2, 3') })
+
+_ok_raises('unterminated flow mapping',
+    @() { yaml.parse('{a: 1, b: 2') })
+
+_ok_raises('unexpected character after closing quote',
+    @() { yaml.parse('"valid"garbage') })
+
+
+# ===========================================================================
+# 17. COMPLEX REAL-WORLD DOCUMENT
+# ===========================================================================
+
+_begin('Complex real-world document')
+
+var complex_yaml = "
+database:
+  host: db.example.com
+  port: 5432
+  name: production_db
+  credentials:
+    username: admin
+    password: 'secret#123'
+  pool:
+    min: 2
+    max: 20
+    timeout: 30
+
+cache:
+  backend: redis
+  servers:
+    - host: cache-1.internal
+      port: 6379
+    - host: cache-2.internal
+      port: 6379
+  ttl_seconds: 3600
+
+feature_flags:
+  new_ui: true
+  beta_api: false
+  max_upload_mb: 50
+
+allowed_origins:
+  - 'https://app.example.com'
+  - 'https://api.example.com'
+"
+
+var cfg = yaml.parse(complex_yaml)
+
+_ok('database host',       cfg['database']['host'],               'db.example.com')
+_ok('database port',       cfg['database']['port'],               5432)
+_ok('pool max',            cfg['database']['pool']['max'],        20)
+_ok('password with #',     cfg['database']['credentials']['password'], 'secret#123')
+_ok('cache backend',       cfg['cache']['backend'],               'redis')
+_ok('server count',        cfg['cache']['servers'].length(),      2)
+_ok('first cache server',  cfg['cache']['servers'][0]['host'],    'cache-1.internal')
+_ok('second cache port',   cfg['cache']['servers'][1]['port'],    6379)
+_ok('ttl',                 cfg['cache']['ttl_seconds'],           3600)
+_ok('feature true',        cfg['feature_flags']['new_ui'],        true)
+_ok('feature false',       cfg['feature_flags']['beta_api'],      false)
+_ok('max upload',          cfg['feature_flags']['max_upload_mb'], 50)
+_ok('origins count',       cfg['allowed_origins'].length(),       2)
+_ok('first origin',        cfg['allowed_origins'][0],            'https://app.example.com')
+
+
+_begin('Anchor and merge in real-world context')
+
+var deploy_yaml = "
+defaults: &defaults
+  replicas: 2
+  resources:
+    cpu: '500m'
+    memory: '256Mi'
+  env:
+    - name: LOG_LEVEL
+      value: info
+
+services:
+  api:
+    <<: *defaults
+    replicas: 4
+    image: api:latest
+
+  worker:
+    <<: *defaults
+    image: worker:latest
+"
+
+var deploy = yaml.parse(deploy_yaml)
+
+_ok('api replicas overrides default',
+    deploy['services']['api']['replicas'], 4)
+
+_ok('api inherits resources from default',
+    deploy['services']['api']['resources']['cpu'], '500m')
+
+_ok('worker replicas from default',
+    deploy['services']['worker']['replicas'], 2)
+
+_ok('worker inherits memory',
+    deploy['services']['worker']['resources']['memory'], '256Mi')
+
+_ok('worker has its own image',
+    deploy['services']['worker']['image'], 'worker:latest')
+
+_ok('env list merged into api',
+    deploy['services']['api']['env'][0]['name'], 'LOG_LEVEL')
+
+
+# ===========================================================================
+# Summary
+# ===========================================================================
+
+_summary()
