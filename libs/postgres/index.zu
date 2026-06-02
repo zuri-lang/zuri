@@ -22,9 +22,9 @@
  * ## Quick start
  *
  * ```zuri
- * import postgres { Connection }
+ * import postgres
  *
- * var conn = Connection('postgres://localhost/mydb')
+ * var conn = postgres.connect('postgres://localhost/mydb')
  * conn.connect()
  *
  * var result = conn.query(
@@ -57,6 +57,7 @@
  * @license   MIT
  */
 
+ 
 # Re-export the public surface of the library so users can write either:
 #   import postgres                   → postgres.Connection(...)
 #   import postgres { Connection }    → Connection(...)
@@ -70,4 +71,19 @@ import .notify      { NotificationListener }
 import .errors      { 
   PostgresError, ConnectionError, QueryError,
   AuthenticationError, ProtocolError 
+}
+
+/**
+ * Connects to a PostgreSQL database using the provided DSN string or options dict.
+ * The DSN can be in URI form (e.g. `postgres://user:pass@host:port/dbname`) or
+ * in key=value form (e.g. `host=localhost port=5432 dbname.
+ * 
+ * @param {string|dict} dsn The DSN string or options dict.
+ * @return {Connection}
+ * @throws {PostgresError} if the connection fails.
+ */
+def connect(dsn) {
+  var conn = Connection(dsn)
+  conn.connect()
+  return conn
 }
