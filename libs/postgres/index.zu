@@ -1,9 +1,9 @@
 /**
  * @module postgres
  *
- * An enterprise-grade PostgreSQL client library for the Zuri programming
- * language, implementing the PostgreSQL Frontend/Backend wire protocol
- * (version 3.0) in pure Zuri with full binary type encoding and decoding.
+ * An enterprise-grade PostgreSQL client library implementing the PostgreSQL
+ * Frontend/Backend wire protocol (version 3.0) with full binary type
+ * encoding and decoding.
  *
  * ## Features
  *
@@ -53,8 +53,7 @@
  * host=localhost port=5432 dbname=mydb user=alice password=secret
  * ```
  *
- * @copyright 2024, The Zuri Authors
- * @license   MIT
+ * @copyright 2026, The Zuri Authors
  */
 
  

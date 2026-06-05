@@ -17,6 +17,7 @@
  *   zuri test_yaml.zu
  */
 
+import math
 import yaml
 
 
@@ -79,7 +80,7 @@ def _ok_type(label, value, type_name) {
 def _ok_raises(label, fn) {
   var raised = false
   catch { fn() } as e
-  if isinstance(e, yaml.YamlError) {
+  if instance_of(e, yaml.YamlError) {
     raised = true
   }
   if raised {
@@ -293,7 +294,7 @@ _ok('simple mapping',
 
 _ok('mixed value types',
     yaml.parse("s: hello\nn: 42\nb: true\nnil: ~"),
-    {s: 'hello', n: 42, b: true, nil: nil})
+    {s: 'hello', n: 42, b: true, 'nil': nil})
 
 _ok('nested mapping',
     yaml.parse("outer:\n  inner:\n    deep: value"),

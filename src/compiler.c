@@ -2228,6 +2228,11 @@ static void parse_specific_import(z_parser* p, char* module_name, int import_con
     do {
       ignore_whitespace(p);
 
+      // allow trailing comma
+      if (check(p, RBRACE_TOKEN)) {
+        break;
+      }
+
       // terminate on all (*)
       if (match(p, MULTIPLY_TOKEN)) {
         emit_byte(p, is_native ? OP_IMPORT_ALL_NATIVE : OP_IMPORT_ALL);

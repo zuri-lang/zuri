@@ -152,6 +152,7 @@ class TLSSocket {
     else self._context = context
 
     self._ssl = ssl ? ssl : SSL(self._context)
+    self._ssl.set_fd(socket.id)
   }
 
   /**

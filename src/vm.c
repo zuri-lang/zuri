@@ -2155,7 +2155,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
           }
 
           property_error("instance of class %s does not have a property or method named '%s'",
-                        AS_INSTANCE(peek(vm, 0))->klass->name->chars, name->chars);
+                        instance->klass->name->chars, name->chars);
           break;
         } else if (IS_CLASS(peek(vm, 0))) {
           z_obj_class *klass = AS_CLASS(peek(vm, 0));

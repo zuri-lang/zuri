@@ -37,6 +37,23 @@ class SSL {
   }
 
   /**
+   * Performs a handshake on the SSL socket. This is very useful for performing handshake when
+   * wrapping a previously connected socket with SSL capabilities.
+   *
+   * @returns bool
+   * @throws Exception
+   */
+  do_handshake() {
+    var result = _ssl.do_handshake(self._ptr)
+
+    if is_number(result) {
+      raise Exception(self.error(result))
+    }
+
+    return result
+  }
+
+  /**
    * Returns the current socket file descriptor.
    * It returns `-1` on failure or a positive integer on success.
    * 

@@ -31,11 +31,18 @@
 # ifndef STDIN_FILENO
 #   define STDIN_FILENO _fileno(stdin)
 # endif
+# define POLL_FD WSAPOLLFD
+# define poll WSAPoll
+# define POLLIN POLLRDNORM
+# define POLLOUT POLLWRNORM
 #else
 # include <sys/socket.h>
 # include <arpa/inet.h>
 # include <netdb.h> //hostent
 # include <sys/ioctl.h>
+# include <poll.h>
+# define POLL_FD struct pollfd
+#include <netinet/tcp.h>
 # define closesocket close
 #endif
 
@@ -324,9 +331,12 @@ DECLARE_MODULE_METHOD(socket__connect) {
       int se = last_sock_error();
       if (is_in_progress(se) || is_would_block(se)) {
         if (time_out > 0) {
-          fd_set wfds; FD_ZERO(&wfds); FD_SET(sock, &wfds);
-          struct timeval timeout = { (long)(time_out/1000), (int)((time_out%1000)*1000) };
-          int sel = select(sock + 1, NULL, &wfds, NULL, &timeout);
+          POLL_FD pfd;
+          pfd.fd = sock;
+          pfd.events = POLLOUT;
+          pfd.revents = 0;
+
+          int sel = poll(&pfd, 1, time_out);
           if (sel > 0) {
             int so_error = 0; socklen_t len = (socklen_t)sizeof(so_error);
 #ifndef _WIN32
@@ -348,8 +358,10 @@ DECLARE_MODULE_METHOD(socket__connect) {
             last_errno = ETIMEDOUT;
           } else {
 #ifdef _WIN32
+            if (last_sock_error() == WSAEINTR) continue;
             last_errno = map_sock_err_to_errno(last_sock_error());
 #else
+            if (last_sock_error() == EINTR) continue;
             last_errno = errno; // select failed
 #endif
           }
@@ -564,15 +576,21 @@ DECLARE_MODULE_METHOD(socket__send) {
   int processed = 0;
 
   // Determine send timeout (if any) using SO_SNDTIMEO
-  struct timeval send_timeout_base; int optlen = sizeof(send_timeout_base);
-  send_timeout_base.tv_sec = 0; send_timeout_base.tv_usec = 0;
+  int timeout_ms = -1;
 #ifndef _WIN32
+  struct timeval send_timeout_base;
+  int optlen = sizeof(send_timeout_base);
   (void)getsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout_base, (socklen_t*)&optlen);
+  timeout_ms = send_timeout_base.tv_sec == 0 && send_timeout_base.tv_usec == 0 ? -1 :
+        (int)(send_timeout_base.tv_sec * 1000) + (int)(send_timeout_base.tv_usec / 1000);
 #else
+  DWORD send_timeout_base = 0;
+  int option_length = sizeof(tv_ms);
   (void)getsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&send_timeout_base, (socklen_t*)&optlen);
+  timeout_ms = (int)send_timeout_base;
 #endif
 
-  bool has_timeout = (send_timeout_base.tv_sec > 0 || send_timeout_base.tv_usec > 0);
+  bool has_timeout = timeout_ms > 0;
   const int SEND_CHUNK = 65536;
 
   while (processed < length) {
@@ -593,10 +611,12 @@ DECLARE_MODULE_METHOD(socket__send) {
       }
       if (is_would_block(se)) {
         if (has_timeout) {
-          /* [C7] Always use a fresh copy of the timeout for each select() */
-          struct timeval tv = send_timeout_base;
-          fd_set wfds; FD_ZERO(&wfds); FD_SET(sock, &wfds);
-          int sel = select(sock + 1, NULL, &wfds, NULL, &tv);
+          POLL_FD pfd;
+          pfd.fd = sock;
+          pfd.events = POLLOUT;
+          pfd.revents = 0;
+
+          int sel = poll(&pfd, 1, timeout_ms);
           if (sel > 0) continue;   // socket writable; retry send
           if (sel == 0) {
 #ifdef _WIN32
@@ -608,7 +628,7 @@ DECLARE_MODULE_METHOD(socket__send) {
           }
           // select error: fall through to return error
         } else {
-          // Non-blocking socket with no timeout: surface WOULDBLOCK to caller
+          // Non-blocking socket with no timeout: surface EWOULDBLOCK to caller
           RETURN_NUMBER(-1);
         }
       }
@@ -632,37 +652,35 @@ DECLARE_MODULE_METHOD(socket__recv) {
   int length = AS_NUMBER(args[1]);
   int flags = AS_NUMBER(args[2]);
 
+  int timeout_ms = -1;
 #ifndef _WIN32
   struct timeval timeout;
   int option_length = sizeof(timeout);
   int rc = getsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, (socklen_t *)&option_length);
   if (rc != 0 || (int)sizeof(timeout) != option_length ||
       (timeout.tv_sec == 0 && timeout.tv_usec == 0)) {
-    // Default: 0.5 second wait for data to arrive
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 500000;
+    timeout_ms = 500;
+  } else {
+    timeout_ms = (int)(timeout.tv_sec * 1000) + (int)(timeout.tv_usec / 1000);
   }
 #else
   DWORD tv_ms = 0;
   int option_length = sizeof(tv_ms);
   int rc = getsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv_ms, (socklen_t *)&option_length);
-  struct timeval timeout;
   if (rc != 0 || option_length != sizeof(tv_ms) || tv_ms == 0) {
-    // Default: 0.5 second wait for data to arrive
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 500000;
+    timeout_ms = 500;
   } else {
-    timeout.tv_sec = tv_ms / 1000;
-    timeout.tv_usec = (tv_ms % 1000) * 1000;
+    timeout_ms = (int) tv_ms;
   }
 #endif
 
-  fd_set read_set;
-  FD_ZERO(&read_set);
-  FD_SET(sock, &read_set);
+  POLL_FD pfd;
+  pfd.fd = sock;
+  pfd.events = POLLIN;
+  pfd.revents = 0;
 
   int status;
-  if ((status = select(sock + 1, &read_set, NULL, NULL, &timeout)) > 0) {
+  if ((status = poll(&pfd, 1, timeout_ms)) > 0) {
 
   int content_length = 0;
 #ifndef _WIN32
@@ -695,10 +713,9 @@ DECLARE_MODULE_METHOD(socket__recv) {
           int se = last_sock_error();
           if (is_interrupted(se)) continue;
           if (is_would_block(se)) {
-            /* [C7] Fresh timeout copy for each retry select() */
-            struct timeval tv = timeout;
-            fd_set rs; FD_ZERO(&rs); FD_SET(sock, &rs);
-            int sel2 = select(sock + 1, &rs, NULL, NULL, &tv);
+            pfd.revents = 0;
+            int sel2 = poll(&pfd, 1, timeout_ms);
+
             if (sel2 > 0) continue;
             if (sel2 == 0) {
 #ifdef _WIN32
@@ -759,68 +776,81 @@ DECLARE_MODULE_METHOD(socket__read) {
 }
 
 DECLARE_MODULE_METHOD(socket__setsockopt) {
-  ENFORCE_ARG_COUNT(setsockopt, 3);
+  ENFORCE_ARG_COUNT(setsockopt, 4);
   ENFORCE_ARG_TYPE(setsockopt, 0, IS_NUMBER); // the socket id
   ENFORCE_ARG_TYPE(setsockopt, 1, IS_NUMBER); // the option id
+  ENFORCE_ARG_TYPE(setsockopt, 2, IS_NUMBER); // level
 
   int sock = AS_NUMBER(args[0]);
   int option = AS_NUMBER(args[1]);
-  z_value value = args[2];
+
+  int level = AS_NUMBER(args[2]);
+  if (level == -1) {
+    level = SOL_SOCKET;
+  }
+
+  z_value value = args[3];
 
   switch (option) {
     case SO_SNDTIMEO:
     case SO_RCVTIMEO: {
-      ENFORCE_ARG_TYPE(setsockopt, 2, IS_NUMBER);
+      ENFORCE_ARG_TYPE(setsockopt, 3, IS_NUMBER);
 
 #ifdef _WIN32
       DWORD timeout = (DWORD)AS_NUMBER(value);
-      RETURN_NUMBER(setsockopt(sock, SOL_SOCKET, option,
+      RETURN_NUMBER(setsockopt(sock, level, option,
                                (const char *)&timeout, sizeof(timeout)));
 #else
       int milliseconds = (int)AS_NUMBER(value);
       struct timeval tv = { (long)(milliseconds / 1000),
                             (int)((milliseconds % 1000) * 1000) };
-      RETURN_NUMBER(setsockopt(sock, SOL_SOCKET, option, &tv, sizeof(tv)));
+      RETURN_NUMBER(setsockopt(sock, level, option, &tv, sizeof(tv)));
 #endif
     }
 
 #ifdef SO_LINGER
     case SO_LINGER: {
-      ENFORCE_ARG_TYPE(setsockopt, 2, IS_NUMBER);
+      ENFORCE_ARG_TYPE(setsockopt, 3, IS_NUMBER);
       int linger_secs = (int)AS_NUMBER(value);
       struct linger lg;
       lg.l_onoff  = (linger_secs > 0) ? 1 : 0;
       lg.l_linger = (linger_secs > 0) ? linger_secs : 0;
-      RETURN_NUMBER(setsockopt(sock, SOL_SOCKET, SO_LINGER,
+      RETURN_NUMBER(setsockopt(sock, level, SO_LINGER,
                                (const char *)&lg, sizeof(lg)));
     }
 #endif
 
     default: {
-      ENFORCE_ARG_TYPE(setsockopt, 2, IS_BOOL);
+      ENFORCE_ARG_TYPE(setsockopt, 3, IS_BOOL);
       int val = AS_BOOL(value) ? 1 : 0;
-      RETURN_NUMBER(setsockopt(sock, SOL_SOCKET, option,
+      RETURN_NUMBER(setsockopt(sock, level, option,
                                (const char *)&val, sizeof val));
     }
   }
 }
 
 DECLARE_MODULE_METHOD(socket__getsockopt) {
-  ENFORCE_ARG_COUNT(getsockopt, 2);
+  ENFORCE_ARG_COUNT(getsockopt, 3);
   ENFORCE_ARG_TYPE(getsockopt, 0, IS_NUMBER); // the socket id
   ENFORCE_ARG_TYPE(getsockopt, 1, IS_NUMBER); // the option id
+  ENFORCE_ARG_TYPE(getsockopt, 2, IS_NUMBER); // level
 
   int sock = AS_NUMBER(args[0]);
   int option = AS_NUMBER(args[1]);
+
+  int level = AS_NUMBER(args[2]);
+  if (level == -1) {
+    level = SOL_SOCKET;
+  }
 
   switch (option) {
     case SO_ERROR: {
       int so_error = 0;
       socklen_t len = (socklen_t)sizeof(so_error);
 #ifndef _WIN32
-      getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+      getsockopt(sock, level, SO_ERROR, &so_error, &len);
 #else
-      getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&so_error, &len);
+      getsockopt(sock, level, SO_ERROR, (char *)&so_error, &len);
 #endif
       if (so_error == 0) RETURN_NIL;
 #ifdef _WIN32
@@ -835,13 +865,13 @@ DECLARE_MODULE_METHOD(socket__getsockopt) {
 #ifdef _WIN32
       DWORD timeout;
       int len = sizeof(timeout);
-      if (getsockopt(sock, SOL_SOCKET, option, (char *)&timeout, &len) >= 0) {
+      if (getsockopt(sock, level, option, (char *)&timeout, &len) >= 0) {
         RETURN_NUMBER(timeout);
       }
 #else
       struct timeval tv;
       socklen_t len = (socklen_t)sizeof(tv);
-      getsockopt(sock, SOL_SOCKET, option, &tv, &len);
+      getsockopt(sock, level, option, &tv, &len);
       if (len == sizeof(tv)) {
         RETURN_NUMBER((tv.tv_sec * 1000) + ((double)tv.tv_usec / 1000));
       }
@@ -853,9 +883,9 @@ DECLARE_MODULE_METHOD(socket__getsockopt) {
       int so_result = 0;
       socklen_t len = (socklen_t)sizeof(so_result);
 #ifndef _WIN32
-      getsockopt(sock, SOL_SOCKET, option, &so_result, &len);
+      getsockopt(sock, level, option, &so_result, &len);
 #else
-      getsockopt(sock, SOL_SOCKET, option, (char *)&so_result, &len);
+      getsockopt(sock, level, option, (char *)&so_result, &len);
 #endif
       if (len == sizeof(so_result)) {
         RETURN_NUMBER(so_result);
@@ -1785,11 +1815,26 @@ z_value __socket_SHUT_RDWR(z_vm *vm) {
 #endif
 }
 
-
 //  Maximum queue length specifiable by listen.
 z_value __socket_SOMAXCONN(z_vm *vm) {
 #ifdef SOMAXCONN
   return NUMBER_VAL(SOMAXCONN);
+#else
+  return NUMBER_VAL(-1);
+#endif
+}
+
+z_value __socket_TCP_NODELAY(z_vm *vm) {
+#ifdef TCP_NODELAY
+  return NUMBER_VAL(TCP_NODELAY);
+#else
+  return NUMBER_VAL(-1);
+#endif
+}
+
+z_value __socket_TCP_FASTOPEN(z_vm *vm) {
+#ifdef TCP_FASTOPEN
+  return NUMBER_VAL(TCP_FASTOPEN);
 #else
   return NUMBER_VAL(-1);
 #endif
@@ -1914,6 +1959,12 @@ CREATE_MODULE_LOADER(socket) {
       {"IPPROTO_MPLS",   true, __socket_IPPROTO_MPLS},
       {"IPPROTO_RAW",    true, __socket_IPPROTO_RAW},
       {"IPPROTO_MAX",    true, __socket_IPPROTO_MAX},
+
+      /**
+       * TCP options
+       */
+      {"TCP_NODELAY",    true, __socket_TCP_NODELAY},
+      {"TCP_FASTOPEN",    true, __socket_TCP_FASTOPEN},
 
       /**
        * howto arguments for shutdown(2), specified by Posix.1g.

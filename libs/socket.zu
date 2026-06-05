@@ -452,6 +452,18 @@ var IPPROTO_RAW = _socket.IPPROTO_RAW
  */
 var IPPROTO_MAX = _socket.IPPROTO_MAX
 
+# TCP Options
+
+/**
+ * Don't delay send to coalesce packets
+ */
+var TCP_NODELAY = _socket.TCP_NODELAY
+
+/**
+ * Enable FastOpen on listeners
+ */
+var TCP_FASTOPEN = _socket.TCP_FASTOPEN
+
 
 # howto arguments for shutdown(2), specified by Posix.1g.
 
@@ -1044,25 +1056,31 @@ class Socket {
   }
 
   /**
-   * Sets the options of the current socket.
+   * Sets the options of the current socket. If _level_ is given, the option will be
+   * retrieved at the given socket level. Otherwise, level defaults to the SOL_SOCKET level.
    * 
    * @note Only `SO_` variables are valid option types.
    * 
    * @param int option
    * @param any value
+   * @param int? level
    * @returns bool
    */
-  set_option(option, value) {
+  set_option(option, value, level) {
+    if level == nil level = -1
+
     if !option or !value 
       raise ArgumentError('both option and value are required')
     if !is_int(option) 
       raise TypeError('integer expected for option, ${typeof(option)} given')
+    if !is_int(level)
+      raise TypeError('integer expected for level, ${typeof(level)} given')
 
     if option == SO_TYPE or option == SO_ERROR
       raise ValueError('the given option is read-only')
 
     if !self.is_closed and !self.is_shutdown {
-      var result = self._check_error(_socket.setsockopt(self.id, option, value)) >= 0
+      var result = self._check_error(_socket.setsockopt(self.id, option, level, value)) >= 0
 
       if result {
         # get an update on SO_SNDTIMEO and SO_RCVTIMEO
@@ -1077,21 +1095,28 @@ class Socket {
   }
 
   /**
-   * Gets the options set on the current socket
+   * Gets the options set on the current socket. If _level_ is given, the option will be
+   * retrieved at the given socket level. Otherwise, level defaults to the SOL_SOCKET level.
    * 
    * @param int option
+   * @param int? level
    * @returns any
    */
-  get_option(option) {
+  get_option(option, level) {
+    if level == nil level = -1
+
     if !is_int(option) 
       raise TypeError('integer expected for option, ${typeof(option)} given')
+
+    if !is_int(level)
+      raise TypeError('integer expected for level, ${typeof(level)} given')
 
     # we have a local copy of SO_RCVTIMEO and SO_SNDTIMEO
     # we can simply return them when required
     if option == SO_RCVTIMEO return self.receive_timeout
     else if option == SO_SNDTIMEO return self.send_timeout
 
-    return _socket.getsockopt(self.id, option)
+    return _socket.getsockopt(self.id, option, level)
   }
 
   /**

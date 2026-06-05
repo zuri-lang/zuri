@@ -16,9 +16,16 @@
 
 # define sleep			_sleep
 # define ioctl ioctlsocket
+
+# define POLL_FD WSAPOLLFD
+# define poll WSAPoll
+# define POLLIN POLLRDNORM
+# define POLLOUT POLLWRNORM
 #else
 # include <sys/socket.h>
+# include <poll.h>
 # include <sys/ioctl.h>
+# define POLL_FD struct pollfd
 #endif
 
 #define SSL_BUF_SIZE 16384
@@ -626,33 +633,34 @@ DECLARE_MODULE_METHOD(ssl_read) {
   SSL_set_options(ssl, SSL_OP_IGNORE_UNEXPECTED_EOF);
 #endif
 
-  fd_set read_fds;
-  FD_ZERO(&read_fds);
-  FD_SET(ssl_fd, &read_fds);
-
-  struct timeval timeout;
+  int timeout_ms = -1;
   if(is_blocking) {
+#ifndef _WIN32
+    struct timeval timeout;
     int option_length = sizeof(timeout);
-
-  #ifndef _WIN32
     int rc = getsockopt(ssl_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, (socklen_t *) &option_length);
-  #else
-    int rc = getsockopt(ssl_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, (socklen_t*)&option_length);
-  #endif // !_WIN32
-
-    if (rc != 0 || sizeof(timeout) != option_length || (timeout.tv_sec == 0 && timeout.tv_usec == 0)) {
-      // set default timeout to 0 seconds
-      timeout.tv_sec = 0;
-      timeout.tv_usec = 0;
+    if (rc == 0 && sizeof(timeout) == option_length && !(timeout.tv_sec == 0 && timeout.tv_usec == 0)) {
+      timeout_ms = (int)(timeout.tv_sec * 1000) + (int)(timeout.tv_usec / 1000);
     }
+#else
+    DWORD timeout;
+    int option_length = sizeof(timeout);
+    int rc = getsockopt(ssl_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, (socklen_t*)&option_length);
+    if (rc == 0 && (int) timeout > 0) {
+      timeout_ms = (int)timeout;
+    }
+  #endif // !_WIN32
   } else {
-    // set default timeout to 0.05 seconds
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 50000;
+    timeout_ms = 500;
   }
 
-  int ret = select(ssl_fd + 1, &read_fds, NULL, NULL, &timeout);
-  if (ret == 0 || !FD_ISSET(ssl_fd, &read_fds)) {
+  POLL_FD pfd;
+  pfd.fd = ssl_fd;
+  pfd.events = POLLIN;
+  pfd.revents = 0;
+
+  int ret = poll(&pfd,1, timeout_ms);
+  if (ret == 0) {
     RETURN_NIL;
   } else if (ret < 0) {
     // Error
@@ -697,14 +705,15 @@ DECLARE_MODULE_METHOD(ssl_read) {
       if(error == SSL_ERROR_WANT_READ) {
         continue;
       } else if(error == SSL_ERROR_WANT_WRITE) {
-        SSL_do_handshake(ssl); // must want an handshake
+        SSL_do_handshake(ssl); // must want a handshake
         continue;
       } else if(error == SSL_ERROR_ZERO_RETURN || error == SSL_ERROR_NONE) {
         SSL_shutdown(ssl);
         break;
       }
     } else {
-      if(select(ssl_fd + 1, &read_fds, NULL, NULL, &timeout) > 0) {
+      pfd.revents = 0;
+      if(poll(&pfd,1, timeout_ms) > 0) {
         continue;
       }
 
@@ -776,6 +785,49 @@ DECLARE_MODULE_METHOD(ssl_do_connect) {
   }
 
   RETURN_NUMBER(result);
+}
+
+DECLARE_MODULE_METHOD(ssl_do_handshake) {
+  ENFORCE_ARG_COUNT(do_handshake, 1);
+  ENFORCE_ARG_TYPE(do_handshake, 0, IS_PTR);
+
+  SSL *ssl = (SSL*)AS_PTR(args[0])->pointer;
+  int ssl_fd = SSL_get_fd(ssl);
+
+  bool handshake_complete = false;
+
+  while (!handshake_complete) {
+    int result = SSL_do_handshake(ssl);
+
+    if (result == 1) {
+      // Handshake succeeded!
+      handshake_complete = true;
+    } else {
+      int ssl_err = SSL_get_error(ssl, result);
+
+      POLL_FD pfd;
+      pfd.fd = ssl_fd;
+      pfd.revents = 0;
+
+      if (ssl_err == SSL_ERROR_WANT_READ) {
+        pfd.events = POLLIN;
+      } else if (ssl_err == SSL_ERROR_WANT_WRITE) {
+        pfd.events = POLLOUT;
+      } else {
+        // A fatal SSL error occurred (e.g., certificate rejected)
+        RETURN_NUMBER(result);
+      }
+
+      // Block until the OS flags the socket as ready (-1 timeout means block indefinitely)
+      int poll_status = poll(&pfd, 1, -1);
+
+      if (poll_status < 0) {
+        RETURN_FALSE;
+      }
+    }
+  }
+
+  RETURN_BOOL(SSL_is_init_finished(ssl) == 0);
 }
 
 DECLARE_MODULE_METHOD(ssl_error) {
@@ -989,6 +1041,7 @@ CREATE_MODULE_LOADER(ssl) {
       {"connect",   true,  GET_MODULE_METHOD(ssl_connect)},
       {"accept",   true,  GET_MODULE_METHOD(ssl_accept)},
       {"do_accept",   true,  GET_MODULE_METHOD(ssl_do_accept)},
+      {"do_handshake",   true,  GET_MODULE_METHOD(ssl_do_handshake)},
       {"push",   true,  GET_MODULE_METHOD(ssl_bio_push)},
       {"pop",   true,  GET_MODULE_METHOD(ssl_bio_pop)},
       {"write",   true,  GET_MODULE_METHOD(ssl_write)},

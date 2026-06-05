@@ -6,6 +6,18 @@
 
 static OSSL_PROVIDER *default_provider = NULL, *legacy_provider = NULL;
 
+void z__hash_module_preloader(z_vm* vm) {
+  OpenSSL_add_all_digests();
+  default_provider = OSSL_PROVIDER_load(NULL, "default");
+  legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+}
+
+void z__hash_module_unloader(z_vm* vm) {
+  if (default_provider) OSSL_PROVIDER_unload(default_provider);
+  if (legacy_provider) OSSL_PROVIDER_unload(legacy_provider);
+  default_provider = legacy_provider = NULL;
+}
+
 static void FNV1(unsigned char *data, int length, unsigned char digest[4]) {
   FNV132_CTX ctx;
   FNV132Init(&ctx);
@@ -39,18 +51,6 @@ static void GOSTString(unsigned char *data, unsigned int data_len, unsigned char
   GOSTInit(&ctx);
   GOSTUpdate(&ctx, data, data_len);
   GOSTFinal(digest, &ctx);
-}
-
-void z__hash_module_preloader(z_vm* vm) {
-  OpenSSL_add_all_digests();
-  default_provider = OSSL_PROVIDER_load(NULL, "default");
-  legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
-}
-
-void z__hash_module_unloader(z_vm* vm) {
-  if (default_provider) OSSL_PROVIDER_unload(default_provider);
-  if (legacy_provider) OSSL_PROVIDER_unload(legacy_provider);
-  default_provider = legacy_provider = NULL;
 }
 
 DECLARE_MODULE_METHOD(hash__hash) {

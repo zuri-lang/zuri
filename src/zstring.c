@@ -638,7 +638,6 @@ DECLARE_STRING_METHOD(match) {
   }
 
   char *real_regex = remove_regex_delimiter(vm, substr);
-  printf("real_regex = %s\n", real_regex);
 
   int error_number;
   PCRE2_SIZE error_offset;
