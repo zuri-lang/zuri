@@ -11,7 +11,7 @@
  *
  * ### Execution model
  *
- * 1. `describe(name, fn)` pushes a Suite onto `_state.suite_stack`, calls
+ * 1. `test(name, fn)` pushes a Suite onto `_state.suite_stack`, calls
  *    `fn()` synchronously, then pops the suite.  Nested `describe` calls
  *    create child suites.
  * 2. `it(name, fn)` registers a Test inside the current suite and runs it
@@ -292,7 +292,7 @@ def stop_capture() {
  * @param string   name  Suite label displayed in the report.
  * @param function fn    Synchronous function containing `it()` calls.
  */
-def run_describe(name, fn, is_only, is_skip) {
+def run_test(name, fn, is_only, is_skip) {
   if _state.start_ms == nil _state.start_ms = _now_ms()
 
   _state.suites++
@@ -494,7 +494,7 @@ def register_after_all(fn) {
 
 /**
  * Prints the final summary banner and all failure detail blocks.
- * Called automatically after the last top-level describe() returns, or
+ * Called automatically after the last top-level test() returns, or
  * can be called manually at the end of a test file.
  */
 def print_summary() {

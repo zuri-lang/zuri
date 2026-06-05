@@ -8,7 +8,7 @@ When writing tests you often need to check that a value meets certain criterias.
 The `expect` function is used every time you want to test a value. You will rarely call `expect` by itself. Instead, you will use `expect` along with a "matcher" function to assert something about a value. Let's say you have a method `name_of_app()` which is supposed to return the string `'qi'`. Here's how you would test that:
 
 ```zuri
-describe('Name of app test', @{
+test('Name of app test', @{
   it('should be qi', @{
     expect(name_of_app()).to_be('qi')
   })
@@ -26,7 +26,7 @@ The argument to `expect` should be the value that your code produces, and any ar
 If you know how to test something, `.not()` lets you test its opposite. For example, this code tests that the name of the application is `not` `'qi'`.
 
 ```zuri
-describe('Name of app test', @{
+test('Name of app test', @{
   it('should be qi', @{
     expect(name_of_app()).not().to_be('qi')
   })
@@ -54,7 +54,7 @@ var can = {
   ounces: 12,
 }
 
-describe('the can', @{
+test('the can', @{
   it('has 12 ounces', @{
     expect(can.ounces).to_be(12)
   })
@@ -176,7 +176,7 @@ Use `.to_match` to check that a string matches a regular expression.
 For example, you might not know what exactly `essay_on_the_best_flavor()` returns, but you know it's a really long string, and the substring grapefruit should be in there somewhere. You can test this with:
 
 ```zuri
-describe('an essay on the best flavor', @{
+test('an essay on the best flavor', @{
   it('mentions grapefruit', @{
     expect(essay_on_the_best_flavor()).to_match('/grapefruit/i')
   })
@@ -186,7 +186,7 @@ describe('an essay on the best flavor', @{
 This matcher also accepts a string, which it will try to match:
 
 ```zuri
-describe('grapefruits', @{
+test('grapefruits', @{
   it('should be a grape', @{
     expect('grapefruits').to_match('grape')
   })

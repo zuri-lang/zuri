@@ -4,18 +4,18 @@
 #include "fnv.h"
 #include "gost.h"
 
-static OSSL_PROVIDER *default_provider = NULL, *legacy_provider = NULL;
+static OSSL_PROVIDER *__hash_default_provider = NULL, *__hash_legacy_provider = NULL;
 
 void z__hash_module_preloader(z_vm* vm) {
   OpenSSL_add_all_digests();
-  default_provider = OSSL_PROVIDER_load(NULL, "default");
-  legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+  __hash_default_provider = OSSL_PROVIDER_load(NULL, "default");
+  __hash_legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
 }
 
 void z__hash_module_unloader(z_vm* vm) {
-  if (default_provider) OSSL_PROVIDER_unload(default_provider);
-  if (legacy_provider) OSSL_PROVIDER_unload(legacy_provider);
-  default_provider = legacy_provider = NULL;
+  if (__hash_default_provider) OSSL_PROVIDER_unload(__hash_default_provider);
+  if (__hash_legacy_provider) OSSL_PROVIDER_unload(__hash_legacy_provider);
+  __hash_default_provider = __hash_legacy_provider = NULL;
 }
 
 static void FNV1(unsigned char *data, int length, unsigned char digest[4]) {

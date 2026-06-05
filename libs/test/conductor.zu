@@ -24,7 +24,7 @@ def conduct(directory) {
   }
 
   # Register globals
-  reflect.set_global(test.describe, 'describe')
+  reflect.set_global(test.test, 'test')
   reflect.set_global(test.it, 'it')
   reflect.set_global(test.expect, 'expect')
   reflect.set_global(test.before_each, 'before_each')
@@ -32,7 +32,7 @@ def conduct(directory) {
   reflect.set_global(test.after_each, 'after_each')
   reflect.set_global(test.after_all, 'after_all')
   reflect.set_global(test.fail, 'fail')
-  reflect.set_global(test.xdescribe, 'xdescribe')
+  reflect.set_global(test.xtest, 'xtest')
   reflect.set_global(test.xit, 'xit')
   reflect.set_global(test.done, 'done')
 
@@ -45,7 +45,7 @@ def conduct(directory) {
   }
 
   # Unregister globals
-  reflect.unset_global('describe')
+  reflect.unset_global('test')
   reflect.unset_global('it')
   reflect.unset_global('expect')
   reflect.unset_global('before_each')
@@ -53,7 +53,7 @@ def conduct(directory) {
   reflect.unset_global('after_each')
   reflect.unset_global('after_all')
   reflect.unset_global('fail')
-  reflect.unset_global('xdescribe')
+  reflect.unset_global('xtest')
   reflect.unset_global('xit')
   reflect.unset_global('done')
   

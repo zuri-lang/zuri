@@ -4,9 +4,9 @@ Qi exposes a set of global functions for use in your test files by putting each 
 
 ## Methods
 
-### describe(name, fn)
+### test(name, fn)
 
-`describe(name, fn)` creates a block that groups together several related tests. It is the Test Suite. For example, if you have a `myBeverage` object that is supposed to be delicious but not sour, you could test it with:
+`test(name, fn)` creates a block that groups together several related tests. It is the Test Suite. For example, if you have a `myBeverage` object that is supposed to be delicious but not sour, you could test it with:
 
 ```zuri
 var myBeverage = {
@@ -14,7 +14,7 @@ var myBeverage = {
   sour: false,
 }
 
-describe('my beverage', @{
+test('my beverage', @{
   it('should be delicious', @{
     expect(myBeverage.delicious).to_be_truthy()
   });
@@ -36,8 +36,8 @@ var binay_string_to_number = @( bin_string ) {
   return to_number('0b' + bin_string)
 }
 
-describe('binay string to number', @{
-  describe('given an invalid binary string', @{
+test('binay string to number', @{
+  test('given an invalid binary string', @{
     it('throws CustomError when composed of non-numbers', @{
       expect(@{ binay_string_to_number('abc') }).to_throw(CustomError)
     })
@@ -47,7 +47,7 @@ describe('binay string to number', @{
     })
   })
 
-  describe('given a valid binary string', @{
+  test('given a valid binary string', @{
     it('returns the correct number', @{
       expect(binay_string_to_number('100')).to_be(4)
     })
@@ -94,7 +94,7 @@ before_all(@{
 
 # Since we only set up the database once in this example, it's important
 # that our tests don't modify it.
-describe('Before all', @{
+test('Before all', @{
   it('can find things', @{
     return global_db.find('thing', {}, @(results) {
       expect(results.length()).to_be_greater_than(0)
@@ -122,7 +122,7 @@ after_all(@{
   clean_up_db(global_db)
 });
 
-describe('confirming after_all works', @{
+test('confirming after_all works', @{
   it('can find things', @{
     return global_db.find('thing', {}, @(results) {
       expect(results.length()).to_be_greater_than(0)
@@ -156,7 +156,7 @@ before_each(@{
   global_db.insert({testData: 'foo'});
 })
 
-describe('confirming before_each works', @{
+test('confirming before_each works', @{
   it('can find things', @{
     return global_db.find('thing', {}, @(results) {
       expect(results.length()).to_be_greater_than(0)
@@ -190,7 +190,7 @@ after_each(@{
   clean_up_db(global_db)
 })
 
-describe('confirming after_each works', @{
+test('confirming after_each works', @{
   it('can find things', @{
     return global_db.find('thing', {}, @(results) {
       expect(results.length()).to_be_greater_than(0)

@@ -1288,20 +1288,20 @@ DECLARE_MODULE_METHOD(crypto_hkdf) {
  * ====================================================================== */
 
 
-// static OSSL_PROVIDER *default_provider = NULL, *legacy_provider = NULL;
+// static OSSL_PROVIDER *__crypto_default_provider = NULL, *__crypto_legacy_provider = NULL;
 //
 // void z__crypto_module_preloader(z_vm* vm) {
 //   // OpenSSL_add_all_digests();
 //   // OpenSSL_add_all_ciphers();
 //   // OpenSSL_add_all_algorithms();
-//   default_provider = OSSL_PROVIDER_load(NULL, "default");
-//   legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+//   __crypto_default_provider = OSSL_PROVIDER_load(NULL, "default");
+//   __crypto_legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
 // }
 //
 // void z__crypto_module_unloader(z_vm* vm) {
-//   if (default_provider) OSSL_PROVIDER_unload(default_provider);
-//   if (legacy_provider) OSSL_PROVIDER_unload(legacy_provider);
-//   default_provider = legacy_provider = NULL;
+//   if (__crypto_default_provider) OSSL_PROVIDER_unload(__crypto_default_provider);
+//   if (__crypto_legacy_provider) OSSL_PROVIDER_unload(__crypto_legacy_provider);
+//   __crypto_default_provider = __crypto_legacy_provider = NULL;
 // }
 
 CREATE_MODULE_LOADER(crypto) {

@@ -11,9 +11,7 @@
  * ### Quick start
  *
  * ```zuri
- * import test { describe, it, expect }
- *
- * describe('Math utilities', @{
+ * test('Math utilities', @{
  *
  *   it('should multiply two numbers', @{
  *     expect(2 * 3).to_be(6)
@@ -31,16 +29,16 @@
  * ### Nested suites
  *
  * ```zuri
- * describe('User module', @{
+ * test('User module', @{
  *
- *   describe('create()', @{
+ *   test('create()', @{
  *     it('returns a user dict', @{
  *       var u = User.create('Ada')
  *       expect(u).to_match_object({ name: 'Ada', active: true })
  *     })
  *   })
  *
- *   describe('delete()', @{
+ *   test('delete()', @{
  *     it('removes the user', @{
  *       expect(User.delete(1)).to_be_true()
  *     })
@@ -54,7 +52,7 @@
  * ### Lifecycle hooks
  *
  * ```zuri
- * describe('Database', @{
+ * test('Database', @{
  *
  *   before_all(@{
  *     db.connect()
@@ -84,7 +82,7 @@
  * ### Modifiers
  *
  * ```zuri
- * describe('Feature X', @{
+ * test('Feature X', @{
  *
  *   it.skip('not implemented yet', @{
  *     expect(true).to_be(false)    # never runs
@@ -222,6 +220,58 @@ def expect(value, label) {
   return _assertion.Expect(value, label)
 }
 
+# ---------------------------------------------------------------------------
+# test()
+# ---------------------------------------------------------------------------
+
+/**
+ * Defines a named test suite.  Suites may be nested arbitrarily.
+ *
+ * ```zuri
+ * test('Calculator', @{
+ *   it('adds numbers', @{
+ *     expect(1 + 1).to_be(2)
+ *   })
+ * })
+ * ```
+ *
+ * @param string   name  Suite label shown in the report.
+ * @param function fn    Suite body containing `it()`, hooks, and nested
+ *                       `test()` calls.
+ */
+def test(name, fn) {
+  _runner.run_test(name, fn, false, false)
+}
+
+/**
+ * Marks an entire suite to be skipped.  The suite header is printed but
+ * its tests do not run.
+ *
+ * ```zuri
+ * describe.skip('Legacy code', @{ ... })
+ * ```
+ *
+ * @param string   name
+ * @param function fn
+ */
+def skip(name, fn) {
+  _runner.run_test(name, fn, false, true)
+}
+
+/**
+ * Runs only this suite (and any other suites/tests also marked `.only`).
+ * All other top-level suites are bypassed.
+ *
+ * ```zuri
+ * describe.only('Focused suite', @{ ... })
+ * ```
+ *
+ * @param string   name
+ * @param function fn
+ */
+def only(name, fn) {
+  _runner.run_test(name, fn, true, false)
+}
 
 # ---------------------------------------------------------------------------
 # Aliases — xdescribe / xit (Jasmine/Mocha convention)
@@ -233,8 +283,8 @@ def expect(value, label) {
  * @param string   name
  * @param function fn
  */
-def xdescribe(name, fn) {
-  _runner.run_describe(name, fn, false, true)
+def xtest(name, fn) {
+  _runner.run_test(name, fn, false, true)
 }
 
 /**
@@ -256,7 +306,7 @@ def xit(name, fn) {
  * Registers a function to run once before any test in the enclosing suite.
  *
  * ```zuri
- * describe('DB tests', @{
+ * test('DB tests', @{
  *   before_all(@{ db.connect() })
  *   after_all(@{  db.disconnect() })
  * })
@@ -296,7 +346,6 @@ def before_each(fn) {
 def after_each(fn) {
   _runner.register_after_each(fn)
 }
-
 
 # ---------------------------------------------------------------------------
 # Unconditional failure helper

@@ -19,7 +19,7 @@ Now, let's create a test for it by creating a file `prod.test.zu` in the `tests`
 ```zuri
 import ..prod
 
-describe('Product test suite', @{
+test('Product test suite', @{
   it('should return 6 for 2 and 3', @{
     expect(prod(2, 3)).to_be(6)
   })

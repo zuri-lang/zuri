@@ -6,7 +6,7 @@ echo '-------------- SINGLE THREAD ---------------------'
 
 var start = microtime()
 for i in 0..10 {
-    echo http.get('https://example.com')
+    echo http.get('http://example.com')
 }
 var normal_ends = microtime() - start
 
@@ -18,7 +18,7 @@ start = microtime()
 var thrds = []
 for i in 0..10 {
     thrds.append(thread.start(@{
-        echo http.get('https://example.com')
+        echo http.get('http://example.com')
     }))
 }
 

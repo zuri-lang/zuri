@@ -242,11 +242,11 @@ nyssa build --extension my_c_lib
 ```zuri
 # --> tests/api.test.zu
 
-describe('User API', @{
+test('User API', @{
   it('creates a user', @{
     var res = http.post('http://localhost:3000/users', { ... })
     
-    test.expect(res.status).to_equal(201)
+    expect(res.status).to_equal(201)
   })
 })
 ```
