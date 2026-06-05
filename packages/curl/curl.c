@@ -793,7 +793,7 @@ DECLARE_MODULE_METHOD(curl__easy_getinfo) {
             struct curl_slist *s_list;
 
             for(s_list = ci->certinfo[i]; s_list; s_list = s_list->next)
-              write_list(vm, inner_list, STRING_VAL(s_list->data));
+              write_list(vm, inner_list, GC_STRING(s_list->data));
 
             write_list(vm, list, OBJ_VAL(inner_list));
           }
@@ -806,7 +806,7 @@ DECLARE_MODULE_METHOD(curl__easy_getinfo) {
         if(result == CURLE_OK) {
           z_obj_list *list = (z_obj_list*)GC(new_list(vm));
           while(data) {
-            write_list(vm, list, STRING_VAL(data->data));
+            write_list(vm, list, GC_STRING(data->data));
             data = data->next;
           }
           curl_slist_free_all(data);

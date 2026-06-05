@@ -16,16 +16,10 @@
 
 # define sleep			_sleep
 # define ioctl ioctlsocket
-
-# define POLL_FD WSAPOLLFD
-# define poll WSAPoll
-# define POLLIN POLLRDNORM
-# define POLLOUT POLLWRNORM
 #else
 # include <sys/socket.h>
-# include <poll.h>
 # include <sys/ioctl.h>
-# define POLL_FD struct pollfd
+# include <poll.h>
 #endif
 
 #define SSL_BUF_SIZE 16384
@@ -633,34 +627,43 @@ DECLARE_MODULE_METHOD(ssl_read) {
   SSL_set_options(ssl, SSL_OP_IGNORE_UNEXPECTED_EOF);
 #endif
 
-  int timeout_ms = -1;
-  if(is_blocking) {
-#ifndef _WIN32
-    struct timeval timeout;
-    int option_length = sizeof(timeout);
-    int rc = getsockopt(ssl_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, (socklen_t *) &option_length);
-    if (rc == 0 && sizeof(timeout) == option_length && !(timeout.tv_sec == 0 && timeout.tv_usec == 0)) {
-      timeout_ms = (int)(timeout.tv_sec * 1000) + (int)(timeout.tv_usec / 1000);
-    }
+#ifdef _WIN32
+  WSAPOLLFD pfd;
 #else
-    DWORD timeout;
-    int option_length = sizeof(timeout);
-    int rc = getsockopt(ssl_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, (socklen_t*)&option_length);
-    if (rc == 0 && (int) timeout > 0) {
-      timeout_ms = (int)timeout;
-    }
-  #endif // !_WIN32
-  } else {
-    timeout_ms = 500;
-  }
-
-  POLL_FD pfd;
+  struct pollfd pfd;
+#endif
   pfd.fd = ssl_fd;
   pfd.events = POLLIN;
   pfd.revents = 0;
 
-  int ret = poll(&pfd,1, timeout_ms);
-  if (ret == 0) {
+  int timeout_ms;
+  if (is_blocking) {
+    // Mirror the original SO_RCVTIMEO logic: 0 means no timeout (-1 for poll)
+    struct timeval tv;
+    int option_length = sizeof(tv);
+
+#ifndef _WIN32
+    int rc = getsockopt(ssl_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, (socklen_t *)&option_length);
+#else
+    int rc = getsockopt(ssl_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, (socklen_t *)&option_length);
+#endif
+
+    if (rc != 0 || sizeof(tv) != option_length || (tv.tv_sec == 0 && tv.tv_usec == 0)) {
+      timeout_ms = -1; // block indefinitely (no timeout set)
+    } else {
+      timeout_ms = (int)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+    }
+  } else {
+    timeout_ms = 50; // 50 ms (mirrors original 0.05 s)
+  }
+
+#ifdef _WIN32
+  int ret = WSAPoll(&pfd, 1, timeout_ms);
+#else
+  int ret = poll(&pfd, 1, timeout_ms);
+#endif
+
+  if (ret == 0 || !(pfd.revents & POLLIN)) {
     RETURN_NIL;
   } else if (ret < 0) {
     // Error
@@ -679,9 +682,9 @@ DECLARE_MODULE_METHOD(ssl_read) {
     memset(buffer, 0, sizeof(buffer));
 
     int bytes = SSL_read(ssl, buffer, read_count);
-    while(bytes > 0) {
+    while (bytes > 0) {
       data = GROW_ARRAY(char, data, total, total + bytes + 1);
-      if(data == NULL) {
+      if (data == NULL) {
         RETURN_ERROR("device out of memory.");
       }
 
@@ -696,28 +699,33 @@ DECLARE_MODULE_METHOD(ssl_read) {
     }
 
     int error = SSL_get_error(ssl, bytes);
-    if(error == SSL_ERROR_SSL) {
+    if (error == SSL_ERROR_SSL) {
       FREE(char, data);
       RETURN_NIL;
     }
 
-    if(bytes == 0) {
-      if(error == SSL_ERROR_WANT_READ) {
+    if (bytes == 0) {
+      if (error == SSL_ERROR_WANT_READ) {
         continue;
-      } else if(error == SSL_ERROR_WANT_WRITE) {
-        SSL_do_handshake(ssl); // must want a handshake
+      } else if (error == SSL_ERROR_WANT_WRITE) {
+        SSL_do_handshake(ssl);
         continue;
-      } else if(error == SSL_ERROR_ZERO_RETURN || error == SSL_ERROR_NONE) {
+      } else if (error == SSL_ERROR_ZERO_RETURN || error == SSL_ERROR_NONE) {
         SSL_shutdown(ssl);
         break;
       }
     } else {
+#ifdef _WIN32
       pfd.revents = 0;
-      if(poll(&pfd,1, timeout_ms) > 0) {
+      if (WSAPoll(&pfd, 1, timeout_ms) > 0 && (pfd.revents & POLLIN)) {
+#else
+      pfd.revents = 0;
+      if (poll(&pfd, 1, timeout_ms) > 0 && (pfd.revents & POLLIN)) {
+#endif
         continue;
       }
 
-      if(SSL_pending(ssl) > 0) {
+      if (SSL_pending(ssl) > 0) {
         continue;
       }
     }
@@ -787,49 +795,6 @@ DECLARE_MODULE_METHOD(ssl_do_connect) {
   RETURN_NUMBER(result);
 }
 
-DECLARE_MODULE_METHOD(ssl_do_handshake) {
-  ENFORCE_ARG_COUNT(do_handshake, 1);
-  ENFORCE_ARG_TYPE(do_handshake, 0, IS_PTR);
-
-  SSL *ssl = (SSL*)AS_PTR(args[0])->pointer;
-  int ssl_fd = SSL_get_fd(ssl);
-
-  bool handshake_complete = false;
-
-  while (!handshake_complete) {
-    int result = SSL_do_handshake(ssl);
-
-    if (result == 1) {
-      // Handshake succeeded!
-      handshake_complete = true;
-    } else {
-      int ssl_err = SSL_get_error(ssl, result);
-
-      POLL_FD pfd;
-      pfd.fd = ssl_fd;
-      pfd.revents = 0;
-
-      if (ssl_err == SSL_ERROR_WANT_READ) {
-        pfd.events = POLLIN;
-      } else if (ssl_err == SSL_ERROR_WANT_WRITE) {
-        pfd.events = POLLOUT;
-      } else {
-        // A fatal SSL error occurred (e.g., certificate rejected)
-        RETURN_NUMBER(result);
-      }
-
-      // Block until the OS flags the socket as ready (-1 timeout means block indefinitely)
-      int poll_status = poll(&pfd, 1, -1);
-
-      if (poll_status < 0) {
-        RETURN_FALSE;
-      }
-    }
-  }
-
-  RETURN_BOOL(SSL_is_init_finished(ssl) == 0);
-}
-
 DECLARE_MODULE_METHOD(ssl_error) {
   ENFORCE_ARG_RANGE(error, 1, 2);
   ENFORCE_ARG_TYPE(error, 0, IS_PTR);
@@ -876,10 +841,11 @@ DECLARE_MODULE_METHOD(ssl_connect) {
   ENFORCE_ARG_TYPE(connect, 0, IS_PTR);
 
   SSL *ssl = (SSL*)AS_PTR(args[0])->pointer;
-  ERR_clear_error();
 
   int res;
   do {
+    ERR_clear_error();
+
     res = SSL_connect(ssl);
     int error = SSL_get_error(ssl, res);
     if(error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE && error != SSL_ERROR_WANT_CONNECT) {
@@ -948,6 +914,57 @@ DECLARE_MODULE_METHOD(ssl_shutdown) {
 
   SSL *ssl = (SSL*)AS_PTR(args[0])->pointer;
   RETURN_BOOL(SSL_shutdown(ssl) >= 0);
+}
+
+DECLARE_MODULE_METHOD(ssl_do_handshake) {
+  ENFORCE_ARG_COUNT(do_handshake, 1);
+  ENFORCE_ARG_TYPE(do_handshake, 0, IS_PTR);
+
+  SSL *ssl = (SSL*)AS_PTR(args[0])->pointer;
+  int ssl_fd = SSL_get_fd(ssl);
+
+  bool handshake_complete = false;
+
+  while (!handshake_complete) {
+    int result = SSL_do_handshake(ssl);
+
+    if (result == 1) {
+      // Handshake succeeded!
+      handshake_complete = true;
+    } else {
+      int ssl_err = SSL_get_error(ssl, result);
+
+#ifdef _WIN32
+      WSAPOLLFD pfd;
+#else
+      struct pollfd pfd;
+#endif
+      pfd.fd = ssl_fd;
+      pfd.revents = 0;
+
+      if (ssl_err == SSL_ERROR_WANT_READ) {
+        pfd.events = POLLIN;
+      } else if (ssl_err == SSL_ERROR_WANT_WRITE) {
+        pfd.events = POLLOUT;
+      } else {
+        // A fatal SSL error occurred (e.g., certificate rejected)
+        RETURN_NUMBER(result);
+      }
+
+      // Block until the OS flags the socket as ready (-1 timeout means block indefinitely)
+#ifdef _WIN32
+      int poll_status = WSAPoll(&pfd, 1, -1);
+#else
+      int poll_status = poll(&pfd, 1, -1);
+#endif
+
+      if (poll_status < 0) {
+        RETURN_FALSE;
+      }
+    }
+  }
+
+  RETURN_BOOL(SSL_is_init_finished(ssl) == 0);
 }
 
 

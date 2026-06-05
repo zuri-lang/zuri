@@ -135,7 +135,7 @@ DECLARE_MODULE_METHOD(base64__decode) {
 
   if (data == NULL) RETURN_NIL;
 
-  z_obj_bytes *bytes = new_bytes(vm, output_length);
+  z_obj_bytes *bytes = (z_obj_bytes *)GC(new_bytes(vm, output_length));
   memcpy(bytes->bytes.bytes, data, output_length);
   free(data);
 

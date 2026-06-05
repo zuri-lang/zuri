@@ -369,7 +369,7 @@ DECLARE_MODULE_METHOD(thread__new) {
 
   z_thread_handle *thread = create_thread_handle(vm, AS_CLOSURE(args[0]), AS_LIST(args[1]));
   if(thread != NULL) {
-    z_obj_ptr *ptr = new_closable_named_ptr(vm, thread, Z_THREAD_PTR_NAME, z_free_thread_handle);
+    z_obj_ptr *ptr = (z_obj_ptr *)GC(new_closable_named_ptr(vm, thread, Z_THREAD_PTR_NAME, z_free_thread_handle));
     ((z_obj *)ptr)->stale++;
     RETURN_OBJ(ptr);
   }

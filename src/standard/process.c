@@ -289,7 +289,7 @@ DECLARE_MODULE_METHOD(process_paged_read) {
 
     // return [format, bytes]
     z_obj_list *list = (z_obj_list *)GC(new_list(vm));
-    write_list(vm, list, STRING_L_VAL(paged->get_format, paged->get_format_length));
+    write_list(vm, list, GC_L_STRING(paged->get_format, paged->get_format_length));
     write_list(vm, list, OBJ_VAL(bytes));
 
     RETURN_OBJ(list);

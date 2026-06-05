@@ -15,16 +15,16 @@
 #endif /* ifndef HAVE_GETTIMEOFDAY */
 
 #define ADD_TIME(n, l, v)                                                      \
-  dict_add_entry(vm, dict, STRING_L_VAL(n, l), NUMBER_VAL(v))
+  dict_add_entry(vm, dict, GC_L_STRING(n, l), NUMBER_VAL(v))
 
 #define ADD_B_TIME(n, l, v)                                                     \
-  dict_add_entry(vm, dict, STRING_L_VAL(n, l), BOOL_VAL(v))
+  dict_add_entry(vm, dict, GC_L_STRING(n, l), BOOL_VAL(v))
 
 #define ADD_S_TIME(n, l, v, g)                                                  \
-  dict_add_entry(vm, dict, STRING_L_VAL(n, l), STRING_L_VAL(v, g))
+  dict_add_entry(vm, dict, GC_L_STRING(n, l), GC_L_STRING(v, g))
 
 #define ADD_G_TIME(n, l, v)                                                  \
-  dict_add_entry(vm, dict, STRING_L_VAL(n, l), STRING_L_VAL(v, (int)strlen(v)))
+  dict_add_entry(vm, dict, GC_L_STRING(n, l), GC_L_STRING(v, (int)strlen(v)))
 
 DECLARE_MODULE_METHOD(date____mktime) {
   ENFORCE_ARG_RANGE(mktime, 1, 8);

@@ -31,7 +31,7 @@ z_value get_zuri_value(z_vm *vm, json_value * data) {
       break;
     }
     case json_string: {
-      value = STRING_L_VAL(data->u.string.ptr, data->u.string.length);
+      value = GC_L_STRING(data->u.string.ptr, data->u.string.length);
       break;
     }
     case json_boolean: {

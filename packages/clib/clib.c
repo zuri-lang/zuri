@@ -611,7 +611,7 @@ z_value get_zuri_value(z_vm *vm, int type, size_t size, void *data, size_t *read
       int length = strlen(string);
 
       len += size;
-      zuri_value = STRING_L_VAL(string, length);
+      zuri_value = GC_L_STRING(string, length);
       break;
     }
     case z_clib_type_pointer: CLIB_GET_ZURI_VALUE(void *, PTR_VAL);

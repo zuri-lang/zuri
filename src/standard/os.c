@@ -186,7 +186,7 @@ z_value get_zuri_os_args(z_vm *vm) {
   z_obj_list *list = (z_obj_list*)GC(new_list(vm));
   if(vm->std_args != NULL) {
     for(int i = 0; i < vm->std_args_count; i++) {
-      write_list(vm, list, STRING_VAL(vm->std_args[i]));
+      write_list(vm, list, GC_STRING(vm->std_args[i]));
     }
   }
   CLEAR_GC();
@@ -506,7 +506,7 @@ DECLARE_MODULE_METHOD(os__dirname) {
   if(!dir) {
     result = args[0];
   } else {
-    result = STRING_VAL(dir);
+    result = GC_STRING(dir);
   }
   free(str);
   RETURN_VALUE(result);
@@ -521,7 +521,7 @@ DECLARE_MODULE_METHOD(os__basename) {
   if(!dir) {
     result = args[0];
   } else {
-    result = STRING_VAL(dir);
+    result = GC_STRING(dir);
   }
   free(str);
   RETURN_VALUE(result);

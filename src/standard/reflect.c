@@ -314,7 +314,7 @@ DECLARE_MODULE_METHOD(reflect__runscript) {
 
   if(fn != NULL) {
     push(vm, OBJ_VAL(fn));
-    z_obj_closure *cls = new_closure(vm, fn);
+    z_obj_closure *cls = (z_obj_closure *)GC(new_closure(vm, fn));
     pop(vm);
 
     queue_closure(vm, cls);
