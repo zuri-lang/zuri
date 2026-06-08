@@ -286,16 +286,6 @@ def _get_real_value(item, value) {
   return value
 }
 
-def _validate_choice(item, value, label) {
-  if item.type == CHOICE and item.choices {
-    var choices = is_dict(item.choices) ? item.choices.keys() : item.choices
-    var raw = is_dict(item.choices) ? (item.choices.contains(value) ? value : nil) : value
-    if !choices.contains(value) {
-      raise ArgsException('${label} expects one of {${"', '".join(choices)}}, got "${value}"')
-    }
-  }
-}
-
 # ---------------------------------------------------------------------------
 # Public exception
 # ---------------------------------------------------------------------------
@@ -685,7 +675,7 @@ class Parser < _Optionable {
               if e {
                 self._option_error(option.long_name, e.message)
               }
-              _validate_choice(option, cli_args[i], '--${option.long_name}')
+              self._validate_choice(option, cli_args[i], '--${option.long_name}')
               parsed_args.options.set(option.long_name, v)
             } else {
               # No value — treat as boolean true
@@ -717,7 +707,7 @@ class Parser < _Optionable {
               var msg = 'option --${option.long_name} expects a <${meta}>'
               if option.type == CHOICE and option.choices {
                 var keys = is_dict(option.choices) ? option.choices.keys() : option.choices
-                msg += ' — one of {${"', '".join(keys)}}'
+                msg += ' — one of {\'${"', '".join(keys)}\'}'
               }
               self._option_error(option.long_name, msg)
             }
@@ -730,7 +720,7 @@ class Parser < _Optionable {
             if e {
               self._option_error(option.long_name, e.message)
             }
-            _validate_choice(option, raw_val, '--${option.long_name}')
+            self._validate_choice(option, raw_val, '--${option.long_name}')
             parsed_args.options.set(option.long_name, coerced)
           }
         }
@@ -765,7 +755,7 @@ class Parser < _Optionable {
                 if !keys.contains(raw_val) {
                   self._command_error(command.name,
                     'command "${command.name}" expects one of ' +
-                    '{${"', '".join(keys)}}, got "${raw_val}"')
+                    '{\'${"', '".join(keys)}\'}, got "${raw_val}"')
                 }
               }
 
@@ -807,7 +797,7 @@ class Parser < _Optionable {
           if e {
             self._option_error(idx.name, e.message)
           }
-          _validate_choice(idx, arg, idx.name)
+          self._validate_choice(idx, arg, idx.name)
           parsed_args.indexes.append(v)
           i++
           continue
@@ -911,6 +901,16 @@ class Parser < _Optionable {
   # -------------------------------------------------------------------------
   # Private helpers — option resolution
   # -------------------------------------------------------------------------
+
+  _validate_choice(item, value, label) {
+    if item.type == CHOICE and item.choices {
+      var choices = is_dict(item.choices) ? item.choices.keys() : item.choices
+      var raw = is_dict(item.choices) ? (item.choices.contains(value) ? value : nil) : value
+      if !choices.contains(value) {
+        self._option_error(item.long_name, '${label} expects one of {\'${"', '".join(choices)}\'}, got "${value}"')
+      }
+    }
+  }
 
   _get_option_exact(source, name) {
     var result = []
@@ -1073,7 +1073,7 @@ class Parser < _Optionable {
 
     if opt.type == CHOICE and opt.choices {
       var keys = is_dict(opt.choices) ? opt.choices.keys() : opt.choices
-      help += ' ' + _muted('{${"', '".join(keys)}}')
+      help += ' ' + _muted('{\'${"', '".join(keys)}\'}')
     }
 
     if opt.value != nil and opt.type != NONE {
@@ -1168,7 +1168,7 @@ class Parser < _Optionable {
         var help = idx.help ? idx.help : _muted('<no description>')
         if idx.choices {
           var keys = is_dict(idx.choices) ? idx.choices.keys() : idx.choices
-          help += ' ' + _muted('{${"', '".join(keys)}}')
+          help += ' ' + _muted('{\'${"', '".join(keys)}\'}')
         }
         if idx.value != nil help += ' ' + _muted('(default: ${idx.value})')
         echo padded + help
@@ -1204,7 +1204,7 @@ class Parser < _Optionable {
         #     if opt.deprecated help += ' ' + _muted('[deprecated]')
         #     if opt.type == CHOICE and opt.choices {
         #       var keys = is_dict(opt.choices) ? opt.choices.keys() : opt.choices
-        #       help += ' ' + _muted('{${"', '".join(keys)}}')
+        #       help += ' ' + _muted('{\'${"', '".join(keys)}\'}')
         #     }
         #     if opt.value != nil and opt.type != NONE {
         #       help += ' ' + _muted('(default: ${opt.value})')

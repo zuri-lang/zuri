@@ -955,7 +955,10 @@ class HttpRequest {
         )
 
         # set correct content type and body
-        message += 'Content-Type: ${resolved_data[1]}\r\n'
+        if data {
+          message += 'Content-Type: ${resolved_data[1]}\r\n'
+        }
+        
         data = resolved_data[0]
 
         if data {
