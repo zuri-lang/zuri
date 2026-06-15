@@ -6,7 +6,7 @@ import log
 def parse(parser) {
   parser.add_command(
     'clean', 
-    'Clear Nyssa storage and cache'
+    'Clear Zuri repository storage and cache'
   ).add_option(
     'cache',
     'clean packages cache',
@@ -37,12 +37,12 @@ def run(value, options, success, error) {
 
   if is_logs or is_all {
     log.info('Cleaning logs...', true)
-    os.remove_dir(os.join_paths(setup.NYSSA_DIR, setup.LOGS_DIR), true)
+    os.remove_dir(os.join_paths(setup.ZURI_APP_DIR, setup.LOGS_DIR), true)
   }
   if is_cache or is_all {
     log.info('Cleaning cache...', true)
-    os.remove_dir(os.join_paths(setup.NYSSA_DIR, setup.CACHE_DIR), true)
-    os.create_dir(os.join_paths(setup.NYSSA_DIR, setup.CACHE_DIR))
+    os.remove_dir(os.join_paths(setup.ZURI_APP_DIR, setup.CACHE_DIR), true)
+    os.create_dir(os.join_paths(setup.ZURI_APP_DIR, setup.CACHE_DIR))
   }
 
   var cleaned = (is_logs and is_cache) or is_all ? (

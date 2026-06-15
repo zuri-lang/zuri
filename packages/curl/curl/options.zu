@@ -1519,4 +1519,9 @@ class Option {
     * @static
     */
    static var SASL_AUTHZID = _curl.CURLOPT_SASL_AUTHZID
+
+   /**
+    * This is the file the regular output should be written to.
+    */
+   static var WRITEDATA = _curl.CURLOPT_WRITEDATA
 }

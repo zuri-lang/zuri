@@ -7,7 +7,7 @@ import ..setup
 def parse(parser) {
   parser.add_command(
     'serve', 
-    'Starts a local Nyssa repository server'
+    'Starts a local Zuri repository server'
   ).add_option(
     'port', 
     'The port the server should run on',

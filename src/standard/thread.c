@@ -268,7 +268,7 @@ z_vm *copy_vm(z_vm *src, uint64_t id) {
   vm->objects = NULL;
   vm->current_frame = NULL;
   vm->bytes_allocated = 0;
-  vm->next_gc = DEFAULT_GC_START / 4; // default is quarter the original set value
+  vm->next_gc = DEFAULT_GC_START / 4; // default is quarter of the original set value
   vm->mark_value = true;
   vm->gray_count = 0;
   vm->gray_capacity = 0;
@@ -544,41 +544,52 @@ DECLARE_MODULE_METHOD(thread__new_mutex) {
 
 DECLARE_MODULE_METHOD(thread__mutex_lock) {
   ENFORCE_ARG_COUNT(lock, 1);
-  z_thread_mutex *m = (z_thread_mutex *)AS_PTR(args[0])->pointer;
+
+  z_obj_ptr *ptr = AS_PTR(args[0]);
+  z_thread_mutex *m = (z_thread_mutex *)ptr->pointer;
   if (!m) RETURN_ERROR("invalid instance");
 
   int rc = pthread_mutex_lock(&m->mu);
   if (rc != 0) {
-    RETURN_ERROR("MutexStatus: %d", rc);
+    RETURN_NUMBER(rc);
   }
+
+  ptr->obj.stale++;
   m->locked = 1;
-  RETURN_NIL;
+  RETURN_NUMBER(0);
 }
 
 DECLARE_MODULE_METHOD(thread__mutex_unlock) {
   ENFORCE_ARG_COUNT(unlock, 1);
-  z_thread_mutex *m = (z_thread_mutex *)AS_PTR(args[0])->pointer;
+
+  z_obj_ptr *ptr = AS_PTR(args[0]);
+  z_thread_mutex *m = (z_thread_mutex *)ptr->pointer;
   if (!m) RETURN_ERROR("invalid instance");
 
   m->locked = 0;
   int rc = pthread_mutex_unlock(&m->mu);
   if (rc != 0) {
-    RETURN_ERROR("MutexStatus: %d", rc);
+    RETURN_NUMBER(rc);
   }
-  RETURN_NIL;
+
+  ptr->obj.stale--;
+  RETURN_NUMBER(0);
 }
 
 DECLARE_MODULE_METHOD(thread__mutex_try_lock) {
   ENFORCE_ARG_COUNT(try_lock, 1);
-  z_thread_mutex *m = (z_thread_mutex *)AS_PTR(args[0])->pointer;
+
+  z_obj_ptr *ptr = AS_PTR(args[0]);
+  z_thread_mutex *m = (z_thread_mutex *)ptr->pointer;
   if (!m) RETURN_ERROR("invalid instance");
 
   int rc = pthread_mutex_trylock(&m->mu);
   if (rc == 0) {
     m->locked = 1;
-    RETURN_BOOL(true);
+    ptr->obj.stale++;
+    RETURN_TRUE;
   } else if (rc == EBUSY) {
-    RETURN_BOOL(false);
+    RETURN_FALSE;
   } else {
     RETURN_ERROR("MutexStatus: %d", rc);
   }
@@ -607,6 +618,12 @@ DECLARE_MODULE_METHOD(thread__new_channel) {
 
   if (cap > 0) {
     c->buf = (z_value *)malloc(sizeof(z_value) * cap);
+    // set all records to empty (similar to memset)
+    for (int i = 0; i < cap; i++) {
+      c->buf[i] = EMPTY_VAL;
+    }
+
+
     if (!c->buf) {
       free(c);
       RETURN_ERROR("out of memory");
@@ -639,13 +656,19 @@ DECLARE_MODULE_METHOD(thread__new_channel) {
     RETURN_ERROR("ChannelStatus: %d", rc);
   }
 
-  RETURN_CLOSABLE_NAMED_PTR(c, Z_THREAD_CHANNEL_NAME, z_thread_channel_finalizer);
+  z_obj_ptr *ptr = (z_obj_ptr *)GC(new_closable_named_ptr(
+    vm, c, Z_THREAD_CHANNEL_NAME, z_thread_channel_finalizer
+  ));
+
+  ptr->obj.stale++;
+
+  RETURN_OBJ(ptr);
 }
 
 DECLARE_MODULE_METHOD(thread__channel_send) {
   ENFORCE_ARG_COUNT(send, 2);
   z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
-  if (!c) RETURN_ERROR("invalid instance");
+  if (!c) RETURN_ERROR("invalid resource");
 
   z_value val = args[1];
 
@@ -787,7 +810,9 @@ DECLARE_MODULE_METHOD(thread__channel_try_receive) {
 
 DECLARE_MODULE_METHOD(thread__channel_close) {
   ENFORCE_ARG_COUNT(close, 1);
-  z_thread_channel *c = (z_thread_channel *)AS_PTR(args[0])->pointer;
+
+  z_obj_ptr *ptr = AS_PTR(args[0]);
+  z_thread_channel *c = (z_thread_channel *)ptr->pointer;
   if (!c) RETURN_ERROR("invalid instance");
 
   pthread_mutex_lock(&c->mu);
@@ -796,6 +821,9 @@ DECLARE_MODULE_METHOD(thread__channel_close) {
   pthread_cond_broadcast(&c->not_empty);
   pthread_cond_broadcast(&c->not_full);
   pthread_mutex_unlock(&c->mu);
+
+  // it can now be freed
+  ptr->obj.stale--;
   RETURN_NIL;
 }
 
@@ -835,6 +863,7 @@ DECLARE_MODULE_METHOD(thread__new_semaphore) {
     initial = (int)AS_NUMBER(args[0]);
     if (initial < 0) RETURN_ERROR("initial count must be >= 0");
   }
+
   if (arg_count == 2) {
     ENFORCE_ARG_TYPE(new, 1, IS_NUMBER);
     max = (int)AS_NUMBER(args[1]);
@@ -868,10 +897,13 @@ DECLARE_MODULE_METHOD(thread__new_semaphore) {
 /* .acquire() — blocks until count > 0, then decrements */
 DECLARE_MODULE_METHOD(thread__semaphore_acquire) {
   ENFORCE_ARG_COUNT(acquire, 1);
-  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
+
+  z_obj_ptr *ptr = AS_PTR(args[0]);
+  z_thread_semaphore *s = (z_thread_semaphore *)ptr->pointer;
   if (!s) RETURN_ERROR("invalid instance");
- 
+
   pthread_mutex_lock(&s->mu);
+  ptr->obj.stale++;
   while (s->count == 0) {
     pthread_cond_wait(&s->cond, &s->mu);
   }
@@ -883,9 +915,11 @@ DECLARE_MODULE_METHOD(thread__semaphore_acquire) {
 /* .release() — increments count and wakes one waiter */
 DECLARE_MODULE_METHOD(thread__semaphore_release) {
   ENFORCE_ARG_COUNT(release, 1);
-  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
+
+  z_obj_ptr *ptr = AS_PTR(args[0]);
+  z_thread_semaphore *s = (z_thread_semaphore *)ptr->pointer;
   if (!s) RETURN_ERROR("invalid instance");
- 
+
   pthread_mutex_lock(&s->mu);
   if (s->count >= s->max) {
     pthread_mutex_unlock(&s->mu);
@@ -894,16 +928,20 @@ DECLARE_MODULE_METHOD(thread__semaphore_release) {
   s->count++;
   pthread_cond_signal(&s->cond);
   pthread_mutex_unlock(&s->mu);
+  ptr->obj.stale--;
   RETURN_NIL;
 }
  
 /* .try_acquire() → bool */
 DECLARE_MODULE_METHOD(thread__semaphore_try_acquire) {
   ENFORCE_ARG_COUNT(try_acquire, 1);
-  z_thread_semaphore *s = (z_thread_semaphore *)AS_PTR(args[0])->pointer;
+
+  z_obj_ptr *ptr = AS_PTR(args[0]);
+  z_thread_semaphore *s = (z_thread_semaphore *)ptr->pointer;
   if (!s) RETURN_ERROR("invalid instance");
- 
+
   pthread_mutex_lock(&s->mu);
+  ptr->obj.stale++;
   int ok = 0;
   if (s->count > 0) {
     s->count--;

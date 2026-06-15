@@ -29,7 +29,7 @@ static void repl(z_vm *vm) {
   bool continue_repl = true;
 
   printf("Zuri %s (running on ZuriVM %s), REPL/Interactive mode = ON\n",
-         ZURI_VERSION_STRING, BVM_VERSION);
+         ZURI_VERSION_STRING, ZVM_VERSION);
   printf("%s, (Build time = %s, %s)\n", COMPILER, __DATE__, __TIME__);
   printf("Type \".exit\" to quit or \".credits\" for more information\n");
 
@@ -195,7 +195,7 @@ void show_usage(char *argv[], bool fail) {
   fprintf(out, "   -e       Print bytecode and exit.\n");
   fprintf(out, "   -g arg   Sets the minimum heap size in kilobytes before the GC\n"
                "            can start. [Default = %d (%s)]\n", DEFAULT_GC_START / 1024, format_size(DEFAULT_GC_START));
-  fprintf(out, "   -c arg   Runs the given code.\n");
+  // fprintf(out, "   -c arg   Runs the given code.\n");
   fprintf(out, "   -w       Show runtime warnings.\n");
   exit(fail ? EXIT_FAILURE : EXIT_SUCCESS);
 }
@@ -206,60 +206,60 @@ int main(int argc, char *argv[]) {
   bool should_print_bytecode = false;
   long stdout_buffer_size = 0L;
   bool should_exit_after_bytecode = false;
-  char *source = NULL;
+  // char *source = NULL;
   int next_gc_start = DEFAULT_GC_START;
 
-  if (argc > 1) {
-    int opt;
-#ifdef __linux__
-    while ((opt = getopt(argc, argv, "+hdeb:s:vg:wc:")) != -1) {
-#else
-    while ((opt = getopt(argc, argv, "hdeb:s:vg:wc:")) != -1) {
-#endif
-      switch (opt) {
-        case 'h': {
-          show_usage(argv, false);
-          break;
-        }// exits
-        case 'd':
-          should_print_bytecode = true;
-          break;
-        case 'e':
-          should_print_bytecode = true;
-          should_exit_after_bytecode = true;
-          break;
-        case 'b':
-          stdout_buffer_size = strtol(optarg, NULL, 10);
-          if (stdout_buffer_size < 0) {
-            stdout_buffer_size = 0;
-          }
-          break;
-        case 'v': {
-          printf("Zuri " ZURI_VERSION_STRING " (running on ZuriVM " BVM_VERSION ")\n");
-          return EXIT_SUCCESS;
-        }
-        case 'g': {
-          int next = (int) strtol(optarg, NULL, 10);
-          if (next > 0) {
-            next_gc_start = next * 1024; // expected value is in kilobytes
-          }
-          break;
-        }
-        case 'c': {
-          source = optarg;
-          break;
-        }
-        case 'w': {
-          show_warnings = true;
-          break;
-        }
-        default: {
-          show_usage(argv, true); // exits
-          break;
-        }
-      }
-    }
-  }
+//   if (argc > 1) {
+//     int opt;
+// #ifdef __linux__
+//     while ((opt = getopt(argc, argv, "+hdeb:s:vg:wc:")) != -1) {
+// #else
+//     while ((opt = getopt(argc, argv, "hdeb:s:vg:wc:")) != -1) {
+// #endif
+//       switch (opt) {
+//         case 'h': {
+//           show_usage(argv, false);
+//           break;
+//         }// exits
+//         case 'd':
+//           should_print_bytecode = true;
+//           break;
+//         case 'e':
+//           should_print_bytecode = true;
+//           should_exit_after_bytecode = true;
+//           break;
+//         case 'b':
+//           stdout_buffer_size = strtol(optarg, NULL, 10);
+//           if (stdout_buffer_size < 0) {
+//             stdout_buffer_size = 0;
+//           }
+//           break;
+//         case 'v': {
+//           printf("Zuri " ZURI_VERSION_STRING " (running on ZuriVM " ZVM_VERSION ")\n");
+//           return EXIT_SUCCESS;
+//         }
+//         case 'g': {
+//           int next = (int) strtol(optarg, NULL, 10);
+//           if (next > 0) {
+//             next_gc_start = next * 1024; // expected value is in kilobytes
+//           }
+//           break;
+//         }
+//         // case 'c': {
+//         //   source = optarg;
+//         //   break;
+//         // }
+//         case 'w': {
+//           show_warnings = true;
+//           break;
+//         }
+//         default: {
+//           show_usage(argv, true); // exits
+//           break;
+//         }
+//       }
+//     }
+//   }
 
   z_vm *vm = (z_vm *) malloc(sizeof(z_vm));
   if (vm != NULL) {
@@ -284,36 +284,64 @@ int main(int argc, char *argv[]) {
     SetConsoleOutputCP(CP_UTF8);
 #endif
 
-    int opt_deviation = argc - optind + 1;
-    char **std_args = (char**)calloc(opt_deviation, sizeof(char *));
-    if(std_args != NULL) {
-      if(optind > 0) {
-        std_args[0] = argv[0];
-      }
+    char **args = NULL;
+    if (argc > 1) {
+      if (memcmp(argv[1], "run", strlen(argv[1])) != 0) {
+        args = (char **) calloc(argc + 1, sizeof(char *));
+        if (args != NULL) {
+          args[0] = argv[0];
+          args[1] = get_root_app_path();
 
-      for(int i = optind; i < argc; i++) {
-        std_args[i - optind + 1] = argv[i];
-      }
+          for (int i = 1; i < argc; i++) {
+            args[i + 1] = argv[i];
+          }
 
-      vm->std_args = std_args;
-      vm->std_args_count = opt_deviation;
+          argc++;
+        }
+      } else {
+        args = (char **) calloc(argc - 1, sizeof(char *));
+        if (args != NULL) {
+          args[0] = argv[0];
+
+          if (argc == 2) {
+            args[1] = LIBRARY_DIRECTORY_INDEX ZURI_EXTENSION;
+          } else {
+            for (int i = 2; i < argc; i++) {
+              args[i - 1] = argv[i];
+            }
+
+            argc--;
+          }
+        }
+      }
+    } else {
+      args = (char **) calloc(1, sizeof(char *));
+      if (args != NULL) {
+        args[0] = argv[0];
+      }
     }
 
-    vm->is_repl = argc == 1 || argc <= optind;
+    if (args != NULL) {
+      vm->std_args = args;
+      vm->std_args_count = argc;
+    }
+
+    vm->is_repl = argc == 1;
 
     // always do this last so that we can have access to everything else
     bind_native_modules(vm);
 
-    if (source != NULL) {
+    /*if (source != NULL) {
       run_code(vm, source, true);
-    } else if (vm->is_repl) {
+    } else */
+    if (vm->is_repl) {
       repl(vm);
-    } else {
-      run_file(vm, argv[optind], true);
+    } else if (args != NULL && args[1] != NULL) {
+      run_file(vm, args[1], true);
     }
 
     free_vm(vm);
-    free(std_args);
+    free(args);
     return EXIT_SUCCESS;
   }
 

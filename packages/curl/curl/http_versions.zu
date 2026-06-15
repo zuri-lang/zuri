@@ -1,0 +1,60 @@
+#!-- part of the curl module
+
+import _curl
+
+/**
+ * cURL HTTP Versions
+ */
+class Version {
+
+  /**
+   * Setting this means we don't care, and that we'd like the library to choose the best
+   * possible for us.
+   * @static
+   */
+  static var VERSION_NONE = _curl.CURL_HTTP_VERSION_NONE
+
+  /**
+   * Please use HTTP 1.0 in the request.
+   * @static
+   */
+  static var VERSION_1_0 = _curl.CURL_HTTP_VERSION_1_0
+
+  /**
+   * Please use HTTP 1.1 in the request.
+   * @static
+   */
+  static var VERSION_1_1 = _curl.CURL_HTTP_VERSION_1_1
+
+  /**
+   * Please use HTTP 2 in the request.
+   * @static
+   */
+  static var VERSION_2 = _curl.CURL_HTTP_VERSION_2
+
+  /**
+   * Use version 2 for HTTPS, version 1.1 for HTTP.
+   * @static
+   */
+  static var VERSION_2TLS = _curl.CURL_HTTP_VERSION_2TLS
+
+  /**
+   * Please use HTTP 2 without HTTP/1.1 Upgrade
+   * @static
+   */
+  static var VERSION_2_PRIOR_KNOWLEDGE = _curl.CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE
+
+  /**
+   * Use HTTP/3, fallback to HTTP/2 or HTTP/1 if needed. For HTTPS only. For HTTP,
+   * this option makes the curl library return error.
+   * @static
+   */
+  static var VERSION_3 = _curl.CURL_HTTP_VERSION_3
+
+  /**
+   * Use HTTP/3 without fallback. For HTTPS only. For HTTP, this makes the curl
+   * library return error.
+   * @static
+   */
+  static var VERSION_3ONLY = _curl.CURL_HTTP_VERSION_3ONLY
+}

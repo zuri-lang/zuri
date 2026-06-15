@@ -1,10 +1,9 @@
 import os
-import ..setup
 
 def parse(parser) {
   parser.add_option(
     'version', 
-    'Show Nyssa version', 
+    'Show Zuri version',
     {
       short_name: 'v'
     }
@@ -12,6 +11,6 @@ def parse(parser) {
 }
 
 def get(value) {
-  echo 'Nyssa ${setup.NYSSA_VERSION}'
-  echo os.exec('${os.args[0]} -v')
+  echo 'Zuri v${os.version}'
+  echo 'Running on ZuriVM v${os.vm_version}'
 }

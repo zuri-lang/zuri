@@ -10,7 +10,7 @@ import io
 import ..setup
 
 /**
- * The bundle command can be configured in the nyssa.json file and takes the following format:
+ * The bundle command can be configured in the project.json file and takes the following format:
  * 
  * "bundle": {
  *    "name": "The app name ", # If missing, it defaults to the Nyssa package name
@@ -146,17 +146,7 @@ def _get_zuri_bundler(source_os, target_os, config) {
     # if we do not have a local copy of the Zuri bundler, then we download a
     # Bundler for the current Zuri version from Github.
     if !file(zuri_zip).exists() {
-      var version_response = os.exec('"${os.exe_path}" -v')
-      if !version_response {
-        raise Exception('Failed to determine Zuri version')
-      }
-
-      var zuri_version = version_response.match('/(?<=Zuri)\s*(\d+[.]\d+[.]\d+)/')
-      if !zuri_version {
-        raise Exception('Failed to determine Zuri version')
-      }
-
-      var version = zuri_version[1]
+      var version = os.version
       var download_link = 'https://github.com/zuri-lang/zuri/releases/download/v${version}/zuri-${target_os}-v${version}.zip'
       log.info('Getting Zuri bundle from ${download_link}')
 
@@ -344,7 +334,7 @@ def run(value, options, success, error) {
     return
   }
 
-  # if the "bundle" key is given in nyssa.json and it contains a valid dictionary, 
+  # if the "bundle" key is given in project.json and it contains a valid dictionary,
   # we'll assume that our configuration is coming from there.
   if config.contains('bundle') and is_dict(config.bundle) {
     var tmp_config = config.bundle

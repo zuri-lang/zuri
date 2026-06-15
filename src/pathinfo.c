@@ -104,7 +104,6 @@ char *get_zuri_filename(char *filename) {
   return merge_paths(filename, ZURI_EXTENSION);
 }
 
-#include <stdio.h>
 char *get_core_library_file_path(char *module_name) {
   char *zuri_file_name = get_zuri_filename(module_name);
   if (zuri_file_name != NULL) {
@@ -141,6 +140,23 @@ char *get_core_library_file_path(char *module_name) {
       free(exe_dir);
     }
     free(zuri_file_name);
+  }
+
+  return NULL;
+}
+
+char *get_root_app_path() {
+#ifdef __APPLE__
+  char *exe_dir = strdup(get_exe_dir());
+#else
+  char *exe_dir = get_exe_dir();
+#endif
+
+  if (exe_dir != NULL) {
+    return merge_paths(
+      exe_dir,
+      PACKAGES_DIRECTORY ZURI_PATH_SEPARATOR "nyssa" ZURI_PATH_SEPARATOR "cli" ZURI_EXTENSION
+    );
   }
 
   return NULL;

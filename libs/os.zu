@@ -8,6 +8,19 @@
 
 import _os
 
+
+/**
+ * The current Zuri version.
+ * @type string
+ */
+var version = _os.version
+
+/**
+ * The current Zuri VM version.
+ * @type string
+ */
+var vm_version = _os.vm_version
+
 /**
  * The name of the current platform in string or `unknown` if 
  * the platform name could not be determined.
@@ -100,18 +113,24 @@ var DT_WHT = _os.DT_WHT
 
 /**
  * Executes the given shell (or command prompt for Windows) commands and 
- * returns the output as string.
+ * returns a dictionary containing the exit code and the output as string.
  * 
  * `exec()` accepts multiple string arguments and concatenates them together with a 
  * space in between before executing.
+ *
+ * The returned dictionary contains the following:
+ *
+ * - `exit_code`: number - The exit code of the program. Any number other
+ *    than zero (0) should be treated as a failure.
+ * - `output`: string - The output of the program.
  * 
  * Example,
  * 
  * ```zuri-repl
  * %> os.exec('ls', '-l')
- * 'total 48
+ * {exit_code: 1, output: 'total 48
  * -rw-r--r--@ 1 username  staff  705 Aug 27  2021 buggy.zu
- * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.zu'
+ * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.zu'}
  * ```
  * 
  * @param {...string} cmd
@@ -123,7 +142,11 @@ def exec(...) {
       raise TypeError('string expected, ${typeof(arg)} given')
   }
 
-  return _os.exec(' '.join(__args__))
+  var result = _os.exec(' '.join(__args__))
+  return {
+    exit_code: result[0],
+    output: result[1],
+  }
 }
 
 /**

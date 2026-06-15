@@ -108,7 +108,7 @@ def run(value, options, success, error) {
   # We're overly certain that there can only be one `.` in the repository name.
   #
   # This is because irrespective of whether user intends to have a `.` in the repo name
-  #or not, having it in the name of the repo automatically means it cannot be distributed
+  # or not, having it in the name of the repo automatically means it cannot be distributed
   # as a Zuri package since it cannot be imported into any project. Hence, irrespective
   # of how many dots actually exist in the repository name, it can only be imported via
   # the first name before a dot.
@@ -137,18 +137,18 @@ def run(value, options, success, error) {
   }
 
   os.change_dir(libs_dir)
-  var output = os.exec(git_path, 'clone', value)
+  var cmd = os.exec(git_path, 'clone', value)
 
-  if output and (output.lower().index_of('failed') > -1 or output.lower().index_of('error') > -1) {
-    error(output)
+  if cmd.exit_code != 0 {
+    error(cmd.output)
   }
 
   if version != nil {
     os.change_dir(name)
 
-    output = os.exec(git_path, 'checkout', version)
-    if output and (output.lower().index_of('failed') > -1 or output.lower().index_of('error') > -1) {
-      error(output)
+    cmd = os.exec(git_path, 'checkout', version)
+    if cmd.exit_code != 0 {
+      error(cmd.output)
     }
   }
 

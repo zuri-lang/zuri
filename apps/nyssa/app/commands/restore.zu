@@ -12,7 +12,7 @@ import ..config { Config }
 import ..util { setup_cli }
 
 
-var cache_dir = os.join_paths(setup.NYSSA_DIR, setup.CACHE_DIR)
+var cache_dir = os.join_paths(setup.ZURI_APP_DIR, setup.CACHE_DIR)
 if !os.dir_exists(cache_dir)
   os.create_dir(cache_dir)
 
@@ -77,7 +77,7 @@ def configure(config, repo, full_name, name, version, path, progress, no_cache, 
       os.change_dir(destination)
 
       # run the script
-      os.exec('${zuri_exe} ${package_config.post_install}')
+      os.exec('${zuri_exe} run ${package_config.post_install}')
 
       # return to current directory
       os.change_dir(this_dir)

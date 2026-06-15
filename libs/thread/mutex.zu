@@ -52,8 +52,8 @@ import _thread
  * 
  * The Mutex class provides the following methods:
  * 
- * - `.lock()`              — acquire (blocks until available)
- * - `.unlock()`            — release
+ * - `.lock()`      -> bool — acquire (blocks until available)
+ * - `.unlock()`    -> bool — release
  * - `.try_lock()`  → bool  — non-blocking acquire attempt
  * - `.is_locked()` → bool  — query state (advisory only)
  */
@@ -87,6 +87,8 @@ class Mutex {
    * Every call to `lock()` must be paired with exactly one call to `unlock()`. Failing to 
    * call `unlock()` will leave all other threads that attempt to `lock()` suspended 
    * indefinitely (deadlock).
+   *
+   * If `lock` completes successfully, it returns true. Otherwise, it returns false.
    * 
    * Example:
    * 
@@ -99,10 +101,10 @@ class Mutex {
    * > **NOTE:** This method must not be called from the thread that already holds the lock. 
    * > Doing so will deadlock that thread.
    * 
-   * @returns {void}
+   * @returns {bool}
    */
   lock() {
-    _thread.mutex_lock(self._ptr)
+    return _thread.mutex_lock(self._ptr) == 0
   }
 
   /**
@@ -115,6 +117,8 @@ class Mutex {
    * `unlock()` must only be called by the thread that currently holds the lock. Calling it from 
    * a non-holder thread, or calling it when the lock is not held, is a programming error and 
    * will raise an exception.
+   *
+   * If `unlock` completes successfully, it returns true. Otherwise, it returns false.
    * 
    * Example:
    * 
@@ -124,10 +128,10 @@ class Mutex {
    *   mu.unlock()
    * ```
    * 
-   * @returns {void}
+   * @returns {bool}
    */
   unlock() {
-    _thread.mutex_unlock(self._ptr)
+    return _thread.mutex_unlock(self._ptr) == 0
   }
 
   /**

@@ -8,9 +8,9 @@ def parallel_fetch(count) {
 
   # Producer thread
   for i in 0..count {
-    thread.start(@ {
+    thread.start(@(_, http) {
       ch.send(http.get('https://example.com').body.to_string())
-    }).detach()
+    }, [http]).detach()
   }
 
   # Consumer on the main thread

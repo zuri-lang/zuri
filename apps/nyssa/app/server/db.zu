@@ -5,7 +5,7 @@ import math
 import log
 import ..setup
 
-var db_file = os.join_paths(setup.NYSSA_DIR, setup.DATABASE_FILE)
+var db_file = os.join_paths(setup.ZURI_APP_DIR, setup.DATABASE_FILE)
 var db_dir = os.dir_name(db_file)
 
 if !os.dir_exists(db_dir)

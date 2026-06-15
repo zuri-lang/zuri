@@ -133,7 +133,7 @@ def run(value, options, success, error) {
     log.info('Existing README.md. Skipping')
   }
 
-  # Create the nyssa.json file.
+  # Create the project.json file.
   log.info('Generating Nyssa config file')
   file(config_file, 'w').write(json.encode(config, false))
 

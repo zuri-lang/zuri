@@ -73,7 +73,7 @@ def _setup_session(req, res) {
 
 var _template_setup = @{
   var tpl = template()
-  tpl.set_root(os.join_paths(setup.NYSSA_DIR, setup.TEMPLATES_DIR))
+  tpl.set_root(os.join_paths(setup.ZURI_APP_DIR, setup.TEMPLATES_DIR))
   for name, fn in template_ext() {
     tpl.register_function(name, fn)
   }

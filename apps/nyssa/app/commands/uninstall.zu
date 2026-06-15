@@ -64,7 +64,7 @@ def run(value, options, success, error) {
             os.change_dir(package_dir)
 
             # run the script
-            os.exec('${zuri_exe} ${package_config.pre_uninstall}')
+            os.exec('${zuri_exe} run ${package_config.pre_uninstall}')
 
             # return to current directory
             os.change_dir(this_dir)

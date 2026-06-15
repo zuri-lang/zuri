@@ -317,7 +317,7 @@ DECLARE_MODULE_METHOD(reflect__runscript) {
     z_obj_closure *cls = (z_obj_closure *)GC(new_closure(vm, fn));
     pop(vm);
 
-    queue_closure(vm, cls);
+    call_closure(vm, cls, (z_obj_list *)GC(new_list(vm)));
   } else if (captured_output != NULL) {
     RETURN_TT_STRING(captured_output);
   }
@@ -463,6 +463,13 @@ DECLARE_MODULE_METHOD(reflect__set_ptr_value) {
 
   RETURN;
 }
+
+// DECLARE_MODULE_METHOD(reflect__printbytecode) {
+//   ENFORCE_ARG_COUNT(print_bytecode, 1);
+//   ENFORCE_ARG_TYPE(print_bytecode, 0, IS_BOOL);
+//   vm->should_print_bytecode = AS_BOOL(args[0]);
+//   RETURN;
+// }
 
 CREATE_MODULE_LOADER(reflect) {
   static z_func_reg module_functions[] = {

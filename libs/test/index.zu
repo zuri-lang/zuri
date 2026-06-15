@@ -191,7 +191,6 @@ import ._printer
 
 
 # Exported imports
-import .describe
 import .it
 
 

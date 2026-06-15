@@ -72,6 +72,8 @@ DECLARE_MODULE_METHOD(os_exec) {
   char *output = ALLOCATE(char, 1);
   memset(output, 0, sizeof(*output));
 
+  z_obj_list *result = (z_obj_list *)GC(new_list(vm));
+
   if (output != NULL) {
     while ((n_read = fread(buffer, sizeof(*buffer), sizeof(buffer), fd)) != 0) {
       size_t current_length = length;
@@ -80,7 +82,7 @@ DECLARE_MODULE_METHOD(os_exec) {
       output = GROW_ARRAY(char, output, current_length, length + 1);
       if(output == NULL) {
         pclose(fd);
-        RETURN_NIL;
+        RETURN_ERROR("Failed to read command output");
       }
 
       memcpy(output + current_length, buffer, n_read);
@@ -88,19 +90,34 @@ DECLARE_MODULE_METHOD(os_exec) {
     }
 
     fflush(fd);
-    pclose(fd);
+    int exit_status = pclose(fd);
+    int exit_code = 0;
+
+#ifdef _WIN32
+    exit_code = exit_status;
+#else
+    if (WIFEXITED(exit_status)) {
+      exit_code = WEXITSTATUS(exit_status);
+    } else {
+      exit_code = EXIT_FAILURE;
+    }
+#endif
+
+    write_list(vm, result, NUMBER_VAL(exit_code));
 
     if (length == 0) {
       FREE(char, output);
-      RETURN_NIL;
+      write_list(vm, result, GC_STRING(""));
+    } else {
+      write_list(vm, result, GC_T_STRING(output, length));
     }
 
-    RETURN_T_STRING(output, length);
+    RETURN_OBJ(result);
   }
 
   fflush(fd);
   pclose(fd);
-  RETURN_STRING("");
+  RETURN_ERROR("Failed to read command output");
 }
 
 DECLARE_MODULE_METHOD(os_info) {
@@ -203,6 +220,14 @@ z_value get_zuri_os_exe_path(z_vm *vm) {
     return STRING_TT_VAL(path);
   }
   return NIL_VAL;
+}
+
+z_value get_zuri_version(z_vm *vm) {
+  return STRING_VAL(ZURI_VERSION_STRING);
+}
+
+z_value get_vm_version(z_vm *vm) {
+  return STRING_VAL(ZVM_VERSION);
 }
 
 DECLARE_MODULE_METHOD(os_getenv) {
@@ -683,6 +708,8 @@ CREATE_MODULE_LOADER(os) {
   };
 
   static z_field_reg os_module_fields[] = {
+      {"version", true, get_zuri_version},
+      {"vm_version", true, get_vm_version},
       {"platform", true, get_os_platform},
       {"args", true, get_zuri_os_args},
       {"path_separator", true, get_zuri_os_path_separator},

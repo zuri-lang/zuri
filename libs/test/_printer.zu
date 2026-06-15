@@ -48,7 +48,7 @@ def _c(text, color_code, bg_code) {
 }
 
 # Convenience wrappers for every colour role used by the reporter.
-def _green(s)        { return _c(s, colors.text_color.green) }
+def green(s)        { return _c(s, colors.text_color.green) }
 def red(s)          { return _c(s, colors.text_color.light_red) }
 def yellow(s)       { return _c(s, colors.text_color.yellow) }
 def _cyan(s)         { return _c(s, colors.text_color.cyan) }
@@ -63,7 +63,7 @@ def bold(s)         { return _c(s, colors.style.bold) }
 def reverse(s)         { return _c(s, colors.style.reverse) }
 def dim(s)          { return _c(s, colors.style.disable) }
 
-def greenbold(s)   { return bold(_green(s)) }
+def greenbold(s)   { return bold(green(s)) }
 def redbold(s)     { return bold(red(s)) }
 def orangebold(s)     { return bold(orange(s)) }
 def pinkbold(s)     { return bold(pink(s)) }
@@ -120,7 +120,7 @@ def pretty(value) {
   if value == nil    return _cyan('nil')
   if is_bool(value)  return _cyan(to_string(value))
   if is_number(value) return yellow(to_string(value))
-  if is_string(value) return _green('"' + value + '"')
+  if is_string(value) return green('"' + value + '"')
   if is_list(value) {
     if value.length() == 0 return grey('[]')
     if value.length() <= 6 {
@@ -157,7 +157,7 @@ def pretty(value) {
 # Produces a two-line "expected / received" block for assertion failures.
 def _diff_lines(expected, received) {
   return [
-    '  ' + _green('  expected  ') + greenbold(pretty(expected)),
+    '  ' + green('  expected  ') + greenbold(pretty(expected)),
     '  ' + red(  '  received  ') + redbold(pretty(received)),
   ]
 }
@@ -181,7 +181,7 @@ def print_suite_header(name, depth) {
 def print_pass(name, depth, elapsed_ms) {
   var indent = _indent(depth)
   var time_str = elapsed_ms != nil ? dim(' (${elapsed_ms}ms)') : ''
-  echo indent + _green(SYM_PASS + ' ') + dim(name) + time_str
+  echo indent + green(SYM_PASS + ' ') + dim(name) + time_str
 }
 
 def print_fail(name, depth, elapsed_ms) {
@@ -253,7 +253,7 @@ def print_rule() {
 
 def print_summary(stats) {
   echo ''
-  print_rule()
+#   print_rule()
   echo ''
 
   # Result badges

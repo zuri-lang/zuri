@@ -13,7 +13,7 @@ Nyssa projecs are typical Zuri  applications
 
 ### Converting an existing project
 
-To convert an existing application or library into a Nyssa application, all you need to do is to follow the same process for creating a new package. **If the application already contain a file named `nyssa.json`, you may need to delete it** because nyssa does not reinitialize existing projects.
+To convert an existing application or library into a Nyssa application, all you need to do is to follow the same process for creating a new package. **If the application already contains a file named `project.json`, you may need to delete it** because nyssa does not reinitialize existing projects.
 
 _When converting an existing application, your existing directory and files matching those that nyssa creates will not be overwritten_.
 

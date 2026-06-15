@@ -11,7 +11,7 @@ if !os.dir_exists(setup.STORAGE_DIR)
   os.create_dir(setup.STORAGE_DIR)
 
 # ensure config file exists...
-var config_file = os.join_paths(setup.NYSSA_DIR, setup.CONFIG_FILE)
+var config_file = os.join_paths(setup.ZURI_APP_DIR, setup.CONFIG_FILE)
 if !file(config_file).exists()
   file(config_file, 'w').write('{}')
 
@@ -19,7 +19,7 @@ if !file(config_file).exists()
 if !file(setup.STATE_FILE).exists()
   file(setup.STATE_FILE, 'w').write('{}')
 
-var logs_dir = os.join_paths(setup.NYSSA_DIR, setup.LOGS_DIR)
+var logs_dir = os.join_paths(setup.ZURI_APP_DIR, setup.LOGS_DIR)
 if !os.dir_exists(logs_dir)
   os.create_dir(logs_dir)
 
@@ -46,11 +46,12 @@ import .commands.publish
 import .commands.serve
 import .commands.test
 import .commands.bundle
+import .commands.run
 
 # Import options...
 import .options.version
 
-var parser = args.Parser('nyssa', true)
+var parser = args.Parser('zuri', true)
 
 var commands = {
   account,
@@ -62,6 +63,7 @@ var commands = {
   install,
   publish,
   restore,
+  run,
   serve,
   test,
   uninstall,

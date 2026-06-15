@@ -4,7 +4,7 @@ Nyssa provides two installation hook (`post_install` and `cli`) and one uninstal
 
 ### `post_install`
 
-The `post_install` configuration allows package authors to specify a Zuri script that should be run after the package has been extracted into its destination directory. To specify a script to run after installation, add the `post_install` option to the `nyssa.json` file.
+The `post_install` configuration allows package authors to specify a Zuri script that should be run after the package has been extracted into its destination directory. To specify a script to run after installation, add the `post_install` option to the `project.json` file.
 
 ```json
 ...
@@ -15,7 +15,7 @@ The _<scirpt_name>_ must be a path or filename relative to the root of the packa
 
 ### `pre_uninstall`
 
-The `pre_uninstall` configuration is much like the `post_install` configuration, except that it runs just before a package is uninstalled. You can add it to the `nyssa.json` file in the same way as the `post_install` option.
+The `pre_uninstall` configuration is much like the `post_install` configuration, except that it runs just before a package is uninstalled. You can add it to the `project.json` file in the same way as the `post_install` option.
 
 ```json
 ...

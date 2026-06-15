@@ -1,6 +1,6 @@
 # Getting project information
 
-Nyssa provides the `info` command to allow you print a user-friendly description of the current application. Run the `nyssa info` command from the root of your application or package to get information about the project without opening the `nyssa.json` file.
+Nyssa provides the `info` command to allow you print a user-friendly description of the current application. Run the `nyssa info` command from the root of your application or package to get information about the project without opening the `project.json` file.
 
 For example,
 

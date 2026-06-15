@@ -1,8 +1,8 @@
 @ECHO OFF
 SETLOCAL
 SET "ROOT=%~dp0"
-SET "NYSSA_DIR=%ROOT%\apps\nyssa\cli.zu"
+SET "ZURI_APP_DIR=%ROOT%\apps\nyssa\cli.zu"
 SET "ZURI_EXE=%ROOT%\zuri.exe"
 
-%ZURI_EXE% %NYSSA_DIR% %*
+%ZURI_EXE% %ZURI_APP_DIR% %*
 EXIT /B 0

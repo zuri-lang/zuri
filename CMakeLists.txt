@@ -150,9 +150,9 @@ set(LIBRARY_NAME_END "${CMAKE_DEBUG_POSTFIX}${CMAKE_STATIC_LIBRARY_SUFFIX}")
 set(SHARED_LIBRARY_NAME_END "${CMAKE_DEBUG_POSTFIX}${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
 set_target_properties(libzuri
-		PROPERTIES
-		OUTPUT_NAME zuri
-		)
+    PROPERTIES
+    OUTPUT_NAME zuri
+)
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
@@ -169,9 +169,9 @@ set(PCRE2_BUILD_PCRE2GREP OFF)
 set(PCRE2_SUPPORT_JIT ON)
 include(FetchContent)
 FetchContent_Declare(pcre2
-		URL      https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.46/pcre2-10.46.tar.gz
-		URL_HASH SHA256=8d28d7f2c3b970c3a4bf3776bcbb5adfc923183ce74bc8df1ebaad8c1985bd07
-		)
+    URL      https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.46/pcre2-10.46.tar.gz
+    URL_HASH SHA256=8d28d7f2c3b970c3a4bf3776bcbb5adfc923183ce74bc8df1ebaad8c1985bd07
+)
 FetchContent_MakeAvailable(pcre2)
 
 if(NOT pcre2_POPULATED)
@@ -187,7 +187,7 @@ if(UNIX)
 	FetchContent_Declare(LineNoiseSrc
 		URL      https://github.com/zuri-lang/linenoise/archive/refs/heads/main.zip
 		URL_HASH SHA256=590fbdba8f9b523562b433602dc23cd45aee45acef39f0d380aefd549bd35926
-		)
+    )
 	FetchContent_MakeAvailable(LineNoiseSrc)
 
 	if(NOT linenoisesrc_POPULATED)
@@ -231,12 +231,12 @@ endif()
 target_link_libraries(zuri PRIVATE libzuri)
 
 add_custom_target(zuri_lib_files ALL
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/libs" "${OUTPUT_DIR}/libs"
-#		COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/tests" "${OUTPUT_DIR}/tests"
-#		COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/benchmarks" "${OUTPUT_DIR}/benchmarks"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/apps" "${OUTPUT_DIR}/apps"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/bins" "${OUTPUT_DIR}"
-		COMMENT "Exporting libs, tests, and benchmark scripts..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/libs" "${OUTPUT_DIR}/libs"
+#	COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/tests" "${OUTPUT_DIR}/tests"
+#	COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/benchmarks" "${OUTPUT_DIR}/benchmarks"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/apps" "${OUTPUT_DIR}/apps"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/bins" "${OUTPUT_DIR}"
+    COMMENT "Exporting libs, tests, and benchmark scripts..."
 )
 
 add_dependencies(zuri zuri_lib_files)
@@ -245,13 +245,13 @@ set(EXE_FILE "${OUTPUT_DIR}/$<TARGET_NAME:zuri>${CMAKE_EXECUTABLE_SUFFIX}")
 set(LIBRARY_FILE "${OUTPUT_DIR}/$<TARGET_NAME:libzuri>${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
 add_custom_command(TARGET zuri POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:zuri> ${EXE_FILE}
-		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libzuri> ${LIBRARY_FILE}
-		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/make_zuri.zu" "${PROJECT_SOURCE_DIR}"
-#		# The first one is useful for development purposes but doesn't in any way harm release.
-		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/ast.zu" "${PROJECT_SOURCE_DIR}/libs/ast"
-		COMMAND ${EXE_FILE} "${PROJECT_SOURCE_DIR}/scripts/ast.zu" "${OUTPUT_DIR}/libs/ast"
-		COMMENT "Generating Zuri header and copy output..."
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:zuri> ${EXE_FILE}
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libzuri> ${LIBRARY_FILE}
+    COMMAND ${EXE_FILE} "run" "${PROJECT_SOURCE_DIR}/scripts/make_zuri.zu" "${PROJECT_SOURCE_DIR}"
+#	The first one is useful for development purposes but doesn't in any way harm release.
+    COMMAND ${EXE_FILE} "run" "${PROJECT_SOURCE_DIR}/scripts/ast.zu" "${PROJECT_SOURCE_DIR}/libs/ast"
+    COMMAND ${EXE_FILE} "run" "${PROJECT_SOURCE_DIR}/scripts/ast.zu" "${OUTPUT_DIR}/libs/ast"
+    COMMENT "Generating Zuri header and copy output..."
 )
 
 string(TOUPPER "${CMAKE_BUILD_TYPE}" buildtype)
@@ -278,9 +278,9 @@ endif()
 
 # Generating single header file...
 generate_export_header(libzuri           # generates the export header shared_EXPORTS.h automatically
-		EXPORT_MACRO_NAME EXPORT
-		EXPORT_FILE_NAME export.h
-		STATIC_DEFINE SHARED_EXPORTS_BUILT_AS_STATIC
+    EXPORT_MACRO_NAME EXPORT
+    EXPORT_FILE_NAME export.h
+    STATIC_DEFINE SHARED_EXPORTS_BUILT_AS_STATIC
 )
 
 enable_testing()

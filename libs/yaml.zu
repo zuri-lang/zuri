@@ -1662,9 +1662,12 @@ class _Emitter {
 
   # Emit a list as a YAML block sequence.
   _emit_sequence(items, depth, in_flow) {
-    if items.length() == 0 { return '[]' }
-
     var pad = self._spaces(depth * self._indent)
+
+    if items.length() == 0 {
+      if in_flow return '[]'
+      return pad + '[]'
+    }
 
     var lines = ''
     for item in items {
@@ -1682,10 +1685,14 @@ class _Emitter {
   # Emit a dict as a YAML block mapping.
   _emit_mapping(map, depth, in_flow) {
     var keys = map.keys()
-    if keys.length() == 0 { return '{}' }
 
     var pad   = self._spaces(depth * self._indent)
     var lines = ''
+
+    if keys.length() == 0 {
+      if in_flow return '{}'
+      return pad + '{}'
+    }
 
     for key in keys {
       var val        = map[key]

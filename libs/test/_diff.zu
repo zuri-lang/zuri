@@ -125,10 +125,10 @@ def _diff_list(expected, received, indent) {
     var has_r = i < received.length()
 
     if has_e and has_r and deep_equal(expected[i], received[i]) {
-      lines.append(indent + _p.grey('  [${_pad(i)}]  ' + _p.pretty(expected[i])))
+      lines.append(indent + _p.grey('  [${_pad(shown)}]  ' + expected[i]))
     } else {
-      if has_e lines.append(indent + _p._green('- [${_pad(i)}]  ' + _p.pretty(expected[i])))
-      if has_r lines.append(indent + _p.red(  '+ [${_pad(i)}]  ' + _p.pretty(received[i])))
+      if has_r lines.append(indent + _p.red(  '- [${_pad(shown)}]  ' + received[i]))
+      if has_e lines.append(indent + _p.green('+ [${_pad(shown)}]  ' + expected[i]))
     }
   }
 
@@ -153,11 +153,11 @@ def _diff_dict(expected, received, indent) {
       if deep_equal(ev, rv) {
         lines.append(indent + _p.grey('  ${k}: ${_p.pretty(ev)}'))
       } else {
-        lines.append(indent + _p._green('- ${k}: ${_p.pretty(ev)}'))
+        lines.append(indent + _p.green('- ${k}: ${_p.pretty(ev)}'))
         lines.append(indent + _p.red(  '+ ${k}: ${_p.pretty(rv)}'))
       }
     } else {
-      lines.append(indent + _p._green('- ${k}: ${_p.pretty(ev)}') + _p.grey(' (missing in received)'))
+      lines.append(indent + _p.green('- ${k}: ${_p.pretty(ev)}') + _p.grey(' (missing in received)'))
     }
   }
 
@@ -198,7 +198,7 @@ def diff(expected, received) {
 
   # Type mismatch — just show the two-line block
   if te != tr {
-    lines.append(indent + _p._green('Expected  ' + _p.pretty(expected) + ' (' + te + ')'))
+    lines.append(indent + _p.green('Expected  ' + _p.pretty(expected) + ' (' + te + ')'))
     lines.append(indent + _p.red(  'Received  ' + _p.pretty(received) + ' (' + tr + ')'))
     return lines
   }
@@ -218,7 +218,7 @@ def diff(expected, received) {
   }
 
   # Scalar / everything else
-  lines.append(indent + _p._green('Expected  ' + _p.pretty(expected)))
+  lines.append(indent + _p.green('Expected  ' + _p.pretty(expected)))
   lines.append(indent + _p.red(  'Received  ' + _p.pretty(received)))
   return lines
 }

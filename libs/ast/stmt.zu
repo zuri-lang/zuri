@@ -358,11 +358,13 @@ class ImportStmt < Stmt {
   /**
    * @param {Stmt|any|nil} path
    * @param {Stmt|any|nil} elements
+   * @param {Stmt|any|nil} name
    * @constructor
    */
-  ImportStmt(path, elements) {
+  ImportStmt(path, elements, name) {
     self.path = path
     self.elements = elements
+    self.name = name
   }
 
   @to_json() {
@@ -370,6 +372,7 @@ class ImportStmt < Stmt {
       type: 'ImportStmt',
       path: self.path,
       elements: self.elements,
+      name: self.name,
     }
   }
 }

@@ -35,6 +35,7 @@ import .filetypes { FileType }
 import .infos { Info }
 import .auth { Auth }
 import .usessl { UseSSL }
+import .http_versions { Version }
 import .curl { * }
 import _curl
 

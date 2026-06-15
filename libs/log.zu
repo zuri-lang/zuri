@@ -658,6 +658,13 @@ class FileTransport < Transport {
       raise Exception('path must be string')
     }
 
+    self._init(path)
+  }
+
+  _init(path) {
+    # For error recovery...
+    self._path = path
+
     # Create the parent log directory if it does not exist.
     var dir_name = os.dir_name(path)
     if !os.dir_exists(dir_name) {
@@ -668,7 +675,13 @@ class FileTransport < Transport {
   }
 
   write(message, level) {
-    self.file.write('${message}\n')
+    catch {
+      self.file.write('${message}\n')
+    } as error
+    if error {
+      self._init(self._path)
+      self.file.write('${message}\n')
+    }
   }
 
   flush() {

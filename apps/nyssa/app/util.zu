@@ -19,7 +19,7 @@ def setup_cli(name, base_path, cli_path) {
       '\n'+ 
       'ZURI_EXE=`which zuri`\n' +
       '\n' +
-      'exec "$ZURI_EXE" "${cli_path}" "$@"\n'
+      'exec "$ZURI_EXE" "run" "${cli_path}" "$@"\n'
   } else {
 
     cmd = '@ECHO OFF\r\n' +
@@ -45,7 +45,7 @@ def setup_cli(name, base_path, cli_path) {
       '\r\n' +
       ':RUN\r\n' +
       '\r\n' +
-      '"%ZURI_EXE%" "${cli_path}" %*\r\n' +
+      '"%ZURI_EXE%" "run" "${cli_path}" %*\r\n' +
       'EXIT /B 0\r\n'
   }
 
@@ -65,7 +65,7 @@ def remove_cli(name, base_path) {
 
 def setup_template() {
   var tpl = template()
-  tpl.set_root(os.join_paths(setup.NYSSA_DIR, setup.TEMPLATES_DIR))
+  tpl.set_root(os.join_paths(setup.ZURI_APP_DIR, setup.TEMPLATES_DIR))
   return tpl.render
 }
 

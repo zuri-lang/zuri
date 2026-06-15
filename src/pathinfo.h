@@ -11,20 +11,14 @@
 #endif /* ifdef _WIN32 */
 
 char *get_exe_path();
-
 char *get_exe_dir();
-
 char *merge_paths(char *a, char *b);
-
 bool file_exists(char *filepath);
-
 char *get_zuri_filename(char *filename);
-
 char *resolve_import_path(char *module_name, const char *current_file, const char *root_file, bool is_relative);
-
 char *get_core_library_file_path(char *module_name);
-
 char *get_real_file_name(char *path);
+char *get_root_app_path();
 
 
 #if defined(HAVE_UNISTD_H)

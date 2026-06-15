@@ -13,7 +13,7 @@ var state = st.get()
 def parse(parser) {
   parser.add_command(
     'account', 
-    'Manages a Nyssa publisher account',
+    'Manages a package publisher account',
     {
       type: args.CHOICE,
 #       choices: ['create', 'login', 'logout'],

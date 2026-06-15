@@ -16,7 +16,7 @@ To install a package locally into your application, open a terminal at the root 
 nyssa install <package_name>
 ```
 
-This will create the path `.zuri/libs` in your current directory if it doesn't exist already and download the package into that directory. This will also update the `nyssa.json` file with the installed dependency uder the `deps` section.
+This will create the path `.zuri/libs` in your current directory if it doesn't exist already and download the package into that directory. This will also update the `project.json` file with the installed dependency uder the `deps` section.
 
 > **NOTE:** nyssa does not install a local package outside of a nyssa project.
 
@@ -38,7 +38,7 @@ To install a package globally and make it available to all applications, you nee
 nyssa install --global <package_name>
 ```
 
-> **NOTE:** You can install a package globally from any directory on your device. A `nyssa.json` file will only be updated if it is ran inside a nyssa project.
+> **NOTE:** You can install a package globally from any directory on your device. A `project.json` file will only be updated if it is ran inside a nyssa project.
 
 You can also choose to install a package from another repository other than [nyssa.zurilang.org](https://nyssa.zurilang.org) by specifying the `--repo` flag (or `-r` for short) like below.
 
@@ -46,7 +46,7 @@ You can also choose to install a package from another repository other than [nys
 nyssa install --repo <repo_url> <package_name>
 ```
 
-The new repo will be added as a source into the `nyssa.json` script. This allows nyssa to easily restore the dependency later on.
+The new repo will be added as a source into the `project.json` script. This allows nyssa to easily restore the dependency later on.
 
 > When installing packages, by default nyssa does not use the cache. You can instruct nyssa to check if a version of the package and version has been previously downloaded and use that download copy again by specifying the `--use-cache` flag (`-c` for short). This helps avoid unnecessary bandwidth costs.
 

@@ -83,6 +83,8 @@ class ParseResult {
    * iterator decoration
    */
   @iter(index) {
+    if self._results.is_empty()
+      return nil
     return self._results[index]
   }
 

@@ -19,22 +19,22 @@ follows:
   > documentation format as shown in the Zuri standard library 
   > documentation, your package documentation _may_ be expanded to include
   > such documentations.
-- `nyssa.json`: The Nyssa package configuration script.
+- `project.json`: The Nyssa package configuration script.
 - `tests`: This directory contains unit, integration and all types 
   of tests for your package.
 
 **!Important**
 
 You can create a Nyssa package without having to run `nyssa init`. Essentially,
-the only files required are the `index.zu` and the `nyssa.json` files and they
+the only files required are the `index.zu` and the `project.json` files and they
 can be manually created without losing Nyssa's ability to install, uninstall
 and configure packages.
 
 
-### `nyssa.json`
+### `project.json`
 
-The `nyssa.json` file is pretty intuitive and is very similar to NodeJS NPM
-package.json files. A typical sample of a complete `nyssa.json` file looks like this:
+The `project.json` file is pretty intuitive and is very similar to NodeJS NPM
+package.json files. A typical sample of a complete `project.json` file looks like this:
 
 ```json
 {

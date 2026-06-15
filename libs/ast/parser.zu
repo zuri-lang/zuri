@@ -777,10 +777,16 @@ class Parser {
   _import() {
     var path = []
     var elements = []
+    var name = nil
 
-    while !self._match(TokenType.NEWLINE, TokenType.EOF, TokenType.LBRACE) {
+    while !self._match(TokenType.NEWLINE, TokenType.EOF, TokenType.LBRACE, TokenType.AS) {
       self._advance()
       path.append(self._previous().literal)
+    }
+
+    if self._previous().type == TokenType.AS {
+      self._advance()
+      name = self._previous().literal
     }
 
     if self._previous().type == TokenType.LBRACE {
@@ -796,7 +802,7 @@ class Parser {
       self._consume(TokenType.RBRACE, "'}' expected at end of selective import")
     }
 
-    return ImportStmt(''.join(path), elements)
+    return ImportStmt(''.join(path), elements, name)
   }
 
   /**

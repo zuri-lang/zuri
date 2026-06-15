@@ -55,7 +55,7 @@ var asts = {
       Assert: ['expr', 'message'],
       Using: ['expr', 'cases', 'default_case'],
       Case: ['conditions', 'statement'],
-      Import: ['path', 'elements'],
+      Import: ['path', 'elements', 'name'],
       Catch: ['body', 'var_name'],
       Comment: ['data'],
       Block: ['body'],
