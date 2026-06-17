@@ -10,7 +10,7 @@
 [//]: # (  <h1>Zuri</h1>)
 
   <p><strong>The self-sufficient full-stack language.</strong><br>
-  Build complete, production-ready full-stack services with nothing but Zuri &mdash;<br>
+  Build complete, production-ready full-stack services with nothing but Zuri &mdash; <br>
   no framework hunting, no dependency hell, no third-party registry anxiety.</p>
 
 [![Build Status](https://github.com/zuri-lang/zuri/actions/workflows/ci.yml/badge.svg)](https://github.com/zuri-lang/zuri/actions)
@@ -103,10 +103,10 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | JSON                      | `json`                     | ✅ Ready    |
 | File                      | `file`, `csv`              | ✅ Ready    |
 | Input & Output (I/O)      | `io`                       | ✅ Ready    |
-| Compression               | `zlib`, `zip`              | ✅ Ready    |
+| Compression               | `zlib`, `zip`, `tar`       | ✅ Ready    |
 | AST & metaprogramming     | `ast`                      | ✅ Ready    |
-| Unit testing              | `zuri test`, `test`       | ✅ Ready    |
-| Distribution              | `zuri bundle`             | ✅ Ready    |
+| Unit testing              | `zuri test`, `test`        | ✅ Ready    |
+| Distribution              | `zuri bundle`              | ✅ Ready    |
 | URL / cURL bindings       | `url`, `curl`              | ✅ Ready    |
 | FFI/C interop             | `clib`                     | ✅ Ready    |
 | HTML parsing & generation | `html`                     | ✅ Ready    |
@@ -181,7 +181,7 @@ Image.new(640, 640, true).use(@(im) {
 ```zuri
 import ast
 
-var tree = ast.parse(file('script.zuri').read())
+var tree = ast.parse(file('script.zu').read())
 # Build linters, formatters, or code generators in pure Zuri
 ```
 
@@ -204,7 +204,7 @@ class User {
 }
 ```
 
-**Function promotion** &mdash; use any module like a function if the module exports a default function.
+**Function promotion** &mdash; use any module like a function if the module exports a function with the same name as the module.
 
 ```zuri
 import template
@@ -273,9 +273,9 @@ bash <(curl -s https://raw.githubusercontent.com/zuri-lang/zuri/main/scripts/ins
 echo "import http
 var s = http.server(3000)
 s.handle('GET', '/', @(req, res) { res.json({hello: 'world'}) })
-s.listen()" > server.zuri
+s.listen()" > server.zu
 
-zuri server.zuri
+zuri run server.zu
 # → Listening on port 3000
 ```
 
@@ -297,16 +297,14 @@ zuri server.zuri
 
 ## Ecosystem
 
-| Project                                                 | Description                                        |
-|---------------------------------------------------------|----------------------------------------------------|
-| [Zuri](https://github.com/zuri-lang/zuri)              | Package manager and self-hostable private registry |
-| [Wire](https://github.com/zuri-lang/zuri)               | Built-in HTML template engine                      |
-| [zuri-vscode](https://github.com/zuri-lang/zuri-vscode) | Visual Studio Code extension                       |
-| [jsonrpc](https://github.com/mcfriend99/jsonrpc)        | JSON-RPC library                                   |
-| [tar](https://github.com/mcfriend99/tar)                | Pure Zuri TAR archive library                      |
-| [mysql](https://github.com/mcfriend99/mysql)            | Pure Zuri MySQL/MariaDB client                     |
-| [postgres](https://github.com/mcfriend99/postgres)      | Pure Zuri PostgreSQL client                        |
-| [doka](https://github.com/mcfriend99/doka)              | Zuri documentation site server                     |
+| Project                                                 | Description                                                 |
+|---------------------------------------------------------|-------------------------------------------------------------|
+| [Zuric](https://github.com/zuri-lang/zuri)              | Built-in package manager and self-hostable private registry |
+| [Wire](https://github.com/zuri-lang/zuri)               | Built-in HTML template engine                               |
+| [zuri-vscode](https://github.com/zuri-lang/zuri-vscode) | Visual Studio Code extension                                |
+| [jsonrpc](https://github.com/mcfriend99/jsonrpc)        | JSON-RPC library                                            |
+| [mysql](https://github.com/mcfriend99/mysql)            | Pure Zuri MySQL/MariaDB client                              |
+| [doka](https://github.com/mcfriend99/doka)              | Zuri documentation site server                              |
 
 ---
 

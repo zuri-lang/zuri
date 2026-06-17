@@ -560,7 +560,7 @@ class ZuriDoc {
 
 def main(args) {
   if args.length() < 2 {
-    echo 'Usage: zuri zdoc.zu <source_dir> <output_dir>'
+    echo 'Usage: zuri run zdoc.zu <source_dir> <output_dir>'
     return
   }
 

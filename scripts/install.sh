@@ -165,7 +165,7 @@ install_zuri() {
   echo "Zuri installed successfully!"
 }
 
-echo "Beginning installation of Zuri..."
+echo "Starting Zuri installation..."
 
 install_build_env
 remove_redundant_libraries
