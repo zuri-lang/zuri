@@ -1,0 +1,55 @@
+<nav class="navbar has-background-primary-light">
+  <div class="container">
+    <div id="navMenu" class="navbar-menu">
+      <div class="navbar-start">
+        <a class="navbar-item" href="/">
+          Home
+        </a>
+        <a class="navbar-item" href="https://zurilang.org/zuric">
+          Getting Started
+        </a>
+        <a class="navbar-item is-mobile" href="/login" x-if="show_login">Login</a>
+        <a class="navbar-item is-link  is-mobile" href="/account" x-not="show_login">
+          <span class="icon-text">
+            <span class="icon">
+              <i class="fas fa-user"></i>
+            </span>
+            <span>My Account</span>
+          </span>
+        </a>
+        <a class="navbar-item is-dark is-mobile" href="https://github.com/zuri-lang/zuri" target="_blank">
+          <span class="icon-text">
+            <span class="icon">
+              <i class="fa-brands fa-github"></i>
+            </span>
+            <span>Github</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="navbar-end">
+        <div class="navbar-item">
+          <div class="buttons">
+            <a class="button" href="/login" x-if="show_login">Login</a>
+            <a class="button is-link" href="/account" x-not="show_login">
+              <span class="icon-text">
+                <span class="icon">
+                  <i class="fas fa-user"></i>
+                </span>
+                <span>My Account</span>
+              </span>
+            </a>
+            <a class="button is-dark" href="https://github.com/zuri-lang/zuri" target="_blank">
+              <span class="icon-text">
+                <span class="icon">
+                  <i class="fa-brands fa-github"></i>
+                </span>
+                <span>Github</span>
+              </span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>

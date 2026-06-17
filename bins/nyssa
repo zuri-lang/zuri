@@ -1,8 +1,0 @@
-#!/bin/bash
-
-ROOT=$(dirname "$0")
-
-ZURI_APP_DIR="$ROOT/apps/nyssa/cli.zu"
-ZURI_EXE="$ROOT/zuri"
-
-exec "$ZURI_EXE" "$ZURI_APP_DIR" "$@"

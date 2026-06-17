@@ -1,0 +1,392 @@
+import os
+import io
+import args
+import log
+import http
+import zip
+import json
+import io
+
+import ..setup
+import ..util
+
+/**
+ * The bundle command can be configured in the project.json file and takes the following format:
+ * 
+ * "bundle": {
+ *    "name": "The app name ", # If missing, it defaults to the Zuri package name
+ *    "version": "The app version", # # If missing, it defaults to the Zuri package version
+ *    "icns": "/path/to/icon.icns", # custom app icon only used by a `macos` bundle
+ *    "plist": "/path/to/plist/file", # custom Info.plist file to be used by a `macos` bundle
+ * }
+ */
+
+# ...
+var tmp_dir = os.join_paths(setup.STORAGE_DIR, '.tmp')
+
+var arch = os.info().machine
+
+var _supported_platforms = [
+  'linux',
+  'linux-aarch64',
+  'macos',
+  'osx',
+  'windows',
+]
+
+
+def parse(parser) {
+
+  var default_platform = os.platform
+  if default_platform == 'linux' and arch == 'arm64' {
+    default_platform = 'linux-aarch64'
+  } else if default_platform == 'osx' {
+    default_platform = 'macos'
+  }
+
+  var platform_list = ', '.join(_supported_platforms)
+
+  parser.add_command(
+    'bundle', 
+    'Creates a standalone application bundle.'
+  ).add_option(
+    'os',
+    'the target operating system (${platform_list})',
+    {
+      short_name: 's',
+      type: args.OPTIONAL,
+      value: default_platform,
+    }
+  ).add_option(
+    'dest',
+    'the output directory to store the bundle',
+    {
+      short_name: 'd',
+      type: args.OPTIONAL,
+      value: os.cwd(),
+    }
+  )
+}
+
+def get_file_list(root_dir, main_root) {
+  if !main_root {
+    main_root = root_dir
+  }
+
+  if os.dir_exists(root_dir) {
+    return os.read_dir(root_dir).filter(@(f) { 
+      return !f.starts_with('.git') and f != '.' and f != '..'
+    }).reduce(@(list, file) {
+      var full_path = os.join_paths(root_dir, file)
+      if os.dir_exists(full_path) {
+        list.extend(get_file_list(full_path, main_root))
+      } else {
+        list.append(full_path[main_root.length(),])
+      }
+      return list
+    }, [])
+  }
+
+  return []
+}
+
+def copy_directory(src_dir, dest_dir) {
+  var fls = get_file_list(src_dir)
+
+  for fl in  fls {
+    var src = os.join_paths(src_dir, fl)
+    var dest = os.join_paths(dest_dir, fl)
+
+    if os.dir_exists(src) {
+      os.create_dir(dest)
+    } else {
+      # create the directory if its missing
+      os.create_dir(os.dir_name(dest))
+
+      var src_file = file(src)
+      src_file.copy(dest)
+      
+      # get source file stats and close source
+      var src_stats = src_file.stats()
+      src_file.close()
+      
+      # update destination file times and permissions with src values
+      var dest_file = file(dest)
+      dest_file.set_times(src_stats.atime, src_stats.mtime)
+      dest_file.chmod(src_stats.mode)
+      dest_file.close()
+    }
+  }
+}
+
+def _get_zuri_bundler(source_os, target_os, config) {
+  var zuri_zip_target = os.join_paths(tmp_dir, '${config.name}-${config.version}')
+  if os.dir_exists(zuri_zip_target) {
+    os.remove_dir(zuri_zip_target, true)
+  }
+
+  var zuri_zip_tmp_target = os.join_paths(tmp_dir, '__${config.name}-${config.version}')
+  if os.dir_exists(zuri_zip_tmp_target) {
+    os.remove_dir(zuri_zip_tmp_target, true)
+  }
+
+  var runtime_dir = os.join_paths(zuri_zip_target, 'runtime')
+
+  # if we are generating for the same platform we are running on, we'll 
+  # be using a copy of our local installation.
+  if source_os == target_os {
+    copy_directory(os.dir_name(os.exe_path), runtime_dir)
+    log.info('Successfully copied bundler...')
+  } else {
+    var zuri_zip = os.join_paths(setup.CACHE_DIR, 'zuri-${target_os}.zip')
+
+    # create/recreate temporary target directory
+    os.create_dir(zuri_zip_tmp_target)
+
+    # if we do not have a local copy of the Zuri bundler, then we download a
+    # Bundler for the current Zuri version from Github.
+    if !file(zuri_zip).exists() {
+      var version = os.version
+      var download_link = 'https://github.com/zuri-lang/zuri/releases/download/v${version}/zuri-${target_os}-v${version}.zip'
+      log.info('Getting Zuri bundle from ${download_link}')
+
+      var download_result = http.get(download_link)
+
+      if download_result.status == 200 {
+        file(zuri_zip, 'wb').write(download_result.body)
+        log.info('Saved downloaded bundler ${target_os}-${version}')
+      } else if download_result.status == 404 {
+        raise Exception('Bundler for OS ${target_os} not found for current Zuri version!')
+      } else  {
+        raise Exception('Failed to get bundler for OS ${target_os}: ${download_result.as_text()}')
+      }
+    }
+
+    zip.extract(zuri_zip, zuri_zip_tmp_target)
+
+    # create/recreate target directory
+    if os.dir_exists(zuri_zip_target) {
+      os.remove_dir(zuri_zip_target, true)
+    }
+    os.create_dir(zuri_zip_target)
+
+    # move zuri to runtime directory
+    os.rename(
+      os.real_path(os.join_paths(zuri_zip_tmp_target, 'zuri')),
+      runtime_dir
+    )
+
+    # remove intermediate extraction directory
+    os.remove_dir(zuri_zip_tmp_target, true)
+    log.info('Successfully extracted bundler...')
+  }
+
+  # streamline runtime
+  # 1. Remove zuri and its binaries since its not accessible in userspace
+  os.remove_dir(os.join_paths(runtime_dir, 'apps'), true)
+
+  # 2. Extract bundle.zip from the runtime into the target_directory so that 
+  # we can use it later then remove the bundle.zip file.
+  zip.extract(
+    os.join_paths(runtime_dir, 'bundle.zip'),
+    os.join_paths(zuri_zip_target, 'bundle')
+  )
+  file(os.join_paths(runtime_dir, 'bundle.zip')).delete()
+
+  log.info('Successfully streamlined bundler...')
+
+  return zuri_zip_target
+}
+
+def bundle_app(source_os, target_os, config, dest_dir) {
+  var target_src = _get_zuri_bundler(source_os, target_os, config)
+
+  # remove any existing application.
+  if os.dir_exists(target_src + '.app') {
+    os.remove_dir(target_src + '.app', true)
+  }
+
+  var runtime_dir = os.join_paths(target_src, 'runtime')
+  var bundle_dir = os.join_paths(target_src, 'bundle')
+
+  var contents_dir = os.join_paths(target_src, 'Contents')
+  
+  # create the MacOS directory
+  var macos_dir = os.join_paths(contents_dir, 'MacOS')
+  os.create_dir(macos_dir)
+
+  # create the Resources directory
+  var resources_dir = os.join_paths(contents_dir, 'Resources')
+  os.create_dir(resources_dir)
+
+  # create plist file
+  var target_plist_path = os.join_paths(contents_dir, 'Info.plist')
+
+  # Allow plist to be overriden in the zuri config using the "plist" key.
+  var src_plist = file(
+    config.contains('plist') ? config.plist : os.join_paths(bundle_dir, 'Info.plist')
+  )
+
+  src_plist.copy(target_plist_path)
+  file(target_plist_path, 'w').write(
+    src_plist.read().replace('\${EXE}', config.name, false)
+  )
+
+  log.info('Successfully created target Plist.')
+
+  # move runtime directory to resources
+  os.rename(
+    os.real_path(runtime_dir),
+    os.join_paths(resources_dir, 'runtime')
+  )
+  log.info('Successfully packaged runtime')
+
+  # copy the current directory to the resources app directory
+  copy_directory(
+    os.cwd(),
+    os.join_paths(resources_dir, 'app')
+  )
+  log.info('Successfully packaged application')
+  
+  file(
+    config.contains('icns') ? config.icns : os.join_paths(bundle_dir, 'icon.icns')
+  ).copy(
+    os.join_paths(resources_dir, 'icon.icns')
+  )
+  log.info('Successfully packaged application icon')
+
+  # DO THIS LAST
+  # move the bundler executable to the MacOS folder and rename to the app name
+  file(os.join_paths(bundle_dir, 'bundle')).rename(
+    os.join_paths(macos_dir, config.name)
+  )
+  file(os.join_paths(macos_dir, 'macos'), 'w') # we only need the file to exist.
+  file(os.join_paths(macos_dir, config.name)).chmod(0c755)
+  file(os.join_paths(resources_dir, 'runtime', 'zuri')).chmod(0c755)
+
+  log.info('Successfully packaged launcher')
+
+  # remove the bundler directory
+  os.remove_dir(bundle_dir, true)
+
+  os.rename(
+    target_src,
+    os.join_paths(dest_dir, '${config.name}-${config.version}.app')
+  )
+}
+
+def bundle_zip(source_os, target_os, config, dest_dir) {
+  var target_src = _get_zuri_bundler(source_os, target_os, config)
+
+  var bundle_name = target_os == 'windows' ? 'bundle.exe' : 'bundle'
+  var zuri_exe_name = target_os == 'windows' ? 'zuri.exe' : 'zuri'
+
+  var target_bundle_name = target_os == 'windows' ? config.name + '.exe' : config.name
+  var bundle_dir = os.join_paths(target_src, 'bundle')
+
+  # copy the current directory to the resources app directory
+  copy_directory(
+    os.cwd(),
+    os.join_paths(target_src, 'app')
+  )
+  log.info('Successfully packaged application')
+
+  # DO THIS LAST
+  # move the bundler executable to the MacOS folder and rename to the app name
+  file(os.join_paths(bundle_dir, 'bundle')).rename(
+    os.join_paths(target_src, target_bundle_name)
+  )
+  file(os.join_paths(target_src, target_bundle_name)).chmod(0c755)
+  file(os.join_paths(target_src, 'runtime', zuri_exe_name)).chmod(0c755)
+
+  log.info('Successfully packaged launcher')
+
+  # remove the bundler directory
+  os.remove_dir(bundle_dir, true)
+
+  zip.compress(
+    target_src,
+    os.join_paths(dest_dir, '${config.name}-${config.version}.zip'),
+    nil,
+    true 
+  )
+
+  # remove the target src
+  os.remove_dir(target_src, true)
+}
+
+def _get_tty_size() {
+  return io.TTY(io.stdin).get_size()
+}
+
+def run(value, options, success, error) {
+  var source_os = os.platform == 'osx' ? 'macos' : os.platform
+
+  var config = util.load_config()
+
+  # if the "bundle" key is given in project.json and it contains a valid dictionary,
+  # we'll assume that our configuration is coming from there.
+  if is_dict(config.bundle) {
+    var tmp_config = config.bundle
+    if !tmp_config.contains('name') {
+      tmp_config['name'] = config.name
+    }
+    if !tmp_config.contains('version') {
+      tmp_config['version'] = config.version
+    }
+
+    config = tmp_config
+  }
+
+
+  if !os.dir_exists(setup.CACHE_DIR) {
+    os.create_dir(setup.CACHE_DIR)
+  }
+  if !os.dir_exists(tmp_dir) {
+    os.create_dir(tmp_dir)
+  }
+
+  var targets = []
+  if options.os == 'all' {
+    targets = _supported_platforms.clone()
+
+    # when target is all, only generate a bundle for macos and not osx since 
+    # 'macos' target is the default on macos devices
+    targets.remove('osx')
+  } else {
+    targets.append(options.os)
+  }
+
+  var console_size = _get_tty_size()
+
+  for target_os in targets {
+    # keep a copy of the original target os incase it was osx rewritten to macos
+    var original_target_os = target_os
+
+    target_os =  target_os == 'osx' ? 'macos' : target_os
+
+    if targets.length() > 1 {
+      # when monitoring from the console, add a separator line between the target attempts
+      var line_width = '-' * ((console_size.cols - target_os.length() - 2) // 2)
+      echo '${line_width} ${target_os} ${line_width}'
+    }
+
+    log.info('Generating bundle ${config.name}-${config.version} for ${target_os}...')
+
+    # ensure that target location exists
+    options.dest = os.real_path(options.dest)
+
+    catch {
+      using original_target_os {
+        when 'macos' bundle_app(source_os, target_os, config, options.dest)
+        default bundle_zip(source_os, target_os, config, options.dest)
+      }
+    } as error
+
+    if error {
+      log.exception(error, 'Failed to generate bundle ${config.name}-${config.version} for ${target_os}!')
+    } else {
+      log.info('Bundle ${config.name}-${config.version} generated successfully for ${target_os}!')
+    }
+  }
+}

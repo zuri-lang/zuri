@@ -1,0 +1,182 @@
+import args
+import os
+import url
+import json
+import colors
+import log
+import io
+import .install
+import ..util
+import ..setup
+import ..config { Config }
+
+var config_file = os.join_paths(os.cwd(), setup.CONFIG_FILE)
+
+def parse(parser) {
+  parser.add_command(
+    'fetch',
+    'Fetch a package from a Git repository',
+    {
+      type: args.STRING,
+    }
+  )
+  .add_option(
+     'repo',
+     'the repository to install package dependencies from',
+     {
+       short_name: 'r',
+       type: args.OPTIONAL
+     }
+   )
+}
+
+def configure(config, repo, full_name, name, version, destination, error) {
+  log.info('Installing ${full_name}')
+
+  var zuri_exe = os.args[0]
+
+  var package_config_file = os.join_paths(destination, setup.CONFIG_FILE)
+  var package_config = Config.from_dict(json.decode(file(package_config_file).read()))
+
+  # install dependencies before running post-install in case post-install
+  # depends on a dependency.
+  if package_config.deps {
+    echo ''
+    log.info('Fetching dependencies for ${full_name}...')
+    echo '--------------------------${"-" * full_name.length()}---'
+
+    for dep, ver in package_config.deps {
+      var dep_full_name = ver ? '${dep}@${ver}' : dep
+      if !progress.contains(dep) {
+        install(config, repo, dep_full_name, dep, ver, false, true, {}, error)
+      }
+    }
+  }
+
+  # run post install script if it exists
+  if package_config.post_install {
+    log.info('Running post install for ${full_name}')
+
+    # cd into the destination before running post_install so
+    # that post_install will run relative to the package.
+    var this_dir = os.cwd()
+    os.change_dir(destination)
+
+    # run the script
+    os.exec('${zuri_exe} ${package_config.post_install}')
+
+    # return to current directory
+    os.change_dir(this_dir)
+  }
+
+  # create cli if required
+  if package_config.cli {
+    var cli_path = os.join_paths(destination, package_config.cli)
+    log.info('Creating CLI for ${name} at ${cli_path}')
+    setup_cli(name, destination, cli_path)
+  }
+}
+
+def run(value, options, success, error) {
+  var current_dir = os.cwd()
+
+  var use_cli = options.get('cli', false),
+      repo = options.get('repo', setup.DEFAULT_REPOSITORY),
+      progress = {}
+
+  var config = Config.from_dict(util.load_config(is_global))
+  var git_path = util.find_app_in_path('git')
+
+  if !git_path {
+    error('Git not installed')
+  }
+
+  # We're overly certain that there can only be one `.` in the repository name.
+  #
+  # This is because irrespective of whether user intends to have a `.` in the repo name
+  # or not, having it in the name of the repo automatically means it cannot be distributed
+  # as a Zuri package since it cannot be imported into any project. Hence, irrespective
+  # of how many dots actually exist in the repository name, it can only be imported via
+  # the first name before a dot.
+  var package_name = os.base_name(value).split('.').first()
+  var libs_dir = os.join_paths(os.cwd(), '.zuri', 'libs')
+
+  if !os.dir_exists(libs_dir)
+    os.create_dir(libs_dir)
+
+  var ns = package_name.split('#'),
+      name = ns[0],
+      version = ns.length() > 1 ? ns[1] : nil,
+      full_name = version ? '${name}@${version}' : name
+
+  var clone_dir = os.join_paths(libs_dir, name)
+
+  # Ensure the package or another package with a conflicting name does not currently exist
+  if os.read_dir(libs_dir).some(@(x) => x == package_name) {
+
+    echo 'Another package with the same name "${name}" is currently installed'
+    if !['y', 'Y'].contains(io.readline('Do you want to remove it and fetch this one? [y/N]').trim())
+      return
+
+    # Remove the existing package
+    os.remove_dir(clone_dir, true)
+  }
+
+  os.change_dir(libs_dir)
+  var cmd = os.exec(git_path, 'clone', value)
+
+  if cmd.exit_code != 0 {
+    error(cmd.output)
+  }
+
+  if version != nil {
+    os.change_dir(name)
+
+    cmd = os.exec(git_path, 'checkout', version)
+    if cmd.exit_code != 0 {
+      error(cmd.output)
+    }
+  }
+
+  configure(config, repo, full_name, name, version, clone_dir, error)
+
+  # Reset directory
+  os.change_dir(current_dir)
+
+  catch {
+    log.info('Updating dependency state for project')
+
+    if config.cvs_deps.contains(value) and version == nil {
+      # do nothing...
+    } else {
+      config.cvs_deps[value] = version
+    }
+
+    # In order to avoid conflict, remove any standard package with a conflicting name
+    if config.deps.contains(name) {
+      config.deps.remove(name)
+    }
+
+    # update sources if not already listed
+    if !config.sources.contains(repo) {
+      config.sources.append(repo)
+    }
+
+    if config_exists {
+      file(config_file, 'w').write(json.encode(config, false))
+    }
+  } as e
+  if e {
+    echo colors.text(
+      'Dependency state update failed!\n' +
+      'You can manually fix it by adding the following to the CVS dependency section of your ' + setup.CONFIG_FILE + ' file.\n' +
+      '\n\t"${name}": ' + (version ? '"${version}"' : "null") +  '\n\n' +
+      'If the section is not empty add a comma (,) and press ENTER before adding the fix.\n',
+      colors.text_color.orange
+    )
+
+    error(e.message)
+  }
+
+  success('${full_name} fetched successfully!')
+}

@@ -155,7 +155,7 @@ char *get_root_app_path() {
   if (exe_dir != NULL) {
     return merge_paths(
       exe_dir,
-      PACKAGES_DIRECTORY ZURI_PATH_SEPARATOR "nyssa" ZURI_PATH_SEPARATOR "cli" ZURI_EXTENSION
+      PACKAGES_DIRECTORY ZURI_PATH_SEPARATOR "zuri" ZURI_PATH_SEPARATOR "cli" ZURI_EXTENSION
     );
   }
 

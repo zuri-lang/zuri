@@ -1,0 +1,16 @@
+import args
+
+def parse(parser) {
+  parser.add_command(
+    'run',
+    'Run a zuri project or script',
+    {
+      type: args.STRING,
+      value: 'index.zu'
+    }
+  )
+}
+
+def run(value, options, success, error) {
+  # Handled automatically by VM.
+}

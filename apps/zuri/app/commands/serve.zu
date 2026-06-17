@@ -1,0 +1,34 @@
+import args
+import os
+import log
+import ..server
+import ..setup
+
+def parse(parser) {
+  parser.add_command(
+    'serve', 
+    'Starts a local Zuric repository server'
+  ).add_option(
+    'port', 
+    'The port the server should run on',
+    {
+      short_name: 'p',
+      type: args.OPTIONAL,
+      value: setup.REPOSITORY_PORT,
+    }
+  ).add_option(
+    'host',
+    'The host ip address',
+    {
+      short_name: 'n',
+      type: args.OPTIONAL,
+      value: setup.REPOSITORY_HOST,
+    }
+  )
+}
+
+def run(value, options, success, error) {
+  var port = to_number(options.get('port', setup.REPOSITORY_PORT))
+  var host = options.get('host', setup.REPOSITORY_HOST)
+  server(host, port)
+}
