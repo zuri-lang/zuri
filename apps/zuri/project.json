@@ -1,10 +1,10 @@
 {
-  "name": "nyssa", 
+  "name": "zuri",
   "version": "0.1.0",
   "description": "A package manager and repository for the Zuri programming language.",
   "homepage": "", 
   "tags": [
-    "nyssa", 
+    "zuri",
     "zuri",
     "package-manager",
     "repository",
@@ -13,6 +13,6 @@
   "author": "Richard Ore <eqliqandfriends@gmail.com>", 
   "license": "MIT", 
   "sources": [
-    "https://nyssa.zurilang.org"
+    "https://pub.zurilang.org"
   ]
 }

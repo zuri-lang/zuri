@@ -24,8 +24,8 @@ var DATABASE_FILE = os.join_paths(DATABASE_DIR, 'zuri.db')
 var STATE_FILE = os.join_paths(STORAGE_DIR, 'config.json')
 
 # repository
-var REPOSITORY_HOST = '127.0.0.1'
-var REPOSITORY_PORT = 3000
+var REPOSITORY_HOST = os.get_env('ZURI_REPOSITORY_HOST', '127.0.0.1')
+var REPOSITORY_PORT = to_number(os.get_env('ZURI_REPOSITORY_PORT', 3000))
 
 var DEFAULT_REPOSITORY = 'https://pub.zurilang.org'
 

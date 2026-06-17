@@ -62,20 +62,20 @@ Zuri was designed from the ground up to eliminate this problem. The standard lib
 
 ### Own your infrastructure completely
 
-Zuri ships with **Nyssa** &mdash; a package manager *and* a self-hostable private package registry in one. Your team can run its own registry on your own servers. No dependence on a central public registry. No exposure of proprietary internal packages. Full control over what code enters your supply chain.
+Zuri ships with **Zuric** &mdash; a package manager *and* a self-hostable private package registry in one. Your team can run its own registry on your own servers. No dependence on a central public registry. No exposure of proprietary internal packages. Full control over what code enters your supply chain.
 
 ```sh
 # Install a package
-nyssa install package-name
+zuri install package-name
 
 # Publish to your own private registry
-nyssa publish --registry https://packages.yourcompany.com
+zuri publish --registry https://packages.yourcompany.com
 
 # Run your own registry server
-nyssa serve
+zuri serve
 
 # Distribute your app as a single runnable unit for Linux, Windows, and MacOS.
-nyssa bundle
+zuri bundle
 ```
 
 This makes Zuri especially compelling for organizations with strict data sovereignty requirements, regulated industries, and teams that have been burned by public registry outages or supply chain attacks.
@@ -105,8 +105,8 @@ Zuri's standard library covers everything a full-stack needs &mdash; production-
 | Input & Output (I/O)      | `io`                       | ✅ Ready    |
 | Compression               | `zlib`, `zip`              | ✅ Ready    |
 | AST & metaprogramming     | `ast`                      | ✅ Ready    |
-| Unit testing              | `nyssa test`, `test`       | ✅ Ready    |
-| Distribution              | `nyssa bundle`             | ✅ Ready    |
+| Unit testing              | `zuri test`, `test`       | ✅ Ready    |
+| Distribution              | `zuri bundle`             | ✅ Ready    |
 | URL / cURL bindings       | `url`, `curl`              | ✅ Ready    |
 | FFI/C interop             | `clib`                     | ✅ Ready    |
 | HTML parsing & generation | `html`                     | ✅ Ready    |
@@ -234,7 +234,7 @@ echo json.encode(X())
 **Easy C extension system** &mdash; wrap any C library as a Zuri package with the built-in extension compiler.
 
 ```sh
-nyssa build --extension my_c_lib
+zuri build --extension my_c_lib
 ```
 
 **Built-in testing** &mdash; no test framework to install.
@@ -252,7 +252,7 @@ test('User API', @{
 ```
 
 ```sh
-nyssa test
+zuri test
 ```
 
 ---
@@ -299,7 +299,7 @@ zuri server.zuri
 
 | Project                                                 | Description                                        |
 |---------------------------------------------------------|----------------------------------------------------|
-| [Nyssa](https://github.com/zuri-lang/zuri)              | Package manager and self-hostable private registry |
+| [Zuri](https://github.com/zuri-lang/zuri)              | Package manager and self-hostable private registry |
 | [Wire](https://github.com/zuri-lang/zuri)               | Built-in HTML template engine                      |
 | [zuri-vscode](https://github.com/zuri-lang/zuri-vscode) | Visual Studio Code extension                       |
 | [jsonrpc](https://github.com/mcfriend99/jsonrpc)        | JSON-RPC library                                   |

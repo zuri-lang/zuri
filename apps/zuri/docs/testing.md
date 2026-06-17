@@ -1,8 +1,6 @@
 # Testing
 
-Zuri comes shipped with a test runner called `qi` designed to run tests are out the `tests` directory. Nyssa provides the default interface to the test runner via the `test` command allowing you to write and run tests for your Zuri applications out of the box. For this reason, Nyssa considers all files in the `test` directory as test files and will automatically create the directory for you when you create a new project.
-
-Both _ZURI_ and `Qi` ship with Zuri allowing you write comprehensive tests without any third-party package.
+Zuri comes shipped with a test runner designed to run tests are inside the `tests` directory. Zuri provides the default interface to the test runner via the `test` command allowing you to write and run tests for your Zuri applications out of the box. For this reason, Zuri considers all files in the `tests` directory as test files and will automatically create the directory for you when you create a new project.
 
 ### Writing a simple test
 
@@ -31,13 +29,13 @@ test('Product test suite', @{
 Run the following command at the root directory (the directory that contains the `tests` folder) to run all tests.
 
 ```sh
-nyssa test
+zuri test
 ```
 
 You should get an output similar to this:
 
 ```sh
- PASS  tests/prod.test.zu
+PASS  tests/prod.test.zu
   Product test suite
     ✔ should return 6 for 2 and 3 (1.09µs)
       ✔ expect "6" to be "6"

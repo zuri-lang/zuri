@@ -15,6 +15,6 @@
 # log files
 *.log
 
-# nyssa custom
+# Zuric custom
 *.DS_Store
 storage/
