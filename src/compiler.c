@@ -514,11 +514,13 @@ static z_obj_func* end_compiler(z_parser* p) {
   emit_return(p);
   z_obj_func* function = p->vm->compiler->function;
 
-  if (!p->had_error && p->vm->should_print_bytecode) {
+#if PRINT_BYTECODE
+  if (!p->had_error) {
     disassemble_blob(current_blob(p), function->name == NULL
                                         ? p->module->file
                                         : function->name->chars);
   }
+#endif
 
   p->vm->compiler = p->vm->compiler->enclosing;
   return function;
@@ -1623,9 +1625,6 @@ static void compile_type_check(z_parser* p, int index, z_token name, z_token typ
 static int function_args(z_parser* p, bool is_operator) {
   // compile argument list...
   int count = 0;
-
-  z_token hint_names[MAX_FUNCTION_PARAMETERS];
-  z_token hint_types[MAX_FUNCTION_PARAMETERS];
   int hint_count = 0;
 
   do {
@@ -1658,25 +1657,18 @@ static int function_args(z_parser* p, bool is_operator) {
         return count;
       }
 
-      // Capture type hints
-      hint_names[hint_count] = p->previous;
+      // Capture variable name
+      z_token name = p->previous;
 
       match(p, COLON_TOKEN);
-
       consume(p, IDENTIFIER_TOKEN, "expected type name after ':'");
-      hint_types[hint_count] = p->previous;
       hint_count++;
+
+      compile_type_check(p, hint_count, name, p->previous);
     }
 
     ignore_whitespace(p);
   } while (match(p, COMMA_TOKEN));
-
-  if (hint_count > 0) {
-    for (int i = 0; i < hint_count; i++) {
-      compile_type_check(p, i + 1, hint_names[i], hint_types[i]);
-    }
-  }
-
   return count;
 }
 

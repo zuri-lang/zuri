@@ -976,7 +976,7 @@ class Parser {
     while self._match(TokenType.IDENTIFIER, TokenType.TRI_DOT) {
       params.append(self._previous().literal)
 
-      if self._check(TokenType.COLON) {
+      if self._match(TokenType.COLON) {
         self._consume(TokenType.IDENTIFIER, "expected type name after ':' in method declaration")
       }
 
@@ -1031,7 +1031,7 @@ class Parser {
     while self._match(TokenType.IDENTIFIER, TokenType.TRI_DOT) {
       params.append(self._previous().literal)
 
-      if self._check(TokenType.COLON) {
+      if self._match(TokenType.COLON) {
         self._consume(TokenType.IDENTIFIER, "expected type name after ':' in method declaration")
       }
 

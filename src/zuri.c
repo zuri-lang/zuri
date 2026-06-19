@@ -185,100 +185,12 @@ static void repl(z_vm *vm) {
   }
 }
 
-void show_usage(char *argv[], bool fail) {
-  FILE *out = fail ? stderr : stdout;
-  fprintf(out, "Usage: %s [-[h | c | d | e | v | g | w]] [filename]\n", argv[0]);
-  fprintf(out, "   -h       Show this help message.\n");
-  fprintf(out, "   -v       Show version string.\n");
-  fprintf(out, "   -b arg   Buffer terminal outputs with the given size.\n");
-  fprintf(out, "   -d       Print bytecode.\n");
-  fprintf(out, "   -e       Print bytecode and exit.\n");
-  fprintf(out, "   -g arg   Sets the minimum heap size in kilobytes before the GC\n"
-               "            can start. [Default = %d (%s)]\n", DEFAULT_GC_START / 1024, format_size(DEFAULT_GC_START));
-  // fprintf(out, "   -c arg   Runs the given code.\n");
-  fprintf(out, "   -w       Show runtime warnings.\n");
-  exit(fail ? EXIT_FAILURE : EXIT_SUCCESS);
-}
-
 int main(int argc, char *argv[]) {
-
-  bool show_warnings = false;
-  bool should_print_bytecode = false;
-  long stdout_buffer_size = 0L;
-  bool should_exit_after_bytecode = false;
-  // char *source = NULL;
-  int next_gc_start = DEFAULT_GC_START;
-
-//   if (argc > 1) {
-//     int opt;
-// #ifdef __linux__
-//     while ((opt = getopt(argc, argv, "+hdeb:s:vg:wc:")) != -1) {
-// #else
-//     while ((opt = getopt(argc, argv, "hdeb:s:vg:wc:")) != -1) {
-// #endif
-//       switch (opt) {
-//         case 'h': {
-//           show_usage(argv, false);
-//           break;
-//         }// exits
-//         case 'd':
-//           should_print_bytecode = true;
-//           break;
-//         case 'e':
-//           should_print_bytecode = true;
-//           should_exit_after_bytecode = true;
-//           break;
-//         case 'b':
-//           stdout_buffer_size = strtol(optarg, NULL, 10);
-//           if (stdout_buffer_size < 0) {
-//             stdout_buffer_size = 0;
-//           }
-//           break;
-//         case 'v': {
-//           printf("Zuri " ZURI_VERSION_STRING " (running on ZuriVM " ZVM_VERSION ")\n");
-//           return EXIT_SUCCESS;
-//         }
-//         case 'g': {
-//           int next = (int) strtol(optarg, NULL, 10);
-//           if (next > 0) {
-//             next_gc_start = next * 1024; // expected value is in kilobytes
-//           }
-//           break;
-//         }
-//         // case 'c': {
-//         //   source = optarg;
-//         //   break;
-//         // }
-//         case 'w': {
-//           show_warnings = true;
-//           break;
-//         }
-//         default: {
-//           show_usage(argv, true); // exits
-//           break;
-//         }
-//       }
-//     }
-//   }
 
   z_vm *vm = (z_vm *) malloc(sizeof(z_vm));
   if (vm != NULL) {
     memset(vm, 0, sizeof(z_vm));
     init_vm(vm);
-
-    // set vm options...
-    vm->show_warnings = show_warnings;
-    vm->should_print_bytecode = should_print_bytecode;
-    vm->should_exit_after_bytecode = should_exit_after_bytecode;
-    vm->next_gc = next_gc_start;
-
-    if (stdout_buffer_size) {
-      // forcing printf buffering for TTYs and terminals
-      if (isatty(fileno(stdout))) {
-        char buffer[stdout_buffer_size];
-        setvbuf(stdout, buffer, _IOFBF, stdout_buffer_size);
-      }
-    }
 
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -331,9 +243,16 @@ int main(int argc, char *argv[]) {
     // always do this last so that we can have access to everything else
     bind_native_modules(vm);
 
-    /*if (source != NULL) {
-      run_code(vm, source, true);
-    } else */
+    // Now, set vm defaults
+
+#if STDOUT_BUFFER_SIZE > 0
+    // forcing printf buffering for TTYs and terminals
+    if (isatty(fileno(stdout))) {
+      char buffer[stdout_buffer_size];
+      setvbuf(stdout, buffer, _IOFBF, stdout_buffer_size);
+    }
+#endif
+
     if (vm->is_repl) {
       repl(vm);
     } else if (args != NULL && args[1] != NULL) {
@@ -345,6 +264,5 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  fprintf(stderr, "Device out of memory.");
-  exit(EXIT_FAILURE);
+  OUT_OF_MEMORY();
 }

@@ -239,8 +239,6 @@ z_vm *copy_vm(z_vm *src, uint64_t id) {
   vm->root_file = src->root_file;
   vm->is_repl = src->is_repl;
   vm->show_warnings = src->show_warnings;
-  vm->should_print_bytecode = src->should_print_bytecode;
-  vm->should_exit_after_bytecode = src->should_exit_after_bytecode;
   vm->std_args = src->std_args;
   vm->std_args_count = src->std_args_count;
 

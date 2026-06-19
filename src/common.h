@@ -132,6 +132,6 @@
 #define EXIT_RUNTIME 11
 #define EXIT_TERMINAL 12
 
-#define ZURI_COPYRIGHT "\tCopyright (c) Richard Ore"
+#define ZURI_COPYRIGHT "\tCopyright (c) Richard Ore and The Zuri Contributors"
 
 #endif

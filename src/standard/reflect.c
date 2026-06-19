@@ -464,13 +464,6 @@ DECLARE_MODULE_METHOD(reflect__set_ptr_value) {
   RETURN;
 }
 
-// DECLARE_MODULE_METHOD(reflect__printbytecode) {
-//   ENFORCE_ARG_COUNT(print_bytecode, 1);
-//   ENFORCE_ARG_TYPE(print_bytecode, 0, IS_BOOL);
-//   vm->should_print_bytecode = AS_BOOL(args[0]);
-//   RETURN;
-// }
-
 CREATE_MODULE_LOADER(reflect) {
   static z_func_reg module_functions[] = {
       {"hasprop",   true,  GET_MODULE_METHOD(reflect__hasprop)},

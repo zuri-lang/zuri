@@ -13,6 +13,7 @@
 
 // global debug mode flag
 #define DEBUG_MODE 0
+#define PRINT_BYTECODE DEBUG_MODE
 
 #define MAX_USING_CASES 256
 #define MAX_FUNCTION_PARAMETERS 255
@@ -36,6 +37,8 @@
 
 #define INTEGER_PRINT_FORMAT "%lld"
 #define DOUBLE_PRINT_FORMAT "%.16g"
+
+#define STDOUT_BUFFER_SIZE 0
 
 #cmakedefine HAVE_GETOPT_H
 #cmakedefine HAVE_TERMIOS_H

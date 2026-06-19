@@ -685,7 +685,7 @@ DECLARE_MODULE_METHOD(ssl_read) {
     while (bytes > 0) {
       data = GROW_ARRAY(char, data, total, total + bytes + 1);
       if (data == NULL) {
-        RETURN_ERROR("device out of memory.");
+        OUT_OF_MEMORY();
       }
 
       memcpy(data + total, buffer, bytes);

@@ -588,8 +588,6 @@ void init_vm(z_vm *vm) {
   vm->is_repl = false;
   vm->mark_value = true;
   vm->show_warnings = false;
-  vm->should_print_bytecode = false;
-  vm->should_exit_after_bytecode = false;
 
   vm->gray_count = 0;
   vm->gray_capacity = 0;
@@ -2902,9 +2900,9 @@ z_ptr_result interpret(z_vm *vm, z_obj_module *module, const char *source) {
     return PTR_COMPILE_ERR;
   }
 
-  if (vm->should_exit_after_bytecode) {
-    return PTR_OK;
-  }
+#if PRINT_BYTECODE
+  return PTR_OK;
+#endif
 
   push(vm, OBJ_VAL(function));
   z_obj_closure *closure = new_closure(vm, function);

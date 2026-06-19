@@ -78,8 +78,6 @@ struct s_vm {
   bool mark_value;
   // for switching through the command line args...
   bool show_warnings;
-  bool should_print_bytecode;
-  bool should_exit_after_bytecode;
 
   // id
   uint64_t id;
