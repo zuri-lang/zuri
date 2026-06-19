@@ -161,8 +161,7 @@ class Pool {
       var result
       catch {
         result = conn.query(sql, options)
-      } as err
-      if err {
+      } as err {
         self._release(conn)
         raise err
       }

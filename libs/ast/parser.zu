@@ -976,6 +976,10 @@ class Parser {
     while self._match(TokenType.IDENTIFIER, TokenType.TRI_DOT) {
       params.append(self._previous().literal)
 
+      if self._check(TokenType.COLON) {
+        self._consume(TokenType.IDENTIFIER, "expected type name after ':' in method declaration")
+      }
+
       if !self._check(TokenType.RPAREN) {
         self._consume(TokenType.COMMA, "',' expected between function arguments")
         self._ignore_newline()
@@ -1026,6 +1030,10 @@ class Parser {
     self._consume(TokenType.LPAREN, "'(' expected after method name")
     while self._match(TokenType.IDENTIFIER, TokenType.TRI_DOT) {
       params.append(self._previous().literal)
+
+      if self._check(TokenType.COLON) {
+        self._consume(TokenType.IDENTIFIER, "expected type name after ':' in method declaration")
+      }
 
       if !self._check(TokenType.RPAREN) {
         self._consume(TokenType.COMMA, "',' expected between method arguments")

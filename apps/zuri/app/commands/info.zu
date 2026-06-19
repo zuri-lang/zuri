@@ -30,7 +30,7 @@ def green(t) {
 }
 
 def title(t) {
-  return green(bold(t)) + '\n' + green('~' * t.length())
+  return green(bold(t)) + '\n'
 }
 
 def info(n, m) {
@@ -52,34 +52,38 @@ def run(value, options, success, error) {
   var config = Config.from_dict(util.load_config())
 
   catch {
+    echo title('Package Information')
+    echo info('Name', config.name)
+    echo info('Version', config.version)
+    echo info('Description', config.description)
+    echo info('Homepage', config.homepage)
+    echo info('Author', config.author)
+    echo info('License', config.license)
+    echo info('Tags', ', '.join(config.tags))
+
     echo ''
-      echo title('PACKAGE INFORMATION')
-      echo info('Name', config.name)
-      echo info('Version', config.version)
-      echo info('Description', config.description)
-      echo info('Homepage', config.homepage)
-      echo info('Author', config.author)
-      echo info('License', config.license)
-      echo info('Tags', ', '.join(config.tags))
-      echo ''
-      echo title('DEPENDENCIES')
-      if config.deps {
-        for name, version in config.deps {
-          echo info(name, version)
-        }
-      } else {
-        echo empty()
+    echo title('Dependencies')
+
+    var deps = config.deps.clone()
+    deps.extend(config.cvs_deps)
+
+    if deps {
+      for name, version in deps {
+        echo info(name, version)
       }
-      echo ''
-      echo title('SOURCES')
-      if config.sources {
-        for source in config.sources {
-          echo info(source)
-        }
-      } else {
-        echo empty()
+    } else {
+      echo empty()
+    }
+
+    echo ''
+    echo title('Sources')
+    if config.sources {
+      for source in config.sources {
+        echo info(source)
       }
-      echo ''
+    } else {
+      echo empty()
+    }
   } as e
 
   if e {

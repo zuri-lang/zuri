@@ -427,9 +427,7 @@ def exit_code() {
  * 
  * catch {  
  *   raise AssertionError('') 
- * } as e
- *
- * if e {
+ * } as e {
  *   # ... 
  * }
  * ```

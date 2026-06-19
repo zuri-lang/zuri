@@ -495,9 +495,18 @@ static void define_variable(z_parser* p, int global) {
 }
 
 static z_token synthetic_token(const char* name) {
-  z_token token;
-  token.start = name;
-  token.length = (int)strlen(name);
+  z_token token = {
+    .start = name,
+    .length = (int)strlen(name),
+  };
+  return token;
+}
+
+static z_token synthetic_l_token(const char* name, int length) {
+  z_token token = {
+    .start = name,
+    .length = length,
+  };
   return token;
 }
 
@@ -1022,7 +1031,7 @@ static z_value compile_number(z_parser* p) {
     long value = strtol(p->previous.start + 2, NULL, 8);
     return NUMBER_VAL(value);
   } else if (p->previous.type == HEX_NUMBER_TOKEN) {
-    unsigned long long value = strtoull(p->previous.start, NULL, 16);  // always 64-bit
+    unsigned long long value = strtoull(p->previous.start, NULL, 16); // always 64-bit
     return NUMBER_VAL((double)value);
   } else {
     double value = strtod(p->previous.start, NULL);
@@ -1383,9 +1392,9 @@ z_parse_rule parse_rules[] = {
 static bool next_meaningful_token_is_dot(z_parser* p) {
   // Snapshot complete scanner and parser token state before skipping
   // newlines, so we can restore everything if no dot follows.
-  z_scanner saved_scanner  = *p->scanner;
-  z_token   saved_current  = p->current;
-  z_token   saved_previous = p->previous;
+  z_scanner saved_scanner = *p->scanner;
+  z_token saved_current = p->current;
+  z_token saved_previous = p->previous;
 
   ignore_whitespace(p);
   bool is_dot = p->current.type == DOT_TOKEN;
@@ -1393,7 +1402,7 @@ static bool next_meaningful_token_is_dot(z_parser* p) {
   // Always restore — the actual consumption happens in the loop body
   // via the existing ignore_whitespace + advance sequence.
   *p->scanner = saved_scanner;
-  p->current  = saved_current;
+  p->current = saved_current;
   p->previous = saved_previous;
 
   return is_dot;
@@ -1492,9 +1501,133 @@ static void return_statement(z_parser* p, bool is_inline) {
   p->is_returning = false;
 }
 
+static struct {
+  const char* name;
+  const int name_len;
+  const char* type_fn;
+  const int type_fn_len;
+} z_type_check_map[] = {
+  {"any", 3, NULL, 0},
+  {"bool", 4, "is_bool", 7},
+  {"int", 3, "is_int", 6},
+  {"number", 6, "is_number", 9},
+  {"string", 6, "is_string", 9},
+  {"list", 4, "is_list", 7},
+  {"dict", 4, "is_dict", 7},
+  {"range", 5, "is_range", 8},
+  {"function", 8, "is_function", 11},
+  {"class", 5, "is_class", 5},
+  {"instance", 8, "is_instance", 8},
+  {NULL, -1, NULL, -1},
+};
+
+static char* create_type_check_error_message(z_token name, z_token type, int index, int *length) {
+#define ERROR_FORMAT "value of type %.*s expected in argument %d (%.*s)"
+
+  *length = snprintf(
+    NULL, 0,
+    ERROR_FORMAT, type.length, type.start, index, name.length, name.start
+  );
+
+  char* message = calloc(*length + 1, sizeof(char));
+  sprintf(message, ERROR_FORMAT, type.length, type.start, index, name.length, name.start);
+
+  return message;
+
+#undef ERROR_FORMAT
+}
+
+static void compile_type_check(z_parser* p, int index, z_token name, z_token type) {
+  bool native_type_found = false, is_any = false;
+
+  // Firstly, check if it's nil.
+  // If it is nil, we want to jump the entire type check.
+  emit_byte_and_short(p, OP_GET_LOCAL, index);
+  emit_byte(p, OP_NIL);
+  emit_byte(p, OP_EQUAL);
+  emit_byte(p, OP_NOT);
+
+  int nil_exit = emit_jump(p, OP_JUMP_IF_FALSE);
+  emit_byte(p, OP_POP);
+
+  for (int i = 0; z_type_check_map[i].name != NULL; i++) {
+    if (
+      z_type_check_map[i].name_len == type.length
+      && memcmp(z_type_check_map[i].name, type.start, z_type_check_map[i].name_len) == 0
+    ) {
+      // Do not compile anything for type "any"
+      if (z_type_check_map[i].type_fn == NULL) {
+        is_any = true;
+        break;
+      }
+
+      // Get the typecheck function on stack...
+      z_token check_fn_token = synthetic_l_token(z_type_check_map[i].type_fn, z_type_check_map[i].type_fn_len);
+      int check_fn_global_id = identifier_constant(p, &check_fn_token);
+      emit_byte_and_short(p, OP_GET_GLOBAL, check_fn_global_id);
+
+      // Wrap it in a function call (e.g. !is_string(x)
+      emit_byte_and_short(p, OP_GET_LOCAL, index);
+      emit_bytes(p, OP_CALL, 1);
+
+      native_type_found = true;
+      break;
+    }
+  }
+
+  if (!native_type_found && !is_any) {
+    // We need a class name instead
+
+    // Get the "instance_of" typecheck function on stack...
+    z_token check_fn_token = synthetic_l_token("instance_of", 11);
+    int check_fn_global_id = identifier_constant(p, &check_fn_token);
+    emit_byte_and_short(p, OP_GET_GLOBAL, check_fn_global_id);
+
+    // Wrap it in a function call (e.g. !instance_of(x, Exception)
+    emit_byte_and_short(p, OP_GET_LOCAL, index);
+    named_variable(p, type, false);
+    emit_bytes(p, OP_CALL, 2);
+  }
+
+  if (!is_any) {
+    emit_byte(p, OP_NOT);
+
+    int exit_jump = emit_jump(p, OP_JUMP_IF_FALSE);
+    emit_byte(p, OP_POP);
+
+    z_token exception_token = synthetic_l_token("TypeError", 9);
+    int exception_id = identifier_constant(p, &exception_token);
+    emit_byte_and_short(p, OP_GET_GLOBAL, exception_id);
+
+    int error_message_length = 0;
+    char* error_message = create_type_check_error_message(name, type, index, &error_message_length);
+
+    emit_constant(p, OBJ_VAL(copy_string(p->vm, error_message, error_message_length)));
+    emit_bytes(p, OP_CALL, 1);
+    emit_byte(p, OP_RAISE);
+
+    free(error_message);
+
+    int else_jump = emit_jump(p, OP_JUMP);
+    patch_jump(p, exit_jump);
+    emit_byte(p, OP_POP);
+    patch_jump(p, else_jump);
+  }
+
+  int else_jump = emit_jump(p, OP_JUMP);
+  patch_jump(p, nil_exit);
+  emit_byte(p, OP_POP);
+  patch_jump(p, else_jump);
+}
+
 static int function_args(z_parser* p, bool is_operator) {
   // compile argument list...
   int count = 0;
+
+  z_token hint_names[MAX_FUNCTION_PARAMETERS];
+  z_token hint_types[MAX_FUNCTION_PARAMETERS];
+  int hint_count = 0;
+
   do {
     count++;
 
@@ -1518,8 +1651,32 @@ static int function_args(z_parser* p, bool is_operator) {
 
     int param_constant = parse_variable(p, "expected parameter name");
     define_variable(p, param_constant);
+
+    if (check(p, COLON_TOKEN)) {
+      if (count > hint_count + 1) {
+        error_at_current(p, "cannot have type hinted parameter after non-hinted parameter");
+        return count;
+      }
+
+      // Capture type hints
+      hint_names[hint_count] = p->previous;
+
+      match(p, COLON_TOKEN);
+
+      consume(p, IDENTIFIER_TOKEN, "expected type name after ':'");
+      hint_types[hint_count] = p->previous;
+      hint_count++;
+    }
+
     ignore_whitespace(p);
   } while (match(p, COMMA_TOKEN));
+
+  if (hint_count > 0) {
+    for (int i = 0; i < hint_count; i++) {
+      compile_type_check(p, i + 1, hint_names[i], hint_types[i]);
+    }
+  }
+
   return count;
 }
 
@@ -1704,7 +1861,7 @@ static void class_declaration(z_parser* p) {
 
   z_token extending_class = {
     .length = 0,
-    .line  = 0,
+    .line = 0,
     .start = "",
     .type = UNDEFINED_TOKEN,
   };
@@ -2476,7 +2633,11 @@ static void catch_statement(z_parser* p) {
 
       block(p);
       ignore_whitespace(p);
+
+      int else_jump = emit_jump(p, OP_JUMP);
       patch_jump(p, exit_jump);
+      emit_byte(p, OP_POP);
+      patch_jump(p, else_jump);
     }
 
     if (has_scope) {

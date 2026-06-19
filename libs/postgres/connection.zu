@@ -436,8 +436,7 @@ class Connection {
    */
   transaction(fn, isolation) {
     self.begin(isolation)
-    catch { fn() } as err
-    if err {
+    catch { fn() } as err {
       catch { self.rollback() } as _e
       raise err
     }

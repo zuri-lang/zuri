@@ -198,9 +198,7 @@ def _pop_hook_level() {
     for fn in h.after_all {
       catch {
         fn()
-      } as e 
-      
-      if e {
+      } as e {
         _p.print_unexpected_error('after_all hook', _state.depth(), e.message)
       }
     }
@@ -213,9 +211,7 @@ def _run_before_each() {
     for fn in h.before_each {
       catch {
         fn()
-      } as e 
-      
-      if e {
+      } as e {
         raise e   # propagate so the test itself is marked failed
       }
     }
@@ -227,9 +223,7 @@ def _run_after_each() {
     for fn in h.after_each {
       catch {
         fn()
-      } as e 
-      
-      if e {
+      } as e {
         # after_each errors are reported but do not change test status
         _p.print_unexpected_error('after_each hook', _state.depth(), e.message)
       }
@@ -245,9 +239,7 @@ def _run_before_all_if_needed() {
     for fn in h.before_all {
       catch {
         fn()
-      } as e 
-      
-      if e {
+      } as e {
         raise e
       }
     }
@@ -364,9 +356,7 @@ def run_it(name, fn, is_only, is_skip, is_todo) {
   # Run before_all for this suite level (once per suite)
   catch {
     _run_before_all_if_needed()
-  } as ba_err
-  
-  if ba_err {
+  } as ba_err {
     result.status = 'fail'
     _state.failed++
     result.failures.append({
@@ -385,9 +375,7 @@ def run_it(name, fn, is_only, is_skip, is_todo) {
   # before_each
   catch {
     _run_before_each()
-  } as be_err 
-  
-  if be_err {
+  } as be_err {
     result.status = 'fail'
     _state.failed++
     result.failures.append({

@@ -170,9 +170,7 @@ def get_package_config() {
     version: io.readline('version ${_default("1.0.0")}:').trim() or '1.0.0',
     description: io.readline('description:').trim(),
     homepage: io.readline('homepage:').trim(),
-    tags: io.readline('tags:').trim().split(',').map(@(x) {
-      return x.trim()
-    }),
+    tags: io.readline('tags:').trim().split(',').map(@(x) => x.trim()).filter(@(x) => !!x),
     author: io.readline('author:').trim(),
     license: io.readline('license ${_default("ISC")}:').trim() or 'ISC',
   })

@@ -809,9 +809,7 @@ class Expect {
 
     catch {
       self._value()
-    } as _e 
-    
-    if _e {
+    } as _e {
       threw = true
     }
 
@@ -840,9 +838,7 @@ class Expect {
 
     catch {
       self._value()
-    } as e 
-    
-    if e {
+    } as e {
       threw = true
       actual_msg = e.message
     }
@@ -876,9 +872,7 @@ class Expect {
 
     catch {
       self._value()
-    } as e 
-    
-    if e {
+    } as e {
       threw = true
       correct_type = instance_of(e, error_class)
     }
@@ -909,9 +903,7 @@ class Expect {
 
     catch {
       self._value()
-    } as e 
-    
-    if e {
+    } as e {
       threw = true
       err_msg = e.message
     }
