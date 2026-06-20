@@ -207,7 +207,7 @@ class ZipItem {
    * 
    * This function returns `true` if the operation succeeds or `false` otherwise.
    * 
-   * @param string? base_dir: Default value is `os.cwd()`.
+   * @param ?string base_dir: Default value is `os.cwd()`.
    * @returns bool
    */
   export(base_dir) {
@@ -304,7 +304,7 @@ class ZipFile {
    * 
    * This function returns `true` if the operation succeeds or `false` otherwise.
    * 
-   * @param string? base_dir: Default value is `os.cwd()`.
+   * @param ?string base_dir: Default value is `os.cwd()`.
    * @returns bool
    */
   export(base_dir) {
@@ -344,8 +344,8 @@ class ZipArchive {
 
   /**
    * @param string path
-   * @param number? compression_method: Default value is `ZIP_DEFLATE`
-   * @param bool? use_zip_64: Default value is `false`.
+   * @param ?number compression_method: Default value is `ZIP_DEFLATE`
+   * @param ?bool use_zip_64: Default value is `false`.
    * @constructor
    */
   ZipArchive(path, compression_method, use_zip_64) {
@@ -659,7 +659,7 @@ class ZipArchive {
    * file will be written to the destination path in the archive.
    * 
    * @param string path
-   * @param string? destination
+   * @param ?string destination
    * @returns bool
    */
   add_file(path, destination) {
@@ -1059,8 +1059,8 @@ class ZipArchive {
  * > Set `is_zip64` to true if the size of the zip file exceeds `ZIP_MAX`.
  * 
  * @param string file
- * @param string? destination: Default value is `os.cwd()`.
- * @param bool? is_zip64: Default value is `false`.
+ * @param ?string destination: Default value is `os.cwd()`.
+ * @param ?bool is_zip64: Default value is `false`.
  * @returns bool
  */
 def extract(file, destination, is_zip64) {
@@ -1091,9 +1091,9 @@ def extract(file, destination, is_zip64) {
  * > `ZIP_FILE_COUNT_LIMIT`
  * 
  * @param string file
- * @param string? destination: Default value is `os.cwd()`.
- * @param number? compression_method: Default value is `ZIP_DEFLATE`
- * @param bool? is_zip64: Default value is `false`.
+ * @param ?string destination: Default value is `os.cwd()`.
+ * @param ?number compression_method: Default value is `ZIP_DEFLATE`
+ * @param ?bool is_zip64: Default value is `false`.
  * @returns bool
  */
 def compress(path, destination, compression_method, use_zip64) {

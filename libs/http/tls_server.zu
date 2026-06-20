@@ -46,7 +46,7 @@ class TLSServer < HttpServer {
 
   /**
    * @param int port
-   * @param string? host
+   * @param ?string host
    * @constructor
    */
   TLSServer(port, host) {

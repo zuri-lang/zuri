@@ -344,7 +344,7 @@ class Token {
  * @param  dict   header   — must contain at minimum an 'alg' key
  * @param  dict   payload
  * @param  string secret
- * @param  dict?   options  — see `sign()` for supported option keys
+ * @param  ?dict   options  — see `sign()` for supported option keys
  * @return string
  * @throws AlgorithmException
  * @throws JwtException
@@ -532,7 +532,7 @@ def decode(token) {
  *
  * @param  dict   payload
  * @param  string secret
- * @param  dict?   options
+ * @param  ?dict   options
  * @return string
  * @throws AlgorithmException
  * @throws JwtException

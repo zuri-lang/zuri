@@ -18,7 +18,7 @@
  * %> "another version with double quotes"
  * 'another version with double quotes'
  * %> 'What\'s the escape character?'
- * "What's the escape character?"
+ * "What's the escape ?character"
  * %> "It's the \"\\\" character"
  * "It's the "\" character"
  * ```
@@ -917,7 +917,7 @@ class string {
    * true
    * %> 'gorilla'.match('gox')     # regular string non-match
    * false
-   * %> 'gorilla'.match('/gox?/')  # regular expression match
+   * %> 'gorilla'.match('/?gox/')  # regular expression match
    * {0: go}
    * %> 'gorilla'.match('/gox\d/') # regular expression non-match
    * false

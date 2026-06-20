@@ -115,7 +115,7 @@ def run(value, options, success, error) {
   if os.read_dir(libs_dir).some(@(x) => x == package_name) {
 
     echo 'Another package with the same name "${name}" is currently installed'
-    if !['y', 'Y'].contains(io.readline('Do you want to remove it and fetch this one? [y/N]').trim())
+    if !['y', 'Y'].contains(io.readline('Do you want to remove it and fetch this ?one [y/N]').trim())
       return
 
     # Remove the existing package

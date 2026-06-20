@@ -31,7 +31,7 @@ class BIO {
    * 
    * @note Option must be one of the BIO constants if given.
    * @param [[ssl.SSL]] ssl
-   * @param int? option: Default value is `BIO_NOCLOSE`
+   * @param ?int option: Default value is `BIO_NOCLOSE`
    */
   set_ssl(ssl, option) {
     if !instance_of(ssl, SSL)
@@ -207,7 +207,7 @@ class BIO {
    * Sets the socket file descriptor for this BIO
    * 
    * @param int fd
-   * @param int? opt: Default value is `BIO_NOCLOSE`
+   * @param ?int opt: Default value is `BIO_NOCLOSE`
    */
   set_fd(fd, opt) {
     if !is_int(fd)
@@ -224,7 +224,7 @@ class BIO {
    * Converts the BIO into a non-blocking I/O stream if b is `true`, otherwise 
    * converts it into a blocking stream.
    * 
-   * @param bool? is_blocking: Default value is `true`.
+   * @param ?bool is_blocking: Default value is `true`.
    */
   set_non_blocking(is_blocking) {
     if !is_blocking is_blocking = true
@@ -281,7 +281,7 @@ class BIO {
   /**
    * Reads data off the I/O and returns it.
    * 
-   * @param int? length: Default value is `1024`
+   * @param ?int length: Default value is `1024`
    * @returns string
    */
   read(length) {
@@ -328,7 +328,7 @@ class BIO {
   /**
    * Returns the last SSL error number.
    * 
-   * @param int? code
+   * @param ?int code
    * @returns int
    */
   error(code) {

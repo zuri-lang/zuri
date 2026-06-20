@@ -120,7 +120,7 @@ var _parse_defaults = {
  * ```
  * 
  * @param string str
- * @param dict? options
+ * @param ?dict options
  * @returns list
  */
 def decode(str, options) {
@@ -148,7 +148,7 @@ def decode(str, options) {
  * declare a custom tag as self-closing.
  * 
  * @param list nodes
- * @param dict? options
+ * @param ?dict options
  * @returns string
  */
 def encode(nodes, options) {

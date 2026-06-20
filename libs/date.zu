@@ -287,15 +287,15 @@ class Date {
    * @note When no argument is given, the date will be set to the current system date.
    * @note when the date fields are given, the timezone is always in UTC irrespective of the 
    *    system timezone or if a gmt_offset is given or not.
-   * @param number? year
-   * @param number? month
-   * @param number? day
-   * @param number? hour
-   * @param number? minute
-   * @param number? seconds
-   * @param number? microseconds
-   * @param number? gmt_offset
-   * @param bool? is_dst
+   * @param ?number year
+   * @param ?number month
+   * @param ?number day
+   * @param ?number hour
+   * @param ?number minute
+   * @param ?number seconds
+   * @param ?number microseconds
+   * @param ?number gmt_offset
+   * @param ?bool is_dst
    * @constructor 
    */
   Date(year, month, day, hour, minute, seconds, microseconds, gmt_offset, is_dst) {
@@ -2241,13 +2241,13 @@ def parse_format(date_string, format) {
 /**
  * Returns a new `Date` instance representing the given system date or the current date if no argument is specified.
  * 
- * @param number? year
- * @param number? month
- * @param number? day
- * @param number? hour
- * @param number? minute
- * @param number? seconds
- * @param bool? is_dst
+ * @param ?number year
+ * @param ?number month
+ * @param ?number day
+ * @param ?number hour
+ * @param ?number minute
+ * @param ?number seconds
+ * @param ?bool is_dst
  * @returns Date
  * @default
  */

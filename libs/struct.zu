@@ -91,7 +91,7 @@ def pack(format, ...) {
  * 
  * @param string format
  * @param bytes|string data
- * @param number? offset: Default value is `0`
+ * @param ?number offset: Default value is `0`
  * @returns any
  */
 def unpack(format, data, offset) {

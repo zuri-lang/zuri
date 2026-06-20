@@ -47,8 +47,8 @@ class Encoder {
   var _is_list = false
 
   /**
-   * @param bool? compact: Default value is `false`.
-   * @param number? max_depth: Default value is `1024`.
+   * @param ?bool compact: Default value is `false`.
+   * @param ?number max_depth: Default value is `1024`.
    * @note Depth starts from zero
    * @note Set max_depth to `0` to disable max depth
    * @constructor

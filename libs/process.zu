@@ -71,8 +71,8 @@ var cpu_count = _process.cpu_count
 class PagedValue {
 
   /**
-   * @param bool? executable
-   * @param bool? private
+   * @param ?bool executable
+   * @param ?bool private
    * @constructor
    */
   PagedValue(executable, private) {
@@ -305,7 +305,7 @@ class Process {
    * if the process was initialized with a PagedValue.
    * 
    * @param function fn
-   * @param PageValue? paged
+   * @param ?PageValue paged
    * @constructor
    */
   Process(fn, paged) {
@@ -435,7 +435,7 @@ class Process {
  * if the process was initialized with a PagedValue.
  * 
  * @param function fn
- * @param PageValue? paged
+ * @param ?PageValue paged
  * @default
  */
 def process(fn, paged) {

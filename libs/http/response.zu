@@ -126,7 +126,7 @@ class HttpResponse {
    * response will be sent with the given status code.
    * 
    * @param any data
-   * @param number? status_code
+   * @param ?number status_code
    */
   json(data, status_code) {
     if status_code != nil {
@@ -144,7 +144,7 @@ class HttpResponse {
    * response will be sent with the given status code.
    * 
    * @param string path
-   * @param number? status_code
+   * @param ?number status_code
    */
   file(path, status_code) {
     if status_code != nil {
@@ -167,11 +167,11 @@ class HttpResponse {
    * 
    * @param string key
    * @param string value
-   * @param string? domain
-   * @param string? path
-   * @param string? expires
-   * @param bool? secure
-   * @param string? extras
+   * @param ?string domain
+   * @param ?string path
+   * @param ?string expires
+   * @param ?bool secure
+   * @param ?string extras
    */
   set_cookie(key, value, domain, path, expires, secure, extras) {
     if !is_string(key) or !is_string(value)
@@ -208,7 +208,7 @@ class HttpResponse {
    * parameter is not given, the function defaults to `302`.
    * 
    * @param string location
-   * @param string? status
+   * @param ?string status
    * @note When supplying a status, it must be a 30x
    * @throw HttpException
    */
@@ -246,7 +246,7 @@ class HttpResponse {
    * helps reduce the overhead for use cases where rending is never needed.
    *
    * @param string path
-   * @param dict? variables
+   * @param ?dict variables
    */
   render(path, variables) {
     if !self._template {

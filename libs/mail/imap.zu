@@ -131,7 +131,7 @@ class IMAP {
             }
         }
         when 'search' {
-          line = line.replace('/\r?\n/', '').trim().replace('* SEARCH ', '', false)
+          line = line.replace('/\?r\n/', '').trim().replace('* SEARCH ', '', false)
           if line {
             list.extend(line.split(' '))
           }
@@ -143,7 +143,7 @@ class IMAP {
   }
 
   _examine(data) {
-    var lines = data.split('/\r?\n/')
+    var lines = data.split('/\?r\n/')
 
     var result = {
       flags: [],
@@ -347,7 +347,7 @@ class IMAP {
    * Executes a raw IMAP command.
    * 
    * @param string command The command to execute.
-   * @param string? path The path segment of the request url.
+   * @param ?string path The path segment of the request url.
    * @returns string The response from the server.
    */
   exec(command, path) {
@@ -364,7 +364,7 @@ class IMAP {
   /**
    * Gets a list of the mailbox directories on the server.
    * 
-   * @param string? path
+   * @param ?string path
    * @returns list
    */
   get_dirs(path) {
@@ -498,7 +498,7 @@ class IMAP {
    * real INBOX resides on the server or another.
    * 
    * @param string name
-   * @param string? pattern
+   * @param ?string pattern
    * @returns list
    */
   list(name, pattern) {
@@ -511,7 +511,7 @@ class IMAP {
    * Same as the `list()` function except that it returns a subset of names.
    * 
    * @param string name
-   * @param string? pattern
+   * @param ?string pattern
    * @returns list
    */
   lsub(name, pattern) {
@@ -650,8 +650,8 @@ class IMAP {
    *  when empty.
    * 
    * @see: https://datatracker.ietf.org/doc/html/rfc9051#section-6.4.4 for more.
-   * @param string? query
-   * @param string? folder
+   * @param ?string query
+   * @param ?string folder
    */
   search(query, folder) {
     if query != nil and !is_string(query)
@@ -671,8 +671,8 @@ class IMAP {
    * __path__ is not given, it will attempt to retrieve the message from the `INBOX` 
    * folder.
    * 
-   * @param number? uid
-   * @param string? path
+   * @param ?number uid
+   * @param ?string path
    */
   fetch(uid, path) {
     if uid != nil and !is_number(uid)

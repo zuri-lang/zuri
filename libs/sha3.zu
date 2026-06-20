@@ -69,7 +69,7 @@ class Keccak {
   /**
    * @param number bits: Capacity
    * @param number padding: Padding value - 1 for Keccak, 6 for SHA3 and 31 for SHAKE
-   * @param number? length: Optional length of the output hash in bits. If not given bits is taken as default.
+   * @param ?number length: Optional length of the output hash in bits. If not given bits is taken as default.
    * @constructor
    */
   Keccak(bits, padding, length) {

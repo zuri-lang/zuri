@@ -62,7 +62,7 @@ class Clib {
 
   /**
    * @note The _name_ should follow the same practice outlined in `load()`.
-   * @param string? name
+   * @param ?string name
    * @constructor
    */
   Clib(name) {

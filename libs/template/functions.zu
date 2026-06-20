@@ -326,7 +326,7 @@ def join(value, glue) {
  * {{ value|url_encode }}
  * ```
  * 
- * If value is **https://www.example.org/foo?a=b&c=d**, output will be **https://www.example.org/foo%3Fa%3Db&c%3Dd**.
+ * If value is **https://www.example.org/?fooa=b&c=d**, output will be **https://www.example.org/foo%3Fa%3Db&c%3Dd**.
  */
 def url_encode(value) {
   if !is_string(value)

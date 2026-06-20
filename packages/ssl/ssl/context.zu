@@ -26,7 +26,7 @@ class SSLContext {
    * @note The verification of certificates can be controlled by a set of logically or'ed mode flags.
    * @note If the mode is SSL_VERIFY_NONE none of the other flags may be set.
    * @param int mode
-   * @param bool? disable - Default: false
+   * @param ?bool disable - Default: false
    */
   set_verify(mode, disable) {
     if disable == nil disable = false

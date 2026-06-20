@@ -70,7 +70,7 @@ class Channel {
    *   var buffered   = thread.Channel(16)     # buffer up to 16 items
    * ```
    * 
-   * @param {number?} capacity - The capacity of the channel.
+   * @param {?number} capacity - The capacity of the channel.
    * @throws {Exception} If the capacity is not a number or is negative.
    * @constructor
    */
@@ -177,7 +177,7 @@ class Channel {
    *   }
    * ```
    * 
-   * @returns {any?} The value received from the channel, or `nil` if the channel is empty.
+   * @returns {?any} The value received from the channel, or `nil` if the channel is empty.
    */
   try_receive() {
     return _thread.channel_try_receive(self._ptr)

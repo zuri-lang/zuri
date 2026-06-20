@@ -140,8 +140,8 @@ class SSL {
    * Reads data off the I/O and returns it. Set _length_ to -1 to read 
    * till no data is available in the stream.
    * 
-   * @param int? length: Default value is -1
-   * @param bool? is_blocking: Default value is false
+   * @param ?int length: Default value is -1
+   * @param ?bool is_blocking: Default value is false
    * @returns string
    */
   read(length, is_blocking) {
@@ -169,7 +169,7 @@ class SSL {
   /**
    * Returns the last SSL error number
    * 
-   * @param int? code
+   * @param ?int code
    * @returns int
    */
   error(code) {

@@ -662,16 +662,11 @@ def _generate_salt(rounds) {
  * the length of the salt will be equal to `DEFAULT_LOG2_ROUNDS`.
  * 
  * @param string str
- * @param number? salt_length
+ * @param ?number salt_length
  * @raises  Exception
  * @returns string
  */
-def hash(str, salt_length) {
-  if !is_string(str)
-    raise TypeError('string expected in argument 1 (str)')
-  if salt_length != nil and !is_number(salt_length)
-    raise TypeError('number expected in argument 2 (salt_length)')
-
+def hash(str: string, salt_length: ?number) {
   if salt_length == nil salt_length = DEFAULT_LOG2_ROUNDS
   var salt = _generate_salt(salt_length)
 
@@ -686,10 +681,7 @@ def hash(str, salt_length) {
  * @raises  Exception
  * @returns bool
  */
-def compare(str, known_hash) {
-  if !is_string(str) or !is_string(known_hash)
-    raise TypeError('arguments must be string')
-
+def compare(str: string, known_hash: string) {
   var known_length = known_hash.length()
   if known_length != 60
     return false
@@ -715,9 +707,7 @@ def compare(str, known_hash) {
  * @raises  Exception
  * @returns number
  */
-def get_rounds(hash) {
-  if !is_string(hash)
-    raise TypeError('string expected in argument 1 (hash)')
+def get_rounds(hash: string) {
   return to_number(hash.split('$')[2])
 }
 
@@ -729,9 +719,7 @@ def get_rounds(hash) {
  * @raises  Exception
  * @returns string
  */
-def get_salt(hash) {
-  if !is_string(hash)
-    raise TypeError('string expected in argument 1 (hash)')
+def get_salt(hash: string) {
   if hash.length() != 60
     raise ValueError('illegal hash length: ${hash.length()} != 60')
   return hash[,29]

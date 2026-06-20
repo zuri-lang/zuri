@@ -334,8 +334,8 @@ class _Optionable {
    * - `deprecated` {bool}    — print a warning when the option is used
    *
    * @param string name
-   * @param string? help
-   * @param dict? opts
+   * @param ?string help
+   * @param ?dict opts
    */
   add_option(name, help, opts) {
     if !is_string(name)
@@ -457,7 +457,7 @@ class Parser < _Optionable {
    * Creates a new parser instance.
    * 
    * @param string name         The program name shown in usage lines.
-   * @param bool?  default_help Show help when invoked with no arguments.
+   * @param ?bool  default_help Show help when invoked with no arguments.
    *                            Defaults to `true`.
    * @constructor
    */
@@ -493,8 +493,8 @@ class Parser < _Optionable {
    * - `deprecated` {bool}    — print a warning when the option is used
    *
    * @param string name
-   * @param string? help
-   * @param dict? opts
+   * @param ?string help
+   * @param ?dict opts
    */
   add_option(name, help, opts) {
     parent.add_option(name, help, opts)
@@ -516,8 +516,8 @@ class Parser < _Optionable {
    * ```
    *
    * @param string name
-   * @param string? help
-   * @param dict? opts
+   * @param ?string help
+   * @param ?dict opts
    * @returns _Command
    */
   add_command(name, help, opts) {
@@ -554,8 +554,8 @@ class Parser < _Optionable {
    * - `metavar`  {string}    — display name in help
    *
    * @param string name
-   * @param string? help
-   * @param dict? opts
+   * @param ?string help
+   * @param ?dict opts
    */
   add_index(name, help, opts) {
     if !is_string(name)

@@ -633,7 +633,7 @@ class Reader {
    * Creates a `Reader` from a file object.
    *
    * @param file     file     An open, readable Zuri file object.
-   * @param Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
+   * @param ?Dialect  dialect  Optional dialect (defaults to `Dialect()`).
    * @throws CsvError  If dialect validation fails.
    */
   Reader(file, dialect) {
@@ -862,7 +862,7 @@ class Writer {
    * Creates a `Writer` targeting a file object.
    *
    * @param file     file     An open, writable Zuri file object.
-   * @param Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
+   * @param ?Dialect  dialect  Optional dialect (defaults to `Dialect()`).
    * @throws CsvError  If dialect validation fails.
    */
   Writer(file, dialect) {
@@ -967,7 +967,7 @@ class Writer {
    * ```
    *
    * @param  list  rows  List of dicts, each representing one record.
-   * @param  list?  keys  Optional ordered key list.  Inferred from the first
+   * @param  ?list  keys  Optional ordered key list.  Inferred from the first
    *     row when omitted.
    * @throws CsvError  On encoding error.
    */
@@ -1044,7 +1044,7 @@ class Writer {
  * ```
  *
  * @param  string   text     The CSV text to parse.
- * @param  Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
+ * @param  ?Dialect  dialect  Optional dialect (defaults to `Dialect()`).
  * @return list              List of lists or dicts depending on `has_header`.
  * @throws CsvError          On parse error in strict mode.
  */
@@ -1149,8 +1149,8 @@ def parse(text, dialect) {
  * ```
  *
  * @param  list     rows     List of lists or dicts to encode.
- * @param  Dialect?  dialect  Optional dialect (defaults to `Dialect()`).
- * @param  list?     keys     Optional column key order when `rows` are dicts.
+ * @param  ?Dialect  dialect  Optional dialect (defaults to `Dialect()`).
+ * @param  ?list     keys     Optional column key order when `rows` are dicts.
  * @return string            The encoded CSV text.
  * @throws CsvError          On encoding error.
  */
@@ -1228,7 +1228,7 @@ def stringify(rows, dialect, keys) {
  * ```
  *
  * @param  string   line     A single CSV record (with or without line ending).
- * @param  Dialect?  dialect  Optional dialect.
+ * @param  ?Dialect  dialect  Optional dialect.
  * @return list              The parsed field values.
  * @throws CsvError          On parse error.
  */
@@ -1262,7 +1262,7 @@ def parse_record(line, dialect) {
  * ```
  *
  * @param  list     row      Field values to encode.
- * @param  Dialect?  dialect  Optional dialect.
+ * @param  ?Dialect  dialect  Optional dialect.
  * @return string            The encoded record with line terminator.
  * @throws CsvError          On encoding error.
  */
@@ -1302,7 +1302,7 @@ def format_record(row, dialect) {
  * ```
  *
  * @param  string   path     Filesystem path to the CSV file.
- * @param  Dialect?  dialect  Optional dialect.
+ * @param  ?Dialect  dialect  Optional dialect.
  * @return list              All records as lists or dicts.
  * @throws CsvError          On parse error.
  * @throws Exception         On file I/O error.
@@ -1342,8 +1342,8 @@ def read_file(path, dialect) {
  *
  * @param  string   path     Filesystem path to write to.
  * @param  list     rows     List of lists or dicts.
- * @param  Dialect?  dialect  Optional dialect.
- * @param  list?     keys     Optional column key order for dict rows.
+ * @param  ?Dialect  dialect  Optional dialect.
+ * @param  ?list     keys     Optional column key order for dict rows.
  * @throws CsvError          On encoding error.
  * @throws Exception         On file I/O error.
  */

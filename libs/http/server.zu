@@ -106,7 +106,7 @@ class HttpServer {
 
   /**
    * @param int port
-   * @param string? host
+   * @param ?string host
    * @constructor
    */
   HttpServer(port, host) {
@@ -288,8 +288,8 @@ class HttpServer {
    *
    * @param string base_path
    * @param string directory
-   * @param number? cache_age = 0
-   * @param bool? tag = false
+   * @param ?number cache_age = 0
+   * @param ?bool tag = false
    */
   serve_files(base_path, directory, cache_age, tag) {
     if !is_string(base_path)

@@ -64,7 +64,7 @@ def id(value) {
  * @note Algorithm names are not case-sensitive.
  * @param string algorithm
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def hash(algorithm, data, as_bytes) {
@@ -107,7 +107,7 @@ def hash(algorithm, data, as_bytes) {
  * Returns the md4 hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def md4(str, as_bytes) {
@@ -118,7 +118,7 @@ def md4(str, as_bytes) {
  * Returns the md5 hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def md5(str, as_bytes) {
@@ -129,7 +129,7 @@ def md5(str, as_bytes) {
  * Returns the md5 hash of the given file.
  *
  * @param file file
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def md5_file(f, as_bytes) {
@@ -152,7 +152,7 @@ def md5_file(f, as_bytes) {
  * Returns the sha1 hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def sha1(str, as_bytes) {
@@ -163,7 +163,7 @@ def sha1(str, as_bytes) {
  * Returns the sha224 hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def sha224(str, as_bytes) {
@@ -174,7 +174,7 @@ def sha224(str, as_bytes) {
  * Returns the sha256 hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def sha256(str, as_bytes) {
@@ -185,7 +185,7 @@ def sha256(str, as_bytes) {
  * Returns the sha384 hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def sha384(str, as_bytes) {
@@ -196,7 +196,7 @@ def sha384(str, as_bytes) {
  * Returns the sha512 hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def sha512(str, as_bytes) {
@@ -211,7 +211,7 @@ def sha512(str, as_bytes) {
  * Returns the 32 bit fnv1 hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def fnv1(data, as_bytes) {
@@ -236,7 +236,7 @@ def fnv1(data, as_bytes) {
  * Returns the 64 bit fnv1 hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def fnv1_64(data, as_bytes) {
@@ -261,7 +261,7 @@ def fnv1_64(data, as_bytes) {
  * Returns the 32 bit fnv1a hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def fnv1a(data, as_bytes) {
@@ -286,7 +286,7 @@ def fnv1a(data, as_bytes) {
  * Returns the 64 bit fnv1a hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def fnv1a_64(data, as_bytes) {
@@ -315,7 +315,7 @@ def fnv1a_64(data, as_bytes) {
  * Returns the whirlpool hash of the given string or bytes.
  *
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def whirlpool(str, as_bytes) {
@@ -330,7 +330,7 @@ def whirlpool(str, as_bytes) {
  * Returns the Gost cryptographic hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def gost(data, as_bytes) {
@@ -359,7 +359,7 @@ def gost(data, as_bytes) {
  * Returns the SHA3-224 cryptographic hash of the given string or bytes.
  * 
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def sha3_224(data, as_bytes)  {
@@ -370,7 +370,7 @@ def sha3_224(data, as_bytes)  {
  * Returns the SHA3-256 cryptographic hash of the given string or bytes.
  * 
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def sha3_256(data, as_bytes)  {
@@ -381,7 +381,7 @@ def sha3_256(data, as_bytes)  {
  * Returns the SHA3-384 cryptographic hash of the given string or bytes.
  * 
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def sha3_384(data, as_bytes)  {
@@ -392,7 +392,7 @@ def sha3_384(data, as_bytes)  {
  * Returns the SHA3-512 cryptographic hash of the given string or bytes.
  * 
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def sha3_512(data, as_bytes)  {
@@ -407,7 +407,7 @@ def sha3_512(data, as_bytes)  {
  * Returns the SHAKE-128 cryptographic hash of the given string or bytes.
  * 
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def shake128(data, as_bytes) {
@@ -418,7 +418,7 @@ def shake128(data, as_bytes) {
  * Returns the SHAKE-256 cryptographic hash of the given string or bytes.
  * 
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def shake256(data, as_bytes) {
@@ -433,7 +433,7 @@ def shake256(data, as_bytes) {
  * Returns the BLAKE2B-512 cryptographic hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def blake2b512(data, as_bytes) {
@@ -444,7 +444,7 @@ def blake2b512(data, as_bytes) {
  * Returns the BLAKE2S-256 cryptographic hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def blake2s256(data, as_bytes) {
@@ -459,7 +459,7 @@ def blake2s256(data, as_bytes) {
  * Returns the RIPEMD-160 cryptographic hash of the given string or bytes.
  *
  * @param {string|bytes} data
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes}
  */
 def ripemd160(data, as_bytes) {
@@ -484,7 +484,7 @@ var _hmac_allowed = [
  * @param function method
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac(method, key, str, as_bytes) {
@@ -560,7 +560,7 @@ def hmac(method, key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_md4(key, str, as_bytes) {
@@ -572,7 +572,7 @@ def hmac_md4(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_md5(key, str, as_bytes) {
@@ -583,7 +583,7 @@ def hmac_md5(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_sha1(key, str, as_bytes) {
@@ -595,7 +595,7 @@ def hmac_sha1(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_sha224(key, str, as_bytes) {
@@ -607,7 +607,7 @@ def hmac_sha224(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_sha256(key, str, as_bytes) {
@@ -619,7 +619,7 @@ def hmac_sha256(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_sha384(key, str, as_bytes) {
@@ -631,7 +631,7 @@ def hmac_sha384(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_sha512(key, str, as_bytes) {
@@ -643,7 +643,7 @@ def hmac_sha512(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_whirlpool(key, str, as_bytes) {
@@ -655,7 +655,7 @@ def hmac_whirlpool(key, str, as_bytes) {
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
- * @param bool? as_bytes
+ * @param ?bool as_bytes
  * @returns {string|bytes} 
  */
 def hmac_gost(key, str, as_bytes) {

@@ -40,7 +40,7 @@
  * con.exec('CREATE TABLE users (id integer primary key, name text, gender text)')
  *
  * # Insert data into the table
- * # This isn't exactly the most optimal way to do it but you get the idea. Right?
+ * # This isn't exactly the most optimal way to do it but you get the idea. ?Right
  * con.exec('INSERT INTO users (id, name, gender) VALUES (0, "James", "Male")')
  * con.exec('INSERT INTO users (id, name, gender) VALUES (1, "Lilith", "Female")')
  * con.exec('INSERT INTO users (id, name, gender) VALUES (2, "Candy", "Non-Binary")')
@@ -102,7 +102,7 @@
  * Name = Candy, Gender = Non-Binary
  * ```
  *
- * > Much shorter right? Care should be taken though as a few of our tests have shown that for
+ * > Much shorter ?right Care should be taken though as a few of our tests have shown that for
  * > result sets with a large number of columns, the first option (using `while`) might be slightly
  * > faster for performace critical applications. However, no realworld dataset has been testd.
  *
@@ -197,7 +197,7 @@ import .sqlite3 { * }
  * Returns an handle to a sqlite3 database. If _path_ is not given, 
  * it will create an in-memory sqlite database.
  * 
- * @param string? path
+ * @param ?string path
  * @returns [[sqlite.SQLite3]]
  */
 def open(path) {

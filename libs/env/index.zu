@@ -139,13 +139,13 @@
  * In the above example, _FOO_ will be empty of the environment variable `BAR` has not been set either on the 
  * system or via env previously, but will take the value of `BAR` if it exists.
  * 
- * ### Should I commit my `.env` file?
+ * ### Should I commit my `.env` ?file
  * 
  * No. We **strongly** recommend against committing your `.env` file to version control. It should only include 
  * environment-specific values such as database passwords or API keys. Your production database should have a 
  * different password than your development database.
  * 
- * ### Should I have multiple `.env` files?
+ * ### Should I have multiple `.env` ?files
  * 
  * No. We **strongly** recommend against having a "main" `.env` file and an "environment" `.env` file like 
  * `.env.test`. Your config should vary between deploys, and you should not be sharing values between 
@@ -157,7 +157,7 @@
  * >
  * > – [The Twelve-Factor App](http://12factor.net/config)
  * 
- * ### What rules does the parsing engine follow?
+ * ### What rules does the parsing engine ?follow
  * 
  * The parsing engine currently supports the following rules:
  * 
@@ -182,7 +182,7 @@
  * 
  * - backticks are supported (`` BACKTICK_KEY=`This has 'single' and "double" quotes inside of it.` ``)
  * 
- * ### What happens to environment variables that were already set?
+ * ### What happens to environment variables that were already ?set
  * 
  * By default, we will never modify any environment variables that have already been set. In particular, if there 
  * is a variable in your `.env` file which collides with one that already exists in your environment, then that 
@@ -320,7 +320,7 @@ def _resolve_home(env_path) {
  * ```
  * 
  * @param {string|bytes} source The source string to parse.
- * @param bool? expand Whether to expand environment variables.
+ * @param ?bool expand Whether to expand environment variables.
  * @returns dict A dictionary of environment variables.
  * @throws TypeError
  */
@@ -338,7 +338,7 @@ def parse(source, expand) {
   var lines = is_bytes(source) ? source.to_string() : source
 
   # Convert line breaks to same format
-  lines = lines.replace('/\r\n?/m', '\n')
+  lines = lines.replace('/\r\?n/m', '\n')
 
   var match
   while match = lines.match(_LINE) {
@@ -430,7 +430,7 @@ def parse(source, expand) {
  * env.config({ path: '/custom/path/to/.env' })
  * ```
  * 
- * @param dict? options Optional configuration options.
+ * @param ?dict options Optional configuration options.
  * @returns dict A dictionary of environment variables.
  * @throws TypeError If the options parameter is not a dictionary or contains invalid options.
  */
@@ -489,7 +489,7 @@ def config(options) {
  * options dictionary.
  * 
  * @param string path Path to the environment file to load.
- * @param dict? options Optional configuration options (same as `config()`).
+ * @param ?dict options Optional configuration options (same as `config()`).
  * @returns dict A dictionary of environment variables parsed from the file.
  * @throws TypeError If the options parameter is not a dictionary.
  */
@@ -514,7 +514,7 @@ def load(path, options) {
  * import the os module.
  * 
  * @param string name The name of the environment variable to retrieve.
- * @param any? default_value Optional default value to return if the variable is not set.
+ * @param ?any default_value Optional default value to return if the variable is not set.
  * @returns any The value of the environment variable, or the default value if not found.
  */
 def get(name, default_value) {

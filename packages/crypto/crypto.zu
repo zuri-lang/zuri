@@ -181,7 +181,7 @@ class _AesGcm {
    * @param  bytes  key        16, 24, or 32 bytes.
    * @param  bytes  iv         12 bytes (strongly recommended).
    * @param  bytes  plaintext
-   * @param  bytes?  aad        Optional additional authenticated data.
+   * @param  ?bytes  aad        Optional additional authenticated data.
    * @return bytes             Ciphertext with 16-byte auth tag appended.
    * @throws CryptoException
    */
@@ -198,7 +198,7 @@ class _AesGcm {
    * @param  bytes  key        The same key used to encrypt.
    * @param  bytes  iv         The same IV used to encrypt.
    * @param  bytes  ciphertext Ciphertext as returned by `encrypt`.
-   * @param  bytes?  aad        The same AAD used to encrypt, if any.
+   * @param  ?bytes  aad        The same AAD used to encrypt, if any.
    * @return bytes             Decrypted plaintext.
    * @throws CryptoException
    */
@@ -329,7 +329,7 @@ class _ChaCha20 {
    * @param  bytes  key        Exactly 32 bytes.
    * @param  bytes  iv         Exactly 12 bytes.
    * @param  bytes  plaintext
-   * @param  bytes?  aad        Optional additional authenticated data.
+   * @param  ?bytes  aad        Optional additional authenticated data.
    * @return bytes             Ciphertext with 16-byte Poly1305 tag appended.
    * @throws CryptoException
    */
@@ -345,7 +345,7 @@ class _ChaCha20 {
    * @param  bytes  key        The same key used to encrypt.
    * @param  bytes  iv         The same IV used to encrypt.
    * @param  bytes  ciphertext Ciphertext as returned by `encrypt`.
-   * @param  bytes?  aad        The same AAD used to encrypt, if any.
+   * @param  ?bytes  aad        The same AAD used to encrypt, if any.
    * @return bytes
    * @throws CryptoException
    */

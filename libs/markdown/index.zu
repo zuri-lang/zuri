@@ -301,8 +301,8 @@ class Markdown {
    * })
    * ```
    * 
-   * @param string? preset_name: `commonmark`, `standard` or `zero` (default: `standard`)
-   * @param dict? options
+   * @param ?string preset_name: `commonmark`, `standard` or `zero` (default: `standard`)
+   * @param ?dict options
    */
   Markdown(preset_name, options) {
     if !instance_of(self, Markdown) {
@@ -512,7 +512,7 @@ class Markdown {
    * and then pass updated object to renderer.
    * 
    * @param string src: source string
-   * @param object? env: environment sandbox
+   * @param ?object env: environment sandbox
    * @returns string
    */
   render(src, env) {
@@ -527,7 +527,7 @@ class Markdown {
    * tokens in `children` property. Also updates `env` object.
    * 
    * @param string src: source string
-   * @param object? env: environment sandbox
+   * @param ?object env: environment sandbox
    * @returns list
    * @internal
    **/
@@ -549,7 +549,7 @@ class Markdown {
    * will NOT be wrapped into `<p>` tags.
    * 
    * @param string src: source string
-   * @param object? env: environment sandbox
+   * @param ?object env: environment sandbox
    * @returns string
    */
   render_inline(src, env) {

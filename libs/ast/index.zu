@@ -22,7 +22,7 @@ import .token { * }
  * Parses a given source code and outputs Zuri AST objects.
  * 
  * @param string source
- * @param string? path
+ * @param ?string path
  * @returns [[ast.ParseResult]]
  */
 def parse(source, path) {
@@ -59,7 +59,7 @@ def parse_file(source) {
  * it's AST structure.
  * 
  * @param string source
- * @param string? path
+ * @param ?string path
  * @returns string
  */
 def json(source, path) {

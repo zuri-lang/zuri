@@ -29,7 +29,7 @@
  * 
  * var client = http.HttpClient()
  * client.receive_timeout = 30000 # Optional
- * var res = client.send_request('http://example.com/endpoint?query=1', 'GET')
+ * var res = client.send_request('http://example.com/?endpointquery=1', 'GET')
  * echo res.body.to_string()
  * ```
  * 
@@ -132,7 +132,7 @@ def set_headers(headers) {
  * or throws one of SocketException or Exception if it fails.
  * 
  * @param string url
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -147,7 +147,7 @@ def get(url, headers) {
  * 
  * @param string url
  * @param string|bytes|nil data
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -162,7 +162,7 @@ def post(url, data, headers) {
  * 
  * @param string url
  * @param string|bytes|nil data
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -177,7 +177,7 @@ def put(url, data, headers) {
  * 
  * @param string url
  * @param string|bytes|nil data
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -191,7 +191,7 @@ def patch(url, data, headers) {
  * Sends an Http DELETE request and returns an HttpResponse.
  * 
  * @param string url
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -205,7 +205,7 @@ def delete(url, headers) {
  * Sends an Http OPTIONS request and returns an HttpResponse.
  * 
  * @param string url
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -219,7 +219,7 @@ def options(url, headers) {
  * Sends an Http TRACE request and returns an HttpResponse.
  * 
  * @param string url
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -233,7 +233,7 @@ def trace(url, headers) {
  * Sends an Http HEAD request and returns an HttpResponse.
  * 
  * @param string url
- * @param dict? headers
+ * @param ?dict headers
  * @returns HttpResponse
  * @raises  Exception
  * @raises  SocketException
@@ -271,7 +271,7 @@ def server(port, address) {
  * Creates an new TLSServer instance.
  *
  * @param int port
- * @param string? host
+ * @param ?string host
  * @returns TLSServer
  * @throws Exception, SocketException, HttpException
  */

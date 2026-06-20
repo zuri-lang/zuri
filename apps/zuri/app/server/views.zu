@@ -128,7 +128,7 @@ def authenticate(req, res) {
     }
   }
 
-  res.redirect('/login?error=1')
+  res.redirect('/?loginerror=1')
 }
 
 def login(req, res) {
@@ -177,7 +177,7 @@ def recover(req, res) {
     }
   }
 
-  res.redirect('/forgot-password?error=1')
+  res.redirect('/forgot-?passworderror=1')
 }
 
 def change_password(req, res) {
@@ -207,20 +207,20 @@ def update_password(req, res) {
         if !db.update_publisher_password(
           res.session['user'].username, bcrypt.hash(password, 5)
         ) {
-          res.redirect('/change-password?error=3')
+          res.redirect('/change-?passworderror=3')
           return
         }
 
         res.redirect('/account')
         return
       } else {
-        res.redirect('/change-password?error=2')
+        res.redirect('/change-?passworderror=2')
         return
       }
     }
   }
 
-  res.redirect('/change-password?error=1')
+  res.redirect('/change-?passworderror=1')
 }
 
 def account(req, res) {

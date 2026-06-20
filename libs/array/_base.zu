@@ -55,7 +55,7 @@ class Array {
   /**
    * Returns the first item in the array or nil if the array is empty.
    * 
-   * @returns number?
+   * @returns ?number
    */
   first() {
     if self.length() > 0 {
@@ -72,7 +72,7 @@ class Array {
   /**
    * Returns the last item in the array or nil if the array is empty.
    * 
-   * @returns number?
+   * @returns ?number
    */
   last() {
     if self.length() > 0 {
@@ -113,7 +113,7 @@ class Array {
   /**
    * Removes the last element in the array and returns the value of that item.
    * 
-   * @returns number?
+   * @returns ?number
    */
   pop() {
     var last = self.last()

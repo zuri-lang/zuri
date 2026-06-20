@@ -646,14 +646,14 @@ class Socket {
   var receive_timeout = -1
 
   /**
-   * @param number family
-   * @param number? type
-   * @param number? protocol
+   * @param ?number family
+   * @param ?number type
+   * @param ?number protocol
    * @constructor  
    * 
    * @example Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
    */
-  Socket(family, type, protocol, id) {
+  Socket(family: ?int, type: ?int, protocol: ?int, id) {
     # NOTE: NEVER EVER SET `id` YOURSELF.
     # The parameter is meant to make `accept()`.
 
@@ -662,12 +662,12 @@ class Socket {
     if protocol self.protocol = protocol
 
     if !id {
-      if !is_int(self.family) 
-        raise ValueError('AF_* expected for family, ${typeof(self.family)} given')
-      if !is_int(self.type) 
-        raise ValueError('SOCK_* expected for type, ${typeof(self.type)} given')
-      if !is_int(self.protocol) 
-        raise TypeError('integer expected for protocol, ${typeof(self.protocol)} given')
+#       if !is_int(self.family)
+#         raise ValueError('AF_* expected for family, ${typeof(self.family)} given')
+#       if !is_int(self.type)
+#         raise ValueError('SOCK_* expected for type, ${typeof(self.type)} given')
+#       if !is_int(self.protocol)
+#         raise TypeError('integer expected for protocol, ${typeof(self.protocol)} given')
 
       self.id = self._check_error(_socket.create(self.family, self.type, self.protocol))
     } else {
@@ -692,26 +692,23 @@ class Socket {
    * 
    * @param string host
    * @param int port
-   * @param int? timeout: Defaults to 300,000ms (i.e. 300 seconds)
+   * @param ?int timeout: Defaults to 300,000ms (i.e. 300 seconds)
    * @returns bool
    */
-  connect(host, port, timeout) {
+  connect(host: ?string, port: int, timeout: ?int) {
     if !host host = self.host
     if !timeout timeout = 300000 # default timeout is 300 seconds
 
-    if !port raise ArgumentError('port not specified')
-    if !is_string(host) 
-      raise TypeError('string expected for host, ${typeof(host)} given')
-    if !is_int(port) 
-      raise TypeError('integer expected for port, ${typeof(port)} given')
-    if !is_int(timeout) 
-      raise TypeError('integer expected for timeout, ${typeof(timeout)} given')
+    if self.id == -1 or self.is_closed
+      raise SocketException('socket is in an illegal state')
 
-    if self.id == -1 or self.is_closed raise SocketException('socket is in an illegal state')
+    if self.is_connected
+      raise SocketException('socket has existing connection')
 
-    if self.is_connected raise SocketException('socket has existing connection')
+    var result = self._check_error(
+      _socket.connect(self.id, host, port, self.family, timeout, self.is_blocking)
+    )
 
-    var result = self._check_error(_socket.connect(self.id, host, port, self.family, timeout, self.is_blocking))
     if result {
       self.is_client = true
       self.is_connected = true
@@ -727,22 +724,17 @@ class Socket {
    * on to the current host specified on the socket.
    * 
    * @param int port
-   * @param string? host
+   * @param ?string host
    * @returns bool
    */
-  bind(port, host) {
+  bind(port: int, host: ?string) {
     if !host host = self.host
 
-    if !port raise ArgumentError('port not specified')
-    if !is_string(host) 
-      raise TypeError('string expected for host, ${typeof(host)} given')
-    if !is_int(port) 
-      raise TypeError('integer expected for port, ${typeof(port)} given')
+    if self.id == -1 or self.is_closed
+      raise SocketException('socket is in an illegal state')
 
-    if self.id == -1 or self.is_closed raise SocketException('socket is in an illegal state')
-
-
-    if self.is_bound raise SocketException('socket previously bound')
+    if self.is_bound
+      raise SocketException('socket previously bound')
 
     var result = self._check_error(_socket.bind(self.id, host, port, self.family))
     if result {
@@ -751,6 +743,7 @@ class Socket {
       self.is_connected = false # a bound socket can't be connected ass well
       self.is_client = false # a bound socket cannot be a client
     }
+
     return result == 0
   }
 
@@ -758,18 +751,13 @@ class Socket {
    * Sends the specified message to the socket. When this methods accepts a file as a message, 
    * the file is read and the resultant bytes of the file content is streamed to the socket.
    * 
-   * @param string|file|bytes|? message
-   * @param int? flags: Not currently used.
+   * @param ?string|file|bytes message
+   * @param ?int flags: Not currently used.
    * @returns number greater than -1 if successful indicating the total number of bytes sent or -1 if it fails.
    */
-  send(message, flags) {
+  send(message: ?string|file|bytes, flags: ?int) {
     if !message message = ''
     if !flags flags = 0
-
-    if !is_string(message) and !is_bytes(message) and !is_file(message) 
-      raise TypeError('message must string, bytes or file; ${typeof(message)} given')
-    if !is_int(flags) 
-      raise TypeError('integer expected for flags, ${typeof(flags)} given')
 
     if self.id == -1 or self.is_closed or (self.is_shutdown and 
       (self.shutdown_reason == SHUT_WR or 
@@ -788,30 +776,20 @@ class Socket {
    * UDP (`SOCK_DGRAM`) sockets that haven't been `connect()`'d require `sendto()` and recvfrom() to 
    * specify the peer address per datagram.
    * 
-   * @param {string?} host
-   * @param {int?} port
-   * @param {int?} family
+   * @param {?string} host
+   * @param {?int} port
+   * @param {?int} family
    * @param {string|file|bytes|nil} message
-   * @param {int?} flags: Not currently used.
+   * @param {?int} flags: Not currently used.
    * @returns number greater than -1 if successful indicating the total number of bytes sent or 
    *    -1 if it fails.
    */
-  send_to(host, port, family, message, flags) {
+  send_to(host: ?string, port: ?int, family: ?int, message: ?string|bytes|file, flags: ?int) {
     if !host host = self.host
     if !port port = self.port
     if !family family = self.family
     if !message message = ''
     if !flags flags = 0
-
-    if !port raise ArgumentError('port not specified')
-    if !is_string(host) 
-      raise TypeError('string expected for host, ${typeof(host)} given')
-    if !is_int(port) 
-      raise TypeError('integer expected for port, ${typeof(port)} given')
-    if !is_string(message) and !is_bytes(message) and !is_file(message) 
-      raise TypeError('message must string, bytes or file; ${typeof(message)} given')
-    if !is_int(flags) 
-      raise TypeError('integer expected for flags, ${typeof(flags)} given')
 
     if self.id == -1 or self.is_closed or (self.is_shutdown and 
       (self.shutdown_reason == SHUT_WR or 
@@ -828,18 +806,13 @@ class Socket {
    * `receive_timeout` which is also equal to the `SO_RCVTIMEO` setting of the socket has elapsed before or 
    * until it has received the total number of bytes required (whichever comes first).
    * 
-   * @param int? length
-   * @param int? flags: Not currently used.
+   * @param ?int length
+   * @param ?int flags: Not currently used.
    * @returns string
    */
-  receive(length, flags) {
+  receive(length: ?int, flags: ?int) {
     if !length length = -1
     if !flags flags = 0
-
-    if !is_int(length) 
-      raise TypeError('integer expected for length, ${typeof(length)} given')
-    if !is_int(flags) 
-      raise TypeError('integer expected for flags, ${typeof(flags)} given')
 
     if self.id == -1 or self.is_closed or (self.is_shutdown and 
       (self.shutdown_reason == SHUT_RD or 
@@ -864,19 +837,14 @@ class Socket {
    * 
    * @note The receive_from() method is especially useful for UDP sockets.
    * 
-   * @param int? length
-   * @param int? flags: Not currently used.
+   * @param ?int length
+   * @param ?int flags: Not currently used.
    * @returns {dict}
    * @throws SocketException
    */
-  receive_from(length, flags) {
+  receive_from(length: ?int, flags: ?int) {
     if !length length = -1
     if !flags flags = 0
-
-    if !is_int(length) 
-      raise TypeError('integer expected for length, ${typeof(length)} given')
-    if !is_int(flags) 
-      raise TypeError('integer expected for flags, ${typeof(flags)} given')
 
     var result = _socket.recvfrom(self.id, length, flags)
     if result == -1 {
@@ -902,14 +870,11 @@ class Socket {
    * 
    * @note Only use this function after a call to `receive()` has succeeded.
    * 
-   * @param int? length: Default value is `1024`
+   * @param ?int length: Default value is `1024`
    * @returns string
    */
-  read(length) {
+  read(length: ?int) {
     if !length length = 1024
-
-    if !is_int(length) 
-      raise TypeError('integer expected for length, ${typeof(length)} given')
 
     if self.id == -1 or self.is_closed or (self.is_shutdown and 
       (self.shutdown_reason == SHUT_RD or 
@@ -939,14 +904,12 @@ class Socket {
    * 
    * @note listen() call applies only to sockets of type `SOCK_STREAM` (which is the default)
    * 
-   * @param int? queue_length
+   * @param ?int queue_length
    * @returns bool
    */
-  listen(queue_length) {
+  listen(queue_length: ?int) {
     if !queue_length queue_length = SOMAXCONN # default to 128 simultaneous clients...
 
-    if !is_int(queue_length) 
-      raise TypeError('integer expected for queue_length, ${typeof(queue_length)} given')
     if queue_length > SOMAXCONN 
       raise ValueError('maximum queue length exceeded')
 
@@ -1024,14 +987,11 @@ class Socket {
    * 
    * When _how_ is not specified, it defaults to `SHUT_RD`.
    * 
-   * @param int? how
+   * @param ?int how
    * @returns bool
    */
-  shutdown(how) {
+  shutdown(how: ?int) {
     if !how how = SHUT_RD
-    
-    if !is_int(how) 
-      raise TypeError('integer expected for how, ${typeof(how)} given')
 
     if how < SHUT_RD or how > SHUT_RDWR
       raise ValueError('expected one of SHUT_* flags')
@@ -1063,18 +1023,11 @@ class Socket {
    * 
    * @param int option
    * @param any value
-   * @param int? level
+   * @param ?int level
    * @returns bool
    */
-  set_option(option, value, level) {
+  set_option(option: int, value: any, level: ?int) {
     if level == nil level = -1
-
-    if !option or !value 
-      raise ArgumentError('both option and value are required')
-    if !is_int(option) 
-      raise TypeError('integer expected for option, ${typeof(option)} given')
-    if !is_int(level)
-      raise TypeError('integer expected for level, ${typeof(level)} given')
 
     if option == SO_TYPE or option == SO_ERROR
       raise ValueError('the given option is read-only')
@@ -1099,17 +1052,11 @@ class Socket {
    * retrieved at the given socket level. Otherwise, level defaults to the SOL_SOCKET level.
    * 
    * @param int option
-   * @param int? level
+   * @param ?int level
    * @returns any
    */
-  get_option(option, level) {
+  get_option(option: int, level: ?int) {
     if level == nil level = -1
-
-    if !is_int(option) 
-      raise TypeError('integer expected for option, ${typeof(option)} given')
-
-    if !is_int(level)
-      raise TypeError('integer expected for level, ${typeof(level)} given')
 
     # we have a local copy of SO_RCVTIMEO and SO_SNDTIMEO
     # we can simply return them when required
@@ -1127,7 +1074,7 @@ class Socket {
    * @param {bool} mode
    * @returns {bool}
    */
-  set_blocking(mode) {
+  set_blocking(mode: bool) {
     if !is_bool(mode) raise TypeError('boolean expected')
     self.is_blocking = mode
     return _socket.setblocking(self.id, mode)
@@ -1152,17 +1099,12 @@ class Socket {
 /**
  * Returns ip and name information of a given address.
  * 
- * @param number address
- * @param string? type: Default value is `http`
- * @param int? family: Default value is [AF_INET]
+ * @param string address
+ * @param ?string type: Default value is `http`
+ * @param ?int family: Default value is [AF_INET]
  * @returns dictionary
  */
-def get_address_info(address, type, family) {
-  if !is_string(address)
-    raise TypeError('string expected for address, ${typeof(address)} given')
-  if type != nil and !is_string(type)
-    raise TypeError('string expected for type, ${typeof(type)} given')
-
+def get_address_info(address: string, type: ?string, family: ?int) {
   if !type type = 'http'
   if !family family = AF_INET
 
@@ -1172,14 +1114,14 @@ def get_address_info(address, type, family) {
 /**
  * Returns a new instance of a Socket.
  * 
- * @param number family
- * @param number? type
- * @param number? protocol
+ * @param ?int family
+ * @param ?int type
+ * @param ?int protocol
  * @returns Socket
  * 
  * @example socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
  * @default
  */
-def socket(family, type, protocol) {
+def socket(family: ?int, type: ?int, protocol: ?int) {
   return Socket(family, type, protocol)
 }

@@ -318,7 +318,7 @@ expect_invalid('email — double @',            s.check({ f: 'a@@b.com' }))
 
 s = validate.schema({ f: validate.url() })
 expect_valid('url — https',                   s.check({ f: 'https://zuri-lang.org' }))
-expect_valid('url — http with path',          s.check({ f: 'http://x.com/path?q=1' }))
+expect_valid('url — http with path',          s.check({ f: 'http://x.com/?pathq=1' }))
 expect_invalid('url — ftp scheme',            s.check({ f: 'ftp://x.com' }))
 expect_invalid('url — no scheme',             s.check({ f: 'zuri-lang.org' }))
 

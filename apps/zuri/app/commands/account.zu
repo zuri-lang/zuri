@@ -39,7 +39,7 @@ def create(repo, success, error) {
   if state.get('name', nil) and state.get('key', nil) {
     var name = state['name']
     echo 'Account "${name}" currently logged in. If you continue, ${name} will be logged out.'
-    if !['y', 'Y'].contains(io.readline('Do you want to continue? [y/N]').trim())
+    if !['y', 'Y'].contains(io.readline('Do you want to ?continue [y/N]').trim())
       return
   }
 
@@ -84,7 +84,7 @@ def login(repo, success, error) {
   if state.get('name', nil) and state.get('key', nil) {
     var name = state['name']
     echo 'Account "${name}" currently logged in. If you continue, ${name} will be logged out.'
-    if !['y', 'Y'].contains(io.readline('Do you want to continue? [y/N]').trim())
+    if !['y', 'Y'].contains(io.readline('Do you want to ?continue [y/N]').trim())
       return
   }
 

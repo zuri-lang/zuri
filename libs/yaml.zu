@@ -691,7 +691,7 @@ class _Parser {
     return self._parse_plain_scalar(indent, in_flow, tag)
   }
 
-  # Heuristic: is the current position the start of a block mapping?
+  # Heuristic: is the current position the start of a block ?mapping
   # Scans ahead to find a ':' not inside a flow context.
   _could_be_block_mapping(indent) {
     if self._flow_depth > 0 { return false }
@@ -1803,10 +1803,7 @@ def _strip_bom_and_normalise(text) {
  * @return any           The parsed Zuri value.
  * @throws YamlError     On any YAML syntax or structural error.
  */
-def parse(text) {
-  if !is_string(text) {
-    raise ArgumentError('string expected in argument 1 (text)')
-  }
+def parse(text: string) {
   text = _strip_bom_and_normalise(text)
   var p = _Parser(text)
   return p.parse_one()
@@ -1832,10 +1829,7 @@ def parse(text) {
  * @return list          List of parsed document values (one per document).
  * @throws YamlError     On any YAML syntax or structural error.
  */
-def parse_all(text) {
-  if !is_string(text) {
-    raise ArgumentError('string expected in argument 1 (text)')
-  }
+def parse_all(text: string) {
   text = _strip_bom_and_normalise(text)
   var p = _Parser(text)
   return p.parse_stream()
@@ -1856,11 +1850,7 @@ def parse_all(text) {
  * @throws YamlError     On parse error.
  * @throws Exception     On file I/O error.
  */
-def load_single_file(path) {
-  if !is_string(path) {
-    raise ArgumentError('string expected in argument 1 (path)')
-  }
-  
+def load_single_file(path: string) {
   var text = file(path).read()
   return parse(text)
 }
@@ -1873,11 +1863,7 @@ def load_single_file(path) {
  * @throws YamlError     On parse error.
  * @throws Exception     On file I/O error.
  */
-def load_file(path) {
-  if !is_string(path) {
-    raise ArgumentError('string expected in argument 1 (path)')
-  }
-  
+def load_file(path: string) {
   var text = file(path).read()
   return parse_all(text)
 }
@@ -1921,12 +1907,12 @@ def load_file(path) {
  * ```
  *
  * @param  any     value   The Zuri value to serialise.
- * @param  number  indent  Spaces per indentation level (default: `2`).
- * @param  number  width   Target line width for flow-style decisions (default: `80`).
+ * @param  ?int  indent  Spaces per indentation level (default: `2`).
+ * @param  ?int  width   Target line width for flow-style decisions (default: `80`).
  * @return string          The YAML text (always ends with `\n`).
  * @throws YamlError       On emission error (e.g. unserializable value).
  */
-def dump(value, indent, width) {
+def dump(value: any, indent: ?int, width: ?int) {
   var e = _Emitter(indent, width)
   return e.emit(value)
 }
@@ -1947,15 +1933,12 @@ def dump(value, indent, width) {
  * ```
  *
  * @param  list    values  List of Zuri values to serialise.
- * @param  number  indent  Spaces per indentation level (default: `2`).
- * @param  number  width   Target line width (default: `80`).
+ * @param  ?int  indent  Spaces per indentation level (default: `2`).
+ * @param  ?int  width   Target line width (default: `80`).
  * @return string          The YAML stream text.
  * @throws YamlError       On emission error.
  */
-def dump_all(values, indent, width) {
-  if !is_list(values) {
-    raise ArgumentError('list expected in argument 1 (values)')
-  }
+def dump_all(values: list, indent: ?int, width: ?int) {
   var e      = _Emitter(indent, width)
   var result = ''
   for value in values {
@@ -1981,15 +1964,12 @@ def dump_all(values, indent, width) {
  *
  * @param  string  path    Filesystem path to write to.
  * @param  any     value   The value to serialise.
- * @param  number  indent  Indentation level (default: `2`).
- * @param  number  width   Line width (default: `80`).
+ * @param  ?int  indent  Indentation level (default: `2`).
+ * @param  ?int  width   Line width (default: `80`).
  * @throws YamlError       On emission error.
  * @throws Exception       On file I/O error.
  */
-def dump_file(path, value, indent, width) {
-  if !is_string(path) {
-    raise ArgumentError('string expected in argument 1 (path)')
-  }
+def dump_file(path: string, value: any, indent: ?int, width: ?int) {
   var f = file(path, 'w')
 
   if !is_list(value) {

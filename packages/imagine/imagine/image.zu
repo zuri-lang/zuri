@@ -18,7 +18,7 @@ class Image {
    * 
    * @param number width
    * @param number height
-   * @param bool? use_true_colors
+   * @param ?bool use_true_colors
    * @returns [[imagine.ImageResource]]
    */
   static new(width, height, use_true_colors) {

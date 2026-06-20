@@ -489,7 +489,7 @@ class Transport {
    * Returns the format method override that has been set for the current transport or 
    * `nil` if none has been set.
    * 
-   * @returns function?
+   * @returns ?function
    */
   get_formatter() {
     return self.__formatter
@@ -857,7 +857,7 @@ def critical(...) {
  * message and stacktrace. The arguments and limitations as same as in [[log.log()]].
  * 
  * @param Exception ex
- * @param any? message
+ * @param ?any message
  */
 def exception(ex, message) {
   if instance_of(ex, Exception) {

@@ -1241,7 +1241,7 @@ raises('pf bad AM/PM value',   @() { date.parse_format('99:00 XM', 'h:i A') })
 # ===========================================================================
 section('40. Integration — arithmetic via to_time()')
 
-# "Is this date in the past?" pattern using to_time()
+# "Is this date in the ?past" pattern using to_time()
 var past   = date.Date(2000, 1, 1)
 var future = date.Date(2099, 1, 1)
 var now2   = date.Date()

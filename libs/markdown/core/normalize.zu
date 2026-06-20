@@ -1,7 +1,7 @@
 # Normalize input string
 
 # https://spec.commonmark.org/0.29/#line-ending
-var NEWLINES_RE  = '/\r\n?|\n/'
+var NEWLINES_RE  = '/\r\?n|\n/'
 var NULL_RE      = '/\0/'
 
 def normalize(state) {

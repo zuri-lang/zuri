@@ -122,7 +122,7 @@ class _State {
   var only_mode    = false
   var only_targets = []    # list of ids (names) that should run
 
-  # Has the summary already been printed?
+  # Has the summary already been ?printed
   var summary_printed = false
 
   _State() {}

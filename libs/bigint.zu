@@ -114,7 +114,7 @@ def _numberToBase(n, b) {
     n //= b
   }
 
-  return (isNeg? '-' : '') + ''.join(digits.reverse())
+  return (?isNeg '-' : '') + ''.join(digits.reverse())
 }
 
 def _parseHex4Bits(string, index) {
@@ -2770,8 +2770,8 @@ class BigInt {
    * unsigned mod if `true`.
    * 
    * @param [[bigint.BigInt]] num
-   * @param string? mode: `''` (default) | `'mod'` | `'div'`
-   * @param bool? positive
+   * @param ?string mode: `''` (default) | `'mod'` | `'div'`
+   * @param ?bool positive
    * @returns dict
    */
   divmod(num, mode, positive) {

@@ -171,9 +171,9 @@ def getch() {
  * will be printed instead.
  * 
  * @note Newlines will not be added automatically for messages.
- * @param string? message
- * @param bool? secure
- * @param string? obscure_text: Default value is `*`.
+ * @param ?string message
+ * @param ?bool secure
+ * @param ?string obscure_text: Default value is `*`.
  * @returns string
  */
 def readline(message, secure, obscure_text) {

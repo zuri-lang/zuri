@@ -52,7 +52,7 @@ class Parser {
 
   /**
    * @param list[Token] tokens
-   * @param string? path
+   * @param ?string path
    * @constructor 
    */
   Parser(tokens, path) {
@@ -165,7 +165,7 @@ class Parser {
   }
 
   _get_doc_defn_data() {
-    return self._previous().literal[3,-2].replace('/^\s*\*\s?/m', '').trim()
+    return self._previous().literal[3,-2].replace('/^\s*\*\?s/m', '').trim()
   }
 
   _end_statement() {

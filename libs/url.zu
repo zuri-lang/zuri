@@ -145,41 +145,24 @@ class Url {
   var empty_path = false
 
   /**
-   * @param string scheme
-   * @param string host
-   * @param string? port
-   * @param string? path
-   * @param string? query
-   * @param string? hash
-   * @param string? username
-   * @param string? password
-   * @param bool? has_slash
-   * @param bool? empty_path
+   * @param ?string scheme
+   * @param ?string host
+   * @param ?string port
+   * @param ?string path
+   * @param ?string query
+   * @param ?string hash
+   * @param ?string username
+   * @param ?string password
+   * @param ?bool has_slash
+   * @param ?bool empty_path
    * @constructor 
    */
-  Url(scheme, host, port, path, query, hash, username, password, has_slash, empty_path) {
-    if scheme != nil and !is_string(scheme)
-      raise TypeError('scheme must be a string')
-    if host != nil and !is_string(host)
-      raise TypeError('host must be a string')
-    if port != nil and !is_string(port) and !is_int(port)
-      raise TypeError('port must be a string or an integer')
-    if path != nil and !is_string(path)
-      raise TypeError('path must be a string')
-    if query != nil and !is_string(query)
-      raise TypeError('query must be a string')
-    if hash != nil and !is_string(hash)
-      raise TypeError('hash must be a string')
-    if username != nil and !is_string(username)
-      raise TypeError('username must be a string')
-    if password != nil and !is_string(password)
-      raise TypeError('password must be a string')
-    if has_slash != nil and !is_bool(has_slash)
-      raise TypeError('has_slash must be a boolean')
-    if empty_path != nil and !is_bool(empty_path)
-      raise TypeError('empty_path must be a boolean')
-
-    if is_number(port) port = to_string(port)
+  Url(
+    scheme: ?string, host: ?string, port: ?string, path: ?int|string, query: ?string,
+    hash: ?string, username: ?string, password: ?string, has_slash: ?bool, empty_path: ?bool
+  ) {
+    if is_number(port)
+      port = to_string(port)
 
     self.scheme = scheme
     self.host = host
@@ -198,7 +181,10 @@ class Url {
    * @returns Url
    */
   clone() {
-    return Url(self.scheme, self.host, self.port, self.path, self.query, self.hash, self.username, self.password, self.has_slash, self.empty_path)
+    return Url(
+      self.scheme, self.host, self.port, self.path, self.query,
+      self.hash, self.username, self.password, self.has_slash, self.empty_path
+    )
   }
 
   /**
@@ -380,16 +366,10 @@ class Url {
  * the default encoding used by modern browsers.
  *
  * @param string url
- * @param bool? strict: Default value is `false`
+ * @param ?bool strict: Default value is `false`
  * @returns string
  */
-def encode(url, strict) {
-  if !is_string(url)
-    raise TypeError('string expected at parameter 1')
-
-  if strict != nil and !is_bool(strict) 
-    raise TypeError('boolean expected at parameter 2')
-
+def encode(url: string, strict: ?bool) {
   var result = ''
   url.ascii(true)
 
@@ -418,12 +398,10 @@ def encode(url, strict) {
  * @param string url
  * @returns string
  */
-def decode(url) {
-  if !is_string(url)
-    raise TypeError('string expected')
-
+def decode(url: string) {
   # quick exit strategy
-  if url.index_of('%') == -1 return url
+  if url.index_of('%') == -1
+    return url
 
   var lookup_table = '0123456789abcdef'
 
@@ -454,15 +432,10 @@ def decode(url) {
  * a malformed url.
  * 
  * @param string url
- * @param bool? strict: Default value is `false`
+ * @param ?bool strict: Default value is `false`
  * @returns Url
  */
-def parse(url, strict) {
-  if !is_string(url) 
-    raise TypeError('string expected in argument 1 (url)')
-  if strict != nil and !is_bool(strict)
-    raise TypeError('boolean expected in argument 2 (strict)')
-    
+def parse(url: string, strict: ?bool) {
   if strict == nil strict = true
   url = url.trim() # support urls surrounded by whitespaces
 

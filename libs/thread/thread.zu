@@ -87,7 +87,7 @@ class Thread {
    * used for the thread when started.
    * 
    * @param function delegate
-   * @param number? stack_size
+   * @param ?number stack_size
    * @constructor
    */
   Thread(delegate, stack_size) {
@@ -381,7 +381,7 @@ class Thread {
  * Returns a new instance of Thread.
  * 
  * @param function delegate
- * @param number? stack_size
+ * @param ?number stack_size
  * @see Constructor
  * @returns Thread
  */

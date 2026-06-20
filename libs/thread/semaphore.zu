@@ -67,8 +67,8 @@ class Semaphore {
    * If the initial or maximum values are not numbers, or if they violate the constraints mentioned 
    * above, an exception will be thrown.
    * 
-   * @param {number?} initial - Starting counter value (default: `1`). Must be `>= 0`.
-   * @param {number?} max - Maximum counter value (default: `1`). Must be `> 0`.
+   * @param {?number} initial - Starting counter value (default: `1`). Must be `>= 0`.
+   * @param {?number} max - Maximum counter value (default: `1`). Must be `> 0`.
    * @throws {Exception}
    * @constructor
    */

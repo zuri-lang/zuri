@@ -138,8 +138,8 @@ def _get_sequence(v, bg) {
  * 
  * @note The color argument can be replace with a style.
  * @param string value
- * @param int? color
- * @param int? bg
+ * @param ?int color
+ * @param ?int bg
  * @returns string
  */
 def text(value, color, bg) {
@@ -397,7 +397,7 @@ def xyz(x, y, z) {
  * @param int r
  * @param int g
  * @param int b
- * @param int? a
+ * @param ?int a
  * @returns string
  */
 def rgb_to_hex(r, g, b, a) {

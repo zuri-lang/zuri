@@ -259,7 +259,7 @@ class UUID {
    * @param string uuid_str  The UUID to parse.
    * @throws Exception       If `uuid_str` is not a valid UUID in any accepted form.
    */
-  UUID(uuid_str) {
+  UUID(uuid_str: string) {
     var s = uuid_str.lower().trim()
 
     # Strip URN prefix.
@@ -409,7 +409,7 @@ class UUID {
    * @param  UUID | string  other  The UUID to compare against.
    * @return bool
    */
-  equals(other) {
+  equals(other: UUID) {
     if isinstance(other, UUID) {
       return self.value == other.value
     }
@@ -443,7 +443,7 @@ class UUID {
  * @param  string  str  The string to test.
  * @return bool
  */
-def is_valid(str) {
+def is_valid(str: any) {
   if !is_string(str) { return false }
   # Canonical form: 8-4-4-4-12 lowercase or uppercase hex digits.
   return str.matches('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i')
@@ -456,7 +456,7 @@ def is_valid(str) {
  * @param  string       str  A canonical UUID string.
  * @return number | nil
  */
-def version(str) {
+def version(str: string) {
   if !is_valid(str) { return nil }
   var s = str.lower()
   if s == NIL or s == MAX { return nil }
@@ -494,7 +494,7 @@ def version(str) {
  *                               used.
  * @return string  Canonical UUID string.
  */
-def v1(node, clock_seq) {
+def v1(node: ?string, clock_seq: ?number) {
   var ts = _gregorian_timestamp()
 
   # Ensure monotonically increasing clock sequence within this process.
@@ -570,13 +570,9 @@ def v1(node, clock_seq) {
  * @return string  Canonical UUID string.
  * @throws Exception  If `namespace` is not a valid UUID.
  */
-def v3(namespace, name) {
+def v3(namespace: string, name: string) {
   if !is_valid(namespace) {
     raise Exception('uuid.v3: namespace must be a valid UUID string')
-  }
-
-  if !is_string(name) {
-    raise Exception('uuid.v3: name must be a string')
   }
 
   # Concatenate namespace bytes + name bytes, then MD5.
@@ -647,13 +643,9 @@ def v4() {
  * @return string  Canonical UUID string.
  * @throws Exception  If `namespace` is not a valid UUID.
  */
-def v5(namespace, name) {
+def v5(namespace: string, name: string) {
   if !is_valid(namespace) {
     raise Exception('uuid.v5: namespace must be a valid UUID string')
-  }
-
-  if !is_string(name) {
-    raise Exception('uuid.v5: name must be a string')
   }
 
   var ns_hex   = _strip_hyphens(namespace.lower())
@@ -694,7 +686,7 @@ def v5(namespace, name) {
  * @param  number | nil  clock_seq Optional 14-bit clock sequence (see `v1()`).
  * @return string  Canonical UUID string.
  */
-def v6(node, clock_seq) {
+def v6(node: ?string, clock_seq: ?number) {
   var ts  = _gregorian_timestamp()
   var seq = clock_seq != nil ? (clock_seq & 0x3fff) : _v1_clock_seq
 
@@ -835,10 +827,7 @@ def v7() {
  *                    exceeding 62 bits are silently truncated.
  * @return string  Canonical UUID string.
  */
-def v8(a, b, c) {
-  if !is_number(a) or !is_number(b) or !is_number(c) {
-    raise TypeError('number expected, ${typeof(a)}, ${typeof(b)}, ${typeof(c)} given')
-  }
+def v8(a: number, b: number, c: number) {
 
   var field_a = _int_to_hex(a % 281474976710656, 12)  # 48-bit max
   var field_b = _int_to_hex(b % 4096, 3)              # 12-bit max
@@ -903,7 +892,7 @@ def max_uuid() {
  * @return UUID
  * @throws Exception  If `str` is not a recognisable UUID form.
  */
-def parse(str) {
+def parse(str: string) {
   return UUID(str)
 }
 
@@ -915,7 +904,7 @@ def parse(str) {
  * @return string  Canonical UUID string.
  * @throws Exception  If `bytes_list` does not contain exactly 16 bytes.
  */
-def from_bytes(bytes_list) {
+def from_bytes(bytes_list: list|bytes) {
   if !is_list(bytes_list) and !is_bytes(bytes_list) {
     raise TypeError('bytes or list expected, ${typeof(bytes_list)} given')
   }
@@ -938,10 +927,10 @@ def from_bytes(bytes_list) {
  * For very large integers (> 2^53) the result may lose precision due to
  * Zuri's floating-point number type.  In that case, prefer `from_bytes()`.
  *
- * @param  number  int_val  The integer value of the UUID.
+ * @param  int  int_val  The integer value of the UUID.
  * @return string  Canonical UUID string.
  */
-def from_int(int_val) {
+def from_int(int_val: int) {
   var hex32 = _int_to_hex(int_val, 32)
   return _format(hex32)
 }

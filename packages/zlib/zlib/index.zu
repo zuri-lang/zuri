@@ -141,7 +141,7 @@ var MAX_WBITS = _zlib.MAX_WBITS
  * 
  * @note An Adler-32 checksum is almost as reliable as a CRC-32 but can be computed much faster.
  * @param {bytes|string} data
- * @param number? initial
+ * @param ?number initial
  * @returns number
  */
 def adler32(data, initial) {
@@ -161,7 +161,7 @@ def adler32(data, initial) {
  * updated CRC-32 checksum.
  * 
  * @param {bytes|string} data
- * @param number? intial
+ * @param ?number intial
  * @returns number
  */
 def crc32(data, initial) {
@@ -232,10 +232,10 @@ def crc32(data, initial) {
  * 
  * {.list}
  * @param {bytes|string} data
- * @param int? level: Default value is `DEFAULT_COMPRESSION`.
- * @param int? strategy: Default value is `DEFAULT_STRATEGY`.
- * @param int? wbits: Default value is `MAX_WBITS`.
- * @param int? memory_level: Default value is `DEFAULT_MEMORY_LEVEL`.
+ * @param ?int level: Default value is `DEFAULT_COMPRESSION`.
+ * @param ?int strategy: Default value is `DEFAULT_STRATEGY`.
+ * @param ?int wbits: Default value is `MAX_WBITS`.
+ * @param ?int memory_level: Default value is `DEFAULT_MEMORY_LEVEL`.
  * @returns bytes
  */
 def compress(data, level, strategy, wbits, memory_level) {
@@ -305,7 +305,7 @@ def compress(data, level, strategy, wbits, memory_level) {
  * 
  * {.list}
  * @param {bytes|string} data
- * @param int? wbits: Default value is `MAX_WBITS`.
+ * @param ?int wbits: Default value is `MAX_WBITS`.
  * @returns bytes
  */
 def uncompress(data, wbits) {
@@ -370,7 +370,7 @@ class GZ {
    * GZ(path: string [, mode: string = 'rb'])
    * 
    * @param string path
-   * @param string? mode: Default value is `rb`.
+   * @param ?string mode: Default value is `rb`.
    * @see `gzopen()`
    * @constructor
    */
@@ -522,7 +522,7 @@ class GZ {
    * would be before the current position.
    * 
    * @param int offset
-   * @param int? whence: Default value is `SEEK_SET`.
+   * @param ?int whence: Default value is `SEEK_SET`.
    * @returns number
    */
   seek(offset, whence) {
@@ -612,7 +612,7 @@ class GZ {
  * 'w', or 'a' was not provided, or '+' was provided).
  * 
  * @param string path
- * @param string? mode: Default value is `rb`.
+ * @param ?string mode: Default value is `rb`.
  * @returns ptr
  */
 def gzopen(path, mode) {

@@ -120,7 +120,7 @@ class Enum {
    * class that represents the enumeration.
    *
    * @param {list|dict} data
-   * @param bool? unique = true
+   * @param ?bool unique = true
    * @constructor
    */
   Enum(data, unique) {

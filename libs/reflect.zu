@@ -359,7 +359,7 @@ def ptr_from_address(address) {
  * respectively otherwise, an Exception will be raised.
  * 
  * @param any value
- * @param string? name
+ * @param ?string name
  */
 def set_global(value, name) {
   # if typeof(value) == 'module'
@@ -392,7 +392,7 @@ def unset_global(name) {
  * 
  * @note Script will only run if compilation is successful!
  * @param string path
- * @return string?
+ * @return ?string
  */
 def run_script(path) {
   if !is_string(path)

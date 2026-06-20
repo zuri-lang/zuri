@@ -91,7 +91,7 @@ class HttpClient {
    * If the _base_url_ param is set, all calls to HTTP method functions will automatically
    * prepend requested url with the base url if they do not start with the base url.
    *
-   * @param string? base_url: The base url for the HTTP client requests
+   * @param ?string base_url: The base url for the HTTP client requests
    * @constructor
    */
   HttpClient(base_url) {
@@ -108,12 +108,12 @@ class HttpClient {
    * Sends an Http request and returns a HttpResponse.
    * 
    * @param string uri
-   * @param string? method: Default value is `GET`.
+   * @param ?string method: Default value is `GET`.
    * @param string|dict|nil data
-   * @param dict? headers: To override the instance options. 
+   * @param ?dict headers: To override the instance options.
    *    This can be very useful if you want to reuse the same 
    *    instance for multiple requests and headers scenarios.
-   * @param dict? client request options
+   * @param ?dict client request options
    * @returns HttpResponse
    * @raises  SocketException
    * @raises  Exception
@@ -170,7 +170,7 @@ class HttpClient {
    * Sends an Http GET request and returns an HttpResponse.
    * 
    * @param string url
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException
@@ -185,7 +185,7 @@ class HttpClient {
    * 
    * @param string url
    * @param string|bytes|nil data
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException
@@ -200,7 +200,7 @@ class HttpClient {
    * 
    * @param string url
    * @param string|bytes|nil data
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException
@@ -215,7 +215,7 @@ class HttpClient {
    * 
    * @param string url
    * @param string|bytes|nil data
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException
@@ -229,7 +229,7 @@ class HttpClient {
    * Sends an Http DELETE request and returns an HttpResponse.
    * 
    * @param string url
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException
@@ -243,7 +243,7 @@ class HttpClient {
    * Sends an Http OPTIONS request and returns an HttpResponse.
    * 
    * @param string url
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException
@@ -257,7 +257,7 @@ class HttpClient {
    * Sends an Http TRACE request and returns an HttpResponse.
    * 
    * @param string url
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException
@@ -271,7 +271,7 @@ class HttpClient {
    * Sends an Http HEAD request and returns an HttpResponse.
    * 
    * @param string url
-   * @param dict? headers
+   * @param ?dict headers
    * @returns HttpResponse
    * @raises  Exception
    * @raises  SocketException

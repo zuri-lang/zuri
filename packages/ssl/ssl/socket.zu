@@ -161,7 +161,7 @@ class TLSSocket {
    * 
    * @param string host
    * @param int port
-   * @param int? timeout: Default is 300,000ms (i.e. 300 seconds)
+   * @param ?int timeout: Default is 300,000ms (i.e. 300 seconds)
    * @returns bool
    */
   connect(host, port, timeout) {
@@ -178,7 +178,7 @@ class TLSSocket {
    * on to the current hostn specified on the socket. 
    * 
    * @param int port
-   * @param string? host
+   * @param ?string host
    * @returns bool
    */
   bind(port, host) {
@@ -191,7 +191,7 @@ class TLSSocket {
    * 
    * @note the flags parameter is currently redundant and is kept only to remain compatible with future plans for this method.
    * @param string|bytes|file message
-   * @param int? flags
+   * @param ?int flags
    * @returns number greater than -1 if successful indicating the total number of bytes sent or -1 if it fails.
    */
   send(message, flags) {
@@ -208,8 +208,8 @@ class TLSSocket {
    * until it has received the total number of bytes required (whichever comes first).
    * 
    * @note the flags parameter is currently redundant and is kept only to remain compatible with future plans for this method.
-   * @param int? length
-   * @param int? flags
+   * @param ?int length
+   * @param ?int flags
    * @returns string
    */
   receive(length, flags) {
@@ -227,7 +227,7 @@ class TLSSocket {
    * > reading.
    * 
    * @note Only use this function after a call to `receive()` has succeeded.
-   * @param int? length: Default value is 1024.
+   * @param ?int length: Default value is 1024.
    * @returns string
    */
   read(length) {
@@ -247,7 +247,7 @@ class TLSSocket {
    * the current platform which is usually equal to `SOMAXCONN`.
    * 
    * @note listen() call applies only to sockets of type `SOCK_STREAM` (which is the default).
-   * @param int? queue_length: Default value is `SOMAXCONN`.
+   * @param ?int queue_length: Default value is `SOMAXCONN`.
    * @returns bool
    */
   listen(queue_length) {

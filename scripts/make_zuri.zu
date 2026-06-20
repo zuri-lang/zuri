@@ -74,7 +74,7 @@ for f in header_list {
     g = g.replace('/#include\s*"[^"]+"\n/', '')
 
     # remove all native method declarations
-    g = g.replace('/DECLARE_NATIVE\([^)]+\);?\n\n?/', '')
+    g = g.replace('/DECLARE_NATIVE\([^)]+\);?\n\?n/', '')
     processed_content.append(g)
   }
 }

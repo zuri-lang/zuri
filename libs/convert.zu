@@ -64,7 +64,7 @@ def bytes_to_hex(data) {
  * digits, the result will be truncated to the least significant digits.
  * 
  * @param number n
- * @param number? digits
+ * @param ?number digits
  * @returns string
  */
 def decimal_to_hex(n, digits) {

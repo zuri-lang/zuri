@@ -435,7 +435,7 @@ class HttpRequest {
   var request_uri
 
   /**
-   * The requested path or file. E.g. if the Request URI is `/users?sort=desc`, 
+   * The requested path or file. E.g. if the Request URI is `/?userssort=desc`,
    * then the path is `/users`.
    * @type string
    */
@@ -821,8 +821,8 @@ class HttpRequest {
    * @param url uri
    * @param string method
    * @param string|bytes|dict|nil data
-   * @param dict? headers
-   * @params dict? options
+   * @param ?dict headers
+   * @params ?dict options
    */
   send(uri, method, data, headers, options) {
     # arguments validation.
@@ -1039,7 +1039,7 @@ class HttpRequest {
             }
           }
         } else {
-          # If reused, we might still want to update timeouts?
+          # If reused, we might still want to update ?timeouts
           client.set_option(socket.SO_SNDTIMEO, send_timeout)
           client.set_option(socket.SO_RCVTIMEO, receive_timeout)
 

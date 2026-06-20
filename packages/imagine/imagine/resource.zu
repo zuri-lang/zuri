@@ -550,10 +550,10 @@ class ImageResource {
    * Any of R, G, B, or A can be omitted or set to nil in which case 
    * they'll default to zero.
    * 
-   * @param number? r
-   * @param number? g
-   * @param number? b
-   * @param number? a
+   * @param ?number r
+   * @param ?number g
+   * @param ?number b
+   * @param ?number a
    * @returns number
    */
   allocate_color(r, g, b, a) {
@@ -1082,7 +1082,7 @@ class ImageResource {
    * Sets whether an image is interlaced. If the `enabled` parameter is not 
    * given, it defaults to true.
    * 
-   * @param bool? enable
+   * @param ?bool enable
    */
   interlace(enable) {
     if enable == nil enable = true
@@ -1126,7 +1126,7 @@ class ImageResource {
    * in mode. `mode` must be one of the `FLIP_*` constants. When no mode is set, 
    * mode defaults to `FLIP_BOTH`.
    * 
-   * @param number? mode
+   * @param ?number mode
    */
   flip(mode) {
     if !mode mode = flips.FLIP_BOTH
@@ -1170,7 +1170,7 @@ class ImageResource {
    * Crop an image automatically using one of the `CROP_*` modes. If `mode` 
    * is not give, it defaults to `CROP_DEFAULT`.
    * 
-   * @param number? mode
+   * @param ?number mode
    * @returns [[imagine.ImageResource]]
    */
   auto_crop(mode) {
@@ -1199,8 +1199,8 @@ class ImageResource {
    * This method returns a new image rather than modify this image.
    * 
    * @param number width
-   * @param number? height
-   * @param number? method
+   * @param ?number height
+   * @param ?number method
    * @returns [[imagine.ImageResource]]
    */
   scale(width, height, method) {
@@ -1230,7 +1230,7 @@ class ImageResource {
    * 
    * @param number angle
    * @param number bg_color
-   * @param number? method
+   * @param ?number method
    * @returns [[imagine.ImageResource]]
    */
   rotate(angle, bg_color, method) {
@@ -1470,7 +1470,7 @@ class ImageResource {
     # meta includes res_x and res_y. If we do not do this, the 
     # image metadata will be invalid and out of sync.
     # 
-    # Why we didn't just update self._meta?
+    # Why we didn't just update self.?_meta
     # Because it could be nil. Which will essentially make us 
     # re-implement meta() except that function uses a cache so 
     # it can't be updated directly without first updating the 

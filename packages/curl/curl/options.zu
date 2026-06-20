@@ -148,7 +148,7 @@ class Option {
    static var KEYPASSWD = _curl.CURLOPT_KEYPASSWD
 
    /**
-    * send TYPE parameter? 
+    * send TYPE ?parameter
     * @static
     */
    static var CRLF = _curl.CURLOPT_CRLF
@@ -1437,7 +1437,7 @@ class Option {
    static var HAPPY_EYEBALLS_TIMEOUT_MS = _curl.CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS
 
    /**
-    * send HAProxy PROXY protocol header? 
+    * send HAProxy PROXY protocol ?header
     * @static
     */
    static var HAPROXYPROTOCOL = _curl.CURLOPT_HAPROXYPROTOCOL

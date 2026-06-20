@@ -233,7 +233,7 @@ def get_env(name, default_value) {
  * @note Environment variables set will not persist after application exists.
  * @param string name
  * @param string value
- * @param bool? overwrite: Default value is `false`.
+ * @param ?bool overwrite: Default value is `false`.
  * @returns bool
  */
 def set_env(name, value, overwrite) {
@@ -248,8 +248,8 @@ def set_env(name, value, overwrite) {
  * @note if the directory already exists, it returns `false` otherwise, it returns `true`.
  * @note permission should be given as octal number.
  * @param string path
- * @param number? permission: Default value is `0c777`
- * @param bool? recursive: Default value is `true`.
+ * @param ?number permission: Default value is `0c777`
+ * @param ?bool recursive: Default value is `true`.
  * @returns boolean
  */
 def create_dir(path, permission, recursive) {
@@ -299,7 +299,7 @@ def create_dir(path, permission, recursive) {
  * @note `..` indicates parent directory and can be used as argument to _os.read_dir_ as well.
  * 
  * @param string path
- * @param bool? recursive
+ * @param ?bool recursive
  * @returns list[string]
  */
 def read_dir(path, recursive) {

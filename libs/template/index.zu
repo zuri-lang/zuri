@@ -43,7 +43,7 @@
  * For example, the code below should return an empty string.
  * 
  * ```zuri
- * tpl.render_string('<!-- HTML or Wire comment? -->')
+ * tpl.render_string('<!-- HTML or Wire ?comment -->')
  * ```
  * 
  * #### Multi-Line Comments
@@ -1198,7 +1198,7 @@ def _strip_declarations(root) {
  * 
  * @param dict element
  * @param string name
- * @returns dict?
+ * @returns ?dict
  */
 def attr(element, name) {
 
@@ -1856,8 +1856,8 @@ class Template {
    * ```
    * 
    * @param string source
-   * @param dict? variables
-   * @param string? path
+   * @param ?dict variables
+   * @param ?string path
    * @returns string
    */
   render_string(source, variables, path) {
@@ -1903,7 +1903,7 @@ class Template {
    * You can pass a variable the same way you do with [[Template.render_string]].
    * 
    * @param string path
-   * @param dict? variables
+   * @param ?dict variables
    * @returns string
    */
   render(path, variables) {
@@ -1941,7 +1941,7 @@ class Template {
    * 
    * @param dict element
    * @param string name
-   * @returns dict?
+   * @returns ?dict
    */
   attr(element, name) {
     return attr(element, name)
@@ -1969,7 +1969,7 @@ def template(auto_init) {
  * See [[Template.render]] for details.
  * 
  * @param string path
- * @param dict? variables
+ * @param ?dict variables
  * @returns string
  */
 def render(path, variables) {
@@ -1982,8 +1982,8 @@ def render(path, variables) {
  * See [[Template.render_string]] for details.
  * 
  * @param string path
- * @param dict? variables
- * @param string? path
+ * @param ?dict variables
+ * @param ?string path
  * @returns string
  */
 def render_string(source, variables, path) {

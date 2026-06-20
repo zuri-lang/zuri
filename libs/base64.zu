@@ -16,7 +16,7 @@ import _base64
  * @param bytes data
  * @returns string
  */
-def encode(data) {
+def encode(data: bytes) {
   return _base64.encode(data)
 }
 
@@ -26,6 +26,6 @@ def encode(data) {
  * @param string data
  * @returns bytes
  */
-def decode(data) {
+def decode(data: string) {
   return _base64.decode(data)
 }

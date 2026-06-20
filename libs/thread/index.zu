@@ -74,7 +74,7 @@
  * configure the thread behavior before starting a thread, the `start()` 
  * function is the idiomatic way to create threads.
  * 
- * > **NOTICE THE _t_ VARIABLE?**
+ * > **NOTICE THE _t_ ?VARIABLE**
  * >
  * > When a thread's delegate function accepts parameters, it will always 
  * > be given the thread instance itself as the first argument. Any other 
