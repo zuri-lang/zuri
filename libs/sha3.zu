@@ -67,17 +67,12 @@ class Keccak {
   var _padding
 
   /**
-   * @param number bits: Capacity
-   * @param number padding: Padding value - 1 for Keccak, 6 for SHA3 and 31 for SHAKE
-   * @param ?number length: Optional length of the output hash in bits. If not given bits is taken as default.
+   * @param int bits: Capacity
+   * @param int padding: Padding value - 1 for Keccak, 6 for SHA3 and 31 for SHAKE
+   * @param ?int length: Optional length of the output hash in bits. If not given bits is taken as default.
    * @constructor
    */
-  Keccak(bits, padding, length) {
-    if !is_number(bits) or !is_number(padding) or 
-      (length != nil and !is_number(length)) {
-        raise TypeError('number expected')
-    }
-
+  Keccak(bits: int, padding: int, length: ?int) {
     self._padding = padding
     self._hash_size = (length or bits) / 8
     self._block_count = (1600 - bits * 2) / 32
@@ -107,10 +102,7 @@ class Keccak {
    * @param string|bytes message
    * @returns self
    */
-  update(message) {
-    if !is_string(message) and !is_bytes(message) 
-      raise TypeError('string or bytes expected.')
-
+  update(message: string|bytes) {
     if is_string(message) 
       message = message.to_bytes()
 
@@ -133,7 +125,7 @@ class Keccak {
    * @param string|bytes message
    * @returns bytes
    */
-  digest(message) {
+  digest(message: string|bytes) {
     self.update(message)
 
     var b = self._buffer, idx = self._buffer_index,
@@ -176,7 +168,7 @@ class Keccak {
    * @param string|bytes message
    * @returns string
    */
-  hash(message) {
+  hash(message: string|bytes) {
     return self.init().digest(message)
   }
 
@@ -381,7 +373,7 @@ class Keccak {
  * @param string|bytes message
  * @returns string
  */
-def keccak_224(message) {
+def keccak_224(message: string|bytes) {
   return bytes_to_hex(Keccak(224, 1).hash(message))
 }
 
@@ -391,7 +383,7 @@ def keccak_224(message) {
  * @param string|bytes message
  * @returns string
  */
-def keccak_256(message) {
+def keccak_256(message: string|bytes) {
   return bytes_to_hex(Keccak(256, 1).hash(message))
 }
 
@@ -401,7 +393,7 @@ def keccak_256(message) {
  * @param string|bytes message
  * @returns string
  */
-def keccak_384(message) {
+def keccak_384(message: string|bytes) {
   return bytes_to_hex(Keccak(384, 1).hash(message))
 }
 
@@ -411,7 +403,7 @@ def keccak_384(message) {
  * @param string|bytes message
  * @returns string
  */
-def keccak_512(message) {
+def keccak_512(message: string|bytes) {
   return bytes_to_hex(Keccak(512, 1).hash(message))
 }
 
@@ -421,7 +413,7 @@ def keccak_512(message) {
  * @param string|bytes message
  * @returns string
  */
-def sha3_224(message) {
+def sha3_224(message: string|bytes) {
   return bytes_to_hex(Keccak(224, 6).hash(message))
 }
 
@@ -431,7 +423,7 @@ def sha3_224(message) {
  * @param string|bytes message
  * @returns string
  */
-def sha3_256(message) {
+def sha3_256(message: string|bytes) {
   return bytes_to_hex(Keccak(256, 6).hash(message))
 }
 
@@ -441,7 +433,7 @@ def sha3_256(message) {
  * @param string|bytes message
  * @returns string
  */
-def sha3_384(message) {
+def sha3_384(message: string|bytes) {
   return bytes_to_hex(Keccak(384, 6).hash(message))
 }
 
@@ -451,7 +443,7 @@ def sha3_384(message) {
  * @param string|bytes message
  * @returns string
  */
-def sha3_512(message) {
+def sha3_512(message: string|bytes) {
   return bytes_to_hex(Keccak(512, 6).hash(message))
 }
 
@@ -462,7 +454,7 @@ def sha3_512(message) {
  * @param string|bytes message
  * @returns string
  */
-def shake128(length, message) {
+def shake128(length: number, message: string|bytes) {
   return bytes_to_hex(Keccak(128, 31, length).hash(message))
 }
 
@@ -473,6 +465,6 @@ def shake128(length, message) {
  * @param string|bytes message
  * @returns string
  */
-def shake256(length, message) {
+def shake256(length: number, message: string|bytes) {
   return bytes_to_hex(Keccak(256, 31, length).hash(message))
 }

@@ -270,7 +270,7 @@ var Critical = LogLevel.Critical
 /**
  * Returns the name of a log level as a string.
  * 
- * @param [[log.LogLevel]] level
+ * @param {log.LogLevel} level
  * @returns string
  */
 def get_level_name(level) {
@@ -309,7 +309,7 @@ class Transport {
    * implementation, when a handler is created, the level is set to [[log.None]] (which 
    * causes all messages to be processed).
    * 
-   * @param [[log.LogLevel]] level
+   * @param {log.LogLevel} level
    * @returns self
    */
   set_level(level) {
@@ -337,7 +337,7 @@ class Transport {
    * maximum level is set to [[log.Critical]] (which causes all messages to be 
    * processed).
    * 
-   * @param [[log.LogLevel]] level
+   * @param {log.LogLevel} level
    * @returns self
    */
   set_max_level(level) {
@@ -499,7 +499,7 @@ class Transport {
    * Returns a boolean value which indicates if a message of severity *level* can be 
    * processed by this transport.
    * 
-   * @param [[log.LogLeven]] level
+   * @param {log.LogLeven} level
    * @returns bool
    */
   can_log(level) {
@@ -555,7 +555,7 @@ class Transport {
    * - _bool_ `self._show_level`
    * 
    * @params {list[any]} records
-   * @param [[log.LogLevel]] level
+   * @param {log.LogLevel} level
    * @returns any
    */
   format(records, level) {
@@ -588,7 +588,7 @@ class Transport {
    * directly from `Transport`.
    * 
    * @param any message
-   * @param [[log.LogLevel]] level
+   * @param {log.LogLevel} level
    * @raises Exception
    */
   write(message, level) {
@@ -705,7 +705,7 @@ var _default_transport = ConsoleTransport()
 /**
  * Sets the threshold level for the default transport to handle.
  * 
- * @param [[log.LogLevel]] level
+ * @param {log.LogLevel} level
  * @returns default_transport
  */
 def set_level(level) {
@@ -743,7 +743,7 @@ var _transports = [ _default_transport ]
  * Adds a new transport service to the list of registered transports. If the transport 
  * has been previously added, this function will do nothing.
  * 
- * @param [[log.Transport]] transport
+ * @param {log.Transport} transport
  */
 def add_transport(transport) {
   # ensure we are not adding the same transport again
@@ -757,7 +757,7 @@ def add_transport(transport) {
 /**
  * Removes the given transport service from the list of registered transports.
  * 
- * @param [[log.Transport]] transport
+ * @param {log.Transport} transport
  */
 def remove_transport(transport) {
   _transports.remove(transport)

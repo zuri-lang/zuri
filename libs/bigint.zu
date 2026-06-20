@@ -1702,7 +1702,7 @@ class BigInt {
   /**
    * Performs a bitwise OR operation on the number and the given one.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   or_(num) {
@@ -1763,7 +1763,7 @@ class BigInt {
   /**
    * Performs a bitwise AND operation on the number and the given one.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   and_(num) {
@@ -1837,7 +1837,7 @@ class BigInt {
   /**
    * Performs a bitwise XOR operation on the number and the given one.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   xor(num) {
@@ -2002,7 +2002,7 @@ class BigInt {
   /**
    * Adds the given number to the current one.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   add(num) {
@@ -2108,7 +2108,7 @@ class BigInt {
   /**
    * Subracts the given number from the current one.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   sub(num) {
@@ -2134,7 +2134,7 @@ class BigInt {
   /**
    * Multiplies the given number by the current one.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   mul(num) {
@@ -2227,7 +2227,7 @@ class BigInt {
    * Returns a number which is equal to the current number raise to the power 
    * of the given number.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   pow(num) {
@@ -2769,7 +2769,7 @@ class BigInt {
    * It also accept a third argument `positive` causes the function to return the 
    * unsigned mod if `true`.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @param ?string mode: `''` (default) | `'mod'` | `'div'`
    * @param ?bool positive
    * @returns dict
@@ -2874,7 +2874,7 @@ class BigInt {
   /**
    * Divides the current number by the given number _num_.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   div(num) {
@@ -2884,7 +2884,7 @@ class BigInt {
   /**
    * Returns the remainder of dividing the current number by the given number _num_.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   mod(num) {
@@ -2901,7 +2901,7 @@ class BigInt {
   /**
    * Same as [[bigint.BigInt.div]] but rounds the result to the nearest number.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   divRound(num) {
@@ -2992,7 +2992,7 @@ class BigInt {
    * (ax + by) where _x_ is the current number and returns a dictionary containing 
    * the results of `a`, `b`, and `gcd`.
    * 
-   * @param [[bigint.BigInt]] y
+   * @param {bigint.BigInt} y
    * @returns dict
    */
   egcd(y) {
@@ -3173,7 +3173,7 @@ class BigInt {
   /**
    * Calculates the Greatest Common Divisor of the current number and the given number _num_.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   gcd(num) {
@@ -3219,7 +3219,7 @@ class BigInt {
   /**
    * Calculates the inverse of the current number modulo the given number _num_.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns [[bigint.BigInt]]
    */
   invm(num) {
@@ -3361,7 +3361,7 @@ class BigInt {
    * current number is less than the given number, `0` if it is equal to the 
    * given number, or `1` if it is greater than the given number.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns number
    */
   cmp(num) {
@@ -3417,7 +3417,7 @@ class BigInt {
    * Returns `true` if the current number is greater than the given number 
    * _num_ otherwise, it returns `false`.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns bool
    */
   gt(num) {
@@ -3439,7 +3439,7 @@ class BigInt {
    * Returns `true` if the current number is greater than or equal to the given 
    * number _num_ otherwise, it returns `false`.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns bool
    */
   gte(num) {
@@ -3461,7 +3461,7 @@ class BigInt {
    * Returns `true` if the current number is less than the given number 
    * _num_ otherwise, it returns `false`.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns bool
    */
   lt(num) {
@@ -3483,7 +3483,7 @@ class BigInt {
    * Returns `true` if the current number is less than or equal to the given 
    * number _num_ otherwise, it returns `false`.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns bool
    */
   lte(num) {
@@ -3505,7 +3505,7 @@ class BigInt {
    * Returns `true` if the current number isequal to the given number _num_ 
    * otherwise, it returns `false`.
    * 
-   * @param [[bigint.BigInt]] num
+   * @param {bigint.BigInt} num
    * @returns bool
    */
   eq(num) {

@@ -432,7 +432,7 @@ def await_list(threads) {
  * same as [[thread.await_list()]], but allows passing the items as 
  * known arguments.
  * 
- * @param [[thread.Thread]]... threads
+ * @param {thread.Thread}... threads
  */
 def await_all(...) {
   for thread in __args__ {

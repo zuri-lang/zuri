@@ -30,7 +30,7 @@ class BIO {
    * Sets the working SSL instance for this BIO.
    * 
    * @note Option must be one of the BIO constants if given.
-   * @param [[ssl.SSL]] ssl
+   * @param {ssl.SSL} ssl
    * @param ?int option: Default value is `BIO_NOCLOSE`
    */
   set_ssl(ssl, option) {
@@ -240,7 +240,7 @@ class BIO {
    * to the current BIO stack (unless the current pinter is `nil`). 
    * It then makes a control call on BIO _bio_ and returns it.
    * 
-   * @param [[ssl.BIO]] bio
+   * @param {ssl.BIO} bio
    * @returns self
    */
   push(bio) {

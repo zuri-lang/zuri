@@ -61,7 +61,7 @@ class SQLite3Cursor {
   var columns = []
 
   /**
-   * @param [[sqlite.SQLite3]] db
+   * @param {sqlite.SQLite3} db
    * @param ptr cursor
    * @note SQLite3Cursor should NEVER be maually instantiated.
    * @constructor

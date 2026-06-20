@@ -12,7 +12,7 @@ import date
 class SSL {
 
   /**
-   * @param [[ssl.SSLContext]] context
+   * @param {ssl.SSLContext} context
    * @constructor
    */
   SSL(context) {

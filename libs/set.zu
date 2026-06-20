@@ -4,7 +4,7 @@
  * This module provides functionalities for working with mathematical sets. 
  * 
  * Sets are collections of unique values. You can iterate through sets in the 
- * same order in which they were initialized or set by [[set.Set.add()]]. 
+ * same order in which they were initialized or set by {set.Set.add()}. 
  * This module assumes that all Sets containing exactly the same elements 
  * irrespective of their order are equal.
  * 
@@ -88,15 +88,11 @@ class Set {
    * Creates a new Set object from a list or dictionary or an empty Set object 
    * when no argument is passed.
    * 
-   * @param {list|dict|nil} items
+   * @param {?list|dict} items
    * @constructor
    */
-  Set(items) {
+  Set(items: ?list|dict) {
     if items != nil {
-      if !is_list(items) and !is_dict(items) {
-        raise TypeError('expected list or dictionary, ${typeof(items)} given')
-      }
-  
       if is_dict(items) {
         items = items.keys()
       }
@@ -110,14 +106,10 @@ class Set {
    * Returns a new set containing elements which are in either or both of this 
    * set and the given set.
    * 
-   * @param [[set.Set]] other
-   * @returns [[set.Set]]
+   * @param {set.Set} other
+   * @returns {set.Set}
    */
-  union(other) {
-    if !instance_of(other, Set) {
-      raise TypeError('instance of Set expected, ${typeof(other)} given')
-    }
-
+  union(other: Set) {
     var items = self.to_list()
     items.extend(other.to_list())
 
@@ -127,14 +119,10 @@ class Set {
   /**
    * Returns a new set containing elements in both this set and the given set.
    * 
-   * @param [[set.Set]] other
-   * @returns [[set.Set]]
+   * @param {set.Set} other
+   * @returns {set.Set}
    */
-  intersect(other) {
-    if !instance_of(other, Set) {
-      raise TypeError('instance of Set expected, ${typeof(other)} given')
-    }
-
+  intersect(other: Set) {
     var common = []
 
     if !other.is_empty() {
@@ -151,14 +139,10 @@ class Set {
   /**
    * Returns a new set containing elements in this set but not in the given set.
    * 
-   * @param [[set.Set]] other
-   * @returns [[set.Set]]
+   * @param {set.Set} other
+   * @returns {set.Set}
    */
-  difference(other) {
-    if !instance_of(other, Set) {
-      raise TypeError('instance of Set expected, ${typeof(other)} given')
-    }
-
+  difference(other: Set) {
     var diff = []
 
     if other.is_empty() {
@@ -178,14 +162,10 @@ class Set {
    * Returns a new set containing elements which are in either this set or 
    * the given set, but not in both.
    * 
-   * @param [[set.Set]] other
-   * @returns [[set.Set]]
+   * @param {set.Set} other
+   * @returns {set.Set}
    */
-  symmetric_difference(other) {
-    if !instance_of(other, Set) {
-      raise TypeError('instance of Set expected, ${typeof(other)} given')
-    }
-
+  symmetric_difference(other: Set) {
     var diff = []
 
     if self.is_empty() {
@@ -213,14 +193,10 @@ class Set {
    * Returns a boolean indicating if this set has no elements in common with 
    * the given set.
    * 
-   * @param [[set.Set]] other
+   * @param {set.Set} other
    * @returns bool
    */
-  is_disjoint(other) {
-    if !instance_of(other, Set) {
-      raise TypeError('instance of Set expected, ${typeof(other)} given')
-    }
-
+  is_disjoint(other: Set) {
     var intersect = self.intersect(other)
     var is_disjoint = intersect.is_empty()
 
@@ -233,14 +209,10 @@ class Set {
   /**
    * Returns a boolean indicating if all elements of this set are in the given set.
    * 
-   * @param [[set.Set]] other
+   * @param {set.Set} other
    * @returns bool
    */
-  is_subset(other) {
-    if !instance_of(other, Set) {
-      raise TypeError('instance of Set expected, ${typeof(other)} given')
-    }
-
+  is_subset(other: Set) {
     # important early exit
     if self.length() <= other.length() {
       return false
@@ -258,14 +230,10 @@ class Set {
   /**
    * Returns a boolean indicating if all elements of the given set are in this set.
    * 
-   * @param [[set.Set]] other
+   * @param {set.Set} other
    * @returns bool
    */
-  is_superset(other) {
-    if !instance_of(other, Set) {
-      raise TypeError('instance of Set expected, ${typeof(other)} given')
-    }
-
+  is_superset(other: Set) {
     # important early exit
     if self.length() >= other.length() {
       return false
@@ -296,7 +264,7 @@ class Set {
    * @param any value
    * @returns bool
    */
-  contains(value) {
+  contains(value: any) {
     return self._items.contains(value)
   }
 
@@ -327,7 +295,7 @@ class Set {
    * @param any value
    * @returns any
    */
-  remove(value) {
+  remove(value: any) {
     return self._items.remove(value)
   }
 
@@ -338,7 +306,7 @@ class Set {
    * @param any value
    * @returns bool
    */
-  add(value) {
+  add(value: any) {
     if !self._items.contains(value) {
       self._items.append(value)
       return true
@@ -350,7 +318,7 @@ class Set {
   /**
    * Returns a new Set which is an exact replica of the current Set.
    * 
-   * @returns [[set.Set]]
+   * @returns {set.Set}
    */
   clone() {
     return Set(self.to_list())
@@ -362,21 +330,9 @@ class Set {
    * 
    * @param function callback
    */
-  each(callback) {
-    if !is_function(callback) {
-      raise TypeError('callback function expected, ${typeof(callback)} given')
-    }
-
-    var fn_meta = _reflect.getfunctionmetadata(function)
-
-    if fn_meta.arity > 1 {
-      for index, item in self._items {
-        callback(item, index)
-      }
-    } else {
-      for item in self._items {
-        callback(item)
-      }
+  each(callback: function) {
+    for index, item in self._items {
+      callback(item, index)
     }
   }
 
@@ -461,12 +417,12 @@ class Set {
 
 
 /**
- * Default export function for the [[set.Set]] class.
+ * Default export function for the {set.Set} class.
  * 
- * @param {list|dict|nil} items
- * @returns [[set.Set]]
+ * @param {?list|dict} items
+ * @returns {set.Set}
  * @default
  */
-def set(items) {
+def set(items: ?list|dict) {
   return Set(items)
 }
