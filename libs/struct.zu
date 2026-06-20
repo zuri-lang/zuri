@@ -60,10 +60,7 @@ import _struct
  * @param any... args
  * @returns bytes
  */
-def pack(format, ...) {
-  if !is_string(format)
-    raise ArgumentError('format string expected')
-
+def pack(format: string, ...) {
   var items = []
   for arg in __args__ {
     if is_list(arg) items.extend(arg)
@@ -94,14 +91,7 @@ def pack(format, ...) {
  * @param ?number offset: Default value is `0`
  * @returns any
  */
-def unpack(format, data, offset) {
-  if !is_string(format)
-    raise TypeError('format string expected in argument 1')
-  if !is_string(data) and !is_bytes(data)
-    raise TypeError('data must be string or bytes')
-  if offset != nil and !is_number(offset)
-    raise TypeError('offset must be number if set')
-
+def unpack(format: string, data: bytes|string, offset: ?number) {
   if is_string(data) data = data.to_bytes()
   if !offset offset = 0
   
@@ -116,11 +106,6 @@ def unpack(format, data, offset) {
  * @param list args
  * @returns bytes
  */
-def pack_from(format, args) {
-  if !is_string(format)
-    raise TypeError('format string expected in argument 1')
-  if !is_list(args)
-    raise TypeError('list expected in argument 2 (args)')
-
+def pack_from(format: string, args: list) {
   return _struct.pack(format, args)
 }

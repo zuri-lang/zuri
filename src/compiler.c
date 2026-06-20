@@ -1520,7 +1520,7 @@ static struct {
   {"range", 5, "is_range", 8},
   {"file", 4, "is_file", 7},
   {"function", 8, "is_function", 11},
-  {"class", 5, "is_class", 5},
+  {"type", 4, "is_class", 5},
   {"callable", 8, "is_callable", 11},
   {"iterable", 8, "is_iterable", 11},
   {"instance", 8, "is_instance", 8},

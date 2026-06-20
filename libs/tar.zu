@@ -126,7 +126,7 @@ def _octdec(v) {
 #--------------------------------------------------------------------------------
 
 /**
- * Creates or extracts TAR archives with long pathnames (> 100 characters) 
+ * Creates or extracts TAR archives with a long pathname (> 100 characters)
  * support in POSIX ustar and GNU longlink formats.
  * 
  * For a more fine grained control and to create TAR archives from scratch while adding 
@@ -153,7 +153,7 @@ class Tar {
    *    COMPRESS_AUTO
    * @throws {TarIllegalCompressionException}
    */
-  set_compression(level, type) {
+  set_compression(level: ?int, type: ?int) {
     if !level level = 9
     if !type type = COMPRESS_AUTO
 
@@ -174,7 +174,7 @@ class Tar {
    * @throws {TarIOException}
    * @throws {TarIllegalCompressionException}
    */
-  open(file) {
+  open(file: string) {
     self._file = file
 
     if self._comp_type == COMPRESS_AUTO
@@ -240,13 +240,13 @@ class Tar {
    * operations.
    *
    * @param {string} outdir  the target directory for extracting
-   * @param {int|string} strip   either the number of path components or a fixed prefix to strip
-   * @param {string} exclude a regular expression of files to exclude
-   * @param {string} include a regular expression of files to include
+   * @param {?int|string} strip   either the number of path components or a fixed prefix to strip
+   * @param {?string} exclude a regular expression of files to exclude
+   * @param {?string} include a regular expression of files to include
    * @throws {TarIOException}
    * @return {list[string]}
    */
-  extract(outdir, strip, exclude, include) {
+  extract(outdir: string, strip: ?int|string, exclude: ?string, include: ?string) {
     if !is_string(outdir)
       raise Exception('output directory required as first argument')
 
@@ -322,7 +322,7 @@ class Tar {
    *
    * @param {string} file
    */
-  create(file) {
+  create(file: string) {
     self._file = file
     self._handle = nil
     self._memory = bytes(0)
@@ -353,7 +353,7 @@ class Tar {
    *     with all meta data, empty to take from original.
    * @throws {TarIOException}
    */
-  add_file(path, header) {
+  add_file(path: string, header: string|dict) {
     if self._closed
       raise TarIOException('archive has been closed and files can no longer be added')
 
@@ -402,7 +402,7 @@ class Tar {
    *     with all meta data
    * @throws {TarIOException}
    */
-  add_data(data, header) {
+  add_data(data: bytes, header: string|dict) {
     if self._closed
       raise TarIOException('archive has been closed and files can no longer be added')
 
@@ -501,7 +501,7 @@ class Tar {
    * @param {string} path
    * @returns {bool}
    */
-  save(path) {
+  save(path: string) {
     if self._comp_type == COMPRESS_AUTO
       self.set_compression(self._comp_level, self.file_type(path))
     return file(path, 'wb').write(self._memory)
@@ -512,20 +512,13 @@ class Tar {
    * archive to `dir`.
    * 
    * @param {string} directory
-   * @param {string} file_blacklist if not empty, this function will ignore every file with a 
+   * @param {list} file_blacklist if not empty, this function will ignore every file with a
    *    matching path.
    * @param {list} ext_blacklist if not empty, this function will ignore every file with a 
    *    matching extension.
    * @throws {TarIOException|Exception}
    */
-  add_directory(directory, file_blacklist, ext_blacklist) {
-    if !is_string(directory)
-      raise Exception('expected string in argument 1 (directory)')
-    if file_blacklist != nil and !is_list(file_blacklist)
-      raise Exception('expected list in argument 2 (file_blacklist)')
-    if ext_blacklist != nil and !is_list(ext_blacklist)
-      raise Exception('expected list in argument 3 (ext_blacklist)')
-
+  add_directory(directory: string, file_blacklist: ?list, ext_blacklist: ?list) {
     directory = directory.replace('/\\\\/', '/')
 
     if !os.dir_exists(directory)
@@ -591,7 +584,7 @@ class Tar {
    * @param {string} file
    * @returns {int} (one of COMPRESS_BZIP, COMPRESS_GZIP or COMPRESS_NONE)
    */
-  file_type(f) {
+  file_type(f: string) {
     var ff = file(f, 'rb')
 
     if ff.exists() {
@@ -811,15 +804,16 @@ class Tar {
  * @param {string} path the file or directory that will be compressed.
  * @param {string} destination the destination of the compressed TAR ball.
  */
-def compress(path, destination) {
-  if !destination destination = os.base_name(path) + '.tar.gz'
+def compress(path: string, destination: string) {
+  if !destination
+    destination = os.base_name(path) + '.tar.gz'
 
   var tar = Tar()
   var is_dir = os.dir_exists(path)
   var is_file = file(path).exists()
 
   if !is_dir and !is_file
-    raise TarIOException('cannnot find path "${path}"')
+    raise TarIOException('cannot find path "${path}"')
 
   tar.create()
   if is_dir tar.add_directory(path)
@@ -835,7 +829,7 @@ def compress(path, destination) {
  * @param {string} destination the path to extract to (Optional).
  * @returns {list} list of extracted items
  */
-def extract(file, destination) {
+def extract(file: string, destination: string) {
   if !destination
     destination = '.'.join(file.split('.')[,-1])
   var tar = Tar()

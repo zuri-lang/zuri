@@ -27,7 +27,7 @@ var ST_CTIME = 9
  * @param number mode
  * @returns number
  */
-def S_IMODE(mode) {
+def S_IMODE(mode: number) {
   return mode & 0c7777
 }
 
@@ -37,7 +37,7 @@ def S_IMODE(mode) {
  * @param number mode
  * @returns number
  */
-def S_IFMT(mode) {
+def S_IFMT(mode: number) {
   return mode & 0c170000
 }
 
@@ -64,7 +64,7 @@ var S_IFWHT = 0
  * @param number mode
  * @returns number
  */
-def S_ISDIR(mode) {
+def S_ISDIR(mode: number) {
   return S_IFMT(mode) == S_IFDIR
 }
 
@@ -74,7 +74,7 @@ def S_ISDIR(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISCHR(mode) {
+def S_ISCHR(mode: number) {
   return S_IFMT(mode) == S_IFCHR
 }
 
@@ -84,7 +84,7 @@ def S_ISCHR(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISBLK(mode) {
+def S_ISBLK(mode: number) {
   return S_IFMT(mode) == S_IFBLK
 }
 
@@ -94,7 +94,7 @@ def S_ISBLK(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISREG(mode) {
+def S_ISREG(mode: number) {
   return S_IFMT(mode) == S_IFREG
 }
 
@@ -104,7 +104,7 @@ def S_ISREG(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISFIFO(mode) {
+def S_ISFIFO(mode: number) {
   return S_IFMT(mode) == S_IFIFO
 }
 
@@ -114,7 +114,7 @@ def S_ISFIFO(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISLNK(mode) {
+def S_ISLNK(mode: number) {
   return S_IFMT(mode) == S_IFLNK
 }
 
@@ -124,7 +124,7 @@ def S_ISLNK(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISSOCK(mode) {
+def S_ISSOCK(mode: number) {
   return S_IFMT(mode) == S_IFSOCK
 }
 
@@ -134,7 +134,7 @@ def S_ISSOCK(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISDOOR(mode) {
+def S_ISDOOR(mode: number) {
   return false
 }
 
@@ -144,7 +144,7 @@ def S_ISDOOR(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISPORT(mode) {
+def S_ISPORT(mode: number) {
   return false
 }
 
@@ -154,7 +154,7 @@ def S_ISPORT(mode) {
  * @param number mode
  * @returns number
  */
-def S_ISWHT(mode) {
+def S_ISWHT(mode: number) {
   return false
 }
 
@@ -230,7 +230,7 @@ var _filemode_table = [
  * @param number mode
  * @returns string
  */
-def file_mode(mode) {
+def file_mode(mode: number) {
   var perm = []
   for table in _filemode_table {
     var flag_found = false

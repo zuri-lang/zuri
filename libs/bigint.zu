@@ -114,7 +114,7 @@ def _numberToBase(n, b) {
     n //= b
   }
 
-  return (?isNeg '-' : '') + ''.join(digits.reverse())
+  return (isNeg ? '-' : '') + ''.join(digits.reverse())
 }
 
 def _parseHex4Bits(string, index) {
