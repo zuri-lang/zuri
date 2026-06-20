@@ -152,7 +152,7 @@ class list {
    * @param {any} value
    * @return {list}
    */
-  append(value) {}
+  append(value: any) {}
 
 
   /**
@@ -228,7 +228,7 @@ class list {
    * @param {list} list
    * @return {list}
    */
-  extend(list) {}
+  extend(list: list) {}
 
 
   /**
@@ -249,10 +249,10 @@ class list {
    * ```
    * 
    * @param {any} value
-   * @param {number?} start_index
+   * @param {int?} start_index
    * @return {number}
    */
-  index_of(value, start_index) {}
+  index_of(value: any, start_index: int) {}
 
 
   /**
@@ -280,10 +280,10 @@ class list {
    * ```
    * 
    * @param {any} value
-   * @param {number} index
+   * @param {int} index
    * @return {list}
    */
-  insert(value, index) {}
+  insert(value: any, index: int) {}
 
 
   /**
@@ -332,10 +332,10 @@ class list {
    * []
    * ```
    * 
-   * @param {number?} count
+   * @param {int?} count
    * @return {any}
    */
-  shift(count) {}
+  shift(count: int) {}
 
 
   /**
@@ -360,10 +360,10 @@ class list {
    *     <repl>:1 -> @.script()
    * ```
    * 
-   * @param {number} index
+   * @param {int} index
    * @return {any}
    */
-  remove_at(index) {}
+  remove_at(index: int) {}
 
 
   /**
@@ -383,7 +383,7 @@ class list {
    * @param {any} value
    * @return {any}
    */
-  remove(value) {}
+  remove(value: any) {}
 
 
   /**
@@ -447,7 +447,7 @@ class list {
    * @param {any} value
    * @return {boolean}
    */
-  contains(value) {}
+  contains(value: any) {}
 
 
   /**
@@ -469,11 +469,11 @@ class list {
    * [1, 3, 8, 9]
    * ```
    * 
-   * @param {number} start
-   * @param {number} end
+   * @param {int} start
+   * @param {int} end
    * @return {number}
    */
-  delete(start, end) {}
+  delete(start: int, end: int) {}
 
 
   /**
@@ -539,10 +539,10 @@ class list {
    * [10, 11, 12, 13, 14, 15]
    * ```
    * 
-   * @param {number} n
+   * @param {int} n
    * @return {list}
    */
-  take(n) {}
+  take(n: int) {}
 
 
   /**
@@ -561,10 +561,10 @@ class list {
    *     <repl>:1 -> @.script()
    * ```
    * 
-   * @param {number} index
+   * @param {int} index
    * @return {any}
    */
-  get(index) {}
+  get(index: int) {}
 
 
   /**
@@ -644,7 +644,7 @@ class list {
    * @param {list} list
    * @return {list}
    */
-  zip_from(list) {}
+  zip_from(list: list) {}
 
 
   /**

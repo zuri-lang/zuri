@@ -194,11 +194,7 @@ class _ListExtension > list {
    * > The `each` method does not return a new list; it simply executes the callback for each element.
    * > If you want to create a new list based on the original, consider using the `map` method instead.
    */
-  static each(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static each(callback: function) {
     for item in self {
       callback(item)
     }
@@ -223,11 +219,7 @@ class _ListExtension > list {
    * # Output: [2, 4, 6]
     * ```
    */
-  static map(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static map(callback: function) {
     var result = []
     for index, item in self {
       result.append(callback(item, index))
@@ -257,11 +249,7 @@ class _ListExtension > list {
    * # Output: [2]
    * ```
    */
-  static filter(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static filter(callback: function) {
     var result = []
     for index, item in self {
       if callback(item, index) {
@@ -294,11 +282,7 @@ class _ListExtension > list {
    * # Output: 6
    * ```
    */
-  static reduce(callback, initial) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static reduce(callback: function, initial: any) {
     if self.length() == 0 return initial
 
     var index = 0
@@ -341,11 +325,7 @@ class _ListExtension > list {
    * element in the list. If the callback function returns a falsy value for all elements, `some` will
    * return `false`. If the list is empty, `some` will return `false` by default.
    */
-  static some(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static some(callback: function) {
     for index, item in self {
       if callback(item, index) {
         return true
@@ -377,11 +357,7 @@ class _ListExtension > list {
    * element in the list. If the callback function returns a falsy value for any element, `every`
    * will return `false`. If the list is empty, `every` will return `true` by default.
    */
-  static every(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static every(callback: function) {
     for index, item in self {
       if !callback(item, index) {
         return false
@@ -410,11 +386,7 @@ class _ListExtension > list {
    * # Output: 2
    * ```
    */
-  static find(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static find(callback: function) {
     for index, item in self {
       if callback(item, index) {
         return item
@@ -443,11 +415,7 @@ class _ListExtension > list {
    * # Output: 1
    * ```
    */
-  static find_index(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static find_index(callback: function) {
     for index, item in self {
       if callback(item, index) {
         return index
@@ -476,11 +444,7 @@ class _ListExtension > list {
    * # Output: 2
    * ```
    */
-  static find_last(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static find_last(callback: function) {
     for index in (self.length() - 1)..0 {
       var item = self[index]
       if callback(item, index) {
@@ -510,11 +474,7 @@ class _ListExtension > list {
    * # Output: 1
    * ```
    */
-  static find_last_index(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static find_last_index(callback: function) {
     for index in (self.length() - 1)..0 {
       var item = self[index]
       if callback(item, index) {
@@ -543,11 +503,7 @@ class _ListExtension > list {
    * # Output: [2]
    * ```
    */
-  static find_all(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static find_all(callback: function) {
     var result = []
     for index, item in self {
       if callback(item, index) {
@@ -577,11 +533,7 @@ class _ListExtension > list {
    * # Output: [[2], [1, 3]]
    * ```
    */
-  static partition(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static partition(callback: function) {
     var true_partition = []
     var false_partition = []
 

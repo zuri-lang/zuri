@@ -127,10 +127,10 @@ class {
    * 90
    * ```
    * 
-   * @param {number} size - The step size of the range.
+   * @param {int} size - The step size of the range.
    * @returns {range}
    */
-  step(size) {}
+  step(size: int) {}
 
 
   /**
