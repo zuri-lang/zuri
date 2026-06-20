@@ -4,20 +4,7 @@
  * Zuri has a very rich support for strings and they can be expressed in several ways. In Zuri,
  * strings are denoted by enclosing characters in pairs of single quotes (`'...'`) or pairs of 
  * double quotes (`"..."`) and they are essentially the same.
- * 
- * ## Reference
- * 
- * - [Strings](#strings)
- * - [Reference](#reference)
- * - [More about Strings](#more-about-strings)
- * - [Unicode and UTF-8](#unicode-and-utf-8)
- * - [String Interpolation](#string-interpolation)
- * - [Characters](#characters)
- * - [String Operations](#string-operations)
- * - [String Methods](#string-methods)
- * - [Regular Expressions](#regular-expressions)
- * 
- * 
+ *
  * ## More about Strings
  * 
  * When strings are wrapped in `'` or `"`, you can escape that quotation within the string using 
@@ -526,7 +513,7 @@ class string {
    * false
    * ```
    */
-  is_number(n) {}
+  is_number() {}
 
 
   /**
@@ -613,10 +600,10 @@ class string {
    * 'xampl'
    * ```
    * 
-   * @param {char?} chr - The character to trim (Default = ' ').
+   * @param {?char} chr - The character to trim (Default = ' ').
    * @returns {string}
    */
-  trim(chr) {}
+  trim(chr: ?string) {}
 
 
   /**
@@ -632,10 +619,10 @@ class string {
    * 'xample'
    * ```
    * 
-   * @param {char?} chr - The character to trim (Default = ' ').
+   * @param {?char} chr - The character to trim (Default = ' ').
    * @returns {string}
    */
-  ltrim(chr) {}
+  ltrim(chr: ?string) {}
 
 
   /**
@@ -651,10 +638,10 @@ class string {
    * 'exampl'
    * ```
    * 
-   * @param {char?} chr - The character to trim (Default = ' ').
+   * @param {?char} chr - The character to trim (Default = ' ').
    * @returns {string}
    */
-  rtrim(chr) {}
+  rtrim(chr: ?string) {}
 
 
   /**
@@ -679,7 +666,7 @@ class string {
    * @param {string} string - The string to join the items in the iterable.
    * @returns {string}
    */
-  join(string) {}
+  join(string: string) {}
 
 
   /**
@@ -713,7 +700,7 @@ class string {
    * @param {string} delimiter - The delimiter to use the split the string.
    * @returns {list}
    */
-  split(delimiter) {}
+  split(delimiter: string) {}
 
 
   /**
@@ -737,10 +724,10 @@ class string {
    * ```
    * 
    * @param {string} str - The string to search for.
-   * @param {number?} start_index - The index to start the search from.
+   * @param {?number} start_index - The index to start the search from.
    * @returns {number}
    */
-  index_of(str, start_index) {}
+  index_of(str: string, start_index: ?number) {}
 
 
   /**
@@ -759,7 +746,7 @@ class string {
    * @param {string} str - The string to search for.
    * @returns {boolean}
    */
-  starts_with(str) {}
+  starts_with(str: string) {}
 
 
   /**
@@ -778,7 +765,7 @@ class string {
    * @param {string} str - The string to search for.
    * @returns {boolean}
    */
-  ends_with(str) {}
+  ends_with(str: string) {}
 
 
   /**
@@ -802,7 +789,7 @@ class string {
    * @param {string} str - The string to search for.
    * @returns {number}
    */
-  count(str) {}
+  count(str: string) {}
 
 
   /**
@@ -883,10 +870,10 @@ class string {
    * ```
    * 
    * @param {number} width - The length of the string after padding.
-   * @param {string?} fill - The character to use for padding.
+   * @param {?string} fill - The character to use for padding.
    * @returns {string}
    */
-  lpad(width, fill) {}
+  lpad(width: number, fill: ?string) {}
 
 
   /**
@@ -906,10 +893,10 @@ class string {
    * ```
    * 
    * @param {number} width - The length of the string after padding.
-   * @param {string?} fill - The character to use for padding.
+   * @param {?string} fill - The character to use for padding.
    * @returns {string}
    */
-  rpad(width, fill) {}
+  rpad(width: number, fill: ?string) {}
 
 
   /**
@@ -939,7 +926,7 @@ class string {
    * @param {string} str - The string to match.
    * @returns {boolean|dictionary}
    */
-  match(str) {}
+  match(str: string) {}
 
 
   /**
@@ -960,7 +947,7 @@ class string {
    * @param {string} reg - The regular expression to match.
    * @returns {dictionary}
    */
-  matches(reg) {}
+  matches(reg: string) {}
 
 
   /**
@@ -988,11 +975,11 @@ class string {
    *    expression even if it contains a valid regular expression.
    * @param {string} str - The string to match.
    * @param {string} replacement - The replacement string.
-   * @param {boolean} use_regex - Whether to use the regular expression or the string string as the match 
+   * @param {?bool} use_regex - Whether to use the regular expression or the string string as the match
    *    string (default = true).
    * @returns {string}
    */
-  replace(str, replacement, use_regex) {}
+  replace(str: string, replacement: string, use_regex: ?bool) {}
 
 
   /**
@@ -1049,7 +1036,7 @@ class string {
    * @param {function} callback - The callback function to invoke for each match.
    * @returns {string}
    */
-  replace_with(regex, callback) {}
+  replace_with(regex: string, callback: function) {}
 
 
   /**
@@ -1084,7 +1071,7 @@ class string {
    *    - Zero if the strings are equal.
    *    - A positive number if the string is greater than the other string.
    */
-  compare(other) {}
+  compare(other: string) {}
 
   @iter(n) {}
   @itern(n) {}

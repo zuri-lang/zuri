@@ -1514,11 +1514,15 @@ static struct {
   {"int", 3, "is_int", 6},
   {"number", 6, "is_number", 9},
   {"string", 6, "is_string", 9},
+  {"bytes", 5, "is_bytes", 8},
   {"list", 4, "is_list", 7},
   {"dict", 4, "is_dict", 7},
   {"range", 5, "is_range", 8},
+  {"file", 4, "is_file", 7},
   {"function", 8, "is_function", 11},
   {"class", 5, "is_class", 5},
+  {"callable", 8, "is_callable", 11},
+  {"iterable", 8, "is_iterable", 11},
   {"instance", 8, "is_instance", 8},
   {NULL, -1, NULL, -1},
 };
@@ -1554,18 +1558,21 @@ static char* create_type_check_error_message(z_parser *p, z_token name, z_token 
 // #undef ERROR_FORMAT
 }
 
-static void compile_type_check(z_parser* p, int index, z_token name, z_token types[], int types_count) {
+static void compile_type_check(z_parser* p, int index, z_token name, z_token types[], int types_count, bool nullable) {
   bool is_any = false;
+  int nil_exit = -1;
 
   // Firstly, check if it's nil.
   // If it is nil, we want to jump the entire type check.
-  emit_byte_and_short(p, OP_GET_LOCAL, index);
-  emit_byte(p, OP_NIL);
-  emit_byte(p, OP_EQUAL);
-  emit_byte(p, OP_NOT);
+  if (nullable) {
+    emit_byte_and_short(p, OP_GET_LOCAL, index);
+    emit_byte(p, OP_NIL);
+    emit_byte(p, OP_EQUAL);
+    emit_byte(p, OP_NOT);
 
-  int nil_exit = emit_jump(p, OP_JUMP_IF_FALSE);
-  emit_byte(p, OP_POP);
+    nil_exit = emit_jump(p, OP_JUMP_IF_FALSE);
+    emit_byte(p, OP_POP);
+  }
 
   int all_checks_exit[MAX_PARAMETER_TYPE_HINTS];
 
@@ -1654,10 +1661,12 @@ static void compile_type_check(z_parser* p, int index, z_token name, z_token typ
     patch_jump(p, else_jump);
   }
 
-  int else_jump = emit_jump(p, OP_JUMP);
-  patch_jump(p, nil_exit);
-  emit_byte(p, OP_POP);
-  patch_jump(p, else_jump);
+  if (nil_exit != -1) {
+    int else_jump = emit_jump(p, OP_JUMP);
+    patch_jump(p, nil_exit);
+    emit_byte(p, OP_POP);
+    patch_jump(p, else_jump);
+  }
 }
 
 static int function_args(z_parser* p, bool is_operator) {
@@ -1703,6 +1712,8 @@ static int function_args(z_parser* p, bool is_operator) {
       z_token types[MAX_PARAMETER_TYPE_HINTS];
       int types_count = 0;
 
+      bool nullable = match(p, QUESTION_TOKEN);
+
       do {
         if (types_count == MAX_PARAMETER_TYPE_HINTS) {
           error_at_current(p, "cannot have more than %d type hints", MAX_PARAMETER_TYPE_HINTS);
@@ -1720,7 +1731,7 @@ static int function_args(z_parser* p, bool is_operator) {
         }
       } while (match(p, BAR_TOKEN));
 
-      compile_type_check(p, hint_count, name, types, types_count);
+      compile_type_check(p, hint_count, name, types, types_count, nullable);
     }
 
     ignore_whitespace(p);

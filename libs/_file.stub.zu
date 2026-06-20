@@ -106,10 +106,10 @@ class file {
    * ```
    * 
    * @param {string} path - The path to the file.
-   * @param {string?} mode - The mode in which the file should be opened.
+   * @param {?string} mode - The mode in which the file should be opened.
    * @constructor
    */
-  file(path, mode) {}
+  file(path: string, mode: ?string) {}
 
   /**
    * Returns `true` if a file exists or `false` otherwise.
@@ -167,19 +167,19 @@ class file {
    * 
    * _An example has been given above._
    * 
-   * @param {int?} length
+   * @param {?int} length
    * @return {string|bytes}
    */
-  read(length) {}
+  read(length: ?int) {}
 
 
   /**
    * Same as `read()`, but doesn't open or close the file automatically.
    * 
-   * @param {int?} length
+   * @param {?int} length
    * @return {string|bytes}
    */
-  gets(length) {}
+  gets(length: ?int) {}
 
 
   /**
@@ -192,7 +192,7 @@ class file {
    * @param {string|bytes} data
    * @return {string|bytes}
    */
-  write(data) {}
+  write(data: string|bytes) {}
 
 
   /**
@@ -201,7 +201,7 @@ class file {
    * @param {string|bytes} data
    * @return {string|bytes}
    */
-  puts(data) {}
+  puts(data: string|bytes) {}
 
 
   /**
@@ -353,7 +353,7 @@ class file {
    * @param {string} new_name
    * @return {boolean}
    */
-  rename(new_name) {}
+  rename(new_name: string) {}
 
 
   /**
@@ -399,7 +399,7 @@ class file {
    * @param {string} new_name
    * @return {boolean}
    */
-  copy(path) {}
+  copy(path: string) {}
 
 
   /**
@@ -413,10 +413,10 @@ class file {
    * true
    * ```
    * 
-   * @param {number?} length
+   * @param {?number} length
    * @return {boolean}
    */
-  truncate(length) {}
+  truncate(length: ?number) {}
 
 
   /**
@@ -434,7 +434,7 @@ class file {
    * @param {int} mode
    * @return {boolean}
    */
-  chmod(mode) {}
+  chmod(mode: int) {}
 
 
   /**
@@ -458,7 +458,7 @@ class file {
    * @param {number} mtime
    * @return {boolean}
    */
-  set_times(atime, mtime) {}
+  set_times(atime: number, mtime: number) {}
 
 
   /**
@@ -476,7 +476,7 @@ class file {
    * @param {int} seek_type
    * @return {boolean}
    */
-  seek(offset, seek_type) {}
+  seek(offset: number, seek_type: int) {}
 
 
   /**

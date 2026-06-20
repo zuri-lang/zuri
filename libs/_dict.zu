@@ -24,11 +24,7 @@ class _DictExtension > dict {
    * # c: 3
    * ```
    */
-  static each(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static each(callback: function) {
     for key, value in self {
       callback(value, key)
     }
@@ -55,11 +51,7 @@ class _DictExtension > dict {
    * # Output: {'b': 2, 'c': 3}
    * ```
    */
-  static filter(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static filter(callback: function) {
     var result = {}
 
     for key, value in self {
@@ -93,11 +85,7 @@ class _DictExtension > dict {
    * # Output: true
    * ```
    */
-  static some(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static some(callback: function) {
     for key, value in self {
       if callback(value, key) {
         return true
@@ -129,11 +117,7 @@ class _DictExtension > dict {
    * # Output: true
    * ```
    */
-  static every(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static every(callback: function) {
     for key, value in self {
       if !callback(value, key) {
         return false
@@ -166,7 +150,7 @@ class _DictExtension > dict {
    * # Output: 6
    * ```
    */
-  static reduce(callback, initial) {
+  static reduce(callback: function, initial: any) {
     if !is_function(callback) {
       raise Exception('Callback must be a function')
     }

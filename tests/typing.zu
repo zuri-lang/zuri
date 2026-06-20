@@ -1,0 +1,44 @@
+def a(arg: any, arg2: string, c: ?list) {
+  echo arg
+  echo arg2
+  echo c
+}
+
+a(1, 'hello')
+
+def test(x: string|number|Exception) {
+  echo x
+}
+
+test(1)
+test('hello')
+test(Exception('message'))
+
+class TestClass {
+  method(param: list, ...) {
+    echo param
+    echo __args__
+  }
+}
+
+var x = TestClass()
+x.method([2])
+x.method([], 1, 2, 3)
+
+def method2(param: ?TestClass) {
+  echo param
+}
+
+method2(x)
+method2()
+
+def all_optional(x: ?number, y: ?number) {}
+
+all_optional()
+all_optional(1)
+all_optional(2)
+
+def optional_any(v: ?any) {}
+
+optional_any()
+optional_any(1)

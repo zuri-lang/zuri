@@ -25,11 +25,7 @@ class _BytesExtension > bytes {
    * # Byte at index 4: 111
    * ```
    */
-  static each(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static each(callback: function) {
     iter var i = 0; i < self.length(); i++ {
       callback(self[i], i)
     }

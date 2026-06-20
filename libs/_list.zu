@@ -137,7 +137,7 @@ class _ListExtension > list {
    * The `isort` method is stable, meaning that it maintains the relative order of elements
    * with equal keys.
    */
-  static isort(comparator) {
+  static isort(comparator: ?function) {
     # Timsort implementation in Zuri
 
     if !comparator comparator = _default_comparator

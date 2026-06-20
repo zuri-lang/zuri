@@ -6,7 +6,7 @@
  * @param {number|instance} x The number to get the absolute value of.
  * @returns {number|any}
  */
-def abs(x) {}
+def abs(x: number|instance) {}
 
 
 /**
@@ -17,7 +17,7 @@ def abs(x) {}
  * @param {number|instance} x The number to convert to binary string.
  * @returns {string|any}
  */
-def bin(x) {}
+def bin(x: number|instance) {}
 
 
 /**
@@ -32,7 +32,7 @@ def bin(x) {}
  * @param {number|list} x The number or list to convert to bytes.
  * @returns {bytes|any}
  */
-def bytes(x) {}
+def bytes(x: number|list) {}
 
 
 /**
@@ -41,7 +41,7 @@ def bytes(x) {}
  * @param {number} x The number to convert to character.
  * @returns {string}
  */
-def chr(x) {}
+def chr(x: number) {}
 
 
 /**
@@ -51,7 +51,7 @@ def chr(x) {}
  * @param {string} name The name of the property to delete.
  * @returns {void}
  */
-def delprop(object, name) {}
+def delprop(object: instance, name: string) {}
 
 
 /**
@@ -62,7 +62,7 @@ def delprop(object, name) {}
  * @param {string?} mode The mode to open the file in.
  * @returns {file}
  */
-def file(path, mode) {}
+def file(path: string, mode: ?string) {}
 
 
 /**
@@ -73,7 +73,7 @@ def file(path, mode) {}
  * @param {string} name The name of the property to get.
  * @returns {any|nil}
  */
-def getprop(object, name) {}
+def getprop(object: instance, name: string) {}
 
 
 /**
@@ -84,7 +84,7 @@ def getprop(object, name) {}
  * @param {string} name The name of the property to check.
  * @returns {boolean}
  */
-def hasprop(object, name) {}
+def hasprop(object: instance, name: string) {}
 
 
 /**
@@ -95,7 +95,7 @@ def hasprop(object, name) {}
  * @param {number|instance} x The number to convert to hexadecimal.
  * @returns {string|any}
  */
-def hex(x) {}
+def hex(x: number|instance) {}
 
 
 /**
@@ -105,7 +105,7 @@ def hex(x) {}
  * @param {any} x The value to get the identifier of.
  * @returns {number}
  */
-def id(x) {}
+def id(x: any) {}
 
 
 /**
@@ -116,7 +116,7 @@ def id(x) {}
  * @param {number|instance} x The number to convert to integer.
  * @returns {number|any}
  */
-def int(x) {}
+def int(x: number|instance) {}
 
 
 /**
@@ -125,7 +125,7 @@ def int(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_bool(x) {}
+def is_bool(x: any) {}
 
 
 /**
@@ -135,7 +135,7 @@ def is_bool(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_callable(x) {}
+def is_callable(x: any) {}
 
 
 /**
@@ -144,7 +144,7 @@ def is_callable(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_class(x) {}
+def is_class(x: any) {}
 
 
 /**
@@ -153,7 +153,7 @@ def is_class(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_dict(x) {}
+def is_dict(x: any) {}
 
 
 /**
@@ -162,7 +162,7 @@ def is_dict(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_function(x) {}
+def is_function(x: any) {}
 
 
 /**
@@ -171,7 +171,7 @@ def is_function(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_instance(x) {}
+def is_instance(x: any) {}
 
 
 /**
@@ -180,7 +180,7 @@ def is_instance(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_int(x) {}
+def is_int(x: any) {}
 
 
 /**
@@ -189,7 +189,7 @@ def is_int(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_list(x) {}
+def is_list(x: any) {}
 
 
 /**
@@ -198,7 +198,7 @@ def is_list(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_number(x) {}
+def is_number(x: any) {}
 
 
 /**
@@ -207,7 +207,7 @@ def is_number(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_object(x) {}
+def is_object(x: any) {}
 
 
 /**
@@ -216,7 +216,7 @@ def is_object(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_string(x) {}
+def is_string(x: any) {}
 
 
 /**
@@ -225,7 +225,7 @@ def is_string(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_bytes(x) {}
+def is_bytes(x: any) {}
 
 
 /**
@@ -234,7 +234,7 @@ def is_bytes(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_file(x) {}
+def is_file(x: any) {}
 
 
 /**
@@ -245,7 +245,7 @@ def is_file(x) {}
  * @param {any} x The value to check.
  * @returns {boolean}
  */
-def is_iterable(x) {}
+def is_iterable(x: any) {}
 
 
 /**
@@ -255,7 +255,7 @@ def is_iterable(x) {}
  * @param {class} y The class to check for.
  * @returns {boolean}
  */
-def instance_of(x, y) {}
+def instance_of(x: any, y) {}
 
 
 /**
@@ -274,7 +274,7 @@ def microtime() {}
  * @param {number|instance} x The number to convert to octal.
  * @returns {string|any}
  */
-def oct(x) {}
+def oct(x: number|instance) {}
 
 
 /**
@@ -283,7 +283,7 @@ def oct(x) {}
  * @param {string} x The string to get the Unicode code point of.
  * @returns {number}
  */
-def ord(x) {}
+def ord(x: string) {}
 
 
 /**
@@ -294,19 +294,19 @@ def ord(x) {}
  * @param {number?} y The upper bound of the random number.
  * @returns {number}
  */
-def rand(x, y) {}
+def rand(x: ?number, y: ?number) {}
 
 
 /**
  * Sets the value of the object's property with the matching name to the given value. If the property 
  * already exists, it overwrites it and returns `true`, otherwise it returns `false`.
  * 
- * @param {object} obj The object to set the property of.
+ * @param {instance} obj The object to set the property of.
  * @param {string} prop The property to set.
  * @param {any} value The value to set the property to.
  * @returns {boolean}
  */
-def setprop(obj, prop, value) {}
+def setprop(obj: instance, prop: string, value: any) {}
 
 
 /**
@@ -324,7 +324,7 @@ def time() {}
  * @param {any} x The value to convert to boolean.
  * @returns {boolean}
  */
-def to_bool(x) {}
+def to_bool(x: any) {}
 
 
 /**
@@ -334,7 +334,7 @@ def to_bool(x) {}
  * @param {any} x The value to convert to dictionary.
  * @returns {dict}
  */
-def to_dict(x) {}
+def to_dict(x: any) {}
 
 
 /**
@@ -344,7 +344,7 @@ def to_dict(x) {}
  * @param {any} x The value to convert to integer.
  * @returns {number}
  */
-def to_int(x) {}
+def to_int(x: any) {}
 
 
 /**
@@ -354,7 +354,7 @@ def to_int(x) {}
  * @param {any} x The value to convert to list.
  * @returns {list}
  */
-def to_list(x) {}
+def to_list(x: any) {}
 
 
 /**
@@ -364,7 +364,7 @@ def to_list(x) {}
  * @param {any} x The value to convert to number.
  * @returns {number}
  */
-def to_number(x) {}
+def to_number(x: any) {}
 
 
 /**
@@ -374,7 +374,7 @@ def to_number(x) {}
  * @param {any} x The value to convert to string.
  * @returns {string}
  */
-def to_string(x) {}
+def to_string(x: any) {}
 
 
 /**
@@ -383,4 +383,4 @@ def to_string(x) {}
  * @param {any} x The value to check.
  * @returns {string}
  */
-def typeof(x) {}
+def typeof(x: any) {}

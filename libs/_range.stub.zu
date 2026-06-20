@@ -102,10 +102,11 @@ class {
    * %> (93..21).within(57)
    * true
    * ```
-   * 
+   *
+   * @param {number} value
    * @returns {boolean}
    */
-  within() {}
+  within(value: number) {}
 
 
   /**

@@ -105,7 +105,7 @@ class bytes {
    * (41  42 43 44 45)
    * ```
    */
-  bytes(n) {}
+  bytes(n: number|list) {}
 
    /**
    * Returns the number of bytes in the byte stream.
@@ -117,7 +117,7 @@ class bytes {
    * 
    * @returns {number}
    */
-  length(n) {}
+  length() {}
 
 
   /**
@@ -132,10 +132,10 @@ class bytes {
    * (40 75 16)
    * ```
    * 
-   * @param {number} n The byte to add.
+   * @param {int} n The byte to add.
    * @returns {bytes}
    */
-  append(n) {}
+  append(n: int) {}
 
 
   /**
@@ -176,7 +176,7 @@ class bytes {
    * @param {bytes} n The byte stream to extend with.
    * @returns {bytes}
    */
-  extend(n) {}
+  extend(n: bytes) {}
 
 
   /**
@@ -189,11 +189,11 @@ class bytes {
    * 2
    * ```
    * 
-   * @param {number} byte The byte to search for.
-   * @param {number} start_index The index to start the search from. Defaults to 0.
+   * @param {int} byte The byte to search for.
+   * @param {?number} start_index The index to start the search from. Defaults to 0.
    * @returns {number}
    */
-  index_of(byte, start_index) {}
+  index_of(byte: int, start_index: ?number) {}
 
 
   /**
@@ -226,7 +226,7 @@ class bytes {
    * @param {number} index The index to remove.
    * @returns {bytes}
    */
-  remove(index) {}
+  remove(index: number) {}
 
 
   /**
@@ -273,7 +273,7 @@ class bytes {
    * @param {number} index The index to get the item from.
    * @returns {number}
    */
-  get(index) {}
+  get(index: number) {}
 
 
   /**
@@ -291,7 +291,7 @@ class bytes {
    * @param {bytes} delimiter The delimiter to split on.
    * @returns {list}
    */
-  split(delimiter) {}
+  split(delimiter: bytes) {}
 
 
   /**
@@ -385,7 +385,7 @@ class bytes {
    * 
    * @returns {boolean}
    */
-  is_upper(n) {}
+  is_upper() {}
 
 
   /**
@@ -400,7 +400,7 @@ class bytes {
    * 
    * @returns {boolean}
    */
-  is_space(n) {}
+  is_space() {}
 
 
   /**
@@ -413,7 +413,7 @@ class bytes {
    * 
    * @returns {list}
    */
-  to_list(n) {}
+  to_list() {}
 
 
   /**
@@ -426,7 +426,7 @@ class bytes {
    * 
    * @returns {string}
    */
-  to_string(n) {}
+  to_string() {}
 
 
   @iter(n) {}

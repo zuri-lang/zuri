@@ -17,7 +17,7 @@ class _StringExtension > string {
    * @param {string} str The substring to search for.
    * @return {boolean}
    */
-  static contains(str) {
+  static contains(str: string) {
     return self.index_of(str) > -1
   }
 
@@ -38,11 +38,7 @@ class _StringExtension > string {
    * @throws {Exception} if the callback is not a function.
    * @return void
    */
-  static each_line(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static each_line(callback: function) {
     for index, line in self.lines() {
       callback(line, index)
     }
@@ -56,11 +52,7 @@ class _StringExtension > string {
    * @throws {Exception} if the callback is not a function.
    * @return {void}
    */
-  static each(callback) {
-    if !is_function(callback) {
-      raise Exception('Callback must be a function')
-    }
-
+  static each(callback: function) {
     iter var i = 0; i < self.length(); i++ {
       callback(self[i], i)
     }

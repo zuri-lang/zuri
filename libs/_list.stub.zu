@@ -249,10 +249,10 @@ class list {
    * ```
    * 
    * @param {any} value
-   * @param {int?} start_index
+   * @param {?int} start_index
    * @return {number}
    */
-  index_of(value: any, start_index: int) {}
+  index_of(value: any, start_index: ?int) {}
 
 
   /**
@@ -332,10 +332,10 @@ class list {
    * []
    * ```
    * 
-   * @param {int?} count
+   * @param {?int} count
    * @return {any}
    */
-  shift(count: int) {}
+  shift(count: ?int) {}
 
 
   /**

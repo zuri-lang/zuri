@@ -171,7 +171,7 @@ class dict {
    * @param {string} key
    * @param {any} value
    */
-  add(key, value) {}
+  add(key: string, value: any) {}
 
 
   /**
@@ -201,7 +201,7 @@ class dict {
    * @param {string} key
    * @param {any} value
    */
-  set(key, value) {}
+  set(key: string, value: any) {}
 
 
   /**
@@ -269,7 +269,7 @@ class dict {
    * @param {string} key
    * @return boolean
    */
-  contains(key) {}
+  contains(key: string) {}
 
 
   /**
@@ -286,7 +286,7 @@ class dict {
    * 
    * @param {dict} dict
    */
-  extend(dict) {}
+  extend(dict: dict) {}
 
 
   /**
@@ -310,7 +310,7 @@ class dict {
    * @param {any|nil} default_value
    * @return {any|nil}
    */
-  get(key, default_value) {}
+  get(key: string, default_value: any) {}
 
 
   /**
@@ -394,7 +394,7 @@ class dict {
    * @param {any} value
    * @return {string|nil}
    */
-  find_key(value) {}
+  find_key(value: any) {}
 
 
   /**
