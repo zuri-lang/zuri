@@ -14,6 +14,7 @@
   reallocate(vm, pointer, sizeof(type) * (old_count), 0)
 
 #define FREE(type, pointer) reallocate(vm, pointer, sizeof(type), 0)
+#define ZFREE(v, type, pointer) reallocate(v, pointer, sizeof(type), 0)
 
 #define ALLOCATE(type, count)                                                  \
   (type *)reallocate(vm, NULL, 0, sizeof(type) * (count))

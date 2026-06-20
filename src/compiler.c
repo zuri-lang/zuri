@@ -1523,24 +1523,39 @@ static struct {
   {NULL, -1, NULL, -1},
 };
 
-static char* create_type_check_error_message(z_token name, z_token type, int index, int *length) {
-#define ERROR_FORMAT "value of type %.*s expected in argument %d (%.*s)"
+static char* create_type_check_error_message(z_parser *p, z_token name, z_token types[], int types_count, int index) {
+// #define ERROR_FORMAT "parameter :%.*s (argument %d) expects value of type %s"
 
-  *length = snprintf(
-    NULL, 0,
-    ERROR_FORMAT, type.length, type.start, index, name.length, name.start
-  );
+  char *str = strdup("parameter :");
+  str = append_strings_n(str, (char *)name.start, name.length);
+  str = append_strings_n(str, " @", 2);
 
-  char* message = calloc(*length + 1, sizeof(char));
-  sprintf(message, ERROR_FORMAT, type.length, type.start, index, name.length, name.start);
+  int number_len = 0;
+  char *number = number_to_string(p->vm, index, &number_len);
 
-  return message;
+  str = append_strings_n(str, number, number_len);
+  str = append_strings_n(str, " expects value of type ", 23);
+  ZFREE(p->vm, char, number);
 
-#undef ERROR_FORMAT
+  for (int i = 0; i < types_count; i++) {
+    if (i > 0) {
+      if (i == types_count - 1) {
+        str = append_strings_n(str, " or ", 4);
+      } else {
+        str = append_strings_n(str, ", ", 2);
+      }
+    }
+
+    str = append_strings_n(str, (char *)types[i].start, types[i].length);
+  }
+
+  return str;
+
+// #undef ERROR_FORMAT
 }
 
-static void compile_type_check(z_parser* p, int index, z_token name, z_token type) {
-  bool native_type_found = false, is_any = false;
+static void compile_type_check(z_parser* p, int index, z_token name, z_token types[], int types_count) {
+  bool is_any = false;
 
   // Firstly, check if it's nil.
   // If it is nil, we want to jump the entire type check.
@@ -1552,46 +1567,72 @@ static void compile_type_check(z_parser* p, int index, z_token name, z_token typ
   int nil_exit = emit_jump(p, OP_JUMP_IF_FALSE);
   emit_byte(p, OP_POP);
 
-  for (int i = 0; z_type_check_map[i].name != NULL; i++) {
-    if (
-      z_type_check_map[i].name_len == type.length
-      && memcmp(z_type_check_map[i].name, type.start, z_type_check_map[i].name_len) == 0
-    ) {
-      // Do not compile anything for type "any"
-      if (z_type_check_map[i].type_fn == NULL) {
-        is_any = true;
+  int all_checks_exit[MAX_PARAMETER_TYPE_HINTS];
+
+  for (int j = 0; j < types_count; j++) {
+    bool native_type_found = false;
+
+    for (int i = 0; z_type_check_map[i].name != NULL; i++) {
+      if (
+        z_type_check_map[i].name_len == types[j].length
+        && memcmp(z_type_check_map[i].name, types[j].start, z_type_check_map[i].name_len) == 0
+      ) {
+        // Do not compile anything for type "any"
+        if (z_type_check_map[i].type_fn == NULL) {
+          is_any = true;
+          break;
+        }
+
+        // Get the typecheck function on stack...
+        z_token check_fn_token = synthetic_l_token(z_type_check_map[i].type_fn, z_type_check_map[i].type_fn_len);
+        int check_fn_global_id = identifier_constant(p, &check_fn_token);
+        emit_byte_and_short(p, OP_GET_GLOBAL, check_fn_global_id);
+
+        // Wrap it in a function call (e.g. !is_string(x)
+        emit_byte_and_short(p, OP_GET_LOCAL, index);
+        emit_bytes(p, OP_CALL, 1);
+
+        native_type_found = true;
         break;
       }
+    }
 
-      // Get the typecheck function on stack...
-      z_token check_fn_token = synthetic_l_token(z_type_check_map[i].type_fn, z_type_check_map[i].type_fn_len);
+    if (is_any) {
+      continue;
+    }
+
+    if (!native_type_found && !is_any) {
+      // We need a class name instead
+
+      // Get the "instance_of" typecheck function on stack...
+      z_token check_fn_token = synthetic_l_token("instance_of", 11);
       int check_fn_global_id = identifier_constant(p, &check_fn_token);
       emit_byte_and_short(p, OP_GET_GLOBAL, check_fn_global_id);
 
-      // Wrap it in a function call (e.g. !is_string(x)
+      // Wrap it in a function call (e.g. !instance_of(x, Exception)
       emit_byte_and_short(p, OP_GET_LOCAL, index);
-      emit_bytes(p, OP_CALL, 1);
+      named_variable(p, types[j], false);
+      emit_bytes(p, OP_CALL, 2);
+    }
 
-      native_type_found = true;
-      break;
+    // Handle multiple typechecks: E.g., string|list like if x or y.
+    if (j != types_count - 1 && types_count > 1) {
+      int false_jump = emit_jump(p, OP_JUMP_IF_FALSE);
+      all_checks_exit[j] = emit_jump(p, OP_JUMP);
+      patch_jump(p, false_jump);
+      emit_byte(p, OP_POP);
     }
   }
 
-  if (!native_type_found && !is_any) {
-    // We need a class name instead
-
-    // Get the "instance_of" typecheck function on stack...
-    z_token check_fn_token = synthetic_l_token("instance_of", 11);
-    int check_fn_global_id = identifier_constant(p, &check_fn_token);
-    emit_byte_and_short(p, OP_GET_GLOBAL, check_fn_global_id);
-
-    // Wrap it in a function call (e.g. !instance_of(x, Exception)
-    emit_byte_and_short(p, OP_GET_LOCAL, index);
-    named_variable(p, type, false);
-    emit_bytes(p, OP_CALL, 2);
-  }
-
   if (!is_any) {
+    if (types_count > 1) {
+      for (int i = 0; i < types_count - 1; i++) {
+        if (all_checks_exit[i] > 0) {
+          patch_jump(p, all_checks_exit[i]);
+        }
+      }
+    }
+
     emit_byte(p, OP_NOT);
 
     int exit_jump = emit_jump(p, OP_JUMP_IF_FALSE);
@@ -1601,14 +1642,11 @@ static void compile_type_check(z_parser* p, int index, z_token name, z_token typ
     int exception_id = identifier_constant(p, &exception_token);
     emit_byte_and_short(p, OP_GET_GLOBAL, exception_id);
 
-    int error_message_length = 0;
-    char* error_message = create_type_check_error_message(name, type, index, &error_message_length);
+    char* error_message = create_type_check_error_message(p, name, types, types_count, index);
 
-    emit_constant(p, OBJ_VAL(copy_string(p->vm, error_message, error_message_length)));
+    emit_constant(p, OBJ_VAL(take_string(p->vm, error_message, strlen(error_message))));
     emit_bytes(p, OP_CALL, 1);
     emit_byte(p, OP_RAISE);
-
-    free(error_message);
 
     int else_jump = emit_jump(p, OP_JUMP);
     patch_jump(p, exit_jump);
@@ -1654,17 +1692,35 @@ static int function_args(z_parser* p, bool is_operator) {
     if (check(p, COLON_TOKEN)) {
       if (count > hint_count + 1) {
         error_at_current(p, "cannot have type hinted parameter after non-hinted parameter");
-        return count;
       }
 
       // Capture variable name
       z_token name = p->previous;
 
       match(p, COLON_TOKEN);
-      consume(p, IDENTIFIER_TOKEN, "expected type name after ':'");
       hint_count++;
 
-      compile_type_check(p, hint_count, name, p->previous);
+      z_token types[MAX_PARAMETER_TYPE_HINTS];
+      int types_count = 0;
+
+      do {
+        if (types_count == MAX_PARAMETER_TYPE_HINTS) {
+          error_at_current(p, "cannot have more than %d type hints", MAX_PARAMETER_TYPE_HINTS);
+        }
+
+        consume(p, IDENTIFIER_TOKEN, "expected type name after ':'");
+        types[types_count++] = p->previous;
+
+        if (memcmp(p->previous.start, "any", p->previous.length) == 0) {
+          if (types_count == 1) {
+            break;
+          }
+
+          error_at_current(p, "cannot mix 'any' type hint with other types");
+        }
+      } while (match(p, BAR_TOKEN));
+
+      compile_type_check(p, hint_count, name, types, types_count);
     }
 
     ignore_whitespace(p);
