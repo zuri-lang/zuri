@@ -1,7 +1,7 @@
 import args
 import os
-import ..setup
 import log
+import ..setup
 
 def parse(parser) {
   parser.add_command(

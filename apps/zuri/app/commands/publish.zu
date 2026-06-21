@@ -9,8 +9,6 @@ import ..setup
 import ..util
 import ..config { Config }
 
-var storage_dir = os.join_paths(setup.ZURI_APP_DIR, setup.STORAGE_DIR)
-
 def italics(t) {
   return colors.text(t, colors.style.italic)
 }
@@ -77,12 +75,12 @@ def run(value, options, success, error) {
     var config = Config.from_dict(util.load_config())
 
     var source_name = '${state.name}_${config.name}_${config.version}.nyp'
-    tmp_dest = os.join_paths(storage_dir, source_name)
+    tmp_dest = os.join_paths(setup.STORAGE_DIR, source_name)
 
     log.info('Packaging ${config.name}@${config.version}...')
 
     # make a backup that has no git.
-    var tmp_root = os.join_paths(storage_dir, '.tmp')
+    var tmp_root = os.join_paths(setup.STORAGE_DIR, '.tmp')
     copy_to_tmp('.', tmp_root)
     var curr_dir = os.cwd()
     os.change_dir(tmp_root)

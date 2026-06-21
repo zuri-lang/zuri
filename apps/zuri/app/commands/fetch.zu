@@ -10,8 +10,6 @@ import ..util
 import ..setup
 import ..config { Config }
 
-var config_file = os.join_paths(os.cwd(), setup.CONFIG_FILE)
-
 def parse(parser) {
   parser.add_command(
     'fetch',
@@ -35,8 +33,7 @@ def configure(config, repo, full_name, name, version, destination, error) {
 
   var zuri_exe = os.args[0]
 
-  var package_config_file = os.join_paths(destination, setup.CONFIG_FILE)
-  var package_config = Config.from_dict(json.decode(file(package_config_file).read()))
+  var package_config = util.load_config(false, os.join_paths(destination, setup.CONFIG_FILE))
 
   # install dependencies before running post-install in case post-install
   # depends on a dependency.
@@ -84,7 +81,7 @@ def run(value, options, success, error) {
       repo = options.get('repo', setup.DEFAULT_REPOSITORY),
       progress = {}
 
-  var config = Config.from_dict(util.load_config(is_global))
+  var config = util.load_config(is_global)
   var git_path = util.find_app_in_path('git')
 
   if !git_path {
@@ -163,10 +160,9 @@ def run(value, options, success, error) {
     }
 
     if config_exists {
-      file(config_file, 'w').write(json.encode(config, false))
+      file(setup.LOCAL_CONFIG_FILE, 'w').write(json.encode(config, false))
     }
-  } as e
-  if e {
+  } as e {
     echo colors.text(
       'Dependency state update failed!\n' +
       'You can manually fix it by adding the following to the CVS dependency section of your ' + setup.CONFIG_FILE + ' file.\n' +

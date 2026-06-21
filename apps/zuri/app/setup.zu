@@ -15,6 +15,7 @@ var LOGS_DIR = os.join_paths(STORAGE_DIR, 'logs')
 var SOURCES_DIR = os.join_paths(STORAGE_DIR, 'sources')
 var DATABASE_DIR = os.join_paths(STORAGE_DIR, 'db')
 var CACHE_DIR = os.join_paths(STORAGE_DIR, 'cache')
+var TMP_DIR = os.join_paths(STORAGE_DIR, '.tmp')
 
 # files
 var INDEX_FILE = 'index.zu'
@@ -22,6 +23,7 @@ var README_FILE = 'README.md'
 var CONFIG_FILE = 'project.json'
 var DATABASE_FILE = os.join_paths(DATABASE_DIR, 'zuri.db')
 var STATE_FILE = os.join_paths(STORAGE_DIR, 'config.json')
+var LOCAL_CONFIG_FILE = os.join_paths(os.cwd(), CONFIG_FILE)
 
 # repository
 var REPOSITORY_HOST = os.get_env('ZURI_REPOSITORY_HOST', '127.0.0.1')

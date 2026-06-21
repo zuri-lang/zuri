@@ -1,7 +1,6 @@
 import args
 import os
 import log
-import ..server
 import ..setup
 
 def parse(parser) {
@@ -28,6 +27,8 @@ def parse(parser) {
 }
 
 def run(value, options, success, error) {
+  import ..server
+
   var port = to_number(options.get('port', setup.REPOSITORY_PORT))
   var host = options.get('host', setup.REPOSITORY_HOST)
   server(host, port)

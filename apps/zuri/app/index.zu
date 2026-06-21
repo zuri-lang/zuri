@@ -6,27 +6,20 @@ import log
 import date
 import .setup
 
-# initialize storage directory
-if !os.dir_exists(setup.STORAGE_DIR)
-  os.create_dir(setup.STORAGE_DIR)
+# Initialize storage directory
+for dir in [setup.LOGS_DIR, setup.SOURCES_DIR, setup.DATABASE_DIR, setup.CACHE_DIR] {
+  if !os.dir_exists(dir)
+    os.create_dir(dir)
+}
 
-# ensure config file exists...
-var config_file = os.join_paths(setup.ZURI_APP_DIR, setup.CONFIG_FILE)
-if !file(config_file).exists()
-  file(config_file, 'w').write('{}')
-
-# ensure the state file exists
+# Ensure the state file exists
 if !file(setup.STATE_FILE).exists()
   file(setup.STATE_FILE, 'w').write('{}')
-
-var logs_dir = os.join_paths(setup.ZURI_APP_DIR, setup.LOGS_DIR)
-if !os.dir_exists(logs_dir)
-  os.create_dir(logs_dir)
 
 # setup file logging
 var time = date.localtime()
 log.add_transport(log.FileTransport(
-  '${logs_dir}/${time.year}-${to_string(time.month).lpad(2,'0')}-${to_string(time.day).lpad(2,'0')}.log'
+  '${setup.LOGS_DIR}/${time.year}-${to_string(time.month).lpad(2,'0')}-${to_string(time.day).lpad(2,'0')}.log'
 ))
 
 # setup console logging
@@ -54,23 +47,13 @@ import .options.version
 var parser = args.Parser('zuri', true)
 
 var commands = {
-  account,
-  bundle,
-  clean,
-  fetch,
-  info,
-  init,
-  install,
-  publish,
-  restore,
-  run,
-  serve,
-  test,
+  account, bundle, clean, fetch, info, init,
+  install, publish, restore, run, serve, test,
   uninstall,
 }
 
 var options = {
-  version: version,
+  version,
 }
 
 for cmd in commands {

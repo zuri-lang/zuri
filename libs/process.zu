@@ -75,14 +75,9 @@ class PagedValue {
    * @param ?bool private
    * @constructor
    */
-  PagedValue(executable, private) {
+  PagedValue(executable: ?bool, private: ?bool) {
     if executable == nil executable = false
     if private == nil private = false
-
-    if !is_bool(executable)
-      raise TypeError('boolean value expected in argument 1 (executable)')
-    if !is_bool(private)
-      raise TypeError('boolean value expected in argument 2 (private)')
 
     self._ptr = _process.new_paged(executable, private)
   }
@@ -183,10 +178,10 @@ class PagedValue {
    * Sets the value of the PagedValue to the given value. It returns the number of 
    * bytes written or `false` if the PagedValue is in an invalid state.
    * 
-   * @param boolean|number|string|list|dictionary value
+   * @param bool|number|string|list|dict value
    * @returns number | boolean
    */
-  set(value) {
+  set(value: bool|number|string|list|dict) {
     if self._ptr {
       var format = self._set_format(value),
           get_format = self._get_format(value)
@@ -211,10 +206,10 @@ class PagedValue {
    * Locks the PagedValue for writing then sets the value to the given value and unlocks it. 
    * It returns the number of bytes written or `false` if the PagedValue is in an invalid state.
    * 
-   * @param boolean|number|string|list|dictionary value
+   * @param bool|number|string|list|dict value
    * @returns number | boolean
    */
-  locked_set(value) {
+  locked_set(value: bool|number|string|list|dict) {
     if self._ptr {
       self.lock()
       var result = self.set(value)
@@ -308,11 +303,7 @@ class Process {
    * @param ?PageValue paged
    * @constructor
    */
-  Process(fn, paged) {
-    if !is_function(fn)
-      raise TypeError('function expected in argument 1 (fn)')
-    if paged != nil and !instance_of(paged, PagedValue)
-      raise TypeError('instance of PagedValue expected in argument 2 (paged)')
+  Process(fn: function, paged: ?PagedValue) {
 
     # No windows support yet.
     if os.platform == 'windows' {
@@ -341,9 +332,7 @@ class Process {
    * Adds a new listener to be called when the process finishes execution.
    * @param function fn
    */
-  on_complete(fn) {
-    if !is_function(fn)
-      raise TypeError('function expected at argument 1')
+  on_complete(fn: function) {
     self._on_complete_listeners.append(fn)
   }
 
@@ -438,7 +427,7 @@ class Process {
  * @param ?PageValue paged
  * @default
  */
-def process(fn, paged) {
+def process(fn: function, paged: ?PagedValue) {
   return Process(fn, paged)
 }
 

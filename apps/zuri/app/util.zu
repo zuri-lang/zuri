@@ -185,3 +185,27 @@ def load_config(no_raise) {
 
   return nil
 }
+
+def load_config(no_raise, path) {
+  catch {
+    if !path {
+      path = os.join_paths(os.cwd(), setup.CONFIG_FILE)
+    }
+
+    var config = json.parse(path)
+
+    # Validate config data
+    if !is_dict(config) or !config.get('name', nil) or !config.get('version', nil) {
+      raise Exception('')
+    }
+
+    return Config.from_dict(config)
+  } as error
+
+  if error and !no_raise {
+    log.error('Not in a Zuri project!')
+    os.exit(1)
+  }
+
+  return nil
+}

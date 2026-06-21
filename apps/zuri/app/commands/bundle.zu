@@ -21,9 +21,6 @@ import ..util
  * }
  */
 
-# ...
-var tmp_dir = os.join_paths(setup.STORAGE_DIR, '.tmp')
-
 var arch = os.info().machine
 
 var _supported_platforms = [
@@ -120,12 +117,12 @@ def copy_directory(src_dir, dest_dir) {
 }
 
 def _get_zuri_bundler(source_os, target_os, config) {
-  var zuri_zip_target = os.join_paths(tmp_dir, '${config.name}-${config.version}')
+  var zuri_zip_target = os.join_paths(setup.TMP_DIR, '${config.name}-${config.version}')
   if os.dir_exists(zuri_zip_target) {
     os.remove_dir(zuri_zip_target, true)
   }
 
-  var zuri_zip_tmp_target = os.join_paths(tmp_dir, '__${config.name}-${config.version}')
+  var zuri_zip_tmp_target = os.join_paths(setup.TMP_DIR, '__${config.name}-${config.version}')
   if os.dir_exists(zuri_zip_tmp_target) {
     os.remove_dir(zuri_zip_tmp_target, true)
   }
@@ -342,8 +339,8 @@ def run(value, options, success, error) {
   if !os.dir_exists(setup.CACHE_DIR) {
     os.create_dir(setup.CACHE_DIR)
   }
-  if !os.dir_exists(tmp_dir) {
-    os.create_dir(tmp_dir)
+  if !os.dir_exists(setup.TMP_DIR) {
+    os.create_dir(setup.TMP_DIR)
   }
 
   var targets = []

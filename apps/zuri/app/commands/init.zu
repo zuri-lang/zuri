@@ -57,7 +57,7 @@ def run(value, options, success, error) {
   if !os.dir_exists(test_dir) os.create_dir(test_dir)
 
   # Create .gitignore files in tests and examples directory for 
-  # git compartibility.
+  # git compatibility.
   log.info('Creating required git files')
   var tf = file(test_ignore, 'w+')
   tf.open(); tf.close()
@@ -80,14 +80,14 @@ def run(value, options, success, error) {
   # 
   # this will only happen if the file does not exist or does not contain 
   # the zuri default ignore definitions.
-  var test_ingore_file = file(ignore_file)
+  var test_ignore_file = file(ignore_file)
   var ignore_start_line = '# zuri packages directory and files'
-  if !test_ingore_file.exists() or !test_ingore_file.read().match(
+  if !test_ignore_file.exists() or !test_ignore_file.read().match(
     '/${ignore_start_line}/'
   ) {
     log.info('Initializing Gitignore')
 
-    var start_line = test_ingore_file.exists() ? '\n' : ''
+    var start_line = test_ignore_file.exists() ? '\n' : ''
     file(ignore_file, 'w+').write(
       start_line +
       '${ignore_start_line}\n' +

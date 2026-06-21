@@ -11,11 +11,6 @@ import ..setup
 import ..config { Config }
 import ..util { setup_cli, load_config }
 
-
-var cache_dir = os.join_paths(setup.ZURI_APP_DIR, setup.CACHE_DIR)
-if !os.dir_exists(cache_dir)
-  os.create_dir(cache_dir)
-
 def parse(parser) {
   parser.add_command(
     'restore', 
@@ -98,7 +93,7 @@ def configure(config, repo, full_name, name, version, path, progress, no_cache, 
 def install(config, repo, full_name, name, version, progress, no_cache, error) {
   if !no_cache log.info('Checking local cache for ${full_name}')
   var cache_id = hash.sha1(repo + name + version)
-  var cache_path = os.join_paths(cache_dir, '${cache_id}.nyp')
+  var cache_path = os.join_paths(setup.CACHE_DIR, '${cache_id}.nyp')
 
   catch {
 

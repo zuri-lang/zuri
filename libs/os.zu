@@ -179,7 +179,7 @@ def info() {
  * 
  * @param number duration
  */
-def sleep(duration) {
+def sleep(duration: number) {
   _os.sleep(duration)
 }
 
@@ -196,10 +196,10 @@ def sleep(duration) {
  * ```
  * 
  * @param string name
- * @param any|nil default_value
- * @returns string|nil
+ * @param ?any default_value
+ * @returns ?string
  */
-def get_env(name, default_value) {
+def get_env(name: string, default_value: ?any) {
   var value = _os.getenv(name)
   return value != nil ? value : default_value
 }
@@ -236,7 +236,7 @@ def get_env(name, default_value) {
  * @param ?bool overwrite: Default value is `false`.
  * @returns bool
  */
-def set_env(name, value, overwrite) {
+def set_env(name: string, value: string, overwrite: ?bool) {
   if overwrite == nil overwrite = false
   return _os.setenv(name, value, overwrite)
 }
@@ -248,16 +248,11 @@ def set_env(name, value, overwrite) {
  * @note if the directory already exists, it returns `false` otherwise, it returns `true`.
  * @note permission should be given as octal number.
  * @param string path
- * @param ?number permission: Default value is `0c777`
+ * @param ?int permission: Default value is `0c777`
  * @param ?bool recursive: Default value is `true`.
  * @returns boolean
  */
-def create_dir(path, permission, recursive) {
-
-  if path {
-    if !is_string(path) raise TypeError('path must be string')
-    path = path
-  }
+def create_dir(path: string, permission: ?int, recursive: ?bool) {
   if !path.ends_with(path_separator)
     path += path_separator
 
@@ -265,17 +260,11 @@ def create_dir(path, permission, recursive) {
     path = path.replace('@\/@', '\\')
   }
 
-  if permission {
-    if !is_number(permission)
-      raise TypeError('expected number in first argument, ${typeof(permission)} given')
-  } else {
+  if permission == nil {
     permission = 0c777
   }
 
-  if recursive != nil {
-    if !is_bool(recursive) 
-      raise TypeError('boolean expected in second argument, ${typeof(recursive)} given')
-  } else {
+  if recursive == nil {
     recursive = true
   }
 
@@ -302,7 +291,7 @@ def create_dir(path, permission, recursive) {
  * @param ?bool recursive
  * @returns list[string]
  */
-def read_dir(path, recursive) {
+def read_dir(path: string, recursive: ?bool) {
   if recursive == nil 
     recursive = false
 
@@ -315,10 +304,10 @@ def read_dir(path, recursive) {
  * operating system values.
  * 
  * @param string path
- * @param number mode
+ * @param int mode
  * @returns boolean
  */
-def chmod(path, mode) {
+def chmod(path: string, mode: int) {
   return _os.chmod(path, mode)
 }
 
@@ -328,7 +317,7 @@ def chmod(path, mode) {
  * @param string path
  * @returns bool
  */
-def is_dir(path) {
+def is_dir(path: string) {
   return _os.isdir(path)
 }
 
@@ -337,14 +326,11 @@ def is_dir(path) {
  * will have their contents deleted first.
  * 
  * @param string path
- * @param bool recursive: Default value is `false`.
+ * @param ?bool recursive: Default value is `false`.
  * @returns bool
  */
-def remove_dir(path, recursive) {
-  if recursive != nil {
-    if !is_bool(recursive)
-      raise TypeError('boolean expected in argument 2')
-  } else {
+def remove_dir(path: string, recursive: ?bool) {
+  if recursive == nil {
     recursive = false
   }
   return _os.removedir(path, recursive)
@@ -365,7 +351,7 @@ def cwd() {
  * @param string path
  * @returns bool
  */
-def change_dir(path) {
+def change_dir(path: string) {
   return _os.chdir(path)
 }
 
@@ -375,7 +361,7 @@ def change_dir(path) {
  * @param string path
  * @returns bool
  */
-def dir_exists(path) {
+def dir_exists(path: string) {
   return _os.exists(path)
 }
 
@@ -385,7 +371,7 @@ def dir_exists(path) {
  * @param number code
  * @returns
  */
-def exit(code) {
+def exit(code: number) {
   _os.exit(code)
 }
 
@@ -431,7 +417,7 @@ def join_paths(...) {
  * @param string path
  * @returns string
  */
-def real_path(path) {
+def real_path(path: string) {
   return _os.realpath(path)
 }
 
@@ -442,7 +428,7 @@ def real_path(path) {
  * @param string path
  * @returns string
  */
-def abs_path(path) {
+def abs_path(path: string) {
 
   # Return early if we already have an absolute path.
   var regex = platform == 'windows' ? '~^[a-zA-Z]\\:~' : '~^\\/~'
@@ -470,7 +456,7 @@ def abs_path(path) {
  * @param string path
  * @returns string
  */
-def dir_name(path) {
+def dir_name(path: string) {
   return _os.dirname(path)
 } 
 
@@ -483,7 +469,7 @@ def dir_name(path) {
  * @param string path
  * @returns string
  */
-def base_name(path) {
+def base_name(path: string) {
   return _os.basename(path)
 }
 
@@ -504,7 +490,7 @@ def base_name(path) {
  * @returns bool
  * @raises Exception
  */
-def rename(old_name, new_name) {
+def rename(old_name: string, new_name: string) {
   return _os.rename(old_name, new_name)
 }
 

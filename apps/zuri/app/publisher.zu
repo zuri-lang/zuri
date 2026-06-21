@@ -19,7 +19,11 @@ class Publisher {
   }
 
   static from_dict(dict) {
-    var package = Publisher(dict.username, dict.email, dict.password, dict.key, dict.get('created_at', date().format('c')))
+    var package = Publisher(
+      dict.username, dict.email, dict.password, dict.key,
+      dict.get('created_at', date().format('c'))
+    )
+
     package.active = dict.get('active', true)
     package.deleted_at = dict.get('deleted_at', nil)
     return package

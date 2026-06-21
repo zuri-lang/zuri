@@ -44,12 +44,7 @@ import _reflect
  * @param string name
  * @returns bool
  */
-def has_prop(object, name) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
-
+def has_prop(object: instance, name: string) {
   return _reflect.hasprop(object, name)
 }
 
@@ -61,11 +56,9 @@ def has_prop(object, name) {
  * @param string name
  * @returns any
  */
-def get_prop(object, name) {
+def get_prop(object: instance|callable, name: string) {
   if !is_instance(object) and typeof(object) != 'module'
     raise TypeError('object instance or module expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
 
   return _reflect.getprop(object, name)
 }
@@ -75,10 +68,9 @@ def get_prop(object, name) {
  * list if the instance or module has no property.
  *
  * @param instance|module object
- * @param string name
  * @returns list[string]
  */
-def get_props(object) {
+def get_props(object: instance|callable) {
   if !is_instance(object) and typeof(object) != 'module'
     raise TypeError('object instance or module expected in argument 1 (object)')
 
@@ -95,28 +87,18 @@ def get_props(object) {
  * @param any value
  * @returns bool: `true` if a new property was set, `false` if a property was updated
  */
-def set_prop(object, name, value) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
-
+def set_prop(object: instance, name: string, value: any) {
   return _reflect.setprop(object, name, value)
 }
 
 /**
  * Deletes the named property from the instance
  * 
- * @param instance|module object
+ * @param instance object
  * @param string name
  * @returns bool
  */
-def del_prop(object, name) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
-
+def del_prop(object: instance, name: string) {
   return _reflect.delprop(object, name)
 }
 
@@ -128,12 +110,7 @@ def del_prop(object, name) {
  * @param string name
  * @returns bool
  */
-def has_method(object, name) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
-
+def has_method(object: instance, name: string) {
   return _reflect.hasmethod(object, name)
 }
 
@@ -145,12 +122,7 @@ def has_method(object, name) {
  * @param string name
  * @returns bool
  */
-def has_decorator(object, name) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
-
+def has_decorator(object: instance, name: string) {
   return _reflect.hasmethod(object, '@${name}')
 }
 
@@ -163,12 +135,7 @@ def has_decorator(object, name) {
  * @param string name
  * @returns function
  */
-def get_method(object, name) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
-
+def get_method(object: instance, name: string) {
   return _reflect.getmethod(object, name)
 }
 
@@ -181,12 +148,7 @@ def get_method(object, name) {
  * @param string name
  * @returns function
  */
-def get_decorator(object, name) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
-
+def get_decorator(object: instance, name: string) {
   if _reflect.hasmethod(object, '@${name}') {
     return _reflect.getboundmethod(object, '@${name}')
   } else {
@@ -204,12 +166,7 @@ def get_decorator(object, name) {
  * @param function method
  * @returns function
  */
-def bind_method(object, method) {
-  if !is_instance(object)
-    raise TypeError('object instance expected in argument 1 (object)')
-  if !is_function(method)
-    raise TypeError('function expected in argument 2 (method)')
-
+def bind_method(object: instance, method: function) {
   return _reflect.bindmethod(object, method)
 }
 
@@ -219,10 +176,7 @@ def bind_method(object, method) {
  * @param instance object
  * @returns string
  */
-def get_type(object) {
-  if !is_instance(object)
-    raise TypeError('instance expected in argument 1 (object)')
-
+def get_type(object: instance) {
   return _reflect.gettype(object)
 }
 
@@ -242,10 +196,7 @@ def get_type(object) {
  * @param function object
  * @returns dictionary
  */
-def get_function_metadata(function) {
-  if !is_function(function)
-    raise TypeError('function expected in argument 1 (function)')
-
+def get_function_metadata(function: function) {
   return _reflect.getfunctionmetadata(function)
 }
 
@@ -262,10 +213,7 @@ def get_function_metadata(function) {
  * @param class klass
  * @returns dictionary
  */
-def get_class_metadata(klass) {
-  if !is_class(klass)
-    raise TypeError('class expected in argument 1 (klass)')
-
+def get_class_metadata(klass: type) {
   return _reflect.getclassmetadata(klass)
 }
 
@@ -282,7 +230,7 @@ def get_class_metadata(klass) {
  * @param module module
  * @returns dictionary
  */
-def get_module_metadata(module) {
+def get_module_metadata(module: callable) {
   return _reflect.getmodulemetadata(module)
 }
 
@@ -293,10 +241,7 @@ def get_module_metadata(module) {
  * @param instance object
  * @returns class
  */
-def get_class(object) {
-  if !is_instance(object)
-    raise TypeError('instance expected in argument 1 (object)')
-
+def get_class(object: instance) {
   return _reflect.getclass(object)
 }
 
@@ -306,7 +251,7 @@ def get_class(object) {
  * @param any value
  * @returns bool
  */
-def is_ptr(value) {
+def is_ptr(value: any) {
   return _reflect.isptr(value)
 }
 
@@ -316,7 +261,7 @@ def is_ptr(value) {
  * @param any value
  * @returns ptr
  */
-def get_ptr(value) {
+def get_ptr(value: any) {
   return _reflect.getptr(value)
 }
 
@@ -336,7 +281,7 @@ def set_ptr(pointer, value) {
  * @param any value
  * @returns ptr
  */
-def get_address(value) {
+def get_address(value: any) {
   return _reflect.getaddress(value)
 }
 
@@ -346,7 +291,7 @@ def get_address(value) {
  * @param number address
  * @returns ptr
  */
-def ptr_from_address(address) {
+def ptr_from_address(address: number) {
   return _reflect.ptrfromaddress(address)
 }
 
@@ -361,11 +306,9 @@ def ptr_from_address(address) {
  * @param any value
  * @param ?string name
  */
-def set_global(value, name) {
+def set_global(value: any, name: ?string) {
   # if typeof(value) == 'module'
   #   raise TypeError('modules cannot be set as global')
-  if name != nil and !is_string(name)
-    raise TypeError('string expected in argument 2 (name)')
   _reflect.setglobal(value, name)
 }
 
@@ -376,9 +319,7 @@ def set_global(value, name) {
  * @param string name
  * @returns any
  * */
-def unset_global(name) {
-  if !is_string(name)
-    raise TypeError('string expected in argument 1 (name)')
+def unset_global(name: string) {
   return _reflect.unsetglobal(name)
 }
 
@@ -394,10 +335,7 @@ def unset_global(name) {
  * @param string path
  * @return ?string
  */
-def run_script(path) {
-  if !is_string(path)
-    raise TypeError('string expected in argument 1 (path)')
-
+def run_script(path: string) {
   var fh = file(path)
   if !fh.exists()
     raise Exception('cannot find script at "${path}"')
@@ -412,6 +350,6 @@ def run_script(path) {
  * @param list args
  * @returns any
  */
-def call_function(function, args) {
+def call_function(function: function, args: list) {
   return _reflect.callfunction(function, args)
 }

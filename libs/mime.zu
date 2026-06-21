@@ -19,16 +19,11 @@ class MimeFormat {
   
   /**
    * @param string mimetype
-   * @param list|bytes|nil header
+   * @param ?list|bytes header
    * @note only the first 16 bytes of a file header will be used.
    * @constructor
    */
-  MimeFormat(mimetype, header) {
-    if !is_string(mimetype)
-      raise TypeError('expecting mimetype as string')
-    if header and !is_list(header)
-      raise ValueError('Mime type definition must set header to nil, list of numbers or bytes')
-
+  MimeFormat(mimetype: string, header: ?list|bytes) {
     self.mimetype = mimetype
     self.header = header
   }
@@ -404,10 +399,7 @@ var _mimes = {
  * @param string name
  * @returns string
  */
-def detect_from_name(name) {
-  if !is_string(name)
-    raise TypeError('name must be string')
-
+def detect_from_name(name: string) {
   for ext, mime in _mimes {
     if name.ends_with(ext) return mime.mimetype
   }
@@ -435,10 +427,7 @@ def detect_from_name(name) {
  * @param file file
  * @returns string
  */
-def detect_from_header(file) {
-  if !is_file(file)
-    raise TypeError('file object expected')
-
+def detect_from_header(file: file) {
   if !file.mode().match('b') {
     raise ValueError('detect_from_header expects file to be opened in binary mode')
   }
@@ -501,10 +490,7 @@ def detect_from_header(file) {
  * @param file file
  * @returns string
  */
-def detect(file) {
-  if !is_file(file)
-    raise TypeError('file object expected')
-
+def detect(file: file) {
   if file.mode().match('b') {
     var mime = detect_from_header(file)
     if mime == 'application/octet-stream' {
@@ -536,11 +522,9 @@ def detect(file) {
  * @param MimeFormat format
  * @returns bool
  */
-def extend(extension, format) {
-  if !is_string(extension) or extension[0] != '.'
+def extend(extension: string, format: MimeFormat) {
+  if extension[0] != '.'
     raise ValueError('invalid file extension')
-  if !instance_of(format, MimeFormat)
-    raise TypeError('instance of MimeFormat expected')
   
   extension = extension.lower()
   

@@ -6,10 +6,6 @@ import ..setup
 import ..config { Config }
 import ..util { remove_cli, load_config }
 
-var zuri_exe = os.args[0]
-var libs_dir = os.join_paths(os.cwd(), '.zuri/libs')
-var global_dir = os.join_paths(os.dir_name(os.args[0]), 'vendor')
-
 def parse(parser) {
   parser.add_command(
     'uninstall', 
@@ -27,6 +23,10 @@ def parse(parser) {
 }
 
 def run(value, options, success, error) {
+  var zuri_exe = os.args[0]
+  var libs_dir = os.join_paths(os.cwd(), '.zuri/libs')
+  var global_dir = os.join_paths(os.dir_name(zuri_exe), 'vendor')
+
   var is_global = options.get('global', false)
   var package_not_installed = 'package ${value} not installed.'
   var wrk_dir = is_global ? global_dir : libs_dir

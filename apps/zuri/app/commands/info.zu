@@ -11,8 +11,6 @@ import ..setup
 import ..util
 import ..config { Config }
 
-var config_file = os.join_paths(os.cwd(), setup.CONFIG_FILE)
-
 def italic(t) {
   return colors.text(t, colors.style.italic)
 }
@@ -46,10 +44,7 @@ def parse(parser) {
 }
 
 def run(value, options, success, error) {
-  if !file(config_file).exists() 
-    error('Not in a Zuri project')
-  
-  var config = Config.from_dict(util.load_config())
+  var config = util.load_config()
 
   catch {
     echo title('Package Information')
@@ -84,9 +79,7 @@ def run(value, options, success, error) {
     } else {
       echo empty()
     }
-  } as e
-
-  if e {
+  } as e {
     error('Failed to retrieve package information for ${value}:\n  ${e.message}')
   }
 }
