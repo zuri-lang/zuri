@@ -1,0 +1,135 @@
+import args
+import os
+import http
+import zip
+import log
+import ..setup
+
+def parse(parser) {
+  parser.add_command(
+    'update',
+    'Updates the Zuri installation'
+  ).add_option(
+    'version',
+    'The version of Zuri to install',
+    {
+      short_name: 'V',
+      type: args.STRING,
+      value: 'latest',
+    }
+  )
+}
+
+def _extract_version(records, version) {
+  if version == 'latest' {
+    return records[0]
+  }
+
+  var version_name = 'v${version}'
+  return records.find(@(x) => x.get('tag_name') == version_name)
+}
+
+def run(value, options, success, error) {
+  var version = options.get('version', '').lower()
+  var is_arm64 = os.info().machine == 'arm64'
+
+  def not_found() {
+    error('Could not find installable Zuri updates with version ${version}!')
+  }
+
+  log.info('Getting updated version metadata information...')
+
+#   var query = http.get('https://api.github.com/repos/zuri-lang/zuri/releases', {
+  var query = http.get('https://api.github.com/repos/mcfriend99/exwrap/releases', {
+    'Content-Type': 'application/json'
+  })
+
+  if !query.is_ok() {
+    error('Failed to resolve available Zuri versions.')
+  }
+
+  var response = query.as_dict()
+  if response.is_empty() {
+    if version == 'latest' {
+      success('Latest Zuri version installed!')
+    } else {
+      not_found()
+    }
+  }
+
+  # Now check if the version is the latest or not.
+  var version_data = _extract_version(response, version)
+  if !version_data {
+    not_found()
+  }
+
+  var asset_name = 'zuri-'
+
+  using os.platform {
+    when 'linux' asset_name += is_arm64 ? 'linux-aarch64-' : 'linux-'
+    when 'windows' asset_name += 'windows-'
+    when 'macos' asset_name += 'macos-'
+    default not_found()
+  }
+
+  asset_name += '${version_data.tag_name}.zip'
+
+  var asset_data = version_data.assets.find(@(x) => x.name == asset_name)
+  if !asset_data {
+    not_found()
+  }
+
+  log.info('Downloading update asset for ${version_data.tag_name}...')
+
+  var zuri_installation_dir = os.dir_name(os.args[0])
+  var tmp_file_name = os.join_paths(setup.TMP_DIR, 'update-file.zip')
+  var tmp_extract_dir = os.join_paths(os.home_dir(), 'zuri-tmp-' + microtime())
+
+  var download = http.get(asset_data.get('browser_download_url', ''))
+  if !download.is_ok() {
+    error('Failed to download update asset for Zuri ${version_data.tag_name}!')
+  }
+
+  def cleanup() {
+    log.info('Cleaning up temporary data...')
+
+    catch {
+      os.remove(tmp_file_name)
+      os.remove_dir(tmp_extract_dir, true)
+    }
+  }
+
+  log.info('Finalizing update asset...')
+
+  # Write the downloaded file to temporary directory
+  file(tmp_file_name, 'wb').write(download.body)
+
+  log.info('Extracting update asset...')
+
+  if !zip.extract(tmp_file_name, tmp_extract_dir) {
+    cleanup()
+    error('Update data corrupted!')
+  }
+
+  catch {
+    log.info('Updating...')
+
+    if os.rename(zuri_installation_dir, zuri_installation_dir + '__old') {
+      if !os.rename(tmp_extract_dir, zuri_installation_dir) {
+        os.rename(zuri_installation_dir + '__old', zuri_installation_dir)
+
+        cleanup()
+        error('Zuri update to version ${version_data.tag_name} failed!')
+      } else {
+        os.remove_dir(zuri_installation_dir + '__old')
+      }
+    }
+  } as e {
+    log.error('Update failed: ${e.message}')
+  }
+
+  # Remove the temporary data...
+  cleanup()
+
+  success('Zuri successfully updated to ${version_data.tag_name}')
+}

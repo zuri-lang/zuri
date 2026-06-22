@@ -31,7 +31,7 @@ def parse(parser) {
 def configure(config, repo, full_name, name, version, destination, error) {
   log.info('Installing ${full_name}')
 
-  var zuri_exe = os.args[0]
+  var zuri_exe = os.exe_path
 
   var package_config = util.load_config(false, os.join_paths(destination, setup.CONFIG_FILE))
 
