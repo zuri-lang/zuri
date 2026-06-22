@@ -23,7 +23,7 @@ def parse(parser) {
 }
 
 def run(value, options, success, error) {
-  var zuri_exe = os.args[0]
+  var zuri_exe = os.exe_path
   var libs_dir = os.join_paths(os.cwd(), '.zuri/libs')
   var global_dir = os.join_paths(os.dir_name(zuri_exe), 'vendor')
 

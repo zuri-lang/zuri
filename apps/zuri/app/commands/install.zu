@@ -56,7 +56,7 @@ def parse(parser) {
 def configure(config, repo, full_name, name, version, path, is_global, with_cache, progress, error, skip_extract) {
   log.info('Installing ${full_name}')
 
-  var zuri_exe = os.args[0]
+  var zuri_exe = os.exe_path
 
   var destination
   if !is_global destination = os.join_paths(os.cwd(), '.zuri', 'libs', name)

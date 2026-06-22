@@ -310,6 +310,20 @@ class HttpResponse {
   }
 
   /**
+   * Returns `true` if the HTTP response contains a successful response.
+   * Otherwise, it returns `false`.
+   *
+   * @returns bool
+   */
+  is_ok() {
+    if self.status < 200 {
+      return false
+    }
+
+    return self.status < 300
+  }
+
+  /**
    * Returns the response as a JSON object
    */
   to_json() {

@@ -7,7 +7,7 @@ import date
 import .setup
 
 # Initialize storage directory
-for dir in [setup.LOGS_DIR, setup.SOURCES_DIR, setup.DATABASE_DIR, setup.CACHE_DIR] {
+for dir in [setup.LOGS_DIR, setup.SOURCES_DIR, setup.DATABASE_DIR, setup.CACHE_DIR, setup.TMP_DIR] {
   if !os.dir_exists(dir)
     os.create_dir(dir)
 }
@@ -40,6 +40,7 @@ import .commands.serve
 import .commands.test
 import .commands.bundle
 import .commands.run
+import .commands.update
 
 # Import options...
 import .options.version
@@ -49,7 +50,7 @@ var parser = args.Parser('zuri', true)
 var commands = {
   account, bundle, clean, fetch, info, init,
   install, publish, restore, run, serve, test,
-  uninstall,
+  uninstall, update,
 }
 
 var options = {

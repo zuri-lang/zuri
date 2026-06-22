@@ -37,3 +37,4 @@ var SESSION_NAME = os.get_env('ZURI_SESSION_NAME', 'ZURI-SESSION-ID')
 
 # Zuri app directory
 var ZURI_APP_DIR = os.dir_name(__root__)
+var ZURI_DIR = os.dir_name(os.exe_path)

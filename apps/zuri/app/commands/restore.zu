@@ -27,7 +27,7 @@ def parse(parser) {
 def configure(config, repo, full_name, name, version, path, progress, no_cache, error) {
   log.info('Installing ${full_name}')
 
-  var zuri_exe = os.args[0],
+  var zuri_exe = os.exe_path,
       destination = os.join_paths(os.cwd(), '.zuri', 'libs', name)
 
   # create the packages directory if not exists
