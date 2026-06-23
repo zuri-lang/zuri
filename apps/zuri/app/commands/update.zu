@@ -50,7 +50,7 @@ def run(value, options, success, error) {
   var response = query.as_dict()
   if response.is_empty() {
     if version == 'latest' {
-      success('Latest Zuri version installed!')
+      success('Latest Zuri version installed.')
     } else {
       not_found()
     }
@@ -60,6 +60,10 @@ def run(value, options, success, error) {
   var version_data = _extract_version(response, version)
   if !version_data {
     not_found()
+  }
+
+  if version_data.tag_name == 'v${os.version}' {
+    success("You're already on the latest version of Zuri.")
   }
 
   var asset_name = 'zuri-'
@@ -124,7 +128,7 @@ def run(value, options, success, error) {
       }
     }
   } as e {
-    log.error('Update failed: ${e.message}')
+    log.error('Update failed: ${e.message}.')
   }
 
   # Remove the temporary data...

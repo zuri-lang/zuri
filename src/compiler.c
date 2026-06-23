@@ -1523,7 +1523,7 @@ static struct {
   {"type", 4, "is_class", 5},
   {"callable", 8, "is_callable", 11},
   {"iterable", 8, "is_iterable", 11},
-  {"instance", 8, "is_instance", 8},
+  {"instance", 8, "is_instance", 11},
   {NULL, -1, NULL, -1},
 };
 
