@@ -1007,7 +1007,7 @@ DECLARE_MODULE_METHOD(crypto_x25519_exchange) {
  *   hash_len — raw hash length bytes  (default 32)
  */
 DECLARE_MODULE_METHOD(crypto_argon2_hash) {
-    ENFORCE_ARG_RANGE(argon2_hash, 2, 3);
+    ENFORCE_ARG_RANGE(argon2_hash, 2, 4);
     ENFORCE_ARG_TYPE(argon2_hash, 0, IS_STRING);
     ENFORCE_ARG_TYPE(argon2_hash, 1, IS_BYTES);
 
@@ -1022,7 +1022,7 @@ DECLARE_MODULE_METHOD(crypto_argon2_hash) {
     uint32_t threads  = 4;
     uint32_t hash_len = 32;
 
-    if (arg_count == 3 && IS_DICT(args[2])) {
+    if (arg_count >= 3 && IS_DICT(args[2])) {
         z_obj_dict *opts = AS_DICT(args[2]);
         z_value v;
         if (dict_get_entry(opts, GC_STRING("t_cost"),  &v) && IS_NUMBER(v)) t_cost   = (uint32_t)AS_NUMBER(v);
@@ -1031,25 +1031,49 @@ DECLARE_MODULE_METHOD(crypto_argon2_hash) {
         if (dict_get_entry(opts, GC_STRING("hash_len"),&v) && IS_NUMBER(v)) hash_len = (uint32_t)AS_NUMBER(v);
     }
 
-    size_t encoded_len = argon2_encodedlen(t_cost, m_cost, threads,
-                             salt_obj->bytes.count, hash_len, Argon2_id);
-    char *encoded = malloc(encoded_len);
-    if (!encoded) RETURN_ERROR("argon2_hash(): out of memory");
-
-    int rc = argon2id_hash_encoded(
-        t_cost, m_cost, threads,
-        pwd_obj->chars, pwd_obj->length,
-        salt_obj->bytes.bytes, salt_obj->bytes.count,
-        hash_len, encoded, encoded_len
-    );
-
-    if (rc != ARGON2_OK) {
-        const char *msg = argon2_error_message(rc);
-        free(encoded);
-        RETURN_ERROR(msg ? msg : "argon2_hash(): unknown error");
+    bool return_bytes = false;
+    if(arg_count == 4) {
+        ENFORCE_ARG_TYPE(argon2_hash, 3, IS_BOOL);
+        return_bytes = AS_BOOL(args[3]);
     }
 
-    RETURN_STRING(encoded);
+    if(return_bytes) {
+        z_obj_bytes *bytes = (z_obj_bytes *)GC(new_bytes(vm, hash_len));
+
+        int rc = argon2id_hash_raw(
+            t_cost, m_cost, threads,
+            pwd_obj->chars, pwd_obj->length,
+            salt_obj->bytes.bytes, salt_obj->bytes.count,
+            bytes->bytes.bytes, hash_len
+        );
+
+        if (rc != ARGON2_OK) {
+            const char *msg = argon2_error_message(rc);
+            RETURN_ERROR(msg ? msg : "argon2_hash(): unknown error");
+        }
+
+        RETURN_OBJ(bytes);
+    } else {
+        size_t encoded_len = argon2_encodedlen(t_cost, m_cost, threads,
+                                salt_obj->bytes.count, hash_len, Argon2_id);
+        char *encoded = malloc(encoded_len);
+        if (!encoded) RETURN_ERROR("argon2_hash(): out of memory");
+
+        int rc = argon2id_hash_encoded(
+            t_cost, m_cost, threads,
+            pwd_obj->chars, pwd_obj->length,
+            salt_obj->bytes.bytes, salt_obj->bytes.count,
+            hash_len, encoded, encoded_len
+        );
+
+        if (rc != ARGON2_OK) {
+            const char *msg = argon2_error_message(rc);
+            free(encoded);
+            RETURN_ERROR(msg ? msg : "argon2_hash(): unknown error");
+        }
+
+        RETURN_T_STRING(encoded, encoded_len);
+    }
 }
 
 /*

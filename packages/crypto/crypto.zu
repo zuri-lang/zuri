@@ -809,13 +809,14 @@ class _Argon2 {
    * | hash_len | number | 32      | Length of the raw output hash        |
    *
    * @param  string password
-   * @param  bytes  salt     At least 8 bytes. Generate with `random_bytes(16)`.
-   * @param  dict   options  Optional tuning parameters (see table above).
-   * @return string          Encoded Argon2id hash string.
+   * @param  bytes  salt          At least 8 bytes. Generate with `random_bytes(16)`.
+   * @param  dict   options       Optional tuning parameters (see table above). 
+   * @param  bool   return_bytes Whether to return the raw hash bytes.
+   * @return bytes | string        Argon2id hash string.
    * @throws CryptoException
    */
-  hash(password, salt, options) {
-    return _crypto.argon2_hash(password, salt, options)
+  hash(password, salt, options, return_bytes) {
+    return _crypto.argon2_hash(password, salt, options, return_bytes)
   }
 
   /**
