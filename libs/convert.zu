@@ -32,9 +32,12 @@ def hex_to_bytes(str) {
   iter var i = 0; i < length - 1; i += 2 {
     b[i / 2] = to_number('0x${str[i,i+2]}')
   }
-  if length % 2 != 0 b.append(_reverse_hex_table.index_of(str[-1].upper()))
+  
+  if length % 2 != 0 {
+    b.append(_hex_table.index_of(str[-1].lower()))
+  }
 
-  return bytes(b.reverse())
+  return bytes(b)
 }
 
 /**

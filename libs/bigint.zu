@@ -1003,7 +1003,7 @@ class BigInt {
       raise ValueError('BigInt base out of range')
     }
 
-    number = to_string(number).replace('/\\s+/', '')
+    number = to_string(number).replace('~\s+~', '')
 
     # Enforce an upper bound on input length to prevent DoS
     if number.length() > _MAX_INPUT_LENGTH {

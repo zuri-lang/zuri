@@ -863,10 +863,6 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   #     The data argument is:
   #       - U_1: the salt bytes with the 4-byte counter appended (+).
   #       - U_j: the bytes object from the previous round directly.
-  #
-  #     hmac_* returns a hex string; convert.hex_to_bytes() converts it to a
-  #     bytes object so indexing gives numeric values for XOR, and so it
-  #     can be passed as data to the next round without re-encoding.
   # -------------------------------------------------------------------------
 
   var dk = []   # derived key accumulated as a list of byte integers

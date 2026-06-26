@@ -420,16 +420,22 @@ DECLARE_NATIVE(to_number) {
   }
 
   if(length > (end + 1) && v[start] == '0') {
-    char *t = ALLOCATE(char, length - 2);
-    memcpy(t, v + (end + 1), length - 2);
+    const char *digits = v + end + 1;
 
     if(v[end] == 'b') {
-      RETURN_NUMBER(multiplier * strtoll(t, NULL, 2));
+      RETURN_NUMBER(multiplier * strtoll(digits, NULL, 2));
     } else if(v[end] == 'x') {
-      RETURN_NUMBER(multiplier * strtol(t, NULL, 16));
+      RETURN_NUMBER(multiplier * strtol(digits, NULL, 16));
     } else if(v[end] == 'c') {
-      RETURN_NUMBER(multiplier * strtol(t, NULL, 8));
+      RETURN_NUMBER(multiplier * strtol(digits, NULL, 8));
     }
+  }
+
+  // Fallback: If no valid lowercase prefix was matched, treat strictly as decimal.
+  // To prevent strtod from accidentally parsing uppercase '0X' hex values:
+  if (length > (end + 1) && v[start] == '0' && (v[end] == 'X' || v[end] == 'B')) {
+    // Return 0 (stops parsing at X or B)
+    RETURN_NUMBER(0);
   }
 
   RETURN_NUMBER(strtod(v, NULL));
