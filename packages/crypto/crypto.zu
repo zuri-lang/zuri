@@ -816,6 +816,9 @@ class _Argon2 {
    * @throws CryptoException
    */
   hash(password, salt, options, return_bytes) {
+    if return_bytes == nil {
+      return_bytes = false
+    }
     return _crypto.argon2_hash(password, salt, options, return_bytes)
   }
 

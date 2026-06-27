@@ -794,7 +794,7 @@ inline bool invoke_from_class(z_vm *vm, z_obj_class *klass, z_obj_string *name, 
   return throw_undefined_error(vm, "undefined method '%s' in %s", name->chars, klass->name->chars);
 }
 
-static bool invoke_self(z_vm *vm, z_obj_string *name, int arg_count) {
+static bool invoke_self(z_vm *vm, z_value name, int arg_count) {
   z_value receiver = peek(vm, arg_count);
   z_value value;
 
@@ -803,55 +803,55 @@ static bool invoke_self(z_vm *vm, z_obj_string *name, int arg_count) {
       case OBJ_INSTANCE: {
         z_obj_instance *instance = AS_INSTANCE(receiver);
 
-        if (table_get(&instance->klass->methods, OBJ_VAL(name), &value)) {
+        if (table_get(&instance->klass->methods, name, &value)) {
           if (get_method_type(value) != TYPE_STATIC) {
             return call_value(vm, value, arg_count);
           }
 
-          return throw_access_error(vm, "cannot call static method %s() on instance", name->chars);
+          return throw_access_error(vm, "cannot call static method %s() on instance", AS_STRING(name)->chars);
         }
 
-        if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
+        if (table_get(&instance->properties, name, &value)) {
           vm->stack_top[-arg_count - 1] = value;
           return call_value(vm, value, arg_count);
         }
       }
       case OBJ_CLASS: {
-        if (table_get(&AS_CLASS(receiver)->methods, OBJ_VAL(name), &value)) {
+        if (table_get(&AS_CLASS(receiver)->methods, name, &value)) {
           if (get_method_type(value) == TYPE_STATIC) {
             return call_value(vm, value, arg_count);
           }
 
-          return throw_access_error(vm, "cannot call non-static method %s() on non instance", name->chars);
+          return throw_access_error(vm, "cannot call non-static method %s() on non instance", AS_STRING(name)->chars);
         }
       }
       case OBJ_STRING: {
-        if (table_get(&vm->methods_string, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_string, name, &value)) {
           return call_value(vm, value, arg_count);
         }
       }
       case OBJ_BYTES: {
-        if (table_get(&vm->methods_bytes, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_bytes, name, &value)) {
           return call_value(vm, value, arg_count);
         }
       }
       case OBJ_DICT: {
-        if (table_get(&vm->methods_dict, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_dict, name, &value)) {
           return call_value(vm, value, arg_count);
         }
       }
       case OBJ_FILE: {
-        if (table_get(&vm->methods_file, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_file, name, &value)) {
           return call_value(vm, value, arg_count);
         }
       }
       case OBJ_LIST: {
-        if (table_get(&vm->methods_list, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_list, name, &value)) {
           return call_value(vm, value, arg_count);
         }
       }
       case OBJ_RANGE: {
-        if (table_get(&vm->methods_range, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_range, name, &value)) {
           return call_value(vm, value, arg_count);
         }
       }
@@ -861,7 +861,7 @@ static bool invoke_self(z_vm *vm, z_obj_string *name, int arg_count) {
   }
 
   return throw_type_error(vm, "cannot call method %s on object of type %s",
-                         name->chars, value_type(receiver));
+                         AS_STRING(name)->chars, value_type(receiver));
 }
 
 static bool invoke_operator(z_vm *vm, z_obj_string *name, int arg_count, bool is_binary) {
@@ -884,105 +884,108 @@ static bool invoke_operator(z_vm *vm, z_obj_string *name, int arg_count, bool is
   }
 }
 
-static bool invoke(z_vm *vm, z_obj_string *name, int arg_count) {
+static bool invoke(z_vm *vm, z_value name, int arg_count, bool is_private) {
   z_value receiver = peek(vm, arg_count);
   z_value value;
 
   if (!IS_OBJ(receiver)) {
     // @TODO: have methods for non-objects as well.
-    return throw_type_error(vm, "non-object %s has no method '%s'", value_type(receiver), name->chars);
+    return throw_type_error(vm, "non-object %s has no method '%s'", value_type(receiver), AS_STRING(name)->chars);
   } else {
     switch (AS_OBJ(receiver)->type) {
       case OBJ_MODULE: {
         z_obj_module *module = AS_MODULE(receiver);
-        if (table_get(&module->values, OBJ_VAL(name), &value)) {
-          if (is_private(name)) {
-            return throw_access_error(vm, "cannot call private module method '%s'", name->chars);
+        if (table_get(&module->values, name, &value)) {
+          if (is_private) {
+            return throw_access_error(vm, "cannot call private module method '%s'", AS_STRING(name)->chars);
           }
           return call_value(vm, value, arg_count);
         }
-        return throw_undefined_error(vm, "module %s does not define class or method %s()", module->name, name->chars);
+        return throw_undefined_error(vm, "module %s does not define class or method %s()", module->name, AS_STRING(name)->chars);
         break;
       }
       case OBJ_CLASS: {
-        if (table_get(&AS_CLASS(receiver)->methods, OBJ_VAL(name), &value)) {
-          if (get_method_type(value) == TYPE_PRIVATE) {
+        z_obj_class *klass = AS_CLASS(receiver);
+        if (table_get(&klass->methods, name, &value)) {
+          if (is_private) {
             return throw_access_error(vm, "cannot call private method %s() on %s",
-                                   name->chars, AS_CLASS(receiver)->name->chars);
+                                   AS_STRING(name)->chars, klass->name->chars);
           }
           return call_value(vm, value, arg_count);
         }
-        if (table_get(&AS_CLASS(receiver)->static_properties, OBJ_VAL(name), &value)) {
+
+        if (table_get(&klass->static_properties, name, &value)) {
           return call_value(vm, value, arg_count);
         }
 
-        return throw_undefined_error(vm, "unknown method %s() in class %s", name->chars, AS_CLASS(receiver)->name->chars);
+        return throw_undefined_error(vm, "unknown method %s() in class %s", AS_STRING(name)->chars, klass->name->chars);
       }
       case OBJ_INSTANCE: {
         z_obj_instance *instance = AS_INSTANCE(receiver);
 
-        if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
+        if (table_get(&instance->properties, name, &value)) {
           vm->stack_top[-arg_count - 1] = value;
           return call_value(vm, value, arg_count);
         }
 
-        return invoke_from_class(vm, instance->klass, name, arg_count);
+        return invoke_from_class(vm, instance->klass, AS_STRING(name), arg_count);
       }
       case OBJ_STRING: {
-        if (table_get(&vm->methods_string, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_string, name, &value)) {
           return call_value(vm, value, arg_count);
         }
-        return throw_property_error(vm, "String has no method %s()", name->chars);
+        return throw_property_error(vm, "String has no method %s()", AS_STRING(name)->chars);
       }
       case OBJ_LIST: {
-        if (table_get(&vm->methods_list, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_list, name, &value)) {
           return call_value(vm, value, arg_count);
         }
-        return throw_property_error(vm, "List has no method %s()", name->chars);
+        return throw_property_error(vm, "List has no method %s()", AS_STRING(name)->chars);
       }
       case OBJ_RANGE: {
-        if (table_get(&vm->methods_range, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_range, name, &value)) {
           return call_value(vm, value, arg_count);
         }
-        return throw_property_error(vm, "Range has no method %s()", name->chars);
+        return throw_property_error(vm, "Range has no method %s()", AS_STRING(name)->chars);
       }
       case OBJ_DICT: {
-        if (table_get(&vm->methods_dict, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_dict, name, &value)) {
           return call_value(vm, value, arg_count);
         }
 
-        else if(table_get(&AS_DICT(receiver)->items, OBJ_VAL(name), &value)) {
+        if(table_get(&AS_DICT(receiver)->items, name, &value)) {
           if(IS_CLOSURE(value)) {
             return call_value(vm, value, arg_count);
           }
         }
-        return throw_property_error(vm, "Dict has no method %s()", name->chars);
+
+        return throw_property_error(vm, "Dict has no method %s()", AS_STRING(name)->chars);
       }
       case OBJ_FILE: {
-        if (table_get(&vm->methods_file, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_file, name, &value)) {
           return call_value(vm, value, arg_count);
         }
-        return throw_property_error(vm, "File has no method %s()", name->chars);
+        return throw_property_error(vm, "File has no method %s()", AS_STRING(name)->chars);
       }
       case OBJ_BYTES: {
-        if (table_get(&vm->methods_bytes, OBJ_VAL(name), &value)) {
+        if (table_get(&vm->methods_bytes, name, &value)) {
           return call_value(vm, value, arg_count);
         }
-        return throw_property_error(vm, "Bytes has no method %s()", name->chars);
+        return throw_property_error(vm, "Bytes has no method %s()", AS_STRING(name)->chars);
       }
       default: {
         return throw_type_error(vm, "cannot call method %s on object of type %s",
-                               name->chars, value_type(receiver));
+                               AS_STRING(name)->chars, value_type(receiver));
       }
     }
   }
 }
 
-static inline bool bind_method(z_vm *vm, z_obj_class *klass, z_obj_string *name) {
+static inline bool bind_method(z_vm *vm, z_obj_class *klass, z_value name) {
   z_value method;
   if (table_get(&klass->methods, OBJ_VAL(name), &method)) {
     if (get_method_type(method) == TYPE_PRIVATE) {
-      return throw_access_error(vm, "cannot get private property '%s' from instance", name->chars);
+      return throw_access_error(vm, "cannot get private property '%s' from instance", AS_STRING(name)->chars);
     }
 
     z_obj_bound *bound = new_bound_method(vm, peek(vm, 0), AS_CLOSURE(method));
@@ -992,7 +995,7 @@ static inline bool bind_method(z_vm *vm, z_obj_class *klass, z_obj_string *name)
   }
 
   return throw_property_error(vm, "instance of class %s does not have a property or method named '%s'",
-                            klass->name->chars, name->chars);
+                            klass->name->chars, AS_STRING(name)->chars);
 }
 
 static z_obj_up_value *capture_up_value(z_vm *vm, z_value *local) {
@@ -1028,25 +1031,25 @@ static inline void close_up_values(z_vm *vm, const z_value *last) {
   }
 }
 
-static inline void define_method(z_vm *vm, z_obj_string *name) {
+static inline void define_method(z_vm *vm, z_value name) {
   z_value method = peek(vm, 0);
   z_obj_class *klass = AS_CLASS(peek(vm, 1));
 
-  table_set(vm, &klass->methods, OBJ_VAL(name), method);
+  table_set(vm, &klass->methods, name, method);
   if (get_method_type(method) == TYPE_INITIALIZER) {
     klass->initializer = method;
   }
   pop(vm);
 }
 
-static inline void define_property(z_vm *vm, z_obj_string *name, bool is_static) {
+static inline void define_property(z_vm *vm, z_value name, bool is_static) {
   z_value property = peek(vm, 0);
   z_obj_class *klass = AS_CLASS(peek(vm, 1));
 
   if (!is_static) {
-    table_set(vm, &klass->properties, OBJ_VAL(name), property);
+    table_set(vm, &klass->properties, name, property);
   } else {
-    table_set(vm, &klass->static_properties, OBJ_VAL(name), property);
+    table_set(vm, &klass->static_properties, name, property);
   }
   pop(vm);
 }
@@ -1060,10 +1063,11 @@ Z_ALWAYS_INLINE bool is_false(z_value value) {
   if (IS_NIL(value) || IS_EMPTY(value)) return true;
 
   // Strings/bytes/collections: empty => false, non-empty => true
-  if (IS_STRING(value)) return AS_STRING(value)->length < 1;
-  if (IS_BYTES(value)) return AS_BYTES(value)->bytes.count < 1;
+  if (IS_STRING(value)) return AS_STRING(value)->length == 0;
+  if (IS_BYTES(value)) return AS_BYTES(value)->bytes.count == 0;
   if (IS_LIST(value)) return AS_LIST(value)->items.count == 0;
   if (IS_DICT(value)) return AS_DICT(value)->names.count == 0;
+  if (IS_RANGE(value)) return AS_RANGE(value)->range == 0;
 
   // Classes, closures, bound methods, functions are true by default
   return false;
@@ -1687,13 +1691,13 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
   }
 
   for (;;) {
-    // try...finally... (i.e., try without a catch but finally
-    // whose try body raises an exception)
-    // can cause us to go into an invalid mode where frame count == 0;
-    // to fix this, we need to exit with an appropriate mode here.
-    if (vm->frame_count == 0) {
-      return PTR_RUNTIME_ERR;
-    }
+    // // try...finally... (i.e., try without a catch but finally
+    // // whose try body raises an exception)
+    // // can cause us to go into an invalid mode where frame count == 0;
+    // // to fix this, we need to exit with an appropriate mode here.
+    // if (vm->frame_count == 0) {
+    //   return PTR_RUNTIME_ERR;
+    // }
 
 #if defined(DEBUG_STACK) && DEBUG_STACK
     if (vm->current_frame->closure->function->module->file != NULL && memcmp(vm->current_frame->closure->function->module->file, "<repl>", 6) == 0) {
@@ -1719,19 +1723,22 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
 
       case OP_ADD: {
-        if (IS_STRING(peek(vm, 0)) || IS_STRING(peek(vm, 1))) {
+        z_value a_ = peek(vm, 1);
+        z_value b_ = peek(vm, 0);
+
+        if (IS_STRING(a_) || IS_STRING(b_)) {
           if (!concatenate(vm)) {
-            numeric_error("unsupported operand + for %s and %s", value_type(peek(vm, 0)), value_type(peek(vm, 1)));
+            numeric_error("unsupported operand + for %s and %s", value_type(a_), value_type(b_));
             break;
           }
-        } else if (IS_LIST(peek(vm, 0)) && IS_LIST(peek(vm, 1))) {
+        } else if (IS_LIST(a_) && IS_LIST(b_)) {
           z_value result =
-              OBJ_VAL(add_list(vm, AS_LIST(peek(vm, 1)), AS_LIST(peek(vm, 0))));
+              OBJ_VAL(add_list(vm, AS_LIST(a_), AS_LIST(b_)));
           pop_n(vm, 2);
           push(vm, result);
-        } else if (IS_BYTES(peek(vm, 0)) && IS_BYTES(peek(vm, 1))) {
+        } else if (IS_BYTES(a_) && IS_BYTES(b_)) {
           z_value result = OBJ_VAL(
-              add_bytes(vm, AS_BYTES(peek(vm, 1)), AS_BYTES(peek(vm, 0))));
+              add_bytes(vm, AS_BYTES(a_), AS_BYTES(b_)));
           pop_n(vm, 2);
           push(vm, result);
         } else {
@@ -1744,23 +1751,29 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         break;
       }
       case OP_MULTIPLY: {
-        if (IS_STRING(peek(vm, 1)) && IS_NUMBER(peek(vm, 0))) {
-          double number = AS_NUMBER(peek(vm, 0));
-          z_obj_string *string = AS_STRING(peek(vm, 1));
+        z_value a_ = peek(vm, 1);
+        z_value b_ = peek(vm, 0);
+
+        if (IS_STRING(a_) && IS_NUMBER(b_)) {
+          double number = AS_NUMBER(b_);
+          z_obj_string *string = AS_STRING(a_);
           z_value result = OBJ_VAL(multiply_string(vm, string, number));
           pop_n(vm, 2);
           push(vm, result);
           break;
-        } else if (IS_LIST(peek(vm, 1)) && IS_NUMBER(peek(vm, 0))) {
-          int number = (int) AS_NUMBER(pop(vm));
-          z_obj_list *list = AS_LIST(peek(vm, 0));
+        }
+
+        if (IS_LIST(a_) && IS_NUMBER(b_)) {
+          int number = (int) AS_NUMBER(b_);
+          z_obj_list *list = AS_LIST(a_);
           z_obj_list *n_list = new_list(vm);
           push(vm, OBJ_VAL(n_list));
           multiply_list(vm, list, n_list, number);
-          pop_n(vm, 2);
+          pop_n(vm, 3); // +1 for the new list that was GC-protected
           push(vm, OBJ_VAL(n_list));
           break;
         }
+
         BINARY_OP(NUMBER_VAL, *);
         break;
       }
@@ -1831,7 +1844,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
 
         if(IS_INSTANCE(__a)) {
           z_value dummy;
-          if(table_get(&AS_INSTANCE(__a)->klass->methods, STRING_VAL("="), &dummy)) {
+          if(table_get(&AS_INSTANCE(__a)->klass->methods, STRING_L_VAL("=", 1), &dummy)) {
             CLASS_BINARY_OPERATION("=");
           }
         }
@@ -1936,12 +1949,14 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
 
       case OP_DEFINE_GLOBAL: {
-        z_obj_string *name = READ_STRING();
-        if(IS_EMPTY(peek(vm, 0))) {
+        z_value name = OBJ_VAL(READ_STRING());
+        z_value value = peek(vm, 0);
+        if(IS_EMPTY(value)) {
           runtime_error(ERR_CANT_ASSIGN_EMPTY);
           break;
         }
-        table_set(vm, &vm->current_frame->closure->function->module->values, OBJ_VAL(name), peek(vm, 0));
+
+        table_set(vm, &vm->current_frame->closure->function->module->values, name, value);
         pop(vm);
 
 #if defined(DEBUG_TABLE) && DEBUG_TABLE
@@ -1951,14 +1966,15 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
 
       case OP_GET_GLOBAL: {
-        z_obj_string *name = READ_STRING();
+        z_value name = OBJ_VAL(READ_STRING());
         z_value value;
-        if (!table_get(&vm->current_frame->closure->function->module->values, OBJ_VAL(name), &value)) {
-          if (!table_get(&vm->globals, OBJ_VAL(name), &value)) {
-            dbg(printf("Name requested: '%s' with length %d\n", name->chars, name->length));
+        if (!table_get(&vm->current_frame->closure->function->module->values, name, &value)) {
+          if (!table_get(&vm->globals, name, &value)) {
+            z_obj_string *string = AS_STRING(name);
+            dbg(printf("Name requested: '%s' with length %d\n", string->chars, string->length));
             cond_dbg(vm->current_frame, table_print(&vm->current_frame->closure->function->module->values));
 
-            undefined_error("'%s' is undefined in this scope", name->chars);
+            undefined_error("'%s' is undefined in this scope", string->chars);
             break;
           }
         }
@@ -1967,16 +1983,17 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
 
       case OP_SET_GLOBAL: {
-        if(IS_EMPTY(peek(vm, 0))) {
+        z_value value = peek(vm, 0);
+        if(IS_EMPTY(value)) {
           runtime_error(ERR_CANT_ASSIGN_EMPTY);
           break;
         }
 
-        z_obj_string *name = READ_STRING();
+        z_value name = OBJ_VAL(READ_STRING());
         z_table *table = &vm->current_frame->closure->function->module->values;
-        if (table_set(vm, table, OBJ_VAL(name), peek(vm, 0))) {
-          table_delete(table, OBJ_VAL(name));
-          undefined_error("%s is undefined in this scope", name->chars);
+        if (table_set(vm, table, name, value)) {
+          table_delete(table, name);
+          undefined_error("%s is undefined in this scope", AS_STRING(name)->chars);
           break;
         }
         break;
@@ -1989,26 +2006,30 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
       case OP_SET_LOCAL: {
         uint16_t slot = READ_SHORT();
-        if(IS_EMPTY(peek(vm, 0))) {
+        z_value value = peek(vm, 0);
+        if(IS_EMPTY(value)) {
           runtime_error(ERR_CANT_ASSIGN_EMPTY);
           break;
         }
-        vm->current_frame->slots[slot] = peek(vm, 0);
+        vm->current_frame->slots[slot] = value;
         break;
       }
 
       case OP_GET_PROPERTY: {
-        z_obj_string *name = READ_STRING();
+        z_obj_string *name_string = READ_STRING();
+        bool private = is_private(name_string);
+        z_value name = OBJ_VAL(name_string);
+        z_value object = peek(vm, 0);
 
-        if (IS_OBJ(peek(vm, 0))) {
+        if (IS_OBJ(object)) {
           z_value value;
 
-          switch (AS_OBJ(peek(vm, 0))->type) {
+          switch (AS_OBJ(object)->type) {
             case OBJ_MODULE: {
-              z_obj_module *module = AS_MODULE(peek(vm, 0));
-              if (table_get(&module->values, OBJ_VAL(name), &value)) {
-                if (is_private(name)) {
-                  access_error("cannot get private module property '%s'", name->chars);
+              z_obj_module *module = AS_MODULE(object);
+              if (table_get(&module->values, name, &value)) {
+                if (private) {
+                  access_error("cannot get private module property '%s'", name_string->chars);
                   break;
                 }
 
@@ -2017,25 +2038,26 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
                 break;
               }
 
-              property_error("%s module does not define '%s'", module->name, name->chars);
+              property_error("%s module does not define '%s'", module->name, name_string->chars);
               break;
             }
             case OBJ_CLASS: {
-              if (table_get(&AS_CLASS(peek(vm, 0))->methods, OBJ_VAL(name), &value)) {
+              z_obj_class *klass = AS_CLASS(object);
+              if (table_get(&klass->methods, name, &value)) {
                 if (get_method_type(value) == TYPE_STATIC) {
-                  if (is_private(name)) {
+                  if (private) {
                     access_error("cannot call private property '%s' of class %s",
-                                  name->chars, AS_CLASS(peek(vm, 0))->name->chars);
+                                  name_string->chars, AS_CLASS(peek(vm, 0))->name->chars);
                     break;
                   }
                   pop(vm); // pop the class...
                   push(vm, value);
                   break;
                 }
-              } else if (table_get(&AS_CLASS(peek(vm, 0))->static_properties, OBJ_VAL(name), &value)) {
-                if (is_private(name)) {
+              } else if (table_get(&klass->static_properties, name, &value)) {
+                if (private) {
                   access_error("cannot call private property '%s' of class %s",
-                                name->chars, AS_CLASS(peek(vm, 0))->name->chars);
+                                name_string->chars, klass->name->chars);
                   break;
                 }
                 pop(vm); // pop the class...
@@ -2044,16 +2066,15 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
               }
 
               property_error("class %s does not have a static property or method named '%s'",
-                            AS_CLASS(peek(vm, 0))->name->chars, name->chars);
+                            klass->name->chars, name_string->chars);
               break;
             }
             case OBJ_INSTANCE: {
-              z_obj_instance *instance = AS_INSTANCE(peek(vm, 0));
-              bool private = is_private(name);
-              if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
+              z_obj_instance *instance = AS_INSTANCE(object);
+              if (table_get(&instance->properties, name, &value)) {
                 if (private) {
                   access_error("cannot call private property '%s' from instance of %s",
-                                name->chars, instance->klass->name->chars);
+                                name_string->chars, instance->klass->name->chars);
                   break;
                 }
                 pop(vm); // pop the instance...
@@ -2063,7 +2084,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
 
               if (private) {
                 access_error("cannot bind private property '%s' to instance of %s",
-                              name->chars, instance->klass->name->chars);
+                              name_string->chars, instance->klass->name->chars);
                 break;
               }
 
@@ -2073,85 +2094,87 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
               break;
             }
             case OBJ_STRING: {
-              if (table_get(&vm->methods_string, OBJ_VAL(name), &value)) {
+              if (table_get(&vm->methods_string, name, &value)) {
                 pop(vm); // pop the string...
                 push(vm, value);
                 break;
               }
 
-              property_error("class String has no named property '%s'", name->chars);
+              property_error("class String has no named property '%s'", name_string->chars);
               break;
             }
             case OBJ_LIST: {
-              if (table_get(&vm->methods_list, OBJ_VAL(name), &value)) {
+              if (table_get(&vm->methods_list, name, &value)) {
                 pop(vm); // pop the list...
                 push(vm, value);
                 break;
               }
 
-              property_error("class List has no named property '%s'", name->chars);
+              property_error("class List has no named property '%s'", name_string->chars);
               break;
             }
             case OBJ_RANGE: {
-              if (table_get(&vm->methods_range, OBJ_VAL(name), &value)) {
+              if (table_get(&vm->methods_range, name, &value)) {
                 pop(vm); // pop the range...
                 push(vm, value);
                 break;
               }
 
-              property_error("class Range has no named property '%s'", name->chars);
+              property_error("class Range has no named property '%s'", name_string->chars);
               break;
             }
             case OBJ_DICT: {
-              if (table_get(&AS_DICT(peek(vm, 0))->items, OBJ_VAL(name), &value) ||
-                  table_get(&vm->methods_dict, OBJ_VAL(name), &value)) {
+              if (table_get(&AS_DICT(object)->items, name, &value) ||
+                  table_get(&vm->methods_dict, name, &value)) {
                 pop(vm); // pop the dictionary...
                 push(vm, value);
                 break;
               }
 
-              property_error("unknown key or class Dict property '%s'", name->chars);
+              property_error("unknown key or class Dict property '%s'", name_string->chars);
               break;
             }
             case OBJ_BYTES: {
-              if (table_get(&vm->methods_bytes, OBJ_VAL(name), &value)) {
+              if (table_get(&vm->methods_bytes, name, &value)) {
                 pop(vm); // pop the bytes...
                 push(vm, value);
                 break;
               }
 
-              property_error("class Bytes has no named property '%s'", name->chars);
+              property_error("class Bytes has no named property '%s'", name_string->chars);
               break;
             }
             case OBJ_FILE: {
-              if (table_get(&vm->methods_file, OBJ_VAL(name), &value)) {
+              if (table_get(&vm->methods_file, name, &value)) {
                 pop(vm); // pop the file...
                 push(vm, value);
                 break;
               }
 
-              property_error("class File has no named property '%s'", name->chars);
+              property_error("class File has no named property '%s'", name_string->chars);
               break;
             }
             default: {
-              type_error("object of type %s does not carry properties", value_type(peek(vm, 0)));
+              type_error("object of type %s does not carry properties", value_type(object));
               break;
             }
           }
         } else {
-          type_error("'%s' of type %s does not have properties", value_to_string(vm, peek(vm, 0))->chars, value_type(peek(vm, 0)));
+          type_error("'%s' of type %s does not have properties", value_to_string(vm, object)->chars, value_type(object));
           break;
         }
         break;
       }
 
       case OP_GET_SELF_PROPERTY: {
-        z_obj_string *name = READ_STRING();
+        z_value name = OBJ_VAL(READ_STRING());
+        z_value object = peek(vm, 0);
+
         z_value value;
 
-        if (IS_INSTANCE(peek(vm, 0))) {
-          z_obj_instance *instance = AS_INSTANCE(peek(vm, 0));
-          if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
+        if (IS_INSTANCE(object)) {
+          z_obj_instance *instance = AS_INSTANCE(object);
+          if (table_get(&instance->properties, name, &value)) {
             pop(vm); // pop the instance...
             push(vm, value);
             break;
@@ -2161,77 +2184,86 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
             EXIT_VM();
           }
           break;
-        } else if (IS_CLASS(peek(vm, 0))) {
-          z_obj_class *klass = AS_CLASS(peek(vm, 0));
-          if (table_get(&klass->methods, OBJ_VAL(name), &value)) {
+        }
+
+        if (IS_CLASS(object)) {
+          z_obj_class *klass = AS_CLASS(object);
+          if (table_get(&klass->methods, name, &value)) {
             if (get_method_type(value) == TYPE_STATIC) {
               pop(vm); // pop the class...
               push(vm, value);
               break;
             }
-          } else if (table_get(&klass->static_properties, OBJ_VAL(name), &value)) {
+          } else if (table_get(&klass->static_properties, name, &value)) {
             pop(vm); // pop the class...
             push(vm, value);
             break;
           }
           property_error("class %s does not have a static property or method named '%s'",
-                        klass->name->chars, name->chars);
+                        klass->name->chars, AS_STRING(name)->chars);
           break;
-        } else if (IS_MODULE(peek(vm, 0))) {
-          z_obj_module *module = AS_MODULE(peek(vm, 0));
-          if (table_get(&module->values, OBJ_VAL(name), &value)) {
+        }
+
+        if (IS_MODULE(object)) {
+          z_obj_module *module = AS_MODULE(object);
+          if (table_get(&module->values, name, &value)) {
             pop(vm); // pop the module...
             push(vm, value);
             break;
           }
 
-          property_error("module %s does not define '%s'", module->name, name->chars);
+          property_error("module %s does not define '%s'", module->name, AS_STRING(name)->chars);
           break;
         }
 
-        type_error("'%s' of type %s does not have properties", value_to_string(vm, peek(vm, 0))->chars, value_type(peek(vm, 0)));
+        type_error("'%s' of type %s does not have properties", value_to_string(vm, object)->chars, value_type(object));
         break;
       }
 
       case OP_SET_PROPERTY: {
-        if (!IS_INSTANCE(peek(vm, 1)) && !IS_DICT(peek(vm, 1)) && !IS_CLASS(peek(vm, 1)) && !IS_MODULE(peek(vm, 1))) {
-          type_error("object of type %s can not carry properties", value_type(peek(vm, 1)));
+        z_value object = peek(vm, 1);
+        z_value value = peek(vm, 0);
+
+        if (!IS_INSTANCE(object) && !IS_DICT(object) && !IS_CLASS(object) && !IS_MODULE(object)) {
+          type_error("object of type %s can not carry properties", value_type(object));
           break;
-        } else  if(IS_EMPTY(peek(vm, 0))) {
+        }
+
+        if(IS_EMPTY(value)) {
           runtime_error(ERR_CANT_ASSIGN_EMPTY);
           break;
         }
 
-        z_obj_string *name = READ_STRING();
+        z_value name = OBJ_VAL(READ_STRING());
 
-        if (IS_INSTANCE(peek(vm, 1))) {
-          z_obj_instance *instance = AS_INSTANCE(peek(vm, 1));
-          table_set(vm, &instance->properties, OBJ_VAL(name), peek(vm, 0));
+        if (IS_INSTANCE(object)) {
+          z_obj_instance *instance = AS_INSTANCE(object);
+          table_set(vm, &instance->properties, name, value);
 
-          z_value value = pop(vm);
+          z_value v = pop(vm);
           pop(vm); // removing the instance object
-          push(vm, value);
-        } else if (IS_CLASS(peek(vm, 1))) {
-          z_obj_class *klass = AS_CLASS(peek(vm, 1));
-          table_set(vm, &klass->static_properties, OBJ_VAL(name), peek(vm, 0));
+          push(vm, v);
+        } else if (IS_CLASS(object)) {
+          z_obj_class *klass = AS_CLASS(object);
+          table_set(vm, &klass->static_properties, name, value);
 
-          z_value value = pop(vm);
+          z_value v = pop(vm);
           pop(vm); // removing the instance object
-          push(vm, value);
-        } else if (IS_MODULE(peek(vm, 1))) {
-          z_obj_module *module = AS_MODULE(peek(vm, 1));
-          table_set(vm, &module->values, OBJ_VAL(name), peek(vm, 0));
+          push(vm, v);
+        } else if (IS_MODULE(object)) {
+          z_obj_module *module = AS_MODULE(object);
+          table_set(vm, &module->values, name, value);
 
-          z_value value = pop(vm);
+          z_value v = pop(vm);
           pop(vm); // removing the instance object
-          push(vm, value);
+          push(vm, v);
         } else {
-          z_obj_dict *dict = AS_DICT(peek(vm, 1));
-          dict_set_entry(vm, dict, OBJ_VAL(name), peek(vm, 0));
+          z_obj_dict *dict = AS_DICT(object);
+          dict_set_entry(vm, dict, name, value);
 
-          z_value value = pop(vm);
+          z_value v = pop(vm);
           pop(vm); // removing the dictionary object
-          push(vm, value);
+          push(vm, v);
         }
         break;
       }
@@ -2248,8 +2280,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
           if (is_local) {
             closure->up_values[i] = capture_up_value(vm, vm->current_frame->slots + index);
           } else {
-            closure->up_values[i] =
-                ((z_obj_closure *) vm->current_frame->closure)->up_values[index];
+            closure->up_values[i] = vm->current_frame->closure->up_values[index];
           }
         }
 
@@ -2257,7 +2288,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
       case OP_GET_UP_VALUE: {
         int index = READ_SHORT();
-        push(vm, *((z_obj_closure *) vm->current_frame->closure)->up_values[index]->location);
+        push(vm, *(vm->current_frame->closure)->up_values[index]->location);
         break;
       }
       case OP_SET_UP_VALUE: {
@@ -2266,7 +2297,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
           runtime_error(ERR_CANT_ASSIGN_EMPTY);
           break;
         }
-        *((z_obj_closure *) vm->current_frame->closure)->up_values[index]->location =
+        *(vm->current_frame->closure)->up_values[index]->location =
             peek(vm, 0);
         break;
       }
@@ -2282,14 +2313,14 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       case OP_INVOKE: {
         z_obj_string *method = READ_STRING();
         int arg_count = READ_BYTE();
-        if (!invoke(vm, method, arg_count)) {
+        if (!invoke(vm, OBJ_VAL(method), arg_count, method->length > 0 && method->chars[0] == '_')) {
           EXIT_VM();
         }
         vm->current_frame = &vm->frames[vm->frame_count - 1];
         break;
       }
       case OP_INVOKE_SELF: {
-        z_obj_string *method = READ_STRING();
+        z_value method = OBJ_VAL(READ_STRING());
         int arg_count = READ_BYTE();
         if (!invoke_self(vm, method, arg_count)) {
           EXIT_VM();
@@ -2304,23 +2335,23 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         break;
       }
       case OP_METHOD: {
-        z_obj_string *name = READ_STRING();
-        define_method(vm, name);
+        define_method(vm, OBJ_VAL(READ_STRING()));
         break;
       }
       case OP_CLASS_PROPERTY: {
-        z_obj_string *name = READ_STRING();
+        z_value name = OBJ_VAL(READ_STRING());
         int is_static = READ_BYTE();
         define_property(vm, name, is_static == 1);
         break;
       }
       case OP_INHERIT: {
-        if (!IS_CLASS(peek(vm, 1))) {
+        z_value object = peek(vm, 1);
+        if (!IS_CLASS(object)) {
           type_error("cannot inherit from non-class object");
           break;
         }
 
-        z_obj_class *superclass = AS_CLASS(peek(vm, 1));
+        z_obj_class *superclass = AS_CLASS(object);
         z_obj_class *subclass = AS_CLASS(peek(vm, 0));
         table_add_all(vm, &superclass->properties, &subclass->properties);
         table_add_all(vm, &superclass->methods, &subclass->methods);
@@ -2331,8 +2362,9 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       case OP_EXTEND: {
         z_obj_class *ext_class = AS_CLASS(peek(vm, 0));
 
-        if (IS_STRING(peek(vm, 1))) {
-          z_obj_string *klass = AS_STRING(peek(vm, 1));
+        z_value object = peek(vm, 1);
+        if (IS_STRING(object)) {
+          z_obj_string *klass = AS_STRING(object);
 
           z_table *table = NULL;
           if (memcmp(klass->chars, "string", klass->length) == 0) {
@@ -2355,18 +2387,18 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
           }
 
           undefined_error("cannot extend undefined class %*.s", klass->length, klass->chars);
-        } else if (!IS_CLASS(peek(vm, 1))) {
+        } else if (!IS_CLASS(object)) {
           type_error("cannot extend non-class object");
           break;
         }
 
-        z_obj_class *actual_class = AS_CLASS(peek(vm, 1));
+        z_obj_class *actual_class = AS_CLASS(object);
         table_copy_extensions(vm, &ext_class->methods, &actual_class->methods);
         pop(vm); // pop the subclass
         break;
       }
       case OP_GET_SUPER: {
-        z_obj_string *name = READ_STRING();
+        z_value name = OBJ_VAL(READ_STRING());
         z_obj_class *klass = AS_CLASS(peek(vm, 0));
         if (!bind_method(vm, klass->superclass, name)) {
           EXIT_VM();
@@ -2439,22 +2471,24 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         uint8_t will_assign = READ_BYTE();
 
         bool is_gotten = true;
-        if (IS_OBJ(peek(vm, 2))) {
-          switch (AS_OBJ(peek(vm, 2))->type) {
+        z_value object = peek(vm, 2);
+
+        if (IS_OBJ(object)) {
+          switch (AS_OBJ(object)->type) {
             case OBJ_STRING: {
-              if (!string_get_ranged_index(vm, AS_STRING(peek(vm, 2)), will_assign == (uint8_t) 1)) {
+              if (!string_get_ranged_index(vm, AS_STRING(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
             }
             case OBJ_LIST: {
-              if (!list_get_ranged_index(vm, AS_LIST(peek(vm, 2)), will_assign == (uint8_t) 1)) {
+              if (!list_get_ranged_index(vm, AS_LIST(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
             }
             case OBJ_BYTES: {
-              if (!bytes_get_ranged_index(vm, AS_BYTES(peek(vm, 2)), will_assign == (uint8_t) 1)) {
+              if (!bytes_get_ranged_index(vm, AS_BYTES(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
@@ -2469,7 +2503,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         }
 
         if (!is_gotten) {
-          type_error("cannot range index object of type %s", value_type(peek(vm, 2)));
+          type_error("cannot range index object of type %s", value_type(object));
         }
         break;
       }
@@ -2477,40 +2511,42 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         uint8_t will_assign = READ_BYTE();
 
         bool is_gotten = true;
-        if (IS_OBJ(peek(vm, 1))) {
-          switch (AS_OBJ(peek(vm, 1))->type) {
+        z_value object = peek(vm, 1);
+
+        if (IS_OBJ(object)) {
+          switch (AS_OBJ(object)->type) {
             case OBJ_STRING: {
-              if (!string_get_index(vm, AS_STRING(peek(vm, 1)), will_assign == (uint8_t) 1)) {
+              if (!string_get_index(vm, AS_STRING(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
             }
             case OBJ_LIST: {
-              if (!list_get_index(vm, AS_LIST(peek(vm, 1)), will_assign == (uint8_t) 1)) {
+              if (!list_get_index(vm, AS_LIST(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
             }
             case OBJ_DICT: {
-              if (!dict_get_index(vm, AS_DICT(peek(vm, 1)), will_assign == (uint8_t) 1)) {
+              if (!dict_get_index(vm, AS_DICT(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
             }
             case OBJ_MODULE: {
-              if (!module_get_index(vm, AS_MODULE(peek(vm, 1)), will_assign == (uint8_t) 1)) {
+              if (!module_get_index(vm, AS_MODULE(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
             }
             case OBJ_BYTES: {
-              if (!bytes_get_index(vm, AS_BYTES(peek(vm, 1)), will_assign == (uint8_t) 1)) {
+              if (!bytes_get_index(vm, AS_BYTES(object), will_assign == (uint8_t) 1)) {
                 EXIT_VM();
               }
               break;
             }
             case OBJ_INSTANCE: {
-              if (!invoke_self(vm, copy_string(vm, "@to_index", 9), 1)) {
+              if (!invoke_self(vm, STRING_L_VAL("@to_index", 9), 1)) {
                 EXIT_VM();
               }
               vm->current_frame = &vm->frames[vm->frame_count - 1];
@@ -2526,14 +2562,16 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         }
 
         if (!is_gotten) {
-          type_error("cannot index object of type %s", value_type(peek(vm, 1)));
+          type_error("cannot index object of type %s", value_type(object));
         }
         break;
       }
 
       case OP_SET_INDEX: {
         bool is_set = true;
-        if (IS_OBJ(peek(vm, 2))) {
+        z_value object = peek(vm, 2);
+
+        if (IS_OBJ(object)) {
 
           z_value value = peek(vm, 0);
           z_value index = peek(vm, 1);
@@ -2543,9 +2581,9 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
             break;
           }
 
-          switch (AS_OBJ(peek(vm, 2))->type) {
+          switch (AS_OBJ(object)->type) {
             case OBJ_LIST: {
-              if (!list_set_index(vm, AS_LIST(peek(vm, 2)), index, value)) {
+              if (!list_set_index(vm, AS_LIST(object), index, value)) {
                 EXIT_VM();
               }
               break;
@@ -2555,15 +2593,15 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
               break;
             }
             case OBJ_DICT: {
-              dict_set_index(vm, AS_DICT(peek(vm, 2)), index, value);
+              dict_set_index(vm, AS_DICT(object), index, value);
               break;
             }
             case OBJ_MODULE: {
-              module_set_index(vm, AS_MODULE(peek(vm, 2)), index, value);
+              module_set_index(vm, AS_MODULE(object), index, value);
               break;
             }
             case OBJ_BYTES: {
-              if (!bytes_set_index(vm, AS_BYTES(peek(vm, 2)), index, value)) {
+              if (!bytes_set_index(vm, AS_BYTES(object), index, value)) {
                 EXIT_VM();
               }
               break;
@@ -2578,7 +2616,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         }
 
         if (!is_set) {
-          type_error("type of %s is not a valid iterable", value_type(peek(vm, 3)));
+          type_error("type of %s is not a valid iterable", value_type(object));
         }
         break;
       }
@@ -2615,9 +2653,11 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
 
         z_value existing_module;
         if(table_get(&vm->modules, STRING_VAL(closure->function->module->file), &existing_module)) {
-          add_known_module(vm, AS_MODULE(existing_module), closure->function->module->name);
+          z_obj_module *module = AS_MODULE(existing_module);
+
+          add_known_module(vm, module, closure->function->module->name);
           // attach same module to import closure for selective import
-          closure->function->module = AS_MODULE(existing_module);
+          closure->function->module = module;
         } else {
           add_module(vm, closure->function->module);
           register_module__FILE__(vm, closure->function->module);
@@ -2628,44 +2668,44 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
 
       case OP_NATIVE_MODULE: {
-        z_obj_string *module_name = READ_STRING();
+        z_value module_name = OBJ_VAL(READ_STRING());
         z_value value;
-        if (table_get(&vm->modules, OBJ_VAL(module_name), &value)) {
+        if (table_get(&vm->modules, module_name, &value)) {
           z_obj_module *module = AS_MODULE(value);
           if(module->preloader != NULL) {
             ((z_module_loader)module->preloader)(vm);
           }
           module->imported = true;
-          table_set(vm, &vm->current_frame->closure->function->module->values, OBJ_VAL(module_name), value);
+          table_set(vm, &vm->current_frame->closure->function->module->values, module_name, value);
           break;
         }
-        undefined_error("module '%s' not found", module_name->chars);
+        undefined_error("module '%s' not found", AS_STRING(module_name)->chars);
         break;
       }
 
       case OP_SELECT_IMPORT: {
-        z_obj_string *entry_name = READ_STRING();
+        z_value entry_name = OBJ_VAL(READ_STRING());
         z_obj_func *function = AS_CLOSURE(peek(vm, 0))->function;
         z_value value;
-        if (table_get(&function->module->values, OBJ_VAL(entry_name), &value)) {
-          table_set(vm, &vm->current_frame->closure->function->module->values, OBJ_VAL(entry_name), value);
+        if (table_get(&function->module->values, entry_name, &value)) {
+          table_set(vm, &vm->current_frame->closure->function->module->values, entry_name, value);
         } else {
-          property_error("module %s does not define '%s'", function->module->name, entry_name->chars);
+          property_error("module %s does not define '%s'", function->module->name, AS_STRING(entry_name)->chars);
         }
         break;
       }
 
       case OP_SELECT_NATIVE_IMPORT: {
         z_obj_string *module_name = AS_STRING(peek(vm, 0));
-        z_obj_string *value_name = READ_STRING();
+        z_value value_name = OBJ_VAL(READ_STRING());
         z_value mod;
         if (table_get(&vm->modules, OBJ_VAL(module_name), &mod)) {
           z_obj_module *module = AS_MODULE(mod);
           z_value value;
-          if (table_get(&module->values, OBJ_VAL(value_name), &value)) {
-            table_set(vm, &vm->current_frame->closure->function->module->values, OBJ_VAL(value_name), value);
+          if (table_get(&module->values, value_name, &value)) {
+            table_set(vm, &vm->current_frame->closure->function->module->values, value_name, value);
           } else {
-            property_error("module %s does not define '%s'", module->name, value_name->chars);
+            property_error("module %s does not define '%s'", module->name, AS_STRING(value_name)->chars);
           }
         } else{
           undefined_error("module '%s' not found", module_name->chars);
@@ -2679,9 +2719,9 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       }
 
       case OP_IMPORT_ALL_NATIVE: {
-        z_obj_string *name = AS_STRING(peek(vm, 0));
+        z_value name = peek(vm, 0);
         z_value mod;
-        if (table_get(&vm->modules, OBJ_VAL(name), &mod)) {
+        if (table_get(&vm->modules, name, &mod)) {
           table_import_all(vm, &AS_MODULE(mod)->values, &vm->current_frame->closure->function->module->values);
         }
         break;
@@ -2706,18 +2746,19 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       case OP_EJECT_NATIVE_IMPORT: {
         z_value mod;
         z_obj_string *name = READ_STRING();
-        if (table_get(&vm->modules, OBJ_VAL(name), &mod)) {
+        z_value name_val = OBJ_VAL(name);
+        if (table_get(&vm->modules, name_val, &mod)) {
           z_table *current_module = &vm->current_frame->closure->function->module->values;
 
           table_import_all(vm, &AS_MODULE(mod)->values, current_module);
-          table_delete(current_module, OBJ_VAL(name));
+          table_delete(current_module, name_val);
         }
         break;
       }
 
       case OP_ASSERT: {
-        z_value message = pop(vm);
-        z_value expression = pop(vm);
+        z_value message = peek(vm, 0);
+        z_value expression = peek(vm, 1);
         if (is_false(expression)) {
           if (!IS_NIL(message)) {
             do_throw_exception(vm, NULL, true, value_to_string(vm, message)->chars);
@@ -2725,24 +2766,29 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
             do_throw_exception(vm, NULL, true, "");
           }
         }
+        pop_n(vm, 2); // message + expression
         break;
       }
 
       case OP_RAISE: {
-        if (!IS_INSTANCE(peek(vm, 0)) ||
-            !is_instance_of(AS_INSTANCE(peek(vm, 0))->klass, vm->exception_class)) {
+        z_value exception = peek(vm, 0);
+
+        if (!IS_INSTANCE(exception) ||
+            !is_instance_of(AS_INSTANCE(exception)->klass, vm->exception_class)) {
           type_error("instance of Exception expected");
           break;
         }
 
-        z_value exception = peek(vm, 0);
-        z_value stacktrace = get_stack_trace(vm);
         z_obj_instance *instance = AS_INSTANCE(exception);
+        z_value stacktrace = get_stack_trace(vm);
+        push(vm, stacktrace);
+        z_value type = STRING_L_VAL(instance->klass->name->chars, instance->klass->name->length);
+        push(vm, type);
+
         table_set(vm, &instance->properties, STRING_L_VAL("stacktrace", 10), stacktrace);
-        table_set(vm, &instance->properties, STRING_L_VAL("type", 4),
-          STRING_L_VAL(instance->klass->name->chars, instance->klass->name->length)
-        );
-        pop(vm); // pop the exception
+        table_set(vm, &instance->properties, STRING_L_VAL("type", 4), type);
+
+        pop_n(vm, 3); // stacktrace + type + exception
 
         if(print_exception(vm, instance, false)) {
           z_error_frame *error = peek_error(vm);
