@@ -64,12 +64,13 @@ static z_value get_stack_trace(z_vm *vm) {
       }
 
       trace = append_strings(trace, trace_line);
-      free(trace_line);
+      FREE(char, trace_line);
     }
 
     return STRING_TT_VAL(trace);
   }
 
+  free(trace);
   return STRING_L_VAL("", 0);
 }
 
@@ -118,16 +119,23 @@ bool do_throw_exception(z_vm *vm, const char *type, bool is_assert, const char *
   int length = vasprintf(&message, format, args);
   va_end(args);
 
-  z_obj_instance *instance = create_exception(vm, type, take_string(vm, message, length));
+  z_obj_string *message_string = take_string(vm, message, length);
+  push(vm, OBJ_VAL(message_string));
+
+  z_obj_instance *instance = create_exception(vm, type, message_string);
+
+  pop(vm); // pop message string
   push(vm, OBJ_VAL(instance));
 
   z_value stacktrace = get_stack_trace(vm);
+  z_value typename = STRING_L_VAL(instance->klass->name->chars, instance->klass->name->length);
   push(vm, stacktrace);
+  push(vm, typename);
+
   table_set(vm, &instance->properties, STRING_L_VAL("stacktrace", 10), stacktrace);
-  table_set(vm, &instance->properties, STRING_L_VAL("type", 4),
-    STRING_L_VAL(instance->klass->name->chars, instance->klass->name->length)
-  );
-  pop(vm);
+  table_set(vm, &instance->properties, STRING_L_VAL("type", 4), typename);
+
+  pop_n(vm, 2); // pop the stacktrace and typename
 
   pop(vm); // pop the instance
 
@@ -313,30 +321,30 @@ inline z_error_frame* peek_error(z_vm *vm) {
 }
 
 Z_ALWAYS_INLINE z_value pop(z_vm *vm) {
-  if (Z_UNLIKELY(vm->stack_top == vm->stack)) {
-    fprintf(stderr, "Exit: Stack integrity check at end of stack failed.\n");
-    exit(EXIT_TERMINAL);
-  }
+  // if (Z_UNLIKELY(vm->stack_top == vm->stack)) {
+  //   fprintf(stderr, "Exit: Stack integrity check at end of stack failed.\n");
+  //   exit(EXIT_TERMINAL);
+  // }
 
   vm->stack_top--;
   return *vm->stack_top;
 }
 
 Z_ALWAYS_INLINE z_value pop_n(z_vm *vm, int n) {
-  if (Z_UNLIKELY(vm->stack_top - vm->stack < n)) {
-    fprintf(stderr, "Exit: Stack integrity check at %ld failed.\n", vm->stack_top - vm->stack);
-    exit(EXIT_TERMINAL);
-  }
+  // if (Z_UNLIKELY(vm->stack_top - vm->stack < n)) {
+  //   fprintf(stderr, "Exit: Stack integrity check at %d failed.\n", n);
+  //   exit(EXIT_TERMINAL);
+  // }
 
   vm->stack_top -= n;
   return *vm->stack_top;
 }
 
 Z_ALWAYS_INLINE z_value peek(z_vm *vm, int distance) {
-  if (Z_UNLIKELY(vm->stack_top - vm->stack < distance + 1)) {
-    fprintf(stderr, "Exit: Stack integrity check at distance %d failed.\n", distance);
-    exit(EXIT_TERMINAL);
-  }
+  // if (Z_UNLIKELY(vm->stack_top - vm->stack < distance + 1)) {
+  //   fprintf(stderr, "Exit: Stack integrity check at distance %d failed.\n", distance);
+  //   exit(EXIT_TERMINAL);
+  // }
 
   return vm->stack_top[-1 - distance]; 
 }
@@ -983,7 +991,8 @@ static inline bool bind_method(z_vm *vm, z_obj_class *klass, z_obj_string *name)
     return true;
   }
 
-  return throw_undefined_error(vm, "undefined property '%s'", name->chars);
+  return throw_property_error(vm, "instance of class %s does not have a property or method named '%s'",
+                            klass->name->chars, name->chars);
 }
 
 static z_obj_up_value *capture_up_value(z_vm *vm, z_value *local) {
@@ -1687,6 +1696,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
     }
 
 #if defined(DEBUG_STACK) && DEBUG_STACK
+    if (vm->current_frame->closure->function->module->file != NULL && memcmp(vm->current_frame->closure->function->module->file, "<repl>", 6) == 0) {
       printf("          ");
       for (z_value *slot = vm->stack; slot < vm->stack_top; slot++) {
         printf("[ ");
@@ -1697,6 +1707,7 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
       disassemble_instruction(
           &vm->current_frame->closure->function->blob,
           (int) (vm->current_frame->ip - vm->current_frame->closure->function->blob.code));
+    }
 #endif
 
     switch (READ_BYTE()) {
@@ -2038,8 +2049,9 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
             }
             case OBJ_INSTANCE: {
               z_obj_instance *instance = AS_INSTANCE(peek(vm, 0));
+              bool private = is_private(name);
               if (table_get(&instance->properties, OBJ_VAL(name), &value)) {
-                if (is_private(name)) {
+                if (private) {
                   access_error("cannot call private property '%s' from instance of %s",
                                 name->chars, instance->klass->name->chars);
                   break;
@@ -2049,18 +2061,15 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
                 break;
               }
 
-              if (is_private(name)) {
+              if (private) {
                 access_error("cannot bind private property '%s' to instance of %s",
                               name->chars, instance->klass->name->chars);
                 break;
               }
 
-              if (bind_method(vm, instance->klass, name)) {
-                break;
+              if (!bind_method(vm, instance->klass, name)) {
+                EXIT_VM();
               }
-
-              property_error("instance of class %s does not have a property or method named '%s'",
-                            AS_INSTANCE(peek(vm, 0))->klass->name->chars, name->chars);
               break;
             }
             case OBJ_STRING: {
@@ -2148,12 +2157,9 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
             break;
           }
 
-          if (bind_method(vm, instance->klass, name)) {
-            break;
+          if (!bind_method(vm, instance->klass, name)) {
+            EXIT_VM();
           }
-
-          property_error("instance of class %s does not have a property or method named '%s'",
-                        AS_INSTANCE(peek(vm, 0))->klass->name->chars, name->chars);
           break;
         } else if (IS_CLASS(peek(vm, 0))) {
           z_obj_class *klass = AS_CLASS(peek(vm, 0));
@@ -2363,7 +2369,8 @@ z_ptr_result run(z_vm *vm, int exit_frame) {
         z_obj_string *name = READ_STRING();
         z_obj_class *klass = AS_CLASS(peek(vm, 0));
         if (!bind_method(vm, klass->superclass, name)) {
-          property_error("class %s does not define a function %s", klass->name->chars, name->chars);
+          EXIT_VM();
+          // property_error("class %s does not define a function %s", klass->name->chars, name->chars);
         }
         break;
       }

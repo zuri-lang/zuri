@@ -514,7 +514,7 @@ static z_obj_func* end_compiler(z_parser* p) {
   emit_return(p);
   z_obj_func* function = p->vm->compiler->function;
 
-#if PRINT_BYTECODE
+#if DEBUG_PRINT_CODE
   if (!p->had_error) {
     disassemble_blob(current_blob(p), function->name == NULL
                                         ? p->module->file

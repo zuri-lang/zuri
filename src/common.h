@@ -65,7 +65,7 @@
 # define DEBUG_PRINT_CODE 1
 # define DEBUG_TABLE 0
 # define DEBUG_GC 0
-# define DEBUG_STACK 0
+# define DEBUG_STACK 1
 
 # define dbg(x) do { x; } while(0)
 # define cond_dbg(c, x) do { if((c)) { x; } } while(0)
