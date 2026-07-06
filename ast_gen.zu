@@ -1,0 +1,205 @@
+var exprs = '
+Nil                :
+Bool               : bool value
+Integer            : i64 value
+Float              : f64 value
+BigNumber          : BigInt value
+Literal            : String token
+Unary              : TokenKind op, Expr right
+Binary             : Expr left, TokenKind op, Expr right
+Logical            : Expr left, TokenKind op, Expr right
+Range              : Expr lower, Expr upper
+Grouping           : Expr expression
+Identifier         : Token token
+Condition          : Expr expression, Expr truth, Expr falsy
+Call               : Expr callee, Vec<Expr> args
+Get                : Expr expression, Token name
+Set                : Expr expression, Token name, Expr value
+Index              : Expr callee, Expr argument
+Slice              : Expr callee, Expr lower, Expr upper
+List               : Vec<Expr> items
+Dict               : Vec<Expr> keys, Vec<Expr> values
+New                : Expr expression, Vec<Expr> arguments
+Parent             :
+Self_              :
+Assign             : Expr expression, Expr value
+Anonymous          : Decl function
+TypeHint           : Vec<Expr> types, bool optional
+Argument           : Token name, Expr type_hint
+'.trim().split('\n')
+
+var stmts = '
+None       :
+Echo       : Expr value
+Expression : Expr expression
+If         : Expr condition, Stmt then_branch, Stmt? else_branch
+While      : Expr condition, Stmt body
+Continue   :
+Break      :
+Raise      : Expr exception
+Return     : Expr value
+Assert     : Expr expression, Expr? message
+Using      : Expr expression, Vec<Expr> case_labels, Vec<Stmt> case_bodies, Stmt? default_case
+Import     : String path, Expr name, Vec<Expr> elements, bool all
+Catch      : Stmt body, Stmt? catch_body, Expr? name
+Block      : Vec<Stmt> body
+Var        : Token name, Expr type_hint, Expr value, bool is_constant
+VarList    : Vec<Stmt> declarations
+'.trim().split('\n')
+
+var decls = '
+None       :
+Stmt      : Stmt statement
+Block      : Vec<Stmt> body
+Import     : String path, Expr name, Vec<Expr> elements, bool all
+Function   : Token name, Vec<Expr> parameters, Stmt body, bool is_variadic
+Method     : Token name, Vec<Expr> parameters, Stmt body, bool is_variadic, bool is_static
+Property   : Token name, Expr value, Expr type_hint, bool is_static, bool is_constant
+Class      : Token name, Expr? superclass, Vec<Decl> properties, Vec<Decl> methods, bool is_extension
+'.trim().split('\n')
+
+import io
+
+var node_kinds = []
+
+var current_out = io.stdout
+io.stdout = file('src/ast.rs', 'w+')
+
+def print_entries(entries, title) {
+  print('#[derive(Debug, Clone, PartialEq)]\n')
+  print('pub enum ${title} {\n')
+
+  for entry in entries {
+    var s = entry.split(':')
+    var name = s[0].trim()
+    var fields = s[1].trim()
+
+    if fields.length() == 0 {
+      print('  ${name},\n')
+      continue
+    }
+
+    print('  ${name}(')
+
+    print(', '.join(
+      fields.split(',')
+        .map(@(field) {
+          var f = field.trim()
+
+          var type_name
+
+          if f.length() > 0 {
+            var parts = f.split(' ')
+            type_name = parts[0].trim()
+            var field_name = parts[1].trim()
+
+            var is_optional = false
+            if type_name.ends_with('?') {
+              is_optional = true
+              type_name = type_name[,-1]
+            }
+
+            if type_name == 'Node' or type_name == 'Expr' or type_name == 'Stmt' or type_name == 'Decl' {
+              type_name = 'Box<${type_name}>'
+            }
+
+            if is_optional {
+              type_name = 'Option<${type_name}>'
+            }
+          }
+
+          return type_name
+        })
+        .filter(@(x) => x != nil)
+    ))
+
+    print('),\n')
+  }
+
+  print('}\n')
+
+  print('
+impl From<${title}> for NodeKind {
+  fn from(e: ${title}) -> Self { NodeKind::${title}(e) }
+}
+  ')
+
+  node_kinds.append(title)
+}
+
+def print_node_kinds() {
+  print('#[derive(Debug, Clone, PartialEq)]\n')
+  print('pub enum NodeKind {\n')
+
+  for kind in node_kinds {
+    print('  ${kind}(${kind}),\n')
+  }
+
+  print('}\n')
+}
+
+def print_node_struct() {
+  print('
+#[derive(Debug, Clone, PartialEq)]
+pub struct Node {
+  pub kind: NodeKind,
+  pub line: usize,
+  pub col: usize,
+}
+
+impl From<Node> for NodeKind {
+  fn from(e: Node) -> Self {
+    e.kind
+  }
+}
+
+impl From<&mut Node> for NodeKind {
+  fn from(e: &mut Node) -> Self {
+    e.clone().kind
+  }
+}
+
+impl Node {
+  pub fn mark_from(&mut self, token: Token) -> Self {
+    self.line = token.line;
+    self.col = token.column;
+    self.clone()
+  }
+}
+')
+}
+
+def print_traits() {
+  print('
+pub trait NodeTrait {
+  fn into_node(self, line: usize, col: usize) -> Node;  
+}
+  ')
+}
+
+def print_imports() {
+  print('
+use big_num::BigInt;
+use crate::token::{Token, TokenKind};
+  ')
+}
+
+print_imports()
+print('\n')
+print_entries(exprs, 'Expr')
+print('\n')
+print_entries(stmts, 'Stmt')
+print('\n')
+print_entries(decls, 'Decl')
+print('\n')
+print_node_kinds()
+print('\n')
+print_node_struct()
+print('\n')
+
+io.stdout.flush()
+io.stdout = current_out
+
+import os
+os.exec('cargo', 'fmt')
+

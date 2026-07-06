@@ -1,0 +1,7 @@
+[package]
+name = "zuri"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+big_num = "0.1.0"

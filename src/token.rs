@@ -1,0 +1,296 @@
+use std::fmt::{self, Debug};
+
+use big_num::BigInt;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TokenKind {
+  // symbols
+  Newline,
+  Lparen,
+  Rparen,
+  Lbracket,
+  Rbracket,
+  Lbrace,
+  Rbrace,
+  Semicolon,
+  Comma,
+  Backslash,
+  Bang,
+  BangEq,
+  Colon,
+  At,
+  Dot,
+  Range,
+  TriDot,
+  Plus,
+  PlusEq,
+  Increment,
+  Minus,
+  MinusEq,
+  Decrement,
+  Multiply,
+  MultiplyEq,
+  Pow,
+  PowEq,
+  Divide,
+  DivideEq,
+  Floor,
+  FloorEq,
+  Equal,
+  EqualEq,
+  Less,
+  LessEq,
+  Lshift,
+  LshiftEq,
+  Greater,
+  GreaterEq,
+  Rshift,
+  RshiftEq,
+  Urshift,
+  UrshiftEq,
+  Percent,
+  PercentEq,
+  Amp,
+  AmpEq,
+  Bar,
+  BarEq,
+  Tilde,
+  TildeEq,
+  Xor,
+  XorEq,
+  Question,
+  Arrow,
+
+  // keywords
+  And,
+  As,
+  Assert,
+  Break,
+  Catch,
+  Class,
+  Const,
+  Continue,
+  Def,
+  Default,
+  Do,
+  Echo,
+  Else,
+  False,
+  Finally,
+  For,
+  If,
+  Import,
+  In,
+  Iter,
+  Nil,
+  New,
+  Or,
+  Parent,
+  Raise,
+  Return,
+  Self_,
+  Static,
+  True,
+  Try,
+  Using,
+  Var,
+  When,
+  While,
+
+  // types token
+  Literal(String),
+  BigNumber(BigInt),
+  Integer(i64),
+  Double(f64),
+  BinNumber(i64),
+  OctNumber(i64),
+  HexNumber(i64),
+  Identifier(String),
+  Decorator(String),
+  Interpolation(String),
+
+  //  * end of file
+  Eof,
+}
+
+impl fmt::Display for TokenKind {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      // TokenKind::Eof => write!(f, "{}", "Eof"),
+
+      // types token
+      TokenKind::Identifier(s) => write!(f, "Identifier{{v={}}}", s),
+      TokenKind::Decorator(s) => write!(f, "Decorator{{v={}}}", s),
+      TokenKind::Interpolation(s) => write!(f, "Interpolation{{v={}}}", s),
+      TokenKind::Literal(s) => write!(f, "Literal{{v={}}}", s),
+      TokenKind::BigNumber(s) => write!(f, "BigNumber{{v={}}}", s),
+      TokenKind::Integer(n) => write!(f, "Integer{{v={}}}", n),
+      TokenKind::Double(n) => write!(f, "Double{{v={}}}", n),
+      TokenKind::BinNumber(s) => write!(f, "BinNumber{{v={}}}", s),
+      TokenKind::OctNumber(n) => write!(f, "OctNumber{{v={}}}", n),
+      TokenKind::HexNumber(n) => write!(f, "HexNumber{{v={}}}", n),
+
+      _ => write!(f, "{:?}", self),
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+  pub kind: TokenKind,
+  pub line: usize,
+  pub column: usize,
+}
+
+impl Token {
+  #[inline]
+  pub fn new(kind: TokenKind, line: usize, column: usize) -> Self {
+    Self { kind, line, column }
+  }
+
+  #[inline]
+  pub fn copy_to(&self, kind: TokenKind) -> Self {
+    Self::new(kind, self.line, self.column)
+  }
+}
+
+impl fmt::Display for Token {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(
+      f,
+      "Token{{kind={} at line={}, column={}}}",
+      self.kind, self.line, self.column
+    )
+  }
+}
+
+pub static ASSIGNMENT_TOKENS: &[TokenKind] = &[
+  TokenKind::Equal,
+  TokenKind::PlusEq,
+  TokenKind::MinusEq,
+  TokenKind::MultiplyEq,
+  TokenKind::DivideEq,
+  TokenKind::FloorEq,
+  TokenKind::PowEq,
+  TokenKind::PercentEq,
+  TokenKind::AmpEq,
+  TokenKind::BarEq,
+  TokenKind::TildeEq,
+  TokenKind::XorEq,
+  TokenKind::LshiftEq,
+  TokenKind::RshiftEq,
+  TokenKind::UrshiftEq,
+];
+
+pub fn get_assignment_alt(kind: TokenKind) -> TokenKind {
+  match kind {
+    TokenKind::PlusEq => TokenKind::Plus,
+    TokenKind::MinusEq => TokenKind::Minus,
+    TokenKind::MultiplyEq => TokenKind::Multiply,
+    TokenKind::DivideEq => TokenKind::Divide,
+    TokenKind::FloorEq => TokenKind::Floor,
+    TokenKind::PowEq => TokenKind::Pow,
+    TokenKind::PercentEq => TokenKind::Percent,
+    TokenKind::AmpEq => TokenKind::Amp,
+    TokenKind::BarEq => TokenKind::Bar,
+    TokenKind::TildeEq => TokenKind::Tilde,
+    TokenKind::XorEq => TokenKind::Xor,
+    TokenKind::LshiftEq => TokenKind::Lshift,
+    TokenKind::RshiftEq => TokenKind::Rshift,
+    TokenKind::UrshiftEq => TokenKind::Urshift,
+    _ => kind,
+  }
+}
+
+pub static FACTOR_OPERATOR_TOKENS: &[TokenKind] = &[
+  TokenKind::Multiply,
+  TokenKind::Divide,
+  TokenKind::Floor,
+  TokenKind::Pow,
+  TokenKind::Percent,
+];
+
+pub static EQUALITY_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::BangEq, TokenKind::EqualEq];
+
+pub static TERM_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::Plus, TokenKind::Minus];
+
+pub static SHIFT_OPERATOR_TOKENS: &[TokenKind] =
+  &[TokenKind::Lshift, TokenKind::Rshift, TokenKind::Urshift];
+
+pub static BINARY_OPERATOR_TOKENS: &[TokenKind] = &[
+  TokenKind::Plus,
+  TokenKind::Minus,
+  TokenKind::Multiply,
+  TokenKind::Divide,
+  TokenKind::Floor,
+  TokenKind::Pow,
+  TokenKind::Percent,
+  TokenKind::Amp,
+  TokenKind::Bar,
+  TokenKind::Tilde,
+  TokenKind::Xor,
+  TokenKind::Lshift,
+  TokenKind::Rshift,
+  TokenKind::Urshift,
+];
+
+pub static COMPARISON_OPERATOR_TOKENS: &[TokenKind] = &[
+  TokenKind::EqualEq,
+  TokenKind::BangEq,
+  TokenKind::Less,
+  TokenKind::LessEq,
+  TokenKind::Greater,
+  TokenKind::GreaterEq,
+];
+
+pub static UNARY_OPERATOR_TOKENS: &[TokenKind] = &[
+  TokenKind::Bang,
+  TokenKind::Minus,
+  TokenKind::Plus,
+  TokenKind::Tilde,
+];
+
+pub static LOGICAL_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::And, TokenKind::Or];
+
+pub static KEYWORD_TOKENS: &[TokenKind] = &[
+  TokenKind::And,
+  TokenKind::As,
+  TokenKind::Assert,
+  TokenKind::Break,
+  TokenKind::Catch,
+  TokenKind::Class,
+  TokenKind::Const,
+  TokenKind::Continue,
+  TokenKind::Def,
+  TokenKind::Default,
+  TokenKind::Do,
+  TokenKind::Echo,
+  TokenKind::Else,
+  TokenKind::False,
+  TokenKind::Finally,
+  TokenKind::For,
+  TokenKind::If,
+  TokenKind::Import,
+  TokenKind::In,
+  TokenKind::Iter,
+  TokenKind::Nil,
+  TokenKind::New,
+  TokenKind::Or,
+  TokenKind::Parent,
+  TokenKind::Raise,
+  TokenKind::Return,
+  TokenKind::Self_,
+  TokenKind::Static,
+  TokenKind::True,
+  TokenKind::Try,
+  TokenKind::Using,
+  TokenKind::Var,
+  TokenKind::When,
+  TokenKind::While,
+];
+
+pub static EMPTY_TOKEN: Token = Token {
+  kind: TokenKind::Eof,
+  line: 0,
+  column: 0,
+};
