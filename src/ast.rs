@@ -2,9 +2,8 @@ use crate::token::{Token, TokenKind};
 use big_num::BigInt;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Type {
+pub enum Primitive {
   Void,
-  Any,
   Bool,
   Int8,
   Int16,
@@ -17,6 +16,12 @@ pub enum Type {
   Float32,
   Float64,
   String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+  Infer,
+  Primitive(Primitive),
   Defined(Token),
   Typed(Box<Type>, Box<Type>),
   Vector(Box<Type>, Vec<Type>),
@@ -44,7 +49,7 @@ pub enum Expr {
   Slice(Box<Expr>, Box<Expr>, Box<Expr>),
   List(Vec<Expr>),
   Dict(Vec<Expr>, Vec<Expr>),
-  New(Box<Expr>, Vec<Expr>),
+  New(Box<Type>, Vec<Expr>),
   Parent,
   Self_,
   Assign(Box<Expr>, Box<Expr>),

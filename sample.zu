@@ -6,3 +6,9 @@ def add(a: int, b: int) int {
 var a: float = @(x, y, ...args) float {
   return 1.0
 }
+
+var a: List<int> = []
+
+var b: Map<string, List<float>> = {}
+
+var b: Map<string, List<float>> = new Map<string, List<float>>()

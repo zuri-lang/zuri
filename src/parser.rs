@@ -2,23 +2,21 @@
 
 use std::fmt::{self, Display};
 
-use crate::ast::{Decl, Expr, Node, NodeKind, Stmt, Type};
-use crate::lexer::{Lexer, LexerError};
+use crate::ast::{Decl, Expr, Node, NodeKind, Primitive, Stmt, Type};
+use crate::lexer::Lexer;
 use crate::token::*;
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
   pub message: String,
-  pub line: String,
   pub line_number: usize,
   pub offset: usize,
   pub length: usize,
 }
 
 impl ParseError {
-  pub fn new(line: String, message: String, token: &Token) -> Self {
+  pub fn new(message: String, token: Token) -> Self {
     Self {
-      line,
       message: message,
       line_number: token.line,
       offset: token.column,
@@ -64,14 +62,15 @@ impl Display for Checkpoint {
   }
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct Parser<'a> {
-  lexer: &'a Lexer<'a>,
+  lexer: &'a mut Lexer<'a>,
   block_count: usize,
-  current: usize,
+  current: Token,
+  previous: Token,
+  last_previous: Token,
   anonymous_count: usize,
   pub errors: Vec<ParseError>,
-  pub lex_errors: Vec<LexerError>,
 }
 
 impl<'a> Display for Parser<'a> {
@@ -89,23 +88,25 @@ impl<'a> Display for Parser<'a> {
 
 impl<'a> Parser<'a> {
   pub fn new(lexer: &'a mut Lexer<'a>) -> Self {
-    if let Err(errors) = lexer.run() {
-      return Self {
-        lexer: lexer,
-        block_count: 0,
-        current: 0,
-        anonymous_count: 0,
-        lex_errors: errors.clone(),
-        errors: Vec::new(),
-      };
-    }
-
     Self {
       lexer: lexer,
       block_count: 0,
-      current: 0,
+      current: Token {
+        kind: TokenKind::None,
+        line: 0,
+        column: 0,
+      },
+      previous: Token {
+        kind: TokenKind::None,
+        line: 0,
+        column: 0,
+      },
+      last_previous: Token {
+        kind: TokenKind::None,
+        line: 0,
+        column: 0,
+      },
       anonymous_count: 0,
-      lex_errors: Vec::new(),
       errors: Vec::new(),
     }
   }
@@ -117,14 +118,13 @@ impl<'a> Parser<'a> {
   fn report_error(&mut self, message: String) {
     let line = self.lexer.line.to_string();
     let token = self.peek().clone();
-    self.errors.push(ParseError::new(line, message, &token));
+    self.errors.push(ParseError::new(message, token));
   }
 
   fn mark(&self) -> Checkpoint {
-    let t = &self.lexer.tokens[self.current];
     Checkpoint {
-      line: t.line,
-      col: t.column,
+      line: self.lexer.line,
+      col: self.lexer.current,
     }
   }
 
@@ -140,35 +140,35 @@ impl<'a> Parser<'a> {
     start.finish(f(self))
   }
 
+  #[inline]
   fn peek(&self) -> &Token {
-    &self.lexer.tokens[self.current]
+    &self.current
   }
 
-  fn peek_nth(&self, nth: usize) -> &Token {
-    let target_idx = self.current + nth;
-
-    if target_idx >= self.lexer.tokens.len() {
-      // Safe because an EOF token physically lives inside the array at the end
-      return self.lexer.tokens.last().unwrap();
-    }
-
-    &self.lexer.tokens[target_idx]
+  fn peek_next(&mut self) -> Token {
+    self.advance();
+    let value = self.peek().clone();
+    self.rewind();
+    value
   }
 
+  #[inline]
   fn previous(&self) -> &Token {
-    &self.lexer.tokens[self.current - 1]
+    &self.previous
   }
 
+  #[inline]
   fn is_at_end(&self) -> bool {
-    matches!(self.peek().kind, TokenKind::Eof)
+    matches!(self.current.kind, TokenKind::Eof)
   }
 
+  #[inline]
   fn check(&self, kind: TokenKind) -> bool {
-    if self.is_at_end() && !matches!(kind, TokenKind::Eof) {
-      return false;
-    }
+    // if self.is_at_end() && !matches!(kind, TokenKind::Eof) {
+    //   return false;
+    // }
 
-    same_kind(self.peek().kind.clone(), kind)
+    same_kind(self.current.kind.clone(), kind)
   }
 
   fn check_any(&self, kinds: &[TokenKind]) -> bool {
@@ -186,18 +186,38 @@ impl<'a> Parser<'a> {
   }
 
   fn advance(&mut self) -> &Token {
-    if self.is_at_end() {
-      return &EMPTY_TOKEN;
+    self.last_previous = self.previous.clone();
+    self.previous = self.current.clone();
+
+    loop {
+      self.current = self.lexer.scan();
+      if self.current.kind == TokenKind::None {
+        continue;
+      }
+
+      if same_kind(
+        self.current.kind.clone(),
+        TokenKind::Error("".to_string(), 0, 0),
+      ) {
+        if let TokenKind::Error(message, line, col) = self.current.kind.clone() {
+          self
+            .errors
+            .push(ParseError::new(message, self.current.clone()));
+        }
+
+        continue;
+      }
+
+      break;
     }
 
-    self.current += 1;
-    self.previous()
+    &self.previous
   }
 
   fn rewind(&mut self) {
-    if self.current > 0 {
-      self.current -= 1;
-    }
+    self.current = self.previous.clone();
+    self.previous = self.last_previous.clone();
+    self.lexer.rewind();
   }
 
   fn match_token(&mut self, kind: TokenKind) -> bool {
@@ -255,7 +275,7 @@ impl<'a> Parser<'a> {
 
     self.consume(TokenKind::Newline, "End of statement expected");
 
-    while self.match_any(&[TokenKind::Newline, TokenKind::Semicolon]) {}
+    while self.match_any(&[TokenKind::Newline, TokenKind::Semicolon, TokenKind::None]) {}
   }
 
   fn ignore_newlines_only(&mut self) {
@@ -263,7 +283,7 @@ impl<'a> Parser<'a> {
   }
 
   fn ignore_newlines(&mut self) {
-    while self.match_any(&[TokenKind::Newline, TokenKind::Semicolon]) {}
+    while self.match_any(&[TokenKind::Newline, TokenKind::Semicolon, TokenKind::None]) {}
   }
 
   //-----------------------------------------------------------------------------------
@@ -290,58 +310,58 @@ impl<'a> Parser<'a> {
   fn get_type_from_token(&mut self, token: Token) -> Type {
     if let TokenKind::Identifier(name) = token.kind.clone() {
       match name.as_str() {
-        "any" => Type::Any,
-        "bool" => Type::Bool,
-        "void" => Type::Void,
-        "i8" => Type::Int8,
-        "i16" => Type::Int16,
-        "i32" | "int" => Type::Int32,
-        "i64" => Type::Int64,
-        "u8" => Type::UInt8,
-        "u16" => Type::UInt16,
-        "u32" => Type::UInt32,
-        "u64" => Type::UInt64,
-        "f32" | "float" => Type::Float32,
-        "f64" => Type::Float64,
-        "string" => Type::String,
+        "bool" => Type::Primitive(Primitive::Bool),
+        "void" => Type::Primitive(Primitive::Void),
+        "i8" => Type::Primitive(Primitive::Int8),
+        "i16" => Type::Primitive(Primitive::Int16),
+        "i32" | "int" => Type::Primitive(Primitive::Int32),
+        "i64" => Type::Primitive(Primitive::Int64),
+        "u8" => Type::Primitive(Primitive::UInt8),
+        "u16" => Type::Primitive(Primitive::UInt16),
+        "u32" => Type::Primitive(Primitive::UInt32),
+        "u64" => Type::Primitive(Primitive::UInt64),
+        "f32" | "float" => Type::Primitive(Primitive::Float32),
+        "f64" => Type::Primitive(Primitive::Float64),
+        "string" => Type::Primitive(Primitive::String),
         _ => Type::Defined(token),
       }
     } else {
       self.report_error("Invalid type declaration.".to_string());
-      Type::Any
+      Type::Infer
     }
   }
 
   fn parse_type(&mut self) -> Type {
+    self.lexer.start_lexing_type();
     let name = self.consume(TokenKind::Identifier("".to_string()), "Expected type name");
 
-    if self.match_token(TokenKind::Lbracket) {
-      let inner_name = self.consume(TokenKind::Identifier("".to_string()), "Expected type name");
+    let result = if self.match_token(TokenKind::Less) {
+      let inner_type = self.parse_type();
 
       let result = if self.check(TokenKind::Comma) {
         let mut types = Vec::new();
 
         while self.match_token(TokenKind::Comma) {
-          let inner_name =
-            self.consume(TokenKind::Identifier("".to_string()), "Expected type name");
-
-          types.push(self.get_type_from_token(inner_name));
+          types.push(self.parse_type());
         }
 
         Type::Vector(Box::new(self.get_type_from_token(name)), types)
       } else {
         Type::Typed(
           Box::new(self.get_type_from_token(name)),
-          Box::new(self.get_type_from_token(inner_name)),
+          Box::new(inner_type),
         )
       };
 
-      self.consume(TokenKind::Rbracket, "Expected ']' after compound type");
+      self.consume(TokenKind::Greater, "Expected '>' after compound type");
 
       result
     } else {
       self.get_type_from_token(name)
-    }
+    };
+
+    self.lexer.stop_lexing_type();
+    result
   }
 
   fn parse_args(&mut self) -> Expr {
@@ -355,7 +375,7 @@ impl<'a> Parser<'a> {
     let type_hint = if self.match_token(TokenKind::Colon) {
       self.parse_type()
     } else {
-      Type::Any
+      Type::Infer
     };
 
     Expr::Argument(name, Box::new(type_hint))
@@ -525,10 +545,10 @@ impl<'a> Parser<'a> {
   }
 
   fn new_statement(&mut self) -> Expr {
-    let expr = self.primary();
+    let type_ = self.parse_type();
     let mut args = Vec::new();
 
-    self.consume(TokenKind::Lparen, "Expected ')' after class name");
+    self.consume(TokenKind::Lparen, "Expected '(' after class name");
     self.ignore_newlines();
 
     if !self.check(TokenKind::Rparen) {
@@ -543,7 +563,7 @@ impl<'a> Parser<'a> {
     self.ignore_newlines();
     self.consume(TokenKind::Rparen, "Expected ')' after arguments");
 
-    Expr::Call(Box::new(expr), args)
+    Expr::New(Box::new(type_), args)
   }
 
   fn literal(&mut self) -> Expr {
@@ -558,8 +578,7 @@ impl<'a> Parser<'a> {
     let start = self.mark();
 
     // Move unto the primary token itself
-    self.advance();
-    let prev = self.previous().clone();
+    let prev = self.advance().clone();
 
     match prev.kind {
       TokenKind::False => Expr::Bool(false),
@@ -621,7 +640,7 @@ impl<'a> Parser<'a> {
       } else if self.match_token(TokenKind::Lbracket) {
         callee = self.finish_index(callee);
       } else if same_kind(self.peek().clone().kind, TokenKind::Newline)
-        && same_kind(self.peek_nth(1).clone().kind, TokenKind::Dot)
+        && same_kind(self.peek_next().clone().kind, TokenKind::Dot)
       {
         self.advance();
       } else {
@@ -664,9 +683,10 @@ impl<'a> Parser<'a> {
 
   fn unary(&mut self) -> Expr {
     if self.match_any(UNARY_OPERATOR_TOKENS) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.unary();
-      return Expr::Unary(self.previous().clone().kind, Box::new(right));
+      return Expr::Unary(op, Box::new(right));
     }
 
     self.assign_expr()
@@ -676,13 +696,11 @@ impl<'a> Parser<'a> {
     let mut expr = self.unary();
 
     while self.match_any(FACTOR_OPERATOR_TOKENS) {
+      let op = self.previous().clone().kind;
+
       self.ignore_newlines();
       let right = self.unary();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -692,13 +710,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.factor();
 
     while self.match_any(TERM_OPERATOR_TOKENS) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.factor();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -708,13 +723,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.term();
 
     while self.match_any(SHIFT_OPERATOR_TOKENS) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.term();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -724,13 +736,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.shift();
 
     while self.match_token(TokenKind::Amp) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.shift();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -740,13 +749,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.bit_and();
 
     while self.match_token(TokenKind::Xor) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.bit_and();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -756,13 +762,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.bit_xor();
 
     while self.match_token(TokenKind::Bar) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.bit_xor();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -772,13 +775,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.bit_or();
 
     while self.match_any(COMPARISON_OPERATOR_TOKENS) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.bit_or();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -788,13 +788,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.comparison();
 
     while self.match_any(EQUALITY_OPERATOR_TOKENS) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.comparison();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -804,13 +801,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.equality();
 
     while self.match_token(TokenKind::And) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.equality();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -820,13 +814,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.and();
 
     while self.match_token(TokenKind::Or) {
+      let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.and();
-      expr = Expr::Binary(
-        Box::new(expr),
-        self.previous().clone().kind,
-        Box::new(right),
-      );
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -981,7 +972,7 @@ impl<'a> Parser<'a> {
     self.ignore_newlines();
 
     let (return_type, body) = if self.match_token(TokenKind::Arrow) {
-      (Type::Any, Stmt::Return(Box::new(self.expression())))
+      (Type::Infer, Stmt::Return(Box::new(self.expression())))
     } else {
       (
         self.parse_type(),
@@ -1110,7 +1101,12 @@ impl<'a> Parser<'a> {
     // var key = nil
     let key_decl_name = key_id.copy_to(TokenKind::Identifier(" key ".to_string()));
     let key_nil = self.compose_nil();
-    let mut key = Stmt::Var(key_decl_name, Box::new(key_nil), Box::new(Type::Any), false);
+    let mut key = Stmt::Var(
+      key_decl_name,
+      Box::new(key_nil),
+      Box::new(Type::Infer),
+      false,
+    );
 
     // var value = nil
     let value_decl_name = key_id.clone();
@@ -1118,7 +1114,7 @@ impl<'a> Parser<'a> {
     let mut value = Stmt::Var(
       value_decl_name,
       Box::new(value_nil),
-      Box::new(Type::Any),
+      Box::new(Type::Infer),
       false,
     );
 
@@ -1135,7 +1131,7 @@ impl<'a> Parser<'a> {
       value = Stmt::Var(
         value_decl_name2,
         Box::new(value_nil2),
-        Box::new(Type::Any),
+        Box::new(Type::Infer),
         false,
       );
     }
@@ -1440,9 +1436,8 @@ impl<'a> Parser<'a> {
     self.ignore_newlines();
 
     let start = self.mark();
-    self.advance();
 
-    let result = match self.previous().kind {
+    let result = match self.advance().kind {
       TokenKind::As => {
         self.report_error("'as' is only a valid keyword in catch context".to_string());
         Stmt::None
@@ -1519,7 +1514,7 @@ impl<'a> Parser<'a> {
       let type_hint = if self.match_token(TokenKind::Colon) {
         self.parse_type()
       } else {
-        Type::Any
+        Type::Infer
       };
 
       let declaration = if self.match_token(TokenKind::Equal) {
@@ -1574,7 +1569,7 @@ impl<'a> Parser<'a> {
           "Variable parameter name expected.",
         );
 
-        params.push(Expr::Argument(id, Box::new(Type::Any)));
+        params.push(Expr::Argument(id, Box::new(Type::Infer)));
         break;
       }
 
@@ -1629,7 +1624,7 @@ impl<'a> Parser<'a> {
     let type_hint = if self.match_token(TokenKind::Colon) {
       Box::new(self.parse_type())
     } else {
-      Box::new(Type::Any)
+      Box::new(Type::Infer)
     };
 
     let value = if self.match_token(TokenKind::Equal) {
@@ -1739,9 +1734,7 @@ impl<'a> Parser<'a> {
   fn declaration(&mut self) -> Decl {
     self.ignore_newlines();
 
-    self.advance();
-
-    let result = match self.previous().kind {
+    let result = match self.advance().kind {
       TokenKind::Def => self.function_decl(),
       TokenKind::Class => self.class_decl(),
       TokenKind::Lbrace => {
@@ -1768,12 +1761,6 @@ impl<'a> Parser<'a> {
   }
 
   pub fn parse(&mut self) -> Result<Vec<Decl>, Vec<ParseError>> {
-    // If there was an error in the lexer, return empty error. Thereby,
-    // prompting the user to fix the lexer error first.
-    if !self.lex_errors.is_empty() {
-      return Err(Vec::new());
-    }
-
     let mut result = Vec::new();
 
     while !self.is_at_end() {

@@ -4,6 +4,8 @@ use big_num::BigInt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
+  None,
+
   // symbols
   Newline,
   Lparen,
@@ -76,7 +78,6 @@ pub enum TokenKind {
   Echo,
   Else,
   False,
-  Finally,
   For,
   If,
   Import,
@@ -91,7 +92,6 @@ pub enum TokenKind {
   Self_,
   Static,
   True,
-  Try,
   Using,
   Var,
   When,
@@ -111,6 +111,7 @@ pub enum TokenKind {
 
   //  * end of file
   Eof,
+  Error(String, usize, usize),
 }
 
 impl fmt::Display for TokenKind {
@@ -267,7 +268,6 @@ pub static KEYWORD_TOKENS: &[TokenKind] = &[
   TokenKind::Echo,
   TokenKind::Else,
   TokenKind::False,
-  TokenKind::Finally,
   TokenKind::For,
   TokenKind::If,
   TokenKind::Import,
@@ -282,7 +282,6 @@ pub static KEYWORD_TOKENS: &[TokenKind] = &[
   TokenKind::Self_,
   TokenKind::Static,
   TokenKind::True,
-  TokenKind::Try,
   TokenKind::Using,
   TokenKind::Var,
   TokenKind::When,

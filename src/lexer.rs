@@ -1,7 +1,5 @@
 use big_num::BigInt;
-use core::fmt;
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::str::Chars;
 use std::str::FromStr;
 
@@ -31,43 +29,19 @@ fn is_hex(c: char) -> bool {
   c.is_ascii_hexdigit()
 }
 
-#[derive(Debug, Clone)]
-pub struct LexerError {
-  pub message: String,
-  pub line: usize,
-  pub column: usize,
-}
-
-impl LexerError {
-  pub fn new(message: String, line: usize, column: usize) -> Self {
-    Self {
-      message,
-      line,
-      column,
-    }
-  }
-}
-
-impl Display for LexerError {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "[{}:{}] {}", self.line, self.column, self.message)
-  }
-}
-
 #[derive(Clone)]
 pub struct Lexer<'a> {
   pub source: Chars<'a>,
-  pub tokens: Vec<Token>,
   pub line: usize,
   pub current: usize,
-  pub errors: Vec<LexerError>,
 
   // private fields
-  lines: HashMap<usize, usize>,
+  lexing_type: usize,
   start: usize,
   start_line: usize,
   total_count: usize,
   interpolating: Vec<char>,
+  lines: HashMap<usize, usize>,
 }
 
 impl<'a> Lexer<'a> {
@@ -79,18 +53,15 @@ impl<'a> Lexer<'a> {
       start_line: 1,
       current: 0,
       start: 0,
+      lexing_type: 0,
       total_count: source.len(),
       lines: HashMap::new(),
-      tokens: Vec::new(),
-      errors: Vec::new(),
       interpolating: Vec::new(),
     }
   }
 
-  fn make_error(&mut self, message: String) {
-    self
-      .errors
-      .push(LexerError::new(message, self.line, self.start));
+  fn make_error(&mut self, message: String) -> Token {
+    self.make_token(TokenKind::Error(message, self.line, self.start))
   }
 
   fn is_at_end(&self) -> bool {
@@ -107,6 +78,22 @@ impl<'a> Lexer<'a> {
     }
 
     val
+  }
+
+  pub fn rewind(&mut self) {
+    // println!("{}, {}, {}", self.current, self.start, self.line);
+
+    let val = if self.is_at_end() {
+      '\0'
+    } else {
+      self.source.clone().nth(self.current - 1).unwrap()
+    };
+    if val == '\n' {
+      self.line -= 1;
+      // self.lines.remove(&self.line);
+    }
+
+    self.current = self.start;
   }
 
   pub fn match_char(&mut self, c: char) -> bool {
@@ -158,7 +145,7 @@ impl<'a> Lexer<'a> {
     }
   }
 
-  fn add_token(&mut self, kind: TokenKind) {
+  fn make_token(&mut self, kind: TokenKind) -> Token {
     let line_start = if self.lines.is_empty() || self.start_line == 1 {
       0
     } else {
@@ -167,7 +154,7 @@ impl<'a> Lexer<'a> {
 
     let column = self.start - line_start + 1;
 
-    self.tokens.push(Token::new(kind, self.start_line, column));
+    Token::new(kind, self.start_line, column)
   }
 
   fn skip_block_comments(&mut self) {
@@ -222,16 +209,16 @@ impl<'a> Lexer<'a> {
     }
   }
 
-  fn decorator(&mut self) {
+  fn decorator(&mut self) -> Token {
     while is_alphanumeric(self.peek()) {
       self.advance();
     }
-    self.add_token(TokenKind::Decorator(
+    self.make_token(TokenKind::Decorator(
       self.source.as_str()[self.start..self.current].to_string(),
-    ));
+    ))
   }
 
-  fn string(&mut self, c: char) {
+  fn string(&mut self, c: char) -> Token {
     while self.peek() != c && !self.is_at_end() {
       if self.peek() == '&' && self.next() == '{' && self.previous() != '\\' {
         // We're at the start of an interpolation
@@ -241,9 +228,13 @@ impl<'a> Lexer<'a> {
 
         let inter_value = self.unescape_string(c.clone());
 
-        self.add_token(TokenKind::Interpolation(inter_value));
+        let result = if inter_value.is_ok() {
+          self.make_token(TokenKind::Interpolation(inter_value.unwrap()))
+        } else {
+          inter_value.unwrap_err()
+        };
         self.current += 1;
-        return;
+        return result;
       }
 
       if self.peek() == '\\' && (self.next() == c || self.next() == '\\') {
@@ -260,10 +251,15 @@ impl<'a> Lexer<'a> {
     self.match_char(c.clone());
 
     let inter_value = self.unescape_string(c.clone());
-    self.add_token(TokenKind::Literal(inter_value));
+
+    if inter_value.is_ok() {
+      self.make_token(TokenKind::Literal(inter_value.unwrap()))
+    } else {
+      inter_value.unwrap_err()
+    }
   }
 
-  fn number(&mut self) {
+  fn number(&mut self) -> Token {
     if self.previous() == '0' {
       if self.match_char('b') {
         // binary number
@@ -271,30 +267,27 @@ impl<'a> Lexer<'a> {
           self.advance();
         }
 
-        self.add_token(TokenKind::BinNumber(
+        return self.make_token(TokenKind::BinNumber(
           i64::from_str_radix(&self.source.as_str()[self.start..self.current], 2).unwrap(),
         ));
-        return;
       } else if self.match_char('c') {
         // octal number
         while is_octal(self.peek()) {
           self.advance();
         }
 
-        self.add_token(TokenKind::OctNumber(
+        return self.make_token(TokenKind::OctNumber(
           i64::from_str_radix(&self.source.as_str()[self.start..self.current], 8).unwrap(),
         ));
-        return;
       } else if self.match_char('x') {
         // hex number
         while is_hex(self.peek()) {
           self.advance();
         }
 
-        self.add_token(TokenKind::HexNumber(
+        return self.make_token(TokenKind::HexNumber(
           i64::from_str_radix(&self.source.as_str()[self.start..self.current], 16).unwrap(),
         ));
-        return;
       }
     }
 
@@ -306,11 +299,10 @@ impl<'a> Lexer<'a> {
       // we've encountered a big integer
       self.advance();
 
-      self.add_token(TokenKind::BigNumber(BigInt::from_str_radix(
+      return self.make_token(TokenKind::BigNumber(BigInt::from_str_radix(
         &self.source.as_str()[self.start..self.current],
         10,
       )));
-      return;
     }
 
     if self.peek() == '.' && is_digit(self.next()) {
@@ -338,13 +330,13 @@ impl<'a> Lexer<'a> {
     let number = &self.source.as_str()[self.start..self.current].replace("_", "");
 
     if number.contains(".") {
-      self.add_token(TokenKind::Double(f64::from_str(number).unwrap()));
+      self.make_token(TokenKind::Double(f64::from_str(number).unwrap()))
     } else {
-      self.add_token(TokenKind::Integer(i64::from_str(number).unwrap()));
+      self.make_token(TokenKind::Integer(i64::from_str(number).unwrap()))
     }
   }
 
-  fn identifier(&mut self) {
+  fn identifier(&mut self) -> Token {
     while is_alphanumeric(self.peek()) {
       self.advance();
     }
@@ -352,45 +344,43 @@ impl<'a> Lexer<'a> {
     let name = &self.source.as_str()[self.start..self.current];
 
     match name {
-      "and" => self.add_token(TokenKind::And),
-      "as" => self.add_token(TokenKind::As),
-      "assert" => self.add_token(TokenKind::Assert),
-      "break" => self.add_token(TokenKind::Break),
-      "catch" => self.add_token(TokenKind::Catch),
-      "class" => self.add_token(TokenKind::Class),
-      "const" => self.add_token(TokenKind::Const),
-      "continue" => self.add_token(TokenKind::Continue),
-      "def" => self.add_token(TokenKind::Def),
-      "default" => self.add_token(TokenKind::Default),
-      "do" => self.add_token(TokenKind::Do),
-      "echo" => self.add_token(TokenKind::Echo),
-      "else" => self.add_token(TokenKind::Else),
-      "false" => self.add_token(TokenKind::False),
-      "finally" => self.add_token(TokenKind::Finally),
-      "for" => self.add_token(TokenKind::For),
-      "if" => self.add_token(TokenKind::If),
-      "import" => self.add_token(TokenKind::Import),
-      "in" => self.add_token(TokenKind::In),
-      "iter" => self.add_token(TokenKind::Iter),
-      "nil" => self.add_token(TokenKind::Nil),
-      "new" => self.add_token(TokenKind::New),
-      "or" => self.add_token(TokenKind::Or),
-      "parent" => self.add_token(TokenKind::Parent),
-      "raise" => self.add_token(TokenKind::Raise),
-      "return" => self.add_token(TokenKind::Return),
-      "self_" => self.add_token(TokenKind::Self_),
-      "static" => self.add_token(TokenKind::Static),
-      "true" => self.add_token(TokenKind::True),
-      "try" => self.add_token(TokenKind::Try),
-      "using" => self.add_token(TokenKind::Using),
-      "var" => self.add_token(TokenKind::Var),
-      "when" => self.add_token(TokenKind::When),
-      "while" => self.add_token(TokenKind::While),
-      _ => self.add_token(TokenKind::Identifier(name.to_string())),
+      "and" => self.make_token(TokenKind::And),
+      "as" => self.make_token(TokenKind::As),
+      "assert" => self.make_token(TokenKind::Assert),
+      "break" => self.make_token(TokenKind::Break),
+      "catch" => self.make_token(TokenKind::Catch),
+      "class" => self.make_token(TokenKind::Class),
+      "const" => self.make_token(TokenKind::Const),
+      "continue" => self.make_token(TokenKind::Continue),
+      "def" => self.make_token(TokenKind::Def),
+      "default" => self.make_token(TokenKind::Default),
+      "do" => self.make_token(TokenKind::Do),
+      "echo" => self.make_token(TokenKind::Echo),
+      "else" => self.make_token(TokenKind::Else),
+      "false" => self.make_token(TokenKind::False),
+      "for" => self.make_token(TokenKind::For),
+      "if" => self.make_token(TokenKind::If),
+      "import" => self.make_token(TokenKind::Import),
+      "in" => self.make_token(TokenKind::In),
+      "iter" => self.make_token(TokenKind::Iter),
+      "nil" => self.make_token(TokenKind::Nil),
+      "new" => self.make_token(TokenKind::New),
+      "or" => self.make_token(TokenKind::Or),
+      "parent" => self.make_token(TokenKind::Parent),
+      "raise" => self.make_token(TokenKind::Raise),
+      "return" => self.make_token(TokenKind::Return),
+      "self_" => self.make_token(TokenKind::Self_),
+      "static" => self.make_token(TokenKind::Static),
+      "true" => self.make_token(TokenKind::True),
+      "using" => self.make_token(TokenKind::Using),
+      "var" => self.make_token(TokenKind::Var),
+      "when" => self.make_token(TokenKind::When),
+      "while" => self.make_token(TokenKind::While),
+      _ => self.make_token(TokenKind::Identifier(name.to_string())),
     }
   }
 
-  fn unescape_string(&mut self, quote: char) -> String {
+  fn unescape_string(&mut self, quote: char) -> Result<String, Token> {
     let mut final_str = String::new();
 
     let end = self.current - 1;
@@ -405,10 +395,7 @@ impl<'a> Lexer<'a> {
           final_str.push(char);
           i += 9;
         } else {
-          // // treat it as regular string
-          // final_str.push(c);
-          // Or throw an error
-          self.make_error("invalid unicode escape sequence".to_string());
+          return Err(self.make_error("invalid unicode escape sequence".to_string()));
         }
       } else if c == '\\' && i + 5 < end && self.source.clone().nth(i + 1).unwrap() == 'u' {
         if let Ok(number) = u32::from_str_radix(&self.source.as_str()[i + 2..i + 6], 16) {
@@ -419,7 +406,7 @@ impl<'a> Lexer<'a> {
           // // treat it as regular string
           // final_str.push(c);
           // Or throw an error
-          self.make_error("invalid unicode escape sequence".to_string());
+          return Err(self.make_error("invalid unicode escape sequence".to_string()));
         }
       } else if c == '\\' && i + 3 < end && self.source.clone().nth(i + 1).unwrap() == 'x' {
         if let Ok(number) = u32::from_str_radix(&self.source.as_str()[i + 2..i + 4], 16) {
@@ -430,7 +417,7 @@ impl<'a> Lexer<'a> {
           // // treat it as regular string
           // final_str.push(c);
           // Or throw an error
-          self.make_error("invalid hex escape sequence".to_string());
+          return Err(self.make_error("invalid hex escape sequence".to_string()));
         }
       } else if c == '\\' && i + 1 < end {
         let next = self.source.clone().nth(i + 1).unwrap();
@@ -470,214 +457,211 @@ impl<'a> Lexer<'a> {
       i += 1;
     }
 
-    final_str
+    Ok(final_str)
   }
 
-  pub fn scan(&mut self) {
+  pub fn scan(&mut self) -> Token {
     self.skip_whitespace();
 
     self.start = self.current;
     self.start_line = self.line;
 
     if self.is_at_end() {
-      return;
+      return self.make_token(TokenKind::Eof);
     }
 
     let c = self.advance();
 
     match c {
-      '(' => self.add_token(TokenKind::Lparen),
-      ')' => self.add_token(TokenKind::Rparen),
-      '[' => self.add_token(TokenKind::Lbracket),
-      ']' => self.add_token(TokenKind::Rbracket),
-      '{' => self.add_token(TokenKind::Lbrace),
+      '(' => self.make_token(TokenKind::Lparen),
+      ')' => self.make_token(TokenKind::Rparen),
+      '[' => self.make_token(TokenKind::Lbracket),
+      ']' => self.make_token(TokenKind::Rbracket),
+      '{' => self.make_token(TokenKind::Lbrace),
       '}' => {
         if !self.interpolating.is_empty() {
           if let Some(v) = self.interpolating.pop() {
-            self.string(v);
+            self.string(v)
+          } else {
+            self.make_token(TokenKind::Interpolation("".to_string()))
           }
         } else {
-          self.add_token(TokenKind::Rbrace)
+          self.make_token(TokenKind::Rbrace)
         }
       },
-      ',' => self.add_token(TokenKind::Comma),
-      ';' => self.add_token(TokenKind::Semicolon),
+      ',' => self.make_token(TokenKind::Comma),
+      ';' => self.make_token(TokenKind::Semicolon),
       '@' => {
         if !is_alpha(self.peek()) {
-          self.add_token(TokenKind::At);
+          self.make_token(TokenKind::At)
         } else {
-          self.decorator();
+          self.decorator()
         }
       },
       '.' => {
         if self.match_char('.') {
           if self.match_char('.') {
-            self.add_token(TokenKind::TriDot);
+            self.make_token(TokenKind::TriDot)
           } else {
-            self.add_token(TokenKind::Range);
+            self.make_token(TokenKind::Range)
           }
         } else {
-          self.add_token(TokenKind::Dot);
+          self.make_token(TokenKind::Dot)
         }
       },
       '-' => {
         if self.match_char('-') {
-          self.add_token(TokenKind::Decrement);
+          self.make_token(TokenKind::Decrement)
         } else if self.match_char('=') {
-          self.add_token(TokenKind::MinusEq);
+          self.make_token(TokenKind::MinusEq)
         } else {
-          self.add_token(TokenKind::Minus);
+          self.make_token(TokenKind::Minus)
         }
       },
       '+' => {
         if self.match_char('+') {
-          self.add_token(TokenKind::Increment);
+          self.make_token(TokenKind::Increment)
         } else if self.match_char('=') {
-          self.add_token(TokenKind::PlusEq);
+          self.make_token(TokenKind::PlusEq)
         } else {
-          self.add_token(TokenKind::Plus);
+          self.make_token(TokenKind::Plus)
         }
       },
       '*' => {
         if self.match_char('*') {
           if self.match_char('=') {
-            self.add_token(TokenKind::PowEq);
+            self.make_token(TokenKind::PowEq)
           } else {
-            self.add_token(TokenKind::Pow);
+            self.make_token(TokenKind::Pow)
           }
         } else if self.match_char('=') {
-          self.add_token(TokenKind::MultiplyEq);
+          self.make_token(TokenKind::MultiplyEq)
         } else {
-          self.add_token(TokenKind::Multiply);
+          self.make_token(TokenKind::Multiply)
         }
       },
       '/' => {
         if self.match_char('/') {
           if self.match_char('=') {
-            self.add_token(TokenKind::FloorEq);
+            self.make_token(TokenKind::FloorEq)
           } else {
-            self.add_token(TokenKind::Floor);
+            self.make_token(TokenKind::Floor)
           }
         } else if self.match_char('=') {
-          self.add_token(TokenKind::DivideEq);
+          self.make_token(TokenKind::DivideEq)
         } else {
-          self.add_token(TokenKind::Divide);
+          self.make_token(TokenKind::Divide)
         }
       },
-      '\\' => self.add_token(TokenKind::Backslash),
-      ':' => self.add_token(TokenKind::Colon),
+      '\\' => self.make_token(TokenKind::Backslash),
+      ':' => self.make_token(TokenKind::Colon),
       '<' => {
         if self.match_char('<') {
           if self.match_char('=') {
-            self.add_token(TokenKind::LshiftEq);
+            self.make_token(TokenKind::LshiftEq)
           } else {
-            self.add_token(TokenKind::Lshift);
+            self.make_token(TokenKind::Lshift)
           }
         } else if self.match_char('=') {
-          self.add_token(TokenKind::LessEq);
+          self.make_token(TokenKind::LessEq)
         } else {
-          self.add_token(TokenKind::Less);
+          self.make_token(TokenKind::Less)
         }
       },
       '>' => {
-        if self.match_char('>') {
+        if self.lexing_type == 0 && self.match_char('>') {
           if self.match_char('>') {
             if self.match_char('=') {
-              self.add_token(TokenKind::UrshiftEq);
+              self.make_token(TokenKind::UrshiftEq)
             } else {
-              self.add_token(TokenKind::Urshift);
+              self.make_token(TokenKind::Urshift)
             }
           } else {
             if self.match_char('=') {
-              self.add_token(TokenKind::RshiftEq);
+              self.make_token(TokenKind::RshiftEq)
             } else {
-              self.add_token(TokenKind::Rshift);
+              self.make_token(TokenKind::Rshift)
             }
           }
         } else if self.match_char('=') {
-          self.add_token(TokenKind::GreaterEq);
+          self.make_token(TokenKind::GreaterEq)
         } else {
-          self.add_token(TokenKind::Greater);
+          self.make_token(TokenKind::Greater)
         }
       },
       '!' => {
         if self.match_char('=') {
-          self.add_token(TokenKind::BangEq);
+          self.make_token(TokenKind::BangEq)
         } else {
-          self.add_token(TokenKind::Bang);
+          self.make_token(TokenKind::Bang)
         }
       },
       '=' => {
         if self.match_char('=') {
-          self.add_token(TokenKind::EqualEq);
+          self.make_token(TokenKind::EqualEq)
         } else if self.match_char('>') {
-          self.add_token(TokenKind::Arrow);
+          self.make_token(TokenKind::Arrow)
         } else {
-          self.add_token(TokenKind::Equal);
+          self.make_token(TokenKind::Equal)
         }
       },
       '%' => {
         if self.match_char('=') {
-          self.add_token(TokenKind::PercentEq);
+          self.make_token(TokenKind::PercentEq)
         } else {
-          self.add_token(TokenKind::Percent);
+          self.make_token(TokenKind::Percent)
         }
       },
       '&' => {
         if self.match_char('=') {
-          self.add_token(TokenKind::AmpEq);
+          self.make_token(TokenKind::AmpEq)
         } else {
-          self.add_token(TokenKind::Amp);
+          self.make_token(TokenKind::Amp)
         }
       },
       '|' => {
         if self.match_char('=') {
-          self.add_token(TokenKind::BarEq);
+          self.make_token(TokenKind::BarEq)
         } else {
-          self.add_token(TokenKind::Bar);
+          self.make_token(TokenKind::Bar)
         }
       },
       '^' => {
         if self.match_char('=') {
-          self.add_token(TokenKind::XorEq);
+          self.make_token(TokenKind::XorEq)
         } else {
-          self.add_token(TokenKind::Xor);
+          self.make_token(TokenKind::Xor)
         }
       },
       '~' => {
         if self.match_char('=') {
-          self.add_token(TokenKind::TildeEq);
+          self.make_token(TokenKind::TildeEq)
         } else {
-          self.add_token(TokenKind::Tilde);
+          self.make_token(TokenKind::Tilde)
         }
       },
-      '?' => self.add_token(TokenKind::Question),
-      '\n' => self.add_token(TokenKind::Newline),
+      '?' => self.make_token(TokenKind::Question),
+      '\n' => self.make_token(TokenKind::Newline),
       '\'' | '"' => self.string(c),
       _ => {
         if is_digit(c) {
-          self.number();
+          self.number()
         } else if is_alpha(c) {
-          self.identifier();
+          self.identifier()
         } else {
           self.make_error(format!("Unexpected character {}", c))
         }
       },
-    };
+    }
   }
 
-  pub fn run(&mut self) -> Result<&mut Vec<Token>, Vec<LexerError>> {
-    while !self.is_at_end() {
-      self.skip_whitespace();
-      self.scan();
-    }
+  pub fn start_lexing_type(&mut self) {
+    self.lexing_type += 1;
+  }
 
-    self.add_token(TokenKind::Eof);
-
-    if self.errors.is_empty() {
-      Ok(self.tokens.as_mut())
-    } else {
-      Err(self.errors.clone())
+  pub fn stop_lexing_type(&mut self) {
+    if self.lexing_type > 0 {
+      self.lexing_type -= 1;
     }
   }
 }
