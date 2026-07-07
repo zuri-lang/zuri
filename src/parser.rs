@@ -326,7 +326,6 @@ impl<'a> Parser<'a> {
         _ => Type::Defined(token),
       }
     } else {
-      self.report_error("Invalid type declaration.".to_string());
       Type::Infer
     }
   }
@@ -975,7 +974,11 @@ impl<'a> Parser<'a> {
       (Type::Infer, Stmt::Return(Box::new(self.expression())))
     } else {
       (
-        self.parse_type(),
+        if self.check(TokenKind::Identifier("".to_string())) {
+          self.parse_type()
+        } else {
+          Type::Infer
+        },
         self.match_block("Expected '{' after function declaration".to_string()),
       )
     };
@@ -1600,7 +1603,11 @@ impl<'a> Parser<'a> {
 
     self.ignore_newlines();
 
-    let return_type = self.parse_type();
+    let return_type = if self.check(TokenKind::Identifier("".to_string())) {
+      self.parse_type()
+    } else {
+      Type::Infer
+    };
 
     self.ignore_newlines();
 

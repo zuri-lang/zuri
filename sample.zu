@@ -11,4 +11,6 @@ var a: List<int> = []
 
 var b: Map<string, List<float>> = {}
 
-var b: Map<string, List<float>> = new Map<string, List<float>>()
+var b = new Map<string, List<float>>()
+
+def test(x, y) {}
