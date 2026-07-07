@@ -2,6 +2,27 @@ use crate::token::{Token, TokenKind};
 use big_num::BigInt;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+  Void,
+  Any,
+  Bool,
+  Int8,
+  Int16,
+  Int32,
+  Int64,
+  UInt8,
+  UInt16,
+  UInt32,
+  UInt64,
+  Float32,
+  Float64,
+  String,
+  Defined(Token),
+  Typed(Box<Type>, Box<Type>),
+  Vector(Box<Type>, Vec<Type>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
   Nil,
   Bool(bool),
@@ -28,8 +49,7 @@ pub enum Expr {
   Self_,
   Assign(Box<Expr>, Box<Expr>),
   Anonymous(Box<Decl>),
-  TypeHint(Vec<Expr>, bool),
-  Argument(Token, Box<Expr>),
+  Argument(Token, Box<Type>),
 }
 
 impl From<Expr> for NodeKind {
@@ -54,7 +74,7 @@ pub enum Stmt {
   Import(String, Box<Expr>, Vec<Expr>, bool),
   Catch(Box<Stmt>, Option<Box<Stmt>>, Option<Box<Expr>>),
   Block(Vec<Stmt>),
-  Var(Token, Box<Expr>, Box<Expr>, bool),
+  Var(Token, Box<Expr>, Box<Type>, bool),
   VarList(Vec<Stmt>),
 }
 
@@ -70,9 +90,9 @@ pub enum Decl {
   Stmt(Box<Stmt>),
   Block(Vec<Stmt>),
   Import(String, Box<Expr>, Vec<Expr>, bool),
-  Function(Token, Vec<Expr>, Box<Stmt>, bool),
-  Method(Token, Vec<Expr>, Box<Stmt>, bool, bool),
-  Property(Token, Box<Expr>, Box<Expr>, bool, bool),
+  Function(Token, Vec<Expr>, Box<Type>, Box<Stmt>, bool),
+  Method(Token, Vec<Expr>, Box<Type>, Box<Stmt>, bool, bool),
+  Property(Token, Box<Expr>, Box<Type>, bool, bool),
   Class(Token, Option<Box<Expr>>, Vec<Decl>, Vec<Decl>, bool),
 }
 
@@ -84,6 +104,7 @@ impl From<Decl> for NodeKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeKind {
+  Type(Type),
   Expr(Expr),
   Stmt(Stmt),
   Decl(Decl),
