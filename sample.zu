@@ -1,16 +1,2 @@
-def add(a: int, b: int) int {
-  return a + b
-}
-
-
-var a: float = @(x, y, ...args) float {
-  return 1.0
-}
-
-var a: List<int> = []
-
-var b: Map<string, List<float>> = {}
-
-var b = new Map<string, List<float>>()
-
-def test(x, y) {}
+echo true ? 'ok' : 'no'
+echo 'hello world!'

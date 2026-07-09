@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::str::Chars;
 use std::str::FromStr;
 
-use crate::token::{Token, TokenKind};
+use crate::compiler::token::{Token, TokenKind};
 
 fn is_digit(c: char) -> bool {
   c.is_ascii_digit()
@@ -300,7 +300,7 @@ impl<'a> Lexer<'a> {
       self.advance();
 
       return self.make_token(TokenKind::BigNumber(BigInt::from_str_radix(
-        &self.source.as_str()[self.start..self.current],
+        &self.source.as_str()[self.start..self.current - 1],
         10,
       )));
     }
@@ -330,9 +330,9 @@ impl<'a> Lexer<'a> {
     let number = &self.source.as_str()[self.start..self.current].replace("_", "");
 
     if number.contains(".") {
-      self.make_token(TokenKind::Double(f64::from_str(number).unwrap()))
+      self.make_token(TokenKind::Double(f64::from_str(number).unwrap_or(0.0)))
     } else {
-      self.make_token(TokenKind::Integer(i64::from_str(number).unwrap()))
+      self.make_token(TokenKind::Integer(i64::from_str(number).unwrap_or(0)))
     }
   }
 
@@ -364,7 +364,6 @@ impl<'a> Lexer<'a> {
       "in" => self.make_token(TokenKind::In),
       "iter" => self.make_token(TokenKind::Iter),
       "nil" => self.make_token(TokenKind::Nil),
-      "new" => self.make_token(TokenKind::New),
       "or" => self.make_token(TokenKind::Or),
       "parent" => self.make_token(TokenKind::Parent),
       "raise" => self.make_token(TokenKind::Raise),

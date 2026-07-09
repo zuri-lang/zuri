@@ -1,30 +1,23 @@
-use crate::token::{Token, TokenKind};
+use crate::compiler::token::{Token, TokenKind};
 use big_num::BigInt;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Primitive {
-  Void,
-  Bool,
-  Int8,
-  Int16,
-  Int32,
-  Int64,
-  UInt8,
-  UInt16,
-  UInt32,
-  UInt64,
-  Float32,
-  Float64,
-  String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-  Infer,
-  Primitive(Primitive),
-  Defined(Token),
-  Typed(Box<Type>, Box<Type>),
-  Vector(Box<Type>, Vec<Type>),
+  Any,
+  Bool,
+  Int,
+  Number,
+  String,
+  Bytes,
+  List,
+  Dict,
+  Range,
+  File,
+  Function,
+  Type,
+  Callable,
+  Iterable,
+  Instance(Token),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,8 +31,8 @@ pub enum Expr {
   Unary(TokenKind, Box<Expr>),
   Binary(Box<Expr>, TokenKind, Box<Expr>),
   Logical(Box<Expr>, TokenKind, Box<Expr>),
-  Range(Box<Expr>, Box<Expr>),
   Grouping(Box<Expr>),
+  Range(Box<Expr>, Box<Expr>),
   Identifier(Token),
   Condition(Box<Expr>, Box<Expr>, Box<Expr>),
   Call(Box<Expr>, Vec<Expr>),
@@ -49,12 +42,12 @@ pub enum Expr {
   Slice(Box<Expr>, Box<Expr>, Box<Expr>),
   List(Vec<Expr>),
   Dict(Vec<Expr>, Vec<Expr>),
-  New(Box<Type>, Vec<Expr>),
   Parent,
   Self_,
   Assign(Box<Expr>, Box<Expr>),
   Anonymous(Box<Decl>),
-  Argument(Token, Box<Type>),
+  TypeHint(Vec<Type>, bool),
+  Argument(Token, Box<Expr>),
 }
 
 impl From<Expr> for NodeKind {
@@ -79,7 +72,7 @@ pub enum Stmt {
   Import(String, Box<Expr>, Vec<Expr>, bool),
   Catch(Box<Stmt>, Option<Box<Stmt>>, Option<Box<Expr>>),
   Block(Vec<Stmt>),
-  Var(Token, Box<Expr>, Box<Type>, bool),
+  Var(Token, Box<Expr>, Option<Box<Expr>>, bool),
   VarList(Vec<Stmt>),
 }
 
@@ -95,9 +88,9 @@ pub enum Decl {
   Stmt(Box<Stmt>),
   Block(Vec<Stmt>),
   Import(String, Box<Expr>, Vec<Expr>, bool),
-  Function(Token, Vec<Expr>, Box<Type>, Box<Stmt>, bool),
-  Method(Token, Vec<Expr>, Box<Type>, Box<Stmt>, bool, bool),
-  Property(Token, Box<Expr>, Box<Type>, bool, bool),
+  Function(Token, Vec<Expr>, Box<Stmt>, bool),
+  Method(Token, Vec<Expr>, Box<Stmt>, bool, bool),
+  Property(Token, Box<Expr>, Box<Expr>, bool, bool),
   Class(Token, Option<Box<Expr>>, Vec<Decl>, Vec<Decl>, bool),
 }
 

@@ -84,7 +84,6 @@ pub enum TokenKind {
   In,
   Iter,
   Nil,
-  New,
   Or,
   Parent,
   Raise,
@@ -244,12 +243,8 @@ pub static COMPARISON_OPERATOR_TOKENS: &[TokenKind] = &[
   TokenKind::GreaterEq,
 ];
 
-pub static UNARY_OPERATOR_TOKENS: &[TokenKind] = &[
-  TokenKind::Bang,
-  TokenKind::Minus,
-  TokenKind::Plus,
-  TokenKind::Tilde,
-];
+pub static UNARY_OPERATOR_TOKENS: &[TokenKind] =
+  &[TokenKind::Bang, TokenKind::Minus, TokenKind::Tilde];
 
 pub static LOGICAL_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::And, TokenKind::Or];
 
@@ -274,7 +269,6 @@ pub static KEYWORD_TOKENS: &[TokenKind] = &[
   TokenKind::In,
   TokenKind::Iter,
   TokenKind::Nil,
-  TokenKind::New,
   TokenKind::Or,
   TokenKind::Parent,
   TokenKind::Raise,

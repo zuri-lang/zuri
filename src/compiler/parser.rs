@@ -2,9 +2,9 @@
 
 use std::fmt::{self, Display};
 
-use crate::ast::{Decl, Expr, Node, NodeKind, Primitive, Stmt, Type};
-use crate::lexer::Lexer;
-use crate::token::*;
+use crate::compiler::ast::{Decl, Expr, Node, NodeKind, Stmt, Type};
+use crate::compiler::lexer::Lexer;
+use crate::compiler::token::*;
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
@@ -290,77 +290,46 @@ impl<'a> Parser<'a> {
   // Parts
   //-----------------------------------------------------------------------------------
 
-  // fn parse_type(&mut self) -> Expr {
-  //   let mut types = Vec::new();
-
-  //   let optional = self.match_token(TokenKind::Question);
-
-  //   loop {
-  //     let type_name = self.consume(TokenKind::Identifier("".to_string()), "Expected type name");
-  //     types.push(self.compose_id(type_name));
-
-  //     if !self.match_token(TokenKind::Bar) {
-  //       break;
-  //     }
-  //   }
-
-  //   Expr::TypeHint(types, optional)
-  // }
-
   fn get_type_from_token(&mut self, token: Token) -> Type {
     if let TokenKind::Identifier(name) = token.kind.clone() {
       match name.as_str() {
-        "bool" => Type::Primitive(Primitive::Bool),
-        "void" => Type::Primitive(Primitive::Void),
-        "i8" => Type::Primitive(Primitive::Int8),
-        "i16" => Type::Primitive(Primitive::Int16),
-        "i32" | "int" => Type::Primitive(Primitive::Int32),
-        "i64" => Type::Primitive(Primitive::Int64),
-        "u8" => Type::Primitive(Primitive::UInt8),
-        "u16" => Type::Primitive(Primitive::UInt16),
-        "u32" => Type::Primitive(Primitive::UInt32),
-        "u64" => Type::Primitive(Primitive::UInt64),
-        "f32" | "float" => Type::Primitive(Primitive::Float32),
-        "f64" => Type::Primitive(Primitive::Float64),
-        "string" => Type::Primitive(Primitive::String),
-        _ => Type::Defined(token),
+        "any" => Type::Any,
+        "bool" => Type::Bool,
+        "int" => Type::Int,
+        "number" => Type::Number,
+        "string" => Type::String,
+        "bytes" => Type::Bytes,
+        "list" => Type::List,
+        "dict" => Type::Dict,
+        "range" => Type::Range,
+        "file" => Type::File,
+        "function" => Type::Function,
+        "type" => Type::Type,
+        "callable" => Type::Callable,
+        "iterable" => Type::Iterable,
+        _ => Type::Instance(token),
       }
     } else {
-      Type::Infer
+      Type::Any
     }
   }
 
-  fn parse_type(&mut self) -> Type {
-    self.lexer.start_lexing_type();
-    let name = self.consume(TokenKind::Identifier("".to_string()), "Expected type name");
+  fn parse_type(&mut self, class_type: bool) -> Expr {
+    let is_nullable = self.match_token(TokenKind::Question);
 
-    let result = if self.match_token(TokenKind::Less) {
-      let inner_type = self.parse_type();
+    let mut types = Vec::new();
 
-      let result = if self.check(TokenKind::Comma) {
-        let mut types = Vec::new();
+    loop {
+      let token = self.consume(TokenKind::Identifier("".to_string()), "Expected type name");
 
-        while self.match_token(TokenKind::Comma) {
-          types.push(self.parse_type());
-        }
+      types.push(self.get_type_from_token(token));
 
-        Type::Vector(Box::new(self.get_type_from_token(name)), types)
-      } else {
-        Type::Typed(
-          Box::new(self.get_type_from_token(name)),
-          Box::new(inner_type),
-        )
-      };
+      if !self.match_token(TokenKind::Bar) {
+        break;
+      }
+    }
 
-      self.consume(TokenKind::Greater, "Expected '>' after compound type");
-
-      result
-    } else {
-      self.get_type_from_token(name)
-    };
-
-    self.lexer.stop_lexing_type();
-    result
+    Expr::TypeHint(types, is_nullable)
   }
 
   fn parse_args(&mut self) -> Expr {
@@ -372,9 +341,9 @@ impl<'a> Parser<'a> {
     );
 
     let type_hint = if self.match_token(TokenKind::Colon) {
-      self.parse_type()
+      self.parse_type(false)
     } else {
-      Type::Infer
+      Expr::TypeHint(vec![Type::Any], true)
     };
 
     Expr::Argument(name, Box::new(type_hint))
@@ -413,6 +382,14 @@ impl<'a> Parser<'a> {
 
   fn compose_call(&mut self, callee: Expr, args: Vec<Expr>) -> Expr {
     Expr::Call(Box::new(callee), args)
+  }
+
+  fn compose_literal(&mut self, token: Token) -> Expr {
+    if let TokenKind::Literal(v) = token.kind {
+      Expr::Literal(v.clone())
+    } else {
+      Expr::Literal(token.to_string())
+    }
   }
 
   //-----------------------------------------------------------------------------------
@@ -519,7 +496,7 @@ impl<'a> Parser<'a> {
   }
 
   fn interpolation(&mut self) -> Expr {
-    let mut expr = Expr::Literal(self.previous().to_string());
+    let mut expr = self.compose_literal(self.previous().clone());
 
     loop {
       let mark = self.mark();
@@ -543,30 +520,8 @@ impl<'a> Parser<'a> {
     expr
   }
 
-  fn new_statement(&mut self) -> Expr {
-    let type_ = self.parse_type();
-    let mut args = Vec::new();
-
-    self.consume(TokenKind::Lparen, "Expected '(' after class name");
-    self.ignore_newlines();
-
-    if !self.check(TokenKind::Rparen) {
-      args.push(self.expression());
-
-      while self.match_token(TokenKind::Comma) {
-        self.ignore_newlines();
-        args.push(self.expression());
-      }
-    }
-
-    self.ignore_newlines();
-    self.consume(TokenKind::Rparen, "Expected ')' after arguments");
-
-    Expr::New(Box::new(type_), args)
-  }
-
   fn literal(&mut self) -> Expr {
-    Expr::Literal(self.previous().to_string())
+    self.compose_literal(self.previous().clone())
   }
 
   fn identifier(&mut self) -> Expr {
@@ -585,7 +540,6 @@ impl<'a> Parser<'a> {
       TokenKind::Nil => Expr::Nil,
       TokenKind::Self_ => Expr::Self_,
       TokenKind::Parent => Expr::Parent,
-      TokenKind::New => self.new_statement(),
       TokenKind::Double(v) => Expr::Float(v),
       TokenKind::Integer(v) => Expr::Integer(v),
       TokenKind::BinNumber(v) => Expr::Integer(v),
@@ -777,7 +731,7 @@ impl<'a> Parser<'a> {
       let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.bit_or();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Logical(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -970,17 +924,10 @@ impl<'a> Parser<'a> {
 
     self.ignore_newlines();
 
-    let (return_type, body) = if self.match_token(TokenKind::Arrow) {
-      (Type::Infer, Stmt::Return(Box::new(self.expression())))
+    let body = if self.match_token(TokenKind::Arrow) {
+      Stmt::Return(Box::new(self.expression()))
     } else {
-      (
-        if self.check(TokenKind::Identifier("".to_string())) {
-          self.parse_type()
-        } else {
-          Type::Infer
-        },
-        self.match_block("Expected '{' after function declaration".to_string()),
-      )
+      self.match_block("Expected '{' after function declaration".to_string())
     };
 
     let function = Decl::Function(
@@ -989,7 +936,6 @@ impl<'a> Parser<'a> {
         self.anonymous_count
       ))),
       parameters,
-      Box::new(return_type),
       Box::new(body),
       is_variadic,
     );
@@ -1104,22 +1050,12 @@ impl<'a> Parser<'a> {
     // var key = nil
     let key_decl_name = key_id.copy_to(TokenKind::Identifier(" key ".to_string()));
     let key_nil = self.compose_nil();
-    let mut key = Stmt::Var(
-      key_decl_name,
-      Box::new(key_nil),
-      Box::new(Type::Infer),
-      false,
-    );
+    let mut key = Stmt::Var(key_decl_name, Box::new(key_nil), None, false);
 
     // var value = nil
     let value_decl_name = key_id.clone();
     let value_nil = self.compose_nil();
-    let mut value = Stmt::Var(
-      value_decl_name,
-      Box::new(value_nil),
-      Box::new(Type::Infer),
-      false,
-    );
+    let mut value = Stmt::Var(value_decl_name, Box::new(value_nil), None, false);
 
     if self.match_token(TokenKind::Comma) {
       value_id = self.consume(
@@ -1131,12 +1067,7 @@ impl<'a> Parser<'a> {
 
       let value_decl_name2 = value_id.clone();
       let value_nil2 = self.compose_nil();
-      value = Stmt::Var(
-        value_decl_name2,
-        Box::new(value_nil2),
-        Box::new(Type::Infer),
-        false,
-      );
+      value = Stmt::Var(value_decl_name2, Box::new(value_nil2), None, false);
     }
 
     self.consume(TokenKind::In, "Expected 'in' after 'for' statement.");
@@ -1515,16 +1446,17 @@ impl<'a> Parser<'a> {
       );
 
       let type_hint = if self.match_token(TokenKind::Colon) {
-        self.parse_type()
+        // type hinting
+        Some(Box::new(self.parse_type(false)))
       } else {
-        Type::Infer
+        None
       };
 
       let declaration = if self.match_token(TokenKind::Equal) {
         Stmt::Var(
           name_token.clone(),
           Box::new(self.expression()),
-          Box::new(type_hint),
+          type_hint,
           is_constant,
         )
       } else {
@@ -1535,7 +1467,7 @@ impl<'a> Parser<'a> {
           Stmt::Var(
             name_token.clone(),
             Box::new(self.compose_nil()),
-            Box::new(type_hint),
+            type_hint,
             false,
           )
         }
@@ -1572,7 +1504,10 @@ impl<'a> Parser<'a> {
           "Variable parameter name expected.",
         );
 
-        params.push(Expr::Argument(id, Box::new(Type::Infer)));
+        params.push(Expr::Argument(
+          id,
+          Box::new(Expr::TypeHint(vec![Type::List], false)),
+        ));
         break;
       }
 
@@ -1603,23 +1538,9 @@ impl<'a> Parser<'a> {
 
     self.ignore_newlines();
 
-    let return_type = if self.check(TokenKind::Identifier("".to_string())) {
-      self.parse_type()
-    } else {
-      Type::Infer
-    };
-
-    self.ignore_newlines();
-
     let body = self.match_block("Expected '{' after function declaration".to_string());
 
-    Decl::Function(
-      name,
-      parameters,
-      Box::new(return_type),
-      Box::new(body),
-      is_variadic,
-    )
+    Decl::Function(name, parameters, Box::new(body), is_variadic)
   }
 
   fn class_field(&mut self, is_static: bool, is_constant: bool) -> Decl {
@@ -1629,9 +1550,9 @@ impl<'a> Parser<'a> {
     );
 
     let type_hint = if self.match_token(TokenKind::Colon) {
-      Box::new(self.parse_type())
+      Box::new(self.parse_type(false))
     } else {
-      Box::new(Type::Infer)
+      Box::new(Expr::TypeHint(vec![Type::List], false))
     };
 
     let value = if self.match_token(TokenKind::Equal) {
@@ -1665,20 +1586,9 @@ impl<'a> Parser<'a> {
 
     self.ignore_newlines();
 
-    let return_type = self.parse_type();
-
-    self.ignore_newlines();
-
     let body = self.match_block("Expected '{' after method declaration".to_string());
 
-    Decl::Method(
-      name,
-      parameters,
-      Box::new(return_type),
-      Box::new(body),
-      is_variadic,
-      is_static,
-    )
+    Decl::Method(name, parameters, Box::new(body), is_variadic, is_static)
   }
 
   fn class_decl(&mut self) -> Decl {
@@ -1692,12 +1602,12 @@ impl<'a> Parser<'a> {
     let mut is_extension = false;
 
     let superclass = if self.match_token(TokenKind::Less) {
-      let superclass_name = self.consume(
+      let target_class_name = self.consume(
         TokenKind::Identifier("".to_string()),
         "Superclass name expected.",
       );
 
-      Some(Box::new(self.compose_id(superclass_name)))
+      Some(Box::new(self.compose_id(target_class_name)))
     } else {
       if self.match_token(TokenKind::Greater) {
         is_extension = true;
@@ -1727,6 +1637,10 @@ impl<'a> Parser<'a> {
       } else if self.match_token(TokenKind::Const) {
         properties.push(self.class_field(is_static, true));
       } else {
+        if self.match_token(TokenKind::Def) {
+          // Do nothing. It changes nothing about our program
+        }
+
         methods.push(self.method_decl(is_static));
       }
 
