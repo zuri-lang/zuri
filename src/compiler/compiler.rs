@@ -14,6 +14,13 @@ use crate::{
   },
 };
 
+struct Local {
+  name: String,
+  reg: u8,
+  is_const: bool,
+  depth: usize,
+}
+
 pub struct Compiler<'a> {
   declarations: Vec<Decl>,
   chunk: Chunk,
@@ -23,6 +30,10 @@ pub struct Compiler<'a> {
   /// Every expression that produces a value claims one via `alloc_reg`.
   next_reg: u8,
   max_reg: u8,
+
+  // Handle locals
+  scope_depth: usize,
+  locals: Vec<Local>,
 }
 
 impl<'a> Compiler<'a> {
@@ -35,6 +46,8 @@ impl<'a> Compiler<'a> {
       heap,
       next_reg: 0,
       max_reg: 0,
+      scope_depth: 0,
+      locals: Vec::new(),
     }
   }
 
@@ -48,11 +61,47 @@ impl<'a> Compiler<'a> {
       .checked_add(1)
       .expect("Compiler ran out of registers (>255 live values in one function)");
 
-    if r + 1 > self.max_reg {
-      self.max_reg = r + 1;
-    }
+    self.max_reg = self.max_reg.max(self.next_reg);
 
     r
+  }
+
+  /// Emit a JmpIfFalse with a placeholder offset, returning the index of
+  /// that instruction so the offset can be backfilled once the jump target
+  /// is known.
+  fn emit_jump_if_false(&mut self, cond: u8) -> usize {
+    self.chunk.emit(Instr::JmpIfFalse { cond, offset: 0 })
+  }
+
+  fn emit_jump(&mut self) -> usize {
+    self.chunk.emit(Instr::Jmp { offset: 0 })
+  }
+
+  /// Backfill a placeholder from emit_jump/emit_jump_if_false so it lands on
+  /// "whatever gets emitted next" -- i.e. right here, right now.
+  fn patch_jump(&mut self, jump_at: usize) {
+    let target = self.chunk.code.len();
+    let offset: i16 = (target as isize - (jump_at as isize + 1))
+      .try_into()
+      .expect("jump target too far away: offset does not fit in i16");
+    match &mut self.chunk.code[jump_at] {
+      Instr::Jmp { offset: o } => *o = offset,
+      Instr::JmpIfFalse { offset: o, .. } => *o = offset,
+      other => panic!(
+        "patch_jump: instruction at {} is not a jump, got {:?}",
+        jump_at, other
+      ),
+    }
+  }
+
+  /// Emit an unconditional Jmp back to `loop_start` (an index captured
+  /// earlier). The target's already known, so no patching needed.
+  fn emit_loop(&mut self, loop_start: usize) {
+    let jump_at = self.chunk.code.len();
+    let offset: i16 = (loop_start as isize - (jump_at as isize + 1))
+      .try_into()
+      .expect("loop body too large: offset does not fit in i16");
+    self.chunk.emit(Instr::Jmp { offset });
   }
 
   /// Give back every register allocated since `mark` was taken. Call this
@@ -109,6 +158,30 @@ impl<'a> Compiler<'a> {
         self.chunk.emit(Instr::LoadConst { dst, const_idx });
         dst
       },
+      Expr::Identifier(token) => {
+        let name = match &token.kind {
+          TokenKind::Identifier(s) => s.clone(),
+          other => panic!(
+            "compile_expression: Identifier token is not an identifier: {:?}",
+            other
+          ),
+        };
+        if let Some(reg) = self
+          .locals
+          .iter()
+          .rev()
+          .find(|l| l.name == name)
+          .map(|l| l.reg)
+        {
+          reg // a local: zero instructions, just point at its already-live register
+        } else {
+          let dst = self.alloc_reg();
+          let str_val = self.heap.alloc_string(name);
+          let name_const = self.chunk.add_constant(str_val);
+          self.chunk.emit(Instr::GetGlobal { dst, name_const });
+          dst
+        }
+      },
       Expr::Unary(op, expr) => {
         let src = self.compile_expression(expr);
 
@@ -128,16 +201,18 @@ impl<'a> Compiler<'a> {
         // Mark right after lhs settles -- this is where rhs's own scratch
         // registers (and its own final result register `b`) will start.
         let mark = self.next_reg;
+        let dst = if a >= mark { a } else { self.alloc_reg() };
+
         let b = self.compile_expression(rhs);
 
         let instr = match op {
-          TokenKind::Plus => Instr::Add { dst: a, a, b },
-          TokenKind::Minus => Instr::Sub { dst: a, a, b },
-          TokenKind::Multiply => Instr::Mul { dst: a, a, b },
-          TokenKind::Divide => Instr::Div { dst: a, a, b },
-          TokenKind::Pow => Instr::Pow { dst: a, a, b },
-          TokenKind::Percent => Instr::Mod { dst: a, a, b },
-          TokenKind::Floor => Instr::Floor { dst: a, a, b },
+          TokenKind::Plus => Instr::Add { dst, a, b },
+          TokenKind::Minus => Instr::Sub { dst, a, b },
+          TokenKind::Multiply => Instr::Mul { dst, a, b },
+          TokenKind::Divide => Instr::Div { dst, a, b },
+          TokenKind::Pow => Instr::Pow { dst, a, b },
+          TokenKind::Percent => Instr::Mod { dst, a, b },
+          TokenKind::Floor => Instr::Floor { dst, a, b },
           _ => panic!("compile_expression: unsupported binary operator: {:?}", op),
         };
         self.chunk.emit(instr);
@@ -147,7 +222,7 @@ impl<'a> Compiler<'a> {
         // freed: it now holds the result, reused in place as the destination,
         // so the invariant ("returns R, next_reg == R+1") holds for us too.
         self.free_regs_to(mark);
-        a
+        dst
       },
       Expr::Logical(lhs, op, rhs) => {
         // By the invariant above, `a` is the one register lhs ends up owning.
@@ -156,15 +231,17 @@ impl<'a> Compiler<'a> {
         // Mark right after lhs settles -- this is where rhs's own scratch
         // registers (and its own final result register `b`) will start.
         let mark = self.next_reg;
+        let dst = if a >= mark { a } else { self.alloc_reg() };
+
         let b = self.compile_expression(rhs);
 
         let instr = match op {
-          TokenKind::EqualEq => Instr::Eq { dst: a, a, b },
-          TokenKind::BangEq => Instr::Neq { dst: a, a, b },
-          TokenKind::Less => Instr::Lt { dst: a, a, b },
-          TokenKind::LessEq => Instr::Le { dst: a, a, b },
-          TokenKind::Greater => Instr::Gt { dst: a, a, b },
-          TokenKind::GreaterEq => Instr::Ge { dst: a, a, b },
+          TokenKind::EqualEq => Instr::Eq { dst, a, b },
+          TokenKind::BangEq => Instr::Neq { dst, a, b },
+          TokenKind::Less => Instr::Lt { dst, a, b },
+          TokenKind::LessEq => Instr::Le { dst, a, b },
+          TokenKind::Greater => Instr::Gt { dst, a, b },
+          TokenKind::GreaterEq => Instr::Ge { dst, a, b },
           _ => panic!("compile_expression: unsupported binary operator: {:?}", op),
         };
         self.chunk.emit(instr);
@@ -174,28 +251,85 @@ impl<'a> Compiler<'a> {
         // freed: it now holds the result, reused in place as the destination,
         // so the invariant ("returns R, next_reg == R+1") holds for us too.
         self.free_regs_to(mark);
-        a
+        dst
       },
       Expr::Grouping(expr) => self.compile_expression(expr),
       Expr::Condition(condition, truth, falsey) => {
         let mark = self.next_reg;
-        let a = self.compile_expression(condition);
-        self.free_regs_to(mark);
+        let cond_reg = self.compile_expression(condition);
+        let then_jump = self.emit_jump_if_false(cond_reg);
+        self.free_regs_to(mark); // cond is dead; also frees the slot the result will land in
 
-        let false_jmp = self.chunk.emit(Instr::JmpIfFalse { cond: a, offset: 0 });
+        // Both branches compile starting from the same `mark`, so by the
+        // compile_expression invariant (a fully-collapsed expression's result
+        // always lands in the very first register it allocates) they're
+        // guaranteed to land in the SAME register regardless of which one
+        // actually runs -- that's what makes this safe without a Move.
+        let then_result = self.compile_expression(truth);
+        debug_assert_eq!(
+          then_result, mark,
+          "ternary branches must land in the same register"
+        );
+        let else_jump = self.emit_jump(); // skip else after then runs
+        self.free_regs_to(mark); // reclaim before the other, mutually-exclusive branch
 
-        self.compile_expression(truth);
-        self.free_regs_to(mark);
-        let exit_jmp = self.chunk.emit(Instr::Jmp { offset: 0 });
+        self.patch_jump(then_jump); // false lands here: start of else
+        let else_result = self.compile_expression(falsey);
+        debug_assert_eq!(
+          else_result, mark,
+          "ternary branches must land in the same register"
+        );
+        self.patch_jump(else_jump); // after else: land here
 
-        self.chunk.patch_false_jump(a, false_jmp);
+        mark // whichever branch ran, its result is sitting in `mark`
+      },
+      Expr::Assign(target, value) => {
+        let name = match target.as_ref() {
+          Expr::Identifier(token) => match &token.kind {
+            TokenKind::Identifier(s) => s.clone(),
 
-        self.compile_expression(falsey);
-        self.free_regs_to(mark);
+            // TODO: Return proper compiler error
+            other => panic!("compile: Assign target is not an identifier: {:?}", other),
+          },
+          // TODO: Return proper compiler error
+          other => panic!("compile: unsupported assignment target: {:?}", other),
+        };
 
-        self.chunk.patch_jump(exit_jmp);
+        // Copy what's needed out of `self.locals` before compiling `value`
+        // (needs &mut self) -- can't hold a borrow of locals across that call.
+        let resolved = self
+          .locals
+          .iter()
+          .rev()
+          .find(|l| l.name == name)
+          .map(|l| (l.reg, l.is_const));
 
-        a
+        match resolved {
+          Some((_, true)) => panic!("compile: cannot assign to constant '{}'", name),
+          Some((dst, false)) => {
+            let value_reg = self.compile_expression(value);
+            if value_reg != dst {
+              self.chunk.emit(Instr::Move {
+                dst,
+                src: value_reg,
+              });
+              self.free_regs_to(value_reg);
+            }
+            dst
+          },
+          None => {
+            // Not a known local -- treat it as a global, same mechanism
+            // "fib" uses to find itself.
+            let value_reg = self.compile_expression(value);
+            let str_val = self.heap.alloc_string(name);
+            let name_const = self.chunk.add_constant(str_val);
+            self.chunk.emit(Instr::SetGlobal {
+              name_const,
+              src: value_reg,
+            });
+            value_reg
+          },
+        }
       },
       _ => {
         panic!(
@@ -217,10 +351,86 @@ impl<'a> Compiler<'a> {
       },
       Stmt::Block(statements) => {
         let mark = self.next_reg;
+        let locals_mark = self.locals.len();
+        self.scope_depth += 1;
+
         for stmt in statements {
           self.compile_statement(stmt);
         }
+
+        self.scope_depth -= 1;
+        self.locals.truncate(locals_mark); // names declared in this block are gone
         self.free_regs_to(mark);
+      },
+      Stmt::If(condition, then_branch, else_branch) => {
+        let mark = self.next_reg;
+        let cond_reg = self.compile_expression(condition);
+        let then_jump = self.emit_jump_if_false(cond_reg);
+        self.free_regs_to(mark); // cond is consumed by the jump test, dead now
+
+        self.compile_statement(then_branch);
+
+        match else_branch {
+          Some(else_stmt) => {
+            let else_jump = self.emit_jump(); // skip the else after then runs
+            self.patch_jump(then_jump); // false lands here: start of else
+            self.compile_statement(else_stmt);
+            self.patch_jump(else_jump); // after else: land here
+          },
+          None => {
+            self.patch_jump(then_jump); // false skips straight past then
+          },
+        }
+      },
+      Stmt::While(cond, body) => {
+        let loop_start = self.chunk.code.len(); // jump-back target
+
+        let mark = self.next_reg;
+        let cond_reg = self.compile_expression(cond);
+        let exit_jump = self.emit_jump_if_false(cond_reg);
+        self.free_regs_to(mark);
+
+        self.compile_statement(body);
+        self.emit_loop(loop_start); // back to re-evaluate cond
+
+        self.patch_jump(exit_jump); // false condition lands here, past the loop
+      },
+      Stmt::VarList(list) => {
+        for item in list {
+          self.compile_statement(item);
+        }
+      },
+      Stmt::Var(token, initializer, _type_hint, is_const) => {
+        let name = match &token.kind {
+          TokenKind::Identifier(s) => s.clone(),
+          other => panic!("compile: Var token is not an identifier: {:?}", other),
+        };
+
+        // Redeclaring the same name in the SAME scope is an error;
+        // shadowing an outer scope's variable of the same name is fine.
+        let redeclared = self
+          .locals
+          .iter()
+          .rev()
+          .take_while(|l| l.depth == self.scope_depth)
+          .any(|l| l.name == name);
+        if redeclared {
+          // TODO: Report compiler error instead!
+          panic!("compile: '{}' is already declared in this scope", name);
+        }
+
+        // The initializer's result lands wherever the next free register is --
+        // and unlike a plain expression statement, we deliberately do NOT free
+        // it afterward: that register now belongs to this local for the rest
+        // of its scope.
+        let reg = self.compile_expression(initializer);
+
+        self.locals.push(Local {
+          name,
+          reg,
+          is_const: *is_const,
+          depth: self.scope_depth,
+        });
       },
       _ => {},
     };

@@ -248,40 +248,6 @@ pub static UNARY_OPERATOR_TOKENS: &[TokenKind] =
 
 pub static LOGICAL_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::And, TokenKind::Or];
 
-pub static KEYWORD_TOKENS: &[TokenKind] = &[
-  TokenKind::And,
-  TokenKind::As,
-  TokenKind::Assert,
-  TokenKind::Break,
-  TokenKind::Catch,
-  TokenKind::Class,
-  TokenKind::Const,
-  TokenKind::Continue,
-  TokenKind::Def,
-  TokenKind::Default,
-  TokenKind::Do,
-  TokenKind::Echo,
-  TokenKind::Else,
-  TokenKind::False,
-  TokenKind::For,
-  TokenKind::If,
-  TokenKind::Import,
-  TokenKind::In,
-  TokenKind::Iter,
-  TokenKind::Nil,
-  TokenKind::Or,
-  TokenKind::Parent,
-  TokenKind::Raise,
-  TokenKind::Return,
-  TokenKind::Self_,
-  TokenKind::Static,
-  TokenKind::True,
-  TokenKind::Using,
-  TokenKind::Var,
-  TokenKind::When,
-  TokenKind::While,
-];
-
 pub static EMPTY_TOKEN: Token = Token {
   kind: TokenKind::Eof,
   line: 0,
