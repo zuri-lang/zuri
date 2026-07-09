@@ -130,13 +130,13 @@ impl<'a> Compiler<'a> {
       },
       Expr::Integer(value) => {
         let dst = self.alloc_reg();
-        let const_idx = self.chunk.add_constant(Value::float(*value as f64));
+        let const_idx = self.chunk.add_constant(Value::number(*value as f64));
         self.chunk.emit(Instr::LoadConst { dst, const_idx });
         dst
       },
       Expr::Float(value) => {
         let dst = self.alloc_reg();
-        let const_idx = self.chunk.add_constant(Value::float(*value as f64));
+        let const_idx = self.chunk.add_constant(Value::number(*value as f64));
         self.chunk.emit(Instr::LoadConst { dst, const_idx });
         dst
       },
@@ -188,7 +188,7 @@ impl<'a> Compiler<'a> {
         let instr = match op {
           TokenKind::Minus => Instr::Neg { dst: src, src },
           TokenKind::Bang => Instr::Not { dst: src, src },
-          // TODO: Handle Tilde (bitwise NOT)
+          TokenKind::Tilde => Instr::BitNot { dst: src, src },
           _ => panic!("compile_expression: unsupported unary operator: {:?}", op),
         };
         self.chunk.emit(instr);
@@ -213,6 +213,12 @@ impl<'a> Compiler<'a> {
           TokenKind::Pow => Instr::Pow { dst, a, b },
           TokenKind::Percent => Instr::Mod { dst, a, b },
           TokenKind::Floor => Instr::Floor { dst, a, b },
+          TokenKind::Amp => Instr::BitAnd { dst, a, b },
+          TokenKind::Bar => Instr::BitOr { dst, a, b },
+          TokenKind::Xor => Instr::BitXor { dst, a, b },
+          TokenKind::Lshift => Instr::BitShl { dst, a, b },
+          TokenKind::Rshift => Instr::BitShr { dst, a, b },
+          TokenKind::Urshift => Instr::BitUshr { dst, a, b },
           _ => panic!("compile_expression: unsupported binary operator: {:?}", op),
         };
         self.chunk.emit(instr);

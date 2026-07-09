@@ -73,6 +73,41 @@ pub enum Instr {
     b: u8,
   },
 
+  BitAnd {
+    dst: u8,
+    a: u8,
+    b: u8,
+  },
+  BitOr {
+    dst: u8,
+    a: u8,
+    b: u8,
+  },
+  BitXor {
+    dst: u8,
+    a: u8,
+    b: u8,
+  },
+  BitShl {
+    dst: u8,
+    a: u8,
+    b: u8,
+  },
+  BitShr {
+    dst: u8,
+    a: u8,
+    b: u8,
+  },
+  BitUshr {
+    dst: u8,
+    a: u8,
+    b: u8,
+  },
+  BitNot {
+    dst: u8,
+    src: u8,
+  },
+
   Eq {
     dst: u8,
     a: u8,

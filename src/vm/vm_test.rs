@@ -26,9 +26,9 @@ use crate::vm::vm::VM;
 fn build_fib(heap: &mut Heap) -> ObjFunction {
   let mut c = Chunk::new();
 
-  let two = c.add_constant(Value::float(2.0));
+  let two = c.add_constant(Value::number(2.0));
   let fib_name = c.add_constant(heap.alloc_string("fib"));
-  let one = c.add_constant(Value::float(1.0));
+  let one = c.add_constant(Value::number(1.0));
 
   c.emit(Instr::LoadConst {
     dst: 3,
@@ -92,11 +92,11 @@ fn build_main(heap: &mut Heap, fib_val: Value) -> ObjFunction {
 
   let fib_const = c.add_constant(fib_val);
   let fib_name = c.add_constant(heap.alloc_string("fib"));
-  let const_42 = c.add_constant(Value::float(42.0));
+  let const_42 = c.add_constant(Value::number(42.0));
   let hello = c.add_constant(heap.alloc_string("hello "));
   let world = c.add_constant(heap.alloc_string("world"));
   let bytes = c.add_constant(heap.alloc_bytes("hello".as_bytes()));
-  let ten = c.add_constant(Value::float(10.0));
+  let ten = c.add_constant(Value::number(10.0));
 
   c.emit(Instr::LoadConst {
     dst: 0,
@@ -189,12 +189,12 @@ pub fn run_test() {
     "size_of::<Value>() = {} bytes",
     std::mem::size_of::<Value>()
   );
-  let i = Value::integer(3);
-  let n = Value::float(3.5);
+  // let i = Value::integer(3);
+  let n = Value::number(3.5);
   let b = Value::bool(false);
   let nil = Value::nil();
-  println!("int: is_int={} display={}", i.is_int(), i);
-  println!("float: is_float={} display={}", n.is_float(), n);
+  // println!("int: is_int={} display={}", i.is_int(), i);
+  println!("float: is_float={} display={}", n.is_number(), n);
   println!("bool:   is_bool={}   display={}", b.is_bool(), b);
   println!("nil:    is_nil={}    display={}", nil.is_nil(), nil);
 }

@@ -22,10 +22,7 @@ pub struct ObjFunction {
 
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
 /// *const Obj pointers into this arena, never real ownership, which is what
-/// lets a Value stay a plain Copy u64. This is a deliberate simplification:
-/// a production VM would trace live registers and free unreachable objects
-/// (a real garbage collector); this arena just never frees, trading memory
-/// for simplicity, which is fine for a teaching VM / short-lived script run.
+/// lets a Value stay a plain Copy u64.
 #[derive(Default)]
 pub struct Heap {
   objects: Vec<Box<Obj>>,

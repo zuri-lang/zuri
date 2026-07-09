@@ -37,7 +37,7 @@ const TAG_FALSE: u64 = 0b10;
 const TAG_TRUE: u64 = 0b11;
 
 // set only for boxed integers; unset for nil/true/false and for pointers
-const TAG_INT: u64 = 1 << 49;
+// const TAG_INT: u64 = 1 << 49;
 
 const NIL_VAL: u64 = QNAN | TAG_NIL;
 const FALSE_VAL: u64 = QNAN | TAG_FALSE;
@@ -60,17 +60,17 @@ impl Value {
     Value(if b { TRUE_VAL } else { FALSE_VAL })
   }
 
-  #[inline]
-  pub fn integer(n: i64) -> Value {
-    debug_assert!(
-      n >= -(1i64 << 47) && n < (1i64 << 47),
-      "integer out of range for a 48-bit packed Value"
-    );
-    Value(QNAN | TAG_INT | ((n as u64) & PTR_MASK))
-  }
+  // #[inline]
+  // pub fn integer(n: i64) -> Value {
+  //   debug_assert!(
+  //     n >= -(1i64 << 47) && n < (1i64 << 47),
+  //     "integer out of range for a 48-bit packed Value"
+  //   );
+  //   Value(QNAN | TAG_INT | ((n as u64) & PTR_MASK))
+  // }
 
   #[inline]
-  pub fn float(n: f64) -> Value {
+  pub fn number(n: f64) -> Value {
     // A computation could in principle produce an actual NaN (0.0 / 0.0).
     // Canonicalize it to a single fixed NaN pattern that does NOT collide
     // with QNAN (we use quiet-NaN-without-our-extra-bit), so it can never
@@ -93,13 +93,13 @@ impl Value {
     Value(SIGN_BIT | QNAN | bits)
   }
 
-  #[inline]
-  pub fn is_int(&self) -> bool {
-    (self.0 & (QNAN | SIGN_BIT | TAG_INT)) == (QNAN | TAG_INT)
-  }
+  // #[inline]
+  // pub fn is_int(&self) -> bool {
+  //   (self.0 & (QNAN | SIGN_BIT | TAG_INT)) == (QNAN | TAG_INT)
+  // }
 
   #[inline]
-  pub fn is_float(&self) -> bool {
+  pub fn is_number(&self) -> bool {
     (self.0 & QNAN) != QNAN
   }
 
@@ -118,18 +118,18 @@ impl Value {
     (self.0 & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT)
   }
 
-  #[inline]
-  pub fn as_int(&self) -> i64 {
-    debug_assert!(self.is_int());
-    let raw = (self.0 & PTR_MASK) as i64;
+  // #[inline]
+  // pub fn as_int(&self) -> i64 {
+  //   debug_assert!(self.is_int());
+  //   let raw = (self.0 & PTR_MASK) as i64;
 
-    // sign-extend bit 47 out to a full i64 — same trick x86-64 uses for 48-bit canonical addresses
-    (raw << 16) >> 16
-  }
+  //   // sign-extend bit 47 out to a full i64 — same trick x86-64 uses for 48-bit canonical addresses
+  //   (raw << 16) >> 16
+  // }
 
   #[inline]
-  pub fn as_float(&self) -> f64 {
-    debug_assert!(self.is_float());
+  pub fn as_number(&self) -> f64 {
+    debug_assert!(self.is_number());
     f64::from_bits(self.0)
   }
 
@@ -151,12 +151,12 @@ impl Value {
   pub fn is_falsey(&self) -> bool {
     self.is_nil()
       || (self.is_bool() && !self.as_bool())
-      || (self.is_float() && self.as_float() <= 0.0)
+      || (self.is_number() && self.as_number() <= 0.0)
   }
 
   pub fn equals(&self, other: &Value) -> bool {
-    if self.is_float() && other.is_float() {
-      return self.as_float() == other.as_float();
+    if self.is_number() && other.is_number() {
+      return self.as_number() == other.as_number();
     }
     if self.is_obj() && other.is_obj() {
       unsafe {
@@ -173,9 +173,10 @@ impl Value {
   }
 
   pub fn type_name(&self) -> &'static str {
-    if self.is_int() {
+    /* if self.is_int() {
       "int"
-    } else if self.is_float() {
+    } else */
+    if self.is_number() {
       "float"
     } else if self.is_nil() {
       "nil"
@@ -198,10 +199,11 @@ impl Value {
 
 impl std::fmt::Display for Value {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    if self.is_int() {
+    /* if self.is_int() {
       write!(f, "{}", self.as_int())
-    } else if self.is_float() {
-      write!(f, "{}", self.as_float())
+    } else */
+    if self.is_number() {
+      write!(f, "{}", self.as_number())
     } else if self.is_nil() {
       write!(f, "nil")
     } else if self.is_bool() {

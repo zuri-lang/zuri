@@ -34,6 +34,11 @@ while i <= 20 {
   i++
 }
 
-iter var i = 0; i <= 10; i++ {
+echo 10 << 3
+echo 10 >> 3
+echo 10 >>> 2
+echo 10 & 24
+
+iter var i = 5; i > 0; i-- {
   echo i
 }

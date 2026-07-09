@@ -94,12 +94,31 @@ impl VM {
         Instr::Floor { dst, a, b } => {
           self.binary_numeric(base, dst, a, b, "//", |x, y| (x / y).floor())?
         },
+        Instr::BitAnd { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "&", |x, y| x & y)?,
+        Instr::BitOr { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "|", |x, y| x | y)?,
+        Instr::BitXor { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "^", |x, y| x ^ y)?,
+        Instr::BitShl { dst, a, b } => {
+          self.bitwise_numeric(base, dst, a, b, "<<", |x, y| x << y)?
+        },
+        Instr::BitShr { dst, a, b } => {
+          self.bitwise_numeric(base, dst, a, b, ">>", |x, y| x >> y)?
+        },
+        Instr::BitUshr { dst, a, b } => {
+          self.bitwise_numeric(base, dst, a, b, ">>>", |x, y| x >> y)?
+        },
+        Instr::BitNot { dst, src } => {
+          let v = self.get_reg(base, src);
+          if !v.is_number() {
+            return Err(format!("cannot bitwise not a {}", v.type_name()));
+          }
+          self.set_reg(base, dst, Value::number((!(v.as_number() as i64)) as f64));
+        },
         Instr::Neg { dst, src } => {
           let v = self.get_reg(base, src);
-          if !v.is_float() {
+          if !v.is_number() {
             return Err(format!("cannot negate a {}", v.type_name()));
           }
-          self.set_reg(base, dst, Value::float(-v.as_float()));
+          self.set_reg(base, dst, Value::number(-v.as_number()));
         },
         Instr::Not { dst, src } => {
           let v = self.get_reg(base, src);
@@ -229,6 +248,33 @@ impl VM {
     f.ip = (f.ip as isize + offset as isize) as usize;
   }
 
+  fn bitwise_numeric(
+    &mut self,
+    base: usize,
+    dst: u8,
+    a: u8,
+    b: u8,
+    op_name: &str,
+    op: fn(i64, i64) -> i64,
+  ) -> RunResult<()> {
+    let va = self.get_reg(base, a);
+    let vb = self.get_reg(base, b);
+    if !va.is_number() || !vb.is_number() {
+      return Err(format!(
+        "operator '{}' expects numbers, got {} and {}",
+        op_name,
+        va.type_name(),
+        vb.type_name()
+      ));
+    }
+    self.set_reg(
+      base,
+      dst,
+      Value::number(op(va.as_number() as i64, vb.as_number() as i64) as f64),
+    );
+    Ok(())
+  }
+
   fn binary_numeric(
     &mut self,
     base: usize,
@@ -240,7 +286,7 @@ impl VM {
   ) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
-    if !va.is_float() || !vb.is_float() {
+    if !va.is_number() || !vb.is_number() {
       return Err(format!(
         "operator '{}' expects numbers, got {} and {}",
         op_name,
@@ -248,7 +294,7 @@ impl VM {
         vb.type_name()
       ));
     }
-    self.set_reg(base, dst, Value::float(op(va.as_float(), vb.as_float())));
+    self.set_reg(base, dst, Value::number(op(va.as_number(), vb.as_number())));
     Ok(())
   }
 
@@ -263,7 +309,7 @@ impl VM {
   ) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
-    if !va.is_float() || !vb.is_float() {
+    if !va.is_number() || !vb.is_number() {
       return Err(format!(
         "operator '{}' expects numbers, got {} and {}",
         op_name,
@@ -271,7 +317,7 @@ impl VM {
         vb.type_name()
       ));
     }
-    self.set_reg(base, dst, Value::bool(op(va.as_float(), vb.as_float())));
+    self.set_reg(base, dst, Value::bool(op(va.as_number(), vb.as_number())));
     Ok(())
   }
 }
