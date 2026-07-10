@@ -5,7 +5,7 @@ use std::{ops::Deref, rc::Rc};
 use crate::{
   compiler::{
     ast::{Decl, Expr, Stmt},
-    token::TokenKind,
+    token::{Token, TokenKind},
   },
   vm::{
     chunk::{Chunk, Instr},
@@ -13,6 +13,14 @@ use crate::{
     value::Value,
   },
 };
+
+fn token_to_string(token: Token) -> String {
+  if let TokenKind::Identifier(name) = token.kind {
+    name.clone()
+  } else {
+    token.kind.to_string()
+  }
+}
 
 struct Local {
   name: String,
@@ -114,6 +122,78 @@ impl<'a> Compiler<'a> {
       "mark must be a previously observed next_reg value"
     );
     self.next_reg = mark;
+  }
+
+  fn compile_function(&mut self, token: &Token, params: &[Expr], body: &Stmt, is_variadic: bool) {
+    let name = token_to_string(token.clone());
+
+    let mut param_names = Vec::new();
+
+    for param in params {
+      if let Expr::Argument(arg, _) = param {
+        param_names.push(token_to_string(arg.clone()));
+      } else {
+        panic!("function parameter must be an identifier");
+      }
+    }
+
+    // Swap in a totally fresh compile context.
+    let saved_chunk = std::mem::replace(&mut self.chunk, Chunk::new());
+    let saved_next_reg = std::mem::replace(&mut self.next_reg, 0);
+    let saved_max_reg = std::mem::replace(&mut self.max_reg, 0);
+    let saved_locals = std::mem::replace(&mut self.locals, Vec::new());
+    let saved_scope_depth = std::mem::replace(&mut self.scope_depth, 0);
+
+    // Parameters become locals in registers 0..params.len() -- exactly
+    // matching Instr::Call's convention (args already sit contiguously
+    // starting at the callee's register 0).
+    for pname in &param_names {
+      let reg = self.alloc_reg();
+      self.locals.push(Local {
+        name: pname.clone(),
+        reg,
+        is_const: false,
+        depth: 0,
+      });
+    }
+
+    self.compile_statement(body);
+
+    // Implicit `return nil` if the body didn't end with one.
+    if !matches!(self.chunk.code.last(), Some(Instr::Return { .. })) {
+      let nil_reg = self.alloc_reg();
+      self.chunk.emit(Instr::LoadNil { dst: nil_reg });
+      self.chunk.emit(Instr::Return { src: nil_reg });
+    }
+
+    let arity = param_names.len() as u8;
+    let num_registers = self.max_reg;
+    let finished_chunk = std::mem::replace(&mut self.chunk, saved_chunk);
+    self.next_reg = saved_next_reg;
+    self.max_reg = saved_max_reg;
+    self.locals = saved_locals;
+    self.scope_depth = saved_scope_depth;
+
+    let obj_fn = ObjFunction {
+      name: name.clone(),
+      arity,
+      variadic: is_variadic,
+      num_registers,
+      chunk: finished_chunk,
+    };
+
+    let fn_val = self.heap.alloc_function(obj_fn);
+
+    let mark = self.next_reg;
+    let dst = self.alloc_reg();
+    let const_idx = self.chunk.add_constant(fn_val);
+    self.chunk.emit(Instr::LoadConst { dst, const_idx });
+    let name_const = self.chunk.add_constant(self.heap.alloc_string(name));
+    self.chunk.emit(Instr::SetGlobal {
+      name_const,
+      src: dst,
+    });
+    self.free_regs_to(mark);
   }
 
   fn compile_expression(&mut self, expression: &Expr) -> u8 {
@@ -337,6 +417,43 @@ impl<'a> Compiler<'a> {
           },
         }
       },
+      Expr::Call(callee, args) => {
+        let mark = self.next_reg;
+        let raw_func_reg = self.compile_expression(callee);
+        let func_reg = if raw_func_reg >= mark {
+          raw_func_reg
+        } else {
+          let fresh = self.alloc_reg();
+          self.chunk.emit(Instr::Move {
+            dst: fresh,
+            src: raw_func_reg,
+          });
+          fresh
+        };
+
+        let mut num_args: u8 = 0;
+        for arg in args {
+          let expected = func_reg + 1 + num_args;
+          let arg_reg = self.compile_expression(arg);
+          if arg_reg != expected {
+            self.chunk.emit(Instr::Move {
+              dst: expected,
+              src: arg_reg,
+            });
+          }
+          self.next_reg = expected + 1; // claim the slot either way
+          num_args += 1;
+        }
+
+        let dst = func_reg; // result overwrites the callee's own register
+        self.chunk.emit(Instr::Call {
+          dst,
+          func: func_reg,
+          num_args,
+        });
+        self.free_regs_to(func_reg + 1);
+        dst
+      },
       _ => {
         panic!(
           "compile_expression: unsupported expression: {:?}",
@@ -438,6 +555,10 @@ impl<'a> Compiler<'a> {
           depth: self.scope_depth,
         });
       },
+      Stmt::Return(value) => {
+        let reg = self.compile_expression(value);
+        self.chunk.emit(Instr::Return { src: reg });
+      },
       _ => {},
     };
   }
@@ -445,6 +566,9 @@ impl<'a> Compiler<'a> {
   fn compile_declaration(&mut self, declaration: &Decl) {
     match declaration {
       Decl::Stmt(statement) => self.compile_statement(statement),
+      Decl::Function(name, params, body, variadic) => {
+        self.compile_function(name, params, body, *variadic);
+      },
       _ => {},
     };
   }
@@ -458,15 +582,17 @@ impl<'a> Compiler<'a> {
 
   /// This function is only meant for the main script
   pub fn finalize(&mut self) -> ObjFunction {
-    // Add a return statement irrespective of the last expression or statement
-    let reg = self.alloc_reg();
-    self.chunk.emit(Instr::LoadNil { dst: reg });
-    self.chunk.emit(Instr::Return { src: reg });
+    if !matches!(self.chunk.code.last(), Some(Instr::Return { .. })) {
+      let nil_reg = self.alloc_reg();
+      self.chunk.emit(Instr::LoadNil { dst: nil_reg });
+      self.chunk.emit(Instr::Return { src: nil_reg });
+    }
 
     ObjFunction {
       name: "<main>".to_string(),
       arity: 0,
       num_registers: self.max_reg,
+      variadic: false,
       chunk: self.chunk.clone(),
     }
   }

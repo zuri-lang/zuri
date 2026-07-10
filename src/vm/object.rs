@@ -9,11 +9,14 @@ pub enum Obj {
   Bytes(Vec<u8>),
   BigInt(BigInt),
   Func(ObjFunction),
+  List(Vec<Value>),
 }
 
 pub struct ObjFunction {
   pub name: String,
   pub arity: u8,
+  pub variadic: bool,
+
   /// How many registers this function's window needs. The caller reserves
   /// this many registers starting at the call's `first_arg` register.
   pub num_registers: u8,
@@ -51,6 +54,10 @@ impl Heap {
 
   pub fn alloc_bigint(&mut self, s: impl Into<BigInt>) -> Value {
     self.alloc(Obj::BigInt(s.into()))
+  }
+
+  pub fn alloc_list(&mut self, list: impl Into<Vec<Value>>) -> Value {
+    self.alloc(Obj::List(list.into()))
   }
 
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {

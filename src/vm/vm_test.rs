@@ -75,6 +75,7 @@ fn build_fib(heap: &mut Heap) -> ObjFunction {
     name: "fib".to_string(),
     arity: 1,
     num_registers: 7,
+    variadic: false,
     chunk: c,
   }
 }
@@ -157,6 +158,7 @@ fn build_main(heap: &mut Heap, fib_val: Value) -> ObjFunction {
     name: "main".to_string(),
     arity: 0,
     num_registers: 7,
+    variadic: false,
     chunk: c,
   }
 }

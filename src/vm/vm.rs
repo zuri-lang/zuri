@@ -169,17 +169,40 @@ impl VM {
           let Obj::Func(callee_fn) = obj else {
             return Err(format!("cannot call a {}", callee.type_name()));
           };
-          if callee_fn.arity != num_args {
-            return Err(format!(
-              "'{}' expects {} argument(s), got {}",
-              callee_fn.name, callee_fn.arity, num_args
-            ));
-          }
+
+          let required = if callee_fn.variadic {
+            callee_fn.arity - 1
+          } else {
+            callee_fn.arity
+          };
+
           let new_base = base + func_reg as usize + 1;
           let needed = new_base + callee_fn.num_registers as usize;
+
           if self.registers.len() < needed {
             self.registers.resize(needed, Value::nil());
           }
+
+          // Missing required args default to nil. Can't rely on the physical
+          // register already being nil -- it may hold stale data from an earlier,
+          // now-finished, deeper call that used to occupy this same slot.
+          for i in num_args..required {
+            self.registers[new_base + i as usize] = Value::nil();
+          }
+
+          if callee_fn.variadic {
+            // Gather everything beyond `required` into a list BEFORE writing into
+            // the variadic slot -- that slot IS register `required`, i.e.
+            // potentially the first extra argument itself, so read them all out first.
+            let extra_count = num_args.saturating_sub(required);
+            let mut items = Vec::with_capacity(extra_count as usize);
+            for i in 0..extra_count {
+              items.push(self.registers[new_base + required as usize + i as usize]);
+            }
+            let list_val = self.heap.alloc_list(items);
+            self.registers[new_base + required as usize] = list_val;
+          }
+
           self.frames.push(CallFrame {
             function: callee_fn as *const ObjFunction,
             ip: 0,

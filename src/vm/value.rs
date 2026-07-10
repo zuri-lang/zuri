@@ -188,6 +188,7 @@ impl Value {
           Obj::Str(_) => "string",
           Obj::Bytes(_) => "bytes",
           Obj::BigInt(_) => "bigint",
+          Obj::List(_) => "list",
           Obj::Func(_) => "function",
         }
       }
@@ -216,11 +217,21 @@ impl std::fmt::Display for Value {
             f,
             "({})",
             s.iter()
-              .map(|f| format!("{:02x} ", f))
+              .map(|f| format!("{:02x}", f))
               .collect::<String>()
               .trim()
           ),
           Obj::BigInt(v) => write!(f, "{}n", v.to_string()),
+          Obj::List(list) => write!(
+            f,
+            "[{}]",
+            list
+              .iter()
+              .map(|v| v.to_string())
+              .collect::<Vec<_>>()
+              .join(", ")
+              .trim()
+          ),
           Obj::Func(func) => write!(f, "<fn {}>", func.name),
         }
       }

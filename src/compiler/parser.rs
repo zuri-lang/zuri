@@ -68,15 +68,15 @@ impl Display for ParseError {
   }
 }
 
+#[inline]
 fn same_kind(a: TokenKind, b: TokenKind) -> bool {
   std::mem::discriminant(&a) == std::mem::discriminant(&b)
 }
 
-/**
- * A snapshot of "where in the source the next node should be anchored".
- * Call `.finish()` once you've built the Expr/Stmt/Decl (or another
- * Node) it should wrap.
- */
+/// A snapshot of "where in the source the next node should be anchored".
+///
+/// Call `.finish()` once you've built the Expr/Stmt/Decl (or another
+/// Node) it should wrap.
 #[derive(Clone, Copy)]
 struct Checkpoint {
   line: usize,
@@ -99,7 +99,6 @@ impl Display for Checkpoint {
   }
 }
 
-// #[derive(Clone)]
 pub struct Parser<'a> {
   lexer: &'a mut Lexer<'a>,
   block_count: usize,

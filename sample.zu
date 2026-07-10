@@ -42,3 +42,34 @@ echo 10 & 24
 iter var i = 5; i > 0; i-- {
   echo i
 }
+
+def test() {
+  echo 'it works!'
+}
+
+echo test
+test()
+
+def add(a, b) {
+  if b == nil {
+    return a
+  }
+  return a + b
+}
+
+echo add(1)
+echo add(2, 3)
+echo add(4, 5, 6)
+
+def sum(...args) {
+  echo args
+}
+
+sum(1, 2, 3)
+
+def sum2(x, ...args) {
+  echo x
+  echo args
+}
+
+sum2(1, 2, 3)
