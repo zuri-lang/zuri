@@ -164,23 +164,73 @@ impl fmt::Display for Token {
   }
 }
 
-pub static ASSIGNMENT_TOKENS: &[TokenKind] = &[
-  TokenKind::Equal,
-  TokenKind::PlusEq,
-  TokenKind::MinusEq,
-  TokenKind::MultiplyEq,
-  TokenKind::DivideEq,
-  TokenKind::FloorEq,
-  TokenKind::PowEq,
-  TokenKind::PercentEq,
-  TokenKind::AmpEq,
-  TokenKind::BarEq,
-  TokenKind::TildeEq,
-  TokenKind::XorEq,
-  TokenKind::LshiftEq,
-  TokenKind::RshiftEq,
-  TokenKind::UrshiftEq,
-];
+#[macro_export]
+macro_rules! assignment_operators {
+  () => {
+    TokenKind::Equal
+      | TokenKind::PlusEq
+      | TokenKind::MinusEq
+      | TokenKind::MultiplyEq
+      | TokenKind::DivideEq
+      | TokenKind::FloorEq
+      | TokenKind::PowEq
+      | TokenKind::PercentEq
+      | TokenKind::AmpEq
+      | TokenKind::BarEq
+      | TokenKind::TildeEq
+      | TokenKind::XorEq
+      | TokenKind::LshiftEq
+      | TokenKind::RshiftEq
+      | TokenKind::UrshiftEq
+  };
+}
+
+#[macro_export]
+macro_rules! factor_operators {
+  () => {
+    TokenKind::Multiply | TokenKind::Divide | TokenKind::Floor | TokenKind::Pow | TokenKind::Percent
+  };
+}
+
+#[macro_export]
+macro_rules! term_operators {
+  () => {
+    TokenKind::Plus | TokenKind::Minus
+  };
+}
+
+#[macro_export]
+macro_rules! equality_operators {
+  () => {
+    TokenKind::EqualEq | TokenKind::BangEq
+  };
+}
+
+#[macro_export]
+macro_rules! shift_operators {
+  () => {
+    TokenKind::Lshift | TokenKind::Rshift | TokenKind::Urshift
+  };
+}
+
+#[macro_export]
+macro_rules! comparison_operators {
+  () => {
+    TokenKind::EqualEq
+      | TokenKind::BangEq
+      | TokenKind::Less
+      | TokenKind::LessEq
+      | TokenKind::Greater
+      | TokenKind::GreaterEq
+  };
+}
+
+#[macro_export]
+macro_rules! unary_operators {
+  () => {
+    TokenKind::Bang | TokenKind::Minus | TokenKind::Tilde
+  };
+}
 
 pub fn get_assignment_alt(kind: TokenKind) -> TokenKind {
   match kind {
@@ -201,52 +251,6 @@ pub fn get_assignment_alt(kind: TokenKind) -> TokenKind {
     _ => kind,
   }
 }
-
-pub static FACTOR_OPERATOR_TOKENS: &[TokenKind] = &[
-  TokenKind::Multiply,
-  TokenKind::Divide,
-  TokenKind::Floor,
-  TokenKind::Pow,
-  TokenKind::Percent,
-];
-
-pub static EQUALITY_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::BangEq, TokenKind::EqualEq];
-
-pub static TERM_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::Plus, TokenKind::Minus];
-
-pub static SHIFT_OPERATOR_TOKENS: &[TokenKind] =
-  &[TokenKind::Lshift, TokenKind::Rshift, TokenKind::Urshift];
-
-pub static BINARY_OPERATOR_TOKENS: &[TokenKind] = &[
-  TokenKind::Plus,
-  TokenKind::Minus,
-  TokenKind::Multiply,
-  TokenKind::Divide,
-  TokenKind::Floor,
-  TokenKind::Pow,
-  TokenKind::Percent,
-  TokenKind::Amp,
-  TokenKind::Bar,
-  TokenKind::Tilde,
-  TokenKind::Xor,
-  TokenKind::Lshift,
-  TokenKind::Rshift,
-  TokenKind::Urshift,
-];
-
-pub static COMPARISON_OPERATOR_TOKENS: &[TokenKind] = &[
-  TokenKind::EqualEq,
-  TokenKind::BangEq,
-  TokenKind::Less,
-  TokenKind::LessEq,
-  TokenKind::Greater,
-  TokenKind::GreaterEq,
-];
-
-pub static UNARY_OPERATOR_TOKENS: &[TokenKind] =
-  &[TokenKind::Bang, TokenKind::Minus, TokenKind::Tilde];
-
-pub static LOGICAL_OPERATOR_TOKENS: &[TokenKind] = &[TokenKind::And, TokenKind::Or];
 
 pub static EMPTY_TOKEN: Token = Token {
   kind: TokenKind::Eof,
