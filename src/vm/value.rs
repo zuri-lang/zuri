@@ -27,6 +27,8 @@
 //! 48 bits is enough to hold every real pointer on x86_64 / AArch64 today
 //! (both use at most 48 address bits), so no pointer information is lost.
 
+use itertools::Itertools;
+
 use crate::vm::object::Obj;
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
@@ -216,22 +218,10 @@ impl std::fmt::Display for Value {
           Obj::Bytes(s) => write!(
             f,
             "({})",
-            s.iter()
-              .map(|f| format!("{:02x}", f))
-              .collect::<String>()
-              .trim()
+            s.iter().map(|f| format!("{:02x}", f)).format(" ")
           ),
           Obj::BigInt(v) => write!(f, "{}n", v.to_string()),
-          Obj::List(list) => write!(
-            f,
-            "[{}]",
-            list
-              .iter()
-              .map(|v| v.to_string())
-              .collect::<Vec<_>>()
-              .join(", ")
-              .trim()
-          ),
+          Obj::List(list) => write!(f, "[{}]", list.iter().map(|v| v.to_string()).format(", ")),
           Obj::Func(func) => write!(f, "<fn {}>", func.name),
         }
       }
