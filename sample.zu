@@ -89,3 +89,6 @@ def outer(a, b) {
 echo outer(1, 2)
 echo outer(1, 2)(3, 4)
 echo outer(1, 2)(3, 4)(5, 6)
+
+
+echo 'Hello ${2 + 2}'

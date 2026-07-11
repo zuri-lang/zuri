@@ -88,7 +88,7 @@ impl<'a> Lexer<'a> {
     } else {
       self.source.clone().nth(self.current - 1).unwrap()
     };
-    if val == '\n' {
+    if val == '\n' || val == '\0' {
       self.line -= 1;
       // self.lines.remove(&self.line);
     }
@@ -152,6 +152,7 @@ impl<'a> Lexer<'a> {
       *self.lines.get(&self.start_line).unwrap()
     };
 
+    // println!("start = {}, line start = {}", self.start, line_start);
     let column = self.start - line_start + 1;
 
     Token::new(kind, self.start_line, column)
@@ -220,7 +221,7 @@ impl<'a> Lexer<'a> {
 
   fn string(&mut self, c: char) -> Token {
     while self.peek() != c && !self.is_at_end() {
-      if self.peek() == '&' && self.next() == '{' && self.previous() != '\\' {
+      if self.peek() == '$' && self.next() == '{' && self.previous() != '\\' {
         // We're at the start of an interpolation
 
         self.interpolating.push(c);

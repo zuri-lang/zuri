@@ -92,10 +92,6 @@ impl Heap {
     }
   }
 
-  pub fn from_objects(objects: Vec<Box<Obj>>) -> Self {
-    Heap { objects }
-  }
-
   fn alloc(&mut self, obj: Obj) -> Value {
     self.objects.push(Box::new(obj));
     let ptr: *const Obj = self.objects.last().unwrap().as_ref();

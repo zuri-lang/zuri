@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::vm::chunk::Instr;
-use crate::vm::object::{Heap, Obj, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
+use crate::vm::object::{Heap, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
 use crate::vm::value::Value;
 
 struct CallFrame {
@@ -102,7 +102,7 @@ impl<'a> VM<'a> {
           self.set_reg(base, dst, v);
         },
 
-        Instr::Add { dst, a, b } => self.binary_numeric(base, dst, a, b, "+", |x, y| x + y)?,
+        Instr::Add { dst, a, b } => self.binary_add(base, dst, a, b, "+")?,
         Instr::Sub { dst, a, b } => self.binary_numeric(base, dst, a, b, "-", |x, y| x - y)?,
         Instr::Mul { dst, a, b } => self.binary_numeric(base, dst, a, b, "*", |x, y| x * y)?,
         Instr::Div { dst, a, b } => self.binary_numeric(base, dst, a, b, "/", |x, y| x / y)?,
@@ -184,13 +184,10 @@ impl<'a> VM<'a> {
           num_args,
         } => {
           let callee = self.get_reg(base, func_reg);
-          if !callee.is_obj() {
+          if !callee.is_closure() {
             return Err(format!("cannot call a {}", callee.type_name()));
           }
-          let obj = unsafe { &*callee.as_obj() };
-          let Obj::Closure(callee_closure) = obj else {
-            return Err(format!("cannot call a {}", callee.type_name()));
-          };
+          let callee_closure = callee.as_closure();
           let callee_fn = unsafe { &*callee_closure.function };
 
           let required = if callee_fn.variadic {
@@ -260,11 +257,11 @@ impl<'a> VM<'a> {
 
         Instr::Closure { dst, proto_const } => {
           let proto_val = func.chunk.constants[proto_const as usize];
-          let proto_ptr = match unsafe { &*proto_val.as_obj() } {
-            Obj::Func(f) => f as *const ObjFunction,
-            _ => return Err("Closure operand is not a function prototype".to_string()),
-          };
-          let proto = unsafe { &*proto_ptr };
+          if !proto_val.is_func() {
+            return Err("Closure operand is not a function".to_string());
+          }
+          let proto = proto_val.as_func();
+          let proto_ptr = proto as *const ObjFunction;
 
           let mut captured = Vec::with_capacity(proto.upvalues.len());
           for desc in &proto.upvalues {
@@ -289,12 +286,12 @@ impl<'a> VM<'a> {
         Instr::GetUpval { dst, idx } => {
           let current_closure = unsafe { &*closure_ptr };
           let upval_val = current_closure.upvalues[idx as usize];
-          let v = match unsafe { &*upval_val.as_obj() } {
-            Obj::Upvalue(cell) => match cell.get() {
-              UpvalueState::Open(abs_idx) => self.registers[abs_idx],
-              UpvalueState::Closed(v) => v,
-            },
-            _ => return Err("GetUpval operand is not an upvalue".to_string()),
+          if !upval_val.is_upvalue() {
+            return Err("GetUpval operand is not an upvalue".to_string());
+          }
+          let v = match upval_val.as_upvalue().get() {
+            UpvalueState::Open(abs_idx) => self.registers[abs_idx],
+            UpvalueState::Closed(v) => v,
           };
           self.set_reg(base, dst, v);
         },
@@ -302,12 +299,13 @@ impl<'a> VM<'a> {
           let v = self.get_reg(base, src);
           let current_closure = unsafe { &*closure_ptr };
           let upval_val = current_closure.upvalues[idx as usize];
-          match unsafe { &*upval_val.as_obj() } {
-            Obj::Upvalue(cell) => match cell.get() {
-              UpvalueState::Open(abs_idx) => self.registers[abs_idx] = v,
-              UpvalueState::Closed(_) => cell.set(UpvalueState::Closed(v)),
-            },
-            _ => return Err("SetUpval operand is not an upvalue".to_string()),
+          if !upval_val.is_upvalue() {
+            return Err("SetUpval operand is not an upvalue".to_string());
+          }
+          let cell = upval_val.as_upvalue();
+          match cell.get() {
+            UpvalueState::Open(abs_idx) => self.registers[abs_idx] = v,
+            UpvalueState::Closed(_) => cell.set(UpvalueState::Closed(v)),
           }
         },
         Instr::CloseUpvalues { from } => {
@@ -339,9 +337,7 @@ impl<'a> VM<'a> {
       let (idx, v) = self.open_upvalues[i];
       if idx >= from_abs_index {
         let current_val = self.registers[idx];
-        if let Obj::Upvalue(cell) = unsafe { &*v.as_obj() } {
-          cell.set(UpvalueState::Closed(current_val));
-        }
+        v.as_upvalue().set(UpvalueState::Closed(current_val));
         self.open_upvalues.swap_remove(i);
       } else {
         i += 1;
@@ -351,13 +347,10 @@ impl<'a> VM<'a> {
 
   fn const_as_str(&self, func: &ObjFunction, idx: u16) -> RunResult<String> {
     let v = func.chunk.constants[idx as usize];
-    if !v.is_obj() {
+    if !v.is_string() {
       return Err("expected a string constant for a global name".to_string());
     }
-    match unsafe { &*v.as_obj() } {
-      Obj::Str(s) => Ok(s.clone()),
-      _ => Err("expected a string constant for a global name".to_string()),
-    }
+    Ok(v.as_str().to_string())
   }
 
   #[inline]
@@ -425,6 +418,27 @@ impl<'a> VM<'a> {
     }
     self.set_reg(base, dst, Value::number(op(va.as_number(), vb.as_number())));
     Ok(())
+  }
+
+  fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
+    let va = self.get_reg(base, a);
+    let vb = self.get_reg(base, b);
+    if va.is_number() && vb.is_number() {
+      return Ok(self.set_reg(base, dst, Value::number(va.as_number() + vb.as_number())));
+    } else if va.is_string() || vb.is_string() {
+      let va = self.get_reg(base, a);
+      let vb = self.get_reg(base, b);
+      let s = format!("{}{}", va, vb);
+      let v = self.heap.alloc_string(s);
+      return Ok(self.set_reg(base, dst, v));
+    }
+
+    Err(format!(
+      "operator '{}' expects numbers, got {} and {}",
+      op_name,
+      va.type_name(),
+      vb.type_name()
+    ))
   }
 
   fn compare(

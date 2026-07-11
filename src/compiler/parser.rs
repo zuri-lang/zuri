@@ -489,13 +489,11 @@ impl<'a> Parser<'a> {
       let right = self.expression();
       expr = Expr::Binary(Box::new(expr), TokenKind::Plus, Box::new(right));
 
-      if !match_tok!(self, TokenKind::Interpolation(_) | TokenKind::Literal(_)) || self.is_at_end()
+      if !check_tok!(self, TokenKind::Interpolation(_) | TokenKind::Literal(_)) || self.is_at_end()
       {
         break;
       }
     }
-
-    match_tok!(self, TokenKind::Interpolation(_) | TokenKind::Literal(_));
 
     expr
   }
@@ -1425,6 +1423,7 @@ impl<'a> Parser<'a> {
 
         Stmt::Raise(Box::new(result))
       },
+      TokenKind::Lbrace => self.block(),
       _ => {
         self.rewind();
         self.expression_stmt(false)
@@ -1677,7 +1676,7 @@ impl<'a> Parser<'a> {
             self.do_call(&mut dict),
           ))))
         } else {
-          Decl::Stmt(Box::new(self.statement()))
+          Decl::Stmt(Box::new(self.block()))
         }
       },
       _ => {

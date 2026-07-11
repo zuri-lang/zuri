@@ -27,9 +27,12 @@
 //! 48 bits is enough to hold every real pointer on x86_64 / AArch64 today
 //! (both use at most 48 address bits), so no pointer information is lost.
 
+use std::cell::Cell;
+
+use big_num::BigInt;
 use itertools::Itertools;
 
-use crate::vm::object::Obj;
+use crate::vm::object::{Obj, ObjClosure, ObjFunction, UpvalueState};
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
 const SIGN_BIT: u64 = 0x8000_0000_0000_0000;
@@ -120,6 +123,41 @@ impl Value {
     (self.0 & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT)
   }
 
+  #[inline]
+  pub fn is_string(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Str(_))
+  }
+
+  #[inline]
+  pub fn is_func(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Func(_))
+  }
+
+  #[inline]
+  pub fn is_closure(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Closure(_))
+  }
+
+  #[inline]
+  pub fn is_list(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::List(_))
+  }
+
+  #[inline]
+  pub fn is_upvalue(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Upvalue(_))
+  }
+
+  #[inline]
+  pub fn is_bytes(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Bytes(_))
+  }
+
+  #[inline]
+  pub fn is_bigint(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::BigInt(_))
+  }
+
   // #[inline]
   // pub fn as_int(&self) -> i64 {
   //   debug_assert!(self.is_int());
@@ -145,6 +183,62 @@ impl Value {
   pub fn as_obj(&self) -> *const Obj {
     debug_assert!(self.is_obj());
     (self.0 & PTR_MASK) as *const Obj
+  }
+
+  pub fn as_str(&self) -> &str {
+    debug_assert!(self.is_string());
+    match unsafe { &*self.as_obj() } {
+      Obj::Str(s) => s.as_str(),
+      _ => unreachable!("as_str() called on a non-string Value"),
+    }
+  }
+
+  pub fn as_func(&self) -> &ObjFunction {
+    debug_assert!(self.is_func());
+    match unsafe { &*self.as_obj() } {
+      Obj::Func(f) => f,
+      _ => unreachable!("as_func() called on a non-function Value"),
+    }
+  }
+
+  pub fn as_closure(&self) -> &ObjClosure {
+    debug_assert!(self.is_closure());
+    match unsafe { &*self.as_obj() } {
+      Obj::Closure(c) => c,
+      _ => unreachable!("as_closure() called on a non-closure Value"),
+    }
+  }
+
+  pub fn as_bytes(&self) -> &[u8] {
+    debug_assert!(self.is_bytes());
+    match unsafe { &*self.as_obj() } {
+      Obj::Bytes(b) => b.as_slice(),
+      _ => unreachable!("as_bytes() called on a non-bytes Value"),
+    }
+  }
+
+  pub fn as_bigint(&self) -> &BigInt {
+    debug_assert!(self.is_bigint());
+    match unsafe { &*self.as_obj() } {
+      Obj::BigInt(b) => b,
+      _ => unreachable!("as_bigint() called on a non-bigint Value"),
+    }
+  }
+
+  pub fn as_list(&self) -> &[Value] {
+    debug_assert!(self.is_list());
+    match unsafe { &*self.as_obj() } {
+      Obj::List(items) => items.as_slice(),
+      _ => unreachable!("as_list() called on a non-list Value"),
+    }
+  }
+
+  pub fn as_upvalue(&self) -> &Cell<UpvalueState> {
+    debug_assert!(self.is_upvalue());
+    match unsafe { &*self.as_obj() } {
+      Obj::Upvalue(cell) => cell,
+      _ => unreachable!("as_upvalue() called on a non-upvalue Value"),
+    }
   }
 
   /// Truthiness for control flow: nil and false are falsy, everything

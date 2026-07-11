@@ -77,7 +77,7 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
     }
   } else {
     return Err(format!(
-      "parse error: {:?}",
+      "parse error: {}",
       parser.errors.iter().map(|f| f.to_string()).join("\n")
     ));
   }
@@ -111,9 +111,9 @@ fn run_file(file: &str) {
       process::exit(1);
     }
   } else {
-    println!(
-      "ParseError: {:?}",
-      parser.errors.iter().map(|f| f.to_string()).join("\n")
+    eprintln!(
+      "ParseError: {}",
+      parser.errors.iter().map(|f| f.to_string()).join("\n  ")
     );
     process::exit(1);
   }

@@ -135,7 +135,7 @@ impl fmt::Display for TokenKind {
   }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Token {
   pub kind: TokenKind,
   pub line: usize,
@@ -155,6 +155,19 @@ impl Token {
 }
 
 impl fmt::Display for Token {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self.kind.clone() {
+      TokenKind::Literal(s) | TokenKind::Interpolation(s) => write!(f, "{}", s),
+      _ => write!(
+        f,
+        "Token{{kind={} at line={}, column={}}}",
+        self.kind, self.line, self.column
+      ),
+    }
+  }
+}
+
+impl fmt::Debug for Token {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(
       f,
