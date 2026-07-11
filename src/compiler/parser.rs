@@ -737,7 +737,7 @@ impl<'a> Parser<'a> {
       let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.equality();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Circuit(Box::new(expr), op, Box::new(right));
     }
 
     expr
@@ -750,7 +750,7 @@ impl<'a> Parser<'a> {
       let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.and();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Circuit(Box::new(expr), op, Box::new(right));
     }
 
     expr

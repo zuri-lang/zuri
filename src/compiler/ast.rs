@@ -31,6 +31,7 @@ pub enum Expr {
   Unary(TokenKind, Box<Expr>),
   Binary(Box<Expr>, TokenKind, Box<Expr>),
   Logical(Box<Expr>, TokenKind, Box<Expr>),
+  Circuit(Box<Expr>, TokenKind, Box<Expr>),
   Grouping(Box<Expr>),
   Range(Box<Expr>, Box<Expr>),
   Identifier(Token),

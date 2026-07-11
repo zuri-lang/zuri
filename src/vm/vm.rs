@@ -172,6 +172,11 @@ impl<'a> VM<'a> {
             self.jump(frame_idx, offset);
           }
         },
+        Instr::JmpIfTrue { cond, offset } => {
+          if !self.get_reg(base, cond).is_falsey() {
+            self.jump(frame_idx, offset);
+          }
+        },
 
         Instr::Call {
           dst,

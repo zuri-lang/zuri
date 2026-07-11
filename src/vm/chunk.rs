@@ -148,6 +148,12 @@ pub enum Instr {
     cond: u8,
     offset: i16,
   },
+  /// Jump by `offset` if register `cond` is truthy -- the complement of
+  /// JmpIfFalse, used for short-circuiting `or`.
+  JmpIfTrue {
+    cond: u8,
+    offset: i16,
+  },
 
   /// Call the function in register `func`. Arguments are expected to
   /// already sit in registers `func+1 ..= func+num_args`, matching Zuri's

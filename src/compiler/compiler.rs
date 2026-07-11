@@ -123,6 +123,10 @@ impl<'a> Compiler<'a> {
     self.emit(Instr::JmpIfFalse { cond, offset: 0 })
   }
 
+  fn emit_jump_if_true(&mut self, cond: u8) -> usize {
+    self.emit(Instr::JmpIfTrue { cond, offset: 0 })
+  }
+
   fn emit_jump(&mut self) -> usize {
     self.emit(Instr::Jmp { offset: 0 })
   }
@@ -130,12 +134,15 @@ impl<'a> Compiler<'a> {
   fn patch_jump(&mut self, jump_at: usize) {
     let target = self.cur().chunk.code.len();
     let raw_offset = target as isize - (jump_at as isize + 1);
+
     let offset: i16 = raw_offset
       .try_into()
       .expect("jump target too far away: offset does not fit in i16");
+
     match &mut self.cur_mut().chunk.code[jump_at] {
       Instr::Jmp { offset: o } => *o = offset,
       Instr::JmpIfFalse { offset: o, .. } => *o = offset,
+      Instr::JmpIfTrue { offset: o, .. } => *o = offset, // NEW
       other => panic!(
         "patch_jump: instruction at {} is not a jump, got {:?}",
         jump_at, other
@@ -425,6 +432,44 @@ impl<'a> Compiler<'a> {
 
         self.free_regs_to(rhs_mark.max(dst + 1));
         dst
+      },
+      Expr::Circuit(lhs, op, rhs) => {
+        let mark = self.cur().next_reg;
+        let result = mark;
+
+        // Force lhs into the fixed result register -- same trick as
+        // Condition: mutually-exclusive control-flow paths can share a
+        // register number, but a bare local-variable read for lhs won't
+        // land there "for free", so Move if needed.
+        let lhs_val = self.compile_expression(lhs);
+        if lhs_val != result {
+          self.emit(Instr::Move {
+            dst: result,
+            src: lhs_val,
+          });
+        }
+        self.free_regs_to(result + 1); // keep just the result register reserved
+
+        // `and`: short-circuit (skip rhs, keep lhs) when lhs is already falsy.
+        // `or`:  short-circuit (skip rhs, keep lhs) when lhs is already truthy.
+        let short_circuit_jump = match op {
+          TokenKind::And => self.emit_jump_if_false(result),
+          TokenKind::Or => self.emit_jump_if_true(result),
+          _ => panic!("compile_expression: unsupported Circuit operator: {:?}", op),
+        };
+
+        // Didn't short-circuit: the result becomes rhs's value instead.
+        let rhs_val = self.compile_expression(rhs);
+        if rhs_val != result {
+          self.emit(Instr::Move {
+            dst: result,
+            src: rhs_val,
+          });
+        }
+        self.free_regs_to(result + 1);
+
+        self.patch_jump(short_circuit_jump);
+        result
       },
       Expr::Grouping(expr) => self.compile_expression(expr),
       Expr::Condition(condition, truth, falsey) => {
