@@ -86,10 +86,14 @@ pub struct Heap {
 }
 
 impl Heap {
-  pub fn new() -> Heap {
+  pub fn new() -> Self {
     Heap {
       objects: Vec::new(),
     }
+  }
+
+  pub fn from_objects(objects: Vec<Box<Obj>>) -> Self {
+    Heap { objects }
   }
 
   fn alloc(&mut self, obj: Obj) -> Value {

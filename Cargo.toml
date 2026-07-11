@@ -6,3 +6,11 @@ edition = "2024"
 [dependencies]
 big_num = "0.1.0"
 itertools = "0.15.0"
+
+[build-dependencies]
+chrono = "0.4.45"
+toml = "1.1.2"
+
+[package.metadata.zuri]
+version = "0.1.0"
+vm_version = "0.1.0"

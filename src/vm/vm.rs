@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::vm::chunk::Instr;
 use crate::vm::object::{Heap, Obj, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
 use crate::vm::value::Value;
@@ -17,7 +19,7 @@ struct CallFrame {
   dst_in_caller: u8,
 }
 
-pub struct VM {
+pub struct VM<'a> {
   /// One flat register stack shared by every call frame; each frame just
   /// claims a slice of it (its "window"), exactly like Lua's VM.
   registers: Vec<Value>,
@@ -29,20 +31,24 @@ pub struct VM {
   open_upvalues: Vec<(usize, Value)>,
   frames: Vec<CallFrame>,
   globals: std::collections::HashMap<String, Value>,
-  pub heap: Heap,
+  pub heap: &'a mut Heap,
 }
 
 type RunResult<T> = Result<T, String>;
 
-impl VM {
-  pub fn new(heap: Heap) -> VM {
+impl<'a> VM<'a> {
+  pub fn new(heap: &'a mut Heap, globals: HashMap<String, Value>) -> Self {
     VM {
       registers: Vec::new(),
       frames: Vec::new(),
-      globals: std::collections::HashMap::new(),
       open_upvalues: Vec::new(),
+      globals,
       heap,
     }
+  }
+
+  pub fn heap_mut(&mut self) -> &mut Heap {
+    &mut self.heap
   }
 
   /// Bind a value directly, useful for wiring up a top-level function

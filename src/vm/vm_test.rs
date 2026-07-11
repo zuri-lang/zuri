@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::vm::chunk::{Chunk, Instr};
 use crate::vm::object::{Heap, ObjClosure, ObjFunction};
 use crate::vm::value::Value;
@@ -174,7 +176,8 @@ pub fn run_test() {
   let main_fn = build_main(&mut heap, fib_val);
   let main_val = heap.alloc_function(main_fn);
 
-  let mut vm = VM::new(heap);
+  let globals = HashMap::new();
+  let mut vm = VM::new(&mut heap, globals);
   // fib needs to find itself by name at call time.
   let main_fn_ptr = match unsafe { &*main_val.as_obj() } {
     crate::vm::object::Obj::Func(f) => f as *const ObjFunction,

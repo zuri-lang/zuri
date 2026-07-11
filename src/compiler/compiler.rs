@@ -64,21 +64,30 @@ enum VarLoc {
   Global,
 }
 
-pub struct Compiler {
+pub struct Compiler<'a> {
   declarations: Vec<Decl>,
-  heap: Box<Heap>,
+  heap: &'a mut Heap,
   scopes: Vec<FunctionScope>,
+  is_repl: bool,
 }
 
-impl Compiler {
-  pub fn new(declarations: Vec<Decl>, chunk: Box<Chunk>, heap: Box<Heap>) -> Self {
+impl<'a> Compiler<'a> {
+  pub fn new(declarations: Vec<Decl>, chunk: Box<Chunk>, heap: &'a mut Heap) -> Self {
     let mut top = FunctionScope::new();
     top.chunk = *chunk;
     Compiler {
       declarations,
       heap,
       scopes: vec![top],
+      is_repl: false,
     }
+  }
+
+  pub fn enable_repl_mode(&mut self) {
+    self.is_repl = true;
+  }
+  pub fn disable_repl_mode(&mut self) {
+    self.is_repl = false;
   }
 
   fn cur(&self) -> &FunctionScope {
@@ -626,25 +635,33 @@ impl Compiler {
       Stmt::Var(token, initializer, _type_hint, is_const) => {
         let name = Self::identifier_name(token);
 
-        let redeclared = self
-          .cur()
-          .locals
-          .iter()
-          .rev()
-          .take_while(|l| l.depth == self.cur().scope_depth)
-          .any(|l| l.name == name);
-        if redeclared {
-          panic!("compile: '{}' is already declared in this scope", name);
-        }
+        if self.is_repl && self.cur().scope_depth == 0 {
+          let src = self.compile_expression(initializer);
 
-        let reg = self.compile_expression(initializer);
-        let depth = self.cur().scope_depth;
-        self.cur_mut().locals.push(Local {
-          name,
-          reg,
-          is_const: *is_const,
-          depth,
-        });
+          let name_val = self.heap.alloc_string(name.clone());
+          let name_const = self.add_constant(name_val);
+          self.emit(Instr::SetGlobal { name_const, src });
+        } else {
+          let redeclared = self
+            .cur()
+            .locals
+            .iter()
+            .rev()
+            .take_while(|l| l.depth == self.cur().scope_depth)
+            .any(|l| l.name == name);
+          if redeclared {
+            panic!("compile: '{}' is already declared in this scope", name);
+          }
+
+          let reg = self.compile_expression(initializer);
+          let depth = self.cur().scope_depth;
+          self.cur_mut().locals.push(Local {
+            name,
+            reg,
+            is_const: *is_const,
+            depth,
+          });
+        }
       },
       Stmt::Return(value) => {
         let reg = self.compile_expression(value);
@@ -664,7 +681,7 @@ impl Compiler {
     };
   }
 
-  pub fn compile(mut self) -> (ObjFunction, Heap) {
+  pub fn compile(mut self) -> ObjFunction {
     for decl in self.declarations.clone().iter() {
       self.compile_declaration(decl);
     }
@@ -673,7 +690,7 @@ impl Compiler {
 
   /// Finish compilation and hand back the assembled top-level function,
   /// ready for `Heap::alloc_plain_closure` + `VM::run`.
-  pub fn finalize(mut self) -> (ObjFunction, Heap) {
+  pub fn finalize(mut self) -> ObjFunction {
     if !matches!(self.cur().chunk.code.last(), Some(Instr::Return { .. })) {
       let nil_reg = self.alloc_reg();
       self.emit(Instr::LoadNil { dst: nil_reg });
@@ -688,6 +705,6 @@ impl Compiler {
       chunk: top.chunk,
       upvalues: Vec::new(),
     };
-    (main_fn, *self.heap)
+    main_fn
   }
 }
