@@ -1,9 +1,14 @@
 use crate::vm::chunk::Instr;
-use crate::vm::object::{Heap, Obj, ObjFunction};
+use crate::vm::object::{Heap, Obj, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
 use crate::vm::value::Value;
 
 struct CallFrame {
   function: *const ObjFunction,
+  /// The specific closure instance this frame is executing -- needed
+  /// whenever GetUpval/SetUpval/Closure look at "my own captured
+  /// upvalues". Distinct from `function` (the shared, static prototype)
+  /// the same way `ObjClosure` is distinct from `ObjFunction`.
+  closure: *const ObjClosure,
   ip: usize,
   /// Index into `VM::registers` where this frame's register window starts.
   base: usize,
@@ -16,6 +21,12 @@ pub struct VM {
   /// One flat register stack shared by every call frame; each frame just
   /// claims a slice of it (its "window"), exactly like Lua's VM.
   registers: Vec<Value>,
+  /// Upvalues that are still Open, as (absolute register index, the
+  /// Obj::Upvalue Value at that index). Consulted whenever a new closure
+  /// captures a local -- if one's already open for that exact register,
+  /// it's reused rather than duplicated, which is what makes two
+  /// closures over the same variable see each other's writes.
+  open_upvalues: Vec<(usize, Value)>,
   frames: Vec<CallFrame>,
   globals: std::collections::HashMap<String, Value>,
   pub heap: Heap,
@@ -29,24 +40,26 @@ impl VM {
       registers: Vec::new(),
       frames: Vec::new(),
       globals: std::collections::HashMap::new(),
+      open_upvalues: Vec::new(),
       heap,
     }
   }
 
   /// Bind a value directly, useful for wiring up a top-level function
   /// (e.g. "fib") before `run` starts executing.
-  #[allow(dead_code)]
   pub fn define_global(&mut self, name: impl Into<String>, v: Value) {
     self.globals.insert(name.into(), v);
   }
 
   /// Run `main` (a top-level, non-nested function with no arguments) to
   /// completion.
-  pub fn run(&mut self, main: *const ObjFunction) -> RunResult<()> {
-    let num_registers = unsafe { (*main).num_registers } as usize;
+  pub fn run(&mut self, main: *const ObjClosure) -> RunResult<()> {
+    let proto = unsafe { &*(*main).function };
+    let num_registers = proto.num_registers as usize;
     self.registers.resize(num_registers, Value::nil());
     self.frames.push(CallFrame {
-      function: main,
+      function: proto as *const ObjFunction,
+      closure: main,
       ip: 0,
       base: 0,
       dst_in_caller: 0,
@@ -56,13 +69,11 @@ impl VM {
 
     loop {
       let frame_idx = self.frames.len() - 1;
-      let (func_ptr, ip, base) = {
+      let (func_ptr, closure_ptr, ip, base) = {
         let f = &self.frames[frame_idx];
-        (f.function, f.ip, f.base)
+        (f.function, f.closure, f.ip, f.base)
       };
       let func = unsafe { &*func_ptr };
-
-      // println!("{:?}", func.chunk);
 
       if ip >= func.chunk.code.len() {
         return Err(format!(
@@ -166,9 +177,10 @@ impl VM {
             return Err(format!("cannot call a {}", callee.type_name()));
           }
           let obj = unsafe { &*callee.as_obj() };
-          let Obj::Func(callee_fn) = obj else {
+          let Obj::Closure(callee_closure) = obj else {
             return Err(format!("cannot call a {}", callee.type_name()));
           };
+          let callee_fn = unsafe { &*callee_closure.function };
 
           let required = if callee_fn.variadic {
             callee_fn.arity - 1
@@ -178,22 +190,15 @@ impl VM {
 
           let new_base = base + func_reg as usize + 1;
           let needed = new_base + callee_fn.num_registers as usize;
-
           if self.registers.len() < needed {
             self.registers.resize(needed, Value::nil());
           }
 
-          // Missing required args default to nil. Can't rely on the physical
-          // register already being nil -- it may hold stale data from an earlier,
-          // now-finished, deeper call that used to occupy this same slot.
           for i in num_args..required {
             self.registers[new_base + i as usize] = Value::nil();
           }
 
           if callee_fn.variadic {
-            // Gather everything beyond `required` into a list BEFORE writing into
-            // the variadic slot -- that slot IS register `required`, i.e.
-            // potentially the first extra argument itself, so read them all out first.
             let extra_count = num_args.saturating_sub(required);
             let mut items = Vec::with_capacity(extra_count as usize);
             for i in 0..extra_count {
@@ -205,6 +210,7 @@ impl VM {
 
           self.frames.push(CallFrame {
             function: callee_fn as *const ObjFunction,
+            closure: callee_closure as *const ObjClosure,
             ip: 0,
             base: new_base,
             dst_in_caller: dst,
@@ -212,6 +218,7 @@ impl VM {
         },
         Instr::Return { src } => {
           let ret = self.get_reg(base, src);
+          self.close_upvalues_from(base);
           let finished = self.frames.pop().unwrap();
           if self.frames.is_empty() {
             return Ok(());
@@ -239,6 +246,94 @@ impl VM {
           let v = self.get_reg(base, src);
           self.globals.insert(name, v);
         },
+
+        Instr::Closure { dst, proto_const } => {
+          let proto_val = func.chunk.constants[proto_const as usize];
+          let proto_ptr = match unsafe { &*proto_val.as_obj() } {
+            Obj::Func(f) => f as *const ObjFunction,
+            _ => return Err("Closure operand is not a function prototype".to_string()),
+          };
+          let proto = unsafe { &*proto_ptr };
+
+          let mut captured = Vec::with_capacity(proto.upvalues.len());
+          for desc in &proto.upvalues {
+            let upval = match *desc {
+              UpvalueDescriptor::Local(reg) => {
+                let abs_index = base + reg as usize;
+                self.capture_upvalue(abs_index)
+              },
+              UpvalueDescriptor::Upvalue(idx) => {
+                let current_closure = unsafe { &*closure_ptr };
+                current_closure.upvalues[idx as usize]
+              },
+            };
+            captured.push(upval);
+          }
+          let closure_val = self.heap.alloc_closure(ObjClosure {
+            function: proto_ptr,
+            upvalues: captured,
+          });
+          self.set_reg(base, dst, closure_val);
+        },
+        Instr::GetUpval { dst, idx } => {
+          let current_closure = unsafe { &*closure_ptr };
+          let upval_val = current_closure.upvalues[idx as usize];
+          let v = match unsafe { &*upval_val.as_obj() } {
+            Obj::Upvalue(cell) => match cell.get() {
+              UpvalueState::Open(abs_idx) => self.registers[abs_idx],
+              UpvalueState::Closed(v) => v,
+            },
+            _ => return Err("GetUpval operand is not an upvalue".to_string()),
+          };
+          self.set_reg(base, dst, v);
+        },
+        Instr::SetUpval { idx, src } => {
+          let v = self.get_reg(base, src);
+          let current_closure = unsafe { &*closure_ptr };
+          let upval_val = current_closure.upvalues[idx as usize];
+          match unsafe { &*upval_val.as_obj() } {
+            Obj::Upvalue(cell) => match cell.get() {
+              UpvalueState::Open(abs_idx) => self.registers[abs_idx] = v,
+              UpvalueState::Closed(_) => cell.set(UpvalueState::Closed(v)),
+            },
+            _ => return Err("SetUpval operand is not an upvalue".to_string()),
+          }
+        },
+        Instr::CloseUpvalues { from } => {
+          self.close_upvalues_from(base + from as usize);
+        },
+      }
+    }
+  }
+
+  /// Find-or-create an OPEN upvalue for the given absolute register
+  /// index. Reusing an existing one (rather than always allocating a new
+  /// one) is what makes two closures created from the same enclosing
+  /// scope, over the same local, actually share state.
+  fn capture_upvalue(&mut self, abs_index: usize) -> Value {
+    if let Some((_, v)) = self.open_upvalues.iter().find(|(idx, _)| *idx == abs_index) {
+      return *v;
+    }
+    let v = self.heap.alloc_upvalue(UpvalueState::Open(abs_index));
+    self.open_upvalues.push((abs_index, v));
+    v
+  }
+
+  /// Close every open upvalue pointing at a register >= `from_abs_index`,
+  /// copying the register's current value into the upvalue's own
+  /// storage. Called on block exit and on Return.
+  fn close_upvalues_from(&mut self, from_abs_index: usize) {
+    let mut i = 0;
+    while i < self.open_upvalues.len() {
+      let (idx, v) = self.open_upvalues[i];
+      if idx >= from_abs_index {
+        let current_val = self.registers[idx];
+        if let Obj::Upvalue(cell) = unsafe { &*v.as_obj() } {
+          cell.set(UpvalueState::Closed(current_val));
+        }
+        self.open_upvalues.swap_remove(i);
+      } else {
+        i += 1;
       }
     }
   }

@@ -9,7 +9,7 @@ use crate::{
   },
   vm::{
     chunk::{Chunk, Instr},
-    object::{Heap, ObjFunction},
+    object::{Heap, ObjFunction, UpvalueDescriptor},
     value::Value,
   },
 };
@@ -29,70 +29,102 @@ struct Local {
   depth: usize,
 }
 
-pub struct Compiler<'a> {
-  declarations: Vec<Decl>,
+/// Everything about compiling ONE function -- its own chunk, register
+/// allocator, locals table, scope depth, and the upvalue descriptors it's
+/// accumulated so far. `Compiler` holds a STACK of these (one per level of
+/// function nesting currently being compiled), which is what makes upvalue
+/// resolution possible: compiling a nested function's body can look back
+/// into `scopes[enclosing_idx].locals` because the enclosing function's
+/// state is a real, still-present stack entry, not swapped away and lost.
+struct FunctionScope {
   chunk: Chunk,
-  heap: &'a mut Heap,
-
-  /// Index of the next free register in the current function's window.
-  /// Every expression that produces a value claims one via `alloc_reg`.
   next_reg: u8,
   max_reg: u8,
-
-  // Handle locals
-  scope_depth: usize,
   locals: Vec<Local>,
+  scope_depth: usize,
+  upvalues: Vec<UpvalueDescriptor>,
 }
 
-impl<'a> Compiler<'a> {
-  pub fn new(declarations: Vec<Decl>, heap: &'a mut Heap) -> Self {
-    let mut chunk = Chunk::new();
-
-    Compiler {
-      declarations,
-      chunk,
-      heap,
+impl FunctionScope {
+  fn new() -> Self {
+    FunctionScope {
+      chunk: Chunk::new(),
       next_reg: 0,
       max_reg: 0,
-      scope_depth: 0,
       locals: Vec::new(),
+      scope_depth: 0,
+      upvalues: Vec::new(),
+    }
+  }
+}
+
+enum VarLoc {
+  Local(u8, bool),
+  Upvalue(u8),
+  Global,
+}
+
+pub struct Compiler {
+  declarations: Vec<Decl>,
+  heap: Box<Heap>,
+  scopes: Vec<FunctionScope>,
+}
+
+impl Compiler {
+  pub fn new(declarations: Vec<Decl>, chunk: Box<Chunk>, heap: Box<Heap>) -> Self {
+    let mut top = FunctionScope::new();
+    top.chunk = *chunk;
+    Compiler {
+      declarations,
+      heap,
+      scopes: vec![top],
     }
   }
 
-  /// Claim the next free register for an expression result. There's no
-  /// corresponding `free_reg` yet -- see the missing-pieces notes -- so
-  /// registers are currently only ever handed out, never reclaimed.
+  fn cur(&self) -> &FunctionScope {
+    self.scopes.last().unwrap()
+  }
+  fn cur_mut(&mut self) -> &mut FunctionScope {
+    self.scopes.last_mut().unwrap()
+  }
+
+  fn emit(&mut self, instr: Instr) -> usize {
+    self.cur_mut().chunk.emit(instr)
+  }
+  fn add_constant(&mut self, v: Value) -> u16 {
+    self.cur_mut().chunk.add_constant(v)
+  }
+
   fn alloc_reg(&mut self) -> u8 {
-    let r = self.next_reg;
-    self.next_reg = self
+    let scope = self.cur_mut();
+    let r = scope.next_reg;
+    scope.next_reg = scope
       .next_reg
       .checked_add(1)
-      .expect("Compiler ran out of registers (>255 live values in one function)");
-
-    self.max_reg = self.max_reg.max(self.next_reg);
-
+      .expect("compiler ran out of registers (>255 live values in one function)");
+    scope.max_reg = scope.max_reg.max(scope.next_reg);
     r
   }
 
-  /// Emit a JmpIfFalse with a placeholder offset, returning the index of
-  /// that instruction so the offset can be backfilled once the jump target
-  /// is known.
+  fn free_regs_to(&mut self, mark: u8) {
+    self.cur_mut().next_reg = mark;
+  }
+
   fn emit_jump_if_false(&mut self, cond: u8) -> usize {
-    self.chunk.emit(Instr::JmpIfFalse { cond, offset: 0 })
+    self.emit(Instr::JmpIfFalse { cond, offset: 0 })
   }
 
   fn emit_jump(&mut self) -> usize {
-    self.chunk.emit(Instr::Jmp { offset: 0 })
+    self.emit(Instr::Jmp { offset: 0 })
   }
 
-  /// Backfill a placeholder from emit_jump/emit_jump_if_false so it lands on
-  /// "whatever gets emitted next" -- i.e. right here, right now.
   fn patch_jump(&mut self, jump_at: usize) {
-    let target = self.chunk.code.len();
-    let offset: i16 = (target as isize - (jump_at as isize + 1))
+    let target = self.cur().chunk.code.len();
+    let raw_offset = target as isize - (jump_at as isize + 1);
+    let offset: i16 = raw_offset
       .try_into()
       .expect("jump target too far away: offset does not fit in i16");
-    match &mut self.chunk.code[jump_at] {
+    match &mut self.cur_mut().chunk.code[jump_at] {
       Instr::Jmp { offset: o } => *o = offset,
       Instr::JmpIfFalse { offset: o, .. } => *o = offset,
       other => panic!(
@@ -102,54 +134,110 @@ impl<'a> Compiler<'a> {
     }
   }
 
-  /// Emit an unconditional Jmp back to `loop_start` (an index captured
-  /// earlier). The target's already known, so no patching needed.
   fn emit_loop(&mut self, loop_start: usize) {
-    let jump_at = self.chunk.code.len();
-    let offset: i16 = (loop_start as isize - (jump_at as isize + 1))
+    let jump_at = self.cur().chunk.code.len();
+    let raw_offset = loop_start as isize - (jump_at as isize + 1);
+    let offset: i16 = raw_offset
       .try_into()
       .expect("loop body too large: offset does not fit in i16");
-    self.chunk.emit(Instr::Jmp { offset });
+    self.emit(Instr::Jmp { offset });
   }
 
-  /// Give back every register allocated since `mark` was taken. Call this
-  /// once the values in those registers are no longer needed -- e.g. after
-  /// a binary op has consumed its operands, or at the end of a block whose
-  /// locals just went out of scope.
-  fn free_regs_to(&mut self, mark: u8) {
-    debug_assert!(
-      mark <= self.next_reg,
-      "mark must be a previously observed next_reg value"
-    );
-    self.next_reg = mark;
+  fn identifier_name(token: &Token) -> String {
+    match &token.kind {
+      TokenKind::Identifier(s) => s.clone(),
+      other => panic!("compile: expected an identifier token, got {:?}", other),
+    }
   }
 
-  fn compile_function(&mut self, token: &Token, params: &[Expr], body: &Stmt, is_variadic: bool) {
-    let name = token_to_string(token.clone());
+  /// Resolve a name against: the current function's locals, then an
+  /// upvalue chain reaching into enclosing functions, then finally a
+  /// global.
+  fn resolve_variable(&mut self, name: &str) -> VarLoc {
+    if let Some(l) = self.cur().locals.iter().rev().find(|l| l.name == name) {
+      return VarLoc::Local(l.reg, l.is_const);
+    }
+    let top = self.scopes.len() - 1;
+    if let Some(idx) = self.resolve_upvalue(top, name) {
+      return VarLoc::Upvalue(idx);
+    }
+    VarLoc::Global
+  }
 
-    let mut param_names = Vec::new();
+  /// Does `scopes[scope_idx]` have access to `name` as an upvalue? Checks
+  /// whether the DIRECTLY enclosing function (`scope_idx - 1`) has it as a
+  /// local (capture it directly), and if not, recurses outward in case
+  /// some function further out has it -- in which case each intermediate
+  /// function threads it through as `UpvalueDescriptor::Upvalue`, chaining
+  /// the capture inward one level at a time.
+  fn resolve_upvalue(&mut self, scope_idx: usize, name: &str) -> Option<u8> {
+    if scope_idx == 0 {
+      return None;
+    }
+    let enclosing_idx = scope_idx - 1;
 
+    if let Some(reg) = self.scopes[enclosing_idx]
+      .locals
+      .iter()
+      .rev()
+      .find(|l| l.name == name)
+      .map(|l| l.reg)
+    {
+      return Some(self.add_upvalue(scope_idx, UpvalueDescriptor::Local(reg)));
+    }
+    if let Some(up_idx) = self.resolve_upvalue(enclosing_idx, name) {
+      return Some(self.add_upvalue(scope_idx, UpvalueDescriptor::Upvalue(up_idx)));
+    }
+    None
+  }
+
+  fn add_upvalue(&mut self, scope_idx: usize, desc: UpvalueDescriptor) -> u8 {
+    if let Some(pos) = self.scopes[scope_idx]
+      .upvalues
+      .iter()
+      .position(|d| *d == desc)
+    {
+      return pos as u8;
+    }
+    self.scopes[scope_idx].upvalues.push(desc);
+    (self.scopes[scope_idx].upvalues.len() - 1) as u8
+  }
+
+  /// Compile a function's PARAMETERS and BODY into a standalone
+  /// `ObjFunction` prototype. Does NOT bind the resulting function
+  /// anywhere -- callers (`compile_function_decl`, `Expr::Anonymous`)
+  /// decide that.
+  fn compile_function_prototype(
+    &mut self,
+    token: &Token,
+    params: &[Expr],
+    body: &Stmt,
+    is_variadic: bool,
+  ) -> ObjFunction {
+    let name = Self::identifier_name(token);
+
+    let mut param_names = Vec::with_capacity(params.len());
     for param in params {
-      if let Expr::Argument(arg, _) = param {
-        param_names.push(token_to_string(arg.clone()));
-      } else {
-        panic!("function parameter must be an identifier");
+      match param {
+        Expr::Argument(ptoken, _type_hint) => param_names.push(Self::identifier_name(ptoken)),
+        other => panic!(
+          "compile: function parameter is not Expr::Argument: {:?}",
+          other
+        ),
       }
     }
+    if is_variadic {
+      assert!(
+        !param_names.is_empty(),
+        "compile: variadic function must have a named last parameter"
+      );
+    }
 
-    // Swap in a totally fresh compile context.
-    let saved_chunk = std::mem::replace(&mut self.chunk, Chunk::new());
-    let saved_next_reg = std::mem::replace(&mut self.next_reg, 0);
-    let saved_max_reg = std::mem::replace(&mut self.max_reg, 0);
-    let saved_locals = std::mem::replace(&mut self.locals, Vec::new());
-    let saved_scope_depth = std::mem::replace(&mut self.scope_depth, 0);
+    self.scopes.push(FunctionScope::new());
 
-    // Parameters become locals in registers 0..params.len() -- exactly
-    // matching Instr::Call's convention (args already sit contiguously
-    // starting at the callee's register 0).
     for pname in &param_names {
       let reg = self.alloc_reg();
-      self.locals.push(Local {
+      self.cur_mut().locals.push(Local {
         name: pname.clone(),
         reg,
         is_const: false,
@@ -159,37 +247,47 @@ impl<'a> Compiler<'a> {
 
     self.compile_statement(body);
 
-    // Implicit `return nil` if the body didn't end with one.
-    if !matches!(self.chunk.code.last(), Some(Instr::Return { .. })) {
+    if !matches!(self.cur().chunk.code.last(), Some(Instr::Return { .. })) {
       let nil_reg = self.alloc_reg();
-      self.chunk.emit(Instr::LoadNil { dst: nil_reg });
-      self.chunk.emit(Instr::Return { src: nil_reg });
+      self.emit(Instr::LoadNil { dst: nil_reg });
+      self.emit(Instr::Return { src: nil_reg });
     }
 
-    let arity = param_names.len() as u8;
-    let num_registers = self.max_reg;
-    let finished_chunk = std::mem::replace(&mut self.chunk, saved_chunk);
-    self.next_reg = saved_next_reg;
-    self.max_reg = saved_max_reg;
-    self.locals = saved_locals;
-    self.scope_depth = saved_scope_depth;
-
-    let obj_fn = ObjFunction {
-      name: name.clone(),
-      arity,
+    let finished = self.scopes.pop().unwrap();
+    ObjFunction {
+      name,
+      arity: param_names.len() as u8,
       variadic: is_variadic,
-      num_registers,
-      chunk: finished_chunk,
-    };
+      num_registers: finished.max_reg,
+      chunk: finished.chunk,
+      upvalues: finished.upvalues,
+    }
+  }
 
-    let fn_val = self.heap.alloc_function(obj_fn);
+  /// `function foo(...) { ... }` as a declaration: compile the prototype,
+  /// materialize it as a closure at THIS point in the enclosing code
+  /// (crucial for recursion), and bind the result as a global.
+  fn compile_function_decl(
+    &mut self,
+    token: &Token,
+    params: &[Expr],
+    body: &Stmt,
+    is_variadic: bool,
+  ) {
+    let name = Self::identifier_name(token);
+    let obj_fn = self.compile_function_prototype(token, params, body, is_variadic);
+    let proto_val = self.heap.alloc_function(obj_fn);
+    let const_idx = self.add_constant(proto_val);
 
-    let mark = self.next_reg;
+    let mark = self.cur().next_reg;
     let dst = self.alloc_reg();
-    let const_idx = self.chunk.add_constant(fn_val);
-    self.chunk.emit(Instr::LoadConst { dst, const_idx });
-    let name_const = self.chunk.add_constant(self.heap.alloc_string(name));
-    self.chunk.emit(Instr::SetGlobal {
+    self.emit(Instr::Closure {
+      dst,
+      proto_const: const_idx,
+    });
+    let name_val = self.heap.alloc_string(name);
+    let name_const = self.add_constant(name_val);
+    self.emit(Instr::SetGlobal {
       name_const,
       src: dst,
     });
@@ -200,24 +298,24 @@ impl<'a> Compiler<'a> {
     match expression {
       Expr::Nil => {
         let dst = self.alloc_reg();
-        self.chunk.emit(Instr::LoadNil { dst });
+        self.emit(Instr::LoadNil { dst });
         dst
       },
       Expr::Bool(value) => {
         let dst = self.alloc_reg();
-        self.chunk.emit(Instr::LoadBool { dst, val: *value });
+        self.emit(Instr::LoadBool { dst, val: *value });
         dst
       },
       Expr::Integer(value) => {
         let dst = self.alloc_reg();
-        let const_idx = self.chunk.add_constant(Value::number(*value as f64));
-        self.chunk.emit(Instr::LoadConst { dst, const_idx });
+        let const_idx = self.add_constant(Value::number(*value as f64));
+        self.emit(Instr::LoadConst { dst, const_idx });
         dst
       },
       Expr::Float(value) => {
         let dst = self.alloc_reg();
-        let const_idx = self.chunk.add_constant(Value::number(*value as f64));
-        self.chunk.emit(Instr::LoadConst { dst, const_idx });
+        let const_idx = self.add_constant(Value::number(*value as f64));
+        self.emit(Instr::LoadConst { dst, const_idx });
         dst
       },
       Expr::Literal(literal) => {
@@ -225,8 +323,8 @@ impl<'a> Compiler<'a> {
         // reference the resulting Value from the constant pool.
         let dst = self.alloc_reg();
         let str_val = self.heap.alloc_string(literal.clone());
-        let const_idx = self.chunk.add_constant(str_val);
-        self.chunk.emit(Instr::LoadConst { dst, const_idx });
+        let const_idx = self.add_constant(str_val);
+        self.emit(Instr::LoadConst { dst, const_idx });
         dst
       },
       Expr::BigNumber(number) => {
@@ -234,32 +332,26 @@ impl<'a> Compiler<'a> {
         // reference the resulting Value from the constant pool.
         let dst = self.alloc_reg();
         let str_val = self.heap.alloc_bigint(number.clone());
-        let const_idx = self.chunk.add_constant(str_val);
-        self.chunk.emit(Instr::LoadConst { dst, const_idx });
+        let const_idx = self.add_constant(str_val);
+        self.emit(Instr::LoadConst { dst, const_idx });
         dst
       },
       Expr::Identifier(token) => {
-        let name = match &token.kind {
-          TokenKind::Identifier(s) => s.clone(),
-          other => panic!(
-            "compile_expression: Identifier token is not an identifier: {:?}",
-            other
-          ),
-        };
-        if let Some(reg) = self
-          .locals
-          .iter()
-          .rev()
-          .find(|l| l.name == name)
-          .map(|l| l.reg)
-        {
-          reg // a local: zero instructions, just point at its already-live register
-        } else {
-          let dst = self.alloc_reg();
-          let str_val = self.heap.alloc_string(name);
-          let name_const = self.chunk.add_constant(str_val);
-          self.chunk.emit(Instr::GetGlobal { dst, name_const });
-          dst
+        let name = Self::identifier_name(token);
+        match self.resolve_variable(&name) {
+          VarLoc::Local(reg, _) => reg,
+          VarLoc::Upvalue(idx) => {
+            let dst = self.alloc_reg();
+            self.emit(Instr::GetUpval { dst, idx });
+            dst
+          },
+          VarLoc::Global => {
+            let dst = self.alloc_reg();
+            let str_val = self.heap.alloc_string(name);
+            let name_const = self.add_constant(str_val);
+            self.emit(Instr::GetGlobal { dst, name_const });
+            dst
+          },
         }
       },
       Expr::Unary(op, expr) => {
@@ -271,18 +363,15 @@ impl<'a> Compiler<'a> {
           TokenKind::Tilde => Instr::BitNot { dst: src, src },
           _ => panic!("compile_expression: unsupported unary operator: {:?}", op),
         };
-        self.chunk.emit(instr);
+        self.emit(instr);
         src
       },
       Expr::Binary(lhs, op, rhs) => {
-        // By the invariant above, `a` is the one register lhs ends up owning.
+        let mark = self.cur().next_reg;
         let a = self.compile_expression(lhs);
-
-        // Mark right after lhs settles -- this is where rhs's own scratch
-        // registers (and its own final result register `b`) will start.
-        let mark = self.next_reg;
         let dst = if a >= mark { a } else { self.alloc_reg() };
 
+        let rhs_mark = self.cur().next_reg;
         let b = self.compile_expression(rhs);
 
         let instr = match op {
@@ -301,24 +390,17 @@ impl<'a> Compiler<'a> {
           TokenKind::Urshift => Instr::BitUshr { dst, a, b },
           _ => panic!("compile_expression: unsupported binary operator: {:?}", op),
         };
-        self.chunk.emit(instr);
+        self.emit(instr);
 
-        // `b` is dead now that Add/Sub/etc. has consumed it -- give it (and
-        // anything rhs allocated above it) back. `a` is deliberately *not*
-        // freed: it now holds the result, reused in place as the destination,
-        // so the invariant ("returns R, next_reg == R+1") holds for us too.
-        self.free_regs_to(mark);
+        self.free_regs_to(rhs_mark.max(dst + 1));
         dst
       },
       Expr::Logical(lhs, op, rhs) => {
-        // By the invariant above, `a` is the one register lhs ends up owning.
+        let mark = self.cur().next_reg;
         let a = self.compile_expression(lhs);
-
-        // Mark right after lhs settles -- this is where rhs's own scratch
-        // registers (and its own final result register `b`) will start.
-        let mark = self.next_reg;
         let dst = if a >= mark { a } else { self.alloc_reg() };
 
+        let rhs_mark = self.cur().next_reg;
         let b = self.compile_expression(rhs);
 
         let instr = match op {
@@ -330,72 +412,57 @@ impl<'a> Compiler<'a> {
           TokenKind::GreaterEq => Instr::Ge { dst, a, b },
           _ => panic!("compile_expression: unsupported binary operator: {:?}", op),
         };
-        self.chunk.emit(instr);
+        self.emit(instr);
 
-        // `b` is dead now that Add/Sub/etc. has consumed it -- give it (and
-        // anything rhs allocated above it) back. `a` is deliberately *not*
-        // freed: it now holds the result, reused in place as the destination,
-        // so the invariant ("returns R, next_reg == R+1") holds for us too.
-        self.free_regs_to(mark);
+        self.free_regs_to(rhs_mark.max(dst + 1));
         dst
       },
       Expr::Grouping(expr) => self.compile_expression(expr),
       Expr::Condition(condition, truth, falsey) => {
-        let mark = self.next_reg;
+        let mark = self.cur().next_reg;
         let cond_reg = self.compile_expression(condition);
         let then_jump = self.emit_jump_if_false(cond_reg);
-        self.free_regs_to(mark); // cond is dead; also frees the slot the result will land in
+        self.free_regs_to(mark);
 
-        // Both branches compile starting from the same `mark`, so by the
-        // compile_expression invariant (a fully-collapsed expression's result
-        // always lands in the very first register it allocates) they're
-        // guaranteed to land in the SAME register regardless of which one
-        // actually runs -- that's what makes this safe without a Move.
-        let then_result = self.compile_expression(truth);
-        debug_assert_eq!(
-          then_result, mark,
-          "ternary branches must land in the same register"
-        );
-        let else_jump = self.emit_jump(); // skip else after then runs
-        self.free_regs_to(mark); // reclaim before the other, mutually-exclusive branch
+        let result = mark;
+        let then_val = self.compile_expression(truth);
+        if then_val != result {
+          self.emit(Instr::Move {
+            dst: result,
+            src: then_val,
+          });
+        }
+        let else_jump = self.emit_jump();
+        self.free_regs_to(mark);
 
-        self.patch_jump(then_jump); // false lands here: start of else
-        let else_result = self.compile_expression(falsey);
-        debug_assert_eq!(
-          else_result, mark,
-          "ternary branches must land in the same register"
-        );
-        self.patch_jump(else_jump); // after else: land here
+        self.patch_jump(then_jump);
+        let else_val = self.compile_expression(falsey);
+        if else_val != result {
+          self.emit(Instr::Move {
+            dst: result,
+            src: else_val,
+          });
+        }
+        self.patch_jump(else_jump);
+        self.free_regs_to(mark + 1);
 
-        mark // whichever branch ran, its result is sitting in `mark`
+        result
       },
       Expr::Assign(target, value) => {
         let name = match target.as_ref() {
-          Expr::Identifier(token) => match &token.kind {
-            TokenKind::Identifier(s) => s.clone(),
-
-            // TODO: Return proper compiler error
-            other => panic!("compile: Assign target is not an identifier: {:?}", other),
-          },
-          // TODO: Return proper compiler error
-          other => panic!("compile: unsupported assignment target: {:?}", other),
+          Expr::Identifier(token) => Self::identifier_name(token),
+          other => panic!(
+            "compile_expression: unsupported assignment target: {:?}",
+            other
+          ),
         };
 
-        // Copy what's needed out of `self.locals` before compiling `value`
-        // (needs &mut self) -- can't hold a borrow of locals across that call.
-        let resolved = self
-          .locals
-          .iter()
-          .rev()
-          .find(|l| l.name == name)
-          .map(|l| (l.reg, l.is_const));
-
-        match resolved {
-          Some((_, true)) => panic!("compile: cannot assign to constant '{}'", name),
-          Some((dst, false)) => {
+        match self.resolve_variable(&name) {
+          VarLoc::Local(_, true) => panic!("compile: cannot assign to constant '{}'", name),
+          VarLoc::Local(dst, false) => {
             let value_reg = self.compile_expression(value);
             if value_reg != dst {
-              self.chunk.emit(Instr::Move {
+              self.emit(Instr::Move {
                 dst,
                 src: value_reg,
               });
@@ -403,13 +470,19 @@ impl<'a> Compiler<'a> {
             }
             dst
           },
-          None => {
-            // Not a known local -- treat it as a global, same mechanism
-            // "fib" uses to find itself.
+          VarLoc::Upvalue(idx) => {
+            let value_reg = self.compile_expression(value);
+            self.emit(Instr::SetUpval {
+              idx,
+              src: value_reg,
+            });
+            value_reg
+          },
+          VarLoc::Global => {
             let value_reg = self.compile_expression(value);
             let str_val = self.heap.alloc_string(name);
-            let name_const = self.chunk.add_constant(str_val);
-            self.chunk.emit(Instr::SetGlobal {
+            let name_const = self.add_constant(str_val);
+            self.emit(Instr::SetGlobal {
               name_const,
               src: value_reg,
             });
@@ -418,13 +491,14 @@ impl<'a> Compiler<'a> {
         }
       },
       Expr::Call(callee, args) => {
-        let mark = self.next_reg;
+        let mark = self.cur().next_reg;
+
         let raw_func_reg = self.compile_expression(callee);
         let func_reg = if raw_func_reg >= mark {
           raw_func_reg
         } else {
           let fresh = self.alloc_reg();
-          self.chunk.emit(Instr::Move {
+          self.emit(Instr::Move {
             dst: fresh,
             src: raw_func_reg,
           });
@@ -436,23 +510,42 @@ impl<'a> Compiler<'a> {
           let expected = func_reg + 1 + num_args;
           let arg_reg = self.compile_expression(arg);
           if arg_reg != expected {
-            self.chunk.emit(Instr::Move {
+            self.emit(Instr::Move {
               dst: expected,
               src: arg_reg,
             });
           }
-          self.next_reg = expected + 1; // claim the slot either way
-          num_args += 1;
+          self.cur_mut().next_reg = expected + 1;
+          num_args = num_args
+            .checked_add(1)
+            .expect("too many arguments in a single call");
         }
 
-        let dst = func_reg; // result overwrites the callee's own register
-        self.chunk.emit(Instr::Call {
+        let dst = func_reg;
+        self.emit(Instr::Call {
           dst,
           func: func_reg,
           num_args,
         });
         self.free_regs_to(func_reg + 1);
         dst
+      },
+      Expr::Anonymous(decl) => match decl.as_ref() {
+        Decl::Function(token, params, body, is_variadic) => {
+          let obj_fn = self.compile_function_prototype(token, params, body, *is_variadic);
+          let proto_val = self.heap.alloc_function(obj_fn);
+          let const_idx = self.add_constant(proto_val);
+          let dst = self.alloc_reg();
+          self.emit(Instr::Closure {
+            dst,
+            proto_const: const_idx,
+          });
+          dst
+        },
+        other => panic!(
+          "compile_expression: unsupported Anonymous declaration: {:?}",
+          other
+        ),
       },
       _ => {
         panic!(
@@ -466,98 +559,96 @@ impl<'a> Compiler<'a> {
   fn compile_statement(&mut self, statement: &Stmt) {
     match statement {
       Stmt::Expression(expression) => {
-        let _ = self.compile_expression(expression);
+        let mark = self.cur().next_reg;
+        self.compile_expression(expression);
+        self.free_regs_to(mark);
       },
       Stmt::Echo(value) => {
         let reg = self.compile_expression(value);
-        self.chunk.emit(Instr::Print { src: reg });
+        self.emit(Instr::Print { src: reg });
       },
       Stmt::Block(statements) => {
-        let mark = self.next_reg;
-        let locals_mark = self.locals.len();
-        self.scope_depth += 1;
+        let mark = self.cur().next_reg;
+        let locals_mark = self.cur().locals.len();
+        self.cur_mut().scope_depth += 1;
 
         for stmt in statements {
           self.compile_statement(stmt);
         }
 
-        self.scope_depth -= 1;
-        self.locals.truncate(locals_mark); // names declared in this block are gone
+        self.cur_mut().scope_depth -= 1;
+        let declared_locals = self.cur().locals.len() > locals_mark;
+        self.cur_mut().locals.truncate(locals_mark);
+        if declared_locals {
+          self.emit(Instr::CloseUpvalues { from: mark });
+        }
         self.free_regs_to(mark);
       },
       Stmt::If(condition, then_branch, else_branch) => {
-        let mark = self.next_reg;
+        let mark = self.cur().next_reg;
         let cond_reg = self.compile_expression(condition);
         let then_jump = self.emit_jump_if_false(cond_reg);
-        self.free_regs_to(mark); // cond is consumed by the jump test, dead now
+        self.free_regs_to(mark);
 
         self.compile_statement(then_branch);
 
         match else_branch {
           Some(else_stmt) => {
-            let else_jump = self.emit_jump(); // skip the else after then runs
-            self.patch_jump(then_jump); // false lands here: start of else
+            let else_jump = self.emit_jump();
+            self.patch_jump(then_jump);
             self.compile_statement(else_stmt);
-            self.patch_jump(else_jump); // after else: land here
+            self.patch_jump(else_jump);
           },
           None => {
-            self.patch_jump(then_jump); // false skips straight past then
+            self.patch_jump(then_jump);
           },
         }
       },
       Stmt::While(cond, body) => {
-        let loop_start = self.chunk.code.len(); // jump-back target
+        let loop_start = self.cur().chunk.code.len();
 
-        let mark = self.next_reg;
+        let mark = self.cur().next_reg;
         let cond_reg = self.compile_expression(cond);
         let exit_jump = self.emit_jump_if_false(cond_reg);
         self.free_regs_to(mark);
 
         self.compile_statement(body);
-        self.emit_loop(loop_start); // back to re-evaluate cond
+        self.emit_loop(loop_start);
 
-        self.patch_jump(exit_jump); // false condition lands here, past the loop
+        self.patch_jump(exit_jump);
       },
+      Stmt::Decl(decl) => self.compile_declaration(decl),
       Stmt::VarList(list) => {
         for item in list {
           self.compile_statement(item);
         }
       },
       Stmt::Var(token, initializer, _type_hint, is_const) => {
-        let name = match &token.kind {
-          TokenKind::Identifier(s) => s.clone(),
-          other => panic!("compile: Var token is not an identifier: {:?}", other),
-        };
+        let name = Self::identifier_name(token);
 
-        // Redeclaring the same name in the SAME scope is an error;
-        // shadowing an outer scope's variable of the same name is fine.
         let redeclared = self
+          .cur()
           .locals
           .iter()
           .rev()
-          .take_while(|l| l.depth == self.scope_depth)
+          .take_while(|l| l.depth == self.cur().scope_depth)
           .any(|l| l.name == name);
         if redeclared {
-          // TODO: Report compiler error instead!
           panic!("compile: '{}' is already declared in this scope", name);
         }
 
-        // The initializer's result lands wherever the next free register is --
-        // and unlike a plain expression statement, we deliberately do NOT free
-        // it afterward: that register now belongs to this local for the rest
-        // of its scope.
         let reg = self.compile_expression(initializer);
-
-        self.locals.push(Local {
+        let depth = self.cur().scope_depth;
+        self.cur_mut().locals.push(Local {
           name,
           reg,
           is_const: *is_const,
-          depth: self.scope_depth,
+          depth,
         });
       },
       Stmt::Return(value) => {
         let reg = self.compile_expression(value);
-        self.chunk.emit(Instr::Return { src: reg });
+        self.emit(Instr::Return { src: reg });
       },
       _ => {},
     };
@@ -566,34 +657,37 @@ impl<'a> Compiler<'a> {
   fn compile_declaration(&mut self, declaration: &Decl) {
     match declaration {
       Decl::Stmt(statement) => self.compile_statement(statement),
-      Decl::Function(name, params, body, variadic) => {
-        self.compile_function(name, params, body, *variadic);
+      Decl::Function(token, params, body, is_variadic) => {
+        self.compile_function_decl(token, params, body, *is_variadic)
       },
       _ => {},
     };
   }
 
-  pub fn compile(&mut self) -> ObjFunction {
+  pub fn compile(mut self) -> (ObjFunction, Heap) {
     for decl in self.declarations.clone().iter() {
       self.compile_declaration(decl);
     }
-    return self.finalize();
+    self.finalize()
   }
 
-  /// This function is only meant for the main script
-  pub fn finalize(&mut self) -> ObjFunction {
-    if !matches!(self.chunk.code.last(), Some(Instr::Return { .. })) {
+  /// Finish compilation and hand back the assembled top-level function,
+  /// ready for `Heap::alloc_plain_closure` + `VM::run`.
+  pub fn finalize(mut self) -> (ObjFunction, Heap) {
+    if !matches!(self.cur().chunk.code.last(), Some(Instr::Return { .. })) {
       let nil_reg = self.alloc_reg();
-      self.chunk.emit(Instr::LoadNil { dst: nil_reg });
-      self.chunk.emit(Instr::Return { src: nil_reg });
+      self.emit(Instr::LoadNil { dst: nil_reg });
+      self.emit(Instr::Return { src: nil_reg });
     }
-
-    ObjFunction {
-      name: "<main>".to_string(),
+    let top = self.scopes.into_iter().next().unwrap();
+    let main_fn = ObjFunction {
+      name: "main".to_string(),
       arity: 0,
-      num_registers: self.max_reg,
       variadic: false,
-      chunk: self.chunk.clone(),
-    }
+      num_registers: top.max_reg,
+      chunk: top.chunk,
+      upvalues: Vec::new(),
+    };
+    (main_fn, *self.heap)
   }
 }

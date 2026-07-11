@@ -178,6 +178,31 @@ pub enum Instr {
     name_const: u16,
     src: u8,
   },
+
+  /// Create a new closure from the function prototype stored at
+  /// `constants[proto_const]`, capturing upvalues per that prototype's
+  /// own (compile-time, static) descriptor list, sourced from the
+  /// CURRENTLY EXECUTING frame's registers/closure.
+  Closure {
+    dst: u8,
+    proto_const: u16,
+  },
+  GetUpval {
+    dst: u8,
+    idx: u8,
+  },
+  SetUpval {
+    idx: u8,
+    src: u8,
+  },
+  /// Close every open upvalue pointing at a register >= `from` (relative
+  /// to the current frame), copying its current value out of the
+  /// register into the upvalue's own storage. Emitted at block exit so a
+  /// register reused for something else (e.g. the next loop iteration's
+  /// local) doesn't silently corrupt a closure that captured it.
+  CloseUpvalues {
+    from: u8,
+  },
 }
 
 #[derive(Default, Clone, Debug)]

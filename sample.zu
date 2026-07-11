@@ -73,3 +73,19 @@ def sum2(x, ...args) {
 }
 
 sum2(1, 2, 3)
+
+def outer(a, b) {
+  def inner(c, d) {
+    def inner_inner(e, f) {
+      return a + b + c + d + e + f
+    }
+
+    return inner_inner
+  }
+
+  return inner
+}
+
+echo outer(1, 2)
+echo outer(1, 2)(3, 4)
+echo outer(1, 2)(3, 4)(5, 6)

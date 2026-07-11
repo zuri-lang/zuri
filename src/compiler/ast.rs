@@ -72,6 +72,7 @@ pub enum Stmt {
   Import(String, Box<Expr>, Vec<Expr>, bool),
   Catch(Box<Stmt>, Option<Box<Stmt>>, Option<Box<Expr>>),
   Block(Vec<Stmt>),
+  Decl(Box<Decl>),
   Var(Token, Box<Expr>, Option<Box<Expr>>, bool),
   VarList(Vec<Stmt>),
 }

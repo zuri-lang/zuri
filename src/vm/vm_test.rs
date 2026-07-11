@@ -1,5 +1,5 @@
 use crate::vm::chunk::{Chunk, Instr};
-use crate::vm::object::{Heap, ObjFunction};
+use crate::vm::object::{Heap, ObjClosure, ObjFunction};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
@@ -77,6 +77,7 @@ fn build_fib(heap: &mut Heap) -> ObjFunction {
     num_registers: 7,
     variadic: false,
     chunk: c,
+    upvalues: Vec::new(),
   }
 }
 
@@ -160,6 +161,7 @@ fn build_main(heap: &mut Heap, fib_val: Value) -> ObjFunction {
     num_registers: 7,
     variadic: false,
     chunk: c,
+    upvalues: Vec::new(),
   }
 }
 
@@ -179,7 +181,10 @@ pub fn run_test() {
     _ => unreachable!(),
   };
 
-  if let Err(e) = vm.run(main_fn_ptr) {
+  if let Err(e) = vm.run(&ObjClosure {
+    function: main_fn_ptr,
+    upvalues: Vec::new(),
+  }) {
     eprintln!("runtime error: {}", e);
     std::process::exit(1);
   }

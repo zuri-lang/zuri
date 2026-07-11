@@ -1,5 +1,7 @@
 use std::fs;
 
+use zuri::vm::{chunk::Chunk, object::Obj};
+
 fn main() {
   // zuri::compiler::compiler_test::run_test();
   // zuri::vm::vm_test::run_test();
@@ -10,14 +12,20 @@ fn main() {
   let mut parser = zuri::compiler::parser::Parser::new(&mut lex);
   if let Ok(tokens) = parser.parse() {
     // println!("{:?}", tokens);
-    let mut heap = zuri::vm::object::Heap::new();
-    let mut compiler = zuri::compiler::compiler::Compiler::new(tokens, &mut heap);
+    let heap = Box::new(zuri::vm::object::Heap::new());
+    let chunk = Box::new(Chunk::new());
+    let compiler = zuri::compiler::compiler::Compiler::new(tokens, chunk, heap);
 
-    let fn_obj = compiler.compile();
+    let (fn_obj, mut heap) = compiler.compile();
+    let closure = heap.alloc_plain_closure(fn_obj);
 
     let mut vm = zuri::vm::vm::VM::new(heap);
+    let main_ptr = match unsafe { &*closure.as_obj() } {
+      Obj::Closure(c) => c as *const _,
+      _ => unreachable!(),
+    };
 
-    if let Err(e) = vm.run(&fn_obj) {
+    if let Err(e) = vm.run(main_ptr) {
       eprintln!("runtime error: {}", e);
       std::process::exit(1);
     }

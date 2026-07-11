@@ -166,6 +166,11 @@ impl Value {
           (Obj::Str(a), Obj::Str(b)) => a == b,
           (Obj::Bytes(a), Obj::Bytes(b)) => a.eq(b),
           (Obj::Func(a), Obj::Func(b)) => std::ptr::eq(a, b),
+          (Obj::Closure(a), Obj::Closure(b)) => std::ptr::eq(a, b),
+          (Obj::Upvalue(a), Obj::Upvalue(b)) => std::ptr::eq(a, b),
+          (Obj::List(a), Obj::List(b)) => {
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
+          },
           _ => false,
         };
       }
@@ -192,6 +197,8 @@ impl Value {
           Obj::BigInt(_) => "bigint",
           Obj::List(_) => "list",
           Obj::Func(_) => "function",
+          Obj::Closure(_) => "function",
+          Obj::Upvalue(_) => "upvalue",
         }
       }
     } else {
@@ -221,8 +228,20 @@ impl std::fmt::Display for Value {
             s.iter().map(|f| format!("{:02x}", f)).format(" ")
           ),
           Obj::BigInt(v) => write!(f, "{}n", v.to_string()),
-          Obj::List(list) => write!(f, "[{}]", list.iter().map(|v| v.to_string()).format(", ")),
+          // Obj::List(list) => write!(f, "[{}]", list.iter().map(|v| v.to_string()).format(", ")),
           Obj::Func(func) => write!(f, "<fn {}>", func.name),
+          Obj::Closure(c) => write!(f, "<fn {}>", (&*c.function).name),
+          Obj::Upvalue(_) => write!(f, "<upvalue>"),
+          Obj::List(items) => {
+            write!(f, "[")?;
+            for (i, item) in items.iter().enumerate() {
+              if i > 0 {
+                write!(f, ", ")?;
+              }
+              write!(f, "{}", item)?;
+            }
+            write!(f, "]")
+          },
         }
       }
     } else {

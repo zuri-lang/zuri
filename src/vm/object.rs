@@ -1,4 +1,5 @@
 use big_num::BigInt;
+use std::cell::Cell;
 
 use crate::vm::chunk::Chunk;
 use crate::vm::value::Value;
@@ -8,19 +9,72 @@ pub enum Obj {
   Str(String),
   Bytes(Vec<u8>),
   BigInt(BigInt),
-  Func(ObjFunction),
+  /// A dynamically-sized list -- used to collect a variadic function's
+  /// trailing arguments. No bytecode support yet for indexing into or
+  /// iterating one from Zuri code -- this is just the storage.
   List(Vec<Value>),
+  /// A function PROTOTYPE -- the static, compiled-once result of one
+  /// `function` declaration or literal. Shared by every closure ever
+  /// created from it; holds no per-call-site state itself.
+  Func(ObjFunction),
+  /// A function VALUE at runtime -- a prototype plus the specific
+  /// upvalues captured at the moment this particular closure was
+  /// created. Every callable Value is one of these, even a top-level
+  /// function that captures nothing (its `upvalues` is just empty).
+  Closure(ObjClosure),
+  /// A captured variable. Starts Open, pointing at a live register in
+  /// some still-executing frame -- reads/writes through the upvalue and
+  /// through the original local are the same memory. Closed when that
+  /// frame's register would otherwise become invalid (block exit or
+  /// function return): the current value is copied out, and the upvalue
+  /// owns it from then on.
+  Upvalue(Cell<UpvalueState>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UpvalueDescriptor {
+  /// Capture the immediately enclosing function's local register `n`.
+  Local(u8),
+  /// Capture the immediately enclosing function's OWN upvalue `n` --
+  /// used when a function captures a variable from an outer scope that
+  /// isn't its *direct* parent (the variable passes through, unchanged,
+  /// via the intermediate function's own upvalue list).
+  Upvalue(u8),
+}
+
+#[derive(Clone, Copy)]
+pub enum UpvalueState {
+  /// Points at an absolute index into `VM::registers` (i.e. already
+  /// includes some frame's `base`).
+  Open(usize),
+  Closed(Value),
 }
 
 pub struct ObjFunction {
   pub name: String,
-  pub arity: u8,
   pub variadic: bool,
+  pub chunk: Chunk,
+
+  /// Total declared parameter count, INCLUDING the variadic parameter
+  /// itself if `variadic` is set.
+  pub arity: u8,
 
   /// How many registers this function's window needs. The caller reserves
   /// this many registers starting at the call's `first_arg` register.
   pub num_registers: u8,
-  pub chunk: Chunk,
+
+  /// Static, compile-time list of what this function's own upvalues
+  /// need to capture from ITS enclosing function, in order. Every time
+  /// a closure is created from this prototype (`Instr::Closure`), the
+  /// VM walks this list once to build that instance's actual upvalues.
+  pub upvalues: Vec<UpvalueDescriptor>,
+}
+
+pub struct ObjClosure {
+  pub function: *const ObjFunction,
+  /// One entry per `function.upvalues` descriptor, in the same order.
+  /// Each Value here points at an `Obj::Upvalue`.
+  pub upvalues: Vec<Value>,
 }
 
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
@@ -62,5 +116,28 @@ impl Heap {
 
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {
     self.alloc(Obj::Func(f))
+  }
+  pub fn alloc_closure(&mut self, c: ObjClosure) -> Value {
+    self.alloc(Obj::Closure(c))
+  }
+
+  pub fn alloc_upvalue(&mut self, state: UpvalueState) -> Value {
+    self.alloc(Obj::Upvalue(Cell::new(state)))
+  }
+
+  /// Convenience for a function that captures nothing (the common case:
+  /// every top-level function, and any nested function that happens not
+  /// to reference an enclosing local) -- allocates the prototype and
+  /// wraps it in a trivial empty-upvalue closure in one step.
+  pub fn alloc_plain_closure(&mut self, f: ObjFunction) -> Value {
+    let proto_val = self.alloc_function(f);
+    let proto_ptr = match unsafe { &*proto_val.as_obj() } {
+      Obj::Func(func) => func as *const ObjFunction,
+      _ => unreachable!(),
+    };
+    self.alloc_closure(ObjClosure {
+      function: proto_ptr,
+      upvalues: Vec::new(),
+    })
   }
 }

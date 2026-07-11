@@ -1394,6 +1394,7 @@ impl<'a> Parser<'a> {
       TokenKind::Lbrace => self.block(),
       TokenKind::Import => self.import_stmt(),
       TokenKind::Catch => self.catch_stmt(),
+      TokenKind::Def => Stmt::Decl(Box::new(self.function_decl())),
       TokenKind::Continue => Stmt::Continue,
       TokenKind::Break => Stmt::Break,
       TokenKind::Return => {
