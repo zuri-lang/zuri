@@ -116,7 +116,11 @@ impl<'a> Compiler<'a> {
   }
 
   fn free_regs_to(&mut self, mark: u8) {
-    self.cur_mut().next_reg = mark;
+    let scope = self.cur_mut();
+    scope.next_reg = mark;
+    if mark > scope.max_reg {
+      scope.max_reg = mark;
+    }
   }
 
   fn emit_jump_if_false(&mut self, cond: u8) -> usize {
@@ -569,7 +573,7 @@ impl<'a> Compiler<'a> {
               src: arg_reg,
             });
           }
-          self.cur_mut().next_reg = expected + 1;
+          self.free_regs_to(expected + 1);
           num_args = num_args
             .checked_add(1)
             .expect("too many arguments in a single call");

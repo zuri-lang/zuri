@@ -33,7 +33,7 @@ _in()
 
 
 iter var i = 0; i < 10; i++ {
-  var start = time()
+  # var start = time()
   var sum = 0
   iter var j = 0; j < 1000; j++ {
     def outer(a, b, c) {
@@ -48,5 +48,5 @@ iter var i = 0; i < 10; i++ {
   }
 
   echo sum
-  echo time() - start
+  # echo time() - start
 }

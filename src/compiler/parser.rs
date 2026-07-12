@@ -1476,6 +1476,8 @@ impl<'a> Parser<'a> {
       if !match_tok!(self, TokenKind::Comma) {
         if declarations.is_empty() {
           return declaration;
+        } else {
+          declarations.push(declaration);
         }
 
         break;

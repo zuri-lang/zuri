@@ -10,6 +10,6 @@ def log(n) {
 
 echo log(21)
 
-# Compare against the Math library
-import math
-echo math.log(21)
+# # Compare against the Math library
+# import math
+# echo math.log(21)

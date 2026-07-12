@@ -114,15 +114,15 @@ impl<'a> VM<'a> {
         Instr::BitAnd { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "&", |x, y| x & y)?,
         Instr::BitOr { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "|", |x, y| x | y)?,
         Instr::BitXor { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "^", |x, y| x ^ y)?,
-        Instr::BitShl { dst, a, b } => {
-          self.bitwise_numeric(base, dst, a, b, "<<", |x, y| x << y)?
-        },
-        Instr::BitShr { dst, a, b } => {
-          self.bitwise_numeric(base, dst, a, b, ">>", |x, y| x >> y)?
-        },
-        Instr::BitUshr { dst, a, b } => {
-          self.bitwise_numeric(base, dst, a, b, ">>>", |x, y| x >> y)?
-        },
+        Instr::BitShl { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "<<", |x, y| {
+          x.checked_shl(y as u32).unwrap_or(0)
+        })?,
+        Instr::BitShr { dst, a, b } => self.bitwise_numeric(base, dst, a, b, ">>", |x, y| {
+          x.checked_shr(y as u32).unwrap_or(0)
+        })?,
+        Instr::BitUshr { dst, a, b } => self.bitwise_numeric(base, dst, a, b, ">>>", |x, y| {
+          (x as u32).checked_shr(y as u32).unwrap_or(0) as i64
+        })?,
         Instr::BitNot { dst, src } => {
           let v = self.get_reg(base, src);
           if !v.is_number() {

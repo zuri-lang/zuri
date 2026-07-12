@@ -15,9 +15,9 @@ test('hello')
 test(Exception('message'))
 
 class TestClass {
-  method(param: list, ...) {
+  method(param: list, ...args) {
     echo param
-    echo __args__
+    echo args
   }
 }
 

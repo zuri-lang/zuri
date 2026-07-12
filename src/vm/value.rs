@@ -52,6 +52,7 @@ const TRUE_VAL: u64 = QNAN | TAG_TRUE;
 const PTR_MASK: u64 = 0x0000_ffff_ffff_ffff;
 
 #[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
 pub struct Value(u64);
 
 impl Value {
@@ -323,8 +324,13 @@ impl std::fmt::Display for Value {
           ),
           Obj::BigInt(v) => write!(f, "{}n", v.to_string()),
           // Obj::List(list) => write!(f, "[{}]", list.iter().map(|v| v.to_string()).format(", ")),
-          Obj::Func(func) => write!(f, "<fn {}>", func.name),
-          Obj::Closure(c) => write!(f, "<fn {}>", (&*c.function).name),
+          Obj::Func(func) => write!(f, "<function {}({})>", func.name, func.arity),
+          Obj::Closure(c) => write!(
+            f,
+            "<function {}({})>",
+            (&*c.function).name,
+            (&*c.function).arity
+          ),
           Obj::Upvalue(_) => write!(f, "<upvalue>"),
           Obj::List(items) => {
             write!(f, "[")?;
