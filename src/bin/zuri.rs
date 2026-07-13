@@ -18,7 +18,7 @@ fn print_repl_help() {
   println!("Press <tab> for autocomplete suggestions");
 }
 
-fn run_repl() {
+fn run_repl(vm: &mut VM) {
   let mut repl = Repl::new(
     KEYWORD_TOKENS
       .iter()
@@ -37,11 +37,7 @@ fn run_repl() {
   // let stdin = io::stdin();
   // let mut input = String::new();
 
-  let mut heap = Heap::new();
-  let globals = HashMap::new();
-  let mut vm = VM::new(&mut heap, globals);
-
-  repl.run(&mut vm, |vm, buffer| {
+  repl.run(vm, |vm, buffer| {
     if !buffer.is_empty() {
       if buffer.eq(".exit") {
         return Err(());
@@ -91,10 +87,8 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
   Ok(())
 }
 
-fn run_file(file: &str) {
+fn run_file(vm: &mut VM, file: &str) {
   let content = fs::read_to_string(file).expect("Should have been able to read the file");
-
-  let globals = HashMap::new();
 
   let mut lex = Lexer::new(&content);
   let mut parser = Parser::new(&mut lex);
@@ -107,7 +101,6 @@ fn run_file(file: &str) {
     let fn_obj = compiler.compile();
     let closure = heap.alloc_plain_closure(fn_obj);
 
-    let mut vm = VM::new(&mut heap, globals);
     let main_ptr = match unsafe { &*closure.as_obj() } {
       Obj::Closure(c) => c as *const _,
       _ => unreachable!(),
@@ -135,9 +128,17 @@ fn main() {
   if args.len() > 2 {
     println!("Usage: zuri <script>");
     process::exit(1);
-  } else if args.len() == 2 {
-    run_file(&args[1]);
   } else {
-    run_repl();
+    let mut heap = Heap::new();
+    let globals = HashMap::new();
+
+    let mut vm = VM::new(&mut heap, globals);
+    vm.init();
+
+    if args.len() == 2 {
+      run_file(&mut vm, &args[1]);
+    } else {
+      run_repl(&mut vm);
+    }
   }
 }

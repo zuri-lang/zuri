@@ -32,7 +32,7 @@ use std::cell::Cell;
 use itertools::Itertools;
 use num_bigint::BigInt;
 
-use crate::vm::object::{Obj, ObjClosure, ObjFunction, UpvalueState};
+use crate::vm::object::{NativeFunction, Obj, ObjClosure, ObjFunction, UpvalueState};
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
 const SIGN_BIT: u64 = 0x8000_0000_0000_0000;
@@ -159,6 +159,17 @@ impl Value {
     self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::BigInt(_))
   }
 
+  #[inline]
+  pub fn is_native(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Native(_))
+  }
+
+  /// Is this something Instr::Call can invoke -- closure OR native. Same
+  /// concept to a Zuri program; different call paths internally.
+  pub fn is_callable(&self) -> bool {
+    self.is_closure() || self.is_native()
+  }
+
   // #[inline]
   // pub fn as_int(&self) -> i64 {
   //   debug_assert!(self.is_int());
@@ -207,6 +218,14 @@ impl Value {
     match unsafe { &*self.as_obj() } {
       Obj::Closure(c) => c,
       _ => unreachable!("as_closure() called on a non-closure Value"),
+    }
+  }
+
+  pub fn as_native(&self) -> &NativeFunction {
+    debug_assert!(self.is_native());
+    match unsafe { &*self.as_obj() } {
+      Obj::Native(c) => c,
+      _ => unreachable!("as_native() called on a non-native Value"),
     }
   }
 
@@ -293,8 +312,7 @@ impl Value {
           Obj::Bytes(_) => "bytes",
           Obj::BigInt(_) => "bigint",
           Obj::List(_) => "list",
-          Obj::Func(_) => "function",
-          Obj::Closure(_) => "function",
+          Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) => "function",
           Obj::Upvalue(_) => "upvalue",
         }
       }
@@ -325,13 +343,26 @@ impl std::fmt::Display for Value {
             s.iter().map(|f| format!("{:02x}", f)).format(" ")
           ),
           Obj::BigInt(v) => write!(f, "{}n", v.to_string()),
-          // Obj::List(list) => write!(f, "[{}]", list.iter().map(|v| v.to_string()).format(", ")),
-          Obj::Func(func) => write!(f, "<function {}({})>", func.name, func.arity),
+          Obj::Func(func) => write!(
+            f,
+            "<function {}({}{})>",
+            func.name,
+            func.arity,
+            if func.variadic { "..." } else { "" }
+          ),
           Obj::Closure(c) => write!(
             f,
-            "<function {}({})>",
+            "<function {}({}{})>",
             (&*c.function).name,
-            (&*c.function).arity
+            (&*c.function).arity,
+            if (&*c.function).variadic { "..." } else { "" }
+          ),
+          Obj::Native(func) => write!(
+            f,
+            "<function {}({}{})>",
+            func.name,
+            func.min_arity,
+            if func.variadic { "..." } else { "" }
           ),
           Obj::Upvalue(_) => write!(f, "<upvalue>"),
           Obj::List(items) => {

@@ -5,6 +5,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 use crate::vm::chunk::Instr;
+use crate::vm::natives;
 use crate::vm::object::{Heap, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
 use crate::vm::value::Value;
 
@@ -49,6 +50,10 @@ impl<'a> VM<'a> {
       globals,
       heap,
     }
+  }
+
+  pub fn init(&mut self) {
+    natives::install(self);
   }
 
   pub fn heap_mut(&mut self) -> &mut Heap {
@@ -232,6 +237,35 @@ impl<'a> VM<'a> {
           num_args,
         } => {
           let callee = self.get_reg(base, func_reg);
+
+          if callee.is_native() {
+            let native = callee.as_native();
+            let ok_arity = if native.variadic {
+              num_args >= native.min_arity
+            } else {
+              num_args == native.min_arity
+            };
+            if !ok_arity {
+              return Err(format!(
+                "'{}' expects {}{} argument(s), got {}",
+                native.name,
+                if native.variadic { "at least " } else { "" },
+                native.min_arity,
+                num_args
+              ));
+            }
+
+            let args_start = base + func_reg as usize + 1;
+            let args_end = args_start + num_args as usize;
+            let args = &self.registers[args_start..args_end];
+            // Disjoint field borrow: `args` borrows self.registers, `&mut
+            // self.heap` borrows a DIFFERENT field -- allowed because both
+            // are direct field accesses, not hidden behind a &mut self call.
+            let result = (native.func)(&mut self.heap, args)?;
+            self.set_reg(base, dst, result);
+            continue; // <- load-bearing: skips the closure-only checks below
+          }
+
           if !callee.is_closure() {
             return Err(format!("cannot call a {}", callee.type_name()));
           }

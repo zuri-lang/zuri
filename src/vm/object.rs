@@ -29,6 +29,7 @@ pub enum Obj {
   /// function return): the current value is copied out, and the upvalue
   /// owns it from then on.
   Upvalue(Cell<UpvalueState>),
+  Native(NativeFunction),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -76,6 +77,20 @@ pub struct ObjClosure {
   /// Each Value here points at an `Obj::Upvalue`.
   pub upvalues: Vec<Value>,
 }
+
+pub struct NativeFunction {
+  pub name: &'static str,
+  pub min_arity: u8,
+  /// If true, min_arity is a floor ("one or more"); if false, arg count
+  /// must equal min_arity exactly.
+  pub variadic: bool,
+  pub func: NativeFn,
+}
+
+/// A plain fn pointer, not a boxed closure. Takes &mut Heap (not &mut VM)
+/// specifically so it can be called while a slice of VM::registers is
+/// still borrowed -- see the disjoint-field-borrow note in Instr::Call.
+pub type NativeFn = fn(&mut Heap, &[Value]) -> Result<Value, String>;
 
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
 /// *const Obj pointers into this arena, never real ownership, which is what
@@ -139,5 +154,9 @@ impl Heap {
       function: proto_ptr,
       upvalues: Vec::new(),
     })
+  }
+
+  pub fn alloc_native(&mut self, native: NativeFunction) -> Value {
+    self.alloc(Obj::Native(native))
   }
 }
