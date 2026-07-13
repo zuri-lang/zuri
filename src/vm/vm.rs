@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+use std::ops::{Neg, Shl, Shr};
+
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 use crate::vm::chunk::Instr;
 use crate::vm::object::{Heap, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
@@ -103,26 +107,66 @@ impl<'a> VM<'a> {
         },
 
         Instr::Add { dst, a, b } => self.binary_add(base, dst, a, b, "+")?,
-        Instr::Sub { dst, a, b } => self.binary_numeric(base, dst, a, b, "-", |x, y| x - y)?,
-        Instr::Mul { dst, a, b } => self.binary_numeric(base, dst, a, b, "*", |x, y| x * y)?,
-        Instr::Div { dst, a, b } => self.binary_numeric(base, dst, a, b, "/", |x, y| x / y)?,
-        Instr::Pow { dst, a, b } => self.binary_numeric(base, dst, a, b, "**", |x, y| x.powf(y))?,
-        Instr::Mod { dst, a, b } => self.binary_numeric(base, dst, a, b, "%", |x, y| x % y)?,
-        Instr::Floor { dst, a, b } => {
-          self.binary_numeric(base, dst, a, b, "//", |x, y| (x / y).floor())?
+        Instr::Sub { dst, a, b } => {
+          self.binary_numeric(base, dst, a, b, "-", |x, y| x - y, |x, y| &x - &y)?
         },
-        Instr::BitAnd { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "&", |x, y| x & y)?,
-        Instr::BitOr { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "|", |x, y| x | y)?,
-        Instr::BitXor { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "^", |x, y| x ^ y)?,
-        Instr::BitShl { dst, a, b } => self.bitwise_numeric(base, dst, a, b, "<<", |x, y| {
-          x.checked_shl(y as u32).unwrap_or(0)
-        })?,
-        Instr::BitShr { dst, a, b } => self.bitwise_numeric(base, dst, a, b, ">>", |x, y| {
-          x.checked_shr(y as u32).unwrap_or(0)
-        })?,
-        Instr::BitUshr { dst, a, b } => self.bitwise_numeric(base, dst, a, b, ">>>", |x, y| {
-          (x as u32).checked_shr(y as u32).unwrap_or(0) as i64
-        })?,
+        Instr::Mul { dst, a, b } => {
+          self.binary_numeric(base, dst, a, b, "*", |x, y| x * y, |x, y| &x * &y)?
+        },
+        Instr::Div { dst, a, b } => {
+          self.binary_numeric(base, dst, a, b, "/", |x, y| x / y, |x, y| &x / &y)?
+        },
+        Instr::Pow { dst, a, b } => {
+          self.binary_numeric(base, dst, a, b, "**", |x, y| x.powf(y), |x, y| &x * &y)?
+        },
+        Instr::Mod { dst, a, b } => {
+          self.binary_numeric(base, dst, a, b, "%", |x, y| x % y, |x, y| &x % &y)?
+        },
+        Instr::Floor { dst, a, b } => self.binary_numeric(
+          base,
+          dst,
+          a,
+          b,
+          "//",
+          |x, y| (x / y).floor(),
+          |x, y| &x / &y,
+        )?,
+        Instr::BitAnd { dst, a, b } => {
+          self.bitwise_numeric(base, dst, a, b, "&", |x, y| x & y, |x, y| &x & &y)?
+        },
+        Instr::BitOr { dst, a, b } => {
+          self.bitwise_numeric(base, dst, a, b, "|", |x, y| x | y, |x, y| &x | &y)?
+        },
+        Instr::BitXor { dst, a, b } => {
+          self.bitwise_numeric(base, dst, a, b, "^", |x, y| x ^ y, |x, y| &x ^ &y)?
+        },
+        Instr::BitShl { dst, a, b } => self.bitwise_numeric(
+          base,
+          dst,
+          a,
+          b,
+          "<<",
+          |x, y| x.checked_shl(y as u32).unwrap_or(0),
+          |x, y| x.shl(y.to_i64().unwrap_or(0)),
+        )?,
+        Instr::BitShr { dst, a, b } => self.bitwise_numeric(
+          base,
+          dst,
+          a,
+          b,
+          ">>",
+          |x, y| x.checked_shr(y as u32).unwrap_or(0),
+          |x, y| x.shr(y.to_i64().unwrap_or(0)),
+        )?,
+        Instr::BitUshr { dst, a, b } => self.bitwise_numeric(
+          base,
+          dst,
+          a,
+          b,
+          ">>>",
+          |x, y| (x as u32).checked_shr(y as u32).unwrap_or(0) as i64,
+          |x, y| x.shr(y.to_i64().unwrap_or(0)),
+        )?,
         Instr::BitNot { dst, src } => {
           let v = self.get_reg(base, src);
           if !v.is_number() {
@@ -132,10 +176,14 @@ impl<'a> VM<'a> {
         },
         Instr::Neg { dst, src } => {
           let v = self.get_reg(base, src);
-          if !v.is_number() {
+          if v.is_number() {
+            self.set_reg(base, dst, Value::number(-v.as_number()));
+          } else if v.is_bigint() {
+            let v = self.heap.alloc_bigint(v.as_bigint().neg());
+            self.set_reg(base, dst, v);
+          } else {
             return Err(format!("cannot negate a {}", v.type_name()));
           }
-          self.set_reg(base, dst, Value::number(-v.as_number()));
         },
         Instr::Not { dst, src } => {
           let v = self.get_reg(base, src);
@@ -378,23 +426,29 @@ impl<'a> VM<'a> {
     b: u8,
     op_name: &str,
     op: fn(i64, i64) -> i64,
+    big_op: fn(BigInt, BigInt) -> BigInt,
   ) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
-    if !va.is_number() || !vb.is_number() {
-      return Err(format!(
-        "operator '{}' expects numbers, got {} and {}",
-        op_name,
-        va.type_name(),
-        vb.type_name()
+    if va.is_number() && vb.is_number() {
+      return Ok(self.set_reg(
+        base,
+        dst,
+        Value::number(op(va.as_number() as i64, vb.as_number() as i64) as f64),
       ));
+    } else if va.is_bigint() && vb.is_bigint() {
+      let v = self
+        .heap
+        .alloc_bigint(big_op(va.as_bigint().clone(), vb.as_bigint().clone()));
+      return Ok(self.set_reg(base, dst, v));
     }
-    self.set_reg(
-      base,
-      dst,
-      Value::number(op(va.as_number() as i64, vb.as_number() as i64) as f64),
-    );
-    Ok(())
+
+    Err(format!(
+      "operator '{}' expects numbers, got {} and {}",
+      op_name,
+      va.type_name(),
+      vb.type_name()
+    ))
   }
 
   fn binary_numeric(
@@ -405,19 +459,26 @@ impl<'a> VM<'a> {
     b: u8,
     op_name: &str,
     op: fn(f64, f64) -> f64,
+    big_op: fn(BigInt, BigInt) -> BigInt,
   ) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
-    if !va.is_number() || !vb.is_number() {
-      return Err(format!(
-        "operator '{}' expects numbers, got {} and {}",
-        op_name,
-        va.type_name(),
-        vb.type_name()
-      ));
+
+    if va.is_number() && vb.is_number() {
+      return Ok(self.set_reg(base, dst, Value::number(op(va.as_number(), vb.as_number()))));
+    } else if va.is_bigint() && vb.is_bigint() {
+      let v = self
+        .heap
+        .alloc_bigint(big_op(va.as_bigint().clone(), vb.as_bigint().clone()));
+      return Ok(self.set_reg(base, dst, v));
     }
-    self.set_reg(base, dst, Value::number(op(va.as_number(), vb.as_number())));
-    Ok(())
+
+    Err(format!(
+      "operator '{}' not defined for {} and {}",
+      op_name,
+      va.type_name(),
+      vb.type_name()
+    ))
   }
 
   fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
@@ -425,6 +486,9 @@ impl<'a> VM<'a> {
     let vb = self.get_reg(base, b);
     if va.is_number() && vb.is_number() {
       return Ok(self.set_reg(base, dst, Value::number(va.as_number() + vb.as_number())));
+    } else if va.is_bigint() && vb.is_bigint() {
+      let v = self.heap.alloc_bigint(va.as_bigint() + vb.as_bigint());
+      return Ok(self.set_reg(base, dst, v));
     } else if va.is_string() || vb.is_string() {
       let va = self.get_reg(base, a);
       let vb = self.get_reg(base, b);
@@ -434,7 +498,7 @@ impl<'a> VM<'a> {
     }
 
     Err(format!(
-      "operator '{}' expects numbers, got {} and {}",
+      "operator '{}' not defined for {} and {}",
       op_name,
       va.type_name(),
       vb.type_name()
@@ -454,7 +518,7 @@ impl<'a> VM<'a> {
     let vb = self.get_reg(base, b);
     if !va.is_number() || !vb.is_number() {
       return Err(format!(
-        "operator '{}' expects numbers, got {} and {}",
+        "operator '{}' not defined for {} and {}",
         op_name,
         va.type_name(),
         vb.type_name()

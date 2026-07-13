@@ -1,5 +1,5 @@
 use crate::compiler::token::{Token, TokenKind};
-use big_num::BigInt;
+use num_bigint::BigInt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {

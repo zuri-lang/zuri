@@ -29,8 +29,8 @@
 
 use std::cell::Cell;
 
-use big_num::BigInt;
 use itertools::Itertools;
+use num_bigint::BigInt;
 
 use crate::vm::object::{Obj, ObjClosure, ObjFunction, UpvalueState};
 
@@ -249,6 +249,7 @@ impl Value {
     self.is_nil()
       || (self.is_bool() && !self.as_bool())
       || (self.is_number() && self.as_number() <= 0.0)
+      || (self.is_bigint() && self.as_bigint() <= &BigInt::from(0))
   }
 
   pub fn equals(&self, other: &Value) -> bool {
@@ -259,6 +260,7 @@ impl Value {
       unsafe {
         return match (&*self.as_obj(), &*other.as_obj()) {
           (Obj::Str(a), Obj::Str(b)) => a == b,
+          (Obj::BigInt(a), Obj::BigInt(b)) => a == b,
           (Obj::Bytes(a), Obj::Bytes(b)) => a.eq(b),
           (Obj::Func(a), Obj::Func(b)) => std::ptr::eq(a, b),
           (Obj::Closure(a), Obj::Closure(b)) => std::ptr::eq(a, b),

@@ -1,4 +1,4 @@
-use big_num::BigInt;
+use num_bigint::BigInt;
 use std::cell::Cell;
 
 use crate::vm::chunk::Chunk;

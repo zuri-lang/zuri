@@ -1,4 +1,4 @@
-use big_num::BigInt;
+use num_bigint::BigInt;
 use std::collections::HashMap;
 use std::str::Chars;
 use std::str::FromStr;
@@ -300,10 +300,10 @@ impl<'a> Lexer<'a> {
       // we've encountered a big integer
       self.advance();
 
-      return self.make_token(TokenKind::BigNumber(BigInt::from_str_radix(
-        &self.source.as_str()[self.start..self.current - 1],
-        10,
-      )));
+      return self.make_token(TokenKind::BigNumber(
+        BigInt::from_str(&self.source.as_str()[self.start..self.current - 1])
+          .unwrap_or(BigInt::ZERO),
+      ));
     }
 
     if self.peek() == '.' && is_digit(self.next()) {

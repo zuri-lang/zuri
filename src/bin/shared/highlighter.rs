@@ -1,0 +1,103 @@
+use nu_ansi_term::{Color, Style};
+use reedline::{AbbrExpandContext, Highlighter, StyledText};
+
+pub static DEFAULT_BUFFER_MATCH_COLOR: Color = Color::Green;
+pub static DEFAULT_BUFFER_NEUTRAL_COLOR: Color = Color::White;
+pub static DEFAULT_BUFFER_NOT_MATCH_COLOR: Color = Color::Default;
+
+/// A simple, example highlighter that shows how to highlight keywords
+pub struct ZuriHighlighter {
+  external_commands: Vec<String>,
+  match_color: Color,
+  not_match_color: Color,
+  neutral_color: Color,
+}
+
+impl Highlighter for ZuriHighlighter {
+  // A simple example of disabling abbreviation expansion within string literals
+  fn should_expand_abbr(&self, line: &str, cursor: usize, _context: AbbrExpandContext) -> bool {
+    if line.is_empty() || cursor == 0 {
+      return true;
+    }
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    let mut byte_pos = 0;
+    for &byte in line.as_bytes() {
+      if byte_pos >= cursor {
+        break;
+      }
+      if escaped {
+        escaped = false;
+        byte_pos += 1;
+        continue;
+      }
+      match byte {
+        b'\\' => escaped = true,
+        b'\'' if !in_double => in_single = !in_single,
+        b'"' if !in_single => in_double = !in_double,
+        _ => {},
+      }
+      byte_pos += 1;
+    }
+    !(in_single || in_double)
+  }
+
+  fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
+    let mut styled_text = StyledText::new();
+
+    if self
+      .external_commands
+      .clone()
+      .iter()
+      .any(|x| line.contains(x))
+    {
+      let matches: Vec<&str> = self
+        .external_commands
+        .iter()
+        .filter(|c| line.contains(*c))
+        .map(std::ops::Deref::deref)
+        .collect();
+      let longest_match = matches.iter().fold("".to_string(), |acc, &item| {
+        if item.len() > acc.len() {
+          item.to_string()
+        } else {
+          acc
+        }
+      });
+      let buffer_split: Vec<&str> = line.splitn(2, &longest_match).collect();
+
+      styled_text.push((
+        Style::new().fg(self.neutral_color),
+        buffer_split[0].to_string(),
+      ));
+      styled_text.push((Style::new().fg(self.match_color), longest_match));
+      styled_text.push((
+        Style::new().bold().fg(self.neutral_color),
+        buffer_split[1].to_string(),
+      ));
+    } else if self.external_commands.is_empty() {
+      styled_text.push((Style::new().fg(self.neutral_color), line.to_string()));
+    } else {
+      styled_text.push((Style::new().fg(self.not_match_color), line.to_string()));
+    }
+
+    styled_text
+  }
+}
+impl ZuriHighlighter {
+  /// Construct the default highlighter with a given set of extern commands/keywords to detect and highlight
+  pub fn new(external_commands: Vec<String>) -> ZuriHighlighter {
+    ZuriHighlighter {
+      external_commands,
+      match_color: DEFAULT_BUFFER_MATCH_COLOR,
+      not_match_color: DEFAULT_BUFFER_NOT_MATCH_COLOR,
+      neutral_color: DEFAULT_BUFFER_NEUTRAL_COLOR,
+    }
+  }
+}
+impl Default for ZuriHighlighter {
+  fn default() -> Self {
+    ZuriHighlighter::new(vec![])
+  }
+}

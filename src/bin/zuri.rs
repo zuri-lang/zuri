@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::io::Write;
-use std::{env, fs, io, process};
+use std::{env, fs, process};
+use zuri::compiler::token::KEYWORD_TOKENS;
 
 use itertools::Itertools;
 use zuri::compiler::{compiler::Compiler, lexer::Lexer, parser::Parser};
@@ -10,47 +10,54 @@ use zuri::vm::{
   object::{Heap, Obj},
 };
 
+use crate::shared::repl::Repl;
+
+mod shared;
+
+fn print_repl_help() {
+  println!("Press <tab> for autocomplete suggestions");
+}
+
 fn run_repl() {
+  let mut repl = Repl::new(
+    KEYWORD_TOKENS
+      .iter()
+      .map(|f| f.to_string().to_lowercase())
+      .collect::<Vec<_>>(),
+  );
+
   println!(
     "Zuri {} (running on ZuriVM {}), REPL/Interactive mode = ON",
     env!("ZURI_VERSION"),
     env!("ZVM_VERSION")
   );
   println!("Build No. => {}", env!("ZURI_BUILD_TIME"));
-  println!("Type \".exit\" to quit or \".credits\" for more information");
+  println!("Type \".exit\" to quit, \".help\" for help or \".credits\" for more information");
 
-  let stdin = io::stdin();
-  let mut input = String::new();
+  // let stdin = io::stdin();
+  // let mut input = String::new();
 
   let mut heap = Heap::new();
   let globals = HashMap::new();
   let mut vm = VM::new(&mut heap, globals);
 
-  loop {
-    print!("> ");
-    io::stdout().flush().expect("Failed to flush stdout");
+  repl.run(&mut vm, |vm, buffer| {
+    if !buffer.is_empty() {
+      if buffer.eq(".exit") {
+        return Err(());
+      } else if buffer.eq(".help") {
+        print_repl_help();
+        return Ok(());
+      }
 
-    input.clear();
-    if stdin.read_line(&mut input).expect("Failed to read line") == 0 {
-      // End of file (Ctrl+D)
-      println!();
-      break;
+      // Evaluate the line using the persistent VM and heap references
+      if let Err(e) = evaluate_line(&buffer, vm) {
+        eprintln!("Error: {}", e);
+      }
     }
 
-    let line = input.trim();
-    if line.is_empty() {
-      continue;
-    }
-
-    if line.eq(".exit") {
-      break;
-    }
-
-    // 2. Evaluate the line using the persistent VM and heap references
-    if let Err(e) = evaluate_line(line, &mut vm) {
-      eprintln!("Error: {}", e);
-    }
-  }
+    Ok(())
+  });
 }
 
 fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {

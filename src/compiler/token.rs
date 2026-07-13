@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use big_num::BigInt;
+use num_bigint::BigInt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
@@ -270,3 +270,37 @@ pub static EMPTY_TOKEN: Token = Token {
   line: 0,
   column: 0,
 };
+
+pub static KEYWORD_TOKENS: &[TokenKind] = &[
+  TokenKind::And,
+  TokenKind::As,
+  TokenKind::Assert,
+  TokenKind::Break,
+  TokenKind::Catch,
+  TokenKind::Class,
+  TokenKind::Const,
+  TokenKind::Continue,
+  TokenKind::Def,
+  TokenKind::Default,
+  TokenKind::Do,
+  TokenKind::Echo,
+  TokenKind::Else,
+  TokenKind::False,
+  TokenKind::For,
+  TokenKind::If,
+  TokenKind::Import,
+  TokenKind::In,
+  TokenKind::Iter,
+  TokenKind::Nil,
+  TokenKind::Or,
+  TokenKind::Parent,
+  TokenKind::Raise,
+  TokenKind::Return,
+  TokenKind::Self_,
+  TokenKind::Static,
+  TokenKind::True,
+  TokenKind::Using,
+  TokenKind::Var,
+  TokenKind::When,
+  TokenKind::While,
+];

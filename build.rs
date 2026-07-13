@@ -38,11 +38,20 @@ fn main() {
     .and_then(|v| v.as_bool())
     .unwrap_or(false);
 
+  let history_size = parsed_toml
+    .get("package")
+    .and_then(|p| p.get("metadata"))
+    .and_then(|m| m.get("zuri"))
+    .and_then(|c| c.get("history_size"))
+    .and_then(|v| v.as_integer())
+    .unwrap_or(1000);
+
   // 4. Pass it to the main application via cargo environment variables
   println!("cargo:rustc-env=ZURI_VERSION={}", zuri_version);
   println!("cargo:rustc-env=ZVM_VERSION={}", vm_version);
   println!("cargo:rustc-env=ZURI_BUILD_TIME={}", now);
   println!("cargo:rustc-env=ZURI_DEBUG_OPCODES={}", debug_opcodes);
+  println!("cargo:rustc-env=ZURI_HISTORY_SIZE={}", history_size);
 
   // Tell Cargo to re-run this script only if Cargo.toml changes
   println!("cargo:rerun-if-changed=Cargo.toml");
