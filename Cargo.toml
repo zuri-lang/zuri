@@ -14,3 +14,4 @@ toml = "1.1.2"
 [package.metadata.zuri]
 version = "0.1.0"
 vm_version = "0.1.0"
+debug_opcodes = false

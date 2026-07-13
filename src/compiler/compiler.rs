@@ -375,16 +375,18 @@ impl<'a> Compiler<'a> {
         }
       },
       Expr::Unary(op, expr) => {
+        let mark = self.cur().next_reg;
         let src = self.compile_expression(expr);
+        let dst = if src >= mark { src } else { self.alloc_reg() };
 
         let instr = match op {
-          TokenKind::Minus => Instr::Neg { dst: src, src },
-          TokenKind::Bang => Instr::Not { dst: src, src },
-          TokenKind::Tilde => Instr::BitNot { dst: src, src },
+          TokenKind::Minus => Instr::Neg { dst, src },
+          TokenKind::Bang => Instr::Not { dst, src },
+          TokenKind::Tilde => Instr::BitNot { dst, src },
           _ => panic!("compile_expression: unsupported unary operator: {:?}", op),
         };
         self.emit(instr);
-        src
+        dst
       },
       Expr::Binary(lhs, op, rhs) => {
         let mark = self.cur().next_reg;
@@ -702,7 +704,25 @@ impl<'a> Compiler<'a> {
             panic!("compile: '{}' is already declared in this scope", name);
           }
 
-          let reg = self.compile_expression(initializer);
+          let mark = self.cur().next_reg;
+          let raw_reg = self.compile_expression(initializer);
+          // If the initializer resolved to a PRE-EXISTING register (e.g. a
+          // bare read of another local, like `var t = n`), adopting that
+          // register directly as this new local's home would make the two
+          // names ALIAS the same physical storage -- any future write to
+          // either one would silently corrupt the other. Only a register
+          // freshly allocated for this expression (>= mark) is safe to
+          // adopt as-is; anything else needs its own copy.
+          let reg = if raw_reg >= mark {
+            raw_reg
+          } else {
+            let fresh = self.alloc_reg();
+            self.emit(Instr::Move {
+              dst: fresh,
+              src: raw_reg,
+            });
+            fresh
+          };
           let depth = self.cur().scope_depth;
           self.cur_mut().locals.push(Local {
             name,
@@ -754,6 +774,23 @@ impl<'a> Compiler<'a> {
       chunk: top.chunk,
       upvalues: Vec::new(),
     };
+
+    if env!("ZURI_DEBUG_OPCODES") == "true" {
+      // Dump sin's own compiled bytecode directly from main's constant pool.
+      for c in &main_fn.chunk.constants {
+        if c.is_func() {
+          let proto = c.as_func();
+          println!(
+            "=== function '{}' ({} registers) ===",
+            proto.name, proto.num_registers
+          );
+          for (i, instr) in proto.chunk.code.iter().enumerate() {
+            println!("{:3}: {:?}", i, instr);
+          }
+        }
+      }
+    }
+
     main_fn
   }
 }
