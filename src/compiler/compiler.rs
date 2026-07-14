@@ -38,11 +38,23 @@ struct Local {
 /// state is a real, still-present stack entry, not swapped away and lost.
 struct FunctionScope {
   chunk: Chunk,
+  /// High-water mark of `next_reg`. Unlike `next_reg`, this never goes
+  /// back down when `free_regs_to` runs -- it's what becomes
+  /// `ObjFunction.num_registers` once this function finishes compiling.
   next_reg: u8,
   max_reg: u8,
   locals: Vec<Local>,
   scope_depth: usize,
+  /// Static, compile-time list of what THIS function needs to capture
+  /// from its enclosing function, built up as `resolve_upvalue` discovers
+  /// references to outer-scope names. Order matches `Instr::GetUpval`'s
+  /// `idx` and becomes `ObjFunction.upvalues`.
   upvalues: Vec<UpvalueDescriptor>,
+  /// Stack of currently-open loops, innermost last -- what `break` and
+  /// `continue` target. Doesn't cross function boundaries: a closure
+  /// declared inside a loop starts with an empty stack, so `break` inside
+  /// it (if it were otherwise valid) can't reach the enclosing loop.
+  loops: Vec<LoopContext>,
 }
 
 impl FunctionScope {
@@ -54,8 +66,23 @@ impl FunctionScope {
       locals: Vec::new(),
       scope_depth: 0,
       upvalues: Vec::new(),
+      loops: Vec::new(),
     }
   }
+}
+
+/// One active loop's jump targets, live only while compiling that loop's
+/// body.
+struct LoopContext {
+  /// Where `continue` jumps back to -- the condition re-check.
+  continue_target: usize,
+  /// Where `break` jumps forward to -- patched once the loop's exit point
+  /// is known, after the whole body has compiled.
+  break_jumps: Vec<usize>,
+  /// Register mark at the loop body's own entry. `break`/`continue` emit
+  /// CloseUpvalues back to this point before jumping, since they skip
+  /// whatever nested blocks' own natural close-on-exit would have done.
+  body_mark: u8,
 }
 
 enum VarLoc {
@@ -672,10 +699,55 @@ impl<'a> Compiler<'a> {
         let exit_jump = self.emit_jump_if_false(cond_reg);
         self.free_regs_to(mark);
 
+        self.cur_mut().loops.push(LoopContext {
+          continue_target: loop_start,
+          break_jumps: Vec::new(),
+          body_mark: mark,
+        });
+
         self.compile_statement(body);
         self.emit_loop(loop_start);
 
         self.patch_jump(exit_jump);
+
+        let finished_loop = self.cur_mut().loops.pop().unwrap();
+        let after_loop = self.cur().chunk.code.len();
+        for jump_at in finished_loop.break_jumps {
+          self.patch_jump(jump_at);
+        }
+        debug_assert_eq!(
+          self.cur().chunk.code.len(),
+          after_loop,
+          "patching break jumps should not emit new code"
+        );
+      },
+      Stmt::Break => {
+        let loop_ctx = self
+          .cur()
+          .loops
+          .last()
+          .unwrap_or_else(|| panic!("compile: 'break' used outside of a loop"));
+        let body_mark = loop_ctx.body_mark;
+        self.emit(Instr::CloseUpvalues { from: body_mark });
+        let jump_at = self.emit_jump();
+        self
+          .cur_mut()
+          .loops
+          .last_mut()
+          .unwrap()
+          .break_jumps
+          .push(jump_at);
+      },
+      Stmt::Continue => {
+        let loop_ctx = self
+          .cur()
+          .loops
+          .last()
+          .unwrap_or_else(|| panic!("compile: 'continue' used outside of a loop"));
+        let body_mark = loop_ctx.body_mark;
+        let continue_target = loop_ctx.continue_target;
+        self.emit(Instr::CloseUpvalues { from: body_mark });
+        self.emit_loop(continue_target);
       },
       Stmt::Decl(decl) => self.compile_declaration(decl),
       Stmt::VarList(list) => {
