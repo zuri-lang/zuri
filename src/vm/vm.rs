@@ -458,6 +458,23 @@ impl VM {
         Instr::CloseUpvalues { from } => {
           self.close_upvalues_from(base + from as usize);
         },
+        Instr::MakeList { dst, start, count } => {
+          let items: Vec<Value> = (0..count).map(|i| self.get_reg(base, start + i)).collect();
+          let list_val = self.heap.alloc_list(items);
+          self.set_reg(base, dst, list_val);
+        },
+        Instr::MakeDict { dst, start, count } => {
+          let pairs: Vec<(Value, Value)> = (0..count)
+            .map(|i| {
+              (
+                self.get_reg(base, start + i),
+                self.get_reg(base, start + count + i),
+              )
+            })
+            .collect();
+          let dict_val = self.heap.alloc_dict(pairs);
+          self.set_reg(base, dst, dict_val);
+        },
       }
     }
   }

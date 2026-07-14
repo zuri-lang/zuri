@@ -634,6 +634,68 @@ impl<'a> Compiler<'a> {
           other
         ),
       },
+      Expr::List(elements) => {
+        let start = self.cur().next_reg;
+        let mut count: u8 = 0;
+        for elem in elements {
+          let expected = start + count;
+          let elem_reg = self.compile_expression(elem);
+          if elem_reg != expected {
+            self.emit(Instr::Move {
+              dst: expected,
+              src: elem_reg,
+            });
+          }
+          self.cur_mut().next_reg = expected + 1;
+          count = count
+            .checked_add(1)
+            .expect("too many elements in one list literal");
+        }
+        let dst = self.alloc_reg();
+        self.emit(Instr::MakeList { dst, start, count });
+        self.free_regs_to(dst + 1);
+        dst
+      },
+      Expr::Dict(keys, values) => {
+        debug_assert_eq!(
+          keys.len(),
+          values.len(),
+          "Dict keys and values must be the same length"
+        );
+        let count = keys.len() as u8;
+        let start = self.cur().next_reg;
+
+        // Keys and values compile into two back-to-back contiguous runs
+        // -- keys first, then values -- matching what Instr::MakeDict
+        // expects.
+        for (i, key_expr) in keys.iter().enumerate() {
+          let expected = start + i as u8;
+          let key_reg = self.compile_expression(key_expr);
+          if key_reg != expected {
+            self.emit(Instr::Move {
+              dst: expected,
+              src: key_reg,
+            });
+          }
+          self.cur_mut().next_reg = expected + 1;
+        }
+        for (i, val_expr) in values.iter().enumerate() {
+          let expected = start + count + i as u8;
+          let val_reg = self.compile_expression(val_expr);
+          if val_reg != expected {
+            self.emit(Instr::Move {
+              dst: expected,
+              src: val_reg,
+            });
+          }
+          self.cur_mut().next_reg = expected + 1;
+        }
+
+        let dst = self.alloc_reg();
+        self.emit(Instr::MakeDict { dst, start, count });
+        self.free_regs_to(dst + 1);
+        dst
+      },
       _ => {
         panic!(
           "compile_expression: unsupported expression: {:?}",

@@ -209,6 +209,22 @@ pub enum Instr {
   CloseUpvalues {
     from: u8,
   },
+
+  /// Collect `count` consecutive registers starting at `start` into a
+  /// new List, placed in `dst`.
+  MakeList {
+    dst: u8,
+    start: u8,
+    count: u8,
+  },
+  /// Collect a dict from TWO back-to-back runs of `count` registers
+  /// each, starting at `start`: keys occupy `start..start+count`,
+  /// values occupy `start+count..start+2*count`. Placed in `dst`.
+  MakeDict {
+    dst: u8,
+    start: u8,
+    count: u8,
+  },
 }
 
 #[derive(Default, Clone, Debug)]

@@ -145,6 +145,11 @@ impl Value {
   }
 
   #[inline]
+  pub fn is_dict(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Dict(_))
+  }
+
+  #[inline]
   pub fn is_upvalue(&self) -> bool {
     self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Upvalue(_))
   }
@@ -253,6 +258,14 @@ impl Value {
     }
   }
 
+  pub fn as_dict(&self) -> &[(Value, Value)] {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(pairs) => pairs.as_slice(),
+      _ => unreachable!("as_dict() called on a non-dict Value"),
+    }
+  }
+
   pub fn as_upvalue(&self) -> &Cell<UpvalueState> {
     debug_assert!(self.is_upvalue());
     match unsafe { &*self.as_obj() } {
@@ -287,6 +300,13 @@ impl Value {
           (Obj::List(a), Obj::List(b)) => {
             a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
           },
+          (Obj::Dict(a), Obj::Dict(b)) => {
+            a.len() == b.len()
+              && a
+                .iter()
+                .all(|(k, v)| b.iter().any(|(k2, v2)| k.equals(k2) && v.equals(v2)))
+          },
+
           _ => false,
         };
       }
@@ -312,6 +332,7 @@ impl Value {
           Obj::Bytes(_) => "bytes",
           Obj::BigInt(_) => "bigint",
           Obj::List(_) => "list",
+          Obj::Dict(_) => "dict",
           Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) => "function",
           Obj::Upvalue(_) => "upvalue",
         }
@@ -374,6 +395,16 @@ impl std::fmt::Display for Value {
               write!(f, "{}", item)?;
             }
             write!(f, "]")
+          },
+          Obj::Dict(pairs) => {
+            write!(f, "{{")?;
+            for (i, (k, v)) in pairs.iter().enumerate() {
+              if i > 0 {
+                write!(f, ", ")?;
+              }
+              write!(f, "{}: {}", k, v)?;
+            }
+            write!(f, "}}")
           },
         }
       }

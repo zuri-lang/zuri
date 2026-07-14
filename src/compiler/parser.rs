@@ -372,6 +372,8 @@ impl<'a> Parser<'a> {
   fn compose_literal(&mut self, token: Token) -> Expr {
     if let TokenKind::Literal(v) = token.kind {
       Expr::Literal(v.clone())
+    } else if let TokenKind::Identifier(v) = token.kind {
+      Expr::Literal(v.clone())
     } else {
       Expr::Literal(token.to_string())
     }
@@ -822,9 +824,12 @@ impl<'a> Parser<'a> {
 
           if !match_tok!(self, TokenKind::Colon) {
             let missing = "Missing value in dictionary definition".to_string();
+            let token = self.previous.clone();
 
             match key {
-              Expr::Literal(token) => values.push(Expr::Literal(token)),
+              Expr::Literal(v) => {
+                values.push(self.compose_id(token.copy_to(TokenKind::Identifier(v))))
+              },
               _ => self.report_error(missing),
             };
           } else {

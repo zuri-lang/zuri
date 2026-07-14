@@ -14,6 +14,14 @@ pub enum Obj {
   /// trailing arguments. No bytecode support yet for indexing into or
   /// iterating one from Zuri code -- this is just the storage.
   List(Vec<Value>),
+  /// A dict literal's storage. `Vec<(Value, Value)>` rather than a real
+  /// hash map, deliberately -- a proper HashMap needs Value to have
+  /// Hash/Eq that matches Value::equals' semantics (content-equality
+  /// for strings and numbers, identity for closures/lists), which is a
+  /// design decision worth making once Expr::Index/lookup exists and
+  /// performance is the thing being optimized for. This is correct and
+  /// simple; it's O(n) lookup, which is the honest tradeoff for now.
+  Dict(Vec<(Value, Value)>),
   /// A function PROTOTYPE -- the static, compiled-once result of one
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
@@ -30,6 +38,11 @@ pub enum Obj {
   /// function return): the current value is copied out, and the upvalue
   /// owns it from then on.
   Upvalue(Cell<UpvalueState>),
+  /// A native (Rust-implemented) function -- callable through the exact
+  /// same Instr::Call path as a Closure, but with no CallFrame, no
+  /// register-window setup, and no heap allocation on the call path:
+  /// its arguments are a zero-copy slice straight into the caller's own
+  /// registers. See vm/natives.rs.
   Native(NativeFunction),
 }
 
@@ -81,6 +94,7 @@ pub struct ObjClosure {
 
 pub struct NativeFunction {
   pub name: &'static str,
+  /// Minimum number of arguments required.
   pub min_arity: u8,
   /// If true, min_arity is a floor ("one or more"); if false, arg count
   /// must equal min_arity exactly.
@@ -88,6 +102,18 @@ pub struct NativeFunction {
   pub func: NativeFn,
 }
 
+/// A plain Rust function pointer -- not `Box<dyn Fn>`. No vtable, no
+/// heap-allocated closure environment; calling one is a single indirect
+/// call through a fn pointer, as cheap as native dispatch gets. Takes
+/// `&mut Heap` (not `&mut VM`) specifically so the caller can hand it a
+/// zero-copy slice of `VM::registers` at the same time -- see the
+/// disjoint-field-borrow note in `Instr::Call`'s handling.
+/// Everything a native function body gets handed. `args` is an OWNED
+/// copy of the call's arguments, not a borrow into VM::registers -- it
+/// has to be, because `vm` is a live &mut VM at the same time, and a
+/// slice into the VM's own register array would alias with that. This is
+/// the real cost of letting natives call back into Zuri code via
+/// `vm.call_value(...)`.
 pub struct ZuriContext<'a> {
   pub vm: &'a mut VM,
   pub args: &'a [Value],
@@ -141,6 +167,23 @@ impl Heap {
 
   pub fn alloc_list(&mut self, list: impl Into<Vec<Value>>) -> Value {
     self.alloc(Obj::List(list.into()))
+  }
+
+  /// Builds a Dict from raw (key, value) pairs, de-duplicating by
+  /// VALUE equality (not pointer identity -- two distinct string
+  /// objects with the same text collide, matching every other
+  /// language's dict-literal semantics), keeping the LAST occurrence
+  /// of any repeated key.
+  pub fn alloc_dict(&mut self, pairs: Vec<(Value, Value)>) -> Value {
+    let mut deduped: Vec<(Value, Value)> = Vec::with_capacity(pairs.len());
+    for (key, value) in pairs {
+      if let Some(existing) = deduped.iter_mut().find(|(k, _)| k.equals(&key)) {
+        existing.1 = value;
+      } else {
+        deduped.push((key, value));
+      }
+    }
+    self.alloc(Obj::Dict(deduped))
   }
 
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {

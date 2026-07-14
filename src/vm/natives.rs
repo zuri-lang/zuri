@@ -63,7 +63,7 @@ fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
     let is_valid_list = v
       .as_list()
       .iter()
-      .all(|f| f.is_number() && 0.0 >= f.as_number() && f.as_number() <= 255.0);
+      .all(|f| f.is_number() && 0.0 <= f.as_number() && f.as_number() <= 255.0);
 
     if !is_valid_list {
       return Err(format!(
