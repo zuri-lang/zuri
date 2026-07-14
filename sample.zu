@@ -1,94 +1,20 @@
-echo (1 + 2) + (3 + 4)
-
-echo false ? 'ok' : 'no'
-echo 'hello world!'
-
-if 5 > 2 {
-  echo '5 is greater than 2'
-} else {
-  echo '5 is not greater than 2'
+iter var i = 0; i < 1_000_000; i++ {
+  time()
+  abs(-5.2)
+  sum(1, 2, 3, 4, 5, 6, 7, 8, 9)
 }
 
-if !0 {
-  echo '0 is false'
-}
-
-if !1 {
-  echo '1 is true'
-}
-
-var a = 5
-echo a
-
-a += 25
-
-echo a
-
-# while true {
-#   echo 'hello world!'
-# }
-
-var i = 10
-while i <= 20 {
-  echo i
-  i++
-}
-
-echo 10 << 3
-echo 10 >> 3
-echo 10 >>> 2
-echo 10 & 24
-
-iter var i = 5; i > 0; i-- {
-  echo i
-}
-
-def test() {
-  echo 'it works!'
-}
-
-echo test
-test()
-
-def add(a, b) {
-  if b == nil {
-    return a
-  }
-  return a + b
-}
-
-echo add(1)
-echo add(2, 3)
-echo add(4, 5, 6)
-
-def sum(...args) {
-  echo args
-}
-
-sum(1, 2, 3)
-
-def sum2(x, ...args) {
-  echo x
-  echo args
-}
-
-sum2(1, 2, 3)
-
-def outer(a, b) {
-  def inner(c, d) {
-    def inner_inner(e, f) {
-      return a + b + c + d + e + f
-    }
-
-    return inner_inner
-  }
-
-  return inner
-}
-
-echo outer(1, 2)
-echo outer(1, 2)(3, 4)
-echo outer(1, 2)(3, 4)(5, 6)
+# DEFAULT
+# --------------------------------------------------------------------------
+# ./target/debug/zuri sample.zu  8.40s user 0.00s system 99% cpu 8.405 total
+# ./target/debug/zuri sample.zu  8.38s user 0.00s system 99% cpu 8.389 total
+# ./target/debug/zuri sample.zu  8.32s user 0.00s system 99% cpu 8.339 total
+# ./target/debug/zuri sample.zu  8.45s user 0.00s system 99% cpu 8.459 total
+# ./target/debug/zuri sample.zu  8.41s user 0.00s system 99% cpu 8.455 total
 
 
-echo 'Hello ${2 + 2}'
+# ./target/debug/zuri sample.zu  9.20s user 0.00s system 99% cpu 9.201 total
+# ./target/debug/zuri sample.zu  9.10s user 0.00s system 99% cpu 9.115 total
+# ./target/debug/zuri sample.zu  9.14s user 0.00s system 99% cpu 9.142 total
+# ./target/debug/zuri sample.zu  8.96s user 0.00s system 99% cpu 8.975 total
+# ./target/debug/zuri sample.zu  9.19s user 0.00s system 99% cpu 9.194 total

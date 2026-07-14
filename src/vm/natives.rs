@@ -1,12 +1,13 @@
-use crate::vm::object::{Heap, NativeFn, NativeFunction};
+use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn install(vm: &mut VM) {
-  register(vm, "time", 0, false, native_time);
-  register(vm, "abs", 1, false, native_abs);
-  register(vm, "sum", 1, true, native_sum);
+  register(vm, "time", 0, false, time);
+  register(vm, "abs", 1, false, abs);
+  register(vm, "sum", 1, true, sum);
+  register(vm, "bytes", 1, false, bytes);
 }
 
 fn register(vm: &mut VM, name: &'static str, min_arity: u8, variadic: bool, func: NativeFn) {
@@ -20,7 +21,7 @@ fn register(vm: &mut VM, name: &'static str, min_arity: u8, variadic: bool, func
   vm.define_global(name, value);
 }
 
-fn native_time(_heap: &mut Heap, _args: &[Value]) -> Result<Value, String> {
+fn time(_ctx: &mut ZuriContext) -> Result<Value, String> {
   let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| {
     format!(
       "time() failed: system clock is set before the Unix epoch: {}",
@@ -30,17 +31,17 @@ fn native_time(_heap: &mut Heap, _args: &[Value]) -> Result<Value, String> {
   Ok(Value::number(now.as_secs_f64()))
 }
 
-fn native_abs(_heap: &mut Heap, args: &[Value]) -> Result<Value, String> {
-  let v = args[0];
+fn abs(ctx: &mut ZuriContext) -> Result<Value, String> {
+  let v = ctx.args[0];
   if !v.is_number() {
     return Err(format!("abs() expects a number, got {}", v.type_name()));
   }
   Ok(Value::number(v.as_number().abs()))
 }
 
-fn native_sum(_heap: &mut Heap, args: &[Value]) -> Result<Value, String> {
+fn sum(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut total = 0.0;
-  for (i, v) in args.iter().enumerate() {
+  for (i, v) in ctx.args.iter().enumerate() {
     if !v.is_number() {
       return Err(format!(
         "sum() expects numbers, argument {} is a {}",
@@ -51,4 +52,38 @@ fn native_sum(_heap: &mut Heap, args: &[Value]) -> Result<Value, String> {
     total += v.as_number();
   }
   Ok(Value::number(total))
+}
+
+fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
+  let v = ctx.args[0];
+  if v.is_number() {
+    let bytes = ctx.heap().alloc_bytes(vec![0; v.as_number() as usize]);
+    return Ok(bytes);
+  } else if v.is_list() {
+    let is_valid_list = v
+      .as_list()
+      .iter()
+      .all(|f| f.is_number() && 0.0 >= f.as_number() && f.as_number() <= 255.0);
+
+    if !is_valid_list {
+      return Err(format!(
+        "bytes() expects a list of numbers, got {}",
+        v.type_name()
+      ));
+    }
+
+    let bytes = ctx.heap().alloc_bytes(
+      v.as_list()
+        .iter()
+        .map(|f| f.as_number() as u8)
+        .collect::<Vec<_>>(),
+    );
+
+    return Ok(bytes);
+  }
+
+  return Err(format!(
+    "bytes() expects a number or list, got {}",
+    v.type_name()
+  ));
 }

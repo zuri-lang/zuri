@@ -129,10 +129,10 @@ fn main() {
     println!("Usage: zuri <script>");
     process::exit(1);
   } else {
-    let mut heap = Heap::new();
+    let heap = Heap::new();
     let globals = HashMap::new();
 
-    let mut vm = VM::new(&mut heap, globals);
+    let mut vm = VM::new(heap, globals);
     vm.init();
 
     if args.len() == 2 {

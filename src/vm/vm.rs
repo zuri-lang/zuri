@@ -6,7 +6,9 @@ use num_traits::ToPrimitive;
 
 use crate::vm::chunk::Instr;
 use crate::vm::natives;
-use crate::vm::object::{Heap, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
+use crate::vm::object::{
+  Heap, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, ZuriContext,
+};
 use crate::vm::value::Value;
 
 struct CallFrame {
@@ -24,7 +26,7 @@ struct CallFrame {
   dst_in_caller: u8,
 }
 
-pub struct VM<'a> {
+pub struct VM {
   /// One flat register stack shared by every call frame; each frame just
   /// claims a slice of it (its "window"), exactly like Lua's VM.
   registers: Vec<Value>,
@@ -36,13 +38,13 @@ pub struct VM<'a> {
   open_upvalues: Vec<(usize, Value)>,
   frames: Vec<CallFrame>,
   globals: std::collections::HashMap<String, Value>,
-  pub heap: &'a mut Heap,
+  pub heap: Heap,
 }
 
 type RunResult<T> = Result<T, String>;
 
-impl<'a> VM<'a> {
-  pub fn new(heap: &'a mut Heap, globals: HashMap<String, Value>) -> Self {
+impl VM {
+  pub fn new(heap: Heap, globals: HashMap<String, Value>) -> Self {
     VM {
       registers: Vec::new(),
       frames: Vec::new(),
@@ -66,8 +68,8 @@ impl<'a> VM<'a> {
     self.globals.insert(name.into(), v);
   }
 
-  /// Run `main` (a top-level, non-nested function with no arguments) to
-  /// completion.
+  /// Run `main` (a top-level closure, typically zero-upvalue, taking no
+  /// arguments) to completion.
   pub fn run(&mut self, main: *const ObjClosure) -> RunResult<()> {
     let proto = unsafe { &*(*main).function };
     let num_registers = proto.num_registers as usize;
@@ -79,9 +81,83 @@ impl<'a> VM<'a> {
       base: 0,
       dst_in_caller: 0,
     });
+    self.run_until(0)?;
+    Ok(())
+  }
 
-    // println!("{:?}", (unsafe { &*main }).chunk);
+  /// Invoke any callable Value -- a closure OR a native -- with the
+  /// given (already-evaluated, owned) arguments, run it to completion,
+  /// and return its result. This is what lets a native function call
+  /// BACK into Zuri code: a future `map(list, fn)` plugin would call
+  /// this once per element with `fn` as the callee.
+  pub fn call_value(&mut self, callee: Value, args: &[Value]) -> RunResult<Value> {
+    if callee.is_native() {
+      let native = callee.as_native();
+      return self.call_native(native, args);
+    }
 
+    if !callee.is_closure() {
+      return Err(format!("cannot call a {}", callee.type_name()));
+    }
+    let closure = callee.as_closure();
+    let proto = unsafe { &*closure.function };
+    let required = if proto.variadic {
+      proto.arity - 1
+    } else {
+      proto.arity
+    };
+
+    // Always place the injected frame at the current top of the
+    // shared register stack -- guaranteed not to overlap any
+    // currently-live frame, however deep we already are.
+    let new_base = self.registers.len();
+    let needed = new_base + proto.num_registers as usize;
+    self.registers.resize(needed, Value::nil());
+
+    for i in 0..required as usize {
+      self.registers[new_base + i] = args.get(i).copied().unwrap_or(Value::nil());
+    }
+    if proto.variadic {
+      let extra: Vec<Value> = args.iter().skip(required as usize).copied().collect();
+      let list_val = self.heap.alloc_list(extra);
+      self.registers[new_base + required as usize] = list_val;
+    }
+
+    let stop_depth = self.frames.len();
+    self.frames.push(CallFrame {
+      function: proto as *const ObjFunction,
+      closure: closure as *const ObjClosure,
+      ip: 0,
+      base: new_base,
+      dst_in_caller: 0, // unused -- run_until returns the value directly instead
+    });
+    self.run_until(stop_depth)
+  }
+
+  fn call_native(
+    &mut self,
+    native: &crate::vm::object::NativeFunction,
+    args: &[Value],
+  ) -> RunResult<Value> {
+    let ok_arity = if native.variadic {
+      args.len() as u8 >= native.min_arity
+    } else {
+      args.len() as u8 == native.min_arity
+    };
+    if !ok_arity {
+      return Err(format!(
+        "'{}' expects {}{} argument(s), got {}",
+        native.name,
+        if native.variadic { "at least " } else { "" },
+        native.min_arity,
+        args.len()
+      ));
+    }
+    let mut ctx = ZuriContext { vm: self, args };
+    (native.func)(&mut ctx)
+  }
+
+  fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
     loop {
       let frame_idx = self.frames.len() - 1;
       let (func_ptr, closure_ptr, ip, base) = {
@@ -239,31 +315,20 @@ impl<'a> VM<'a> {
           let callee = self.get_reg(base, func_reg);
 
           if callee.is_native() {
-            let native = callee.as_native();
-            let ok_arity = if native.variadic {
-              num_args >= native.min_arity
-            } else {
-              num_args == native.min_arity
-            };
-            if !ok_arity {
-              return Err(format!(
-                "'{}' expects {}{} argument(s), got {}",
-                native.name,
-                if native.variadic { "at least " } else { "" },
-                native.min_arity,
-                num_args
-              ));
-            }
-
+            // Copy args out into an owned buffer BEFORE
+            // calling -- once the native gets &mut VM (so it
+            // can call back into Zuri closures), a slice
+            // borrowed straight from self.registers would
+            // alias that &mut VM. This is the real cost of
+            // supporting reentrant native plugins: no longer
+            // zero-copy the way a plain &mut Heap native was.
             let args_start = base + func_reg as usize + 1;
             let args_end = args_start + num_args as usize;
-            let args = &self.registers[args_start..args_end];
-            // Disjoint field borrow: `args` borrows self.registers, `&mut
-            // self.heap` borrows a DIFFERENT field -- allowed because both
-            // are direct field accesses, not hidden behind a &mut self call.
-            let result = (native.func)(&mut self.heap, args)?;
+            let args: Vec<Value> = self.registers[args_start..args_end].to_vec();
+            let native = callee.as_native();
+            let result = self.call_native(native, &args)?;
             self.set_reg(base, dst, result);
-            continue; // <- load-bearing: skips the closure-only checks below
+            continue;
           }
 
           if !callee.is_closure() {
@@ -310,8 +375,8 @@ impl<'a> VM<'a> {
           let ret = self.get_reg(base, src);
           self.close_upvalues_from(base);
           let finished = self.frames.pop().unwrap();
-          if self.frames.is_empty() {
-            return Ok(());
+          if self.frames.len() == stop_depth {
+            return Ok(ret);
           }
           let caller = self.frames.last().unwrap();
           self.set_reg(caller.base, finished.dst_in_caller, ret);

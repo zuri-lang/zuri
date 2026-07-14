@@ -3,6 +3,7 @@ use std::cell::Cell;
 
 use crate::vm::chunk::Chunk;
 use crate::vm::value::Value;
+use crate::vm::vm::VM;
 
 /// Everything a Value's pointer tag can point at.
 pub enum Obj {
@@ -87,10 +88,23 @@ pub struct NativeFunction {
   pub func: NativeFn,
 }
 
+pub struct ZuriContext<'a> {
+  pub vm: &'a mut VM,
+  pub args: &'a [Value],
+}
+
+impl<'a> ZuriContext<'a> {
+  /// Equivalent to `ctx.vm.heap`, spelled out because `heap` used to be
+  /// its own field before this took `&mut VM` instead.
+  pub fn heap(&mut self) -> &mut Heap {
+    &mut self.vm.heap
+  }
+}
+
 /// A plain fn pointer, not a boxed closure. Takes &mut Heap (not &mut VM)
 /// specifically so it can be called while a slice of VM::registers is
 /// still borrowed -- see the disjoint-field-borrow note in Instr::Call.
-pub type NativeFn = fn(&mut Heap, &[Value]) -> Result<Value, String>;
+pub type NativeFn = fn(&mut ZuriContext) -> Result<Value, String>;
 
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
 /// *const Obj pointers into this arena, never real ownership, which is what

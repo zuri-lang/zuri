@@ -177,7 +177,7 @@ pub fn run_test() {
   let main_val = heap.alloc_function(main_fn);
 
   let globals = HashMap::new();
-  let mut vm = VM::new(&mut heap, globals);
+  let mut vm = VM::new(heap, globals);
   // fib needs to find itself by name at call time.
   let main_fn_ptr = match unsafe { &*main_val.as_obj() } {
     crate::vm::object::Obj::Func(f) => f as *const ObjFunction,
