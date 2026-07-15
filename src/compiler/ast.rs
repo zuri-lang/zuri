@@ -60,6 +60,7 @@ impl From<Expr> for NodeKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
   None,
+  FixContinue,
   Echo(Box<Expr>),
   Expression(Box<Expr>),
   If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),

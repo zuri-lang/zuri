@@ -1348,6 +1348,7 @@ impl<'a> Parser<'a> {
     let mut block_body = Vec::new();
     block_body.push(body);
 
+    block_body.push(Stmt::FixContinue);
     for stmt in final_stmts {
       block_body.push(stmt);
     }

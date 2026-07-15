@@ -83,6 +83,8 @@ struct LoopContext {
   /// CloseUpvalues back to this point before jumping, since they skip
   /// whatever nested blocks' own natural close-on-exit would have done.
   body_mark: u8,
+  /// The bytecode index of the continue instruction
+  continue_locales: Vec<usize>,
 }
 
 enum VarLoc {
@@ -181,13 +183,13 @@ impl<'a> Compiler<'a> {
     }
   }
 
-  fn emit_loop(&mut self, loop_start: usize) {
+  fn emit_loop(&mut self, loop_start: usize) -> usize {
     let jump_at = self.cur().chunk.code.len();
     let raw_offset = loop_start as isize - (jump_at as isize + 1);
     let offset: i16 = raw_offset
       .try_into()
       .expect("loop body too large: offset does not fit in i16");
-    self.emit(Instr::Jmp { offset });
+    self.emit(Instr::Jmp { offset })
   }
 
   fn identifier_name(token: &Token) -> String {
@@ -765,6 +767,7 @@ impl<'a> Compiler<'a> {
           continue_target: loop_start,
           break_jumps: Vec::new(),
           body_mark: mark,
+          continue_locales: Vec::new(),
         });
 
         self.compile_statement(body);
@@ -809,7 +812,27 @@ impl<'a> Compiler<'a> {
         let body_mark = loop_ctx.body_mark;
         let continue_target = loop_ctx.continue_target;
         self.emit(Instr::CloseUpvalues { from: body_mark });
-        self.emit_loop(continue_target);
+
+        let continue_location = self.emit_loop(continue_target);
+
+        self
+          .cur_mut()
+          .loops
+          .last_mut()
+          .unwrap()
+          .continue_locales
+          .push(continue_location);
+      },
+      Stmt::FixContinue => {
+        let locales = self
+          .cur_mut()
+          .loops
+          .last()
+          .unwrap()
+          .continue_locales
+          .clone()
+          .iter()
+          .for_each(|f| self.patch_jump(*f));
       },
       Stmt::Decl(decl) => self.compile_declaration(decl),
       Stmt::VarList(list) => {
