@@ -43,6 +43,14 @@ macro_rules! consume_tok {
   };
 }
 
+fn token_to_string(token: Token) -> String {
+  match token.kind {
+    TokenKind::Identifier(name) => name.clone(),
+    TokenKind::Decorator(name) => name.clone(),
+    _ => token.kind.to_string(),
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParseError {
   pub message: String,
@@ -1666,7 +1674,10 @@ impl<'a> Parser<'a> {
       "Expected '}' after class declaration."
     );
 
-    if !methods.iter().any(|f| f.is_method("init")) {
+    if !methods
+      .iter()
+      .any(|f| f.is_method(token_to_string(name.clone()).as_str()))
+    {
       methods.push(Decl::Method(
         name.clone(),
         Vec::new(),

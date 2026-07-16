@@ -240,6 +240,146 @@ impl VM {
     Ok(instance_val)
   }
 
+  /// Shared "call whatever's in register `func_reg`" logic -- the exact
+  /// dispatch `Instr::Call` performs, factored out so Invoke/InvokeSuper's
+  /// field-fallback (a field that happens to hold a callable, e.g. `var
+  /// _print = @(g) { ... }`) can reach it too, rather than duplicating
+  /// native/class/bound-method/closure dispatch a second time. `func_reg`
+  /// and `dst` are relative to `base`; arguments must already sit at
+  /// `func_reg+1 ..= func_reg+num_args` -- ordinary data-call convention,
+  /// arity does NOT include any implicit receiver.
+  fn dispatch_call(&mut self, base: usize, func_reg: u8, num_args: u8, dst: u8) -> RunResult<()> {
+    let callee = self.get_reg(base, func_reg);
+
+    if callee.is_native() {
+      let args_start = base + func_reg as usize + 1;
+      let args_end = args_start + num_args as usize;
+      let args: Vec<Value> = self.registers[args_start..args_end].to_vec();
+      let native = callee.as_native();
+      let result = self.call_native(native, &args)?;
+      self.set_reg(base, dst, result);
+      return Ok(());
+    }
+
+    if callee.is_class() {
+      let args_start = base + func_reg as usize + 1;
+      let args_end = args_start + num_args as usize;
+      let user_args: Vec<Value> = self.registers[args_start..args_end].to_vec();
+      let instance = self.instantiate(callee, &user_args)?;
+      self.set_reg(base, dst, instance);
+      return Ok(());
+    }
+
+    if callee.is_bound_method() {
+      let args_start = base + func_reg as usize + 1;
+      let args_end = args_start + num_args as usize;
+      let bound = callee.as_bound_method();
+      let mut full_args = Vec::with_capacity(num_args as usize + 1);
+      full_args.push(bound.receiver);
+      full_args.extend_from_slice(&self.registers[args_start..args_end]);
+      let method = bound.method;
+      let result = self.call_value(method, &full_args)?;
+      self.set_reg(base, dst, result);
+      return Ok(());
+    }
+
+    if !callee.is_closure() {
+      return Err(format!("cannot call a {}", callee.type_name()));
+    }
+    let callee_closure = callee.as_closure();
+    let callee_fn = callee_closure.function.as_func();
+
+    let required = if callee_fn.variadic {
+      callee_fn.arity - 1
+    } else {
+      callee_fn.arity
+    };
+
+    let new_base = base + func_reg as usize + 1;
+    let needed = new_base + callee_fn.num_registers as usize;
+    if self.registers.len() < needed {
+      self.registers.resize(needed, Value::nil());
+    }
+    for i in num_args..required {
+      self.registers[new_base + i as usize] = Value::nil();
+    }
+    if callee_fn.variadic {
+      let extra_count = num_args.saturating_sub(required);
+      let mut items = Vec::with_capacity(extra_count as usize);
+      for i in 0..extra_count {
+        items.push(self.registers[new_base + required as usize + i as usize]);
+      }
+      let list_val = self.heap.alloc_list(items);
+      self.registers[new_base + required as usize] = list_val;
+    }
+
+    self.frames.push(CallFrame {
+      function: callee_fn as *const ObjFunction,
+      closure: callee_closure as *const ObjClosure,
+      closure_val: callee,
+      ip: 0,
+      base: new_base,
+      dst_in_caller: dst,
+    });
+    Ok(())
+  }
+
+  /// Call a CLOSURE whose implicit receiver has ALREADY been placed by
+  /// the compiler at `recv_reg + 1` -- the convention behind a genuine
+  /// method call (`is_method` reserved that slot at compile time; see
+  /// `ObjFunction::is_method`'s doc comment). Unlike `dispatch_call`,
+  /// `callee` itself is never written into any register here -- it's
+  /// consulted only for its function pointers, since the receiver
+  /// occupying what would otherwise be the callee's register is exactly
+  /// the point of the fused Invoke/InvokeSuper instructions.
+  fn invoke_prebound(
+    &mut self,
+    base: usize,
+    recv_reg: u8,
+    callee: Value,
+    num_args: u8,
+    dst: u8,
+  ) -> RunResult<()> {
+    if !callee.is_closure() {
+      return Err(format!("cannot call a {}", callee.type_name()));
+    }
+    let callee_closure = callee.as_closure();
+    let callee_fn = callee_closure.function.as_func();
+
+    let required = if callee_fn.variadic {
+      callee_fn.arity - 1
+    } else {
+      callee_fn.arity
+    };
+    let new_base = base + recv_reg as usize + 1;
+    let needed = new_base + callee_fn.num_registers as usize;
+    if self.registers.len() < needed {
+      self.registers.resize(needed, Value::nil());
+    }
+    for i in (1 + num_args)..required {
+      self.registers[new_base + i as usize] = Value::nil();
+    }
+    if callee_fn.variadic {
+      let extra_count = (1 + num_args).saturating_sub(required);
+      let mut items = Vec::with_capacity(extra_count as usize);
+      for i in 0..extra_count {
+        items.push(self.registers[new_base + required as usize + i as usize]);
+      }
+      let list_val = self.heap.alloc_list(items);
+      self.registers[new_base + required as usize] = list_val;
+    }
+
+    self.frames.push(CallFrame {
+      function: callee_fn as *const ObjFunction,
+      closure: callee_closure as *const ObjClosure,
+      closure_val: callee,
+      ip: 0,
+      base: new_base,
+      dst_in_caller: dst,
+    });
+    Ok(())
+  }
+
   fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
     loop {
       if self.heap.needs_gc() {
@@ -399,95 +539,7 @@ impl VM {
           func: func_reg,
           num_args,
         } => {
-          let callee = self.get_reg(base, func_reg);
-
-          if callee.is_native() {
-            // Copy args out into an owned buffer BEFORE
-            // calling -- once the native gets &mut VM (so it
-            // can call back into Zuri closures), a slice
-            // borrowed straight from self.registers would
-            // alias that &mut VM. This is the real cost of
-            // supporting reentrant native plugins: no longer
-            // zero-copy the way a plain &mut Heap native was.
-            let args_start = base + func_reg as usize + 1;
-            let args_end = args_start + num_args as usize;
-            let args: Vec<Value> = self.registers[args_start..args_end].to_vec();
-            let native = callee.as_native();
-            let result = self.call_native(native, &args)?;
-            self.set_reg(base, dst, result);
-            continue;
-          }
-
-          if callee.is_class() {
-            let args_start = base + func_reg as usize + 1;
-            let args_end = args_start + num_args as usize;
-            let user_args: Vec<Value> = self.registers[args_start..args_end].to_vec();
-            let instance = self.instantiate(callee, &user_args)?;
-            self.set_reg(base, dst, instance);
-            continue;
-          }
-
-          if callee.is_bound_method() {
-            // The slow, general path -- reached only for a bound method
-            // that was stored in a variable/field/list rather than
-            // called right off a `.` access (that case is Invoke, which
-            // never allocates one of these to begin with). Routed
-            // through call_value rather than the in-place register-
-            // window setup below, since the receiver needs to be
-            // spliced in as an extra leading argument the caller never
-            // actually placed in a register.
-            let args_start = base + func_reg as usize + 1;
-            let args_end = args_start + num_args as usize;
-            let bound = callee.as_bound_method();
-            let mut full_args = Vec::with_capacity(num_args as usize + 1);
-            full_args.push(bound.receiver);
-            full_args.extend_from_slice(&self.registers[args_start..args_end]);
-            let method = bound.method;
-            let result = self.call_value(method, &full_args)?;
-            self.set_reg(base, dst, result);
-            continue;
-          }
-
-          if !callee.is_closure() {
-            return Err(format!("cannot call a {}", callee.type_name()));
-          }
-          let callee_closure = callee.as_closure();
-          let callee_fn = callee_closure.function.as_func();
-
-          let required = if callee_fn.variadic {
-            callee_fn.arity - 1
-          } else {
-            callee_fn.arity
-          };
-
-          let new_base = base + func_reg as usize + 1;
-          let needed = new_base + callee_fn.num_registers as usize;
-          if self.registers.len() < needed {
-            self.registers.resize(needed, Value::nil());
-          }
-
-          for i in num_args..required {
-            self.registers[new_base + i as usize] = Value::nil();
-          }
-
-          if callee_fn.variadic {
-            let extra_count = num_args.saturating_sub(required);
-            let mut items = Vec::with_capacity(extra_count as usize);
-            for i in 0..extra_count {
-              items.push(self.registers[new_base + required as usize + i as usize]);
-            }
-            let list_val = self.heap.alloc_list(items);
-            self.registers[new_base + required as usize] = list_val;
-          }
-
-          self.frames.push(CallFrame {
-            function: callee_fn as *const ObjFunction,
-            closure: callee_closure as *const ObjClosure,
-            closure_val: callee,
-            ip: 0,
-            base: new_base,
-            dst_in_caller: dst,
-          });
+          self.dispatch_call(base, func_reg, num_args, dst)?;
         },
         Instr::Return { src } => {
           let ret = self.get_reg(base, src);
@@ -646,9 +698,20 @@ impl VM {
           let class_val = self.get_reg(base, class);
           let name = self.const_as_str(func, name_const)?;
           let mut c = class_val.as_class_mut();
-          let idx = c.field_count;
-          c.field_slots.insert(name, idx);
-          c.field_count += 1;
+          // Idempotent: a name that's already present -- inherited from
+          // the superclass (invisible to the compiler's own self.x=...
+          // scan, which only sees this class's own AST -- see
+          // Compiler::compile_class_decl) or already declared earlier
+          // in this same class -- keeps its EXISTING slot rather than
+          // being handed a new one. Reassigning would silently desync
+          // an inherited field initializer (which writes to the OLD
+          // index) from every later read/write of the same name
+          // (which would then resolve to the NEW index instead).
+          if !c.field_slots.contains_key(&name) {
+            let idx = c.field_count;
+            c.field_slots.insert(name, idx);
+            c.field_count += 1;
+          }
         },
 
         Instr::SetFieldInit { class, src } => {
@@ -780,77 +843,69 @@ impl VM {
           let receiver = self.get_reg(base, obj);
           let method_name = self.const_as_str(func, method_const)?;
 
-          let callee = if receiver.is_instance() {
+          if receiver.is_instance() {
             let inst = receiver.as_instance();
-            let class = inst.class.as_class();
-            class.methods.get(&method_name).copied().ok_or_else(|| {
-              format!(
-                "undefined method '{}' on instance of '{}'",
-                method_name, class.name
-              )
-            })?
+            let class_val = inst.class;
+            let found = {
+              let class = class_val.as_class();
+              if let Some(m) = class.methods.get(&method_name).copied() {
+                Some(Ok(m))
+              } else if let Some(&idx) = class.field_slots.get(&method_name) {
+                Some(Err(idx))
+              } else {
+                None
+              }
+            };
+
+            match found {
+              Some(Ok(method)) => self.invoke_prebound(base, obj, method, num_args, dst)?,
+              Some(Err(idx)) => {
+                // A plain field that happens to hold a callable (e.g.
+                // `var _print = @(g) { ... }`) -- called as ordinary
+                // data, NOT as a method: no implicit self, matching
+                // what would happen if it were fetched into a variable
+                // and called from there. Overwriting the compiler's
+                // (here-irrelevant) self-duplicate register with the
+                // field's own value gives dispatch_call exactly what
+                // it needs -- the real arguments already sit right
+                // after it, at obj+2 onward.
+                let field_value = inst.fields[idx as usize].get();
+                self.set_reg(base, obj + 1, field_value);
+                self.dispatch_call(base, obj + 1, num_args, dst)?;
+              },
+              None => {
+                return Err(format!(
+                  "undefined property '{}' on instance of '{}'",
+                  method_name,
+                  class_val.as_class().name
+                ));
+              },
+            }
           } else if receiver.is_class() {
-            lookup_static(receiver, &method_name).ok_or_else(|| {
+            let callee = lookup_static(receiver, &method_name).ok_or_else(|| {
               format!(
                 "undefined static member '{}' on class '{}'",
                 method_name,
                 receiver.as_class().name
               )
-            })?
+            })?;
+            if callee.is_closure() && callee.as_closure().function.as_func().is_method {
+              self.invoke_prebound(base, obj, callee, num_args, dst)?;
+            } else {
+              // A static field holding a plain callable (`static var f
+              // = @(x){}`), not a declared `static` method -- no
+              // reserved receiver slot, so treat exactly like the
+              // instance field-fallback above.
+              self.set_reg(base, obj + 1, callee);
+              self.dispatch_call(base, obj + 1, num_args, dst)?;
+            }
           } else {
             return Err(format!(
               "cannot call method '{}' on a {}",
               method_name,
               receiver.type_name()
             ));
-          };
-
-          if !callee.is_closure() {
-            return Err(format!(
-              "'{}' is not callable (got a {})",
-              method_name,
-              callee.type_name()
-            ));
           }
-          let callee_closure = callee.as_closure();
-          let callee_fn = callee_closure.function.as_func();
-
-          let required = if callee_fn.variadic {
-            callee_fn.arity - 1
-          } else {
-            callee_fn.arity
-          };
-          // Register `obj + 1` is where the compiler already placed a
-          // duplicate of the receiver (see Compiler::compile_invoke) --
-          // it becomes this call's register 0 (the callee's implicit
-          // self), with real arguments right after it. Same register-
-          // window convention as Instr::Call, shifted by one.
-          let new_base = base + obj as usize + 1;
-          let needed = new_base + callee_fn.num_registers as usize;
-          if self.registers.len() < needed {
-            self.registers.resize(needed, Value::nil());
-          }
-          for i in (1 + num_args)..required {
-            self.registers[new_base + i as usize] = Value::nil();
-          }
-          if callee_fn.variadic {
-            let extra_count = (1 + num_args).saturating_sub(required);
-            let mut items = Vec::with_capacity(extra_count as usize);
-            for i in 0..extra_count {
-              items.push(self.registers[new_base + required as usize + i as usize]);
-            }
-            let list_val = self.heap.alloc_list(items);
-            self.registers[new_base + required as usize] = list_val;
-          }
-
-          self.frames.push(CallFrame {
-            function: callee_fn as *const ObjFunction,
-            closure: callee_closure as *const ObjClosure,
-            closure_val: callee,
-            ip: 0,
-            base: new_base,
-            dst_in_caller: dst,
-          });
         },
 
         Instr::InvokeSuper {
@@ -867,57 +922,47 @@ impl VM {
             ));
           }
           let method_name = self.const_as_str(func, method_const)?;
-          let callee = {
+          let found = {
             let class = super_val.as_class();
-            class.methods.get(&method_name).copied().ok_or_else(|| {
-              format!(
-                "undefined method '{}' on superclass '{}'",
-                method_name, class.name
-              )
-            })?
+            class.methods.get(&method_name).copied()
           };
 
-          if !callee.is_closure() {
-            return Err(format!(
-              "'{}' is not callable (got a {})",
-              method_name,
-              callee.type_name()
-            ));
-          }
-          let callee_closure = callee.as_closure();
-          let callee_fn = callee_closure.function.as_func();
-
-          let required = if callee_fn.variadic {
-            callee_fn.arity - 1
+          if let Some(method) = found {
+            self.invoke_prebound(base, superclass, method, num_args, dst)?;
           } else {
-            callee_fn.arity
-          };
-          let new_base = base + superclass as usize + 1;
-          let needed = new_base + callee_fn.num_registers as usize;
-          if self.registers.len() < needed {
-            self.registers.resize(needed, Value::nil());
-          }
-          for i in (1 + num_args)..required {
-            self.registers[new_base + i as usize] = Value::nil();
-          }
-          if callee_fn.variadic {
-            let extra_count = (1 + num_args).saturating_sub(required);
-            let mut items = Vec::with_capacity(extra_count as usize);
-            for i in 0..extra_count {
-              items.push(self.registers[new_base + required as usize + i as usize]);
+            // Not a method anywhere up the (statically fixed) chain --
+            // fields were never virtual to begin with, so fall back to
+            // self's own field slots directly, same as Invoke's own
+            // fallback. `self` is already sitting in register
+            // `superclass + 1` (placed there by
+            // Compiler::compile_invoke_super), so reuse it as both the
+            // field owner and, if found, the overwritten callee
+            // register.
+            let self_val = self.get_reg(base, superclass + 1);
+            if !self_val.is_instance() {
+              return Err(format!(
+                "undefined method '{}' on superclass '{}'",
+                method_name,
+                super_val.as_class().name
+              ));
             }
-            let list_val = self.heap.alloc_list(items);
-            self.registers[new_base + required as usize] = list_val;
+            let inst = self_val.as_instance();
+            let idx = *inst
+              .class
+              .as_class()
+              .field_slots
+              .get(&method_name)
+              .ok_or_else(|| {
+                format!(
+                  "undefined method '{}' on superclass '{}'",
+                  method_name,
+                  super_val.as_class().name
+                )
+              })?;
+            let field_value = inst.fields[idx as usize].get();
+            self.set_reg(base, superclass + 1, field_value);
+            self.dispatch_call(base, superclass + 1, num_args, dst)?;
           }
-
-          self.frames.push(CallFrame {
-            function: callee_fn as *const ObjFunction,
-            closure: callee_closure as *const ObjClosure,
-            closure_val: callee,
-            ip: 0,
-            base: new_base,
-            dst_in_caller: dst,
-          });
         },
       }
     }
