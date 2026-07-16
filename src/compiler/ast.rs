@@ -97,6 +97,18 @@ pub enum Decl {
   Class(Token, Option<Box<Expr>>, Vec<Decl>, Vec<Decl>, bool),
 }
 
+impl Decl {
+  pub fn is_method(&self, name: &str) -> bool {
+    match self {
+      Decl::Method(token, _, _, _, _) => match token.kind.clone() {
+        TokenKind::Identifier(token_name) => token_name.eq(name),
+        _ => false,
+      },
+      _ => false,
+    }
+  }
+}
+
 impl From<Decl> for NodeKind {
   fn from(e: Decl) -> Self {
     NodeKind::Decl(e)

@@ -1666,6 +1666,16 @@ impl<'a> Parser<'a> {
       "Expected '}' after class declaration."
     );
 
+    if !methods.iter().any(|f| f.is_method("init")) {
+      methods.push(Decl::Method(
+        name.clone(),
+        Vec::new(),
+        Box::new(Stmt::None),
+        false,
+        false,
+      ))
+    }
+
     Decl::Class(name, superclass, properties, methods, is_extension)
   }
 
