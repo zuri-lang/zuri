@@ -100,8 +100,9 @@ pub enum Decl {
 impl Decl {
   pub fn is_method(&self, name: &str) -> bool {
     match self {
-      Decl::Method(token, _, _, _, _) => match token.kind.clone() {
+      Decl::Method(token, ..) => match token.kind.clone() {
         TokenKind::Identifier(token_name) => token_name.eq(name),
+        TokenKind::Decorator(token_name) => token_name.eq(name),
         _ => false,
       },
       _ => false,
