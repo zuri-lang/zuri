@@ -891,7 +891,10 @@ impl<'a> Compiler<'a> {
           TokenKind::LessEq => Instr::Le { dst, a, b },
           TokenKind::Greater => Instr::Gt { dst, a, b },
           TokenKind::GreaterEq => Instr::Ge { dst, a, b },
-          _ => panic!("compile_expression: unsupported binary operator: {:?}", op),
+          _ => panic!(
+            "compile_expression: unsupported comparison operator: {:?}",
+            op
+          ),
         };
         self.emit(instr);
 

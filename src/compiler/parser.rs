@@ -1072,7 +1072,7 @@ impl<'a> Parser<'a> {
     {
       let left = self.compose_id(key_id.clone());
       let right = self.compose_nil();
-      let condition = Expr::Binary(Box::new(left), TokenKind::Equal, Box::new(right));
+      let condition = Expr::Logical(Box::new(left), TokenKind::EqualEq, Box::new(right));
       let then_branch = Stmt::Break;
       stmt_list.push(Stmt::If(Box::new(condition), Box::new(then_branch), None));
     }
