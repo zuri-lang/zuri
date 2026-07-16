@@ -371,13 +371,16 @@ impl std::fmt::Display for Value {
             func.arity,
             if func.variadic { "..." } else { "" }
           ),
-          Obj::Closure(c) => write!(
-            f,
-            "<function {}({}{})>",
-            (&*c.function).name,
-            (&*c.function).arity,
-            if (&*c.function).variadic { "..." } else { "" }
-          ),
+          Obj::Closure(c) => {
+            let func = c.function.as_func();
+            write!(
+              f,
+              "<function {}({}{})>",
+              func.name,
+              func.arity,
+              if func.variadic { "..." } else { "" }
+            )
+          },
           Obj::Native(func) => write!(
             f,
             "<function {}({}{})>",

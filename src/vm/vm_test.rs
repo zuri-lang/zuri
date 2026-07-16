@@ -175,19 +175,15 @@ pub fn run_test() {
 
   let main_fn = build_main(&mut heap, fib_val);
   let main_val = heap.alloc_function(main_fn);
+  let main_closure = heap.alloc_closure(ObjClosure {
+    function: main_val,
+    upvalues: Vec::new(),
+  });
 
   let globals = HashMap::new();
   let mut vm = VM::new(heap, globals);
-  // fib needs to find itself by name at call time.
-  let main_fn_ptr = match unsafe { &*main_val.as_obj() } {
-    crate::vm::object::Obj::Func(f) => f as *const ObjFunction,
-    _ => unreachable!(),
-  };
 
-  if let Err(e) = vm.run(&ObjClosure {
-    function: main_fn_ptr,
-    upvalues: Vec::new(),
-  }) {
+  if let Err(e) = vm.run(main_closure) {
     eprintln!("runtime error: {}", e);
     std::process::exit(1);
   }

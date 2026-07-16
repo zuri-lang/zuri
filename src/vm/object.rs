@@ -1,5 +1,6 @@
 use num_bigint::BigInt;
 use std::cell::Cell;
+use std::collections::HashSet;
 
 use crate::vm::chunk::Chunk;
 use crate::vm::value::Value;
@@ -86,7 +87,12 @@ pub struct ObjFunction {
 }
 
 pub struct ObjClosure {
-  pub function: *const ObjFunction,
+  /// The prototype this closure was created from, as the tagged `Value`
+  /// that points at its `Obj::Func` -- not a raw pointer -- so the GC's
+  /// mark phase can trace it like any other reference and keep the
+  /// prototype (and everything in its constant pool) alive for exactly
+  /// as long as some closure still needs it.
+  pub function: Value,
   /// One entry per `function.upvalues` descriptor, in the same order.
   /// Each Value here points at an `Obj::Upvalue`.
   pub upvalues: Vec<Value>,
@@ -138,16 +144,63 @@ pub type NativeFn = fn(&mut ZuriContext) -> Result<Value, String>;
 #[derive(Default)]
 pub struct Heap {
   objects: Vec<Box<Obj>>,
+  /// Running total of `approx_size()` across every live object --
+  /// compared against `next_gc` to decide when the VM should pause and
+  /// collect. Recomputed from scratch on every sweep rather than
+  /// incrementally decremented on free, so it can never drift out of
+  /// sync with what's actually still on the heap.
+  bytes_allocated: usize,
+  /// The `bytes_allocated` threshold that triggers the next collection.
+  /// Grows with live heap size after each sweep (see `sweep`), the same
+  /// self-tuning strategy clox uses, so steady-state programs settle
+  /// into collecting roughly every time the heap doubles rather than
+  /// thrashing on a fixed budget.
+  next_gc: usize,
 }
 
 impl Heap {
+  /// Floor for `next_gc` -- keeps a small/short-lived program from
+  /// triggering a collection after every third allocation.
+  const MIN_NEXT_GC: usize = 256 * 1024;
+  /// After a sweep, the next collection is scheduled at this multiple of
+  /// the heap's current live size.
+  const GC_HEAP_GROW_FACTOR: usize = 2;
+
   pub fn new() -> Self {
     Heap {
       objects: Vec::new(),
+      bytes_allocated: 0,
+      next_gc: Self::MIN_NEXT_GC,
     }
   }
 
+  /// Rough size in bytes attributed to one heap object, used only to
+  /// decide *when* to collect -- not an exact accounting (e.g. a
+  /// `BigInt`'s own heap limbs aren't sized individually), just enough
+  /// to make `next_gc` track real memory pressure instead of raw object
+  /// count.
+  fn approx_size(obj: &Obj) -> usize {
+    use std::mem::size_of;
+
+    size_of::<Obj>()
+      + match obj {
+        Obj::Str(s) => s.len(),
+        Obj::Bytes(b) => b.len(),
+        Obj::BigInt(_) => 0,
+        Obj::List(items) => items.len() * size_of::<Value>(),
+        Obj::Dict(pairs) => pairs.len() * size_of::<(Value, Value)>(),
+        Obj::Func(f) => {
+          f.chunk.code.len() * size_of::<crate::vm::chunk::Instr>()
+            + f.chunk.constants.len() * size_of::<Value>()
+        },
+        Obj::Closure(c) => c.upvalues.len() * size_of::<Value>(),
+        Obj::Upvalue(_) => 0,
+        Obj::Native(_) => 0,
+      }
+  }
+
   fn alloc(&mut self, obj: Obj) -> Value {
+    self.bytes_allocated += Self::approx_size(&obj);
     self.objects.push(Box::new(obj));
     let ptr: *const Obj = self.objects.last().unwrap().as_ref();
     Value::obj(ptr)
@@ -203,17 +256,56 @@ impl Heap {
   /// wraps it in a trivial empty-upvalue closure in one step.
   pub fn alloc_plain_closure(&mut self, f: ObjFunction) -> Value {
     let proto_val = self.alloc_function(f);
-    let proto_ptr = match unsafe { &*proto_val.as_obj() } {
-      Obj::Func(func) => func as *const ObjFunction,
-      _ => unreachable!(),
-    };
     self.alloc_closure(ObjClosure {
-      function: proto_ptr,
+      function: proto_val,
       upvalues: Vec::new(),
     })
   }
 
   pub fn alloc_native(&mut self, native: NativeFunction) -> Value {
     self.alloc(Obj::Native(native))
+  }
+
+  #[inline]
+  pub fn bytes_allocated(&self) -> usize {
+    self.bytes_allocated
+  }
+
+  #[inline]
+  pub fn next_gc(&self) -> usize {
+    self.next_gc
+  }
+
+  #[inline]
+  pub fn object_count(&self) -> usize {
+    self.objects.len()
+  }
+
+  /// Has the heap grown enough since the last collection that the VM
+  /// should pause and run one before allocating further?
+  #[inline]
+  pub fn needs_gc(&self) -> bool {
+    self.bytes_allocated > self.next_gc
+  }
+
+  /// Drop every object whose address isn't in `reachable`, then
+  /// recompute `bytes_allocated` and re-arm `next_gc` off the resulting
+  /// live size. Returns how many objects were freed.
+  ///
+  /// This only performs the sweep half of mark-and-sweep -- `reachable`
+  /// must already be the complete, transitively-closed set of live
+  /// objects (see `VM::collect_garbage`), or anything missing from it
+  /// gets freed out from under whatever still references it.
+  pub fn sweep(&mut self, reachable: &HashSet<*const Obj>) -> usize {
+    let before = self.objects.len();
+    self
+      .objects
+      .retain(|obj| reachable.contains(&(obj.as_ref() as *const Obj)));
+    let freed = before - self.objects.len();
+
+    self.bytes_allocated = self.objects.iter().map(|o| Self::approx_size(o)).sum();
+    self.next_gc = (self.bytes_allocated * Self::GC_HEAP_GROW_FACTOR).max(Self::MIN_NEXT_GC);
+
+    freed
   }
 }

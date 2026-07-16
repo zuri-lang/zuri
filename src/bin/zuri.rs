@@ -5,10 +5,7 @@ use zuri::compiler::token::KEYWORD_TOKENS;
 use itertools::Itertools;
 use zuri::compiler::{compiler::Compiler, lexer::Lexer, parser::Parser};
 use zuri::vm::vm::VM;
-use zuri::vm::{
-  chunk::Chunk,
-  object::{Heap, Obj},
-};
+use zuri::vm::{chunk::Chunk, object::Heap};
 
 use crate::shared::repl::Repl;
 
@@ -67,16 +64,11 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
     compiler.enable_repl_mode();
 
     let fn_obj = compiler.compile();
-    // println!("{}", fn_obj.chunk);
     let closure = heap.alloc_plain_closure(fn_obj);
 
-    let main_ptr = match unsafe { &*closure.as_obj() } {
-      Obj::Closure(c) => c as *const _,
-      _ => unreachable!(),
-    };
-
-    if let Err(e) = vm.run(main_ptr) {
-      return Err(format!("runtime error: {}", e));
+    if let Err(e) = vm.run(closure) {
+      eprintln!("runtime error: {}", e);
+      process::exit(1);
     }
   } else {
     return Err(format!(
@@ -101,12 +93,7 @@ fn run_file(vm: &mut VM, file: &str) {
     let fn_obj = compiler.compile();
     let closure = heap.alloc_plain_closure(fn_obj);
 
-    let main_ptr = match unsafe { &*closure.as_obj() } {
-      Obj::Closure(c) => c as *const _,
-      _ => unreachable!(),
-    };
-
-    if let Err(e) = vm.run(main_ptr) {
+    if let Err(e) = vm.run(closure) {
       eprintln!("runtime error: {}", e);
       process::exit(1);
     }

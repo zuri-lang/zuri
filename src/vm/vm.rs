@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::{Neg, Shl, Shr};
+use std::sync::LazyLock;
 
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -7,7 +8,7 @@ use num_traits::ToPrimitive;
 use crate::vm::chunk::Instr;
 use crate::vm::natives;
 use crate::vm::object::{
-  Heap, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, ZuriContext,
+  Heap, Obj, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, ZuriContext,
 };
 use crate::vm::value::Value;
 
@@ -18,6 +19,13 @@ struct CallFrame {
   /// upvalues". Distinct from `function` (the shared, static prototype)
   /// the same way `ObjClosure` is distinct from `ObjFunction`.
   closure: *const ObjClosure,
+  /// The same closure as `closure`, but as the tagged `Value` it was
+  /// called through rather than a raw pointer. `function`/`closure`
+  /// stay raw pointers purely so the hot instruction-dispatch loop
+  /// doesn't pay for a tag check on every fetch; this field is what the
+  /// GC's root scan actually walks to keep those raw pointers valid --
+  /// see `VM::collect_garbage`.
+  closure_val: Value,
   ip: usize,
   /// Index into `VM::registers` where this frame's register window starts.
   base: usize,
@@ -42,6 +50,9 @@ pub struct VM {
 }
 
 type RunResult<T> = Result<T, String>;
+
+const LOG_GC: LazyLock<bool> =
+  std::sync::LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
 
 impl VM {
   pub fn new(heap: Heap, globals: HashMap<String, Value>) -> Self {
@@ -70,13 +81,15 @@ impl VM {
 
   /// Run `main` (a top-level closure, typically zero-upvalue, taking no
   /// arguments) to completion.
-  pub fn run(&mut self, main: *const ObjClosure) -> RunResult<()> {
-    let proto = unsafe { &*(*main).function };
+  pub fn run(&mut self, main: Value) -> RunResult<()> {
+    let closure = main.as_closure();
+    let proto = closure.function.as_func();
     let num_registers = proto.num_registers as usize;
     self.registers.resize(num_registers, Value::nil());
     self.frames.push(CallFrame {
       function: proto as *const ObjFunction,
-      closure: main,
+      closure: closure as *const ObjClosure,
+      closure_val: main,
       ip: 0,
       base: 0,
       dst_in_caller: 0,
@@ -99,8 +112,9 @@ impl VM {
     if !callee.is_closure() {
       return Err(format!("cannot call a {}", callee.type_name()));
     }
+
     let closure = callee.as_closure();
-    let proto = unsafe { &*closure.function };
+    let proto = closure.function.as_func();
     let required = if proto.variadic {
       proto.arity - 1
     } else {
@@ -127,6 +141,7 @@ impl VM {
     self.frames.push(CallFrame {
       function: proto as *const ObjFunction,
       closure: closure as *const ObjClosure,
+      closure_val: callee,
       ip: 0,
       base: new_base,
       dst_in_caller: 0, // unused -- run_until returns the value directly instead
@@ -159,6 +174,10 @@ impl VM {
 
   fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
     loop {
+      if self.heap.needs_gc() {
+        self.collect_garbage();
+      }
+
       let frame_idx = self.frames.len() - 1;
       let (func_ptr, closure_ptr, ip, base) = {
         let f = &self.frames[frame_idx];
@@ -335,7 +354,7 @@ impl VM {
             return Err(format!("cannot call a {}", callee.type_name()));
           }
           let callee_closure = callee.as_closure();
-          let callee_fn = unsafe { &*callee_closure.function };
+          let callee_fn = callee_closure.function.as_func();
 
           let required = if callee_fn.variadic {
             callee_fn.arity - 1
@@ -366,6 +385,7 @@ impl VM {
           self.frames.push(CallFrame {
             function: callee_fn as *const ObjFunction,
             closure: callee_closure as *const ObjClosure,
+            closure_val: callee,
             ip: 0,
             base: new_base,
             dst_in_caller: dst,
@@ -408,7 +428,6 @@ impl VM {
             return Err("Closure operand is not a function".to_string());
           }
           let proto = proto_val.as_func();
-          let proto_ptr = proto as *const ObjFunction;
 
           let mut captured = Vec::with_capacity(proto.upvalues.len());
           for desc in &proto.upvalues {
@@ -424,8 +443,9 @@ impl VM {
             };
             captured.push(upval);
           }
+
           let closure_val = self.heap.alloc_closure(ObjClosure {
-            function: proto_ptr,
+            function: proto_val,
             upvalues: captured,
           });
           self.set_reg(base, dst, closure_val);
@@ -642,5 +662,116 @@ impl VM {
     }
     self.set_reg(base, dst, Value::bool(op(va.as_number(), vb.as_number())));
     Ok(())
+  }
+
+  //-----------------------------------------------------------------------------------
+  // Garbage collection
+  //-----------------------------------------------------------------------------------
+
+  /// Mark-and-sweep collection. Roots are: every register within reach
+  /// of a currently active frame, every global, the closure each active
+  /// call frame is executing, and any upvalue still open. From there,
+  /// every `Value` those objects transitively hold is walked with an
+  /// explicit work-list (not recursion, so a long chain can't blow the
+  /// stack) before anything unreached gets swept.
+  ///
+  /// Called automatically from `run_until` once the heap has grown past
+  /// its threshold; also exposed to native code (see the `gc` native)
+  /// for forcing a collection on demand.
+  pub(crate) fn collect_garbage(&mut self) {
+    let before_bytes = self.heap.bytes_allocated();
+    let before_count = self.heap.object_count();
+
+    let mut reachable: HashSet<*const Obj> = HashSet::new();
+    let mut worklist: Vec<*const Obj> = Vec::new();
+
+    // Only the register range actually within reach of a currently
+    // active frame can hold live data -- registers past the innermost
+    // active frame's window are left over from calls that have already
+    // returned (the register stack is never shrunk, purely as a perf
+    // tradeoff), so scanning them would just pin down garbage forever.
+    let regs_top = self
+      .frames
+      .last()
+      .map(|f| f.base + unsafe { &*f.function }.num_registers as usize)
+      .unwrap_or(0)
+      .min(self.registers.len());
+
+    for v in &self.registers[..regs_top] {
+      Self::mark_root(*v, &mut reachable, &mut worklist);
+    }
+    for v in self.globals.values() {
+      Self::mark_root(*v, &mut reachable, &mut worklist);
+    }
+    for frame in &self.frames {
+      Self::mark_root(frame.closure_val, &mut reachable, &mut worklist);
+    }
+    for (_, v) in &self.open_upvalues {
+      Self::mark_root(*v, &mut reachable, &mut worklist);
+    }
+
+    while let Some(ptr) = worklist.pop() {
+      // SAFETY: every pointer on the worklist was pulled out of a Value
+      // that was itself still live when we queued it, and nothing is
+      // freed until `sweep` runs below -- well after this loop -- so the
+      // object behind `ptr` is guaranteed to still be valid here.
+      match unsafe { &*ptr } {
+        Obj::List(items) => {
+          for item in items {
+            Self::mark_root(*item, &mut reachable, &mut worklist);
+          }
+        },
+        Obj::Dict(pairs) => {
+          for (k, v) in pairs {
+            Self::mark_root(*k, &mut reachable, &mut worklist);
+            Self::mark_root(*v, &mut reachable, &mut worklist);
+          }
+        },
+        Obj::Func(f) => {
+          for c in &f.chunk.constants {
+            Self::mark_root(*c, &mut reachable, &mut worklist);
+          }
+        },
+        Obj::Closure(c) => {
+          Self::mark_root(c.function, &mut reachable, &mut worklist);
+          for u in &c.upvalues {
+            Self::mark_root(*u, &mut reachable, &mut worklist);
+          }
+        },
+        Obj::Upvalue(cell) => {
+          if let UpvalueState::Closed(v) = cell.get() {
+            Self::mark_root(v, &mut reachable, &mut worklist);
+          }
+        },
+        Obj::Str(_) | Obj::Bytes(_) | Obj::BigInt(_) | Obj::Native(_) => {},
+      }
+    }
+
+    let freed = self.heap.sweep(&reachable);
+
+    if *LOG_GC {
+      eprintln!(
+        "[gc] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
+        freed,
+        before_count,
+        before_bytes,
+        self.heap.bytes_allocated(),
+        self.heap.next_gc()
+      );
+    }
+  }
+
+  /// Add `v` to the reachable set and, the first time it's seen, queue
+  /// it so `collect_garbage` walks its children too. A no-op on repeat
+  /// visits, which is what makes cycles (e.g. a closure capturing a
+  /// variable that in turn points back at the closure) safe to trace.
+  fn mark_root(v: Value, reachable: &mut HashSet<*const Obj>, worklist: &mut Vec<*const Obj>) {
+    if !v.is_obj() {
+      return;
+    }
+    let ptr = v.as_obj();
+    if reachable.insert(ptr) {
+      worklist.push(ptr);
+    }
   }
 }

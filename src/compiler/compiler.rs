@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::{ops::Deref, rc::Rc};
+use std::{ops::Deref, rc::Rc, sync::LazyLock};
 
 use crate::{
   compiler::{
@@ -92,6 +92,9 @@ enum VarLoc {
   Upvalue(u8),
   Global,
 }
+
+const LOG_INSTR: LazyLock<bool> =
+  std::sync::LazyLock::new(|| std::env::var_os("ZURI_INSTR_LOG").is_some());
 
 pub struct Compiler<'a> {
   declarations: Vec<Decl>,
@@ -932,7 +935,7 @@ impl<'a> Compiler<'a> {
       upvalues: Vec::new(),
     };
 
-    if env!("ZURI_DEBUG_OPCODES") == "true" {
+    if *LOG_INSTR {
       // Dump sin's own compiled bytecode directly from main's constant pool.
       for c in &main_fn.chunk.constants {
         if c.is_func() {

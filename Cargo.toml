@@ -18,4 +18,3 @@ toml = "1.1.2"
 version = "0.1.0"
 vm_version = "0.1.0"
 history_size = 1000
-debug_opcodes = false

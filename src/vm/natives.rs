@@ -8,6 +8,7 @@ pub fn install(vm: &mut VM) {
   register(vm, "abs", 1, false, abs);
   register(vm, "sum", 1, true, sum);
   register(vm, "bytes", 1, false, bytes);
+  // register(vm, "gc", 0, false, gc);
 }
 
 fn register(vm: &mut VM, name: &'static str, min_arity: u8, variadic: bool, func: NativeFn) {
@@ -86,4 +87,15 @@ fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
     "bytes() expects a number or list, got {}",
     v.type_name()
   ));
+}
+
+/// Force an immediate mark-and-sweep collection, bypassing the usual
+/// allocation-threshold heuristic. Mainly useful for exercising or
+/// benchmarking the collector directly from a script -- set the
+/// ZURI_GC_LOG environment variable before running to see what each
+/// collection actually freed.
+#[allow(unused)]
+fn gc(ctx: &mut ZuriContext) -> Result<Value, String> {
+  ctx.vm.collect_garbage();
+  Ok(Value::nil())
 }
