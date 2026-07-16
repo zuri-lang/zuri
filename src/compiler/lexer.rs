@@ -369,7 +369,7 @@ impl<'a> Lexer<'a> {
       "parent" => self.make_token(TokenKind::Parent),
       "raise" => self.make_token(TokenKind::Raise),
       "return" => self.make_token(TokenKind::Return),
-      "self_" => self.make_token(TokenKind::Self_),
+      "self" => self.make_token(TokenKind::Self_),
       "static" => self.make_token(TokenKind::Static),
       "true" => self.make_token(TokenKind::True),
       "using" => self.make_token(TokenKind::Using),
