@@ -15,10 +15,10 @@ use crate::{
 };
 
 fn token_to_string(token: Token) -> String {
-  if let TokenKind::Identifier(name) = token.kind {
-    name.clone()
-  } else {
-    token.kind.to_string()
+  match token.kind {
+    TokenKind::Identifier(name) => name.clone(),
+    TokenKind::Decorator(name) => name.clone(),
+    _ => token.kind.to_string(),
   }
 }
 
@@ -95,6 +95,9 @@ enum VarLoc {
 
 const LOG_INSTR: LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var_os("ZURI_INSTR_LOG").is_some());
+
+const LOG_AST: LazyLock<bool> =
+  std::sync::LazyLock::new(|| std::env::var_os("ZURI_AST_LOG").is_some());
 
 pub struct Compiler<'a> {
   declarations: Vec<Decl>,
@@ -198,6 +201,7 @@ impl<'a> Compiler<'a> {
   fn identifier_name(token: &Token) -> String {
     match &token.kind {
       TokenKind::Identifier(s) => s.clone(),
+      TokenKind::Decorator(s) => s.clone(),
       other => panic!("compile: expected an identifier token, got {:?}", other),
     }
   }
@@ -313,6 +317,7 @@ impl<'a> Compiler<'a> {
       num_registers: finished.max_reg,
       chunk: finished.chunk,
       upvalues: finished.upvalues,
+      is_method: false,
     }
   }
 
@@ -344,6 +349,428 @@ impl<'a> Compiler<'a> {
       src: dst,
     });
     self.free_regs_to(mark);
+  }
+
+  /// Like `compile_function_prototype`, but for a class method: register
+  /// 0 is ALWAYS reserved for the receiver -- even for a static method,
+  /// which never reads it -- so every call site (Invoke/InvokeSuper) can
+  /// use one uniform register layout regardless of whether the target
+  /// turns out to be static or not. Only non-static methods get a named
+  /// "self" local pointing at it, which is what makes `self` a compile
+  /// error inside a static method (resolve_variable("self") simply
+  /// won't find it there).
+  fn compile_method_prototype(
+    &mut self,
+    token: &Token,
+    params: &[Expr],
+    body: &Stmt,
+    is_variadic: bool,
+    is_static: bool,
+  ) -> ObjFunction {
+    let name = Self::identifier_name(token);
+
+    let mut param_names = Vec::with_capacity(params.len());
+    for param in params {
+      match param {
+        Expr::Argument(ptoken, _type_hint) => param_names.push(Self::identifier_name(ptoken)),
+        other => panic!(
+          "compile: method parameter is not Expr::Argument: {:?}",
+          other
+        ),
+      }
+    }
+    if is_variadic {
+      assert!(
+        !param_names.is_empty(),
+        "compile: variadic method must have a named last parameter"
+      );
+    }
+
+    self.scopes.push(FunctionScope::new());
+
+    let self_reg = self.alloc_reg();
+    if !is_static {
+      self.cur_mut().locals.push(Local {
+        name: "self".to_string(),
+        reg: self_reg,
+        is_const: true,
+        depth: 0,
+      });
+    }
+
+    for pname in &param_names {
+      let reg = self.alloc_reg();
+      self.cur_mut().locals.push(Local {
+        name: pname.clone(),
+        reg,
+        is_const: false,
+        depth: 0,
+      });
+    }
+
+    self.compile_statement(body);
+
+    if !matches!(self.cur().chunk.code.last(), Some(Instr::Return { .. })) {
+      let nil_reg = self.alloc_reg();
+      self.emit(Instr::LoadNil { dst: nil_reg });
+      self.emit(Instr::Return { src: nil_reg });
+    }
+
+    let finished = self.scopes.pop().unwrap();
+    ObjFunction {
+      name,
+      arity: (param_names.len() + 1) as u8, // +1 for the always-reserved receiver slot
+      variadic: is_variadic,
+      num_registers: finished.max_reg,
+      chunk: finished.chunk,
+      upvalues: finished.upvalues,
+      is_method: true,
+    }
+  }
+
+  /// Compile a class's own (non-static) field initializers into a
+  /// single arity-1 (self) function, run once per instance at
+  /// construction time -- see `VM::instantiate`. Own field names were
+  /// already registered into the class's field_slots table via
+  /// Instr::DeclareField before this runs, but that happens at CLASS
+  /// declaration time, well before any instance (and thus any call to
+  /// this function) exists, so ordering is never actually a race.
+  fn compile_field_initializer(
+    &mut self,
+    class_token: &Token,
+    own_fields: &[&Decl],
+  ) -> ObjFunction {
+    self.scopes.push(FunctionScope::new());
+    let self_reg = self.alloc_reg();
+    self.cur_mut().locals.push(Local {
+      name: "self".to_string(),
+      reg: self_reg,
+      is_const: true,
+      depth: 0,
+    });
+
+    for prop in own_fields {
+      if let Decl::Property(fname, value, ..) = prop {
+        let mark = self.cur().next_reg;
+        let value_reg = self.compile_expression(value);
+        let fname_val = self.heap.alloc_string(Self::identifier_name(fname));
+        let fname_const = self.add_constant(fname_val);
+        self.emit(Instr::SetField {
+          obj: self_reg,
+          name_const: fname_const,
+          src: value_reg,
+        });
+        self.free_regs_to(mark);
+      }
+    }
+
+    let nil_reg = self.alloc_reg();
+    self.emit(Instr::LoadNil { dst: nil_reg });
+    self.emit(Instr::Return { src: nil_reg });
+
+    let finished = self.scopes.pop().unwrap();
+    ObjFunction {
+      name: format!("@{}_init_fields", Self::identifier_name(class_token)),
+      arity: 1,
+      variadic: false,
+      num_registers: finished.max_reg,
+      chunk: finished.chunk,
+      upvalues: finished.upvalues,
+      is_method: true,
+    }
+  }
+
+  /// `class Name < Superclass { ... }` (and `class Name { ... }`).
+  /// Sequence: evaluate the superclass expression once, MakeClass a
+  /// shell that inherits its method/field tables, register this
+  /// class's own fields and build their initializer, evaluate its own
+  /// static members, compile and attach its own methods, resolve the
+  /// constructor, then bind the class as a global -- mirroring how a
+  /// top-level function declaration binds itself, just with a lot more
+  /// steps in between.
+  fn compile_class_decl(
+    &mut self,
+    name: &Token,
+    superclass: &Option<Box<Expr>>,
+    properties: &[Decl],
+    methods: &[Decl],
+    is_extension: bool,
+  ) {
+    if is_extension {
+      panic!("compile: class extension ('class > Target') is not yet supported");
+    }
+
+    let class_name = Self::identifier_name(name);
+    let mark = self.cur().next_reg;
+
+    let superclass_reg: Option<u8> = superclass
+      .as_ref()
+      .map(|expr| self.compile_expression(expr));
+
+    let dst = self.alloc_reg();
+    let name_val = self.heap.alloc_string(class_name);
+    let name_const = self.add_constant(name_val);
+    self.emit(Instr::MakeClass {
+      dst,
+      name_const,
+      superclass: superclass_reg,
+    });
+
+    // Alias the (already-evaluated) superclass value as a synthetic
+    // local named "@superclass" -- never reachable as a real
+    // identifier, since the lexer never produces one starting with '@'
+    // -- purely so every method compiled below can find it through the
+    // same resolve_variable/resolve_upvalue machinery used for any
+    // other captured outer local. That's what lets `parent.foo()` work
+    // even from inside a closure nested several levels deep in a
+    // method body.
+    let locals_mark = self.cur().locals.len();
+    if let Some(sreg) = superclass_reg {
+      let depth = self.cur().scope_depth;
+      self.cur_mut().locals.push(Local {
+        name: "@superclass".to_string(),
+        reg: sreg,
+        is_const: true,
+        depth,
+      });
+    }
+
+    let own_fields: Vec<&Decl> = properties
+      .iter()
+      .filter(|p| matches!(p, Decl::Property(_, _, _, is_static, _) if !*is_static))
+      .collect();
+
+    for prop in &own_fields {
+      if let Decl::Property(fname, ..) = prop {
+        let fname_val = self.heap.alloc_string(Self::identifier_name(fname));
+        let fname_const = self.add_constant(fname_val);
+        self.emit(Instr::DeclareField {
+          class: dst,
+          name_const: fname_const,
+        });
+      }
+    }
+
+    if !own_fields.is_empty() {
+      let init_fn = self.compile_field_initializer(name, &own_fields);
+      let proto_val = self.heap.alloc_function(init_fn);
+      let const_idx = self.add_constant(proto_val);
+      let freg = self.alloc_reg();
+      self.emit(Instr::Closure {
+        dst: freg,
+        proto_const: const_idx,
+      });
+      self.emit(Instr::SetFieldInit {
+        class: dst,
+        src: freg,
+      });
+      self.free_regs_to(freg);
+    }
+
+    for prop in properties {
+      if let Decl::Property(pname, value, _, true, _) = prop {
+        let mark2 = self.cur().next_reg;
+        let vreg = self.compile_expression(value);
+        let pname_val = self.heap.alloc_string(Self::identifier_name(pname));
+        let pname_const = self.add_constant(pname_val);
+        self.emit(Instr::DeclareStatic {
+          class: dst,
+          name_const: pname_const,
+          src: vreg,
+        });
+        self.free_regs_to(mark2);
+      }
+    }
+
+    for m in methods {
+      if let Decl::Method(mname, params, body, is_variadic, is_static) = m {
+        let obj_fn = self.compile_method_prototype(mname, params, body, *is_variadic, *is_static);
+        let proto_val = self.heap.alloc_function(obj_fn);
+        let const_idx = self.add_constant(proto_val);
+        let mreg = self.alloc_reg();
+        self.emit(Instr::Closure {
+          dst: mreg,
+          proto_const: const_idx,
+        });
+        let mname_val = self.heap.alloc_string(Self::identifier_name(mname));
+        let mname_const = self.add_constant(mname_val);
+        if *is_static {
+          self.emit(Instr::DeclareStatic {
+            class: dst,
+            name_const: mname_const,
+            src: mreg,
+          });
+        } else {
+          self.emit(Instr::SetMethod {
+            class: dst,
+            name_const: mname_const,
+            src: mreg,
+          });
+        }
+        self.free_regs_to(mreg);
+      }
+    }
+
+    self.emit(Instr::FinalizeClass {
+      class: dst,
+      name_const,
+    });
+    self.emit(Instr::SetGlobal {
+      name_const,
+      src: dst,
+    });
+
+    self.cur_mut().locals.truncate(locals_mark);
+    self.emit(Instr::CloseUpvalues { from: mark });
+    self.free_regs_to(mark);
+  }
+
+  /// Resolve the current method's implicit receiver to a register,
+  /// exactly like resolving any other named local -- `self` is pushed
+  /// as a real (synthetic) Local when compiling a method body
+  /// specifically so nested closures can capture it as an upvalue
+  /// through the same mechanism as any other outer local (see
+  /// `compile_method_prototype`). Panics outside of a method, where no
+  /// such local exists.
+  fn compile_self_reg(&mut self) -> u8 {
+    match self.resolve_variable("self") {
+      VarLoc::Local(reg, _) => reg,
+      VarLoc::Upvalue(idx) => {
+        let dst = self.alloc_reg();
+        self.emit(Instr::GetUpval { dst, idx });
+        dst
+      },
+      VarLoc::Global => panic!("compile: 'self'/'parent' used outside of a method"),
+    }
+  }
+
+  /// Compile the object half of a `.field`/`.field(...)` access.
+  /// `parent` is special-cased to mean "the current self" here --
+  /// unlike a method CALL through `parent` (see `compile_invoke_super`),
+  /// a plain field read/write isn't virtual (every class's fields live
+  /// in one flat, already-inherited slot layout), so `parent.x` and
+  /// `self.x` are simply the same access.
+  fn compile_receiver(&mut self, expr: &Expr) -> u8 {
+    match expr {
+      Expr::Parent => self.compile_self_reg(),
+      other => self.compile_expression(other),
+    }
+  }
+
+  /// `obj.method(args)` -- fused into one Invoke instruction rather
+  /// than a Get producing a bound-method object followed by a plain
+  /// Call, to skip that heap allocation on every method call. The
+  /// receiver is duplicated into `obj_reg + 1`; see Instr::Invoke's own
+  /// doc comment for why.
+  fn compile_invoke(&mut self, obj: &Expr, method: &Token, args: &[Expr]) -> u8 {
+    let obj_reg = self.alloc_reg();
+    let raw = self.compile_receiver(obj);
+    if raw != obj_reg {
+      self.emit(Instr::Move {
+        dst: obj_reg,
+        src: raw,
+      });
+    }
+    self.free_regs_to(obj_reg + 1);
+
+    let self_slot = self.alloc_reg();
+    self.emit(Instr::Move {
+      dst: self_slot,
+      src: obj_reg,
+    });
+
+    let mut num_args: u8 = 0;
+    for arg in args {
+      let expected = self_slot + 1 + num_args;
+      let arg_reg = self.compile_expression(arg);
+      if arg_reg != expected {
+        self.emit(Instr::Move {
+          dst: expected,
+          src: arg_reg,
+        });
+      }
+      self.free_regs_to(expected + 1);
+      num_args = num_args
+        .checked_add(1)
+        .expect("too many arguments in a single call");
+    }
+
+    let method_name = Self::identifier_name(method);
+    let method_val = self.heap.alloc_string(method_name);
+    let method_const = self.add_constant(method_val);
+
+    let dst = obj_reg;
+    self.emit(Instr::Invoke {
+      dst,
+      obj: obj_reg,
+      method_const,
+      num_args,
+    });
+    self.free_regs_to(obj_reg + 1);
+    dst
+  }
+
+  /// `parent.method(args)` -- statically resolves which class's method
+  /// table to look in (the current method's lexical superclass,
+  /// captured via the synthetic "@superclass" local -- see
+  /// `compile_class_decl`) while still binding the CURRENT self, unlike
+  /// a plain virtual `self.method()` call.
+  fn compile_invoke_super(&mut self, method: &Token, args: &[Expr]) -> u8 {
+    let call_reg = self.alloc_reg();
+    let raw_super = match self.resolve_variable("@superclass") {
+      VarLoc::Local(reg, _) => reg,
+      VarLoc::Upvalue(idx) => {
+        let dst = self.alloc_reg();
+        self.emit(Instr::GetUpval { dst, idx });
+        dst
+      },
+      VarLoc::Global => panic!("compile: 'parent' used in a class with no superclass"),
+    };
+    if raw_super != call_reg {
+      self.emit(Instr::Move {
+        dst: call_reg,
+        src: raw_super,
+      });
+    }
+    self.free_regs_to(call_reg + 1);
+
+    let self_slot = self.alloc_reg();
+    let self_reg = self.compile_self_reg();
+    self.emit(Instr::Move {
+      dst: self_slot,
+      src: self_reg,
+    });
+    self.free_regs_to(self_slot + 1);
+
+    let mut num_args: u8 = 0;
+    for arg in args {
+      let expected = self_slot + 1 + num_args;
+      let arg_reg = self.compile_expression(arg);
+      if arg_reg != expected {
+        self.emit(Instr::Move {
+          dst: expected,
+          src: arg_reg,
+        });
+      }
+      self.free_regs_to(expected + 1);
+      num_args = num_args
+        .checked_add(1)
+        .expect("too many arguments in a single call");
+    }
+
+    let method_name = Self::identifier_name(method);
+    let method_val = self.heap.alloc_string(method_name);
+    let method_const = self.add_constant(method_val);
+
+    let dst = call_reg;
+    self.emit(Instr::InvokeSuper {
+      dst,
+      superclass: call_reg,
+      method_const,
+      num_args,
+    });
+    self.free_regs_to(call_reg + 1);
+    dst
   }
 
   fn compile_expression(&mut self, expression: &Expr) -> u8 {
@@ -583,6 +1010,14 @@ impl<'a> Compiler<'a> {
         }
       },
       Expr::Call(callee, args) => {
+        if let Expr::Get(obj, method) = callee.as_ref() {
+          return if matches!(obj.as_ref(), Expr::Parent) {
+            self.compile_invoke_super(method, args)
+          } else {
+            self.compile_invoke(obj, method, args)
+          };
+        }
+
         let mark = self.cur().next_reg;
 
         let raw_func_reg = self.compile_expression(callee);
@@ -700,6 +1135,34 @@ impl<'a> Compiler<'a> {
         self.emit(Instr::MakeDict { dst, start, count });
         self.free_regs_to(dst + 1);
         dst
+      },
+      Expr::Self_ => self.compile_self_reg(),
+      Expr::Parent => {
+        panic!("compile: 'parent' must be followed by '.member' or '.member(...)'")
+      },
+      Expr::Get(obj, field) => {
+        let obj_reg = self.compile_receiver(obj);
+        let dst = self.alloc_reg();
+        let fname_val = self.heap.alloc_string(Self::identifier_name(field));
+        let fname_const = self.add_constant(fname_val);
+        self.emit(Instr::GetField {
+          dst,
+          obj: obj_reg,
+          name_const: fname_const,
+        });
+        dst
+      },
+      Expr::Set(obj, field, value) => {
+        let obj_reg = self.compile_receiver(obj);
+        let value_reg = self.compile_expression(value);
+        let fname_val = self.heap.alloc_string(Self::identifier_name(field));
+        let fname_const = self.add_constant(fname_val);
+        self.emit(Instr::SetField {
+          obj: obj_reg,
+          name_const: fname_const,
+          src: value_reg,
+        });
+        value_reg
       },
       _ => {
         panic!(
@@ -906,11 +1369,18 @@ impl<'a> Compiler<'a> {
       Decl::Function(token, params, body, is_variadic) => {
         self.compile_function_decl(token, params, body, *is_variadic)
       },
+      Decl::Class(name, superclass, properties, methods, is_extension) => {
+        self.compile_class_decl(name, superclass, properties, methods, *is_extension)
+      },
       _ => {},
     };
   }
 
   pub fn compile(mut self) -> ObjFunction {
+    if *LOG_AST {
+      println!("{:?}", self.declarations.clone());
+    }
+
     for decl in self.declarations.clone().iter() {
       self.compile_declaration(decl);
     }
@@ -933,6 +1403,7 @@ impl<'a> Compiler<'a> {
       num_registers: top.max_reg,
       chunk: top.chunk,
       upvalues: Vec::new(),
+      is_method: false,
     };
 
     if *LOG_INSTR {

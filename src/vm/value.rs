@@ -32,7 +32,9 @@ use std::cell::Cell;
 use itertools::Itertools;
 use num_bigint::BigInt;
 
-use crate::vm::object::{NativeFunction, Obj, ObjClosure, ObjFunction, UpvalueState};
+use crate::vm::object::{
+  NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, UpvalueState,
+};
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
 const SIGN_BIT: u64 = 0x8000_0000_0000_0000;
@@ -169,10 +171,25 @@ impl Value {
     self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Native(_))
   }
 
+  #[inline]
+  pub fn is_class(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Class(_))
+  }
+
+  #[inline]
+  pub fn is_instance(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Instance(_))
+  }
+
+  #[inline]
+  pub fn is_bound_method(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::BoundMethod(_))
+  }
+
   /// Is this something Instr::Call can invoke -- closure OR native. Same
   /// concept to a Zuri program; different call paths internally.
   pub fn is_callable(&self) -> bool {
-    self.is_closure() || self.is_native()
+    self.is_closure() || self.is_bound_method() || self.is_native() || self.is_class()
   }
 
   // #[inline]
@@ -274,6 +291,42 @@ impl Value {
     }
   }
 
+  pub fn as_bound_method(&self) -> &ObjBoundMethod {
+    debug_assert!(self.is_bound_method());
+    match unsafe { &*self.as_obj() } {
+      Obj::BoundMethod(b) => b,
+      _ => unreachable!("as_bound_method() called on a non-bound-method Value"),
+    }
+  }
+
+  /// Same trust model as every other `as_*` here: safe only because
+  /// `Value` is never used across a stale heap pointer (see `Heap`'s own
+  /// docs). Returned as a `Ref`/`RefMut` rather than `&`/`&mut` because
+  /// `ObjClass`'s tables are `RefCell`-wrapped -- see `Obj::Class`.
+  pub fn as_class(&self) -> std::cell::Ref<'_, ObjClass> {
+    debug_assert!(self.is_class());
+    match unsafe { &*self.as_obj() } {
+      Obj::Class(c) => c.borrow(),
+      _ => unreachable!("as_class() called on a non-class Value"),
+    }
+  }
+
+  pub fn as_class_mut(&self) -> std::cell::RefMut<'_, ObjClass> {
+    debug_assert!(self.is_class());
+    match unsafe { &*self.as_obj() } {
+      Obj::Class(c) => c.borrow_mut(),
+      _ => unreachable!("as_class_mut() called on a non-class Value"),
+    }
+  }
+
+  pub fn as_instance(&self) -> &ObjInstance {
+    debug_assert!(self.is_instance());
+    match unsafe { &*self.as_obj() } {
+      Obj::Instance(i) => i,
+      _ => unreachable!("as_instance() called on a non-instance Value"),
+    }
+  }
+
   /// Truthiness for control flow: nil and false are falsy, everything
   /// else (including 0 and "") is truthy.
   #[inline]
@@ -296,7 +349,10 @@ impl Value {
           (Obj::Bytes(a), Obj::Bytes(b)) => a.eq(b),
           (Obj::Func(a), Obj::Func(b)) => std::ptr::eq(a, b),
           (Obj::Closure(a), Obj::Closure(b)) => std::ptr::eq(a, b),
+          (Obj::BoundMethod(a), Obj::BoundMethod(b)) => std::ptr::eq(a, b),
           (Obj::Upvalue(a), Obj::Upvalue(b)) => std::ptr::eq(a, b),
+          (Obj::Class(a), Obj::Class(b)) => std::ptr::eq(a, b),
+          (Obj::Instance(a), Obj::Instance(b)) => std::ptr::eq(a, b),
           (Obj::List(a), Obj::List(b)) => {
             a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
           },
@@ -306,7 +362,6 @@ impl Value {
                 .iter()
                 .all(|(k, v)| b.iter().any(|(k2, v2)| k.equals(k2) && v.equals(v2)))
           },
-
           _ => false,
         };
       }
@@ -333,8 +388,10 @@ impl Value {
           Obj::BigInt(_) => "bigint",
           Obj::List(_) => "list",
           Obj::Dict(_) => "dict",
-          Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) => "function",
+          Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) | Obj::BoundMethod(_) => "function",
           Obj::Upvalue(_) => "upvalue",
+          Obj::Class(_) => "class",
+          Obj::Instance(_) => "instance",
         }
       }
     } else {
@@ -389,6 +446,9 @@ impl std::fmt::Display for Value {
             if func.variadic { "..." } else { "" }
           ),
           Obj::Upvalue(_) => write!(f, "<upvalue>"),
+          Obj::BoundMethod(b) => write!(f, "{}", b.method),
+          Obj::Class(c) => write!(f, "<class {}>", c.borrow().name),
+          Obj::Instance(i) => write!(f, "<instance of {}>", i.class.as_class().name),
           Obj::List(items) => {
             write!(f, "[")?;
             for (i, item) in items.iter().enumerate() {

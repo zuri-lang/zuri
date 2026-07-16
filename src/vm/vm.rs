@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Neg, Shl, Shr};
 use std::sync::LazyLock;
@@ -8,7 +9,7 @@ use num_traits::ToPrimitive;
 use crate::vm::chunk::Instr;
 use crate::vm::natives;
 use crate::vm::object::{
-  Heap, Obj, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, ZuriContext,
+  Heap, Obj, ObjClass, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, ZuriContext,
 };
 use crate::vm::value::Value;
 
@@ -46,6 +47,14 @@ pub struct VM {
   open_upvalues: Vec<(usize, Value)>,
   frames: Vec<CallFrame>,
   globals: std::collections::HashMap<String, Value>,
+  /// Explicit extra GC roots for values internal (non-bytecode) VM code
+  /// needs to keep alive across a call that might itself trigger a
+  /// collection -- e.g. `instantiate` invoking several field
+  /// initializers in sequence. A Value sitting only in a local Rust
+  /// variable, with nothing in any register/global/frame pointing at
+  /// it, is invisible to the normal root scan; push it here for exactly
+  /// as long as it needs to survive, then truncate back off.
+  gc_pins: Vec<Value>,
   pub heap: Heap,
 }
 
@@ -60,6 +69,7 @@ impl VM {
       registers: Vec::new(),
       frames: Vec::new(),
       open_upvalues: Vec::new(),
+      gc_pins: Vec::new(),
       globals,
       heap,
     }
@@ -170,6 +180,64 @@ impl VM {
     }
     let mut ctx = ZuriContext { vm: self, args };
     (native.func)(&mut ctx)
+  }
+
+  /// Construct a new instance of `class_val`: allocate storage sized to
+  /// its (already-merged) field layout, run every ancestor's OWN field
+  /// initializer root-to-leaf, then call the resolved constructor (if
+  /// any) with `args`.
+  ///
+  /// This is the one place internal VM code makes several SEQUENTIAL
+  /// re-entrant calls (`call_value`, which can itself trigger a
+  /// collection) while depending on Values that live only in local Rust
+  /// variables in between -- the class itself, its ancestors' field
+  /// initializers, the constructor, and the caller's own `args`. None of
+  /// those are reachable through any register/global/frame during that
+  /// window, so each is explicitly pinned for the duration (see
+  /// `gc_pins`) rather than trusting the normal root scan to find them.
+  fn instantiate(&mut self, class_val: Value, args: &[Value]) -> RunResult<Value> {
+    let mut field_inits = Vec::new();
+    let mut cur = Some(class_val);
+    while let Some(c) = cur {
+      let cobj = c.as_class();
+      field_inits.push(cobj.own_field_initializer);
+      cur = cobj.superclass;
+    }
+    field_inits.reverse(); // root to leaf
+    let constructor = class_val.as_class().constructor;
+    let field_count = class_val.as_class().field_count;
+
+    let pin_mark = self.gc_pins.len();
+    self.gc_pins.push(class_val);
+    for f in field_inits.iter().flatten() {
+      self.gc_pins.push(*f);
+    }
+    if let Some(c) = constructor {
+      self.gc_pins.push(c);
+    }
+    for a in args {
+      self.gc_pins.push(*a);
+    }
+
+    let instance_val = self.heap.alloc_instance(class_val, field_count as usize);
+    self.gc_pins.push(instance_val);
+
+    let result: RunResult<()> = (|| {
+      for init in field_inits.iter().flatten() {
+        self.call_value(*init, &[instance_val])?;
+      }
+      if let Some(ctor) = constructor {
+        let mut ctor_args = Vec::with_capacity(args.len() + 1);
+        ctor_args.push(instance_val);
+        ctor_args.extend_from_slice(args);
+        self.call_value(ctor, &ctor_args)?;
+      }
+      Ok(())
+    })();
+
+    self.gc_pins.truncate(pin_mark);
+    result?;
+    Ok(instance_val)
   }
 
   fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
@@ -350,6 +418,36 @@ impl VM {
             continue;
           }
 
+          if callee.is_class() {
+            let args_start = base + func_reg as usize + 1;
+            let args_end = args_start + num_args as usize;
+            let user_args: Vec<Value> = self.registers[args_start..args_end].to_vec();
+            let instance = self.instantiate(callee, &user_args)?;
+            self.set_reg(base, dst, instance);
+            continue;
+          }
+
+          if callee.is_bound_method() {
+            // The slow, general path -- reached only for a bound method
+            // that was stored in a variable/field/list rather than
+            // called right off a `.` access (that case is Invoke, which
+            // never allocates one of these to begin with). Routed
+            // through call_value rather than the in-place register-
+            // window setup below, since the receiver needs to be
+            // spliced in as an extra leading argument the caller never
+            // actually placed in a register.
+            let args_start = base + func_reg as usize + 1;
+            let args_end = args_start + num_args as usize;
+            let bound = callee.as_bound_method();
+            let mut full_args = Vec::with_capacity(num_args as usize + 1);
+            full_args.push(bound.receiver);
+            full_args.extend_from_slice(&self.registers[args_start..args_end]);
+            let method = bound.method;
+            let result = self.call_value(method, &full_args)?;
+            self.set_reg(base, dst, result);
+            continue;
+          }
+
           if !callee.is_closure() {
             return Err(format!("cannot call a {}", callee.type_name()));
           }
@@ -494,6 +592,332 @@ impl VM {
             .collect();
           let dict_val = self.heap.alloc_dict(pairs);
           self.set_reg(base, dst, dict_val);
+        },
+
+        Instr::MakeClass {
+          dst,
+          name_const,
+          superclass,
+        } => {
+          let name = self.const_as_str(func, name_const)?;
+          let superclass_val = match superclass {
+            Some(r) => {
+              let v = self.get_reg(base, r);
+              if !v.is_class() {
+                return Err(format!(
+                  "superclass of '{}' is not a class (got a {})",
+                  name,
+                  v.type_name()
+                ));
+              }
+              Some(v)
+            },
+            None => None,
+          };
+
+          let (methods, field_slots, field_count, constructor) = match superclass_val {
+            Some(sup) => {
+              let s = sup.as_class();
+              (
+                s.methods.clone(),
+                s.field_slots.clone(),
+                s.field_count,
+                s.constructor,
+              )
+            },
+            None => (HashMap::new(), HashMap::new(), 0, None),
+          };
+
+          let class_val = self.heap.alloc_class(ObjClass {
+            name,
+            superclass: superclass_val,
+            methods,
+            field_slots,
+            field_count,
+            own_field_initializer: None,
+            constructor,
+            static_slots: HashMap::new(),
+            statics: Vec::new(),
+          });
+          self.set_reg(base, dst, class_val);
+        },
+
+        Instr::DeclareField { class, name_const } => {
+          let class_val = self.get_reg(base, class);
+          let name = self.const_as_str(func, name_const)?;
+          let mut c = class_val.as_class_mut();
+          let idx = c.field_count;
+          c.field_slots.insert(name, idx);
+          c.field_count += 1;
+        },
+
+        Instr::SetFieldInit { class, src } => {
+          let class_val = self.get_reg(base, class);
+          let init = self.get_reg(base, src);
+          class_val.as_class_mut().own_field_initializer = Some(init);
+        },
+
+        Instr::SetMethod {
+          class,
+          name_const,
+          src,
+        } => {
+          let class_val = self.get_reg(base, class);
+          let name = self.const_as_str(func, name_const)?;
+          let method = self.get_reg(base, src);
+          class_val.as_class_mut().methods.insert(name, method);
+        },
+
+        Instr::DeclareStatic {
+          class,
+          name_const,
+          src,
+        } => {
+          let class_val = self.get_reg(base, class);
+          let name = self.const_as_str(func, name_const)?;
+          let value = self.get_reg(base, src);
+          let mut c = class_val.as_class_mut();
+          let idx = c.statics.len() as u16;
+          c.static_slots.insert(name, idx);
+          c.statics.push(Cell::new(value));
+        },
+
+        Instr::FinalizeClass { class, name_const } => {
+          let class_val = self.get_reg(base, class);
+          let name = self.const_as_str(func, name_const)?;
+          let mut c = class_val.as_class_mut();
+          if let Some(ctor) = c.methods.get(&name).copied() {
+            c.constructor = Some(ctor);
+          }
+        },
+
+        Instr::GetField {
+          dst,
+          obj,
+          name_const,
+        } => {
+          let receiver = self.get_reg(base, obj);
+          let name = self.const_as_str(func, name_const)?;
+          let value = if receiver.is_instance() {
+            let inst = receiver.as_instance();
+            let class = inst.class.as_class();
+            if let Some(&idx) = class.field_slots.get(&name) {
+              inst.fields[idx as usize].get()
+            } else if let Some(method) = class.methods.get(&name).copied() {
+              // Accessed without an immediate call -- e.g. `var f =
+              // obj.method` -- so unlike Invoke, this can't skip
+              // allocation: bind the receiver into a real ObjBoundMethod
+              // so the resulting value is independently callable later.
+              self.heap.alloc_bound_method(receiver, method)
+            } else {
+              return Err(format!(
+                "undefined property '{}' on instance of '{}'",
+                name, class.name
+              ));
+            }
+          } else if receiver.is_class() {
+            let raw = lookup_static(receiver, &name).ok_or_else(|| {
+              format!(
+                "undefined static member '{}' on class '{}'",
+                name,
+                receiver.as_class().name
+              )
+            })?;
+            // A static METHOD's frame reserves register 0 for a
+            // receiver it never reads (see ObjFunction::is_method's doc
+            // comment) -- fetched bare like this, nothing would
+            // otherwise fill that register at call time, so wrap it
+            // with a harmless dummy nil receiver. A static field
+            // holding a plain closure value (`static var f = @(x){}`)
+            // has no such reservation and passes through unwrapped.
+            if raw.is_closure() && raw.as_closure().function.as_func().is_method {
+              self.heap.alloc_bound_method(Value::nil(), raw)
+            } else {
+              raw
+            }
+          } else {
+            return Err(format!(
+              "cannot read property '{}' on a {}",
+              name,
+              receiver.type_name()
+            ));
+          };
+          self.set_reg(base, dst, value);
+        },
+
+        Instr::SetField {
+          obj,
+          name_const,
+          src,
+        } => {
+          let receiver = self.get_reg(base, obj);
+          let value = self.get_reg(base, src);
+          let name = self.const_as_str(func, name_const)?;
+          if receiver.is_instance() {
+            let inst = receiver.as_instance();
+            let class = inst.class.as_class();
+            let idx = *class.field_slots.get(&name).ok_or_else(|| {
+              format!("undefined field '{}' on instance of '{}'", name, class.name)
+            })?;
+            inst.fields[idx as usize].set(value);
+          } else if receiver.is_class() {
+            set_static(receiver, &name, value)?;
+          } else {
+            return Err(format!(
+              "cannot set property '{}' on a {}",
+              name,
+              receiver.type_name()
+            ));
+          }
+        },
+
+        Instr::Invoke {
+          dst,
+          obj,
+          method_const,
+          num_args,
+        } => {
+          let receiver = self.get_reg(base, obj);
+          let method_name = self.const_as_str(func, method_const)?;
+
+          let callee = if receiver.is_instance() {
+            let inst = receiver.as_instance();
+            let class = inst.class.as_class();
+            class.methods.get(&method_name).copied().ok_or_else(|| {
+              format!(
+                "undefined method '{}' on instance of '{}'",
+                method_name, class.name
+              )
+            })?
+          } else if receiver.is_class() {
+            lookup_static(receiver, &method_name).ok_or_else(|| {
+              format!(
+                "undefined static member '{}' on class '{}'",
+                method_name,
+                receiver.as_class().name
+              )
+            })?
+          } else {
+            return Err(format!(
+              "cannot call method '{}' on a {}",
+              method_name,
+              receiver.type_name()
+            ));
+          };
+
+          if !callee.is_closure() {
+            return Err(format!(
+              "'{}' is not callable (got a {})",
+              method_name,
+              callee.type_name()
+            ));
+          }
+          let callee_closure = callee.as_closure();
+          let callee_fn = callee_closure.function.as_func();
+
+          let required = if callee_fn.variadic {
+            callee_fn.arity - 1
+          } else {
+            callee_fn.arity
+          };
+          // Register `obj + 1` is where the compiler already placed a
+          // duplicate of the receiver (see Compiler::compile_invoke) --
+          // it becomes this call's register 0 (the callee's implicit
+          // self), with real arguments right after it. Same register-
+          // window convention as Instr::Call, shifted by one.
+          let new_base = base + obj as usize + 1;
+          let needed = new_base + callee_fn.num_registers as usize;
+          if self.registers.len() < needed {
+            self.registers.resize(needed, Value::nil());
+          }
+          for i in (1 + num_args)..required {
+            self.registers[new_base + i as usize] = Value::nil();
+          }
+          if callee_fn.variadic {
+            let extra_count = (1 + num_args).saturating_sub(required);
+            let mut items = Vec::with_capacity(extra_count as usize);
+            for i in 0..extra_count {
+              items.push(self.registers[new_base + required as usize + i as usize]);
+            }
+            let list_val = self.heap.alloc_list(items);
+            self.registers[new_base + required as usize] = list_val;
+          }
+
+          self.frames.push(CallFrame {
+            function: callee_fn as *const ObjFunction,
+            closure: callee_closure as *const ObjClosure,
+            closure_val: callee,
+            ip: 0,
+            base: new_base,
+            dst_in_caller: dst,
+          });
+        },
+
+        Instr::InvokeSuper {
+          dst,
+          superclass,
+          method_const,
+          num_args,
+        } => {
+          let super_val = self.get_reg(base, superclass);
+          if !super_val.is_class() {
+            return Err(format!(
+              "'parent' does not refer to a class (got a {})",
+              super_val.type_name()
+            ));
+          }
+          let method_name = self.const_as_str(func, method_const)?;
+          let callee = {
+            let class = super_val.as_class();
+            class.methods.get(&method_name).copied().ok_or_else(|| {
+              format!(
+                "undefined method '{}' on superclass '{}'",
+                method_name, class.name
+              )
+            })?
+          };
+
+          if !callee.is_closure() {
+            return Err(format!(
+              "'{}' is not callable (got a {})",
+              method_name,
+              callee.type_name()
+            ));
+          }
+          let callee_closure = callee.as_closure();
+          let callee_fn = callee_closure.function.as_func();
+
+          let required = if callee_fn.variadic {
+            callee_fn.arity - 1
+          } else {
+            callee_fn.arity
+          };
+          let new_base = base + superclass as usize + 1;
+          let needed = new_base + callee_fn.num_registers as usize;
+          if self.registers.len() < needed {
+            self.registers.resize(needed, Value::nil());
+          }
+          for i in (1 + num_args)..required {
+            self.registers[new_base + i as usize] = Value::nil();
+          }
+          if callee_fn.variadic {
+            let extra_count = (1 + num_args).saturating_sub(required);
+            let mut items = Vec::with_capacity(extra_count as usize);
+            for i in 0..extra_count {
+              items.push(self.registers[new_base + required as usize + i as usize]);
+            }
+            let list_val = self.heap.alloc_list(items);
+            self.registers[new_base + required as usize] = list_val;
+          }
+
+          self.frames.push(CallFrame {
+            function: callee_fn as *const ObjFunction,
+            closure: callee_closure as *const ObjClosure,
+            closure_val: callee,
+            ip: 0,
+            base: new_base,
+            dst_in_caller: dst,
+          });
         },
       }
     }
@@ -709,6 +1133,9 @@ impl VM {
     for (_, v) in &self.open_upvalues {
       Self::mark_root(*v, &mut reachable, &mut worklist);
     }
+    for v in &self.gc_pins {
+      Self::mark_root(*v, &mut reachable, &mut worklist);
+    }
 
     while let Some(ptr) = worklist.pop() {
       // SAFETY: every pointer on the worklist was pulled out of a Value
@@ -743,6 +1170,34 @@ impl VM {
             Self::mark_root(v, &mut reachable, &mut worklist);
           }
         },
+        Obj::Class(c) => {
+          let class = c.borrow();
+          if let Some(sup) = class.superclass {
+            Self::mark_root(sup, &mut reachable, &mut worklist);
+          }
+          for m in class.methods.values() {
+            Self::mark_root(*m, &mut reachable, &mut worklist);
+          }
+          if let Some(init) = class.own_field_initializer {
+            Self::mark_root(init, &mut reachable, &mut worklist);
+          }
+          if let Some(ctor) = class.constructor {
+            Self::mark_root(ctor, &mut reachable, &mut worklist);
+          }
+          for cell in &class.statics {
+            Self::mark_root(cell.get(), &mut reachable, &mut worklist);
+          }
+        },
+        Obj::Instance(inst) => {
+          Self::mark_root(inst.class, &mut reachable, &mut worklist);
+          for cell in &inst.fields {
+            Self::mark_root(cell.get(), &mut reachable, &mut worklist);
+          }
+        },
+        Obj::BoundMethod(b) => {
+          Self::mark_root(b.receiver, &mut reachable, &mut worklist);
+          Self::mark_root(b.method, &mut reachable, &mut worklist);
+        },
         Obj::Str(_) | Obj::Bytes(_) | Obj::BigInt(_) | Obj::Native(_) => {},
       }
     }
@@ -774,4 +1229,37 @@ impl VM {
       worklist.push(ptr);
     }
   }
+}
+
+/// Walk `class_val`'s superclass chain looking for a static member
+/// named `name`, checking each class's own (never inherited-in)
+/// `static_slots` table -- see `ObjClass`'s doc comment for why statics
+/// aren't pre-merged the way methods/fields are.
+fn lookup_static(class_val: Value, name: &str) -> Option<Value> {
+  let mut cur = Some(class_val);
+  while let Some(c) = cur {
+    let class = c.as_class();
+    if let Some(&idx) = class.static_slots.get(name) {
+      return Some(class.statics[idx as usize].get());
+    }
+    cur = class.superclass;
+  }
+  None
+}
+
+fn set_static(class_val: Value, name: &str, value: Value) -> Result<(), String> {
+  let mut cur = Some(class_val);
+  while let Some(c) = cur {
+    let class = c.as_class();
+    if let Some(&idx) = class.static_slots.get(name) {
+      class.statics[idx as usize].set(value);
+      return Ok(());
+    }
+    cur = class.superclass;
+  }
+  Err(format!(
+    "undefined static member '{}' on class '{}'",
+    name,
+    class_val.as_class().name
+  ))
 }

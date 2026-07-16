@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
-use std::cell::Cell;
-use std::collections::HashSet;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 
 use crate::vm::chunk::Chunk;
 use crate::vm::value::Value;
@@ -27,6 +27,7 @@ pub enum Obj {
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
   Func(ObjFunction),
+  BoundMethod(ObjBoundMethod),
   /// A function VALUE at runtime -- a prototype plus the specific
   /// upvalues captured at the moment this particular closure was
   /// created. Every callable Value is one of these, even a top-level
@@ -45,6 +46,15 @@ pub enum Obj {
   /// its arguments are a zero-copy slice straight into the caller's own
   /// registers. See vm/natives.rs.
   Native(NativeFunction),
+  /// See `ObjClass`'s own doc comment. Wrapped in a `RefCell` (unlike
+  /// every other heap object here, which is immutable-after-creation
+  /// except through a `Cell`-wrapped field) because a class's tables
+  /// keep growing throughout its own declaration -- `RefCell` is the
+  /// safe way to do that through the same shared `*const Obj` pointer
+  /// every other Value already uses, rather than reaching for unsafe
+  /// mutation.
+  Class(RefCell<ObjClass>),
+  Instance(ObjInstance),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -84,6 +94,33 @@ pub struct ObjFunction {
   /// a closure is created from this prototype (`Instr::Closure`), the
   /// VM walks this list once to build that instance's actual upvalues.
   pub upvalues: Vec<UpvalueDescriptor>,
+
+  /// True for a method (instance OR static) compiled via
+  /// `Compiler::compile_method_prototype` -- register 0 of its frame is
+  /// reserved for an implicit receiver even when unused (a static
+  /// method's own body never reads it), which is what lets the fused
+  /// Invoke/InvokeSuper instructions use one uniform calling convention
+  /// regardless of what a receiver expression turns out to be at
+  /// runtime. `GetField` consults this flag to decide whether a
+  /// class-level (static) closure fetched as a bare value needs
+  /// wrapping in an `ObjBoundMethod` with a dummy nil receiver, so that
+  /// register still gets filled when it's later called as a plain
+  /// value. Ordinary functions/closures/anonymous functions leave this
+  /// false.
+  pub is_method: bool,
+}
+
+/// A method value bound to a specific receiver -- produced only when a
+/// method is accessed WITHOUT being called immediately (`var f =
+/// obj.method`), so it can be stored, passed around, and invoked later
+/// on its own. Direct call-site method calls (`obj.method(args)`,
+/// `self.method(args)`, `parent.method(args)`) never go through this --
+/// they're compiled straight to Invoke/InvokeSuper, which look up and
+/// call in one step with no heap allocation. This exists purely for the
+/// "method as a first-class value" case.
+pub struct ObjBoundMethod {
+  pub receiver: Value,
+  pub method: Value,
 }
 
 pub struct ObjClosure {
@@ -106,6 +143,58 @@ pub struct NativeFunction {
   /// must equal min_arity exactly.
   pub variadic: bool,
   pub func: NativeFn,
+}
+
+/// A class value: the shared, heap-allocated "shape" every instance of
+/// it points back at. Method/field-slot tables are fully merged with
+/// the superclass chain once, at declaration time (see `Instr::MakeClass`)
+/// -- so a call site never needs to walk ancestors to find an instance
+/// method or a field's slot index, just one hashmap lookup. Statics are
+/// the deliberate exception: `static_slots`/`statics` hold ONLY this
+/// class's own declarations, and a lookup that misses walks `superclass`
+/// live (see `lookup_static` in vm.rs) -- so an inherited static genuinely
+/// shares storage with wherever it's actually declared, rather than being
+/// copied.
+pub struct ObjClass {
+  pub name: String,
+  pub superclass: Option<Value>,
+  /// Own + inherited instance methods, pre-merged (own overrides
+  /// inherited of the same name). Also where a self-named method (this
+  /// class's constructor, if it declares one) lives -- see
+  /// `Instr::FinalizeClass`.
+  pub methods: HashMap<String, Value>,
+  /// Name -> slot index for OWN + inherited instance fields, pre-merged
+  /// the same way; `field_count` is the total flat layout size every
+  /// `ObjInstance.fields` of this class is allocated with.
+  pub field_slots: HashMap<String, u16>,
+  pub field_count: u16,
+  /// This class's OWN declared instance fields' initializer (arity 1:
+  /// self) -- None if it declares no instance fields itself. Ancestors'
+  /// own initializers are invoked separately (root to leaf) at
+  /// construction time -- see `VM::instantiate` -- so this is
+  /// deliberately NOT chained to call the superclass's initializer.
+  pub own_field_initializer: Option<Value>,
+  /// Resolved once, when the class is declared (see
+  /// `Instr::FinalizeClass`): this class's own same-named method if it
+  /// declares one, else inherited from the nearest ancestor that does,
+  /// else None (no constructor anywhere in the chain -- valid, just
+  /// means "run field inits and stop").
+  pub constructor: Option<Value>,
+  /// Own-only static fields AND static methods, unified in one
+  /// namespace (a static method is just a Value that happens to be a
+  /// Closure) -- deliberately not merged with the superclass at
+  /// declaration time; see the struct-level doc comment above.
+  pub static_slots: HashMap<String, u16>,
+  pub statics: Vec<Cell<Value>>,
+}
+
+/// An instance value. `fields` is a fixed-size, flat, slot-indexed
+/// array sized to `class.field_count` at allocation time -- there is no
+/// dynamic/open field set; a name not present in `class.field_slots` is
+/// a runtime error (see `Instr::GetField`/`SetField` in vm.rs).
+pub struct ObjInstance {
+  pub class: Value,
+  pub fields: Vec<Cell<Value>>,
 }
 
 /// A plain Rust function pointer -- not `Box<dyn Fn>`. No vtable, no
@@ -174,6 +263,28 @@ impl Heap {
     }
   }
 
+  #[inline]
+  pub fn bytes_allocated(&self) -> usize {
+    self.bytes_allocated
+  }
+
+  #[inline]
+  pub fn next_gc(&self) -> usize {
+    self.next_gc
+  }
+
+  #[inline]
+  pub fn object_count(&self) -> usize {
+    self.objects.len()
+  }
+
+  /// Has the heap grown enough since the last collection that the VM
+  /// should pause and run one before allocating further?
+  #[inline]
+  pub fn needs_gc(&self) -> bool {
+    self.bytes_allocated > self.next_gc
+  }
+
   /// Rough size in bytes attributed to one heap object, used only to
   /// decide *when* to collect -- not an exact accounting (e.g. a
   /// `BigInt`'s own heap limbs aren't sized individually), just enough
@@ -193,9 +304,18 @@ impl Heap {
           f.chunk.code.len() * size_of::<crate::vm::chunk::Instr>()
             + f.chunk.constants.len() * size_of::<Value>()
         },
+        Obj::BoundMethod(_) => size_of::<ObjBoundMethod>(),
         Obj::Closure(c) => c.upvalues.len() * size_of::<Value>(),
         Obj::Upvalue(_) => 0,
         Obj::Native(_) => 0,
+        Obj::Class(c) => {
+          let c = c.borrow();
+          size_of::<ObjClass>()
+            + c.methods.len() * 64
+            + c.field_slots.len() * 32
+            + c.static_slots.len() * 32
+        },
+        Obj::Instance(i) => i.fields.len() * size_of::<Cell<Value>>(),
       }
   }
 
@@ -250,6 +370,10 @@ impl Heap {
     self.alloc(Obj::Upvalue(Cell::new(state)))
   }
 
+  pub fn alloc_bound_method(&mut self, receiver: Value, method: Value) -> Value {
+    self.alloc(Obj::BoundMethod(ObjBoundMethod { receiver, method }))
+  }
+
   /// Convenience for a function that captures nothing (the common case:
   /// every top-level function, and any nested function that happens not
   /// to reference an enclosing local) -- allocates the prototype and
@@ -266,26 +390,15 @@ impl Heap {
     self.alloc(Obj::Native(native))
   }
 
-  #[inline]
-  pub fn bytes_allocated(&self) -> usize {
-    self.bytes_allocated
+  pub fn alloc_class(&mut self, class: ObjClass) -> Value {
+    self.alloc(Obj::Class(RefCell::new(class)))
   }
 
-  #[inline]
-  pub fn next_gc(&self) -> usize {
-    self.next_gc
-  }
-
-  #[inline]
-  pub fn object_count(&self) -> usize {
-    self.objects.len()
-  }
-
-  /// Has the heap grown enough since the last collection that the VM
-  /// should pause and run one before allocating further?
-  #[inline]
-  pub fn needs_gc(&self) -> bool {
-    self.bytes_allocated > self.next_gc
+  pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
+    self.alloc(Obj::Instance(ObjInstance {
+      class,
+      fields: vec![Cell::new(Value::nil()); field_count],
+    }))
   }
 
   /// Drop every object whose address isn't in `reachable`, then

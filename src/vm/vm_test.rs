@@ -80,6 +80,7 @@ fn build_fib(heap: &mut Heap) -> ObjFunction {
     variadic: false,
     chunk: c,
     upvalues: Vec::new(),
+    is_method: false,
   }
 }
 
@@ -164,6 +165,7 @@ fn build_main(heap: &mut Heap, fib_val: Value) -> ObjFunction {
     variadic: false,
     chunk: c,
     upvalues: Vec::new(),
+    is_method: false,
   }
 }
 

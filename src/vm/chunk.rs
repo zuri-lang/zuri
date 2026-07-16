@@ -225,6 +225,84 @@ pub enum Instr {
     start: u8,
     count: u8,
   },
+
+  /// Build a new class shell: clones the superclass's already-merged
+  /// method table, field-slot layout, and constructor (inheriting them
+  /// wholesale), or starts empty if `superclass` is None. Statics are
+  /// deliberately NOT inherited here -- see `ObjClass`'s doc comment.
+  MakeClass {
+    dst: u8,
+    name_const: u16,
+    superclass: Option<u8>,
+  },
+  /// Register one of this class's OWN instance fields, extending its
+  /// (already superclass-seeded) field_slots/field_count. Only ever
+  /// emitted while a class is being declared.
+  DeclareField {
+    class: u8,
+    name_const: u16,
+  },
+  SetFieldInit {
+    class: u8,
+    src: u8,
+  },
+  SetMethod {
+    class: u8,
+    name_const: u16,
+    src: u8,
+  },
+  /// Register one of this class's OWN static members (field or method
+  /// -- both are just Values in the same table). Only ever emitted
+  /// while a class is being declared.
+  DeclareStatic {
+    class: u8,
+    name_const: u16,
+    src: u8,
+  },
+  /// Resolve this class's constructor: if `methods` contains an entry
+  /// keyed by the class's own name (declared just above, in this same
+  /// declaration), that becomes the constructor, overriding whatever
+  /// was inherited by `MakeClass`. Emitted once, after every method has
+  /// been added.
+  FinalizeClass {
+    class: u8,
+    name_const: u16,
+  },
+  /// Read a named field (instance) or static member (class) from `obj`.
+  GetField {
+    dst: u8,
+    obj: u8,
+    name_const: u16,
+  },
+  SetField {
+    obj: u8,
+    name_const: u16,
+    src: u8,
+  },
+  /// Fused "look up method by name on `obj`'s class, then call it" --
+  /// dynamic dispatch through the receiver's ACTUAL runtime class. The
+  /// compiler always duplicates the receiver into register `obj + 1`
+  /// before emitting this (see `Compiler::compile_invoke`), which is
+  /// where the callee's own register 0 (self) ends up; user arguments
+  /// follow at `obj + 2 ..`.
+  Invoke {
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+  },
+  /// Like `Invoke`, but looks the method up on the STATIC class in
+  /// register `superclass` directly -- no dynamic dispatch -- while
+  /// still binding the current `self` (duplicated by the compiler into
+  /// `superclass + 1`, same convention as `Invoke`). This is what makes
+  /// `parent.foo()` call the lexically-fixed ancestor's method even
+  /// when `self`'s actual runtime class is several levels further down.
+  InvokeSuper {
+    dst: u8,
+    superclass: u8,
+    method_const: u16,
+    num_args: u8,
+  },
 }
 
 #[derive(Default, Clone, Debug)]

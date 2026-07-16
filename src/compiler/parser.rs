@@ -471,7 +471,7 @@ impl<'a> Parser<'a> {
       let get = Expr::Get(Box::new(callee.clone()), prop_token.clone());
 
       let rhs = self.assignment();
-      let binary_value = Expr::Binary(Box::new(get), token.kind, Box::new(rhs));
+      let binary_value = Expr::Binary(Box::new(get), get_assignment_alt(token.kind), Box::new(rhs));
 
       return Expr::Set(
         Box::new(callee.clone()),

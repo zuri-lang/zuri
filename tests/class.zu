@@ -7,9 +7,9 @@ class Pair {
 }
 
 var pair = Pair()
-pair.first = 1
-pair.second = 2
-echo pair.first + pair.second
+# pair.first = 1
+# pair.second = 2
+# echo pair.first + pair.second
 echo pair.field
 
 class Scone {
@@ -22,6 +22,7 @@ var scone = Scone()
 scone.topping('berries', 'cream')
 
 class Person {
+  var name
   var age = 10
   static var id = 2001
 
@@ -107,5 +108,5 @@ class Dog < Animal {
 }
 
 Animal().setName()
-Animal()._print('hello again')
+var f = Animal()._print('hello again')
 Dog().getName()
