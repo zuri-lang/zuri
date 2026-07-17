@@ -155,6 +155,26 @@ fn collect_self_fields_expr(expr: &Expr, out: &mut Vec<String>) {
   }
 }
 
+/// Purely syntactic privacy check, run at the exact point a `.name`
+/// access (Get, Set, or a method-call routed through compile_invoke) is
+/// compiled. Both facts it depends on -- does `name` start with '_',
+/// and is the receiver spelled `self`/`parent` -- are fully known from
+/// the AST at THIS point, for every access site in the program,
+/// regardless of what the receiver's value turns out to be once the
+/// program runs. That's also why the rule can't be narrowed to "methods
+/// only, fields/statics exempt": the compiler has no way to know here
+/// whether `obj` will resolve to an instance or a class at runtime, so
+/// a leading underscore is gated uniformly no matter what it turns out
+/// to name.
+fn check_private_access(name: &str, privileged: bool) {
+  if name.starts_with('_') && !privileged {
+    panic!(
+      "compile: '{}' is private and can only be accessed via 'self' or 'parent'",
+      name
+    );
+  }
+}
+
 struct Local {
   name: String,
   reg: u8,
@@ -402,6 +422,7 @@ impl<'a> Compiler<'a> {
     params: &[Expr],
     body: &Stmt,
     is_variadic: bool,
+    is_method: bool,
   ) -> ObjFunction {
     let name = Self::identifier_name(token);
 
@@ -450,7 +471,7 @@ impl<'a> Compiler<'a> {
       num_registers: finished.max_reg,
       chunk: finished.chunk,
       upvalues: finished.upvalues,
-      is_method: false,
+      is_method,
     }
   }
 
@@ -465,7 +486,7 @@ impl<'a> Compiler<'a> {
     is_variadic: bool,
   ) {
     let name = Self::identifier_name(token);
-    let obj_fn = self.compile_function_prototype(token, params, body, is_variadic);
+    let obj_fn = self.compile_function_prototype(token, params, body, is_variadic, false);
     let proto_val = self.heap.alloc_function(obj_fn);
     let const_idx = self.add_constant(proto_val);
 
@@ -630,7 +651,8 @@ impl<'a> Compiler<'a> {
     is_extension: bool,
   ) {
     if is_extension {
-      panic!("compile: class extension ('class > Target') is not yet supported");
+      self.compile_extension_decl(name, superclass, properties, methods);
+      return;
     }
 
     let class_name = Self::identifier_name(name);
@@ -753,6 +775,20 @@ impl<'a> Compiler<'a> {
       }
     }
 
+    let mut seen_method_names: Vec<String> = Vec::new();
+    for m in methods {
+      if let Decl::Method(mname, ..) = m {
+        let mname_str = Self::identifier_name(mname);
+        if seen_method_names.contains(&mname_str) {
+          panic!(
+            "compile: multiple declaration for {} found in class '{}'",
+            mname_str, class_name
+          );
+        }
+        seen_method_names.push(mname_str);
+      }
+    }
+
     for m in methods {
       if let Decl::Method(mname, params, body, is_variadic, is_static) = m {
         let obj_fn = self.compile_method_prototype(mname, params, body, *is_variadic, *is_static);
@@ -796,6 +832,83 @@ impl<'a> Compiler<'a> {
     self.free_regs_to(mark);
   }
 
+  /// `class Name > Target { ... }` -- monkey-patches new methods directly
+  /// into an ALREADY-DECLARED class's live method table, rather than
+  /// building a new class of its own. Every member must be `static`
+  /// (enforced below) and takes the instance it's called on as an
+  /// ordinary, explicit first parameter -- there's no implicit `self`
+  /// binding here, since these compile as plain functions (just tagged
+  /// `is_method: true` so Invoke/GetField still treat the installed
+  /// closure as receiver-expecting once it's sitting in a real method
+  /// table).
+  ///
+  /// See this method's caller for the load-bearing caveat about WHEN
+  /// this patch becomes visible to already-declared subclasses.
+  fn compile_extension_decl(
+    &mut self,
+    name: &Token,
+    target: &Option<Box<Expr>>,
+    properties: &[Decl],
+    methods: &[Decl],
+  ) {
+    let ext_name = Self::identifier_name(name);
+
+    let target_expr = target.as_ref().unwrap_or_else(|| {
+      panic!(
+        "compile: extension '{}' must specify a target class with '> Target'",
+        ext_name
+      )
+    });
+
+    if !properties.is_empty() {
+      panic!(
+        "compile: extension '{}' cannot declare fields -- extensions only add methods to an \
+         existing class",
+        ext_name
+      );
+    }
+    for m in methods {
+      if let Decl::Method(mname, _, _, _, is_static) = m {
+        if !*is_static {
+          panic!(
+            "compile: extension '{}' method '{}' must be declared 'static' -- extension \
+             methods receive the instance explicitly as their own first parameter instead of \
+             an implicit 'self' (if this came from an auto-inserted default constructor, the \
+             parser needs to skip that for extension classes)",
+            ext_name,
+            Self::identifier_name(mname)
+          );
+        }
+      }
+    }
+
+    let mark = self.cur().next_reg;
+    let target_reg = self.compile_expression(target_expr);
+
+    for m in methods {
+      if let Decl::Method(mname, params, body, is_variadic, _is_static) = m {
+        let obj_fn = self.compile_function_prototype(mname, params, body, *is_variadic, true);
+        let proto_val = self.heap.alloc_function(obj_fn);
+        let const_idx = self.add_constant(proto_val);
+        let mreg = self.alloc_reg();
+        self.emit(Instr::Closure {
+          dst: mreg,
+          proto_const: const_idx,
+        });
+        let mname_val = self.heap.alloc_string(Self::identifier_name(mname));
+        let mname_const = self.add_constant(mname_val);
+        self.emit(Instr::SetMethod {
+          class: target_reg,
+          name_const: mname_const,
+          src: mreg,
+        });
+        self.free_regs_to(mreg);
+      }
+    }
+
+    self.free_regs_to(mark);
+  }
+
   /// Resolve the current method's implicit receiver to a register,
   /// exactly like resolving any other named local -- `self` is pushed
   /// as a real (synthetic) Local when compiling a method body
@@ -834,6 +947,15 @@ impl<'a> Compiler<'a> {
   /// receiver is duplicated into `obj_reg + 1`; see Instr::Invoke's own
   /// doc comment for why.
   fn compile_invoke(&mut self, obj: &Expr, method: &Token, args: &[Expr]) -> u8 {
+    let method_name = Self::identifier_name(method);
+
+    // `parent.foo(...)` never reaches this function -- it's intercepted
+    // earlier and routed to compile_invoke_super, which is
+    // unconditionally privileged (see check_private_access's own doc
+    // comment for why this has to be checked here, purely
+    // syntactically, rather than deferred to Invoke's runtime handler).
+    check_private_access(&method_name, matches!(obj, Expr::Self_));
+
     let obj_reg = self.alloc_reg();
     let raw = self.compile_receiver(obj);
     if raw != obj_reg {
@@ -866,7 +988,6 @@ impl<'a> Compiler<'a> {
         .expect("too many arguments in a single call");
     }
 
-    let method_name = Self::identifier_name(method);
     let method_val = self.heap.alloc_string(method_name);
     let method_const = self.add_constant(method_val);
 
@@ -1233,7 +1354,7 @@ impl<'a> Compiler<'a> {
       },
       Expr::Anonymous(decl) => match decl.as_ref() {
         Decl::Function(token, params, body, is_variadic) => {
-          let obj_fn = self.compile_function_prototype(token, params, body, *is_variadic);
+          let obj_fn = self.compile_function_prototype(token, params, body, *is_variadic, false);
           let proto_val = self.heap.alloc_function(obj_fn);
           let const_idx = self.add_constant(proto_val);
           let dst = self.alloc_reg();
@@ -1315,9 +1436,19 @@ impl<'a> Compiler<'a> {
         panic!("compile: 'parent' must be followed by '.member' or '.member(...)'")
       },
       Expr::Get(obj, field) => {
+        let field_name = Self::identifier_name(field);
+
+        // Both self.x and parent.x count as privileged here -- a plain
+        // (non-call) property access through `parent` is never virtual
+        // to begin with (see compile_receiver's own doc comment).
+        check_private_access(
+          &field_name,
+          matches!(obj.as_ref(), Expr::Self_ | Expr::Parent),
+        );
+
         let obj_reg = self.compile_receiver(obj);
         let dst = self.alloc_reg();
-        let fname_val = self.heap.alloc_string(Self::identifier_name(field));
+        let fname_val = self.heap.alloc_string(field_name);
         let fname_const = self.add_constant(fname_val);
         self.emit(Instr::GetField {
           dst,
@@ -1327,9 +1458,16 @@ impl<'a> Compiler<'a> {
         dst
       },
       Expr::Set(obj, field, value) => {
+        let field_name = Self::identifier_name(field);
+
+        check_private_access(
+          &field_name,
+          matches!(obj.as_ref(), Expr::Self_ | Expr::Parent),
+        );
+
         let obj_reg = self.compile_receiver(obj);
         let value_reg = self.compile_expression(value);
-        let fname_val = self.heap.alloc_string(Self::identifier_name(field));
+        let fname_val = self.heap.alloc_string(field_name);
         let fname_const = self.add_constant(fname_val);
         self.emit(Instr::SetField {
           obj: obj_reg,

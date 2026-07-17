@@ -1677,6 +1677,7 @@ impl<'a> Parser<'a> {
     if !methods
       .iter()
       .any(|f| f.is_method(token_to_string(name.clone()).as_str()))
+      && !is_extension
     {
       methods.push(Decl::Method(
         name.clone(),

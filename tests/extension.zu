@@ -1,0 +1,69 @@
+class Shape {
+  var name = 'shape'
+  var sides = 0
+
+  Shape(name, sides) {
+    self.name = name
+    self.sides = sides
+  }
+
+  describe() {
+    echo '${self.name} has ${self.sides} sides'
+  }
+}
+
+# Extend Shape itself with a new method. Every member must be static,
+# and the instance is received as an ordinary first parameter -- there
+# is no implicit 'self' here.
+class ShapeExt > Shape {
+  static perimeter(shape, side_length) {
+    echo '${shape.name} perimeter = ${shape.sides * side_length}'
+  }
+
+  static is_regular(shape) {
+    return shape.sides >= 3
+  }
+}
+
+class Square < Shape {
+  Square() {
+    parent.Shape('square', 4)
+  }
+}
+
+var sq = Square()
+sq.describe()
+
+# The patched-in method is now a real entry in Shape's own method
+# table, so ordinary instance.method() dispatch finds it exactly like
+# any method declared inside 'class Shape { ... }' itself.
+sq.perimeter(2)
+echo sq.is_regular()
+
+# Declared BEFORE the extension ran, sq's class (Square) inherited its
+# own copy of Shape's method table at MakeClass time -- but since
+# 'perimeter' isn't overridden on Square, dispatch on a Square instance
+# still finds Shape's (now-patched) version by inheritance. Confirms
+# the patch propagates through instances of the target class as well
+# as instances of a subclass, as long as the subclass doesn't shadow
+# the extended name itself.
+var sq2 = Square()
+sq2.perimeter(3)
+
+# A class declared AFTER the extension picks up the patched method
+# table directly at MakeClass time, same as any other inherited method.
+class Triangle < Shape {
+  Triangle() {
+    parent.Shape('triangle', 3)
+  }
+}
+
+var tri = Triangle()
+tri.describe()
+tri.perimeter(5)
+echo tri.is_regular()
+
+# A field still reads/writes normally alongside the extended methods.
+echo sq.name
+sq.name = 'renamed square'
+echo sq.name
