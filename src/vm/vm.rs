@@ -380,6 +380,90 @@ impl VM {
     Ok(())
   }
 
+  //-----------------------------------------------------------------------------------
+  // Indexing and slicing
+  //-----------------------------------------------------------------------------------
+
+  fn index_get(&mut self, receiver: Value, index: Value) -> RunResult<Value> {
+    if receiver.is_list() {
+      let i = coerce_index(index, receiver.list_len())?;
+      Ok(receiver.list_get(i).unwrap())
+    } else if receiver.is_bytes() {
+      let i = coerce_index(index, receiver.bytes_len())?;
+      Ok(Value::number(receiver.bytes_get(i).unwrap() as f64))
+    } else if receiver.is_string() {
+      let chars_len = receiver.as_str().chars().count();
+      let i = coerce_index(index, chars_len)?;
+      let c = receiver.as_str().chars().nth(i).unwrap();
+      Ok(self.heap.alloc_string(c.to_string()))
+    } else if receiver.is_dict() {
+      receiver
+        .dict_get(&index)
+        .ok_or_else(|| format!("undefined key '{}' in dict", index))
+    } else {
+      Err(format!("cannot index into a {}", receiver.type_name()))
+    }
+  }
+
+  fn index_set(&mut self, receiver: Value, index: Value, value: Value) -> RunResult<()> {
+    if receiver.is_list() {
+      let i = coerce_index(index, receiver.list_len())?;
+      receiver.list_set(i, value);
+      Ok(())
+    } else if receiver.is_bytes() {
+      let i = coerce_index(index, receiver.bytes_len())?;
+      if !value.is_number() {
+        return Err(format!(
+          "bytes element must be a number, got {}",
+          value.type_name()
+        ));
+      }
+      let n = value.as_number();
+      if n.fract() != 0.0 || !(0.0..=255.0).contains(&n) {
+        return Err(format!(
+          "bytes element must be an integer in 0..=255, got {}",
+          n
+        ));
+      }
+      receiver.bytes_set(i, n as u8);
+      Ok(())
+    } else if receiver.is_dict() {
+      receiver.dict_set(index, value);
+      Ok(())
+    } else if receiver.is_string() {
+      Err("strings are immutable and do not support index assignment".to_string())
+    } else {
+      Err(format!("cannot assign into a {}", receiver.type_name()))
+    }
+  }
+
+  fn index_slice(&mut self, receiver: Value, lo: Value, hi: Value) -> RunResult<Value> {
+    if receiver.is_list() {
+      let len = receiver.list_len();
+      let items: Vec<Value> = match resolve_slice_bounds(lo, hi, len)? {
+        Some((lo, hi)) => (lo..=hi).map(|i| receiver.list_get(i).unwrap()).collect(),
+        None => Vec::new(),
+      };
+      Ok(self.heap.alloc_list(items))
+    } else if receiver.is_bytes() {
+      let len = receiver.bytes_len();
+      let items: Vec<u8> = match resolve_slice_bounds(lo, hi, len)? {
+        Some((lo, hi)) => (lo..=hi).map(|i| receiver.bytes_get(i).unwrap()).collect(),
+        None => Vec::new(),
+      };
+      Ok(self.heap.alloc_bytes(items))
+    } else if receiver.is_string() {
+      let chars: Vec<char> = receiver.as_str().chars().collect();
+      let s: String = match resolve_slice_bounds(lo, hi, chars.len())? {
+        Some((lo, hi)) => chars[lo..=hi].iter().collect(),
+        None => String::new(),
+      };
+      Ok(self.heap.alloc_string(s))
+    } else {
+      Err(format!("cannot slice a {}", receiver.type_name()))
+    }
+  }
+
   fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
     loop {
       if self.heap.needs_gc() {
@@ -962,6 +1046,26 @@ impl VM {
             self.dispatch_call(base, superclass + 1, num_args, dst)?;
           }
         },
+
+        Instr::GetIndex { dst, obj, idx } => {
+          let ov = self.get_reg(base, obj);
+          let iv = self.get_reg(base, idx);
+          let result = self.index_get(ov, iv)?;
+          self.set_reg(base, dst, result);
+        },
+        Instr::SetIndex { obj, idx, src } => {
+          let ov = self.get_reg(base, obj);
+          let iv = self.get_reg(base, idx);
+          let sv = self.get_reg(base, src);
+          self.index_set(ov, iv, sv)?;
+        },
+        Instr::GetSlice { dst, obj, lo, hi } => {
+          let ov = self.get_reg(base, obj);
+          let lov = self.get_reg(base, lo);
+          let hiv = self.get_reg(base, hi);
+          let result = self.index_slice(ov, lov, hiv)?;
+          self.set_reg(base, dst, result);
+        },
       }
     }
   }
@@ -1107,6 +1211,15 @@ impl VM {
       value.extend(vb.as_list().iter().cloned());
       let v = self.heap.alloc_list(value);
       return Ok(self.set_reg(base, dst, v));
+    } else if va.is_bytes() || vb.is_bytes() {
+      let va = self.get_reg(base, a);
+      let vb = self.get_reg(base, b);
+
+      let mut value = Vec::new();
+      value.extend(va.as_bytes().iter().cloned());
+      value.extend(vb.as_bytes().iter().cloned());
+      let v = self.heap.alloc_bytes(value);
+      return Ok(self.set_reg(base, dst, v));
     }
 
     Err(format!(
@@ -1239,12 +1352,12 @@ impl VM {
       // object behind `ptr` is guaranteed to still be valid here.
       match unsafe { &*ptr } {
         Obj::List(items) => {
-          for item in items {
-            Self::mark_root(*item, &mut reachable, &mut worklist);
+          for cell in items {
+            Self::mark_root(cell.get(), &mut reachable, &mut worklist);
           }
         },
         Obj::Dict(pairs) => {
-          for (k, v) in pairs {
+          for (k, v) in pairs.borrow().iter() {
             Self::mark_root(*k, &mut reachable, &mut worklist);
             Self::mark_root(*v, &mut reachable, &mut worklist);
           }
@@ -1357,4 +1470,77 @@ fn set_static(class_val: Value, name: &str, value: Value) -> Result<(), String> 
     name,
     class_val.as_class().name
   ))
+}
+
+/// A raw index Value must be a whole number -- fractional or non-number
+/// indices are always a hard error, never silently truncated.
+fn value_as_index(index: Value) -> RunResult<i64> {
+  if !index.is_number() {
+    return Err(format!("index must be a number, got {}", index.type_name()));
+  }
+  let n = index.as_number();
+  if n.fract() != 0.0 {
+    return Err(format!("index must be an integer, got {}", n));
+  }
+  Ok(n as i64)
+}
+
+/// Shared bounds-checking for GetIndex/SetIndex on List/Bytes/String --
+/// negative indices are always rejected (no wraparound-from-end
+/// support), and an index past the end is an error rather than a no-op.
+fn coerce_index(index: Value, len: usize) -> RunResult<usize> {
+  let i = value_as_index(index)?;
+  if i < 0 || i as usize >= len {
+    return Err(format!("index {} out of bounds (length {})", i, len));
+  }
+  Ok(i as usize)
+}
+
+/// Resolves a slice's (possibly-nil) lower/upper bound registers into a
+/// concrete INCLUSIVE `(lo, hi)` range. Nil means "use the default" --
+/// 0 for the lower bound, the last valid index for the upper -- whether
+/// that Nil came from an explicitly omitted bound (see
+/// Parser::finish_index) or a genuinely nil-valued expression; both
+/// resolve identically here. Returns `None` (rather than an error) for
+/// a structurally empty result -- an empty receiver, or a lower bound
+/// past the upper one (`list[3, 1]`) -- since an empty slice is a valid
+/// answer, not a bounds violation. An in-range-but-reversed request
+/// isn't reordered into an ascending one; it's just empty.
+fn resolve_slice_bounds(lo: Value, hi: Value, len: usize) -> RunResult<Option<(usize, usize)>> {
+  if len == 0 {
+    return Ok(None);
+  }
+
+  let lo = if lo.is_nil() {
+    0
+  } else {
+    let i = value_as_index(lo)?;
+    if i < 0 {
+      return Err(format!("slice lower bound {} cannot be negative", i));
+    }
+    i as usize
+  };
+
+  let hi = if hi.is_nil() {
+    len - 1
+  } else {
+    let i = value_as_index(hi)?;
+    if i < 0 {
+      return Err(format!("slice upper bound {} cannot be negative", i));
+    }
+    i as usize
+  };
+
+  if lo >= len || hi >= len {
+    return Err(format!(
+      "slice bounds {}..{} out of range (length {})",
+      lo, hi, len
+    ));
+  }
+
+  if lo > hi {
+    return Ok(None);
+  }
+
+  Ok(Some((lo, hi)))
 }

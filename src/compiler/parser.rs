@@ -429,7 +429,7 @@ impl<'a> Parser<'a> {
     let mut expr = if !check_tok!(self, TokenKind::Comma) {
       self.expression()
     } else {
-      Expr::Integer(0)
+      Expr::Nil
     };
 
     if match_tok!(self, TokenKind::Comma) {
@@ -437,7 +437,7 @@ impl<'a> Parser<'a> {
       let upper = if !check_tok!(self, TokenKind::Rbracket) {
         self.expression()
       } else {
-        Expr::Integer(-1)
+        Expr::Nil
       };
 
       expr = Expr::Slice(Box::new(callee), Box::new(expr), Box::new(upper));

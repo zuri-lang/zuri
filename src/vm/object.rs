@@ -9,12 +9,12 @@ use crate::vm::vm::VM;
 /// Everything a Value's pointer tag can point at.
 pub enum Obj {
   Str(String),
-  Bytes(Vec<u8>),
+  Bytes(RefCell<Vec<u8>>),
   BigInt(BigInt),
   /// A dynamically-sized list -- used to collect a variadic function's
   /// trailing arguments. No bytecode support yet for indexing into or
   /// iterating one from Zuri code -- this is just the storage.
-  List(Vec<Value>),
+  List(Vec<Cell<Value>>),
   /// A dict literal's storage. `Vec<(Value, Value)>` rather than a real
   /// hash map, deliberately -- a proper HashMap needs Value to have
   /// Hash/Eq that matches Value::equals' semantics (content-equality
@@ -22,7 +22,7 @@ pub enum Obj {
   /// design decision worth making once Expr::Index/lookup exists and
   /// performance is the thing being optimized for. This is correct and
   /// simple; it's O(n) lookup, which is the honest tradeoff for now.
-  Dict(Vec<(Value, Value)>),
+  Dict(RefCell<Vec<(Value, Value)>>),
   /// A function PROTOTYPE -- the static, compiled-once result of one
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
@@ -296,10 +296,10 @@ impl Heap {
     size_of::<Obj>()
       + match obj {
         Obj::Str(s) => s.len(),
-        Obj::Bytes(b) => b.len(),
+        Obj::Bytes(b) => b.borrow().len(),
         Obj::BigInt(_) => 0,
-        Obj::List(items) => items.len() * size_of::<Value>(),
-        Obj::Dict(pairs) => pairs.len() * size_of::<(Value, Value)>(),
+        Obj::List(items) => items.len() * size_of::<Cell<Value>>(),
+        Obj::Dict(pairs) => pairs.borrow().len() * size_of::<(Value, Value)>(),
         Obj::Func(f) => {
           f.chunk.code.len() * size_of::<crate::vm::chunk::Instr>()
             + f.chunk.constants.len() * size_of::<Value>()
@@ -331,7 +331,7 @@ impl Heap {
   }
 
   pub fn alloc_bytes(&mut self, b: impl Into<Vec<u8>>) -> Value {
-    self.alloc(Obj::Bytes(b.into()))
+    self.alloc(Obj::Bytes(RefCell::new(b.into())))
   }
 
   pub fn alloc_bigint(&mut self, s: impl Into<BigInt>) -> Value {
@@ -339,7 +339,8 @@ impl Heap {
   }
 
   pub fn alloc_list(&mut self, list: impl Into<Vec<Value>>) -> Value {
-    self.alloc(Obj::List(list.into()))
+    let cells = list.into().into_iter().map(Cell::new).collect();
+    self.alloc(Obj::List(cells))
   }
 
   /// Builds a Dict from raw (key, value) pairs, de-duplicating by
@@ -356,7 +357,7 @@ impl Heap {
         deduped.push((key, value));
       }
     }
-    self.alloc(Obj::Dict(deduped))
+    self.alloc(Obj::Dict(RefCell::new(deduped)))
   }
 
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {

@@ -251,11 +251,48 @@ impl Value {
     }
   }
 
-  pub fn as_bytes(&self) -> &[u8] {
+  pub fn as_bytes(&self) -> Vec<u8> {
     debug_assert!(self.is_bytes());
     match unsafe { &*self.as_obj() } {
-      Obj::Bytes(b) => b.as_slice(),
+      Obj::Bytes(b) => b.borrow().clone(),
       _ => unreachable!("as_bytes() called on a non-bytes Value"),
+    }
+  }
+
+  /// Number of bytes -- `Instr::GetIndex`/`SetIndex`/`GetSlice`'s
+  /// bounds-checking entry point for a `bytes` receiver; avoids
+  /// `as_bytes()`'s full clone just to check a length.
+  pub fn bytes_len(&self) -> usize {
+    debug_assert!(self.is_bytes());
+    match unsafe { &*self.as_obj() } {
+      Obj::Bytes(b) => b.borrow().len(),
+      _ => unreachable!("bytes_len() called on a non-bytes Value"),
+    }
+  }
+
+  pub fn bytes_get(&self, index: usize) -> Option<u8> {
+    debug_assert!(self.is_bytes());
+    match unsafe { &*self.as_obj() } {
+      Obj::Bytes(b) => b.borrow().get(index).copied(),
+      _ => unreachable!("bytes_get() called on a non-bytes Value"),
+    }
+  }
+
+  /// Returns false if `index` is out of bounds -- callers (Instr::SetIndex's
+  /// handler) are expected to have already bounds-checked via
+  /// `bytes_len()`, so this is a defensive double-check, not the
+  /// primary bounds enforcement.
+  pub fn bytes_set(&self, index: usize, value: u8) -> bool {
+    debug_assert!(self.is_bytes());
+    match unsafe { &*self.as_obj() } {
+      Obj::Bytes(b) => match b.borrow_mut().get_mut(index) {
+        Some(slot) => {
+          *slot = value;
+          true
+        },
+        None => false,
+      },
+      _ => unreachable!("bytes_set() called on a non-bytes Value"),
     }
   }
 
@@ -267,19 +304,92 @@ impl Value {
     }
   }
 
-  pub fn as_list(&self) -> &[Value] {
+  pub fn as_list(&self) -> Vec<Value> {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => items.as_slice(),
+      Obj::List(items) => items.iter().map(|c| c.get()).collect(),
       _ => unreachable!("as_list() called on a non-list Value"),
     }
   }
 
-  pub fn as_dict(&self) -> &[(Value, Value)] {
+  /// Number of elements -- the cheap entry point for
+  /// `Instr::GetIndex`/`SetIndex`/`GetSlice` bounds-checking, avoiding
+  /// `as_list()`'s full copy just to check a length.
+  pub fn list_len(&self) -> usize {
+    debug_assert!(self.is_list());
+    match unsafe { &*self.as_obj() } {
+      Obj::List(items) => items.len(),
+      _ => unreachable!("list_len() called on a non-list Value"),
+    }
+  }
+
+  pub fn list_get(&self, index: usize) -> Option<Value> {
+    debug_assert!(self.is_list());
+    match unsafe { &*self.as_obj() } {
+      Obj::List(items) => items.get(index).map(|c| c.get()),
+      _ => unreachable!("list_get() called on a non-list Value"),
+    }
+  }
+
+  pub fn list_set(&self, index: usize, value: Value) -> bool {
+    debug_assert!(self.is_list());
+    match unsafe { &*self.as_obj() } {
+      Obj::List(items) => match items.get(index) {
+        Some(cell) => {
+          cell.set(value);
+          true
+        },
+        None => false,
+      },
+      _ => unreachable!("list_set() called on a non-list Value"),
+    }
+  }
+
+  pub fn as_dict(&self) -> Vec<(Value, Value)> {
     debug_assert!(self.is_dict());
     match unsafe { &*self.as_obj() } {
-      Obj::Dict(pairs) => pairs.as_slice(),
+      Obj::Dict(pairs) => pairs.borrow().clone(),
       _ => unreachable!("as_dict() called on a non-dict Value"),
+    }
+  }
+
+  pub fn dict_len(&self) -> usize {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(pairs) => pairs.borrow().len(),
+      _ => unreachable!("dict_len() called on a non-dict Value"),
+    }
+  }
+
+  /// O(n) by design -- see `Obj::Dict`'s own doc comment for why a real
+  /// hash map isn't used here yet.
+  pub fn dict_get(&self, key: &Value) -> Option<Value> {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(pairs) => pairs
+        .borrow()
+        .iter()
+        .find(|(k, _)| k.equals(key))
+        .map(|(_, v)| *v),
+      _ => unreachable!("dict_get() called on a non-dict Value"),
+    }
+  }
+
+  /// Updates the existing entry if `key` is already present (by
+  /// `Value::equals`, not pointer identity -- matching `alloc_dict`'s
+  /// own dedup rule), otherwise inserts a new one.
+  pub fn dict_set(&self, key: Value, value: Value) {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(pairs) => {
+        let mut pairs = pairs.borrow_mut();
+        if let Some(existing) = pairs.iter_mut().find(|(k, _)| k.equals(&key)) {
+          existing.1 = value;
+        } else {
+          pairs.push((key, value));
+        }
+      },
+      _ => unreachable!("dict_set() called on a non-dict Value"),
     }
   }
 
@@ -346,7 +456,7 @@ impl Value {
         return match (&*self.as_obj(), &*other.as_obj()) {
           (Obj::Str(a), Obj::Str(b)) => a == b,
           (Obj::BigInt(a), Obj::BigInt(b)) => a == b,
-          (Obj::Bytes(a), Obj::Bytes(b)) => a.eq(b),
+          (Obj::Bytes(a), Obj::Bytes(b)) => a.borrow().eq(&*b.borrow()),
           (Obj::Func(a), Obj::Func(b)) => std::ptr::eq(a, b),
           (Obj::Closure(a), Obj::Closure(b)) => std::ptr::eq(a, b),
           (Obj::BoundMethod(a), Obj::BoundMethod(b)) => std::ptr::eq(a, b),
@@ -354,9 +464,15 @@ impl Value {
           (Obj::Class(a), Obj::Class(b)) => std::ptr::eq(a, b),
           (Obj::Instance(a), Obj::Instance(b)) => std::ptr::eq(a, b),
           (Obj::List(a), Obj::List(b)) => {
-            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
+            a.len() == b.len()
+              && a
+                .iter()
+                .zip(b.iter())
+                .all(|(x, y)| x.get().equals(&y.get()))
           },
           (Obj::Dict(a), Obj::Dict(b)) => {
+            let a = a.borrow();
+            let b = b.borrow();
             a.len() == b.len()
               && a
                 .iter()
@@ -418,7 +534,7 @@ impl std::fmt::Display for Value {
           Obj::Bytes(s) => write!(
             f,
             "({})",
-            s.iter().map(|f| format!("{:02x}", f)).format(" ")
+            s.borrow().iter().map(|f| format!("{:02x}", f)).format(" ")
           ),
           Obj::BigInt(v) => write!(f, "{}n", v.to_string()),
           Obj::Func(func) => write!(
@@ -455,11 +571,12 @@ impl std::fmt::Display for Value {
               if i > 0 {
                 write!(f, ", ")?;
               }
-              write!(f, "{}", item)?;
+              write!(f, "{}", item.get())?;
             }
             write!(f, "]")
           },
           Obj::Dict(pairs) => {
+            let pairs = pairs.borrow();
             write!(f, "{{")?;
             for (i, (k, v)) in pairs.iter().enumerate() {
               if i > 0 {

@@ -14,167 +14,6 @@ use crate::{
   },
 };
 
-/// Recursively walk a method's body collecting every field name it
-/// assigns via `self.NAME = ...` -- these count as "predeclared" just
-/// as much as an explicit `var NAME` does, since the compiler can see
-/// them by scanning the class's own AST at declaration time, well
-/// before any instance exists (see `Compiler::compile_class_decl`).
-/// Descends into nested `def`/`@(...)` bodies too, since `self` can be
-/// captured by a closure nested inside a method.
-fn collect_self_fields_stmt(stmt: &Stmt, out: &mut Vec<String>) {
-  match stmt {
-    Stmt::Echo(e) | Stmt::Expression(e) | Stmt::Raise(e) | Stmt::Return(e) => {
-      collect_self_fields_expr(e, out)
-    },
-    Stmt::If(cond, then_b, else_b) => {
-      collect_self_fields_expr(cond, out);
-      collect_self_fields_stmt(then_b, out);
-      if let Some(e) = else_b {
-        collect_self_fields_stmt(e, out);
-      }
-    },
-    Stmt::While(cond, body) => {
-      collect_self_fields_expr(cond, out);
-      collect_self_fields_stmt(body, out);
-    },
-    Stmt::Assert(e, msg) => {
-      collect_self_fields_expr(e, out);
-      if let Some(m) = msg {
-        collect_self_fields_expr(m, out);
-      }
-    },
-    Stmt::Using(subject, labels, bodies, default) => {
-      collect_self_fields_expr(subject, out);
-      for l in labels {
-        collect_self_fields_expr(l, out);
-      }
-      for b in bodies {
-        collect_self_fields_stmt(b, out);
-      }
-      if let Some(d) = default {
-        collect_self_fields_stmt(d, out);
-      }
-    },
-    Stmt::Catch(body, catch_body, _name) => {
-      collect_self_fields_stmt(body, out);
-      if let Some(cb) = catch_body {
-        collect_self_fields_stmt(cb, out);
-      }
-    },
-    Stmt::Block(stmts) => {
-      for s in stmts {
-        collect_self_fields_stmt(s, out);
-      }
-    },
-    Stmt::Decl(decl) => collect_self_fields_decl(decl, out),
-    Stmt::Var(_, init, _, _) => collect_self_fields_expr(init, out),
-    Stmt::VarList(list) => {
-      for s in list {
-        collect_self_fields_stmt(s, out);
-      }
-    },
-    Stmt::None | Stmt::FixContinue | Stmt::Continue | Stmt::Break | Stmt::Import(..) => {},
-  }
-}
-
-fn collect_self_fields_decl(decl: &Decl, out: &mut Vec<String>) {
-  match decl {
-    Decl::Stmt(s) => collect_self_fields_stmt(s, out),
-    Decl::Block(stmts) => {
-      for s in stmts {
-        collect_self_fields_stmt(s, out);
-      }
-    },
-    Decl::Function(_, _, body, _) => collect_self_fields_stmt(body, out),
-    // Method/Class/Property/Import/None aren't expected nested inside a
-    // method body; ignored defensively rather than assumed unreachable.
-    _ => {},
-  }
-}
-
-fn collect_self_fields_expr(expr: &Expr, out: &mut Vec<String>) {
-  match expr {
-    Expr::Set(target, field, value) => {
-      if matches!(target.as_ref(), Expr::Self_) {
-        if let TokenKind::Identifier(field_name) = &field.kind {
-          if !out.contains(field_name) {
-            out.push(field_name.clone());
-          }
-        }
-      }
-      collect_self_fields_expr(target, out);
-      collect_self_fields_expr(value, out);
-    },
-    Expr::Unary(_, e) | Expr::Grouping(e) => collect_self_fields_expr(e, out),
-    Expr::Binary(a, _, b)
-    | Expr::Logical(a, _, b)
-    | Expr::Circuit(a, _, b)
-    | Expr::Range(a, b)
-    | Expr::Index(a, b)
-    | Expr::Assign(a, b) => {
-      collect_self_fields_expr(a, out);
-      collect_self_fields_expr(b, out);
-    },
-    Expr::Condition(a, b, c) | Expr::Slice(a, b, c) => {
-      collect_self_fields_expr(a, out);
-      collect_self_fields_expr(b, out);
-      collect_self_fields_expr(c, out);
-    },
-    Expr::Call(callee, args) => {
-      collect_self_fields_expr(callee, out);
-      for a in args {
-        collect_self_fields_expr(a, out);
-      }
-    },
-    Expr::Get(obj, _) => collect_self_fields_expr(obj, out),
-    Expr::List(items) => {
-      for i in items {
-        collect_self_fields_expr(i, out);
-      }
-    },
-    Expr::Dict(keys, values) => {
-      for k in keys {
-        collect_self_fields_expr(k, out);
-      }
-      for v in values {
-        collect_self_fields_expr(v, out);
-      }
-    },
-    Expr::Anonymous(decl) => collect_self_fields_decl(decl, out),
-    Expr::Nil
-    | Expr::Bool(_)
-    | Expr::Integer(_)
-    | Expr::Float(_)
-    | Expr::BigNumber(_)
-    | Expr::Literal(_)
-    | Expr::Identifier(_)
-    | Expr::Parent
-    | Expr::Self_
-    | Expr::TypeHint(..)
-    | Expr::Argument(..) => {},
-  }
-}
-
-/// Purely syntactic privacy check, run at the exact point a `.name`
-/// access (Get, Set, or a method-call routed through compile_invoke) is
-/// compiled. Both facts it depends on -- does `name` start with '_',
-/// and is the receiver spelled `self`/`parent` -- are fully known from
-/// the AST at THIS point, for every access site in the program,
-/// regardless of what the receiver's value turns out to be once the
-/// program runs. That's also why the rule can't be narrowed to "methods
-/// only, fields/statics exempt": the compiler has no way to know here
-/// whether `obj` will resolve to an instance or a class at runtime, so
-/// a leading underscore is gated uniformly no matter what it turns out
-/// to name.
-fn check_private_access(name: &str, privileged: bool) {
-  if name.starts_with('_') && !privileged {
-    panic!(
-      "compile: '{}' is private and can only be accessed via 'self' or 'parent'",
-      name
-    );
-  }
-}
-
 struct Local {
   name: String,
   reg: u8,
@@ -1262,47 +1101,64 @@ impl<'a> Compiler<'a> {
 
         result
       },
-      Expr::Assign(target, value) => {
-        let name = match target.as_ref() {
-          Expr::Identifier(token) => Self::identifier_name(token),
-          other => panic!(
-            "compile_expression: unsupported assignment target: {:?}",
-            other
-          ),
-        };
-
-        match self.resolve_variable(&name) {
-          VarLoc::Local(_, true) => panic!("compile: cannot assign to constant '{}'", name),
-          VarLoc::Local(dst, false) => {
-            let value_reg = self.compile_expression(value);
-            if value_reg != dst {
-              self.emit(Instr::Move {
-                dst,
+      Expr::Assign(target, value) => match target.as_ref() {
+        // `obj[idx] = value` -- and, via the parser's generic Increment/
+        // Decrement desugaring in assign_expr, also `obj[idx]++` /
+        // `obj[idx]--`. No explicit free here (matching the VarLoc::Global
+        // case below): value_reg is the expression's result and must stay
+        // allocated for whatever called compile_expression to consume; the
+        // enclosing statement's own mark eventually reclaims obj_reg/idx_reg
+        // too.
+        Expr::Index(obj, idx) => {
+          let obj_reg = self.compile_expression(obj);
+          let idx_reg = self.compile_expression(idx);
+          let value_reg = self.compile_expression(value);
+          self.emit(Instr::SetIndex {
+            obj: obj_reg,
+            idx: idx_reg,
+            src: value_reg,
+          });
+          value_reg
+        },
+        Expr::Identifier(token) => {
+          let name = Self::identifier_name(token);
+          match self.resolve_variable(&name) {
+            VarLoc::Local(_, true) => panic!("compile: cannot assign to constant '{}'", name),
+            VarLoc::Local(dst, false) => {
+              let value_reg = self.compile_expression(value);
+              if value_reg != dst {
+                self.emit(Instr::Move {
+                  dst,
+                  src: value_reg,
+                });
+                self.free_regs_to(value_reg);
+              }
+              dst
+            },
+            VarLoc::Upvalue(idx) => {
+              let value_reg = self.compile_expression(value);
+              self.emit(Instr::SetUpval {
+                idx,
                 src: value_reg,
               });
-              self.free_regs_to(value_reg);
-            }
-            dst
-          },
-          VarLoc::Upvalue(idx) => {
-            let value_reg = self.compile_expression(value);
-            self.emit(Instr::SetUpval {
-              idx,
-              src: value_reg,
-            });
-            value_reg
-          },
-          VarLoc::Global => {
-            let value_reg = self.compile_expression(value);
-            let str_val = self.heap.alloc_string(name);
-            let name_const = self.add_constant(str_val);
-            self.emit(Instr::SetGlobal {
-              name_const,
-              src: value_reg,
-            });
-            value_reg
-          },
-        }
+              value_reg
+            },
+            VarLoc::Global => {
+              let value_reg = self.compile_expression(value);
+              let str_val = self.heap.alloc_string(name);
+              let name_const = self.add_constant(str_val);
+              self.emit(Instr::SetGlobal {
+                name_const,
+                src: value_reg,
+              });
+              value_reg
+            },
+          }
+        },
+        other => panic!(
+          "compile_expression: unsupported assignment target: {:?}",
+          other
+        ),
       },
       Expr::Call(callee, args) => {
         if let Expr::Get(obj, method) = callee.as_ref() {
@@ -1475,6 +1331,49 @@ impl<'a> Compiler<'a> {
           src: value_reg,
         });
         value_reg
+      },
+
+      Expr::Index(obj, idx) => {
+        let mark = self.cur().next_reg;
+        let obj_reg = self.compile_expression(obj);
+        let dst = if obj_reg >= mark {
+          obj_reg
+        } else {
+          self.alloc_reg()
+        };
+
+        let idx_mark = self.cur().next_reg;
+        let idx_reg = self.compile_expression(idx);
+
+        self.emit(Instr::GetIndex {
+          dst,
+          obj: obj_reg,
+          idx: idx_reg,
+        });
+        self.free_regs_to(idx_mark.max(dst + 1));
+        dst
+      },
+      Expr::Slice(obj, lo, hi) => {
+        let mark = self.cur().next_reg;
+        let obj_reg = self.compile_expression(obj);
+        let dst = if obj_reg >= mark {
+          obj_reg
+        } else {
+          self.alloc_reg()
+        };
+
+        let operand_mark = self.cur().next_reg;
+        let lo_reg = self.compile_expression(lo);
+        let hi_reg = self.compile_expression(hi);
+
+        self.emit(Instr::GetSlice {
+          dst,
+          obj: obj_reg,
+          lo: lo_reg,
+          hi: hi_reg,
+        });
+        self.free_regs_to(operand_mark.max(dst + 1));
+        dst
       },
       _ => {
         panic!(
@@ -1735,5 +1634,166 @@ impl<'a> Compiler<'a> {
     }
 
     main_fn
+  }
+}
+
+/// Recursively walk a method's body collecting every field name it
+/// assigns via `self.NAME = ...` -- these count as "predeclared" just
+/// as much as an explicit `var NAME` does, since the compiler can see
+/// them by scanning the class's own AST at declaration time, well
+/// before any instance exists (see `Compiler::compile_class_decl`).
+/// Descends into nested `def`/`@(...)` bodies too, since `self` can be
+/// captured by a closure nested inside a method.
+fn collect_self_fields_stmt(stmt: &Stmt, out: &mut Vec<String>) {
+  match stmt {
+    Stmt::Echo(e) | Stmt::Expression(e) | Stmt::Raise(e) | Stmt::Return(e) => {
+      collect_self_fields_expr(e, out)
+    },
+    Stmt::If(cond, then_b, else_b) => {
+      collect_self_fields_expr(cond, out);
+      collect_self_fields_stmt(then_b, out);
+      if let Some(e) = else_b {
+        collect_self_fields_stmt(e, out);
+      }
+    },
+    Stmt::While(cond, body) => {
+      collect_self_fields_expr(cond, out);
+      collect_self_fields_stmt(body, out);
+    },
+    Stmt::Assert(e, msg) => {
+      collect_self_fields_expr(e, out);
+      if let Some(m) = msg {
+        collect_self_fields_expr(m, out);
+      }
+    },
+    Stmt::Using(subject, labels, bodies, default) => {
+      collect_self_fields_expr(subject, out);
+      for l in labels {
+        collect_self_fields_expr(l, out);
+      }
+      for b in bodies {
+        collect_self_fields_stmt(b, out);
+      }
+      if let Some(d) = default {
+        collect_self_fields_stmt(d, out);
+      }
+    },
+    Stmt::Catch(body, catch_body, _name) => {
+      collect_self_fields_stmt(body, out);
+      if let Some(cb) = catch_body {
+        collect_self_fields_stmt(cb, out);
+      }
+    },
+    Stmt::Block(stmts) => {
+      for s in stmts {
+        collect_self_fields_stmt(s, out);
+      }
+    },
+    Stmt::Decl(decl) => collect_self_fields_decl(decl, out),
+    Stmt::Var(_, init, _, _) => collect_self_fields_expr(init, out),
+    Stmt::VarList(list) => {
+      for s in list {
+        collect_self_fields_stmt(s, out);
+      }
+    },
+    Stmt::None | Stmt::FixContinue | Stmt::Continue | Stmt::Break | Stmt::Import(..) => {},
+  }
+}
+
+fn collect_self_fields_decl(decl: &Decl, out: &mut Vec<String>) {
+  match decl {
+    Decl::Stmt(s) => collect_self_fields_stmt(s, out),
+    Decl::Block(stmts) => {
+      for s in stmts {
+        collect_self_fields_stmt(s, out);
+      }
+    },
+    Decl::Function(_, _, body, _) => collect_self_fields_stmt(body, out),
+    // Method/Class/Property/Import/None aren't expected nested inside a
+    // method body; ignored defensively rather than assumed unreachable.
+    _ => {},
+  }
+}
+
+fn collect_self_fields_expr(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::Set(target, field, value) => {
+      if matches!(target.as_ref(), Expr::Self_) {
+        if let TokenKind::Identifier(field_name) = &field.kind {
+          if !out.contains(field_name) {
+            out.push(field_name.clone());
+          }
+        }
+      }
+      collect_self_fields_expr(target, out);
+      collect_self_fields_expr(value, out);
+    },
+    Expr::Unary(_, e) | Expr::Grouping(e) => collect_self_fields_expr(e, out),
+    Expr::Binary(a, _, b)
+    | Expr::Logical(a, _, b)
+    | Expr::Circuit(a, _, b)
+    | Expr::Range(a, b)
+    | Expr::Index(a, b)
+    | Expr::Assign(a, b) => {
+      collect_self_fields_expr(a, out);
+      collect_self_fields_expr(b, out);
+    },
+    Expr::Condition(a, b, c) | Expr::Slice(a, b, c) => {
+      collect_self_fields_expr(a, out);
+      collect_self_fields_expr(b, out);
+      collect_self_fields_expr(c, out);
+    },
+    Expr::Call(callee, args) => {
+      collect_self_fields_expr(callee, out);
+      for a in args {
+        collect_self_fields_expr(a, out);
+      }
+    },
+    Expr::Get(obj, _) => collect_self_fields_expr(obj, out),
+    Expr::List(items) => {
+      for i in items {
+        collect_self_fields_expr(i, out);
+      }
+    },
+    Expr::Dict(keys, values) => {
+      for k in keys {
+        collect_self_fields_expr(k, out);
+      }
+      for v in values {
+        collect_self_fields_expr(v, out);
+      }
+    },
+    Expr::Anonymous(decl) => collect_self_fields_decl(decl, out),
+    Expr::Nil
+    | Expr::Bool(_)
+    | Expr::Integer(_)
+    | Expr::Float(_)
+    | Expr::BigNumber(_)
+    | Expr::Literal(_)
+    | Expr::Identifier(_)
+    | Expr::Parent
+    | Expr::Self_
+    | Expr::TypeHint(..)
+    | Expr::Argument(..) => {},
+  }
+}
+
+/// Purely syntactic privacy check, run at the exact point a `.name`
+/// access (Get, Set, or a method-call routed through compile_invoke) is
+/// compiled. Both facts it depends on -- does `name` start with '_',
+/// and is the receiver spelled `self`/`parent` -- are fully known from
+/// the AST at THIS point, for every access site in the program,
+/// regardless of what the receiver's value turns out to be once the
+/// program runs. That's also why the rule can't be narrowed to "methods
+/// only, fields/statics exempt": the compiler has no way to know here
+/// whether `obj` will resolve to an instance or a class at runtime, so
+/// a leading underscore is gated uniformly no matter what it turns out
+/// to name.
+fn check_private_access(name: &str, privileged: bool) {
+  if name.starts_with('_') && !privileged {
+    panic!(
+      "compile: '{}' is private and can only be accessed via 'self' or 'parent'",
+      name
+    );
   }
 }

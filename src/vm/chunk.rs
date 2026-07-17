@@ -303,6 +303,35 @@ pub enum Instr {
     method_const: u16,
     num_args: u8,
   },
+
+  /// `obj[idx]` -- supported for List, Bytes (yields a number 0-255),
+  /// String (yields a 1-character string, indexed by Unicode scalar
+  /// value, not byte offset), and Dict (`idx` used as a key via
+  /// Value::equals, not coerced to a number).
+  GetIndex {
+    dst: u8,
+    obj: u8,
+    idx: u8,
+  },
+  /// `obj[idx] = src` -- List and Bytes overwrite an existing element
+  /// in place (index must already be in bounds); Dict inserts or
+  /// updates a key. Strings are immutable and always error here.
+  SetIndex {
+    obj: u8,
+    idx: u8,
+    src: u8,
+  },
+  /// `obj[lo, hi]` -- supported for List, Bytes, and String only (not
+  /// Dict). Both bounds are INCLUSIVE. A Nil value in `lo` (register
+  /// content, not a compile-time fact) defaults to 0; a Nil in `hi`
+  /// defaults to the last valid index -- see Instr::GetSlice's own
+  /// handler in vm.rs for the full resolution rules.
+  GetSlice {
+    dst: u8,
+    obj: u8,
+    lo: u8,
+    hi: u8,
+  },
 }
 
 #[derive(Default, Clone, Debug)]
