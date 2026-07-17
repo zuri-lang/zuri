@@ -173,7 +173,8 @@ impl<'a> Compiler<'a> {
     match &mut self.cur_mut().chunk.code[jump_at] {
       Instr::Jmp { offset: o } => *o = offset,
       Instr::JmpIfFalse { offset: o, .. } => *o = offset,
-      Instr::JmpIfTrue { offset: o, .. } => *o = offset, // NEW
+      Instr::JmpIfTrue { offset: o, .. } => *o = offset,
+      Instr::PushCatch { offset: o, .. } => *o = offset,
       other => panic!(
         "patch_jump: instruction at {} is not a jump, got {:?}",
         jump_at, other
@@ -1529,6 +1530,131 @@ impl<'a> Compiler<'a> {
     self.free_regs_to(stmt_mark);
   }
 
+  fn compile_raise(&mut self, expr: &Expr) {
+    let reg = self.compile_expression(expr);
+    self.emit(Instr::Raise { src: reg });
+  }
+
+  /// `assert COND, MSG` desugars into: if COND is falsey, construct
+  /// `AssertError(MSG or 'Assertion failed')` via the exact same
+  /// global-lookup + Call path a user's own `raise AssertError(...)`
+  /// would use (so its constructor runs normally), then `Raise` it --
+  /// reusing Stmt::Raise's own instruction for the stacktrace-
+  /// attachment and Exception-subclass validation, rather than
+  /// duplicating either.
+  fn compile_assert(&mut self, cond: &Expr, message: &Option<Box<Expr>>) {
+    let mark = self.cur().next_reg;
+    let cond_reg = self.compile_expression(cond);
+    let skip = self.emit_jump_if_true(cond_reg);
+    self.free_regs_to(mark);
+
+    let class_reg = self.alloc_reg();
+    let class_name_val = self.heap.alloc_string("AssertError".to_string());
+    let class_name_const = self.add_constant(class_name_val);
+    self.emit(Instr::GetGlobal {
+      dst: class_reg,
+      name_const: class_name_const,
+    });
+
+    let expected_msg_reg = class_reg + 1;
+    let msg_reg = match message {
+      Some(m) => {
+        let mreg = self.compile_expression(m);
+        if mreg != expected_msg_reg {
+          self.emit(Instr::Move {
+            dst: expected_msg_reg,
+            src: mreg,
+          });
+        }
+        expected_msg_reg
+      },
+      None => {
+        let default_val = self.heap.alloc_string("Assertion failed".to_string());
+        let default_const = self.add_constant(default_val);
+        self.emit(Instr::LoadConst {
+          dst: expected_msg_reg,
+          const_idx: default_const,
+        });
+        expected_msg_reg
+      },
+    };
+    self.free_regs_to(msg_reg + 1);
+
+    self.emit(Instr::Call {
+      dst: class_reg,
+      func: class_reg,
+      num_args: 1,
+    });
+    self.emit(Instr::Raise { src: class_reg });
+
+    self.free_regs_to(mark);
+    self.patch_jump(skip);
+  }
+
+  /// `catch { body } as var { error_block }` (and the two shorter
+  /// forms). `var`, if present, is declared as an ORDINARY Local in the
+  /// CURRENT scope (not a nested one) -- exactly like a `var` statement
+  /// -- so it stays resolvable for the rest of the enclosing scope, per
+  /// spec ("used whenever or wherever in the code"). Deliberately does
+  /// NOT run the redeclaration check `var` itself uses: writing several
+  /// sequential `catch {...} as e` blocks reusing the same name is the
+  /// expected idiom (each rebinds `e` to its own exception), not an
+  /// error.
+  fn compile_catch(
+    &mut self,
+    body: &Stmt,
+    error_block: &Option<Box<Stmt>>,
+    var_expr: &Option<Box<Expr>>,
+  ) {
+    let var_reg = var_expr.as_ref().map(|e| {
+      let name = match e.as_ref() {
+        Expr::Identifier(token) => Self::identifier_name(token),
+        other => panic!(
+          "compile: catch variable must be an identifier, got {:?}",
+          other
+        ),
+      };
+      let reg = self.alloc_reg();
+      self.emit(Instr::LoadNil { dst: reg });
+      let depth = self.cur().scope_depth;
+      self.cur_mut().locals.push(Local {
+        name,
+        reg,
+        is_const: false,
+        depth,
+      });
+      reg
+    });
+
+    let push_at = self.emit(Instr::PushCatch { var_reg, offset: 0 });
+
+    self.compile_statement(body);
+    self.emit(Instr::PopCatch);
+
+    // Both the normal-completion fallthrough (right here) and an
+    // exception's direct jump (via PushCatch's own offset) converge at
+    // this exact point -- see Instr::PushCatch's doc comment.
+    self.patch_jump(push_at);
+
+    if let Some(err_stmt) = error_block {
+      let reg = var_reg.expect("compile: catch error-block requires an 'as' variable");
+      let mark = self.cur().next_reg;
+      let nil_reg = self.alloc_reg();
+      self.emit(Instr::LoadNil { dst: nil_reg });
+      let cond_reg = self.alloc_reg();
+      self.emit(Instr::Neq {
+        dst: cond_reg,
+        a: reg,
+        b: nil_reg,
+      });
+      let skip = self.emit_jump_if_false(cond_reg);
+      self.free_regs_to(mark);
+
+      self.compile_statement(err_stmt);
+      self.patch_jump(skip);
+    }
+  }
+
   fn compile_statement(&mut self, statement: &Stmt) {
     match statement {
       Stmt::Expression(expression) => {
@@ -1718,6 +1844,9 @@ impl<'a> Compiler<'a> {
       Stmt::Using(subject, labels, bodies, default) => {
         self.compile_using(subject, labels, bodies, default)
       },
+      Stmt::Raise(expr) => self.compile_raise(expr),
+      Stmt::Assert(cond, message) => self.compile_assert(cond, message),
+      Stmt::Catch(body, error_block, var_expr) => self.compile_catch(body, error_block, var_expr),
       _ => {},
     };
   }

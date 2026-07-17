@@ -67,13 +67,13 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
     let closure = heap.alloc_plain_closure(fn_obj);
 
     if let Err(e) = vm.run(closure) {
-      eprintln!("runtime error: {}", e);
+      eprintln!("runtime error: {}", vm.describe_exception(e));
       process::exit(1);
     }
   } else {
     return Err(format!(
       "parse error: {}",
-      parser.errors.iter().map(|f| f.to_string()).join("\n")
+      parser.errors.iter().map(|f| f.to_string()).join("\n  ")
     ));
   }
   Ok(())
@@ -94,7 +94,7 @@ fn run_file(vm: &mut VM, file: &str) {
     let closure = heap.alloc_plain_closure(fn_obj);
 
     if let Err(e) = vm.run(closure) {
-      eprintln!("runtime error: {}", e);
+      eprintln!("runtime error: {}", vm.describe_exception(e));
       process::exit(1);
     }
   } else {

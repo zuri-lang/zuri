@@ -355,6 +355,31 @@ pub enum Instr {
     subject: u8,
     table_idx: u16,
   },
+
+  /// `raise EXPR` -- EXPR must evaluate to an Exception (or subclass)
+  /// instance; the VM validates this and overwrites its `stacktrace`
+  /// field, then propagates it as a catchable error. Also what
+  /// `Compiler::compile_assert` desugars into on a failed assertion.
+  Raise {
+    src: u8,
+  },
+  /// `catch { body } as var { error_block }`. Pushed BEFORE `body`
+  /// compiles, popped by `Instr::PopCatch` on normal completion.
+  /// `var_reg` (if the `as` clause was present) is a register in the
+  /// SAME frame this instruction executes in -- pre-loaded with Nil --
+  /// that either stays Nil (no exception) or gets overwritten with the
+  /// caught exception by the VM's unwind logic. `offset` is a relative
+  /// jump-style offset (same encoding/patching as Jmp) to where
+  /// execution resumes on EITHER path -- normal fallthrough past
+  /// PopCatch, or an exception jumping there directly.
+  PushCatch {
+    var_reg: Option<u8>,
+    offset: i16,
+  },
+  /// Marks normal (non-exceptional) completion of a catch body --
+  /// pops the handler `PushCatch` registered. Never reached if an
+  /// exception unwound past this point instead.
+  PopCatch,
 }
 
 /// A compile-time-constant `using` case label's value, in a form that's

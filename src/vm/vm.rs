@@ -35,6 +35,21 @@ struct CallFrame {
   dst_in_caller: u8,
 }
 
+/// One active `catch` statement's unwind target -- see the module-level
+/// design note in this diff's accompanying explanation for the full
+/// reasoning behind `frame_depth`'s role in distinguishing "this
+/// exception is mine to catch" from "belongs to an ancestor
+/// `run_until` invocation, possibly across a `call_value` boundary".
+struct CatchHandler {
+  /// `self.frames.len()` at the moment `PushCatch` executed -- the
+  /// frame containing the `catch` statement itself is `frames[frame_depth-1]`.
+  frame_depth: usize,
+  /// Absolute instruction index (within that same frame) to resume at,
+  /// whichever path is taken -- normal completion or an unwind.
+  resume_ip: usize,
+  var_reg: Option<u8>,
+}
+
 pub struct VM {
   /// One flat register stack shared by every call frame; each frame just
   /// claims a slice of it (its "window"), exactly like Lua's VM.
@@ -55,10 +70,17 @@ pub struct VM {
   /// it, is invisible to the normal root scan; push it here for exactly
   /// as long as it needs to survive, then truncate back off.
   gc_pins: Vec<Value>,
+  /// Active `catch` handlers, innermost (most recently pushed) last --
+  /// see `CatchHandler`'s own doc comment.
+  catch_stack: Vec<CatchHandler>,
+  /// Cached by name after `prelude::install` runs, for O(1) lookup from
+  /// `VM::raise` rather than a `self.globals` hashmap hit on every
+  /// internal error.
+  pub(crate) builtin_exceptions: HashMap<&'static str, Value>,
   pub heap: Heap,
 }
 
-type RunResult<T> = Result<T, String>;
+type RunResult<T> = Result<T, Value>;
 
 const LOG_GC: LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
@@ -70,6 +92,8 @@ impl VM {
       frames: Vec::new(),
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
+      catch_stack: Vec::new(),
+      builtin_exceptions: HashMap::new(),
       globals,
       heap,
     }
@@ -77,6 +101,7 @@ impl VM {
 
   pub fn init(&mut self) {
     natives::install(self);
+    crate::vm::prelude::install(self);
   }
 
   pub fn heap_mut(&mut self) -> &mut Heap {
@@ -87,6 +112,112 @@ impl VM {
   /// (e.g. "fib") before `run` starts executing.
   pub fn define_global(&mut self, name: impl Into<String>, v: Value) {
     self.globals.insert(name.into(), v);
+  }
+
+  pub fn lookup_global(&self, name: &str) -> Option<Value> {
+    self.globals.get(name).copied()
+  }
+
+  /// Construct a fresh instance of the builtin exception class named
+  /// `class_name` (from `prelude::EXCEPTION_CLASS_NAMES`), with
+  /// `message`/`type` set directly by field-slot name (bypassing the
+  /// normal constructor-call path entirely, since these are ALWAYS the
+  /// prelude's own known classes -- no user override to worry about),
+  /// and its `stacktrace` attached. This is what every internal VM
+  /// error site calls instead of returning a bare Rust string.
+  pub(crate) fn raise(&mut self, class_name: &'static str, message: impl Into<String>) -> Value {
+    let message_str = message.into();
+    let class_val = *self.builtin_exceptions.get(class_name).unwrap_or_else(|| {
+      panic!(
+        "internal error: unknown builtin exception class '{}' (prelude not installed?)",
+        class_name
+      )
+    });
+
+    let field_count = class_val.as_class().field_count;
+    let instance = self.heap.alloc_instance(class_val, field_count as usize);
+    let message_val = self.heap.alloc_string(message_str);
+    let type_val = self.heap.alloc_string(class_name.to_string());
+
+    {
+      let class = class_val.as_class();
+      let inst = instance.as_instance();
+      if let Some(&idx) = class.field_slots.get("message") {
+        inst.fields[idx as usize].set(message_val);
+      }
+      if let Some(&idx) = class.field_slots.get("type") {
+        inst.fields[idx as usize].set(type_val);
+      }
+    }
+
+    self.attach_stacktrace(instance)
+  }
+
+  /// Is `v` an instance of `Exception` or one of its subclasses? What
+  /// `Instr::Raise` checks before allowing a value to propagate as an
+  /// error, and what `raise`'s own output always satisfies trivially.
+  fn is_exception_value(&self, v: Value) -> bool {
+    if !v.is_instance() {
+      return false;
+    }
+    let Some(&exception_class) = self.builtin_exceptions.get("Exception") else {
+      return false;
+    };
+    let mut cur = Some(v.as_instance().class);
+    while let Some(c) = cur {
+      if c.equals(&exception_class) {
+        return true;
+      }
+      cur = c.as_class().superclass;
+    }
+    false
+  }
+
+  /// Frame names, innermost first, as a Zuri list of strings -- what
+  /// gets attached to every exception's `stacktrace` field. No line
+  /// numbers yet (bytecode doesn't carry source positions), just the
+  /// call chain by function name.
+  fn build_stacktrace(&mut self) -> Value {
+    let mut lines = Vec::with_capacity(self.frames.len());
+    for frame in self.frames.iter().rev() {
+      let func = unsafe { &*frame.function };
+      lines.push(self.heap.alloc_string(format!("in {}", func.name)));
+    }
+    self.heap.alloc_list(lines)
+  }
+
+  fn attach_stacktrace(&mut self, instance: Value) -> Value {
+    let trace = self.build_stacktrace();
+    if instance.is_instance() {
+      let inst = instance.as_instance();
+      let idx = inst.class.as_class().field_slots.get("stacktrace").copied();
+      if let Some(idx) = idx {
+        inst.fields[idx as usize].set(trace);
+      }
+    }
+    instance
+  }
+
+  /// Formats an uncaught exception for top-level reporting (see
+  /// zuri.rs) -- "TYPE: message", falling back gracefully if `exc`
+  /// somehow isn't an instance at all.
+  pub fn describe_exception(&self, exc: Value) -> String {
+    if !exc.is_instance() {
+      return format!("{}", exc);
+    }
+    let inst = exc.as_instance();
+    let class = inst.class.as_class();
+    let message = class
+      .field_slots
+      .get("message")
+      .map(|&idx| inst.fields[idx as usize].get().to_string())
+      .unwrap_or_else(|| "An unexpected error has occurred".to_string());
+    let type_name = class
+      .field_slots
+      .get("type")
+      .map(|&idx| inst.fields[idx as usize].get().to_string())
+      .unwrap_or_else(|| class.name.clone());
+    format!("{}: {}", type_name, message)
   }
 
   /// Run `main` (a top-level closure, typically zero-upvalue, taking no
@@ -120,7 +251,8 @@ impl VM {
     }
 
     if !callee.is_closure() {
-      return Err(format!("cannot call a {}", callee.type_name()));
+      let msg = format!("cannot call a {}", callee.type_name());
+      return Err(self.raise("TypeError", msg));
     }
 
     let closure = callee.as_closure();
@@ -169,17 +301,21 @@ impl VM {
     } else {
       args.len() as u8 == native.min_arity
     };
+
     if !ok_arity {
-      return Err(format!(
+      let msg = format!(
         "'{}' expects {}{} argument(s), got {}",
         native.name,
         if native.variadic { "at least " } else { "" },
         native.min_arity,
         args.len()
-      ));
+      );
+      return Err(self.raise("ArgumentError", msg));
     }
+
     let mut ctx = ZuriContext { vm: self, args };
-    (native.func)(&mut ctx)
+    let result = (native.func)(&mut ctx);
+    result.map_err(|msg| self.raise("TypeError", msg))
   }
 
   /// Construct a new instance of `class_val`: allocate storage sized to
@@ -284,8 +420,10 @@ impl VM {
     }
 
     if !callee.is_closure() {
-      return Err(format!("cannot call a {}", callee.type_name()));
+      let msg = format!("cannot call a {}", callee.type_name());
+      return Err(self.raise("TypeError", msg));
     }
+
     let callee_closure = callee.as_closure();
     let callee_fn = callee_closure.function.as_func();
 
@@ -300,9 +438,11 @@ impl VM {
     if self.registers.len() < needed {
       self.registers.resize(needed, Value::nil());
     }
+
     for i in num_args..required {
       self.registers[new_base + i as usize] = Value::nil();
     }
+
     if callee_fn.variadic {
       let extra_count = num_args.saturating_sub(required);
       let mut items = Vec::with_capacity(extra_count as usize);
@@ -341,8 +481,10 @@ impl VM {
     dst: u8,
   ) -> RunResult<()> {
     if !callee.is_closure() {
-      return Err(format!("cannot call a {}", callee.type_name()));
+      let msg = format!("cannot call a {}", callee.type_name());
+      return Err(self.raise("TypeError", msg));
     }
+
     let callee_closure = callee.as_closure();
     let callee_fn = callee_closure.function.as_func();
 
@@ -386,44 +528,47 @@ impl VM {
 
   fn index_get(&mut self, receiver: Value, index: Value) -> RunResult<Value> {
     if receiver.is_list() {
-      let i = coerce_index(index, receiver.list_len())?;
+      let i = self.coerce_index(index, receiver.list_len())?;
       Ok(receiver.list_get(i).unwrap())
     } else if receiver.is_bytes() {
-      let i = coerce_index(index, receiver.bytes_len())?;
+      let i = self.coerce_index(index, receiver.bytes_len())?;
       Ok(Value::number(receiver.bytes_get(i).unwrap() as f64))
     } else if receiver.is_string() {
       let chars_len = receiver.as_str().chars().count();
-      let i = coerce_index(index, chars_len)?;
+      let i = self.coerce_index(index, chars_len)?;
       let c = receiver.as_str().chars().nth(i).unwrap();
       Ok(self.heap.alloc_string(c.to_string()))
     } else if receiver.is_dict() {
-      receiver
-        .dict_get(&index)
-        .ok_or_else(|| format!("undefined key '{}' in dict", index))
+      match receiver.dict_get(&index) {
+        Some(v) => Ok(v),
+        None => Err(self.raise(
+          "PropertyError",
+          format!("undefined key '{}' in dict", index),
+        )),
+      }
     } else {
-      Err(format!("cannot index into a {}", receiver.type_name()))
+      Err(self.raise(
+        "TypeError",
+        format!("cannot index into a {}", receiver.type_name()),
+      ))
     }
   }
 
   fn index_set(&mut self, receiver: Value, index: Value, value: Value) -> RunResult<()> {
     if receiver.is_list() {
-      let i = coerce_index(index, receiver.list_len())?;
+      let i = self.coerce_index(index, receiver.list_len())?;
       receiver.list_set(i, value);
       Ok(())
     } else if receiver.is_bytes() {
-      let i = coerce_index(index, receiver.bytes_len())?;
+      let i = self.coerce_index(index, receiver.bytes_len())?;
       if !value.is_number() {
-        return Err(format!(
-          "bytes element must be a number, got {}",
-          value.type_name()
-        ));
+        let msg = format!("bytes element must be a number, got {}", value.type_name());
+        return Err(self.raise("TypeError", msg));
       }
       let n = value.as_number();
       if n.fract() != 0.0 || !(0.0..=255.0).contains(&n) {
-        return Err(format!(
-          "bytes element must be an integer in 0..=255, got {}",
-          n
-        ));
+        let msg = format!("bytes element must be an integer in 0..=255, got {}", n);
+        return Err(self.raise("NumericError", msg));
       }
       receiver.bytes_set(i, n as u8);
       Ok(())
@@ -431,36 +576,48 @@ impl VM {
       receiver.dict_set(index, value);
       Ok(())
     } else if receiver.is_string() {
-      Err("strings are immutable and do not support index assignment".to_string())
+      Err(self.raise(
+        "TypeError",
+        "strings are immutable and do not support index assignment",
+      ))
     } else {
-      Err(format!("cannot assign into a {}", receiver.type_name()))
+      Err(self.raise(
+        "TypeError",
+        format!("cannot assign into a {}", receiver.type_name()),
+      ))
     }
   }
 
   fn index_slice(&mut self, receiver: Value, lo: Value, hi: Value) -> RunResult<Value> {
     if receiver.is_list() {
       let len = receiver.list_len();
-      let items: Vec<Value> = match resolve_slice_bounds(lo, hi, len)? {
+      let bounds = self.resolve_slice_bounds(lo, hi, len)?;
+      let items: Vec<Value> = match bounds {
         Some((lo, hi)) => (lo..=hi).map(|i| receiver.list_get(i).unwrap()).collect(),
         None => Vec::new(),
       };
       Ok(self.heap.alloc_list(items))
     } else if receiver.is_bytes() {
       let len = receiver.bytes_len();
-      let items: Vec<u8> = match resolve_slice_bounds(lo, hi, len)? {
+      let bounds = self.resolve_slice_bounds(lo, hi, len)?;
+      let items: Vec<u8> = match bounds {
         Some((lo, hi)) => (lo..=hi).map(|i| receiver.bytes_get(i).unwrap()).collect(),
         None => Vec::new(),
       };
       Ok(self.heap.alloc_bytes(items))
     } else if receiver.is_string() {
       let chars: Vec<char> = receiver.as_str().chars().collect();
-      let s: String = match resolve_slice_bounds(lo, hi, chars.len())? {
+      let bounds = self.resolve_slice_bounds(lo, hi, chars.len())?;
+      let s: String = match bounds {
         Some((lo, hi)) => chars[lo..=hi].iter().collect(),
         None => String::new(),
       };
       Ok(self.heap.alloc_string(s))
     } else {
-      Err(format!("cannot slice a {}", receiver.type_name()))
+      Err(self.raise(
+        "TypeError",
+        format!("cannot slice a {}", receiver.type_name()),
+      ))
     }
   }
 
@@ -478,619 +635,700 @@ impl VM {
       let func = unsafe { &*func_ptr };
 
       if ip >= func.chunk.code.len() {
-        return Err(format!(
-          "fell off the end of '{}' without a Return",
-          func.name
-        ));
+        let msg = format!("fell off the end of '{}' without a Return", func.name);
+        return Err(self.raise("Exception", msg));
       }
+
       let instr = func.chunk.code[ip];
       self.frames[frame_idx].ip += 1;
 
-      match instr {
-        Instr::LoadConst { dst, const_idx } => {
-          let v = func.chunk.constants[const_idx as usize];
-          self.set_reg(base, dst, v);
-        },
-        Instr::LoadNil { dst } => self.set_reg(base, dst, Value::nil()),
-        Instr::LoadBool { dst, val } => self.set_reg(base, dst, Value::bool(val)),
-        Instr::Move { dst, src } => {
-          let v = self.get_reg(base, src);
-          self.set_reg(base, dst, v);
-        },
-
-        Instr::Add { dst, a, b } => self.binary_add(base, dst, a, b, "+")?,
-        Instr::Sub { dst, a, b } => {
-          self.binary_numeric(base, dst, a, b, "-", |x, y| x - y, |x, y| &x - &y)?
-        },
-        Instr::Mul { dst, a, b } => self.binary_mult(base, dst, a, b, "*")?,
-        Instr::Div { dst, a, b } => {
-          self.binary_numeric(base, dst, a, b, "/", |x, y| x / y, |x, y| &x / &y)?
-        },
-        Instr::Pow { dst, a, b } => {
-          self.binary_numeric(base, dst, a, b, "**", |x, y| x.powf(y), |x, y| &x * &y)?
-        },
-        Instr::Mod { dst, a, b } => {
-          self.binary_numeric(base, dst, a, b, "%", |x, y| x % y, |x, y| &x % &y)?
-        },
-        Instr::Floor { dst, a, b } => self.binary_numeric(
-          base,
-          dst,
-          a,
-          b,
-          "//",
-          |x, y| (x / y).floor(),
-          |x, y| &x / &y,
-        )?,
-        Instr::BitAnd { dst, a, b } => {
-          self.bitwise_numeric(base, dst, a, b, "&", |x, y| x & y, |x, y| &x & &y)?
-        },
-        Instr::BitOr { dst, a, b } => {
-          self.bitwise_numeric(base, dst, a, b, "|", |x, y| x | y, |x, y| &x | &y)?
-        },
-        Instr::BitXor { dst, a, b } => {
-          self.bitwise_numeric(base, dst, a, b, "^", |x, y| x ^ y, |x, y| &x ^ &y)?
-        },
-        Instr::BitShl { dst, a, b } => self.bitwise_numeric(
-          base,
-          dst,
-          a,
-          b,
-          "<<",
-          |x, y| x.checked_shl(y as u32).unwrap_or(0),
-          |x, y| x.shl(y.to_i64().unwrap_or(0)),
-        )?,
-        Instr::BitShr { dst, a, b } => self.bitwise_numeric(
-          base,
-          dst,
-          a,
-          b,
-          ">>",
-          |x, y| x.checked_shr(y as u32).unwrap_or(0),
-          |x, y| x.shr(y.to_i64().unwrap_or(0)),
-        )?,
-        Instr::BitUshr { dst, a, b } => self.bitwise_numeric(
-          base,
-          dst,
-          a,
-          b,
-          ">>>",
-          |x, y| (x as u32).checked_shr(y as u32).unwrap_or(0) as i64,
-          |x, y| x.shr(y.to_i64().unwrap_or(0)),
-        )?,
-        Instr::BitNot { dst, src } => {
-          let v = self.get_reg(base, src);
-          if !v.is_number() {
-            return Err(format!("cannot bitwise not a {}", v.type_name()));
-          }
-          self.set_reg(base, dst, Value::number((!(v.as_number() as i64)) as f64));
-        },
-        Instr::Neg { dst, src } => {
-          let v = self.get_reg(base, src);
-          if v.is_number() {
-            self.set_reg(base, dst, Value::number(-v.as_number()));
-          } else if v.is_bigint() {
-            let v = self.heap.alloc_bigint(v.as_bigint().neg());
+      let step: RunResult<Option<Value>> = (|| {
+        match instr {
+          Instr::LoadConst { dst, const_idx } => {
+            let v = func.chunk.constants[const_idx as usize];
             self.set_reg(base, dst, v);
-          } else {
-            return Err(format!("cannot negate a {}", v.type_name()));
-          }
-        },
-        Instr::Not { dst, src } => {
-          let v = self.get_reg(base, src);
-          self.set_reg(base, dst, Value::bool(v.is_falsey()));
-        },
-        Instr::Concat { dst, a, b } => {
-          let va = self.get_reg(base, a);
-          let vb = self.get_reg(base, b);
-          let s = format!("{}{}", va, vb);
-          let v = self.heap.alloc_string(s);
-          self.set_reg(base, dst, v);
-        },
+          },
+          Instr::LoadNil { dst } => self.set_reg(base, dst, Value::nil()),
+          Instr::LoadBool { dst, val } => self.set_reg(base, dst, Value::bool(val)),
+          Instr::Move { dst, src } => {
+            let v = self.get_reg(base, src);
+            self.set_reg(base, dst, v);
+          },
 
-        Instr::Eq { dst, a, b } => {
-          let va = self.get_reg(base, a);
-          let vb = self.get_reg(base, b);
-          self.set_reg(base, dst, Value::bool(va.equals(&vb)));
-        },
-        Instr::Neq { dst, a, b } => {
-          let va = self.get_reg(base, a);
-          let vb = self.get_reg(base, b);
-          self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
-        },
-        Instr::Lt { dst, a, b } => self.compare(base, dst, a, b, "<", |x, y| x < y)?,
-        Instr::Gt { dst, a, b } => self.compare(base, dst, a, b, ">", |x, y| x > y)?,
-        Instr::Le { dst, a, b } => self.compare(base, dst, a, b, "<=", |x, y| x <= y)?,
-        Instr::Ge { dst, a, b } => self.compare(base, dst, a, b, ">=", |x, y| x >= y)?,
-
-        Instr::Jmp { offset } => {
-          self.jump(frame_idx, offset);
-        },
-        Instr::JmpIfFalse { cond, offset } => {
-          if self.get_reg(base, cond).is_falsey() {
-            self.jump(frame_idx, offset);
-          }
-        },
-        Instr::JmpIfTrue { cond, offset } => {
-          if !self.get_reg(base, cond).is_falsey() {
-            self.jump(frame_idx, offset);
-          }
-        },
-
-        Instr::Call {
-          dst,
-          func: func_reg,
-          num_args,
-        } => {
-          self.dispatch_call(base, func_reg, num_args, dst)?;
-        },
-        Instr::Return { src } => {
-          let ret = self.get_reg(base, src);
-          self.close_upvalues_from(base);
-          let finished = self.frames.pop().unwrap();
-          if self.frames.len() == stop_depth {
-            return Ok(ret);
-          }
-          let caller = self.frames.last().unwrap();
-          self.set_reg(caller.base, finished.dst_in_caller, ret);
-        },
-
-        Instr::Print { src } => {
-          let v = self.get_reg(base, src);
-          println!("{}", v);
-        },
-
-        Instr::GetGlobal { dst, name_const } => {
-          let name = self.const_as_str(func, name_const)?;
-          let v = self
-            .globals
-            .get(&name)
-            .copied()
-            .ok_or_else(|| format!("undefined global '{}'", name))?;
-          self.set_reg(base, dst, v);
-        },
-        Instr::SetGlobal { name_const, src } => {
-          let name = self.const_as_str(func, name_const)?;
-          let v = self.get_reg(base, src);
-          self.globals.insert(name, v);
-        },
-
-        Instr::Closure { dst, proto_const } => {
-          let proto_val = func.chunk.constants[proto_const as usize];
-          if !proto_val.is_func() {
-            return Err("Closure operand is not a function".to_string());
-          }
-          let proto = proto_val.as_func();
-
-          let mut captured = Vec::with_capacity(proto.upvalues.len());
-          for desc in &proto.upvalues {
-            let upval = match *desc {
-              UpvalueDescriptor::Local(reg) => {
-                let abs_index = base + reg as usize;
-                self.capture_upvalue(abs_index)
-              },
-              UpvalueDescriptor::Upvalue(idx) => {
-                let current_closure = unsafe { &*closure_ptr };
-                current_closure.upvalues[idx as usize]
-              },
-            };
-            captured.push(upval);
-          }
-
-          let closure_val = self.heap.alloc_closure(ObjClosure {
-            function: proto_val,
-            upvalues: captured,
-          });
-          self.set_reg(base, dst, closure_val);
-        },
-        Instr::GetUpval { dst, idx } => {
-          let current_closure = unsafe { &*closure_ptr };
-          let upval_val = current_closure.upvalues[idx as usize];
-          if !upval_val.is_upvalue() {
-            return Err("GetUpval operand is not an upvalue".to_string());
-          }
-          let v = match upval_val.as_upvalue().get() {
-            UpvalueState::Open(abs_idx) => self.registers[abs_idx],
-            UpvalueState::Closed(v) => v,
-          };
-          self.set_reg(base, dst, v);
-        },
-        Instr::SetUpval { idx, src } => {
-          let v = self.get_reg(base, src);
-          let current_closure = unsafe { &*closure_ptr };
-          let upval_val = current_closure.upvalues[idx as usize];
-          if !upval_val.is_upvalue() {
-            return Err("SetUpval operand is not an upvalue".to_string());
-          }
-          let cell = upval_val.as_upvalue();
-          match cell.get() {
-            UpvalueState::Open(abs_idx) => self.registers[abs_idx] = v,
-            UpvalueState::Closed(_) => cell.set(UpvalueState::Closed(v)),
-          }
-        },
-        Instr::CloseUpvalues { from } => {
-          self.close_upvalues_from(base + from as usize);
-        },
-        Instr::MakeList { dst, start, count } => {
-          let items: Vec<Value> = (0..count).map(|i| self.get_reg(base, start + i)).collect();
-          let list_val = self.heap.alloc_list(items);
-          self.set_reg(base, dst, list_val);
-        },
-        Instr::MakeDict { dst, start, count } => {
-          let pairs: Vec<(Value, Value)> = (0..count)
-            .map(|i| {
-              (
-                self.get_reg(base, start + i),
-                self.get_reg(base, start + count + i),
-              )
-            })
-            .collect();
-          let dict_val = self.heap.alloc_dict(pairs);
-          self.set_reg(base, dst, dict_val);
-        },
-
-        Instr::MakeClass {
-          dst,
-          name_const,
-          superclass,
-        } => {
-          let name = self.const_as_str(func, name_const)?;
-          let superclass_val = match superclass {
-            Some(r) => {
-              let v = self.get_reg(base, r);
-              if !v.is_class() {
-                return Err(format!(
-                  "superclass of '{}' is not a class (got a {})",
-                  name,
-                  v.type_name()
-                ));
-              }
-              Some(v)
-            },
-            None => None,
-          };
-
-          let (methods, field_slots, field_count, constructor) = match superclass_val {
-            Some(sup) => {
-              let s = sup.as_class();
-              (
-                s.methods.clone(),
-                s.field_slots.clone(),
-                s.field_count,
-                s.constructor,
-              )
-            },
-            None => (HashMap::new(), HashMap::new(), 0, None),
-          };
-
-          let class_val = self.heap.alloc_class(ObjClass {
-            name,
-            superclass: superclass_val,
-            methods,
-            field_slots,
-            field_count,
-            own_field_initializer: None,
-            constructor,
-            static_slots: HashMap::new(),
-            statics: Vec::new(),
-          });
-          self.set_reg(base, dst, class_val);
-        },
-
-        Instr::DeclareField { class, name_const } => {
-          let class_val = self.get_reg(base, class);
-          let name = self.const_as_str(func, name_const)?;
-          let mut c = class_val.as_class_mut();
-          // Idempotent: a name that's already present -- inherited from
-          // the superclass (invisible to the compiler's own self.x=...
-          // scan, which only sees this class's own AST -- see
-          // Compiler::compile_class_decl) or already declared earlier
-          // in this same class -- keeps its EXISTING slot rather than
-          // being handed a new one. Reassigning would silently desync
-          // an inherited field initializer (which writes to the OLD
-          // index) from every later read/write of the same name
-          // (which would then resolve to the NEW index instead).
-          if !c.field_slots.contains_key(&name) {
-            let idx = c.field_count;
-            c.field_slots.insert(name, idx);
-            c.field_count += 1;
-          }
-        },
-
-        Instr::SetFieldInit { class, src } => {
-          let class_val = self.get_reg(base, class);
-          let init = self.get_reg(base, src);
-          class_val.as_class_mut().own_field_initializer = Some(init);
-        },
-
-        Instr::SetMethod {
-          class,
-          name_const,
-          src,
-        } => {
-          let class_val = self.get_reg(base, class);
-          let name = self.const_as_str(func, name_const)?;
-          let method = self.get_reg(base, src);
-          class_val.as_class_mut().methods.insert(name, method);
-        },
-
-        Instr::DeclareStatic {
-          class,
-          name_const,
-          src,
-        } => {
-          let class_val = self.get_reg(base, class);
-          let name = self.const_as_str(func, name_const)?;
-          let value = self.get_reg(base, src);
-          let mut c = class_val.as_class_mut();
-          let idx = c.statics.len() as u16;
-          c.static_slots.insert(name, idx);
-          c.statics.push(Cell::new(value));
-        },
-
-        Instr::FinalizeClass { class, name_const } => {
-          let class_val = self.get_reg(base, class);
-          let name = self.const_as_str(func, name_const)?;
-          let mut c = class_val.as_class_mut();
-          if let Some(ctor) = c.methods.get(&name).copied() {
-            c.constructor = Some(ctor);
-          }
-        },
-
-        Instr::GetField {
-          dst,
-          obj,
-          name_const,
-        } => {
-          let receiver = self.get_reg(base, obj);
-          let name = self.const_as_str(func, name_const)?;
-          let value = if receiver.is_instance() {
-            let inst = receiver.as_instance();
-            let class = inst.class.as_class();
-            if let Some(&idx) = class.field_slots.get(&name) {
-              inst.fields[idx as usize].get()
-            } else if let Some(method) = class.methods.get(&name).copied() {
-              // Accessed without an immediate call -- e.g. `var f =
-              // obj.method` -- so unlike Invoke, this can't skip
-              // allocation: bind the receiver into a real ObjBoundMethod
-              // so the resulting value is independently callable later.
-              self.heap.alloc_bound_method(receiver, method)
-            } else {
-              return Err(format!(
-                "undefined property '{}' on instance of '{}'",
-                name, class.name
-              ));
+          Instr::Add { dst, a, b } => self.binary_add(base, dst, a, b, "+")?,
+          Instr::Sub { dst, a, b } => {
+            self.binary_numeric(base, dst, a, b, "-", |x, y| x - y, |x, y| &x - &y)?
+          },
+          Instr::Mul { dst, a, b } => self.binary_mult(base, dst, a, b, "*")?,
+          Instr::Div { dst, a, b } => {
+            self.binary_numeric(base, dst, a, b, "/", |x, y| x / y, |x, y| &x / &y)?
+          },
+          Instr::Pow { dst, a, b } => {
+            self.binary_numeric(base, dst, a, b, "**", |x, y| x.powf(y), |x, y| &x * &y)?
+          },
+          Instr::Mod { dst, a, b } => {
+            self.binary_numeric(base, dst, a, b, "%", |x, y| x % y, |x, y| &x % &y)?
+          },
+          Instr::Floor { dst, a, b } => self.binary_numeric(
+            base,
+            dst,
+            a,
+            b,
+            "//",
+            |x, y| (x / y).floor(),
+            |x, y| &x / &y,
+          )?,
+          Instr::BitAnd { dst, a, b } => {
+            self.bitwise_numeric(base, dst, a, b, "&", |x, y| x & y, |x, y| &x & &y)?
+          },
+          Instr::BitOr { dst, a, b } => {
+            self.bitwise_numeric(base, dst, a, b, "|", |x, y| x | y, |x, y| &x | &y)?
+          },
+          Instr::BitXor { dst, a, b } => {
+            self.bitwise_numeric(base, dst, a, b, "^", |x, y| x ^ y, |x, y| &x ^ &y)?
+          },
+          Instr::BitShl { dst, a, b } => self.bitwise_numeric(
+            base,
+            dst,
+            a,
+            b,
+            "<<",
+            |x, y| x.checked_shl(y as u32).unwrap_or(0),
+            |x, y| x.shl(y.to_i64().unwrap_or(0)),
+          )?,
+          Instr::BitShr { dst, a, b } => self.bitwise_numeric(
+            base,
+            dst,
+            a,
+            b,
+            ">>",
+            |x, y| x.checked_shr(y as u32).unwrap_or(0),
+            |x, y| x.shr(y.to_i64().unwrap_or(0)),
+          )?,
+          Instr::BitUshr { dst, a, b } => self.bitwise_numeric(
+            base,
+            dst,
+            a,
+            b,
+            ">>>",
+            |x, y| (x as u32).checked_shr(y as u32).unwrap_or(0) as i64,
+            |x, y| x.shr(y.to_i64().unwrap_or(0)),
+          )?,
+          Instr::BitNot { dst, src } => {
+            let v = self.get_reg(base, src);
+            if !v.is_number() {
+              let msg = format!("cannot bitwise not a {}", v.type_name());
+              return Err(self.raise("TypeError", msg));
             }
-          } else if receiver.is_class() {
-            let raw = lookup_static(receiver, &name).ok_or_else(|| {
-              format!(
-                "undefined static member '{}' on class '{}'",
-                name,
-                receiver.as_class().name
-              )
-            })?;
-            // A static METHOD's frame reserves register 0 for a
-            // receiver it never reads (see ObjFunction::is_method's doc
-            // comment) -- fetched bare like this, nothing would
-            // otherwise fill that register at call time, so wrap it
-            // with a harmless dummy nil receiver. A static field
-            // holding a plain closure value (`static var f = @(x){}`)
-            // has no such reservation and passes through unwrapped.
-            if raw.is_closure() && raw.as_closure().function.as_func().is_method {
-              self.heap.alloc_bound_method(Value::nil(), raw)
+            self.set_reg(base, dst, Value::number((!(v.as_number() as i64)) as f64));
+          },
+          Instr::Neg { dst, src } => {
+            let v = self.get_reg(base, src);
+            if v.is_number() {
+              self.set_reg(base, dst, Value::number(-v.as_number()));
+            } else if v.is_bigint() {
+              let v = self.heap.alloc_bigint(v.as_bigint().neg());
+              self.set_reg(base, dst, v);
             } else {
-              raw
+              let msg = format!("cannot negate a {}", v.type_name());
+              return Err(self.raise("TypeError", msg));
             }
-          } else {
-            return Err(format!(
-              "cannot read property '{}' on a {}",
-              name,
-              receiver.type_name()
-            ));
-          };
-          self.set_reg(base, dst, value);
-        },
+          },
+          Instr::Not { dst, src } => {
+            let v = self.get_reg(base, src);
+            self.set_reg(base, dst, Value::bool(v.is_falsey()));
+          },
+          Instr::Concat { dst, a, b } => {
+            let va = self.get_reg(base, a);
+            let vb = self.get_reg(base, b);
+            let s = format!("{}{}", va, vb);
+            let v = self.heap.alloc_string(s);
+            self.set_reg(base, dst, v);
+          },
 
-        Instr::SetField {
-          obj,
-          name_const,
-          src,
-        } => {
-          let receiver = self.get_reg(base, obj);
-          let value = self.get_reg(base, src);
-          let name = self.const_as_str(func, name_const)?;
-          if receiver.is_instance() {
-            let inst = receiver.as_instance();
-            let class = inst.class.as_class();
-            let idx = *class.field_slots.get(&name).ok_or_else(|| {
-              format!("undefined field '{}' on instance of '{}'", name, class.name)
-            })?;
-            inst.fields[idx as usize].set(value);
-          } else if receiver.is_class() {
-            set_static(receiver, &name, value)?;
-          } else {
-            return Err(format!(
-              "cannot set property '{}' on a {}",
-              name,
-              receiver.type_name()
-            ));
-          }
-        },
+          Instr::Eq { dst, a, b } => {
+            let va = self.get_reg(base, a);
+            let vb = self.get_reg(base, b);
+            self.set_reg(base, dst, Value::bool(va.equals(&vb)));
+          },
+          Instr::Neq { dst, a, b } => {
+            let va = self.get_reg(base, a);
+            let vb = self.get_reg(base, b);
+            self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
+          },
+          Instr::Lt { dst, a, b } => self.compare(base, dst, a, b, "<", |x, y| x < y)?,
+          Instr::Gt { dst, a, b } => self.compare(base, dst, a, b, ">", |x, y| x > y)?,
+          Instr::Le { dst, a, b } => self.compare(base, dst, a, b, "<=", |x, y| x <= y)?,
+          Instr::Ge { dst, a, b } => self.compare(base, dst, a, b, ">=", |x, y| x >= y)?,
 
-        Instr::Invoke {
-          dst,
-          obj,
-          method_const,
-          num_args,
-        } => {
-          let receiver = self.get_reg(base, obj);
-          let method_name = self.const_as_str(func, method_const)?;
+          Instr::Jmp { offset } => {
+            self.jump(frame_idx, offset);
+          },
+          Instr::JmpIfFalse { cond, offset } => {
+            if self.get_reg(base, cond).is_falsey() {
+              self.jump(frame_idx, offset);
+            }
+          },
+          Instr::JmpIfTrue { cond, offset } => {
+            if !self.get_reg(base, cond).is_falsey() {
+              self.jump(frame_idx, offset);
+            }
+          },
 
-          if receiver.is_instance() {
-            let inst = receiver.as_instance();
-            let class_val = inst.class;
-            let found = {
-              let class = class_val.as_class();
-              if let Some(m) = class.methods.get(&method_name).copied() {
-                Some(Ok(m))
-              } else if let Some(&idx) = class.field_slots.get(&method_name) {
-                Some(Err(idx))
-              } else {
-                None
-              }
-            };
+          Instr::Call {
+            dst,
+            func: func_reg,
+            num_args,
+          } => {
+            self.dispatch_call(base, func_reg, num_args, dst)?;
+          },
+          Instr::Return { src } => {
+            let ret = self.get_reg(base, src);
+            self.close_upvalues_from(base);
+            let finished = self.frames.pop().unwrap();
+            if self.frames.len() == stop_depth {
+              return Ok(Some(ret));
+            }
+            let caller = self.frames.last().unwrap();
+            self.set_reg(caller.base, finished.dst_in_caller, ret);
+          },
 
-            match found {
-              Some(Ok(method)) => self.invoke_prebound(base, obj, method, num_args, dst)?,
-              Some(Err(idx)) => {
-                // A plain field that happens to hold a callable (e.g.
-                // `var _print = @(g) { ... }`) -- called as ordinary
-                // data, NOT as a method: no implicit self, matching
-                // what would happen if it were fetched into a variable
-                // and called from there. Overwriting the compiler's
-                // (here-irrelevant) self-duplicate register with the
-                // field's own value gives dispatch_call exactly what
-                // it needs -- the real arguments already sit right
-                // after it, at obj+2 onward.
-                let field_value = inst.fields[idx as usize].get();
-                self.set_reg(base, obj + 1, field_value);
-                self.dispatch_call(base, obj + 1, num_args, dst)?;
-              },
+          Instr::Print { src } => {
+            let v = self.get_reg(base, src);
+            println!("{}", v);
+          },
+
+          Instr::GetGlobal { dst, name_const } => {
+            let name = self.const_as_str(func, name_const)?;
+            let found = self.globals.get(&name).copied();
+            let v = match found {
+              Some(v) => v,
               None => {
-                return Err(format!(
-                  "undefined property '{}' on instance of '{}'",
-                  method_name,
-                  class_val.as_class().name
-                ));
+                return Err(self.raise("UndefinedError", format!("undefined global '{}'", name)));
               },
+            };
+            self.set_reg(base, dst, v);
+          },
+          Instr::SetGlobal { name_const, src } => {
+            let name = self.const_as_str(func, name_const)?;
+            let v = self.get_reg(base, src);
+            self.globals.insert(name, v);
+          },
+
+          Instr::Closure { dst, proto_const } => {
+            let proto_val = func.chunk.constants[proto_const as usize];
+            if !proto_val.is_func() {
+              return Err(self.raise("TypeError", "Closure operand is not a function"));
             }
-          } else if receiver.is_class() {
-            let callee = lookup_static(receiver, &method_name).ok_or_else(|| {
-              format!(
-                "undefined static member '{}' on class '{}'",
-                method_name,
-                receiver.as_class().name
-              )
-            })?;
-            if callee.is_closure() && callee.as_closure().function.as_func().is_method {
-              self.invoke_prebound(base, obj, callee, num_args, dst)?;
+            let proto = proto_val.as_func();
+
+            let mut captured = Vec::with_capacity(proto.upvalues.len());
+            for desc in &proto.upvalues {
+              let upval = match *desc {
+                UpvalueDescriptor::Local(reg) => {
+                  let abs_index = base + reg as usize;
+                  self.capture_upvalue(abs_index)
+                },
+                UpvalueDescriptor::Upvalue(idx) => {
+                  let current_closure = unsafe { &*closure_ptr };
+                  current_closure.upvalues[idx as usize]
+                },
+              };
+              captured.push(upval);
+            }
+
+            let closure_val = self.heap.alloc_closure(ObjClosure {
+              function: proto_val,
+              upvalues: captured,
+            });
+            self.set_reg(base, dst, closure_val);
+          },
+          Instr::GetUpval { dst, idx } => {
+            let current_closure = unsafe { &*closure_ptr };
+            let upval_val = current_closure.upvalues[idx as usize];
+            if !upval_val.is_upvalue() {
+              return Err(self.raise("TypeError", "GetUpval operand is not an upvalue"));
+            }
+            let v = match upval_val.as_upvalue().get() {
+              UpvalueState::Open(abs_idx) => self.registers[abs_idx],
+              UpvalueState::Closed(v) => v,
+            };
+            self.set_reg(base, dst, v);
+          },
+          Instr::SetUpval { idx, src } => {
+            let v = self.get_reg(base, src);
+            let current_closure = unsafe { &*closure_ptr };
+            let upval_val = current_closure.upvalues[idx as usize];
+            if !upval_val.is_upvalue() {
+              return Err(self.raise("TypeError", "SetUpval operand is not an upvalue"));
+            }
+            let cell = upval_val.as_upvalue();
+            match cell.get() {
+              UpvalueState::Open(abs_idx) => self.registers[abs_idx] = v,
+              UpvalueState::Closed(_) => cell.set(UpvalueState::Closed(v)),
+            }
+          },
+          Instr::CloseUpvalues { from } => {
+            self.close_upvalues_from(base + from as usize);
+          },
+          Instr::MakeList { dst, start, count } => {
+            let items: Vec<Value> = (0..count).map(|i| self.get_reg(base, start + i)).collect();
+            let list_val = self.heap.alloc_list(items);
+            self.set_reg(base, dst, list_val);
+          },
+          Instr::MakeDict { dst, start, count } => {
+            let pairs: Vec<(Value, Value)> = (0..count)
+              .map(|i| {
+                (
+                  self.get_reg(base, start + i),
+                  self.get_reg(base, start + count + i),
+                )
+              })
+              .collect();
+            let dict_val = self.heap.alloc_dict(pairs);
+            self.set_reg(base, dst, dict_val);
+          },
+
+          Instr::MakeClass {
+            dst,
+            name_const,
+            superclass,
+          } => {
+            let name = self.const_as_str(func, name_const)?;
+            let superclass_val = match superclass {
+              Some(r) => {
+                let v = self.get_reg(base, r);
+                if !v.is_class() {
+                  let msg = format!(
+                    "superclass of '{}' is not a class (got a {})",
+                    name,
+                    v.type_name()
+                  );
+                  return Err(self.raise("TypeError", msg));
+                }
+                Some(v)
+              },
+              None => None,
+            };
+
+            let (methods, field_slots, field_count, constructor) = match superclass_val {
+              Some(sup) => {
+                let s = sup.as_class();
+                (
+                  s.methods.clone(),
+                  s.field_slots.clone(),
+                  s.field_count,
+                  s.constructor,
+                )
+              },
+              None => (HashMap::new(), HashMap::new(), 0, None),
+            };
+
+            let class_val = self.heap.alloc_class(ObjClass {
+              name,
+              superclass: superclass_val,
+              methods,
+              field_slots,
+              field_count,
+              own_field_initializer: None,
+              constructor,
+              static_slots: HashMap::new(),
+              statics: Vec::new(),
+            });
+            self.set_reg(base, dst, class_val);
+          },
+
+          Instr::DeclareField { class, name_const } => {
+            let class_val = self.get_reg(base, class);
+            let name = self.const_as_str(func, name_const)?;
+            let mut c = class_val.as_class_mut();
+
+            // Idempotent: a name that's already present -- inherited from
+            // the superclass (invisible to the compiler's own self.x=...
+            // scan, which only sees this class's own AST -- see
+            // Compiler::compile_class_decl) or already declared earlier
+            // in this same class -- keeps its EXISTING slot rather than
+            // being handed a new one. Reassigning would silently desync
+            // an inherited field initializer (which writes to the OLD
+            // index) from every later read/write of the same name
+            // (which would then resolve to the NEW index instead).
+            if !c.field_slots.contains_key(&name) {
+              let idx = c.field_count;
+              c.field_slots.insert(name, idx);
+              c.field_count += 1;
+            }
+          },
+
+          Instr::SetFieldInit { class, src } => {
+            let class_val = self.get_reg(base, class);
+            let init = self.get_reg(base, src);
+            class_val.as_class_mut().own_field_initializer = Some(init);
+          },
+
+          Instr::SetMethod {
+            class,
+            name_const,
+            src,
+          } => {
+            let class_val = self.get_reg(base, class);
+            let name = self.const_as_str(func, name_const)?;
+            let method = self.get_reg(base, src);
+            class_val.as_class_mut().methods.insert(name, method);
+          },
+
+          Instr::DeclareStatic {
+            class,
+            name_const,
+            src,
+          } => {
+            let class_val = self.get_reg(base, class);
+            let name = self.const_as_str(func, name_const)?;
+            let value = self.get_reg(base, src);
+            let mut c = class_val.as_class_mut();
+            let idx = c.statics.len() as u16;
+            c.static_slots.insert(name, idx);
+            c.statics.push(Cell::new(value));
+          },
+
+          Instr::FinalizeClass { class, name_const } => {
+            let class_val = self.get_reg(base, class);
+            let name = self.const_as_str(func, name_const)?;
+            let mut c = class_val.as_class_mut();
+            if let Some(ctor) = c.methods.get(&name).copied() {
+              c.constructor = Some(ctor);
+            }
+          },
+
+          Instr::GetField {
+            dst,
+            obj,
+            name_const,
+          } => {
+            let receiver = self.get_reg(base, obj);
+            let name = self.const_as_str(func, name_const)?;
+            let value = if receiver.is_instance() {
+              let inst = receiver.as_instance();
+              let class = inst.class.as_class();
+              if let Some(&idx) = class.field_slots.get(&name) {
+                inst.fields[idx as usize].get()
+              } else if let Some(method) = class.methods.get(&name).copied() {
+                // Accessed without an immediate call -- e.g. `var f =
+                // obj.method` -- so unlike Invoke, this can't skip
+                // allocation: bind the receiver into a real ObjBoundMethod
+                // so the resulting value is independently callable later.
+                self.heap.alloc_bound_method(receiver, method)
+              } else {
+                let msg = format!(
+                  "undefined property '{}' on instance of '{}'",
+                  name, class.name
+                );
+                return Err(self.raise("PropertyError", msg));
+              }
+            } else if receiver.is_class() {
+              let raw = lookup_static(receiver, &name)
+                .ok_or_else(|| {
+                  format!(
+                    "undefined static member '{}' on class '{}'",
+                    name,
+                    receiver.as_class().name
+                  )
+                })
+                .map_err(|msg| self.raise("PropertyError", msg))?;
+              // A static METHOD's frame reserves register 0 for a
+              // receiver it never reads (see ObjFunction::is_method's doc
+              // comment) -- fetched bare like this, nothing would
+              // otherwise fill that register at call time, so wrap it
+              // with a harmless dummy nil receiver. A static field
+              // holding a plain closure value (`static var f = @(x){}`)
+              // has no such reservation and passes through unwrapped.
+              if raw.is_closure() && raw.as_closure().function.as_func().is_method {
+                self.heap.alloc_bound_method(Value::nil(), raw)
+              } else {
+                raw
+              }
             } else {
-              // A static field holding a plain callable (`static var f
-              // = @(x){}`), not a declared `static` method -- no
-              // reserved receiver slot, so treat exactly like the
-              // instance field-fallback above.
-              self.set_reg(base, obj + 1, callee);
-              self.dispatch_call(base, obj + 1, num_args, dst)?;
+              let msg = format!(
+                "cannot read property '{}' on a {}",
+                name,
+                receiver.type_name()
+              );
+              return Err(self.raise("TypeError", msg));
+            };
+            self.set_reg(base, dst, value);
+          },
+
+          Instr::SetField {
+            obj,
+            name_const,
+            src,
+          } => {
+            let receiver = self.get_reg(base, obj);
+            let value = self.get_reg(base, src);
+            let name = self.const_as_str(func, name_const)?;
+            if receiver.is_instance() {
+              let inst = receiver.as_instance();
+              let class = inst.class.as_class();
+              let idx = *class
+                .field_slots
+                .get(&name)
+                .ok_or_else(|| {
+                  format!("undefined field '{}' on instance of '{}'", name, class.name)
+                })
+                .map_err(|msg| self.raise("PropertyError", msg))?;
+              inst.fields[idx as usize].set(value);
+            } else if receiver.is_class() {
+              set_static(receiver, &name, value).map_err(|msg| self.raise("PropertyError", msg))?;
+            } else {
+              let msg = format!(
+                "cannot set property '{}' on a {}",
+                name,
+                receiver.type_name()
+              );
+              return Err(self.raise("TypeError", msg));
             }
-          } else {
-            return Err(format!(
-              "cannot call method '{}' on a {}",
-              method_name,
-              receiver.type_name()
-            ));
-          }
-        },
+          },
 
-        Instr::InvokeSuper {
-          dst,
-          superclass,
-          method_const,
-          num_args,
-        } => {
-          let super_val = self.get_reg(base, superclass);
-          if !super_val.is_class() {
-            return Err(format!(
-              "'parent' does not refer to a class (got a {})",
-              super_val.type_name()
-            ));
-          }
-          let method_name = self.const_as_str(func, method_const)?;
-          let found = {
-            let class = super_val.as_class();
-            class.methods.get(&method_name).copied()
-          };
+          Instr::Invoke {
+            dst,
+            obj,
+            method_const,
+            num_args,
+          } => {
+            let receiver = self.get_reg(base, obj);
+            let method_name = self.const_as_str(func, method_const)?;
 
-          if let Some(method) = found {
-            self.invoke_prebound(base, superclass, method, num_args, dst)?;
-          } else {
-            // Not a method anywhere up the (statically fixed) chain --
-            // fields were never virtual to begin with, so fall back to
-            // self's own field slots directly, same as Invoke's own
-            // fallback. `self` is already sitting in register
-            // `superclass + 1` (placed there by
-            // Compiler::compile_invoke_super), so reuse it as both the
-            // field owner and, if found, the overwritten callee
-            // register.
-            let self_val = self.get_reg(base, superclass + 1);
-            if !self_val.is_instance() {
-              return Err(format!(
-                "undefined method '{}' on superclass '{}'",
+            if receiver.is_instance() {
+              let inst = receiver.as_instance();
+              let class_val = inst.class;
+              let found = {
+                let class = class_val.as_class();
+                if let Some(m) = class.methods.get(&method_name).copied() {
+                  Some(Ok(m))
+                } else if let Some(&idx) = class.field_slots.get(&method_name) {
+                  Some(Err(idx))
+                } else {
+                  None
+                }
+              };
+
+              match found {
+                Some(Ok(method)) => self.invoke_prebound(base, obj, method, num_args, dst)?,
+                Some(Err(idx)) => {
+                  // A plain field that happens to hold a callable (e.g.
+                  // `var _print = @(g) { ... }`) -- called as ordinary
+                  // data, NOT as a method: no implicit self, matching
+                  // what would happen if it were fetched into a variable
+                  // and called from there. Overwriting the compiler's
+                  // (here-irrelevant) self-duplicate register with the
+                  // field's own value gives dispatch_call exactly what
+                  // it needs -- the real arguments already sit right
+                  // after it, at obj+2 onward.
+                  let field_value = inst.fields[idx as usize].get();
+                  self.set_reg(base, obj + 1, field_value);
+                  self.dispatch_call(base, obj + 1, num_args, dst)?;
+                },
+                None => {
+                  let msg = format!(
+                    "undefined property '{}' on instance of '{}'",
+                    method_name,
+                    class_val.as_class().name
+                  );
+                  return Err(self.raise("PropertyError", msg));
+                },
+              }
+            } else if receiver.is_class() {
+              let callee = lookup_static(receiver, &method_name)
+                .ok_or_else(|| {
+                  format!(
+                    "undefined static member '{}' on class '{}'",
+                    method_name,
+                    receiver.as_class().name
+                  )
+                })
+                .map_err(|msg| self.raise("PropertyError", msg))?;
+              if callee.is_closure() && callee.as_closure().function.as_func().is_method {
+                self.invoke_prebound(base, obj, callee, num_args, dst)?;
+              } else {
+                // A static field holding a plain callable (`static var f
+                // = @(x){}`), not a declared `static` method -- no
+                // reserved receiver slot, so treat exactly like the
+                // instance field-fallback above.
+                self.set_reg(base, obj + 1, callee);
+                self.dispatch_call(base, obj + 1, num_args, dst)?;
+              }
+            } else {
+              let msg = format!(
+                "cannot call method '{}' on a {}",
                 method_name,
-                super_val.as_class().name
-              ));
+                receiver.type_name()
+              );
+              return Err(self.raise("TypeError", msg));
             }
-            let inst = self_val.as_instance();
-            let idx = *inst
-              .class
-              .as_class()
-              .field_slots
-              .get(&method_name)
-              .ok_or_else(|| {
-                format!(
+          },
+
+          Instr::InvokeSuper {
+            dst,
+            superclass,
+            method_const,
+            num_args,
+          } => {
+            let super_val = self.get_reg(base, superclass);
+            if !super_val.is_class() {
+              let msg = format!(
+                "'parent' does not refer to a class (got a {})",
+                super_val.type_name()
+              );
+              return Err(self.raise("TypeError", msg));
+            }
+
+            let method_name = self.const_as_str(func, method_const)?;
+            let found = {
+              let class = super_val.as_class();
+              class.methods.get(&method_name).copied()
+            };
+
+            if let Some(method) = found {
+              self.invoke_prebound(base, superclass, method, num_args, dst)?;
+            } else {
+              // Not a method anywhere up the (statically fixed) chain --
+              // fields were never virtual to begin with, so fall back to
+              // self's own field slots directly, same as Invoke's own
+              // fallback. `self` is already sitting in register
+              // `superclass + 1` (placed there by
+              // Compiler::compile_invoke_super), so reuse it as both the
+              // field owner and, if found, the overwritten callee
+              // register.
+              let self_val = self.get_reg(base, superclass + 1);
+              if !self_val.is_instance() {
+                let msg = format!(
                   "undefined method '{}' on superclass '{}'",
                   method_name,
                   super_val.as_class().name
-                )
-              })?;
-            let field_value = inst.fields[idx as usize].get();
-            self.set_reg(base, superclass + 1, field_value);
-            self.dispatch_call(base, superclass + 1, num_args, dst)?;
-          }
-        },
+                );
+                return Err(self.raise("PropertyError", msg));
+              }
 
-        Instr::GetIndex { dst, obj, idx } => {
-          let ov = self.get_reg(base, obj);
-          let iv = self.get_reg(base, idx);
-          let result = self.index_get(ov, iv)?;
-          self.set_reg(base, dst, result);
-        },
-        Instr::SetIndex { obj, idx, src } => {
-          let ov = self.get_reg(base, obj);
-          let iv = self.get_reg(base, idx);
-          let sv = self.get_reg(base, src);
-          self.index_set(ov, iv, sv)?;
-        },
-        Instr::GetSlice { dst, obj, lo, hi } => {
-          let ov = self.get_reg(base, obj);
-          let lov = self.get_reg(base, lo);
-          let hiv = self.get_reg(base, hi);
-          let result = self.index_slice(ov, lov, hiv)?;
-          self.set_reg(base, dst, result);
-        },
+              let inst = self_val.as_instance();
+              let idx = *inst
+                .class
+                .as_class()
+                .field_slots
+                .get(&method_name)
+                .ok_or_else(|| {
+                  format!(
+                    "undefined method '{}' on superclass '{}'",
+                    method_name,
+                    super_val.as_class().name
+                  )
+                })
+                .map_err(|msg| self.raise("PropertyError", msg))?;
 
-        Instr::MakeRange { dst, lower, upper } => {
-          let lo = self.get_reg(base, lower);
-          let hi = self.get_reg(base, upper);
-          if !lo.is_number() || !hi.is_number() {
-            return Err(format!(
-              "range bounds must be numbers, got {} and {}",
-              lo.type_name(),
-              hi.type_name()
-            ));
-          }
-          let range_val = self.heap.alloc_range(lo.as_number(), hi.as_number());
-          self.set_reg(base, dst, range_val);
-        },
-        Instr::UsingJump { subject, table_idx } => {
-          let v = self.get_reg(base, subject);
-          if let Some(key) = value_to_jump_key(v) {
-            if let Some(&target) = func.chunk.jump_tables[table_idx as usize].get(&key) {
-              self.frames[frame_idx].ip = target;
+              let field_value = inst.fields[idx as usize].get();
+              self.set_reg(base, superclass + 1, field_value);
+              self.dispatch_call(base, superclass + 1, num_args, dst)?;
             }
+          },
+
+          Instr::GetIndex { dst, obj, idx } => {
+            let ov = self.get_reg(base, obj);
+            let iv = self.get_reg(base, idx);
+            let result = self.index_get(ov, iv)?;
+            self.set_reg(base, dst, result);
+          },
+          Instr::SetIndex { obj, idx, src } => {
+            let ov = self.get_reg(base, obj);
+            let iv = self.get_reg(base, idx);
+            let sv = self.get_reg(base, src);
+            self.index_set(ov, iv, sv)?;
+          },
+          Instr::GetSlice { dst, obj, lo, hi } => {
+            let ov = self.get_reg(base, obj);
+            let lov = self.get_reg(base, lo);
+            let hiv = self.get_reg(base, hi);
+            let result = self.index_slice(ov, lov, hiv)?;
+            self.set_reg(base, dst, result);
+          },
+
+          Instr::MakeRange { dst, lower, upper } => {
+            let lo = self.get_reg(base, lower);
+            let hi = self.get_reg(base, upper);
+            if !lo.is_number() || !hi.is_number() {
+              let msg = format!(
+                "range bounds must be numbers, got {} and {}",
+                lo.type_name(),
+                hi.type_name()
+              );
+              return Err(self.raise("TypeError", msg));
+            }
+            let range_val = self.heap.alloc_range(lo.as_number(), hi.as_number());
+            self.set_reg(base, dst, range_val);
+          },
+          Instr::UsingJump { subject, table_idx } => {
+            let v = self.get_reg(base, subject);
+            if let Some(key) = value_to_jump_key(v) {
+              if let Some(&target) = func.chunk.jump_tables[table_idx as usize].get(&key) {
+                self.frames[frame_idx].ip = target;
+              }
+            }
+            // A miss (unhashable value, or just no matching entry) is not
+            // an error -- it simply falls through to the next instruction,
+            // where the sequential dynamic-label checks (and the default
+            // case) live. See Compiler::compile_using.
+          },
+
+          Instr::Raise { src } => {
+            let value = self.get_reg(base, src);
+            if !self.is_exception_value(value) {
+              let msg = format!(
+                "can only raise an Exception or subclass, got a {}",
+                value.type_name()
+              );
+              return Err(self.raise("TypeError", msg));
+            }
+            let value = self.attach_stacktrace(value);
+            return Err(value);
+          },
+
+          Instr::PushCatch { var_reg, offset } => {
+            let resume_ip = (self.frames[frame_idx].ip as isize + offset as isize) as usize;
+            self.catch_stack.push(CatchHandler {
+              frame_depth: self.frames.len(),
+              resume_ip,
+              var_reg,
+            });
+          },
+
+          Instr::PopCatch => {
+            self.catch_stack.pop();
+          },
+        }
+        Ok(None)
+      })();
+
+      match step {
+        Ok(Some(ret)) => return Ok(ret),
+        Ok(None) => continue,
+        Err(exc) => {
+          let claims_it = matches!(self.catch_stack.last(), Some(h) if h.frame_depth > stop_depth);
+          if claims_it {
+            let handler = self.catch_stack.pop().unwrap();
+            // Close upvalues into any frame about to be discarded --
+            // without this, a closure created (and possibly already
+            // escaped) inside the unwound call chain could keep
+            // pointing at a register that's now free for reuse.
+            if let Some(discard_base) = self.frames.get(handler.frame_depth).map(|f| f.base) {
+              self.close_upvalues_from(discard_base);
+            }
+            self.frames.truncate(handler.frame_depth);
+            let top = self.frames.last_mut().expect("catch handler left no frame");
+            top.ip = handler.resume_ip;
+            let top_base = top.base;
+            if let Some(reg) = handler.var_reg {
+              self.set_reg(top_base, reg, exc);
+            }
+            continue;
           }
-          // A miss (unhashable value, or just no matching entry) is not
-          // an error -- it simply falls through to the next instruction,
-          // where the sequential dynamic-label checks (and the default
-          // case) live. See Compiler::compile_using.
+          return Err(exc);
         },
       }
     }
@@ -1126,10 +1364,10 @@ impl VM {
     }
   }
 
-  fn const_as_str(&self, func: &ObjFunction, idx: u16) -> RunResult<String> {
+  fn const_as_str(&mut self, func: &ObjFunction, idx: u16) -> RunResult<String> {
     let v = func.chunk.constants[idx as usize];
     if !v.is_string() {
-      return Err("expected a string constant for a global name".to_string());
+      return Err(self.raise("TypeError", "expected a string constant for a global name"));
     }
     Ok(v.as_str().to_string())
   }
@@ -1176,12 +1414,13 @@ impl VM {
       return Ok(self.set_reg(base, dst, v));
     }
 
-    Err(format!(
+    let msg = format!(
       "operator '{}' expects numbers, got {} and {}",
       op_name,
       va.type_name(),
       vb.type_name()
-    ))
+    );
+    Err(self.raise("TypeError", msg))
   }
 
   fn binary_numeric(
@@ -1206,12 +1445,13 @@ impl VM {
       return Ok(self.set_reg(base, dst, v));
     }
 
-    Err(format!(
+    let msg = format!(
       "operator '{}' not defined for {} and {}",
       op_name,
       va.type_name(),
       vb.type_name()
-    ))
+    );
+    Err(self.raise("TypeError", msg))
   }
 
   fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
@@ -1248,12 +1488,13 @@ impl VM {
       return Ok(self.set_reg(base, dst, v));
     }
 
-    Err(format!(
+    let msg = format!(
       "operator '{}' not defined for {} and {}",
       op_name,
       va.type_name(),
       vb.type_name()
-    ))
+    );
+    Err(self.raise("TypeError", msg))
   }
 
   fn binary_mult(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
@@ -1291,12 +1532,13 @@ impl VM {
       return Ok(self.set_reg(base, dst, v));
     }
 
-    Err(format!(
+    let msg = format!(
       "operator '{}' not defined for {} and {}",
       op_name,
       va.type_name(),
       vb.type_name()
-    ))
+    );
+    Err(self.raise("TypeError", msg))
   }
 
   fn compare(
@@ -1311,12 +1553,13 @@ impl VM {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
     if !va.is_number() || !vb.is_number() {
-      return Err(format!(
+      let msg = format!(
         "operator '{}' not defined for {} and {}",
         op_name,
         va.type_name(),
         vb.type_name()
-      ));
+      );
+      return Err(self.raise("TypeError", msg));
     }
     self.set_reg(base, dst, Value::bool(op(va.as_number(), vb.as_number())));
     Ok(())
@@ -1465,6 +1708,77 @@ impl VM {
   }
 }
 
+impl VM {
+  fn value_as_index(&mut self, index: Value) -> RunResult<i64> {
+    if !index.is_number() {
+      let msg = format!("index must be a number, got {}", index.type_name());
+      return Err(self.raise("TypeError", msg));
+    }
+    let n = index.as_number();
+    if n.fract() != 0.0 {
+      return Err(self.raise("TypeError", format!("index must be an integer, got {}", n)));
+    }
+    Ok(n as i64)
+  }
+
+  fn coerce_index(&mut self, index: Value, len: usize) -> RunResult<usize> {
+    let i = self.value_as_index(index)?;
+    if i < 0 || i as usize >= len {
+      let msg = format!("index {} out of bounds (length {})", i, len);
+      return Err(self.raise("RangeError", msg));
+    }
+    Ok(i as usize)
+  }
+
+  fn resolve_slice_bounds(
+    &mut self,
+    lo: Value,
+    hi: Value,
+    len: usize,
+  ) -> RunResult<Option<(usize, usize)>> {
+    if len == 0 {
+      return Ok(None);
+    }
+
+    let lo = if lo.is_nil() {
+      0
+    } else {
+      let i = self.value_as_index(lo)?;
+      if i < 0 {
+        return Err(self.raise(
+          "RangeError",
+          format!("slice lower bound {} cannot be negative", i),
+        ));
+      }
+      i as usize
+    };
+
+    let hi = if hi.is_nil() {
+      len - 1
+    } else {
+      let i = self.value_as_index(hi)?;
+      if i < 0 {
+        return Err(self.raise(
+          "RangeError",
+          format!("slice upper bound {} cannot be negative", i),
+        ));
+      }
+      i as usize
+    };
+
+    if lo >= len || hi >= len {
+      let msg = format!("slice bounds {}..{} out of range (length {})", lo, hi, len);
+      return Err(self.raise("RangeError", msg));
+    }
+
+    if lo > hi {
+      return Ok(None);
+    }
+
+    Ok(Some((lo, hi)))
+  }
+}
+
 /// Walk `class_val`'s superclass chain looking for a static member
 /// named `name`, checking each class's own (never inherited-in)
 /// `static_slots` table -- see `ObjClass`'s doc comment for why statics
@@ -1496,79 +1810,6 @@ fn set_static(class_val: Value, name: &str, value: Value) -> Result<(), String> 
     name,
     class_val.as_class().name
   ))
-}
-
-/// A raw index Value must be a whole number -- fractional or non-number
-/// indices are always a hard error, never silently truncated.
-fn value_as_index(index: Value) -> RunResult<i64> {
-  if !index.is_number() {
-    return Err(format!("index must be a number, got {}", index.type_name()));
-  }
-  let n = index.as_number();
-  if n.fract() != 0.0 {
-    return Err(format!("index must be an integer, got {}", n));
-  }
-  Ok(n as i64)
-}
-
-/// Shared bounds-checking for GetIndex/SetIndex on List/Bytes/String --
-/// negative indices are always rejected (no wraparound-from-end
-/// support), and an index past the end is an error rather than a no-op.
-fn coerce_index(index: Value, len: usize) -> RunResult<usize> {
-  let i = value_as_index(index)?;
-  if i < 0 || i as usize >= len {
-    return Err(format!("index {} out of bounds (length {})", i, len));
-  }
-  Ok(i as usize)
-}
-
-/// Resolves a slice's (possibly-nil) lower/upper bound registers into a
-/// concrete INCLUSIVE `(lo, hi)` range. Nil means "use the default" --
-/// 0 for the lower bound, the last valid index for the upper -- whether
-/// that Nil came from an explicitly omitted bound (see
-/// Parser::finish_index) or a genuinely nil-valued expression; both
-/// resolve identically here. Returns `None` (rather than an error) for
-/// a structurally empty result -- an empty receiver, or a lower bound
-/// past the upper one (`list[3, 1]`) -- since an empty slice is a valid
-/// answer, not a bounds violation. An in-range-but-reversed request
-/// isn't reordered into an ascending one; it's just empty.
-fn resolve_slice_bounds(lo: Value, hi: Value, len: usize) -> RunResult<Option<(usize, usize)>> {
-  if len == 0 {
-    return Ok(None);
-  }
-
-  let lo = if lo.is_nil() {
-    0
-  } else {
-    let i = value_as_index(lo)?;
-    if i < 0 {
-      return Err(format!("slice lower bound {} cannot be negative", i));
-    }
-    i as usize
-  };
-
-  let hi = if hi.is_nil() {
-    len - 1
-  } else {
-    let i = value_as_index(hi)?;
-    if i < 0 {
-      return Err(format!("slice upper bound {} cannot be negative", i));
-    }
-    i as usize
-  };
-
-  if lo >= len || hi >= len {
-    return Err(format!(
-      "slice bounds {}..{} out of range (length {})",
-      lo, hi, len
-    ));
-  }
-
-  if lo > hi {
-    return Ok(None);
-  }
-
-  Ok(Some((lo, hi)))
 }
 
 /// Converts a runtime `using`-subject Value into the same hashable key
