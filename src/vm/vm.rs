@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
-use crate::vm::chunk::Instr;
+use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
   Heap, Obj, ObjClass, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, ZuriContext,
@@ -1066,6 +1066,32 @@ impl VM {
           let result = self.index_slice(ov, lov, hiv)?;
           self.set_reg(base, dst, result);
         },
+
+        Instr::MakeRange { dst, lower, upper } => {
+          let lo = self.get_reg(base, lower);
+          let hi = self.get_reg(base, upper);
+          if !lo.is_number() || !hi.is_number() {
+            return Err(format!(
+              "range bounds must be numbers, got {} and {}",
+              lo.type_name(),
+              hi.type_name()
+            ));
+          }
+          let range_val = self.heap.alloc_range(lo.as_number(), hi.as_number());
+          self.set_reg(base, dst, range_val);
+        },
+        Instr::UsingJump { subject, table_idx } => {
+          let v = self.get_reg(base, subject);
+          if let Some(key) = value_to_jump_key(v) {
+            if let Some(&target) = func.chunk.jump_tables[table_idx as usize].get(&key) {
+              self.frames[frame_idx].ip = target;
+            }
+          }
+          // A miss (unhashable value, or just no matching entry) is not
+          // an error -- it simply falls through to the next instruction,
+          // where the sequential dynamic-label checks (and the default
+          // case) live. See Compiler::compile_using.
+        },
       }
     }
   }
@@ -1406,7 +1432,7 @@ impl VM {
           Self::mark_root(b.receiver, &mut reachable, &mut worklist);
           Self::mark_root(b.method, &mut reachable, &mut worklist);
         },
-        Obj::Str(_) | Obj::Bytes(_) | Obj::BigInt(_) | Obj::Native(_) => {},
+        Obj::Str(_) | Obj::Bytes(_) | Obj::BigInt(_) | Obj::Native(_) | Obj::Range { .. } => {},
       }
     }
 
@@ -1543,4 +1569,24 @@ fn resolve_slice_bounds(lo: Value, hi: Value, len: usize) -> RunResult<Option<(u
   }
 
   Ok(Some((lo, hi)))
+}
+
+/// Converts a runtime `using`-subject Value into the same hashable key
+/// space `Instr::UsingJump`'s jump table was built in at compile time
+/// (see `expr_as_jump_key` in compiler.rs). `None` for anything that
+/// was never eligible to be a constant case label to begin with (list,
+/// dict, instance, range, etc.) -- always falls through to the
+/// sequential dynamic-label path rather than ever consulting the table.
+fn value_to_jump_key(v: Value) -> Option<JumpKey> {
+  if v.is_nil() {
+    Some(JumpKey::Nil)
+  } else if v.is_bool() {
+    Some(JumpKey::Bool(v.as_bool()))
+  } else if v.is_number() {
+    Some(JumpKey::Number(v.as_number().to_bits()))
+  } else if v.is_string() {
+    Some(JumpKey::Str(v.as_str().to_string()))
+  } else {
+    None
+  }
 }

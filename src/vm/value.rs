@@ -393,6 +393,19 @@ impl Value {
     }
   }
 
+  #[inline]
+  pub fn is_range(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Range { .. })
+  }
+
+  pub fn as_range(&self) -> (f64, f64) {
+    debug_assert!(self.is_range());
+    match unsafe { &*self.as_obj() } {
+      Obj::Range { lower, upper } => (*lower, *upper),
+      _ => unreachable!("as_range() called on a non-range Value"),
+    }
+  }
+
   pub fn as_upvalue(&self) -> &Cell<UpvalueState> {
     debug_assert!(self.is_upvalue());
     match unsafe { &*self.as_obj() } {
@@ -478,6 +491,16 @@ impl Value {
                 .iter()
                 .all(|(k, v)| b.iter().any(|(k2, v2)| k.equals(k2) && v.equals(v2)))
           },
+          (
+            Obj::Range {
+              lower: l1,
+              upper: u1,
+            },
+            Obj::Range {
+              lower: l2,
+              upper: u2,
+            },
+          ) => l1 == l2 && u1 == u2,
           _ => false,
         };
       }
@@ -508,6 +531,7 @@ impl Value {
           Obj::Upvalue(_) => "upvalue",
           Obj::Class(_) => "class",
           Obj::Instance(_) => "instance",
+          Obj::Range { .. } => "range",
         }
       }
     } else {
@@ -586,6 +610,7 @@ impl std::fmt::Display for Value {
             }
             write!(f, "}}")
           },
+          Obj::Range { lower, upper } => write!(f, "{}..{}", lower, upper),
         }
       }
     } else {

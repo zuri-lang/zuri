@@ -55,6 +55,15 @@ pub enum Obj {
   /// mutation.
   Class(RefCell<ObjClass>),
   Instance(ObjInstance),
+  /// A `lower..upper` range value -- valid in either direction (see
+  /// Expr::Range's compilation in compiler.rs). Stored as raw f64s, not
+  /// Values, specifically so this is a GC leaf: nothing here is ever a
+  /// heap pointer, so the mark phase's worklist never needs to descend
+  /// into one (see VM::collect_garbage's Obj::Range arm).
+  Range {
+    lower: f64,
+    upper: f64,
+  },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -316,6 +325,7 @@ impl Heap {
             + c.static_slots.len() * 32
         },
         Obj::Instance(i) => i.fields.len() * size_of::<Cell<Value>>(),
+        Obj::Range { .. } => 0,
       }
   }
 
@@ -400,6 +410,10 @@ impl Heap {
       class,
       fields: vec![Cell::new(Value::nil()); field_count],
     }))
+  }
+
+  pub fn alloc_range(&mut self, lower: f64, upper: f64) -> Value {
+    self.alloc(Obj::Range { lower, upper })
   }
 
   /// Drop every object whose address isn't in `reachable`, then

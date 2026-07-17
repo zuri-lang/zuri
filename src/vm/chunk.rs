@@ -1,4 +1,5 @@
 use core::fmt;
+use std::collections::HashMap;
 
 use crate::vm::value::Value;
 
@@ -332,12 +333,62 @@ pub enum Instr {
     lo: u8,
     hi: u8,
   },
+
+  /// `lower..upper` -- valid in either direction (`upper` may be less
+  /// than, equal to, or greater than `lower`); both bounds must resolve
+  /// to numbers at runtime (checked in Instr::MakeRange's own handler).
+  MakeRange {
+    dst: u8,
+    lower: u8,
+    upper: u8,
+  },
+
+  /// Dispatch table for a `using` statement's CONSTANT case labels --
+  /// built once at compile time (see Compiler::compile_using) as
+  /// `chunk.jump_tables[table_idx]`. A hit sets `ip` directly to that
+  /// case body's absolute instruction index in O(1), regardless of how
+  /// many `when` arms the statement has. A miss (subject's value isn't
+  /// hashable, or it just doesn't match any constant label) falls
+  /// through to the next instruction, where any NON-constant (dynamic)
+  /// labels are checked sequentially instead.
+  UsingJump {
+    subject: u8,
+    table_idx: u16,
+  },
+}
+
+/// A compile-time-constant `using` case label's value, in a form that's
+/// both `Hash` and `Eq` -- `Value` itself can't be (NaN-boxed f64 bit
+/// patterns don't have well-behaved hashing/equality for arbitrary
+/// floats), so this is a small, deliberately narrow parallel
+/// representation built only from the handful of AST literal shapes
+/// `Compiler::compile_using` treats as constant (see `expr_as_jump_key`
+/// in compiler.rs) and the matching runtime Values that can appear as a
+/// `using` subject (see `value_to_jump_key` in vm.rs). A label/subject
+/// that isn't one of these -- a list, dict, instance, negative-number
+/// literal, BigNumber, etc. -- always falls back to the sequential
+/// dynamic-label path, never into this table.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum JumpKey {
+  Nil,
+  Bool(bool),
+  /// The label/subject's exact `f64::to_bits()` pattern -- an exact
+  /// bit-for-bit match, not IEEE `==`, so e.g. `-0.0` and `0.0` (equal
+  /// under `==`, different bit patterns) could in principle land in
+  /// different entries. Not a concern for any label written as an
+  /// ordinary integer or float literal, which is the only way a key
+  /// enters this table to begin with.
+  Number(u64),
+  Str(String),
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct Chunk {
   pub code: Vec<Instr>,
   pub constants: Vec<Value>,
+  /// One entry per `using` statement that has at least one constant
+  /// case label -- see `Instr::UsingJump`.
+  pub jump_tables: Vec<HashMap<JumpKey, usize>>,
 }
 
 impl Chunk {
@@ -345,12 +396,18 @@ impl Chunk {
     Chunk {
       code: Vec::new(),
       constants: Vec::new(),
+      jump_tables: Vec::new(),
     }
   }
 
   pub fn add_constant(&mut self, v: Value) -> u16 {
     self.constants.push(v);
     (self.constants.len() - 1) as u16
+  }
+
+  pub fn add_jump_table(&mut self) -> u16 {
+    self.jump_tables.push(HashMap::new());
+    (self.jump_tables.len() - 1) as u16
   }
 
   pub fn emit(&mut self, instr: Instr) -> usize {

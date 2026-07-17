@@ -1132,7 +1132,7 @@ impl<'a> Parser<'a> {
 
     let mut state = 0;
 
-    while !match_tok!(self, TokenKind::Rbrace) && !self.is_at_end() {
+    while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() {
       if match_tok!(
         self,
         TokenKind::When | TokenKind::Default | TokenKind::Newline
@@ -1152,9 +1152,11 @@ impl<'a> Parser<'a> {
               self.ignore_newlines();
               tmp_cases.push(self.expression());
 
-              if !check_tok!(self, TokenKind::Comma) {
+              if !check_tok!(self, TokenKind::Comma) || check_tok!(self, TokenKind::Lbrace) {
                 break;
               }
+
+              consume_tok!(self, TokenKind::Comma, "Expected ',' but found none.");
             }
 
             let stmt = self.statement();
@@ -1175,8 +1177,15 @@ impl<'a> Parser<'a> {
         };
       } else {
         self.report_error("Invalid using statement".to_string());
+        break;
       }
     }
+
+    consume_tok!(
+      self,
+      TokenKind::Rbrace,
+      "Expected '}' at end of using statement."
+    );
 
     Stmt::Using(Box::new(expr), case_labels, case_bodies, default_case)
   }

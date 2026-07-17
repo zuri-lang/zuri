@@ -8,7 +8,7 @@ use crate::{
     token::{Token, TokenKind},
   },
   vm::{
-    chunk::{Chunk, Instr},
+    chunk::{Chunk, Instr, JumpKey},
     object::{Heap, ObjFunction, UpvalueDescriptor},
     value::Value,
   },
@@ -1375,6 +1375,22 @@ impl<'a> Compiler<'a> {
         self.free_regs_to(operand_mark.max(dst + 1));
         dst
       },
+      Expr::Range(lower, upper) => {
+        let mark = self.cur().next_reg;
+        let lo = self.compile_expression(lower);
+        let dst = if lo >= mark { lo } else { self.alloc_reg() };
+
+        let hi_mark = self.cur().next_reg;
+        let hi = self.compile_expression(upper);
+
+        self.emit(Instr::MakeRange {
+          dst,
+          lower: lo,
+          upper: hi,
+        });
+        self.free_regs_to(hi_mark.max(dst + 1));
+        dst
+      },
       _ => {
         panic!(
           "compile_expression: unsupported expression: {:?}",
@@ -1382,6 +1398,135 @@ impl<'a> Compiler<'a> {
         );
       },
     }
+  }
+
+  /// `using subject { when a, b { ... } when c { ... } default { ... } }`.
+  ///
+  /// `labels`/`bodies` are already index-aligned by the parser (a `when
+  /// a, b { block }` with multiple labels desugars into one entry per
+  /// label, each pointing at its own CLONE of the same block -- see
+  /// Parser::using_stmt). This groups those clones back together via
+  /// structural equality over adjacent entries (always contiguous,
+  /// since the parser only ever produces them that way), so each
+  /// distinct body is compiled exactly once regardless of how many
+  /// labels point at it.
+  ///
+  /// Every label whose value is compile-time-knowable (see
+  /// `expr_as_jump_key`) is registered into a hash-based jump table,
+  /// checked FIRST at runtime via one `Instr::UsingJump`, in O(1)
+  /// regardless of arm count. Only labels that AREN'T compile-time-
+  /// knowable (an arbitrary expression, a variable, a BigNumber, ...)
+  /// fall back to sequential evaluate-and-compare -- and even then,
+  /// only those specific labels, never the constant ones.
+  fn compile_using(
+    &mut self,
+    subject: &Expr,
+    labels: &[Expr],
+    bodies: &[Stmt],
+    default: &Option<Box<Stmt>>,
+  ) {
+    struct Group<'a> {
+      body: &'a Stmt,
+      const_keys: Vec<JumpKey>,
+      dynamic_labels: Vec<&'a Expr>,
+    }
+
+    let mut groups: Vec<Group> = Vec::new();
+    for (label, body) in labels.iter().zip(bodies.iter()) {
+      let same_as_last = groups.last().is_some_and(|g| g.body == body);
+      if !same_as_last {
+        groups.push(Group {
+          body,
+          const_keys: Vec::new(),
+          dynamic_labels: Vec::new(),
+        });
+      }
+      let group = groups.last_mut().unwrap();
+      match expr_as_jump_key(label) {
+        Some(key) => group.const_keys.push(key),
+        None => group.dynamic_labels.push(label),
+      }
+    }
+
+    let stmt_mark = self.cur().next_reg;
+    let raw_subject = self.compile_expression(subject);
+    let subj = if raw_subject >= stmt_mark {
+      raw_subject
+    } else {
+      let r = self.alloc_reg();
+      self.emit(Instr::Move {
+        dst: r,
+        src: raw_subject,
+      });
+      r
+    };
+    // Reserve `subj` for the whole statement -- every dynamic-label
+    // comparison and, eventually, every group body reads it.
+    self.free_regs_to(subj + 1);
+
+    let table_idx = self.cur_mut().chunk.add_jump_table();
+    self.emit(Instr::UsingJump {
+      subject: subj,
+      table_idx,
+    });
+
+    // Sequential fallback: only dynamic labels ever get a comparison
+    // emitted here. A group with zero dynamic labels (the common case,
+    // matching every current test file) contributes nothing to this
+    // section at all.
+    let mut group_dyn_jumps: Vec<Vec<usize>> = Vec::with_capacity(groups.len());
+    for group in &groups {
+      let mut jumps = Vec::new();
+      for &label in &group.dynamic_labels {
+        let mark = self.cur().next_reg;
+        let label_reg = self.compile_expression(label);
+        let eq_reg = self.alloc_reg();
+        self.emit(Instr::Eq {
+          dst: eq_reg,
+          a: subj,
+          b: label_reg,
+        });
+        let jump_site = self.emit_jump_if_true(eq_reg);
+        self.free_regs_to(mark);
+        jumps.push(jump_site);
+      }
+      group_dyn_jumps.push(jumps);
+    }
+
+    // Reached only if the jump table missed AND every dynamic check
+    // above also missed.
+    if let Some(stmt) = default {
+      self.compile_statement(stmt);
+    }
+    let after_default_jump = self.emit_jump();
+
+    let mut end_jumps = Vec::new();
+    for (group, dyn_jumps) in groups.iter().zip(group_dyn_jumps.into_iter()) {
+      let group_start = self.cur().chunk.code.len();
+
+      for key in &group.const_keys {
+        self.cur_mut().chunk.jump_tables[table_idx as usize].insert(key.clone(), group_start);
+      }
+      for site in dyn_jumps {
+        self.patch_jump(site);
+      }
+
+      self.compile_statement(group.body);
+      end_jumps.push(self.emit_jump());
+    }
+
+    let after_point = self.cur().chunk.code.len();
+    self.patch_jump(after_default_jump);
+    for j in end_jumps {
+      self.patch_jump(j);
+    }
+    debug_assert_eq!(
+      self.cur().chunk.code.len(),
+      after_point,
+      "patching using-statement jumps should not emit new code"
+    );
+
+    self.free_regs_to(stmt_mark);
   }
 
   fn compile_statement(&mut self, statement: &Stmt) {
@@ -1570,6 +1715,9 @@ impl<'a> Compiler<'a> {
         let reg = self.compile_expression(value);
         self.emit(Instr::Return { src: reg });
       },
+      Stmt::Using(subject, labels, bodies, default) => {
+        self.compile_using(subject, labels, bodies, default)
+      },
       _ => {},
     };
   }
@@ -1608,7 +1756,7 @@ impl<'a> Compiler<'a> {
     }
     let top = self.scopes.into_iter().next().unwrap();
     let main_fn = ObjFunction {
-      name: "main".to_string(),
+      name: "<script>".to_string(),
       arity: 0,
       variadic: false,
       num_registers: top.max_reg,
@@ -1618,7 +1766,6 @@ impl<'a> Compiler<'a> {
     };
 
     if *LOG_INSTR {
-      // Dump sin's own compiled bytecode directly from main's constant pool.
       for c in &main_fn.chunk.constants {
         if c.is_func() {
           let proto = c.as_func();
@@ -1630,6 +1777,12 @@ impl<'a> Compiler<'a> {
             println!("{:3}: {:?}", i, instr);
           }
         }
+      }
+
+      // Main entry function
+      println!("=== function '<script>' ({} registers) ===", top.max_reg);
+      for (i, c) in main_fn.chunk.code.iter().enumerate() {
+        println!("{:3}: {:?}", i, c);
       }
     }
 
@@ -1795,5 +1948,23 @@ fn check_private_access(name: &str, privileged: bool) {
       "compile: '{}' is private and can only be accessed via 'self' or 'parent'",
       name
     );
+  }
+}
+
+/// Recognizes exactly the AST shapes `Value::equals` treats as
+/// content-comparable primitives -- nil, bool, number, string -- as
+/// eligible for `Instr::UsingJump`'s O(1) jump table. Anything else (an
+/// arbitrary runtime expression, a BigNumber literal, etc.) returns
+/// None and falls back to the sequential dynamic-label path in
+/// `Compiler::compile_using` -- correctness is unaffected either way,
+/// this only decides which path a given label's comparison takes.
+fn expr_as_jump_key(expr: &Expr) -> Option<JumpKey> {
+  match expr {
+    Expr::Nil => Some(JumpKey::Nil),
+    Expr::Bool(b) => Some(JumpKey::Bool(*b)),
+    Expr::Integer(i) => Some(JumpKey::Number((*i as f64).to_bits())),
+    Expr::Float(f) => Some(JumpKey::Number(f.to_bits())),
+    Expr::Literal(s) => Some(JumpKey::Str(s.clone())),
+    _ => None,
   }
 }
