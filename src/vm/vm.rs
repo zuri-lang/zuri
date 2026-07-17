@@ -418,9 +418,7 @@ impl VM {
         Instr::Sub { dst, a, b } => {
           self.binary_numeric(base, dst, a, b, "-", |x, y| x - y, |x, y| &x - &y)?
         },
-        Instr::Mul { dst, a, b } => {
-          self.binary_numeric(base, dst, a, b, "*", |x, y| x * y, |x, y| &x * &y)?
-        },
+        Instr::Mul { dst, a, b } => self.binary_mult(base, dst, a, b, "*")?,
         Instr::Div { dst, a, b } => {
           self.binary_numeric(base, dst, a, b, "/", |x, y| x / y, |x, y| &x / &y)?
         },
@@ -1099,6 +1097,58 @@ impl VM {
       let vb = self.get_reg(base, b);
       let s = format!("{}{}", va, vb);
       let v = self.heap.alloc_string(s);
+      return Ok(self.set_reg(base, dst, v));
+    } else if va.is_list() || vb.is_list() {
+      let va = self.get_reg(base, a);
+      let vb = self.get_reg(base, b);
+
+      let mut value = Vec::new();
+      value.extend(va.as_list().iter().cloned());
+      value.extend(vb.as_list().iter().cloned());
+      let v = self.heap.alloc_list(value);
+      return Ok(self.set_reg(base, dst, v));
+    }
+
+    Err(format!(
+      "operator '{}' not defined for {} and {}",
+      op_name,
+      va.type_name(),
+      vb.type_name()
+    ))
+  }
+
+  fn binary_mult(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
+    let va = self.get_reg(base, a);
+    let vb = self.get_reg(base, b);
+
+    if va.is_number() && vb.is_number() {
+      return Ok(self.set_reg(base, dst, Value::number(va.as_number() * vb.as_number())));
+    } else if va.is_bigint() && vb.is_bigint() {
+      let v = self.heap.alloc_bigint(va.as_bigint() * vb.as_bigint());
+      return Ok(self.set_reg(base, dst, v));
+    } else if va.is_string() && vb.is_number() {
+      let va = self.get_reg(base, a);
+      let vb = self.get_reg(base, b);
+      let count = vb.as_number() as usize;
+
+      let s = if count < usize::MAX {
+        va.as_str().repeat(count)
+      } else {
+        String::new()
+      };
+      let v = self.heap.alloc_string(s);
+      return Ok(self.set_reg(base, dst, v));
+    } else if va.is_list() && vb.is_number() {
+      let va = self.get_reg(base, a);
+      let vb = self.get_reg(base, b);
+      let count = vb.as_number() as usize;
+
+      let value = if count < usize::MAX {
+        va.as_list().to_vec().repeat(count)
+      } else {
+        Vec::new()
+      };
+      let v = self.heap.alloc_list(value);
       return Ok(self.set_reg(base, dst, v));
     }
 
