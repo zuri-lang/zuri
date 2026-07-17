@@ -14,11 +14,144 @@ use crate::{
   },
 };
 
-fn token_to_string(token: Token) -> String {
-  match token.kind {
-    TokenKind::Identifier(name) => name.clone(),
-    TokenKind::Decorator(name) => name.clone(),
-    _ => token.kind.to_string(),
+/// Recursively walk a method's body collecting every field name it
+/// assigns via `self.NAME = ...` -- these count as "predeclared" just
+/// as much as an explicit `var NAME` does, since the compiler can see
+/// them by scanning the class's own AST at declaration time, well
+/// before any instance exists (see `Compiler::compile_class_decl`).
+/// Descends into nested `def`/`@(...)` bodies too, since `self` can be
+/// captured by a closure nested inside a method.
+fn collect_self_fields_stmt(stmt: &Stmt, out: &mut Vec<String>) {
+  match stmt {
+    Stmt::Echo(e) | Stmt::Expression(e) | Stmt::Raise(e) | Stmt::Return(e) => {
+      collect_self_fields_expr(e, out)
+    },
+    Stmt::If(cond, then_b, else_b) => {
+      collect_self_fields_expr(cond, out);
+      collect_self_fields_stmt(then_b, out);
+      if let Some(e) = else_b {
+        collect_self_fields_stmt(e, out);
+      }
+    },
+    Stmt::While(cond, body) => {
+      collect_self_fields_expr(cond, out);
+      collect_self_fields_stmt(body, out);
+    },
+    Stmt::Assert(e, msg) => {
+      collect_self_fields_expr(e, out);
+      if let Some(m) = msg {
+        collect_self_fields_expr(m, out);
+      }
+    },
+    Stmt::Using(subject, labels, bodies, default) => {
+      collect_self_fields_expr(subject, out);
+      for l in labels {
+        collect_self_fields_expr(l, out);
+      }
+      for b in bodies {
+        collect_self_fields_stmt(b, out);
+      }
+      if let Some(d) = default {
+        collect_self_fields_stmt(d, out);
+      }
+    },
+    Stmt::Catch(body, catch_body, _name) => {
+      collect_self_fields_stmt(body, out);
+      if let Some(cb) = catch_body {
+        collect_self_fields_stmt(cb, out);
+      }
+    },
+    Stmt::Block(stmts) => {
+      for s in stmts {
+        collect_self_fields_stmt(s, out);
+      }
+    },
+    Stmt::Decl(decl) => collect_self_fields_decl(decl, out),
+    Stmt::Var(_, init, _, _) => collect_self_fields_expr(init, out),
+    Stmt::VarList(list) => {
+      for s in list {
+        collect_self_fields_stmt(s, out);
+      }
+    },
+    Stmt::None | Stmt::FixContinue | Stmt::Continue | Stmt::Break | Stmt::Import(..) => {},
+  }
+}
+
+fn collect_self_fields_decl(decl: &Decl, out: &mut Vec<String>) {
+  match decl {
+    Decl::Stmt(s) => collect_self_fields_stmt(s, out),
+    Decl::Block(stmts) => {
+      for s in stmts {
+        collect_self_fields_stmt(s, out);
+      }
+    },
+    Decl::Function(_, _, body, _) => collect_self_fields_stmt(body, out),
+    // Method/Class/Property/Import/None aren't expected nested inside a
+    // method body; ignored defensively rather than assumed unreachable.
+    _ => {},
+  }
+}
+
+fn collect_self_fields_expr(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::Set(target, field, value) => {
+      if matches!(target.as_ref(), Expr::Self_) {
+        if let TokenKind::Identifier(field_name) = &field.kind {
+          if !out.contains(field_name) {
+            out.push(field_name.clone());
+          }
+        }
+      }
+      collect_self_fields_expr(target, out);
+      collect_self_fields_expr(value, out);
+    },
+    Expr::Unary(_, e) | Expr::Grouping(e) => collect_self_fields_expr(e, out),
+    Expr::Binary(a, _, b)
+    | Expr::Logical(a, _, b)
+    | Expr::Circuit(a, _, b)
+    | Expr::Range(a, b)
+    | Expr::Index(a, b)
+    | Expr::Assign(a, b) => {
+      collect_self_fields_expr(a, out);
+      collect_self_fields_expr(b, out);
+    },
+    Expr::Condition(a, b, c) | Expr::Slice(a, b, c) => {
+      collect_self_fields_expr(a, out);
+      collect_self_fields_expr(b, out);
+      collect_self_fields_expr(c, out);
+    },
+    Expr::Call(callee, args) => {
+      collect_self_fields_expr(callee, out);
+      for a in args {
+        collect_self_fields_expr(a, out);
+      }
+    },
+    Expr::Get(obj, _) => collect_self_fields_expr(obj, out),
+    Expr::List(items) => {
+      for i in items {
+        collect_self_fields_expr(i, out);
+      }
+    },
+    Expr::Dict(keys, values) => {
+      for k in keys {
+        collect_self_fields_expr(k, out);
+      }
+      for v in values {
+        collect_self_fields_expr(v, out);
+      }
+    },
+    Expr::Anonymous(decl) => collect_self_fields_decl(decl, out),
+    Expr::Nil
+    | Expr::Bool(_)
+    | Expr::Integer(_)
+    | Expr::Float(_)
+    | Expr::BigNumber(_)
+    | Expr::Literal(_)
+    | Expr::Identifier(_)
+    | Expr::Parent
+    | Expr::Self_
+    | Expr::TypeHint(..)
+    | Expr::Argument(..) => {},
   }
 }
 
@@ -508,7 +641,7 @@ impl<'a> Compiler<'a> {
       .map(|expr| self.compile_expression(expr));
 
     let dst = self.alloc_reg();
-    let name_val = self.heap.alloc_string(class_name);
+    let name_val = self.heap.alloc_string(class_name.clone());
     let name_const = self.add_constant(name_val);
     self.emit(Instr::MakeClass {
       dst,
@@ -549,6 +682,44 @@ impl<'a> Compiler<'a> {
           name_const: fname_const,
         });
       }
+    }
+
+    // A field doesn't have to go through an explicit `var` -- `self.x =
+    // value` anywhere in one of this class's own (non-static) methods,
+    // most commonly the constructor, is just as visible to the compiler
+    // at class-declaration time and counts as "predeclared" the same
+    // way. This is what makes e.g. `Person(name) { self.name = name }`
+    // valid without a redundant `var name` line above it. Names already
+    // covered by an explicit `var`/`const` are skipped here to avoid a
+    // redundant instruction; a name inherited from a superclass is
+    // invisible to this scan (the superclass's layout only exists as a
+    // runtime Value by now) and is instead deduped where it actually
+    // matters -- Instr::DeclareField's own handler in vm.rs.
+    let explicit_names: Vec<String> = own_fields
+      .iter()
+      .filter_map(|p| match p {
+        Decl::Property(fname, ..) => Some(Self::identifier_name(fname)),
+        _ => None,
+      })
+      .collect();
+
+    let mut implicit_names: Vec<String> = Vec::new();
+    for m in methods.iter().filter(|f| f.is_method(class_name.as_str())) {
+      if let Decl::Method(_, _, body, _, is_static) = m {
+        if !*is_static {
+          collect_self_fields_stmt(body, &mut implicit_names);
+        }
+      }
+    }
+    implicit_names.retain(|n| !explicit_names.contains(n));
+
+    for fname in &implicit_names {
+      let fname_val = self.heap.alloc_string(fname.clone());
+      let fname_const = self.add_constant(fname_val);
+      self.emit(Instr::DeclareField {
+        class: dst,
+        name_const: fname_const,
+      });
     }
 
     if !own_fields.is_empty() {
