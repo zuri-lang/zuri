@@ -6,6 +6,8 @@
 //! write itself, including being subclassable (see
 //! tests/custom_exception.zu's `class Error < Exception`).
 
+use std::rc::Rc;
+
 use crate::compiler::{compiler::Compiler, lexer::Lexer, parser::Parser};
 use crate::vm::chunk::Chunk;
 use crate::vm::value::Value;
@@ -125,7 +127,7 @@ pub fn install(vm: &mut VM) {
     .unwrap_or_else(|errors| panic!("internal error: prelude failed to parse: {:?}", errors));
 
   let chunk = Box::new(Chunk::new());
-  let compiler = Compiler::new(decls, chunk, &mut vm.heap);
+  let compiler = Compiler::new(decls, chunk, &mut vm.heap, Rc::from("<prelude>"));
   let fn_obj = compiler.compile();
   let closure = vm.heap.alloc_plain_closure(fn_obj);
 

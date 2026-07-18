@@ -185,6 +185,10 @@ pub enum Instr {
     name_const: u16,
     src: u8,
   },
+  AssignGlobal {
+    name_const: u16,
+    src: u8,
+  },
 
   /// Create a new closure from the function prototype stored at
   /// `constants[proto_const]`, capturing upvalues per that prototype's
@@ -414,6 +418,12 @@ pub struct Chunk {
   /// One entry per `using` statement that has at least one constant
   /// case label -- see `Instr::UsingJump`.
   pub jump_tables: Vec<HashMap<JumpKey, usize>>,
+  /// Parallel to `code` -- `lines[i]` is the source line `code[i]` was
+  /// compiled from (statement granularity; see
+  /// `Compiler::emit`/`FunctionScope::current_line`). Used only to
+  /// build a stack trace on a raised or uncaught exception -- see
+  /// `VM::build_stacktrace`.
+  pub lines: Vec<u32>,
 }
 
 impl Chunk {
@@ -422,6 +432,7 @@ impl Chunk {
       code: Vec::new(),
       constants: Vec::new(),
       jump_tables: Vec::new(),
+      lines: Vec::new(),
     }
   }
 

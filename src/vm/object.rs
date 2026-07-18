@@ -1,6 +1,7 @@
 use num_bigint::BigInt;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::vm::chunk::Chunk;
 use crate::vm::value::Value;
@@ -117,6 +118,13 @@ pub struct ObjFunction {
   /// value. Ordinary functions/closures/anonymous functions leave this
   /// false.
   pub is_method: bool,
+
+  /// The file this function was compiled from, shared (via `Rc`, not
+  /// cloned) by every function compiled in the same `Compiler` run --
+  /// see `Compiler::new`. Read per-frame by `VM::build_stacktrace`,
+  /// which is what lets a trace correctly attribute each frame to its
+  /// OWN file.
+  pub source_path: Rc<str>,
 }
 
 /// A method value bound to a specific receiver -- produced only when a

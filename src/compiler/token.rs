@@ -152,6 +152,21 @@ impl Token {
   pub fn copy_to(&self, kind: TokenKind) -> Self {
     Self::new(kind, self.line, self.column)
   }
+
+  /// Human-readable label for this token, used in syntax-error
+  /// messages -- e.g. "def" for a `Def` keyword, "x" for
+  /// `Identifier("x")`, "@my_decorator" for a decorator. Falls back to
+  /// a lowercased Debug form for symbol/keyword tokens without their
+  /// own payload; not hand-tuned per symbol, but covers every current
+  /// TokenKind reasonably.
+  pub fn describe(&self) -> String {
+    match &self.kind {
+      TokenKind::Literal(s) | TokenKind::Identifier(s) | TokenKind::Interpolation(s) => s.clone(),
+      TokenKind::Decorator(s) => format!("@{}", s),
+      TokenKind::Eof => "end of input".to_string(),
+      other => format!("{:?}", other).to_lowercase(),
+    }
+  }
 }
 
 impl fmt::Display for Token {

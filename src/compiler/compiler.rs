@@ -21,7 +21,7 @@ struct Local {
   depth: usize,
 }
 
-/// Everything about compiling ONE function -- its own chunk, register
+/// Everything about compiling a function -- its own chunk, register
 /// allocator, locals table, scope depth, and the upvalue descriptors it's
 /// accumulated so far. `Compiler` holds a STACK of these (one per level of
 /// function nesting currently being compiled), which is what makes upvalue
@@ -47,18 +47,24 @@ struct FunctionScope {
   /// declared inside a loop starts with an empty stack, so `break` inside
   /// it (if it were otherwise valid) can't reach the enclosing loop.
   loops: Vec<LoopContext>,
+  /// Source line of whatever statement is CURRENTLY being compiled --
+  /// stamped onto every instruction `Compiler::emit` produces until
+  /// it's next updated (see `Compiler::compile`'s top-level loop and
+  /// `Stmt::Block`'s own handling).
+  current_line: u32,
 }
 
 impl FunctionScope {
   fn new() -> Self {
     FunctionScope {
       chunk: Chunk::new(),
-      next_reg: 0,
-      max_reg: 0,
       locals: Vec::new(),
-      scope_depth: 0,
       upvalues: Vec::new(),
       loops: Vec::new(),
+      scope_depth: 0,
+      next_reg: 0,
+      max_reg: 0,
+      current_line: 0,
     }
   }
 }
@@ -92,19 +98,27 @@ const LOG_AST: LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var_os("ZURI_AST_LOG").is_some());
 
 pub struct Compiler<'a> {
-  declarations: Vec<Decl>,
+  decls: Vec<Decl>,
   heap: &'a mut Heap,
   scopes: Vec<FunctionScope>,
   is_repl: bool,
+  source_path: Rc<str>,
 }
 
 impl<'a> Compiler<'a> {
-  pub fn new(declarations: Vec<Decl>, chunk: Box<Chunk>, heap: &'a mut Heap) -> Self {
+  pub fn new(
+    decls: Vec<Decl>,
+    chunk: Box<Chunk>,
+    heap: &'a mut Heap,
+    source_path: Rc<str>,
+  ) -> Self {
     let mut top = FunctionScope::new();
     top.chunk = *chunk;
+
     Compiler {
-      declarations,
+      decls,
       heap,
+      source_path,
       scopes: vec![top],
       is_repl: false,
     }
@@ -113,6 +127,7 @@ impl<'a> Compiler<'a> {
   pub fn enable_repl_mode(&mut self) {
     self.is_repl = true;
   }
+
   pub fn disable_repl_mode(&mut self) {
     self.is_repl = false;
   }
@@ -120,13 +135,19 @@ impl<'a> Compiler<'a> {
   fn cur(&self) -> &FunctionScope {
     self.scopes.last().unwrap()
   }
+
   fn cur_mut(&mut self) -> &mut FunctionScope {
     self.scopes.last_mut().unwrap()
   }
 
   fn emit(&mut self, instr: Instr) -> usize {
-    self.cur_mut().chunk.emit(instr)
+    let line = self.cur().current_line;
+    let scope = self.cur_mut();
+    let idx = scope.chunk.emit(instr);
+    scope.chunk.lines.push(line);
+    idx
   }
+
   fn add_constant(&mut self, v: Value) -> u16 {
     self.cur_mut().chunk.add_constant(v)
   }
@@ -311,6 +332,7 @@ impl<'a> Compiler<'a> {
       num_registers: finished.max_reg,
       chunk: finished.chunk,
       upvalues: finished.upvalues,
+      source_path: self.source_path.clone(),
       is_method,
     }
   }
@@ -418,6 +440,7 @@ impl<'a> Compiler<'a> {
       num_registers: finished.max_reg,
       chunk: finished.chunk,
       upvalues: finished.upvalues,
+      source_path: self.source_path.clone(),
       is_method: true,
     }
   }
@@ -470,6 +493,7 @@ impl<'a> Compiler<'a> {
       num_registers: finished.max_reg,
       chunk: finished.chunk,
       upvalues: finished.upvalues,
+      source_path: self.source_path.clone(),
       is_method: true,
     }
   }
@@ -505,6 +529,8 @@ impl<'a> Compiler<'a> {
     let dst = self.alloc_reg();
     let name_val = self.heap.alloc_string(class_name.clone());
     let name_const = self.add_constant(name_val);
+
+    self.cur_mut().current_line = name.line as u32;
     self.emit(Instr::MakeClass {
       dst,
       name_const,
@@ -832,6 +858,7 @@ impl<'a> Compiler<'a> {
     let method_const = self.add_constant(method_val);
 
     let dst = obj_reg;
+    self.cur_mut().current_line = method.line as u32;
     self.emit(Instr::Invoke {
       dst,
       obj: obj_reg,
@@ -895,6 +922,7 @@ impl<'a> Compiler<'a> {
     let method_const = self.add_constant(method_val);
 
     let dst = call_reg;
+    self.cur_mut().current_line = method.line as u32;
     self.emit(Instr::InvokeSuper {
       dst,
       superclass: call_reg,
@@ -960,12 +988,13 @@ impl<'a> Compiler<'a> {
             let dst = self.alloc_reg();
             let str_val = self.heap.alloc_string(name);
             let name_const = self.add_constant(str_val);
+            self.cur_mut().current_line = token.line as u32;
             self.emit(Instr::GetGlobal { dst, name_const });
             dst
           },
         }
       },
-      Expr::Unary(op, expr) => {
+      Expr::Unary(op, expr, line) => {
         let mark = self.cur().next_reg;
         let src = self.compile_expression(expr);
         let dst = if src >= mark { src } else { self.alloc_reg() };
@@ -976,10 +1005,11 @@ impl<'a> Compiler<'a> {
           TokenKind::Tilde => Instr::BitNot { dst, src },
           _ => panic!("compile_expression: unsupported unary operator: {:?}", op),
         };
+        self.cur_mut().current_line = *line;
         self.emit(instr);
         dst
       },
-      Expr::Binary(lhs, op, rhs) => {
+      Expr::Binary(lhs, op, rhs, line) => {
         let mark = self.cur().next_reg;
         let a = self.compile_expression(lhs);
         let dst = if a >= mark { a } else { self.alloc_reg() };
@@ -1003,12 +1033,14 @@ impl<'a> Compiler<'a> {
           TokenKind::Urshift => Instr::BitUshr { dst, a, b },
           _ => panic!("compile_expression: unsupported binary operator: {:?}", op),
         };
+
+        self.cur_mut().current_line = *line;
         self.emit(instr);
 
         self.free_regs_to(rhs_mark.max(dst + 1));
         dst
       },
-      Expr::Logical(lhs, op, rhs) => {
+      Expr::Logical(lhs, op, rhs, line) => {
         let mark = self.cur().next_reg;
         let a = self.compile_expression(lhs);
         let dst = if a >= mark { a } else { self.alloc_reg() };
@@ -1028,6 +1060,8 @@ impl<'a> Compiler<'a> {
             op
           ),
         };
+
+        self.cur_mut().current_line = *line;
         self.emit(instr);
 
         self.free_regs_to(rhs_mark.max(dst + 1));
@@ -1110,10 +1144,11 @@ impl<'a> Compiler<'a> {
         // allocated for whatever called compile_expression to consume; the
         // enclosing statement's own mark eventually reclaims obj_reg/idx_reg
         // too.
-        Expr::Index(obj, idx) => {
+        Expr::Index(obj, idx, line) => {
           let obj_reg = self.compile_expression(obj);
           let idx_reg = self.compile_expression(idx);
           let value_reg = self.compile_expression(value);
+          self.cur_mut().current_line = *line;
           self.emit(Instr::SetIndex {
             obj: obj_reg,
             idx: idx_reg,
@@ -1148,10 +1183,18 @@ impl<'a> Compiler<'a> {
               let value_reg = self.compile_expression(value);
               let str_val = self.heap.alloc_string(name);
               let name_const = self.add_constant(str_val);
-              self.emit(Instr::SetGlobal {
-                name_const,
-                src: value_reg,
-              });
+
+              if self.scopes.last().unwrap().scope_depth > 0 {
+                self.emit(Instr::AssignGlobal {
+                  name_const,
+                  src: value_reg,
+                });
+              } else {
+                self.emit(Instr::SetGlobal {
+                  name_const,
+                  src: value_reg,
+                });
+              }
               value_reg
             },
           }
@@ -1161,7 +1204,7 @@ impl<'a> Compiler<'a> {
           other
         ),
       },
-      Expr::Call(callee, args) => {
+      Expr::Call(callee, args, line) => {
         if let Expr::Get(obj, method) = callee.as_ref() {
           return if matches!(obj.as_ref(), Expr::Parent) {
             self.compile_invoke_super(method, args)
@@ -1201,11 +1244,14 @@ impl<'a> Compiler<'a> {
         }
 
         let dst = func_reg;
+
+        self.cur_mut().current_line = *line;
         self.emit(Instr::Call {
           dst,
           func: func_reg,
           num_args,
         });
+
         self.free_regs_to(func_reg + 1);
         dst
       },
@@ -1307,6 +1353,7 @@ impl<'a> Compiler<'a> {
         let dst = self.alloc_reg();
         let fname_val = self.heap.alloc_string(field_name);
         let fname_const = self.add_constant(fname_val);
+        self.cur_mut().current_line = field.line as u32;
         self.emit(Instr::GetField {
           dst,
           obj: obj_reg,
@@ -1326,6 +1373,7 @@ impl<'a> Compiler<'a> {
         let value_reg = self.compile_expression(value);
         let fname_val = self.heap.alloc_string(field_name);
         let fname_const = self.add_constant(fname_val);
+        self.cur_mut().current_line = field.line as u32;
         self.emit(Instr::SetField {
           obj: obj_reg,
           name_const: fname_const,
@@ -1334,7 +1382,7 @@ impl<'a> Compiler<'a> {
         value_reg
       },
 
-      Expr::Index(obj, idx) => {
+      Expr::Index(obj, idx, line) => {
         let mark = self.cur().next_reg;
         let obj_reg = self.compile_expression(obj);
         let dst = if obj_reg >= mark {
@@ -1346,6 +1394,7 @@ impl<'a> Compiler<'a> {
         let idx_mark = self.cur().next_reg;
         let idx_reg = self.compile_expression(idx);
 
+        self.cur_mut().current_line = *line;
         self.emit(Instr::GetIndex {
           dst,
           obj: obj_reg,
@@ -1354,7 +1403,7 @@ impl<'a> Compiler<'a> {
         self.free_regs_to(idx_mark.max(dst + 1));
         dst
       },
-      Expr::Slice(obj, lo, hi) => {
+      Expr::Slice(obj, lo, hi, line) => {
         let mark = self.cur().next_reg;
         let obj_reg = self.compile_expression(obj);
         let dst = if obj_reg >= mark {
@@ -1367,6 +1416,7 @@ impl<'a> Compiler<'a> {
         let lo_reg = self.compile_expression(lo);
         let hi_reg = self.compile_expression(hi);
 
+        self.cur_mut().current_line = *line;
         self.emit(Instr::GetSlice {
           dst,
           obj: obj_reg,
@@ -1376,7 +1426,7 @@ impl<'a> Compiler<'a> {
         self.free_regs_to(operand_mark.max(dst + 1));
         dst
       },
-      Expr::Range(lower, upper) => {
+      Expr::Range(lower, upper, line) => {
         let mark = self.cur().next_reg;
         let lo = self.compile_expression(lower);
         let dst = if lo >= mark { lo } else { self.alloc_reg() };
@@ -1384,6 +1434,7 @@ impl<'a> Compiler<'a> {
         let hi_mark = self.cur().next_reg;
         let hi = self.compile_expression(upper);
 
+        self.cur_mut().current_line = *line;
         self.emit(Instr::MakeRange {
           dst,
           lower: lo,
@@ -1618,15 +1669,18 @@ impl<'a> Compiler<'a> {
       self.emit(Instr::LoadNil { dst: reg });
       let depth = self.cur().scope_depth;
       self.cur_mut().locals.push(Local {
-        name,
+        name: name.clone(),
         reg,
         is_const: false,
         depth,
       });
-      reg
+      (reg, name)
     });
 
-    let push_at = self.emit(Instr::PushCatch { var_reg, offset: 0 });
+    let push_at = self.emit(Instr::PushCatch {
+      var_reg: var_reg.as_ref().map(|(r, _)| *r),
+      offset: 0,
+    });
 
     self.compile_statement(body);
     self.emit(Instr::PopCatch);
@@ -1636,8 +1690,24 @@ impl<'a> Compiler<'a> {
     // this exact point -- see Instr::PushCatch's doc comment.
     self.patch_jump(push_at);
 
+    // REPL top-level persistence: mirrors Stmt::Var's own is_repl
+    // special-case -- a REPL line's register file is gone by the time
+    // the NEXT line compiles (each is a fresh Chunk), so without this,
+    // the caught exception would be unreachable outside the exact
+    // catch statement that declared it.
+    if let Some((reg, name)) = &var_reg {
+      if self.is_repl && self.cur().scope_depth == 0 {
+        let name_val = self.heap.alloc_string(name.clone());
+        let name_const = self.add_constant(name_val);
+        self.emit(Instr::SetGlobal {
+          name_const,
+          src: *reg,
+        });
+      }
+    }
+
     if let Some(err_stmt) = error_block {
-      let reg = var_reg.expect("compile: catch error-block requires an 'as' variable");
+      let (reg, _) = var_reg.expect("compile: catch error-block requires an 'as' variable");
       let mark = self.cur().next_reg;
       let nil_reg = self.alloc_reg();
       self.emit(Instr::LoadNil { dst: nil_reg });
@@ -1866,10 +1936,10 @@ impl<'a> Compiler<'a> {
 
   pub fn compile(mut self) -> ObjFunction {
     if *LOG_AST {
-      println!("{:?}", self.declarations.clone());
+      println!("{:?}", self.decls.clone());
     }
 
-    for decl in self.declarations.clone().iter() {
+    for decl in self.decls.clone().iter() {
       self.compile_declaration(decl);
     }
     self.finalize()
@@ -1883,14 +1953,20 @@ impl<'a> Compiler<'a> {
       self.emit(Instr::LoadNil { dst: nil_reg });
       self.emit(Instr::Return { src: nil_reg });
     }
+
     let top = self.scopes.into_iter().next().unwrap();
     let main_fn = ObjFunction {
-      name: "<script>".to_string(),
+      name: if self.is_repl {
+        "@.repl".to_string()
+      } else {
+        "@.script".to_string()
+      },
       arity: 0,
       variadic: false,
       num_registers: top.max_reg,
       chunk: top.chunk,
       upvalues: Vec::new(),
+      source_path: self.source_path.clone(),
       is_method: false,
     };
 
@@ -2010,22 +2086,22 @@ fn collect_self_fields_expr(expr: &Expr, out: &mut Vec<String>) {
       collect_self_fields_expr(target, out);
       collect_self_fields_expr(value, out);
     },
-    Expr::Unary(_, e) | Expr::Grouping(e) => collect_self_fields_expr(e, out),
-    Expr::Binary(a, _, b)
-    | Expr::Logical(a, _, b)
+    Expr::Unary(_, e, _) | Expr::Grouping(e) => collect_self_fields_expr(e, out),
+    Expr::Binary(a, _, b, _)
+    | Expr::Logical(a, _, b, _)
     | Expr::Circuit(a, _, b)
-    | Expr::Range(a, b)
-    | Expr::Index(a, b)
+    | Expr::Range(a, b, _)
+    | Expr::Index(a, b, _)
     | Expr::Assign(a, b) => {
       collect_self_fields_expr(a, out);
       collect_self_fields_expr(b, out);
     },
-    Expr::Condition(a, b, c) | Expr::Slice(a, b, c) => {
+    Expr::Condition(a, b, c) | Expr::Slice(a, b, c, _) => {
       collect_self_fields_expr(a, out);
       collect_self_fields_expr(b, out);
       collect_self_fields_expr(c, out);
     },
-    Expr::Call(callee, args) => {
+    Expr::Call(callee, args, _) => {
       collect_self_fields_expr(callee, out);
       for a in args {
         collect_self_fields_expr(a, out);

@@ -43,20 +43,13 @@ macro_rules! consume_tok {
   };
 }
 
-fn token_to_string(token: Token) -> String {
-  match token.kind {
-    TokenKind::Identifier(name) => name.clone(),
-    TokenKind::Decorator(name) => name.clone(),
-    _ => token.kind.to_string(),
-  }
-}
-
 #[derive(Debug, Clone)]
 pub struct ParseError {
   pub message: String,
   pub line_number: usize,
   pub offset: usize,
   pub length: usize,
+  pub token_text: String,
 }
 
 impl ParseError {
@@ -66,13 +59,14 @@ impl ParseError {
       line_number: token.line,
       offset: token.column,
       length: format!("{}", token).len(),
+      token_text: token.describe(),
     }
   }
 }
 
 impl Display for ParseError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "[{}:{}] {}", self.line_number, self.offset, self.message)
+    write!(f, "SyntaxError at '{}': {}", self.token_text, self.message)
   }
 }
 
@@ -346,11 +340,11 @@ impl<'a> Parser<'a> {
   // Composers
   //-----------------------------------------------------------------------------------
 
-  fn compose_one_binary(&mut self, expr: Expr, kind: TokenKind) -> Expr {
+  fn compose_one_binary(&mut self, expr: Expr, kind: TokenKind, line: u32) -> Expr {
     let start = self.mark();
     let one = Expr::Integer(1);
 
-    Expr::Binary(Box::new(expr), kind, Box::new(one))
+    Expr::Binary(Box::new(expr), kind, Box::new(one), line)
   }
 
   fn compose_nil(&mut self) -> Expr {
@@ -373,8 +367,8 @@ impl<'a> Parser<'a> {
     Expr::Assign(Box::new(expr), Box::new(value))
   }
 
-  fn compose_call(&mut self, callee: Expr, args: Vec<Expr>) -> Expr {
-    Expr::Call(Box::new(callee), args)
+  fn compose_call(&mut self, callee: Expr, args: Vec<Expr>, line: u32) -> Expr {
+    Expr::Call(Box::new(callee), args, line)
   }
 
   fn compose_literal(&mut self, token: Token) -> Expr {
@@ -401,6 +395,7 @@ impl<'a> Parser<'a> {
   }
 
   fn finish_call(&mut self, callee: Expr) -> Expr {
+    let line = self.previous().line as u32;
     let mut args = Vec::new();
     self.ignore_newlines();
 
@@ -421,10 +416,11 @@ impl<'a> Parser<'a> {
     self.ignore_newlines();
     consume_tok!(self, TokenKind::Rparen, "Expected ')' after arguments");
 
-    Expr::Call(Box::new(callee), args)
+    Expr::Call(Box::new(callee), args, line)
   }
 
   fn finish_index(&mut self, callee: Expr) -> Expr {
+    let line = self.previous().line as u32;
     self.ignore_newlines();
     let mut expr = if !check_tok!(self, TokenKind::Comma) {
       self.expression()
@@ -440,9 +436,9 @@ impl<'a> Parser<'a> {
         Expr::Nil
       };
 
-      expr = Expr::Slice(Box::new(callee), Box::new(expr), Box::new(upper));
+      expr = Expr::Slice(Box::new(callee), Box::new(expr), Box::new(upper), line);
     } else {
-      expr = Expr::Index(Box::new(callee), Box::new(expr));
+      expr = Expr::Index(Box::new(callee), Box::new(expr), line);
     }
 
     self.ignore_newlines();
@@ -452,6 +448,7 @@ impl<'a> Parser<'a> {
   }
 
   fn finish_dot(&mut self, callee: Expr) -> Expr {
+    let line = self.previous().line as u32;
     self.ignore_newlines();
 
     // `prop` is a real, independently addressable piece of syntax (the
@@ -479,7 +476,12 @@ impl<'a> Parser<'a> {
       let get = Expr::Get(Box::new(callee.clone()), prop_token.clone());
 
       let rhs = self.assignment();
-      let binary_value = Expr::Binary(Box::new(get), get_assignment_alt(token.kind), Box::new(rhs));
+      let binary_value = Expr::Binary(
+        Box::new(get),
+        get_assignment_alt(token.kind),
+        Box::new(rhs),
+        line,
+      );
 
       return Expr::Set(
         Box::new(callee.clone()),
@@ -495,9 +497,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.compose_literal(self.previous().clone());
 
     loop {
+      let line = self.previous().line as u32;
       let mark = self.mark();
       let right = self.expression();
-      expr = Expr::Binary(Box::new(expr), TokenKind::Plus, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), TokenKind::Plus, Box::new(right), line);
 
       if !check_tok!(self, TokenKind::Interpolation(_) | TokenKind::Literal(_)) || self.is_at_end()
       {
@@ -562,9 +565,10 @@ impl<'a> Parser<'a> {
     let mut expr = self.primary();
 
     while match_tok!(self, TokenKind::Range) {
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let upper = self.primary();
-      expr = Expr::Range(Box::new(expr), Box::new(upper));
+      expr = Expr::Range(Box::new(expr), Box::new(upper), line);
     }
 
     expr
@@ -602,7 +606,8 @@ impl<'a> Parser<'a> {
     let expr = self.call();
 
     if match_tok!(self, TokenKind::Increment) {
-      let plus_one = Box::new(self.compose_one_binary(expr.clone(), TokenKind::Plus));
+      let line = self.previous().line as u32;
+      let plus_one = Box::new(self.compose_one_binary(expr.clone(), TokenKind::Plus, line));
 
       return match expr {
         Expr::Get(expression, name) => Expr::Set(expression, name, plus_one),
@@ -611,7 +616,8 @@ impl<'a> Parser<'a> {
     }
 
     if match_tok!(self, TokenKind::Decrement) {
-      let sub_one = Box::new(self.compose_one_binary(expr.clone(), TokenKind::Minus));
+      let line = self.previous().line as u32;
+      let sub_one = Box::new(self.compose_one_binary(expr.clone(), TokenKind::Minus, line));
 
       return match expr {
         Expr::Get(expression, name) => Expr::Set(expression, name, sub_one),
@@ -625,9 +631,10 @@ impl<'a> Parser<'a> {
   fn unary(&mut self) -> Expr {
     if match_tok!(self, unary_operators!()) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.unary();
-      return Expr::Unary(op, Box::new(right));
+      return Expr::Unary(op, Box::new(right), line);
     }
 
     self.assign_expr()
@@ -638,10 +645,11 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, factor_operators!()) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
 
       self.ignore_newlines();
       let right = self.unary();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -652,9 +660,10 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, term_operators!()) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.factor();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -665,9 +674,10 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, shift_operators!()) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.term();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -678,9 +688,10 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, TokenKind::Amp) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.shift();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -691,9 +702,10 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, TokenKind::Xor) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.bit_and();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -704,9 +716,10 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, TokenKind::Bar) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.bit_xor();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -717,9 +730,10 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, comparison_operators!()) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.bit_or();
-      expr = Expr::Logical(Box::new(expr), op, Box::new(right));
+      expr = Expr::Logical(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -730,9 +744,10 @@ impl<'a> Parser<'a> {
 
     while match_tok!(self, equality_operators!()) {
       let op = self.previous().clone().kind;
+      let line = self.previous().line as u32;
       self.ignore_newlines();
       let right = self.comparison();
-      expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+      expr = Expr::Binary(Box::new(expr), op, Box::new(right), line);
     }
 
     expr
@@ -797,6 +812,7 @@ impl<'a> Parser<'a> {
           Box::new(expr.clone()),
           get_assignment_alt(type_token.clone().kind),
           Box::new(right),
+          type_token.line as u32,
         );
         expr = Expr::Assign(Box::new(expr), Box::new(binary));
       }
@@ -1070,7 +1086,7 @@ impl<'a> Parser<'a> {
       let get_name = key_id.copy_to(TokenKind::Identifier("@key".to_string()));
       let getter = self.compose_get(iterable.clone(), get_name);
       let call_arg = self.compose_id(key_id.clone());
-      let call = self.compose_call(getter, vec![call_arg]);
+      let call = self.compose_call(getter, vec![call_arg], key_id.line as u32);
       let lhs = self.compose_id(key_id.clone());
       let assign = self.compose_assign(lhs, call);
       stmt_list.push(Stmt::Expression(Box::new(assign)));
@@ -1080,7 +1096,12 @@ impl<'a> Parser<'a> {
     {
       let left = self.compose_id(key_id.clone());
       let right = self.compose_nil();
-      let condition = Expr::Logical(Box::new(left), TokenKind::EqualEq, Box::new(right));
+      let condition = Expr::Logical(
+        Box::new(left),
+        TokenKind::EqualEq,
+        Box::new(right),
+        key_id.line as u32,
+      );
       let then_branch = Stmt::Break;
       stmt_list.push(Stmt::If(Box::new(condition), Box::new(then_branch), None));
     }
@@ -1090,7 +1111,7 @@ impl<'a> Parser<'a> {
       let get_name = value_id.copy_to(TokenKind::Identifier("@value".to_string()));
       let getter = self.compose_get(iterable.clone(), get_name);
       let call_arg = self.compose_id(key_id.clone());
-      let call = self.compose_call(getter, vec![call_arg]);
+      let call = self.compose_call(getter, vec![call_arg], value_id.line as u32);
       let lhs = self.compose_id(value_id.clone());
       let assign = self.compose_assign(lhs, call);
       stmt_list.push(Stmt::Expression(Box::new(assign)));
@@ -1685,7 +1706,7 @@ impl<'a> Parser<'a> {
 
     if !methods
       .iter()
-      .any(|f| f.is_method(token_to_string(name.clone()).as_str()))
+      .any(|f| f.is_method(name.describe().as_str()))
       && !is_extension
     {
       methods.push(Decl::Method(

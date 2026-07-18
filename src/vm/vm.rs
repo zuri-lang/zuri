@@ -181,7 +181,14 @@ impl VM {
     let mut lines = Vec::with_capacity(self.frames.len());
     for frame in self.frames.iter().rev() {
       let func = unsafe { &*frame.function };
-      lines.push(self.heap.alloc_string(format!("in {}", func.name)));
+      let line = func
+        .chunk
+        .lines
+        .get(frame.ip.saturating_sub(1))
+        .copied()
+        .unwrap_or(0);
+      let entry = format!("{}:{} -> {}()", func.source_path, line, func.name);
+      lines.push(self.heap.alloc_string(entry));
     }
     self.heap.alloc_list(lines)
   }
@@ -218,6 +225,29 @@ impl VM {
       .map(|&idx| inst.fields[idx as usize].get().to_string())
       .unwrap_or_else(|| class.name.clone());
     format!("{}: {}", type_name, message)
+  }
+
+  /// Full multi-line "Unhandled ..." block for an uncaught exception --
+  /// what the CLI/REPL print at the top level (see zuri.rs).
+  /// `describe_exception` stays the short "TYPE: message" summary,
+  /// still used e.g. by the prelude's own internal panic path.
+  pub fn format_uncaught(&self, exc: Value) -> String {
+    let summary = self.describe_exception(exc);
+    if !exc.is_instance() {
+      return format!("Unhandled {}", summary);
+    }
+    let inst = exc.as_instance();
+    let trace_idx = inst.class.as_class().field_slots.get("stacktrace").copied();
+    let mut out = format!("Unhandled {}\n  StackTrace:", summary);
+    if let Some(idx) = trace_idx {
+      let trace_val = inst.fields[idx as usize].get();
+      if trace_val.is_list() {
+        for line in trace_val.as_list() {
+          out.push_str(&format!("\n    {}", line));
+        }
+      }
+    }
+    out
   }
 
   /// Run `main` (a top-level closure, typically zero-upvalue, taking no
@@ -813,6 +843,18 @@ impl VM {
             let name = self.const_as_str(func, name_const)?;
             let v = self.get_reg(base, src);
             self.globals.insert(name, v);
+          },
+          Instr::AssignGlobal { name_const, src } => {
+            let name = self.const_as_str(func, name_const)?;
+            let value = self.get_reg(base, src);
+
+            let found = self.globals.get(&name).copied();
+            match found {
+              Some(_) => self.globals.insert(name, value),
+              None => {
+                return Err(self.raise("UndefinedError", format!("undefined global '{}'", name)));
+              },
+            };
           },
 
           Instr::Closure { dst, proto_const } => {

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::{env, fs, process};
+use zuri::compiler::parser::ParseError;
 use zuri::compiler::token::KEYWORD_TOKENS;
 
 use itertools::Itertools;
@@ -13,6 +15,14 @@ mod shared;
 
 fn print_repl_help() {
   println!("Press <tab> for autocomplete suggestions");
+}
+
+fn format_parse_errors(errors: &[ParseError], path: &str) -> String {
+  errors
+    .iter()
+    .map(|e| format!("{}\n  {}:{}", e, path, e.line_number))
+    .collect::<Vec<_>>()
+    .join("\n\n")
 }
 
 fn run_repl(vm: &mut VM) {
@@ -56,19 +66,16 @@ fn run_repl(vm: &mut VM) {
 fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
   let mut lex = Lexer::new(line);
   let mut parser = Parser::new(&mut lex);
-  if let Ok(tokens) = parser.parse() {
+  if let Ok(decls) = parser.parse() {
     let chunk = Box::new(Chunk::new());
-
-    let heap = vm.heap_mut();
-    let mut compiler = Compiler::new(tokens, chunk, heap);
+    let mut compiler = Compiler::new(decls, chunk, &mut vm.heap, Rc::from("<repl>"));
     compiler.enable_repl_mode();
 
     let fn_obj = compiler.compile();
-    let closure = heap.alloc_plain_closure(fn_obj);
+    let closure = vm.heap.alloc_plain_closure(fn_obj);
 
     if let Err(e) = vm.run(closure) {
-      eprintln!("runtime error: {}", vm.describe_exception(e));
-      process::exit(1);
+      eprintln!("{}", vm.format_uncaught(e));
     }
   } else {
     return Err(format!(
@@ -81,27 +88,30 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
 
 fn run_file(vm: &mut VM, file: &str) {
   let content = fs::read_to_string(file).expect("Should have been able to read the file");
+  // Canonicalize so stack traces show a full, unambiguous path,
+  // matching the target format -- falls back to the given (possibly
+  // relative) path if that fails for any reason.
+  let display_path: Rc<str> = Rc::from(
+    fs::canonicalize(file)
+      .map(|p| p.display().to_string())
+      .unwrap_or_else(|_| file.to_string()),
+  );
 
   let mut lex = Lexer::new(&content);
   let mut parser = Parser::new(&mut lex);
-  if let Ok(tokens) = parser.parse() {
-    // println!("{:?}", tokens);
-    let mut heap = Heap::new();
+  if let Ok(decls) = parser.parse() {
     let chunk = Box::new(Chunk::new());
-    let compiler = Compiler::new(tokens, chunk, &mut heap);
+    let compiler = Compiler::new(decls, chunk, &mut vm.heap, display_path.clone());
 
     let fn_obj = compiler.compile();
-    let closure = heap.alloc_plain_closure(fn_obj);
+    let closure = vm.heap.alloc_plain_closure(fn_obj);
 
     if let Err(e) = vm.run(closure) {
-      eprintln!("runtime error: {}", vm.describe_exception(e));
+      eprintln!("{}", vm.format_uncaught(e));
       process::exit(1);
     }
   } else {
-    eprintln!(
-      "ParseError: {}",
-      parser.errors.iter().map(|f| f.to_string()).join("\n  ")
-    );
+    eprintln!("{}", format_parse_errors(&parser.errors, &display_path));
     process::exit(1);
   }
 }
