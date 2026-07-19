@@ -1231,9 +1231,9 @@ impl VM {
                 },
                 None => {
                   let msg = format!(
-                    "cannot call method '{}' on object of type {}",
-                    method_name,
-                    receiver.type_name()
+                    "object of type {} does not define method '{}'",
+                    receiver.type_name(),
+                    method_name
                   );
                   return Err(self.raise("TypeError", msg));
                 },
