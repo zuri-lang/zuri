@@ -933,6 +933,63 @@ impl<'a> Compiler<'a> {
     dst
   }
 
+  // Mirrors compile_invoke_super, minus the method-name lookup
+  /// `parent(args)` -- calls the SUPERCLASS's own constructor on the
+  /// CURRENT self. See `Instr::CallSuperCtor`'s doc comment for why this
+  /// reads `ObjClass::constructor` directly instead of a name lookup.
+  fn compile_super_ctor_call(&mut self, args: &[Expr]) -> u8 {
+    let call_reg = self.alloc_reg();
+    let raw_super = match self.resolve_variable("@superclass") {
+      VarLoc::Local(reg, _) => reg,
+      VarLoc::Upvalue(idx) => {
+        let dst = self.alloc_reg();
+        self.emit(Instr::GetUpval { dst, idx });
+        dst
+      },
+      VarLoc::Global => panic!("compile: 'parent' used in a class with no superclass"),
+    };
+    if raw_super != call_reg {
+      self.emit(Instr::Move {
+        dst: call_reg,
+        src: raw_super,
+      });
+    }
+    self.free_regs_to(call_reg + 1);
+
+    let self_slot = self.alloc_reg();
+    let self_reg = self.compile_self_reg();
+    self.emit(Instr::Move {
+      dst: self_slot,
+      src: self_reg,
+    });
+    self.free_regs_to(self_slot + 1);
+
+    let mut num_args: u8 = 0;
+    for arg in args {
+      let expected = self_slot + 1 + num_args;
+      let arg_reg = self.compile_expression(arg);
+      if arg_reg != expected {
+        self.emit(Instr::Move {
+          dst: expected,
+          src: arg_reg,
+        });
+      }
+      self.free_regs_to(expected + 1);
+      num_args = num_args
+        .checked_add(1)
+        .expect("too many arguments in a single call");
+    }
+
+    let dst = call_reg;
+    self.emit(Instr::CallSuperCtor {
+      dst,
+      superclass: call_reg,
+      num_args,
+    });
+    self.free_regs_to(call_reg + 1);
+    dst
+  }
+
   fn compile_expression(&mut self, expression: &Expr) -> u8 {
     match expression {
       Expr::Nil => {
@@ -1205,6 +1262,17 @@ impl<'a> Compiler<'a> {
         ),
       },
       Expr::Call(callee, args, line) => {
+        if let Expr::Get(obj, method) = callee.as_ref() {
+          return if matches!(obj.as_ref(), Expr::Parent) {
+            self.compile_invoke_super(method, args)
+          } else {
+            self.compile_invoke(obj, method, args)
+          };
+        }
+        if matches!(callee.as_ref(), Expr::Parent) {
+          return self.compile_super_ctor_call(args);
+        }
+
         if let Expr::Get(obj, method) = callee.as_ref() {
           return if matches!(obj.as_ref(), Expr::Parent) {
             self.compile_invoke_super(method, args)

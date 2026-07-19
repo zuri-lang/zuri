@@ -539,36 +539,22 @@ impl Value {
     }
   }
 
+  /// Like `type_name()`, but for a class or an instance of one, reports
+  /// the user-given class name instead of the generic "class"/"instance"
+  /// -- what error messages want when they say what type was actually
+  /// passed. Everything else just defers to `type_name()`, which is
+  /// already just as accurate for any type that isn't user-named.
   pub fn argument_type_name(&self) -> String {
-    /* if self.is_int() {
-      "int"
-    } else */
-    if self.is_number() {
-      "float".to_string()
-    } else if self.is_nil() {
-      "nil".to_string()
-    } else if self.is_bool() {
-      "bool".to_string()
-    } else if self.is_obj() {
+    if self.is_obj() {
       unsafe {
         match &*self.as_obj() {
-          Obj::Str(_) => "string".to_string(),
-          Obj::Bytes(_) => "bytes".to_string(),
-          Obj::BigInt(_) => "bigint".to_string(),
-          Obj::List(_) => "list".to_string(),
-          Obj::Dict(_) => "dict".to_string(),
-          Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) | Obj::BoundMethod(_) => {
-            "function".to_string()
-          },
-          Obj::Upvalue(_) => "upvalue".to_string(),
-          Obj::Class(x) => x.borrow().name.clone(),
-          Obj::Instance(x) => x.class.argument_type_name(),
-          Obj::Range { .. } => "range".to_string(),
+          Obj::Class(c) => return c.borrow().name.clone(),
+          Obj::Instance(i) => return i.class.argument_type_name(),
+          _ => {},
         }
       }
-    } else {
-      "unknown".to_string()
     }
+    self.type_name().to_string()
   }
 }
 

@@ -1726,16 +1726,6 @@ impl<'a> Parser<'a> {
       "Expected '}' after class declaration."
     );
 
-    if !methods.iter().any(|f| f.is_method("@new")) && !is_extension {
-      methods.push(Decl::Method(
-        name.copy_to(TokenKind::Identifier("@new".to_string())),
-        Vec::new(),
-        Box::new(Stmt::None),
-        false,
-        false,
-      ))
-    }
-
     Decl::Class(name, superclass, properties, methods, is_extension)
   }
 

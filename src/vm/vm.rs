@@ -1303,6 +1303,31 @@ impl VM {
               self.dispatch_call(base, superclass + 1, num_args, dst)?;
             }
           },
+          Instr::CallSuperCtor {
+            dst,
+            superclass,
+            num_args,
+          } => {
+            let super_val = self.get_reg(base, superclass);
+            if !super_val.is_class() {
+              let msg = format!(
+                "'parent' does not refer to a class (got a {})",
+                super_val.type_name()
+              );
+              return Err(self.raise("TypeError", msg));
+            }
+            let ctor = super_val.as_class().constructor;
+            match ctor {
+              Some(ctor) => self.invoke_prebound(base, superclass, ctor, num_args, dst)?,
+              None => {
+                let msg = format!(
+                  "class '{}' has no constructor to call via parent()",
+                  super_val.as_class().name
+                );
+                return Err(self.raise("AccessError", msg));
+              },
+            }
+          },
 
           Instr::GetIndex { dst, obj, idx } => {
             let ov = self.get_reg(base, obj);

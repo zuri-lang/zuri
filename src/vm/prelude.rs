@@ -19,76 +19,76 @@ class Error {
   var stacktrace = []
   var type = 'Error'
 
-  Error(message) {
+  @new(message) {
     self.message = message or self.message
   }
 }
 
 class TypeError < Error {
-  TypeError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'TypeError'
   }
 }
 
 class ValueError < Error {
-  ValueError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'ValueError'
   }
 }
 
 class NumericError < Error {
-  NumericError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'NumericError'
   }
 }
 
 class ArgumentError < Error {
-  ArgumentError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'ArgumentError'
   }
 }
 
 class NotImplementedError < Error {
-  NotImplementedError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'NotImplementedError'
   }
 }
 
 class RangeError < Error {
-  RangeError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'RangeError'
   }
 }
 
 class AccessError < Error {
-  AccessError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'AccessError'
   }
 }
 
 class AssertError < Error {
-  AssertError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'AssertError'
   }
 }
 
 class PropertyError < Error {
-  PropertyError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'PropertyError'
   }
 }
 
 class UndefinedError < Error {
-  UndefinedError(message) {
+  @new(message) {
     self.message = message or self.message
     self.type = 'UndefinedError'
   }

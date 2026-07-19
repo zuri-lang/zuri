@@ -307,6 +307,23 @@ pub enum Instr {
     method_const: u16,
     num_args: u8,
   },
+  // chunk.rs
+  /// `parent(args)` -- calls the SUPERCLASS's own resolved constructor
+  /// (`ObjClass::constructor`) directly on the CURRENT `self`, the
+  /// constructor equivalent of `InvokeSuper`'s method calls. Unlike an
+  /// ordinary `SomeClass(args)` call, this never allocates a new
+  /// instance. `superclass` is a register holding the class Value; `self`
+  /// is duplicated by the compiler into `superclass + 1` (same
+  /// convention `InvokeSuper` uses), with `num_args` more values
+  /// following it. "No superclass at all" is a compile-time fact and
+  /// panics, same as `parent.method()` in that position already does;
+  /// a superclass that resolves but has no constructor is the one
+  /// genuinely dynamic case, and raises a catchable `AccessError`.
+  CallSuperCtor {
+    dst: u8,
+    superclass: u8,
+    num_args: u8,
+  },
 
   /// `obj[idx]` -- supported for List, Bytes (yields a number 0-255),
   /// String (yields a 1-character string, indexed by Unicode scalar

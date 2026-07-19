@@ -1,6 +1,5 @@
-class Base < Object {
+class Base {
   @new() {
-    parent()
     self.count = 0
   }
   
