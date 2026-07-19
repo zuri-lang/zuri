@@ -5,7 +5,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn install(vm: &mut VM) {
   register(vm, "time", 0, false, time);
-  register(vm, "abs", 1, false, abs);
   register(vm, "sum", 1, true, sum);
   register(vm, "bytes", 1, false, bytes);
   // register(vm, "gc", 0, false, gc);
@@ -30,14 +29,6 @@ fn time(_ctx: &mut ZuriContext) -> Result<Value, String> {
     )
   })?;
   Ok(Value::number(now.as_secs_f64()))
-}
-
-fn abs(ctx: &mut ZuriContext) -> Result<Value, String> {
-  let v = ctx.args[0];
-  if !v.is_number() {
-    return Err(format!("abs() expects a number, got {}", v.type_name()));
-  }
-  Ok(Value::number(v.as_number().abs()))
 }
 
 fn sum(ctx: &mut ZuriContext) -> Result<Value, String> {

@@ -180,6 +180,7 @@ impl VM {
   /// call chain by function name.
   fn build_stacktrace(&mut self) -> Value {
     let mut lines = Vec::with_capacity(self.frames.len());
+
     for frame in self.frames.iter().rev() {
       let func = unsafe { &*frame.function };
       let line = func
@@ -191,6 +192,7 @@ impl VM {
       let entry = format!("{}:{} -> {}()", func.source_path, line, func.name);
       lines.push(self.heap.alloc_string(entry));
     }
+
     self.heap.alloc_list(lines)
   }
 
@@ -1180,7 +1182,7 @@ impl VM {
                 },
                 None => match builtins::lookup(receiver, &method_name) {
                   Some(native) => {
-                    let args_start = base + obj as usize + 1;
+                    let args_start = base + obj as usize + 2; // was + 1
                     let args_end = args_start + num_args as usize;
                     let mut call_args = Vec::with_capacity(num_args as usize + 1);
                     call_args.push(receiver);
@@ -1221,7 +1223,7 @@ impl VM {
             } else {
               match builtins::lookup(receiver, &method_name) {
                 Some(native) => {
-                  let args_start = base + obj as usize + 1;
+                  let args_start = base + obj as usize + 2; // was + 1
                   let args_end = args_start + num_args as usize;
                   let mut call_args = Vec::with_capacity(num_args as usize + 1);
                   call_args.push(receiver);

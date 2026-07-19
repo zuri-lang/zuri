@@ -1051,7 +1051,7 @@ impl<'a> Parser<'a> {
     let mut value_id = key_id.clone();
 
     // var key = nil
-    let key_decl_name = key_id.copy_to(TokenKind::Identifier(" key ".to_string()));
+    let key_decl_name = key_id.copy_to(TokenKind::Identifier("$key".to_string()));
     let key_nil = self.compose_nil();
     let mut key = Stmt::Var(key_decl_name, Box::new(key_nil), None, false);
 
@@ -1061,9 +1061,9 @@ impl<'a> Parser<'a> {
     let mut value = Stmt::Var(value_decl_name, Box::new(value_nil), None, false);
 
     if match_tok!(self, TokenKind::Comma) {
-      value_id = consume_tok!(self, TokenKind::Identifier(_), "Variable name expected");
-
       key = value;
+      
+      value_id = consume_tok!(self, TokenKind::Identifier(_), "Variable name expected");
 
       let value_decl_name2 = value_id.clone();
       let value_nil2 = self.compose_nil();

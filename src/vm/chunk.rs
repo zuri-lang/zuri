@@ -288,7 +288,11 @@ pub enum Instr {
   /// compiler always duplicates the receiver into register `obj + 1`
   /// before emitting this (see `Compiler::compile_invoke`), which is
   /// where the callee's own register 0 (self) ends up; user arguments
-  /// follow at `obj + 2 ..`.
+  /// follow at `obj + 2 ..`. This applies uniformly to every dispatch
+  /// path reached from here -- a real class method (`invoke_prebound`),
+  /// a field holding a callable (`dispatch_call(base, obj+1, ...)`), AND
+  /// a builtin native (`builtins::lookup`) -- so any new fallback added
+  /// here must read its arguments starting at `obj + 2`, never `obj + 1`.
   Invoke {
     dst: u8,
     obj: u8,

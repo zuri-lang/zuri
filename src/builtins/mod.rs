@@ -102,6 +102,21 @@ fn method(name: &'static str, func: NativeFn) -> (&'static str, NativeFunction) 
   )
 }
 
+/// Same as method, but allows specifying `arity` of the function.
+/// The arity provided shoukd be the number of arguments expected by the function without counting the implicit receiver.
+/// For example, `x.length(1)` has arity 1.
+fn method_n(name: &'static str, arity: u8, func: NativeFn) -> (&'static str, NativeFunction) {
+  (
+    name,
+    NativeFunction {
+      name,
+      min_arity: arity + 1,
+      variadic: false,
+      func,
+    },
+  )
+}
+
 fn build(entries: Vec<(&'static str, NativeFunction)>) -> MethodTable {
   entries.into_iter().collect()
 }

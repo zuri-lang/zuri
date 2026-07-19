@@ -70,7 +70,7 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
     let mut compiler = Compiler::new(decls, chunk, &mut vm.heap, Rc::from("<repl>"));
     compiler.enable_repl_mode();
 
-    match compiler.compile() {
+    let res = match compiler.compile() {
       Ok(fn_obj) => {
         let closure = vm.heap.alloc_plain_closure(fn_obj);
         if let Err(e) = vm.run(closure) {
@@ -78,7 +78,11 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
         }
       },
       Err(errors) => eprintln!("{}", format_parse_errors(&errors, "<repl>")),
-    }
+    };
+
+    parser.errors.clear();
+
+    res
   } else {
     return Err(format_parse_errors(&parser.errors, "<repl>"));
   }
