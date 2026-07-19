@@ -4,7 +4,7 @@ class A {
   }
 
   a() {
-      return self.value
+    return self.value
   }
 }
 

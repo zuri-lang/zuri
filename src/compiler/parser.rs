@@ -1047,22 +1047,30 @@ impl<'a> Parser<'a> {
   // independently correct position.
   fn for_stmt(&mut self) -> Stmt {
     let key_id = consume_tok!(self, TokenKind::Identifier(_), "Variable name expected");
-
     let mut value_id = key_id.clone();
 
-    // var key = nil
+    // The variable that tracks the key/index ACROSS iterations. For a
+    // single-variable loop (`for x in ...`) this must be the synthetic
+    // `$key` -- invisible to user code -- because the user's own
+    // variable holds only the VALUE and must not be clobbered by key
+    // bookkeeping written back into it each iteration. For a
+    // two-variable loop (`for k, v in ...`), the user's own first name
+    // IS the key tracker -- exposing it as `k` is the whole point, so
+    // it's swapped in below once we know we're in that form.
     let key_decl_name = key_id.copy_to(TokenKind::Identifier("$key".to_string()));
+    let mut key_track_id = key_decl_name.clone();
+
     let key_nil = self.compose_nil();
     let mut key = Stmt::Var(key_decl_name, Box::new(key_nil), None, false);
 
-    // var value = nil
     let value_decl_name = key_id.clone();
     let value_nil = self.compose_nil();
     let mut value = Stmt::Var(value_decl_name, Box::new(value_nil), None, false);
 
     if match_tok!(self, TokenKind::Comma) {
       key = value;
-      
+      key_track_id = key_id.clone();
+
       value_id = consume_tok!(self, TokenKind::Identifier(_), "Variable name expected");
 
       let value_decl_name2 = value_id.clone();
@@ -1072,31 +1080,30 @@ impl<'a> Parser<'a> {
 
     consume_tok!(self, TokenKind::In, "Expected 'in' after 'for' statement.");
 
-    // object
     let iterable = self.expression();
 
     let mut stmt_list = Vec::new();
 
     // key = object.@key(key)
     {
-      let get_name = key_id.copy_to(TokenKind::Identifier("@key".to_string()));
+      let get_name = key_track_id.copy_to(TokenKind::Identifier("@key".to_string()));
       let getter = self.compose_get(iterable.clone(), get_name);
-      let call_arg = self.compose_id(key_id.clone());
-      let call = self.compose_call(getter, vec![call_arg], key_id.line as u32);
-      let lhs = self.compose_id(key_id.clone());
+      let call_arg = self.compose_id(key_track_id.clone());
+      let call = self.compose_call(getter, vec![call_arg], key_track_id.line as u32);
+      let lhs = self.compose_id(key_track_id.clone());
       let assign = self.compose_assign(lhs, call);
       stmt_list.push(Stmt::Expression(Box::new(assign)));
     }
 
     // if key == nil { break }
     {
-      let left = self.compose_id(key_id.clone());
+      let left = self.compose_id(key_track_id.clone());
       let right = self.compose_nil();
       let condition = Expr::Logical(
         Box::new(left),
         TokenKind::EqualEq,
         Box::new(right),
-        key_id.line as u32,
+        key_track_id.line as u32,
       );
       let then_branch = Stmt::Break;
       stmt_list.push(Stmt::If(Box::new(condition), Box::new(then_branch), None));
@@ -1106,7 +1113,7 @@ impl<'a> Parser<'a> {
     {
       let get_name = value_id.copy_to(TokenKind::Identifier("@value".to_string()));
       let getter = self.compose_get(iterable.clone(), get_name);
-      let call_arg = self.compose_id(key_id.clone());
+      let call_arg = self.compose_id(key_track_id.clone());
       let call = self.compose_call(getter, vec![call_arg], value_id.line as u32);
       let lhs = self.compose_id(value_id.clone());
       let assign = self.compose_assign(lhs, call);

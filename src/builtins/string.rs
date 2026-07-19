@@ -45,8 +45,6 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];
   let obj = ctx.args[0].as_str();
 
-  println!("{}, {}", ctx.args[0], ctx.args[1]);
-
   if val.is_nil() {
     if obj.is_empty() {
       return Ok(Value::bool(false));

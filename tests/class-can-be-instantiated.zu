@@ -1,6 +1,6 @@
 class A {
-    a() {
-        return 'A.a'
-    }
+  a() {
+    return 'A.a'
+  }
 }
 echo A().a()

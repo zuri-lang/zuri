@@ -149,7 +149,7 @@ impl<'a> Lexer<'a> {
     let line_start = if self.lines.is_empty() || self.start_line == 1 {
       0
     } else {
-      *self.lines.get(&self.start_line).unwrap()
+      *self.lines.get(&self.start_line).unwrap_or(&0)
     };
 
     // println!("start = {}, line start = {}", self.start, line_start);
