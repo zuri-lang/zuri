@@ -1,0 +1,7 @@
+{name: Richard, address: Plot 10, Alagbaa Estate, age: 28, married: true, children: 1}
+Plot 10, Alagbaa Estate
+30
+{name: Richard, address: Plot 10, Alagbaa Estate, age: 30, married: true, children: 2}
+{name: Richard, age: 30}
+{name: Richard, age: 53}
+{name: Alexander, age: 30}

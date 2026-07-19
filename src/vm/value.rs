@@ -538,6 +538,38 @@ impl Value {
       "unknown"
     }
   }
+
+  pub fn argument_type_name(&self) -> String {
+    /* if self.is_int() {
+      "int"
+    } else */
+    if self.is_number() {
+      "float".to_string()
+    } else if self.is_nil() {
+      "nil".to_string()
+    } else if self.is_bool() {
+      "bool".to_string()
+    } else if self.is_obj() {
+      unsafe {
+        match &*self.as_obj() {
+          Obj::Str(_) => "string".to_string(),
+          Obj::Bytes(_) => "bytes".to_string(),
+          Obj::BigInt(_) => "bigint".to_string(),
+          Obj::List(_) => "list".to_string(),
+          Obj::Dict(_) => "dict".to_string(),
+          Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) | Obj::BoundMethod(_) => {
+            "function".to_string()
+          },
+          Obj::Upvalue(_) => "upvalue".to_string(),
+          Obj::Class(x) => x.borrow().name.clone(),
+          Obj::Instance(x) => x.class.argument_type_name(),
+          Obj::Range { .. } => "range".to_string(),
+        }
+      }
+    } else {
+      "unknown".to_string()
+    }
+  }
 }
 
 impl std::fmt::Display for Value {

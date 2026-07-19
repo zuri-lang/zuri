@@ -1,15 +1,16 @@
 class Pair {
+  var first
+  var second
   var field = 10
 
   method() {
-
   }
 }
 
 var pair = Pair()
-# pair.first = 1
-# pair.second = 2
-# echo pair.first + pair.second
+pair.first = 1
+pair.second = 2
+echo pair.first + pair.second
 echo pair.field
 
 class Scone {
@@ -22,11 +23,10 @@ var scone = Scone()
 scone.topping('berries', 'cream')
 
 class Person {
-  var name
   var age = 10
   static var id = 2001
 
-  Person(name) {
+  @new(name) {
     self.name = name
   }
 

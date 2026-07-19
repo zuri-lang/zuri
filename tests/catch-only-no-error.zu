@@ -1,0 +1,3 @@
+catch {
+  echo 'Should not show anything'
+}

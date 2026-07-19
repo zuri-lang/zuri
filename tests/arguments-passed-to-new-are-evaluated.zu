@@ -1,0 +1,4 @@
+class Class { }
+var l = 3
+Class(l = 5)
+echo l

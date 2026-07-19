@@ -1,0 +1,5 @@
+class Class {
+   c() { return 1 }
+   c() { return 2 }
+}
+echo Class().c()

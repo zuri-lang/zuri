@@ -1,0 +1,7 @@
+class A {
+  @new() {
+    self.value = 2
+  }
+}
+
+echo A() + A()

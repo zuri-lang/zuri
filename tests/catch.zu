@@ -1,0 +1,6 @@
+catch {
+  var a = 20
+  raise Error('Something happened')
+}
+
+echo 'Cleaning up'

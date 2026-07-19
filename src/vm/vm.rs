@@ -153,14 +153,14 @@ impl VM {
     self.attach_stacktrace(instance)
   }
 
-  /// Is `v` an instance of `Exception` or one of its subclasses? What
+  /// Is `v` an instance of `Error` or one of its subclasses? What
   /// `Instr::Raise` checks before allowing a value to propagate as an
   /// error, and what `raise`'s own output always satisfies trivially.
   fn is_exception_value(&self, v: Value) -> bool {
     if !v.is_instance() {
       return false;
     }
-    let Some(&exception_class) = self.builtin_exceptions.get("Exception") else {
+    let Some(&exception_class) = self.builtin_exceptions.get("Error") else {
       return false;
     };
     let mut cur = Some(v.as_instance().class);
@@ -666,7 +666,7 @@ impl VM {
 
       if ip >= func.chunk.code.len() {
         let msg = format!("fell off the end of '{}' without a Return", func.name);
-        return Err(self.raise("Exception", msg));
+        return Err(self.raise("Error", msg));
       }
 
       let instr = func.chunk.code[ip];
@@ -1032,10 +1032,18 @@ impl VM {
             c.statics.push(Cell::new(value));
           },
 
-          Instr::FinalizeClass { class, name_const } => {
+          Instr::FinalizeClass { class } => {
             let class_val = self.get_reg(base, class);
-            let name = self.const_as_str(func, name_const)?;
+            let name = self.const_as_str(func, 0)?;
             let mut c = class_val.as_class_mut();
+
+            if self.globals.get(&c.name).is_some() {
+              return Err(self.raise(
+                "Error",
+                format!("class '{}' already declared in this scope", c.name),
+              ));
+            }
+
             if let Some(ctor) = c.methods.get(&name).copied() {
               c.constructor = Some(ctor);
             }
@@ -1200,7 +1208,7 @@ impl VM {
               }
             } else {
               let msg = format!(
-                "cannot call method '{}' on a {}",
+                "cannot call method '{}' on object of type {}",
                 method_name,
                 receiver.type_name()
               );
@@ -1322,7 +1330,7 @@ impl VM {
             let value = self.get_reg(base, src);
             if !self.is_exception_value(value) {
               let msg = format!(
-                "can only raise an Exception or subclass, got a {}",
+                "can only raise an Error or subclass, got a {}",
                 value.type_name()
               );
               return Err(self.raise("TypeError", msg));
@@ -1488,10 +1496,10 @@ impl VM {
     }
 
     let msg = format!(
-      "operator '{}' not defined for {} and {}",
+      "operator '{}' not defined for call signature ({}, {})",
       op_name,
-      va.type_name(),
-      vb.type_name()
+      va.argument_type_name(),
+      vb.argument_type_name()
     );
     Err(self.raise("TypeError", msg))
   }
@@ -1531,10 +1539,10 @@ impl VM {
     }
 
     let msg = format!(
-      "operator '{}' not defined for {} and {}",
+      "operator '{}' not defined for call signature ({}, {})",
       op_name,
-      va.type_name(),
-      vb.type_name()
+      va.argument_type_name(),
+      vb.argument_type_name()
     );
     Err(self.raise("TypeError", msg))
   }
@@ -1575,10 +1583,10 @@ impl VM {
     }
 
     let msg = format!(
-      "operator '{}' not defined for {} and {}",
+      "operator '{}' not defined for call signature ({}, {})",
       op_name,
-      va.type_name(),
-      vb.type_name()
+      va.argument_type_name(),
+      vb.argument_type_name()
     );
     Err(self.raise("TypeError", msg))
   }
@@ -1598,8 +1606,8 @@ impl VM {
       let msg = format!(
         "operator '{}' not defined for {} and {}",
         op_name,
-        va.type_name(),
-        vb.type_name()
+        va.argument_type_name(),
+        vb.argument_type_name()
       );
       return Err(self.raise("TypeError", msg));
     }

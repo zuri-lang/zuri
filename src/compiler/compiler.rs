@@ -115,6 +115,9 @@ impl<'a> Compiler<'a> {
     let mut top = FunctionScope::new();
     top.chunk = *chunk;
 
+    // The first constant is always the class constructor name, which is "@new"
+    top.chunk.add_constant(heap.alloc_string("@new"));
+
     Compiler {
       decls,
       heap,
@@ -592,7 +595,7 @@ impl<'a> Compiler<'a> {
       .collect();
 
     let mut implicit_names: Vec<String> = Vec::new();
-    for m in methods.iter().filter(|f| f.is_method(class_name.as_str())) {
+    for m in methods.iter().filter(|f| f.is_method("@new")) {
       if let Decl::Method(_, _, body, _, is_static) = m {
         if !*is_static {
           collect_self_fields_stmt(body, &mut implicit_names);
@@ -684,10 +687,7 @@ impl<'a> Compiler<'a> {
       }
     }
 
-    self.emit(Instr::FinalizeClass {
-      class: dst,
-      name_const,
-    });
+    self.emit(Instr::FinalizeClass { class: dst });
     self.emit(Instr::SetGlobal {
       name_const,
       src: dst,
@@ -1591,7 +1591,7 @@ impl<'a> Compiler<'a> {
   /// global-lookup + Call path a user's own `raise AssertError(...)`
   /// would use (so its constructor runs normally), then `Raise` it --
   /// reusing Stmt::Raise's own instruction for the stacktrace-
-  /// attachment and Exception-subclass validation, rather than
+  /// attachment and Error-subclass validation, rather than
   /// duplicating either.
   fn compile_assert(&mut self, cond: &Expr, message: &Option<Box<Expr>>) {
     let mark = self.cur().next_reg;

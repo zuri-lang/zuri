@@ -108,6 +108,7 @@ pub struct Parser<'a> {
   previous: Token,
   last_previous: Token,
   anonymous_count: usize,
+  functions_count: usize,
   pub errors: Vec<ParseError>,
 }
 
@@ -145,6 +146,7 @@ impl<'a> Parser<'a> {
         column: 0,
       },
       anonymous_count: 0,
+      functions_count: 0,
       errors: Vec::new(),
     }
   }
@@ -911,6 +913,7 @@ impl<'a> Parser<'a> {
   }
 
   fn anonymous(&mut self) -> Expr {
+    self.functions_count += 1;
     let start = self.mark();
 
     let name_token = self.previous().clone();
@@ -951,6 +954,7 @@ impl<'a> Parser<'a> {
     // Increment the count for the next guy
     self.anonymous_count += 1;
 
+    self.functions_count -= 1;
     Expr::Anonymous(Box::new(function))
   }
 
@@ -1312,7 +1316,7 @@ impl<'a> Parser<'a> {
       let id = consume_tok!(
         self,
         TokenKind::Identifier(_),
-        "Exception variable name expected after 'as'."
+        "Error variable name expected after 'as'."
       );
 
       name = Some(Box::new(self.compose_id(id)));
@@ -1334,36 +1338,41 @@ impl<'a> Parser<'a> {
       // Do nothing
     }
 
-    let mut top_stmt = None;
     let mut final_stmts = Vec::new();
 
-    if !check_tok!(self, TokenKind::Semicolon) {
+    let mut top_stmt = if !match_tok!(self, TokenKind::Semicolon) {
       if match_tok!(self, TokenKind::Var) {
         // do nothing...
       }
 
-      top_stmt = Some(self.var_decl(false));
-    }
+      let res = Some(self.var_decl(false));
 
-    consume_tok!(
-      self,
-      TokenKind::Semicolon,
-      "Expected ';' after iter declaration."
-    );
-    self.ignore_newlines();
+      consume_tok!(
+        self,
+        TokenKind::Semicolon,
+        "Expected ';' after iter initializer."
+      );
+      self.ignore_newlines();
 
-    let mut condition = self.compose_bool(true);
+      res
+    } else {
+      None
+    };
 
-    if !check_tok!(self, TokenKind::Semicolon) {
-      condition = self.expression();
-    }
+    let mut condition = if !match_tok!(self, TokenKind::Semicolon) {
+      let res = self.expression();
 
-    consume_tok!(
-      self,
-      TokenKind::Semicolon,
-      "Expected ';' after iter condition."
-    );
-    self.ignore_newlines();
+      consume_tok!(
+        self,
+        TokenKind::Semicolon,
+        "Expected ';' after iter condition."
+      );
+      self.ignore_newlines();
+
+      res
+    } else {
+      self.compose_bool(true)
+    };
 
     if !check_tok!(self, TokenKind::Lbrace | TokenKind::Rparen) {
       loop {
@@ -1425,6 +1434,11 @@ impl<'a> Parser<'a> {
         self.end_statement();
         result
       },
+      TokenKind::Const => {
+        let result = self.var_decl(true);
+        self.end_statement();
+        result
+      },
       TokenKind::Echo => self.echo_stmt(),
       TokenKind::If => self.if_stmt(),
       TokenKind::While => self.while_stmt(),
@@ -1440,6 +1454,10 @@ impl<'a> Parser<'a> {
       TokenKind::Continue => Stmt::Continue,
       TokenKind::Break => Stmt::Break,
       TokenKind::Return => {
+        if self.functions_count == 0 {
+          self.report_error("'return' is only a valid keyword in function context".to_string());
+        }
+
         let mut result = self.compose_nil();
 
         if !self.is_at_end()
@@ -1574,6 +1592,7 @@ impl<'a> Parser<'a> {
   }
 
   fn function_decl(&mut self) -> Decl {
+    self.functions_count += 1;
     let name = consume_tok!(self, TokenKind::Identifier(_), "Function name expected.");
 
     consume_tok!(self, TokenKind::Lparen, "Expected '(' after function name.");
@@ -1592,6 +1611,7 @@ impl<'a> Parser<'a> {
 
     let body = self.match_block("Expected '{' after function declaration".to_string());
 
+    self.functions_count -= 1;
     Decl::Function(name, parameters, Box::new(body), is_variadic)
   }
 
@@ -1617,6 +1637,7 @@ impl<'a> Parser<'a> {
   }
 
   fn method_decl(&mut self, is_static: bool) -> Decl {
+    self.functions_count += 1;
     let name = consume_tok!(
       self,
       TokenKind::Identifier(_) | TokenKind::Decorator(_),
@@ -1639,6 +1660,7 @@ impl<'a> Parser<'a> {
 
     let body = self.match_block("Expected '{' after method declaration".to_string());
 
+    self.functions_count -= 1;
     Decl::Method(name, parameters, Box::new(body), is_variadic, is_static)
   }
 
@@ -1704,13 +1726,9 @@ impl<'a> Parser<'a> {
       "Expected '}' after class declaration."
     );
 
-    if !methods
-      .iter()
-      .any(|f| f.is_method(name.describe().as_str()))
-      && !is_extension
-    {
+    if !methods.iter().any(|f| f.is_method("@new")) && !is_extension {
       methods.push(Decl::Method(
-        name.clone(),
+        name.copy_to(TokenKind::Identifier("@new".to_string())),
         Vec::new(),
         Box::new(Stmt::None),
         false,

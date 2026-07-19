@@ -1,10 +1,10 @@
-//! Built-in Exception class hierarchy, defined as ordinary Zuri source
+//! Built-in Error class hierarchy, defined as ordinary Zuri source
 //! and compiled + run once at VM startup (see `install`) rather than
 //! hand-built in Rust -- reuses the exact same class/inheritance
-//! machinery every user-defined class goes through, so Exception and
+//! machinery every user-defined class goes through, so Error and
 //! its subclasses behave identically to anything a Zuri program could
 //! write itself, including being subclassable (see
-//! tests/custom_exception.zu's `class Error < Exception`).
+//! tests/custom_exception.zu's `class Error < Error`).
 
 use std::rc::Rc;
 
@@ -14,80 +14,80 @@ use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
 const PRELUDE_SOURCE: &str = r#"
-class Exception {
+class Error {
   var message = 'An unexpected error has occurred'
   var stacktrace = []
-  var type = 'Exception'
+  var type = 'Error'
 
-  Exception(message) {
+  Error(message) {
     self.message = message or self.message
   }
 }
 
-class TypeError < Exception {
+class TypeError < Error {
   TypeError(message) {
     self.message = message or self.message
     self.type = 'TypeError'
   }
 }
 
-class ValueError < Exception {
+class ValueError < Error {
   ValueError(message) {
     self.message = message or self.message
     self.type = 'ValueError'
   }
 }
 
-class NumericError < Exception {
+class NumericError < Error {
   NumericError(message) {
     self.message = message or self.message
     self.type = 'NumericError'
   }
 }
 
-class ArgumentError < Exception {
+class ArgumentError < Error {
   ArgumentError(message) {
     self.message = message or self.message
     self.type = 'ArgumentError'
   }
 }
 
-class NotImplementedError < Exception {
+class NotImplementedError < Error {
   NotImplementedError(message) {
     self.message = message or self.message
     self.type = 'NotImplementedError'
   }
 }
 
-class RangeError < Exception {
+class RangeError < Error {
   RangeError(message) {
     self.message = message or self.message
     self.type = 'RangeError'
   }
 }
 
-class AccessError < Exception {
+class AccessError < Error {
   AccessError(message) {
     self.message = message or self.message
     self.type = 'AccessError'
   }
 }
 
-class AssertError < Exception {
+class AssertError < Error {
   AssertError(message) {
     self.message = message or self.message
     self.type = 'AssertError'
   }
 }
 
-class PropertyError < Exception {
+class PropertyError < Error {
   PropertyError(message) {
     self.message = message or self.message
     self.type = 'PropertyError'
   }
 }
 
-class UndefinedError < Exception {
+class UndefinedError < Error {
   UndefinedError(message) {
     self.message = message or self.message
     self.type = 'UndefinedError'
@@ -96,11 +96,11 @@ class UndefinedError < Exception {
 "#;
 
 /// Names of every builtin exception class, in declaration order (each
-/// subclasses `Exception`, so it has to already be bound as a global by
+/// subclasses `Error`, so it has to already be bound as a global by
 /// the time its subclasses compile -- matching `PRELUDE_SOURCE`'s own
 /// ordering).
 pub const EXCEPTION_CLASS_NAMES: &[&str] = &[
-  "Exception",
+  "Error",
   "TypeError",
   "ValueError",
   "NumericError",

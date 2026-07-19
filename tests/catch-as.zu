@@ -1,0 +1,7 @@
+catch {
+  var a = 20
+  raise Error('Something happened')
+} as e {
+  echo e.message
+  echo e.stacktrace
+}

@@ -21,23 +21,19 @@ for n in 'name' {
   echo n
 }
 
-for g in bytes([10, 21, 13, 47]) {
-  echo g
-}
-
 class Iterable {
   var items = ['Richard', 'Alex', 'Justina']
 
-  @iter(x) {
+  @value(x) {
     return self.items[x]
   }
 
-  @itern(x) {
+  @key(x) {
     if x == nil return 0
 
     if x < self.items.length() - 1
       return x + 1
-    return false
+    return nil
   }
 }
 

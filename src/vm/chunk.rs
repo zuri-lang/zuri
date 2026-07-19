@@ -271,7 +271,6 @@ pub enum Instr {
   /// been added.
   FinalizeClass {
     class: u8,
-    name_const: u16,
   },
   /// Read a named field (instance) or static member (class) from `obj`.
   GetField {
@@ -360,7 +359,7 @@ pub enum Instr {
     table_idx: u16,
   },
 
-  /// `raise EXPR` -- EXPR must evaluate to an Exception (or subclass)
+  /// `raise EXPR` -- EXPR must evaluate to an Error (or subclass)
   /// instance; the VM validates this and overwrites its `stacktrace`
   /// field, then propagates it as a catchable error. Also what
   /// `Compiler::compile_assert` desugars into on a failed assertion.

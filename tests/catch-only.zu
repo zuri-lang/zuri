@@ -1,0 +1,3 @@
+catch {
+  raise new Error('Something happened')
+}

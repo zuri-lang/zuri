@@ -1,28 +1,42 @@
-var test = @(a) {
-  echo a
+@{
+  echo 'Self called'
+}()
+
+var fn = @{
+  return 10
 }
-test('It works!')
 
-var test_compat = @(a) {
-  echo a
+var fn2 = @{
+  return 20
 }
-test_compat('It works still!')
 
-def main() {
-  var g = 'Coke'
-  echo g
+var fn3 = @(val) {
+  return val ** 5
+}
 
-  var concat = @{
-    g += ' is the best'
+var fn4 = @(val, ...arg) {
+  return '${val} is not in list ${arg}'
+}
+
+echo fn()
+echo fn2()
+echo fn3(14)
+echo fn4(40, 50, 60)
+
+class Demo {
+  var value
+
+  var multiply = @(val) {
+    self.value = 1_000 * val
+    return val * 30
   }
-  concat()
-  echo g
 
-  var concat_compat = @{
-    g += ' still!'
+  get_val() {
+    return self.value
   }
-  concat_compat()
-  echo g
 }
 
-main()
+const demo = Demo()
+echo demo.multiply(15)
+echo demo.get_val()
+echo Demo().multiply(46)
