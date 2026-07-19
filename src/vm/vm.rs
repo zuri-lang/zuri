@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+use crate::builtins;
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -1177,13 +1178,24 @@ impl VM {
                   self.set_reg(base, obj + 1, field_value);
                   self.dispatch_call(base, obj + 1, num_args, dst)?;
                 },
-                None => {
-                  let msg = format!(
-                    "undefined property '{}' on instance of '{}'",
-                    method_name,
-                    class_val.as_class().name
-                  );
-                  return Err(self.raise("PropertyError", msg));
+                None => match builtins::lookup(receiver, &method_name) {
+                  Some(native) => {
+                    let args_start = base + obj as usize + 1;
+                    let args_end = args_start + num_args as usize;
+                    let mut call_args = Vec::with_capacity(num_args as usize + 1);
+                    call_args.push(receiver);
+                    call_args.extend_from_slice(&self.registers[args_start..args_end]);
+                    let result = self.call_native(native, &call_args)?;
+                    self.set_reg(base, dst, result);
+                  },
+                  None => {
+                    let msg = format!(
+                      "undefined property '{}' on instance of '{}'",
+                      method_name,
+                      class_val.as_class().name
+                    );
+                    return Err(self.raise("PropertyError", msg));
+                  },
                 },
               }
             } else if receiver.is_class() {
@@ -1207,12 +1219,25 @@ impl VM {
                 self.dispatch_call(base, obj + 1, num_args, dst)?;
               }
             } else {
-              let msg = format!(
-                "cannot call method '{}' on object of type {}",
-                method_name,
-                receiver.type_name()
-              );
-              return Err(self.raise("TypeError", msg));
+              match builtins::lookup(receiver, &method_name) {
+                Some(native) => {
+                  let args_start = base + obj as usize + 1;
+                  let args_end = args_start + num_args as usize;
+                  let mut call_args = Vec::with_capacity(num_args as usize + 1);
+                  call_args.push(receiver);
+                  call_args.extend_from_slice(&self.registers[args_start..args_end]);
+                  let result = self.call_native(native, &call_args)?;
+                  self.set_reg(base, dst, result);
+                },
+                None => {
+                  let msg = format!(
+                    "cannot call method '{}' on object of type {}",
+                    method_name,
+                    receiver.type_name()
+                  );
+                  return Err(self.raise("TypeError", msg));
+                },
+              }
             }
           },
 
