@@ -44,7 +44,7 @@ macro_rules! consume_tok {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParseError {
+pub struct ParserError {
   pub message: String,
   pub line_number: usize,
   pub offset: usize,
@@ -52,7 +52,7 @@ pub struct ParseError {
   pub token_text: String,
 }
 
-impl ParseError {
+impl ParserError {
   pub fn new(message: String, token: Token) -> Self {
     Self {
       message: message,
@@ -64,15 +64,10 @@ impl ParseError {
   }
 }
 
-impl Display for ParseError {
+impl Display for ParserError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "SyntaxError at '{}': {}", self.token_text, self.message)
   }
-}
-
-#[inline]
-fn same_kind(a: TokenKind, b: TokenKind) -> bool {
-  std::mem::discriminant(&a) == std::mem::discriminant(&b)
 }
 
 /// A snapshot of "where in the source the next node should be anchored".
@@ -109,7 +104,7 @@ pub struct Parser<'a> {
   last_previous: Token,
   anonymous_count: usize,
   functions_count: usize,
-  pub errors: Vec<ParseError>,
+  pub errors: Vec<ParserError>,
 }
 
 impl<'a> Display for Parser<'a> {
@@ -158,7 +153,7 @@ impl<'a> Parser<'a> {
   fn report_error(&mut self, message: String) {
     let line = self.lexer.line.to_string();
     let token = self.peek().clone();
-    self.errors.push(ParseError::new(message, token));
+    self.errors.push(ParserError::new(message, token));
   }
 
   fn mark(&self) -> Checkpoint {
@@ -212,14 +207,11 @@ impl<'a> Parser<'a> {
         continue;
       }
 
-      if same_kind(
-        self.current.kind.clone(),
-        TokenKind::Error("".to_string(), 0, 0),
-      ) {
+      if matches!(self.current.kind.clone(), TokenKind::Error(..),) {
         if let TokenKind::Error(message, line, col) = self.current.kind.clone() {
           self
             .errors
-            .push(ParseError::new(message, self.current.clone()));
+            .push(ParserError::new(message, self.current.clone()));
         }
 
         continue;
@@ -466,7 +458,7 @@ impl<'a> Parser<'a> {
     if match_tok!(self, assignment_operators!()) {
       let token = self.previous().clone();
 
-      if same_kind(token.kind.clone(), TokenKind::Equal) {
+      if matches!(token.kind.clone(), TokenKind::Equal) {
         let value = self.expression();
         return Expr::Set(
           Box::new(callee.clone()),
@@ -547,7 +539,7 @@ impl<'a> Parser<'a> {
       TokenKind::Lbracket => self.list(),
       TokenKind::At => self.anonymous(),
       _ => {
-        self.report_error(format!("Unexpected token {:?}", prev.clone()));
+        self.report_error(format!("Unexpected token {:?}", prev.describe()));
         self.literal()
       },
     }
@@ -586,8 +578,8 @@ impl<'a> Parser<'a> {
         callee = self.finish_call(callee);
       } else if match_tok!(self, TokenKind::Lbracket) {
         callee = self.finish_index(callee);
-      } else if same_kind(self.peek().clone().kind, TokenKind::Newline)
-        && same_kind(self.peek_next().clone().kind, TokenKind::Dot)
+      } else if matches!(self.peek().clone().kind, TokenKind::Newline)
+        && matches!(self.peek_next().clone().kind, TokenKind::Dot)
       {
         self.advance();
       } else {
@@ -805,7 +797,7 @@ impl<'a> Parser<'a> {
       let type_token = self.previous().clone();
       self.ignore_newlines();
 
-      if same_kind(type_token.kind.clone(), TokenKind::Equal) {
+      if matches!(type_token.kind.clone(), TokenKind::Equal) {
         let value = self.assignment();
         expr = Expr::Assign(Box::new(expr), Box::new(value));
       } else {
@@ -1232,7 +1224,7 @@ impl<'a> Parser<'a> {
     while match_tok!(self, TokenKind::Dot | TokenKind::Identifier(_)) {
       let token = self.previous().clone();
 
-      if same_kind(token.kind.clone(), TokenKind::Dot) {
+      if matches!(token.kind.clone(), TokenKind::Dot) {
         paths.push(".".to_string());
       } else if let TokenKind::Identifier(name) = token.kind.clone() {
         paths.push(name.clone());
@@ -1253,7 +1245,7 @@ impl<'a> Parser<'a> {
           "Expected identifier or '*' after import statement."
         );
 
-        if same_kind(element.kind.clone(), TokenKind::Multiply) {
+        if matches!(element.kind.clone(), TokenKind::Multiply) {
           // We're required to import all
           if !elements.is_empty() {
             self.report_error(
@@ -1758,7 +1750,7 @@ impl<'a> Parser<'a> {
     result
   }
 
-  pub fn parse(&mut self) -> Result<Vec<Decl>, Vec<ParseError>> {
+  pub fn parse(&mut self) -> Result<Vec<Decl>, Vec<ParserError>> {
     let mut result = Vec::new();
 
     while !self.is_at_end() {

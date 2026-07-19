@@ -5,6 +5,7 @@ use std::{ops::Deref, rc::Rc, sync::LazyLock};
 use crate::{
   compiler::{
     ast::{Decl, Expr, Stmt},
+    parser::ParserError,
     token::{Token, TokenKind},
   },
   vm::{
@@ -52,6 +53,10 @@ struct FunctionScope {
   /// it's next updated (see `Compiler::compile`'s top-level loop and
   /// `Stmt::Block`'s own handling).
   current_line: u32,
+  /// Set the first time `alloc_reg` hits the 255-register ceiling for
+  /// this function, so a pathological expression reports the overflow
+  /// exactly once instead of once per further allocation attempt.
+  register_overflow_reported: bool,
 }
 
 impl FunctionScope {
@@ -65,6 +70,7 @@ impl FunctionScope {
       next_reg: 0,
       max_reg: 0,
       current_line: 0,
+      register_overflow_reported: false,
     }
   }
 }
@@ -103,6 +109,7 @@ pub struct Compiler<'a> {
   scopes: Vec<FunctionScope>,
   is_repl: bool,
   source_path: Rc<str>,
+  pub errors: Vec<ParserError>,
 }
 
 impl<'a> Compiler<'a> {
@@ -124,6 +131,7 @@ impl<'a> Compiler<'a> {
       source_path,
       scopes: vec![top],
       is_repl: false,
+      errors: Vec::new(),
     }
   }
 
@@ -155,13 +163,101 @@ impl<'a> Compiler<'a> {
     self.cur_mut().chunk.add_constant(v)
   }
 
+  /// Report a genuine, user-triggerable compile error anchored to a
+  /// real token from the AST -- exactly the same shape the parser's own
+  /// `ParseError`s use, so both phases format identically (see
+  /// `format_parse_errors` in zuri.rs).
+  fn report_error(&mut self, message: String, token: &Token) {
+    self.errors.push(ParserError::new(message, token.clone()));
+  }
+
+  /// Same, for the handful of sites with no surviving `Token` in the
+  /// AST at all -- `Expr::Self_`/`Expr::Parent` are unit variants,
+  /// `Stmt::Break`/`Stmt::Continue` carry no payload -- so this falls
+  /// back to whatever line `current_line` was last stamped with (see
+  /// `Compiler::emit`). At worst slightly stale within the same
+  /// statement; never the wrong function or file.
+  fn report_error_here(&mut self, message: String) {
+    let line = self.cur().current_line as usize;
+    self.errors.push(ParserError {
+      message,
+      line_number: line,
+      offset: 1,
+      length: 0,
+      token_text: "<here>".to_string(),
+    });
+  }
+
+  /// A register holding `nil`, handed back from an expression-compiling
+  /// site right after `report_error`/`report_error_here` -- keeps the
+  /// bytecode structurally valid (every caller still gets *a* register)
+  /// even though the function is already known to be invalid and will
+  /// never actually run. Mirrors the parser's own `EMPTY_TOKEN`
+  /// fallback in `consume_tok!`: report once, substitute something
+  /// harmless, keep going so later problems in the same file surface
+  /// too.
+  fn error_reg(&mut self) -> u8 {
+    let dst = self.alloc_reg();
+    self.emit(Instr::LoadNil { dst });
+    dst
+  }
+
+  /// Shared overflow check for every "num_args + 1" call-argument
+  /// counter (a plain `.checked_add(1).expect(...)` used to panic here
+  /// in four different places) -- one real limit (255 args in a single
+  /// call), reported once per call site instead of duplicated
+  /// ad-hoc.
+  fn checked_arg_count(&mut self, num_args: u8, token: Option<&Token>) -> u8 {
+    match num_args.checked_add(1) {
+      Some(n) => n,
+      None => {
+        let msg = "too many arguments in a single call (max 255)".to_string();
+        match token {
+          Some(t) => self.report_error(msg, t),
+          None => self.report_error_here(msg),
+        }
+        num_args
+      },
+    }
+  }
+
+  /// Purely syntactic privacy check, run at the exact point a `.name`
+  /// access (Get, Set, or a method-call routed through compile_invoke) is
+  /// compiled. Both facts it depends on -- does `name` start with '_',
+  /// and is the receiver spelled `self`/`parent` -- are fully known from
+  /// the AST at THIS point, for every access site in the program,
+  /// regardless of what the receiver's value turns out to be once the
+  /// program runs. That's also why the rule can't be narrowed to "methods
+  /// only, fields/statics exempt": the compiler has no way to know here
+  /// whether `obj` will resolve to an instance or a class at runtime, so
+  /// a leading underscore is gated uniformly no matter what it turns out
+  /// to name.
+  fn check_private_access(&mut self, name: &str, privileged: bool, token: &Token) {
+    if name.starts_with('_') && !privileged {
+      self.report_error(
+        format!(
+          "'{}' is private and can only be accessed via 'self' or 'parent'",
+          name
+        ),
+        token,
+      );
+    }
+  }
+
   fn alloc_reg(&mut self) -> u8 {
+    let r = self.cur().next_reg;
+    if r == u8::MAX {
+      if !self.cur().register_overflow_reported {
+        self.cur_mut().register_overflow_reported = true;
+        self.report_error_here(format!(
+          "expression too complex: this function needs more than {} live registers at once",
+          u8::MAX
+        ));
+      }
+      return r;
+    }
     let scope = self.cur_mut();
-    let r = scope.next_reg;
-    scope.next_reg = scope
-      .next_reg
-      .checked_add(1)
-      .expect("compiler ran out of registers (>255 live values in one function)");
+    scope.next_reg += 1;
     scope.max_reg = scope.max_reg.max(scope.next_reg);
     r
   }
@@ -649,12 +745,16 @@ impl<'a> Compiler<'a> {
       if let Decl::Method(mname, ..) = m {
         let mname_str = Self::identifier_name(mname);
         if seen_method_names.contains(&mname_str) {
-          panic!(
-            "compile: multiple declaration for {} found in class '{}'",
-            mname_str, class_name
+          self.report_error(
+            format!(
+              "multiple declaration for method '{}' found in class '{}'",
+              mname_str, class_name
+            ),
+            mname,
           );
+        } else {
+          seen_method_names.push(mname_str);
         }
-        seen_method_names.push(mname_str);
       }
     }
 
@@ -727,22 +827,24 @@ impl<'a> Compiler<'a> {
     });
 
     if !properties.is_empty() {
-      panic!(
-        "compile: extension '{}' cannot declare fields -- extensions only add methods to an \
-         existing class",
-        ext_name
+      self.report_error(
+        format!(
+          "extension '{}' can only declare static methods but not fields",
+          ext_name
+        ),
+        name,
       );
     }
     for m in methods {
       if let Decl::Method(mname, _, _, _, is_static) = m {
         if !*is_static {
-          panic!(
-            "compile: extension '{}' method '{}' must be declared 'static' -- extension \
-             methods receive the instance explicitly as their own first parameter instead of \
-             an implicit 'self' (if this came from an auto-inserted default constructor, the \
-             parser needs to skip that for extension classes)",
-            ext_name,
-            Self::identifier_name(mname)
+          self.report_error(
+            format!(
+              "extension method '{}' must be declared 'static' and receive \
+               the instance explicitly as their own first parameter if desired",
+              Self::identifier_name(mname)
+            ),
+            mname,
           );
         }
       }
@@ -782,7 +884,7 @@ impl<'a> Compiler<'a> {
   /// through the same mechanism as any other outer local (see
   /// `compile_method_prototype`). Panics outside of a method, where no
   /// such local exists.
-  fn compile_self_reg(&mut self) -> u8 {
+  fn compile_self_reg(&mut self, parent: bool) -> u8 {
     match self.resolve_variable("self") {
       VarLoc::Local(reg, _) => reg,
       VarLoc::Upvalue(idx) => {
@@ -790,7 +892,13 @@ impl<'a> Compiler<'a> {
         self.emit(Instr::GetUpval { dst, idx });
         dst
       },
-      VarLoc::Global => panic!("compile: 'self'/'parent' used outside of a method"),
+      VarLoc::Global => {
+        self.report_error_here(format!(
+          "'{}' used outside of a method",
+          if parent { "parent" } else { "self" }
+        ));
+        self.error_reg()
+      },
     }
   }
 
@@ -802,7 +910,7 @@ impl<'a> Compiler<'a> {
   /// `self.x` are simply the same access.
   fn compile_receiver(&mut self, expr: &Expr) -> u8 {
     match expr {
-      Expr::Parent => self.compile_self_reg(),
+      Expr::Parent => self.compile_self_reg(true),
       other => self.compile_expression(other),
     }
   }
@@ -820,7 +928,7 @@ impl<'a> Compiler<'a> {
     // unconditionally privileged (see check_private_access's own doc
     // comment for why this has to be checked here, purely
     // syntactically, rather than deferred to Invoke's runtime handler).
-    check_private_access(&method_name, matches!(obj, Expr::Self_));
+    self.check_private_access(&method_name, matches!(obj, Expr::Self_), method);
 
     let obj_reg = self.alloc_reg();
     let raw = self.compile_receiver(obj);
@@ -849,9 +957,7 @@ impl<'a> Compiler<'a> {
         });
       }
       self.free_regs_to(expected + 1);
-      num_args = num_args
-        .checked_add(1)
-        .expect("too many arguments in a single call");
+      num_args = self.checked_arg_count(num_args, Some(method));
     }
 
     let method_val = self.heap.alloc_string(method_name);
@@ -883,7 +989,10 @@ impl<'a> Compiler<'a> {
         self.emit(Instr::GetUpval { dst, idx });
         dst
       },
-      VarLoc::Global => panic!("compile: 'parent' used in a class with no superclass"),
+      VarLoc::Global => {
+        self.report_error_here("'parent' used in a class with no superclass".to_string());
+        self.error_reg()
+      },
     };
     if raw_super != call_reg {
       self.emit(Instr::Move {
@@ -894,7 +1003,7 @@ impl<'a> Compiler<'a> {
     self.free_regs_to(call_reg + 1);
 
     let self_slot = self.alloc_reg();
-    let self_reg = self.compile_self_reg();
+    let self_reg = self.compile_self_reg(true);
     self.emit(Instr::Move {
       dst: self_slot,
       src: self_reg,
@@ -912,9 +1021,7 @@ impl<'a> Compiler<'a> {
         });
       }
       self.free_regs_to(expected + 1);
-      num_args = num_args
-        .checked_add(1)
-        .expect("too many arguments in a single call");
+      num_args = self.checked_arg_count(num_args, Some(method));
     }
 
     let method_name = Self::identifier_name(method);
@@ -946,7 +1053,10 @@ impl<'a> Compiler<'a> {
         self.emit(Instr::GetUpval { dst, idx });
         dst
       },
-      VarLoc::Global => panic!("compile: 'parent' used in a class with no superclass"),
+      VarLoc::Global => {
+        self.report_error_here("'parent' used in a class with no superclass".to_string());
+        self.error_reg()
+      },
     };
     if raw_super != call_reg {
       self.emit(Instr::Move {
@@ -957,7 +1067,7 @@ impl<'a> Compiler<'a> {
     self.free_regs_to(call_reg + 1);
 
     let self_slot = self.alloc_reg();
-    let self_reg = self.compile_self_reg();
+    let self_reg = self.compile_self_reg(true);
     self.emit(Instr::Move {
       dst: self_slot,
       src: self_reg,
@@ -975,9 +1085,7 @@ impl<'a> Compiler<'a> {
         });
       }
       self.free_regs_to(expected + 1);
-      num_args = num_args
-        .checked_add(1)
-        .expect("too many arguments in a single call");
+      num_args = self.checked_arg_count(num_args, None);
     }
 
     let dst = call_reg;
@@ -1216,7 +1324,13 @@ impl<'a> Compiler<'a> {
         Expr::Identifier(token) => {
           let name = Self::identifier_name(token);
           match self.resolve_variable(&name) {
-            VarLoc::Local(_, true) => panic!("compile: cannot assign to constant '{}'", name),
+            VarLoc::Local(_, true) => {
+              self.report_error(format!("cannot assign to constant '{}'", name), token);
+              // Still compile the RHS and hand its register back, so the
+              // surrounding expression stays well-formed for anything
+              // still nested inside it.
+              self.compile_expression(value)
+            },
             VarLoc::Local(dst, false) => {
               let value_reg = self.compile_expression(value);
               if value_reg != dst {
@@ -1306,9 +1420,12 @@ impl<'a> Compiler<'a> {
             });
           }
           self.free_regs_to(expected + 1);
-          num_args = num_args
-            .checked_add(1)
-            .expect("too many arguments in a single call");
+
+          num_args = if let Expr::Get(obj, method) = callee.as_ref() {
+            self.checked_arg_count(num_args, Some(method))
+          } else {
+            self.checked_arg_count(num_args, None)
+          };
         }
 
         let dst = func_reg;
@@ -1402,7 +1519,7 @@ impl<'a> Compiler<'a> {
         self.free_regs_to(dst + 1);
         dst
       },
-      Expr::Self_ => self.compile_self_reg(),
+      Expr::Self_ => self.compile_self_reg(false),
       Expr::Parent => {
         panic!("compile: 'parent' must be followed by '.member' or '.member(...)'")
       },
@@ -1412,9 +1529,10 @@ impl<'a> Compiler<'a> {
         // Both self.x and parent.x count as privileged here -- a plain
         // (non-call) property access through `parent` is never virtual
         // to begin with (see compile_receiver's own doc comment).
-        check_private_access(
+        self.check_private_access(
           &field_name,
           matches!(obj.as_ref(), Expr::Self_ | Expr::Parent),
+          field,
         );
 
         let obj_reg = self.compile_receiver(obj);
@@ -1432,9 +1550,10 @@ impl<'a> Compiler<'a> {
       Expr::Set(obj, field, value) => {
         let field_name = Self::identifier_name(field);
 
-        check_private_access(
+        self.check_private_access(
           &field_name,
           matches!(obj.as_ref(), Expr::Self_ | Expr::Parent),
+          field,
         );
 
         let obj_reg = self.compile_receiver(obj);
@@ -1873,41 +1992,39 @@ impl<'a> Compiler<'a> {
         );
       },
       Stmt::Break => {
-        let loop_ctx = self
-          .cur()
-          .loops
-          .last()
-          .unwrap_or_else(|| panic!("compile: 'break' used outside of a loop"));
-        let body_mark = loop_ctx.body_mark;
-        self.emit(Instr::CloseUpvalues { from: body_mark });
-        let jump_at = self.emit_jump();
-        self
-          .cur_mut()
-          .loops
-          .last_mut()
-          .unwrap()
-          .break_jumps
-          .push(jump_at);
+        if self.cur().loops.is_empty() {
+          self.report_error_here("'break' used outside of a loop".to_string());
+        } else {
+          let body_mark = self.cur().loops.last().unwrap().body_mark;
+          self.emit(Instr::CloseUpvalues { from: body_mark });
+          let jump_at = self.emit_jump();
+          self
+            .cur_mut()
+            .loops
+            .last_mut()
+            .unwrap()
+            .break_jumps
+            .push(jump_at);
+        }
       },
       Stmt::Continue => {
-        let loop_ctx = self
-          .cur()
-          .loops
-          .last()
-          .unwrap_or_else(|| panic!("compile: 'continue' used outside of a loop"));
-        let body_mark = loop_ctx.body_mark;
-        let continue_target = loop_ctx.continue_target;
-        self.emit(Instr::CloseUpvalues { from: body_mark });
-
-        let continue_location = self.emit_loop(continue_target);
-
-        self
-          .cur_mut()
-          .loops
-          .last_mut()
-          .unwrap()
-          .continue_locales
-          .push(continue_location);
+        if self.cur().loops.is_empty() {
+          self.report_error_here("'continue' used outside of a loop".to_string());
+        } else {
+          let (body_mark, continue_target) = {
+            let loop_ctx = self.cur().loops.last().unwrap();
+            (loop_ctx.body_mark, loop_ctx.continue_target)
+          };
+          self.emit(Instr::CloseUpvalues { from: body_mark });
+          let continue_location = self.emit_loop(continue_target);
+          self
+            .cur_mut()
+            .loops
+            .last_mut()
+            .unwrap()
+            .continue_locales
+            .push(continue_location);
+        }
       },
       Stmt::FixContinue => {
         let locales = self
@@ -1944,7 +2061,10 @@ impl<'a> Compiler<'a> {
             .take_while(|l| l.depth == self.cur().scope_depth)
             .any(|l| l.name == name);
           if redeclared {
-            panic!("compile: '{}' is already declared in this scope", name);
+            self.report_error(
+              format!("'{}' is already declared in this scope", name),
+              token,
+            );
           }
 
           let mark = self.cur().next_reg;
@@ -2002,7 +2122,7 @@ impl<'a> Compiler<'a> {
     };
   }
 
-  pub fn compile(mut self) -> ObjFunction {
+  pub fn compile(mut self) -> Result<ObjFunction, Vec<ParserError>> {
     if *LOG_AST {
       println!("{:?}", self.decls.clone());
     }
@@ -2010,7 +2130,12 @@ impl<'a> Compiler<'a> {
     for decl in self.decls.clone().iter() {
       self.compile_declaration(decl);
     }
-    self.finalize()
+
+    if !self.errors.is_empty() {
+      return Err(self.errors);
+    }
+
+    Ok(self.finalize())
   }
 
   /// Finish compilation and hand back the assembled top-level function,
@@ -2201,26 +2326,6 @@ fn collect_self_fields_expr(expr: &Expr, out: &mut Vec<String>) {
     | Expr::Self_
     | Expr::TypeHint(..)
     | Expr::Argument(..) => {},
-  }
-}
-
-/// Purely syntactic privacy check, run at the exact point a `.name`
-/// access (Get, Set, or a method-call routed through compile_invoke) is
-/// compiled. Both facts it depends on -- does `name` start with '_',
-/// and is the receiver spelled `self`/`parent` -- are fully known from
-/// the AST at THIS point, for every access site in the program,
-/// regardless of what the receiver's value turns out to be once the
-/// program runs. That's also why the rule can't be narrowed to "methods
-/// only, fields/statics exempt": the compiler has no way to know here
-/// whether `obj` will resolve to an instance or a class at runtime, so
-/// a leading underscore is gated uniformly no matter what it turns out
-/// to name.
-fn check_private_access(name: &str, privileged: bool) {
-  if name.starts_with('_') && !privileged {
-    panic!(
-      "compile: '{}' is private and can only be accessed via 'self' or 'parent'",
-      name
-    );
   }
 }
 

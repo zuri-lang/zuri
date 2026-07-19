@@ -1,1 +1,2 @@
-2
+>>>
+SyntaxError at 'c': multiple declaration for method 'c' found in class 'Class'

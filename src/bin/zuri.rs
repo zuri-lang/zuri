@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::{env, fs, process};
-use zuri::compiler::parser::ParseError;
+use zuri::compiler::parser::ParserError;
 use zuri::compiler::token::KEYWORD_TOKENS;
 
 use itertools::Itertools;
@@ -17,11 +17,10 @@ fn print_repl_help() {
   println!("Press <tab> for autocomplete suggestions");
 }
 
-fn format_parse_errors(errors: &[ParseError], path: &str) -> String {
+fn format_parse_errors(errors: &[ParserError], path: &str) -> String {
   errors
     .iter()
     .map(|e| format!("{}\n  {}:{}", e, path, e.line_number))
-    .collect::<Vec<_>>()
     .join("\n\n")
 }
 
@@ -55,7 +54,7 @@ fn run_repl(vm: &mut VM) {
 
       // Evaluate the line using the persistent VM and heap references
       if let Err(e) = evaluate_line(&buffer, vm) {
-        eprintln!("Error: {}", e);
+        eprintln!("{}", e);
       }
     }
 
@@ -71,17 +70,17 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
     let mut compiler = Compiler::new(decls, chunk, &mut vm.heap, Rc::from("<repl>"));
     compiler.enable_repl_mode();
 
-    let fn_obj = compiler.compile();
-    let closure = vm.heap.alloc_plain_closure(fn_obj);
-
-    if let Err(e) = vm.run(closure) {
-      eprintln!("{}", vm.format_uncaught(e));
+    match compiler.compile() {
+      Ok(fn_obj) => {
+        let closure = vm.heap.alloc_plain_closure(fn_obj);
+        if let Err(e) = vm.run(closure) {
+          eprintln!("{}", vm.format_uncaught(e));
+        }
+      },
+      Err(errors) => eprintln!("{}", format_parse_errors(&errors, "<repl>")),
     }
   } else {
-    return Err(format!(
-      "parse error: {}",
-      parser.errors.iter().map(|f| f.to_string()).join("\n  ")
-    ));
+    return Err(format_parse_errors(&parser.errors, "<repl>"));
   }
   Ok(())
 }
@@ -103,12 +102,18 @@ fn run_file(vm: &mut VM, file: &str) {
     let chunk = Box::new(Chunk::new());
     let compiler = Compiler::new(decls, chunk, &mut vm.heap, display_path.clone());
 
-    let fn_obj = compiler.compile();
-    let closure = vm.heap.alloc_plain_closure(fn_obj);
-
-    if let Err(e) = vm.run(closure) {
-      eprintln!("{}", vm.format_uncaught(e));
-      process::exit(1);
+    match compiler.compile() {
+      Ok(fn_obj) => {
+        let closure = vm.heap.alloc_plain_closure(fn_obj);
+        if let Err(e) = vm.run(closure) {
+          eprintln!("{}", vm.format_uncaught(e));
+          process::exit(1);
+        }
+      },
+      Err(errors) => {
+        eprintln!("{}", format_parse_errors(&errors, &display_path));
+        process::exit(1);
+      },
     }
   } else {
     eprintln!("{}", format_parse_errors(&parser.errors, &display_path));

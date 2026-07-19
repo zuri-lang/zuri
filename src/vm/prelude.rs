@@ -3,8 +3,7 @@
 //! hand-built in Rust -- reuses the exact same class/inheritance
 //! machinery every user-defined class goes through, so Error and
 //! its subclasses behave identically to anything a Zuri program could
-//! write itself, including being subclassable (see
-//! tests/custom_exception.zu's `class Error < Error`).
+//! write itself, including being subclassable.
 
 use std::rc::Rc;
 
@@ -128,7 +127,18 @@ pub fn install(vm: &mut VM) {
 
   let chunk = Box::new(Chunk::new());
   let compiler = Compiler::new(decls, chunk, &mut vm.heap, Rc::from("<prelude>"));
-  let fn_obj = compiler.compile();
+
+  let fn_obj = compiler.compile().unwrap_or_else(|errors| {
+    panic!(
+      "internal error: prelude failed to compile:\n  {}",
+      errors
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("\n  ")
+    )
+  });
+
   let closure = vm.heap.alloc_plain_closure(fn_obj);
 
   if let Err(e) = vm.run(closure) {
