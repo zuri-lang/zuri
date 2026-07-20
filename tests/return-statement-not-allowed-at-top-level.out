@@ -1,2 +1,2 @@
-^^^
-Error: 'return' is only a valid keyword in function context
+SyntaxError at '<eof>': 'return' is only a valid keyword in function context
+  @@ROOT/tests/return-statement-not-allowed-at-top-level.zu:0

@@ -1,2 +1,2 @@
->>>
-Error: Something happened\n\s+at.*try\-catch\.zu:3:3 \-\> @\.script\(\)
+Something happened
+[@@ROOT/tests/catch-as.zu:3 -> @.script()]

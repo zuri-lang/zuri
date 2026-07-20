@@ -1,2 +1,3 @@
-^^^
-ArgumentError: operator + is not defined for call signature (A, A)
+Unhandled TypeError: operator '+' not defined for call signature (A, A)
+  StackTrace:
+    @@ROOT/tests/undefined-method-override.zu:7 -> @.script()

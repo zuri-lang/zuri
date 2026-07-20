@@ -10,24 +10,24 @@ class A {
   }
 
   def + {
-    return new A(self.val + __arg__.val)
+    return A(self.val + __arg__.val)
   }
 
   def >>> {
-    return new A(self.val * __arg__.val)
+    return A(self.val * __arg__.val)
   }
 
   def ~ {
-    return new A(self.val ** 2)
+    return A(self.val ** 2)
   }
 }
 
-echo (new A(5) + new A(11)).val
-echo (new A(5) >>> new A(12)).val
-echo (~(~(new A(12)))).val
+echo (A(5) + A(11)).val
+echo (A(5) >>> A(12)).val
+echo (~(~(A(12)))).val
 
-var g = new A(24)
-g += new A(93)
+var g = A(24)
+g += A(93)
 
 echo g.val
 

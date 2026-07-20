@@ -8,4 +8,4 @@ class A {
   }
 }
 
-echo new A() * new A()
+echo A() * A()

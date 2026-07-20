@@ -1,2 +1,2 @@
->>>
-AssertError\: Non empty list expected.*assert\.zu\:3\:1 \-\> @\.script\(\)
+Non empty list expected
+[@@ROOT/tests/assert.zu:3 -> @.script()]

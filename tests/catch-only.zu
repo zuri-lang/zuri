@@ -1,3 +1,3 @@
 catch {
-  raise new Error('Something happened')
+  raise Error('Something happened')
 }

@@ -1,2 +1,3 @@
-^^^
-TypeError: cannot call a float
+Unhandled TypeError: cannot call a float
+  StackTrace:
+    @@ROOT/tests/new-with-non-class-is-an-error.zu:1 -> @.script()

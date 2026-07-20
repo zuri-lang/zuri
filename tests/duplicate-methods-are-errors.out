@@ -1,2 +1,2 @@
->>>
 SyntaxError at 'c': multiple declaration for method 'c' found in class 'Class'
+  @@ROOT/tests/duplicate-methods-are-errors.zu:3

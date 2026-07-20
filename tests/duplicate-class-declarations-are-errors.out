@@ -1,2 +1,3 @@
-^^^
-Error: class 'A' already declared in this scope
+Unhandled Error: class 'A' already declared in this scope
+  StackTrace:
+    @@ROOT/tests/duplicate-class-declarations-are-errors.zu:2 -> @.script()

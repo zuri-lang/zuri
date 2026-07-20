@@ -1,2 +1,3 @@
->>>
-Error: Something happened\n\s+at.*try\-catch\-finally\.zu:3:3 \-\> @\.script\(\)\nCleaning up
+Something happened
+[@@ROOT/tests/catch-as-finally.zu:3 -> @.script()]
+Cleaning up

@@ -1,4 +1,3 @@
-^^^
 outer
 It works! inner
 Richard
@@ -22,4 +21,4 @@ value
 1498500
 1498500
 1498500
-<function outer(3) at
+<function outer(3)>
