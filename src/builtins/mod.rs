@@ -117,6 +117,29 @@ fn method_n(name: &'static str, arity: u8, func: NativeFn) -> (&'static str, Nat
   )
 }
 
+/// Same as `method_n`, but the trailing arguments beyond
+/// `required_extra` are OPTIONAL rather than fixed -- `min_arity`
+/// becomes a floor and the native itself is responsible for checking
+/// `ctx.args.len()` to see how many of its optional parameters were
+/// actually supplied. Used for spec'd-optional trailing params like
+/// `trim([chr])` or `index_of(str, [start])`, where `method_n`'s exact-
+/// arity check would be too strict.
+fn method_opt(
+  name: &'static str,
+  required_extra: u8,
+  func: NativeFn,
+) -> (&'static str, NativeFunction) {
+  (
+    name,
+    NativeFunction {
+      name,
+      min_arity: 1 + required_extra,
+      variadic: true,
+      func,
+    },
+  )
+}
+
 fn build(entries: Vec<(&'static str, NativeFunction)>) -> MethodTable {
   entries.into_iter().collect()
 }
