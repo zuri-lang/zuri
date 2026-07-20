@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use crate::builtins::bigint::BIGINT_METHODS;
 use crate::builtins::bool::BOOL_METHODS;
 use crate::builtins::bytes::BYTES_METHODS;
 use crate::builtins::dict::DICT_METHODS;
@@ -29,6 +30,7 @@ use crate::builtins::string::STRING_METHODS;
 use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
 
+mod bigint;
 mod bool;
 mod bytes;
 mod dict;
@@ -49,6 +51,7 @@ mod string;
 enum Kind {
   Number,
   Bool,
+  BigInt,
   String,
   List,
   Dict,
@@ -74,6 +77,8 @@ impl Kind {
       Some(Kind::Bytes)
     } else if v.is_range() {
       Some(Kind::Range)
+    } else if v.is_bigint() {
+      Some(Kind::BigInt)
     } else if v.is_callable() {
       Some(Kind::Function)
     } else if v.is_nil() {
@@ -161,6 +166,7 @@ fn table_for(kind: Kind) -> &'static MethodTable {
     Kind::Bytes => &BYTES_METHODS,
     Kind::Range => &RANGE_METHODS,
     Kind::Function => &FUNCTION_METHODS,
+    Kind::BigInt => &BIGINT_METHODS,
     Kind::Nil => &NIL_METHODS,
   }
 }
