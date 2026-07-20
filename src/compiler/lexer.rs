@@ -146,13 +146,29 @@ impl<'a> Lexer<'a> {
   }
 
   fn make_token(&mut self, kind: TokenKind) -> Token {
-    let line_start = if self.lines.is_empty() || self.start_line == 1 {
+    let mut line_start = if self.lines.is_empty() || self.start_line == 1 {
       0
     } else {
       *self.lines.get(&self.start_line).unwrap_or(&0)
     };
 
-    // println!("start = {}, line start = {}", self.start, line_start);
+    if line_start > self.start {
+      line_start = self.source.as_str()[0..self.start + 1]
+        .rfind(|f| f == '\n')
+        .unwrap_or(0);
+
+      self.line = *self
+        .lines
+        .keys()
+        .filter(|f| self.lines[f] <= line_start)
+        .last()
+        .unwrap_or(&1);
+    }
+
+    // println!(
+    //   "start = {}, line start = {}, start line = {}",
+    //   self.start, line_start, self.start_line
+    // );
     let column = self.start - line_start + 1;
 
     Token::new(kind, self.start_line, column)
