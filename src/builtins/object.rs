@@ -9,5 +9,6 @@ pub static OBJECT_TO_STRING: LazyLock<NativeFunction> = LazyLock::new(|| NativeF
   name: "to_string",
   min_arity: 1,
   variadic: false,
+  is_method: true,
   func: to_string,
 });

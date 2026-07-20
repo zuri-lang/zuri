@@ -336,17 +336,45 @@ impl VM {
     };
 
     if !ok_arity {
-      let msg = format!(
-        "'{}' expects {}{} argument(s), got {}",
-        native.name,
-        if native.variadic { "at least " } else { "" },
-        native.min_arity,
-        args.len()
-      );
+      let msg = if native.is_method {
+        // `min_arity`/`args.len()` both count the implicit receiver
+        // spliced into `args[0]` (see `builtins::method`/`method_n`/
+        // `method_opt`) -- a user calling `x.abs(1)` wrote ONE
+        // argument, not two, so both numbers need the receiver
+        // subtracted back out before they're shown. This is the SAME
+        // check `enforce_method_arg_count!` does inside a native's own
+        // body, just running earlier -- for an exact-arity (non-
+        // variadic) method, a count mismatch is caught HERE, before
+        // the native body (and any `enforce_method_arg_*!` calls in
+        // it) ever runs at all.
+        let expected = native.min_arity.saturating_sub(1);
+        let got = (args.len() as u8).saturating_sub(1);
+        format!(
+          "'{}' expects {}{} argument{}, got {}",
+          native.name,
+          if native.variadic { "at least " } else { "" },
+          expected,
+          if expected == 1 { "" } else { "s" },
+          got
+        )
+      } else {
+        format!(
+          "{}() expects {}{} argument{}, got {}",
+          native.name,
+          if native.variadic { "at least " } else { "" },
+          native.min_arity,
+          if native.min_arity == 1 { "" } else { "s" },
+          args.len()
+        )
+      };
       return Err(self.raise("ArgumentError", msg));
     }
 
-    let mut ctx = ZuriContext { vm: self, args };
+    let mut ctx = ZuriContext {
+      vm: self,
+      args,
+      name: native.name,
+    };
     let result = (native.func)(&mut ctx);
     result.map_err(|msg| self.raise("TypeError", msg))
   }

@@ -159,6 +159,14 @@ pub struct NativeFunction {
   /// If true, min_arity is a floor ("one or more"); if false, arg count
   /// must equal min_arity exactly.
   pub variadic: bool,
+  /// Was this native registered as a method (`builtins::method`/
+  /// `method_n`/`method_opt`), i.e. does `VM::call_native` splice an
+  /// implicit receiver into `args[0]` before this runs? Free functions
+  /// (`natives.rs`) leave this `false`. Consulted ONLY by
+  /// `VM::call_native`'s own arity-mismatch message -- see that call
+  /// site's doc comment for why the count a user sees has to have the
+  /// receiver subtracted back out.
+  pub is_method: bool,
   pub func: NativeFn,
 }
 
@@ -214,21 +222,22 @@ pub struct ObjInstance {
   pub fields: Vec<Cell<Value>>,
 }
 
-/// A plain Rust function pointer -- not `Box<dyn Fn>`. No vtable, no
-/// heap-allocated closure environment; calling one is a single indirect
-/// call through a fn pointer, as cheap as native dispatch gets. Takes
-/// `&mut Heap` (not `&mut VM`) specifically so the caller can hand it a
-/// zero-copy slice of `VM::registers` at the same time -- see the
-/// disjoint-field-borrow note in `Instr::Call`'s handling.
 /// Everything a native function body gets handed. `args` is an OWNED
 /// copy of the call's arguments, not a borrow into VM::registers -- it
 /// has to be, because `vm` is a live &mut VM at the same time, and a
-/// slice into the VM's own register array would alias with that. This is
-/// the real cost of letting natives call back into Zuri code via
+/// slice into the VM's own register array would alias with that. This
+/// is the real cost of letting natives call back into Zuri code via
 /// `vm.call_value(...)`.
+///
+/// `name` is the SAME string as `NativeFunction::name` this call was
+/// dispatched through -- carried here specifically so the
+/// `enforce_arg_*!` family (see `builtins::enforce`) can generate
+/// "'foo' expects ..." messages without every native having to spell
+/// its own name out by hand at every call site.
 pub struct ZuriContext<'a> {
   pub vm: &'a mut VM,
   pub args: &'a [Value],
+  pub name: &'static str,
 }
 
 impl<'a> ZuriContext<'a> {

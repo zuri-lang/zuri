@@ -1,6 +1,8 @@
+use crate::builtins::enforce::ArgType;
 use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
+use crate::{enforce_arg_count, enforce_arg_type_any_of};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn install(vm: &mut VM) {
@@ -12,6 +14,7 @@ pub fn install(vm: &mut VM) {
 
 fn register(vm: &mut VM, name: &'static str, min_arity: u8, variadic: bool, func: NativeFn) {
   let native = NativeFunction {
+    is_method: false,
     name,
     min_arity,
     variadic,
@@ -47,6 +50,9 @@ fn sum(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::Number, ArgType::List]);
+
   let v = ctx.args[0];
   if v.is_number() {
     let bytes = ctx.heap().alloc_bytes(vec![0; v.as_number() as usize]);

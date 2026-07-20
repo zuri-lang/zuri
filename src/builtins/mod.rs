@@ -32,6 +32,7 @@ use crate::vm::value::Value;
 mod bool;
 mod bytes;
 mod dict;
+pub mod enforce;
 mod function;
 mod list;
 mod number;
@@ -90,13 +91,14 @@ type MethodTable = HashMap<&'static str, NativeFunction>;
 /// further arguments; `call_native`'s existing arity check is what
 /// turns e.g. `x.length(1)` into a proper ArgumentError for free,
 /// rather than every method re-validating its own arg count.
-fn method(name: &'static str, func: NativeFn) -> (&'static str, NativeFunction) {
+pub fn method(name: &'static str, func: NativeFn) -> (&'static str, NativeFunction) {
   (
     name,
     NativeFunction {
       name,
       min_arity: 1,
       variadic: false,
+      is_method: true,
       func,
     },
   )
@@ -105,13 +107,14 @@ fn method(name: &'static str, func: NativeFn) -> (&'static str, NativeFunction) 
 /// Same as method, but allows specifying `arity` of the function.
 /// The arity provided shoukd be the number of arguments expected by the function without counting the implicit receiver.
 /// For example, `x.length(1)` has arity 1.
-fn method_n(name: &'static str, arity: u8, func: NativeFn) -> (&'static str, NativeFunction) {
+pub fn method_n(name: &'static str, arity: u8, func: NativeFn) -> (&'static str, NativeFunction) {
   (
     name,
     NativeFunction {
       name,
       min_arity: arity + 1,
       variadic: false,
+      is_method: true,
       func,
     },
   )
@@ -124,7 +127,7 @@ fn method_n(name: &'static str, arity: u8, func: NativeFn) -> (&'static str, Nat
 /// actually supplied. Used for spec'd-optional trailing params like
 /// `trim([chr])` or `index_of(str, [start])`, where `method_n`'s exact-
 /// arity check would be too strict.
-fn method_opt(
+pub fn method_opt(
   name: &'static str,
   required_extra: u8,
   func: NativeFn,
@@ -135,12 +138,13 @@ fn method_opt(
       name,
       min_arity: 1 + required_extra,
       variadic: true,
+      is_method: true,
       func,
     },
   )
 }
 
-fn build(entries: Vec<(&'static str, NativeFunction)>) -> MethodTable {
+pub fn build(entries: Vec<(&'static str, NativeFunction)>) -> MethodTable {
   entries.into_iter().collect()
 }
 
