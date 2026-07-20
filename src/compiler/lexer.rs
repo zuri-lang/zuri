@@ -285,7 +285,7 @@ impl<'a> Lexer<'a> {
         }
 
         return self.make_token(TokenKind::BinNumber(
-          i64::from_str_radix(&self.source.as_str()[self.start..self.current], 2).unwrap(),
+          i64::from_str_radix(&self.source.as_str()[self.start + 2..self.current], 2).unwrap(),
         ));
       } else if self.match_char('c') {
         // octal number
@@ -294,7 +294,7 @@ impl<'a> Lexer<'a> {
         }
 
         return self.make_token(TokenKind::OctNumber(
-          i64::from_str_radix(&self.source.as_str()[self.start..self.current], 8).unwrap(),
+          i64::from_str_radix(&self.source.as_str()[self.start + 2..self.current], 8).unwrap(),
         ));
       } else if self.match_char('x') {
         // hex number
@@ -303,7 +303,7 @@ impl<'a> Lexer<'a> {
         }
 
         return self.make_token(TokenKind::HexNumber(
-          i64::from_str_radix(&self.source.as_str()[self.start..self.current], 16).unwrap(),
+          i64::from_str_radix(&self.source.as_str()[self.start + 2..self.current], 16).unwrap(),
         ));
       }
     }

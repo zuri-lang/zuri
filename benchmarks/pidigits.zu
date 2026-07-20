@@ -4,7 +4,7 @@
    transliterated from Alexander Fyodorov's program by Isaac Gouy
 */
 
-def pad(i: Number, last: Bool) {
+def pad(i: number, last: bool) {
   var res = i.to_string()
   var count = 10 - res.length()
   while count > 0 {
@@ -18,7 +18,7 @@ def pad(i: Number, last: Bool) {
   return res
 }
 
-def calculatePi(arg: Number) {
+def calculatePi(arg: number) {
   var i = 0, ns = 0
 
   var k = 0n
@@ -45,7 +45,7 @@ def calculatePi(arg: Number) {
       u = m % d + n
 
       if d > u {
-        ns = ns * 10 + to_number(t)
+        ns = ns * 10 + t.to_number()
         i += 1
 
         var last = i >= arg
@@ -65,7 +65,7 @@ def calculatePi(arg: Number) {
 }
 
 
-var start = microtime()
+var start = time()
 calculatePi(10_000)
 
-echo '\nTotal time taken: ${(microtime() - start)/1_000_000}s'
+echo '\nTotal time taken: ${time() - start}s'

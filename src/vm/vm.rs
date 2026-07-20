@@ -817,10 +817,18 @@ impl VM {
             let vb = self.get_reg(base, b);
             self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
           },
-          Instr::Lt { dst, a, b } => self.compare(base, dst, a, b, "<", |x, y| x < y)?,
-          Instr::Gt { dst, a, b } => self.compare(base, dst, a, b, ">", |x, y| x > y)?,
-          Instr::Le { dst, a, b } => self.compare(base, dst, a, b, "<=", |x, y| x <= y)?,
-          Instr::Ge { dst, a, b } => self.compare(base, dst, a, b, ">=", |x, y| x >= y)?,
+          Instr::Lt { dst, a, b } => {
+            self.compare(base, dst, a, b, "<", |x, y| x < y, |x, y| &x < &y)?
+          },
+          Instr::Gt { dst, a, b } => {
+            self.compare(base, dst, a, b, ">", |x, y| x > y, |x, y| &x > &y)?
+          },
+          Instr::Le { dst, a, b } => {
+            self.compare(base, dst, a, b, "<=", |x, y| x <= y, |x, y| &x <= &y)?
+          },
+          Instr::Ge { dst, a, b } => {
+            self.compare(base, dst, a, b, ">=", |x, y| x >= y, |x, y| &x >= &y)?
+          },
 
           Instr::Jmp { offset } => {
             self.jump(frame_idx, offset);
@@ -1679,20 +1687,27 @@ impl VM {
     b: u8,
     op_name: &str,
     op: fn(f64, f64) -> bool,
+    big_op: fn(BigInt, BigInt) -> bool,
   ) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
-    if !va.is_number() || !vb.is_number() {
-      let msg = format!(
-        "operator '{}' not defined for {} and {}",
-        op_name,
-        va.argument_type_name(),
-        vb.argument_type_name()
-      );
-      return Err(self.raise("TypeError", msg));
+    if va.is_number() && vb.is_number() {
+      return Ok(self.set_reg(base, dst, Value::bool(op(va.as_number(), vb.as_number()))));
+    } else if va.is_bigint() && vb.is_bigint() {
+      return Ok(self.set_reg(
+        base,
+        dst,
+        Value::bool(big_op(va.as_bigint().clone(), vb.as_bigint().clone())),
+      ));
     }
-    self.set_reg(base, dst, Value::bool(op(va.as_number(), vb.as_number())));
-    Ok(())
+
+    let msg = format!(
+      "operator '{}' not defined for {} and {}",
+      op_name,
+      va.argument_type_name(),
+      vb.argument_type_name()
+    );
+    return Err(self.raise("TypeError", msg));
   }
 
   //-----------------------------------------------------------------------------------

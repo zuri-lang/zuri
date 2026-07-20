@@ -30,7 +30,7 @@ class NthToggle < Toggle {
     }
 }
 
-const start = microtime()
+const start = time()
 
 var n = 100000
 var val = true
@@ -70,5 +70,5 @@ for i in 0..n {
 
 echo val
 
-echo '\nTotal time taken: ${(microtime() - start)/1_000_000}s'
+echo '\nTotal time taken: ${time() - start}s'
 

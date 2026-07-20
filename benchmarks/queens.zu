@@ -82,7 +82,7 @@ class Queens {
   }
 }
 
-var start = microtime()
+var start = time()
 echo Queens().benchmark() == true
 
-echo '\nTotal time taken: ${(microtime() - start)/1_000_000}s'
+echo '\nTotal time taken: ${time() - start}s'

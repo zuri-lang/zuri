@@ -7,7 +7,7 @@ class Tree {
   }
 }
 
-def make_tree(depth: Number) {
+def make_tree(depth) {
   if depth <= 0 return Tree(nil, nil)
   depth -= 1
   return Tree(make_tree(depth), make_tree(depth))
@@ -18,7 +18,7 @@ def check_tree(node: Tree) {
   return 1 + check_tree(node.left) + check_tree(node.right)
 }
 
-var start = microtime()
+var start = time()
 
 var min_depth = 4
 var max_depth = max(min_depth + 2, N)
@@ -43,4 +43,4 @@ iter var depth = min_depth; depth < stretch_depth; depth += 2 {
 
 echo 'long lived tree of depth ${max_depth}\t check: ${check_tree(long_lived_tree)}'
 
-echo '\nTotal time taken: ${(microtime() - start)/1_000_000}s'
+echo '\nTotal time taken: ${time() - start}s'

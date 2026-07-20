@@ -68,7 +68,7 @@ class IList {
   }
 }
 
-var start = microtime()
+var start = time()
 echo IList().benchmark() == 10
 
-echo '\nTotal time taken: ${(microtime() - start)/1_000_000}s'
+echo '\nTotal time taken: ${time() - start}s'

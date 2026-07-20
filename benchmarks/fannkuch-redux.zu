@@ -34,7 +34,7 @@ def fannkuchredux(n)
             flipsCount += 1
         }
 
-        maxFlipsCount = max(maxFlipsCount, flipsCount)
+        maxFlipsCount = maxFlipsCount.max(flipsCount)
         checksum += permCount % 2 == 0 ? flipsCount : -flipsCount
 
         /* Use incremental change to generate another permutation */
@@ -56,11 +56,11 @@ def fannkuchredux(n)
             if count[r] > 0 break
             r++
         }
-        permCount++;
+        permCount++
     }
 }
 
-const start = microtime()
+const start = time()
 echo 'Pfannkuchen(' +12+ ') = ' + fannkuchredux(12)
 
-echo '\nTotal time taken: ${(microtime() - start)/1_000_000}s'
+echo '\nTotal time taken: ${time() - start}s'

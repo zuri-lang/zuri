@@ -50,7 +50,7 @@ def vector_times_array_times_array_transposed(vector: List) {
   return vector_times_array_transposed(vector_times_array(vector))
 }
 
-const start = microtime()
+const start = time()
 
 iter var i = 0; i < 10; i++ {
   v = vector_times_array_times_array_transposed(u)
@@ -66,4 +66,4 @@ while i < ARRAY_LENGTH {
 
 echo vBv/vv ** 0.5
 
-echo '\nTotal time taken: ${(microtime() - start)/1_000_000}s'
+echo '\nTotal time taken: ${time() - start}s'
