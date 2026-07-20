@@ -71,12 +71,12 @@ fn parse_regex(s: &str) -> Option<(&str, &str)> {
 /// Compile a Zuri regex's pattern/modifiers into a `regex::Regex`. See
 /// this file's module-level caveat: the `regex` crate is NOT PCRE2 --
 /// no backreferences, no lookaround, no named groups -- and only
-/// `i`/`m`/`s`/`x` of Zuri's documented modifiers have a direct
-/// equivalent here; `A`/`D`/`U`/`u`/`J` are accepted but ignored.
+/// `i`/`m`/`s`/`x`/`U`/`u` of Zuri's documented modifiers have a direct
+/// equivalent here; `A`/`D`/`J` are accepted but ignored.
 fn compile_regex(pattern: &str, modifiers: &str) -> Result<Regex, String> {
   let flags: String = modifiers
     .chars()
-    .filter(|c| matches!(c, 'i' | 'm' | 's' | 'x'))
+    .filter(|c| matches!(c, 'i' | 'm' | 's' | 'x' | 'u' | 'U'))
     .collect();
   let full = if flags.is_empty() {
     pattern.to_string()
