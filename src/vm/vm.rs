@@ -747,36 +747,15 @@ impl VM {
             |x, y| (x / y).floor(),
             |x, y| &x / &y,
           )?,
-          Instr::BitAnd { dst, a, b } => self.bitwise_numeric(
-            base,
-            dst,
-            a,
-            b,
-            "&",
-            "@bit_and",
-            |x, y| x & y,
-            |x, y| &x & &y,
-          )?,
-          Instr::BitOr { dst, a, b } => self.bitwise_numeric(
-            base,
-            dst,
-            a,
-            b,
-            "|",
-            "@bit_or",
-            |x, y| x | y,
-            |x, y| &x | &y,
-          )?,
-          Instr::BitXor { dst, a, b } => self.bitwise_numeric(
-            base,
-            dst,
-            a,
-            b,
-            "^",
-            "@bit_xor",
-            |x, y| x ^ y,
-            |x, y| &x ^ &y,
-          )?,
+          Instr::BitAnd { dst, a, b } => {
+            self.bitwise_numeric(base, dst, a, b, "&", "@and", |x, y| x & y, |x, y| &x & &y)?
+          },
+          Instr::BitOr { dst, a, b } => {
+            self.bitwise_numeric(base, dst, a, b, "|", "@or", |x, y| x | y, |x, y| &x | &y)?
+          },
+          Instr::BitXor { dst, a, b } => {
+            self.bitwise_numeric(base, dst, a, b, "^", "@xor", |x, y| x ^ y, |x, y| &x ^ &y)?
+          },
           Instr::BitShl { dst, a, b } => self.bitwise_numeric(
             base,
             dst,
@@ -855,17 +834,31 @@ impl VM {
             self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
           },
           Instr::Lt { dst, a, b } => {
-            self.compare(base, dst, a, b, "<", |x, y| x < y, |x, y| &x < &y)?
+            self.compare(base, dst, a, b, "<", "@lt", |x, y| x < y, |x, y| &x < &y)?
           },
           Instr::Gt { dst, a, b } => {
-            self.compare(base, dst, a, b, ">", |x, y| x > y, |x, y| &x > &y)?
+            self.compare(base, dst, a, b, ">", "@gt", |x, y| x > y, |x, y| &x > &y)?
           },
-          Instr::Le { dst, a, b } => {
-            self.compare(base, dst, a, b, "<=", |x, y| x <= y, |x, y| &x <= &y)?
-          },
-          Instr::Ge { dst, a, b } => {
-            self.compare(base, dst, a, b, ">=", |x, y| x >= y, |x, y| &x >= &y)?
-          },
+          Instr::Le { dst, a, b } => self.compare(
+            base,
+            dst,
+            a,
+            b,
+            "<=",
+            "@lte",
+            |x, y| x <= y,
+            |x, y| &x <= &y,
+          )?,
+          Instr::Ge { dst, a, b } => self.compare(
+            base,
+            dst,
+            a,
+            b,
+            ">=",
+            "@gte",
+            |x, y| x >= y,
+            |x, y| &x >= &y,
+          )?,
 
           Instr::Jmp { offset } => {
             self.jump(frame_idx, offset);
@@ -1662,8 +1655,7 @@ impl VM {
     }
 
     if let Some(result) = self.try_operator_override(va, deco, &[vb])? {
-      self.set_reg(base, dst, result);
-      return Ok(());
+      return Ok(self.set_reg(base, dst, result));
     }
 
     let msg = format!(
@@ -1690,8 +1682,7 @@ impl VM {
     // when the OTHER operand happens to be a string/list/bytes that
     // would otherwise match one of those `||` branches on its own.
     if let Some(result) = self.try_operator_override(va, "@add", &[vb])? {
-      self.set_reg(base, dst, result);
-      return Ok(());
+      return Ok(self.set_reg(base, dst, result));
     }
 
     if va.is_string() || vb.is_string() {
@@ -1751,8 +1742,7 @@ impl VM {
     }
 
     if let Some(result) = self.try_operator_override(va, "@mul", &[vb])? {
-      self.set_reg(base, dst, result);
-      return Ok(());
+      return Ok(self.set_reg(base, dst, result));
     }
 
     let msg = format!(
@@ -1771,6 +1761,7 @@ impl VM {
     a: u8,
     b: u8,
     op_name: &str,
+    deco: &str,
     op: fn(f64, f64) -> bool,
     big_op: fn(BigInt, BigInt) -> bool,
   ) -> RunResult<()> {
@@ -1784,6 +1775,10 @@ impl VM {
         dst,
         Value::bool(big_op(va.as_bigint().clone(), vb.as_bigint().clone())),
       ));
+    }
+
+    if let Some(result) = self.try_operator_override(va, deco, &[vb])? {
+      return Ok(self.set_reg(base, dst, result));
     }
 
     let msg = format!(
