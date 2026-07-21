@@ -368,7 +368,7 @@ class IdleTask < Task {
 
   fn(pkt,r) {
     var i = r
-    assert i.get_class() == IdleTaskRec
+    assert instance_of(i, IdleTaskRec)
     i.count -= 1
     if i.count == 0 return self.hold()
     else if i.control & 1 == 0 {
@@ -465,6 +465,6 @@ def run() {
 
 ####### TESTING .......
 var start = time()
-run()
+echo run()
 
 echo '\nTotal time taken: ${time() - start}s'

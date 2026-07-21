@@ -2,13 +2,14 @@ use crate::builtins::enforce::ArgType;
 use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
-use crate::{enforce_arg_count, enforce_arg_type_any_of};
+use crate::{enforce_arg_count, enforce_arg_type, enforce_arg_type_any_of};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn install(vm: &mut VM) {
   register(vm, "time", 0, false, time);
   register(vm, "sum", 1, true, sum);
   register(vm, "bytes", 1, false, bytes);
+  register(vm, "instance_of", 2, false, instance_of);
   // register(vm, "gc", 0, false, gc);
 }
 
@@ -24,7 +25,9 @@ fn register(vm: &mut VM, name: &'static str, min_arity: u8, variadic: bool, func
   vm.define_global(name, value);
 }
 
-fn time(_ctx: &mut ZuriContext) -> Result<Value, String> {
+fn time(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+
   let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| {
     format!(
       "time() failed: system clock is set before the Unix epoch: {}",
@@ -47,6 +50,28 @@ fn sum(ctx: &mut ZuriContext) -> Result<Value, String> {
     total += v.as_number();
   }
   Ok(Value::number(total))
+}
+
+fn instance_of(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 1, ArgType::Class);
+
+  let value = ctx.args[0];
+  let target_class = ctx.args[1];
+
+  if !value.is_instance() {
+    return Ok(Value::bool(false));
+  }
+
+  let mut cur = Some(value.as_instance().class);
+  while let Some(c) = cur {
+    if c.equals(&target_class) {
+      return Ok(Value::bool(true));
+    }
+    cur = c.as_class().superclass;
+  }
+
+  Ok(Value::bool(false))
 }
 
 fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -93,6 +118,7 @@ fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// collection actually freed.
 #[allow(unused)]
 fn gc(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
   ctx.vm.collect_garbage();
   Ok(Value::nil())
 }
