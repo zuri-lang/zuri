@@ -25,11 +25,11 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];
   let obj = ctx.args[0].as_bytes();
 
-  if val.is_nil() {
-    if obj.is_empty() {
-      return Ok(Value::bool(false));
-    }
+  if obj.is_empty() {
+    return Ok(Value::bool(false));
+  }
 
+  if val.is_nil() {
     return Ok(Value::number(0.0));
   }
 

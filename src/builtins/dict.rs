@@ -25,11 +25,11 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];
   let (keys, _): (Vec<Value>, Vec<Value>) = ctx.args[0].as_dict().into_iter().unzip();
 
-  if val.is_nil() {
-    if keys.is_empty() {
-      return Ok(Value::bool(false));
-    }
+  if keys.is_empty() {
+    return Ok(Value::bool(false));
+  }
 
+  if val.is_nil() {
     return Ok(keys.first().unwrap().clone());
   }
 
