@@ -3,9 +3,9 @@ class A {
     self.value = 6
   }
 
-  def * {
-    return self.value * __arg__.value
+  @mul(other) {
+    return self.value * other.value
   }
 }
 
-echo A() * A()
+echo (A() * A()).value

@@ -9,15 +9,15 @@ class A {
     self.val = val
   }
 
-  def + {
-    return A(self.val + __arg__.val)
+  @add(other) {
+    return A(self.val + other.val)
   }
 
-  def >>> {
-    return A(self.val * __arg__.val)
+  @mul(other) {
+    return A(self.val * other.val)
   }
 
-  def ~ {
+  @not() {
     return A(self.val ** 2)
   }
 }

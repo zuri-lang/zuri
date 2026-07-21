@@ -3,9 +3,9 @@ class A {
     self.value = 2
   }
 
-  def + {
-    return self.value + __arg__.value
+  @add(other) {
+    return self.value + other.value
   }
 }
 
-echo A() + A()
+echo (A() + A()).value
