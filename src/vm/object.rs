@@ -7,6 +7,12 @@ use crate::vm::chunk::Chunk;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
+/// Number of object slots per chunk. Chosen so a chunk is a few hundred
+/// KB -- large enough to amortize the cost of growing, small enough that
+/// early GC cycles don't need to wait for one huge chunk to fill before
+/// the free list has anything to give back.
+const CHUNK_SIZE: usize = 8192;
+
 /// Everything a Value's pointer tag can point at.
 pub enum Obj {
   Str(String),
@@ -27,7 +33,7 @@ pub enum Obj {
   /// A function PROTOTYPE -- the static, compiled-once result of one
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
-  Func(ObjFunction),
+  Func(Box<ObjFunction>),
   BoundMethod(ObjBoundMethod),
   /// A function VALUE at runtime -- a prototype plus the specific
   /// upvalues captured at the moment this particular closure was
@@ -54,7 +60,7 @@ pub enum Obj {
   /// safe way to do that through the same shared `*const Obj` pointer
   /// every other Value already uses, rather than reaching for unsafe
   /// mutation.
-  Class(RefCell<ObjClass>),
+  Class(Box<RefCell<ObjClass>>),
   Instance(ObjInstance),
   /// A `lower..upper` range value -- valid in either direction (see
   /// Expr::Range's compilation in compiler.rs). Stored as raw f64s, not
@@ -257,8 +263,21 @@ pub type NativeFn = fn(&mut ZuriContext) -> Result<Value, String>;
 /// pointer dereference instead of a HashSet insert.
 #[repr(C)]
 struct GcBox {
+  live: Cell<bool>,
   marked: Cell<bool>,
+  size: usize,
   obj: Obj,
+}
+
+/// One fixed-capacity block of GcBox storage. Never grows past
+/// `CHUNK_SIZE` (enforced in `Heap::alloc`), so its backing buffer never
+/// reallocates -- every pointer handed out into a chunk stays valid for
+/// the chunk's whole lifetime, which is the whole lifetime of `Heap`.
+/// Moving the `Chunk` struct itself (e.g. when the outer `chunks: Vec`
+/// grows) only moves the Vec's (ptr, len, cap) header, never the buffer
+/// it points at -- so that's safe too.
+struct GcChunk {
+  slots: Vec<GcBox>,
 }
 
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
@@ -266,7 +285,10 @@ struct GcBox {
 /// lets a Value stay a plain Copy u64.
 #[derive(Default)]
 pub struct Heap {
-  objects: Vec<Box<GcBox>>,
+  chunks: Vec<GcChunk>,
+  /// Pointers to dead, currently-unused slots, ready to be handed back
+  /// out by `alloc` with no system allocator call at all.
+  free_list: Vec<*mut GcBox>,
   /// Running total of `approx_size()` across every live object --
   /// compared against `next_gc` to decide when the VM should pause and
   /// collect. Recomputed from scratch on every sweep rather than
@@ -279,21 +301,24 @@ pub struct Heap {
   /// into collecting roughly every time the heap doubles rather than
   /// thrashing on a fixed budget.
   next_gc: usize,
+  live_count: usize,
 }
 
 impl Heap {
   /// Floor for `next_gc` -- keeps a small/short-lived program from
   /// triggering a collection after every third allocation.
-  const MIN_NEXT_GC: usize = 16 * 1024 * 1024;
+  const MIN_NEXT_GC: usize = 10 * 1024 * 1024;
   /// After a sweep, the next collection is scheduled at this multiple of
   /// the heap's current live size.
-  const GC_HEAP_GROW_FACTOR: usize = 2;
+  const GC_HEAP_GROW_FACTOR: f32 = 1.5;
 
   pub fn new() -> Self {
     Heap {
-      objects: Vec::new(),
+      chunks: Vec::new(),
+      free_list: Vec::new(),
       bytes_allocated: 0,
       next_gc: Self::MIN_NEXT_GC,
+      live_count: 0,
     }
   }
 
@@ -309,7 +334,7 @@ impl Heap {
 
   #[inline]
   pub fn object_count(&self) -> usize {
-    self.objects.len()
+    self.live_count
   }
 
   /// Has the heap grown enough since the last collection that the VM
@@ -321,18 +346,19 @@ impl Heap {
 
   #[inline]
   fn gcbox_of(ptr: *const Obj) -> *const GcBox {
-    // SAFETY: every `*const Obj` reachable from a Value was produced by
-    // `alloc` from the `obj` field of a `GcBox`, so recovering the
-    // enclosing struct via its known field offset is sound.
     let offset = std::mem::offset_of!(GcBox, obj);
+    // SAFETY: every `*const Obj` reachable from a Value was produced by
+    // `alloc`, above, from the `obj` field of a real `GcBox` -- walking
+    // back by that field's known offset recovers the enclosing struct.
     unsafe { (ptr as *const u8).sub(offset) as *const GcBox }
   }
 
-  /// Mark the object behind `ptr` reachable. Returns true the FIRST time
-  /// (caller should then walk its children), false on repeat visits --
-  /// the mark-bit equivalent of `HashSet::insert`'s return value.
+  /// Mark the object behind `ptr` reachable this cycle. Returns true
+  /// the FIRST time (caller should walk its children), false on repeat
+  /// visits -- same contract the old HashSet-based version had.
   pub(crate) fn mark_object(ptr: *const Obj) -> bool {
     let gcbox = unsafe { &*Self::gcbox_of(ptr) };
+    debug_assert!(gcbox.live.get(), "marking a supposedly-dead object");
     !gcbox.marked.replace(true)
   }
 
@@ -343,17 +369,18 @@ impl Heap {
   /// count.
   fn approx_size(obj: &Obj) -> usize {
     use std::mem::size_of;
-
     size_of::<Obj>()
       + match obj {
         Obj::Str(s) => s.len(),
         Obj::Bytes(b) => b.borrow().len(),
-        Obj::BigInt(_) => 0,
+        Obj::BigInt(x) => size_of::<BigInt>() + x.bits() as usize,
         Obj::List(items) => items.len() * size_of::<Cell<Value>>(),
         Obj::Dict(pairs) => pairs.borrow().len() * size_of::<(Value, Value)>(),
         Obj::Func(f) => {
-          f.chunk.code.len() * size_of::<crate::vm::chunk::Instr>()
+          size_of::<ObjFunction>()
+            + f.chunk.code.len() * size_of::<crate::vm::chunk::Instr>()
             + f.chunk.constants.len() * size_of::<Value>()
+            + f.upvalues.len() * size_of::<Value>()
         },
         Obj::BoundMethod(_) => size_of::<ObjBoundMethod>(),
         Obj::Closure(c) => c.upvalues.len() * size_of::<Value>(),
@@ -365,6 +392,7 @@ impl Heap {
             + c.methods.len() * 64
             + c.field_slots.len() * 32
             + c.static_slots.len() * 32
+            + c.statics.len() * size_of::<Cell<Value>>()
         },
         Obj::Instance(i) => i.fields.len() * size_of::<Cell<Value>>(),
         Obj::Range { .. } => 0,
@@ -372,14 +400,50 @@ impl Heap {
   }
 
   fn alloc(&mut self, obj: Obj) -> Value {
-    self.bytes_allocated += Self::approx_size(&obj);
-    self.objects.push(Box::new(GcBox {
+    let size = Self::approx_size(&obj);
+    self.bytes_allocated += size;
+    self.live_count += 1;
+
+    // Fast path: reuse a slot a previous sweep already reclaimed --
+    // no system allocator call at all.
+    if let Some(ptr) = self.free_list.pop() {
+      // SAFETY: `ptr` was pushed by `sweep` only after confirming the
+      // slot is unreachable and dropping its old contents; nothing else
+      // holds a reference to it, so exclusive access here is sound.
+      // Assigning `.obj` below runs the placeholder's Drop and moves
+      // the new value in, same as any other Rust assignment.
+      unsafe {
+        (*ptr).live.set(true);
+        (*ptr).marked.set(false);
+        (*ptr).size = size;
+        (*ptr).obj = obj;
+        return Value::obj(&(*ptr).obj as *const Obj);
+      }
+    }
+
+    // No reusable slot -- bump-allocate into the current chunk, or
+    // start a fresh one if it's full.
+    if self
+      .chunks
+      .last()
+      .is_none_or(|c| c.slots.len() == c.slots.capacity())
+    {
+      self.chunks.push(GcChunk {
+        slots: Vec::with_capacity(CHUNK_SIZE),
+      });
+    }
+    let chunk = self.chunks.last_mut().unwrap();
+    chunk.slots.push(GcBox {
+      live: Cell::new(true),
       marked: Cell::new(false),
+      size,
       obj,
-    }));
-    let boxed = self.objects.last().unwrap();
-    let ptr: *const Obj = &boxed.obj;
-    Value::obj(ptr)
+    });
+    let gcbox_ptr: *const GcBox = chunk.slots.last().unwrap();
+    // SAFETY: `gcbox_ptr` was just pushed into this chunk's stable
+    // buffer; deref is valid for the chunk's (== Heap's) lifetime.
+    let obj_ptr: *const Obj = unsafe { &(*gcbox_ptr).obj };
+    Value::obj(obj_ptr)
   }
 
   pub fn alloc_string(&mut self, s: impl Into<String>) -> Value {
@@ -421,8 +485,9 @@ impl Heap {
   }
 
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {
-    self.alloc(Obj::Func(f))
+    self.alloc(Obj::Func(Box::new(f)))
   }
+
   pub fn alloc_closure(&mut self, c: ObjClosure) -> Value {
     self.alloc(Obj::Closure(c))
   }
@@ -452,7 +517,7 @@ impl Heap {
   }
 
   pub fn alloc_class(&mut self, class: ObjClass) -> Value {
-    self.alloc(Obj::Class(RefCell::new(class)))
+    self.alloc(Obj::Class(Box::new(RefCell::new(class))))
   }
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
@@ -474,14 +539,39 @@ impl Heap {
   /// must already be the complete, transitively-closed set of live
   /// objects (see `VM::collect_garbage`), or anything missing from it
   /// gets freed out from under whatever still references it.
-
+  /// Sweep: any LIVE slot that didn't get marked this cycle is garbage.
+  /// Its contents are dropped in place right now (so a dead object's own
+  /// String/Vec/HashMap buffers are freed immediately, not held onto
+  /// until the slot happens to be reused), then the slot is pushed onto
+  /// the free list for `alloc` to reuse with no further system
+  /// allocator traffic. A slot that's ALREADY free (not `live`) is left
+  /// untouched -- it's not garbage, it's just unused inventory.
   pub fn sweep(&mut self) -> usize {
-    let before = self.objects.len();
-    self.objects.retain(|gcbox| gcbox.marked.replace(false));
-    let freed = before - self.objects.len();
-
-    self.bytes_allocated = self.objects.iter().map(|b| Self::approx_size(&b.obj)).sum();
-    self.next_gc = (self.bytes_allocated * Self::GC_HEAP_GROW_FACTOR).max(Self::MIN_NEXT_GC);
+    let mut freed = 0;
+    for chunk in &mut self.chunks {
+      for gcbox in chunk.slots.iter_mut() {
+        if !gcbox.live.get() {
+          continue;
+        }
+        if gcbox.marked.get() {
+          gcbox.marked.set(false); // ready for the next cycle
+        } else {
+          self.bytes_allocated = self.bytes_allocated.saturating_sub(gcbox.size);
+          // Cheap variant with no owned heap data -- assigning over the
+          // old value runs its Drop, freeing whatever it held.
+          gcbox.obj = Obj::Range {
+            lower: 0.0,
+            upper: 0.0,
+          };
+          gcbox.live.set(false);
+          self.free_list.push(gcbox as *mut GcBox);
+          freed += 1;
+        }
+      }
+    }
+    self.live_count -= freed;
+    self.next_gc =
+      ((self.bytes_allocated as f32 * Self::GC_HEAP_GROW_FACTOR) as usize).max(Self::MIN_NEXT_GC);
     freed
   }
 }
