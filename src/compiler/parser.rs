@@ -1544,6 +1544,7 @@ impl<'a> Parser<'a> {
         break;
       } else {
         declarations.push(declaration);
+        self.ignore_newlines();
       }
     }
 

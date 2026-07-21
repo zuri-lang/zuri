@@ -1,46 +1,54 @@
-var N = 21
+/* The Computer Language Benchmarks Game
+ * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
+ *
+ * binary-trees Zuri #1 program
+ *
+ * contributed by Richard Ore
+ * *reset*
+*/
 
-class Tree {
-  @new(left: Tree, right: Tree) {
+class TreeNode {
+  @new(left, right) {
     self.left = left
     self.right = right
   }
+
+  count() {
+    if self.left == nil return 1
+    return 1 + self.left.count() + self.right.count()
+  }
 }
 
-def make_tree(depth) {
-  if depth <= 0 return Tree(nil, nil)
-  depth -= 1
-  return Tree(make_tree(depth), make_tree(depth))
+def tree_with(depth) {
+  if depth > 0 {
+    return TreeNode(tree_with(depth - 1), tree_with(depth - 1))
+  }
+  return TreeNode(nil, nil)
 }
 
-def check_tree(node: Tree) {
-  if node.left == nil return 1
-  return 1 + check_tree(node.left) + check_tree(node.right)
+def main(n) {
+  var min_depth = 4
+  var max_depth = n.max(min_depth + 2)
+  var stretch_depth = max_depth + 1
+
+  echo 'stretch tree of depth ${stretch_depth}\t check: ${tree_with(stretch_depth).count()}'
+
+  var long_lived_tree = tree_with(max_depth)
+
+  iter var depth = min_depth; depth <= max_depth; depth += 2 {
+    var sum = 0
+    var iterations = 1 << (max_depth - depth + min_depth)
+
+    iter var i = 1; i <= iterations; i++ {
+      sum += tree_with(depth).count()
+    }
+
+    echo '${iterations}\t trees of depth ${depth}\t check: ${sum}'
+  }
+
+  echo 'long lived tree of depth ${max_depth}\t check: ${long_lived_tree.count()}'
 }
 
 var start = time()
-
-var min_depth = 4
-var max_depth = N.max(min_depth + 2)
-var stretch_depth = max_depth + 1
-
-echo 'stretch tree of depth ${stretch_depth}\t check: ${check_tree(make_tree(stretch_depth))}'
-
-var long_lived_tree = make_tree(max_depth)
-
-var iterations = 2 ** max_depth
-
-iter var depth = min_depth; depth < stretch_depth; depth += 2 {
-  var check = 0
-  var max_iteration = iterations + 1
-  iter var i = 1; i < max_iteration; i++ {
-    check += check_tree(make_tree(depth))
-  }
-
-  echo '${iterations}\t trees of depth ${depth}\t check: ${check}'
-  iterations //= 4
-}
-
-echo 'long lived tree of depth ${max_depth}\t check: ${check_tree(long_lived_tree)}'
-
-echo '\nTotal time taken: ${time() - start}s'
+main(21)
+echo '\n\nTime taken: ${time() - start}'
