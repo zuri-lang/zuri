@@ -278,6 +278,15 @@ struct GcBox {
 /// it points at -- so that's safe too.
 struct GcChunk {
   slots: Vec<GcBox>,
+  /// Dead slots within THIS chunk, ready for reuse with no allocator
+  /// call. Kept local (not a heap-wide free list) specifically so that
+  /// when `live_count` hits zero, dropping the whole `Chunk` also drops
+  /// this list -- nothing outside needs to be purged or cross-referenced.
+  free: Vec<*mut GcBox>,
+  /// How many slots in this chunk are currently live. When this hits
+  /// zero, every slot in the chunk is garbage and the whole chunk (and
+  /// its backing allocation) can be dropped.
+  live_count: usize,
 }
 
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
@@ -285,10 +294,13 @@ struct GcChunk {
 /// lets a Value stay a plain Copy u64.
 #[derive(Default)]
 pub struct Heap {
-  chunks: Vec<GcChunk>,
-  /// Pointers to dead, currently-unused slots, ready to be handed back
-  /// out by `alloc` with no system allocator call at all.
-  free_list: Vec<*mut GcBox>,
+  /// `None` marks a chunk that's been reclaimed -- kept as a hole
+  /// rather than removed, so no other chunk's index ever shifts.
+  chunks: Vec<Option<GcChunk>>,
+  /// Stack of chunk indices known to have spare capacity (a free slot,
+  /// or room left to bump-allocate into). Checked before creating a new
+  /// chunk; entries are popped once exhausted or found reclaimed.
+  candidates: Vec<usize>,
   /// Running total of `approx_size()` across every live object --
   /// compared against `next_gc` to decide when the VM should pause and
   /// collect. Recomputed from scratch on every sweep rather than
@@ -315,7 +327,7 @@ impl Heap {
   pub fn new() -> Self {
     Heap {
       chunks: Vec::new(),
-      free_list: Vec::new(),
+      candidates: Vec::new(),
       bytes_allocated: 0,
       next_gc: Self::MIN_NEXT_GC,
       live_count: 0,
@@ -348,8 +360,7 @@ impl Heap {
   fn gcbox_of(ptr: *const Obj) -> *const GcBox {
     let offset = std::mem::offset_of!(GcBox, obj);
     // SAFETY: every `*const Obj` reachable from a Value was produced by
-    // `alloc`, above, from the `obj` field of a real `GcBox` -- walking
-    // back by that field's known offset recovers the enclosing struct.
+    // `alloc`, above, from the `obj` field of a real `GcBox`.
     unsafe { (ptr as *const u8).sub(offset) as *const GcBox }
   }
 
@@ -404,44 +415,66 @@ impl Heap {
     self.bytes_allocated += size;
     self.live_count += 1;
 
-    // Fast path: reuse a slot a previous sweep already reclaimed --
-    // no system allocator call at all.
-    if let Some(ptr) = self.free_list.pop() {
-      // SAFETY: `ptr` was pushed by `sweep` only after confirming the
-      // slot is unreachable and dropping its old contents; nothing else
-      // holds a reference to it, so exclusive access here is sound.
-      // Assigning `.obj` below runs the placeholder's Drop and moves
-      // the new value in, same as any other Rust assignment.
-      unsafe {
-        (*ptr).live.set(true);
-        (*ptr).marked.set(false);
-        (*ptr).size = size;
-        (*ptr).obj = obj;
-        return Value::obj(&(*ptr).obj as *const Obj);
+    // Try the most recently useful chunk(s) first, discarding any that
+    // turn out to be exhausted or already reclaimed.
+    loop {
+      let Some(&idx) = self.candidates.last() else {
+        break;
+      };
+      let Some(chunk) = self.chunks[idx].as_mut() else {
+        self.candidates.pop();
+        continue;
+      };
+
+      if let Some(ptr) = chunk.free.pop() {
+        chunk.live_count += 1;
+        // SAFETY: `ptr` was pushed by `sweep` only after this slot was
+        // confirmed unreachable and its old contents dropped; nothing
+        // else references it, so exclusive access here is sound.
+        unsafe {
+          (*ptr).live.set(true);
+          (*ptr).marked.set(false);
+          (*ptr).size = size;
+          (*ptr).obj = obj;
+          return Value::obj(&(*ptr).obj as *const Obj);
+        }
       }
+
+      if chunk.slots.len() < chunk.slots.capacity() {
+        chunk.slots.push(GcBox {
+          live: Cell::new(true),
+          marked: Cell::new(false),
+          size,
+          obj,
+        });
+        chunk.live_count += 1;
+        let gcbox_ptr: *const GcBox = chunk.slots.last().unwrap();
+        // SAFETY: just pushed into this chunk's stable (with_capacity'd,
+        // never-reallocating) buffer.
+        let obj_ptr: *const Obj = unsafe { &(*gcbox_ptr).obj };
+        return Value::obj(obj_ptr);
+      }
+
+      // Neither a free slot nor spare capacity left -- stale candidate.
+      self.candidates.pop();
     }
 
-    // No reusable slot -- bump-allocate into the current chunk, or
-    // start a fresh one if it's full.
-    if self
-      .chunks
-      .last()
-      .is_none_or(|c| c.slots.len() == c.slots.capacity())
-    {
-      self.chunks.push(GcChunk {
-        slots: Vec::with_capacity(CHUNK_SIZE),
-      });
-    }
-    let chunk = self.chunks.last_mut().unwrap();
+    // No usable candidate -- start a fresh chunk.
+    let mut chunk = GcChunk {
+      slots: Vec::with_capacity(CHUNK_SIZE),
+      free: Vec::new(),
+      live_count: 1,
+    };
     chunk.slots.push(GcBox {
       live: Cell::new(true),
       marked: Cell::new(false),
       size,
       obj,
     });
-    let gcbox_ptr: *const GcBox = chunk.slots.last().unwrap();
-    // SAFETY: `gcbox_ptr` was just pushed into this chunk's stable
-    // buffer; deref is valid for the chunk's (== Heap's) lifetime.
+    self.chunks.push(Some(chunk));
+    let idx = self.chunks.len() - 1;
+    self.candidates.push(idx);
+    let gcbox_ptr: *const GcBox = self.chunks[idx].as_ref().unwrap().slots.last().unwrap();
     let obj_ptr: *const Obj = unsafe { &(*gcbox_ptr).obj };
     Value::obj(obj_ptr)
   }
@@ -539,36 +572,57 @@ impl Heap {
   /// must already be the complete, transitively-closed set of live
   /// objects (see `VM::collect_garbage`), or anything missing from it
   /// gets freed out from under whatever still references it.
-  /// Sweep: any LIVE slot that didn't get marked this cycle is garbage.
-  /// Its contents are dropped in place right now (so a dead object's own
-  /// String/Vec/HashMap buffers are freed immediately, not held onto
-  /// until the slot happens to be reused), then the slot is pushed onto
-  /// the free list for `alloc` to reuse with no further system
-  /// allocator traffic. A slot that's ALREADY free (not `live`) is left
-  /// untouched -- it's not garbage, it's just unused inventory.
+  ///
+  /// Sweep every resident chunk. A slot that's live but wasn't marked
+  /// this cycle is garbage: its contents are dropped in place and it
+  /// goes on its chunk's local free list. A chunk whose live_count hits
+  /// zero -- every slot in it dead -- is dropped ENTIRELY, returning its
+  /// backing allocation (and, for a block this size, typically the
+  /// underlying pages) to the allocator instead of holding it as
+  /// permanent inventory.
   pub fn sweep(&mut self) -> usize {
     let mut freed = 0;
-    for chunk in &mut self.chunks {
-      for gcbox in chunk.slots.iter_mut() {
-        if !gcbox.live.get() {
+
+    for idx in 0..self.chunks.len() {
+      let live_count_after;
+      let became_reusable;
+
+      {
+        let Some(chunk) = self.chunks[idx].as_mut() else {
           continue;
+        };
+        let had_capacity = !chunk.free.is_empty() || chunk.slots.len() < chunk.slots.capacity();
+
+        for gcbox in chunk.slots.iter_mut() {
+          if !gcbox.live.get() {
+            continue;
+          }
+          if gcbox.marked.get() {
+            gcbox.marked.set(false);
+          } else {
+            self.bytes_allocated = self.bytes_allocated.saturating_sub(gcbox.size);
+            gcbox.obj = Obj::Range {
+              lower: 0.0,
+              upper: 0.0,
+            }; // drops old contents
+            gcbox.live.set(false);
+            chunk.live_count -= 1;
+            chunk.free.push(gcbox as *mut GcBox);
+            freed += 1;
+          }
         }
-        if gcbox.marked.get() {
-          gcbox.marked.set(false); // ready for the next cycle
-        } else {
-          self.bytes_allocated = self.bytes_allocated.saturating_sub(gcbox.size);
-          // Cheap variant with no owned heap data -- assigning over the
-          // old value runs its Drop, freeing whatever it held.
-          gcbox.obj = Obj::Range {
-            lower: 0.0,
-            upper: 0.0,
-          };
-          gcbox.live.set(false);
-          self.free_list.push(gcbox as *mut GcBox);
-          freed += 1;
-        }
+
+        live_count_after = chunk.live_count;
+        became_reusable = !had_capacity && !chunk.free.is_empty();
+      }
+
+      if live_count_after == 0 {
+        self.chunks[idx] = None; // whole chunk reclaimed here
+      } else if became_reusable {
+        self.candidates.push(idx);
       }
     }
+
     self.live_count -= freed;
     self.next_gc =
       ((self.bytes_allocated as f32 * Self::GC_HEAP_GROW_FACTOR) as usize).max(Self::MIN_NEXT_GC);
