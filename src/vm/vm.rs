@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::{Neg, Shl, Shr};
 use std::sync::LazyLock;
 
@@ -448,81 +448,81 @@ impl VM {
   fn dispatch_call(&mut self, base: usize, func_reg: u8, num_args: u8, dst: u8) -> RunResult<()> {
     let callee = self.get_reg(base, func_reg);
 
-    if callee.is_native() {
-      let args_start = base + func_reg as usize + 1;
-      let args_end = args_start + num_args as usize;
-      let args: Vec<Value> = self.registers[args_start..args_end].to_vec();
-      let native = callee.as_native();
-      let result = self.call_native(native, &args)?;
-      self.set_reg(base, dst, result);
-      return Ok(());
-    }
-
-    if callee.is_class() {
-      let args_start = base + func_reg as usize + 1;
-      let args_end = args_start + num_args as usize;
-      let user_args: Vec<Value> = self.registers[args_start..args_end].to_vec();
-      let instance = self.instantiate(callee, &user_args)?;
-      self.set_reg(base, dst, instance);
-      return Ok(());
-    }
-
-    if callee.is_bound_method() {
-      let args_start = base + func_reg as usize + 1;
-      let args_end = args_start + num_args as usize;
-      let bound = callee.as_bound_method();
-      let mut full_args = Vec::with_capacity(num_args as usize + 1);
-      full_args.push(bound.receiver);
-      full_args.extend_from_slice(&self.registers[args_start..args_end]);
-      let method = bound.method;
-      let result = self.call_value(method, &full_args)?;
-      self.set_reg(base, dst, result);
-      return Ok(());
-    }
-
-    if !callee.is_closure() {
+    if !callee.is_obj() {
       let msg = format!("cannot call a {}", callee.type_name());
       return Err(self.raise("TypeError", msg));
     }
 
-    let callee_closure = callee.as_closure();
-    let callee_fn = callee_closure.function.as_func();
+    match unsafe { &*callee.as_obj() } {
+      Obj::Native(_) => {
+        let args_start = base + func_reg as usize + 1;
+        let args_end = args_start + num_args as usize;
+        let args: Vec<Value> = self.registers[args_start..args_end].to_vec();
+        let result = self.call_native(callee.as_native(), &args)?;
+        self.set_reg(base, dst, result);
+        Ok(())
+      },
+      Obj::Class(_) => {
+        let args_start = base + func_reg as usize + 1;
+        let args_end = args_start + num_args as usize;
+        let user_args: Vec<Value> = self.registers[args_start..args_end].to_vec();
+        let instance = self.instantiate(callee, &user_args)?;
+        self.set_reg(base, dst, instance);
+        Ok(())
+      },
+      Obj::BoundMethod(_) => {
+        let args_start = base + func_reg as usize + 1;
+        let args_end = args_start + num_args as usize;
+        let bound = callee.as_bound_method();
+        let mut full_args = Vec::with_capacity(num_args as usize + 1);
+        full_args.push(bound.receiver);
+        full_args.extend_from_slice(&self.registers[args_start..args_end]);
+        let result = self.call_value(bound.method, &full_args)?;
+        self.set_reg(base, dst, result);
+        Ok(())
+      },
+      Obj::Closure(_) => {
+        let callee_closure = callee.as_closure();
+        let callee_fn = callee_closure.function.as_func();
+        let required = if callee_fn.variadic {
+          callee_fn.arity - 1
+        } else {
+          callee_fn.arity
+        };
 
-    let required = if callee_fn.variadic {
-      callee_fn.arity - 1
-    } else {
-      callee_fn.arity
-    };
+        let new_base = base + func_reg as usize + 1;
+        let needed = new_base + callee_fn.num_registers as usize;
+        if self.registers.len() < needed {
+          self.registers.resize(needed, Value::nil());
+        }
+        for i in num_args..required {
+          self.registers[new_base + i as usize] = Value::nil();
+        }
+        if callee_fn.variadic {
+          let extra_count = num_args.saturating_sub(required);
+          let mut items = Vec::with_capacity(extra_count as usize);
+          for i in 0..extra_count {
+            items.push(self.registers[new_base + required as usize + i as usize]);
+          }
+          let list_val = self.heap.alloc_list(items);
+          self.registers[new_base + required as usize] = list_val;
+        }
 
-    let new_base = base + func_reg as usize + 1;
-    let needed = new_base + callee_fn.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
+        self.frames.push(CallFrame {
+          function: callee_fn as *const ObjFunction,
+          closure: callee_closure as *const ObjClosure,
+          closure_val: callee,
+          ip: 0,
+          base: new_base,
+          dst_in_caller: dst,
+        });
+        Ok(())
+      },
+      _ => {
+        let msg = format!("cannot call a {}", callee.type_name());
+        Err(self.raise("TypeError", msg))
+      },
     }
-
-    for i in num_args..required {
-      self.registers[new_base + i as usize] = Value::nil();
-    }
-
-    if callee_fn.variadic {
-      let extra_count = num_args.saturating_sub(required);
-      let mut items = Vec::with_capacity(extra_count as usize);
-      for i in 0..extra_count {
-        items.push(self.registers[new_base + required as usize + i as usize]);
-      }
-      let list_val = self.heap.alloc_list(items);
-      self.registers[new_base + required as usize] = list_val;
-    }
-
-    self.frames.push(CallFrame {
-      function: callee_fn as *const ObjFunction,
-      closure: callee_closure as *const ObjClosure,
-      closure_val: callee,
-      ip: 0,
-      base: new_base,
-      dst_in_caller: dst,
-    });
-    Ok(())
   }
 
   /// Call a CLOSURE whose implicit receiver has ALREADY been placed by
@@ -868,32 +868,44 @@ impl VM {
           },
 
           Instr::GetGlobal { dst, name_const } => {
-            let name = self.const_as_str(func, name_const)?;
-            let found = self.globals.get(&name).copied();
-            let v = match found {
+            let name_val = func.chunk.constants[name_const as usize];
+            if !name_val.is_string() {
+              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+            }
+            // Borrow the constant's &str directly -- no allocation on the hot path.
+            let v = match self.globals.get(name_val.as_str()).copied() {
               Some(v) => v,
               None => {
-                return Err(self.raise("UndefinedError", format!("undefined global '{}'", name)));
+                let msg = format!("undefined global '{}'", name_val.as_str());
+                return Err(self.raise("UndefinedError", msg));
               },
             };
             self.set_reg(base, dst, v);
           },
-          Instr::SetGlobal { name_const, src } => {
-            let name = self.const_as_str(func, name_const)?;
-            let v = self.get_reg(base, src);
-            self.globals.insert(name, v);
-          },
-          Instr::AssignGlobal { name_const, src } => {
-            let name = self.const_as_str(func, name_const)?;
-            let value = self.get_reg(base, src);
 
-            let found = self.globals.get(&name).copied();
-            match found {
-              Some(_) => self.globals.insert(name, value),
+          Instr::SetGlobal { name_const, src } => {
+            let name_val = func.chunk.constants[name_const as usize];
+            if !name_val.is_string() {
+              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+            }
+            let v = self.get_reg(base, src);
+            self.globals.insert(name_val.as_str().to_string(), v); // insert genuinely needs an owned key
+          },
+
+          Instr::AssignGlobal { name_const, src } => {
+            let name_val = func.chunk.constants[name_const as usize];
+            if !name_val.is_string() {
+              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+            }
+            let value = self.get_reg(base, src);
+            // get_mut avoids allocating even on assignment (key already exists).
+            match self.globals.get_mut(name_val.as_str()) {
+              Some(slot) => *slot = value,
               None => {
-                return Err(self.raise("UndefinedError", format!("undefined global '{}'", name)));
+                let msg = format!("undefined global '{}'", name_val.as_str());
+                return Err(self.raise("UndefinedError", msg));
               },
-            };
+            }
           },
 
           Instr::Closure { dst, proto_const } => {
@@ -953,8 +965,10 @@ impl VM {
             self.close_upvalues_from(base + from as usize);
           },
           Instr::MakeList { dst, start, count } => {
-            let items: Vec<Value> = (0..count).map(|i| self.get_reg(base, start + i)).collect();
-            let list_val = self.heap.alloc_list(items);
+            let cells: Vec<Cell<Value>> = (0..count)
+              .map(|i| Cell::new(self.get_reg(base, start + i)))
+              .collect();
+            let list_val = self.heap.alloc_list_cells(cells);
             self.set_reg(base, dst, list_val);
           },
           Instr::MakeDict { dst, start, count } => {
@@ -1094,13 +1108,17 @@ impl VM {
             name_const,
           } => {
             let receiver = self.get_reg(base, obj);
-            let name = self.const_as_str(func, name_const)?;
+            let name_val = func.chunk.constants[name_const as usize];
+            if !name_val.is_string() {
+              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+            }
+
             let value = if receiver.is_instance() {
               let inst = receiver.as_instance();
               let class = inst.class.as_class();
-              if let Some(&idx) = class.field_slots.get(&name) {
+              if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
                 inst.fields[idx as usize].get()
-              } else if let Some(method) = class.methods.get(&name).copied() {
+              } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
                 // Accessed without an immediate call -- e.g. `var f =
                 // obj.method` -- so unlike Invoke, this can't skip
                 // allocation: bind the receiver into a real ObjBoundMethod
@@ -1109,16 +1127,17 @@ impl VM {
               } else {
                 let msg = format!(
                   "undefined property '{}' on instance of '{}'",
-                  name, class.name
+                  name_val.as_str(),
+                  class.name
                 );
                 return Err(self.raise("PropertyError", msg));
               }
             } else if receiver.is_class() {
-              let raw = lookup_static(receiver, &name)
+              let raw = lookup_static(receiver, name_val.as_str())
                 .ok_or_else(|| {
                   format!(
                     "undefined static member '{}' on class '{}'",
-                    name,
+                    name_val.as_str(),
                     receiver.as_class().name
                   )
                 })
@@ -1138,7 +1157,7 @@ impl VM {
             } else {
               let msg = format!(
                 "cannot read property '{}' on a {}",
-                name,
+                name_val.as_str(),
                 receiver.type_name()
               );
               return Err(self.raise("TypeError", msg));
@@ -1153,24 +1172,33 @@ impl VM {
           } => {
             let receiver = self.get_reg(base, obj);
             let value = self.get_reg(base, src);
-            let name = self.const_as_str(func, name_const)?;
+            let name_val = func.chunk.constants[name_const as usize];
+            if !name_val.is_string() {
+              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+            }
+
             if receiver.is_instance() {
               let inst = receiver.as_instance();
               let class = inst.class.as_class();
               let idx = *class
                 .field_slots
-                .get(&name)
+                .get(name_val.as_str())
                 .ok_or_else(|| {
-                  format!("undefined field '{}' on instance of '{}'", name, class.name)
+                  format!(
+                    "undefined field '{}' on instance of '{}'",
+                    name_val.as_str(),
+                    class.name
+                  )
                 })
                 .map_err(|msg| self.raise("PropertyError", msg))?;
               inst.fields[idx as usize].set(value);
             } else if receiver.is_class() {
-              set_static(receiver, &name, value).map_err(|msg| self.raise("PropertyError", msg))?;
+              set_static(receiver, name_val.as_str(), value)
+                .map_err(|msg| self.raise("PropertyError", msg))?;
             } else {
               let msg = format!(
                 "cannot set property '{}' on a {}",
-                name,
+                name_val.as_str(),
                 receiver.type_name()
               );
               return Err(self.raise("TypeError", msg));
@@ -1184,16 +1212,19 @@ impl VM {
             num_args,
           } => {
             let receiver = self.get_reg(base, obj);
-            let method_name = self.const_as_str(func, method_const)?;
+            let method_name_val = func.chunk.constants[method_const as usize];
+            if !method_name_val.is_string() {
+              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+            }
 
             if receiver.is_instance() {
               let inst = receiver.as_instance();
               let class_val = inst.class;
               let found = {
                 let class = class_val.as_class();
-                if let Some(m) = class.methods.get(&method_name).copied() {
+                if let Some(m) = class.methods.get(method_name_val.as_str()).copied() {
                   Some(Ok(m))
-                } else if let Some(&idx) = class.field_slots.get(&method_name) {
+                } else if let Some(&idx) = class.field_slots.get(method_name_val.as_str()) {
                   Some(Err(idx))
                 } else {
                   None
@@ -1216,7 +1247,7 @@ impl VM {
                   self.set_reg(base, obj + 1, field_value);
                   self.dispatch_call(base, obj + 1, num_args, dst)?;
                 },
-                None => match builtins::lookup(receiver, &method_name) {
+                None => match builtins::lookup(receiver, method_name_val.as_str()) {
                   Some(native) => {
                     let args_start = base + obj as usize + 2; // was + 1
                     let args_end = args_start + num_args as usize;
@@ -1229,7 +1260,7 @@ impl VM {
                   None => {
                     let msg = format!(
                       "undefined property '{}' on instance of '{}'",
-                      method_name,
+                      method_name_val.as_str(),
                       class_val.as_class().name
                     );
                     return Err(self.raise("PropertyError", msg));
@@ -1237,11 +1268,11 @@ impl VM {
                 },
               }
             } else if receiver.is_class() {
-              let callee = lookup_static(receiver, &method_name)
+              let callee = lookup_static(receiver, method_name_val.as_str())
                 .ok_or_else(|| {
                   format!(
                     "undefined static member '{}' on class '{}'",
-                    method_name,
+                    method_name_val.as_str(),
                     receiver.as_class().name
                   )
                 })
@@ -1257,7 +1288,7 @@ impl VM {
                 self.dispatch_call(base, obj + 1, num_args, dst)?;
               }
             } else {
-              match builtins::lookup(receiver, &method_name) {
+              match builtins::lookup(receiver, method_name_val.as_str()) {
                 Some(native) => {
                   let args_start = base + obj as usize + 2; // was + 1
                   let args_end = args_start + num_args as usize;
@@ -1271,7 +1302,7 @@ impl VM {
                   let msg = format!(
                     "object of type {} does not define method '{}'",
                     receiver.type_name(),
-                    method_name
+                    method_name_val.as_str()
                   );
                   return Err(self.raise("TypeError", msg));
                 },
@@ -1293,11 +1324,14 @@ impl VM {
               );
               return Err(self.raise("TypeError", msg));
             }
+            let method_name_val = func.chunk.constants[method_const as usize];
+            if !method_name_val.is_string() {
+              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+            }
 
-            let method_name = self.const_as_str(func, method_const)?;
             let found = {
               let class = super_val.as_class();
-              class.methods.get(&method_name).copied()
+              class.methods.get(method_name_val.as_str()).copied()
             };
 
             if let Some(method) = found {
@@ -1315,7 +1349,7 @@ impl VM {
               if !self_val.is_instance() {
                 let msg = format!(
                   "undefined method '{}' on superclass '{}'",
-                  method_name,
+                  method_name_val.as_str(),
                   super_val.as_class().name
                 );
                 return Err(self.raise("PropertyError", msg));
@@ -1326,11 +1360,11 @@ impl VM {
                 .class
                 .as_class()
                 .field_slots
-                .get(&method_name)
+                .get(method_name_val.as_str())
                 .ok_or_else(|| {
                   format!(
                     "undefined method '{}' on superclass '{}'",
-                    method_name,
+                    method_name_val.as_str(),
                     super_val.as_class().name
                   )
                 })
@@ -1728,7 +1762,6 @@ impl VM {
     let before_bytes = self.heap.bytes_allocated();
     let before_count = self.heap.object_count();
 
-    let mut reachable: HashSet<*const Obj> = HashSet::new();
     let mut worklist: Vec<*const Obj> = Vec::new();
 
     // Only the register range actually within reach of a currently
@@ -1744,19 +1777,19 @@ impl VM {
       .min(self.registers.len());
 
     for v in &self.registers[..regs_top] {
-      Self::mark_root(*v, &mut reachable, &mut worklist);
+      Self::mark_root(*v, &mut worklist);
     }
     for v in self.globals.values() {
-      Self::mark_root(*v, &mut reachable, &mut worklist);
+      Self::mark_root(*v, &mut worklist);
     }
     for frame in &self.frames {
-      Self::mark_root(frame.closure_val, &mut reachable, &mut worklist);
+      Self::mark_root(frame.closure_val, &mut worklist);
     }
     for (_, v) in &self.open_upvalues {
-      Self::mark_root(*v, &mut reachable, &mut worklist);
+      Self::mark_root(*v, &mut worklist);
     }
     for v in &self.gc_pins {
-      Self::mark_root(*v, &mut reachable, &mut worklist);
+      Self::mark_root(*v, &mut worklist);
     }
 
     while let Some(ptr) = worklist.pop() {
@@ -1767,64 +1800,64 @@ impl VM {
       match unsafe { &*ptr } {
         Obj::List(items) => {
           for cell in items {
-            Self::mark_root(cell.get(), &mut reachable, &mut worklist);
+            Self::mark_root(cell.get(), &mut worklist);
           }
         },
         Obj::Dict(pairs) => {
           for (k, v) in pairs.borrow().iter() {
-            Self::mark_root(*k, &mut reachable, &mut worklist);
-            Self::mark_root(*v, &mut reachable, &mut worklist);
+            Self::mark_root(*k, &mut worklist);
+            Self::mark_root(*v, &mut worklist);
           }
         },
         Obj::Func(f) => {
           for c in &f.chunk.constants {
-            Self::mark_root(*c, &mut reachable, &mut worklist);
+            Self::mark_root(*c, &mut worklist);
           }
         },
         Obj::Closure(c) => {
-          Self::mark_root(c.function, &mut reachable, &mut worklist);
+          Self::mark_root(c.function, &mut worklist);
           for u in &c.upvalues {
-            Self::mark_root(*u, &mut reachable, &mut worklist);
+            Self::mark_root(*u, &mut worklist);
           }
         },
         Obj::Upvalue(cell) => {
           if let UpvalueState::Closed(v) = cell.get() {
-            Self::mark_root(v, &mut reachable, &mut worklist);
+            Self::mark_root(v, &mut worklist);
           }
         },
         Obj::Class(c) => {
           let class = c.borrow();
           if let Some(sup) = class.superclass {
-            Self::mark_root(sup, &mut reachable, &mut worklist);
+            Self::mark_root(sup, &mut worklist);
           }
           for m in class.methods.values() {
-            Self::mark_root(*m, &mut reachable, &mut worklist);
+            Self::mark_root(*m, &mut worklist);
           }
           if let Some(init) = class.own_field_initializer {
-            Self::mark_root(init, &mut reachable, &mut worklist);
+            Self::mark_root(init, &mut worklist);
           }
           if let Some(ctor) = class.constructor {
-            Self::mark_root(ctor, &mut reachable, &mut worklist);
+            Self::mark_root(ctor, &mut worklist);
           }
           for cell in &class.statics {
-            Self::mark_root(cell.get(), &mut reachable, &mut worklist);
+            Self::mark_root(cell.get(), &mut worklist);
           }
         },
         Obj::Instance(inst) => {
-          Self::mark_root(inst.class, &mut reachable, &mut worklist);
+          Self::mark_root(inst.class, &mut worklist);
           for cell in &inst.fields {
-            Self::mark_root(cell.get(), &mut reachable, &mut worklist);
+            Self::mark_root(cell.get(), &mut worklist);
           }
         },
         Obj::BoundMethod(b) => {
-          Self::mark_root(b.receiver, &mut reachable, &mut worklist);
-          Self::mark_root(b.method, &mut reachable, &mut worklist);
+          Self::mark_root(b.receiver, &mut worklist);
+          Self::mark_root(b.method, &mut worklist);
         },
         Obj::Str(_) | Obj::Bytes(_) | Obj::BigInt(_) | Obj::Native(_) | Obj::Range { .. } => {},
       }
     }
 
-    let freed = self.heap.sweep(&reachable);
+    let freed = self.heap.sweep();
 
     if *LOG_GC {
       eprintln!(
@@ -1842,12 +1875,12 @@ impl VM {
   /// it so `collect_garbage` walks its children too. A no-op on repeat
   /// visits, which is what makes cycles (e.g. a closure capturing a
   /// variable that in turn points back at the closure) safe to trace.
-  fn mark_root(v: Value, reachable: &mut HashSet<*const Obj>, worklist: &mut Vec<*const Obj>) {
+  fn mark_root(v: Value, worklist: &mut Vec<*const Obj>) {
     if !v.is_obj() {
       return;
     }
     let ptr = v.as_obj();
-    if reachable.insert(ptr) {
+    if Heap::mark_object(ptr) {
       worklist.push(ptr);
     }
   }

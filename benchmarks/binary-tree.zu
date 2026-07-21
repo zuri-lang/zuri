@@ -21,7 +21,7 @@ def check_tree(node: Tree) {
 var start = time()
 
 var min_depth = 4
-var max_depth = max(min_depth + 2, N)
+var max_depth = N.max(min_depth + 2)
 var stretch_depth = max_depth + 1
 
 echo 'stretch tree of depth ${stretch_depth}\t check: ${check_tree(make_tree(stretch_depth))}'

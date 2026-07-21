@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::vm::chunk::Chunk;
@@ -253,12 +253,20 @@ impl<'a> ZuriContext<'a> {
 /// still borrowed -- see the disjoint-field-borrow note in Instr::Call.
 pub type NativeFn = fn(&mut ZuriContext) -> Result<Value, String>;
 
+/// Wraps every heap object with an inline GC mark bit so marking is a
+/// pointer dereference instead of a HashSet insert.
+#[repr(C)]
+struct GcBox {
+  marked: Cell<bool>,
+  obj: Obj,
+}
+
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
 /// *const Obj pointers into this arena, never real ownership, which is what
 /// lets a Value stay a plain Copy u64.
 #[derive(Default)]
 pub struct Heap {
-  objects: Vec<Box<Obj>>,
+  objects: Vec<Box<GcBox>>,
   /// Running total of `approx_size()` across every live object --
   /// compared against `next_gc` to decide when the VM should pause and
   /// collect. Recomputed from scratch on every sweep rather than
@@ -276,7 +284,7 @@ pub struct Heap {
 impl Heap {
   /// Floor for `next_gc` -- keeps a small/short-lived program from
   /// triggering a collection after every third allocation.
-  const MIN_NEXT_GC: usize = 256 * 1024;
+  const MIN_NEXT_GC: usize = 16 * 1024 * 1024;
   /// After a sweep, the next collection is scheduled at this multiple of
   /// the heap's current live size.
   const GC_HEAP_GROW_FACTOR: usize = 2;
@@ -309,6 +317,23 @@ impl Heap {
   #[inline]
   pub fn needs_gc(&self) -> bool {
     self.bytes_allocated > self.next_gc
+  }
+
+  #[inline]
+  fn gcbox_of(ptr: *const Obj) -> *const GcBox {
+    // SAFETY: every `*const Obj` reachable from a Value was produced by
+    // `alloc` from the `obj` field of a `GcBox`, so recovering the
+    // enclosing struct via its known field offset is sound.
+    let offset = std::mem::offset_of!(GcBox, obj);
+    unsafe { (ptr as *const u8).sub(offset) as *const GcBox }
+  }
+
+  /// Mark the object behind `ptr` reachable. Returns true the FIRST time
+  /// (caller should then walk its children), false on repeat visits --
+  /// the mark-bit equivalent of `HashSet::insert`'s return value.
+  pub(crate) fn mark_object(ptr: *const Obj) -> bool {
+    let gcbox = unsafe { &*Self::gcbox_of(ptr) };
+    !gcbox.marked.replace(true)
   }
 
   /// Rough size in bytes attributed to one heap object, used only to
@@ -348,8 +373,12 @@ impl Heap {
 
   fn alloc(&mut self, obj: Obj) -> Value {
     self.bytes_allocated += Self::approx_size(&obj);
-    self.objects.push(Box::new(obj));
-    let ptr: *const Obj = self.objects.last().unwrap().as_ref();
+    self.objects.push(Box::new(GcBox {
+      marked: Cell::new(false),
+      obj,
+    }));
+    let boxed = self.objects.last().unwrap();
+    let ptr: *const Obj = &boxed.obj;
     Value::obj(ptr)
   }
 
@@ -367,6 +396,10 @@ impl Heap {
 
   pub fn alloc_list(&mut self, list: impl Into<Vec<Value>>) -> Value {
     let cells = list.into().into_iter().map(Cell::new).collect();
+    self.alloc(Obj::List(cells))
+  }
+
+  pub fn alloc_list_cells(&mut self, cells: Vec<Cell<Value>>) -> Value {
     self.alloc(Obj::List(cells))
   }
 
@@ -441,16 +474,14 @@ impl Heap {
   /// must already be the complete, transitively-closed set of live
   /// objects (see `VM::collect_garbage`), or anything missing from it
   /// gets freed out from under whatever still references it.
-  pub fn sweep(&mut self, reachable: &HashSet<*const Obj>) -> usize {
+
+  pub fn sweep(&mut self) -> usize {
     let before = self.objects.len();
-    self
-      .objects
-      .retain(|obj| reachable.contains(&(obj.as_ref() as *const Obj)));
+    self.objects.retain(|gcbox| gcbox.marked.replace(false));
     let freed = before - self.objects.len();
 
-    self.bytes_allocated = self.objects.iter().map(|o| Self::approx_size(o)).sum();
+    self.bytes_allocated = self.objects.iter().map(|b| Self::approx_size(&b.obj)).sum();
     self.next_gc = (self.bytes_allocated * Self::GC_HEAP_GROW_FACTOR).max(Self::MIN_NEXT_GC);
-
     freed
   }
 }
