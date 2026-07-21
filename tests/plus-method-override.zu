@@ -8,4 +8,4 @@ class A {
   }
 }
 
-echo (A() + A()).value
+echo A() + A()

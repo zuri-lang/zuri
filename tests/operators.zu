@@ -17,6 +17,10 @@ class A {
     return A(self.val * other.val)
   }
 
+  @urshift(other) {
+    return A(self.val >>> other.val)
+  }
+
   @not() {
     return A(self.val ** 2)
   }

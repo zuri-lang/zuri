@@ -718,17 +718,24 @@ impl VM {
 
           Instr::Add { dst, a, b } => self.binary_add(base, dst, a, b, "+")?,
           Instr::Sub { dst, a, b } => {
-            self.binary_numeric(base, dst, a, b, "-", |x, y| x - y, |x, y| &x - &y)?
+            self.binary_numeric(base, dst, a, b, "-", "@sub", |x, y| x - y, |x, y| &x - &y)?
           },
           Instr::Mul { dst, a, b } => self.binary_mult(base, dst, a, b, "*")?,
           Instr::Div { dst, a, b } => {
-            self.binary_numeric(base, dst, a, b, "/", |x, y| x / y, |x, y| &x / &y)?
+            self.binary_numeric(base, dst, a, b, "/", "@div", |x, y| x / y, |x, y| &x / &y)?
           },
-          Instr::Pow { dst, a, b } => {
-            self.binary_numeric(base, dst, a, b, "**", |x, y| x.powf(y), |x, y| &x * &y)?
-          },
+          Instr::Pow { dst, a, b } => self.binary_numeric(
+            base,
+            dst,
+            a,
+            b,
+            "**",
+            "@pow",
+            |x, y| x.powf(y),
+            |x, y| &x * &y,
+          )?,
           Instr::Mod { dst, a, b } => {
-            self.binary_numeric(base, dst, a, b, "%", |x, y| x % y, |x, y| &x % &y)?
+            self.binary_numeric(base, dst, a, b, "%", "@mod", |x, y| x % y, |x, y| &x % &y)?
           },
           Instr::Floor { dst, a, b } => self.binary_numeric(
             base,
@@ -736,24 +743,47 @@ impl VM {
             a,
             b,
             "//",
+            "@floordiv",
             |x, y| (x / y).floor(),
             |x, y| &x / &y,
           )?,
-          Instr::BitAnd { dst, a, b } => {
-            self.bitwise_numeric(base, dst, a, b, "&", |x, y| x & y, |x, y| &x & &y)?
-          },
-          Instr::BitOr { dst, a, b } => {
-            self.bitwise_numeric(base, dst, a, b, "|", |x, y| x | y, |x, y| &x | &y)?
-          },
-          Instr::BitXor { dst, a, b } => {
-            self.bitwise_numeric(base, dst, a, b, "^", |x, y| x ^ y, |x, y| &x ^ &y)?
-          },
+          Instr::BitAnd { dst, a, b } => self.bitwise_numeric(
+            base,
+            dst,
+            a,
+            b,
+            "&",
+            "@bit_and",
+            |x, y| x & y,
+            |x, y| &x & &y,
+          )?,
+          Instr::BitOr { dst, a, b } => self.bitwise_numeric(
+            base,
+            dst,
+            a,
+            b,
+            "|",
+            "@bit_or",
+            |x, y| x | y,
+            |x, y| &x | &y,
+          )?,
+          Instr::BitXor { dst, a, b } => self.bitwise_numeric(
+            base,
+            dst,
+            a,
+            b,
+            "^",
+            "@bit_xor",
+            |x, y| x ^ y,
+            |x, y| &x ^ &y,
+          )?,
           Instr::BitShl { dst, a, b } => self.bitwise_numeric(
             base,
             dst,
             a,
             b,
             "<<",
+            "@lshift",
             |x, y| x.checked_shl(y as u32).unwrap_or(0),
             |x, y| x.shl(y.to_i64().unwrap_or(0)),
           )?,
@@ -763,6 +793,7 @@ impl VM {
             a,
             b,
             ">>",
+            "@rshift",
             |x, y| x.checked_shr(y as u32).unwrap_or(0),
             |x, y| x.shr(y.to_i64().unwrap_or(0)),
           )?,
@@ -772,26 +803,32 @@ impl VM {
             a,
             b,
             ">>>",
+            "@urshift",
             |x, y| (x as u32).checked_shr(y as u32).unwrap_or(0) as i64,
             |x, y| x.shr(y.to_i64().unwrap_or(0)),
           )?,
           Instr::BitNot { dst, src } => {
             let v = self.get_reg(base, src);
-            if !v.is_number() {
-              let msg = format!("cannot bitwise not a {}", v.type_name());
+            if v.is_number() {
+              self.set_reg(base, dst, Value::number((!(v.as_number() as i64)) as f64));
+            } else if let Some(result) = self.try_operator_override(v, "@not", &[])? {
+              self.set_reg(base, dst, result);
+            } else {
+              let msg = format!("cannot bitwise not a {}", v.argument_type_name());
               return Err(self.raise("TypeError", msg));
             }
-            self.set_reg(base, dst, Value::number((!(v.as_number() as i64)) as f64));
           },
           Instr::Neg { dst, src } => {
             let v = self.get_reg(base, src);
             if v.is_number() {
               self.set_reg(base, dst, Value::number(-v.as_number()));
             } else if v.is_bigint() {
-              let v = self.heap.alloc_bigint(v.as_bigint().neg());
-              self.set_reg(base, dst, v);
+              let nv = self.heap.alloc_bigint(v.as_bigint().neg());
+              self.set_reg(base, dst, nv);
+            } else if let Some(result) = self.try_operator_override(v, "@neg", &[])? {
+              self.set_reg(base, dst, result);
             } else {
-              let msg = format!("cannot negate a {}", v.type_name());
+              let msg = format!("cannot negate a {}", v.argument_type_name());
               return Err(self.raise("TypeError", msg));
             }
           },
@@ -1568,6 +1605,7 @@ impl VM {
     a: u8,
     b: u8,
     op_name: &str,
+    deco: &str,
     op: fn(i64, i64) -> i64,
     big_op: fn(BigInt, BigInt) -> BigInt,
   ) -> RunResult<()> {
@@ -1586,11 +1624,16 @@ impl VM {
       return Ok(self.set_reg(base, dst, v));
     }
 
+    if let Some(result) = self.try_operator_override(va, deco, &[vb])? {
+      self.set_reg(base, dst, result);
+      return Ok(());
+    }
+
     let msg = format!(
-      "operator '{}' expects numbers, got {} and {}",
+      "operator '{}' not defined for call signature ({}, {})",
       op_name,
-      va.type_name(),
-      vb.type_name()
+      va.argument_type_name(),
+      vb.argument_type_name()
     );
     Err(self.raise("TypeError", msg))
   }
@@ -1602,6 +1645,7 @@ impl VM {
     a: u8,
     b: u8,
     op_name: &str,
+    deco: &str,
     op: fn(f64, f64) -> f64,
     big_op: fn(BigInt, BigInt) -> BigInt,
   ) -> RunResult<()> {
@@ -1615,6 +1659,11 @@ impl VM {
         .heap
         .alloc_bigint(big_op(va.as_bigint().clone(), vb.as_bigint().clone()));
       return Ok(self.set_reg(base, dst, v));
+    }
+
+    if let Some(result) = self.try_operator_override(va, deco, &[vb])? {
+      self.set_reg(base, dst, result);
+      return Ok(());
     }
 
     let msg = format!(
@@ -1634,25 +1683,28 @@ impl VM {
     } else if va.is_bigint() && vb.is_bigint() {
       let v = self.heap.alloc_bigint(va.as_bigint() + vb.as_bigint());
       return Ok(self.set_reg(base, dst, v));
-    } else if va.is_string() || vb.is_string() {
-      let va = self.get_reg(base, a);
-      let vb = self.get_reg(base, b);
+    }
+
+    // Checked BEFORE the generic string/list/bytes fallbacks below so a
+    // class (or builtin table) that defines '@add' always wins, even
+    // when the OTHER operand happens to be a string/list/bytes that
+    // would otherwise match one of those `||` branches on its own.
+    if let Some(result) = self.try_operator_override(va, "@add", &[vb])? {
+      self.set_reg(base, dst, result);
+      return Ok(());
+    }
+
+    if va.is_string() || vb.is_string() {
       let s = format!("{}{}", va, vb);
       let v = self.heap.alloc_string(s);
       return Ok(self.set_reg(base, dst, v));
     } else if va.is_list() || vb.is_list() {
-      let va = self.get_reg(base, a);
-      let vb = self.get_reg(base, b);
-
       let mut value = Vec::new();
       value.extend(va.as_list().iter().cloned());
       value.extend(vb.as_list().iter().cloned());
       let v = self.heap.alloc_list(value);
       return Ok(self.set_reg(base, dst, v));
     } else if va.is_bytes() || vb.is_bytes() {
-      let va = self.get_reg(base, a);
-      let vb = self.get_reg(base, b);
-
       let mut value = Vec::new();
       value.extend(va.as_bytes().iter().cloned());
       value.extend(vb.as_bytes().iter().cloned());
@@ -1679,10 +1731,7 @@ impl VM {
       let v = self.heap.alloc_bigint(va.as_bigint() * vb.as_bigint());
       return Ok(self.set_reg(base, dst, v));
     } else if va.is_string() && vb.is_number() {
-      let va = self.get_reg(base, a);
-      let vb = self.get_reg(base, b);
       let count = vb.as_number() as usize;
-
       let s = if count < usize::MAX {
         va.as_str().repeat(count)
       } else {
@@ -1691,10 +1740,7 @@ impl VM {
       let v = self.heap.alloc_string(s);
       return Ok(self.set_reg(base, dst, v));
     } else if va.is_list() && vb.is_number() {
-      let va = self.get_reg(base, a);
-      let vb = self.get_reg(base, b);
       let count = vb.as_number() as usize;
-
       let value = if count < usize::MAX {
         va.as_list().to_vec().repeat(count)
       } else {
@@ -1702,6 +1748,11 @@ impl VM {
       };
       let v = self.heap.alloc_list(value);
       return Ok(self.set_reg(base, dst, v));
+    }
+
+    if let Some(result) = self.try_operator_override(va, "@mul", &[vb])? {
+      self.set_reg(base, dst, result);
+      return Ok(());
     }
 
     let msg = format!(
@@ -1954,6 +2005,46 @@ impl VM {
     }
 
     Ok(Some((lo, hi)))
+  }
+
+  /// Attempt to service an operator via a class- or builtin-table-declared
+  /// override method named `deco` (e.g. "@add") on the LEFT operand only --
+  /// matching the same "receiver defines the behavior" model every other
+  /// method call in this VM already uses (no reflected/right-hand fallback).
+  /// `extra_args` is everything after the implicit receiver -- one Value
+  /// for a binary op, empty for a unary op.
+  ///
+  /// Returns `Ok(None)` if `receiver` has no such override at all (caller
+  /// falls through to its own type-mismatch error), or the override's
+  /// result / propagated exception once it's actually been invoked.
+  fn try_operator_override(
+    &mut self,
+    receiver: Value,
+    deco: &str,
+    extra_args: &[Value],
+  ) -> RunResult<Option<Value>> {
+    if receiver.is_instance() {
+      let method = {
+        let class = receiver.as_instance().class.as_class();
+        class.methods.get(deco).copied()
+      };
+      if let Some(method) = method {
+        let mut args = Vec::with_capacity(1 + extra_args.len());
+        args.push(receiver);
+        args.extend_from_slice(extra_args);
+        return self.call_value(method, &args).map(Some);
+      }
+      return Ok(None);
+    }
+
+    if let Some(native) = builtins::lookup(receiver, deco) {
+      let mut args = Vec::with_capacity(1 + extra_args.len());
+      args.push(receiver);
+      args.extend_from_slice(extra_args);
+      return self.call_native(native, &args).map(Some);
+    }
+
+    Ok(None)
   }
 }
 
