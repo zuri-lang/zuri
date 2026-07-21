@@ -383,7 +383,7 @@ class IdleTask < Task {
 
 # WorkTask
 
-var A = ord('A')
+var A = 'A'.ord()
 
 class WorkTask < Task {
   @new(i,p,w,s,r) {
@@ -427,7 +427,7 @@ def schedule() {
     if t.isTaskHoldingOrWaiting() {
       t = t.link
     } else {
-      if tracing trace(chr(ord("0") + t.ident))
+      if tracing trace(chr("0".ord() + t.ident))
       t = t.runTask()
     }
   }

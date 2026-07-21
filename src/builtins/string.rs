@@ -30,6 +30,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("is_lower", is_lower),
     method("is_upper", is_upper),
     method("is_space", is_space),
+    method("ord", ord),
     method_opt("trim", 0, trim),
     method_opt("ltrim", 0, ltrim),
     method_opt("rtrim", 0, rtrim),
@@ -229,6 +230,20 @@ fn is_space(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(
     !s.is_empty() && s.chars().all(|c| c.is_whitespace()),
   ))
+}
+
+fn ord(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let s = ctx.args[0].as_str();
+  if s.chars().count() != 1 {
+    return Err(format!(
+      "{}() must be called on a single character, got {}",
+      ctx.name, s
+    ));
+  }
+
+  Ok(Value::number(s.chars().nth(0).unwrap() as u32 as f64))
 }
 
 fn trim(ctx: &mut ZuriContext) -> Result<Value, String> {

@@ -21,7 +21,7 @@ fn format_parse_errors(errors: &[ParserError], path: &str) -> String {
   errors
     .iter()
     .map(|e| format!("{}\n  {}:{}", e, path, e.line_number))
-    .join("\n\n")
+    .join("\n")
 }
 
 fn run_repl(vm: &mut VM) {
@@ -81,10 +81,13 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
     };
 
     parser.errors.clear();
+    vm.clear_frames();
 
     res
   } else {
-    return Err(format_parse_errors(&parser.errors, "<repl>"));
+    let errors = parser.errors.clone();
+    parser.errors.clear();
+    return Err(format_parse_errors(&errors, "<repl>"));
   }
   Ok(())
 }

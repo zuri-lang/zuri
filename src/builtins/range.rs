@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use crate::{
-  builtins::{MethodTable, build, method, method_n, to_string},
+  builtins::{MethodTable, build, enforce::enforce_method_arg_count, method, method_n, to_string},
   vm::{object::ZuriContext, value::Value},
 };
 
@@ -13,8 +13,33 @@ pub static RANGE_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("@key", 1, _key),
     method_n("@value", 1, _value),
     method("to_string", to_string),
+    method("to_list", to_list),
   ])
 });
+
+fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let (lower, upper) = ctx.args[0].as_range();
+  let mut list = if upper > lower {
+    ((lower as i64)..(upper as i64)).collect::<Vec<_>>()
+  } else if lower >= 0.0 {
+    ((upper as i64 + 1)..(lower as i64 + 1))
+      .rev()
+      .collect::<Vec<_>>()
+  } else {
+    ((upper as i64 + 1)..(lower as i64))
+      .rev()
+      .collect::<Vec<_>>()
+  };
+
+  let v = list
+    .into_iter()
+    .map(|x| Value::number(x as f64))
+    .collect::<Vec<_>>();
+
+  Ok(ctx.vm.heap_mut().alloc_list(v))
+}
 
 fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];

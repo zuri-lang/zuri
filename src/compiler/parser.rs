@@ -97,7 +97,7 @@ impl Display for Checkpoint {
 }
 
 pub struct Parser<'a> {
-  lexer: &'a mut Lexer<'a>,
+  lexer: &'a mut Lexer,
   block_count: usize,
   current: Token,
   previous: Token,
@@ -121,7 +121,7 @@ impl<'a> Display for Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-  pub fn new(lexer: &'a mut Lexer<'a>) -> Self {
+  pub fn new(lexer: &'a mut Lexer) -> Self {
     Self {
       lexer: lexer,
       block_count: 0,

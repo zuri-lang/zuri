@@ -1,6 +1,5 @@
 use num_bigint::BigInt;
 use std::collections::HashMap;
-use std::str::Chars;
 use std::str::FromStr;
 
 use crate::compiler::token::{Token, TokenKind};
@@ -30,8 +29,8 @@ fn is_hex(c: char) -> bool {
 }
 
 #[derive(Clone)]
-pub struct Lexer<'a> {
-  pub source: Chars<'a>,
+pub struct Lexer {
+  pub source: Vec<char>,
   pub line: usize,
   pub current: usize,
 
@@ -44,17 +43,18 @@ pub struct Lexer<'a> {
   lines: HashMap<usize, usize>,
 }
 
-impl<'a> Lexer<'a> {
+impl Lexer {
   #[inline]
-  pub fn new(source: &'a str) -> Self {
+  pub fn new(source: &str) -> Self {
+    let chars: Vec<char> = source.chars().collect();
     Self {
-      source: source.chars(),
+      total_count: chars.len(),
+      source: chars,
       line: 1,
       start_line: 1,
       current: 0,
       start: 0,
       lexing_type: 0,
-      total_count: source.len(),
       lines: HashMap::new(),
       interpolating: Vec::new(),
     }
@@ -69,7 +69,11 @@ impl<'a> Lexer<'a> {
   }
 
   fn advance(&mut self) -> char {
-    let val = self.source.clone().nth(self.current).unwrap();
+    if self.current >= self.total_count {
+      return '\0';
+    }
+
+    let val = self.source[self.current];
     self.current += 1;
 
     if val == '\n' {
@@ -86,7 +90,7 @@ impl<'a> Lexer<'a> {
     let val = if self.is_at_end() {
       '\0'
     } else {
-      self.source.clone().nth(self.current - 1).unwrap()
+      self.source[self.current - 1]
     };
     if val == '\n' || val == '\0' {
       self.line -= 1;
@@ -97,7 +101,7 @@ impl<'a> Lexer<'a> {
   }
 
   pub fn match_char(&mut self, c: char) -> bool {
-    if self.is_at_end() || c != self.source.clone().nth(self.current).unwrap() {
+    if self.is_at_end() || c != self.source[self.current] {
       false
     } else {
       self.current += 1;
@@ -115,7 +119,7 @@ impl<'a> Lexer<'a> {
     if self.current + 1 > self.total_count {
       '\0'
     } else {
-      self.source.clone().nth(self.current + 1).unwrap()
+      self.source[self.current + 1]
     }
   }
 
@@ -123,7 +127,7 @@ impl<'a> Lexer<'a> {
     if self.current == 0 {
       '\0'
     } else {
-      self.source.clone().nth(self.current - 1).unwrap()
+      self.source[self.current - 1]
     }
   }
 
@@ -131,7 +135,7 @@ impl<'a> Lexer<'a> {
     if self.is_at_end() {
       '\0'
     } else {
-      self.source.clone().nth(self.current).unwrap()
+      self.source[self.current]
     }
   }
 
@@ -141,7 +145,7 @@ impl<'a> Lexer<'a> {
     if self.is_at_end() || self.current + n >= self.total_count {
       '\0'
     } else {
-      self.source.clone().nth(self.current + n).unwrap()
+      self.source[self.current + n]
     }
   }
 
@@ -153,8 +157,9 @@ impl<'a> Lexer<'a> {
     };
 
     if line_start > self.start {
-      line_start = self.source.as_str()[0..self.start + 1]
-        .rfind(|f| f == '\n')
+      line_start = self.source[0..self.start + 1]
+        .iter()
+        .rposition(|f| *f == '\n')
         .unwrap_or(0);
 
       self.line = *self
@@ -226,12 +231,16 @@ impl<'a> Lexer<'a> {
     }
   }
 
+  fn get_string(&self, start: usize, stop: usize) -> String {
+    self.source[start..stop].iter().collect::<String>()
+  }
+
   fn decorator(&mut self) -> Token {
     while is_alphanumeric(self.peek()) {
       self.advance();
     }
     self.make_token(TokenKind::Decorator(
-      self.source.as_str()[self.start..self.current].to_string(),
+      self.get_string(self.start, self.current),
     ))
   }
 
@@ -285,7 +294,7 @@ impl<'a> Lexer<'a> {
         }
 
         return self.make_token(TokenKind::BinNumber(
-          i64::from_str_radix(&self.source.as_str()[self.start + 2..self.current], 2).unwrap(),
+          i64::from_str_radix(&self.get_string(self.start + 2, self.current), 2).unwrap(),
         ));
       } else if self.match_char('c') {
         // octal number
@@ -294,7 +303,7 @@ impl<'a> Lexer<'a> {
         }
 
         return self.make_token(TokenKind::OctNumber(
-          i64::from_str_radix(&self.source.as_str()[self.start + 2..self.current], 8).unwrap(),
+          i64::from_str_radix(&self.get_string(self.start + 2, self.current), 8).unwrap(),
         ));
       } else if self.match_char('x') {
         // hex number
@@ -303,7 +312,7 @@ impl<'a> Lexer<'a> {
         }
 
         return self.make_token(TokenKind::HexNumber(
-          i64::from_str_radix(&self.source.as_str()[self.start + 2..self.current], 16).unwrap(),
+          i64::from_str_radix(&self.get_string(self.start + 2, self.current), 16).unwrap(),
         ));
       }
     }
@@ -317,8 +326,7 @@ impl<'a> Lexer<'a> {
       self.advance();
 
       return self.make_token(TokenKind::BigNumber(
-        BigInt::from_str(&self.source.as_str()[self.start..self.current - 1])
-          .unwrap_or(BigInt::ZERO),
+        BigInt::from_str(&self.get_string(self.start, self.current - 1)).unwrap_or(BigInt::ZERO),
       ));
     }
 
@@ -344,7 +352,7 @@ impl<'a> Lexer<'a> {
       }
     }
 
-    let number = &self.source.as_str()[self.start..self.current].replace("_", "");
+    let number = &self.get_string(self.start, self.current).replace("_", "");
 
     if number.contains(".") {
       self.make_token(TokenKind::Double(f64::from_str(number).unwrap_or(0.0)))
@@ -358,9 +366,9 @@ impl<'a> Lexer<'a> {
       self.advance();
     }
 
-    let name = &self.source.as_str()[self.start..self.current];
+    let name = self.get_string(self.start, self.current);
 
-    match name {
+    match name.as_str() {
       "and" => self.make_token(TokenKind::And),
       "as" => self.make_token(TokenKind::As),
       "assert" => self.make_token(TokenKind::Assert),
@@ -403,18 +411,18 @@ impl<'a> Lexer<'a> {
     let mut i = self.start + 1;
 
     while i < end {
-      let c = self.source.clone().nth(i).unwrap();
+      let c = self.source[i];
 
-      if c == '\\' && i + 9 < end && self.source.clone().nth(i + 1).unwrap() == 'U' {
-        if let Ok(number) = u32::from_str_radix(&self.source.as_str()[i + 2..i + 10], 16) {
+      if c == '\\' && i + 9 < end && self.source[i + 1] == 'U' {
+        if let Ok(number) = u32::from_str_radix(&self.get_string(i + 2, i + 10), 16) {
           let char = char::from_u32(number).unwrap();
           final_str.push(char);
           i += 9;
         } else {
           return Err(self.make_error("invalid unicode escape sequence".to_string()));
         }
-      } else if c == '\\' && i + 5 < end && self.source.clone().nth(i + 1).unwrap() == 'u' {
-        if let Ok(number) = u32::from_str_radix(&self.source.as_str()[i + 2..i + 6], 16) {
+      } else if c == '\\' && i + 5 < end && self.source[i + 1] == 'u' {
+        if let Ok(number) = u32::from_str_radix(&self.get_string(i + 2, i + 6), 16) {
           let char = char::from_u32(number).unwrap();
           final_str.push(char);
           i += 5;
@@ -424,8 +432,8 @@ impl<'a> Lexer<'a> {
           // Or throw an error
           return Err(self.make_error("invalid unicode escape sequence".to_string()));
         }
-      } else if c == '\\' && i + 3 < end && self.source.clone().nth(i + 1).unwrap() == 'x' {
-        if let Ok(number) = u32::from_str_radix(&self.source.as_str()[i + 2..i + 4], 16) {
+      } else if c == '\\' && i + 3 < end && self.source[i + 1] == 'x' {
+        if let Ok(number) = u32::from_str_radix(&self.get_string(i + 2, i + 4), 16) {
           let char = char::from_u32(number).unwrap();
           final_str.push(char);
           i += 3;
@@ -436,7 +444,7 @@ impl<'a> Lexer<'a> {
           return Err(self.make_error("invalid hex escape sequence".to_string()));
         }
       } else if c == '\\' && i + 1 < end {
-        let next = self.source.clone().nth(i + 1).unwrap();
+        let next = self.source[i + 1];
 
         match next {
           '0' => final_str.push('\0'),

@@ -2041,6 +2041,10 @@ impl VM {
 
     Ok(None)
   }
+
+  pub fn clear_frames(&mut self) {
+    self.frames.clear();
+  }
 }
 
 /// Walk `class_val`'s superclass chain looking for a static member
