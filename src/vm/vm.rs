@@ -14,6 +14,58 @@ use crate::vm::object::{
 };
 use crate::vm::value::Value;
 
+/// Inline capacity for a native/operator-override/constructor call's
+/// argument list. `Value` is a plain Copy u64, so this is a handful of
+/// stack bytes -- covers the overwhelming majority of real calls (few
+/// natives or constructors take more than a handful of arguments) with
+/// zero heap allocation. A call that genuinely needs more spills into
+/// a Vec exactly once, the same cost the old always-Vec version paid
+/// on every call.
+const INLINE_ARGS: usize = 255;
+
+enum CallArgs {
+  Inline([Value; INLINE_ARGS], usize),
+  Spilled(Vec<Value>),
+}
+
+impl CallArgs {
+  #[inline]
+  fn new() -> Self {
+    CallArgs::Inline([Value::nil(); INLINE_ARGS], 0)
+  }
+
+  #[inline]
+  fn push(&mut self, v: Value) {
+    match self {
+      CallArgs::Inline(buf, len) if *len < INLINE_ARGS => {
+        buf[*len] = v;
+        *len += 1;
+      },
+      CallArgs::Inline(buf, len) => {
+        let mut spilled = buf[..*len].to_vec();
+        spilled.push(v);
+        *self = CallArgs::Spilled(spilled);
+      },
+      CallArgs::Spilled(vec) => vec.push(v),
+    }
+  }
+
+  #[inline]
+  fn extend_from_slice(&mut self, vs: &[Value]) {
+    for &v in vs {
+      self.push(v);
+    }
+  }
+
+  #[inline]
+  fn as_slice(&self) -> &[Value] {
+    match self {
+      CallArgs::Inline(buf, len) => &buf[..*len],
+      CallArgs::Spilled(vec) => vec.as_slice(),
+    }
+  }
+}
+
 struct CallFrame {
   function: *const ObjFunction,
   /// The specific closure instance this frame is executing -- needed
@@ -438,10 +490,10 @@ impl VM {
         self.call_value(*init, &[instance_val])?;
       }
       if let Some(ctor) = constructor {
-        let mut ctor_args = Vec::with_capacity(args.len() + 1);
+        let mut ctor_args = CallArgs::new();
         ctor_args.push(instance_val);
         ctor_args.extend_from_slice(args);
-        self.call_value(ctor, &ctor_args)?;
+        self.call_value(ctor, ctor_args.as_slice())?;
       }
       Ok(())
     })();
@@ -471,8 +523,9 @@ impl VM {
       Obj::Native(_) => {
         let args_start = base + func_reg as usize + 1;
         let args_end = args_start + num_args as usize;
-        let args: Vec<Value> = self.registers[args_start..args_end].to_vec();
-        let result = self.call_native(callee.as_native(), &args)?;
+        let mut args = CallArgs::new();
+        args.extend_from_slice(&self.registers[args_start..args_end]);
+        let result = self.call_native(callee.as_native(), args.as_slice())?;
         self.set_reg(base, dst, result);
         Ok(())
       },
@@ -1347,10 +1400,10 @@ impl VM {
                   Some(native) => {
                     let args_start = base + obj as usize + 2;
                     let args_end = args_start + num_args as usize;
-                    let mut call_args = Vec::with_capacity(num_args as usize + 1);
+                    let mut call_args = CallArgs::new();
                     call_args.push(receiver);
                     call_args.extend_from_slice(&self.registers[args_start..args_end]);
-                    let result = tri!(self.call_native(native, &call_args), 'step);
+                    let result = tri!(self.call_native(native, call_args.as_slice()), 'step);
                     self.set_reg(base, dst, result);
                   },
                   None => {
@@ -1385,10 +1438,10 @@ impl VM {
                 Some(native) => {
                   let args_start = base + obj as usize + 2;
                   let args_end = args_start + num_args as usize;
-                  let mut call_args = Vec::with_capacity(num_args as usize + 1);
+                  let mut call_args = CallArgs::new();
                   call_args.push(receiver);
                   call_args.extend_from_slice(&self.registers[args_start..args_end]);
-                  let result = tri!(self.call_native(native, &call_args), 'step);
+                  let result = tri!(self.call_native(native, call_args.as_slice()), 'step);
                   self.set_reg(base, dst, result);
                 },
                 None => {
@@ -2118,19 +2171,19 @@ impl VM {
         class.methods.get(deco).copied()
       };
       if let Some(method) = method {
-        let mut args = Vec::with_capacity(1 + extra_args.len());
+        let mut args = CallArgs::new();
         args.push(receiver);
         args.extend_from_slice(extra_args);
-        return self.call_value(method, &args).map(Some);
+        return self.call_value(method, args.as_slice()).map(Some);
       }
       return Ok(None);
     }
 
     if let Some(native) = builtins::lookup(receiver, deco) {
-      let mut args = Vec::with_capacity(1 + extra_args.len());
+      let mut args = CallArgs::new();
       args.push(receiver);
       args.extend_from_slice(extra_args);
-      return self.call_native(native, &args).map(Some);
+      return self.call_native(native, args.as_slice()).map(Some);
     }
 
     Ok(None)

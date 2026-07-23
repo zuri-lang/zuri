@@ -28,7 +28,7 @@ use crate::builtins::number::NUMBER_METHODS;
 use crate::builtins::object::OBJECT_TO_STRING;
 use crate::builtins::range::RANGE_METHODS;
 use crate::builtins::string::STRING_METHODS;
-use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
+use crate::vm::object::{NativeFn, NativeFunction, Obj, ZuriContext};
 use crate::vm::value::Value;
 
 mod bigint;
@@ -64,28 +64,34 @@ enum Kind {
 
 impl Kind {
   fn of(v: Value) -> Option<Self> {
+    // Cheap tag-bit checks first -- no pointer dereference at all.
     if v.is_number() {
-      Some(Kind::Number)
-    } else if v.is_bool() {
-      Some(Kind::Bool)
-    } else if v.is_string() {
-      Some(Kind::String)
-    } else if v.is_list() {
-      Some(Kind::List)
-    } else if v.is_dict() {
-      Some(Kind::Dict)
-    } else if v.is_bytes() {
-      Some(Kind::Bytes)
-    } else if v.is_range() {
-      Some(Kind::Range)
-    } else if v.is_bigint() {
-      Some(Kind::BigInt)
-    } else if v.is_callable() {
-      Some(Kind::Function)
-    } else if v.is_nil() {
-      Some(Kind::Nil)
-    } else {
-      None
+      return Some(Kind::Number);
+    }
+    if v.is_bool() {
+      return Some(Kind::Bool);
+    }
+    if v.is_nil() {
+      return Some(Kind::Nil);
+    }
+    if !v.is_obj() {
+      return None;
+    }
+    // One dereference, one match -- previously this fell through up to
+    // six separate is_x() checks (is_string, is_list, ..., is_callable
+    // which is itself four more), each re-dereferencing the same
+    // pointer and re-matching against the same Obj variants.
+    match unsafe { &*v.as_obj() } {
+      Obj::Str(_) => Some(Kind::String),
+      Obj::List(_) => Some(Kind::List),
+      Obj::Dict(_) => Some(Kind::Dict),
+      Obj::Bytes(_) => Some(Kind::Bytes),
+      Obj::Range { .. } => Some(Kind::Range),
+      Obj::BigInt(_) => Some(Kind::BigInt),
+      Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) | Obj::BoundMethod(_) | Obj::Class(_) => {
+        Some(Kind::Function)
+      },
+      Obj::Instance(_) | Obj::Upvalue(_) => None,
     }
   }
 }
