@@ -695,16 +695,41 @@ impl VM {
   }
 
   fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
+    // Early-exit out of the labeled 'step block below with an Err,
+    // exactly like `?` would from inside an ordinary function. A bare
+    // `?` here would target run_until's OWN return type directly and
+    // skip the catch_stack check entirely -- every fallible call in
+    // this loop goes through this instead. Label is passed explicitly
+    // (rather than hardcoded as 'step inside the macro body) to avoid
+    // any ambiguity from macro hygiene around labels.
+    macro_rules! tri {
+      ($e:expr, $label:lifetime) => {
+        match $e {
+          Ok(v) => v,
+          Err(e) => break $label Err(e),
+        }
+      };
+    }
+
+    // Cached "which frame/function/closure am I currently executing"
+    // state. Previously this was re-derived from self.frames on EVERY
+    // instruction (two bounds-checked Vec accesses: one read to
+    // destructure it, one write to bump ip) even though the vast
+    // majority of instructions never change which frame is active.
+    // Now it's refreshed only at the specific points that actually
+    // change it: Call/Invoke/InvokeSuper/CallSuperCtor push a frame,
+    // Return pops one, a caught exception truncates several.
+    let mut frame_idx = self.frames.len() - 1;
+    let mut base = self.frames[frame_idx].base;
+    let mut func_ptr = self.frames[frame_idx].function;
+    let mut closure_ptr = self.frames[frame_idx].closure;
+    let mut ip = self.frames[frame_idx].ip;
+
     loop {
       if self.heap.needs_gc() {
         self.collect_garbage();
       }
 
-      let frame_idx = self.frames.len() - 1;
-      let (func_ptr, closure_ptr, ip, base) = {
-        let f = &self.frames[frame_idx];
-        (f.function, f.closure, f.ip, f.base)
-      };
       let func = unsafe { &*func_ptr };
 
       if ip >= func.chunk.code.len() {
@@ -713,9 +738,21 @@ impl VM {
       }
 
       let instr = func.chunk.code[ip];
-      self.frames[frame_idx].ip += 1;
+      ip += 1;
+      // Synced back every instruction (not just at frame-change points)
+      // because ANY instruction can end up calling self.raise(), which
+      // reads every active frame's ip to build a stack trace.
+      self.frames[frame_idx].ip = ip;
 
-      let step: RunResult<Option<Value>> = (|| {
+      // No more IIFE closure wrapping the whole match -- that closure
+      // was too large for LLVM to ever inline across, so every
+      // instruction paid a real function-call boundary on top of the
+      // dispatch itself. This labeled block gives the same
+      // "capture-and-inspect the Result before deciding to propagate"
+      // behavior the closure gave, with none of the call overhead,
+      // and direct mutable access to the frame-state locals above (no
+      // capture needed since it's not a closure).
+      let step: RunResult<()> = 'step: {
         match instr {
           Instr::LoadConst { dst, const_idx } => {
             let v = func.chunk.constants[const_idx as usize];
@@ -728,85 +765,107 @@ impl VM {
             self.set_reg(base, dst, v);
           },
 
-          Instr::Add { dst, a, b } => self.binary_add(base, dst, a, b, "+")?,
+          Instr::Add { dst, a, b } => {
+            tri!(self.binary_add(base, dst, a, b, "+"), 'step);
+          },
           Instr::Sub { dst, a, b } => {
-            self.binary_numeric(base, dst, a, b, "-", "@sub", |x, y| x - y, |x, y| &x - &y)?
+            tri!(
+              self.binary_numeric(base, dst, a, b, "-", "@sub", |x, y| x - y, |x, y| &x - &y),
+              'step
+            );
           },
-          Instr::Mul { dst, a, b } => self.binary_mult(base, dst, a, b, "*")?,
+          Instr::Mul { dst, a, b } => {
+            tri!(self.binary_mult(base, dst, a, b, "*"), 'step);
+          },
           Instr::Div { dst, a, b } => {
-            self.binary_numeric(base, dst, a, b, "/", "@div", |x, y| x / y, |x, y| &x / &y)?
+            tri!(
+              self.binary_numeric(base, dst, a, b, "/", "@div", |x, y| x / y, |x, y| &x / &y),
+              'step
+            );
           },
-          Instr::Pow { dst, a, b } => self.binary_numeric(
-            base,
-            dst,
-            a,
-            b,
-            "**",
-            "@pow",
-            |x, y| x.powf(y),
-            |x, y| &x * &y,
-          )?,
+          Instr::Pow { dst, a, b } => {
+            tri!(
+              self.binary_numeric(
+                base, dst, a, b, "**", "@pow",
+                |x, y| x.powf(y),
+                |x, y| &x * &y,
+              ),
+              'step
+            );
+          },
           Instr::Mod { dst, a, b } => {
-            self.binary_numeric(base, dst, a, b, "%", "@mod", |x, y| x % y, |x, y| &x % &y)?
+            tri!(
+              self.binary_numeric(base, dst, a, b, "%", "@mod", |x, y| x % y, |x, y| &x % &y),
+              'step
+            );
           },
-          Instr::Floor { dst, a, b } => self.binary_numeric(
-            base,
-            dst,
-            a,
-            b,
-            "//",
-            "@floordiv",
-            |x, y| (x / y).floor(),
-            |x, y| &x / &y,
-          )?,
+          Instr::Floor { dst, a, b } => {
+            tri!(
+              self.binary_numeric(
+                base, dst, a, b, "//", "@floordiv",
+                |x, y| (x / y).floor(),
+                |x, y| &x / &y,
+              ),
+              'step
+            );
+          },
           Instr::BitAnd { dst, a, b } => {
-            self.bitwise_numeric(base, dst, a, b, "&", "@and", |x, y| x & y, |x, y| &x & &y)?
+            tri!(
+              self.bitwise_numeric(base, dst, a, b, "&", "@and", |x, y| x & y, |x, y| &x & &y),
+              'step
+            );
           },
           Instr::BitOr { dst, a, b } => {
-            self.bitwise_numeric(base, dst, a, b, "|", "@or", |x, y| x | y, |x, y| &x | &y)?
+            tri!(
+              self.bitwise_numeric(base, dst, a, b, "|", "@or", |x, y| x | y, |x, y| &x | &y),
+              'step
+            );
           },
           Instr::BitXor { dst, a, b } => {
-            self.bitwise_numeric(base, dst, a, b, "^", "@xor", |x, y| x ^ y, |x, y| &x ^ &y)?
+            tri!(
+              self.bitwise_numeric(base, dst, a, b, "^", "@xor", |x, y| x ^ y, |x, y| &x ^ &y),
+              'step
+            );
           },
-          Instr::BitShl { dst, a, b } => self.bitwise_numeric(
-            base,
-            dst,
-            a,
-            b,
-            "<<",
-            "@lshift",
-            |x, y| x.checked_shl(y as u32).unwrap_or(0),
-            |x, y| x.shl(y.to_i64().unwrap_or(0)),
-          )?,
-          Instr::BitShr { dst, a, b } => self.bitwise_numeric(
-            base,
-            dst,
-            a,
-            b,
-            ">>",
-            "@rshift",
-            |x, y| x.checked_shr(y as u32).unwrap_or(0),
-            |x, y| x.shr(y.to_i64().unwrap_or(0)),
-          )?,
-          Instr::BitUshr { dst, a, b } => self.bitwise_numeric(
-            base,
-            dst,
-            a,
-            b,
-            ">>>",
-            "@urshift",
-            |x, y| (x as u32).checked_shr(y as u32).unwrap_or(0) as i64,
-            |x, y| x.shr(y.to_i64().unwrap_or(0)),
-          )?,
+          Instr::BitShl { dst, a, b } => {
+            tri!(
+              self.bitwise_numeric(
+                base, dst, a, b, "<<", "@lshift",
+                |x, y| x.checked_shl(y as u32).unwrap_or(0),
+                |x, y| x.shl(y.to_i64().unwrap_or(0)),
+              ),
+              'step
+            );
+          },
+          Instr::BitShr { dst, a, b } => {
+            tri!(
+              self.bitwise_numeric(
+                base, dst, a, b, ">>", "@rshift",
+                |x, y| x.checked_shr(y as u32).unwrap_or(0),
+                |x, y| x.shr(y.to_i64().unwrap_or(0)),
+              ),
+              'step
+            );
+          },
+          Instr::BitUshr { dst, a, b } => {
+            tri!(
+              self.bitwise_numeric(
+                base, dst, a, b, ">>>", "@urshift",
+                |x, y| (x as u32).checked_shr(y as u32).unwrap_or(0) as i64,
+                |x, y| x.shr(y.to_i64().unwrap_or(0)),
+              ),
+              'step
+            );
+          },
           Instr::BitNot { dst, src } => {
             let v = self.get_reg(base, src);
             if v.is_number() {
               self.set_reg(base, dst, Value::number((!(v.as_number() as i64)) as f64));
-            } else if let Some(result) = self.try_operator_override(v, "@not", &[])? {
+            } else if let Some(result) = tri!(self.try_operator_override(v, "@not", &[]), 'step) {
               self.set_reg(base, dst, result);
             } else {
               let msg = format!("cannot bitwise not a {}", v.argument_type_name());
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             }
           },
           Instr::Neg { dst, src } => {
@@ -816,11 +875,11 @@ impl VM {
             } else if v.is_bigint() {
               let nv = self.heap.alloc_bigint(v.as_bigint().neg());
               self.set_reg(base, dst, nv);
-            } else if let Some(result) = self.try_operator_override(v, "@neg", &[])? {
+            } else if let Some(result) = tri!(self.try_operator_override(v, "@neg", &[]), 'step) {
               self.set_reg(base, dst, result);
             } else {
               let msg = format!("cannot negate a {}", v.argument_type_name());
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             }
           },
           Instr::Not { dst, src } => {
@@ -846,43 +905,35 @@ impl VM {
             self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
           },
           Instr::Lt { dst, a, b } => {
-            self.compare(base, dst, a, b, "<", "@lt", |x, y| x < y, |x, y| &x < &y)?
+            tri!(self.compare(base, dst, a, b, "<", "@lt", |x, y| x < y, |x, y| &x < &y), 'step);
           },
           Instr::Gt { dst, a, b } => {
-            self.compare(base, dst, a, b, ">", "@gt", |x, y| x > y, |x, y| &x > &y)?
+            tri!(self.compare(base, dst, a, b, ">", "@gt", |x, y| x > y, |x, y| &x > &y), 'step);
           },
-          Instr::Le { dst, a, b } => self.compare(
-            base,
-            dst,
-            a,
-            b,
-            "<=",
-            "@lte",
-            |x, y| x <= y,
-            |x, y| &x <= &y,
-          )?,
-          Instr::Ge { dst, a, b } => self.compare(
-            base,
-            dst,
-            a,
-            b,
-            ">=",
-            "@gte",
-            |x, y| x >= y,
-            |x, y| &x >= &y,
-          )?,
+          Instr::Le { dst, a, b } => {
+            tri!(
+              self.compare(base, dst, a, b, "<=", "@lte", |x, y| x <= y, |x, y| &x <= &y),
+              'step
+            );
+          },
+          Instr::Ge { dst, a, b } => {
+            tri!(
+              self.compare(base, dst, a, b, ">=", "@gte", |x, y| x >= y, |x, y| &x >= &y),
+              'step
+            );
+          },
 
           Instr::Jmp { offset } => {
-            self.jump(frame_idx, offset);
+            ip = (ip as isize + offset as isize) as usize;
           },
           Instr::JmpIfFalse { cond, offset } => {
             if self.get_reg(base, cond).is_falsey() {
-              self.jump(frame_idx, offset);
+              ip = (ip as isize + offset as isize) as usize;
             }
           },
           Instr::JmpIfTrue { cond, offset } => {
             if !self.get_reg(base, cond).is_falsey() {
-              self.jump(frame_idx, offset);
+              ip = (ip as isize + offset as isize) as usize;
             }
           },
 
@@ -891,17 +942,32 @@ impl VM {
             func: func_reg,
             num_args,
           } => {
-            self.dispatch_call(base, func_reg, num_args, dst)?;
+            tri!(self.dispatch_call(base, func_reg, num_args, dst), 'step);
+            // dispatch_call may or may not have pushed a new frame
+            // (Closure does, Native/Class/BoundMethod resolve
+            // synchronously and don't) -- always refresh, cheap, and
+            // only paid on an actual call instruction.
+            frame_idx = self.frames.len() - 1;
+            let f = &self.frames[frame_idx];
+            base = f.base;
+            func_ptr = f.function;
+            closure_ptr = f.closure;
+            ip = f.ip;
           },
           Instr::Return { src } => {
             let ret = self.get_reg(base, src);
             self.close_upvalues_from(base);
             let finished = self.frames.pop().unwrap();
             if self.frames.len() == stop_depth {
-              return Ok(Some(ret));
+              return Ok(ret);
             }
-            let caller = self.frames.last().unwrap();
-            self.set_reg(caller.base, finished.dst_in_caller, ret);
+            frame_idx = self.frames.len() - 1;
+            let caller = &self.frames[frame_idx];
+            base = caller.base;
+            func_ptr = caller.function;
+            closure_ptr = caller.closure;
+            ip = caller.ip;
+            self.set_reg(base, finished.dst_in_caller, ret);
           },
 
           Instr::Print { src } => {
@@ -912,14 +978,15 @@ impl VM {
           Instr::GetGlobal { dst, name_const } => {
             let name_val = func.chunk.constants[name_const as usize];
             if !name_val.is_string() {
-              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+              break 'step Err(
+                self.raise("TypeError", "expected a string constant for a global name"),
+              );
             }
-            // Borrow the constant's &str directly -- no allocation on the hot path.
             let v = match self.globals.get(name_val.as_str()).copied() {
               Some(v) => v,
               None => {
                 let msg = format!("undefined global '{}'", name_val.as_str());
-                return Err(self.raise("UndefinedError", msg));
+                break 'step Err(self.raise("UndefinedError", msg));
               },
             };
             self.set_reg(base, dst, v);
@@ -928,24 +995,27 @@ impl VM {
           Instr::SetGlobal { name_const, src } => {
             let name_val = func.chunk.constants[name_const as usize];
             if !name_val.is_string() {
-              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+              break 'step Err(
+                self.raise("TypeError", "expected a string constant for a global name"),
+              );
             }
             let v = self.get_reg(base, src);
-            self.globals.insert(name_val.as_str().to_string(), v); // insert genuinely needs an owned key
+            self.globals.insert(name_val.as_str().to_string(), v);
           },
 
           Instr::AssignGlobal { name_const, src } => {
             let name_val = func.chunk.constants[name_const as usize];
             if !name_val.is_string() {
-              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+              break 'step Err(
+                self.raise("TypeError", "expected a string constant for a global name"),
+              );
             }
             let value = self.get_reg(base, src);
-            // get_mut avoids allocating even on assignment (key already exists).
             match self.globals.get_mut(name_val.as_str()) {
               Some(slot) => *slot = value,
               None => {
                 let msg = format!("undefined global '{}'", name_val.as_str());
-                return Err(self.raise("UndefinedError", msg));
+                break 'step Err(self.raise("UndefinedError", msg));
               },
             }
           },
@@ -953,7 +1023,7 @@ impl VM {
           Instr::Closure { dst, proto_const } => {
             let proto_val = func.chunk.constants[proto_const as usize];
             if !proto_val.is_func() {
-              return Err(self.raise("TypeError", "Closure operand is not a function"));
+              break 'step Err(self.raise("TypeError", "Closure operand is not a function"));
             }
             let proto = proto_val.as_func();
 
@@ -982,7 +1052,7 @@ impl VM {
             let current_closure = unsafe { &*closure_ptr };
             let upval_val = current_closure.upvalues[idx as usize];
             if !upval_val.is_upvalue() {
-              return Err(self.raise("TypeError", "GetUpval operand is not an upvalue"));
+              break 'step Err(self.raise("TypeError", "GetUpval operand is not an upvalue"));
             }
             let v = match upval_val.as_upvalue().get() {
               UpvalueState::Open(abs_idx) => self.registers[abs_idx],
@@ -995,7 +1065,7 @@ impl VM {
             let current_closure = unsafe { &*closure_ptr };
             let upval_val = current_closure.upvalues[idx as usize];
             if !upval_val.is_upvalue() {
-              return Err(self.raise("TypeError", "SetUpval operand is not an upvalue"));
+              break 'step Err(self.raise("TypeError", "SetUpval operand is not an upvalue"));
             }
             let cell = upval_val.as_upvalue();
             match cell.get() {
@@ -1029,7 +1099,7 @@ impl VM {
             name_const,
             superclass,
           } => {
-            let name = self.const_as_str(func, name_const)?;
+            let name = tri!(self.const_as_str(func, name_const), 'step);
             let superclass_val = match superclass {
               Some(r) => {
                 let v = self.get_reg(base, r);
@@ -1039,7 +1109,7 @@ impl VM {
                     name,
                     v.type_name()
                   );
-                  return Err(self.raise("TypeError", msg));
+                  break 'step Err(self.raise("TypeError", msg));
                 }
                 Some(v)
               },
@@ -1075,18 +1145,9 @@ impl VM {
 
           Instr::DeclareField { class, name_const } => {
             let class_val = self.get_reg(base, class);
-            let name = self.const_as_str(func, name_const)?;
+            let name = tri!(self.const_as_str(func, name_const), 'step);
             let mut c = class_val.as_class_mut();
 
-            // Idempotent: a name that's already present -- inherited from
-            // the superclass (invisible to the compiler's own self.x=...
-            // scan, which only sees this class's own AST -- see
-            // Compiler::compile_class_decl) or already declared earlier
-            // in this same class -- keeps its EXISTING slot rather than
-            // being handed a new one. Reassigning would silently desync
-            // an inherited field initializer (which writes to the OLD
-            // index) from every later read/write of the same name
-            // (which would then resolve to the NEW index instead).
             if !c.field_slots.contains_key(&name) {
               let idx = c.field_count;
               c.field_slots.insert(name, idx);
@@ -1106,7 +1167,7 @@ impl VM {
             src,
           } => {
             let class_val = self.get_reg(base, class);
-            let name = self.const_as_str(func, name_const)?;
+            let name = tri!(self.const_as_str(func, name_const), 'step);
             let method = self.get_reg(base, src);
             class_val.as_class_mut().methods.insert(name, method);
           },
@@ -1117,7 +1178,7 @@ impl VM {
             src,
           } => {
             let class_val = self.get_reg(base, class);
-            let name = self.const_as_str(func, name_const)?;
+            let name = tri!(self.const_as_str(func, name_const), 'step);
             let value = self.get_reg(base, src);
             let mut c = class_val.as_class_mut();
             let idx = c.statics.len() as u16;
@@ -1127,11 +1188,11 @@ impl VM {
 
           Instr::FinalizeClass { class } => {
             let class_val = self.get_reg(base, class);
-            let name = self.const_as_str(func, 0)?;
+            let name = tri!(self.const_as_str(func, 0), 'step);
             let mut c = class_val.as_class_mut();
 
             if self.globals.get(&c.name).is_some() {
-              return Err(self.raise(
+              break 'step Err(self.raise(
                 "Error",
                 format!("class '{}' already declared in this scope", c.name),
               ));
@@ -1150,7 +1211,9 @@ impl VM {
             let receiver = self.get_reg(base, obj);
             let name_val = func.chunk.constants[name_const as usize];
             if !name_val.is_string() {
-              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+              break 'step Err(
+                self.raise("TypeError", "expected a string constant for a global name"),
+              );
             }
 
             let value = if receiver.is_instance() {
@@ -1159,10 +1222,6 @@ impl VM {
               if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
                 inst.fields[idx as usize].get()
               } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
-                // Accessed without an immediate call -- e.g. `var f =
-                // obj.method` -- so unlike Invoke, this can't skip
-                // allocation: bind the receiver into a real ObjBoundMethod
-                // so the resulting value is independently callable later.
                 self.heap.alloc_bound_method(receiver, method)
               } else {
                 let msg = format!(
@@ -1170,25 +1229,19 @@ impl VM {
                   name_val.as_str(),
                   class.name
                 );
-                return Err(self.raise("PropertyError", msg));
+                break 'step Err(self.raise("PropertyError", msg));
               }
             } else if receiver.is_class() {
-              let raw = lookup_static(receiver, name_val.as_str())
-                .ok_or_else(|| {
-                  format!(
+              let raw = tri!(
+                lookup_static(receiver, name_val.as_str())
+                  .ok_or_else(|| format!(
                     "undefined static member '{}' on class '{}'",
                     name_val.as_str(),
                     receiver.as_class().name
-                  )
-                })
-                .map_err(|msg| self.raise("PropertyError", msg))?;
-              // A static METHOD's frame reserves register 0 for a
-              // receiver it never reads (see ObjFunction::is_method's doc
-              // comment) -- fetched bare like this, nothing would
-              // otherwise fill that register at call time, so wrap it
-              // with a harmless dummy nil receiver. A static field
-              // holding a plain closure value (`static var f = @(x){}`)
-              // has no such reservation and passes through unwrapped.
+                  ))
+                  .map_err(|msg| self.raise("PropertyError", msg)),
+                'step
+              );
               if raw.is_closure() && raw.as_closure().function.as_func().is_method {
                 self.heap.alloc_bound_method(Value::nil(), raw)
               } else {
@@ -1200,7 +1253,7 @@ impl VM {
                 name_val.as_str(),
                 receiver.type_name()
               );
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             };
             self.set_reg(base, dst, value);
           },
@@ -1214,34 +1267,40 @@ impl VM {
             let value = self.get_reg(base, src);
             let name_val = func.chunk.constants[name_const as usize];
             if !name_val.is_string() {
-              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+              break 'step Err(
+                self.raise("TypeError", "expected a string constant for a global name"),
+              );
             }
 
             if receiver.is_instance() {
               let inst = receiver.as_instance();
               let class = inst.class.as_class();
-              let idx = *class
-                .field_slots
-                .get(name_val.as_str())
-                .ok_or_else(|| {
-                  format!(
+              let idx = *tri!(
+                class
+                  .field_slots
+                  .get(name_val.as_str())
+                  .ok_or_else(|| format!(
                     "undefined field '{}' on instance of '{}'",
                     name_val.as_str(),
                     class.name
-                  )
-                })
-                .map_err(|msg| self.raise("PropertyError", msg))?;
+                  ))
+                  .map_err(|msg| self.raise("PropertyError", msg)),
+                'step
+              );
               inst.fields[idx as usize].set(value);
             } else if receiver.is_class() {
-              set_static(receiver, name_val.as_str(), value)
-                .map_err(|msg| self.raise("PropertyError", msg))?;
+              tri!(
+                set_static(receiver, name_val.as_str(), value)
+                  .map_err(|msg| self.raise("PropertyError", msg)),
+                'step
+              );
             } else {
               let msg = format!(
                 "cannot set property '{}' on a {}",
                 name_val.as_str(),
                 receiver.type_name()
               );
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             }
           },
 
@@ -1254,7 +1313,9 @@ impl VM {
             let receiver = self.get_reg(base, obj);
             let method_name_val = func.chunk.constants[method_const as usize];
             if !method_name_val.is_string() {
-              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+              break 'step Err(
+                self.raise("TypeError", "expected a string constant for a global name"),
+              );
             }
 
             if receiver.is_instance() {
@@ -1272,29 +1333,22 @@ impl VM {
               };
 
               match found {
-                Some(Ok(method)) => self.invoke_prebound(base, obj, method, num_args, dst)?,
+                Some(Ok(method)) => {
+                  tri!(self.invoke_prebound(base, obj, method, num_args, dst), 'step);
+                },
                 Some(Err(idx)) => {
-                  // A plain field that happens to hold a callable (e.g.
-                  // `var _print = @(g) { ... }`) -- called as ordinary
-                  // data, NOT as a method: no implicit self, matching
-                  // what would happen if it were fetched into a variable
-                  // and called from there. Overwriting the compiler's
-                  // (here-irrelevant) self-duplicate register with the
-                  // field's own value gives dispatch_call exactly what
-                  // it needs -- the real arguments already sit right
-                  // after it, at obj+2 onward.
                   let field_value = inst.fields[idx as usize].get();
                   self.set_reg(base, obj + 1, field_value);
-                  self.dispatch_call(base, obj + 1, num_args, dst)?;
+                  tri!(self.dispatch_call(base, obj + 1, num_args, dst), 'step);
                 },
                 None => match builtins::lookup(receiver, method_name_val.as_str()) {
                   Some(native) => {
-                    let args_start = base + obj as usize + 2; // was + 1
+                    let args_start = base + obj as usize + 2;
                     let args_end = args_start + num_args as usize;
                     let mut call_args = Vec::with_capacity(num_args as usize + 1);
                     call_args.push(receiver);
                     call_args.extend_from_slice(&self.registers[args_start..args_end]);
-                    let result = self.call_native(native, &call_args)?;
+                    let result = tri!(self.call_native(native, &call_args), 'step);
                     self.set_reg(base, dst, result);
                   },
                   None => {
@@ -1303,39 +1357,36 @@ impl VM {
                       method_name_val.as_str(),
                       class_val.as_class().name
                     );
-                    return Err(self.raise("PropertyError", msg));
+                    break 'step Err(self.raise("PropertyError", msg));
                   },
                 },
               }
             } else if receiver.is_class() {
-              let callee = lookup_static(receiver, method_name_val.as_str())
-                .ok_or_else(|| {
-                  format!(
+              let callee = tri!(
+                lookup_static(receiver, method_name_val.as_str())
+                  .ok_or_else(|| format!(
                     "undefined static member '{}' on class '{}'",
                     method_name_val.as_str(),
                     receiver.as_class().name
-                  )
-                })
-                .map_err(|msg| self.raise("PropertyError", msg))?;
+                  ))
+                  .map_err(|msg| self.raise("PropertyError", msg)),
+                'step
+              );
               if callee.is_closure() && callee.as_closure().function.as_func().is_method {
-                self.invoke_prebound(base, obj, callee, num_args, dst)?;
+                tri!(self.invoke_prebound(base, obj, callee, num_args, dst), 'step);
               } else {
-                // A static field holding a plain callable (`static var f
-                // = @(x){}`), not a declared `static` method -- no
-                // reserved receiver slot, so treat exactly like the
-                // instance field-fallback above.
                 self.set_reg(base, obj + 1, callee);
-                self.dispatch_call(base, obj + 1, num_args, dst)?;
+                tri!(self.dispatch_call(base, obj + 1, num_args, dst), 'step);
               }
             } else {
               match builtins::lookup(receiver, method_name_val.as_str()) {
                 Some(native) => {
-                  let args_start = base + obj as usize + 2; // was + 1
+                  let args_start = base + obj as usize + 2;
                   let args_end = args_start + num_args as usize;
                   let mut call_args = Vec::with_capacity(num_args as usize + 1);
                   call_args.push(receiver);
                   call_args.extend_from_slice(&self.registers[args_start..args_end]);
-                  let result = self.call_native(native, &call_args)?;
+                  let result = tri!(self.call_native(native, &call_args), 'step);
                   self.set_reg(base, dst, result);
                 },
                 None => {
@@ -1344,10 +1395,21 @@ impl VM {
                     receiver.type_name(),
                     method_name_val.as_str()
                   );
-                  return Err(self.raise("TypeError", msg));
+                  break 'step Err(self.raise("TypeError", msg));
                 },
               }
             }
+
+            // invoke_prebound/dispatch_call above may have pushed a new
+            // frame; the native/field-fallback paths never do. Always
+            // refresh -- only paid on Invoke itself, never on the
+            // arithmetic/move instructions that dominate a hot loop.
+            frame_idx = self.frames.len() - 1;
+            let f = &self.frames[frame_idx];
+            base = f.base;
+            func_ptr = f.function;
+            closure_ptr = f.closure;
+            ip = f.ip;
           },
 
           Instr::InvokeSuper {
@@ -1362,11 +1424,13 @@ impl VM {
                 "'parent' does not refer to a class (got a {})",
                 super_val.type_name()
               );
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             }
             let method_name_val = func.chunk.constants[method_const as usize];
             if !method_name_val.is_string() {
-              return Err(self.raise("TypeError", "expected a string constant for a global name"));
+              break 'step Err(
+                self.raise("TypeError", "expected a string constant for a global name"),
+              );
             }
 
             let found = {
@@ -1375,16 +1439,8 @@ impl VM {
             };
 
             if let Some(method) = found {
-              self.invoke_prebound(base, superclass, method, num_args, dst)?;
+              tri!(self.invoke_prebound(base, superclass, method, num_args, dst), 'step);
             } else {
-              // Not a method anywhere up the (statically fixed) chain --
-              // fields were never virtual to begin with, so fall back to
-              // self's own field slots directly, same as Invoke's own
-              // fallback. `self` is already sitting in register
-              // `superclass + 1` (placed there by
-              // Compiler::compile_invoke_super), so reuse it as both the
-              // field owner and, if found, the overwritten callee
-              // register.
               let self_val = self.get_reg(base, superclass + 1);
               if !self_val.is_instance() {
                 let msg = format!(
@@ -1392,28 +1448,36 @@ impl VM {
                   method_name_val.as_str(),
                   super_val.as_class().name
                 );
-                return Err(self.raise("PropertyError", msg));
+                break 'step Err(self.raise("PropertyError", msg));
               }
 
               let inst = self_val.as_instance();
-              let idx = *inst
-                .class
-                .as_class()
-                .field_slots
-                .get(method_name_val.as_str())
-                .ok_or_else(|| {
-                  format!(
+              let idx = *tri!(
+                inst
+                  .class
+                  .as_class()
+                  .field_slots
+                  .get(method_name_val.as_str())
+                  .ok_or_else(|| format!(
                     "undefined method '{}' on superclass '{}'",
                     method_name_val.as_str(),
                     super_val.as_class().name
-                  )
-                })
-                .map_err(|msg| self.raise("PropertyError", msg))?;
+                  ))
+                  .map_err(|msg| self.raise("PropertyError", msg)),
+                'step
+              );
 
               let field_value = inst.fields[idx as usize].get();
               self.set_reg(base, superclass + 1, field_value);
-              self.dispatch_call(base, superclass + 1, num_args, dst)?;
+              tri!(self.dispatch_call(base, superclass + 1, num_args, dst), 'step);
             }
+
+            frame_idx = self.frames.len() - 1;
+            let f = &self.frames[frame_idx];
+            base = f.base;
+            func_ptr = f.function;
+            closure_ptr = f.closure;
+            ip = f.ip;
           },
           Instr::CallSuperCtor {
             dst,
@@ -1426,38 +1490,47 @@ impl VM {
                 "'parent' does not refer to a class (got a {})",
                 super_val.type_name()
               );
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             }
             let ctor = super_val.as_class().constructor;
             match ctor {
-              Some(ctor) => self.invoke_prebound(base, superclass, ctor, num_args, dst)?,
+              Some(ctor) => {
+                tri!(self.invoke_prebound(base, superclass, ctor, num_args, dst), 'step);
+              },
               None => {
                 let msg = format!(
                   "class '{}' has no constructor to call via parent()",
                   super_val.as_class().name
                 );
-                return Err(self.raise("AccessError", msg));
+                break 'step Err(self.raise("AccessError", msg));
               },
             }
+
+            frame_idx = self.frames.len() - 1;
+            let f = &self.frames[frame_idx];
+            base = f.base;
+            func_ptr = f.function;
+            closure_ptr = f.closure;
+            ip = f.ip;
           },
 
           Instr::GetIndex { dst, obj, idx } => {
             let ov = self.get_reg(base, obj);
             let iv = self.get_reg(base, idx);
-            let result = self.index_get(ov, iv)?;
+            let result = tri!(self.index_get(ov, iv), 'step);
             self.set_reg(base, dst, result);
           },
           Instr::SetIndex { obj, idx, src } => {
             let ov = self.get_reg(base, obj);
             let iv = self.get_reg(base, idx);
             let sv = self.get_reg(base, src);
-            self.index_set(ov, iv, sv)?;
+            tri!(self.index_set(ov, iv, sv), 'step);
           },
           Instr::GetSlice { dst, obj, lo, hi } => {
             let ov = self.get_reg(base, obj);
             let lov = self.get_reg(base, lo);
             let hiv = self.get_reg(base, hi);
-            let result = self.index_slice(ov, lov, hiv)?;
+            let result = tri!(self.index_slice(ov, lov, hiv), 'step);
             self.set_reg(base, dst, result);
           },
 
@@ -1470,7 +1543,7 @@ impl VM {
                 lo.type_name(),
                 hi.type_name()
               );
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             }
             let range_val = self.heap.alloc_range(lo.as_number(), hi.as_number());
             self.set_reg(base, dst, range_val);
@@ -1479,13 +1552,9 @@ impl VM {
             let v = self.get_reg(base, subject);
             if let Some(key) = value_to_jump_key(v) {
               if let Some(&target) = func.chunk.jump_tables[table_idx as usize].get(&key) {
-                self.frames[frame_idx].ip = target;
+                ip = target;
               }
             }
-            // A miss (unhashable value, or just no matching entry) is not
-            // an error -- it simply falls through to the next instruction,
-            // where the sequential dynamic-label checks (and the default
-            // case) live. See Compiler::compile_using.
           },
 
           Instr::Raise { src } => {
@@ -1495,14 +1564,14 @@ impl VM {
                 "can only raise an Error or subclass, got a {}",
                 value.type_name()
               );
-              return Err(self.raise("TypeError", msg));
+              break 'step Err(self.raise("TypeError", msg));
             }
             let value = self.attach_stacktrace(value);
-            return Err(value);
+            break 'step Err(value);
           },
 
           Instr::PushCatch { var_reg, offset } => {
-            let resume_ip = (self.frames[frame_idx].ip as isize + offset as isize) as usize;
+            let resume_ip = (ip as isize + offset as isize) as usize;
             self.catch_stack.push(CatchHandler {
               frame_depth: self.frames.len(),
               resume_ip,
@@ -1514,34 +1583,34 @@ impl VM {
             self.catch_stack.pop();
           },
         }
-        Ok(None)
-      })();
+        Ok(())
+      };
 
-      match step {
-        Ok(Some(ret)) => return Ok(ret),
-        Ok(None) => continue,
-        Err(exc) => {
-          let claims_it = matches!(self.catch_stack.last(), Some(h) if h.frame_depth > stop_depth);
-          if claims_it {
-            let handler = self.catch_stack.pop().unwrap();
-            // Close upvalues into any frame about to be discarded --
-            // without this, a closure created (and possibly already
-            // escaped) inside the unwound call chain could keep
-            // pointing at a register that's now free for reuse.
-            if let Some(discard_base) = self.frames.get(handler.frame_depth).map(|f| f.base) {
-              self.close_upvalues_from(discard_base);
-            }
-            self.frames.truncate(handler.frame_depth);
-            let top = self.frames.last_mut().expect("catch handler left no frame");
-            top.ip = handler.resume_ip;
-            let top_base = top.base;
-            if let Some(reg) = handler.var_reg {
-              self.set_reg(top_base, reg, exc);
-            }
-            continue;
+      if let Err(exc) = step {
+        let claims_it = matches!(self.catch_stack.last(), Some(h) if h.frame_depth > stop_depth);
+        if claims_it {
+          let handler = self.catch_stack.pop().unwrap();
+          if let Some(discard_base) = self.frames.get(handler.frame_depth).map(|f| f.base) {
+            self.close_upvalues_from(discard_base);
           }
-          return Err(exc);
-        },
+          self.frames.truncate(handler.frame_depth);
+          let top = self.frames.last_mut().expect("catch handler left no frame");
+          top.ip = handler.resume_ip;
+          let top_base = top.base;
+          if let Some(reg) = handler.var_reg {
+            self.set_reg(top_base, reg, exc);
+          }
+          // Frames were truncated and ip rewound -- every cached local
+          // above is stale, refresh from the new top frame.
+          frame_idx = self.frames.len() - 1;
+          let f = &self.frames[frame_idx];
+          base = f.base;
+          func_ptr = f.function;
+          closure_ptr = f.closure;
+          ip = f.ip;
+          continue;
+        }
+        return Err(exc);
       }
     }
   }
@@ -1592,13 +1661,6 @@ impl VM {
   #[inline]
   fn set_reg(&mut self, base: usize, r: u8, v: Value) {
     self.registers[base + r as usize] = v;
-  }
-
-  fn jump(&mut self, frame_idx: usize, offset: i16) {
-    let f = &mut self.frames[frame_idx];
-    // ip already advanced past the jump instruction itself, matching a
-    // typical "offset is relative to the instruction after this one" scheme.
-    f.ip = (f.ip as isize + offset as isize) as usize;
   }
 
   #[inline(always)]
