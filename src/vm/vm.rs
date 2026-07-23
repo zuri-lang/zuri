@@ -282,7 +282,6 @@ impl VM {
       let native = callee.as_native();
       return self.call_native(native, args);
     }
-
     if !callee.is_closure() {
       let msg = format!("cannot call a {}", callee.type_name());
       return Err(self.raise("TypeError", msg));
@@ -296,12 +295,25 @@ impl VM {
       proto.arity
     };
 
-    // Always place the injected frame at the current top of the
-    // shared register stack -- guaranteed not to overlap any
-    // currently-live frame, however deep we already are.
-    let new_base = self.registers.len();
+    // Same convention dispatch_call already uses for Instr::Call: place
+    // the new frame right after whatever frame is CURRENTLY executing,
+    // instead of always appending at self.registers.len(). This bounds
+    // growth by max simultaneous call depth -- exactly like ordinary
+    // bytecode recursion already is -- rather than growing once per
+    // call_value invocation forever. No truncate-on-return needed: like
+    // dispatch_call's own recursion, later calls at the same depth just
+    // reuse the already-grown capacity (resize only fires when
+    // `needed > self.registers.len()`), so this is self-bounding on its
+    // own without shrinking anything mid-flight.
+    let new_base = self
+      .frames
+      .last()
+      .map(|f| f.base + unsafe { &*f.function }.num_registers as usize)
+      .unwrap_or(0);
     let needed = new_base + proto.num_registers as usize;
-    self.registers.resize(needed, Value::nil());
+    if self.registers.len() < needed {
+      self.registers.resize(needed, Value::nil());
+    }
 
     for i in 0..required as usize {
       self.registers[new_base + i] = args.get(i).copied().unwrap_or(Value::nil());
@@ -319,7 +331,7 @@ impl VM {
       closure_val: callee,
       ip: 0,
       base: new_base,
-      dst_in_caller: 0, // unused -- run_until returns the value directly instead
+      dst_in_caller: 0,
     });
     self.run_until(stop_depth)
   }
@@ -995,10 +1007,8 @@ impl VM {
             self.close_upvalues_from(base + from as usize);
           },
           Instr::MakeList { dst, start, count } => {
-            let cells: Vec<Cell<Value>> = (0..count)
-              .map(|i| Cell::new(self.get_reg(base, start + i)))
-              .collect();
-            let list_val = self.heap.alloc_list_cells(cells);
+            let items: Vec<Value> = (0..count).map(|i| self.get_reg(base, start + i)).collect();
+            let list_val = self.heap.alloc_list(items);
             self.set_reg(base, dst, list_val);
           },
           Instr::MakeDict { dst, start, count } => {
@@ -1591,7 +1601,8 @@ impl VM {
     f.ip = (f.ip as isize + offset as isize) as usize;
   }
 
-  fn bitwise_numeric(
+  #[inline(always)]
+  fn bitwise_numeric<F, G>(
     &mut self,
     base: usize,
     dst: u8,
@@ -1599,9 +1610,13 @@ impl VM {
     b: u8,
     op_name: &str,
     deco: &str,
-    op: fn(i64, i64) -> i64,
-    big_op: fn(BigInt, BigInt) -> BigInt,
-  ) -> RunResult<()> {
+    op: F,
+    big_op: G,
+  ) -> RunResult<()>
+  where
+    F: Fn(i64, i64) -> i64,
+    G: Fn(BigInt, BigInt) -> BigInt,
+  {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
     if va.is_number() && vb.is_number() {
@@ -1631,7 +1646,8 @@ impl VM {
     Err(self.raise("TypeError", msg))
   }
 
-  fn binary_numeric(
+  #[inline(always)]
+  fn binary_numeric<F, G>(
     &mut self,
     base: usize,
     dst: u8,
@@ -1639,9 +1655,13 @@ impl VM {
     b: u8,
     op_name: &str,
     deco: &str,
-    op: fn(f64, f64) -> f64,
-    big_op: fn(BigInt, BigInt) -> BigInt,
-  ) -> RunResult<()> {
+    op: F,
+    big_op: G,
+  ) -> RunResult<()>
+  where
+    F: Fn(f64, f64) -> f64,
+    G: Fn(BigInt, BigInt) -> BigInt,
+  {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
 
@@ -1667,6 +1687,7 @@ impl VM {
     Err(self.raise("TypeError", msg))
   }
 
+  #[inline(always)]
   fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
@@ -1712,6 +1733,7 @@ impl VM {
     Err(self.raise("TypeError", msg))
   }
 
+  #[inline(always)]
   fn binary_mult(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
@@ -1754,7 +1776,8 @@ impl VM {
     Err(self.raise("TypeError", msg))
   }
 
-  fn compare(
+  #[inline(always)]
+  fn compare<F, G>(
     &mut self,
     base: usize,
     dst: u8,
@@ -1762,9 +1785,13 @@ impl VM {
     b: u8,
     op_name: &str,
     deco: &str,
-    op: fn(f64, f64) -> bool,
-    big_op: fn(BigInt, BigInt) -> bool,
-  ) -> RunResult<()> {
+    op: F,
+    big_op: G,
+  ) -> RunResult<()>
+  where
+    F: Fn(f64, f64) -> bool,
+    G: Fn(BigInt, BigInt) -> bool,
+  {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
     if va.is_number() && vb.is_number() {
@@ -1845,12 +1872,12 @@ impl VM {
       // object behind `ptr` is guaranteed to still be valid here.
       match unsafe { &*ptr } {
         Obj::List(items) => {
-          for cell in items {
-            Self::mark_root(cell.get(), &mut worklist);
+          for v in items.borrow().iter() {
+            Self::mark_root(*v, &mut worklist);
           }
         },
-        Obj::Dict(pairs) => {
-          for (k, v) in pairs.borrow().iter() {
+        Obj::Dict(storage) => {
+          for (k, v) in storage.borrow().entries.iter() {
             Self::mark_root(*k, &mut worklist);
             Self::mark_root(*v, &mut worklist);
           }

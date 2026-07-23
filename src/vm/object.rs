@@ -1,6 +1,7 @@
 use num_bigint::BigInt;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use crate::vm::chunk::Chunk;
@@ -18,18 +19,10 @@ pub enum Obj {
   Str(String),
   Bytes(RefCell<Vec<u8>>),
   BigInt(BigInt),
-  /// A dynamically-sized list -- used to collect a variadic function's
-  /// trailing arguments. No bytecode support yet for indexing into or
-  /// iterating one from Zuri code -- this is just the storage.
-  List(Vec<Cell<Value>>),
-  /// A dict literal's storage. `Vec<(Value, Value)>` rather than a real
-  /// hash map, deliberately -- a proper HashMap needs Value to have
-  /// Hash/Eq that matches Value::equals' semantics (content-equality
-  /// for strings and numbers, identity for closures/lists), which is a
-  /// design decision worth making once Expr::Index/lookup exists and
-  /// performance is the thing being optimized for. This is correct and
-  /// simple; it's O(n) lookup, which is the honest tradeoff for now.
-  Dict(RefCell<Vec<(Value, Value)>>),
+  /// A dynamically-sized list.
+  List(RefCell<Vec<Value>>),
+  /// A dict literal's storage.
+  Dict(RefCell<DictStorage>),
   /// A function PROTOTYPE -- the static, compiled-once result of one
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
@@ -228,6 +221,100 @@ pub struct ObjInstance {
   pub fields: Vec<Cell<Value>>,
 }
 
+/// Wrapper around `Value` that implements `Hash`/`Eq` in terms of
+/// `Value::equals` (content-equality for strings/numbers/nil/bool,
+/// pointer identity for lists/dicts/closures/instances/etc.), since
+/// `Value` itself has no `Hash` impl and its raw NaN-boxed bits don't
+/// hash/compare consistently on their own. This is what lets
+/// `DictStorage::index` be a real `HashMap`.
+#[derive(Clone, Copy)]
+pub struct DictKey(pub Value);
+
+impl PartialEq for DictKey {
+  fn eq(&self, other: &Self) -> bool {
+    self.0.equals(&other.0)
+  }
+}
+impl Eq for DictKey {}
+
+impl Hash for DictKey {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    if self.0.is_number() {
+      0u8.hash(state);
+      self.0.as_number().to_bits().hash(state);
+    } else if self.0.is_nil() {
+      1u8.hash(state);
+    } else if self.0.is_bool() {
+      2u8.hash(state);
+      self.0.as_bool().hash(state);
+    } else if self.0.is_string() {
+      3u8.hash(state);
+      self.0.as_str().hash(state);
+    } else if self.0.is_obj() {
+      // Every other heap-backed kind (list, dict, instance, closure,
+      // ...) is compared by pointer identity in Value::equals, so
+      // hash on that same pointer. Tradeoff: two distinct-but-equal
+      // lists used as dict keys hash differently.
+      4u8.hash(state);
+      (self.0.as_obj() as usize).hash(state);
+    } else {
+      5u8.hash(state);
+    }
+  }
+}
+
+/// Backing storage for a Dict value. `entries` preserves insertion
+/// order (needed for iteration, `@key`/`@value`, and Display);
+/// `index` gives `get`/`set` O(1) average instead of the old O(n)
+/// linear scan. Kept in sync because every mutation goes through
+/// `set`, never touching `entries` directly from outside.
+pub struct DictStorage {
+  pub entries: Vec<(Value, Value)>,
+  index: HashMap<DictKey, usize>,
+}
+
+impl DictStorage {
+  pub fn new() -> Self {
+    DictStorage {
+      entries: Vec::new(),
+      index: HashMap::new(),
+    }
+  }
+
+  /// Builds storage from raw pairs, de-duplicating by VALUE equality
+  /// (via `set`'s own last-write-wins rule) -- same semantics the old
+  /// `Heap::alloc_dict` had.
+  pub fn from_pairs(pairs: Vec<(Value, Value)>) -> Self {
+    let mut storage = DictStorage::new();
+    for (k, v) in pairs {
+      storage.set(k, v);
+    }
+    storage
+  }
+
+  pub fn len(&self) -> usize {
+    self.entries.len()
+  }
+
+  pub fn get(&self, key: &Value) -> Option<Value> {
+    self.index.get(&DictKey(*key)).map(|&i| self.entries[i].1)
+  }
+
+  pub fn set(&mut self, key: Value, value: Value) {
+    if let Some(&i) = self.index.get(&DictKey(key)) {
+      self.entries[i].1 = value;
+    } else {
+      let i = self.entries.len();
+      self.entries.push((key, value));
+      self.index.insert(DictKey(key), i);
+    }
+  }
+
+  pub fn index_of(&self, key: &Value) -> Option<usize> {
+    self.index.get(&DictKey(*key)).copied()
+  }
+}
+
 /// Everything a native function body gets handed. `args` is an OWNED
 /// copy of the call's arguments, not a borrow into VM::registers -- it
 /// has to be, because `vm` is a live &mut VM at the same time, and a
@@ -385,8 +472,11 @@ impl Heap {
         Obj::Str(s) => s.len(),
         Obj::Bytes(b) => b.borrow().len(),
         Obj::BigInt(x) => size_of::<BigInt>() + x.bits() as usize,
-        Obj::List(items) => items.len() * size_of::<Cell<Value>>(),
-        Obj::Dict(pairs) => pairs.borrow().len() * size_of::<(Value, Value)>(),
+        Obj::List(items) => items.borrow().len() * size_of::<Value>(),
+        Obj::Dict(storage) => {
+          let s = storage.borrow();
+          s.entries.len() * (size_of::<(Value, Value)>() + size_of::<usize>() * 2)
+        },
         Obj::Func(f) => {
           size_of::<ObjFunction>()
             + f.chunk.code.len() * size_of::<crate::vm::chunk::Instr>()
@@ -492,12 +582,7 @@ impl Heap {
   }
 
   pub fn alloc_list(&mut self, list: impl Into<Vec<Value>>) -> Value {
-    let cells = list.into().into_iter().map(Cell::new).collect();
-    self.alloc(Obj::List(cells))
-  }
-
-  pub fn alloc_list_cells(&mut self, cells: Vec<Cell<Value>>) -> Value {
-    self.alloc(Obj::List(cells))
+    self.alloc(Obj::List(RefCell::new(list.into())))
   }
 
   /// Builds a Dict from raw (key, value) pairs, de-duplicating by
@@ -506,15 +591,8 @@ impl Heap {
   /// language's dict-literal semantics), keeping the LAST occurrence
   /// of any repeated key.
   pub fn alloc_dict(&mut self, pairs: Vec<(Value, Value)>) -> Value {
-    let mut deduped: Vec<(Value, Value)> = Vec::with_capacity(pairs.len());
-    for (key, value) in pairs {
-      if let Some(existing) = deduped.iter_mut().find(|(k, _)| k.equals(&key)) {
-        existing.1 = value;
-      } else {
-        deduped.push((key, value));
-      }
-    }
-    self.alloc(Obj::Dict(RefCell::new(deduped)))
+    let storage = DictStorage::from_pairs(pairs);
+    self.alloc(Obj::Dict(RefCell::new(storage)))
   }
 
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {

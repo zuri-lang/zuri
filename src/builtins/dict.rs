@@ -23,19 +23,19 @@ fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];
-  let (keys, _): (Vec<Value>, Vec<Value>) = ctx.args[0].as_dict().into_iter().unzip();
-
-  if keys.is_empty() {
-    return Ok(Value::bool(false));
-  }
+  let dict = ctx.args[0];
+  let len = dict.dict_len();
 
   if val.is_nil() {
-    return Ok(keys.first().unwrap().clone());
+    if len == 0 {
+      return Ok(Value::bool(false));
+    }
+    return Ok(dict.dict_key_at(0).unwrap());
   }
 
-  if let Some(index) = keys.iter().position(|&v| v.equals(&val)) {
-    if index < keys.len() - 1 {
-      return Ok(keys[index + 1]);
+  if let Some(index) = dict.dict_index_of(&val) {
+    if index < len - 1 {
+      return Ok(dict.dict_key_at(index + 1).unwrap());
     }
   }
 
@@ -44,12 +44,10 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn _value(ctx: &mut ZuriContext) -> Result<Value, String> {
   let key = ctx.args[1];
-  let (keys, values): (Vec<Value>, Vec<Value>) = ctx.args[0].as_dict().into_iter().unzip();
+  let dict = ctx.args[0];
 
-  if let Some(index) = keys.iter().position(|&v| v.equals(&key)) {
-    if index < keys.len() {
-      return Ok(values[index]);
-    }
+  if let Some(index) = dict.dict_index_of(&key) {
+    return Ok(dict.dict_value_at(index).unwrap());
   }
 
   Ok(Value::nil())

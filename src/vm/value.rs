@@ -307,18 +307,15 @@ impl Value {
   pub fn as_list(&self) -> Vec<Value> {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => items.iter().map(|c| c.get()).collect(),
+      Obj::List(items) => items.borrow().clone(),
       _ => unreachable!("as_list() called on a non-list Value"),
     }
   }
 
-  /// Number of elements -- the cheap entry point for
-  /// `Instr::GetIndex`/`SetIndex`/`GetSlice` bounds-checking, avoiding
-  /// `as_list()`'s full copy just to check a length.
   pub fn list_len(&self) -> usize {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => items.len(),
+      Obj::List(items) => items.borrow().len(),
       _ => unreachable!("list_len() called on a non-list Value"),
     }
   }
@@ -326,7 +323,7 @@ impl Value {
   pub fn list_get(&self, index: usize) -> Option<Value> {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => items.get(index).map(|c| c.get()),
+      Obj::List(items) => items.borrow().get(index).copied(),
       _ => unreachable!("list_get() called on a non-list Value"),
     }
   }
@@ -334,9 +331,9 @@ impl Value {
   pub fn list_set(&self, index: usize, value: Value) -> bool {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => match items.get(index) {
-        Some(cell) => {
-          cell.set(value);
+      Obj::List(items) => match items.borrow_mut().get_mut(index) {
+        Some(slot) => {
+          *slot = value;
           true
         },
         None => false,
@@ -348,7 +345,7 @@ impl Value {
   pub fn as_dict(&self) -> Vec<(Value, Value)> {
     debug_assert!(self.is_dict());
     match unsafe { &*self.as_obj() } {
-      Obj::Dict(pairs) => pairs.borrow().clone(),
+      Obj::Dict(storage) => storage.borrow().entries.clone(),
       _ => unreachable!("as_dict() called on a non-dict Value"),
     }
   }
@@ -356,40 +353,52 @@ impl Value {
   pub fn dict_len(&self) -> usize {
     debug_assert!(self.is_dict());
     match unsafe { &*self.as_obj() } {
-      Obj::Dict(pairs) => pairs.borrow().len(),
+      Obj::Dict(storage) => storage.borrow().len(),
       _ => unreachable!("dict_len() called on a non-dict Value"),
     }
   }
 
-  /// O(n) by design -- see `Obj::Dict`'s own doc comment for why a real
-  /// hash map isn't used here yet.
   pub fn dict_get(&self, key: &Value) -> Option<Value> {
     debug_assert!(self.is_dict());
     match unsafe { &*self.as_obj() } {
-      Obj::Dict(pairs) => pairs
-        .borrow()
-        .iter()
-        .find(|(k, _)| k.equals(key))
-        .map(|(_, v)| *v),
+      Obj::Dict(storage) => storage.borrow().get(key),
       _ => unreachable!("dict_get() called on a non-dict Value"),
     }
   }
 
-  /// Updates the existing entry if `key` is already present (by
-  /// `Value::equals`, not pointer identity -- matching `alloc_dict`'s
-  /// own dedup rule), otherwise inserts a new one.
   pub fn dict_set(&self, key: Value, value: Value) {
     debug_assert!(self.is_dict());
     match unsafe { &*self.as_obj() } {
-      Obj::Dict(pairs) => {
-        let mut pairs = pairs.borrow_mut();
-        if let Some(existing) = pairs.iter_mut().find(|(k, _)| k.equals(&key)) {
-          existing.1 = value;
-        } else {
-          pairs.push((key, value));
-        }
-      },
+      Obj::Dict(storage) => storage.borrow_mut().set(key, value),
       _ => unreachable!("dict_set() called on a non-dict Value"),
+    }
+  }
+
+  /// Position of `key` in insertion order -- O(1) average via the
+  /// same index `dict_get` uses. What `@key`/`@value` (see
+  /// `builtins/dict.rs`) use instead of a linear scan to step forward
+  /// through a dict during iteration.
+  pub fn dict_index_of(&self, key: &Value) -> Option<usize> {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(storage) => storage.borrow().index_of(key),
+      _ => unreachable!("dict_index_of() called on a non-dict Value"),
+    }
+  }
+
+  pub fn dict_key_at(&self, index: usize) -> Option<Value> {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(storage) => storage.borrow().entries.get(index).map(|(k, _)| *k),
+      _ => unreachable!("dict_key_at() called on a non-dict Value"),
+    }
+  }
+
+  pub fn dict_value_at(&self, index: usize) -> Option<Value> {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(storage) => storage.borrow().entries.get(index).map(|(_, v)| *v),
+      _ => unreachable!("dict_value_at() called on a non-dict Value"),
     }
   }
 
@@ -477,19 +486,18 @@ impl Value {
           (Obj::Class(a), Obj::Class(b)) => std::ptr::eq(a, b),
           (Obj::Instance(a), Obj::Instance(b)) => std::ptr::eq(a, b),
           (Obj::List(a), Obj::List(b)) => {
-            a.len() == b.len()
-              && a
-                .iter()
-                .zip(b.iter())
-                .all(|(x, y)| x.get().equals(&y.get()))
+            let a = a.borrow();
+            let b = b.borrow();
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
           },
           (Obj::Dict(a), Obj::Dict(b)) => {
             let a = a.borrow();
             let b = b.borrow();
-            a.len() == b.len()
+            a.entries.len() == b.entries.len()
               && a
+                .entries
                 .iter()
-                .all(|(k, v)| b.iter().any(|(k2, v2)| k.equals(k2) && v.equals(v2)))
+                .all(|(k, v)| b.get(k).map(|v2| v.equals(&v2)).unwrap_or(false))
           },
           (
             Obj::Range {
@@ -609,18 +617,18 @@ impl std::fmt::Display for Value {
           Obj::Instance(i) => write!(f, "<instance of {}>", i.class.as_class().name),
           Obj::List(items) => {
             write!(f, "[")?;
-            for (i, item) in items.iter().enumerate() {
+            for (i, item) in items.borrow().iter().enumerate() {
               if i > 0 {
                 write!(f, ", ")?;
               }
-              write!(f, "{}", item.get())?;
+              write!(f, "{}", item)?;
             }
             write!(f, "]")
           },
-          Obj::Dict(pairs) => {
-            let pairs = pairs.borrow();
+          Obj::Dict(storage) => {
+            let storage = storage.borrow();
             write!(f, "{{")?;
-            for (i, (k, v)) in pairs.iter().enumerate() {
+            for (i, (k, v)) in storage.entries.iter().enumerate() {
               if i > 0 {
                 write!(f, ", ")?;
               }
