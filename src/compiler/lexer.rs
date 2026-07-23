@@ -1,5 +1,5 @@
 use num_bigint::BigInt;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::str::FromStr;
 
 use crate::compiler::token::{Token, TokenKind};
@@ -40,7 +40,7 @@ pub struct Lexer {
   start_line: usize,
   total_count: usize,
   interpolating: Vec<char>,
-  lines: HashMap<usize, usize>,
+  lines: FxHashMap<usize, usize>,
 }
 
 impl Lexer {
@@ -55,7 +55,7 @@ impl Lexer {
       current: 0,
       start: 0,
       lexing_type: 0,
-      lines: HashMap::new(),
+      lines: FxHashMap::default(),
       interpolating: Vec::new(),
     }
   }

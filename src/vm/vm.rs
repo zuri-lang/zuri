@@ -1,10 +1,10 @@
 use std::cell::Cell;
-use std::collections::HashMap;
 use std::ops::{Neg, Shl, Shr};
 use std::sync::LazyLock;
 
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
+use rustc_hash::FxHashMap;
 
 use crate::builtins;
 use crate::vm::chunk::{Instr, JumpKey};
@@ -62,7 +62,7 @@ pub struct VM {
   /// closures over the same variable see each other's writes.
   open_upvalues: Vec<(usize, Value)>,
   frames: Vec<CallFrame>,
-  globals: std::collections::HashMap<String, Value>,
+  globals: FxHashMap<String, Value>,
   /// Explicit extra GC roots for values internal (non-bytecode) VM code
   /// needs to keep alive across a call that might itself trigger a
   /// collection -- e.g. `instantiate` invoking several field
@@ -77,7 +77,7 @@ pub struct VM {
   /// Cached by name after `prelude::install` runs, for O(1) lookup from
   /// `VM::raise` rather than a `self.globals` hashmap hit on every
   /// internal error.
-  pub(crate) builtin_exceptions: HashMap<&'static str, Value>,
+  pub(crate) builtin_exceptions: FxHashMap<&'static str, Value>,
   pub heap: Heap,
 }
 
@@ -87,14 +87,14 @@ const LOG_GC: LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
 
 impl VM {
-  pub fn new(heap: Heap, globals: HashMap<String, Value>) -> Self {
+  pub fn new(heap: Heap, globals: FxHashMap<String, Value>) -> Self {
     VM {
       registers: Vec::new(),
       frames: Vec::new(),
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
       catch_stack: Vec::new(),
-      builtin_exceptions: HashMap::new(),
+      builtin_exceptions: FxHashMap::default(),
       globals,
       heap,
     }
@@ -1126,7 +1126,7 @@ impl VM {
                   s.constructor,
                 )
               },
-              None => (HashMap::new(), HashMap::new(), 0, None),
+              None => (FxHashMap::default(), FxHashMap::default(), 0, None),
             };
 
             let class_val = self.heap.alloc_class(ObjClass {
@@ -1137,7 +1137,7 @@ impl VM {
               field_count,
               own_field_initializer: None,
               constructor,
-              static_slots: HashMap::new(),
+              static_slots: FxHashMap::default(),
               statics: Vec::new(),
             });
             self.set_reg(base, dst, class_val);

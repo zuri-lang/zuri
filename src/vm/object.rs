@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
+use rustc_hash::FxHashMap;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -186,11 +186,11 @@ pub struct ObjClass {
   /// inherited of the same name). Also where a self-named method (this
   /// class's constructor, if it declares one) lives -- see
   /// `Instr::FinalizeClass`.
-  pub methods: HashMap<String, Value>,
+  pub methods: FxHashMap<String, Value>,
   /// Name -> slot index for OWN + inherited instance fields, pre-merged
   /// the same way; `field_count` is the total flat layout size every
   /// `ObjInstance.fields` of this class is allocated with.
-  pub field_slots: HashMap<String, u16>,
+  pub field_slots: FxHashMap<String, u16>,
   pub field_count: u16,
   /// This class's OWN declared instance fields' initializer (arity 1:
   /// self) -- None if it declares no instance fields itself. Ancestors'
@@ -208,7 +208,7 @@ pub struct ObjClass {
   /// namespace (a static method is just a Value that happens to be a
   /// Closure) -- deliberately not merged with the superclass at
   /// declaration time; see the struct-level doc comment above.
-  pub static_slots: HashMap<String, u16>,
+  pub static_slots: FxHashMap<String, u16>,
   pub statics: Vec<Cell<Value>>,
 }
 
@@ -226,7 +226,7 @@ pub struct ObjInstance {
 /// pointer identity for lists/dicts/closures/instances/etc.), since
 /// `Value` itself has no `Hash` impl and its raw NaN-boxed bits don't
 /// hash/compare consistently on their own. This is what lets
-/// `DictStorage::index` be a real `HashMap`.
+/// `DictStorage::index` be a real `FxHashMap`.
 #[derive(Clone, Copy)]
 pub struct DictKey(pub Value);
 
@@ -270,14 +270,14 @@ impl Hash for DictKey {
 /// `set`, never touching `entries` directly from outside.
 pub struct DictStorage {
   pub entries: Vec<(Value, Value)>,
-  index: HashMap<DictKey, usize>,
+  index: FxHashMap<DictKey, usize>,
 }
 
 impl DictStorage {
   pub fn new() -> Self {
     DictStorage {
       entries: Vec::new(),
-      index: HashMap::new(),
+      index: FxHashMap::default(),
     }
   }
 

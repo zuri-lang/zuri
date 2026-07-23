@@ -1,5 +1,6 @@
 use core::fmt;
-use std::collections::HashMap;
+
+use rustc_hash::FxHashMap;
 
 use crate::vm::value::Value;
 
@@ -437,7 +438,7 @@ pub struct Chunk {
   pub constants: Vec<Value>,
   /// One entry per `using` statement that has at least one constant
   /// case label -- see `Instr::UsingJump`.
-  pub jump_tables: Vec<HashMap<JumpKey, usize>>,
+  pub jump_tables: Vec<FxHashMap<JumpKey, usize>>,
   /// Parallel to `code` -- `lines[i]` is the source line `code[i]` was
   /// compiled from (statement granularity; see
   /// `Compiler::emit`/`FunctionScope::current_line`). Used only to
@@ -462,7 +463,7 @@ impl Chunk {
   }
 
   pub fn add_jump_table(&mut self) -> u16 {
-    self.jump_tables.push(HashMap::new());
+    self.jump_tables.push(FxHashMap::default());
     (self.jump_tables.len() - 1) as u16
   }
 

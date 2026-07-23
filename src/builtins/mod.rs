@@ -6,7 +6,7 @@
 //! Mirrors the C runtime's per-type builtin-method tables: rather than
 //! a chain of `if receiver.is_x() { ... } else if receiver.is_y() {
 //! ... }` at every call site, each primitive "kind" gets its own
-//! `HashMap<name, NativeFunction>`, built once and looked up in O(1) --
+//! `FxHashMap<name, NativeFunction>`, built once and looked up in O(1) --
 //! the exact same shape `ObjClass::methods` already gives a real class,
 //! just for values that don't have one. `Instr::Invoke`'s handler is
 //! the only caller; the resolved `NativeFunction` is run through the
@@ -14,8 +14,9 @@
 //! with the receiver spliced in as the implicit first argument -- the
 //! same calling convention a real bound method already uses.
 
-use std::collections::HashMap;
 use std::sync::LazyLock;
+
+use rustc_hash::FxHashMap;
 
 use crate::builtins::bigint::BIGINT_METHODS;
 use crate::builtins::bool::BOOL_METHODS;
@@ -89,7 +90,7 @@ impl Kind {
   }
 }
 
-type MethodTable = HashMap<&'static str, NativeFunction>;
+type MethodTable = FxHashMap<&'static str, NativeFunction>;
 
 /// `min_arity` is always 1 -- the implicit receiver, spliced in by the
 /// caller as `args[0]` -- since every builtin below currently takes no
