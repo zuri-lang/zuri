@@ -105,6 +105,7 @@ impl VM {
     crate::vm::prelude::install(self);
   }
 
+  #[inline]
   pub fn heap_mut(&mut self) -> &mut Heap {
     &mut self.heap
   }
@@ -115,6 +116,7 @@ impl VM {
     self.globals.insert(name.into(), v);
   }
 
+  #[inline]
   pub fn lookup_global(&self, name: &str) -> Option<Value> {
     self.globals.get(name).copied()
   }
@@ -1619,6 +1621,7 @@ impl VM {
   /// index. Reusing an existing one (rather than always allocating a new
   /// one) is what makes two closures created from the same enclosing
   /// scope, over the same local, actually share state.
+  #[inline]
   fn capture_upvalue(&mut self, abs_index: usize) -> Value {
     if let Some((_, v)) = self.open_upvalues.iter().find(|(idx, _)| *idx == abs_index) {
       return *v;
@@ -1645,6 +1648,7 @@ impl VM {
     }
   }
 
+  #[inline]
   fn const_as_str(&mut self, func: &ObjFunction, idx: u16) -> RunResult<String> {
     let v = func.chunk.constants[idx as usize];
     if !v.is_string() {
@@ -1653,12 +1657,12 @@ impl VM {
     Ok(v.as_str().to_string())
   }
 
-  #[inline]
+  #[inline(always)]
   fn get_reg(&self, base: usize, r: u8) -> Value {
     self.registers[base + r as usize]
   }
 
-  #[inline]
+  #[inline(always)]
   fn set_reg(&mut self, base: usize, r: u8, v: Value) {
     self.registers[base + r as usize] = v;
   }
@@ -2010,6 +2014,7 @@ impl VM {
   /// it so `collect_garbage` walks its children too. A no-op on repeat
   /// visits, which is what makes cycles (e.g. a closure capturing a
   /// variable that in turn points back at the closure) safe to trace.
+  #[inline(always)]
   fn mark_root(v: Value, worklist: &mut Vec<*const Obj>) {
     if !v.is_obj() {
       return;
@@ -2131,6 +2136,7 @@ impl VM {
     Ok(None)
   }
 
+  #[inline]
   pub fn clear_frames(&mut self) {
     self.frames.clear();
   }
