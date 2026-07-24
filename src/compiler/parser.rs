@@ -1049,14 +1049,6 @@ impl<'a> Parser<'a> {
     let key_id = consume_tok!(self, TokenKind::Identifier(_), "Variable name expected");
     let mut value_id = key_id.clone();
 
-    // The variable that tracks the key/index ACROSS iterations. For a
-    // single-variable loop (`for x in ...`) this must be the synthetic
-    // `$key` -- invisible to user code -- because the user's own
-    // variable holds only the VALUE and must not be clobbered by key
-    // bookkeeping written back into it each iteration. For a
-    // two-variable loop (`for k, v in ...`), the user's own first name
-    // IS the key tracker -- exposing it as `k` is the whole point, so
-    // it's swapped in below once we know we're in that form.
     let key_decl_name = key_id.copy_to(TokenKind::Identifier("$key".to_string()));
     let mut key_track_id = key_decl_name.clone();
 
@@ -1067,7 +1059,9 @@ impl<'a> Parser<'a> {
     let value_nil = self.compose_nil();
     let mut value = Stmt::Var(value_decl_name, Box::new(value_nil), None, false);
 
+    let mut is_two_var = false;
     if match_tok!(self, TokenKind::Comma) {
+      is_two_var = true;
       key = value;
       key_track_id = key_id.clone();
 
@@ -1082,12 +1076,41 @@ impl<'a> Parser<'a> {
 
     let iterable = self.expression();
 
+    // Fast path for `for x in LOWER..UPPER { body }` (single-variable
+    // form) -- see for_range_fast_path's own doc comment for why.
+    if !is_two_var {
+      if let Expr::Range(lower, upper, line) = iterable.clone() {
+        return self.for_range_fast_path(key_id, *lower, *upper, line);
+      }
+    }
+
+    // Evaluate the iterable expression exactly ONCE, into a synthetic
+    // local ($iter) declared OUTSIDE the loop -- previously `iterable`
+    // was cloned directly into BOTH the @key and @value getters below,
+    // both of which live INSIDE the generated while-loop's body. That
+    // meant the iterable expression was silently re-evaluated (and,
+    // for a list/range LITERAL, re-allocated on the heap) on every
+    // single iteration, twice over -- `for i in [1,2,3]` reallocated
+    // that list every pass through the loop; `for i in a..b`
+    // reallocated a fresh Range object twice per iteration. A
+    // profiler on a range-heavy loop showed this as the dominant
+    // source of self-time: Heap::alloc / GcBox-push / malloc from the
+    // repeated allocation, plus builtins::lookup / HashMap::get /
+    // call_native from repeatedly re-dispatching @key/@value on each
+    // fresh object. Evaluating once, into $iter, is not just faster --
+    // it's the semantically correct behavior for an iterable with any
+    // side effects or internal generator state, which the old
+    // per-iteration reconstruction silently broke.
+    let iter_name = key_id.copy_to(TokenKind::Identifier("$iter".to_string()));
+    let iter_decl = Stmt::Var(iter_name.clone(), Box::new(iterable), None, false);
+
     let mut stmt_list = Vec::new();
 
-    // key = object.@key(key)
+    // key = $iter.@key(key)
     {
       let get_name = key_track_id.copy_to(TokenKind::Identifier("@key".to_string()));
-      let getter = self.compose_get(iterable.clone(), get_name);
+      let iter_expr = self.compose_id(iter_name.clone());
+      let getter = self.compose_get(iter_expr, get_name);
       let call_arg = self.compose_id(key_track_id.clone());
       let call = self.compose_call(getter, vec![call_arg], key_track_id.line as u32);
       let lhs = self.compose_id(key_track_id.clone());
@@ -1109,10 +1132,11 @@ impl<'a> Parser<'a> {
       stmt_list.push(Stmt::If(Box::new(condition), Box::new(then_branch), None));
     }
 
-    // value = object.@value(key)
+    // value = $iter.@value(key)
     {
       let get_name = value_id.copy_to(TokenKind::Identifier("@value".to_string()));
-      let getter = self.compose_get(iterable.clone(), get_name);
+      let iter_expr = self.compose_id(iter_name.clone());
+      let getter = self.compose_get(iter_expr, get_name);
       let call_arg = self.compose_id(key_track_id.clone());
       let call = self.compose_call(getter, vec![call_arg], value_id.line as u32);
       let lhs = self.compose_id(value_id.clone());
@@ -1127,7 +1151,133 @@ impl<'a> Parser<'a> {
     let block = Stmt::Block(stmt_list);
     let body = Stmt::While(Box::new(cond), Box::new(block));
 
-    Stmt::Block(vec![key, value, body])
+    Stmt::Block(vec![iter_decl, key, value, body])
+  }
+
+  /// Fast path for `for x in LOWER..UPPER { body }` (single-variable
+  /// form only -- range key/value order intentionally differs once an
+  /// index variable is also requested, so `for k, v in a..b` always
+  /// falls through to the general @key/@value path in `for_stmt`).
+  /// Compiles directly to a counting loop instead of allocating an
+  /// Obj::Range and invoking `@key`/`@value` through the generic
+  /// Instr::Invoke -> builtins::lookup -> FxHashMap<&str,..> dispatch
+  /// path once per iteration -- what a profiler flagged as the
+  /// dominant self-time cost in range-heavy loops.
+  ///
+  /// Every synthesized name here is prefixed with `$`, which the
+  /// lexer never produces from user source, so these can never
+  /// collide with a real user identifier -- same trick `for_stmt`'s
+  /// own `$key` already relies on.
+  ///
+  /// NOTE: for LOWER == UPPER, `Range::_key`'s own native
+  /// implementation currently returns `Value::bool(false)` as its
+  /// very first key (not `nil`), which the general for-loop path's
+  /// `if key == nil break` check does NOT catch -- so today, `for x
+  /// in a..a { ... }` raises a TypeError from `_value` on its first
+  /// iteration rather than doing nothing. This fast path instead
+  /// treats LOWER == UPPER as a correctly empty loop (zero
+  /// iterations), which is the intended behavior; this is a
+  /// deliberate, beneficial behavior change for that one edge case,
+  /// not an oversight.
+  fn for_range_fast_path(&mut self, var_id: Token, lower: Expr, upper: Expr, line: u32) -> Stmt {
+    let lower_name = var_id.copy_to(TokenKind::Identifier("$lower".to_string()));
+    let upper_name = var_id.copy_to(TokenKind::Identifier("$upper".to_string()));
+    let count_name = var_id.copy_to(TokenKind::Identifier("$count".to_string()));
+    let step_name = var_id.copy_to(TokenKind::Identifier("$step".to_string()));
+    let n_name = var_id.copy_to(TokenKind::Identifier("$n".to_string()));
+
+    // var $lower = LOWER ; var $upper = UPPER  (each evaluated exactly
+    // once, in the same order the original Expr::Range compilation
+    // would have evaluated them)
+    let lower_decl = Stmt::Var(lower_name.clone(), Box::new(lower), None, false);
+    let upper_decl = Stmt::Var(upper_name.clone(), Box::new(upper), None, false);
+
+    // $upper >= $lower  -- decides both direction and, reused below,
+    // which of the two diffs becomes $count.
+    let ge = Expr::Logical(
+      Box::new(self.compose_id(upper_name.clone())),
+      TokenKind::GreaterEq,
+      Box::new(self.compose_id(lower_name.clone())),
+      line,
+    );
+    let asc_diff = Expr::Binary(
+      Box::new(self.compose_id(upper_name.clone())),
+      TokenKind::Minus,
+      Box::new(self.compose_id(lower_name.clone())),
+      line,
+    );
+    let desc_diff = Expr::Binary(
+      Box::new(self.compose_id(lower_name.clone())),
+      TokenKind::Minus,
+      Box::new(self.compose_id(upper_name.clone())),
+      line,
+    );
+    // var $count = $upper >= $lower ? $upper - $lower : $lower - $upper
+    let count_val = Expr::Condition(Box::new(ge), Box::new(asc_diff), Box::new(desc_diff));
+    let count_decl = Stmt::Var(count_name.clone(), Box::new(count_val), None, false);
+
+    // var $step = $upper >= $lower ? 1 : -1
+    let ge_for_step = Expr::Logical(
+      Box::new(self.compose_id(upper_name.clone())),
+      TokenKind::GreaterEq,
+      Box::new(self.compose_id(lower_name.clone())),
+      line,
+    );
+    let step_val = Expr::Condition(
+      Box::new(ge_for_step),
+      Box::new(Expr::Integer(1)),
+      Box::new(Expr::Integer(-1)),
+    );
+    let step_decl = Stmt::Var(step_name.clone(), Box::new(step_val), None, false);
+
+    // var $n = 0
+    let n_decl = Stmt::Var(n_name.clone(), Box::new(Expr::Integer(0)), None, false);
+
+    // var VAR = $lower
+    let lower_expr = self.compose_id(lower_name.clone());
+    let var_decl = Stmt::Var(var_id.clone(), Box::new(lower_expr), None, false);
+
+    // parse the loop body — real user code, keeps its own position
+    let body = self.statement();
+
+    // VAR += $step  ;  $n += 1
+    // Placed AFTER Stmt::FixContinue, mirroring iter_stmt's own
+    // desugaring, so `continue` inside the body still advances the
+    // loop variable instead of skipping straight back to the
+    // condition check.
+    let var_advance = Stmt::Expression(Box::new(Expr::Assign(
+      Box::new(self.compose_id(var_id.clone())),
+      Box::new(Expr::Binary(
+        Box::new(self.compose_id(var_id.clone())),
+        TokenKind::Plus,
+        Box::new(self.compose_id(step_name.clone())),
+        line,
+      )),
+    )));
+    let n_advance = Stmt::Expression(Box::new(Expr::Assign(
+      Box::new(self.compose_id(n_name.clone())),
+      Box::new(Expr::Binary(
+        Box::new(self.compose_id(n_name.clone())),
+        TokenKind::Plus,
+        Box::new(Expr::Integer(1)),
+        line,
+      )),
+    )));
+
+    let block_body = Stmt::Block(vec![body, Stmt::FixContinue, var_advance, n_advance]);
+
+    // while $n < $count { ... }
+    let cond = Expr::Logical(
+      Box::new(self.compose_id(n_name)),
+      TokenKind::Less,
+      Box::new(self.compose_id(count_name)),
+      line,
+    );
+    let while_stmt = Stmt::While(Box::new(cond), Box::new(block_body));
+
+    Stmt::Block(vec![
+      lower_decl, upper_decl, count_decl, step_decl, n_decl, var_decl, while_stmt,
+    ])
   }
 
   fn assert_stmt(&mut self) -> Stmt {

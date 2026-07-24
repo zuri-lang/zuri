@@ -315,7 +315,22 @@ impl Value {
   pub fn list_len(&self) -> usize {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => items.borrow().len(),
+      Obj::List(items) => {
+        #[cfg(debug_assertions)]
+        {
+          items.borrow().len()
+        }
+        #[cfg(not(debug_assertions))]
+        // SAFETY: nothing in this VM holds a live Ref/RefMut on a List
+        // across a re-entrant call into anything that could touch the
+        // SAME list, and execution is single-threaded, so bypassing
+        // RefCell's runtime flag can't observe real aliasing. Checked
+        // via the ordinary borrow() above in debug builds.
+        {
+          let vec_ref: &Vec<Value> = unsafe { &*items.as_ptr() };
+          vec_ref.len()
+        }
+      },
       _ => unreachable!("list_len() called on a non-list Value"),
     }
   }
@@ -323,7 +338,17 @@ impl Value {
   pub fn list_get(&self, index: usize) -> Option<Value> {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => items.borrow().get(index).copied(),
+      Obj::List(items) => {
+        #[cfg(debug_assertions)]
+        {
+          items.borrow().get(index).copied()
+        }
+        #[cfg(not(debug_assertions))]
+        {
+          let vec_ref: &Vec<Value> = unsafe { &*items.as_ptr() };
+          vec_ref.get(index).copied()
+        }
+      },
       _ => unreachable!("list_get() called on a non-list Value"),
     }
   }
@@ -331,12 +356,28 @@ impl Value {
   pub fn list_set(&self, index: usize, value: Value) -> bool {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => match items.borrow_mut().get_mut(index) {
-        Some(slot) => {
-          *slot = value;
-          true
-        },
-        None => false,
+      Obj::List(items) => {
+        #[cfg(debug_assertions)]
+        {
+          match items.borrow_mut().get_mut(index) {
+            Some(slot) => {
+              *slot = value;
+              true
+            },
+            None => false,
+          }
+        }
+        #[cfg(not(debug_assertions))]
+        {
+          let vec_ref: &mut Vec<Value> = unsafe { &mut *items.as_ptr() };
+          match vec_ref.get_mut(index) {
+            Some(slot) => {
+              *slot = value;
+              true
+            },
+            None => false,
+          }
+        }
       },
       _ => unreachable!("list_set() called on a non-list Value"),
     }

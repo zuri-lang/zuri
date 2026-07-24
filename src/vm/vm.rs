@@ -2090,10 +2090,11 @@ impl VM {
       return Err(self.raise("TypeError", msg));
     }
     let n = index.as_number();
-    if n.fract() != 0.0 {
+    let i = n as i64;
+    if i as f64 != n {
       return Err(self.raise("TypeError", format!("index must be an integer, got {}", n)));
     }
-    Ok(n as i64)
+    Ok(i)
   }
 
   fn coerce_index(&mut self, index: Value, len: usize) -> RunResult<usize> {

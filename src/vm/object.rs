@@ -406,7 +406,7 @@ pub struct Heap {
 impl Heap {
   /// Floor for `next_gc` -- keeps a small/short-lived program from
   /// triggering a collection after every third allocation.
-  const MIN_NEXT_GC: usize = 10 * 1024 * 1024;
+  const MIN_NEXT_GC: usize = 16 * 1024 * 1024;
   /// After a sweep, the next collection is scheduled at this multiple of
   /// the heap's current live size.
   const GC_HEAP_GROW_FACTOR: f32 = 1.5;
