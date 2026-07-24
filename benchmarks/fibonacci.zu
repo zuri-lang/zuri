@@ -7,6 +7,6 @@ def fib(n) {
 }
 
 var start = time()
-echo fib(45)
+echo fib(35)
 
 echo '\nTotal time taken: ${time() - start}s'

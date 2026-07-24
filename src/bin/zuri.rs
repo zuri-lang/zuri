@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use std::rc::Rc;
 use std::{env, fs, process};
 use zuri::compiler::parser::ParserError;
@@ -139,9 +138,7 @@ fn main() {
     process::exit(1);
   } else {
     let heap = Heap::new();
-    let globals = FxHashMap::default();
-
-    let mut vm = VM::new(heap, globals);
+    let mut vm = VM::new(heap);
     vm.init();
 
     if args.len() == 2 {

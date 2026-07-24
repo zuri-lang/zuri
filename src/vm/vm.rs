@@ -114,7 +114,17 @@ pub struct VM {
   /// closures over the same variable see each other's writes.
   open_upvalues: Vec<(usize, Value)>,
   frames: Vec<CallFrame>,
-  globals: FxHashMap<String, Value>,
+  /// Backing storage for every global variable, indexed by slot.
+  /// Slots are assigned lazily the first time a name is resolved (see
+  /// `get_or_create_global_slot`) and never reused or removed -- what
+  /// lets `Chunk::global_cache` cache a slot index permanently with no
+  /// invalidation logic needed.
+  global_slots: Vec<Cell<Value>>,
+  /// name -> slot, consulted only on a `global_cache` MISS -- i.e. the
+  /// very first time a particular Get/Set/AssignGlobal instruction
+  /// executes, ever. Every later execution of that instruction goes
+  /// straight through the cache and never touches this map again.
+  global_names: FxHashMap<String, u32>,
   /// Explicit extra GC roots for values internal (non-bytecode) VM code
   /// needs to keep alive across a call that might itself trigger a
   /// collection -- e.g. `instantiate` invoking several field
@@ -139,7 +149,7 @@ const LOG_GC: LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
 
 impl VM {
-  pub fn new(heap: Heap, globals: FxHashMap<String, Value>) -> Self {
+  pub fn new(heap: Heap) -> Self {
     VM {
       registers: Vec::new(),
       frames: Vec::new(),
@@ -147,7 +157,8 @@ impl VM {
       gc_pins: Vec::new(),
       catch_stack: Vec::new(),
       builtin_exceptions: FxHashMap::default(),
-      globals,
+      global_slots: Vec::new(),
+      global_names: FxHashMap::default(),
       heap,
     }
   }
@@ -165,12 +176,26 @@ impl VM {
   /// Bind a value directly, useful for wiring up a top-level function
   /// (e.g. "fib") before `run` starts executing.
   pub fn define_global(&mut self, name: impl Into<String>, v: Value) {
-    self.globals.insert(name.into(), v);
+    let slot = self.get_or_create_global_slot(name.into());
+    self.global_slots[slot as usize].set(v);
+  }
+
+  /// Get `name`'s slot, allocating a fresh one (initialized to nil)
+  /// if it doesn't have one yet.
+  fn get_or_create_global_slot(&mut self, name: String) -> u32 {
+    if let Some(&slot) = self.global_names.get(&name) {
+      return slot;
+    }
+    let slot = self.global_slots.len() as u32;
+    self.global_slots.push(Cell::new(Value::nil()));
+    self.global_names.insert(name, slot);
+    slot
   }
 
   #[inline]
   pub fn lookup_global(&self, name: &str) -> Option<Value> {
-    self.globals.get(name).copied()
+    let &slot = self.global_names.get(name)?;
+    Some(self.global_slots[slot as usize].get())
   }
 
   /// Construct a fresh instance of the builtin exception class named
@@ -941,6 +966,71 @@ impl VM {
             let v = self.get_reg(base, src);
             self.set_reg(base, dst, Value::bool(v.is_falsey()));
           },
+          Instr::AddImm { dst, a, imm_const } => {
+            let va = self.get_reg(base, a);
+            let vb = func.chunk.constants[imm_const as usize];
+            let result = tri!(self.binary_add_values(va, vb, "+"), 'step);
+            self.set_reg(base, dst, result);
+          },
+          Instr::SubImm { dst, a, imm_const } => {
+            let imm = func.chunk.constants[imm_const as usize].as_number();
+            tri!(self.binary_numeric_imm(base, dst, a, imm, "-", "@sub", |x, y| x - y), 'step);
+          },
+          Instr::MulImm { dst, a, imm_const } => {
+            let va = self.get_reg(base, a);
+            let imm = func.chunk.constants[imm_const as usize].as_number();
+            // Mirrors binary_mult's string/list-repeat cases -- only
+            // "string/list * number" needs the repeat behavior (not
+            // "number * string"), and a literal here can only ever
+            // supply the right-hand number, so this covers it fully.
+            if va.is_string() {
+              let count = imm as usize;
+              let s = if count < usize::MAX {
+                va.as_str().repeat(count)
+              } else {
+                String::new()
+              };
+              let v = self.heap.alloc_string(s);
+              self.set_reg(base, dst, v);
+            } else if va.is_list() {
+              let count = imm as usize;
+              let value = if count < usize::MAX {
+                va.as_list().to_vec().repeat(count)
+              } else {
+                Vec::new()
+              };
+              let v = self.heap.alloc_list(value);
+              self.set_reg(base, dst, v);
+            } else {
+              tri!(self.binary_numeric_imm(base, dst, a, imm, "*", "@mul", |x, y| x * y), 'step);
+            }
+          },
+          Instr::LtImm { dst, a, imm_const } => {
+            let imm = func.chunk.constants[imm_const as usize].as_number();
+            tri!(self.compare_imm(base, dst, a, imm, "<", "@lt", |x, y| x < y), 'step);
+          },
+          Instr::LeImm { dst, a, imm_const } => {
+            let imm = func.chunk.constants[imm_const as usize].as_number();
+            tri!(self.compare_imm(base, dst, a, imm, "<=", "@lte", |x, y| x <= y), 'step);
+          },
+          Instr::GtImm { dst, a, imm_const } => {
+            let imm = func.chunk.constants[imm_const as usize].as_number();
+            tri!(self.compare_imm(base, dst, a, imm, ">", "@gt", |x, y| x > y), 'step);
+          },
+          Instr::GeImm { dst, a, imm_const } => {
+            let imm = func.chunk.constants[imm_const as usize].as_number();
+            tri!(self.compare_imm(base, dst, a, imm, ">=", "@gte", |x, y| x >= y), 'step);
+          },
+          Instr::EqImm { dst, a, imm_const } => {
+            let va = self.get_reg(base, a);
+            let vb = func.chunk.constants[imm_const as usize];
+            self.set_reg(base, dst, Value::bool(va.equals(&vb)));
+          },
+          Instr::NeqImm { dst, a, imm_const } => {
+            let va = self.get_reg(base, a);
+            let vb = func.chunk.constants[imm_const as usize];
+            self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
+          },
           Instr::Concat { dst, a, b } => {
             let va = self.get_reg(base, a);
             let vb = self.get_reg(base, b);
@@ -1031,48 +1121,72 @@ impl VM {
           },
 
           Instr::GetGlobal { dst, name_const } => {
-            let name_val = func.chunk.constants[name_const as usize];
-            if !name_val.is_string() {
-              break 'step Err(
-                self.raise("TypeError", "expected a string constant for a global name"),
-              );
-            }
-            let v = match self.globals.get(name_val.as_str()).copied() {
-              Some(v) => v,
-              None => {
-                let msg = format!("undefined global '{}'", name_val.as_str());
-                break 'step Err(self.raise("UndefinedError", msg));
-              },
+            let instr_ip = ip - 1;
+            let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
+              s
+            } else {
+              let name_val = func.chunk.constants[name_const as usize];
+              if !name_val.is_string() {
+                break 'step Err(
+                  self.raise("TypeError", "expected a string constant for a global name"),
+                );
+              }
+              let s = match self.global_names.get(name_val.as_str()) {
+                Some(&s) => s,
+                None => {
+                  let msg = format!("undefined global '{}'", name_val.as_str());
+                  break 'step Err(self.raise("UndefinedError", msg));
+                },
+              };
+              func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
+              s
             };
+            let v = self.global_slots[slot as usize].get();
             self.set_reg(base, dst, v);
           },
 
           Instr::SetGlobal { name_const, src } => {
-            let name_val = func.chunk.constants[name_const as usize];
-            if !name_val.is_string() {
-              break 'step Err(
-                self.raise("TypeError", "expected a string constant for a global name"),
-              );
-            }
+            let instr_ip = ip - 1;
+            let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
+              s
+            } else {
+              let name_val = func.chunk.constants[name_const as usize];
+              if !name_val.is_string() {
+                break 'step Err(
+                  self.raise("TypeError", "expected a string constant for a global name"),
+                );
+              }
+              let s = self.get_or_create_global_slot(name_val.as_str().to_string());
+              func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
+              s
+            };
             let v = self.get_reg(base, src);
-            self.globals.insert(name_val.as_str().to_string(), v);
+            self.global_slots[slot as usize].set(v);
           },
 
           Instr::AssignGlobal { name_const, src } => {
-            let name_val = func.chunk.constants[name_const as usize];
-            if !name_val.is_string() {
-              break 'step Err(
-                self.raise("TypeError", "expected a string constant for a global name"),
-              );
-            }
-            let value = self.get_reg(base, src);
-            match self.globals.get_mut(name_val.as_str()) {
-              Some(slot) => *slot = value,
-              None => {
-                let msg = format!("undefined global '{}'", name_val.as_str());
-                break 'step Err(self.raise("UndefinedError", msg));
-              },
-            }
+            let instr_ip = ip - 1;
+            let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
+              s
+            } else {
+              let name_val = func.chunk.constants[name_const as usize];
+              if !name_val.is_string() {
+                break 'step Err(
+                  self.raise("TypeError", "expected a string constant for a global name"),
+                );
+              }
+              let s = match self.global_names.get(name_val.as_str()) {
+                Some(&s) => s,
+                None => {
+                  let msg = format!("undefined global '{}'", name_val.as_str());
+                  break 'step Err(self.raise("UndefinedError", msg));
+                },
+              };
+              func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
+              s
+            };
+            let v = self.get_reg(base, src);
+            self.global_slots[slot as usize].set(v);
           },
 
           Instr::Closure { dst, proto_const } => {
@@ -1246,7 +1360,7 @@ impl VM {
             let name = tri!(self.const_as_str(func, 0), 'step);
             let mut c = class_val.as_class_mut();
 
-            if self.globals.get(&c.name).is_some() {
+            if self.global_names.contains_key(&c.name) {
               break 'step Err(self.raise(
                 "Error",
                 format!("class '{}' already declared in this scope", c.name),
@@ -1810,41 +1924,40 @@ impl VM {
     Err(self.raise("TypeError", msg))
   }
 
-  #[inline(always)]
-  fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
-    let va = self.get_reg(base, a);
-    let vb = self.get_reg(base, b);
+  #[inline]
+  fn binary_add_values(&mut self, va: Value, vb: Value, op_name: &str) -> RunResult<Value> {
     if va.is_number() && vb.is_number() {
-      return Ok(self.set_reg(base, dst, Value::number(va.as_number() + vb.as_number())));
+      return Ok(Value::number(va.as_number() + vb.as_number()));
     } else if va.is_bigint() && vb.is_bigint() {
-      let v = self.heap.alloc_bigint(va.as_bigint() + vb.as_bigint());
-      return Ok(self.set_reg(base, dst, v));
+      return Ok(self.heap.alloc_bigint(va.as_bigint() + vb.as_bigint()));
     }
 
-    // Checked BEFORE the generic string/list/bytes fallbacks below so a
-    // class (or builtin table) that defines '@add' always wins, even
-    // when the OTHER operand happens to be a string/list/bytes that
-    // would otherwise match one of those `||` branches on its own.
     if let Some(result) = self.try_operator_override(va, "@add", &[vb])? {
-      return Ok(self.set_reg(base, dst, result));
+      return Ok(result);
     }
 
+    // NOTE: `||` here (not `&&`) matches this project's existing Add
+    // behavior exactly, including its pre-existing edge case --
+    // `.as_list()`/`.as_bytes()` below will panic if only ONE side is
+    // actually a list/bytes (e.g. `[1,2] + 5`). That's a latent bug in
+    // the ORIGINAL Add path, not introduced here -- preserved as-is
+    // deliberately, so a literal RHS behaves identically to a variable
+    // RHS holding the same value instead of silently diverging based
+    // on whether fusion happened to apply. Worth fixing separately,
+    // not folded into this change.
     if va.is_string() || vb.is_string() {
       let s = format!("{}{}", va, vb);
-      let v = self.heap.alloc_string(s);
-      return Ok(self.set_reg(base, dst, v));
+      return Ok(self.heap.alloc_string(s));
     } else if va.is_list() || vb.is_list() {
       let mut value = Vec::new();
       value.extend(va.as_list().iter().cloned());
       value.extend(vb.as_list().iter().cloned());
-      let v = self.heap.alloc_list(value);
-      return Ok(self.set_reg(base, dst, v));
+      return Ok(self.heap.alloc_list(value));
     } else if va.is_bytes() || vb.is_bytes() {
       let mut value = Vec::new();
       value.extend(va.as_bytes().iter().cloned());
       value.extend(vb.as_bytes().iter().cloned());
-      let v = self.heap.alloc_bytes(value);
-      return Ok(self.set_reg(base, dst, v));
+      return Ok(self.heap.alloc_bytes(value));
     }
 
     let msg = format!(
@@ -1854,6 +1967,14 @@ impl VM {
       vb.argument_type_name()
     );
     Err(self.raise("TypeError", msg))
+  }
+
+  #[inline]
+  fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
+    let va = self.get_reg(base, a);
+    let vb = self.get_reg(base, b);
+    let result = self.binary_add_values(va, vb, op_name)?;
+    Ok(self.set_reg(base, dst, result))
   }
 
   #[inline(always)]
@@ -1940,6 +2061,64 @@ impl VM {
     return Err(self.raise("TypeError", msg));
   }
 
+  #[inline]
+  fn binary_numeric_imm<F>(
+    &mut self,
+    base: usize,
+    dst: u8,
+    a: u8,
+    imm: f64,
+    op_name: &str,
+    deco: &str,
+    op: F,
+  ) -> RunResult<()>
+  where
+    F: Fn(f64, f64) -> f64,
+  {
+    let va = self.get_reg(base, a);
+    if va.is_number() {
+      return Ok(self.set_reg(base, dst, Value::number(op(va.as_number(), imm))));
+    }
+    if let Some(result) = self.try_operator_override(va, deco, &[Value::number(imm)])? {
+      return Ok(self.set_reg(base, dst, result));
+    }
+    let msg = format!(
+      "operator '{}' not defined for call signature ({}, float)",
+      op_name,
+      va.argument_type_name(),
+    );
+    Err(self.raise("TypeError", msg))
+  }
+
+  #[inline]
+  fn compare_imm<F>(
+    &mut self,
+    base: usize,
+    dst: u8,
+    a: u8,
+    imm: f64,
+    op_name: &str,
+    deco: &str,
+    op: F,
+  ) -> RunResult<()>
+  where
+    F: Fn(f64, f64) -> bool,
+  {
+    let va = self.get_reg(base, a);
+    if va.is_number() {
+      return Ok(self.set_reg(base, dst, Value::bool(op(va.as_number(), imm))));
+    }
+    if let Some(result) = self.try_operator_override(va, deco, &[Value::number(imm)])? {
+      return Ok(self.set_reg(base, dst, result));
+    }
+    let msg = format!(
+      "operator '{}' not defined for {} and float",
+      op_name,
+      va.argument_type_name(),
+    );
+    Err(self.raise("TypeError", msg))
+  }
+
   //-----------------------------------------------------------------------------------
   // Garbage collection
   //-----------------------------------------------------------------------------------
@@ -1975,8 +2154,8 @@ impl VM {
     for v in &self.registers[..regs_top] {
       Self::mark_root(*v, &mut worklist);
     }
-    for v in self.globals.values() {
-      Self::mark_root(*v, &mut worklist);
+    for cell in &self.global_slots {
+      Self::mark_root(cell.get(), &mut worklist);
     }
     for frame in &self.frames {
       Self::mark_root(frame.closure_val, &mut worklist);

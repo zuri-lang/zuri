@@ -1175,6 +1175,19 @@ impl<'a> Compiler<'a> {
         dst
       },
       Expr::Binary(lhs, op, rhs, line) => {
+        if let Some(imm) = literal_as_f64(rhs) {
+          if let Some(ctor) = imm_arith_ctor(op) {
+            let mark = self.cur().next_reg;
+            let a = self.compile_expression(lhs);
+            let dst = if a >= mark { a } else { self.alloc_reg() };
+            let imm_const = self.add_constant(Value::number(imm));
+            self.cur_mut().current_line = *line;
+            self.emit(ctor(dst, a, imm_const));
+            self.free_regs_to(dst + 1);
+            return dst;
+          }
+        }
+
         let mark = self.cur().next_reg;
         let a = self.compile_expression(lhs);
         let dst = if a >= mark { a } else { self.alloc_reg() };
@@ -1206,6 +1219,19 @@ impl<'a> Compiler<'a> {
         dst
       },
       Expr::Logical(lhs, op, rhs, line) => {
+        if let Some(imm) = literal_as_f64(rhs) {
+          if let Some(ctor) = imm_logical_ctor(op) {
+            let mark = self.cur().next_reg;
+            let a = self.compile_expression(lhs);
+            let dst = if a >= mark { a } else { self.alloc_reg() };
+            let imm_const = self.add_constant(Value::number(imm));
+            self.cur_mut().current_line = *line;
+            self.emit(ctor(dst, a, imm_const));
+            self.free_regs_to(dst + 1);
+            return dst;
+          }
+        }
+
         let mark = self.cur().next_reg;
         let a = self.compile_expression(lhs);
         let dst = if a >= mark { a } else { self.alloc_reg() };
@@ -2343,6 +2369,48 @@ fn expr_as_jump_key(expr: &Expr) -> Option<JumpKey> {
     Expr::Integer(i) => Some(JumpKey::Number((*i as f64).to_bits())),
     Expr::Float(f) => Some(JumpKey::Number(f.to_bits())),
     Expr::Literal(s) => Some(JumpKey::Str(s.clone())),
+    _ => None,
+  }
+}
+
+/// Does `expr` name a compile-time-known numeric literal? Only
+/// `Integer`/`Float` -- NOT `BigNumber`, which needs its own bigint
+/// arithmetic path and never participates in this fusion.
+fn literal_as_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(i) => Some(*i as f64),
+    Expr::Float(f) => Some(*f),
+    _ => None,
+  }
+}
+
+/// `EXPR + LITERAL` / `EXPR - LITERAL` / `EXPR * LITERAL` -- collapses
+/// what would otherwise be LoadConst+{Add,Sub,Mul} (two dispatches)
+/// into one fused instruction with the literal embedded as a
+/// constant-pool reference rather than loaded into its own register.
+/// Justified directly by profiling: `LoadConst` immediately followed
+/// by one of these was among the single most common instruction pairs
+/// across every benchmark profiled.
+fn imm_arith_ctor(op: &TokenKind) -> Option<fn(u8, u8, u16) -> Instr> {
+  match op {
+    TokenKind::Plus => Some(|dst, a, imm_const| Instr::AddImm { dst, a, imm_const }),
+    TokenKind::Minus => Some(|dst, a, imm_const| Instr::SubImm { dst, a, imm_const }),
+    TokenKind::Multiply => Some(|dst, a, imm_const| Instr::MulImm { dst, a, imm_const }),
+    _ => None,
+  }
+}
+
+/// Same idea as `imm_arith_ctor`, for comparisons -- `n < 2`,
+/// `depth <= 0`, `x == 0`, all extremely common terminal-check/loop-
+/// bound patterns.
+fn imm_logical_ctor(op: &TokenKind) -> Option<fn(u8, u8, u16) -> Instr> {
+  match op {
+    TokenKind::Less => Some(|dst, a, imm_const| Instr::LtImm { dst, a, imm_const }),
+    TokenKind::LessEq => Some(|dst, a, imm_const| Instr::LeImm { dst, a, imm_const }),
+    TokenKind::Greater => Some(|dst, a, imm_const| Instr::GtImm { dst, a, imm_const }),
+    TokenKind::GreaterEq => Some(|dst, a, imm_const| Instr::GeImm { dst, a, imm_const }),
+    TokenKind::EqualEq => Some(|dst, a, imm_const| Instr::EqImm { dst, a, imm_const }),
+    TokenKind::BangEq => Some(|dst, a, imm_const| Instr::NeqImm { dst, a, imm_const }),
     _ => None,
   }
 }

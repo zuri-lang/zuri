@@ -1,4 +1,5 @@
 use core::fmt;
+use std::cell::RefCell;
 
 use rustc_hash::FxHashMap;
 
@@ -405,6 +406,53 @@ pub enum Instr {
   /// pops the handler `PushCatch` registered. Never reached if an
   /// exception unwound past this point instead.
   PopCatch,
+
+  /* Folded Instructions */
+  AddImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  SubImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  MulImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  LtImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  LeImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  GtImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  GeImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  EqImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
+  NeqImm {
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+  },
 }
 
 /// A compile-time-constant `using` case label's value, in a form that's
@@ -445,6 +493,15 @@ pub struct Chunk {
   /// build a stack trace on a raised or uncaught exception -- see
   /// `VM::build_stacktrace`.
   pub lines: Vec<u32>,
+  /// Inline cache for global variable access: maps a GetGlobal/
+  /// SetGlobal/AssignGlobal instruction's own position in `code` to
+  /// the global slot it resolved to the FIRST time it executed. Every
+  /// later execution of that same instruction skips the name lookup
+  /// (a string hash + FxHashMap probe) entirely and indexes straight
+  /// into VM::global_slots. Never invalidated -- once a name resolves
+  /// to a slot it keeps that slot for the life of the VM (globals are
+  /// never renamed or removed, only reassigned in place).
+  pub global_cache: RefCell<FxHashMap<usize, u32>>,
 }
 
 impl Chunk {
@@ -454,6 +511,7 @@ impl Chunk {
       constants: Vec::new(),
       jump_tables: Vec::new(),
       lines: Vec::new(),
+      global_cache: RefCell::new(FxHashMap::default()),
     }
   }
 
