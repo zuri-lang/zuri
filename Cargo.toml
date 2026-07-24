@@ -23,3 +23,6 @@ history_size = 1000
 
 [profile.release]
 debug = true
+lto = true
+codegen-units = 1
+panic = "abort"

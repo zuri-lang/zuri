@@ -792,7 +792,7 @@ impl VM {
         return Err(self.raise("Error", msg));
       }
 
-      let instr = func.chunk.code[ip];
+      let instr = unsafe { *func.chunk.code.get_unchecked(ip) };
       ip += 1;
       // Synced back every instruction (not just at frame-change points)
       // because ANY instruction can end up calling self.raise(), which
@@ -1712,12 +1712,16 @@ impl VM {
 
   #[inline(always)]
   fn get_reg(&self, base: usize, r: u8) -> Value {
-    self.registers[base + r as usize]
+    debug_assert!((base + r as usize) < self.registers.len());
+    unsafe { *self.registers.get_unchecked(base + r as usize) }
   }
 
   #[inline(always)]
   fn set_reg(&mut self, base: usize, r: u8, v: Value) {
-    self.registers[base + r as usize] = v;
+    debug_assert!((base + r as usize) < self.registers.len());
+    unsafe {
+      *self.registers.get_unchecked_mut(base + r as usize) = v;
+    }
   }
 
   #[inline(always)]
