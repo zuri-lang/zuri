@@ -26,3 +26,9 @@ debug = true
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[features]
+opcode-profile = []
+gc-log = []
+instr-log = []
+ast-log = []

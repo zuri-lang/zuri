@@ -1,6 +1,5 @@
 use std::cell::Cell;
 use std::ops::{Neg, Shl, Shr};
-use std::sync::LazyLock;
 
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -103,6 +102,21 @@ struct CatchHandler {
   var_reg: Option<u8>,
 }
 
+/// Outcome of handling a propagated exception -- what the `#[cold]`
+/// exception path hands back to `run_until` so it can refresh its
+/// cached frame-state locals (or propagate) without that refresh
+/// logic itself needing to live in the cold path.
+enum ExceptionOutcome {
+  Handled {
+    frame_idx: usize,
+    base: usize,
+    func_ptr: *const ObjFunction,
+    closure_ptr: *const ObjClosure,
+    ip: usize,
+  },
+  Propagate(Value),
+}
+
 pub struct VM {
   /// One flat register stack shared by every call frame; each frame just
   /// claims a slice of it (its "window"), exactly like Lua's VM.
@@ -141,12 +155,23 @@ pub struct VM {
   /// internal error.
   pub(crate) builtin_exceptions: FxHashMap<&'static str, Value>,
   pub heap: Heap,
+  /// Per-opcode execution counts, gathered only under
+  /// ZURI_OPCODE_PROFILE -- checked once per instruction (a single
+  /// bool read via LazyLock, same cost every other debug flag here
+  /// already pays), and otherwise entirely inert.
+  #[cfg(feature = "opcode-profile")]
+  opcode_counts: FxHashMap<&'static str, u64>,
+  /// Counts of CONSECUTIVE opcode pairs -- what actually identifies a
+  /// good instruction-fusion candidate, since fusing two opcodes only
+  /// helps if they're frequently adjacent in real bytecode, not just
+  /// individually common.
+  #[cfg(feature = "opcode-profile")]
+  opcode_bigrams: FxHashMap<(&'static str, &'static str), u64>,
+  #[cfg(feature = "opcode-profile")]
+  last_opcode: Option<&'static str>,
 }
 
 type RunResult<T> = Result<T, Value>;
-
-const LOG_GC: LazyLock<bool> =
-  std::sync::LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
 
 impl VM {
   pub fn new(heap: Heap) -> Self {
@@ -159,6 +184,12 @@ impl VM {
       builtin_exceptions: FxHashMap::default(),
       global_slots: Vec::new(),
       global_names: FxHashMap::default(),
+      #[cfg(feature = "opcode-profile")]
+      opcode_counts: FxHashMap::default(),
+      #[cfg(feature = "opcode-profile")]
+      opcode_bigrams: FxHashMap::default(),
+      #[cfg(feature = "opcode-profile")]
+      last_opcode: None,
       heap,
     }
   }
@@ -818,6 +849,10 @@ impl VM {
       }
 
       let instr = unsafe { *func.chunk.code.get_unchecked(ip) };
+
+      #[cfg(feature = "opcode-profile")]
+      self.record_opcode(crate::vm::chunk::instr_name(&instr));
+
       ip += 1;
       // Synced back every instruction (not just at frame-change points)
       // because ANY instruction can end up calling self.raise(), which
@@ -979,7 +1014,7 @@ impl VM {
           Instr::MulImm { dst, a, imm_const } => {
             let va = self.get_reg(base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
-            // Mirrors binary_mult's string/list-repeat cases -- only
+            // Mirrors binary_mult's string/lista-repeat cases -- only
             // "string/list * number" needs the repeat behavior (not
             // "number * string"), and a literal here can only ever
             // supply the right-hand number, so this covers it fully.
@@ -1756,30 +1791,23 @@ impl VM {
       };
 
       if let Err(exc) = step {
-        let claims_it = matches!(self.catch_stack.last(), Some(h) if h.frame_depth > stop_depth);
-        if claims_it {
-          let handler = self.catch_stack.pop().unwrap();
-          if let Some(discard_base) = self.frames.get(handler.frame_depth).map(|f| f.base) {
-            self.close_upvalues_from(discard_base);
-          }
-          self.frames.truncate(handler.frame_depth);
-          let top = self.frames.last_mut().expect("catch handler left no frame");
-          top.ip = handler.resume_ip;
-          let top_base = top.base;
-          if let Some(reg) = handler.var_reg {
-            self.set_reg(top_base, reg, exc);
-          }
-          // Frames were truncated and ip rewound -- every cached local
-          // above is stale, refresh from the new top frame.
-          frame_idx = self.frames.len() - 1;
-          let f = &self.frames[frame_idx];
-          base = f.base;
-          func_ptr = f.function;
-          closure_ptr = f.closure;
-          ip = f.ip;
-          continue;
+        match self.handle_exception(exc, stop_depth) {
+          ExceptionOutcome::Handled {
+            frame_idx: fi,
+            base: b,
+            func_ptr: fp,
+            closure_ptr: cp,
+            ip: nip,
+          } => {
+            frame_idx = fi;
+            base = b;
+            func_ptr = fp;
+            closure_ptr = cp;
+            ip = nip;
+            continue;
+          },
+          ExceptionOutcome::Propagate(e) => return Err(e),
         }
-        return Err(exc);
       }
     }
   }
@@ -2134,7 +2162,9 @@ impl VM {
   /// its threshold; also exposed to native code (see the `gc` native)
   /// for forcing a collection on demand.
   pub(crate) fn collect_garbage(&mut self) {
+    #[cfg(feature = "opcode-profile")]
     let before_bytes = self.heap.bytes_allocated();
+    #[cfg(feature = "opcode-profile")]
     let before_count = self.heap.object_count();
 
     let mut worklist: Vec<*const Obj> = Vec::new();
@@ -2232,18 +2262,22 @@ impl VM {
       }
     }
 
-    let freed = self.heap.sweep();
-
-    if *LOG_GC {
-      eprintln!(
-        "[gc] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
-        freed,
-        before_count,
-        before_bytes,
-        self.heap.bytes_allocated(),
-        self.heap.next_gc()
-      );
+    #[cfg(feature = "gc-log")]
+    {
+      let freed = self.heap.sweep();
+      if std::env::var_os("ZURI_GC_LOG").is_some() {
+        eprintln!(
+          "[gc] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
+          freed,
+          before_count,
+          before_bytes,
+          self.heap.bytes_allocated(),
+          self.heap.next_gc()
+        );
+      }
     }
+    #[cfg(not(feature = "opcode-profile"))]
+    self.heap.sweep();
   }
 
   /// Add `v` to the reachable set and, the first time it's seen, queue
@@ -2371,6 +2405,74 @@ impl VM {
     }
 
     Ok(None)
+  }
+
+  /// Everything that happens when an instruction propagates an
+  /// exception -- factored out of `run_until`'s dispatch loop and
+  /// marked `#[cold]`/`#[inline(never)]` purely for CODE LAYOUT: this
+  /// makes the exception path an out-of-line function call instead of
+  /// inline code sharing icache lines with the hot dispatch loop, and
+  /// lets LLVM lay out the loop's straight-line path biased toward
+  /// the (overwhelmingly common) success case. This is NOT fixing a
+  /// slow per-instruction check -- `if let Err(exc) = step` itself is
+  /// a single, essentially-always-not-taken branch a modern predictor
+  /// handles for free -- it's purely about keeping the rarely-taken
+  /// handling code out of the hot loop's instruction-cache footprint.
+  #[cold]
+  #[inline(never)]
+  fn handle_exception(&mut self, exc: Value, stop_depth: usize) -> ExceptionOutcome {
+    let claims_it = matches!(self.catch_stack.last(), Some(h) if h.frame_depth > stop_depth);
+    if !claims_it {
+      return ExceptionOutcome::Propagate(exc);
+    }
+
+    let handler = self.catch_stack.pop().unwrap();
+    if let Some(discard_base) = self.frames.get(handler.frame_depth).map(|f| f.base) {
+      self.close_upvalues_from(discard_base);
+    }
+    self.frames.truncate(handler.frame_depth);
+    let top = self.frames.last_mut().expect("catch handler left no frame");
+    top.ip = handler.resume_ip;
+    let top_base = top.base;
+    if let Some(reg) = handler.var_reg {
+      self.set_reg(top_base, reg, exc);
+    }
+
+    let frame_idx = self.frames.len() - 1;
+    let f = &self.frames[frame_idx];
+    ExceptionOutcome::Handled {
+      frame_idx,
+      base: f.base,
+      func_ptr: f.function,
+      closure_ptr: f.closure,
+      ip: f.ip,
+    }
+  }
+
+  #[cfg(feature = "opcode-profile")]
+  #[inline]
+  fn record_opcode(&mut self, name: &'static str) {
+    *self.opcode_counts.entry(name).or_insert(0) += 1;
+    if let Some(prev) = self.last_opcode.replace(name) {
+      *self.opcode_bigrams.entry((prev, name)).or_insert(0) += 1;
+    }
+  }
+
+  #[cfg(feature = "opcode-profile")]
+  pub fn dump_opcode_profile(&self) {
+    let mut counts: Vec<_> = self.opcode_counts.iter().collect();
+    counts.sort_by(|a, b| b.1.cmp(a.1));
+    eprintln!("=== opcode counts (top 20) ===");
+    for (name, count) in counts.iter().take(20) {
+      eprintln!("{:>14}  {}", count, name);
+    }
+
+    let mut bigrams: Vec<_> = self.opcode_bigrams.iter().collect();
+    bigrams.sort_by(|a, b| b.1.cmp(a.1));
+    eprintln!("=== consecutive opcode pairs (top 20) ===");
+    for ((a, b), count) in bigrams.iter().take(20) {
+      eprintln!("{:>14}  {} -> {}", count, a, b);
+    }
   }
 
   #[inline]

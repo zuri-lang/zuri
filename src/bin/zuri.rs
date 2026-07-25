@@ -111,7 +111,14 @@ fn run_file(vm: &mut VM, file: &str) {
     match compiler.compile() {
       Ok(fn_obj) => {
         let closure = vm.heap.alloc_plain_closure(fn_obj);
-        if let Err(e) = vm.run(closure) {
+        let result = vm.run(closure);
+
+        #[cfg(feature = "opcode-profile")]
+        if std::env::var_os("ZURI_OPCODE_PROFILE").is_some() {
+          vm.dump_opcode_profile();
+        }
+
+        if let Err(e) = result {
           eprintln!("{}", vm.format_uncaught(e));
           process::exit(1);
         }

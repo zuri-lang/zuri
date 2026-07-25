@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::{ops::Deref, rc::Rc, sync::LazyLock};
+use std::{ops::Deref, rc::Rc};
 
 use crate::{
   compiler::{
@@ -96,12 +96,6 @@ enum VarLoc {
   Upvalue(u8),
   Global,
 }
-
-const LOG_INSTR: LazyLock<bool> =
-  std::sync::LazyLock::new(|| std::env::var_os("ZURI_INSTR_LOG").is_some());
-
-const LOG_AST: LazyLock<bool> =
-  std::sync::LazyLock::new(|| std::env::var_os("ZURI_AST_LOG").is_some());
 
 pub struct Compiler<'a> {
   decls: Vec<Decl>,
@@ -2149,7 +2143,8 @@ impl<'a> Compiler<'a> {
   }
 
   pub fn compile(mut self) -> Result<ObjFunction, Vec<ParserError>> {
-    if *LOG_AST {
+    #[cfg(feature = "ast-log")]
+    if std::env::var_os("ZURI_AST_LOG").is_some() {
       println!("{:?}", self.decls.clone());
     }
 
@@ -2189,7 +2184,8 @@ impl<'a> Compiler<'a> {
       is_method: false,
     };
 
-    if *LOG_INSTR {
+    #[cfg(feature = "instr-log")]
+    if std::env::var_os("ZURI_INSTR_LOG").is_some() {
       for c in &main_fn.chunk.constants {
         if c.is_func() {
           let proto = c.as_func();
