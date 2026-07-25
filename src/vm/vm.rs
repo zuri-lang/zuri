@@ -2162,9 +2162,9 @@ impl VM {
   /// its threshold; also exposed to native code (see the `gc` native)
   /// for forcing a collection on demand.
   pub(crate) fn collect_garbage(&mut self) {
-    #[cfg(feature = "opcode-profile")]
+    #[cfg(feature = "gc-log")]
     let before_bytes = self.heap.bytes_allocated();
-    #[cfg(feature = "opcode-profile")]
+    #[cfg(feature = "gc-log")]
     let before_count = self.heap.object_count();
 
     let mut worklist: Vec<*const Obj> = Vec::new();
@@ -2276,7 +2276,7 @@ impl VM {
         );
       }
     }
-    #[cfg(not(feature = "opcode-profile"))]
+    #[cfg(not(feature = "gc-log"))]
     self.heap.sweep();
   }
 
