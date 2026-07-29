@@ -92,9 +92,8 @@ impl Lexer {
     } else {
       self.source[self.current - 1]
     };
-    if val == '\n' || val == '\0' {
+    if (val == '\n' || val == '\0') && self.line > 0 {
       self.line -= 1;
-      // self.lines.remove(&self.line);
     }
 
     self.current = self.start;
