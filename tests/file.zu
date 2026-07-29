@@ -1,3 +1,11 @@
+/**
+ * Image coursey of:
+ * 
+ * Evan Hahn's World Smallest PNG
+ * 
+ * https://evanhahn.com/worlds-smallest-png/
+ */
+
 var start = time()
 
 var f2 = file('image.png', 'wb')
