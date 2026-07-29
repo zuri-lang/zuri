@@ -22,6 +22,7 @@ use crate::builtins::bigint::BIGINT_METHODS;
 use crate::builtins::bool::BOOL_METHODS;
 use crate::builtins::bytes::BYTES_METHODS;
 use crate::builtins::dict::DICT_METHODS;
+use crate::builtins::enforce::enforce_method_arg_count;
 use crate::builtins::function::FUNCTION_METHODS;
 use crate::builtins::list::LIST_METHODS;
 use crate::builtins::number::NUMBER_METHODS;
@@ -207,6 +208,7 @@ pub fn lookup(receiver: Value, name: &str) -> Option<&'static NativeFunction> {
 /// interpolation, ...), so this is the one source of truth -- reachable
 /// here as `.to_string()` too, for every kind except a class.
 fn to_string(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
   let s = format!("{}", ctx.args[0]);
   Ok(ctx.heap().alloc_string(s))
 }
