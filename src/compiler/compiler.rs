@@ -1936,7 +1936,34 @@ impl<'a> Compiler<'a> {
     match statement {
       Stmt::Expression(expression) => {
         let mark = self.cur().next_reg;
-        self.compile_expression(expression);
+
+        // REPL auto-echo: a bare expression statement typed directly
+        // at the top level of a REPL line prints its own result --
+        // unless that result is `nil`, matching every native/builtin
+        // that signals "no meaningful return value" by yielding nil
+        // (echoing that on every `a.append(x)`-style call would be
+        // pure noise). Nested inside a block (an `if`/`while`/function
+        // body typed at the REPL) is deliberately excluded -- only a
+        // truly top-level statement gets this treatment, so loop
+        // bodies don't print once per iteration.
+        if self.is_repl && self.cur().scope_depth == 0 {
+          let val_reg = self.compile_expression(expression);
+
+          let nil_reg = self.alloc_reg();
+          self.emit(Instr::LoadNil { dst: nil_reg });
+          let cond_reg = self.alloc_reg();
+          self.emit(Instr::Neq {
+            dst: cond_reg,
+            a: val_reg,
+            b: nil_reg,
+          });
+          let skip = self.emit_jump_if_false(cond_reg);
+          self.emit(Instr::Print { src: val_reg });
+          self.patch_jump(skip);
+        } else {
+          self.compile_expression(expression);
+        }
+
         self.free_regs_to(mark);
       },
       Stmt::Echo(value) => {
