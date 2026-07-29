@@ -23,6 +23,7 @@ use crate::builtins::bool::BOOL_METHODS;
 use crate::builtins::bytes::BYTES_METHODS;
 use crate::builtins::dict::DICT_METHODS;
 use crate::builtins::enforce::enforce_method_arg_count;
+use crate::builtins::file::FILE_METHODS;
 use crate::builtins::function::FUNCTION_METHODS;
 use crate::builtins::list::LIST_METHODS;
 use crate::builtins::number::NUMBER_METHODS;
@@ -37,6 +38,7 @@ mod bool;
 mod bytes;
 mod dict;
 pub mod enforce;
+pub mod file;
 mod function;
 mod list;
 mod number;
@@ -60,6 +62,7 @@ enum Kind {
   Bytes,
   Range,
   Function,
+  File,
   Nil,
 }
 
@@ -89,6 +92,7 @@ impl Kind {
       Obj::Bytes(_) => Some(Kind::Bytes),
       Obj::Range { .. } => Some(Kind::Range),
       Obj::BigInt(_) => Some(Kind::BigInt),
+      Obj::File(_) => Some(Kind::File),
       Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) | Obj::BoundMethod(_) | Obj::Class(_) => {
         Some(Kind::Function)
       },
@@ -175,6 +179,7 @@ fn table_for(kind: Kind) -> &'static MethodTable {
     Kind::Range => &RANGE_METHODS,
     Kind::Function => &FUNCTION_METHODS,
     Kind::BigInt => &BIGINT_METHODS,
+    Kind::File => &FILE_METHODS,
     Kind::Nil => &NIL_METHODS,
   }
 }

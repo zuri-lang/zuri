@@ -27,13 +27,14 @@
 //! 48 bits is enough to hold every real pointer on x86_64 / AArch64 today
 //! (both use at most 48 address bits), so no pointer information is lost.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use itertools::Itertools;
 use num_bigint::BigInt;
 
 use crate::vm::object::{
-  NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, UpvalueState,
+  FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance,
+  UpvalueState,
 };
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
@@ -451,7 +452,7 @@ impl Value {
   pub fn as_range(&self) -> (f64, f64) {
     debug_assert!(self.is_range());
     match unsafe { &*self.as_obj() } {
-      Obj::Range { lower, upper } => (*lower, *upper),
+      Obj::Range { lower, upper, .. } => (*lower, *upper),
       _ => unreachable!("as_range() called on a non-range Value"),
     }
   }
@@ -500,6 +501,35 @@ impl Value {
     }
   }
 
+  #[inline]
+  pub fn is_file(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::File(_))
+  }
+
+  pub fn as_file_cell(&self) -> &RefCell<FileHandle> {
+    debug_assert!(self.is_file());
+    match unsafe { &*self.as_obj() } {
+      Obj::File(f) => f,
+      _ => unreachable!("as_file_cell() called on a non-file Value"),
+    }
+  }
+
+  pub fn range_step(&self) -> f64 {
+    debug_assert!(self.is_range());
+    match unsafe { &*self.as_obj() } {
+      Obj::Range { step, .. } => step.get(),
+      _ => unreachable!("range_step() called on a non-range Value"),
+    }
+  }
+
+  pub fn range_set_step(&self, s: f64) {
+    debug_assert!(self.is_range());
+    match unsafe { &*self.as_obj() } {
+      Obj::Range { step, .. } => step.set(s),
+      _ => unreachable!("range_set_step() called on a non-range Value"),
+    }
+  }
+
   /// Truthiness for control flow: nil and false are falsy, everything
   /// else (including 0 and "") is truthy.
   #[inline]
@@ -540,14 +570,17 @@ impl Value {
                 .iter()
                 .all(|(k, v)| b.get(k).map(|v2| v.equals(&v2)).unwrap_or(false))
           },
+          (Obj::File(a), Obj::File(b)) => std::ptr::eq(a, b),
           (
             Obj::Range {
               lower: l1,
               upper: u1,
+              ..
             },
             Obj::Range {
               lower: l2,
               upper: u2,
+              ..
             },
           ) => l1 == l2 && u1 == u2,
           _ => false,
@@ -581,6 +614,7 @@ impl Value {
           Obj::Class(_) => "class",
           Obj::Instance(_) => "instance",
           Obj::Range { .. } => "range",
+          Obj::File(_) => "file",
         }
       }
     } else {
@@ -677,7 +711,18 @@ impl std::fmt::Display for Value {
             }
             write!(f, "}}")
           },
-          Obj::Range { lower, upper } => write!(f, "{}..{}", lower, upper),
+          Obj::Range { lower, upper, step } => {
+            let s = step.get();
+            if s == 1.0 {
+              write!(f, "{}..{}", lower, upper)
+            } else {
+              write!(f, "<range {}..{}, step={}>", lower, upper, s)
+            }
+          },
+          Obj::File(fh_cell) => {
+            let fh = fh_cell.borrow();
+            write!(f, "<file at {} in mode {}>", fh.path, fh.mode)
+          },
         }
       }
     } else {

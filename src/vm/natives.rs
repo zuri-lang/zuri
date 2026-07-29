@@ -1,14 +1,18 @@
 use crate::builtins::enforce::ArgType;
-use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
+use crate::vm::object::{FileHandle, NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
-use crate::{enforce_arg_count, enforce_arg_type, enforce_arg_type_any_of};
+use crate::{
+  enforce_arg_count, enforce_arg_range, enforce_arg_type, enforce_arg_type_any_of,
+  enforce_arg_type_opt,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn install(vm: &mut VM) {
   register(vm, "time", 0, false, time);
   register(vm, "sum", 1, true, sum);
   register(vm, "bytes", 1, false, bytes);
+  register(vm, "file", 1, false, file);
   register(vm, "instance_of", 2, false, instance_of);
   // register(vm, "gc", 0, false, gc);
 }
@@ -109,6 +113,31 @@ fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
     "bytes() expects a number or list, got {}",
     v.type_name()
   ));
+}
+
+fn file(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 1, 2);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+  enforce_arg_type_opt!(ctx, 1, ArgType::String);
+
+  let path = ctx.args[0].as_str().to_string();
+  let mode = if let Some(v) = ctx.args.get(1) {
+    v.as_str()
+  } else {
+    "r"
+  }
+  .to_string();
+
+  let binary = mode.to_lowercase().contains("b");
+
+  let v = ctx.heap().alloc_file(FileHandle {
+    path,
+    mode,
+    binary,
+    handle: None,
+  });
+
+  Ok(v)
 }
 
 /// Force an immediate mark-and-sweep collection, bypassing the usual

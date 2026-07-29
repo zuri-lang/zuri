@@ -1,6 +1,7 @@
 use num_bigint::BigInt;
 use rustc_hash::FxHashMap;
 use std::cell::{Cell, RefCell};
+use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -63,7 +64,14 @@ pub enum Obj {
   Range {
     lower: f64,
     upper: f64,
+    /// Iteration step, defaulting to `1.0`, set via `.step(size)`.
+    /// Only consulted by the `@key`/`@value` iterable protocol (see
+    /// `builtins::range`); `Instr::MakeRange` always allocates with
+    /// the default.
+    step: Cell<f64>,
   },
+  /// A `file(...)` object -- see `FileHandle`.
+  File(RefCell<FileHandle>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -315,6 +323,22 @@ impl DictStorage {
   }
 }
 
+/// Runtime state behind a `file(...)` object -- see `Obj::File`.
+/// `handle` is `None` exactly when the file is currently closed
+/// (never successfully opened, closed via `.close()`, or auto-closed
+/// after a full, unlengthed `.read()`); every method needing real I/O
+/// checks this and raises rather than panicking when it's absent.
+pub struct FileHandle {
+  pub path: String,
+  /// The mode string exactly as given to `file(path, mode)` (defaults
+  /// to `"r"`), reported back verbatim by `.mode()`.
+  pub mode: String,
+  /// Was `b` present in `mode`? Decides whether `.read()`/`.gets()`
+  /// yield a string or a bytes object.
+  pub binary: bool,
+  pub handle: Option<File>,
+}
+
 /// Everything a native function body gets handed. `args` is an OWNED
 /// copy of the call's arguments, not a borrow into VM::registers -- it
 /// has to be, because `vm` is a live &mut VM at the same time, and a
@@ -497,6 +521,7 @@ impl Heap {
         },
         Obj::Instance(i) => i.fields.len() * size_of::<Cell<Value>>(),
         Obj::Range { .. } => 0,
+        Obj::File(_) => size_of::<FileHandle>(),
       }
   }
 
@@ -639,7 +664,15 @@ impl Heap {
   }
 
   pub fn alloc_range(&mut self, lower: f64, upper: f64) -> Value {
-    self.alloc(Obj::Range { lower, upper })
+    self.alloc(Obj::Range {
+      lower,
+      upper,
+      step: Cell::new(1.0),
+    })
+  }
+
+  pub fn alloc_file(&mut self, fh: FileHandle) -> Value {
+    self.alloc(Obj::File(RefCell::new(fh)))
   }
 
   /// Drop every object whose address isn't in `reachable`, then
@@ -682,6 +715,7 @@ impl Heap {
             gcbox.obj = Obj::Range {
               lower: 0.0,
               upper: 0.0,
+              step: Cell::new(1.0),
             }; // drops old contents
             gcbox.live.set(false);
             chunk.live_count -= 1;

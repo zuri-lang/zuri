@@ -2258,7 +2258,12 @@ impl VM {
           Self::mark_root(b.receiver, &mut worklist);
           Self::mark_root(b.method, &mut worklist);
         },
-        Obj::Str(_) | Obj::Bytes(_) | Obj::BigInt(_) | Obj::Native(_) | Obj::Range { .. } => {},
+        Obj::Str(_)
+        | Obj::Bytes(_)
+        | Obj::BigInt(_)
+        | Obj::Native(_)
+        | Obj::File(_)
+        | Obj::Range { .. } => {},
       }
     }
 
