@@ -1,0 +1,38 @@
+No parameter:
+It works
+It works
+It works
+It works
+It works
+With parameter:
+0
+1
+2
+3
+4
+Descending:
+5
+4
+3
+2
+1
+Within:
+true
+true
+false
+false
+For loop iteration:
+10
+11
+12
+13
+14
+Lower:
+1
+10
+Upper:
+10
+1
+Range:
+40
+40

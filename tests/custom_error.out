@@ -1,0 +1,5 @@
+An unexpected error has occurred
+[@@ROOT/tests/custom_exception.zu:10 -> @.script()]
+A custom exception was raised
+Something custom happened
+An unexpected error has occurred

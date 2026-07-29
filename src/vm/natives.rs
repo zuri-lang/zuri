@@ -12,7 +12,7 @@ pub fn install(vm: &mut VM) {
   register(vm, "time", 0, false, time);
   register(vm, "sum", 1, true, sum);
   register(vm, "bytes", 1, false, bytes);
-  register(vm, "file", 1, false, file);
+  register(vm, "file", 1, true, file);
   register(vm, "instance_of", 2, false, instance_of);
   // register(vm, "gc", 0, false, gc);
 }
