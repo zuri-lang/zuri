@@ -14,6 +14,7 @@ pub fn install(vm: &mut VM) {
   register(vm, "bytes", 1, false, bytes);
   register(vm, "file", 1, true, file);
   register(vm, "instance_of", 2, false, instance_of);
+  register(vm, "typeof", 1, false, typeof_fn);
   // register(vm, "gc", 0, false, gc);
 }
 
@@ -138,6 +139,12 @@ fn file(ctx: &mut ZuriContext) -> Result<Value, String> {
   });
 
   Ok(v)
+}
+
+fn typeof_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  let v = ctx.args[0].argument_type_name();
+  Ok(ctx.heap().alloc_string(v))
 }
 
 /// Force an immediate mark-and-sweep collection, bypassing the usual

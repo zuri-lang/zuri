@@ -25,7 +25,13 @@ pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     // methods
     method("to_string", to_string),
     method("abs", abs),
+    method("chr", chr),
+    method("bin", bin),
+    method("hex", hex),
+    method("oct", oct),
+    method("int", int),
     method_n("max", 1, max),
+    method_n("min", 1, min),
     method("factorial", factorial),
     method("sin", sin),
     method("cos", cos),
@@ -65,12 +71,52 @@ fn abs(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(ctx.args[0].as_number().abs()))
 }
 
+fn chr(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  let c = char::from_u32(ctx.args[0].as_number() as u32)
+    .unwrap_or('\0')
+    .to_string();
+  Ok(ctx.heap().alloc_string(c))
+}
+
+fn bin(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  let c = format!("{:b}", ctx.args[0].as_number() as u64);
+  Ok(ctx.heap().alloc_string(c))
+}
+
+fn hex(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  let c = format!("{:x}", ctx.args[0].as_number() as u64);
+  Ok(ctx.heap().alloc_string(c))
+}
+
+fn oct(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  let c = format!("{:o}", ctx.args[0].as_number() as u64);
+  Ok(ctx.heap().alloc_string(c))
+}
+
+fn int(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  Ok(Value::number((ctx.args[0].as_number() as i64) as f64))
+}
+
 fn max(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
 
   Ok(Value::number(
     ctx.args[0].as_number().max(ctx.args[1].as_number()),
+  ))
+}
+
+fn min(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  Ok(Value::number(
+    ctx.args[0].as_number().min(ctx.args[1].as_number()),
   ))
 }
 

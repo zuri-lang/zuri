@@ -631,8 +631,7 @@ impl Value {
     if self.is_obj() {
       unsafe {
         match &*self.as_obj() {
-          Obj::Class(c) => return c.borrow().name.clone(),
-          Obj::Instance(i) => return i.class.argument_type_name(),
+          Obj::Instance(i) => return i.class.as_class().name.clone(),
           _ => {},
         }
       }
