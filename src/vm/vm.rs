@@ -773,36 +773,43 @@ impl VM {
   }
 
   fn index_slice(&mut self, receiver: Value, lo: Value, hi: Value) -> RunResult<Value> {
-    if receiver.is_list() {
-      let len = receiver.list_len();
-      let bounds = self.resolve_slice_bounds(lo, hi, len)?;
-      let items: Vec<Value> = match bounds {
-        Some((lo, hi)) => (lo..=hi).map(|i| receiver.list_get(i).unwrap()).collect(),
-        None => Vec::new(),
-      };
-      Ok(self.heap.alloc_list(items))
-    } else if receiver.is_bytes() {
-      let len = receiver.bytes_len();
-      let bounds = self.resolve_slice_bounds(lo, hi, len)?;
-      let items: Vec<u8> = match bounds {
-        Some((lo, hi)) => (lo..=hi).map(|i| receiver.bytes_get(i).unwrap()).collect(),
-        None => Vec::new(),
-      };
-      Ok(self.heap.alloc_bytes(items))
-    } else if receiver.is_string() {
-      let chars: Vec<char> = receiver.as_str().chars().collect();
-      let bounds = self.resolve_slice_bounds(lo, hi, chars.len())?;
-      let s: String = match bounds {
-        Some((lo, hi)) => chars[lo..=hi].iter().collect(),
-        None => String::new(),
-      };
-      Ok(self.heap.alloc_string(s))
-    } else {
-      Err(self.raise(
-        "TypeError",
-        format!("cannot slice a {}", receiver.type_name()),
-      ))
-    }
+    if receiver.is_obj() {
+      match unsafe { &*receiver.as_obj() } {
+        Obj::List(_) => {
+          let len = receiver.list_len();
+          let bounds = self.resolve_slice_bounds(lo, hi, len)?;
+          let items: Vec<Value> = match bounds {
+            Some((lo, hi)) => (lo..hi).map(|i| receiver.list_get(i).unwrap()).collect(),
+            None => Vec::new(),
+          };
+          return Ok(self.heap.alloc_list(items));
+        },
+        Obj::Bytes(_) => {
+          let len = receiver.bytes_len();
+          let bounds = self.resolve_slice_bounds(lo, hi, len)?;
+          let items: Vec<u8> = match bounds {
+            Some((lo, hi)) => (lo..hi).map(|i| receiver.bytes_get(i).unwrap()).collect(),
+            None => Vec::new(),
+          };
+          return Ok(self.heap.alloc_bytes(items));
+        },
+        Obj::Str(_) => {
+          let chars: Vec<char> = receiver.as_str().chars().collect();
+          let bounds = self.resolve_slice_bounds(lo, hi, chars.len())?;
+          let s: String = match bounds {
+            Some((lo, hi)) => chars[lo..hi].iter().collect(),
+            None => String::new(),
+          };
+          return Ok(self.heap.alloc_string(s));
+        },
+        _ => {},
+      }
+    };
+
+    Err(self.raise(
+      "TypeError",
+      format!("cannot slice a {}", receiver.type_name()),
+    ))
   }
 
   fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
@@ -2337,35 +2344,30 @@ impl VM {
     let lo = if lo.is_nil() {
       0
     } else {
-      let i = self.value_as_index(lo)?;
+      let mut i = self.value_as_index(lo)?;
       if i < 0 {
-        return Err(self.raise(
-          "RangeError",
-          format!("slice lower bound {} cannot be negative", i),
-        ));
+        i = (i + len as i64).max(0);
       }
       i as usize
     };
 
     let hi = if hi.is_nil() {
-      len - 1
+      len
     } else {
-      let i = self.value_as_index(hi)?;
+      let mut i = self.value_as_index(hi)?;
       if i < 0 {
-        return Err(self.raise(
-          "RangeError",
-          format!("slice upper bound {} cannot be negative", i),
-        ));
+        i = (i + len as i64).max(0);
       }
+
       i as usize
     };
 
-    if lo >= len || hi >= len {
+    if lo > len || hi > len {
       let msg = format!("slice bounds {}..{} out of range (length {})", lo, hi, len);
       return Err(self.raise("RangeError", msg));
     }
 
-    if lo > hi {
+    if lo > hi || lo == hi {
       return Ok(None);
     }
 
