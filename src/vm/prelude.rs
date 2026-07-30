@@ -92,6 +92,13 @@ class UndefinedError < Error {
     self.type = 'UndefinedError'
   }
 }
+
+class ModuleNotFoundError < Error {
+  @new(message) {
+    self.message = message or self.message
+    self.type = 'ModuleNotFoundError'
+  }
+}
 "#;
 
 /// Names of every builtin exception class, in declaration order (each
@@ -109,6 +116,7 @@ pub const EXCEPTION_CLASS_NAMES: &[&str] = &[
   "AccessError",
   "AssertError",
   "PropertyError",
+  "ModuleNotFoundError",
   "UndefinedError",
 ];
 

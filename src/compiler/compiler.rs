@@ -103,6 +103,13 @@ pub struct Compiler<'a> {
   scopes: Vec<FunctionScope>,
   is_repl: bool,
   source_path: Rc<str>,
+  /// The module every `ObjFunction` this Compiler produces belongs to
+  /// -- `None` for the main script/REPL (functions get
+  /// `globals_module: None`, i.e. the VM's root table, exactly as
+  /// before this feature existed). Set once via
+  /// `set_current_module`, right after `Compiler::new`, when
+  /// compiling an imported module's own source instead.
+  module: Option<Value>,
   pub errors: Vec<ParserError>,
 }
 
@@ -125,6 +132,7 @@ impl<'a> Compiler<'a> {
       source_path,
       scopes: vec![top],
       is_repl: false,
+      module: None,
       errors: Vec::new(),
     }
   }
@@ -135,6 +143,10 @@ impl<'a> Compiler<'a> {
 
   pub fn disable_repl_mode(&mut self) {
     self.is_repl = false;
+  }
+
+  pub fn set_current_module(&mut self, module: Value) {
+    self.module = Some(module);
   }
 
   fn cur(&self) -> &FunctionScope {
@@ -309,6 +321,7 @@ impl<'a> Compiler<'a> {
     match &token.kind {
       TokenKind::Identifier(s) => s.clone(),
       TokenKind::Decorator(s) => s.clone(),
+      TokenKind::Literal(s) => s.clone(),
       other => panic!("compile: expected an identifier token, got {:?}", other),
     }
   }
@@ -426,6 +439,7 @@ impl<'a> Compiler<'a> {
       chunk: finished.chunk,
       upvalues: finished.upvalues,
       source_path: self.source_path.clone(),
+      globals_module: self.module,
       is_method,
     }
   }
@@ -534,6 +548,7 @@ impl<'a> Compiler<'a> {
       chunk: finished.chunk,
       upvalues: finished.upvalues,
       source_path: self.source_path.clone(),
+      globals_module: self.module,
       is_method: true,
     }
   }
@@ -587,6 +602,7 @@ impl<'a> Compiler<'a> {
       chunk: finished.chunk,
       upvalues: finished.upvalues,
       source_path: self.source_path.clone(),
+      globals_module: self.module,
       is_method: true,
     }
   }
@@ -1932,6 +1948,133 @@ impl<'a> Compiler<'a> {
     }
   }
 
+  /// Binds `value_reg`'s CURRENT value to `name` in the enclosing
+  /// scope, exactly like `var name = <value_reg>` would if the value
+  /// were already sitting in a register instead of coming from
+  /// `compile_expression(initializer)` -- shared by every import
+  /// binding form (the default promoted binding, and each selectively
+  /// imported name).
+  ///
+  /// Unlike `var`, this is NOT a redeclaration error if `name` is
+  /// already a local in this exact scope -- `import` is idempotent by
+  /// name (`import .foo` twice, or the same name appearing in two
+  /// `{ ... }` selective imports, must silently rebind rather than
+  /// fail; see the "importing it again should not re-execute the
+  /// module" case). In that case the EXISTING local's register is just
+  /// repointed at the new value; `value_reg`'s register is otherwise
+  /// left permanently allocated (same as any other local -- reclaimed
+  /// only when the enclosing scope closes), never freed here.
+  fn declare_import_binding(&mut self, name: String, token: &Token, value_reg: u8) {
+    if self.is_repl && self.cur().scope_depth == 0 {
+      let name_val = self.heap.alloc_string(name.clone());
+      let name_const = self.add_constant(name_val);
+      self.emit(Instr::SetGlobal {
+        name_const,
+        src: value_reg,
+      });
+      return;
+    }
+
+    let depth = self.cur().scope_depth;
+
+    if let Some(existing) = self
+      .cur_mut()
+      .locals
+      .iter_mut()
+      .rev()
+      .take_while(|l| l.depth == depth)
+      .find(|l| l.name == name)
+    {
+      existing.reg = value_reg;
+      return;
+    }
+
+    self.cur_mut().locals.push(Local {
+      name,
+      reg: value_reg,
+      is_const: true,
+      depth,
+    });
+
+    // token isn't needed anymore now that redeclaration is never an
+    // error here, but kept as a parameter for a consistent call shape
+    // with the rest of the compiler's binding-site helpers and in case
+    // a future diagnostic (e.g. warning on a *conflicting* re-import)
+    // wants it.
+    let _ = token;
+  }
+
+  /// `import PATH [as NAME] [{ elements... | * }]`. Always starts with
+  /// one `Instr::Import` producing the raw module in a temp register,
+  /// then dispatches to whichever of the three documented forms this
+  /// statement actually is:
+  ///  - `{ * }`           -> `Instr::ImportAll`, no binding created.
+  ///  - `{ a, b, ... }`    -> one `GetField` + `declare_import_binding`
+  ///                         per requested name.
+  ///  - default (neither)  -> `Instr::MakePromoted` + one
+  ///                         `declare_import_binding` for NAME.
+  fn compile_import(&mut self, path: &str, name: &Expr, elements: &[Expr], imports_all: bool) {
+    let path_val = self.heap.alloc_string(path.to_string());
+    let path_const = self.add_constant(path_val);
+    let importer_val = self.heap.alloc_string(self.source_path.to_string());
+    let importer_const = self.add_constant(importer_val);
+
+    let mod_reg = self.alloc_reg();
+    self.emit(Instr::Import {
+      dst: mod_reg,
+      path_const,
+      importer_const,
+    });
+
+    if imports_all {
+      self.emit(Instr::ImportAll { module: mod_reg });
+      // Nothing persists past this statement -- safe to reclaim.
+      self.free_regs_to(mod_reg);
+      return;
+    }
+
+    if !elements.is_empty() {
+      for element in elements {
+        let Expr::Identifier(token) = element else {
+          panic!(
+            "compile: import element is not an identifier: {:?}",
+            element
+          );
+        };
+        let field_name = Self::identifier_name(token);
+        let dst = self.alloc_reg();
+        let fname_val = self.heap.alloc_string(field_name.clone());
+        let fname_const = self.add_constant(fname_val);
+        self.cur_mut().current_line = token.line as u32;
+        self.emit(Instr::GetField {
+          dst,
+          obj: mod_reg,
+          name_const: fname_const,
+        });
+        self.declare_import_binding(field_name, token, dst);
+      }
+      return;
+    }
+
+    let Expr::Identifier(name_token) = name else {
+      panic!(
+        "compile: import binding name is not an identifier: {:?}",
+        name
+      );
+    };
+    let bind_name = Self::identifier_name(name_token);
+    let name_val = self.heap.alloc_string(bind_name.clone());
+    let name_const = self.add_constant(name_val);
+
+    let dst = self.alloc_reg();
+    self.emit(Instr::MakePromoted {
+      dst,
+      module: mod_reg,
+      name_const,
+    });
+    self.declare_import_binding(bind_name, name_token, dst);
+  }
+
   fn compile_statement(&mut self, statement: &Stmt) {
     match statement {
       Stmt::Expression(expression) => {
@@ -2152,6 +2295,12 @@ impl<'a> Compiler<'a> {
       Stmt::Raise(expr) => self.compile_raise(expr),
       Stmt::Assert(cond, message) => self.compile_assert(cond, message),
       Stmt::Catch(body, error_block, var_expr) => self.compile_catch(body, error_block, var_expr),
+      Stmt::Import(path, name, elements, imports_all) => self.compile_import(
+        path.as_str(),
+        name.as_ref(),
+        elements.as_slice(),
+        *imports_all,
+      ),
       _ => {},
     };
   }
@@ -2208,6 +2357,7 @@ impl<'a> Compiler<'a> {
       chunk: top.chunk,
       upvalues: Vec::new(),
       source_path: self.source_path.clone(),
+      globals_module: self.module,
       is_method: false,
     };
 

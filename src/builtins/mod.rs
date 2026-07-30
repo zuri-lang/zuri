@@ -96,7 +96,7 @@ impl Kind {
       Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) | Obj::BoundMethod(_) | Obj::Class(_) => {
         Some(Kind::Function)
       },
-      Obj::Instance(_) | Obj::Upvalue(_) => None,
+      Obj::Instance(_) | Obj::Upvalue(_) | Obj::Module(_) | Obj::ModuleBinding(_) => None,
     }
   }
 }

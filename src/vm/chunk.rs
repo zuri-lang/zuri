@@ -331,6 +331,41 @@ pub enum Instr {
     num_args: u8,
   },
 
+  /// `import PATH` -- loads (or reuses the cached) module for
+  /// `path_const`, resolved relative to `importer_const` (the CURRENT
+  /// file's own path, a compile-time constant) when `path_const` starts
+  /// with `.`/`..`, or via the standard search path otherwise. Leaves
+  /// the raw `Obj::Module` in `dst`; never binds any name by itself --
+  /// the compiler follows this with `GetField` (selective form),
+  /// `ImportAll` (`{*}` form), or `MakePromoted` (default whole-module
+  /// form) to actually bind names. Only executes a module's top-level
+  /// code the FIRST time it's imported (see `vm::modules`).
+  Import {
+    dst: u8,
+    path_const: u16,
+    importer_const: u16,
+  },
+  /// `import PATH { * }` -- merges every name currently in `module`'s
+  /// namespace into whichever globals table the CURRENTLY EXECUTING
+  /// function's own top-level bindings belong to (the running module's
+  /// namespace, or the VM's root table for the main script/REPL -- see
+  /// `ObjFunction::globals_module`). No local/module-binding variable
+  /// is created, matching the documented behavior.
+  ImportAll {
+    module: u8,
+  },
+  /// `import PATH [as NAME]` (default, non-selective, non-`{*}` form)
+  /// -- wraps `module` together with whichever of its members is named
+  /// `name_const` into a callable `ObjModuleBinding`. `name_const` is
+  /// the LOCAL binding name (NAME, or the last import path segment),
+  /// enabling both `NAME.other_member` access and, if that name matches
+  /// a callable module member, direct `NAME(...)` "function promotion".
+  MakePromoted {
+    dst: u8,
+    module: u8,
+    name_const: u16,
+  },
+
   /// `obj[idx]` -- supported for List, Bytes (yields a number 0-255),
   /// String (yields a 1-character string, indexed by Unicode scalar
   /// value, not byte offset), and Dict (`idx` used as a key via
@@ -614,6 +649,9 @@ pub fn instr_name(instr: &Instr) -> &'static str {
     Instr::Invoke { .. } => "Invoke",
     Instr::InvokeSuper { .. } => "InvokeSuper",
     Instr::CallSuperCtor { .. } => "CallSuperCtor",
+    Instr::Import { .. } => "Import",
+    Instr::ImportAll { .. } => "ImportAll",
+    Instr::MakePromoted { .. } => "MakePromoted",
     Instr::GetIndex { .. } => "GetIndex",
     Instr::SetIndex { .. } => "SetIndex",
     Instr::GetSlice { .. } => "GetSlice",

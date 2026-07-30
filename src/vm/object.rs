@@ -72,6 +72,10 @@ pub enum Obj {
   },
   /// A `file(...)` object -- see `FileHandle`.
   File(RefCell<FileHandle>),
+  /// See `ObjModule`'s own doc comment.
+  Module(RefCell<ObjModule>),
+  /// See `ObjModuleBinding`'s own doc comment.
+  ModuleBinding(ObjModuleBinding),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -132,6 +136,16 @@ pub struct ObjFunction {
   /// which is what lets a trace correctly attribute each frame to its
   /// OWN file.
   pub source_path: Rc<str>,
+
+  /// Which module's global namespace this function's own
+  /// `GetGlobal`/`SetGlobal`/`AssignGlobal` instructions resolve
+  /// against. `None` means the VM's shared ROOT table -- the main
+  /// script and the REPL, exactly the pre-module-system behavior, so
+  /// every existing non-module program is completely unaffected. Set
+  /// once, uniformly, for every function a `Compiler` instance
+  /// produces, via `Compiler::set_current_module` -- see
+  /// `vm::modules::run_module_source`.
+  pub globals_module: Option<Value>,
 }
 
 /// A method value bound to a specific receiver -- produced only when a
@@ -157,6 +171,92 @@ pub struct ObjClosure {
   /// One entry per `function.upvalues` descriptor, in the same order.
   /// Each Value here points at an `Obj::Upvalue`.
   pub upvalues: Vec<Value>,
+}
+
+/// A module's own global namespace -- structurally identical to
+/// `VM::global_slots`/`global_names` (a growable slot Vec plus a
+/// name->slot map), just scoped to one module instead of the whole
+/// VM. This is what gives every module a truly separate set of
+/// `def`/`var`/`class` bindings: `Instr::GetGlobal`/`SetGlobal`/
+/// `AssignGlobal` resolve against THIS table instead of the VM's root
+/// one whenever the currently executing function's
+/// `ObjFunction::globals_module` says so (see `vm.rs`).
+pub struct ModuleNamespace {
+  pub slots: Vec<Cell<Value>>,
+  pub names: FxHashMap<String, u32>,
+}
+
+impl ModuleNamespace {
+  pub fn new() -> Self {
+    ModuleNamespace {
+      slots: Vec::new(),
+      names: FxHashMap::default(),
+    }
+  }
+
+  /// Find-or-create `name`'s slot, growing the table with a fresh
+  /// nil-initialized slot the first time this specific module sees
+  /// that name -- mirrors `VM::get_or_create_global_slot` exactly.
+  pub fn get_or_create_slot(&mut self, name: &str) -> u32 {
+    if let Some(&s) = self.names.get(name) {
+      return s;
+    }
+    let s = self.slots.len() as u32;
+    self.slots.push(Cell::new(Value::nil()));
+    self.names.insert(name.to_string(), s);
+    s
+  }
+
+  pub fn get(&self, name: &str) -> Option<Value> {
+    self.names.get(name).map(|&s| self.slots[s as usize].get())
+  }
+
+  pub fn set(&mut self, name: &str, v: Value) {
+    let s = self.get_or_create_slot(name);
+    self.slots[s as usize].set(v);
+  }
+}
+
+/// A loaded `.zu` file (or package `index.zu`), as produced by
+/// `vm::modules::import`. Wrapped in a `RefCell` (like `ObjClass`)
+/// because its namespace keeps growing throughout its own top-level
+/// execution.
+pub struct ObjModule {
+  /// Display/error-message name -- the file's own stem, or the
+  /// enclosing directory's name for a package's `index.zu`. NOT
+  /// necessarily the name any particular importer bound it to (see
+  /// `ObjModuleBinding`).
+  pub name: String,
+  /// Canonical, absolute source path -- this module's own `__file__`,
+  /// and the cache key `vm::modules` dedupes on.
+  pub path: String,
+  pub namespace: ModuleNamespace,
+  /// False for the entire duration this module's own top-level code
+  /// is executing -- lets a circular import observe a partially
+  /// populated module instead of recursing forever; see
+  /// `vm::modules::load_from_candidate`.
+  pub loaded: bool,
+}
+
+/// What `import PATH [as NAME]` (the default, non-selective,
+/// non-`{*}` form) actually binds NAME to, instead of the raw
+/// `Obj::Module` -- see `Instr::MakePromoted`. Promotion has to be
+/// resolved PER IMPORT SITE rather than fixed on the module object
+/// itself: the exact same cached module can be promoted under
+/// different names by different importers (`import jump` promotes to
+/// `jump`'s own `jump()`; `import jump as slow` promotes to `slow()`
+/// instead, per the "function promotion" docs).
+pub struct ObjModuleBinding {
+  pub module: Value,
+  /// The module member matching this binding's own name, if it
+  /// exists AND is callable -- what makes `NAME(...)` work directly.
+  /// `None` means this binding just forwards `.field` access; calling
+  /// it directly is a TypeError.
+  pub promoted: Option<Value>,
+  /// The LOCAL name this was bound under (NAME, or the last import
+  /// path segment) -- purely for Display / error messages, matching
+  /// the documented REPL rendering `<module m at ...>`.
+  pub bind_name: String,
 }
 
 pub struct NativeFunction {
@@ -520,6 +620,11 @@ impl Heap {
             + c.statics.len() * size_of::<Cell<Value>>()
         },
         Obj::Instance(i) => i.fields.len() * size_of::<Cell<Value>>(),
+        Obj::Module(m) => {
+          let m = m.borrow();
+          size_of::<ObjModule>() + m.namespace.slots.len() * (size_of::<Cell<Value>>() + 32)
+        },
+        Obj::ModuleBinding(_) => size_of::<ObjModuleBinding>(),
         Obj::Range { .. } => 0,
         Obj::File(_) => size_of::<FileHandle>(),
       }
@@ -673,6 +778,14 @@ impl Heap {
 
   pub fn alloc_file(&mut self, fh: FileHandle) -> Value {
     self.alloc(Obj::File(RefCell::new(fh)))
+  }
+
+  pub fn alloc_module(&mut self, m: ObjModule) -> Value {
+    self.alloc(Obj::Module(RefCell::new(m)))
+  }
+
+  pub fn alloc_module_binding(&mut self, b: ObjModuleBinding) -> Value {
+    self.alloc(Obj::ModuleBinding(b))
   }
 
   /// Drop every object whose address isn't in `reachable`, then

@@ -93,6 +93,7 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
 
 fn run_file(vm: &mut VM, file: &str) {
   let content = fs::read_to_string(file).expect("Should have been able to read the file");
+
   // Canonicalize so stack traces show a full, unambiguous path,
   // matching the target format -- falls back to the given (possibly
   // relative) path if that fails for any reason.
@@ -101,6 +102,9 @@ fn run_file(vm: &mut VM, file: &str) {
       .map(|p| p.display().to_string())
       .unwrap_or_else(|_| file.to_string()),
   );
+
+  vm.set_root_path(display_path.to_string());
+  vm.init_entry_globals(&display_path);
 
   let mut lex = Lexer::new(&content);
   let mut parser = Parser::new(&mut lex);

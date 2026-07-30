@@ -1372,19 +1372,23 @@ impl<'a> Parser<'a> {
 
     let mut name_is_nil = true;
 
-    // range can only exist at the beginning of import path and
-    // nowhere else within it
-    if match_tok!(self, TokenKind::Range) {
-      paths.push("..".to_string());
-    }
-
-    while match_tok!(self, TokenKind::Dot | TokenKind::Identifier(_)) {
+    // `.` (same directory), `..` (parent directory, lexed as a `Range`
+    // token -- there's no dedicated ".." token kind), and identifiers can
+    // all repeat and interleave freely in a relative import path (e.g.
+    // `..package..root_package..module`), so this is one unified loop
+    // rather than "one leading `..`, then only dots/identifiers" -- the
+    // latter silently stopped consuming after the FIRST embedded `..`.
+    while match_tok!(
+      self,
+      TokenKind::Dot | TokenKind::Range | TokenKind::Identifier(_)
+    ) {
       let token = self.previous().clone();
 
-      if matches!(token.kind.clone(), TokenKind::Dot) {
-        paths.push(".".to_string());
-      } else if let TokenKind::Identifier(name) = token.kind.clone() {
-        paths.push(name.clone());
+      match token.kind.clone() {
+        TokenKind::Dot => paths.push(".".to_string()),
+        TokenKind::Range => paths.push("..".to_string()),
+        TokenKind::Identifier(name) => paths.push(name.clone()),
+        _ => {},
       }
     }
 

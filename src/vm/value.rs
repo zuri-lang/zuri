@@ -34,7 +34,7 @@ use num_bigint::BigInt;
 
 use crate::vm::object::{
   FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance,
-  UpvalueState,
+  ObjModule, ObjModuleBinding, UpvalueState,
 };
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
@@ -530,6 +530,40 @@ impl Value {
     }
   }
 
+  #[inline]
+  pub fn is_module(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Module(_))
+  }
+
+  #[inline]
+  pub fn is_module_binding(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::ModuleBinding(_))
+  }
+
+  pub fn as_module(&self) -> std::cell::Ref<'_, ObjModule> {
+    debug_assert!(self.is_module());
+    match unsafe { &*self.as_obj() } {
+      Obj::Module(m) => m.borrow(),
+      _ => unreachable!("as_module() called on a non-module Value"),
+    }
+  }
+
+  pub fn as_module_mut(&self) -> std::cell::RefMut<'_, ObjModule> {
+    debug_assert!(self.is_module());
+    match unsafe { &*self.as_obj() } {
+      Obj::Module(m) => m.borrow_mut(),
+      _ => unreachable!("as_module_mut() called on a non-module Value"),
+    }
+  }
+
+  pub fn as_module_binding(&self) -> &ObjModuleBinding {
+    debug_assert!(self.is_module_binding());
+    match unsafe { &*self.as_obj() } {
+      Obj::ModuleBinding(b) => b,
+      _ => unreachable!("as_module_binding() called on a non-module-binding Value"),
+    }
+  }
+
   /// Truthiness for control flow: nil and false are falsy, everything
   /// else (including 0 and "") is truthy.
   #[inline]
@@ -613,6 +647,8 @@ impl Value {
           Obj::Upvalue(_) => "upvalue",
           Obj::Class(_) => "class",
           Obj::Instance(_) => "instance",
+          Obj::Module(_) => "module",
+          Obj::ModuleBinding(_) => "module",
           Obj::Range { .. } => "range",
           Obj::File(_) => "file",
         }
@@ -689,6 +725,14 @@ impl std::fmt::Display for Value {
           Obj::BoundMethod(b) => write!(f, "{}", b.method),
           Obj::Class(c) => write!(f, "<class {}>", c.borrow().name),
           Obj::Instance(i) => write!(f, "<instance of {}>", i.class.as_class().name),
+          Obj::Module(m) => {
+            let m = m.borrow();
+            write!(f, "<module {} at {}>", m.name, m.path)
+          },
+          Obj::ModuleBinding(b) => {
+            let module_path = b.module.as_module().path.clone();
+            write!(f, "<module {} at {}>", b.bind_name, module_path)
+          },
           Obj::List(items) => {
             write!(f, "[")?;
             for (i, item) in items.borrow().iter().enumerate() {

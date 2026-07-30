@@ -9,7 +9,8 @@ use crate::builtins;
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
-  Heap, Obj, ObjClass, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, ZuriContext,
+  Heap, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding, UpvalueDescriptor, UpvalueState,
+  ZuriContext,
 };
 use crate::vm::value::Value;
 
@@ -154,6 +155,18 @@ pub struct VM {
   /// `VM::raise` rather than a `self.globals` hashmap hit on every
   /// internal error.
   pub(crate) builtin_exceptions: FxHashMap<&'static str, Value>,
+  /// Every module loaded so far this run, keyed by its canonical
+  /// filesystem path (or `"builtin:NAME"` for a synthetic builtin
+  /// module) -- what makes re-importing the same module a no-op instead
+  /// of re-executing it, and what breaks circular imports (see
+  /// `vm::modules::load_from_candidate`). Also a GC root: a cached
+  /// module must stay alive for the rest of the run even if nothing
+  /// else currently references it, since a LATER `import` of the same
+  /// path must find it again.
+  pub(crate) modules: FxHashMap<String, Value>,
+  /// The application's entry-file path, as set by `set_root_path` --
+  /// becomes every module's `__root__`. `None` in REPL mode, per spec.
+  pub(crate) root_path: Option<String>,
   pub heap: Heap,
   /// Per-opcode execution counts, gathered only under
   /// ZURI_OPCODE_PROFILE -- checked once per instruction (a single
@@ -184,6 +197,8 @@ impl VM {
       builtin_exceptions: FxHashMap::default(),
       global_slots: Vec::new(),
       global_names: FxHashMap::default(),
+      modules: FxHashMap::default(),
+      root_path: None,
       #[cfg(feature = "opcode-profile")]
       opcode_counts: FxHashMap::default(),
       #[cfg(feature = "opcode-profile")]
@@ -227,6 +242,66 @@ impl VM {
   pub fn lookup_global(&self, name: &str) -> Option<Value> {
     let &slot = self.global_names.get(name)?;
     Some(self.global_slots[slot as usize].get())
+  }
+
+  /// Resolve `name` to a slot in whichever globals table `module`
+  /// names (`None` = the VM's own root table), growing that SPECIFIC
+  /// table with a fresh nil slot if `name` hasn't been seen there
+  /// before. Never touches any OTHER table -- this is what keeps two
+  /// modules (or a module and the root script) that happen to declare
+  /// the same name from colliding with each other.
+  fn get_or_create_slot_in(&mut self, module: Option<Value>, name: String) -> u32 {
+    match module {
+      None => self.get_or_create_global_slot(name),
+      Some(m) => m.as_module_mut().namespace.get_or_create_slot(&name),
+    }
+  }
+
+  fn lookup_slot_in(&self, module: Option<Value>, name: &str) -> Option<u32> {
+    match module {
+      None => self.global_names.get(name).copied(),
+      Some(m) => m.as_module().namespace.names.get(name).copied(),
+    }
+  }
+
+  #[inline]
+  fn read_slot_in(&self, module: Option<Value>, slot: u32) -> Value {
+    match module {
+      None => self.global_slots[slot as usize].get(),
+      Some(m) => m.as_module().namespace.slots[slot as usize].get(),
+    }
+  }
+
+  #[inline]
+  fn write_slot_in(&self, module: Option<Value>, slot: u32, v: Value) {
+    match module {
+      None => self.global_slots[slot as usize].set(v),
+      Some(m) => m.as_module().namespace.slots[slot as usize].set(v),
+    }
+  }
+
+  /// Records the application's entry-file path -- every module loaded
+  /// afterward gets this as its own `__root__`. Call before `run`; not
+  /// meaningful (and not called) in REPL mode.
+  pub fn set_root_path(&mut self, path: impl Into<String>) {
+    self.root_path = Some(path.into());
+  }
+
+  /// Seeds `__file__` (and, if `set_root_path` was called, `__root__`)
+  /// into the VM's own ROOT global table -- what makes them visible to
+  /// the MAIN script itself, exactly as if it were a module. Every
+  /// module loaded via `import` gets the same two variables seeded into
+  /// its own separate namespace instead -- see
+  /// `vm::modules::seed_module_vars`. Not called for the REPL, matching
+  /// the documented "not defined in REPL mode" behavior for `__root__`
+  /// (and there's no meaningful `__file__` for a REPL line either).
+  pub fn init_entry_globals(&mut self, file_path: &str) {
+    let file_val = self.heap.alloc_string(file_path.to_string());
+    self.define_global("__file__", file_val);
+    if let Some(root) = self.root_path.clone() {
+      let root_val = self.heap.alloc_string(root);
+      self.define_global("__root__", root_val);
+    }
   }
 
   /// Construct a fresh instance of the builtin exception class named
@@ -640,6 +715,23 @@ impl VM {
           dst_in_caller: dst,
         });
         Ok(())
+      },
+      Obj::ModuleBinding(b) => {
+        match b.promoted {
+          Some(f) => {
+            // Overwrite the callee's own register with the promoted
+            // function and recurse -- dispatch_call re-reads `func_reg`
+            // fresh at the top, so this reuses every existing dispatch
+            // path (closure/native/etc.) for free instead of duplicating
+            // it here.
+            self.set_reg(base, func_reg, f);
+            self.dispatch_call(base, func_reg, num_args, dst)
+          },
+          None => {
+            let msg = format!("module '{}' is not callable", b.bind_name);
+            Err(self.raise("TypeError", msg))
+          },
+        }
       },
       _ => {
         let msg = format!("cannot call a {}", callee.type_name());
@@ -1164,6 +1256,7 @@ impl VM {
 
           Instr::GetGlobal { dst, name_const } => {
             let instr_ip = ip - 1;
+            let gmod = func.globals_module;
             let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
               s
             } else {
@@ -1173,8 +1266,8 @@ impl VM {
                   self.raise("TypeError", "expected a string constant for a global name"),
                 );
               }
-              let s = match self.global_names.get(name_val.as_str()) {
-                Some(&s) => s,
+              let s = match self.lookup_slot_in(gmod, name_val.as_str()) {
+                Some(s) => s,
                 None => {
                   let msg = format!("undefined global '{}'", name_val.as_str());
                   break 'step Err(self.raise("UndefinedError", msg));
@@ -1183,12 +1276,13 @@ impl VM {
               func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
               s
             };
-            let v = self.global_slots[slot as usize].get();
+            let v = self.read_slot_in(gmod, slot);
             self.set_reg(base, dst, v);
           },
 
           Instr::SetGlobal { name_const, src } => {
             let instr_ip = ip - 1;
+            let gmod = func.globals_module;
             let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
               s
             } else {
@@ -1198,16 +1292,17 @@ impl VM {
                   self.raise("TypeError", "expected a string constant for a global name"),
                 );
               }
-              let s = self.get_or_create_global_slot(name_val.as_str().to_string());
+              let s = self.get_or_create_slot_in(gmod, name_val.as_str().to_string());
               func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
               s
             };
             let v = self.get_reg(base, src);
-            self.global_slots[slot as usize].set(v);
+            self.write_slot_in(gmod, slot, v);
           },
 
           Instr::AssignGlobal { name_const, src } => {
             let instr_ip = ip - 1;
+            let gmod = func.globals_module;
             let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
               s
             } else {
@@ -1217,8 +1312,8 @@ impl VM {
                   self.raise("TypeError", "expected a string constant for a global name"),
                 );
               }
-              let s = match self.global_names.get(name_val.as_str()) {
-                Some(&s) => s,
+              let s = match self.lookup_slot_in(gmod, name_val.as_str()) {
+                Some(s) => s,
                 None => {
                   let msg = format!("undefined global '{}'", name_val.as_str());
                   break 'step Err(self.raise("UndefinedError", msg));
@@ -1228,7 +1323,7 @@ impl VM {
               s
             };
             let v = self.get_reg(base, src);
-            self.global_slots[slot as usize].set(v);
+            self.write_slot_in(gmod, slot, v);
           },
 
           Instr::Closure { dst, proto_const } => {
@@ -1402,7 +1497,7 @@ impl VM {
             let name = tri!(self.const_as_str(func, 0), 'step);
             let mut c = class_val.as_class_mut();
 
-            if self.global_names.contains_key(&c.name) {
+            if self.lookup_slot_in(func.globals_module, &c.name).is_some() {
               break 'step Err(self.raise(
                 "Error",
                 format!("class '{}' already declared in this scope", c.name),
@@ -1458,6 +1553,25 @@ impl VM {
               } else {
                 raw
               }
+            } else if receiver.is_module() {
+              let m = receiver.as_module();
+              match m.namespace.get(name_val.as_str()) {
+                Some(v) => v,
+                None => {
+                  let msg = format!("module '{}' has no member '{}'", m.name, name_val.as_str());
+                  break 'step Err(self.raise("PropertyError", msg));
+                },
+              }
+            } else if receiver.is_module_binding() {
+              let module_val = receiver.as_module_binding().module;
+              let m = module_val.as_module();
+              match m.namespace.get(name_val.as_str()) {
+                Some(v) => v,
+                None => {
+                  let msg = format!("module '{}' has no member '{}'", m.name, name_val.as_str());
+                  break 'step Err(self.raise("PropertyError", msg));
+                },
+              }
             } else {
               let msg = format!(
                 "cannot read property '{}' on a {}",
@@ -1505,6 +1619,9 @@ impl VM {
                   .map_err(|msg| self.raise("PropertyError", msg)),
                 'step
               );
+            } else if receiver.is_module() || receiver.is_module_binding() {
+              let msg = "cannot assign to a module member from outside the module".to_string();
+              break 'step Err(self.raise("AccessError", msg));
             } else {
               let msg = format!(
                 "cannot set property '{}' on a {}",
@@ -1588,6 +1705,37 @@ impl VM {
               } else {
                 self.set_reg(base, obj + 1, callee);
                 tri!(self.dispatch_call(base, obj + 1, num_args, dst), 'step);
+              }
+            } else if receiver.is_module() || receiver.is_module_binding() {
+              let module_val = if receiver.is_module() {
+                receiver
+              } else {
+                receiver.as_module_binding().module
+              };
+              let member = {
+                let m = module_val.as_module();
+                m.namespace.get(method_name_val.as_str())
+              };
+              match member {
+                Some(v) => {
+                  self.set_reg(base, obj + 1, v);
+                  tri!(self.dispatch_call(base, obj + 1, num_args, dst), 'step);
+                },
+                None => match builtins::lookup(receiver, method_name_val.as_str()) {
+                  Some(native) => {
+                    let args_start = base + obj as usize + 2;
+                    let args_end = args_start + num_args as usize;
+                    let mut call_args = CallArgs::new();
+                    call_args.push(receiver);
+                    call_args.extend_from_slice(&self.registers[args_start..args_end]);
+                    let result = tri!(self.call_native(native, call_args.as_slice()), 'step);
+                    self.set_reg(base, dst, result);
+                  },
+                  None => {
+                    let msg = format!("undefined member '{}' on module", method_name_val.as_str());
+                    break 'step Err(self.raise("PropertyError", msg));
+                  },
+                },
               }
             } else {
               match builtins::lookup(receiver, method_name_val.as_str()) {
@@ -1792,6 +1940,66 @@ impl VM {
 
           Instr::PopCatch => {
             self.catch_stack.pop();
+          },
+
+          Instr::Import {
+            dst,
+            path_const,
+            importer_const,
+          } => {
+            let path_val = func.chunk.constants[path_const as usize];
+            let importer_val = func.chunk.constants[importer_const as usize];
+            if !path_val.is_string() || !importer_val.is_string() {
+              break 'step Err(self.raise("TypeError", "expected string constants for import"));
+            }
+            let path = path_val.as_str().to_string();
+            let importer = importer_val.as_str().to_string();
+            let module_val = tri!(crate::vm::modules::import(self, &importer, &path), 'step);
+            self.set_reg(base, dst, module_val);
+          },
+
+          Instr::ImportAll { module } => {
+            let mv = self.get_reg(base, module);
+            if !mv.is_module() {
+              break 'step Err(self.raise("TypeError", "expected a module for 'import ... { * }'"));
+            }
+            let entries: Vec<(String, Value)> = {
+              let m = mv.as_module();
+              m.namespace
+                .names
+                .iter()
+                .map(|(k, &idx)| (k.clone(), m.namespace.slots[idx as usize].get()))
+                .collect()
+            };
+            let target = func.globals_module;
+            for (name, val) in entries {
+              let slot = self.get_or_create_slot_in(target, name);
+              self.write_slot_in(target, slot, val);
+            }
+          },
+
+          Instr::MakePromoted {
+            dst,
+            module,
+            name_const,
+          } => {
+            let mv = self.get_reg(base, module);
+            let name_val = func.chunk.constants[name_const as usize];
+            if !mv.is_module() || !name_val.is_string() {
+              break 'step Err(self.raise("TypeError", "invalid module promotion"));
+            }
+            let promoted = {
+              let m = mv.as_module();
+              m.namespace
+                .get(name_val.as_str())
+                .filter(|v| v.is_callable())
+            };
+            let binding = self.heap.alloc_module_binding(ObjModuleBinding {
+              module: mv,
+              promoted,
+              bind_name: name_val.as_str().to_string(),
+            });
+            self.set_reg(base, dst, binding);
           },
         }
         Ok(())
@@ -2203,6 +2411,9 @@ impl VM {
     for v in &self.gc_pins {
       Self::mark_root(*v, &mut worklist);
     }
+    for v in self.modules.values() {
+      Self::mark_root(*v, &mut worklist);
+    }
 
     while let Some(ptr) = worklist.pop() {
       // SAFETY: every pointer on the worklist was pulled out of a Value
@@ -2224,6 +2435,9 @@ impl VM {
         Obj::Func(f) => {
           for c in &f.chunk.constants {
             Self::mark_root(*c, &mut worklist);
+          }
+          if let Some(m) = f.globals_module {
+            Self::mark_root(m, &mut worklist);
           }
         },
         Obj::Closure(c) => {
@@ -2264,6 +2478,18 @@ impl VM {
         Obj::BoundMethod(b) => {
           Self::mark_root(b.receiver, &mut worklist);
           Self::mark_root(b.method, &mut worklist);
+        },
+        Obj::Module(m) => {
+          let m = m.borrow();
+          for cell in &m.namespace.slots {
+            Self::mark_root(cell.get(), &mut worklist);
+          }
+        },
+        Obj::ModuleBinding(b) => {
+          Self::mark_root(b.module, &mut worklist);
+          if let Some(p) = b.promoted {
+            Self::mark_root(p, &mut worklist);
+          }
         },
         Obj::Str(_)
         | Obj::Bytes(_)
