@@ -14,6 +14,7 @@ rustc-hash = "2.1.3"
 
 [build-dependencies]
 chrono = "0.4.45"
+copy_to_output = "2.2.0"
 toml = "1.1.2"
 
 [package.metadata.zuri]

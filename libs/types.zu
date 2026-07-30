@@ -1,0 +1,208 @@
+/** 
+ * @module type
+ * 
+ * Provides type validation and conversion capabilities
+ * 
+ * This module is wrapper around the builtin functions
+ * where applicable and does and return the same thing as the builtin
+ * alternative.
+ * 
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+
+/**
+ * Returns the name of the type of value
+ * 
+ * @note method implemented as part of core language features
+ * 
+ * @param any value
+ * @returns string
+ */
+def of(value: any) {
+  return typeof(value)
+}
+
+/**
+ * Returns true if the value is a character and digit,
+ * otherwise returns false.
+ * 
+ * @param string value
+ * @returns bool
+ */
+def digit(value: string) {
+  if value.length() != 1
+    raise ValueError('single char expected')
+  var _ = value.ord()
+  return _ >= 48 and _ <= 57
+}
+
+/**
+ * Returns true if the value is a character and alphabetic,
+ * otherwise returns false.
+ * 
+ * @param string value
+ * @returns bool
+ */
+def alpha(value: string) {
+  if value.length() != 1
+    raise ValueError('single char expected')
+  var _ = value.ord()
+  return (_ >= 65 and _ <= 90) or (_ >= 97 and _ <= 122)
+}
+
+/**
+ * Returns true if the value is an integer or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def int(value: any) {
+  return is_int(value)
+}
+
+/**
+ * Returns true if the value is a boolean or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def bool(value: any) {
+  return is_bool(value)
+}
+
+/**
+ * Returns true if the value is a number or false otherwise.
+ * 
+ * @note this method also returns true for integers.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def number(value: any) {
+  return is_number(value)
+}
+
+/**
+ * Returns true if the value is a single character or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def char(value: any) {
+  return is_string(value) and value.length() == 1
+}
+
+/**
+ * Returns true if the value is a string or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def string(value: any) {
+  return is_string(value)
+}
+
+/**
+ * Returns true if the value is a bytes or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def bytes(value: any) {
+  return is_bytes(value)
+}
+
+/**
+ * Returns true if the value is a list or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def list(value: any) {
+  return is_list(value)
+}
+
+/**
+ * Returns true if the value is a dictionary or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def dict(value: any) {
+  return is_dict(value)
+}
+
+/**
+ * Returns true if the value is an object or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def object(value: any) {
+  return is_object(value)
+}
+
+/**
+ * Returns true if the value is a function or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def function(value: any) {
+  return is_function(value)
+}
+
+/**
+ * Returns true if the value is a class or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def is_a_class(value: any) {
+  return is_class(value)
+}
+
+/**
+ * Returns true if the value is a file or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def file(value: any) {
+  return is_file(value)
+}
+
+/**
+ * Returns true if the value is an iterable or false otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def iterable(value: any) {
+  return is_iterable(value)
+}
+
+/**
+ * Returns true if the value is a callable function or class and false 
+ * otherwise.
+ * 
+ * @param any value
+ * @returns bool
+ */
+def callable(value: any) {
+  return is_callable(value)
+}
+
+/**
+ * Returns true if the value is an instance the given class, false
+ * otherwise.
+ * 
+ * @param any value
+ * @param {type} type
+ * @returns bool
+ */
+def instance(value: any, type: type) {
+  return instance_of(value, type)
+}
+

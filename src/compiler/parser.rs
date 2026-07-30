@@ -1731,6 +1731,7 @@ impl<'a> Parser<'a> {
       }
 
       params.push(self.parse_args());
+      self.ignore_newlines();
 
       if !check_tok!(self, TokenKind::Rparen) {
         consume_tok!(

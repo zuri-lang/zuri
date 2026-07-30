@@ -1,5 +1,6 @@
 // build.rs
 use chrono::Utc;
+use copy_to_output::copy_to_output;
 use std::env;
 use std::fs;
 
@@ -46,4 +47,7 @@ fn main() {
 
   // Tell Cargo to re-run this script only if Cargo.toml changes
   println!("cargo:rerun-if-changed=Cargo.toml");
+
+  println!("cargo:rerun-if-changed=libs/*");
+  copy_to_output("libs", &env::var("PROFILE").unwrap()).expect("Could not copy");
 }

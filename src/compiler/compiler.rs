@@ -1108,6 +1108,198 @@ impl<'a> Compiler<'a> {
     dst
   }
 
+  /// Registers needed per list element is 1. Chosen conservatively so
+  /// one chunk's own working set (plus the handful of extra registers
+  /// `compile_list_literal`'s merge step needs) stays far under the
+  /// 255-register ceiling regardless of how many OTHER registers
+  /// surrounding code in the same function has already claimed.
+  const LIST_LITERAL_CHUNK_SIZE: usize = 64;
+
+  /// Same idea, but a dict entry needs TWO registers (key + value), so
+  /// this is roughly half the list chunk size for the same total
+  /// register budget per chunk.
+  const DICT_LITERAL_CHUNK_SIZE: usize = 48;
+
+  /// `[a, b, c, ...]`. A short literal compiles straight to one
+  /// `MakeList` (the previous, single-instruction behavior, preserved
+  /// as the fast path). A literal longer than
+  /// `LIST_LITERAL_CHUNK_SIZE` is built INCREMENTALLY instead: an empty
+  /// list, then repeated `list.extend(chunk)` calls, each `chunk` a
+  /// small, ordinary `MakeList` of its own. This is what lets a
+  /// several-hundred-element literal compile at all -- a single
+  /// `MakeList` over the whole thing would need one register PER
+  /// ELEMENT, all live at once, which this VM's `u8`-sized register
+  /// operands simply can't address past ~255 (this used to panic on
+  /// raw, unchecked `u8` arithmetic once a literal got large enough;
+  /// see `compile_dict_literal`'s own doc comment for the sibling bug).
+  fn compile_list_literal(&mut self, elements: &[Expr]) -> u8 {
+    if elements.len() <= Self::LIST_LITERAL_CHUNK_SIZE {
+      return self.compile_list_chunk(elements);
+    }
+
+    let result = self.alloc_reg();
+    self.emit(Instr::MakeList {
+      dst: result,
+      start: result,
+      count: 0,
+    });
+
+    for chunk in elements.chunks(Self::LIST_LITERAL_CHUNK_SIZE) {
+      let chunk_mark = self.cur().next_reg;
+      let chunk_reg = self.compile_list_chunk(chunk);
+      self.emit_extend_call(result, chunk_reg);
+      self.free_regs_to(chunk_mark);
+    }
+
+    self.free_regs_to(result + 1);
+    result
+  }
+
+  /// One bounded (`<= LIST_LITERAL_CHUNK_SIZE` elements) list literal,
+  /// via a single `MakeList` -- the ORIGINAL `Expr::List` compiling
+  /// logic, just factored out and switched from raw register arithmetic
+  /// to `alloc_reg()` (which reports a proper compile error instead of
+  /// panicking if this function is somehow already almost out of
+  /// registers -- see `alloc_reg`'s own overflow handling).
+  fn compile_list_chunk(&mut self, elements: &[Expr]) -> u8 {
+    let start = self.cur().next_reg;
+    let mut count: u8 = 0;
+    for elem in elements {
+      let expected = self.alloc_reg();
+      let elem_reg = self.compile_expression(elem);
+      if elem_reg != expected {
+        self.emit(Instr::Move {
+          dst: expected,
+          src: elem_reg,
+        });
+      }
+      self.free_regs_to(expected + 1);
+      // Safe: callers only ever pass a slice bounded by
+      // LIST_LITERAL_CHUNK_SIZE (64), far under u8::MAX.
+      count += 1;
+    }
+    let dst = self.alloc_reg();
+    self.emit(Instr::MakeList { dst, start, count });
+    self.free_regs_to(dst + 1);
+    dst
+  }
+
+  /// `{k: v, ...}`. Same chunk-and-extend strategy as
+  /// `compile_list_literal`, for the exact same reason -- this is
+  /// actually where the crash you hit came from: `keys.len() as u8`
+  /// silently wrapped for a several-hundred-entry dict, and the
+  /// following raw `start + i as u8` register arithmetic then panicked
+  /// on overflow once enough entries had accumulated. Chunking keeps
+  /// each individual `MakeDict` small enough that this can't happen.
+  fn compile_dict_literal(&mut self, keys: &[Expr], values: &[Expr]) -> u8 {
+    debug_assert_eq!(
+      keys.len(),
+      values.len(),
+      "Dict keys and values must be the same length"
+    );
+
+    if keys.len() <= Self::DICT_LITERAL_CHUNK_SIZE {
+      return self.compile_dict_chunk(keys, values);
+    }
+
+    let result = self.alloc_reg();
+    self.emit(Instr::MakeDict {
+      dst: result,
+      start: result,
+      count: 0,
+    });
+
+    let mut idx = 0;
+    while idx < keys.len() {
+      let end = (idx + Self::DICT_LITERAL_CHUNK_SIZE).min(keys.len());
+      let chunk_mark = self.cur().next_reg;
+      let chunk_reg = self.compile_dict_chunk(&keys[idx..end], &values[idx..end]);
+      self.emit_extend_call(result, chunk_reg);
+      self.free_regs_to(chunk_mark);
+      idx = end;
+    }
+
+    self.free_regs_to(result + 1);
+    result
+  }
+
+  /// One bounded (`<= DICT_LITERAL_CHUNK_SIZE` pairs) dict literal, via
+  /// a single `MakeDict`. Keys and values are still compiled as two
+  /// back-to-back contiguous register runs (what `MakeDict` requires),
+  /// just via `alloc_reg()` instead of raw arithmetic.
+  fn compile_dict_chunk(&mut self, keys: &[Expr], values: &[Expr]) -> u8 {
+    let start = self.cur().next_reg;
+    // Safe: callers only ever pass slices bounded by
+    // DICT_LITERAL_CHUNK_SIZE (48), far under u8::MAX.
+    let count = keys.len() as u8;
+
+    for key_expr in keys {
+      let expected = self.alloc_reg();
+      let key_reg = self.compile_expression(key_expr);
+      if key_reg != expected {
+        self.emit(Instr::Move {
+          dst: expected,
+          src: key_reg,
+        });
+      }
+      self.free_regs_to(expected + 1);
+    }
+    for val_expr in values {
+      let expected = self.alloc_reg();
+      let val_reg = self.compile_expression(val_expr);
+      if val_reg != expected {
+        self.emit(Instr::Move {
+          dst: expected,
+          src: val_reg,
+        });
+      }
+      self.free_regs_to(expected + 1);
+    }
+
+    let dst = self.alloc_reg();
+    self.emit(Instr::MakeDict { dst, start, count });
+    self.free_regs_to(dst + 1);
+    dst
+  }
+
+  /// Emits `receiver_reg.extend(arg_reg)` as an ordinary `Invoke` --
+  /// shared by both the list and dict chunking paths above. Follows the
+  /// exact same calling convention `compile_invoke` always uses (the
+  /// receiver is duplicated into `obj + 1`; see `Instr::Invoke`'s own
+  /// doc comment), even though the native `extend()` methods only
+  /// actually read `obj + 2..` -- staying consistent with the general
+  /// convention is simpler than special-casing "this call happens to
+  /// target a native."
+  fn emit_extend_call(&mut self, receiver_reg: u8, arg_reg: u8) {
+    let name_val = self.heap.alloc_string("extend".to_string());
+    let name_const = self.add_constant(name_val);
+
+    let obj_reg = self.alloc_reg();
+    self.emit(Instr::Move {
+      dst: obj_reg,
+      src: receiver_reg,
+    });
+    let self_slot = self.alloc_reg();
+    self.emit(Instr::Move {
+      dst: self_slot,
+      src: obj_reg,
+    });
+    let arg_slot = self.alloc_reg();
+    if arg_slot != arg_reg {
+      self.emit(Instr::Move {
+        dst: arg_slot,
+        src: arg_reg,
+      });
+    }
+
+    self.emit(Instr::Invoke {
+      dst: obj_reg,
+      obj: obj_reg,
+      method_const: name_const,
+      num_args: 1,
+    });
+  }
+
   fn compile_expression(&mut self, expression: &Expr) -> u8 {
     match expression {
       Expr::Nil => {
@@ -1493,68 +1685,8 @@ impl<'a> Compiler<'a> {
           other
         ),
       },
-      Expr::List(elements) => {
-        let start = self.cur().next_reg;
-        let mut count: u8 = 0;
-        for elem in elements {
-          let expected = start + count;
-          let elem_reg = self.compile_expression(elem);
-          if elem_reg != expected {
-            self.emit(Instr::Move {
-              dst: expected,
-              src: elem_reg,
-            });
-          }
-          self.cur_mut().next_reg = expected + 1;
-          count = count
-            .checked_add(1)
-            .expect("too many elements in one list literal");
-        }
-        let dst = self.alloc_reg();
-        self.emit(Instr::MakeList { dst, start, count });
-        self.free_regs_to(dst + 1);
-        dst
-      },
-      Expr::Dict(keys, values) => {
-        debug_assert_eq!(
-          keys.len(),
-          values.len(),
-          "Dict keys and values must be the same length"
-        );
-        let count = keys.len() as u8;
-        let start = self.cur().next_reg;
-
-        // Keys and values compile into two back-to-back contiguous runs
-        // -- keys first, then values -- matching what Instr::MakeDict
-        // expects.
-        for (i, key_expr) in keys.iter().enumerate() {
-          let expected = start + i as u8;
-          let key_reg = self.compile_expression(key_expr);
-          if key_reg != expected {
-            self.emit(Instr::Move {
-              dst: expected,
-              src: key_reg,
-            });
-          }
-          self.cur_mut().next_reg = expected + 1;
-        }
-        for (i, val_expr) in values.iter().enumerate() {
-          let expected = start + count + i as u8;
-          let val_reg = self.compile_expression(val_expr);
-          if val_reg != expected {
-            self.emit(Instr::Move {
-              dst: expected,
-              src: val_reg,
-            });
-          }
-          self.cur_mut().next_reg = expected + 1;
-        }
-
-        let dst = self.alloc_reg();
-        self.emit(Instr::MakeDict { dst, start, count });
-        self.free_regs_to(dst + 1);
-        dst
-      },
+      Expr::List(elements) => self.compile_list_literal(elements),
+      Expr::Dict(keys, values) => self.compile_dict_literal(keys, values),
       Expr::Self_ => self.compile_self_reg(false),
       Expr::Parent => {
         panic!("compile: 'parent' must be followed by '.member' or '.member(...)'")
