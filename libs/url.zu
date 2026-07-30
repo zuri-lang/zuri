@@ -412,7 +412,8 @@ def decode(url: string) {
       # decode percent-encoded data here
       var hexdata = url[i+1, i+3].lower()
 
-      if hexdata.length() != 2 raise UrlMalformedError('bad encoding')
+      if hexdata.length() != 2 
+        raise UrlMalformedError('bad encoding')
 
       result += ((lookup_table.index_of(hexdata[0]) * 16) + lookup_table.index_of(hexdata[1])).chr()
       i += 2
@@ -494,8 +495,10 @@ def parse(url: string, strict: ?bool) {
         if !_SIMPLE_SCHEMES.contains(scheme) {
           # if the // is missing, it's a malformed url
           if url[i,i+3] != '://' {
-            if strict raise UrlMalformedError('expected // at index ${i}')
-            else break
+            if strict 
+              raise UrlMalformedError('expected // at index ${i}')
+            else 
+              break
           }
           i += 2
           if !skip_scheme has_slash = true
@@ -510,8 +513,10 @@ def parse(url: string, strict: ?bool) {
         # names (e.g., allow "HTTP" as well as "http") for the sake of robustness.
         # https://tools.ietf.org/html/rfc3986#section-3.1
         if !scheme.match('/(?:^|[^a-z0-9.+-])([a-z][a-z0-9.+-]*)$/i') {
-          if strict raise UrlMalformedError('invalid scheme')
-          else break
+          if strict 
+            raise UrlMalformedError('invalid scheme')
+          else 
+            break
         }
       } else if !port {
         # scan the port number
@@ -551,8 +556,10 @@ def parse(url: string, strict: ?bool) {
               # we read the entire url without a terminating @ sign...
               # something is wrong with this url and the url is definitely
               # malformed...
-              if strict raise UrlMalformedError('url not complete')
-              else break
+              if strict 
+                raise UrlMalformedError('url not complete')
+              else 
+                break
             }
 
             # we need to go back to @ to let host be scanned completely
@@ -602,8 +609,10 @@ def parse(url: string, strict: ?bool) {
       # the path cannot begin with two slash characters
       # https://tools.ietf.org/html/rfc3986#section-3.3
       if path.starts_with('//') {
-        if strict raise UrlMalformedError('invalid path')
-        else break
+        if strict 
+          raise UrlMalformedError('invalid path')
+        else 
+          break
       }
 
       # what should we parse next
@@ -627,8 +636,10 @@ def parse(url: string, strict: ?bool) {
         # but RFC 3986 doesn't allow this.
         # for this library, we are going strictly RFC 3986
         # https://tools.ietf.org/html/rfc3986#section-3.4
-        if strict raise UrlMalformedError('query not allowed at index ${i}')
-        else break
+        if strict 
+          raise UrlMalformedError('query not allowed at index ${i}')
+        else 
+          break
       }
 
       # scan the query

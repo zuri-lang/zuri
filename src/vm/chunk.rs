@@ -536,7 +536,7 @@ pub struct Chunk {
   /// into VM::global_slots. Never invalidated -- once a name resolves
   /// to a slot it keeps that slot for the life of the VM (globals are
   /// never renamed or removed, only reassigned in place).
-  pub global_cache: RefCell<FxHashMap<usize, u32>>,
+  pub global_cache: RefCell<FxHashMap<usize, (bool, u32)>>,
 }
 
 impl Chunk {

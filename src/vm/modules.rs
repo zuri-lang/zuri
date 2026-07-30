@@ -289,20 +289,14 @@ fn run_module_source(
 
 /// Constructs (and caches, keyed as `"builtin:NAME"`) a synthetic
 /// module exposing a handful of already-registered natives under a
-/// namespace, for names that read as a "module" in documentation/
-/// existing scripts (`math.sum(...)`) despite being plain global
-/// functions in this implementation. `None` if `name` isn't a
-/// recognized builtin module.
+/// namespace.
 fn builtin_module(vm: &mut VM, name: &str) -> Option<Value> {
   let cache_key = format!("builtin:{}", name);
   if let Some(&cached) = vm.modules.get(&cache_key) {
     return Some(cached);
   }
 
-  let members: &[&str] = match name {
-    "math" => &["sum"],
-    _ => return None,
-  };
+  let def = crate::modules::find(name)?;
 
   let module_val = vm.heap.alloc_module(ObjModule {
     name: name.to_string(),
@@ -311,10 +305,8 @@ fn builtin_module(vm: &mut VM, name: &str) -> Option<Value> {
     loaded: true,
   });
 
-  for member in members {
-    if let Some(v) = vm.lookup_global(member) {
-      module_val.as_module_mut().namespace.set(member, v);
-    }
+  for (member, value) in (def.build)(vm) {
+    module_val.as_module_mut().namespace.set(member, value);
   }
 
   vm.modules.insert(cache_key, module_val);

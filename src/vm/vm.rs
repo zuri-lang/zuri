@@ -265,6 +265,7 @@ impl VM {
   }
 
   #[inline]
+  #[allow(unused)]
   fn read_slot_in(&self, module: Option<Value>, slot: u32) -> Value {
     match module {
       None => self.global_slots[slot as usize].get(),
@@ -277,6 +278,44 @@ impl VM {
     match module {
       None => self.global_slots[slot as usize].set(v),
       Some(m) => m.as_module().namespace.slots[slot as usize].set(v),
+    }
+  }
+
+  /// Resolve `name` against `module`'s own namespace first, then --
+  /// if it isn't declared there -- fall back to the VM's shared root
+  /// table. This is what lets module code see built-in natives
+  /// (`bytes()`, `print()`, `is_string()`, ...) and the prelude's
+  /// Error hierarchy, both of which live only in the root table,
+  /// while still letting a module shadow any of those names with its
+  /// own declaration. `None` (main script/REPL) has nothing to fall
+  /// back FROM -- it just resolves against root directly.
+  fn resolve_global(&self, module: Option<Value>, name: &str) -> Option<(bool, u32)> {
+    match module {
+      None => self.global_names.get(name).copied().map(|s| (true, s)),
+      Some(m) => {
+        if let Some(&s) = m.as_module().namespace.names.get(name) {
+          return Some((false, s));
+        }
+        self.global_names.get(name).copied().map(|s| (true, s))
+      },
+    }
+  }
+
+  #[inline]
+  fn read_resolved(&self, module: Option<Value>, is_root: bool, slot: u32) -> Value {
+    if is_root {
+      self.global_slots[slot as usize].get()
+    } else {
+      module.unwrap().as_module().namespace.slots[slot as usize].get()
+    }
+  }
+
+  #[inline]
+  fn write_resolved(&self, module: Option<Value>, is_root: bool, slot: u32, v: Value) {
+    if is_root {
+      self.global_slots[slot as usize].set(v);
+    } else {
+      module.unwrap().as_module().namespace.slots[slot as usize].set(v);
     }
   }
 
@@ -1257,33 +1296,38 @@ impl VM {
           Instr::GetGlobal { dst, name_const } => {
             let instr_ip = ip - 1;
             let gmod = func.globals_module;
-            let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
-              s
-            } else {
-              let name_val = func.chunk.constants[name_const as usize];
-              if !name_val.is_string() {
-                break 'step Err(
-                  self.raise("TypeError", "expected a string constant for a global name"),
-                );
-              }
-              let s = match self.lookup_slot_in(gmod, name_val.as_str()) {
-                Some(s) => s,
-                None => {
-                  let msg = format!("undefined global '{}'", name_val.as_str());
-                  break 'step Err(self.raise("UndefinedError", msg));
-                },
+            let (is_root, slot) =
+              if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
+                cached
+              } else {
+                let name_val = func.chunk.constants[name_const as usize];
+                if !name_val.is_string() {
+                  break 'step Err(
+                    self.raise("TypeError", "expected a string constant for a global name"),
+                  );
+                }
+                let resolved = match self.resolve_global(gmod, name_val.as_str()) {
+                  Some(r) => r,
+                  None => {
+                    let msg = format!("undefined global '{}'", name_val.as_str());
+                    break 'step Err(self.raise("UndefinedError", msg));
+                  },
+                };
+                func
+                  .chunk
+                  .global_cache
+                  .borrow_mut()
+                  .insert(instr_ip, resolved);
+                resolved
               };
-              func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
-              s
-            };
-            let v = self.read_slot_in(gmod, slot);
+            let v = self.read_resolved(gmod, is_root, slot);
             self.set_reg(base, dst, v);
           },
 
           Instr::SetGlobal { name_const, src } => {
             let instr_ip = ip - 1;
             let gmod = func.globals_module;
-            let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
+            let slot = if let Some(&(_, s)) = func.chunk.global_cache.borrow().get(&instr_ip) {
               s
             } else {
               let name_val = func.chunk.constants[name_const as usize];
@@ -1293,7 +1337,11 @@ impl VM {
                 );
               }
               let s = self.get_or_create_slot_in(gmod, name_val.as_str().to_string());
-              func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
+              func
+                .chunk
+                .global_cache
+                .borrow_mut()
+                .insert(instr_ip, (gmod.is_none(), s));
               s
             };
             let v = self.get_reg(base, src);
@@ -1303,27 +1351,32 @@ impl VM {
           Instr::AssignGlobal { name_const, src } => {
             let instr_ip = ip - 1;
             let gmod = func.globals_module;
-            let slot = if let Some(&s) = func.chunk.global_cache.borrow().get(&instr_ip) {
-              s
-            } else {
-              let name_val = func.chunk.constants[name_const as usize];
-              if !name_val.is_string() {
-                break 'step Err(
-                  self.raise("TypeError", "expected a string constant for a global name"),
-                );
-              }
-              let s = match self.lookup_slot_in(gmod, name_val.as_str()) {
-                Some(s) => s,
-                None => {
-                  let msg = format!("undefined global '{}'", name_val.as_str());
-                  break 'step Err(self.raise("UndefinedError", msg));
-                },
+            let (is_root, slot) =
+              if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
+                cached
+              } else {
+                let name_val = func.chunk.constants[name_const as usize];
+                if !name_val.is_string() {
+                  break 'step Err(
+                    self.raise("TypeError", "expected a string constant for a global name"),
+                  );
+                }
+                let resolved = match self.resolve_global(gmod, name_val.as_str()) {
+                  Some(r) => r,
+                  None => {
+                    let msg = format!("undefined global '{}'", name_val.as_str());
+                    break 'step Err(self.raise("UndefinedError", msg));
+                  },
+                };
+                func
+                  .chunk
+                  .global_cache
+                  .borrow_mut()
+                  .insert(instr_ip, resolved);
+                resolved
               };
-              func.chunk.global_cache.borrow_mut().insert(instr_ip, s);
-              s
-            };
             let v = self.get_reg(base, src);
-            self.write_slot_in(gmod, slot, v);
+            self.write_resolved(gmod, is_root, slot, v);
           },
 
           Instr::Closure { dst, proto_const } => {

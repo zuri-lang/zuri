@@ -58,7 +58,6 @@
  * @license   MIT
  */
 
-import math
 import hash
 import date
 import convert
@@ -69,14 +68,13 @@ import convert
 # ---------------------------------------------------------------------------
 
 # Returns a cryptographically-random hex string of `n` hex characters (n must
-# be even). Uses math.random() seeded with the current time at microsecond
-# resolution as Zuri's best available entropy source.
+# be even).
 def _random_hex(n) {
   var result = ''
   var i = 0
   while i < n {
     var byte = rand(256)
-    var hi   = math.floor(byte / 16)
+    var hi   = (byte / 16).floor()
     var lo   = byte % 16
     result  += '0123456789abcdef'[hi]
     result  += '0123456789abcdef'[lo]
@@ -121,7 +119,7 @@ def _set_variant(hex32) {
   # Byte 8 (chars 16-17): top two bits must be '10'
   var byte8  = ('0x' + hex32[16,18]).to_number()
   byte8 = (byte8 & 0x3f) | 0x80   # clear top 2, set '10'
-  var hi = math.floor(byte8 / 16)
+  var hi = (byte8 / 16).floor()
   var lo = byte8 % 16
   return hex32[0,16] + '0123456789abcdef'[hi] + '0123456789abcdef'[lo] + hex32[18,32]
 }
@@ -131,7 +129,7 @@ def _set_version(hex32, version) {
   # Byte 6 (chars 12-13): top nibble is the version.
   var byte6 = ('0x' + hex32[12,14]).to_number()
   byte6 = (byte6 & 0x0f) | (version * 16)
-  var hi = math.floor(byte6 / 16)
+  var hi = (byte6 / 16).floor()
   var lo = byte6 % 16
   return hex32[0,12] + '0123456789abcdef'[hi] + '0123456789abcdef'[lo] + hex32[14,32]
 }
@@ -144,7 +142,7 @@ def _gregorian_timestamp() {
   #
   # Zuri's date module gives milliseconds since Unix epoch.  We multiply by
   # 10 000 to convert ms → 100-ns intervals, then add the Gregorian offset.
-  var unix_ms  = math.floor(date.Date().to_time() * 1000)
+  var unix_ms  = (date.Date().to_time() * 1000).floor()
   var ts_100ns = unix_ms * 10000 + 122192928000000000
   return ts_100ns
 }
@@ -515,16 +513,16 @@ def v1(node: ?string, clock_seq: ?number) {
   # Zuri integers lose precision beyond 2^53; we perform split arithmetic.
   # ts fits in ~57 bits at year 2024 so direct modulo is safe here.
   var time_low      = ts % 4294967296                        # lower 32 bits
-  var time_upper    = math.floor(ts / 4294967296)            # upper bits
+  var time_upper    = (ts / 4294967296).floor()            # upper bits
   var time_mid      = time_upper % 65536                     # bits 32-47
-  var time_hi       = math.floor(time_upper / 65536) % 4096 # bits 48-59
+  var time_hi       = ((time_upper / 65536) % 4096).floor() # bits 48-59
 
   var tl  = _int_to_hex(time_low, 8)
   var tm  = _int_to_hex(time_mid, 4)
   var th  = _int_to_hex(time_hi, 3)
 
   # Clock sequence: high byte has variant bits in top 2, low 6 bits of seq hi.
-  var seq_hi = math.floor(seq / 256) | 0x80   # variant '10' in top 2 bits
+  var seq_hi = ((seq / 256) | 0x80).floor()   # variant '10' in top 2 bits
   var seq_lo = seq % 256
   var cs  = _int_to_hex(seq_hi, 2) + _int_to_hex(seq_lo, 2)
 
@@ -698,11 +696,11 @@ def v6(node: ?string, clock_seq: ?number) {
   #   clock_seq          (variant + 14 bits)                           → 4 hex
   #   node                                                             → 12 hex
 
-  var time_upper = math.floor(ts / 4096)      # bits 12-59
+  var time_upper = (ts / 4096).floor()      # bits 12-59
   var time_lo12  = ts % 4096                  # bits 0-11
 
   # Split time_upper into two 32-bit halves for hex encoding.
-  var tu_hi = math.floor(time_upper / 4294967296)
+  var tu_hi = (time_upper / 4294967296).floor()
   var tu_lo = time_upper % 4294967296
 
   var th   = _int_to_hex(tu_hi, 8)            # time high (bits 28-59)
@@ -715,7 +713,7 @@ def v6(node: ?string, clock_seq: ?number) {
 
   var time_low12 = _int_to_hex(time_lo12, 3)  # low 12 bits of timestamp
 
-  var seq_hi = math.floor(seq / 256) | 0x80
+  var seq_hi = ((seq / 256) | 0x80).floor()
   var seq_lo = seq % 256
   var cs     = _int_to_hex(seq_hi, 2) + _int_to_hex(seq_lo, 2)
 
@@ -778,7 +776,7 @@ def v6(node: ?string, clock_seq: ?number) {
  * @return string  Canonical UUID string.
  */
 def v7() {
-  var unix_ms = math.floor(date.Date().to_time() * 1000)
+  var unix_ms = (date.Date().to_time() * 1000).floor()
 
   # 48-bit Unix timestamp in milliseconds → 12 hex characters.
   var ts_hex = _int_to_hex(unix_ms, 12)
@@ -833,9 +831,9 @@ def v8(a: number, b: number, c: number) {
   var field_b = _int_to_hex(b % 4096, 3)              # 12-bit max
 
   # c occupies 62 bits; we embed variant bits (10) in the top 2 of those 64.
-  var c_hi  = math.floor(c / 4294967296) & 0x3fffffff  # top 30 bits of 62
+  var c_hi  = ((c / 4294967296) & 0x3fffffff ).floor() # top 30 bits of 62
   var c_lo  = c % 4294967296
-  var byte8 = (math.floor(c_hi / 16777216) & 0x3f) | 0x80  # variant
+  var byte8 = ((c_hi / 16777216).floor() & 0x3f) | 0x80  # variant
   var c_hi2 = c_hi & 0x00ffffff
   var field_c = _int_to_hex(byte8, 2) + _int_to_hex(c_hi2, 6) + _int_to_hex(c_lo, 8)
 

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 itertools = "0.15.0"
+libc = "0.2.189"
 nu-ansi-term = "0.50.3"
 num-bigint = "0.5.1"
 num-traits = "0.2.19"
