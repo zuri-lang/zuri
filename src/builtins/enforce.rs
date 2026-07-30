@@ -142,6 +142,7 @@ macro_rules! enforce_arg_count {
 #[macro_export]
 macro_rules! enforce_arg_range {
   ($ctx:expr, $min:expr, $max:expr) => {
+    #[allow(unused_comparisons)]
     if $ctx.args.len() < $min || $ctx.args.len() > $max {
       return Err(format!(
         "{}() expects between {} and {} arguments, got {}",
