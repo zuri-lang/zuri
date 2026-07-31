@@ -42,6 +42,7 @@ fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
     path: path.to_string(),
     mode: mode.to_string(),
     binary: false,
+    is_stream: true,
     handle,
   }
 }
@@ -52,6 +53,7 @@ fn std_file(_fd: i32, path: &str, mode: &str) -> FileHandle {
     path: path.to_string(),
     mode: mode.to_string(),
     binary: false,
+    is_stream: true,
     handle: None,
   }
 }

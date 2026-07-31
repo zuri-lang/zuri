@@ -142,11 +142,13 @@ fn do_read(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
   let length = ctx.args.get(1).map(|v| v.as_number() as usize);
   let binary = ctx.args[0].as_file_cell().borrow().binary;
 
+  let mut is_stream = false;
   let bytes_read: Vec<u8> = {
     let cell = ctx.args[0].as_file_cell();
     let mut fh = cell.borrow_mut();
+    is_stream = fh.is_stream;
 
-    if auto_close {
+    if auto_close && !is_stream {
       fh.handle = Some(open_with_mode(&fh.path, &fh.mode)?);
     }
 
@@ -170,7 +172,7 @@ fn do_read(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
     }
   };
 
-  if length.is_none() && auto_close {
+  if length.is_none() && auto_close && !is_stream {
     with_file_mut(ctx.args[0], |fh| fh.handle = None);
   }
 
@@ -201,11 +203,13 @@ fn do_write(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
     ctx.args[1].as_bytes()
   };
 
+  let mut is_stream = false;
   {
     let cell = ctx.args[0].as_file_cell();
     let mut fh = cell.borrow_mut();
+    is_stream = fh.is_stream;
 
-    if auto_close {
+    if auto_close && !is_stream {
       fh.handle = Some(open_with_mode(&fh.path, &fh.mode)?);
     }
 
@@ -217,7 +221,7 @@ fn do_write(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
     file.flush().map_err(|e| e.to_string())?;
   }
 
-  if auto_close {
+  if auto_close && !is_stream {
     with_file_mut(ctx.args[0], |fh| fh.handle = None);
   }
 

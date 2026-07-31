@@ -11,6 +11,7 @@
 
 mod io;
 mod math;
+mod os;
 
 use crate::vm::object::{NativeFn, NativeFunction};
 use crate::vm::value::Value;
@@ -22,7 +23,7 @@ pub struct BuiltinModuleDef {
   pub build: fn(&mut VM) -> Vec<(&'static str, Value)>,
 }
 
-pub static REGISTRY: &[BuiltinModuleDef] = &[math::MODULE, io::MODULE];
+pub static REGISTRY: &[BuiltinModuleDef] = &[math::MODULE, io::MODULE, os::MODULE];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {
   REGISTRY.iter().find(|m| m.name == name)

@@ -152,7 +152,7 @@ fn main() {
     let mut vm = VM::new(heap);
     vm.init();
 
-    if args.len() == 2 {
+    if args.len() > 1 {
       run_file(&mut vm, &args[1]);
     } else {
       run_repl(&mut vm);

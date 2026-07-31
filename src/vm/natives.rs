@@ -162,6 +162,7 @@ fn file(ctx: &mut ZuriContext) -> Result<Value, String> {
     mode,
     binary,
     handle: None,
+    is_stream: false,
   });
 
   Ok(v)

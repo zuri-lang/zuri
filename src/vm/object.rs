@@ -437,6 +437,17 @@ pub struct FileHandle {
   /// yield a string or a bytes object.
   pub binary: bool,
   pub handle: Option<File>,
+  /// True only for the `io.stdin`/`io.stdout`/`io.stderr` objects
+  /// built by `modules::io::std_file` -- these wrap a DUPLICATED
+  /// standard-stream file descriptor and have no real path on disk to
+  /// reopen (`path` is a display-only sentinel like `"<stdout>"`).
+  /// `.read()`/`.write()` normally reopen-then-close around each call
+  /// (see `builtins::file::do_read`/`do_write`) so a bare `file(...)`
+  /// object works as a one-shot convenience call -- that reopen would
+  /// simply fail for a stream, so this flag makes `.read()`/`.write()`
+  /// behave like `.gets()`/`.puts()` instead: use (and keep open)
+  /// whatever handle is already there.
+  pub is_stream: bool,
 }
 
 /// Everything a native function body gets handed. `args` is an OWNED
