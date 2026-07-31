@@ -1,107 +1,117 @@
 # The Computer Language Benchmarks Game
 # https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
 #
-#  Contributed by Ian Osgood
+# By Richard Ore
+# based on -- the Naive transliteration from Drake Diedrich's C program
+# contributed by Isaac Gouy
+# at https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/fasta-node-8.html
 
-var last = 42, A = 3877, C = 29573, M = 139968
+import os
 
-def rand(max) {
-  last = (last * A + C) % M
-  return max * last / M
+const IM = 139968
+const IA = 3877
+const IC = 29573
+const SEED = 42
+
+var seed = SEED
+def fastaRand(max) {
+  seed = (seed * IA + IC) % IM
+  return max * seed / IM
 }
 
-var ALU = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG" +
-  "GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA" +
-  "CCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAAT" +
-  "ACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCA" +
-  "GCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGG" +
-  "AGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCC" +
-  "AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA"
+const ALU = 'GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG' +
+  'GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA' +
+  'CCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAAT' +
+  'ACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCA' +
+  'GCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGG' +
+  'AGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCC' +
+  'AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA'
 
-var IUB = {
-  a:0.27, c:0.12, g:0.12, t:0.27,
-  B:0.02, D:0.02, H:0.02, K:0.02,
-  M:0.02, N:0.02, R:0.02, S:0.02,
-  V:0.02, W:0.02, Y:0.02
-}
+const iub = 'acgtBDHKMNRSVWY'
+const iubP = [
+  0.27, 0.12, 0.12, 0.27,
+  0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02
+]
 
-var HomoSap = {
-  a: 0.3029549426680,
-  c: 0.1979883004921,
-  g: 0.1975473066391,
-  t: 0.3015094502008
-}
+const homosapiens = 'acgt'
+const  homosapiensP = [
+  0.3029549426680,
+  0.1979883004921,
+  0.1975473066391,
+  0.3015094502008
+]
 
-def makeCumulative(table) {
-  var last = nil
-  for c, _ in table {
-    if last {
-      table[c] += table[last]
+const LINELEN = 60
+
+# slowest character-at-a-time output
+def repeatFasta(seq, n) {
+  const len = seq.length()
+
+  var i = 0
+
+  /* explicit line buffer */
+  var b = '';
+
+  iter ; i < n; i++ {
+    b += seq[i % len]
+
+    if (i % LINELEN == LINELEN - 1) {
+      b += '\n'
+      print(b)
+      b = ''
     }
+  }
 
-    last = c
+  if i % LINELEN != 0 {
+    b += '\n'
+    print(b)
   }
 }
 
-def fastaRepeat(n, seq) {
-  var seqi = 0, lenOut = 60
+def randomFasta(seq, probability, n) {
+  const len = seq.length()
 
-  while n > 0 {
-    if n < lenOut {
-      lenOut = n
+  var i = 0
+
+  /* explicit line buffer */
+  var b = '';
+
+  iter ; i < n; i++ {
+    var v = fastaRand(1.0)
+    var j = 0
+
+    /* slowest idiomatic linear lookup.  Fast if len is short though. */
+    iter ; j < len - 1; j++ {
+      v -= probability[j]
+      if (v<0) break
     }
 
-    if seqi + lenOut < seq.length() {
-      echo seq[seqi, seqi+lenOut]
-      seqi += lenOut
-    } else {
-      var s = seq[seqi,]
-      seqi = lenOut - s.length()
-      echo s + seq[0, seqi]
-    }
+    b += seq[j]
 
-    n -= lenOut
+    if i % LINELEN == LINELEN - 1 {
+      b += '\n'
+      print(b)
+      b = ''
+    }
+  }
+
+  if i % LINELEN != 0 {
+    b += '\n'
+    print(b)
   }
 }
 
-def fastaRandom(n, table) {
+def main(n) {
+  print('>ONE Homo sapiens alu\n')
+  repeatFasta(ALU, n * 2)
 
-  var line = [nil] * 60
+  print('>TWO IUB ambiguity codes\n')
+  randomFasta(iub, iubP, n * 3)
 
-  makeCumulative(table)
-
-  while n > 0 {
-    if n < line.length() {
-      line = [nil] * n
-    }
-
-    iter var i = 0; i < line.length(); i++ {
-      var r = rand(1)
-
-      for c, v in table {
-        if r < v {
-          line[i] = c
-          break
-        }
-      }
-    }
-
-    echo ''.join(line)
-    n -= line.length()
-  }
+  print('>THREE Homo sapiens frequency\n')
+  randomFasta(homosapiens, homosapiensP, n * 5)
 }
-
-var n = 25000000
 
 var start = time()
-
-echo ">ONE Homo sapiens alu"
-fastaRepeat(2 * n, ALU)
-
-echo ">TWO IUB ambiguity codes"
-fastaRandom(3 * n, IUB)
-
-echo ">THREE Homo sapiens frequency"
-fastaRandom(5 * n, HomoSap)
-
-echo 'Time taken = ${time() - start}s'
+main(os.args.get(2, '1000').to_number())
+echo 'Time taken: ${time() - start}s'

@@ -145,6 +145,10 @@ impl<'a> Compiler<'a> {
     self.is_repl = false;
   }
 
+  fn at_module_top_level(&self) -> bool {
+    self.scopes.len() == 1 && self.cur().scope_depth == 0
+  }
+
   pub fn set_current_module(&mut self, module: Value) {
     self.module = Some(module);
   }
@@ -2368,7 +2372,7 @@ impl<'a> Compiler<'a> {
       Stmt::Var(token, initializer, _type_hint, is_const) => {
         let name = Self::identifier_name(token);
 
-        if self.is_repl && self.cur().scope_depth == 0 {
+        if self.at_module_top_level() {
           let src = self.compile_expression(initializer);
 
           let name_val = self.heap.alloc_string(name.clone());

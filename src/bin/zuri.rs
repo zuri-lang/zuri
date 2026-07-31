@@ -144,18 +144,13 @@ fn main() {
 
   let args = env::args().collect::<Vec<_>>();
 
-  if args.len() > 2 {
-    println!("Usage: zuri <script>");
-    process::exit(1);
-  } else {
-    let heap = Heap::new();
-    let mut vm = VM::new(heap);
-    vm.init();
+  let heap = Heap::new();
+  let mut vm = VM::new(heap);
+  vm.init();
 
-    if args.len() > 1 {
-      run_file(&mut vm, &args[1]);
-    } else {
-      run_repl(&mut vm);
-    }
+  if args.len() > 1 {
+    run_file(&mut vm, &args[1]);
+  } else {
+    run_repl(&mut vm);
   }
 }

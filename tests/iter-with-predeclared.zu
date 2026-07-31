@@ -1,0 +1,17 @@
+var i = 0;
+
+iter ; i < 10; i++ {
+    echo i
+}
+
+echo i
+echo i
+
+var j
+
+iter j = 0; j <= 10; j++ {
+    echo j
+}
+
+echo j
+echo j

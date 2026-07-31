@@ -44,7 +44,7 @@ pub static LIST_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("last", last),
     method("is_empty", is_empty),
     method_n("take", 1, take),
-    method_n("get", 1, get),
+    method_opt("get", 1, get),
     method("compact", compact),
     method("unique", unique),
     method_opt("zip", 0, zip),
@@ -394,13 +394,17 @@ fn take(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn get(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_range!(ctx, 1, 2);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
 
   let idx = ctx.args[1].as_number();
   let len = ctx.args[0].list_len();
   if idx < 0.0 || idx as usize >= len {
-    return Err(format!("list index {} out of range at get()", idx as i64));
+    return if ctx.args.len() == 3 {
+      Ok(ctx.args[2])
+    } else {
+      Err(format!("list index {} out of range at get()", idx as i64))
+    };
   }
   Ok(ctx.args[0].list_get(idx as usize).unwrap())
 }

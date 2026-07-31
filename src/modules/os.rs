@@ -53,7 +53,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   // kept as a real (if today always-empty) skip(2) so this keeps
   // working the moment extra-argument support is added there.
   let args: Vec<Value> = std::env::args()
-    .skip(2)
+    // .skip(2)
     .map(|a| vm.heap_mut().alloc_string(a))
     .collect();
   let args_val = vm.heap_mut().alloc_list(args);
