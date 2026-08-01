@@ -9,6 +9,8 @@
 //! `pub static MODULE: BuiltinModuleDef`, then listing it in
 //! `REGISTRY` below -- nothing else needs to change.
 
+mod crypto;
+mod hash;
 mod io;
 mod math;
 mod os;
@@ -23,7 +25,13 @@ pub struct BuiltinModuleDef {
   pub build: fn(&mut VM) -> Vec<(&'static str, Value)>,
 }
 
-pub static REGISTRY: &[BuiltinModuleDef] = &[math::MODULE, io::MODULE, os::MODULE];
+pub static REGISTRY: &[BuiltinModuleDef] = &[
+  math::MODULE,
+  io::MODULE,
+  os::MODULE,
+  hash::MODULE,
+  crypto::MODULE,
+];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {
   REGISTRY.iter().find(|m| m.name == name)

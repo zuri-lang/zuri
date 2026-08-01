@@ -612,7 +612,7 @@ impl VM {
       name: native.name,
     };
     let result = (native.func)(&mut ctx);
-    result.map_err(|msg| self.raise("TypeError", msg))
+    result.map_err(|msg| self.raise("Error", msg))
   }
 
   /// Construct a new instance of `class_val`: allocate storage sized to
@@ -1625,6 +1625,18 @@ impl VM {
                   break 'step Err(self.raise("PropertyError", msg));
                 },
               }
+            } else if receiver.is_dict() {
+              // `dict.key` is sugar for `dict['key']` -- same lookup,
+              // same "missing key" error as Instr::GetIndex's own dict
+              // arm (see `VM::index_get`), just reached through field
+              // syntax instead of a bracketed index.
+              match receiver.dict_get(&name_val) {
+                Some(v) => v,
+                None => {
+                  let msg = format!("undefined key '{}' in dict", name_val);
+                  break 'step Err(self.raise("PropertyError", msg));
+                },
+              }
             } else {
               let msg = format!(
                 "cannot read property '{}' on a {}",
@@ -1675,6 +1687,11 @@ impl VM {
             } else if receiver.is_module() || receiver.is_module_binding() {
               let msg = "cannot assign to a module member from outside the module".to_string();
               break 'step Err(self.raise("AccessError", msg));
+            } else if receiver.is_dict() {
+              // `dict.key = value` is sugar for `dict['key'] = value` --
+              // insert-or-update, same as Instr::SetIndex's own dict arm
+              // (see `VM::index_set`), never an error for a missing key.
+              receiver.dict_set(name_val, value);
             } else {
               let msg = format!(
                 "cannot set property '{}' on a {}",

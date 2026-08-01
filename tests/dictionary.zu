@@ -9,7 +9,7 @@ var dict = {
 echo dict
 
 echo dict['address']
-echo dict['age'] = 30
+echo dict.age = 30
 
 dict['children'] += 1
 

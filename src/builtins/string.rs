@@ -40,7 +40,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("starts_with", 1, starts_with),
     method_n("ends_with", 1, ends_with),
     method_n("count", 1, count),
-    method("to_number", to_number),
+    method_opt("to_number", 0, to_number),
     method("to_list", to_list),
     method("to_bytes", to_bytes),
     method_opt("lpad", 1, lpad),
@@ -93,8 +93,6 @@ fn compile_regex(pattern: &str, modifiers: &str) -> Result<Regex, String> {
   };
   Regex::new(&full).map_err(|e| format!("invalid regular expression '{}': {}", pattern, e))
 }
-
-static NUMBER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+(\.\d+)?").unwrap());
 
 //-----------------------------------------------------------------------------------
 // Small shared arg helpers
@@ -384,12 +382,22 @@ fn count(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn to_number(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_range!(ctx, 0, 1);
 
   let s = ctx.args[0].as_str();
-  match NUMBER_RE.find(s) {
-    Some(m) => Ok(Value::number(m.as_str().parse::<f64>().unwrap_or(0.0))),
-    None => Ok(Value::number(0.0)),
+  let base = if ctx.args.len() == 2 {
+    enforce_method_arg_type!(ctx, 1, ArgType::Number);
+    ctx.args[1].as_number() as u32
+  } else {
+    10
+  };
+
+  if s.contains(".") && base == 10 {
+    Ok(Value::number(s.parse::<f64>().unwrap_or(0.0)))
+  } else {
+    Ok(Value::number(
+      i64::from_str_radix(s, base).unwrap_or(0) as f64
+    ))
   }
 }
 

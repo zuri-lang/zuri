@@ -29,7 +29,7 @@ def mandlebrot(h, w) {
       } while false
 
       if bit_num == 1 {
-        print(chr(bytes_acc))
+        print(bytes_acc.chr())
         bit_num = 128
         bytes_acc = 0
       } else {
@@ -38,7 +38,7 @@ def mandlebrot(h, w) {
     }
 
     if bit_num != 128 {
-      print(chr(bytes_acc))
+      print(bytes_acc.chr())
       bit_num = 128
       bytes_acc = 0
     }
@@ -46,6 +46,6 @@ def mandlebrot(h, w) {
 }
 
 var start = time()
-mandlebrot(16_000)
+mandlebrot(25_000_000)
 
 echo '\nTotal time taken: ${time() - start}s'
