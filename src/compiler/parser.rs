@@ -1285,6 +1285,7 @@ impl<'a> Parser<'a> {
     let mut message = None;
 
     if match_tok!(self, TokenKind::Comma) {
+      self.ignore_newlines_only();
       message = Some(Box::new(self.expression()));
     }
 
