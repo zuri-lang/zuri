@@ -154,7 +154,7 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let count = (width / step).ceil() as i64;
 
   if count <= 0 {
-    return Ok(Value::bool(false));
+    return Ok(Value::nil());
   }
 
   if val.is_nil() {

@@ -468,6 +468,7 @@ impl Lexer {
             }
             final_str.push(next);
           },
+          '\\' => final_str.push('\\'),
           _ => {
             final_str.push(c);
             final_str.push(next);

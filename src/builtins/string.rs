@@ -39,6 +39,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_opt("index_of", 1, index_of),
     method_n("starts_with", 1, starts_with),
     method_n("ends_with", 1, ends_with),
+    method_n("contains", 1, contains),
     method_n("count", 1, count),
     method_opt("to_number", 0, to_number),
     method("to_list", to_list),
@@ -372,6 +373,15 @@ fn ends_with(ctx: &mut ZuriContext) -> Result<Value, String> {
   ))
 }
 
+fn contains(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::String);
+
+  Ok(Value::bool(
+    ctx.args[0].as_str().contains(ctx.args[1].as_str()),
+  ))
+}
+
 fn count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::String);
@@ -625,10 +635,11 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];
   let obj = ctx.args[0].as_str();
 
+  if obj.is_empty() {
+    return Ok(Value::nil());
+  }
+
   if val.is_nil() {
-    if obj.is_empty() {
-      return Ok(Value::bool(false));
-    }
     return Ok(Value::number(0.0));
   }
 

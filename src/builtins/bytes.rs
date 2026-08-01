@@ -365,10 +365,12 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];
   let len = ctx.args[0].bytes_len();
-  if val.is_nil() {
+
     if len == 0 {
-      return Ok(Value::bool(false));
+      return Ok(Value::nil());
     }
+
+  if val.is_nil() {
     return Ok(Value::number(0.0));
   }
   if !val.is_number() {

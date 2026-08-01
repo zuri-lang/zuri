@@ -1,0 +1,68 @@
+/** 
+ * @module math
+ *
+ * This module contains functions and constants to make trigonometric and 
+ * non-trigonometric mathematics a breeze. The module also defines a couple
+ * of commonly used scientific and mathematical constants such as `PI`.
+ * 
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _math
+
+/**
+ * represents the ratio of the circumference of a circle 
+ * to its diameter
+ */
+var PI = 3.141592653589793
+
+/**
+ * represents Euler's number, the base of natural logarithms
+ */
+var E = 2.718281828459045
+
+/**
+ * represents the natural logarithm of 10
+ */
+var LOG_10 = 2.302585092994046
+
+/**
+ * represents the base 10 logarithm of e
+ */
+var LOG_10_E = 0.4342944819032518
+
+/**
+ * represents the natural logarithm of 2
+ */
+var LOG_2 = 0.6931471805599453
+
+/**
+ * represents the base 2 logarithm of e
+ */
+var LOG_2_E = 1.4426950408889634
+
+/**
+ * represents the square root of 2
+ */
+var ROOT_2 = 1.4142135623730951
+
+/**
+ * represents the square root of 3
+ */
+var ROOT_3 = 1.732050807568877
+
+/**
+ * represents the square root of 1/2
+ */
+var ROOT_HALF = 0.7071067811865476
+
+/**
+ * Mathematical infinity
+ */
+var Infinity = _math.Infinity
+
+/**
+ * Mathematical NaN
+ */
+var NaN = _math.NaN
+

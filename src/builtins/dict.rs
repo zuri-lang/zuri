@@ -340,10 +340,11 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let dict = ctx.args[0];
   let len = dict.dict_len();
 
+  if len == 0 {
+    return Ok(Value::nil());
+  }
+
   if val.is_nil() {
-    if len == 0 {
-      return Ok(Value::bool(false));
-    }
     return Ok(dict.dict_key_at(0).unwrap());
   }
 
