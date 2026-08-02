@@ -19,7 +19,9 @@
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use argon2::{Algorithm as Argon2Algorithm, Argon2, Params as Argon2Params, Version as Argon2Version};
+use argon2::{
+  Algorithm as Argon2Algorithm, Argon2, Params as Argon2Params, Version as Argon2Version,
+};
 use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use ecdsa::signature::{Signer as EcdsaSigner, Verifier as EcdsaVerifier};
@@ -41,40 +43,106 @@ use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_range, enforce_arg_type, enforce_arg_type_opt};
 
-pub static MODULE: BuiltinModuleDef = BuiltinModuleDef { name: "_crypto", build };
+pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
+  name: "_crypto",
+  build,
+};
 
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
-    ("random_bytes", native(vm, "random_bytes", 1, false, random_bytes_fn)),
+    (
+      "random_bytes",
+      native(vm, "random_bytes", 1, false, random_bytes_fn),
+    ),
     // AES-GCM
-    ("aes_gcm_encrypt", native(vm, "aes_gcm_encrypt", 3, true, aes_gcm_encrypt_fn)),
-    ("aes_gcm_decrypt", native(vm, "aes_gcm_decrypt", 3, true, aes_gcm_decrypt_fn)),
+    (
+      "aes_gcm_encrypt",
+      native(vm, "aes_gcm_encrypt", 3, true, aes_gcm_encrypt_fn),
+    ),
+    (
+      "aes_gcm_decrypt",
+      native(vm, "aes_gcm_decrypt", 3, true, aes_gcm_decrypt_fn),
+    ),
     // AES-CBC
-    ("aes_cbc_encrypt", native(vm, "aes_cbc_encrypt", 3, false, aes_cbc_encrypt_fn)),
-    ("aes_cbc_decrypt", native(vm, "aes_cbc_decrypt", 3, false, aes_cbc_decrypt_fn)),
+    (
+      "aes_cbc_encrypt",
+      native(vm, "aes_cbc_encrypt", 3, false, aes_cbc_encrypt_fn),
+    ),
+    (
+      "aes_cbc_decrypt",
+      native(vm, "aes_cbc_decrypt", 3, false, aes_cbc_decrypt_fn),
+    ),
     // ChaCha20-Poly1305
-    ("chacha20_encrypt", native(vm, "chacha20_encrypt", 3, true, chacha20_encrypt_fn)),
-    ("chacha20_decrypt", native(vm, "chacha20_decrypt", 3, true, chacha20_decrypt_fn)),
+    (
+      "chacha20_encrypt",
+      native(vm, "chacha20_encrypt", 3, true, chacha20_encrypt_fn),
+    ),
+    (
+      "chacha20_decrypt",
+      native(vm, "chacha20_decrypt", 3, true, chacha20_decrypt_fn),
+    ),
     // RSA
-    ("rsa_generate", native(vm, "rsa_generate", 1, false, rsa_generate_fn)),
-    ("rsa_encrypt", native(vm, "rsa_encrypt", 2, false, rsa_encrypt_fn)),
-    ("rsa_decrypt", native(vm, "rsa_decrypt", 2, false, rsa_decrypt_fn)),
+    (
+      "rsa_generate",
+      native(vm, "rsa_generate", 1, false, rsa_generate_fn),
+    ),
+    (
+      "rsa_encrypt",
+      native(vm, "rsa_encrypt", 2, false, rsa_encrypt_fn),
+    ),
+    (
+      "rsa_decrypt",
+      native(vm, "rsa_decrypt", 2, false, rsa_decrypt_fn),
+    ),
     ("rsa_sign", native(vm, "rsa_sign", 2, false, rsa_sign_fn)),
-    ("rsa_verify", native(vm, "rsa_verify", 3, false, rsa_verify_fn)),
+    (
+      "rsa_verify",
+      native(vm, "rsa_verify", 3, false, rsa_verify_fn),
+    ),
     // ECDSA
-    ("ecdsa_generate", native(vm, "ecdsa_generate", 1, false, ecdsa_generate_fn)),
-    ("ecdsa_sign", native(vm, "ecdsa_sign", 2, false, ecdsa_sign_fn)),
-    ("ecdsa_verify", native(vm, "ecdsa_verify", 3, false, ecdsa_verify_fn)),
+    (
+      "ecdsa_generate",
+      native(vm, "ecdsa_generate", 1, false, ecdsa_generate_fn),
+    ),
+    (
+      "ecdsa_sign",
+      native(vm, "ecdsa_sign", 2, false, ecdsa_sign_fn),
+    ),
+    (
+      "ecdsa_verify",
+      native(vm, "ecdsa_verify", 3, false, ecdsa_verify_fn),
+    ),
     // Ed25519
-    ("ed25519_generate", native(vm, "ed25519_generate", 0, false, ed25519_generate_fn)),
-    ("ed25519_sign", native(vm, "ed25519_sign", 2, false, ed25519_sign_fn)),
-    ("ed25519_verify", native(vm, "ed25519_verify", 3, false, ed25519_verify_fn)),
+    (
+      "ed25519_generate",
+      native(vm, "ed25519_generate", 0, false, ed25519_generate_fn),
+    ),
+    (
+      "ed25519_sign",
+      native(vm, "ed25519_sign", 2, false, ed25519_sign_fn),
+    ),
+    (
+      "ed25519_verify",
+      native(vm, "ed25519_verify", 3, false, ed25519_verify_fn),
+    ),
     // X25519
-    ("x25519_generate", native(vm, "x25519_generate", 0, false, x25519_generate_fn)),
-    ("x25519_exchange", native(vm, "x25519_exchange", 2, false, x25519_exchange_fn)),
+    (
+      "x25519_generate",
+      native(vm, "x25519_generate", 0, false, x25519_generate_fn),
+    ),
+    (
+      "x25519_exchange",
+      native(vm, "x25519_exchange", 2, false, x25519_exchange_fn),
+    ),
     // Argon2id
-    ("argon2_hash", native(vm, "argon2_hash", 2, true, argon2_hash_fn)),
-    ("argon2_verify", native(vm, "argon2_verify", 2, false, argon2_verify_fn)),
+    (
+      "argon2_hash",
+      native(vm, "argon2_hash", 2, true, argon2_hash_fn),
+    ),
+    (
+      "argon2_verify",
+      native(vm, "argon2_verify", 2, false, argon2_verify_fn),
+    ),
     // HKDF-SHA256
     ("hkdf", native(vm, "hkdf", 4, false, hkdf_fn)),
   ]
@@ -93,7 +161,9 @@ fn make_keypair_dict(ctx: &mut ZuriContext, private_pem: String, public_pem: Str
   let priv_val = ctx.heap().alloc_string(private_pem);
   let pub_key = ctx.heap().alloc_string("public_pem");
   let pub_val = ctx.heap().alloc_string(public_pem);
-  ctx.heap().alloc_dict(vec![(priv_key, priv_val), (pub_key, pub_val)])
+  ctx
+    .heap()
+    .alloc_dict(vec![(priv_key, priv_val), (pub_key, pub_val)])
 }
 
 //-----------------------------------------------------------------------------------
@@ -119,8 +189,8 @@ fn random_bytes_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 //-----------------------------------------------------------------------------------
 
 fn aes_gcm_seal(key: &[u8], iv: &[u8], pt: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
-  use aes_gcm::{Aes128Gcm, Aes256Gcm, AesGcm, Nonce};
   use aes_gcm::aead::generic_array::typenum::U12;
+  use aes_gcm::{Aes128Gcm, Aes256Gcm, AesGcm, Nonce};
   type Aes192Gcm = AesGcm<aes::Aes192, U12>;
 
   if iv.len() != 12 {
@@ -142,13 +212,16 @@ fn aes_gcm_seal(key: &[u8], iv: &[u8], pt: &[u8], aad: &[u8]) -> Result<Vec<u8>,
       .map_err(|e| crypto_err("invalid key", e))?
       .encrypt(nonce, payload)
       .map_err(|_| "aes_gcm: encryption failed".to_string()),
-    n => Err(format!("aes_gcm: key must be 16, 24, or 32 bytes, got {}", n)),
+    n => Err(format!(
+      "aes_gcm: key must be 16, 24, or 32 bytes, got {}",
+      n
+    )),
   }
 }
 
 fn aes_gcm_open(key: &[u8], iv: &[u8], ct: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
-  use aes_gcm::{Aes128Gcm, Aes256Gcm, AesGcm, Nonce};
   use aes_gcm::aead::generic_array::typenum::U12;
+  use aes_gcm::{Aes128Gcm, Aes256Gcm, AesGcm, Nonce};
   type Aes192Gcm = AesGcm<aes::Aes192, U12>;
 
   if iv.len() != 12 {
@@ -156,7 +229,8 @@ fn aes_gcm_open(key: &[u8], iv: &[u8], ct: &[u8], aad: &[u8]) -> Result<Vec<u8>,
   }
   let nonce = Nonce::from_slice(iv);
   let payload = Payload { msg: ct, aad };
-  let fail = || "aes_gcm: authentication failed (wrong key/iv/aad or corrupt ciphertext)".to_string();
+  let fail =
+    || "aes_gcm: authentication failed (wrong key/iv/aad or corrupt ciphertext)".to_string();
 
   match key.len() {
     16 => Aes128Gcm::new_from_slice(key)
@@ -171,7 +245,10 @@ fn aes_gcm_open(key: &[u8], iv: &[u8], ct: &[u8], aad: &[u8]) -> Result<Vec<u8>,
       .map_err(|e| crypto_err("invalid key", e))?
       .decrypt(nonce, payload)
       .map_err(|_| fail()),
-    n => Err(format!("aes_gcm: key must be 16, 24, or 32 bytes, got {}", n)),
+    n => Err(format!(
+      "aes_gcm: key must be 16, 24, or 32 bytes, got {}",
+      n
+    )),
   }
 }
 
@@ -257,7 +334,12 @@ fn aes_cbc_encrypt_bytes(key: &[u8], iv: &[u8], pt: &[u8]) -> Result<Vec<u8>, St
       .encrypt_padded_mut::<Pkcs7>(&mut buf, pt.len())
       .map_err(|_| pad_err())?
       .len(),
-    n => return Err(format!("aes_cbc: key must be 16, 24, or 32 bytes, got {}", n)),
+    n => {
+      return Err(format!(
+        "aes_cbc: key must be 16, 24, or 32 bytes, got {}",
+        n
+      ));
+    },
   };
   buf.truncate(ct_len);
   Ok(buf)
@@ -289,7 +371,12 @@ fn aes_cbc_decrypt_bytes(key: &[u8], iv: &[u8], ct: &[u8]) -> Result<Vec<u8>, St
       .decrypt_padded_mut::<Pkcs7>(&mut buf)
       .map_err(|_| fail())?
       .len(),
-    n => return Err(format!("aes_cbc: key must be 16, 24, or 32 bytes, got {}", n)),
+    n => {
+      return Err(format!(
+        "aes_cbc: key must be 16, 24, or 32 bytes, got {}",
+        n
+      ));
+    },
   };
   buf.truncate(pt_len);
   Ok(buf)
@@ -339,16 +426,28 @@ fn chacha20_encrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let aad = read_aad(ctx, 3)?;
 
   if key.len() != 32 {
-    return Err(format!("chacha20: key must be exactly 32 bytes, got {}", key.len()));
+    return Err(format!(
+      "chacha20: key must be exactly 32 bytes, got {}",
+      key.len()
+    ));
   }
   if iv.len() != 12 {
-    return Err(format!("chacha20: iv must be exactly 12 bytes, got {}", iv.len()));
+    return Err(format!(
+      "chacha20: iv must be exactly 12 bytes, got {}",
+      iv.len()
+    ));
   }
 
   let cipher = ChaCha20Poly1305::new_from_slice(&key).map_err(|e| crypto_err("invalid key", e))?;
   let nonce = Nonce::from_slice(&iv);
   let ct = cipher
-    .encrypt(nonce, Payload { msg: &pt, aad: &aad })
+    .encrypt(
+      nonce,
+      Payload {
+        msg: &pt,
+        aad: &aad,
+      },
+    )
     .map_err(|_| "chacha20: encryption failed".to_string())?;
   Ok(ctx.heap().alloc_bytes(ct))
 }
@@ -367,17 +466,31 @@ fn chacha20_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let aad = read_aad(ctx, 3)?;
 
   if key.len() != 32 {
-    return Err(format!("chacha20: key must be exactly 32 bytes, got {}", key.len()));
+    return Err(format!(
+      "chacha20: key must be exactly 32 bytes, got {}",
+      key.len()
+    ));
   }
   if iv.len() != 12 {
-    return Err(format!("chacha20: iv must be exactly 12 bytes, got {}", iv.len()));
+    return Err(format!(
+      "chacha20: iv must be exactly 12 bytes, got {}",
+      iv.len()
+    ));
   }
 
   let cipher = ChaCha20Poly1305::new_from_slice(&key).map_err(|e| crypto_err("invalid key", e))?;
   let nonce = Nonce::from_slice(&iv);
   let pt = cipher
-    .decrypt(nonce, Payload { msg: &ct, aad: &aad })
-    .map_err(|_| "chacha20: authentication failed (wrong key/iv/aad or corrupt ciphertext)".to_string())?;
+    .decrypt(
+      nonce,
+      Payload {
+        msg: &ct,
+        aad: &aad,
+      },
+    )
+    .map_err(|_| {
+      "chacha20: authentication failed (wrong key/iv/aad or corrupt ciphertext)".to_string()
+    })?;
   Ok(ctx.heap().alloc_bytes(pt))
 }
 
@@ -397,7 +510,8 @@ fn rsa_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     return Err("rsa_generate(): bits must be 2048 or 4096".to_string());
   }
 
-  let priv_key = RsaPrivateKey::new(&mut OsRng, bits as usize).map_err(|e| crypto_err("key generation failed", e))?;
+  let priv_key = RsaPrivateKey::new(&mut OsRng, bits as usize)
+    .map_err(|e| crypto_err("key generation failed", e))?;
   let pub_key = RsaPublicKey::from(&priv_key);
 
   let priv_pem = priv_key
@@ -448,9 +562,9 @@ fn rsa_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn rsa_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  use rsa::RsaPrivateKey;
   use rsa::pkcs8::DecodePrivateKey;
   use rsa::pss::SigningKey;
-  use rsa::RsaPrivateKey;
 
   enforce_arg_count!(ctx, 2);
   enforce_arg_type!(ctx, 0, ArgType::String);
@@ -466,9 +580,9 @@ fn rsa_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn rsa_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  use rsa::RsaPublicKey;
   use rsa::pkcs8::DecodePublicKey;
   use rsa::pss::{Signature as PssSignature, VerifyingKey};
-  use rsa::RsaPublicKey;
 
   enforce_arg_count!(ctx, 3);
   enforce_arg_type!(ctx, 0, ArgType::String);
@@ -527,7 +641,12 @@ fn ecdsa_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
         .map_err(|e| crypto_err("could not encode public key", e))?;
       (priv_pem, pub_pem)
     },
-    other => return Err(format!("ecdsa_generate(): curve must be \"P-256\" or \"P-384\", got \"{}\"", other)),
+    other => {
+      return Err(format!(
+        "ecdsa_generate(): curve must be \"P-256\" or \"P-384\", got \"{}\"",
+        other
+      ));
+    },
   };
 
   Ok(make_keypair_dict(ctx, priv_pem, pub_pem))
@@ -628,8 +747,8 @@ fn ed25519_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
 
-  let signing_key =
-    SigningKey::from_pkcs8_pem(ctx.args[0].as_str()).map_err(|e| crypto_err("invalid private key", e))?;
+  let signing_key = SigningKey::from_pkcs8_pem(ctx.args[0].as_str())
+    .map_err(|e| crypto_err("invalid private key", e))?;
   let message = ctx.args[1].as_bytes();
 
   let sig = signing_key.sign(&message);
@@ -644,8 +763,8 @@ fn ed25519_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
   enforce_arg_type!(ctx, 2, ArgType::Bytes);
 
-  let verifying_key =
-    VerifyingKey::from_public_key_pem(ctx.args[0].as_str()).map_err(|e| crypto_err("invalid public key", e))?;
+  let verifying_key = VerifyingKey::from_public_key_pem(ctx.args[0].as_str())
+    .map_err(|e| crypto_err("invalid public key", e))?;
   let message = ctx.args[1].as_bytes();
   let sig_bytes = ctx.args[2].as_bytes();
 
@@ -674,7 +793,9 @@ mod x25519_der {
 
   /// `SubjectPublicKeyInfo { algorithm=id-X25519, subjectPublicKey=BIT
   /// STRING(raw) }` -- 44 bytes total for a 32-byte key.
-  const SPKI_PREFIX: [u8; 12] = [0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00];
+  const SPKI_PREFIX: [u8; 12] = [
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00,
+  ];
 
   pub fn priv_to_der(raw: &[u8; 32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(48);
@@ -731,7 +852,10 @@ mod x25519_der {
     let stop = pem
       .find(&end)
       .ok_or_else(|| "malformed PEM: missing END marker".to_string())?;
-    let b64: String = pem[start..stop].chars().filter(|c| !c.is_whitespace()).collect();
+    let b64: String = pem[start..stop]
+      .chars()
+      .filter(|c| !c.is_whitespace())
+      .collect();
     base64::engine::general_purpose::STANDARD
       .decode(b64)
       .map_err(|e| format!("malformed PEM body: {}", e))
@@ -746,7 +870,8 @@ fn x25519_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let secret = StaticSecret::random_from_rng(OsRng);
   let public = PublicKey::from(&secret);
 
-  let priv_pem = x25519_der::pem_encode("PRIVATE KEY", &x25519_der::priv_to_der(&secret.to_bytes()));
+  let priv_pem =
+    x25519_der::pem_encode("PRIVATE KEY", &x25519_der::priv_to_der(&secret.to_bytes()));
   let pub_pem = x25519_der::pem_encode("PUBLIC KEY", &x25519_der::pub_to_der(public.as_bytes()));
 
   Ok(make_keypair_dict(ctx, priv_pem, pub_pem))
@@ -845,7 +970,9 @@ fn argon2_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let password = ctx.args[1].as_str();
 
   let parsed = PasswordHash::new(encoded).map_err(|e| crypto_err("invalid encoded hash", e))?;
-  let ok = Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok();
+  let ok = Argon2::default()
+    .verify_password(password.as_bytes(), &parsed)
+    .is_ok();
   Ok(Value::bool(ok))
 }
 

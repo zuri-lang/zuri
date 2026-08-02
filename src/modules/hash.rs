@@ -27,7 +27,10 @@ use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_type};
 
-pub static MODULE: BuiltinModuleDef = BuiltinModuleDef { name: "_hash", build };
+pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
+  name: "_hash",
+  build,
+};
 
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![

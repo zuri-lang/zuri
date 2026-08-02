@@ -1,0 +1,2148 @@
+/**
+ * @module date
+ * 
+ * This modules provides Zuri's implementation of date and time
+ * manipulation methods. This module implements civil dates as well as julian dates.
+ * 
+ * ### Definitions
+ * 
+ * - The calendar date (`class Date`) is a particular day of a calendar year, 
+ * identified by its ordinal number within a calendar month within that year.
+ * 
+ * - The Julian date number (`jd`) is in elapsed days and time since noon 
+ * (Greenwich Mean Time) on January 1, 4713 BCE (in the Julian calendar).
+ * 
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _date
+
+
+/**
+ * Minimum year supported.
+ * @type number
+ */
+var MIN_YEAR = 1
+
+/**
+ * Maximum year supported.
+ * @type number
+ */
+var MAX_YEAR = 9999
+
+/**
+ * Minimum day supported.
+ * @type number
+ */
+var MIN_DAY = 1
+
+/**
+ * Maximum day supported.
+ * @type number
+ */
+var MAX_DAY = 31
+
+/**
+ * Minimum month supported.
+ * @type number
+ */
+var MIN_MONTH = 1
+
+/**
+ * Maximum year supported.
+ * @type number
+ */
+var MAX_MONTH = 12
+
+/**
+ * Maximum hour supported.
+ * @type number
+ */
+var MAX_HOUR = 23
+
+/**
+ * Maximum minute supported.
+ * @type number
+ */
+var MAX_MINUTE = 59
+
+/**
+ * Maximum seconds supported.
+ * @type number
+ */
+var MAX_SECONDS = 59
+
+# the number of days in each month of the year
+# the -1 is a placeholder for proper indexing
+var _days_in_month = [-1, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+var _date_ends = ['th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th']
+
+var _weekday_month_offsets = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]
+
+
+def _check_int_field(field, name) {
+  if !is_int(field)
+    raise TypeError('${name} must be an integer')
+}
+
+def _check_date_fields(year, month, day, hour, minute, seconds) {
+  _check_int_field(year, 'year')
+  _check_int_field(month, 'month')
+  _check_int_field(day, 'day')
+
+  if MIN_YEAR > year or year > MAX_YEAR
+    raise ValueError('year must be in ${MIN_YEAR}..${MAX_YEAR}')
+  if 1 > month or month > 12
+    raise ValueError('month must be in 1..12')
+
+  var dim = _dim(year, month)   
+  if 1 > month or month > 12
+    raise ValueError('month must be in 1..12')
+
+  if 1 > day or day > dim  
+    raise ValueError('day must be in 1..${dim}')
+
+  _check_int_field(hour, 'hour')
+  _check_int_field(minute, 'minute')
+  _check_int_field(seconds, 'seconds')
+
+  if 0 > hour or hour > 23
+    raise ValueError('hour must be in 0..23')
+  if 0 > minute or minute > 59
+    raise ValueError('minute must be in 0..59')
+  if 0 > seconds or seconds > 59
+    raise ValueError('seconds must be in 0..59')
+}
+
+
+
+# the name of months in a year
+# the nil is meant for proper indexing
+var _months_in_year = [
+  nil,
+  'January', 'February', 'March', 'April', 'May', 'June', 
+  'July', 'August', 'September', 'October', 'November', 'December'
+]
+
+# the short name of months in a year
+# the nil is meant for proper indexing
+var _months_in_year_short = [
+  nil,
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+]
+
+# the short name of days in a week
+# the nil is meant for proper indexing
+var _weekdays_short = [
+  'Sun',
+  'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+]
+
+# the long name of days in a week
+# the nil is meant for proper indexing
+var _weekdays_long = [
+  'Sunday',
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+]
+
+# internal declaration to get the
+# days before month
+def _days_before_month(m, g) {
+  var days_before_month = []
+  var days = 0
+  for f in _days_in_month[m,MAX_MONTH+1] {
+    days_before_month.append(days)
+    days += f 
+  }
+  return days_before_month[g - m]
+}
+
+def _days_before_year(year) {
+  var y = year - 1
+  return y*365 + y//4 - y//100 + y//400
+}
+
+def _leap_days_before_year(y) {
+    y -= 1  # Do not include the current year itself
+    return (y // 4) - (y // 100) + (y // 400)
+  }
+
+def _is_leap(year) {
+  return year % 4 == 0 and 
+    (year % 100 != 0 or year % 400 == 0)
+}
+
+def _ymd_to_ordinal(year, month, day) {
+  assert month >= 1 and month <= 12, 'month must be in 1..12'
+
+  var dim = month == 2 and _is_leap(year) ? 29 : _days_in_month[month]
+  
+  assert day >= 1 and day <= dim, 'day must be in 1..${dim}'
+  return (_days_before_year(year) +
+          _days_before_month(0, month) +
+          day)
+}
+
+def _dim(year, month) {
+  if month == 2 and _is_leap(year)
+    return 29
+  return _days_in_month[month]
+}
+
+/**
+ * Returns a dictionary representing the current time without
+ * timezone adjustment.
+ * 
+ * Example,
+ * 
+ * ```zuri-repl
+ * %> echo date.gmtime()
+ * {year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 17, minute: 30, 
+ * seconds: 55, microseconds: 620290, is_dst: false, zone: UTC, gmt_offset: 0}
+ * ```
+ * 
+ * @returns dictionary
+ */
+def gmtime() {
+  return _date.gmtime()
+}
+
+/**
+ * Returns a dictionary representing the current time after
+ * adjusting for the current timezone
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> echo date.localtime()
+ * {year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 18, minute: 18, 
+ * seconds: 35, microseconds: 598166, is_dst: false, zone: WAT, gmt_offset: 3600}
+ * ```
+ * 
+ * @returns dictionary
+ */
+def localtime() {
+  return _date.localtime()
+}
+
+/**
+ * Convert the broken-out time into a time value with the same encoding as 
+ * that of the values returned by the time() function (that is, seconds
+ *  from the Epoch, UTC) according to the timezone settings.
+ * 
+ * <br>
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import date
+ * %> echo date.mktime(2021, 2, 12, 13, 43, 11, false)
+ * 1613133791
+ * ```
+ * 
+ * @param number year
+ * @param number month
+ * @param number day
+ * @param number hour
+ * @param number minute
+ * @param number seconds
+ * @param bool is_dst
+ * @returns number
+ */
+def mktime(year, month, day, hour, minute, seconds, is_dst) {
+  return _date.mktime(year, month, day, hour, minute, seconds, is_dst)
+}
+
+/**
+ * Date and Time manipulation class
+ * 
+ * A date here refers to a calendar datetime consisting of year, month, day, hour, 
+ * minute and seconds. 
+ * 
+ * The `Date` class manages both Date and DateTime and this 
+ * module does not make any distinction between the two as Date is a subset of 
+ * DateTime.
+ * 
+ * Example,
+ * 
+ * ```zuri-repl
+ * %> import date
+ * %> var d = date(2021)
+ * %> d.to_string()
+ * '<Date year: 2021, month: 1, day: 1, hour: 0, minute: 0, seconds: 0>'
+ * %> d = date()
+ * %> d.to_string()
+ * '<Date year: 2022, month: 3, day: 5, hour: 19, minute: 25, seconds: 58>'
+ * ```
+ * 
+ * @serializable
+ * @printable
+ * @number
+ */
+class Date {
+
+  /**
+   * @note All arguments are optional
+   * @note When no argument is given, the date will be set to the current system date.
+   * @note when the date fields are given, the timezone is always in UTC irrespective of the 
+   *    system timezone or if a gmt_offset is given or not.
+   * @param ?number year
+   * @param ?number month
+   * @param ?number day
+   * @param ?number hour
+   * @param ?number minute
+   * @param ?number seconds
+   * @param ?number microseconds
+   * @param ?number gmt_offset
+   * @param ?bool is_dst
+   */
+  @new(year, month, day, hour, minute, seconds, microseconds, gmt_offset, is_dst) {
+
+    if year {
+      self.year = year
+
+      if month self.month = month
+      else self.month = MIN_MONTH
+
+      if day self.day = day
+      else self.day = MIN_DAY
+
+      if hour self.hour = hour
+      else self.hour = 0
+
+      if minute self.minute = minute
+      else self.minute = 0
+
+      if seconds self.seconds = seconds
+      else self.seconds = 0
+
+      if microseconds self.microseconds = microseconds
+      else self.microseconds = 0
+    
+      # check for valid input values
+      _check_date_fields(self.year, self.month, self.day, 
+          self.hour, self.minute, self.seconds)
+
+      if gmt_offset != nil {
+        if !is_number(gmt_offset) {
+          raise TypeError('number expected at gmt_offset, ${typeof(gmt_offset)} given')
+        }
+
+        # If gmt_offset is a whole number, then we use it directly. Otherwise, if it is a fraction,
+        # we take it as fractional representation of the offset
+        self.gmt_offset = gmt_offset > 0 and gmt_offset < 1 ? 
+          (gmt_offset * 1000) : 
+          gmt_offset
+      } else {
+        self.gmt_offset = 0
+      }
+
+      if is_dst != nil and !is_bool(is_dst) {
+        raise TypeError('boolean expected at is_dst, ${typeof(is_dst)} given')
+      } else {
+        self.is_dst = is_dst or false
+      }
+
+
+      self.week_day = self.weekday()
+      self.year_day = _days_before_month(1, self.month) + self.day
+      self.zone = 'UTC'
+
+    } else {
+      var date = localtime()
+
+      self.year = date.year
+      self.month = date.month
+      self.day = date.day
+      self.hour = date.hour
+      self.minute = date.minute
+      self.seconds = date.seconds
+      self.week_day = date.week_day
+      self.year_day = date.year_day
+      self.zone = date.zone
+      self.is_dst = date.is_dst
+      self.gmt_offset = date.gmt_offset
+      self.microseconds = date.microseconds
+    }
+  }
+
+  /** 
+   * Returns true if the year is a leap year or false otherwise.
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date(2018).is_leap()
+   * false
+   * %> date(2020).is_leap()
+   * true
+   * ```
+   * 
+   * @returns bool
+   */
+  is_leap() {
+    return _is_leap(self.year)
+  }
+
+  /** 
+   * Returns the number of days in the year preceding the first
+   * day of the month.
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date(2021, 5, 11).days_before_month(7)
+   * 142
+   * ```
+   * 
+   * @returns number
+   */
+  days_before_month(month) {
+    if !is_number(month) {
+      raise TypeError('number expected, ${typeof(month)} given')
+    }
+
+    assert month >= 1 and month <= 12, 'month must be in 1..12'
+
+    var start = self.month, end = month, day = self.day, comparator = end < 2
+    if self.month > month {
+      start = month
+      end = self.month 
+      day = -(self.day)
+      comparator = start <= 2
+    }
+
+    var days_before = _days_before_month(start, end - start)
+    if comparator and self.is_leap() {
+      return days_before + 1 - day
+    }
+
+    # when going back in time, we must remember not to count today
+    if self.month > month
+      return -(days_before - day - 1)
+
+    return days_before - day
+  }
+
+  /** 
+   * Returns the number of days before January 1st of year.
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date(2021, 5, 11).days_before_year(2024)
+   * 811
+   * ```
+   * 
+   * @param int year
+   * @returns number
+   */
+  days_before_year(year) {
+    assert is_int(year), 'integer expected'
+    assert year >= MIN_YEAR and year <= MAX_YEAR,
+      'year must be in 1..' + MAX_YEAR
+    assert year > self.year, 'year must be greater than current year'
+
+    var days_left_in_year
+    if self.month < MAX_MONTH {
+      days_left_in_year = self.days_before_month(MAX_MONTH) + 
+          _days_in_month[MAX_MONTH]
+    } else {
+      days_left_in_year = _days_in_month[MAX_MONTH] - self.day
+    }
+
+    var days_in_year = (self.is_leap() ? 366 : 365) - days_left_in_year
+      
+    var days_till_today = _days_before_year(self.year) + days_in_year
+    var days_before_year = _days_before_year(year)
+
+    return days_before_year - days_till_today
+  }
+
+  /** 
+   * Returns the number of days in month for the specified year.
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date(2021, 6).days_in_month()
+   * 30
+   * ```
+   * 
+   * @returns number
+   */
+  days_in_month() {
+    return _dim(self.year, self.month)
+  }
+
+  /** 
+   * Returns the numbered day of the week.
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date(2021, 5, 11).weekday()
+   * 2
+   * ```
+   * 
+   * @returns number
+   */
+  weekday() {
+    var day = self.day, month = self.month, year = self.year
+
+    if month < 3 {
+      year--
+    }
+
+    return (
+      (year + year // 4 - year // 100 + year // 400 + _weekday_month_offsets[month - 1] + day) % 7
+    ).int()
+  }
+
+  /**
+   * Returns the number of the current week in the year.
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date(2021, 5, 11).week_number()
+   * 19
+   * ```
+   * 
+   * @returns number
+   */
+  week_number() {
+    var year = self.year
+    var d1w1 = ((11 - Date(year, 1, 1).week_day) % 7) - 3
+    var tv
+
+    if self.year_day < d1w1 {
+      d1w1 = ((11 - Date(year - 1, 1, 1).week_day) % 7) - 3
+    } else {
+      tv = ((11 - Date(year + 1, 1, 1).week_day) % 7) - 3
+      if self.year_day >= tv {
+        d1w1 = tv
+        year++
+      }
+    }
+
+    return ((self.year_day - d1w1) / 7).int() + 1
+  }
+
+  /**
+   * Formats the current date based on the specified string
+   * 
+   * Zuri's Date formatting table
+   * 
+   * Character | Description                                               | Example
+   * ----------|-----------------------------------------------------------|-----------------------------------
+   * A         | uppercase Ante meridian and Post meridian                 | AM or PM
+   * a         | lowercase Ante meridian and Post meridian                 | am or pm
+   * d         | day of the month with leading zero                        | 01 to 31
+   * D         | textual representation of a day, three letters            | Mon - Sun
+   * j         | day of the month without leading zero                     | 1 to 31
+   * l         | full textual representation of the day of the week        | Monday - Sunday
+   * N         | ISO-8601 numeric representation of the day of the week    | 1 - 7
+   * S         | English ordinal suffix for the day of the month           | st, nd, rd or th
+   * w         | numeric representation of the day of the week             | 0 - 6
+   * z         | the day of the year (starting from 0)                     | 0 - 365
+   * W         | ISO-8601 week number of year, weeks starting on Monday    | E.g. 33 (the 33rd week of the year)
+   * F         | full textual representation of a month                    | January - December
+   * m         | numeric representation of a month, with leading zeros     | 01 - 12
+   * n         | numeric representation of a month, without leading zeros  | 1 - 12
+   * M         | short textual representation of a month, three letters    | Jan - Dec
+   * t         | number of days in the given month                         | 28 - 31
+   * L         | whether it's a leap year                                  | 1 if true, 0 otherwise
+   * y         | two digit representation of a year                        | e.g. 09 or 99
+   * Y         | full numeric representation of a year using 4 digits      | e.g. 2009 or 1999
+   * h         | 12 hour format of an hour with leading zeros              | 01 - 12
+   * H         | 24 hour format of an hour with leading zeros              | 01 - 24
+   * g         | 12 hour format of an hour without leading zeros           | 1 - 12
+   * G         | 24 hour format of an hour without leading zeros           | 1 - 24
+   * i         | minutes with leading zero                                 | 00 - 59
+   * s         | seconds with leading zero                                 | 00 - 59
+   * u         | microseconds                                              | e.g. 987654
+   * v         | milliseconds                                              | e.g. 987
+   * e         | timezone identifier                                       | e.g. GMT, UTC, WAT
+   * I         | whether or not the date is in daylight saving time        | 1 for true, 0 otherwise
+   * O         | difference to GMT without colon between hours and minutes | e.g. +0100
+   * P         | difference to GMT with colon between hours and minutes    | e.g. +01:00
+   * Z         | timezone offset in seconds                                | -43200 - 50400
+   * c         | ISO 8601 date                                             | e.g. 2020-03-04T15:19:21+00:00
+   * r         | RFC 2822 formatted date                                   | e.g. Thu, 21 Dec 2000 16:01:07 +0200
+   * 
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date().format('F d, Y g:i A')
+   * 'March 05, 2022 6:24 PM'
+   * ```
+   * 
+   * You can prevent a format character in the format string from being expanded by escaping it with a 
+   * preceding backslash. If the character with a backslash is already a special sequence, you may need 
+   * to also escape the backslash.
+   * 
+   * For example:
+   * 
+   * ```zuri-repl
+   * %> date().format('l jS \o\\f F Y h:i:s A')
+   * 'Wednesday 17th of May 2021 01:39:08 PM'
+   * ```
+   * 
+   * @param string format
+   * @returns string
+   */
+  format(format) {
+    if !is_string(format) {
+      raise TypeError('string expected, ${typeof(format)} given')
+    }
+
+    var result = ''
+    iter var i = 0; i < format.length(); i++ {
+      using format[i] {
+        when '\\' {
+          i++
+          result += format[i]
+        }
+        when 'a' {
+          if self.hour >= 12 result += 'pm'
+          else result += 'am'
+        }
+        when 'A' {
+          if self.hour >= 12 result += 'PM'
+          else result += 'AM'
+        }
+        when 'd' {
+          if self.day <= 9 result += '0${self.day}'
+          else result += self.day
+        }
+        when 'j' {
+          result += self.day
+        }
+        when 'D' {
+          result += _weekdays_short[self.week_day]
+        }
+        when 'l' {
+          result += _weekdays_long[self.week_day]
+        }
+        when 'N' {
+          result += self.week_day
+        }
+        when 'w' {
+          result += self.week_day - 1
+        }
+        when 'z' {
+          result += _days_before_month(1, self.month) + self.day
+        }
+        when 'W' {
+          result += self.week_number()
+        }
+        when 'm' {
+          if self.month <= 9 result += '0${self.month}'
+          else result += self.month
+        }
+        when 'n' {
+          result += self.month
+        }
+        when 't' {
+          result += _days_in_month[self.month]
+        }
+        when 'L' {
+          if self.is_leap() result += 1
+          else result += 0
+        }
+        when 'H' {
+          result += self.hour <= 9 ? '0${self.hour}' : self.hour
+        }
+        when 'h' {
+          var hour = self.hour
+          if hour > 12 hour -= 12
+          if hour == 0 hour = 12
+
+          result += hour <= 9 ? '0${hour}' : hour
+        }
+        when 'M' {
+          result += _months_in_year_short[self.month]
+        }
+        when 'F' {
+          result += _months_in_year[self.month]
+        }
+        when 'g' {
+          result += self.hour <= 12 ? self.hour : self.hour - 12
+        }
+        when 'G' {
+          result += self.hour
+        }
+        when 'i' {
+          result += self.minute <= 9 ? '0${self.minute}' : self.minute
+        }
+        when 's' {
+          result += self.seconds <= 9 ? '0${self.seconds}' : self.seconds
+        }
+        when 'u' {
+          result += self.microseconds
+        }
+        when 'v' {
+          result += (self.microseconds / 1000).int()
+        }
+        when 'S' {
+          if (self.day % 100) >= 11 and (self.day % 100) <= 13 {
+            result += 'th'
+          } else {
+            result += _date_ends[self.day % 10]
+          }
+        }
+        when 'y' {
+          result += self.year.to_string()[2,]
+        }
+        when 'Y' {
+          result += self.year
+        }
+        when 'e' {
+          result += self.zone
+        }
+        when 'I' {
+          result += self.is_dst ? 1 : 0
+        }
+        when 'O' {
+          var hour = (self.gmt_offset / 3600).int()
+          var minute = self.gmt_offset % 60
+
+          if hour > 0 {
+            result += hour <= 9 ? '+0${hour}' : '+${hour}'
+          } else if hour == 0 {
+            result += minute < 0 ? '-00' : '+00'
+          } else {
+            result +=  hour >= -9 ? '-0${hour}' : '-${hour}'
+          }
+
+          result += minute <= 9 ? '0${minute}' : minute
+        }
+        when 'P' {
+          var hour = (self.gmt_offset / 3600).int()
+          var minute = self.gmt_offset % 60
+
+          if hour > 0 {
+            result += hour <= 9 ? '+0${hour}' : '+${hour}'
+          } else if hour == 0 {
+            result += minute < 0 ? '-00' : '+00'
+          } else {
+            result += hour >= -9 ? '-0${hour}' : '-${hour}'
+          }
+
+          result += minute <= 9 ? ':0${minute}' : ':${minute}'
+        }
+        when 'Z' {
+          result += self.gmt_offset
+        }
+        when 'c' {
+          result += self.format('Y-m-dTh:i:sP')
+        }
+        when 'r' {
+          result += self.format('D, d M Y h:i:s O')
+        }
+        default {
+          result += format[i]
+        }
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Returns the HTTP date representation of the current date.
+   * 
+   * For example,
+   * 
+   * ```zuri-repl
+   * %> date().http()
+   * 'Sat, 05 Mar 2022 06:23:32 GMT'
+   * ```
+   * 
+   * @returns string
+   */
+  http() {
+    return self.format('D, d M Y h:i:s') + ' GMT'
+  }
+
+  /**
+   * Converts the current date to a julian day and time.
+   * 
+   * Example,
+   * 
+   * ```zuri-repl
+   * %> date(2021, 5, 11).jd()
+   * 2459345
+   * ```
+   * 
+   * @returns number
+   */
+  jd() {
+    # calculate the julian day i.e. Y-m-d value
+    var jday = (367 * self.year - 7 * (self.year + (self.month + 9) / 12) / 4 +
+              275 * self.month / 9 +
+              self.day + 1721014).int()
+
+    # calculate the time i.e. h:m:s value
+    var jdate = jday - 0.5
+    jdate += (self.hour + 12) / 24.0
+    jdate += self.minute / 1440.0
+    jdate += self.seconds / 86400.0
+
+    return jdate
+  }
+
+  /**
+   * Returns unix `mktime` equivalent of the current date.
+   * 
+   * @returns number
+   * @deprecated - Use `to_time()` instead as it offers more precision.
+   */
+  unix_time() {
+    return _date.mktime(self.year, self.month, self.day, self.hour, 
+              self.minute, self.seconds, self.is_dst)
+  }
+
+  /**
+   * Returns the Epoch timestamp in seconds for the given date.
+   * 
+   * @returns number
+   */
+  to_time() {
+    var years = self.year - 1970
+
+    var leap_years = _leap_days_before_year(self.year) - _leap_days_before_year(1970)
+
+    var total_days = (years * 365) + leap_years
+    total_days += _days_before_month(1, self.month) + self.day
+
+    if !_is_leap(self.year) or self.month <= 2 {
+      # Minus today
+      total_days -= 1
+    }
+    
+    var tm = total_days * 86400
+        tm += self.hour * 3600
+        tm += self.minute * 60
+        tm += self.seconds
+    
+    tm -= self.gmt_offset
+    tm += self.microseconds == 0 ? 0 : (self.microseconds / 1000000)
+  
+    return tm
+  }
+
+  /**
+   * Returns a string representation of the date
+   * 
+   * @returns string
+   */
+  to_string() {
+    return '<Date year: ${self.year}, month: ${self.month}, day: ${self.day}, hour: ' +
+        '${self.hour}, minute: ${self.minute}, seconds: ${self.seconds}, micro_seconds: ${self.microseconds}>'
+  }
+
+  /**
+   * Returns the date object as a dictionary.
+   * 
+   * @returns dict
+   */
+  to_dict() {
+    return {
+      year: self.year,
+      month: self.month,
+      day: self.day,
+      hour: self.hour,
+      minute: self.minute,
+      seconds: self.seconds,
+      microseconds: self.microseconds,
+      gmt_offset: self.gmt_offset,
+      is_dst: self.is_dst,
+      zone: self.zone,
+    }
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+
+  @to_json() {
+    return self.to_dict()
+  }
+
+  @to_number() {
+    return self.to_time()
+  }
+
+  @to_abs() {
+    return self.to_time()
+  }
+}
+
+
+/** 
+ * Returns a date object from a unix timestamp.
+ * 
+ * Example,
+ * 
+ * ```zuri-repl
+ * %> date.from_time(time()).to_string()
+ * '<Date year: 2022, month: 3, day: 5, hour: 18, minute: 34, seconds: 1>'
+ * ```
+ * 
+ * @note Time must be in seconds.
+ * @param number time
+ * @returns Date
+ */
+def from_time(time) {
+  if !is_number(time) {
+    raise TypeError('number expected, ${typeof(time)} given')
+  }
+
+  var microseconds = 0
+  if time > 9999999999 { 
+    if time <= 9999999999999 {
+      # its in milliseconds
+      microseconds = (time % 1000) * 1000
+      time /= 1000
+    } else if time <= 9999999999999999 {
+      # its in microseconds
+      microseconds = time % 1000000
+      time //= 1000000
+    } else {
+      raise RangeError('time out of range')
+    }
+  }
+
+  var SECONDS_IN_DAY = 86400 # seconds in a day
+  var total_days = time // SECONDS_IN_DAY
+  var day_remainder = time % SECONDS_IN_DAY
+
+  # Handle negative pre-1970 timestamps correctly
+  if day_remainder < 0 {
+    day_remainder += SECONDS_IN_DAY
+    total_days -= 1
+  }
+
+  var hour = day_remainder // 3600
+  var minute = (day_remainder % 3600) // 60
+  var second = day_remainder % 60
+
+  # Algorithm: Gregorian Epoch shift method
+  # 
+  # The algorithm uses an optimization trick formalized by computer scientist Peter Baum. 
+  # It temporarily shifts the entire calendar baseline back to March 1, Year 0. By starting 
+  # the calendar year in March instead of January, February 29th (the leap day) becomes the 
+  # absolute last day of the year cycle, making the mathematical patterns incredibly clean.
+  # 
+  # Shift origin to Year 0, March 1st (makes leap days fall at the end)
+  # 
+  # Constants Definition:
+  # ---------------------------------------------------------------------------------
+  # 1. `719468` (The Day-Shift Anchor): The exact number of days between March 1, Year 0 and 
+  #     January 1, 1970 (the Unix Epoch).
+  # 
+  #     Adding this to our Unix day count instantly transforms a standard timestamp into an 
+  #     absolute day count starting from Year 0, anchored smoothly to a March-first cycle.
+  # 
+  # 2. `146097` (The Gregorian Cycle Block):  The total number of days in a full 400-year 
+  #     Gregorian calendar cycle.
+  # 
+  #     365 days * 400 years + 97 leap days = 146,097 days
+  # 
+  #     Because the Gregorian leap year pattern repeats perfectly every 400 years, dividing our 
+  #     total days by 146097 splits the timeline into predictable chunks called "eras" (era).
+  # 
+  # The Leap Year correction matrix:
+  # 
+  # 3. `1460`: The number of days in a standard 4-year cycle (365 * 4).
+  # 4. `36524`: The number of days in a standard 100-year century cycle (365 * 100 + 24 
+  #     leap days).
+  # 5. `146096`: The maximum day index of a 400-year cycle (0 to 146096 equals 146,097 total 
+  #     days).
+  # 6. `365`: Standard days in a non-leap year, used to divide the remaining day pool down into 
+  #     the final individual calendar year.
+  # 
+  # The Magic Month Scalars (`153` and `5`):
+  # 
+  # If we plot out the number of days in each month starting from March, the pattern is 
+  # remarkably stable:
+  # 
+  #         March (31), April (30), May (31), June (30), July (31) 
+  #                       — repeats as -
+  #     August (31), September (30), October (31), November (30), December (31).
+  # 
+  # This specific sequence averages out perfectly to exactly 30.6 days per month.
+  # 
+  # Because computers handle integers better than decimals, the fraction \(30.6\) is rewritten as the 
+  # integer fraction 153 / 5. The math expression (5 * doy + 2) / 153 treats months as consecutive 
+  # linear steps, letting us extract the correct month instantly.
+  # 
+  # The Month Displacement Offset (`3` and `-9`):
+  # 
+  # This is used for the final structural correction for the March alignment.
+  # 
+  # Because the mathematical cycle treated March as month 0, the output variable mp returns a 0 for March, 
+  # 1 for April... and 11 for February. The conditional step (mp < 10 ? 3 : -9) shifts the sequence back to 
+  # our standard calendar format, turning March back into 3 and February back into 2.
+  # 
+  var g = total_days + 719468
+  var era = (g >= 0 ? g : g - 146096) // 146097
+  var doe = g - era * 146097
+  var yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+  var y = yoe + era * 400
+  var doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+  var mp = (5 * doy + 2) // 153
+  var d = doy - (153 * mp + 2) // 5 + 1
+  var m = mp + (mp < 10 ? 3 : -9)
+  
+  if m <= 2 {
+    y += 1
+  }
+
+
+  # Now the year and month are correct, and n is the offset from the
+  # start of that month:  we're done!
+  return Date(y, m, d, hour, minute, second, microseconds)
+}
+
+
+
+/**
+ * Returns a date instance representing the julian date.
+ * 
+ * Example,
+ * 
+ * ```zuri-repl
+ * %> date.from_jd(22063).to_string()
+ * '<Date year: 2022, month: 3, day: 5, hour: 18, minute: 35, seconds: 0>'
+ * ```
+ * 
+ * @param number jdate
+ * @returns number
+ */
+def from_jd(jdate) {
+  if !is_number(jdate) {
+    raise TypeError('number expected, ${typeof(jdate)} given')
+  }
+
+  if jdate < 0 {
+    raise ValueError('Invalid julian date')
+  }
+
+  var x = jdate + 1.0, z = x.int(), f = x - z
+  
+  var y = ((z - 1867216.25) / 36524.25).int()
+  var a = z + 1 + y - (y / 4).int(), b = a + 1524
+  var c = ((b - 122.1) / 365.25).int(), d = (365.25 * c).int()
+  var g = ((b - d) / 30.6001).int()
+
+  var month = g - (g < 13.5 ? 1 : 13)
+
+  # if month is january or february use 4715 else, 4716
+  var year = c - (month < 2.5 ? 4715 : 4716)
+
+  var ut = b - d - (30.6001 * g).int() + f
+  var day = ut.int()
+
+  # calculate time
+  ut -= ut.int()
+  ut *= 24
+
+  var hour = ut.int()
+
+  ut -= ut.int()
+  ut *= 60
+
+  var minute = ut.int()
+
+  ut -= ut.int()
+  ut *= 60
+
+  var seconds = ut.int()
+
+  return Date(year, month, day, hour, minute, seconds)
+}
+
+# ===========================================================================
+# Date parsing — internal infrastructure
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Character-class helpers
+# ---------------------------------------------------------------------------
+
+def _is_digit(ch) {
+  ch = ord(ch)
+  return ch >= 48 and ch <= 57
+}
+
+def _is_alpha_ch(ch) {
+  ch = ord(ch)
+  return (ch >= 97 and ch <= 122) or (ch >= 65 and ch <= 90)
+}
+
+def _is_space(ch) {
+  ch = ord(ch)
+  return ch == 32 or ch == 9 or ch == 13 or ch == 10
+}
+
+# ---------------------------------------------------------------------------
+# Month-name lookup tables (full and abbreviated, case-insensitive key)
+# ---------------------------------------------------------------------------
+
+var _month_name_map = {
+  'january': 1,  'jan': 1,
+  'february': 2, 'feb': 2,
+  'march': 3,    'mar': 3,
+  'april': 4,    'apr': 4,
+  'may': 5,
+  'june': 6,     'jun': 6,
+  'july': 7,     'jul': 7,
+  'august': 8,   'aug': 8,
+  'september': 9,'sep': 9, 'sept': 9,
+  'october': 10, 'oct': 10,
+  'november': 11,'nov': 11,
+  'december': 12,'dec': 12,
+}
+
+# Weekday names — used to skip over them during auto-detection parsing.
+var _weekday_name_set = [
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
+]
+
+# ---------------------------------------------------------------------------
+# Low-level scanner
+# ---------------------------------------------------------------------------
+
+# Read up to `max_digits` decimal digits from `s` starting at position `pos`.
+# Returns [value: number, new_pos: number].  Returns [-1, pos] on failure.
+def _scan_int(s, pos, max_digits) {
+  var start = pos
+  var len   = s.length()
+  iter var count = 0; pos < len and count < max_digits and _is_digit(s[pos]); pos++ {
+    count++
+  }
+  if pos == start return [-1, start]
+  return [to_number(s[start, pos]), pos]
+}
+
+# Read a run of ASCII alpha characters; returns [token_lower, new_pos].
+def _scan_alpha(s, pos) {
+  var start = pos
+  var len   = s.length()
+  while pos < len and _is_alpha_ch(s[pos]) {
+    pos++
+  }
+  if pos == start return ['', start]
+  return [s[start, pos].lower(), pos]
+}
+
+# Skip whitespace; returns new position.
+def _skip_space(s, pos) {
+  var len = s.length()
+  while pos < len and _is_space(s[pos]) {
+    pos++
+  }
+  return pos
+}
+
+# Skip exactly one character if it matches `ch`; returns new position.
+def _skip_char(s, pos, ch) {
+  if pos < s.length() and s[pos] == ch return pos + 1
+  return pos
+}
+
+# ---------------------------------------------------------------------------
+# Timezone offset parser
+# ---------------------------------------------------------------------------
+
+# Parses a timezone offset token at position `pos` in string `s`.
+# Understands: Z, UTC, GMT, +HH:MM, +HHMM, -HH:MM, -HHMM.
+# Returns [offset_seconds: number, new_pos: number, zone_name: string].
+# Returns [0, pos, 'UTC'] if nothing recognisable is found.
+def _parse_tz(s, pos) {
+  pos = _skip_space(s, pos)
+  var len = s.length()
+  if pos >= len return [0, pos, 'UTC']
+
+  var ch = s[pos]
+
+  # 'Z' — UTC shorthand (ISO 8601)
+  if ch == 'Z' or ch == 'z' return [0, pos + 1, 'UTC']
+
+  # Named offsets: UTC, GMT (and variants like UTC+5)
+  if _is_alpha_ch(ch) {
+    var res = _scan_alpha(s, pos)
+    var token = res[0]
+    pos = res[1]
+    if token == 'utc' or token == 'gmt' {
+      # Allow optional sign+offset after GMT/UTC
+      var inner = _parse_tz(s, pos)
+      return [inner[0], inner[1], token.upper()]
+    }
+    # Unknown named timezone — treat as UTC, leave position advanced
+    return [0, pos, token.upper()]
+  }
+
+  # Numeric offset: (+|-)HH:MM or (+|-)HHMM
+  if ch != '+' and ch != '-' return [0, pos, 'UTC']
+
+  var sign = ch == '+' ? 1 : -1
+  pos++
+
+  var hr_res  = _scan_int(s, pos, 2)
+  var tz_hour = hr_res[0]
+  pos         = hr_res[1]
+
+  if tz_hour < 0 return [0, pos, 'UTC']   # no digits after sign
+
+  pos = _skip_char(s, pos, ':')            # optional colon
+
+  var mn_res  = _scan_int(s, pos, 2)
+  var tz_min  = mn_res[0] < 0 ? 0 : mn_res[0]
+  if mn_res[0] >= 0 pos = mn_res[1]
+
+  var offset  = sign * (tz_hour * 3600 + tz_min * 60)
+  var name    = sign > 0 ? '+' : '-'
+  name       += tz_hour <= 9 ? '0${tz_hour}' : tz_hour.to_string()
+  name       += tz_min  <= 9 ? '0${tz_min}'  : tz_min.to_string()
+
+  return [offset, pos, name]
+}
+
+# ---------------------------------------------------------------------------
+# AM/PM normalisation
+# ---------------------------------------------------------------------------
+
+# Adjusts `hour` (1-12) to 24h given an am_pm token ('am'|'pm').
+# If am_pm is nil (not present), returns hour unchanged.
+def _apply_ampm(hour, am_pm) {
+  if am_pm == nil return hour
+  if am_pm == 'pm' {
+    if hour != 12 return hour + 12
+    return 12
+  }
+  # am
+  if hour == 12 return 0
+  return hour
+}
+
+# ---------------------------------------------------------------------------
+# Result accumulator — default field values for a parse result
+# ---------------------------------------------------------------------------
+
+def _default_fields() {
+  return {
+    year: 1970, month: 1, day: 1,
+    hour: 0, minute: 0, seconds: 0, microseconds: 0,
+    gmt_offset: 0, zone: 'UTC', is_dst: false,
+    am_pm: nil,
+  }
+}
+
+# Build a Date from an accumulator dictionary, applying AM/PM last.
+def _fields_to_date(f) {
+  var hour = _apply_ampm(f.hour, f.am_pm)
+  var d = Date(f.year, f.month, f.day, hour, f.minute, f.seconds, f.microseconds)
+  d.gmt_offset = f.gmt_offset
+  d.zone       = f.zone
+  d.is_dst     = f.is_dst
+  return d
+}
+
+# ---------------------------------------------------------------------------
+# Auto-detection parser
+# ---------------------------------------------------------------------------
+#
+# Strategy: tokenise the string into (integer | alpha-word | punctuation)
+# tokens, then pattern-match the token stream against known date grammars.
+#
+# Grammars recognised (non-exhaustive — ordered from most-specific):
+#
+#   ISO 8601 / RFC 3339
+#     YYYY-MM-DD[T ]HH:MM:SS[.ffffff][Z|(+|-)HH:MM]
+#     YYYY-MM-DD
+#     YYYYMMDD
+#     YYYYMMDDTHHMMSS
+#
+#   RFC 2822 / HTTP
+#     [Weekday, ]DD Mon YYYY HH:MM:SS [tz]
+#     [Weekday, ]Mon DD, YYYY HH:MM:SS [tz]
+#
+#   Common locale formats
+#     MM/DD/YYYY [HH:MM[:SS][AM|PM]]
+#     DD/MM/YYYY [HH:MM[:SS][AM|PM]]   (ambiguous — see below)
+#     DD.MM.YYYY [HH:MM[:SS]]
+#     DD-MM-YYYY
+#     YYYY/MM/DD
+#     Month DD[,] YYYY [HH:MM[:SS] [AM|PM]]
+#     DD Month YYYY [HH:MM[:SS] [AM|PM]]
+#
+#   Time-only (uses 1970-01-01 as the date)
+#     HH:MM[:SS][.ffffff] [AM|PM] [tz]
+#
+# Ambiguity policy for MM/DD vs DD/MM:
+#   When the first numeric field is > 12 it must be a day.
+#   When the first numeric field is <= 12 and the second is > 12 it is a month.
+#   When both are <= 12 the format is treated as MM/DD/YYYY (US convention).
+#   Callers who require DD/MM should use parse_format() with '%d/%m/%Y'.
+
+def _auto_parse(s) {
+  if !is_string(s) raise TypeError('string expected, ${typeof(s)} given')
+  s = s.trim()
+  if s.length() == 0 raise ValueError('cannot parse empty date string')
+
+  var f = _default_fields()
+
+  # ------------------------------------------------------------------
+  # 1. ISO 8601 compact: YYYYMMDD or YYYYMMDDTHHMMSS[.fff][Z|+HH:MM]
+  # ------------------------------------------------------------------
+  if s.match('/^\\d{8}(T\\d{6})?/') {
+    var yr_r = _scan_int(s, 0, 4)
+    var mo_r = _scan_int(s, yr_r[1], 2)
+    var dy_r = _scan_int(s, mo_r[1], 2)
+    f.year   = yr_r[0]
+    f.month  = mo_r[0]
+    f.day    = dy_r[0]
+    var pos  = dy_r[1]
+
+    if pos < s.length() and (s[pos] == 'T' or s[pos] == 't') {
+      pos++
+      var hh_r = _scan_int(s, pos, 2)
+      var mm_r = _scan_int(s, hh_r[1], 2)
+      var ss_r = _scan_int(s, mm_r[1], 2)
+      f.hour    = hh_r[0] < 0 ? 0 : hh_r[0]
+      f.minute  = mm_r[0] < 0 ? 0 : mm_r[0]
+      f.seconds = ss_r[0] < 0 ? 0 : ss_r[0]
+      pos = ss_r[1]
+
+      if pos < s.length() and s[pos] == '.' {
+        pos++
+        var us_r = _scan_int(s, pos, 6)
+        if us_r[0] >= 0 {
+          f.microseconds = us_r[0]
+          pos = us_r[1]
+        }
+      }
+      var tz = _parse_tz(s, pos)
+      f.gmt_offset = tz[0]
+      f.zone       = tz[2]
+    }
+    return _fields_to_date(f)
+  }
+
+  # ------------------------------------------------------------------
+  # 2. ISO 8601 extended: YYYY-MM-DD[T ]HH:MM:SS[.ffffff][tz]
+  #    Also handles YYYY-MM-DD alone.
+  # ------------------------------------------------------------------
+  if s.match('/^\\d{4}-\\d{1,2}-\\d{1,2}/') {
+    var yr_r = _scan_int(s, 0, 4)
+    var pos  = _skip_char(s, yr_r[1], '-')
+    var mo_r = _scan_int(s, pos, 2)
+    pos      = _skip_char(s, mo_r[1], '-')
+    var dy_r = _scan_int(s, pos, 2)
+    pos      = dy_r[1]
+
+    f.year   = yr_r[0]
+    f.month  = mo_r[0]
+    f.day    = dy_r[0]
+
+    if pos < s.length() and (s[pos] == 'T' or s[pos] == 't' or s[pos] == ' ') {
+      pos++
+      pos = _skip_space(s, pos)
+      var hh_r = _scan_int(s, pos, 2)
+      if hh_r[0] >= 0 {
+        f.hour = hh_r[0]
+        pos    = _skip_char(s, hh_r[1], ':')
+        var mm_r = _scan_int(s, pos, 2)
+        if mm_r[0] >= 0 {
+          f.minute = mm_r[0]
+          pos      = _skip_char(s, mm_r[1], ':')
+          var ss_r = _scan_int(s, pos, 2)
+          if ss_r[0] >= 0 {
+            f.seconds = ss_r[0]
+            pos       = ss_r[1]
+          }
+        }
+        # Fractional seconds
+        if pos < s.length() and s[pos] == '.' {
+          pos++
+          var us_r = _scan_int(s, pos, 6)
+          if us_r[0] >= 0 {
+            f.microseconds = us_r[0]
+            pos = us_r[1]
+          }
+        }
+        pos = _skip_space(s, pos)
+        # AM/PM
+        if pos < s.length() and _is_alpha_ch(s[pos]) {
+          var ap_r = _scan_alpha(s, pos)
+          if ap_r[0] == 'am' or ap_r[0] == 'pm' {
+            f.am_pm = ap_r[0]
+            pos = ap_r[1]
+          }
+        }
+        var tz = _parse_tz(s, pos)
+        f.gmt_offset = tz[0]
+        f.zone       = tz[2]
+      }
+    }
+    return _fields_to_date(f)
+  }
+
+  # ------------------------------------------------------------------
+  # 3. RFC 2822 / HTTP: [Weekday, ]DD Mon YYYY HH:MM:SS [tz]
+  #    e.g. "Thu, 21 Dec 2000 16:01:07 +0200"
+  #    e.g. "Sat, 05 Mar 2022 06:23:32 GMT"
+  # ------------------------------------------------------------------
+  var _try_rfc2822 = @(str) {
+    var pos = 0
+    pos = _skip_space(str, pos)
+
+    # Optional weekday + comma
+    if pos < str.length() and _is_alpha_ch(str[pos]) {
+      var wd_r = _scan_alpha(str, pos)
+      pos = wd_r[1]
+      pos = _skip_space(str, pos)
+      pos = _skip_char(str, pos, ',')
+      pos = _skip_space(str, pos)
+    }
+
+    # Day
+    var dy_r = _scan_int(str, pos, 2)
+    if dy_r[0] < 0 return nil
+    pos = _skip_space(str, dy_r[1])
+
+    # Month name
+    if !_is_alpha_ch(str[pos]) return nil
+    var mn_r = _scan_alpha(str, pos)
+    if !_month_name_map.contains(mn_r[0]) return nil
+    pos = _skip_space(str, mn_r[1])
+
+    # Year (2 or 4 digits)
+    var yr_r = _scan_int(str, pos, 4)
+    if yr_r[0] < 0 return nil
+    var year = yr_r[0]
+    if year < 100 year += year < 70 ? 2000 : 1900   # 2-digit year heuristic
+    pos = _skip_space(str, yr_r[1])
+
+    var ff = _default_fields()
+    ff.year  = year
+    ff.month = _month_name_map[mn_r[0]]
+    ff.day   = dy_r[0]
+
+    # Optional time
+    var hh_r = _scan_int(str, pos, 2)
+    if hh_r[0] >= 0 {
+      ff.hour = hh_r[0]
+      pos     = _skip_char(str, hh_r[1], ':')
+      var mm_r = _scan_int(str, pos, 2)
+      if mm_r[0] >= 0 {
+        ff.minute = mm_r[0]
+        pos       = _skip_char(str, mm_r[1], ':')
+        var ss_r  = _scan_int(str, pos, 2)
+        if ss_r[0] >= 0 {
+          ff.seconds = ss_r[0]
+          pos        = ss_r[1]
+        }
+      }
+      pos = _skip_space(str, pos)
+      var tz = _parse_tz(str, pos)
+      ff.gmt_offset = tz[0]
+      ff.zone       = tz[2]
+    }
+    return _fields_to_date(ff)
+  }
+
+  # ------------------------------------------------------------------
+  # 4. RFC 2822 variant: [Weekday, ]Mon DD[,] YYYY [HH:MM:SS [tz]]
+  #    e.g. "March 05, 2022 6:24 PM"
+  #    e.g. "Dec 25, 2023"
+  # ------------------------------------------------------------------
+  var _try_alpha_month_first = @(str) {
+    var pos = 0
+    pos = _skip_space(str, pos)
+
+    # Optional weekday
+    if pos < str.length() and _is_alpha_ch(str[pos]) {
+      var tmp = _scan_alpha(str, pos)
+      if _weekday_name_set.contains(tmp[0]) {
+        pos = tmp[1]
+        pos = _skip_space(str, pos)
+        pos = _skip_char(str, pos, ',')
+        pos = _skip_space(str, pos)
+      }
+    }
+
+    if pos >= str.length() or !_is_alpha_ch(str[pos]) return nil
+    var mn_r = _scan_alpha(str, pos)
+    if !_month_name_map.contains(mn_r[0]) return nil
+    pos = _skip_space(str, mn_r[1])
+
+    var dy_r = _scan_int(str, pos, 2)
+    if dy_r[0] < 0 return nil
+    pos = _skip_char(str, dy_r[1], ',')
+    pos = _skip_space(str, pos)
+
+    var yr_r = _scan_int(str, pos, 4)
+    if yr_r[0] < 0 return nil
+    var year = yr_r[0]
+    if year < 100 year += year < 70 ? 2000 : 1900
+    pos = _skip_space(str, yr_r[1])
+
+    var ff = _default_fields()
+    ff.year  = year
+    ff.month = _month_name_map[mn_r[0]]
+    ff.day   = dy_r[0]
+
+    var hh_r = _scan_int(str, pos, 2)
+    if hh_r[0] >= 0 {
+      ff.hour = hh_r[0]
+      pos     = _skip_char(str, hh_r[1], ':')
+      var mm_r = _scan_int(str, pos, 2)
+      if mm_r[0] >= 0 {
+        ff.minute = mm_r[0]
+        pos       = _skip_char(str, mm_r[1], ':')
+        var ss_r  = _scan_int(str, pos, 2)
+        if ss_r[0] >= 0 {
+          ff.seconds = ss_r[0]
+          pos        = ss_r[1]
+        }
+      }
+      pos = _skip_space(str, pos)
+      if pos < str.length() and _is_alpha_ch(str[pos]) {
+        var ap_r = _scan_alpha(str, pos)
+        if ap_r[0] == 'am' or ap_r[0] == 'pm' {
+          ff.am_pm = ap_r[0]
+          pos = ap_r[1]
+        }
+      }
+      pos = _skip_space(str, pos)
+      var tz = _parse_tz(str, pos)
+      ff.gmt_offset = tz[0]
+      ff.zone       = tz[2]
+    }
+    return _fields_to_date(ff)
+  }
+
+  # ------------------------------------------------------------------
+  # 5. Slash / dot / hyphen numeric: MM/DD/YYYY, DD.MM.YYYY, YYYY/MM/DD, etc.
+  # ------------------------------------------------------------------
+  var _try_numeric_separated = @(str) {
+    var pos  = 0
+    var a_r  = _scan_int(str, pos, 4)
+    if a_r[0] < 0 return nil
+    pos = a_r[1]
+
+    if pos >= str.length() return nil
+    var sep  = str[pos]
+    if sep != '/' and sep != '.' and sep != '-' return nil
+    pos++
+
+    var b_r = _scan_int(str, pos, 4)
+    if b_r[0] < 0 return nil
+    pos = _skip_char(str, b_r[1], sep)
+
+    var c_r = _scan_int(str, pos, 4)
+    if c_r[0] < 0 return nil
+    pos = c_r[1]
+
+    var a = a_r[0], b = b_r[0], c = c_r[0]
+    var year, month, day
+
+    # YYYY/MM/DD (first field is 4-digit year)
+    if a > 31 {
+      year = a; month = b; day = c
+    }
+    # DD.MM.YYYY or DD/MM/YYYY where day > 12
+    else if a > 12 {
+      day = a; month = b; year = c
+    }
+    # MM/DD/YYYY where month <= 12, day > 12
+    else if c > 31 {
+      # Last field is year — determine order of first two
+      year = c
+      if b > 12 { day = b; month = a }
+      else       { month = a; day = b }   # MM/DD ambiguity → US convention
+    }
+    else {
+      return nil   # cannot resolve unambiguously
+    }
+
+    if year < 100 year += year < 70 ? 2000 : 1900
+
+    var ff = _default_fields()
+    ff.year = year; ff.month = month; ff.day = day
+
+    pos = _skip_space(str, pos)
+    var hh_r = _scan_int(str, pos, 2)
+    if hh_r[0] >= 0 {
+      ff.hour = hh_r[0]
+      pos     = _skip_char(str, hh_r[1], ':')
+      var mm_r = _scan_int(str, pos, 2)
+      if mm_r[0] >= 0 {
+        ff.minute = mm_r[0]
+        pos       = _skip_char(str, mm_r[1], ':')
+        var ss_r  = _scan_int(str, pos, 2)
+        if ss_r[0] >= 0 {
+          ff.seconds = ss_r[0]
+          pos        = ss_r[1]
+        }
+      }
+      pos = _skip_space(str, pos)
+      if pos < str.length() and _is_alpha_ch(str[pos]) {
+        var ap_r = _scan_alpha(str, pos)
+        if ap_r[0] == 'am' or ap_r[0] == 'pm' {
+          ff.am_pm = ap_r[0]
+          pos = ap_r[1]
+        }
+      }
+      pos = _skip_space(str, pos)
+      var tz = _parse_tz(str, pos)
+      ff.gmt_offset = tz[0]
+      ff.zone       = tz[2]
+    }
+    return _fields_to_date(ff)
+  }
+
+  # ------------------------------------------------------------------
+  # 6. Time-only: HH:MM[:SS][.ffffff] [AM|PM] [tz]
+  # ------------------------------------------------------------------
+  var _try_time_only = @(str) {
+    var pos  = 0
+    var hh_r = _scan_int(str, pos, 2)
+    if hh_r[0] < 0 or hh_r[0] > 23 return nil
+    pos = hh_r[1]
+    if pos >= str.length() or str[pos] != ':' return nil
+    pos++
+
+    var mm_r = _scan_int(str, pos, 2)
+    if mm_r[0] < 0 return nil
+    pos = mm_r[1]
+
+    var ss = 0
+    if pos < str.length() and str[pos] == ':' {
+      pos++
+      var ss_r = _scan_int(str, pos, 2)
+      if ss_r[0] >= 0 { ss = ss_r[0]; pos = ss_r[1] }
+    }
+
+    var us = 0
+    if pos < str.length() and str[pos] == '.' {
+      pos++
+      var us_r = _scan_int(str, pos, 6)
+      if us_r[0] >= 0 { us = us_r[0]; pos = us_r[1] }
+    }
+
+    pos = _skip_space(str, pos)
+    var am_pm = nil
+    if pos < str.length() and _is_alpha_ch(str[pos]) {
+      var ap_r = _scan_alpha(str, pos)
+      if ap_r[0] == 'am' or ap_r[0] == 'pm' {
+        am_pm = ap_r[0]
+        pos   = ap_r[1]
+      }
+    }
+
+    pos = _skip_space(str, pos)
+    var tz = _parse_tz(str, pos)
+
+    var ff = _default_fields()
+    ff.hour         = hh_r[0]
+    ff.minute       = mm_r[0]
+    ff.seconds      = ss
+    ff.microseconds = us
+    ff.am_pm        = am_pm
+    ff.gmt_offset   = tz[0]
+    ff.zone         = tz[2]
+    return _fields_to_date(ff)
+  }
+
+  # Try each strategy in order
+  var r
+
+  # RFC 2822 heuristic: starts with alpha
+  if _is_alpha_ch(s[0]) {
+    r = _try_alpha_month_first(s)
+    if r != nil return r
+    r = _try_rfc2822(s)
+    if r != nil return r
+  }
+
+  # Numeric — starts with digit
+  if _is_digit(s[0]) {
+    r = _try_rfc2822(s)
+    if r != nil return r
+    r = _try_numeric_separated(s)
+    if r != nil return r
+    r = _try_time_only(s)
+    if r != nil return r
+  }
+
+  raise ValueError('unable to parse date string: "${s}"')
+}
+
+# ---------------------------------------------------------------------------
+# Format-directed parser  (parse_format)
+# ---------------------------------------------------------------------------
+#
+# Mirrors the `format()` method character table exactly.  Each recognised
+# format character consumes a corresponding token from the input string.
+# Literal characters in the format string must match literally.
+# Backslash escapes in the format string (`\x`) match the literal character.
+#
+# Supported format directives (same symbols as `format()`):
+#
+#   Y  — 4-digit year
+#   y  — 2-digit year (00-99; 00-69 → 2000-2069, 70-99 → 1970-1999)
+#   m  — month with leading zero (01-12)
+#   n  — month without leading zero (1-12)
+#   M  — abbreviated month name (Jan-Dec)
+#   F  — full month name (January-December)
+#   d  — day with leading zero (01-31)
+#   j  — day without leading zero (1-31)
+#   D  — abbreviated weekday name (ignored — not stored)
+#   l  — full weekday name (ignored — not stored)
+#   H  — 24-hour hour with leading zero (00-23)
+#   G  — 24-hour hour without leading zero (0-23)
+#   h  — 12-hour hour with leading zero (01-12)
+#   g  — 12-hour hour without leading zero (1-12)
+#   i  — minutes with leading zero (00-59)
+#   s  — seconds with leading zero (00-59)
+#   u  — microseconds (up to 6 digits)
+#   v  — milliseconds (up to 3 digits; stored as microseconds × 1000)
+#   A  — uppercase AM/PM
+#   a  — lowercase am/pm
+#   e  — timezone name/identifier
+#   O  — timezone offset without colon (+0200)
+#   P  — timezone offset with colon (+02:00)
+#   Z  — timezone offset in seconds
+#   c  — ISO 8601 full datetime (YYYY-MM-DDTHH:MM:SS+HH:MM) — calls _auto_parse
+#   r  — RFC 2822 datetime — calls _auto_parse
+#   N, w, z, W, S, t, L, I  — output-only fields (skipped in input)
+
+def _format_parse(s, fmt) {
+  if !is_string(s)   raise TypeError('input must be a string')
+  if !is_string(fmt) raise TypeError('format must be a string')
+
+  # Shorthand passthrough for composite format directives
+  if fmt == 'c' or fmt == 'r' return _auto_parse(s)
+
+  var f    = _default_fields()
+  var spos = 0
+  var flen = fmt.length()
+  var slen = s.length()
+
+  iter var fi = 0; fi < flen; fi++ {
+    var fc = fmt[fi]
+
+    # Backslash escape — literal match
+    if fc == '\\' {
+      fi++
+      if fi >= flen break
+      var lit = fmt[fi]
+      if spos < slen and s[spos] == lit { spos++; continue }
+      raise ValueError('parse_format: expected literal "${lit}" at position ${spos} in "${s}"')
+    }
+
+    using fc {
+
+      # ---- Year ----
+      when 'Y' {
+        var r = _scan_int(s, spos, 4)
+        if r[0] < 0 raise ValueError('parse_format: expected 4-digit year at position ${spos}')
+        f.year = r[0]
+        spos   = r[1]
+      }
+      when 'y' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected 2-digit year at position ${spos}')
+        f.year = r[0] < 70 ? 2000 + r[0] : 1900 + r[0]
+        spos   = r[1]
+      }
+
+      # ---- Month ----
+      when 'm' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected month at position ${spos}')
+        f.month = r[0]
+        spos    = r[1]
+      }
+      when 'n' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected month at position ${spos}')
+        f.month = r[0]
+        spos    = r[1]
+      }
+      when 'M' {
+        var r = _scan_alpha(s, spos)
+        if !_month_name_map.contains(r[0])
+          raise ValueError('parse_format: expected abbreviated month name at position ${spos}')
+        f.month = _month_name_map[r[0]]
+        spos    = r[1]
+      }
+      when 'F' {
+        var r = _scan_alpha(s, spos)
+        if !_month_name_map.contains(r[0])
+          raise ValueError('parse_format: expected full month name at position ${spos}')
+        f.month = _month_name_map[r[0]]
+        spos    = r[1]
+      }
+
+      # ---- Day ----
+      when 'd' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected day at position ${spos}')
+        f.day = r[0]
+        spos  = r[1]
+      }
+      when 'j' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected day at position ${spos}')
+        f.day = r[0]
+        spos  = r[1]
+      }
+
+      # ---- Weekday (consumed but ignored) ----
+      when 'D' {
+        var r = _scan_alpha(s, spos)
+        spos  = r[1]   # skip abbreviated weekday
+      }
+      when 'l' {
+        var r = _scan_alpha(s, spos)
+        spos  = r[1]   # skip full weekday
+      }
+
+      # ---- Hour ----
+      when 'H' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected hour at position ${spos}')
+        f.hour = r[0]
+        spos   = r[1]
+      }
+      when 'G' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected hour at position ${spos}')
+        f.hour = r[0]
+        spos   = r[1]
+      }
+      when 'h' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected 12h hour at position ${spos}')
+        f.hour = r[0]
+        spos   = r[1]
+      }
+      when 'g' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected 12h hour at position ${spos}')
+        f.hour = r[0]
+        spos   = r[1]
+      }
+
+      # ---- Minute ----
+      when 'i' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected minute at position ${spos}')
+        f.minute = r[0]
+        spos     = r[1]
+      }
+
+      # ---- Seconds ----
+      when 's' {
+        var r = _scan_int(s, spos, 2)
+        if r[0] < 0 raise ValueError('parse_format: expected seconds at position ${spos}')
+        f.seconds = r[0]
+        spos      = r[1]
+      }
+
+      # ---- Subseconds ----
+      when 'u' {
+        var r = _scan_int(s, spos, 6)
+        if r[0] >= 0 { f.microseconds = r[0]; spos = r[1] }
+      }
+      when 'v' {
+        var r = _scan_int(s, spos, 3)
+        if r[0] >= 0 { f.microseconds = r[0] * 1000; spos = r[1] }
+      }
+
+      # ---- AM / PM ----
+      when 'A' {
+        var r = _scan_alpha(s, spos)
+        var v = r[0].lower()
+        if v != 'am' and v != 'pm'
+          raise ValueError('parse_format: expected AM or PM at position ${spos}')
+        f.am_pm = v
+        spos    = r[1]
+      }
+      when 'a' {
+        var r = _scan_alpha(s, spos)
+        var v = r[0].lower()
+        if v != 'am' and v != 'pm'
+          raise ValueError('parse_format: expected am or pm at position ${spos}')
+        f.am_pm = v
+        spos    = r[1]
+      }
+
+      # ---- Timezone ----
+      when 'e' {
+        var r = _scan_alpha(s, spos)
+        if r[0].length() > 0 { f.zone = r[0].upper(); spos = r[1] }
+      }
+      when 'O' {
+        var tz = _parse_tz(s, spos)
+        f.gmt_offset = tz[0]
+        f.zone       = tz[2]
+        spos         = tz[1]
+      }
+      when 'P' {
+        var tz = _parse_tz(s, spos)
+        f.gmt_offset = tz[0]
+        f.zone       = tz[2]
+        spos         = tz[1]
+      }
+      when 'Z' {
+        # Offset in seconds — may be signed integer
+        var sign = 1
+        if spos < slen and (s[spos] == '+' or s[spos] == '-') {
+          if s[spos] == '-' sign = -1
+          spos++
+        }
+        var r = _scan_int(s, spos, 6)
+        if r[0] >= 0 { f.gmt_offset = sign * r[0]; spos = r[1] }
+      }
+
+      # ---- Output-only fields (skipped without consuming input) ----
+      # S (ordinal suffix), t, L, N, w, z, W, I — these appear in format()
+      # output but carry no parseable information. We skip them silently so
+      # that a format string produced by format() round-trips through
+      # parse_format() without error.
+      when 'S' {
+        # Skip up to 2 alpha chars (st/nd/rd/th)
+        if spos < slen and _is_alpha_ch(s[spos]) {
+          spos++
+          if spos < slen and _is_alpha_ch(s[spos]) spos++
+        }
+      }
+      when 't' { var r = _scan_int(s, spos, 2); if r[0] >= 0 spos = r[1] }
+      when 'L' { var r = _scan_int(s, spos, 1); if r[0] >= 0 spos = r[1] }
+      when 'N' { var r = _scan_int(s, spos, 1); if r[0] >= 0 spos = r[1] }
+      when 'w' { var r = _scan_int(s, spos, 1); if r[0] >= 0 spos = r[1] }
+      when 'z' { var r = _scan_int(s, spos, 3); if r[0] >= 0 spos = r[1] }
+      when 'W' { var r = _scan_int(s, spos, 2); if r[0] >= 0 spos = r[1] }
+      when 'I' { var r = _scan_int(s, spos, 1); if r[0] >= 0 spos = r[1] }
+
+      # ---- Composite directives ----
+      when 'c' {
+        # ISO 8601 full — delegate to auto-parser for the rest of the string
+        var d2 = _auto_parse(s[spos,])
+        f.year = d2.year; f.month = d2.month; f.day = d2.day
+        f.hour = d2.hour; f.minute = d2.minute; f.seconds = d2.seconds
+        f.microseconds = d2.microseconds
+        f.gmt_offset = d2.gmt_offset; f.zone = d2.zone
+        spos = slen   # consumed remainder
+      }
+      when 'r' {
+        var d2 = _auto_parse(s[spos,])
+        f.year = d2.year; f.month = d2.month; f.day = d2.day
+        f.hour = d2.hour; f.minute = d2.minute; f.seconds = d2.seconds
+        f.microseconds = d2.microseconds
+        f.gmt_offset = d2.gmt_offset; f.zone = d2.zone
+        spos = slen
+      }
+
+      # ---- Literal character (not a recognised directive) ----
+      default {
+        # Skip optional whitespace in the input regardless of what the
+        # format character is, then match the literal.
+        spos = _skip_space(s, spos)
+        if spos < slen and s[spos] == fc {
+          spos++
+        }
+        # If the literal doesn't match, advance anyway — lenient matching
+        # allows formats like 'D, d M Y h:i:s O' where ', ' is literal.
+      }
+    }
+  }
+
+  return _fields_to_date(f)
+}
+
+
+/**
+ * Parses a date string into a `Date` instance, automatically detecting the
+ * format.
+ *
+ * `parse` recognises a broad set of standard date and datetime formats
+ * without requiring the caller to specify the format string:
+ *
+ * ### Recognised formats
+ *
+ * | Category              | Examples                                          |
+ * |-----------------------|---------------------------------------------------|
+ * | ISO 8601 extended     | `2024-06-15`, `2024-06-15T14:30:00Z`              |
+ * | ISO 8601 extended     | `2024-06-15 14:30:00+01:00`                       |
+ * | ISO 8601 compact      | `20240615`, `20240615T143000Z`                    |
+ * | RFC 2822              | `Thu, 21 Dec 2000 16:01:07 +0200`                 |
+ * | HTTP date             | `Sat, 05 Mar 2022 06:23:32 GMT`                   |
+ * | Full month name first | `March 05, 2022 6:24 PM`                          |
+ * | Full month name first | `January 1 2000`                                  |
+ * | Day-month-year        | `21 Dec 2000 16:01:07 +0200`                      |
+ * | US slash-separated    | `06/15/2024`, `6/15/2024 2:30 PM`                 |
+ * | EU dot-separated      | `15.06.2024`, `15.06.2024 14:30:00`               |
+ * | Hyphen numeric        | `15-06-2024`                                      |
+ * | ISO order slash       | `2024/06/15`                                      |
+ * | Time only             | `14:30:00`, `2:30 PM`, `14:30:00.123456 UTC`      |
+ *
+ * ### Timezone handling
+ *
+ * When a timezone offset is present in the string it is stored in
+ * `gmt_offset` (seconds) and `zone` (name string).  When absent, `zone`
+ * defaults to `"UTC"` and `gmt_offset` to `0`.
+ *
+ * ### Ambiguity policy
+ *
+ * For slash-separated numeric dates where both the first and second fields
+ * are ≤ 12 (e.g. `06/05/2024`), the US convention is assumed: month first
+ * (`MM/DD/YYYY`).  When the input is known to be `DD/MM/YYYY`, use
+ * `parse_format` with `'%d/%m/%Y'` instead.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import date
+ *
+ * var d = date.parse('2024-06-15T14:30:00Z')
+ * echo d.year    # 2024
+ * echo d.month   # 6
+ * echo d.hour    # 14
+ * echo d.zone    # UTC
+ *
+ * var d2 = date.parse('March 05, 2022 6:24 PM')
+ * echo d2.year   # 2022
+ * echo d2.hour   # 18   (PM applied)
+ *
+ * var d3 = date.parse('Thu, 21 Dec 2000 16:01:07 +0200')
+ * echo d3.year        # 2000
+ * echo d3.gmt_offset  # 7200
+ * ```
+ *
+ * @param  string date_string  The date string to parse.
+ * @returns Date
+ * @throws TypeError   When `date_string` is not a string.
+ * @throws ValueError  When the string cannot be parsed as a date.
+ */
+def parse(date_string) {
+  return _auto_parse(date_string)
+}
+
+
+/**
+ * Parses a date string using an explicit format pattern and returns a
+ * `Date` instance.
+ *
+ * The format pattern uses the same character codes as the `Date.format()`
+ * method, making it straightforward to round-trip a date through
+ * `format()` and back through `parse_format()`.
+ *
+ * ### Format character reference
+ *
+ * The following characters are interpreted as directives in the format
+ * string.  All other characters are treated as literals and must appear
+ * verbatim in the input.  Prefix a character with a backslash (`\`) to
+ * force literal treatment even for directive characters.
+ *
+ * Character | Consumes                                                | Example input
+ * ----------|---------------------------------------------------------|---------------
+ * `Y`       | 4-digit year                                            | `2024`
+ * `y`       | 2-digit year (00–69 → 2000–2069, 70–99 → 1970–1999)    | `24`
+ * `m`       | Month with leading zero (01–12)                         | `06`
+ * `n`       | Month without leading zero (1–12)                       | `6`
+ * `M`       | Abbreviated month name (case-insensitive)               | `Jun`
+ * `F`       | Full month name (case-insensitive)                      | `June`
+ * `d`       | Day with leading zero (01–31)                           | `05`
+ * `j`       | Day without leading zero (1–31)                         | `5`
+ * `D`       | Abbreviated weekday name (consumed and ignored)         | `Thu`
+ * `l`       | Full weekday name (consumed and ignored)                | `Thursday`
+ * `H`       | 24-hour hour with leading zero (00–23)                  | `14`
+ * `G`       | 24-hour hour without leading zero (0–23)                | `14`
+ * `h`       | 12-hour hour with leading zero (01–12)                  | `02`
+ * `g`       | 12-hour hour without leading zero (1–12)                | `2`
+ * `i`       | Minutes with leading zero (00–59)                       | `30`
+ * `s`       | Seconds with leading zero (00–59)                       | `00`
+ * `u`       | Microseconds (up to 6 digits)                           | `123456`
+ * `v`       | Milliseconds (up to 3 digits)                           | `123`
+ * `A`       | Uppercase AM/PM                                         | `PM`
+ * `a`       | Lowercase am/pm                                         | `pm`
+ * `e`       | Timezone name/identifier                                | `UTC`
+ * `O`       | Timezone offset without colon                           | `+0200`
+ * `P`       | Timezone offset with colon                              | `+02:00`
+ * `Z`       | Timezone offset in seconds (signed integer)             | `7200`
+ * `c`       | ISO 8601 full datetime (delegated to `parse`)           | `2024-06-15T14:30:00+02:00`
+ * `r`       | RFC 2822 full datetime (delegated to `parse`)           | `Thu, 21 Dec 2000 16:01:07 +0200`
+ * `S`       | Ordinal suffix (consumed and ignored)                   | `th`
+ * `t`,`L`,`N`,`w`,`z`,`W`,`I` | Output-only fields (skipped)     | —
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import date
+ *
+ * # Basic date
+ * var d = date.parse_format('15/06/2024', 'd/m/Y')
+ * echo d.year    # 2024
+ * echo d.month   # 6
+ * echo d.day     # 15
+ *
+ * # DateTime with AM/PM
+ * var d2 = date.parse_format('March 05, 2022 6:24 PM', 'F d, Y g:i A')
+ * echo d2.hour   # 18
+ *
+ * # Round-trip through format()
+ * var original = date.Date(2024, 6, 15, 14, 30, 0)
+ * var fmt      = 'D, d M Y H:i:s O'
+ * var reparsed = date.parse_format(original.format(fmt), fmt)
+ * echo reparsed.day    # 15
+ * echo reparsed.month  # 6
+ *
+ * # European DD/MM/YYYY (ambiguous with auto-detect — use parse_format)
+ * var eu = date.parse_format('05/06/2024', 'd/m/Y')
+ * echo eu.month  # 6
+ * echo eu.day    # 5
+ *
+ * # Timezone-aware
+ * var tz = date.parse_format('2024-06-15T14:30:00+05:30', 'Y-m-d\\TH:i:sP')
+ * echo tz.gmt_offset  # 19800 (5.5 hours in seconds)
+ * ```
+ *
+ * @param  string date_string   The input string to parse.
+ * @param  string format        The format pattern describing `date_string`.
+ * @returns Date
+ * @throws TypeError   When either argument is not a string.
+ * @throws ValueError  When the string does not match the expected format.
+ */
+def parse_format(date_string, format) {
+  return _format_parse(date_string, format)
+}
+
+
+/**
+ * Returns a new `Date` instance representing the given system date or the current date if no argument is specified.
+ * 
+ * @param ?number year
+ * @param ?number month
+ * @param ?number day
+ * @param ?number hour
+ * @param ?number minute
+ * @param ?number seconds
+ * @param ?bool is_dst
+ * @returns Date
+ * @default
+ */
+def date(year, month, day, hour, minute, seconds) {
+  return Date(year, month, day, hour, minute, seconds)
+}

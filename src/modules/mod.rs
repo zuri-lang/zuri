@@ -16,6 +16,7 @@ mod io;
 mod json;
 mod math;
 mod os;
+mod date;
 
 use crate::vm::object::{NativeFn, NativeFunction};
 use crate::vm::value::Value;
@@ -35,6 +36,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   crypto::MODULE,
   json::MODULE,
   base64::MODULE,
+  date::MODULE,
 ];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {

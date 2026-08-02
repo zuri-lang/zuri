@@ -2,26 +2,27 @@
 //! wrapping the process's own standard streams, `readline(...)`, etc.
 
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 
 use crate::modules::{BuiltinModuleDef, native};
 use crate::vm::object::{FileHandle, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
-pub static MODULE: BuiltinModuleDef = BuiltinModuleDef { name: "io", build };
+pub static MODULE: BuiltinModuleDef = BuiltinModuleDef { name: "_io", build };
 
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   let stdin_val = vm.heap_mut().alloc_file(std_file(0, "<stdin>", "r"));
   let stdout_val = vm.heap_mut().alloc_file(std_file(1, "<stdout>", "w"));
   let stderr_val = vm.heap_mut().alloc_file(std_file(2, "<stderr>", "w"));
-  let readline_val = native(vm, "readline", 0, true, readline);
 
   vec![
     ("stdin", stdin_val),
     ("stdout", stdout_val),
     ("stderr", stderr_val),
-    ("readline", readline_val),
+    ("isrepl", Value::bool(vm.is_repl)),
+    ("readline", native(vm, "readline", 0, true, readline)),
+    ("getch", native(vm, "getch", 0, true, getch)),
   ]
 }
 
@@ -56,6 +57,63 @@ fn std_file(_fd: i32, path: &str, mode: &str) -> FileHandle {
     is_stream: true,
     handle: None,
   }
+}
+
+fn getch(ctx: &mut ZuriContext) -> Result<Value, String> {
+  let mut stdin = io::stdin().lock();
+  let mut first_byte = [0u8; 1];
+
+  // Read the very first byte
+  let b = loop {
+    // Read the next byte
+    if stdin.read_exact(&mut first_byte).is_err() {
+      return Ok(Value::nil()); // EOF reached
+    }
+
+    let current_byte = first_byte[0];
+
+    // Skip carriage return (\r) and newline (\n)
+    if current_byte != b'\n' && current_byte != b'\r' {
+      break current_byte;
+    }
+  };
+
+  // Determine UTF-8 character length from the first byte
+  let len = if b & 0x80 == 0 {
+    1
+  } else if b & 0xE0 == 0xC0 {
+    2
+  } else if b & 0xF0 == 0xE0 {
+    3
+  } else if b & 0xF8 == 0xF0 {
+    4
+  } else {
+    return Err("Invalid UTF-8 start byte".into());
+  };
+
+  // Construct the full buffer for this character
+  let mut buf = vec![b; 1];
+  if len > 1 {
+    let mut remaining = vec![0u8; len - 1];
+    let x = stdin
+      .read_exact(&mut remaining)
+      .map_err(|_| "Failed to read character".to_string());
+
+    if x.is_err() {
+      return Err(x.unwrap_err());
+    }
+
+    buf.extend(remaining);
+  }
+
+  // Clear any trailing newlines or remaining line data until \n
+  let mut garbage = Vec::new();
+  let _ = stdin.read_until(b'\n', &mut garbage);
+
+  // Convert bytes to string slice, then grab the char
+  let s = std::str::from_utf8(&buf).map_err(|e| e.to_string())?;
+
+  Ok(ctx.heap().alloc_string(String::from(s)))
 }
 
 /// `readline([message[, secure[, obscure_text]]])`.

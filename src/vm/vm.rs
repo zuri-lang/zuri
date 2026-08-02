@@ -119,6 +119,7 @@ enum ExceptionOutcome {
 }
 
 pub struct VM {
+  pub(crate) is_repl: bool,
   /// One flat register stack shared by every call frame; each frame just
   /// claims a slice of it (its "window"), exactly like Lua's VM.
   registers: Vec<Value>,
@@ -189,6 +190,7 @@ type RunResult<T> = Result<T, Value>;
 impl VM {
   pub fn new(heap: Heap) -> Self {
     VM {
+      is_repl: false,
       registers: Vec::new(),
       frames: Vec::new(),
       open_upvalues: Vec::new(),
@@ -217,6 +219,10 @@ impl VM {
   #[inline]
   pub fn heap_mut(&mut self) -> &mut Heap {
     &mut self.heap
+  }
+
+  pub fn enable_repl_mode(&mut self) {
+    self.is_repl = true;
   }
 
   /// Bind a value directly, useful for wiring up a top-level function
