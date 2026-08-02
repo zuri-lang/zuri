@@ -33,8 +33,7 @@ use itertools::Itertools;
 use num_bigint::BigInt;
 
 use crate::vm::object::{
-  FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance,
-  ObjModule, ObjModuleBinding, UpvalueState,
+  FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjModule, ObjModuleBinding, ObjPtr, UpvalueState,
 };
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
@@ -564,6 +563,38 @@ impl Value {
     }
   }
 
+  #[inline]
+  pub fn is_ptr(&self) -> bool {
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Ptr(_))
+  }
+
+  /// The wrapped resource's type tag, or `None` if this isn't a Ptr at
+  /// all -- the first check a native should make before downcasting.
+  pub fn ptr_type_name(&self) -> Option<&'static str> {
+    if !self.is_ptr() {
+      return None;
+    }
+    match unsafe { &*self.as_obj() } {
+      Obj::Ptr(cell) => Some(cell.borrow().type_name),
+      _ => unreachable!(),
+    }
+  }
+
+  /// Convenience for a native that already knows the expected tag --
+  /// `v.is_ptr_type("sqlite3_connection")` before doing anything else
+  /// with `v`.
+  pub fn is_ptr_type(&self, expected: &str) -> bool {
+    self.ptr_type_name() == Some(expected)
+  }
+
+  pub fn as_ptr_cell(&self) -> &RefCell<ObjPtr> {
+    debug_assert!(self.is_ptr());
+    match unsafe { &*self.as_obj() } {
+      Obj::Ptr(cell) => cell,
+      _ => unreachable!("as_ptr_cell() called on a non-ptr Value"),
+    }
+  }
+
   /// Truthiness for control flow: nil and false are falsy, everything
   /// else (including 0 and "") is truthy.
   #[inline]
@@ -617,6 +648,7 @@ impl Value {
               ..
             },
           ) => l1 == l2 && u1 == u2,
+          (Obj::Ptr(a), Obj::Ptr(b)) => std::ptr::eq(a, b),
           _ => false,
         };
       }
@@ -651,6 +683,7 @@ impl Value {
           Obj::ModuleBinding(_) => "module",
           Obj::Range { .. } => "range",
           Obj::File(_) => "file",
+          Obj::Ptr(cell) => cell.borrow().type_name,
         }
       }
     } else {
@@ -766,6 +799,12 @@ impl std::fmt::Display for Value {
             let fh = fh_cell.borrow();
             write!(f, "<file at {} in mode {}>", fh.path, fh.mode)
           },
+          Obj::Ptr(cell) => write!(
+            f,
+            "<ptr {} at {:p}>",
+            cell.borrow().type_name,
+            self.as_obj()
+          ),
         }
       }
     } else {

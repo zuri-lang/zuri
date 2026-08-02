@@ -49,6 +49,13 @@ pub enum ArgType {
   /// own variant yet.
   Instance,
   Nil,
+  /// A `Ptr` wrapping specifically the resource named by the given
+  /// tag (see `ObjPtr::type_name`) -- e.g.
+  /// `ArgType::PtrOf("sqlite3_connection")`. Distinct from a bare
+  /// "any Ptr" check: a `gd_image` handed to a function expecting a
+  /// `sqlite3_connection` should fail here, not at the `downcast`
+  /// call inside the native body.
+  PtrOf(&'static str),
   /// Accepts anything -- useful for `enforce_arg_types!`'s uniform
   /// call shape when only SOME positions need a real constraint.
   Any,
@@ -68,6 +75,7 @@ impl ArgType {
       ArgType::Function => v.is_callable(),
       ArgType::Class => v.is_class(),
       ArgType::Instance => v.is_instance(),
+      ArgType::PtrOf(tag) => v.is_ptr_type(tag),
       ArgType::Nil => v.is_nil(),
       ArgType::Any => true,
     }
@@ -86,6 +94,16 @@ impl ArgType {
       ArgType::Function => "a function",
       ArgType::Class => "a class",
       ArgType::Instance => "an instance",
+      // Static-str-only limitation: a Ptr's error text can't embed
+      // the tag through this fn alone (unlike every other variant,
+      // the "expected" description here is itself dynamic data, not
+      // baked into the variant's own match arm). Handled by
+      // `describe_types`/the macros calling `type_name()` directly
+      // instead where the ACTUAL received value's tag matters more
+      // than the generic label anyway -- see `ptr_type_mismatch_msg`
+      // below for the real (informative) message every `enforce_*`
+      // callsite actually emits for this variant.
+      ArgType::PtrOf(_) => "a pointer",
       ArgType::Nil => "nil",
       ArgType::Any => "a value",
     }
@@ -276,6 +294,47 @@ macro_rules! enforce_arg_type_any_of_opt {
   };
 }
 
+/// Like `enforce_arg_type!`, but specifically for `ArgType::PtrOf(tag)` --
+/// produces a message naming the ACTUAL wrapped type on a mismatch
+/// (e.g. "expects argument 1 to be a sqlite3_connection, got a
+/// gd_image") instead of the generic "a pointer" `ArgType::label`
+/// falls back to for this variant. Free-function form; see
+/// `enforce_method_arg_ptr!` below for the method-style counterpart.
+#[macro_export]
+macro_rules! enforce_arg_ptr {
+  ($ctx:expr, $idx:expr, $tag:expr) => {
+    match $ctx.args.get($idx) {
+      Some(v) if v.is_ptr_type($tag) => {},
+      Some(v) if v.is_ptr() => {
+        return Err(format!(
+          "{}() expects argument {} to be a {}, got a {}",
+          $ctx.name,
+          $idx + 1,
+          $tag,
+          v.ptr_type_name().unwrap_or("ptr")
+        ));
+      },
+      Some(v) => {
+        return Err(format!(
+          "{}() expects argument {} to be a {}, got {}",
+          $ctx.name,
+          $idx + 1,
+          $tag,
+          v.type_name()
+        ));
+      },
+      None => {
+        return Err(format!(
+          "{}() expects argument {} (a {}), but it was not given",
+          $ctx.name,
+          $idx + 1,
+          $tag
+        ));
+      },
+    }
+  };
+}
+
 //-----------------------------------------------------------------------------------
 // Method-style variants
 //-----------------------------------------------------------------------------------
@@ -432,7 +491,40 @@ macro_rules! enforce_method_arg_type_any_of_opt {
   };
 }
 
+macro_rules! enforce_method_arg_ptr {
+  ($ctx:expr, $idx:expr, $tag:expr) => {
+    match $ctx.args.get($idx) {
+      Some(v) if v.is_ptr_type($tag) => {},
+      Some(v) if v.is_ptr() => {
+        return Err(format!(
+          "'{}' expects argument {} to be a {}, got a {}",
+          $ctx.name,
+          $idx,
+          $tag,
+          v.ptr_type_name().unwrap_or("ptr")
+        ));
+      },
+      Some(v) => {
+        return Err(format!(
+          "'{}' expects argument {} to be a {}, got {}",
+          $ctx.name,
+          $idx,
+          $tag,
+          v.type_name()
+        ));
+      },
+      None => {
+        return Err(format!(
+          "'{}' expects argument {} (a {}), but it was not given",
+          $ctx.name, $idx, $tag
+        ));
+      },
+    }
+  };
+}
+
 pub(crate) use enforce_method_arg_count;
+pub(crate) use enforce_method_arg_ptr;
 pub(crate) use enforce_method_arg_range;
 pub(crate) use enforce_method_arg_type;
 pub(crate) use enforce_method_arg_type_any_of;

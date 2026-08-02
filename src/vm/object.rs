@@ -1,5 +1,6 @@
 use num_bigint::BigInt;
 use rustc_hash::FxHashMap;
+use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
@@ -76,6 +77,8 @@ pub enum Obj {
   Module(RefCell<ObjModule>),
   /// See `ObjModuleBinding`'s own doc comment.
   ModuleBinding(ObjModuleBinding),
+  /// See `ObjPtr`'s own doc comment.
+  Ptr(RefCell<ObjPtr>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -450,6 +453,49 @@ pub struct FileHandle {
   pub is_stream: bool,
 }
 
+/// A type-erased handle to an arbitrary Rust value, letting a native
+/// module wrap an external resource -- a SQLite connection, a libgd
+/// image buffer, a TLS context, a compiled regex, anything -- as an
+/// ordinary Zuri `Value` that can be stored in variables, lists,
+/// dicts, and instance fields, and passed to/from native functions
+/// just like any other value.
+///
+/// Cleanup needs no separate finalizer callback:
+/// `value` is a real, owned Rust value, so when this `ObjPtr` is
+/// dropped (by `Heap::sweep`, the same as every other dead object)
+/// its own `Drop` impl runs -- closing a connection, freeing a
+/// buffer, whatever the wrapped type does when it goes out of scope
+/// in ordinary Rust code.
+pub struct ObjPtr {
+  /// A short, stable identifier for what's wrapped -- e.g.
+  /// `"sqlite3_connection"`, `"gd_image"`, `"openssl_ctx"`. Checked
+  /// by natives via `Value::ptr_type_name()`/`Value::is_ptr_type()`
+  /// before downcasting: `Any::downcast` alone matches on `TypeId`,
+  /// which is precise but gives an opaque failure mode when a native
+  /// is handed the wrong kind of pointer by mistake (e.g. a user
+  /// passing a `gd_image` where a db connection was expected) --
+  /// checking `type_name` first lets that surface as an ordinary,
+  /// readable Zuri `TypeError` instead.
+  pub type_name: &'static str,
+  /// The wrapped value itself, type-erased. Boxed so `Obj` doesn't
+  /// need to know the size of every possible wrapped type up front,
+  /// and so it participates in this arena's normal alloc/sweep/drop
+  /// lifecycle like everything else.
+  pub value: Box<dyn Any>,
+}
+
+impl ObjPtr {
+  #[inline]
+  pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
+    self.value.downcast_ref::<T>()
+  }
+
+  #[inline]
+  pub fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
+    self.value.downcast_mut::<T>()
+  }
+}
+
 /// Everything a native function body gets handed. `args` is an OWNED
 /// copy of the call's arguments, not a borrow into VM::registers -- it
 /// has to be, because `vm` is a live &mut VM at the same time, and a
@@ -638,6 +684,7 @@ impl Heap {
         Obj::ModuleBinding(_) => size_of::<ObjModuleBinding>(),
         Obj::Range { .. } => 0,
         Obj::File(_) => size_of::<FileHandle>(),
+        Obj::Ptr(_) => size_of::<ObjPtr>(),
       }
   }
 
@@ -797,6 +844,13 @@ impl Heap {
 
   pub fn alloc_module_binding(&mut self, b: ObjModuleBinding) -> Value {
     self.alloc(Obj::ModuleBinding(b))
+  }
+
+  pub fn alloc_ptr<T: 'static>(&mut self, type_name: &'static str, value: T) -> Value {
+    self.alloc(Obj::Ptr(RefCell::new(ObjPtr {
+      type_name,
+      value: Box::new(value),
+    })))
   }
 
   /// Drop every object whose address isn't in `reachable`, then

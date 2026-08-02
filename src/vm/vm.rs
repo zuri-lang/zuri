@@ -2572,7 +2572,8 @@ impl VM {
         | Obj::BigInt(_)
         | Obj::Native(_)
         | Obj::File(_)
-        | Obj::Range { .. } => {},
+        | Obj::Ptr(_)
+        | Obj::Range { .. } => {}
       }
     }
 

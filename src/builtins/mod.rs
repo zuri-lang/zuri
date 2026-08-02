@@ -28,6 +28,7 @@ use crate::builtins::function::FUNCTION_METHODS;
 use crate::builtins::list::LIST_METHODS;
 use crate::builtins::number::NUMBER_METHODS;
 use crate::builtins::object::OBJECT_TO_STRING;
+use crate::builtins::ptr::PTR_METHODS;
 use crate::builtins::range::RANGE_METHODS;
 use crate::builtins::string::STRING_METHODS;
 use crate::vm::object::{NativeFn, NativeFunction, Obj, ZuriContext};
@@ -43,6 +44,7 @@ mod function;
 mod list;
 mod number;
 mod object;
+pub mod ptr;
 mod range;
 mod string;
 
@@ -63,6 +65,7 @@ enum Kind {
   Range,
   Function,
   File,
+  Ptr,
   Nil,
 }
 
@@ -93,6 +96,7 @@ impl Kind {
       Obj::Range { .. } => Some(Kind::Range),
       Obj::BigInt(_) => Some(Kind::BigInt),
       Obj::File(_) => Some(Kind::File),
+      Obj::Ptr(_) => Some(Kind::Ptr),
       Obj::Func(_) | Obj::Closure(_) | Obj::Native(_) | Obj::BoundMethod(_) | Obj::Class(_) => {
         Some(Kind::Function)
       },
@@ -180,6 +184,7 @@ fn table_for(kind: Kind) -> &'static MethodTable {
     Kind::Function => &FUNCTION_METHODS,
     Kind::BigInt => &BIGINT_METHODS,
     Kind::File => &FILE_METHODS,
+    Kind::Ptr => &PTR_METHODS,
     Kind::Nil => &NIL_METHODS,
   }
 }
