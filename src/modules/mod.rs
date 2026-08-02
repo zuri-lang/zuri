@@ -9,9 +9,11 @@
 //! `pub static MODULE: BuiltinModuleDef`, then listing it in
 //! `REGISTRY` below -- nothing else needs to change.
 
+mod base64;
 mod crypto;
 mod hash;
 mod io;
+mod json;
 mod math;
 mod os;
 
@@ -31,6 +33,8 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   os::MODULE,
   hash::MODULE,
   crypto::MODULE,
+  json::MODULE,
+  base64::MODULE,
 ];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {

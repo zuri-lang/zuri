@@ -1,0 +1,118 @@
+/**
+ * @module json
+ *
+ * Provides APIs for encoding and decoding JSON data.
+ *
+ * JavaScript Object Notation (JSON) is a lightweight, text-based,
+ * language-independent data interchange format.  It was derived from
+ * the ECMAScript Programming Language Standard.  JSON defines a small
+ * set of formatting rules for the portable representation of structured
+ * data.
+ *
+ * This implementation complies with [RFC 8259](https://datatracker.ietf.org/doc/html/rfc8259).
+ *
+ * ### JSON to Zuri value mapping
+ *
+ * | JSON | Zuri |
+ * |------|-------|
+ * | Null | Nil |
+ * | String | String |
+ * | Number | Number |
+ * | Boolean | Boolean |
+ * | Array | List |
+ * | Object | Dict |
+ *
+ *
+ * ### Zuri to JSON object mapping
+ *
+ * | Zuri | JSON |
+ * |-------|------|
+ * | `nil` | Null |
+ * | Integer | Number |
+ * | Number | Number |
+ * | Char | String |
+ * | String | String |
+ * | List | Array |
+ * | Dict | Object |
+ * | Instance of class implementing `to_json()` decorator | Any |
+ *
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> import json
+ * %> json.encode([1, 2, 3])
+ * '[1,2,3]'
+ * %>
+ * %> json.encode({name: 'Zuri', version: '0.1.0'})
+ * '{"name":"Zuri","version":"0.1.0"}'
+ * %>
+ * %> json.encode({name: 'Zuri', version: '0.1.0'}, false)
+ * '{
+ *   "name": "Zuri",
+ *   "version": "0.1.0"
+ * }'
+ * ```
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+
+/**
+ * JSON encodes the given value with a recursive depth up to `max_depth`.
+ * 
+ * If _compact_ is `true`, the resulting json string will be 
+ * tightly packed. i.e. spaces will be trimmed from objects and arrays. Otherwise, 
+ * the JSON output will be pretty formatted.
+ * 
+ * @param any value
+ * @param ?bool compact: Default value is `true`.
+ * @param ?number max_depth: is the maximum recursive depth for encoding, default = 1024.
+ * @note pretty formatting use 2 spaces instead of tabs.
+ * @raises Error: If the value cannot be encoded to json.
+ * @returns string
+ */
+def encode(value, compact, max_depth) {
+  if compact == nil 
+    compact = true
+  if max_depth == nil 
+    max_depth = 1024
+  return _json.encode(value, compact, max_depth)
+}
+
+/**
+ * Decodes the input JSON string into Zuri objects
+ * 
+ * @param string value: The string to decode
+ * @param ?bool allow_comments: Can be set to enable/disable C-style comments in json [default = true]
+ * @raises Error: If the json is invalid.
+ * @returns object
+ */
+def decode(value, allow_comments) {
+  if allow_comments == nil 
+    allow_comments = true
+  return _json.decode(value, allow_comments)
+}
+
+/**
+ * Parses a file containing json data.
+ * 
+ * @param string path
+ * @param ?bool allow_comments: Can be set to enable/disable C-style comments in json [default = true]
+ * @raises Error: If the file cannot be read or if the json is invalid.
+ * @returns object
+ */
+def parse(path, allow_comments) {}
+
+/**
+ * Dumps the given value into a json file at the specified path.
+ * 
+ * @param any value
+ * @param string path
+ * @param ?bool compact: Default value is `true`.
+ * @param ?number max_depth: is the maximum recursive depth for encoding, default = 1024.
+ * @note pretty formatting use 2 spaces instead of tabs.
+ * @raises Error: If the file cannot be written to.
+ */
+def dump(value, path, compact, max_depth) {}
+
