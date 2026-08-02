@@ -87,7 +87,7 @@ class BytesIO {
    * 
    * @param number length: Default = -1
    * @returns bytes
-   * @throws Exception
+   * @throws Error
    */
   read(length) {
     if !length {
@@ -112,7 +112,7 @@ class BytesIO {
    * 
    * @param number length: Default = -1
    * @returns bytes
-   * @throws Exception
+   * @throws Error
    */
   gets(length) {
     if !length {
@@ -257,7 +257,7 @@ class BytesIO {
    * Clears the bytearray and closes it for reading or writing.
    * 
    * Any further attempt to perform most operations on the BytesIO 
-   * after calling `delete()` will raise an exception.
+   * after calling `delete()` will raise an error.
    * 
    * @returns bool
    */
@@ -410,11 +410,11 @@ class BytesIO {
   }
 
   _can_read() {
-    return self._open and to_bool(self._mode.index_of('r') or self._mode.index_of('+') or self._mode.index_of('a'))
+    return self._open and (self._mode.contains('r') or self._mode.contains('+') or self._mode.contains('a'))
   }
 
   _can_write() {
-    return self._open and to_bool(self._mode.index_of('w') or self._mode.index_of('+') or self._mode.index_of('a'))
+    return self._open and (self._mode.contains('w') or self._mode.contains('+') or self._mode.contains('a'))
   }
 
   _do_open() {
@@ -431,7 +431,7 @@ class BytesIO {
 
   _read(length) {
     if !self._can_read() {
-      raise Exception('I/O not open for reading')
+      raise Error('I/O not open for reading')
     }
 
     self._atime = time()
@@ -454,11 +454,11 @@ class BytesIO {
 
   _write(data) {
     if !self._can_write() {
-      raise Exception('I/O not open for writing')
+      raise Error('I/O not open for writing')
     }
 
     if self._max_length - self._position < 0 {
-      raise Exception('cannot write beyond I/O offsets')
+      raise Error('cannot write beyond I/O offsets')
     }
 
     self.source += data

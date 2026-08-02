@@ -15,23 +15,23 @@ if error {
   echo error.stacktrace
 }
 
-class MyCustomException < Error {}
+class MyCustomError < Error {}
 
 var x = 50
 
 catch {
   if x == 50 {
-    raise MyCustomException('Something custom happened')
+    raise MyCustomError('Something custom happened')
   } else {
     raise Error('Error happened')
   }
 } as error
 
-if instance_of(error, MyCustomException) {
-  echo 'A custom exception was raised'
+if instance_of(error, MyCustomError) {
+  echo 'A custom error was raised'
   echo error.message
 } else {
-  echo 'Regular exception raised'
+  echo 'Regular error raised'
   echo error.message
 }
 

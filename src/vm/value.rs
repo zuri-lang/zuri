@@ -33,7 +33,8 @@ use itertools::Itertools;
 use num_bigint::BigInt;
 
 use crate::vm::object::{
-  FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjModule, ObjModuleBinding, ObjPtr, UpvalueState,
+  FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance,
+  ObjModule, ObjModuleBinding, ObjPtr, UpvalueState,
 };
 
 const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
@@ -662,7 +663,7 @@ impl Value {
       "int"
     } else */
     if self.is_number() {
-      "float"
+      "number"
     } else if self.is_nil() {
       "nil"
     } else if self.is_bool() {

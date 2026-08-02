@@ -233,7 +233,7 @@ class Task < TaskState {
   }
 
   fn(pkt,r) {
-    raise Exception('not implemented')
+    raise Error('not implemented')
   }
 
   addPacket(p,old) {
@@ -297,7 +297,7 @@ class Task < TaskState {
   findtcb(id) {
     var t = taskWorkArea.taskTab[id]
     if t == nil
-      raise Exception("Bad task id ${id}")
+      raise Error("Bad task id ${id}")
     return t
   }
 }
@@ -427,7 +427,7 @@ def schedule() {
     if t.isTaskHoldingOrWaiting() {
       t = t.link
     } else {
-      if tracing trace(chr("0".ord() + t.ident))
+      if tracing trace((48 + t.ident).chr()) # 48 is '0' in ASCII
       t = t.runTask()
     }
   }

@@ -75,7 +75,7 @@ var RS512 = 'RS512'
  * Unsecured algorithm identifier. Tokens signed with this algorithm carry
  * no signature and must never be used to protect sensitive resources.
  * Passing this value to sign() requires setting allow_none: true in options
- * or an exception will be raised.
+ * or an error will be raised.
  */
 var NONE = 'none'
 
@@ -117,7 +117,7 @@ def _hmac_fn(alg) {
   if alg == HS256 { return hash.hmac_sha256 }
   if alg == HS384 { return hash.hmac_sha384 }
   if alg == HS512 { return hash.hmac_sha512 }
-  raise JwtException('unsupported HMAC algorithm: ' + alg)
+  raise JwtError('unsupported HMAC algorithm: ' + alg)
 }
 
 # Performs a constant-time string comparison to prevent timing attacks.
@@ -128,7 +128,7 @@ def _safe_equals(a, b) {
 
   var result = 0
   iter var i = 0; i < a.length(); i++ {
-    result = result | (ord(a[i]) ^ ord(b[i]))
+    result = result | (a[i].ord() ^ b[i].ord())
   }
 
   return result == 0
@@ -136,19 +136,19 @@ def _safe_equals(a, b) {
 
 
 # ---------------------------------------------------------------------------
-# Exceptions
+# Errors
 # ---------------------------------------------------------------------------
 
 /**
- * Base exception class for all errors raised by the jwt module.
+ * Base error class for all errors raised by the jwt module.
  * Catching this class will intercept any jwt-specific error.
  */
-class JwtException < Exception {
+class JwtError < Error {
   /**
    * @param string message
    * @constructor
    */
-  JwtException(message) {
+  @new(message) {
     parent(message)
   }
 }
@@ -158,8 +158,8 @@ class JwtException < Exception {
  * This includes tokens that are not three dot-separated segments or that
  * contain malformed base64url or JSON.
  */
-class MalformedTokenException < JwtException {
-  MalformedTokenException(message) {
+class MalformedTokenError < JwtError {
+  @new(message) {
     parent(message)
   }
 }
@@ -169,8 +169,8 @@ class MalformedTokenException < JwtException {
  * This indicates the token has been tampered with or was signed with a
  * different key.
  */
-class SignatureException < JwtException {
-  SignatureException(message) {
+class SignatureError < JwtError {
+  @new(message) {
     parent(message)
   }
 }
@@ -182,8 +182,8 @@ class SignatureException < JwtException {
  * - `nbf` (not before) — token is not yet valid
  * - `iat` (issued at) — token was issued in the future
  */
-class TokenExpiredException < JwtException {
-  TokenExpiredException(message) {
+class TokenExpiredError < JwtError {
+  @new(message) {
     parent(message)
   }
 }
@@ -192,8 +192,8 @@ class TokenExpiredException < JwtException {
  * Raised when a required claim is absent from the token payload, or when a
  * registered claim (iss, aud, sub) does not match the expected value.
  */
-class ClaimException < JwtException {
-  ClaimException(message) {
+class ClaimError < JwtError {
+  @new(message) {
     parent(message)
   }
 }
@@ -203,8 +203,8 @@ class ClaimException < JwtException {
  * this module, or when the caller attempts to use the none algorithm without
  * explicitly enabling it.
  */
-class AlgorithmException < JwtException {
-  AlgorithmException(message) {
+class AlgorithmError < JwtError {
+  @new(message) {
     parent(message)
   }
 }
@@ -262,7 +262,7 @@ class Token {
    * @param string signature
    * @param string raw
    */
-  Token(header, payload, signature, raw) {
+  @new(header, payload, signature, raw) {
     self.header    = header
     self.payload   = payload
     self.signature = signature
@@ -346,8 +346,8 @@ class Token {
  * @param  string secret
  * @param  ?dict   options  — see `sign()` for supported option keys
  * @return string
- * @throws AlgorithmException
- * @throws JwtException
+ * @throws AlgorithmError
+ * @throws JwtError
  */
 def encode(header, payload, secret, options) {
   if !options { 
@@ -358,7 +358,7 @@ def encode(header, payload, secret, options) {
 
   if alg == NONE {
     if !options.get('allow_none', false) {
-      raise AlgorithmException(
+      raise AlgorithmError(
         'algorithm "none" is disabled; set allow_none: true in options to permit unsecured tokens'
       )
     }
@@ -383,7 +383,7 @@ def encode(header, payload, secret, options) {
   } else if alg == RS256 or alg == RS384 or alg == RS512 {
     sig = _b64_encode(crypto.rsa.sign(secret, signing_input, alg))
   } else {
-    raise AlgorithmException('unsupported algorithm: ' + alg)
+    raise AlgorithmError('unsupported algorithm: ' + alg)
   }
 
   return signing_input + '.' + sig
@@ -400,18 +400,18 @@ def encode(header, payload, secret, options) {
  *
  * @param  string token
  * @return Token
- * @throws MalformedTokenException
+ * @throws MalformedTokenError
  */
 def decode(token) {
   if !_is_string(token) {
-    raise MalformedTokenException('token must be a non-empty string')
+    raise MalformedTokenError('token must be a non-empty string')
   }
 
   var parts = token.split('.')
   if parts.length() != 3 {
-    raise MalformedTokenException(
+    raise MalformedTokenError(
       'malformed token: expected three dot-separated segments, got ' +
-      to_string(parts.length())
+      parts.length().to_string()
     )
   }
 
@@ -419,39 +419,35 @@ def decode(token) {
 
   catch {
     header_json = _b64_decode(parts[0])
-  } as _
-  if _ {
-    raise MalformedTokenException('malformed token: header segment is not valid base64url')
+  } as _ {
+    raise MalformedTokenError('malformed token: header segment is not valid base64url')
   }
 
   catch {
     payload_json = _b64_decode(parts[1])
-  } as _
-  if _ {
-    raise MalformedTokenException('malformed token: payload segment is not valid base64url')
+  } as _ {
+    raise MalformedTokenError('malformed token: payload segment is not valid base64url')
   }
   
   var header, payload
 
   catch {
     header = json.decode(header_json)
-  } as _
-  if _ {
-    raise MalformedTokenException('malformed token: header is not valid JSON')
+  } as _ {
+    raise MalformedTokenError('malformed token: header is not valid JSON')
   }
 
   catch {
     payload = json.decode(payload_json)
-  } as _
-  if _ {
-    raise MalformedTokenException('malformed token: payload is not valid JSON')
+  } as _ {
+    raise MalformedTokenError('malformed token: payload is not valid JSON')
   }
 
   if !is_dict(header) {
-    raise MalformedTokenException('malformed token: header must be a JSON object')
+    raise MalformedTokenError('malformed token: header must be a JSON object')
   }
   if !is_dict(payload) {
-    raise MalformedTokenException('malformed token: payload must be a JSON object')
+    raise MalformedTokenError('malformed token: payload must be a JSON object')
   }
 
   return Token(header, payload, parts[2], token)
@@ -534,8 +530,8 @@ def decode(token) {
  * @param  string secret
  * @param  ?dict   options
  * @return string
- * @throws AlgorithmException
- * @throws JwtException
+ * @throws AlgorithmError
+ * @throws JwtError
  */
 def sign(payload, secret, options) {
   if !options { 
@@ -543,10 +539,10 @@ def sign(payload, secret, options) {
   }
 
   if !is_dict(payload) {
-    raise JwtException('payload must be a dictionary')
+    raise JwtError('payload must be a dictionary')
   }
   if !_is_string(secret) and options.get('algorithm', HS256) != NONE {
-    raise JwtException('secret must be a non-empty string')
+    raise JwtError('secret must be a non-empty string')
   }
 
   var alg = options.get('algorithm', HS256)
@@ -592,7 +588,7 @@ def sign(payload, secret, options) {
     claims['jti'] = options['jwt_id']
   } else if !payload.contains('jti') {
     # Generate a simple unique token id from current time + random salt.
-    claims['jti'] = _b64_encode(hash.md5(to_string(now) + to_string(rand()), true))
+    claims['jti'] = _b64_encode(hash.md5(now.to_string() + rand().to_string(), true))
   }
 
   # Merge: option-derived claims first, explicit payload claims win.
@@ -623,7 +619,7 @@ def sign(payload, secret, options) {
  * 5. Registered claim validation — checks iss, aud, and sub when the
  *    corresponding options are set.
  *
- * An exception is raised at the first failure; verification does not
+ * An error is raised at the first failure; verification does not
  * accumulate errors.
  *
  * ### Options
@@ -655,7 +651,7 @@ def sign(payload, secret, options) {
  * } as e
  *
  * if e {
- *   # e is a JwtException
+ *   # e is a JwtError
  *   echo 'token rejected: ' + e.message
  * }
  * ```
@@ -664,11 +660,11 @@ def sign(payload, secret, options) {
  * @param  string secret
  * @param  dict   options
  * @return dict|Token
- * @throws MalformedTokenException
- * @throws AlgorithmException
- * @throws SignatureException
- * @throws TokenExpiredException
- * @throws ClaimException
+ * @throws MalformedTokenError
+ * @throws AlgorithmError
+ * @throws SignatureError
+ * @throws TokenExpiredError
+ * @throws ClaimError
  */
 def verify(token, secret, options) {
   if !options { 
@@ -680,7 +676,7 @@ def verify(token, secret, options) {
 
   var alg = tok.header.get('alg', '')
   if alg.length() == 0 {
-    raise MalformedTokenException('malformed token: missing alg header parameter')
+    raise MalformedTokenError('malformed token: missing alg header parameter')
   }
 
   # Step 2 — algorithm whitelist
@@ -689,12 +685,12 @@ def verify(token, secret, options) {
 
   if alg == NONE {
     if !options.get('allow_none', false) {
-      raise AlgorithmException(
+      raise AlgorithmError(
         'algorithm "none" is not permitted; set allow_none: true to accept unsecured tokens'
       )
     }
   } else if !accepted.contains(alg) {
-    raise AlgorithmException(
+    raise AlgorithmError(
       'token algorithm "' + alg + '" is not in the accepted list: ' +
       ', '.join(accepted)
     )
@@ -713,7 +709,7 @@ def verify(token, secret, options) {
       expected_sig = _b64_encode(fn(secret, signing_input))
     } else if alg == RS256 or alg == RS384 or alg == RS512 {
       if !crypto.rsa.verify(secret, signing_input, provided_sig, alg) {
-        raise SignatureException('invalid token signature')
+        raise SignatureError('invalid token signature')
       }
 
       # RSA path returns early after explicit verify call.
@@ -721,7 +717,7 @@ def verify(token, secret, options) {
     }
 
     if !_safe_equals(expected_sig, provided_sig) {
-      raise SignatureException('invalid token signature')
+      raise SignatureError('invalid token signature')
     }
   }
 
@@ -738,65 +734,65 @@ def _finish_verify(tok, options) {
 
   if !options.get('ignore_expiration', false) and payload.contains('exp') {
     if !is_number(payload['exp']) {
-      raise ClaimException('exp claim must be a numeric date')
+      raise ClaimError('exp claim must be a numeric date')
     }
 
     if now > payload['exp'] + tolerance {
-      raise TokenExpiredException(
-        'token expired at ' + to_string(payload['exp']) +
-        ' (current time: ' + to_string(now) + ')'
+      raise TokenExpiredError(
+        'token expired at ' + payload['exp'].to_string() +
+        ' (current time: ' + now.to_string() + ')'
       )
     }
   }
 
   if !options.get('ignore_not_before', false) and payload.contains('nbf') {
     if !is_number(payload['nbf']) {
-      raise ClaimException('nbf claim must be a numeric date')
+      raise ClaimError('nbf claim must be a numeric date')
     }
 
     if now < payload['nbf'] - tolerance {
-      raise TokenExpiredException(
-        'token not valid before ' + to_string(payload['nbf']) +
-        ' (current time: ' + to_string(now) + ')'
+      raise TokenExpiredError(
+        'token not valid before ' + payload['nbf'].to_string() +
+        ' (current time: ' + now.to_string() + ')'
       )
     }
   }
 
   if payload.contains('iat') and !is_number(payload['iat']) {
-    raise ClaimException('iat claim must be a numeric date')
+    raise ClaimError('iat claim must be a numeric date')
   }
 
   # Step 5 — registered claim validation
 
   if options.contains('issuer') {
     if !payload.contains('iss') {
-      raise ClaimException('token is missing the required iss claim')
+      raise ClaimError('token is missing the required iss claim')
     }
 
     if payload['iss'] != options['issuer'] {
-      raise ClaimException(
+      raise ClaimError(
         'issuer mismatch: expected "' + options['issuer'] +
-        '", got "' + to_string(payload['iss']) + '"'
+        '", got "' + payload['iss'].to_string() + '"'
       )
     }
   }
 
   if options.contains('subject') {
     if !payload.contains('sub') {
-      raise ClaimException('token is missing the required sub claim')
+      raise ClaimError('token is missing the required sub claim')
     }
 
     if payload['sub'] != options['subject'] {
-      raise ClaimException(
+      raise ClaimError(
         'subject mismatch: expected "' + options['subject'] +
-        '", got "' + to_string(payload['sub']) + '"'
+        '", got "' + payload['sub'].to_string() + '"'
       )
     }
   }
 
   if options.contains('auraisence') {
     if !payload.contains('aud') {
-      raise ClaimException('token is missing the required aud claim')
+      raise ClaimError('token is missing the required aud claim')
     }
 
     var expected_aud = options['auraisence']
@@ -817,7 +813,7 @@ def _finish_verify(tok, options) {
       }
     }
     if !matched {
-      raise ClaimException(
+      raise ClaimError(
         'auraisence mismatch: token aud does not include any of the expected values'
       )
     }
@@ -868,9 +864,9 @@ class Verifier {
    * @param string secret   The secret or PEM public key used for verification.
    * @param dict   options  Verification options (see verify() for reference).
    */
-  Verifier(secret, options) {
+  @new(secret, options) {
     if !_is_string(secret) and !options.get('allow_none', false) {
-      raise JwtException('Verifier secret must be a non-empty string')
+      raise JwtError('Verifier secret must be a non-empty string')
     }
     self._secret  = secret
     self._options = options ? options : {}
@@ -888,11 +884,11 @@ class Verifier {
    * @param  string token
    * @param  dict   options  Optional per-call option overrides.
    * @return dict|Token
-   * @throws MalformedTokenException
-   * @throws AlgorithmException
-   * @throws SignatureException
-   * @throws TokenExpiredException
-   * @throws ClaimException
+   * @throws MalformedTokenError
+   * @throws AlgorithmError
+   * @throws SignatureError
+   * @throws TokenExpiredError
+   * @throws ClaimError
    */
   verify(token, options) {
     var merged = {}
@@ -912,7 +908,7 @@ class Verifier {
    *
    * @param  string token
    * @return Token
-   * @throws MalformedTokenException
+   * @throws MalformedTokenError
    */
   decode(token) {
     return jwt.decode(token)
@@ -956,9 +952,9 @@ class Signer {
    * @param string secret   The secret or PEM private key used for signing.
    * @param dict   options  Default signing options (see sign() for reference).
    */
-  Signer(secret, options) {
+  @new(secret, options) {
     if !_is_string(secret) and !options.get('allow_none', false) {
-      raise JwtException('Signer secret must be a non-empty string')
+      raise JwtError('Signer secret must be a non-empty string')
     }
     self._secret  = secret
     self._options = options ? options : {}
@@ -974,8 +970,8 @@ class Signer {
    * @param  dict payload
    * @param  dict options  Optional per-call option overrides.
    * @return string
-   * @throws AlgorithmException
-   * @throws JwtException
+   * @throws AlgorithmError
+   * @throws JwtError
    */
   sign(payload, options) {
     var merged = {}
@@ -1003,7 +999,7 @@ class Signer {
  *
  * @param  string token
  * @return dict
- * @throws MalformedTokenException
+ * @throws MalformedTokenError
  */
 def header(token) {
   return decode(token).header
@@ -1017,7 +1013,7 @@ def header(token) {
  *
  * @param  string token
  * @return dict
- * @throws MalformedTokenException
+ * @throws MalformedTokenError
  */
 def payload(token) {
   return decode(token).payload
@@ -1032,7 +1028,7 @@ def payload(token) {
  * @param  string token
  * @param  number leeway  Optional seconds of tolerance. Default: 0.
  * @return bool
- * @throws MalformedTokenException
+ * @throws MalformedTokenError
  */
 def is_expired(token, leeway) {
   if !leeway { leeway = 0 }
@@ -1050,7 +1046,7 @@ def is_expired(token, leeway) {
  *
  * @param  string token
  * @return number|nil
- * @throws MalformedTokenException
+ * @throws MalformedTokenError
  */
 def expires_in(token) {
   var tok = decode(token)

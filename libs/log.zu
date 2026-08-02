@@ -584,12 +584,12 @@ class Transport {
 
   /**
    * Do whatever it takes to actually log the specified logging record. This method is 
-   * intended to be implemented by subclasses and so raises an *Exception* if called 
+   * intended to be implemented by subclasses and so raises an *Error* if called 
    * directly from `Transport`.
    * 
    * @param any message
    * @param {log.LogLevel} level
-   * @raises Exception
+   * @raises Error
    */
   write(message, level) {
     raise NotImplementedError()
@@ -613,7 +613,7 @@ class Transport {
 
 
 # Verifies that obj is a valid Transport and returns obj as is if true 
-# or raises an Exception if not.
+# or raises an Error if not.
 def _assert_transport(obj) {
   if !instance_of(obj, Transport) {
     raise ValueError('invalid Transport')
@@ -653,9 +653,9 @@ class FileTransport < Transport {
    * @param string path
    * @constructor
    */
-  FileTransport(path) {
+  @new(path) {
     if !is_string(path) {
-      raise Exception('path must be string')
+      raise Error('path must be string')
     }
 
     self._init(path)
@@ -798,8 +798,8 @@ def _write(level, args) {
  * @params any...
  * @default
  */
-def log(...) {
-  _write(LogLevel.None, __args__)
+def log(...args) {
+  _write(LogLevel.None, args)
 }
 
 /**
@@ -808,8 +808,8 @@ def log(...) {
  * 
  * @params any...
  */
-def info(...) {
-  _write(LogLevel.Info, __args__)
+def info(...args) {
+  _write(LogLevel.Info, args)
 }
 
 /**
@@ -818,8 +818,8 @@ def info(...) {
  * 
  * @params any...
  */
-def debug(...) {
-  _write(LogLevel.Debug, __args__)
+def debug(...args) {
+  _write(LogLevel.Debug, args)
 }
 
 /**
@@ -828,8 +828,8 @@ def debug(...) {
  * 
  * @params any...
  */
-def warn(...) {
-  _write(LogLevel.Warning, __args__)
+def warn(...args) {
+  _write(LogLevel.Warning, args)
 }
 
 /**
@@ -838,8 +838,8 @@ def warn(...) {
  * 
  * @params any...
  */
-def error(...) {
-  _write(LogLevel.Error, __args__)
+def error(...args) {
+  _write(LogLevel.Error, args)
 }
 
 /**
@@ -848,19 +848,19 @@ def error(...) {
  * 
  * @params any...
  */
-def critical(...) {
-  _write(LogLevel.Critical, __args__)
+def critical(...args) {
+  _write(LogLevel.Critical, args)
 }
 
 /**
- * Logs a message with level [[log.Error]] on all registered transports along with an exception 
+ * Logs a message with level [[log.Error]] on all registered transports along with an error 
  * message and stacktrace. The arguments and limitations as same as in [[log.log()]].
  * 
- * @param Exception ex
+ * @param Error ex
  * @param ?any message
  */
-def exception(ex, message) {
-  if instance_of(ex, Exception) {
+def error(ex, message) {
+  if instance_of(ex, Error) {
     if message {
       _write(LogLevel.Error, [ 
         '${message}\n', 

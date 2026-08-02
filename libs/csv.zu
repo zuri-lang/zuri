@@ -117,7 +117,7 @@ var QUOTE_NONE = 3
 # ---------------------------------------------------------------------------
 
 /**
- * Exception raised when a CSV parsing or encoding error is encountered.
+ * Error raised when a CSV parsing or encoding error is encountered.
  *
  * @property string  message  Human-readable description of the error.
  * @property number  line     1-based line number where the error occurred
@@ -125,7 +125,7 @@ var QUOTE_NONE = 3
  * @property number  column   1-based column (character) position within the
  *                            line where the error occurred (-1 if unknown).
  */
-class CsvError < Exception {
+class CsvError < Error {
   var line   = -1
   var column = -1
 
@@ -135,7 +135,7 @@ class CsvError < Exception {
    * @param number  column   Column number (1-based).
    * @constructor
    */
-  CsvError(message, line, column) {
+  @new(message, line, column) {
     parent(message)
     if line   != nil { 
       self.line   = line 
@@ -491,7 +491,7 @@ def _encode_field(value, dialect) {
     value = ','.join(value)
   } 
 
-  var s      = to_string(value)
+  var s      = value.to_string()
   var qchar  = dialect.quote_char
   var delim  = dialect.delimiter
   var term   = dialect.line_terminator
@@ -541,9 +541,9 @@ def _encode_field(value, dialect) {
  */
 def _has_bom(text) {
   return text.length() >= 3 and
-    ord(text[0]) == 0xef and
-    ord(text[1]) == 0xbb and
-    ord(text[2]) == 0xbf
+    text[0].ord() == 0xef and
+    text[1].ord() == 0xbb and
+    text[2].ord() == 0xbf
 }
 
 
@@ -636,7 +636,7 @@ class Reader {
    * @param ?Dialect  dialect  Optional dialect (defaults to `Dialect()`).
    * @throws CsvError  If dialect validation fails.
    */
-  Reader(file, dialect) {
+  @new(file, dialect) {
     if !is_file(file) and !instance_of(file, io.BytesIO) {
       raise TypeError('file-like object expected in argument 1 (file)')
     }
@@ -865,7 +865,7 @@ class Writer {
    * @param ?Dialect  dialect  Optional dialect (defaults to `Dialect()`).
    * @throws CsvError  If dialect validation fails.
    */
-  Writer(file, dialect) {
+  @new(file, dialect) {
     if !is_file(file) and !instance_of(file, io.BytesIO) {
       raise TypeError('file-like object expected in argument 1 (file)')
     }
@@ -1305,7 +1305,7 @@ def format_record(row, dialect) {
  * @param  ?Dialect  dialect  Optional dialect.
  * @return list              All records as lists or dicts.
  * @throws CsvError          On parse error.
- * @throws Exception         On file I/O error.
+ * @throws Error         On file I/O error.
  */
 def read_file(path, dialect) {
   if !is_string(path) {
@@ -1345,7 +1345,7 @@ def read_file(path, dialect) {
  * @param  ?Dialect  dialect  Optional dialect.
  * @param  ?list     keys     Optional column key order for dict rows.
  * @throws CsvError          On encoding error.
- * @throws Exception         On file I/O error.
+ * @throws Error         On file I/O error.
  */
 def write_file(path, rows, dialect, keys) {
   if !is_string(path) {

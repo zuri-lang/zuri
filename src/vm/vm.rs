@@ -2626,7 +2626,13 @@ impl VM {
   }
 
   fn coerce_index(&mut self, index: Value, len: usize) -> RunResult<usize> {
-    let i = self.value_as_index(index)?;
+    let mut i = self.value_as_index(index)?;
+
+    // First attempt to coerce it into the range [0, len) by wrapping negative indices around to the end of the array.
+    if i < 0 {
+      i += len as i64;
+    }
+
     if i < 0 || i as usize >= len {
       let msg = format!("index {} out of bounds (length {})", i, len);
       return Err(self.raise("RangeError", msg));

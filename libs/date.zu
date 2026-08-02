@@ -91,10 +91,12 @@ def _check_date_fields(year, month, day, hour, minute, seconds) {
   _check_int_field(month, 'month')
   _check_int_field(day, 'day')
 
-  if MIN_YEAR > year or year > MAX_YEAR
+  if MIN_YEAR > year or year > MAX_YEAR {
     raise ValueError('year must be in ${MIN_YEAR}..${MAX_YEAR}')
-  if 1 > month or month > 12
+  }
+  if 1 > month or month > 12 {
     raise ValueError('month must be in 1..12')
+  }
 
   var dim = _dim(year, month)   
   if 1 > month or month > 12
@@ -299,25 +301,25 @@ class Date {
    */
   @new(year, month, day, hour, minute, seconds, microseconds, gmt_offset, is_dst) {
 
-    if year {
+    if year != nil{
       self.year = year
 
-      if month self.month = month
+      if month != nil self.month = month
       else self.month = MIN_MONTH
 
-      if day self.day = day
+      if day != nil self.day = day
       else self.day = MIN_DAY
 
-      if hour self.hour = hour
+      if hour != nil self.hour = hour
       else self.hour = 0
 
-      if minute self.minute = minute
+      if minute != nil self.minute = minute
       else self.minute = 0
 
-      if seconds self.seconds = seconds
+      if seconds != nil self.seconds = seconds
       else self.seconds = 0
 
-      if microseconds self.microseconds = microseconds
+      if microseconds != nil self.microseconds = microseconds
       else self.microseconds = 0
     
       # check for valid input values
@@ -865,6 +867,10 @@ class Date {
     }
   }
 
+  to_number() {
+    return self.to_time()
+  }
+
   @to_string() {
     return self.to_string()
   }
@@ -874,7 +880,7 @@ class Date {
   }
 
   @to_number() {
-    return self.to_time()
+    return self.to_number()
   }
 
   @to_abs() {
@@ -1076,17 +1082,17 @@ def from_jd(jdate) {
 # ---------------------------------------------------------------------------
 
 def _is_digit(ch) {
-  ch = ord(ch)
+  ch = ch.ord()
   return ch >= 48 and ch <= 57
 }
 
 def _is_alpha_ch(ch) {
-  ch = ord(ch)
+  ch = ch.ord()
   return (ch >= 97 and ch <= 122) or (ch >= 65 and ch <= 90)
 }
 
 def _is_space(ch) {
-  ch = ord(ch)
+  ch = ch.ord()
   return ch == 32 or ch == 9 or ch == 13 or ch == 10
 }
 
@@ -1128,7 +1134,7 @@ def _scan_int(s, pos, max_digits) {
     count++
   }
   if pos == start return [-1, start]
-  return [to_number(s[start, pos]), pos]
+  return [s[start, pos].to_number(), pos]
 }
 
 # Read a run of ASCII alpha characters; returns [token_lower, new_pos].

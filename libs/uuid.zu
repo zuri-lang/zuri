@@ -73,9 +73,9 @@ def _random_hex(n) {
   var result = ''
   var i = 0
   while i < n {
-    var byte = rand(256)
+    var byte = rand(256).floor()
     var hi   = (byte / 16).floor()
-    var lo   = byte % 16
+    var lo   = (byte % 16)
     result  += '0123456789abcdef'[hi]
     result  += '0123456789abcdef'[lo]
     i += 2
@@ -578,7 +578,7 @@ def v3(namespace: string, name: string) {
 
   var name_hex = ''
   for ch in name {
-    name_hex += _int_to_hex(ord(ch), 2)
+    name_hex += _int_to_hex(ch.ord(), 2)
   }
 
   var digest = hash.md5(ns_hex + name_hex)
@@ -650,7 +650,7 @@ def v5(namespace: string, name: string) {
 
   var name_hex = ''
   for ch in name {
-    name_hex += _int_to_hex(ord(ch), 2)
+    name_hex += _int_to_hex(ch.ord(), 2)
   }
 
   # SHA-1 produces 40 hex chars (160 bits); we take the first 32 (128 bits).

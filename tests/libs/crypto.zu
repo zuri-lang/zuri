@@ -51,8 +51,8 @@ def summary() {
   echo '\n  ── ' + _group + ' ──'
 }
 
-# Asserts that calling fn() raises any exception.
-# Returns true if an exception was raised, false if fn completed normally.
+# Asserts that calling fn() raises any error.
+# Returns true if an error was raised, false if fn completed normally.
 def raises(fn) {
   catch {
     return true
@@ -174,7 +174,7 @@ ok('AAD — correct AAD decrypts cleanly')
 assert raises(@() {
   crypto.aes_gcm.decrypt(gcm_key, gcm_iv, gcm_ct_aad, 'wrong-aad'.to_bytes())
 }), 'AES-GCM must reject mismatched AAD'
-ok('AAD — wrong AAD raises exception')
+ok('AAD — wrong AAD raises error')
 
 # Tampered ciphertext must fail
 var gcm_tampered = gcm_ct.clone()
@@ -182,13 +182,13 @@ gcm_tampered[0] = gcm_tampered[0] ^ 0xff    # flip all bits in first byte
 assert raises(@() {
   crypto.aes_gcm.decrypt(gcm_key, gcm_iv, gcm_tampered)
 }), 'AES-GCM must reject tampered ciphertext'
-ok('tampered ciphertext raises exception')
+ok('tampered ciphertext raises error')
 
 # Wrong key must fail
 assert raises(@() {
   crypto.aes_gcm.decrypt(gcm_key2, gcm_iv, gcm_ct)
 }), 'AES-GCM must reject wrong key'
-ok('wrong key raises exception')
+ok('wrong key raises error')
 
 # Empty plaintext is valid
 var gcm_empty_ct = crypto.aes_gcm.encrypt(gcm_key, gcm_iv, bytes(0))
@@ -233,7 +233,7 @@ ok('round-trip (AES-128-CBC)')
 assert raises(@() {
   crypto.aes_cbc.decrypt(cbc_key2, cbc_iv, cbc_ct)
 }), 'AES-CBC must reject wrong key'
-ok('wrong key raises exception')
+ok('wrong key raises error')
 
 # Plaintext exactly one block — tests boundary padding
 var cbc_block_pt = '0123456789abcdef'.to_bytes()   # exactly 16 bytes
@@ -291,7 +291,7 @@ ok('AAD — correct AAD decrypts cleanly')
 assert raises(@() {
   crypto.chacha20.decrypt(cc_key, cc_iv, cc_ct_aad, 'bad-aad'.to_bytes())
 }), 'ChaCha20 must reject mismatched AAD'
-ok('AAD — wrong AAD raises exception')
+ok('AAD — wrong AAD raises error')
 
 # Tampered ciphertext
 var cc_tampered = cc_ct.clone()
@@ -299,13 +299,13 @@ cc_tampered[0] = cc_tampered[0] ^ 0xff
 assert raises(@() {
   crypto.chacha20.decrypt(cc_key, cc_iv, cc_tampered)
 }), 'ChaCha20 must reject tampered ciphertext'
-ok('tampered ciphertext raises exception')
+ok('tampered ciphertext raises error')
 
 # Wrong key
 assert raises(@() {
   crypto.chacha20.decrypt(cc_key2, cc_iv, cc_ct)
 }), 'ChaCha20 must reject wrong key'
-ok('wrong key raises exception')
+ok('wrong key raises error')
 
 # Empty plaintext
 var cc_empty_ct = crypto.chacha20.encrypt(cc_key, cc_iv, bytes(0))
@@ -390,7 +390,7 @@ ok('PSS verify — cross-keypair rejected')
 assert raises(@() {
   crypto.rsa.decrypt(rsa2k_b['private_pem'], rsa_ct)
 }), 'RSA-OAEP must fail when decrypted with wrong private key'
-ok('OAEP decrypt with wrong key raises exception')
+ok('OAEP decrypt with wrong key raises error')
 
 
 # ===========================================================================

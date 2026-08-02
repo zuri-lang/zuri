@@ -68,15 +68,15 @@ def id(value) {
  */
 def hash(algorithm, data, as_bytes) {
   if !is_string(algorithm) {
-    raise Exception('algorithm must be string')
+    raise Error('algorithm must be string')
   }
   
   if !is_string(data) and !is_bytes(data) {
-    raise Exception('data must be of type bytes or string')
+    raise Error('data must be of type bytes or string')
   }
 
   if as_bytes != nil and !is_bool(as_bytes) {
-    raise Exception('as_bytes must be of type bool')
+    raise Error('as_bytes must be of type bool')
   }
 
   var result
@@ -133,7 +133,7 @@ def md5(str, as_bytes) {
  */
 def md5_file(f, as_bytes) {
   if !is_file(f) {
-    raise Exception('file expected')
+    raise Error('file expected')
   }
 
   if f.mode().contains('b') {
@@ -215,11 +215,11 @@ def sha512(str, as_bytes) {
  */
 def fnv1(data, as_bytes) {
   if !is_string(data) and !is_bytes(data) {
-    raise Exception('data must be of type bytes or string')
+    raise Error('data must be of type bytes or string')
   }
 
   if as_bytes != nil and !is_bool(as_bytes) {
-    raise Exception('as_bytes must be of type bool')
+    raise Error('as_bytes must be of type bool')
   }
 
   var result = _hash.fnv1(data)
@@ -240,11 +240,11 @@ def fnv1(data, as_bytes) {
  */
 def fnv1_64(data, as_bytes) {
   if !is_string(data) and !is_bytes(data) {
-    raise Exception('data must be of type bytes or string')
+    raise Error('data must be of type bytes or string')
   }
 
   if as_bytes != nil and !is_bool(as_bytes) {
-    raise Exception('as_bytes must be of type bool')
+    raise Error('as_bytes must be of type bool')
   }
 
   var result = _hash.fnv1_64(data)
@@ -265,11 +265,11 @@ def fnv1_64(data, as_bytes) {
  */
 def fnv1a(data, as_bytes) {
   if !is_string(data) and !is_bytes(data) {
-    raise Exception('data must be of type bytes or string')
+    raise Error('data must be of type bytes or string')
   }
 
   if as_bytes != nil and !is_bool(as_bytes) {
-    raise Exception('as_bytes must be of type bool')
+    raise Error('as_bytes must be of type bool')
   }
 
   var result = _hash.fnv1a(data)
@@ -290,11 +290,11 @@ def fnv1a(data, as_bytes) {
  */
 def fnv1a_64(data, as_bytes) {
   if !is_string(data) and !is_bytes(data) {
-    raise Exception('data must be of type bytes or string')
+    raise Error('data must be of type bytes or string')
   }
 
   if as_bytes != nil and !is_bool(as_bytes) {
-    raise Exception('as_bytes must be of type bool')
+    raise Error('as_bytes must be of type bool')
   }
 
   var result = _hash.fnv1a_64(data)
@@ -334,11 +334,11 @@ def whirlpool(str, as_bytes) {
  */
 def gost(data, as_bytes) {
   if !is_string(data) and !is_bytes(data) {
-    raise Exception('data must be of type bytes or string')
+    raise Error('data must be of type bytes or string')
   }
 
   if as_bytes != nil and !is_bool(as_bytes) {
-    raise Exception('as_bytes must be of type bool')
+    raise Error('as_bytes must be of type bool')
   }
 
   var result = _hash.gost(data)
@@ -491,15 +491,15 @@ def hmac(method, key, str, as_bytes) {
     raise ValueError('invalid HMAC method')
 
   if !is_string(key) and !is_bytes(key) {
-    raise Exception('bytes or string expected in argument 2')
+    raise Error('bytes or string expected in argument 2')
   }
 
   if !is_string(str) and !is_bytes(str) {
-    raise Exception('bytes or string expected in argument 3')
+    raise Error('bytes or string expected in argument 3')
   }
 
   if as_bytes != nil and !is_bool(as_bytes) {
-    raise Exception('bool expected in argument 4')
+    raise Error('bool expected in argument 4')
   }
 
   # convert key and str to array of bytes.
@@ -751,7 +751,7 @@ def hmac_gost(key, str, as_bytes) {
  *
  * @return string | bytes  The derived key.
  *
- * @throws Exception
+ * @throws Error
  */
 def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
 
@@ -787,14 +787,14 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
 
   var algo_key = algorithm.lower()
   if !_algos.contains(algo_key) {
-    raise Exception(
+    raise Error(
       'hash.pbkdf2: unsupported algorithm "' + algorithm + '". ' +
       'Accepted values: md5, sha1, sha224, sha256, sha384, sha512.'
     )
   }
 
   if !is_int(iterations) or iterations < 1 {
-    raise Exception(
+    raise Error(
       'hash.pbkdf2: iterations must be a positive integer >= 1, got: ' +
       iterations
     )
@@ -808,7 +808,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   if dk_len == nil { dk_len = h_len }
 
   if !is_int(dk_len) or dk_len < 1 {
-    raise Exception(
+    raise Error(
       'hash.pbkdf2: dk_len must be a positive integer, got: ' + dk_len
     )
   }
@@ -816,7 +816,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   # RFC 2898 §5.2 step 1 — enforce the maximum derived-key length.
   var max_len = 4294967295 * h_len
   if dk_len > max_len {
-    raise Exception(
+    raise Error(
       'hash.pbkdf2: dk_len (' + dk_len + ') exceeds the maximum ' +
       'allowed length (' + max_len + ') for algorithm "' + algorithm + '".'
     )

@@ -24,6 +24,7 @@ pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   build(vec![
     // methods
     method("to_string", to_string),
+    method("to_bool", to_bool),
     method("abs", abs),
     method("chr", chr),
     method("bin", bin),
@@ -65,6 +66,11 @@ pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("fraction", fraction),
   ])
 });
+
+fn to_bool(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  Ok(Value::bool(ctx.args[0].as_number() >= 0.0))
+}
 
 fn abs(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);

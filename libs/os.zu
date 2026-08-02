@@ -484,7 +484,7 @@ def base_name(path: string) {
  * @param string old_name
  * @param string new_name
  * @returns bool
- * @raises Exception
+ * @raises Error
  */
 def rename(old_name: string, new_name: string) {
   return _os.rename(old_name, new_name)
