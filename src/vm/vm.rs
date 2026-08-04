@@ -221,7 +221,7 @@ impl VM {
     &mut self.heap
   }
 
-  pub fn enable_repl_mode(&mut self) {
+  pub fn set_repl_mode(&mut self) {
     self.is_repl = true;
   }
 
@@ -2573,7 +2573,7 @@ impl VM {
         | Obj::Native(_)
         | Obj::File(_)
         | Obj::Ptr(_)
-        | Obj::Range { .. } => {}
+        | Obj::Range { .. } => {},
       }
     }
 
