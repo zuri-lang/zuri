@@ -66,7 +66,11 @@ impl ParserError {
 
 impl Display for ParserError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "SyntaxError at '{}': {}", self.token_text, self.message)
+    write!(
+      f,
+      "SyntaxError at '{}': {} on line {} column {}",
+      self.token_text, self.message, self.line_number, self.offset
+    )
   }
 }
 

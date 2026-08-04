@@ -25,6 +25,8 @@ fn format_parse_errors(errors: &[ParserError], path: &str) -> String {
 
 fn run_repl(vm: &mut VM) {
   vm.set_repl_mode();
+  vm.set_root_path("@.repl.root".to_string());
+  vm.init_entry_globals("@.repl");
 
   let mut repl = Repl::new(
     KEYWORD_TOKENS

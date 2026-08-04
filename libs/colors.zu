@@ -750,7 +750,7 @@ def hwb_to_rgb(h, w, b) {
     default { r = v; g = n; b2 = w }
   }
 
-  return [r * 255].round(), g * 255].round(), (b2 * 255).round()]
+  return [(r * 255).round(), (g * 255).round(), (b2 * 255).round()]
 }
 
 /**

@@ -553,9 +553,11 @@ def _crypt(b, salt, rounds) {
           break
       }
     } else {
-      iter i = 0; i < 64; i++
-        iter j = 0; j < (clen >> 1); j++
+      iter i = 0; i < 64; i++ {
+        iter j = 0; j < (clen >> 1); j++ {
           _encipher(cdata, j << 1, P, S)
+        }
+      }
       
       var ret = []
       iter i = 0; i < clen; i++ {
