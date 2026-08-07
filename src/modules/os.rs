@@ -315,14 +315,28 @@ fn readdir(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn collect_dir_entries(dir: &Path, recursive: bool, out: &mut Vec<String>) -> std::io::Result<()> {
+  // Start with an empty prefix so root entries are just their own names
+  collect_dir_entries_inner(dir, Path::new(""), recursive, out)
+}
+
+fn collect_dir_entries_inner(
+  dir: &Path,
+  prefix: &Path,
+  recursive: bool,
+  out: &mut Vec<String>,
+) -> std::io::Result<()> {
   for entry in fs::read_dir(dir)? {
     let entry = entry?;
-    let name = entry.file_name().to_string_lossy().into_owned();
-    out.push(name);
-    if recursive {
-      let p = entry.path();
-      if p.is_dir() {
-        collect_dir_entries(&p, recursive, out)?;
+    let name = entry.file_name();
+
+    // Build the relative path from the original directory
+    let rel_path = prefix.join(&name);
+    out.push(rel_path.to_string_lossy().into_owned());
+
+    if recursive && entry.file_type()?.is_dir() {
+      // Guard against infinite recursion into . and ..
+      if name != "." && name != ".." {
+        collect_dir_entries_inner(&entry.path(), &rel_path, recursive, out)?;
       }
     }
   }
