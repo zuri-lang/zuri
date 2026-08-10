@@ -16,13 +16,13 @@ import date
  * The maximum size of a single file in a zip archive when zip64 is not used
  * @type number
  */
-var ZIP_FILE_MAX = 2147483649   # = 2 ** 31 + 1
+var ZIP_FILE_MAX = 2_147_483_649   # = 2 ** 31 + 1
 
 /**
  * The maximum number of files in a zip archive when zip64 is not used
  * @type number
  */
-var ZIP_FILE_COUNT_LIMIT = 65535  # = 2 ** 16 - 1
+var ZIP_FILE_COUNT_LIMIT = 65_535  # = 2 ** 16 - 1
 
 /**
  * The maximum size of a zip archive when zip64 is not used
@@ -893,9 +893,7 @@ class ZipArchive {
 					when 8 { # Deflated
             catch {
               decoded = compress_lib.deflate.decode(filedata)
-            } as e
-
-            if e {
+            } as e {
               entrya['error'] = e.message
             }
           }
