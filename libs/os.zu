@@ -387,21 +387,25 @@ def exit(code: number) {
  */
 def join_paths(...paths) {
   var result = ''
-  for arg in args {
-    if !is_string(paths)
+  for arg in paths {
+    if !is_string(arg)
       raise TypeError('string expected, ${typeof(arg)} given')
 
     arg = arg.trim()
     
     if arg {
       result = result.rtrim(path_separator)
-      if result != '' arg = arg.ltrim(path_separator)
+      if result != '' {
+        arg = arg.ltrim(path_separator)
+      }
       
       result += '${path_separator}${arg}'
     }
   }
   
-  if result result = result[1,]
+  if result {
+    result = result[1,]
+  }
   
   return result
 }

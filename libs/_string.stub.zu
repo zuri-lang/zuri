@@ -175,7 +175,7 @@
  * %> echo ord('A')
  * 65
  * %> echo ord('AB')
- * Unhandled Exception: ord() expects character as argument, string given
+ * Unhandled Error: ord() expects character as argument, string given
  * StackTrace:
  *   <repl>:1 -> @.script()
  * ```
@@ -265,11 +265,11 @@
  * Note that trying to access a non-existing index or an index out of the range of the length of the string
  * will result in an error.
  * 
- * For example, the following code throws an exception.
+ * For example, the following code throws an Error.
  * 
  * ```zuri-repl
  * %> 'Hello'[6]
- * Unhandled Exception: string index 6 out of range
+ * Unhandled Error: string index 6 out of range
  * StackTrace:
  *   <repl>:1 -> @.script()
  * ```
@@ -324,7 +324,7 @@
  * 
  * ```zuri-repl
  * > 'Zuri'[0] = 'J'
- * Unhandled Exception: strings do not support object assignment
+ * Unhandled Error: strings do not support object assignment
  * StackTrace:
  *   <repl>:1 -> @.script()
  * ```
@@ -1065,7 +1065,7 @@ class string {
    * Compares the string with another string.
    * 
    * @param {string} other - The other string to compare with.
-   * @throws {Exception} if the other string is not a string.
+   * @throws {Error} if the other string is not a string.
    * @returns {number}
    *    - A negative number if the string is less than the other string.
    *    - Zero if the strings are equal.

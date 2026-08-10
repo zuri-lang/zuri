@@ -604,6 +604,8 @@ impl Value {
       || (self.is_bool() && !self.as_bool())
       || (self.is_number() && self.as_number() <= 0.0)
       || (self.is_bigint() && self.as_bigint() <= &BigInt::from(0))
+      || (self.is_string() && self.as_str().is_empty())
+      || (self.is_bytes() && self.as_bytes().is_empty())
   }
 
   pub fn equals(&self, other: &Value) -> bool {

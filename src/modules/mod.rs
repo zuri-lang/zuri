@@ -18,8 +18,9 @@ mod json;
 mod math;
 mod os;
 mod r#struct;
+mod compress;
 
-use crate::vm::object::{NativeFn, NativeFunction};
+use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
@@ -39,6 +40,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   base64::MODULE,
   date::MODULE,
   r#struct::MODULE,
+  compress::MODULE,
 ];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {
@@ -62,4 +64,32 @@ pub fn native(
     variadic,
     func,
   })
+}
+
+fn optional_bool(ctx: &ZuriContext, idx: usize, default: bool) -> Result<bool, String> {
+  match ctx.args.get(idx) {
+    None => Ok(default),
+    Some(v) if v.is_nil() => Ok(default),
+    Some(v) if v.is_bool() => Ok(v.as_bool()),
+    Some(v) => Err(format!(
+      "{}() expects argument {} to be a bool, got {}",
+      ctx.name,
+      idx + 1,
+      v.type_name()
+    )),
+  }
+}
+
+fn optional_number(ctx: &ZuriContext, idx: usize, default: f64) -> Result<f64, String> {
+  match ctx.args.get(idx) {
+    None => Ok(default),
+    Some(v) if v.is_nil() => Ok(default),
+    Some(v) if v.is_number() => Ok(v.as_number()),
+    Some(v) => Err(format!(
+      "{}() expects argument {} to be a number, got {}",
+      ctx.name,
+      idx + 1,
+      v.type_name()
+    )),
+  }
 }

@@ -665,7 +665,7 @@ def _generate_salt(rounds) {
  * 
  * @param string str
  * @param ?number salt_length
- * @raises  Exception
+ * @raises  Error
  * @returns string
  */
 def hash(str: string, salt_length: ?number) {
@@ -680,7 +680,7 @@ def hash(str: string, salt_length: ?number) {
  * 
  * @param string str
  * @param string known_hash
- * @raises  Exception
+ * @raises  Error
  * @returns bool
  */
 def compare(str: string, known_hash: string) {
@@ -706,7 +706,7 @@ def compare(str: string, known_hash: string) {
  * Gets the number of rounds used to encrypt the specified hash.
  * 
  * @param string hash
- * @raises  Exception
+ * @raises  Error
  * @returns number
  */
 def get_rounds(hash: string) {
@@ -718,7 +718,7 @@ def get_rounds(hash: string) {
  * 
  * @note This function does not validate the hash.
  * @param string hash
- * @raises  Exception
+ * @raises  Error
  * @returns string
  */
 def get_salt(hash: string) {

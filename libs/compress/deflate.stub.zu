@@ -1,0 +1,21 @@
+/**
+ * @module deflate
+ * 
+ * This is the Deflate submodule for the compress module
+ */
+
+/**
+ * Compress data using the default options for Deflate.
+ * 
+ * @param {bytes|string} data
+ * @returns bytes
+ */
+def deflate(data) {}
+
+/**
+ * Uncompress a deflated data using default options.
+ * 
+ * @param {bytes|string} data
+ * @returns bytes
+ */
+def undeflate(data) {}

@@ -340,7 +340,7 @@ class list {
 
   /**
    * Removes the item at the specified index in the list and returns it. If the index is less than 
-   * `0` or greater than `list.length() - 1`, an exception is raised.
+   * `0` or greater than `list.length() - 1`, an Error is raised.
    * 
    * For example:
    * 
@@ -351,11 +351,11 @@ class list {
    * %> a
    * [1, 2, 3, 5]
    * %> a.remove_at(6)
-   * Unhandled Exception: list index 6 out of range at remove_at()
+   * Unhandled Error: list index 6 out of range at remove_at()
    *   StackTrace:
    *     <repl>:1 -> @.script()
    * %> a.remove_at(-1)
-   * Unhandled Exception: list index -1 out of range at remove_at()
+   * Unhandled Error: list index -1 out of range at remove_at()
    *   StackTrace:
    *     <repl>:1 -> @.script()
    * ```
@@ -547,7 +547,7 @@ class list {
 
   /**
    * Returns the value at the specified index in the list. If _index_ is outside the boundary of 
-   * the list indexes (`0..(list.length() - 1)`), an exception is thrown. This method is equivalent 
+   * the list indexes (`0..(list.length() - 1)`), an Error is thrown. This method is equivalent 
    * to `list[index]`.
    * 
    * For example:
@@ -556,7 +556,7 @@ class list {
    * %> [13, 14, 15, 16].get(1)
    * 14
    * %> [13, 14, 15, 16].get(6)
-   * Unhandled Exception: list index 6 out of range at get()
+   * Unhandled Error: list index 6 out of range at get()
    *   StackTrace:
    *     <repl>:1 -> @.script()
    * ```

@@ -359,10 +359,27 @@ fn chmod_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       Err(e) => Err(format!("could not chmod '{}': {}", path, e)),
     }
   }
-  #[cfg(not(unix))]
+  #[cfg(windows)]
+  {
+    // Windows has no Unix-style permission bits. Best-effort: map the
+    // owner-write bit (0o200) to the read-only attribute.
+    let readonly = (mode & 0o200) == 0;
+    match fs::metadata(&path) {
+      Ok(metadata) => {
+        let mut permissions = metadata.permissions();
+        permissions.set_readonly(readonly);
+        match fs::set_permissions(&path, permissions) {
+          Ok(()) => Ok(Value::bool(true)),
+          Err(e) => Err(format!("could not chmod '{}': {}", path, e)),
+        }
+      },
+      Err(e) => Err(format!("could not chmod '{}': {}", path, e)),
+    }
+  }
+  #[cfg(not(any(unix, windows)))]
   {
     let _ = mode;
-    Err("chmod() is only supported on Unix platforms".to_string())
+    Err("chmod() is only supported on Unix and Windows platforms".to_string())
   }
 }
 

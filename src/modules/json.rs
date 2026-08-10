@@ -28,7 +28,7 @@
 use std::fs;
 
 use crate::builtins::enforce::ArgType;
-use crate::modules::{BuiltinModuleDef, native};
+use crate::modules::{BuiltinModuleDef, native, optional_bool};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -75,27 +75,6 @@ fn encode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let out = encode_source(ctx, value, compact, max_depth)?;
   Ok(ctx.heap().alloc_string(out))
-}
-
-/// Reads an optional boolean argument at `idx`, treating a MISSING
-/// argument or an explicit `nil` identically as "use `default`" --
-/// the usual Zuri idiom for skipping a trailing optional parameter
-/// while still supplying a later one (compare `os.get_env`'s own
-/// `default_value` handling, or `csv.parse`'s `dialect != nil`
-/// check). Only a value that is PRESENT, non-nil, and not itself a
-/// bool is a genuine type error.
-fn optional_bool(ctx: &ZuriContext, idx: usize, default: bool) -> Result<bool, String> {
-  match ctx.args.get(idx) {
-    None => Ok(default),
-    Some(v) if v.is_nil() => Ok(default),
-    Some(v) if v.is_bool() => Ok(v.as_bool()),
-    Some(v) => Err(format!(
-      "{}() expects argument {} to be a bool, got {}",
-      ctx.name,
-      idx + 1,
-      v.type_name()
-    )),
-  }
 }
 
 /// Same idea as `optional_bool`, for `encode`/`dump`'s shared

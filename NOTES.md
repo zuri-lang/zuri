@@ -1,0 +1,2 @@
+- The `zlib` module has been dropped in favor of the `compress` module.
+- Classes are now partially-immutable. Once created, new fields and methods cannot be added at runtime. However, their static properties can continue to be mutated.

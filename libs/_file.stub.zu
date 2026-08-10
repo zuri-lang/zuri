@@ -322,7 +322,7 @@ class file {
    * 
    * @note If the file is opened by one or more processes or threads outside of the current process or thread, 
    *    the file will not be deleted until the last process frees it.
-   * @note This method throws Exception on failure.
+   * @note This method throws Error on failure.
    * 
    * For example:
    * 
@@ -341,7 +341,7 @@ class file {
    * be moved.
    * 
    * @note The new name cannot be empty
-   * @note This method throws Exception on failure.
+   * @note This method throws Error on failure.
    * 
    * For example:
    * 

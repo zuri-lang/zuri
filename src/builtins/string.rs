@@ -24,6 +24,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("length", length),
     method("upper", upper),
     method("lower", lower),
+    method("is_empty", is_empty),
     method("is_alpha", is_alpha),
     method("is_alnum", is_alnum),
     method("is_number", is_number),
@@ -173,6 +174,13 @@ fn lower(ctx: &mut ZuriContext) -> Result<Value, String> {
       .heap_mut()
       .alloc_string(ctx.args[0].as_str().to_lowercase()),
   )
+}
+
+fn is_empty(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let s = ctx.args[0].as_str();
+  Ok(Value::bool(s.is_empty()))
 }
 
 fn is_alpha(ctx: &mut ZuriContext) -> Result<Value, String> {

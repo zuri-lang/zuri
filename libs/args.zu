@@ -259,18 +259,18 @@ def _wrap(text, width, indent) {
 def _get_real_value(item, value) {
   if item.type == INT {
     var n = to_number(value)
-    if n == nil raise ArgsException('expected an integer, got "${value}"')
+    if n == nil raise ArgsError('expected an integer, got "${value}"')
     return to_int(n)
   } else if item.type == NUMBER {
     var n = to_number(value)
-    if n == nil raise ArgsException('expected a number, got "${value}"')
+    if n == nil raise ArgsError('expected a number, got "${value}"')
     return n
   } else if item.type == BOOL {
     if is_bool(value) return value
     var lv = to_string(value).lower()
     if lv == 'true'  or lv == '1' or lv == 'yes' or lv == 'on'  return true
     if lv == 'false' or lv == '0' or lv == 'no'  or lv == 'off' return false
-    raise ArgsException('expected a boolean (true/false/1/0/yes/no/on/off), got "${value}"')
+    raise ArgsError('expected a boolean (true/false/1/0/yes/no/on/off), got "${value}"')
   } else if item.type == STRING {
     return to_string(value)
   } else if item.type == LIST {
@@ -292,7 +292,7 @@ def _get_real_value(item, value) {
 /**
  * Error raised for argument parsing errors.
  */
-class ArgsException < Error {}
+class ArgsError < Error {}
 
 # ---------------------------------------------------------------------------
 # Internal classes
@@ -348,10 +348,10 @@ class _Optionable {
     # Duplicate detection
     for o in self.options {
       if o.long_name == name
-        raise ArgsException('option "--${name}" already declared')
+        raise ArgsError('option "--${name}" already declared')
       var sn = opts.get('short_name')
       if sn != nil and o.short_name == sn
-        raise ArgsException('short option "-${sn}" already in use by "--${o.long_name}"')
+        raise ArgsError('short option "-${sn}" already in use by "--${o.long_name}"')
     }
 
     var short_name  = opts.get('short_name')
@@ -530,7 +530,7 @@ class Parser < _Optionable {
 
     for o in self.commands {
       if o.name == name
-        raise ArgsException('command "${name}" already declared')
+        raise ArgsError('command "${name}" already declared')
     }
 
     var type    = to_int(to_number(opts.get('type', NONE)))

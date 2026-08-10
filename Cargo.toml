@@ -50,6 +50,9 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 hkdf = "0.12"
 argon2 = "0.5"
 
+# --- compress module (src/modules/compress.rs) ---------------------------------
+zlib-rs = "0.6.7"
+
 
 [build-dependencies]
 chrono = "0.4.45"
