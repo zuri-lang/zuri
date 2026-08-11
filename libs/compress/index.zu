@@ -180,10 +180,10 @@ def compress(data, level, strategy, wbits, memory_level) {
 }
 
 /**
- * Uncompress decompresses as much data as possible, and stops when the input
+ * Decompress decompresses as much data as possible, and stops when the input
  * buffer becomes empty or the output buffer becomes full.
  * 
- * -  In this implementation, uncompress() always flushes as much output as
+ * -  In this implementation, decompress() always flushes as much output as
  *    possible to the output buffer, and always uses the faster approach on the
  *    first call.
  * 
@@ -192,14 +192,14 @@ def compress(data, level, strategy, wbits, memory_level) {
  *    this version of the library.  The default value is 15.  `wbits` must be greater than or equal to the `wbits` value
  *    provided to compress() while compressing, or it must be equal to 15 if
  *    compress() is used with the default values.  If a compressed stream with a 
- *    larger window size is given as input, uncompress() will return with the error 
+ *    larger window size is given as input, decompress() will return with the error 
  *    code data error instead of trying to allocate a larger window.
  * 
- *    `wbits` can also be zero to request that uncompress use the window size in
+ *    `wbits` can also be zero to request that decompress use the window size in
  *    the zlib header of the compressed stream.
  * 
- *    `wbits` can also be -8..-15 for raw uncompress.  In this case, `-wbits`
- *    determines the window size.  uncompress() will then process raw compress data,
+ *    `wbits` can also be -8..-15 for raw decompress.  In this case, `-wbits`
+ *    determines the window size.  decompress() will then process raw compress data,
  *    not looking for a zlib or gzip header, not generating a check value, and not
  *    looking for any check values for comparison at the end of the stream.  This
  *    is for use with other formats that use the compress compressed data format
@@ -213,20 +213,21 @@ def compress(data, level, strategy, wbits, memory_level) {
  *    `wbits` can also be greater than 15 for optional gzip decoding.  Add
  *    32 to `wbits` to enable zlib and gzip decoding with automatic header
  *    detection, or add 16 to decode only the gzip format (the zlib format will
- *    return a data error).  uncompress() will not automatically decode concatenated 
+ *    return a data error).  decompress() will not automatically decode concatenated 
  *    gzip streams.
  * 
- * -  uncompress() can uncompress either zlib-wrapped or gzip-wrapped compress data.
+ * -  decompress() can decompress either zlib-wrapped or gzip-wrapped compress data.
  *    If the compression uses gzip-wrapper, the correct `wbits` may need to be set.
  * 
  * @param {bytes|string} data
  * @param ?int wbits: Default value is `MAX_WBITS`.
  * @returns bytes
  */
-def uncompress(data, wbits) {
-  return _compress.uncompress(data, wbits)
+def decompress(data, wbits) {
+  return _compress.decompress(data, wbits)
 }
 
 import @.deflate
 import @.gzip
 import @.checksum
+import @.zstd

@@ -16,7 +16,7 @@ import _compress
  * @returns number
  */
 def adler32(data, initial) {
-  return _compress.checksum_adler32(data, initial)
+  return _compress.adler32_checksum(data, initial)
 }
 
 /**
@@ -28,5 +28,5 @@ def adler32(data, initial) {
  * @returns number
  */
 def crc32(data, initial) {
-  return _compress.checksum_crc32(data, initial)
+  return _compress.crc32_checksum(data, initial)
 }

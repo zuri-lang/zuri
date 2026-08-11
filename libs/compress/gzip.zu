@@ -1,7 +1,7 @@
 /**
  * @module gzip
  * 
- * The is the GZip submodule for the compress module
+ * The is the GZip submodule for the compress module.
  */
 
 import _compress
@@ -12,18 +12,18 @@ import _compress
  * @param {bytes|string} data
  * @returns bytes
  */
-def encode(data) {
-  return _compress.gzip_encode(data)
+def compress(data) {
+  return _compress.gzip_compress(data)
 }
 
 /**
- * Uncompress a GZipped data using default options.
+ * Decompress a GZipped data using default options.
  * 
  * @param {bytes|string} data
  * @returns bytes
  */
-def decode(data) {
-  return _compress.gzip_decode(data)
+def decompress(data) {
+  return _compress.gzip_decompress(data)
 }
 
 

@@ -12,16 +12,16 @@ import _compress
  * @param {bytes|string} data
  * @returns bytes
  */
-def encode(data) {
-  return _compress.deflate_encode(data)
+def compress(data) {
+  return _compress.deflate_compress(data)
 }
 
 /**
- * Uncompress a deflated data using default options.
+ * Decompress a deflated data using default options.
  * 
  * @param {bytes|string} data
  * @returns bytes
  */
-def decode(data) {
- return _compress.deflate_decode(data)
+def decompress(data) {
+ return _compress.deflate_decompress(data)
 }

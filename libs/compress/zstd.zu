@@ -1,0 +1,31 @@
+/**
+ * @module deflate
+ * 
+ * This is the Zstd submodule for the compress module. It implements 
+ * zstd compression levels -8 through 4 (Fast and DFast strategies), 
+ * targeting high-speed compression for data transfers. It produces 
+ * standard zstd frames decompressible by any compliant decoder.
+ */
+
+import _compress
+
+/**
+ * Compress data using the default options for Zstd.
+ * 
+ * @param {bytes|string} data
+ * @param ?number level
+ * @returns bytes
+ */
+def compress(data, level) {
+  return _compress.zstd_compress(data, level)
+}
+
+/**
+ * Decompress a Zstd compressed data.
+ * 
+ * @param {bytes|string} data
+ * @returns bytes
+ */
+def decompress(data) {
+ return _compress.zstd_decompress(data)
+}

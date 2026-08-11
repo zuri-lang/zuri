@@ -569,7 +569,7 @@ class ZipArchive {
 
     var uzdata = data
     if self._compression_method == ZIP_DEFLATE {
-      uzdata = deflate.encode(data)
+      uzdata = deflate.compress(data)
     }
 
 		var c_len = uzdata.length()
@@ -893,7 +893,7 @@ class ZipArchive {
           }
 					when 8 { # Deflated
             catch {
-              decoded = deflate.decode(filedata)
+              decoded = deflate.decompress(filedata)
             } as e {
               entrya['error'] = e.message
             }
