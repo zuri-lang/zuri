@@ -29,3 +29,214 @@ def compress(data, level) {
 def decompress(data) {
  return _compress.zstd_decompress(data)
 }
+
+
+/**
+ * Streaming zstd compressor implemention. This encoder supports levels -8 
+ * through 4 for fast transfer pipelines.
+ * 
+ * Buffers input until a full block (128 KiB) is ready, then compresses 
+ * and writes it to the underlying writer. Call `finish()` to flush the 
+ * final block, write the content checksum, and recover the writer.
+ * 
+ * Internal buffers (hash tables, sequence scratch, block encoder 
+ * workspace) are allocated once and reused across blocks. To reuse them 
+ * across multiple frames, call `reset()` instead of `finish`.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.zstd
+ * %> var encoder = zstd.ZstdEncoder()
+ * %> encoder.write('hello world')
+ * 11
+ * %> encoder.finish()
+ * (28 b5 2f fd 04 00 59 00 00 68 65 6c 6c 6f 20 77 6f 72 6c 64 68 69 1e b2)
+ * ```
+ * 
+ * The normal match finder operates within a sliding window (512 KiB at L1). 
+ * LDM (Long Distance Matching) finds matches at distances up to 
+ * `1 << window_log` bytes by sampling positions into a separate hash table. 
+ * Useful for data with long-range repeats: log files, database dumps, 
+ * source archives.
+ * 
+ * `window_log` controls the maximum match distance (24 = 16 MiB, 27 = 128 MiB). 
+ * The main cost is memory: the encoder allocates an 8 MiB LDM hash table plus 
+ * a window buffer of `1 << window_log` bytes, and the decoder allocates a 
+ * window buffer of the same size (declared in the frame header). At window_log 
+ * 27 that is ~136 MiB on each side. On data without long-range repeats, LDM 
+ * adds overhead with no ratio benefit.
+ * 
+ * `ZstdEncoder` own persistent hash tables and workspace buffers. Call 
+ * `reset()` to start a new frame while reusing all allocations.
+ */
+class ZstdEncoder {
+  var _ptr
+
+  /**
+   * Creates a new streaming Zstd encoder at the given level (-8..=4).
+   * 
+   * Negative levels (-8 through -1) unlocks zstd's fastest compression tiers. 
+   * They can be useful when throughput matters more than ratio.
+   * 
+   * Level 0 maps to the module's default which is currently level 1.
+   * 
+   * Positive levels spend more match-finding work for better ratios while 
+   * staying in the Fast/DFast range.
+   * 
+   * @param ?number level - Default 1
+   * @param ?number window_log - Default 10
+   * @param ?bool ldm - Default false
+   */
+  @new(level, window_log, ldm) {
+    self._ptr = _compress.zstd_new_encoder(level, window_log, ldm)
+  }
+
+  /**
+   * Flushes remaining data, writes the content checksum, and returns 
+   * the inner byte stream.
+   * 
+   * @note Once finish is called, the encoder can no longer be reused.
+   * @returns bytes
+   */
+  finish() {
+    return _compress.zstd_encoder_finish(self._ptr)
+  }
+
+  /**
+   * Finishes the current frame and installs byte stream for the next one.
+   * 
+   * Returns the previous byte stream containing the completed frame. 
+   * All internal buffers (hash tables, workspace, block scratch) stay 
+   * allocated and are reused for the next frame.
+   * 
+   * @returns bytes
+   */
+  reset() {
+    return _compress.zstd_encoder_reset(self._ptr)
+  }
+
+  /**
+   * Writes data into this encoder's byte stream, returning how many 
+   * bytes were written.
+   * 
+   * @param {bytes|string} data
+   * @returns number
+   */
+  write(data) {
+    return _compress.zstd_encoder_write(self._ptr, data)
+  }
+
+  /**
+   * Attempts to write an entire data into this encoder's byte stream.
+   * 
+   * @param {bytes|string} data
+   */
+  write_all(data) {
+    _compress.zstd_encoder_write_all(self._ptr, data)
+  }
+
+  /**
+   * Flushes this output stream, ensuring that all intermediately buffered 
+   * contents reach their destination.
+   */
+  flush() {
+    _compress.zstd_encoder_flush(self._ptr)
+  }
+}
+
+
+/**
+ * Streaming zstd decompressor implemention. This decoder reads standard zstd 
+ * blocks and frames produced at any zstd compression level.
+ * 
+ * Wraps a byte stream of compressed data and yields decompressed bytes. 
+ * Supports multi-frame streams and skippable frames.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.zstd
+ * %> var data = zstd.compress('hello world')
+ * %> data
+ * (28 b5 2f fd 24 0b 59 00 00 68 65 6c 6c 6f 20 77 6f 72 6c 64 68 69 1e b2)
+ * %> 
+ * %> var decoder = zstd.ZstdDecoder(data)
+ * %> decoder.read_as_string()
+ * hello world
+ * ```
+ * 
+ * `ZstdDecoder` own persistent hash tables and workspace buffers. Call 
+ * `reset()` to start a new frame while reusing all allocations.
+ * 
+ * This decoder is level-independent and supports standard zstd frames produced 
+ * by all zstd compression levels.
+ */
+class ZstdDecoder {
+
+  /**
+   * Creates a Zstd decoder
+   * 
+   * @param bytes source
+   */
+  @new(source) {
+    self._ptr = _compress.zstd_new_decoder(source)
+  }
+
+  /**
+   * Installs a new data source for the next frame, keeping all internal 
+   * buffers allocated.
+   * 
+   * @param bytes new_source
+   */
+  reset(new_source) {
+    _compress.zstd_decoder_reset(self._ptr, new_source)
+  }
+
+  /**
+   * Reads some bytes up to the amount of bytes specified by length from 
+   * the current source. Returns an empty byte stream when there is no 
+   * more data to read.
+   * 
+   * This function does not block or wait waiting for data, but reads as 
+   * much data as is available to read when it runs.
+   * 
+   * @param number length
+   * @returns bytes
+   */
+  read(length) {
+    return _compress.zstd_decoder_read(self._ptr, length)
+  }
+
+  /**
+   * Reads the exact number of bytes from the buffer. This method will 
+   * raise an error if it encounters an unexpected EOF (`end of file`) or 
+   * there are insufficient data to read to complete the required number 
+   * of bytes.
+   * 
+   * @param number length
+   * @returns bytes
+   */
+  read_exact(length) {
+    return _compress.zstd_decoder_read_exact(self._ptr, length)
+  }
+
+  /**
+   * Reads all remaining bytes until EOF is encountered in the source.
+   * 
+   * @returns bytes
+   */
+  read_all() {
+    return _compress.zstd_decoder_read_all(self._ptr)
+  }
+
+  /**
+   * Reads all remaining bytes until EOF is encountered in the source and 
+   * returns the data read as a string instead of a byte stream.
+   * 
+   * @returns string
+   */
+  read_as_string() {
+    return _compress.zstd_decoder_read_as_string(self._ptr)
+  }
+}

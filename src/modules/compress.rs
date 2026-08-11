@@ -1,12 +1,16 @@
+use std::io::{Cursor, Read, Write};
+
 use zlib_rs::{
   DeflateConfig, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode, Status, Strategy,
   adler32::adler32, compress_bound, compress_slice, crc32::crc32, decompress_slice,
 };
 
 use crate::{
-  builtins::enforce::ArgType,
-  enforce_arg_count, enforce_arg_range, enforce_arg_type_any_of,
-  modules::{BuiltinModuleDef, native, optional_number},
+  builtins::enforce::{
+    ArgType, enforce_method_arg_count, enforce_method_arg_type, enforce_method_arg_type_any_of,
+  },
+  enforce_arg_count, enforce_arg_range, enforce_arg_type, enforce_arg_type_any_of,
+  modules::{BuiltinModuleDef, native, optional_bool, optional_number},
   vm::{object::ZuriContext, value::Value, vm::VM},
 };
 
@@ -50,6 +54,54 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     (
       "adler32_checksum",
       native(vm, "adler32", 1, true, adler32_fn),
+    ),
+    (
+      "zstd_new_encoder",
+      native(vm, "@new", 0, true, zstd_new_encoder),
+    ),
+    (
+      "zstd_encoder_finish",
+      native(vm, "finish", 1, false, zstd_encoder_finish),
+    ),
+    (
+      "zstd_encoder_reset",
+      native(vm, "reset", 1, false, zstd_encoder_reset),
+    ),
+    (
+      "zstd_encoder_write",
+      native(vm, "write", 2, false, zstd_encoder_write),
+    ),
+    (
+      "zstd_encoder_write_all",
+      native(vm, "write_all", 2, false, zstd_encoder_write_all),
+    ),
+    (
+      "zstd_encoder_flush",
+      native(vm, "flush", 1, false, zstd_encoder_flush),
+    ),
+    (
+      "zstd_new_decoder",
+      native(vm, "@new", 1, false, zstd_new_decoder),
+    ),
+    (
+      "zstd_decoder_reset",
+      native(vm, "reset", 1, false, zstd_decoder_reset),
+    ),
+    (
+      "zstd_decoder_read",
+      native(vm, "read", 1, false, zstd_decoder_read),
+    ),
+    (
+      "zstd_decoder_read_exact",
+      native(vm, "zread_exact", 1, false, zstd_decoder_read_exact),
+    ),
+    (
+      "zstd_decoder_read_all",
+      native(vm, "read_all", 1, false, zstd_decoder_read_all),
+    ),
+    (
+      "zstd_decoder_read_as_string",
+      native(vm, "read_as_string", 1, false, zstd_decoder_read_as_string),
     ),
   ]
 }
@@ -189,6 +241,8 @@ fn get_data(args: &[Value]) -> Vec<u8> {
   }
 }
 
+// ----------------------------------------- ZLib -----------------------------------------
+
 fn compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 1, 5);
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
@@ -228,6 +282,8 @@ fn decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
 
+// --------------------------------------- Deflate ----------------------------------------
+
 fn deflate_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
@@ -259,6 +315,8 @@ fn deflate_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
 
+// ----------------------------------------- GZIP -----------------------------------------
+
 fn gzip_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
@@ -267,7 +325,7 @@ fn gzip_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut config = DeflateConfig::default();
   config.window_bits = config.window_bits | 16; // raw gzip
 
-  let mut output = vec![0u8; compress_bound(data.len())];
+  let mut output = vec![0u8; compress_bound(data.len()) + 18]; // 10 byte header + 8 byte footer workaround.
   let (compressed_data, rc) = compress_slice(&mut output, &data, config);
 
   if let Err(msg) = parse_zlib_result(rc) {
@@ -285,15 +343,13 @@ fn gzip_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut config = InflateConfig::default();
   config.window_bits = config.window_bits | 16; // raw gzip
 
-  let mut decompressed_data = Vec::new();
-  let (_, rc) = decompress_slice(decompressed_data.as_mut_slice(), &data, config);
-
-  if let Err(msg) = parse_zlib_result(rc) {
-    return Err(msg.to_string());
-  }
+  let decompressed_data =
+    decompress_data(&data, config.window_bits).map_err(|x| parse_zlib_error(x))?;
 
   Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
+
+// --------------------------------------- Checksum ---------------------------------------
 
 fn adler32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 1, 2);
@@ -315,6 +371,11 @@ fn crc32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(checksum as f64))
 }
 
+// ----------------------------------------- ZSTD -----------------------------------------
+
+const ZSTD_ENCODER_NAME: &str = "zuri::compress::zstd::encoder";
+const ZSTD_DECODER_NAME: &str = "zuri::compress::zstd::decoder";
+
 fn zstd_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 1, 2);
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
@@ -322,7 +383,7 @@ fn zstd_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   let data = get_data(ctx.args);
   let level = optional_number(ctx, 1, 1.0)? as i32;
 
-  let compressed_data = zrip::compress(&data, level).map_err(|x| parse_zrip_compress_error(x))?;
+  let compressed_data = zrip::compress(&data, level).map_err(parse_zrip_compress_error)?;
 
   Ok(ctx.heap().alloc_bytes(compressed_data))
 }
@@ -333,7 +394,199 @@ fn zstd_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(ctx.args);
 
-  let compressed_data = zrip::decompress(&data).map_err(|x| parse_zrip_decompress_error(x))?;
+  let compressed_data = zrip::decompress(&data).map_err(parse_zrip_decompress_error)?;
 
   Ok(ctx.heap().alloc_bytes(compressed_data))
+}
+
+fn zstd_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 0, 3);
+
+  let level = optional_number(ctx, 0, 1.0)? as i32;
+  let window_log = optional_number(ctx, 1, 10.0)? as u32;
+  let ldm = optional_bool(ctx, 2, false)?;
+
+  let option = zrip::Options::default().window_log(window_log).ldm(ldm);
+
+  let encoder = zrip::FrameEncoder::with_options(Vec::new(), level, &option)
+    .map_err(parse_zrip_compress_error)?;
+  Ok(ctx.heap().alloc_ptr(ZSTD_ENCODER_NAME, encoder))
+}
+
+fn zstd_encoder_finish(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+
+  let boxed = std::mem::replace(&mut ptr.value, Box::new(()));
+  ptr.type_name = "zuri::compress::__finished__";
+
+  let encoder = boxed.downcast::<zrip::FrameEncoder<Vec<u8>>>().unwrap();
+
+  let result = encoder.finish().map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(result))
+}
+
+fn zstd_encoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<zrip::FrameEncoder<Vec<u8>>>().unwrap();
+
+  let result = encoder.reset(Vec::new()).map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(result))
+}
+
+fn zstd_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_ENCODER_NAME));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<zrip::FrameEncoder<Vec<u8>>>().unwrap();
+
+  let data = get_data(&ctx.args[1..]);
+
+  Ok(Value::number(
+    encoder.write(data.as_slice()).map_err(|x| x.to_string())? as f64,
+  ))
+}
+
+fn zstd_encoder_write_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_ENCODER_NAME));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<zrip::FrameEncoder<Vec<u8>>>().unwrap();
+
+  let data = get_data(&ctx.args[1..]);
+  encoder
+    .write_all(data.as_slice())
+    .map_err(|x| x.to_string())?;
+
+  Ok(Value::nil())
+}
+
+fn zstd_encoder_flush(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<zrip::FrameEncoder<Vec<u8>>>().unwrap();
+
+  encoder.flush().map_err(|x| x.to_string())?;
+
+  Ok(Value::nil())
+}
+
+fn zstd_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::Bytes);
+
+  let data = ctx.args[0].as_bytes();
+  let cursor = Cursor::new(data);
+
+  let decoder = zrip::FrameDecoder::new(cursor);
+  Ok(ctx.heap().alloc_ptr(ZSTD_DECODER_NAME, decoder))
+}
+
+fn zstd_decoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Bytes);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let data = ctx.args[1].as_bytes();
+  let cursor = Cursor::new(data);
+
+  decoder.reset(cursor);
+
+  Ok(Value::nil())
+}
+
+fn zstd_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = vec![0u8; length];
+  let bytes_read = decoder
+    .read(buffer.as_mut_slice())
+    .map_err(|x| x.to_string())?;
+
+  if bytes_read > 0 {
+    return Ok(ctx.heap().alloc_bytes(&buffer[0..bytes_read]));
+  }
+
+  Ok(ctx.heap().alloc_bytes(Vec::new()))
+}
+
+fn zstd_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = vec![0u8; length];
+  decoder
+    .read_exact(buffer.as_mut_slice())
+    .map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn zstd_decoder_read_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let mut buffer = Vec::new();
+  decoder
+    .read_to_end(&mut buffer)
+    .map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn zstd_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let mut buffer = String::new();
+  decoder
+    .read_to_string(&mut buffer)
+    .map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_string(buffer))
 }
