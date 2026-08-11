@@ -2,7 +2,7 @@ use std::io::{Cursor, Read, Write};
 
 use zlib_rs::{
   DeflateConfig, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode, Status, Strategy,
-  adler32::adler32, compress_bound, compress_slice, crc32::crc32, decompress_slice,
+  adler32::adler32, compress_bound, compress_slice, crc32::crc32,
 };
 
 use crate::{

@@ -10,6 +10,7 @@
 //! `REGISTRY` below -- nothing else needs to change.
 
 mod base64;
+mod compress;
 mod crypto;
 mod date;
 mod hash;
@@ -18,7 +19,6 @@ mod json;
 mod math;
 mod os;
 mod r#struct;
-mod compress;
 
 use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
