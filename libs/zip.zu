@@ -7,7 +7,8 @@
  */
 
 import struct { pack, unpack }
-import compress as compress_lib
+import compress.deflate
+import compress.checksum
 import os
 import io
 import date
@@ -564,11 +565,11 @@ class ZipArchive {
     ))
 
 		var unc_len = data.length()
-		var crc = compress_lib.checksum.crc32(data)
+		var crc = checksum.crc32(data)
 
     var uzdata = data
     if self._compression_method == ZIP_DEFLATE {
-      uzdata = compress_lib.deflate.encode(data)
+      uzdata = deflate.encode(data)
     }
 
 		var c_len = uzdata.length()
@@ -892,7 +893,7 @@ class ZipArchive {
           }
 					when 8 { # Deflated
             catch {
-              decoded = compress_lib.deflate.decode(filedata)
+              decoded = deflate.decode(filedata)
             } as e {
               entrya['error'] = e.message
             }
@@ -917,7 +918,7 @@ class ZipArchive {
 						entrya['error'] = 'Decompression failed.'
 					} /* else if filedata.length() != unpackeda['size_uncompressed'] {
 						entrya['error'] = 'File size is not equal to the value given in header.'
-					} else if compress_lib.checksum.crc32(filedata) != unpackeda['crc'] {
+					} else if checksum.crc32(filedata) != unpackeda['crc'] {
 						entrya['error'] = 'CRC32 checksum is not equal to the value given in header.'
 					} */
 				}

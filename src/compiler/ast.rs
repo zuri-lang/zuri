@@ -82,7 +82,7 @@ pub enum Stmt {
   Return(Box<Expr>),
   Assert(Box<Expr>, Option<Box<Expr>>),
   Using(Box<Expr>, Vec<Expr>, Vec<Stmt>, Option<Box<Stmt>>),
-  Import(String, Box<Expr>, Vec<Expr>, bool),
+  Import(String, Box<Expr>, Vec<Expr>, bool, bool),
   Catch(Box<Stmt>, Option<Box<Stmt>>, Option<Box<Expr>>),
   Block(Vec<Stmt>),
   Decl(Box<Decl>),

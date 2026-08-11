@@ -30,12 +30,7 @@
 import _io
 
 # import .tty { TTY }
-import .bytesio
-
-/**
- * @export
- */
-var BytesIO = bytesio.BytesIO
+import @.bytesio { BytesIO }
 
 #------------------------------------------------------------------------------------------------
 # Seek constants

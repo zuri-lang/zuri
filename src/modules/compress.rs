@@ -1,6 +1,3 @@
-use std::cell::Cell;
-
-use rustc_hash::FxHashMap;
 use zlib_rs::{
   DeflateConfig, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode, Status, Strategy,
   adler32::adler32, compress_bound, compress_slice, crc32::crc32, decompress_slice,
@@ -10,15 +7,11 @@ use crate::{
   builtins::enforce::ArgType,
   enforce_arg_count, enforce_arg_range, enforce_arg_type_any_of,
   modules::{BuiltinModuleDef, native, optional_number},
-  vm::{
-    object::{ModuleNamespace, ObjModule, ZuriContext},
-    value::Value,
-    vm::VM,
-  },
+  vm::{object::ZuriContext, value::Value, vm::VM},
 };
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
-  name: "compress",
+  name: "_compress",
   build,
 };
 
@@ -26,80 +19,18 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
 /// `math` namespace -- preserves `import math; math.sum(...)` exactly
 /// as it worked before this registry existed.
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
-  /* Checksum  */
-  let mut checksum_mod_entries = FxHashMap::default();
-  checksum_mod_entries.insert("crc32".to_string(), 0);
-  checksum_mod_entries.insert("adler32".to_string(), 1);
-
-  let crc32 = native(vm, "crc32", 1, true, crc32_fn);
-  let adler32 = native(vm, "adler32", 1, true, adler32_fn);
-
-  let common_module = vm.heap_mut().alloc_module(ObjModule {
-    name: "deflate".into(),
-    path: "<native::mod::compress::deflate>".into(),
-    namespace: ModuleNamespace {
-      slots: vec![Cell::new(crc32), Cell::new(adler32)],
-      names: checksum_mod_entries,
-    },
-    loaded: true,
-  });
-
-  /* Deflate  */
-  let mut deflate_mod_entries = FxHashMap::default();
-  deflate_mod_entries.insert("encode".to_string(), 0);
-  deflate_mod_entries.insert("decode".to_string(), 1);
-
-  let deflate_encode = native(vm, "encode", 1, false, deflate);
-  let deflate_decode = native(vm, "decode", 1, false, undeflate);
-
-  let deflate_module = vm.heap_mut().alloc_module(ObjModule {
-    name: "deflate".into(),
-    path: "<native::mod::compress::deflate>".into(),
-    namespace: ModuleNamespace {
-      slots: vec![Cell::new(deflate_encode), Cell::new(deflate_decode)],
-      names: deflate_mod_entries,
-    },
-    loaded: true,
-  });
-
-  /* GZip  */
-  let mut gzip_mod_entries = FxHashMap::default();
-  gzip_mod_entries.insert("encode".to_string(), 0);
-  gzip_mod_entries.insert("decode".to_string(), 1);
-
-  let gzip_encode = native(vm, "encode", 1, false, gzip);
-  let gzip_decode = native(vm, "decode", 1, false, ungzip);
-
-  let gzip_module = vm.heap_mut().alloc_module(ObjModule {
-    name: "deflate".into(),
-    path: "<native::mod::compress::gzip>".into(),
-    namespace: ModuleNamespace {
-      slots: vec![Cell::new(gzip_encode), Cell::new(gzip_decode)],
-      names: gzip_mod_entries,
-    },
-    loaded: true,
-  });
-
   vec![
-    // Top level constants
-    ("NO_COMPRESSION", Value::number(0.0)),
-    ("BEST_SPEED", Value::number(1.0)),
-    ("BEST_COMPRESSION", Value::number(9.0)),
-    ("DEFAULT_COMPRESSION", Value::number(-1.0)),
-    ("FILTERED", Value::number(1.0)),
-    ("HUFFMAN_ONLY", Value::number(2.0)),
-    ("RLE", Value::number(3.0)),
-    ("FIXED", Value::number(4.0)),
-    ("DEFAULT_STRATEGY", Value::number(0.0)),
-    ("DEFAULT_MEMORY_LEVEL", Value::number(8.0)),
-    ("MAX_WBITS", Value::number(15.0)),
-    // Top level functions
     ("compress", native(vm, "compress", 1, true, compress)),
     ("uncompress", native(vm, "uncompress", 1, true, uncompress)),
-    // Sub modules
-    ("checksum", common_module),
-    ("deflate", deflate_module),
-    ("gzip", gzip_module),
+    ("deflate_encode", native(vm, "encode", 1, false, deflate)),
+    ("deflate_decode", native(vm, "decode", 1, false, undeflate)),
+    ("gzip_encode", native(vm, "encode", 1, false, gzip)),
+    ("gzip_decode", native(vm, "decode", 1, false, ungzip)),
+    ("checksum_crc32", native(vm, "crc32", 1, true, crc32_fn)),
+    (
+      "checksum_adler32",
+      native(vm, "adler32", 1, true, adler32_fn),
+    ),
   ]
 }
 

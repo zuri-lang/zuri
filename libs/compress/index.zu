@@ -37,6 +37,8 @@
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
+import _compress
+
 
 # compression levels
 
@@ -173,7 +175,9 @@ var MAX_WBITS = 15
  * @param ?int memory_level: Default value is `DEFAULT_MEMORY_LEVEL`.
  * @returns bytes
  */
-def compress(data, level, strategy, wbits, memory_level) {}
+def compress(data, level, strategy, wbits, memory_level) {
+  return _compress.compress(data, level, strategy, wbits, memory_level)
+}
 
 /**
  * Uncompress decompresses as much data as possible, and stops when the input
@@ -219,4 +223,10 @@ def compress(data, level, strategy, wbits, memory_level) {}
  * @param ?int wbits: Default value is `MAX_WBITS`.
  * @returns bytes
  */
-def uncompress(data, wbits) {}
+def uncompress(data, wbits) {
+  return _compress.uncompress(data, wbits)
+}
+
+import @.deflate
+import @.gzip
+import @.checksum

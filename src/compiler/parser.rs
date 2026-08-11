@@ -1377,6 +1377,8 @@ impl<'a> Parser<'a> {
 
     let mut name_is_nil = true;
 
+    let exported = match_tok!(self, TokenKind::At);
+
     // `.` (same directory), `..` (parent directory, lexed as a `Range`
     // token -- there's no dedicated ".." token kind), and identifiers can
     // all repeat and interleave freely in a relative import path (e.g.
@@ -1462,7 +1464,7 @@ impl<'a> Parser<'a> {
       name = self.compose_id(synthesized);
     }
 
-    Stmt::Import(final_path, Box::new(name), elements, imports_all)
+    Stmt::Import(final_path, Box::new(name), elements, imports_all, exported)
   }
 
   fn catch_stmt(&mut self) -> Stmt {

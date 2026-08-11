@@ -4,6 +4,8 @@
  * This is the checksum submodule for the compress module.
  */
 
+import _compress
+
 /**
  * Updates a running Adler-32 checksum with the bytes buf[0,len-1] and
  * return the updated checksum.
@@ -13,7 +15,9 @@
  * @param ?number initial
  * @returns number
  */
-def adler32(data, initial) {}
+def adler32(data, initial) {
+  return _compress.checksum_adler32(data, initial)
+}
 
 /**
  * Update a running CRC-32 checksum with the bytes buf[0,len-1] and return the
@@ -23,4 +27,6 @@ def adler32(data, initial) {}
  * @param ?number intial
  * @returns number
  */
-def crc32(data, initial) {}
+def crc32(data, initial) {
+  return _compress.checksum_crc32(data, initial)
+}

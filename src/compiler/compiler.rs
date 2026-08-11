@@ -2100,8 +2100,8 @@ impl<'a> Compiler<'a> {
   /// repointed at the new value; `value_reg`'s register is otherwise
   /// left permanently allocated (same as any other local -- reclaimed
   /// only when the enclosing scope closes), never freed here.
-  fn declare_import_binding(&mut self, name: String, token: &Token, value_reg: u8) {
-    if self.is_repl && self.cur().scope_depth == 0 {
+  fn declare_import_binding(&mut self, name: String, token: &Token, value_reg: u8, exported: bool) {
+    if (self.is_repl && self.cur().scope_depth == 0) || exported {
       let name_val = self.heap.alloc_string(name.clone());
       let name_const = self.add_constant(name_val);
       self.emit(Instr::SetGlobal {
@@ -2149,7 +2149,14 @@ impl<'a> Compiler<'a> {
   ///                         per requested name.
   ///  - default (neither)  -> `Instr::MakePromoted` + one
   ///                         `declare_import_binding` for NAME.
-  fn compile_import(&mut self, path: &str, name: &Expr, elements: &[Expr], imports_all: bool) {
+  fn compile_import(
+    &mut self,
+    path: &str,
+    name: &Expr,
+    elements: &[Expr],
+    imports_all: bool,
+    exported: bool,
+  ) {
     let path_val = self.heap.alloc_string(path.to_string());
     let path_const = self.add_constant(path_val);
     let importer_val = self.heap.alloc_string(self.source_path.to_string());
@@ -2187,7 +2194,7 @@ impl<'a> Compiler<'a> {
           obj: mod_reg,
           name_const: fname_const,
         });
-        self.declare_import_binding(field_name, token, dst);
+        self.declare_import_binding(field_name, token, dst, exported);
       }
       return;
     }
@@ -2208,7 +2215,7 @@ impl<'a> Compiler<'a> {
       module: mod_reg,
       name_const,
     });
-    self.declare_import_binding(bind_name, name_token, dst);
+    self.declare_import_binding(bind_name, name_token, dst, exported);
   }
 
   fn compile_statement(&mut self, statement: &Stmt) {
@@ -2431,11 +2438,12 @@ impl<'a> Compiler<'a> {
       Stmt::Raise(expr) => self.compile_raise(expr),
       Stmt::Assert(cond, message) => self.compile_assert(cond, message),
       Stmt::Catch(body, error_block, var_expr) => self.compile_catch(body, error_block, var_expr),
-      Stmt::Import(path, name, elements, imports_all) => self.compile_import(
+      Stmt::Import(path, name, elements, imports_all, exported) => self.compile_import(
         path.as_str(),
         name.as_ref(),
         elements.as_slice(),
         *imports_all,
+        *exported,
       ),
       _ => {},
     };
