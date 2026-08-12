@@ -1,0 +1,195 @@
+/**
+ * @module lz4
+ * 
+ * This is the Lz4 submodule for the compress module.
+ * 
+ * This modules provides two ways to use lz4. The first way is through the 
+ * `Lz4Decoder` and `Lz4Encoder` classes, which implement a streaming encoder 
+ * and decoder with the lz4 frame format. Unless you have a specific reason 
+ * to the contrary, you should only use the Lz4 classes which implement the 
+ * lz4 frame format. Specifically, the lz4 frame format permits streaming 
+ * compression or decompression.
+ * 
+ * The second way is through the `compress` and `decompress` functions. These 
+ * functions provide access to the lz4 block format, and don’t support a streaming 
+ * interface directly. You should only use these types if you know you 
+ * specifically need the lz4 block format.
+ * 
+ * @note The block format and the frame format are not interchangeable.
+ * 
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _compress
+
+/**
+ * Compress data using the Lz4 block format. The uncompressed size will be 
+ * prepended as a little endian unsigned integer 32.
+ * 
+ * @param {bytes|string} data
+ * @param ?number level
+ * @returns bytes
+ */
+def compress(data) {
+  return _compress.lz4_compress(data)
+}
+
+/**
+ * Decompress a Lz4 compressed data. The first 4 bytes are expected to be the 
+ * uncompressed size in little endian.
+ * 
+ * @param {bytes|string} data
+ * @returns bytes
+ */
+def decompress(data) {
+ return _compress.lz4_decompress(data)
+}
+
+
+/**
+ * Streaming lz4 compressor implemention. Data written to this encoder are 
+ * compressed using the LZ4 frame format and are automatically buffered.
+ * 
+ * To ensure a well formed stream the encoder must be finalized by calling 
+ * the `finish()` method.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.lz4
+ * %> var encoder = lz4.Lz4Encoder()
+ * %> encoder.write('hello world')
+ * 11
+ * %> encoder.finish()
+ * (04 22 4d 18 60 40 82 0b 00 00 80 68 65 6c 6c 6f 20 77 6f 72 6c 64 00 00 00 00)
+ * ```
+ */
+class Lz4Encoder {
+  var _ptr
+
+  /**
+   * Creates a new streaming Lz4 encoder.
+   */
+  @new() {
+    self._ptr = _compress.lz4_new_encoder()
+  }
+
+  /**
+   * Flushes remaining data, writes the content checksum, and returns 
+   * the inner byte stream.
+   * 
+   * @note Once finish is called, the encoder can no longer be reused.
+   * @returns bytes
+   */
+  finish() {
+    return _compress.lz4_encoder_finish(self._ptr)
+  }
+
+  /**
+   * Writes data into this encoder's byte stream, returning how many 
+   * bytes were written.
+   * 
+   * @param {bytes|string} data
+   * @returns number
+   */
+  write(data) {
+    return _compress.lz4_encoder_write(self._ptr, data)
+  }
+
+  /**
+   * Attempts to write an entire data into this encoder's byte stream.
+   * 
+   * @param {bytes|string} data
+   */
+  write_all(data) {
+    _compress.lz4_encoder_write_all(self._ptr, data)
+  }
+
+  /**
+   * Flushes this output stream, ensuring that all intermediately buffered 
+   * contents reach their destination.
+   */
+  flush() {
+    _compress.lz4_encoder_flush(self._ptr)
+  }
+}
+
+
+/**
+ * Streaming reader for decompressing the LZ4 frame format.
+ * Bytes read will be decompressed according to the LZ4 frame format.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.lz4
+ * %> var x = lz4.Lz4Encoder()
+ * %> x.write('hello world')
+ * 11
+ * %> var g = x.finish()
+ * %> g
+ * (04 22 4d 18 60 40 82 0b 00 00 80 68 65 6c 6c 6f 20 77 6f 72 6c 64 00 00 00 00)
+ * %> 
+ * %> var f = lz4.Lz4Decoder(g)
+ * %> f.read_as_string()
+ * hello world
+ * ```
+ */
+class Lz4Decoder {
+
+  /**
+   * Creates a Lz4 decoder
+   * 
+   * @param bytes source
+   */
+  @new(source) {
+    self._ptr = _compress.lz4_new_decoder(source)
+  }
+
+  /**
+   * Reads some bytes up to the amount of bytes specified by length from 
+   * the current source. Returns an empty byte stream when there is no 
+   * more data to read.
+   * 
+   * This function does not block or wait waiting for data, but reads as 
+   * much data as is available to read when it runs.
+   * 
+   * @param number length
+   * @returns bytes
+   */
+  read(length) {
+    return _compress.lz4_decoder_read(self._ptr, length)
+  }
+
+  /**
+   * Reads the exact number of bytes from the buffer. This method will 
+   * raise an error if it encounters an unexpected EOF (`end of file`) or 
+   * there are insufficient data to read to complete the required number 
+   * of bytes.
+   * 
+   * @param number length
+   * @returns bytes
+   */
+  read_exact(length) {
+    return _compress.lz4_decoder_read_exact(self._ptr, length)
+  }
+
+  /**
+   * Reads all remaining bytes until EOF is encountered in the source.
+   * 
+   * @returns bytes
+   */
+  read_all() {
+    return _compress.lz4_decoder_read_all(self._ptr)
+  }
+
+  /**
+   * Reads all remaining bytes until EOF is encountered in the source and 
+   * returns the data read as a string instead of a byte stream.
+   * 
+   * @returns string
+   */
+  read_as_string() {
+    return _compress.lz4_decoder_read_as_string(self._ptr)
+  }
+}

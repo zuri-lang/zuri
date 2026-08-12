@@ -1,7 +1,9 @@
 /**
  * @module deflate
  * 
- * This is the Deflate submodule for the compress module
+ * This is the Deflate submodule for the compress module.
+ * 
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _compress
@@ -32,6 +34,17 @@ import .gzip { GzipDecoder, GzipEncoder }
 
 /**
  * A streaming Deflate encoder.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.deflate
+ * %> var encoder = deflate.DeflateEncoder()
+ * %> encoder.write('hello world')
+ * 11
+ * %> encoder.finish()
+ * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
+ * ```
  */
 class DeflateEncoder < GzipEncoder {
 

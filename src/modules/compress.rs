@@ -1,5 +1,6 @@
 use std::io::{Cursor, Read, Write};
 
+use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use zlib_rs::{
   DeflateConfig, DeflateError, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode,
   Status, Strategy, adler32::adler32, compress_bound, compress_slice, crc32::crc32,
@@ -30,6 +31,11 @@ use super::compress_util::{DeflateDecoder, DeflateEncoder};
 /// as it worked before this registry existed.
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
+    ("crc32_checksum", native(vm, "crc32", 1, true, crc32_fn)),
+    (
+      "adler32_checksum",
+      native(vm, "adler32", 1, true, adler32_fn),
+    ),
     ("compress", native(vm, "compress", 1, true, compress)),
     ("decompress", native(vm, "decompress", 1, true, decompress)),
     (
@@ -132,11 +138,6 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "zstd_decompress",
       native(vm, "decompress", 1, false, zstd_decompress),
     ),
-    ("crc32_checksum", native(vm, "crc32", 1, true, crc32_fn)),
-    (
-      "adler32_checksum",
-      native(vm, "adler32", 1, true, adler32_fn),
-    ),
     (
       "zstd_new_encoder",
       native(vm, "@new", 0, true, zstd_new_encoder),
@@ -184,6 +185,54 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     (
       "zstd_decoder_read_as_string",
       native(vm, "read_as_string", 1, false, zstd_decoder_read_as_string),
+    ),
+    (
+      "lz4_compress",
+      native(vm, "compress", 1, true, lz4_compress),
+    ),
+    (
+      "lz4_decompress",
+      native(vm, "decompress", 1, false, lz4_decompress),
+    ),
+    (
+      "lz4_new_encoder",
+      native(vm, "@new", 0, true, lz4_new_encoder),
+    ),
+    (
+      "lz4_encoder_finish",
+      native(vm, "finish", 1, false, lz4_encoder_finish),
+    ),
+    (
+      "lz4_encoder_write",
+      native(vm, "write", 2, false, lz4_encoder_write),
+    ),
+    (
+      "lz4_encoder_write_all",
+      native(vm, "write_all", 2, false, lz4_encoder_write_all),
+    ),
+    (
+      "lz4_encoder_flush",
+      native(vm, "flush", 1, false, lz4_encoder_flush),
+    ),
+    (
+      "lz4_new_decoder",
+      native(vm, "@new", 1, false, lz4_new_decoder),
+    ),
+    (
+      "lz4_decoder_read",
+      native(vm, "read", 2, false, lz4_decoder_read),
+    ),
+    (
+      "lz4_decoder_read_exact",
+      native(vm, "zread_exact", 2, true, lz4_decoder_read_exact),
+    ),
+    (
+      "lz4_decoder_read_all",
+      native(vm, "read_all", 1, false, lz4_decoder_read_all),
+    ),
+    (
+      "lz4_decoder_read_as_string",
+      native(vm, "read_as_string", 1, false, lz4_decoder_read_as_string),
     ),
   ]
 }
@@ -267,6 +316,21 @@ fn parse_zrip_decompress_error(code: zrip::DecompressError) -> &'static str {
     zrip::DecompressError::InvalidDictionary => "Dictionary bytes failed to parse.",
     zrip::DecompressError::InputExhausted => "Input ended before the frame was complete.",
     zrip::DecompressError::ExtraBytes => "Unexpected trailing bytes after a valid frame.",
+  }
+}
+
+fn parse_lz4_decompress_error(code: lz4_flex::block::DecompressError) -> &'static str {
+  match code {
+    lz4_flex::block::DecompressError::OutputTooSmall { .. } => "The provided output is too small",
+    lz4_flex::block::DecompressError::LiteralOutOfBounds => "Literal is out of bounds of the input",
+    lz4_flex::block::DecompressError::ExpectedAnotherByte => {
+      "Expected another byte, but none found."
+    },
+    lz4_flex::block::DecompressError::OffsetZero => "Match offset is 0",
+    lz4_flex::block::DecompressError::OffsetOutOfBounds => {
+      "Deduplication offset out of bounds (not in buffer)."
+    },
+    _ => "Unknown error",
   }
 }
 
@@ -728,9 +792,9 @@ fn zstd_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(ctx.args);
 
-  let compressed_data = zrip::decompress(&data).map_err(parse_zrip_decompress_error)?;
+  let decompressed_data = zrip::decompress(&data).map_err(parse_zrip_decompress_error)?;
 
-  Ok(ctx.heap().alloc_bytes(compressed_data))
+  Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
 
 fn zstd_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -915,6 +979,196 @@ fn zstd_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let decoder = ptr
     .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let mut buffer = String::new();
+  decoder
+    .read_to_string(&mut buffer)
+    .map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_string(buffer))
+}
+
+// ----------------------------------------- LZ4 ------------------------------------------
+
+const LZ4_ENCODER_NAME: &str = "zuri::compress::lz4::encoder";
+const LZ4_DECODER_NAME: &str = "zuri::compress::lz4::decoder";
+
+fn lz4_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
+
+  let data = get_data(ctx.args);
+
+  let compressed_data = compress_prepend_size(data.as_slice());
+
+  Ok(ctx.heap().alloc_bytes(compressed_data))
+}
+
+fn lz4_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
+
+  let data = get_data(ctx.args);
+
+  let decompressed_data = decompress_size_prepended(&data).map_err(parse_lz4_decompress_error)?;
+
+  Ok(ctx.heap().alloc_bytes(decompressed_data))
+}
+
+fn lz4_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+
+  let encoder = lz4_flex::frame::FrameEncoder::new(Vec::new());
+  Ok(ctx.heap().alloc_ptr(LZ4_ENCODER_NAME, encoder))
+}
+
+fn lz4_encoder_finish(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+
+  let boxed = std::mem::replace(&mut ptr.value, Box::new(()));
+  ptr.type_name = "zuri::compress::__finished__";
+
+  let encoder = boxed
+    .downcast::<lz4_flex::frame::FrameEncoder<Vec<u8>>>()
+    .unwrap();
+
+  let result = encoder.finish().map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(result))
+}
+
+fn lz4_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_ENCODER_NAME));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr
+    .downcast_mut::<lz4_flex::frame::FrameEncoder<Vec<u8>>>()
+    .unwrap();
+
+  let data = get_data(&ctx.args[1..]);
+
+  Ok(Value::number(
+    encoder.write(data.as_slice()).map_err(|x| x.to_string())? as f64,
+  ))
+}
+
+fn lz4_encoder_write_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_ENCODER_NAME));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr
+    .downcast_mut::<lz4_flex::frame::FrameEncoder<Vec<u8>>>()
+    .unwrap();
+
+  let data = get_data(&ctx.args[1..]);
+  encoder
+    .write_all(data.as_slice())
+    .map_err(|x| x.to_string())?;
+
+  Ok(Value::nil())
+}
+
+fn lz4_encoder_flush(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr
+    .downcast_mut::<lz4_flex::frame::FrameEncoder<Vec<u8>>>()
+    .unwrap();
+
+  encoder.flush().map_err(|x| x.to_string())?;
+
+  Ok(Value::nil())
+}
+
+fn lz4_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::Bytes);
+
+  let data = ctx.args[0].as_bytes();
+  let cursor = Cursor::new(data);
+
+  let decoder = lz4_flex::frame::FrameDecoder::new(cursor);
+  Ok(ctx.heap().alloc_ptr(LZ4_DECODER_NAME, decoder))
+}
+
+fn lz4_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<lz4_flex::frame::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = vec![0u8; length];
+  let bytes_read = decoder
+    .read(buffer.as_mut_slice())
+    .map_err(|x| x.to_string())?;
+
+  if bytes_read > 0 {
+    return Ok(ctx.heap().alloc_bytes(&buffer[0..bytes_read]));
+  }
+
+  Ok(ctx.heap().alloc_bytes(Vec::new()))
+}
+
+fn lz4_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<lz4_flex::frame::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = vec![0u8; length];
+  decoder
+    .read_exact(buffer.as_mut_slice())
+    .map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn lz4_decoder_read_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<lz4_flex::frame::FrameDecoder<Cursor<Vec<u8>>>>()
+    .unwrap();
+
+  let mut buffer = Vec::new();
+  decoder
+    .read_to_end(&mut buffer)
+    .map_err(|x| x.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn lz4_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr
+    .downcast_mut::<lz4_flex::frame::FrameDecoder<Cursor<Vec<u8>>>>()
     .unwrap();
 
   let mut buffer = String::new();

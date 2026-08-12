@@ -2,6 +2,8 @@
  * @module gzip
  * 
  * The is the GZip submodule for the compress module.
+ * 
+ * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _compress
@@ -28,7 +30,18 @@ def decompress(data) {
 
 
 /**
- * A streaming GZip encoder.
+ * A streaming GZip encoder. 
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.gzip
+ * %> var encoder = gzip.GzipEncoder()
+ * %> encoder.write('hello world')
+ * 11
+ * %> encoder.finish()
+ * (02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00)
+ * ```
  */
 class GzipEncoder {
   var _ptr

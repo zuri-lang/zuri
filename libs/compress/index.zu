@@ -231,3 +231,4 @@ import @.deflate
 import @.gzip
 import @.checksum
 import @.zstd
+import @.lz4
