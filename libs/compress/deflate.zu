@@ -55,17 +55,17 @@ class DeflateEncoder < GzipEncoder {
  * Example:
  * 
  * ```zuri-repl
- * %> import compress.gzip
- * %> var data = gzip.compress('hello world')
+ * %> import compress.deflate
+ * %> var data = deflate.compress('hello world')
  * %> data
- * (28 b5 2f fd 24 0b 59 00 00 68 65 6c 6c 6f 20 77 6f 72 6c 64 68 69 1e b2)
+ * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
  * %> 
- * %> var decoder = gzip.GzipDecoder(data)
+ * %> var decoder = deflate.DeflateDecoder(data)
  * %> decoder.read_as_string()
  * hello world
  * ```
  * 
- * This decoder is level-independent and supports standard gzip frames 
+ * This decoder is level-independent and supports standard deflate frames 
  * produced by all deflate compression levels.
  */
 class DeflateDecoder < GzipDecoder {

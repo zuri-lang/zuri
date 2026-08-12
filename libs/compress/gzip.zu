@@ -136,7 +136,7 @@ class GzipEncoder {
  * %> import compress.gzip
  * %> var data = gzip.compress('hello world')
  * %> data
- * (28 b5 2f fd 24 0b 59 00 00 68 65 6c 6c 6f 20 77 6f 72 6c 64 68 69 1e b2)
+ * (02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00)
  * %> 
  * %> var decoder = gzip.GzipDecoder(data)
  * %> decoder.read_as_string()
