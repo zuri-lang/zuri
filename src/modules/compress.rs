@@ -1,8 +1,8 @@
 use std::io::{Cursor, Read, Write};
 
 use zlib_rs::{
-  DeflateConfig, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode, Status, Strategy,
-  adler32::adler32, compress_bound, compress_slice, crc32::crc32,
+  DeflateConfig, DeflateError, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode,
+  Status, Strategy, adler32::adler32, compress_bound, compress_slice, crc32::crc32,
 };
 
 use crate::{
@@ -10,7 +10,9 @@ use crate::{
     ArgType, enforce_method_arg_count, enforce_method_arg_type, enforce_method_arg_type_any_of,
   },
   enforce_arg_count, enforce_arg_range, enforce_arg_type, enforce_arg_type_any_of,
-  modules::{BuiltinModuleDef, native, optional_bool, optional_number},
+  modules::{
+    BuiltinModuleDef, compress_util::DeflateDecoderError, native, optional_bool, optional_number,
+  },
   vm::{object::ZuriContext, value::Value, vm::VM},
 };
 
@@ -18,6 +20,10 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   name: "_compress",
   build,
 };
+
+// TODO: Remove this
+#[allow(unused_imports)]
+use super::compress_util::{DeflateDecoder, DeflateEncoder};
 
 /// Re-exports the already globally-registered `sum` native under the
 /// `math` namespace -- preserves `import math; math.sum(...)` exactly
@@ -41,6 +47,82 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     (
       "gzip_decompress",
       native(vm, "decompress", 1, false, gzip_decompress),
+    ),
+    (
+      "gzip_new_encoder",
+      native(vm, "@new", 0, true, gzip_new_encoder),
+    ),
+    (
+      "gzip_encoder_finish",
+      native(vm, "finish", 1, false, gzip_encoder_finish),
+    ),
+    (
+      "gzip_encoder_reset",
+      native(vm, "reset", 1, false, gzip_encoder_reset),
+    ),
+    (
+      "gzip_encoder_write",
+      native(vm, "write", 2, false, gzip_encoder_write),
+    ),
+    (
+      "gzip_encoder_flush",
+      native(vm, "flush", 1, false, gzip_encoder_flush),
+    ),
+    (
+      "gzip_encoder_available",
+      native(vm, "available", 1, false, gzip_encoder_available),
+    ),
+    (
+      "gzip_encoder_finished",
+      native(vm, "finished", 1, false, gzip_encoder_finished),
+    ),
+    (
+      "gzip_encoder_total_in",
+      native(vm, "total_in", 1, false, gzip_encoder_total_in),
+    ),
+    (
+      "gzip_encoder_total_out",
+      native(vm, "total_out", 1, false, gzip_encoder_total_out),
+    ),
+    (
+      "gzip_new_decoder",
+      native(vm, "@new", 1, true, gzip_new_decoder),
+    ),
+    (
+      "gzip_decoder_reset",
+      native(vm, "reset", 1, false, gzip_decoder_reset),
+    ),
+    (
+      "gzip_decoder_read",
+      native(vm, "read", 2, false, gzip_decoder_read),
+    ),
+    (
+      "gzip_decoder_read_exact",
+      native(vm, "read_exact", 2, false, gzip_decoder_read_exact),
+    ),
+    (
+      "gzip_decoder_read_all",
+      native(vm, "read_all", 1, false, gzip_decoder_read_all),
+    ),
+    (
+      "gzip_decoder_read_as_string",
+      native(vm, "read_as_string", 1, false, gzip_decoder_read_as_string),
+    ),
+    (
+      "gzip_decoder_available",
+      native(vm, "available", 1, false, gzip_decoder_available),
+    ),
+    (
+      "gzip_decoder_finished",
+      native(vm, "finished", 1, false, gzip_decoder_finished),
+    ),
+    (
+      "gzip_decoder_total_in",
+      native(vm, "total_in", 1, false, gzip_decoder_total_in),
+    ),
+    (
+      "gzip_decoder_total_out",
+      native(vm, "total_out", 1, false, gzip_decoder_total_out),
     ),
     (
       "zstd_compress",
@@ -89,11 +171,11 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     (
       "zstd_decoder_read",
-      native(vm, "read", 1, false, zstd_decoder_read),
+      native(vm, "read", 2, false, zstd_decoder_read),
     ),
     (
       "zstd_decoder_read_exact",
-      native(vm, "zread_exact", 1, false, zstd_decoder_read_exact),
+      native(vm, "zread_exact", 2, true, zstd_decoder_read_exact),
     ),
     (
       "zstd_decoder_read_all",
@@ -120,7 +202,7 @@ fn parse_zlib_result(code: ReturnCode) -> Result<(), &'static str> {
   }
 }
 
-fn parse_zlib_error(code: InflateError) -> &'static str {
+fn parse_zlib_inflate_error(code: InflateError) -> &'static str {
   match code {
     InflateError::NeedDict { .. } => "Decompressing this input requires a dictionary.",
     InflateError::StreamError => {
@@ -128,6 +210,16 @@ fn parse_zlib_error(code: InflateError) -> &'static str {
     },
     InflateError::DataError => "The input is not a valid deflate stream.",
     InflateError::MemError => "A memory allocation failed.",
+  }
+}
+
+fn parse_zlib_deflate_error(code: DeflateError) -> &'static str {
+  match code {
+    DeflateError::StreamError => {
+      "The [`Deflate`] is in an inconsistent state, most likely due to an invalid configuration parameter."
+    },
+    DeflateError::DataError => "The input is not a valid deflate stream.",
+    DeflateError::MemError => "A memory allocation failed.",
   }
 }
 
@@ -277,7 +369,8 @@ fn decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   let default_config: InflateConfig = InflateConfig::default();
   let window_bits = optional_number(ctx, 1, default_config.window_bits as f64)? as i32;
 
-  let decompressed_data = decompress_data(&data, window_bits).map_err(|x| parse_zlib_error(x))?;
+  let decompressed_data =
+    decompress_data(&data, window_bits).map_err(|x| parse_zlib_inflate_error(x))?;
 
   Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
@@ -310,12 +403,15 @@ fn deflate_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   let config = InflateConfig::default();
 
   let decompressed_data =
-    decompress_data(&data, -config.window_bits).map_err(|x| parse_zlib_error(x))?;
+    decompress_data(&data, -config.window_bits).map_err(|x| parse_zlib_inflate_error(x))?;
 
   Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
 
 // ----------------------------------------- GZIP -----------------------------------------
+
+const GZIP_ENCODER_NAME: &str = "zuri::compress::gzip::encoder";
+const GZIP_DECODER_NAME: &str = "zuri::compress::gzip::decoder";
 
 fn gzip_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -344,9 +440,247 @@ fn gzip_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   config.window_bits = config.window_bits | 16; // raw gzip
 
   let decompressed_data =
-    decompress_data(&data, config.window_bits).map_err(|x| parse_zlib_error(x))?;
+    decompress_data(&data, config.window_bits).map_err(|x| parse_zlib_inflate_error(x))?;
 
   Ok(ctx.heap().alloc_bytes(decompressed_data))
+}
+
+fn gzip_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 1, 2);
+
+  let zlib_header = optional_bool(ctx, 0, false)?;
+  let level = optional_number(ctx, 1, 1.0)? as i32;
+
+  let encoder = DeflateEncoder::new(level, zlib_header);
+  Ok(ctx.heap().alloc_ptr(GZIP_ENCODER_NAME, encoder))
+}
+
+fn gzip_encoder_finish(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  let output = encoder.finish().map_err(parse_zlib_deflate_error)?;
+
+  Ok(ctx.heap().alloc_bytes(output))
+}
+
+fn gzip_encoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  let output = encoder.reset().map_err(parse_zlib_deflate_error)?;
+
+  Ok(ctx.heap().alloc_bytes(output))
+}
+
+fn gzip_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  let data = get_data(&ctx.args[1..]);
+
+  Ok(Value::number(
+    encoder
+      .write(data.as_slice())
+      .map_err(parse_zlib_deflate_error)? as f64,
+  ))
+}
+
+fn gzip_encoder_flush(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  encoder.flush().map_err(parse_zlib_deflate_error)?;
+
+  Ok(Value::nil())
+}
+
+fn gzip_encoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  Ok(Value::number(encoder.available() as f64))
+}
+
+fn gzip_encoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  Ok(Value::bool(encoder.is_finished()))
+}
+
+fn gzip_encoder_total_in(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  Ok(Value::number(encoder.total_in() as f64))
+}
+
+fn gzip_encoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
+
+  Ok(Value::number(encoder.total_out() as f64))
+}
+
+fn gzip_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 1, 2);
+  enforce_arg_type!(ctx, 1, ArgType::Bytes);
+
+  let data = ctx.args[1].as_bytes();
+  let zlib_header = optional_bool(ctx, 0, false)?;
+
+  let decoder = DeflateDecoder::new(data, zlib_header);
+  Ok(ctx.heap().alloc_ptr(GZIP_DECODER_NAME, decoder))
+}
+
+fn gzip_decoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Bytes);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  decoder.reset(ctx.args[1].as_bytes());
+
+  Ok(Value::nil())
+}
+
+fn gzip_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = Vec::new();
+  let bytes_read = decoder
+    .read(&mut buffer, length)
+    .map_err(parse_zlib_inflate_error)?;
+
+  if bytes_read > 0 {
+    return Ok(ctx.heap().alloc_bytes(&buffer[0..bytes_read]));
+  }
+
+  Ok(ctx.heap().alloc_bytes(Vec::new()))
+}
+
+fn gzip_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = vec![0u8; length];
+  decoder
+    .read_exact(&mut buffer, length)
+    .map_err(parse_zlib_inflate_error)?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn gzip_decoder_read_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  let mut buffer = Vec::new();
+  decoder
+    .read_to_end(&mut buffer)
+    .map_err(parse_zlib_inflate_error)?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn gzip_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  let mut buffer = String::new();
+  decoder.read_to_string(&mut buffer).map_err(|x| match x {
+    DeflateDecoderError::Inflate(code) => parse_zlib_inflate_error(code).to_string(),
+    DeflateDecoderError::Utf8(e) => e.to_string(),
+  })?;
+
+  Ok(ctx.heap().alloc_string(buffer))
+}
+
+fn gzip_decoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  Ok(Value::number(encoder.available() as f64))
+}
+
+fn gzip_decoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  Ok(Value::bool(encoder.is_finished()))
+}
+
+fn gzip_decoder_total_in(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  Ok(Value::number(encoder.total_in() as f64))
+}
+
+fn gzip_decoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
+
+  Ok(Value::number(encoder.total_out() as f64))
 }
 
 // --------------------------------------- Checksum ---------------------------------------

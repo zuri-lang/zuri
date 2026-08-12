@@ -11,6 +11,7 @@
 
 mod base64;
 mod compress;
+mod compress_util;
 mod crypto;
 mod date;
 mod hash;

@@ -27,260 +27,227 @@ def decompress(data) {
 }
 
 
-# /**
-#  * class GZ
-#  */
-# class GZ {
+/**
+ * A streaming GZip encoder.
+ */
+class GzipEncoder {
+  var _ptr
 
-#   /**
-#    * GZ(path: string [, mode: string = 'rb'])
-#    * 
-#    * @param string path
-#    * @param ?string mode: Default value is `rb`.
-#    * @see `gzopen()`
-#    * @constructor
-#    */
-#   GZ(path, mode) {
-#     if !is_string(path)
-#       raise TypeError('string expected in arg 1 (path)')
-#     if mode != nil and !is_string(mode)
-#       raise TypeError('string expected in arg 2 (mode)')
-#     if !mode mode = 'rb'
+  /**
+   * Creates a new streaming GZip encoder at the given level (0..=9).
+   * 
+   * @param ?number level - Default 1
+   */
+  @new(level) {
+    self._ptr = _compress.gzip_new_encoder(false, level)
+  }
 
-#     self._ptr = _compress.gzopen(path, mode)
-#   }
+  /**
+   * Flushes remaining data, writes the content checksum, and returns 
+   * the inner byte stream.
+   * 
+   * @note Once finish is called, the encoder can no longer be reused.
+   * @returns bytes
+   */
+  finish() {
+    return _compress.gzip_encoder_finish(self._ptr)
+  }
 
-#   /**
-#    * Reads the given number of uncompressed bytes from the compressed file.  If
-#    * the input file is not in gzip format, `read()` copies the given number of
-#    * bytes into the buffer directly from the file.
-#    * 
-#    * After reaching the end of a gzip stream in the input, _read_ will continue
-#    * to read, looking for another gzip stream.  Any number of gzip streams may be
-#    * concatenated in the input file, and will all be decompressed by `read()`.
-#    * If something other than a gzip stream is encountered after a gzip stream,
-#    * that remaining trailing garbage is ignored (and no error is returned).
-#    * 
-#    * read can be used to read a gzip file that is being concurrently written.
-#    * Upon reaching the end of the input, read will return with the available
-#    * data. Note that read does not return -1 in the event of an incomplete gzip stream.  
-#    * This error is deferred until `close()`, which will return false if the last read 
-#    * ended in the middle of a gzip stream.  Alternatively, gzerror can be used before 
-#    * close to detect this case.
-#    * 
-#    * read returns the number of uncompressed bytes actually read, less than
-#    * length for end of file, or -1 for error.  If len is too large to fit in an integer,
-#    * then nothing is read, -1 is returned.
-#    * 
-#    * @param number length
-#    * @returns bytes
-#    */
-#   read(length) {
-#     if length != nil and !is_number(length)
-#       raise TypeError('number expected in arg 2 (length)')
-#     if !length length = 1
-#     return _compress.gzread(self._ptr, length)
-#   }
+  /**
+   * Finishes the current frame and installs byte stream for the next one.
+   * 
+   * Returns the previous byte stream containing the completed frame. 
+   * All internal buffers (hash tables, workspace, block scratch) stay 
+   * allocated and are reused for the next frame.
+   * 
+   * @returns bytes
+   */
+  reset() {
+    return _compress.gzip_encoder_reset(self._ptr)
+  }
 
-#   /**
-#    * Writes the given number of uncompressed bytes into the compressed file.
-#    * write returns the number of uncompressed bytes written or 0 in case of
-#    * error.
-#    * 
-#    * @param {bytes|string} data
-#    * @returns number
-#    */
-#   write(data) {
-#     if !is_bytes(data) and !is_string(data)
-#       raise TypeError('bytes or string expected in arg 2 (data)')
-  
-#     if is_string(data) data = data.to_bytes()
-#     return _compress.gzwrite(self._ptr, data)
-#   }
+  /**
+   * Writes data into this encoder's byte stream, returning how many 
+   * bytes were written.
+   * 
+   * @param {bytes|string} data
+   * @returns number
+   */
+  write(data) {
+    return _compress.gzip_encoder_write(self._ptr, data)
+  }
 
-#   /**
-#    * Returns `true` if the end-of-file indicator has been set while reading,
-#    * `false` otherwise.  Note that the end-of-file indicator is set only if the
-#    * read tried to go past the end of the input, but came up short.  Therefore,
-#    * `eof()` may return `false` even if there is no more data to read, in the event 
-#    * that the last read request was for the exact number of bytes remaining in the 
-#    * input file.  This will happen if the input file size is an exact multiple of 
-#    * the buffer size.
-#    *
-#    * If eof() returns true, then the read functions will return no more data,
-#    * unless the end-of-file indicator is reset by gzclearerr() and the input file
-#    * has grown since the previous end of file was detected.
-#    * 
-#    * @returns bool
-#    */
-#   eof() {
-#     return _compress.gzeof(self._ptr)
-#   }
+  /**
+   * Flushes this output stream, ensuring that all intermediately buffered 
+   * contents reach their destination.
+   */
+  flush() {
+    _compress.gzip_encoder_flush(self._ptr)
+  }
 
-#   /**
-#    * Returns `true` if file is being copied directly while reading, or `false`
-#    * if file is a gzip stream being decompressed.
-#    * 
-#    * If the input file is empty, direct() will return true, since the input
-#    * does not contain a gzip stream.
-#    * 
-#    * If direct() is used immediately after gzopen() it will cause buffers to be 
-#    * allocated to allow reading the file to determine if it is a gzip file.
-#    * 
-#    * When writing, direct() returns true if transparent writing was requested 
-#    * ("wT" for the gzopen() mode), or false otherwise.
-#    * 
-#    * > Note: direct() is not needed when writing.  Transparent writing must be 
-#    * explicitly requested, so the application already knows the answer.
-#    * 
-#    * @returns bool
-#    */
-#   direct() {
-#     return _compress.gzdirect(self._ptr)
-#   }
+  /**
+   * Returns the number of compressed bytes currently waiting in the 
+   * encoder's output buffer.
+   * 
+   * @returns number
+   */
+  available() {
+    return _compress.gzip_encoder_available(self._ptr)
+  }
 
-#   /**
-#    * Flushes all pending output if necessary, closes the compressed file and
-#    * deallocates the (de)compression state.  Note that once file is closed, you
-#    * cannot call gzerror with file, since its structures have been deallocated.
-#    * close must not be called more than once on the same file, just as free
-#    * must not be called more than once on the same allocation.
-#    * 
-#    * close will return `true` on success or `false` otherwise.
-#    * 
-#    * @returns bool
-#    */
-#   close() {
-#     return _compress.gzclose(self._ptr)
-#   }
+  /**
+   * Returns whether `finish()` has completed the stream.
+   * 
+   * @returns bool
+   */
+  finished() {
+    return _compress.gzip_encoder_finished(self._ptr)
+  }
 
-#   /**
-#    * Dynamically update the compression level or strategy.  See the description
-#    * of `compress()` for the meaning of these parameters.  Previously provided
-#    * data is flushed before the parameter change.
-#    * 
-#    * @param number level
-#    * @param number strategy
-#    * @returns bool
-#   */
-#   set_params(level, strategy) {
-#     if !is_number(level) and !is_int(level)
-#       raise TypeError('integer expected in arg 2 (level)')
-#     if !is_number(strategy) and !is_int(strategy)
-#       raise TypeError('integer expected in arg 3 (strategy)')
-#     return _compress.gzsetparams(self._ptr, level, strategy)
-#   }
+  /**
+   * Number of uncompressed bytes consumed by the encoder.
+   * 
+   * @returns number
+   */
+  total_in() {
+    return _compress.gzip_encoder_total_in(self._ptr)
+  }
 
-#   /**
-#    * Sets the starting position for the next read or write on the given
-#    * compressed file.  The offset represents a number of bytes in the
-#    * uncompressed data stream. The whence parameter is defined as in `io` 
-#    * module; the value SEEK_END is not supported.
-#    * 
-#    * If the file is opened for reading, this function is emulated but can be
-#    * extremely slow.  If the file is opened for writing, only forward seeks are
-#    * supported; `seek()` then compresses a sequence of zeroes up to the new
-#    * starting position.
-#    * 
-#    * seek returns the resulting offset location as measured in bytes from
-#    * the beginning of the uncompressed stream, or -1 in case of error, in
-#    * particular if the file is opened for writing and the new starting position
-#    * would be before the current position.
-#    * 
-#    * @param int offset
-#    * @param ?int whence: Default value is `SEEK_SET`.
-#    * @returns number
-#    */
-#   seek(offset, whence) {
-#     if !is_number(offset) and !is_int(offset)
-#       raise TypeError('integer expected in arg 2 (offset)')
-#     if whence != nil and !is_number(whence) and !is_int(whence)
-#       raise TypeError('integer expected in arg 3 (whence)')
+  /**
+   * Number of compressed bytes generated by the encoder.
+   * 
+   * @returns number
+   */
+  total_out() {
+    return _compress.gzip_encoder_total_out(self._ptr)
+  }
+}
 
-#     if !whence whence = SEEK_SET
-#     return _compress.gzseek(self._ptr, offset, whence)
-#   }
 
-#   /**
-#    * Rewinds the given file. This function is supported only for reading.
-#    * 
-#    * @note `rewind()` is equivalent to `seek(0, SEEK_SET)`.
-#    * @returns number
-#    */
-#   rewind() {
-#     return _compress.gzrewind(self._ptr)
-#   }
+/**
+ * Streaming gzip decompressor implemention. This decoder reads standard gzip 
+ * blocks and frames produced at any gzip compression level.
+ * 
+ * Wraps a byte stream of compressed data and yields decompressed bytes. 
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.gzip
+ * %> var data = gzip.compress('hello world')
+ * %> data
+ * (28 b5 2f fd 24 0b 59 00 00 68 65 6c 6c 6f 20 77 6f 72 6c 64 68 69 1e b2)
+ * %> 
+ * %> var decoder = gzip.GzipDecoder(data)
+ * %> decoder.read_as_string()
+ * hello world
+ * ```
+ * 
+ * This decoder is level-independent and supports standard gzip frames produced 
+ * by all gzip compression levels.
+ */
+class GzipDecoder {
 
-#   /**
-#    * Returns the starting position for the next read or write on the given
-#    * compressed file.  This position represents a number of bytes in the
-#    * uncompressed data stream, and is zero when starting.
-#    * 
-#    * @note `tell()` is equivalent to `seek(0, SEEK_CUR)`.
-#    * @returns number
-#    */
-#   tell() {
-#     return _compress.gztell(self._ptr)
-#   }
+  /**
+   * Creates a Gzip decoder
+   * 
+   * @param bytes source
+   */
+  @new(source) {
+    self._ptr = _compress.gzip_new_decoder(false, source)
+  }
 
-#   /**
-#    * Returns the current offset in the file being read or written.  This offset
-#    * includes the count of bytes that precede the gzip stream, for example when
-#    * appending.  When reading, the offset does not include as yet unused buffered 
-#    * input.  This information can be used for a progress indicator.  On error, 
-#    * offset() returns -1.
-#    * 
-#    * @returns number
-#    */
-#   offset() {
-#     return _compress.gzoffset(self._ptr)
-#   }
+  /**
+   * Installs a new data source for the next frame, keeping all internal 
+   * buffers allocated.
+   * 
+   * @param bytes new_source
+   */
+  reset(new_source) {
+    _compress.gzip_decoder_reset(self._ptr, new_source)
+  }
 
-#   /**
-#    * Clears the error and end-of-file flags for file. This is useful for continuing 
-#    * to read a gzip file that is being written concurrently.
-#    */
-#   clear_error() {
-#     _compress.gzclearerr(self._ptr)
-#   }
-# }
+  /**
+   * Reads some bytes up to the amount of bytes specified by length from 
+   * the current source. Returns an empty byte stream when there is no 
+   * more data to read.
+   * 
+   * This function does not block or wait waiting for data, but reads as 
+   * much data as is available to read when it runs.
+   * 
+   * @param number length
+   * @returns bytes
+   */
+  read(length) {
+    return _compress.gzip_decoder_read(self._ptr, length)
+  }
 
-# /**
-#  * Opens a gzip (.gz) file for reading or writing.  The mode parameter is as
-#  * in `file` ("rb" or "wb") but can also include a compression level ("wb9") or
-#  * a strategy: 'f' for filtered data as in "wb6f", 'h' for Huffman-only
-#  * compression as in "wb1h", 'R' for run-length encoding as in "wb1R", or 'F'
-#  * for fixed code compression as in "wb9F".  (See the description of
-#  * `compress()` for more information about the strategy parameter.)  'T' will
-#  * request transparent writing or appending with no compression and not using
-#  * the gzip format.
-#  * 
-#  * "a" can be used instead of "w" to request that the gzip stream that will
-#  * be written be appended to the file.  "+" will result in an error, since
-#  * reading and writing to the same gzip file is not supported.  The addition of
-#  * "x" when writing will create the file exclusively, which fails if the file
-#  * already exists.  On systems that support it, the addition of "e" when
-#  * reading or writing will set the flag to close the file on an execve() call.
-#  * 
-#  * These functions, as well as gzip, will read and decode a sequence of gzip
-#  * streams in a file.  The append function of gzopen() can be used to create
-#  * such a file. When appending, gzopen does not test whether the file begins with 
-#  * a gzip stream, nor does it look for the end of the gzip streams to begin 
-#  * appending.  gzopen will simply append a gzip stream to the existing file.
-#  * 
-#  * gzopen can be used to read a file which is not in gzip format; in this
-#  * case read will directly read from the file without decompression.  When
-#  * reading, this will be detected automatically by looking for the magic two-byte 
-#  * gzip header.
-#  * 
-#  * gzopen throws an error if the file could not be opened, if there was insufficient 
-#  * memory to allocate the gzFile state, or if an invalid mode was specified (an 'r', 
-#  * 'w', or 'a' was not provided, or '+' was provided).
-#  * 
-#  * @param string path
-#  * @param ?string mode: Default value is `rb`.
-#  * @returns ptr
-#  */
-# def gzopen(path, mode) {
-#   return GZ(path, mode)
-# }
+  /**
+   * Reads the exact number of bytes from the buffer. This method will 
+   * raise an error if it encounters an unexpected EOF (`end of file`) or 
+   * there are insufficient data to read to complete the required number 
+   * of bytes.
+   * 
+   * @param number length
+   * @returns bytes
+   */
+  read_exact(length) {
+    return _compress.gzip_decoder_read_exact(self._ptr, length)
+  }
+
+  /**
+   * Reads all remaining bytes until EOF is encountered in the source.
+   * 
+   * @returns bytes
+   */
+  read_all() {
+    return _compress.gzip_decoder_read_all(self._ptr)
+  }
+
+  /**
+   * Reads all remaining bytes until EOF is encountered in the source and 
+   * returns the data read as a string instead of a byte stream.
+   * 
+   * @returns string
+   */
+  read_as_string() {
+    return _compress.gzip_decoder_read_as_string(self._ptr)
+  }
+
+  /**
+   * Returns the number of compressed bytes currently waiting in the 
+   * decoder's output buffer.
+   * 
+   * @returns number
+   */
+  available() {
+    return _compress.gzip_encoder_available(self._ptr)
+  }
+
+  /**
+   * Returns whether `finish()` has completed the stream.
+   * 
+   * @returns bool
+   */
+  finished() {
+    return _compress.gzip_encoder_finished(self._ptr)
+  }
+
+  /**
+   * Number of compressed bytes consumed by the decoder.
+   * 
+   * @returns number
+   */
+  total_in() {
+    return _compress.gzip_encoder_total_in(self._ptr)
+  }
+
+  /**
+   * Number of uncompressed bytes generated by the decoder.
+   * 
+   * @returns number
+   */
+  total_out() {
+    return _compress.gzip_encoder_total_out(self._ptr)
+  }
+}

@@ -25,3 +25,57 @@ def compress(data) {
 def decompress(data) {
  return _compress.deflate_decompress(data)
 }
+
+
+import .gzip { GzipDecoder, GzipEncoder }
+
+
+/**
+ * A streaming Deflate encoder.
+ */
+class DeflateEncoder < GzipEncoder {
+
+  /**
+   * Creates a new streaming Deflate encoder at the given level (0..=9).
+   * 
+   * @param ?number level - Default 1
+   */
+  @new(level) {
+    self._ptr = _compress.gzip_new_encoder(true, level)
+  }
+}
+
+
+/**
+ * Streaming deflate decompressor implemention. This decoder reads standard 
+ * deflate blocks and frames produced at any deflate compression level.
+ * 
+ * Wraps a byte stream of compressed data and yields decompressed bytes.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.gzip
+ * %> var data = gzip.compress('hello world')
+ * %> data
+ * (28 b5 2f fd 24 0b 59 00 00 68 65 6c 6c 6f 20 77 6f 72 6c 64 68 69 1e b2)
+ * %> 
+ * %> var decoder = gzip.GzipDecoder(data)
+ * %> decoder.read_as_string()
+ * hello world
+ * ```
+ * 
+ * This decoder is level-independent and supports standard gzip frames 
+ * produced by all deflate compression levels.
+ */
+class DeflateDecoder < GzipDecoder {
+
+  /**
+   * Creates a Gzip decoder
+   * 
+   * @param bytes source
+   */
+  @new(source) {
+    self._ptr = _compress.gzip_new_decoder(true, source)
+  }
+}
