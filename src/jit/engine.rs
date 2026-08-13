@@ -70,6 +70,13 @@ impl JitEngine {
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
     flag_builder.set("opt_level", "speed").unwrap();
+    // The backtracking allocator produces measurably better code
+    // (fewer spills/moves) than the single-pass one, at the cost of
+    // more compile time -- a trade that only became strictly correct
+    // to make once compilation moved off the interpreter's own thread
+    // (see `jit::background`): there is no longer a reason to economize
+    // on compile time by settling for the cheaper allocator.
+    flag_builder.set("regalloc_algorithm", "backtracking").unwrap();
 
     let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
       panic!("zuri: host machine is not supported by the JIT backend: {msg}")
