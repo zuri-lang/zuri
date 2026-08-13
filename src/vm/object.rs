@@ -216,6 +216,14 @@ pub struct JitInfo {
   /// specific loop is hot enough to trigger (or use, if compilation
   /// already happened) on-stack replacement.
   pub osr_counts: RefCell<FxHashMap<usize, u32>>,
+  /// True from the moment a compile job for this function is handed
+  /// to the background compiler thread (see `VM::enqueue_or_ready`)
+  /// until its result is drained (`VM::drain_jit_results`) -- prevents
+  /// enqueueing a second, redundant compile for the same prototype
+  /// while one is already in flight. Main-thread-only, like every
+  /// other `JitInfo` field: the background thread never reads or
+  /// writes `JitInfo` at all (see `jit::background`'s module docs).
+  pub compiling: Cell<bool>,
 }
 
 impl JitInfo {
@@ -228,6 +236,7 @@ impl JitInfo {
       osr_ids: RefCell::new(None),
       ineligible: Cell::new(false),
       osr_counts: RefCell::new(FxHashMap::default()),
+      compiling: Cell::new(false),
     }
   }
 }

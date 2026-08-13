@@ -6,7 +6,7 @@ use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::builtins;
-use crate::jit::{EntryFn, JitEngine};
+use crate::jit::{EntryFn, JitEngine, background};
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -187,6 +187,19 @@ pub struct VM {
   /// for the rest of the process; compiled machine code is never
   /// unloaded or recompiled.
   jit_engine: Option<JitEngine>,
+  /// Handle to the single background compiler thread (see
+  /// `jit::background`) -- lazily spawned alongside `jit_engine`, on
+  /// the same "don't pay for it until actually needed" principle.
+  /// `None` until the first function crosses its warmup threshold.
+  jit_compiler: Option<background::JitCompilerHandle>,
+  /// GC roots for every function with a background compile currently
+  /// enqueued or in flight -- pinned here from the moment a job is
+  /// sent to `jit_compiler` until its result is drained
+  /// (`drain_jit_results`), since the compiled-code round trip crosses
+  /// a thread boundary the GC can't otherwise see into. Scanned by
+  /// `collect_garbage` exactly like `gc_pins`. See `jit::background`'s
+  /// module docs for the full safety argument.
+  pending_jit_compiles: Vec<Value>,
   /// Side channel a `crate::jit::runtime` helper sets to a non-nil
   /// exception `Value` exactly when it needs to propagate a failure
   /// out of currently-executing compiled code. Compiled code has no
@@ -262,6 +275,8 @@ impl VM {
       gc_pins: Vec::new(),
       catch_stack: Vec::new(),
       jit_engine: None,
+      jit_compiler: None,
+      pending_jit_compiles: Vec::new(),
       jit_pending_exception: Cell::new(Value::nil()),
       jit_enabled: !matches!(
         std::env::var("ZURI_JIT").as_deref(),
@@ -659,32 +674,45 @@ impl VM {
     self.regs_ptr_cache.set(self.registers.as_mut_ptr());
   }
 
-  /// Does `proto` have (or should it now get) a compiled entry point
-  /// ready for a call about to happen? `None` means "run it
-  /// interpreted" -- because the JIT is disabled, this exact prototype
+  /// Does `proto` have a compiled entry point ready to use RIGHT NOW?
+  /// Never blocks: because the JIT is disabled, this exact prototype
   /// was found ineligible (contains `Raise`/`PushCatch`/`PopCatch` --
-  /// see the `jit` module's docs), it isn't warm enough yet, or the
-  /// real call stack is already deep enough that handing it another
-  /// native call risks overflowing it (see `MAX_JIT_CALL_DEPTH`).
+  /// see the `jit` module's docs), the real call stack is already deep
+  /// enough that handing it another native call risks overflowing it
+  /// (see `MAX_JIT_CALL_DEPTH`), or it isn't warm enough yet, this
+  /// returns `None` immediately. Once `proto` IS warm, this either
+  /// finds a background compile already in flight (does nothing
+  /// further) or enqueues one (see `jit::background`) -- EITHER WAY it
+  /// still returns `None` for this exact call, so the interpreter
+  /// keeps running `proto` interpreted for as many further calls as it
+  /// takes the background thread to finish, then transparently
+  /// switches over once `drain_jit_results` installs the result.
   ///
   /// This is THE hot-path check -- reached on every single
   /// `Instr::Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`, so the
   /// common case (already compiled) is nothing more than an enabled-
-  /// flag read, a depth-counter read, and one `Cell::get()` on
-  /// `proto.jit.entry`. See `object::JitInfo::entry`'s own docs for why
-  /// this is deliberately NOT behind a `RefCell<Option<Rc<...>>>`.
+  /// flag read, a depth-counter read, a non-blocking channel drain,
+  /// and one `Cell::get()` on `proto.jit.entry`. See
+  /// `object::JitInfo::entry`'s own docs for why this is deliberately
+  /// NOT behind a `RefCell<Option<Rc<...>>>`.
+  ///
+  /// `proto_value` must be the exact `Value` (`Obj::Func`-tagged) that
+  /// owns `proto` -- used to pin it as a GC root if this call ends up
+  /// enqueueing a new compile (see `enqueue_compile`).
   #[inline]
-  pub(crate) fn tiered_entry(&mut self, proto: &ObjFunction) -> Option<EntryFn> {
+  pub(crate) fn tiered_entry(&mut self, proto: &ObjFunction, proto_value: Value) -> Option<EntryFn> {
     if !self.jit_enabled || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
       return None;
     }
+    self.drain_jit_results();
     if let Some(entry) = proto.jit.entry.get() {
       return Some(entry);
     }
-    if proto.jit.ineligible.get() || proto.jit.call_count.get() < proto.jit.call_threshold {
+    if proto.jit.ineligible.get() || proto.jit.compiling.get() || proto.jit.call_count.get() < proto.jit.call_threshold {
       return None;
     }
-    self.try_compile(proto)
+    self.enqueue_compile(proto, proto_value);
+    None
   }
 
   /// The Cranelift engine, built on first use -- see `jit_engine`
@@ -694,44 +722,108 @@ impl VM {
     self.jit_engine.get_or_insert_with(JitEngine::new)
   }
 
-  /// Compile `proto` right now (regardless of its own warm-up
-  /// counters), memoizing either the resulting entry point (plus its
-  /// OSR map) or a sticky "don't try again" flag on
-  /// `proto.jit.ineligible`. Shared by ordinary call-site warm-up
-  /// (`tiered_entry`) and OSR (`maybe_osr`), both of which want
-  /// "compile it if we haven't already, then use whatever's there"
-  /// with no duplicated bookkeeping. Cold relative to `tiered_entry` --
-  /// runs at most once per prototype, ever.
-  pub(crate) fn try_compile(&mut self, proto: &ObjFunction) -> Option<EntryFn> {
-    if let Some(entry) = proto.jit.entry.get() {
-      return Some(entry);
+  /// The background compiler thread's channel handle, lazily spawned
+  /// on first use -- see `jit_compiler` field's own docs.
+  fn jit_compiler(&mut self) -> &mut background::JitCompilerHandle {
+    if self.jit_compiler.is_none() {
+      let isa = self.jit_engine().isa_handle();
+      self.jit_compiler = Some(background::spawn(isa));
     }
-    if proto.jit.ineligible.get() {
-      return None;
-    }
+    self.jit_compiler.as_mut().unwrap()
+  }
+
+  /// Builds `proto`'s IR right now (synchronously -- the only stage
+  /// that touches `proto`, see `jit::background`'s module docs) and
+  /// hands the result to the background compiler thread for the
+  /// expensive part, pinning `proto_value` as a GC root for the round
+  /// trip. If IR-building itself fails, `proto` is marked permanently
+  /// ineligible immediately (no point enqueueing anything) -- exactly
+  /// mirroring the old synchronous `try_compile`'s failure handling,
+  /// just without the (now background-only) backend-compile step ever
+  /// getting a chance to also fail here.
+  fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
     let speculative_params = self.sample_param_types(proto);
-    match self.jit_engine().compile_function(proto, speculative_params) {
-      Ok(compiled) => {
-        if crate::jit::log_enabled() {
-          eprintln!(
-            "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x})",
-            proto.name,
-            proto.chunk.code.len(),
-            compiled.osr_ids.len(),
-            speculative_params.unwrap_or(0),
-          );
-        }
-        *proto.jit.osr_ids.borrow_mut() = Some(compiled.osr_ids);
-        proto.jit.entry.set(Some(compiled.entry));
-        Some(compiled.entry)
-      },
+    let pending = match self.jit_engine().build_ir(proto, speculative_params) {
+      Ok(pending) => pending,
       Err(reason) => {
         if crate::jit::log_enabled() {
           eprintln!("[jit] '{}' ineligible: {}", proto.name, reason);
         }
         proto.jit.ineligible.set(true);
-        None
+        return;
       },
+    };
+
+    proto.jit.compiling.set(true);
+    self.pending_jit_compiles.push(proto_value);
+    let job = background::CompileJob {
+      ctx: pending.ctx,
+      func_id: pending.func_id,
+      osr_ids: pending.osr_ids,
+      proto: background::SendPtr(proto as *const ObjFunction),
+      speculative_params,
+    };
+    if self.jit_compiler().job_tx.send(job).is_err() {
+      // The background thread is gone -- shouldn't happen (it lives
+      // for the whole process), but if it did, undo the pin/flag so
+      // `proto` just stays interpreted forever rather than wedged in
+      // a permanent "compiling" state no result will ever clear.
+      proto.jit.compiling.set(false);
+      self.pending_jit_compiles.pop();
+    }
+  }
+
+  /// Installs every background compile result that's ready RIGHT NOW
+  /// (non-blocking) into its prototype's `JitInfo`, and un-pins it.
+  /// Called at the top of both `tiered_entry` and `maybe_osr` -- the
+  /// only two places that ever check "is this ready yet" -- so results
+  /// get installed lazily, exactly when something asks, with no
+  /// separate polling thread/timer needed.
+  fn drain_jit_results(&mut self) {
+    if self.jit_compiler.is_none() {
+      return;
+    }
+    // Collect into an owned `Vec` first rather than looping directly
+    // on `try_recv` while also calling `self.jit_engine()` for each --
+    // avoids overlapping the channel's borrow of `self.jit_compiler`
+    // with the `&mut self` each result's installation needs.
+    let mut results = Vec::new();
+    while let Ok(result) = self.jit_compiler.as_ref().unwrap().result_rx.try_recv() {
+      results.push(result);
+    }
+    for result in results {
+      // SAFETY: `result.proto` was pinned in `pending_jit_compiles`
+      // from the moment its job was enqueued until right here -- see
+      // `jit::background`'s module docs.
+      let proto = unsafe { &*result.proto.0 };
+      let install_outcome = result
+        .outcome
+        .and_then(|(bytes, alignment, relocs)| self.jit_engine().install_compiled(result.func_id, alignment, &bytes, &relocs));
+      match install_outcome {
+        Ok(entry) => {
+          if crate::jit::log_enabled() {
+            eprintln!(
+              "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x})",
+              proto.name,
+              proto.chunk.code.len(),
+              result.osr_ids.len(),
+              result.speculative_params.unwrap_or(0),
+            );
+          }
+          *proto.jit.osr_ids.borrow_mut() = Some(result.osr_ids);
+          proto.jit.entry.set(Some(entry));
+        },
+        Err(reason) => {
+          if crate::jit::log_enabled() {
+            eprintln!("[jit] '{}' ineligible: {}", proto.name, reason);
+          }
+          proto.jit.ineligible.set(true);
+        },
+      }
+      proto.jit.compiling.set(false);
+      if let Some(pos) = self.pending_jit_compiles.iter().position(|v| std::ptr::eq(v.as_func(), proto)) {
+        self.pending_jit_compiles.swap_remove(pos);
+      }
     }
   }
 
@@ -776,7 +868,8 @@ impl VM {
   /// `Instr::Call` does.
   fn run_frame(&mut self, stop_depth: usize, proto: &ObjFunction, closure_val: Value) -> RunResult<Value> {
     proto.jit.call_count.set(proto.jit.call_count.get().saturating_add(1));
-    if let Some(entry) = self.tiered_entry(proto) {
+    let proto_value = closure_val.as_closure().function;
+    if let Some(entry) = self.tiered_entry(proto, proto_value) {
       return self.invoke_compiled(entry, closure_val, -1);
     }
     self.run_until(stop_depth)
@@ -834,11 +927,15 @@ impl VM {
     if !self.jit_enabled || func.jit.ineligible.get() || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
       return None;
     }
+    self.drain_jit_results();
 
     if let Some(entry) = func.jit.entry.get() {
       let osr_id = *func.jit.osr_ids.borrow().as_ref()?.get(&target_ip)?;
       let closure_val = self.frames.last().unwrap().closure_val;
       return Some(self.invoke_compiled(entry, closure_val, osr_id));
+    }
+    if func.jit.compiling.get() {
+      return None;
     }
 
     let hot = {
@@ -851,10 +948,14 @@ impl VM {
       return None;
     }
 
-    let entry = self.try_compile(func)?;
-    let osr_id = *func.jit.osr_ids.borrow().as_ref()?.get(&target_ip)?;
+    // `self.frames.last()` is `func`'s own currently-executing frame
+    // (this is only ever reached from a backward jump INSIDE `func`'s
+    // own interpreted execution) -- its closure's `function` field is
+    // exactly the `Value` `enqueue_compile` needs to pin.
     let closure_val = self.frames.last().unwrap().closure_val;
-    Some(self.invoke_compiled(entry, closure_val, osr_id))
+    let proto_value = closure_val.as_closure().function;
+    self.enqueue_compile(func, proto_value);
+    None
   }
 
   /// Pops the current top frame with no upvalue-closing/return-value
@@ -1192,7 +1293,7 @@ impl VM {
           // existing push-and-continue behavior is completely
           // unchanged.
           callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
-          if let Some(entry) = self.tiered_entry(callee_fn) {
+          if let Some(entry) = self.tiered_entry(callee_fn, callee_closure.function) {
             let ret = self.invoke_compiled(entry, callee, -1)?;
             self.set_reg(base, dst, ret);
           }
@@ -1287,7 +1388,7 @@ impl VM {
       // Same mixed-mode tiering as `dispatch_call`'s Closure arm -- see
       // its comment for the full rationale.
       callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
-      if let Some(entry) = self.tiered_entry(callee_fn) {
+      if let Some(entry) = self.tiered_entry(callee_fn, callee_closure.function) {
         let ret = self.invoke_compiled(entry, callee, -1)?;
         self.set_reg(base, dst, ret);
       }
@@ -3002,6 +3103,9 @@ impl VM {
       Self::mark_root(*v, &mut worklist);
     }
     for v in &self.gc_pins {
+      Self::mark_root(*v, &mut worklist);
+    }
+    for v in &self.pending_jit_compiles {
       Self::mark_root(*v, &mut worklist);
     }
     for v in self.modules.values() {

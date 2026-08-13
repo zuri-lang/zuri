@@ -72,6 +72,7 @@
 //!   code calls out to for anything that isn't worth (or safe to)
 //!   inline directly as machine code.
 
+pub mod background;
 pub mod codegen;
 pub mod engine;
 pub mod runtime;
