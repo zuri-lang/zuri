@@ -709,14 +709,16 @@ impl VM {
     if proto.jit.ineligible.get() {
       return None;
     }
-    match self.jit_engine().compile_function(proto) {
+    let speculative_params = self.sample_param_types(proto);
+    match self.jit_engine().compile_function(proto, speculative_params) {
       Ok(compiled) => {
         if crate::jit::log_enabled() {
           eprintln!(
-            "[jit] compiled '{}' ({} bytecode ops, {} osr point(s))",
+            "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x})",
             proto.name,
             proto.chunk.code.len(),
-            compiled.osr_ids.len()
+            compiled.osr_ids.len(),
+            speculative_params.unwrap_or(0),
           );
         }
         *proto.jit.osr_ids.borrow_mut() = Some(compiled.osr_ids);
@@ -731,6 +733,37 @@ impl VM {
         None
       },
     }
+  }
+
+  /// A ONE-SHOT type sample of `proto`'s FIXED-arity parameters, read
+  /// from whichever call/OSR trigger is causing `proto` to compile
+  /// right now (`try_compile`'s only caller-side precondition: by the
+  /// time compilation is ever triggered, `self.frames.last()` is
+  /// ALWAYS a frame for `proto` -- either just pushed with real
+  /// argument values already placed at its own `base` by
+  /// `setup_closure_call`/`call_value`, for an ordinary call, or the
+  /// currently-executing frame itself, for an OSR trigger, whose
+  /// parameter registers still hold whatever this same invocation's
+  /// arguments evolved into by now). Feeds `codegen`'s optional
+  /// second, specialized compiled body -- see `jit::codegen::compile`'s
+  /// own docs on why betting on THIS ONE call's argument types is
+  /// sound: the guard it emits re-validates the same registers before
+  /// ever trusting them on any LATER call.
+  fn sample_param_types(&self, proto: &ObjFunction) -> Option<u64> {
+    let frame = self.frames.last()?;
+    if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
+      return None;
+    }
+    let required = if proto.variadic { proto.arity.saturating_sub(1) } else { proto.arity };
+    let base = frame.base;
+    let mut mask: u64 = 0;
+    for i in 0..(required as usize).min(64) {
+      let Some(v) = self.registers.get(base + i) else { break };
+      if v.is_number() {
+        mask |= 1u64 << i;
+      }
+    }
+    Some(mask)
   }
 
   /// Given a frame that was JUST pushed for `proto`/`closure_val` (so

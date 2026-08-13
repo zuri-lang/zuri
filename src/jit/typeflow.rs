@@ -160,17 +160,38 @@ impl TypeFacts {
 /// reproduces the fully conservative baseline (nothing assumed at
 /// entry) -- always sound on its own, used for both ordinary
 /// compilation and every OSR entry point.
-pub fn analyze(proto: &ObjFunction, speculative_entry: Option<&RegSet>) -> TypeFacts {
+///
+/// `speculative_params` is a bitmask (bit `r` = register `r`) of
+/// FIXED-arity parameter registers to seed as already-proven at
+/// function entry, rather than a `RegSet` directly -- keeps `RegSet`
+/// itself a purely internal representation, with only a plain integer
+/// crossing this module's boundary. Bits at or past register 64 (or
+/// past `proto.num_registers`) are simply never representable/used --
+/// a real function needing more than 64 SPECULATED parameters doesn't
+/// lose correctness, just the ability to speculate on the overflow
+/// ones (`codegen`'s own entry guard is built from the same mask, so
+/// the two always agree on which registers are actually being bet on).
+pub fn analyze(proto: &ObjFunction, speculative_params: Option<u64>) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
 
   let preds = build_predecessors(proto);
 
+  let seed: Option<RegSet> = speculative_params.map(|mask| {
+    let mut s = RegSet::empty(num_registers);
+    for bit in 0..64u8 {
+      if mask & (1u64 << bit) != 0 {
+        s.set(bit, true);
+      }
+    }
+    s
+  });
+
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| if ip == 0 { RegSet::empty(num_registers) } else { RegSet::full(num_registers) })
     .collect();
-  if let Some(seed) = speculative_entry
+  if let Some(seed) = &seed
     && code_len > 0
   {
     entry[0] = seed.clone();
@@ -200,7 +221,7 @@ pub fn analyze(proto: &ObjFunction, speculative_entry: Option<&RegSet>) -> TypeF
       new_in = RegSet::full(num_registers);
     }
     if ip == 0
-      && let Some(seed) = speculative_entry
+      && let Some(seed) = &seed
     {
       new_in = seed.clone();
     } else if ip == 0 {

@@ -52,11 +52,24 @@ const HEAP_NEXT_GC_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NEXT_GC_OFFS
 /// or a human-readable ineligibility reason on failure -- the latter is
 /// ALWAYS a permanent, sticky "never try this prototype again" signal
 /// (see `VM::try_compile`), never a transient error.
+///
+/// `speculative_params` (bit `r` = fixed-arity parameter register `r`)
+/// is a ONE-SHOT type sample of the actual call that triggered this
+/// compilation (see `VM::try_compile`'s own docs) -- when non-empty, a
+/// SECOND, specialized copy of the whole function body is compiled
+/// alongside the always-present general one, with those specific
+/// parameters treated as proven-numeric from entry (see
+/// `jit::typeflow`). One runtime guard at ordinary (non-OSR) entry
+/// checks the bet is still good and picks a body; OSR always targets
+/// the general body (see `FuncCompiler::emit_entry_dispatch`). `None`
+/// or an all-zero mask compiles exactly one body, identical to before
+/// this parameter existed.
 pub fn compile(
   fb: &mut FunctionBuilder,
   module: &mut JITModule,
   helpers: &HashMap<&'static str, FuncId>,
   proto: &ObjFunction,
+  speculative_params: Option<u64>,
 ) -> Result<FxHashMap<usize, i32>, String> {
   // Exception-handling bytecode is never compiled -- see this crate's
   // `jit` module docs on why "bail to the interpreter" is implemented
@@ -81,7 +94,8 @@ pub fn compile(
     return Err("function too large to compile".to_string());
   }
 
-  let mut fc = FuncCompiler::new(fb, module, helpers, proto, code_len);
+  let speculative_params = speculative_params.filter(|&m| m != 0);
+  let mut fc = FuncCompiler::new(fb, module, helpers, proto, code_len, speculative_params);
   fc.run()
 }
 
@@ -127,12 +141,19 @@ struct FuncCompiler<'a, 'b> {
   /// inside the helper's own class-method-table lookup, with no
   /// register holding it for generated code to read back directly.
   closure_out_slot: Option<StackSlot>,
-  /// Which registers are PROVEN numeric at each bytecode position --
-  /// see `jit::typeflow`'s own docs. Consulted before emitting any
-  /// guarded arithmetic op: when every operand is proven, the guard
-  /// and its slow-path fallback are skipped entirely (they'd never be
-  /// taken), leaving unconditional straight-line float math.
+  /// Which registers are PROVEN numeric at each bytecode position, for
+  /// WHICHEVER body (general or specialized) is currently being
+  /// populated -- see `jit::typeflow`'s own docs and `run`'s two-pass
+  /// structure. Consulted before emitting any guarded arithmetic op:
+  /// when every operand is proven, the guard and its slow-path
+  /// fallback are skipped entirely (they'd never be taken), leaving
+  /// unconditional straight-line float math.
   type_facts: typeflow::TypeFacts,
+  /// A ONE-SHOT type sample of the call that triggered this
+  /// compilation (bit `r` = fixed-arity parameter register `r` held a
+  /// number) -- `None` after filtering out an all-zero sample. See
+  /// `compile`'s own docs and `emit_entry_dispatch`.
+  speculative_params: Option<u64>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -142,6 +163,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     helpers: &'a HashMap<&'static str, FuncId>,
     proto: &'a ObjFunction,
     code_len: usize,
+    speculative_params: Option<u64>,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let type_facts = typeflow::analyze(proto, None);
@@ -160,6 +182,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       entry_sig: None,
       closure_out_slot: None,
       type_facts,
+      speculative_params,
     }
   }
 
@@ -208,8 +231,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let eight = self.fb.ins().iconst(types::I64, 8);
     self.base_bytes = self.fb.ins().imul(self.base_param, eight);
 
-    self.emit_osr_dispatch(osr_param);
+    // If speculating, allocate a SECOND set of blocks now (before the
+    // entry dispatch, which needs `specialized_blocks[0]` as a jump
+    // target) -- populated in a second pass below, after the general
+    // body. Creating a block doesn't require switching into it, so
+    // this doesn't disturb `entry_block`'s own not-yet-terminated
+    // state.
+    let specialized_blocks: Option<Vec<Block>> =
+      self.speculative_params.map(|_| (0..self.blocks.len()).map(|_| self.fb.create_block()).collect());
 
+    self.emit_entry_dispatch(osr_param, specialized_blocks.as_deref());
+
+    // Pass 1: the general body, exactly as before this function ever
+    // had a `speculative_params` concept -- `type_facts` was already
+    // computed conservatively (seeded with nothing) in `new`.
     for ip in 0..self.blocks.len() {
       self.fb.switch_to_block(self.blocks[ip]);
       let instr = self.proto.chunk.code[ip];
@@ -220,20 +255,65 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
     }
 
+    // Pass 2: the specialized body, if any -- same instruction-
+    // emission logic, just re-run against a SEPARATE block array and
+    // a type-fact set seeded with the speculated parameters proven
+    // from entry. `emit_instruction`/every `emit_*` helper only ever
+    // reference `self.blocks`/`self.type_facts` generically, so
+    // swapping both fields and re-running the identical loop is
+    // sufficient -- no separate codegen path needed.
+    if let Some(spec_blocks) = specialized_blocks {
+      self.type_facts = typeflow::analyze(self.proto, self.speculative_params);
+      let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
+      for ip in 0..self.blocks.len() {
+        self.fb.switch_to_block(self.blocks[ip]);
+        let instr = self.proto.chunk.code[ip];
+        let terminated = self.emit_instruction(ip, instr);
+        if !terminated {
+          let next = self.blocks.get(ip + 1).copied().unwrap_or(self.blocks[ip]);
+          self.fb.ins().jump(next, &[]);
+        }
+      }
+      // `osr_ids` (returned to the caller) indexes into the GENERAL
+      // block set by construction (computed before either pass ran,
+      // from `self.blocks` as it was BEFORE this swap) -- restore it
+      // so nothing downstream of `run` needs to know a swap ever
+      // happened.
+      self.blocks = general_blocks;
+    }
+
     Ok(std::mem::take(&mut self.osr_ids))
   }
 
-  /// `osr_param == -1` -> ordinary entry (`blocks[0]`); `osr_param ==
-  /// id` -> `blocks[ip]` for whichever `ip` that `id` was assigned to
-  /// in `run`. A linear compare chain (not a `br_table`) -- the number
-  /// of loop headers in one function is always small, and this avoids
-  /// depending on `JumpTableData`'s exact API for what's a cold, one-
-  /// time-per-call dispatch anyway.
-  fn emit_osr_dispatch(&mut self, osr_param: IrValue) {
+  /// `osr_param == -1` -> ordinary entry; `osr_param == id` -> jump
+  /// straight into the GENERAL body's `blocks[ip]` for whichever `ip`
+  /// that `id` was assigned to in `run` (OSR always targets the
+  /// general body -- see `compile`'s own docs on why: it enters mid-
+  /// function at an arbitrary bytecode position, which the
+  /// specialized body's ENTRY-ONLY speculation guard was never built
+  /// to validate). A linear compare chain (not a `br_table`) -- the
+  /// number of loop headers in one function is always small, and this
+  /// avoids depending on `JumpTableData`'s exact API for what's a
+  /// cold, one-time-per-call dispatch anyway.
+  ///
+  /// On ordinary entry, if `specialized_blocks` is `Some`, one more
+  /// guard picks between it and the general body: every register
+  /// named in `self.speculative_params` is checked with a plain
+  /// `is_number()` test (the exact same bit-test guard used
+  /// everywhere else in this file) -- if ALL hold, the bet that
+  /// triggered specializing this function is still good, so control
+  /// goes to `specialized_blocks[0]`; otherwise (or if not
+  /// speculating at all) it falls back to the always-correct general
+  /// `blocks[0]`.
+  fn emit_entry_dispatch(&mut self, osr_param: IrValue, specialized_blocks: Option<&[Block]>) {
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
+
+    let guard_block = specialized_blocks.map(|_| self.fb.create_block());
+    let normal_target = guard_block.unwrap_or(self.blocks[0]);
+
     let mut next_check = self.fb.create_block();
-    self.fb.ins().brif(is_normal, self.blocks[0], &[], next_check, &[]);
+    self.fb.ins().brif(is_normal, normal_target, &[], next_check, &[]);
 
     let mut targets: Vec<(i32, Block)> = self
       .osr_ids
@@ -254,11 +334,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Defensive fallback for an `osr_id` that matches none of the
     // known loop headers -- unreachable in practice (`VM::maybe_osr`
     // only ever passes an id it read out of THIS SAME function's own
-    // `osr_ids` map), but falling through to the ordinary entry is a
-    // safe, well-defined default rather than leaving the block
-    // unterminated.
+    // `osr_ids` map), but falling through to the ordinary (general)
+    // entry is a safe, well-defined default rather than leaving the
+    // block unterminated.
     self.fb.switch_to_block(next_check);
     self.fb.ins().jump(self.blocks[0], &[]);
+
+    if let (Some(guard_block), Some(spec_blocks)) = (guard_block, specialized_blocks) {
+      self.fb.switch_to_block(guard_block);
+      let mask = self.speculative_params.expect("guard_block only created when speculative_params is Some");
+      let mut guard: Option<IrValue> = None;
+      for bit in 0..64u8 {
+        if mask & (1u64 << bit) != 0 {
+          let v = self.load_reg(bit);
+          let is_num = self.is_number(v);
+          guard = Some(match guard {
+            None => is_num,
+            Some(g) => self.fb.ins().band(g, is_num),
+          });
+        }
+      }
+      let guard = guard.expect("non-empty speculative_params always sets at least one bit");
+      self.fb.ins().brif(guard, spec_blocks[0], &[], self.blocks[0], &[]);
+    }
   }
 
   // ---------------------------------------------------------------

@@ -92,8 +92,9 @@ impl JitEngine {
   /// Compile `proto` to machine code. `Err(reason)` means `proto` is
   /// permanently ineligible (see `codegen::compile`'s own eligibility
   /// scan) -- the caller (`VM::try_compile`) marks it as such and never
-  /// asks again.
-  pub fn compile_function(&mut self, proto: &ObjFunction) -> Result<CompiledFunction, String> {
+  /// asks again. `speculative_params` is passed straight through to
+  /// `codegen::compile` -- see its own docs.
+  pub fn compile_function(&mut self, proto: &ObjFunction, speculative_params: Option<u64>) -> Result<CompiledFunction, String> {
     self.next_id += 1;
     let name = format!("zuri_fn_{}", self.next_id);
 
@@ -115,7 +116,7 @@ impl JitEngine {
     let osr_ids = {
       let mut builder =
         cranelift_frontend::FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx);
-      let osr_ids = codegen::compile(&mut builder, &mut self.module, &self.helper_ids, proto)?;
+      let osr_ids = codegen::compile(&mut builder, &mut self.module, &self.helper_ids, proto, speculative_params)?;
       builder.seal_all_blocks();
       builder.finalize(self.module.target_config());
       osr_ids
