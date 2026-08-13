@@ -659,6 +659,14 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(vm_ptr: *mut VM, base: u64, func_
 /// `zuri_jit_invoke`). Mirrors `zuri_jit_call_prepare` otherwise (see
 /// its docs for the full protocol), except the value written to
 /// `*closure_out` is the resolved METHOD, not the receiver in `obj`.
+// NOTE: `closure_out` is declared LAST here, not next to
+// `method_name_bits`, because `codegen::FuncCompiler::emit_fast_call`
+// always APPENDS the closure-out-slot address as the final argument to
+// whatever `prepare_args` it's given -- the parameter order here must
+// match that calling convention exactly, or the wrong register-sized
+// slot ends up interpreted as a pointer (a real bug this project
+// tripped on once already: a misaligned-pointer panic from `func_ptr`/
+// `instr_ip` landing where `closure_out` was expected).
 pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   vm_ptr: *mut VM,
   base: u64,
@@ -666,6 +674,8 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   num_args: u64,
   dst: u64,
   method_name_bits: u64,
+  func_ptr_bits: u64,
+  instr_ip: u64,
   closure_out: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
@@ -675,11 +685,33 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   if !receiver.is_instance() || !vm.jit_depth_ok() {
     return 0;
   }
-  let method_name = Value::from_bits(method_name_bits);
-  let method = {
-    let inst = receiver.as_instance();
+  let inst = receiver.as_instance();
+  let class_bits = inst.class.to_bits();
+  let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
+  let instr_ip = instr_ip as usize;
+
+  // Inline cache: same receiver CLASS as the last time this exact
+  // `Instr::Invoke` ran -> reuse the resolved method `Value` directly,
+  // skipping `ObjClass::methods`'s hash-map probe entirely. See
+  // `Chunk::method_cache`'s own docs.
+  let cached = func
+    .chunk
+    .method_cache
+    .borrow()
+    .get(&instr_ip)
+    .filter(|&&(cached_class, _)| cached_class == class_bits)
+    .map(|&(_, method_bits)| Value::from_bits(method_bits));
+
+  let method = if let Some(m) = cached {
+    Some(m)
+  } else {
+    let method_name = Value::from_bits(method_name_bits);
     let class = inst.class.as_class();
-    class.methods.get(method_name.as_str()).copied()
+    let resolved = class.methods.get(method_name.as_str()).copied();
+    if let Some(m) = resolved {
+      func.chunk.method_cache.borrow_mut().insert(instr_ip, (class_bits, m.to_bits()));
+    }
+    resolved
   };
   let Some(method) = method else {
     return 0;
@@ -1509,6 +1541,8 @@ pub unsafe extern "C" fn zuri_jit_get_field(
   dst: u64,
   obj: u64,
   name_bits: u64,
+  func_ptr_bits: u64,
+  instr_ip: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
@@ -1517,18 +1551,39 @@ pub unsafe extern "C" fn zuri_jit_get_field(
 
   let result: Result<Value, Value> = if receiver.is_instance() {
     let inst = receiver.as_instance();
-    let class = inst.class.as_class();
-    if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
+    let class_bits = inst.class.to_bits();
+    let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
+    let instr_ip = instr_ip as usize;
+
+    // Inline cache: same receiver CLASS as the last time this exact
+    // `Instr::GetField` ran -> reuse its resolved slot directly,
+    // skipping `ObjClass::field_slots`'s hash-map probe entirely. See
+    // `Chunk::field_cache`'s own docs.
+    let cached_slot = func
+      .chunk
+      .field_cache
+      .borrow()
+      .get(&instr_ip)
+      .filter(|&&(cached_class, _)| cached_class == class_bits)
+      .map(|&(_, slot)| slot);
+
+    if let Some(idx) = cached_slot {
       Ok(inst.fields[idx as usize].get())
-    } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
-      Ok(vm.heap.alloc_bound_method(receiver, method))
     } else {
-      let msg = format!(
-        "undefined property '{}' on instance of '{}'",
-        name_val.as_str(),
-        class.name
-      );
-      Err(vm.raise("PropertyError", msg))
+      let class = inst.class.as_class();
+      if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
+        func.chunk.field_cache.borrow_mut().insert(instr_ip, (class_bits, idx));
+        Ok(inst.fields[idx as usize].get())
+      } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
+        Ok(vm.heap.alloc_bound_method(receiver, method))
+      } else {
+        let msg = format!(
+          "undefined property '{}' on instance of '{}'",
+          name_val.as_str(),
+          class.name
+        );
+        Err(vm.raise("PropertyError", msg))
+      }
     }
   } else if receiver.is_class() {
     match crate::vm::vm::lookup_static(receiver, name_val.as_str()) {
@@ -1601,6 +1656,8 @@ pub unsafe extern "C" fn zuri_jit_set_field(
   obj: u64,
   name_bits: u64,
   src: u64,
+  func_ptr_bits: u64,
+  instr_ip: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
@@ -1610,20 +1667,40 @@ pub unsafe extern "C" fn zuri_jit_set_field(
 
   let result: Result<(), Value> = if receiver.is_instance() {
     let inst = receiver.as_instance();
-    let class = inst.class.as_class();
-    match class.field_slots.get(name_val.as_str()).copied() {
-      Some(idx) => {
-        inst.fields[idx as usize].set(value);
-        Ok(())
-      },
-      None => {
-        let msg = format!(
-          "undefined field '{}' on instance of '{}'",
-          name_val.as_str(),
-          class.name
-        );
-        Err(vm.raise("PropertyError", msg))
-      },
+    let class_bits = inst.class.to_bits();
+    let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
+    let instr_ip = instr_ip as usize;
+
+    // Same inline-cache shape as `zuri_jit_get_field` -- see
+    // `Chunk::field_cache`'s docs.
+    let cached_slot = func
+      .chunk
+      .field_cache
+      .borrow()
+      .get(&instr_ip)
+      .filter(|&&(cached_class, _)| cached_class == class_bits)
+      .map(|&(_, slot)| slot);
+
+    if let Some(idx) = cached_slot {
+      inst.fields[idx as usize].set(value);
+      Ok(())
+    } else {
+      let class = inst.class.as_class();
+      match class.field_slots.get(name_val.as_str()).copied() {
+        Some(idx) => {
+          func.chunk.field_cache.borrow_mut().insert(instr_ip, (class_bits, idx));
+          inst.fields[idx as usize].set(value);
+          Ok(())
+        },
+        None => {
+          let msg = format!(
+            "undefined field '{}' on instance of '{}'",
+            name_val.as_str(),
+            class.name
+          );
+          Err(vm.raise("PropertyError", msg))
+        },
+      }
     }
   } else if receiver.is_class() {
     crate::vm::vm::set_static(receiver, name_val.as_str(), value)
@@ -1805,6 +1882,7 @@ type Fn4 = unsafe extern "C" fn(*mut VM, u64, u64, u64) -> u64;
 type Fn5 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64) -> u64;
 type Fn6 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64) -> u64;
 type Fn7 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64) -> u64;
+type Fn9 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 /// Reinterprets an already-coerced, concrete function-pointer value
 /// (one of the `FnN` aliases above -- NOT a bare function item, which
@@ -1874,6 +1952,15 @@ macro_rules! spec7 {
     }
   };
 }
+macro_rules! spec9 {
+  ($f:ident) => {
+    HelperSpec {
+      name: stringify!($f),
+      ptr: as_ptr($f as Fn9),
+      arity: 9,
+    }
+  };
+}
 
 pub fn helper_table() -> Vec<HelperSpec> {
   vec![
@@ -1918,7 +2005,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_geimm_slow),
     spec5!(zuri_jit_call),
     spec6!(zuri_jit_call_prepare),
-    spec7!(zuri_jit_invoke_prepare),
+    spec9!(zuri_jit_invoke_prepare),
     spec5!(zuri_jit_call_finish),
     spec5!(zuri_jit_call_super_ctor),
     spec5!(zuri_jit_make_closure),
@@ -1931,8 +2018,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_set_index),
     spec5!(zuri_jit_set_method),
     spec5!(zuri_jit_declare_static),
-    spec5!(zuri_jit_get_field),
-    spec5!(zuri_jit_set_field),
+    spec7!(zuri_jit_get_field),
+    spec7!(zuri_jit_set_field),
     spec5!(zuri_jit_using_jump),
     spec5!(zuri_jit_import),
     spec5!(zuri_jit_make_promoted),

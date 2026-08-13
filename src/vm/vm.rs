@@ -941,6 +941,56 @@ impl VM {
   /// window, so each is explicitly pinned for the duration (see
   /// `gc_pins`) rather than trusting the normal root scan to find them.
   fn instantiate(&mut self, class_val: Value, args: &[Value]) -> RunResult<Value> {
+    let constructor = class_val.as_class().constructor;
+    let field_count = class_val.as_class().field_count;
+
+    // Fast path: does ANY ancestor declare an own field initializer at
+    // all? A class whose instance fields are all assigned directly in
+    // its own constructor body (no top-level `var name = default`
+    // declarations) -- an extremely common shape, e.g. any simple data
+    // class -- never needs the `field_inits` list below at all. Worth
+    // checking explicitly: building that list, even when every entry in
+    // it turns out to be `None`, means a REAL heap allocation (the
+    // `Vec` itself) on every single instantiation otherwise -- pure
+    // overhead for the common case.
+    let mut has_field_init = false;
+    let mut cur = Some(class_val);
+    while let Some(c) = cur {
+      let cobj = c.as_class();
+      if cobj.own_field_initializer.is_some() {
+        has_field_init = true;
+        break;
+      }
+      cur = cobj.superclass;
+    }
+
+    if !has_field_init {
+      let pin_mark = self.gc_pins.len();
+      self.gc_pins.push(class_val);
+      if let Some(c) = constructor {
+        self.gc_pins.push(c);
+      }
+      for a in args {
+        self.gc_pins.push(*a);
+      }
+      let instance_val = self.heap.alloc_instance(class_val, field_count as usize);
+      self.gc_pins.push(instance_val);
+
+      let result: RunResult<()> = (|| {
+        if let Some(ctor) = constructor {
+          let mut ctor_args = CallArgs::new();
+          ctor_args.push(instance_val);
+          ctor_args.extend_from_slice(args);
+          self.call_value(ctor, ctor_args.as_slice())?;
+        }
+        Ok(())
+      })();
+
+      self.gc_pins.truncate(pin_mark);
+      result?;
+      return Ok(instance_val);
+    }
+
     let mut field_inits = Vec::new();
     let mut cur = Some(class_val);
     while let Some(c) = cur {
@@ -949,8 +999,6 @@ impl VM {
       cur = cobj.superclass;
     }
     field_inits.reverse(); // root to leaf
-    let constructor = class_val.as_class().constructor;
-    let field_count = class_val.as_class().field_count;
 
     let pin_mark = self.gc_pins.len();
     self.gc_pins.push(class_val);

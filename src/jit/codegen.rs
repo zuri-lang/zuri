@@ -440,6 +440,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().band(na, nb)
   }
 
+  /// `(bits & (QNAN|SIGN_BIT)) == (QNAN|SIGN_BIT)` -- `Value::is_obj()`'s
+  /// exact bit test (see `value.rs`). Like `is_number`, safe to inline
+  /// because it only inspects the tagged `u64` itself; telling WHICH
+  /// heap type it is still always needs a real dereference (`Obj`'s
+  /// layout is never hand-encoded here), so this is only ever used to
+  /// decide "must call a helper" vs "provably not an object."
+  fn is_obj(&mut self, v: IrValue) -> IrValue {
+    let mask = self.u64c(value::QNAN | value::SIGN_BIT);
+    let masked = self.fb.ins().band(v, mask);
+    self.fb.ins().icmp(IntCC::Equal, masked, mask)
+  }
+
+  fn both_obj(&mut self, va: IrValue, vb: IrValue) -> IrValue {
+    let oa = self.is_obj(va);
+    let ob = self.is_obj(vb);
+    self.fb.ins().band(oa, ob)
+  }
+
   fn to_f64(&mut self, bits: IrValue) -> IrValue {
     self.fb.ins().bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), bits)
   }
@@ -456,6 +474,61 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let t = self.u64c(value::TRUE_VAL);
     let f = self.u64c(value::FALSE_VAL);
     self.fb.ins().select(cond, t, f)
+  }
+
+  /// `Value::is_falsey()` -- fully inlined, no helper call at all,
+  /// UNLESS `cond`'s register holds a heap object at runtime (a
+  /// bigint/string/bytes might be empty-and-therefore-falsey; any other
+  /// heap type never is -- see `value.rs`'s own `is_falsey` doc
+  /// comment). `Value`'s tag space is exactly {number, nil, true,
+  /// false, object}, and only the "object" case needs a real
+  /// dereference to resolve -- nil/bool/number are each decidable from
+  /// the bit pattern alone: `nil` and `false` are exact bit-pattern
+  /// matches, and a number is falsey iff it's `<= 0.0` (real IEEE-754
+  /// comparison, not a bit compare, to get `-0.0`/NaN right). This is
+  /// the single hottest check in the whole VM (every loop condition and
+  /// `if` goes through it), so avoiding a real function call for the
+  /// overwhelming majority of cases (a loop counter, a comparison
+  /// result, ...) matters far more here than for most other ops.
+  fn emit_is_falsey(&mut self, cond: u8) -> IrValue {
+    let v = self.load_reg(cond);
+    let is_obj = self.is_obj(v);
+    let result_var = self.fb.declare_var(types::I64);
+
+    let obj_block = self.fb.create_block();
+    let nonobj_block = self.fb.create_block();
+    let merge_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], nonobj_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let cond_i = self.idx(cond);
+    let falsey = self.call_helper("zuri_jit_is_falsey", &[vm_p, base, cond_i]);
+    self.fb.def_var(result_var, falsey);
+    self.fb.ins().jump(merge_block, &[]);
+
+    self.fb.switch_to_block(nonobj_block);
+    let nil_val = self.u64c(value::NIL_VAL);
+    let false_val = self.u64c(value::FALSE_VAL);
+    let is_nil = self.fb.ins().icmp(IntCC::Equal, v, nil_val);
+    let is_false = self.fb.ins().icmp(IntCC::Equal, v, false_val);
+    let is_num = self.is_number(v);
+    let fv = self.to_f64(v);
+    let zero_f = self.fb.ins().f64const(0.0);
+    let le_zero = self
+      .fb
+      .ins()
+      .fcmp(cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual, fv, zero_f);
+    let num_falsey = self.fb.ins().band(is_num, le_zero);
+    let nil_or_false = self.fb.ins().bor(is_nil, is_false);
+    let falsey_bool = self.fb.ins().bor(nil_or_false, num_falsey);
+    let falsey_i64 = self.fb.ins().uextend(types::I64, falsey_bool);
+    self.fb.def_var(result_var, falsey_i64);
+    self.fb.ins().jump(merge_block, &[]);
+
+    self.fb.switch_to_block(merge_block);
+    self.fb.use_var(result_var)
   }
 
   // ---------------------------------------------------------------
@@ -651,10 +724,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::JmpIfFalse { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
-        let base = self.base_param;
-        let cond_i = self.idx(cond);
-        let falsey = self.call_helper("zuri_jit_is_falsey", &[self.vm_param, base, cond_i]);
-        self.refresh_regs();
+        let falsey = self.emit_is_falsey(cond);
         let zero = self.i64c(0);
         let is_falsey = self.fb.ins().icmp(IntCC::NotEqual, falsey, zero);
         if offset < 0 {
@@ -665,10 +735,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::JmpIfTrue { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
-        let base = self.base_param;
-        let cond_i = self.idx(cond);
-        let truthy = self.call_helper("zuri_jit_is_falsey", &[self.vm_param, base, cond_i]);
-        self.refresh_regs();
+        let truthy = self.emit_is_falsey(cond);
         let zero = self.i64c(0);
         let is_truthy = self.fb.ins().icmp(IntCC::Equal, truthy, zero);
         if offset < 0 {
@@ -838,7 +905,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let dst_i = self.idx(dst);
         let obj_i = self.idx(obj);
         let name = self.bake_const(name_const);
-        self.call_checked("zuri_jit_get_field", &[self.vm_param, base, dst_i, obj_i, name]);
+        let func_ptr = self.func_ptr_const();
+        let ip_c = self.u64c(ip as u64);
+        self.call_checked("zuri_jit_get_field", &[self.vm_param, base, dst_i, obj_i, name, func_ptr, ip_c]);
         false
       },
       Instr::SetField { obj, name_const, src } => {
@@ -846,7 +915,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let obj_i = self.idx(obj);
         let name = self.bake_const(name_const);
         let src_i = self.idx(src);
-        self.call_checked("zuri_jit_set_field", &[self.vm_param, base, obj_i, name, src_i]);
+        let func_ptr = self.func_ptr_const();
+        let ip_c = self.u64c(ip as u64);
+        self.call_checked("zuri_jit_set_field", &[self.vm_param, base, obj_i, name, src_i, func_ptr, ip_c]);
         false
       },
 
@@ -858,10 +929,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let num_args_i = self.idx(num_args);
         let dst_i = self.idx(dst);
         let name = self.bake_const(method_const);
+        let func_ptr = self.func_ptr_const();
+        let ip_c = self.u64c(ip as u64);
         let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
         self.emit_fast_call(
           "zuri_jit_invoke_prepare",
-          &[vm_p, base, obj_i, num_args_i, dst_i, name],
+          &[vm_p, base, obj_i, num_args_i, dst_i, name, func_ptr, ip_c],
           new_base,
           dst,
           "zuri_jit_invoke",
@@ -1147,20 +1220,37 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.call_checked(helper, &[self.vm_param, base, dst_i, a_i, b_i]);
   }
 
+  /// `Instr::Eq`/`Instr::Neq` -- fully inlined except when BOTH
+  /// operands are heap objects (needing `Obj`-aware content comparison
+  /// -- list/dict structural equality, or pointer identity for
+  /// everything else -- which always needs a real dereference). Eq/Neq
+  /// never consult an operator override (matches the interpreter's own
+  /// handler exactly -- see `vm.rs`).
+  ///
+  /// `Value::equals`'s own logic is: real IEEE-754 compare when both
+  /// are numbers; recursive/pointer compare when both are objects;
+  /// otherwise a RAW BIT COMPARE of the two `u64`s (see `value.rs`) --
+  /// which is exactly right for nil/bool/number-vs-anything-mismatched,
+  /// since NaN-boxing guarantees no two DIFFERENT tag categories ever
+  /// share a bit pattern. So the only case genuinely needing a helper
+  /// is "both objects"; every other combination (extremely common --
+  /// `x == nil` chains through linked structures, `flag == true`, a
+  /// number compared against a non-number, ...) is just one more
+  /// branch away from the number fast path, no helper call at all.
   fn emit_compare_guarded(&mut self, dst: u8, a: u8, b: u8, slow_helper: &'static str, cc: IntCC) {
-    // Eq/Neq never consult an operator override (matches the
-    // interpreter's own handler exactly -- see `vm.rs`), so the ONLY
-    // reason to fall to the helper is a non-number operand needing a
-    // real (potentially heap-dereferencing) `Value::equals`.
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
-    let guard = self.both_numbers(va, vb);
-    let fast_block = self.fb.create_block();
-    let slow_block = self.fb.create_block();
-    let done_block = self.fb.create_block();
-    self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
+    let both_num = self.both_numbers(va, vb);
+    let both_obj = self.both_obj(va, vb);
 
-    self.fb.switch_to_block(fast_block);
+    let num_block = self.fb.create_block();
+    let check_obj_block = self.fb.create_block();
+    let obj_block = self.fb.create_block();
+    let bits_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(both_num, num_block, &[], check_obj_block, &[]);
+
+    self.fb.switch_to_block(num_block);
     let fa = self.to_f64(va);
     let fb_ = self.to_f64(vb);
     let cmp = self.fb.ins().fcmp(to_float_cc(cc), fa, fb_);
@@ -1168,12 +1258,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.store_reg(dst, bits);
     self.fb.ins().jump(done_block, &[]);
 
-    self.fb.switch_to_block(slow_block);
+    self.fb.switch_to_block(check_obj_block);
+    self.fb.ins().brif(both_obj, obj_block, &[], bits_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
     let base = self.base_param;
     let dst_i = self.idx(dst);
     let a_i = self.idx(a);
     let b_i = self.idx(b);
     self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(bits_block);
+    let raw_cmp = self.fb.ins().icmp(cc, va, vb);
+    let raw_bits = self.bool_value(raw_cmp);
+    self.store_reg(dst, raw_bits);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);

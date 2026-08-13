@@ -537,6 +537,26 @@ pub struct Chunk {
   /// to a slot it keeps that slot for the life of the VM (globals are
   /// never renamed or removed, only reassigned in place).
   pub global_cache: RefCell<FxHashMap<usize, (bool, u32)>>,
+  /// Monomorphic inline cache for JIT-compiled `Instr::GetField`/
+  /// `Instr::SetField` on an INSTANCE receiver (never consulted by the
+  /// interpreter, which has no analogous per-instruction cache of its
+  /// own -- see `jit::runtime::zuri_jit_get_field`/`zuri_jit_set_field`):
+  /// maps this instruction's own position in `code` to the last-seen
+  /// receiver's class (as its `Value` bits -- heap objects never move,
+  /// so bit-identity IS pointer identity, see `object::Heap`'s docs)
+  /// and the field slot that class resolved the name to. A cache HIT
+  /// (same class as last time -- the overwhelmingly common case at any
+  /// real call site, monomorphic or not) skips the
+  /// `ObjClass::field_slots` hash-map probe entirely; a MISS (a
+  /// different, or first-ever, receiver class) just falls back to the
+  /// real lookup and overwrites the entry -- so a polymorphic call site
+  /// degrades to "no speedup," never to incorrect behavior.
+  pub field_cache: RefCell<FxHashMap<usize, (u64, u16)>>,
+  /// Same idea as `field_cache`, for `Instr::Invoke`'s class-method
+  /// lookup -- maps instruction position to (last-seen receiver class
+  /// bits, the resolved method `Value`'s own bits). See
+  /// `jit::runtime::zuri_jit_invoke_prepare`.
+  pub method_cache: RefCell<FxHashMap<usize, (u64, u64)>>,
 }
 
 impl Chunk {
@@ -547,6 +567,8 @@ impl Chunk {
       jump_tables: Vec::new(),
       lines: Vec::new(),
       global_cache: RefCell::new(FxHashMap::default()),
+      field_cache: RefCell::new(FxHashMap::default()),
+      method_cache: RefCell::new(FxHashMap::default()),
     }
   }
 
