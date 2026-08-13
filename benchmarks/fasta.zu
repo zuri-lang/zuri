@@ -113,5 +113,5 @@ def main(n) {
 }
 
 var start = time()
-main(os.args.get(2, '1000').to_number())
+main(os.args.get(2, '25000000').to_number())
 echo 'Time taken: ${time() - start}s'
