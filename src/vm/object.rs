@@ -665,6 +665,13 @@ pub struct Heap {
   live_count: usize,
 }
 
+/// Byte offsets of `Heap::bytes_allocated`/`next_gc` -- combined with
+/// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
+/// `needs_gc()`'s check directly instead of an FFI call at every
+/// safepoint. See `vm::VM_HEAP_OFFSET`'s own docs for why this is sound.
+pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize = std::mem::offset_of!(Heap, bytes_allocated);
+pub(crate) const HEAP_NEXT_GC_OFFSET: usize = std::mem::offset_of!(Heap, next_gc);
+
 impl Heap {
   /// Floor for `next_gc` -- keeps a small/short-lived program from
   /// triggering a collection after every third allocation.

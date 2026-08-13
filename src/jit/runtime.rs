@@ -41,12 +41,15 @@
 //! frame (an ordinary call, an operator-override dispatch, a
 //! constructor, a whole module's top-level code running on `import`)
 //! can invalidate a previously-fetched register base pointer. Compiled
-//! code therefore NEVER caches that pointer across such a call --
-//! `zuri_jit_regs_ptr` is called again immediately afterward (see
-//! `codegen`'s per-helper `refresh_regs` metadata). Helpers that
-//! provably never push a frame are exempt purely as a performance
-//! optimization, not a correctness shortcut -- when in doubt, a helper
-//! is conservatively treated as frame-pushing by `codegen`.
+//! code therefore NEVER caches that pointer across such a call -- it
+//! re-reads `VM::regs_ptr_cache` (a plain field VM itself keeps in sync
+//! at every point `VM::registers` can reallocate) via a direct memory
+//! load at a compile-time-baked offset immediately afterward (see
+//! `codegen::FuncCompiler::refresh_regs`), no FFI call needed at all.
+//! Helpers that provably never push a frame are exempt purely as a
+//! performance optimization, not a correctness shortcut -- when in
+//! doubt, a helper is conservatively treated as frame-pushing by
+//! `codegen`.
 //!
 //! # Baked constants
 //!
@@ -89,14 +92,6 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 // ---------------------------------------------------------------------
 // Register-array / GC-safepoint primitives
 // ---------------------------------------------------------------------
-
-/// Returns the CURRENT backing pointer of `VM::registers` -- see this
-/// module's docs on why compiled code must re-fetch this after any
-/// frame-pushing call rather than caching it across one.
-pub unsafe extern "C" fn zuri_jit_regs_ptr(vm_ptr: *mut VM) -> u64 {
-  let vm = unsafe { vm(vm_ptr) };
-  vm.registers_ptr() as u64
-}
 
 /// GC safepoint -- called at every loop back-edge and call site in
 /// compiled code (see `codegen::FuncCompiler::emit_safepoint`), mirrors
@@ -1964,7 +1959,6 @@ macro_rules! spec9 {
 
 pub fn helper_table() -> Vec<HelperSpec> {
   vec![
-    spec1!(zuri_jit_regs_ptr),
     spec1!(zuri_jit_gc_safepoint),
     spec3!(zuri_jit_is_falsey),
     spec3!(zuri_jit_print),

@@ -29,8 +29,22 @@ use cranelift_module::{FuncId, Module};
 use rustc_hash::FxHashMap;
 
 use crate::vm::chunk::Instr;
-use crate::vm::object::ObjFunction;
+use crate::vm::object::{self, ObjFunction};
 use crate::vm::value::{self};
+use crate::vm::vm;
+
+/// Byte offset (from a `*mut VM`) of the cached registers pointer --
+/// see `vm::VM::regs_ptr_cache`'s docs. Read directly by compiled code
+/// (entry-block init and `refresh_regs`) instead of calling into Rust,
+/// since this is re-fetched at essentially every helper-call site.
+const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
+/// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
+/// -- lets `emit_safepoint` inline `Heap::needs_gc()`'s check (two
+/// loads + a compare) instead of an unconditional FFI call on every
+/// loop back-edge and call site, only actually calling into Rust on the
+/// rare branch where a collection is really about to happen.
+const HEAP_BYTES_ALLOCATED_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
+const HEAP_NEXT_GC_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NEXT_GC_OFFSET) as i32;
 
 /// Compiles `proto`'s bytecode into `fb`'s function body. Returns the
 /// bytecode-ip -> osr-id map (`CompiledFunction::osr_ids`) on success,
@@ -169,7 +183,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let osr_param = params[3];
 
     self.regs_var = self.fb.declare_var(types::I64);
-    let initial_regs = self.call_helper("zuri_jit_regs_ptr", &[self.vm_param]);
+    let initial_regs = self.load_regs_ptr_cache();
     self.fb.def_var(self.regs_var, initial_regs);
 
     let eight = self.fb.ins().iconst(types::I64, 8);
@@ -252,8 +266,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
   }
 
+  /// Direct load of `VM::regs_ptr_cache` at its compile-time-baked
+  /// offset -- no FFI call. Sound as long as every reallocation of
+  /// `VM::registers` keeps that cache in sync, which is `VM`'s own
+  /// invariant (see `VM::sync_regs_ptr_cache`), not something this
+  /// compiler needs to re-establish.
+  fn load_regs_ptr_cache(&mut self) -> IrValue {
+    self
+      .fb
+      .ins()
+      .load(types::I64, cranelift_codegen::ir::MemFlagsData::trusted(), self.vm_param, REGS_PTR_CACHE_OFFSET)
+  }
+
   fn refresh_regs(&mut self) {
-    let fresh = self.call_helper("zuri_jit_regs_ptr", &[self.vm_param]);
+    let fresh = self.load_regs_ptr_cache();
     self.fb.def_var(self.regs_var, fresh);
   }
 
@@ -1135,8 +1161,39 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Emitted at every loop back-edge and function/method call site,
   /// matching the standard "safepoints at back-edges and calls"
   /// baseline-JIT policy this project's design calls for.
+  ///
+  /// `Heap::needs_gc()` itself is just `bytes_allocated > next_gc`, two
+  /// plain integer loads -- inlined here so the overwhelmingly common
+  /// case (heap nowhere near its threshold) costs two loads and a
+  /// compare instead of an unconditional FFI call at EVERY loop
+  /// iteration and call site. The real `zuri_jit_gc_safepoint` helper
+  /// is only actually invoked on the rare branch where a collection is
+  /// about to happen; it re-checks `needs_gc()` itself too, so a stale
+  /// read here (never possible mid-single-threaded-execution anyway)
+  /// couldn't cause an incorrect collection either way.
   fn emit_safepoint(&mut self) {
+    let bytes = self
+      .fb
+      .ins()
+      .load(types::I64, cranelift_codegen::ir::MemFlagsData::trusted(), self.vm_param, HEAP_BYTES_ALLOCATED_OFFSET);
+    let next_gc = self
+      .fb
+      .ins()
+      .load(types::I64, cranelift_codegen::ir::MemFlagsData::trusted(), self.vm_param, HEAP_NEXT_GC_OFFSET);
+    let needs_gc = self.fb.ins().icmp(IntCC::UnsignedGreaterThan, bytes, next_gc);
+
+    let gc_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(needs_gc, gc_block, &[], done_block, &[]);
+
+    self.fb.switch_to_block(gc_block);
     self.call_helper("zuri_jit_gc_safepoint", &[self.vm_param]);
+    // `collect_garbage` never touches `VM::registers`'s backing buffer
+    // (it only reads register contents for root-marking, and frees
+    // `Obj` storage on `heap`), so no `refresh_regs()` is needed here.
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
   }
 
   fn emit_binary_numeric_guarded(

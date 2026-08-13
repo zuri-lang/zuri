@@ -137,6 +137,15 @@ pub struct VM {
   /// One flat register stack shared by every call frame; each frame just
   /// claims a slice of it (its "window"), exactly like Lua's VM.
   registers: Vec<Value>,
+  /// Mirrors `registers.as_mut_ptr()`, updated at the 3 sites that can
+  /// reallocate `registers` (see `sync_regs_ptr_cache`). Exists so
+  /// compiled code (see `jit::codegen`) can re-fetch the current
+  /// registers pointer with a single direct memory load at a
+  /// compile-time-baked offset (`VM_REGS_PTR_CACHE_OFFSET`) instead of
+  /// an FFI call into `registers_ptr()` -- this is refetched at every
+  /// helper-call site, so replacing a real function call with a load
+  /// there matters a lot for call-heavy compiled code.
+  regs_ptr_cache: Cell<*mut Value>,
   /// Upvalues that are still Open, as (absolute register index, the
   /// Obj::Upvalue Value at that index). Consulted whenever a new closure
   /// captures a local -- if one's already open for that exact register,
@@ -230,6 +239,16 @@ pub struct VM {
   last_opcode: Option<&'static str>,
 }
 
+/// Byte offset of `VM::heap` within `VM` -- combined in `crate::jit` with
+/// `object::HEAP_BYTES_ALLOCATED_OFFSET`/`HEAP_NEXT_GC_OFFSET` so compiled
+/// code can inline `Heap::needs_gc()`'s check (a plain integer compare)
+/// as two direct loads instead of an unconditional FFI call at every
+/// safepoint. Sound within this compilation: `offset_of!` asks the
+/// compiler for VM's actual layout rather than assuming one.
+pub(crate) const VM_HEAP_OFFSET: usize = std::mem::offset_of!(VM, heap);
+/// Byte offset of `VM::regs_ptr_cache` -- see that field's own docs.
+pub(crate) const VM_REGS_PTR_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs_ptr_cache);
+
 type RunResult<T> = Result<T, Value>;
 
 impl VM {
@@ -237,6 +256,7 @@ impl VM {
     VM {
       is_repl: false,
       registers: Vec::new(),
+      regs_ptr_cache: Cell::new(std::ptr::null_mut()),
       frames: Vec::new(),
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
@@ -542,6 +562,7 @@ impl VM {
     let proto = closure.function.as_func();
     let num_registers = proto.num_registers as usize;
     self.registers.resize(num_registers, Value::nil());
+    self.sync_regs_ptr_cache();
     self.frames.push(CallFrame {
       function: proto as *const ObjFunction,
       closure: closure as *const ObjClosure,
@@ -595,6 +616,7 @@ impl VM {
     let needed = new_base + proto.num_registers as usize;
     if self.registers.len() < needed {
       self.registers.resize(needed, Value::nil());
+      self.sync_regs_ptr_cache();
     }
 
     for i in 0..required as usize {
@@ -627,17 +649,14 @@ impl VM {
   // never frame setup itself.
   //-----------------------------------------------------------------------------------
 
-  /// Absolute pointer to the current backing buffer of `VM::registers`.
-  /// Deliberately NOT safe to cache across any call that could push a
-  /// deeper frame (`Instr::Call`/`Invoke`/... , or an operator-override
-  /// dispatch) -- `self.registers.resize` can reallocate, which would
-  /// silently invalidate a stale copy of this pointer. Compiled code
-  /// (see `jit::codegen`) re-fetches this via `jit::runtime::zuri_jit_regs_ptr`
-  /// immediately after every call site for exactly this reason, the
-  /// same way `get_reg`/`set_reg` always index through `&self`/`&mut
-  /// self` fresh rather than a cached slice.
-  pub(crate) fn registers_ptr(&mut self) -> *mut Value {
-    self.registers.as_mut_ptr()
+  /// Refreshes `regs_ptr_cache` to match `registers`' current backing
+  /// buffer -- MUST be called immediately after every `self.registers
+  /// .resize(..)`, with no exceptions, since compiled code trusts this
+  /// cache implicitly (a single direct memory load, no bounds/staleness
+  /// check of its own -- see `VM_REGS_PTR_CACHE_OFFSET`).
+  #[inline]
+  fn sync_regs_ptr_cache(&mut self) {
+    self.regs_ptr_cache.set(self.registers.as_mut_ptr());
   }
 
   /// Does `proto` have (or should it now get) a compiled entry point
@@ -862,6 +881,7 @@ impl VM {
     let needed = new_base + proto.num_registers as usize;
     if self.registers.len() < needed {
       self.registers.resize(needed, Value::nil());
+      self.sync_regs_ptr_cache();
     }
     for i in num_args..required {
       self.registers[new_base + i as usize] = Value::nil();
