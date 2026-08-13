@@ -145,6 +145,34 @@ impl TypeFacts {
   pub fn is_numeric(&self, ip: usize, r: u8) -> bool {
     self.entry[ip].get(r)
   }
+
+  /// Every register (among the first 64 -- the same bound
+  /// `speculative_params` itself is already subject to) proven numeric
+  /// AT bytecode position `ip`, as a bitmask. At `ip == 0` this is
+  /// exactly whatever seed `analyze` was given (if any) -- unchanged
+  /// from before this existed. At any OTHER `ip`, this is the SOUND
+  /// thing to re-validate a runtime guard against when jumping
+  /// directly into that bytecode position (e.g. on-stack replacement):
+  /// exactly the claim the code at `ip` is about to rely on, not a
+  /// proxy for it. Checking whether the ORIGINAL entry-time seed
+  /// registers are STILL numeric at `ip` is NOT equivalent to this and
+  /// is NOT sound in general -- a seed register can be reassigned
+  /// (even to another number) between entry and `ip` in a way that
+  /// invalidates an EARLIER computation's proof without that
+  /// reassignment itself being visible in a "is register R numeric
+  /// right now" check. Querying `entry[ip]` directly sidesteps that
+  /// entirely: it's already the fixed point of the SAME dataflow proof
+  /// used everywhere else in this file, which tracks every
+  /// reassignment precisely.
+  pub fn numeric_mask_at(&self, ip: usize) -> u64 {
+    let mut mask = 0u64;
+    for bit in 0..64u8 {
+      if self.entry[ip].get(bit) {
+        mask |= 1u64 << bit;
+      }
+    }
+    mask
+  }
 }
 
 /// Runs the analysis. `speculative_numeric_params`, if given, seeds

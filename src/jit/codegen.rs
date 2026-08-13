@@ -243,14 +243,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // target) -- populated in a second pass below, after the general
     // body. Creating a block doesn't require switching into it, so
     // this doesn't disturb `entry_block`'s own not-yet-terminated
-    // state.
-    let specialized_blocks: Option<Vec<Block>> = self.speculative_params.map(|_| {
-      (0..self.blocks.len())
-        .map(|_| self.fb.create_block())
-        .collect()
+    // state. Its type-facts are computed HERE too (not lazily during
+    // the second pass, as before) -- `emit_entry_dispatch` needs them
+    // NOW to build a SOUND per-OSR-target guard (see its own docs).
+    let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> = self.speculative_params.map(|mask| {
+      let blocks = (0..self.blocks.len()).map(|_| self.fb.create_block()).collect();
+      let facts = typeflow::analyze(self.proto, Some(mask));
+      (blocks, facts)
     });
 
-    self.emit_entry_dispatch(osr_param, specialized_blocks.as_deref());
+    self.emit_entry_dispatch(osr_param, specialized.as_ref().map(|(b, f)| (b.as_slice(), f)));
 
     // Pass 1: the general body, exactly as before this function ever
     // had a `speculative_params` concept -- `type_facts` was already
@@ -267,13 +269,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     // Pass 2: the specialized body, if any -- same instruction-
     // emission logic, just re-run against a SEPARATE block array and
-    // a type-fact set seeded with the speculated parameters proven
-    // from entry. `emit_instruction`/every `emit_*` helper only ever
-    // reference `self.blocks`/`self.type_facts` generically, so
-    // swapping both fields and re-running the identical loop is
-    // sufficient -- no separate codegen path needed.
-    if let Some(spec_blocks) = specialized_blocks {
-      self.type_facts = typeflow::analyze(self.proto, self.speculative_params);
+    // the type-facts computed above. `emit_instruction`/every
+    // `emit_*` helper only ever reference `self.blocks`/
+    // `self.type_facts` generically, so swapping both fields and re-
+    // running the identical loop is sufficient -- no separate codegen
+    // path needed.
+    if let Some((spec_blocks, spec_facts)) = specialized {
+      self.type_facts = spec_facts;
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       for ip in 0..self.blocks.len() {
         self.fb.switch_to_block(self.blocks[ip]);
@@ -296,84 +298,101 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `osr_param == -1` -> ordinary entry; `osr_param == id` -> jump
-  /// straight into the GENERAL body's `blocks[ip]` for whichever `ip`
-  /// that `id` was assigned to in `run` (OSR always targets the
-  /// general body -- see `compile`'s own docs on why: it enters mid-
-  /// function at an arbitrary bytecode position, which the
-  /// specialized body's ENTRY-ONLY speculation guard was never built
-  /// to validate). A linear compare chain (not a `br_table`) -- the
-  /// number of loop headers in one function is always small, and this
-  /// avoids depending on `JumpTableData`'s exact API for what's a
-  /// cold, one-time-per-call dispatch anyway.
+  /// straight into `blocks[ip]` for whichever `ip` that `id` was
+  /// assigned to in `run`. A linear compare chain (not a `br_table`)
+  /// -- the number of loop headers in one function is always small,
+  /// and this avoids depending on `JumpTableData`'s exact API for
+  /// what's a cold, one-time-per-call dispatch anyway.
   ///
-  /// On ordinary entry, if `specialized_blocks` is `Some`, one more
-  /// guard picks between it and the general body: every register
-  /// named in `self.speculative_params` is checked with a plain
-  /// `is_number()` test (the exact same bit-test guard used
-  /// everywhere else in this file) -- if ALL hold, the bet that
-  /// triggered specializing this function is still good, so control
-  /// goes to `specialized_blocks[0]`; otherwise (or if not
-  /// speculating at all) it falls back to the always-correct general
-  /// `blocks[0]`.
-  fn emit_entry_dispatch(&mut self, osr_param: IrValue, specialized_blocks: Option<&[Block]>) {
+  /// If `specialized` is `Some((blocks, facts))`, EVERY entry point
+  /// (ordinary AND each OSR target) gets its own guard picking between
+  /// the specialized and general body, built from `facts.numeric_mask_at`
+  /// AT THAT SPECIFIC bytecode position -- not from a single fixed
+  /// mask re-checked everywhere. This is the sound way to validate an
+  /// OSR jump straight into the MIDDLE of the specialized body: at
+  /// `ip == 0` `numeric_mask_at` is exactly the original speculated
+  /// parameter mask (so ordinary entry is unaffected by this
+  /// generalization), but at any OTHER `ip` it's whatever the SAME
+  /// dataflow proof actually established is live and provably numeric
+  /// AT THAT POINT -- precisely the claim the code there is about to
+  /// rely on, re-validated against real, current register values. See
+  /// `typeflow::TypeFacts::numeric_mask_at`'s own docs for why
+  /// re-checking the ORIGINAL entry mask at a later `ip` instead would
+  /// NOT be sound (a speculated register can be reassigned between
+  /// entry and that point in a way a same-register recheck can't see).
+  /// An OSR target where NOTHING is provably numeric (the mask is
+  /// empty -- the loop never touches the speculated value at all)
+  /// skips the guard and routes straight to the general body: the
+  /// specialized block there would be behaviorally identical anyway.
+  fn emit_entry_dispatch(&mut self, osr_param: IrValue, specialized: Option<(&[Block], &typeflow::TypeFacts)>) {
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
 
-    let guard_block = specialized_blocks.map(|_| self.fb.create_block());
-    let normal_target = guard_block.unwrap_or(self.blocks[0]);
+    let normal_route = specialized.map(|_| self.fb.create_block());
+    let normal_target = normal_route.unwrap_or(self.blocks[0]);
 
     let mut next_check = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_normal, normal_target, &[], next_check, &[]);
+    self.fb.ins().brif(is_normal, normal_target, &[], next_check, &[]);
 
-    let mut targets: Vec<(i32, Block)> = self
-      .osr_ids
-      .iter()
-      .map(|(&ip, &id)| (id, self.blocks[ip]))
-      .collect();
+    let mut targets: Vec<(i32, usize)> = self.osr_ids.iter().map(|(&ip, &id)| (id, ip)).collect();
     targets.sort_by_key(|&(id, _)| id);
 
-    for (id, target_block) in targets {
+    // (route_block, target_ip) pairs to populate AFTER the compare
+    // chain is fully laid out -- keeps every `switch_to_block` call
+    // for the chain itself contiguous, matching the original
+    // structure, with route-block bodies filled in afterward.
+    let mut routes: Vec<(Block, usize)> = Vec::new();
+    if let Some(route) = normal_route {
+      routes.push((route, 0));
+    }
+
+    for (id, ip) in targets {
       self.fb.switch_to_block(next_check);
       let id_const = self.fb.ins().iconst(types::I32, id as i64);
       let is_this = self.fb.ins().icmp(IntCC::Equal, osr_param, id_const);
       let after = self.fb.create_block();
-      self.fb.ins().brif(is_this, target_block, &[], after, &[]);
+      if specialized.is_some() {
+        let route = self.fb.create_block();
+        self.fb.ins().brif(is_this, route, &[], after, &[]);
+        routes.push((route, ip));
+      } else {
+        self.fb.ins().brif(is_this, self.blocks[ip], &[], after, &[]);
+      }
       next_check = after;
     }
 
     // Defensive fallback for an `osr_id` that matches none of the
     // known loop headers -- unreachable in practice (`VM::maybe_osr`
     // only ever passes an id it read out of THIS SAME function's own
-    // `osr_ids` map), but falling through to the ordinary (general)
-    // entry is a safe, well-defined default rather than leaving the
-    // block unterminated.
+    // `osr_ids` map), but falling through to the ordinary entry (`ip
+    // 0`, general OR specialized per that route's own guard) is a
+    // safe, well-defined default rather than leaving the block
+    // unterminated.
     self.fb.switch_to_block(next_check);
-    self.fb.ins().jump(self.blocks[0], &[]);
+    self.fb.ins().jump(normal_target, &[]);
 
-    if let (Some(guard_block), Some(spec_blocks)) = (guard_block, specialized_blocks) {
-      self.fb.switch_to_block(guard_block);
-      let mask = self
-        .speculative_params
-        .expect("guard_block only created when speculative_params is Some");
-      let mut guard: Option<IrValue> = None;
-      for bit in 0..64u8 {
-        if mask & (1u64 << bit) != 0 {
-          let v = self.load_reg(bit);
-          let is_num = self.is_number(v);
-          guard = Some(match guard {
-            None => is_num,
-            Some(g) => self.fb.ins().band(g, is_num),
-          });
+    if let Some((spec_blocks, spec_facts)) = specialized {
+      for (route_block, ip) in routes {
+        self.fb.switch_to_block(route_block);
+        let mask = spec_facts.numeric_mask_at(ip);
+        if mask == 0 {
+          self.fb.ins().jump(self.blocks[ip], &[]);
+          continue;
         }
+        let mut guard: Option<IrValue> = None;
+        for bit in 0..64u8 {
+          if mask & (1u64 << bit) != 0 {
+            let v = self.load_reg(bit);
+            let is_num = self.is_number(v);
+            guard = Some(match guard {
+              None => is_num,
+              Some(g) => self.fb.ins().band(g, is_num),
+            });
+          }
+        }
+        let guard = guard.expect("mask != 0 always sets at least one bit");
+        self.fb.ins().brif(guard, spec_blocks[ip], &[], self.blocks[ip], &[]);
       }
-      let guard = guard.expect("non-empty speculative_params always sets at least one bit");
-      self
-        .fb
-        .ins()
-        .brif(guard, spec_blocks[0], &[], self.blocks[0], &[]);
     }
   }
 
