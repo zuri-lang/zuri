@@ -4,8 +4,6 @@
 # Based on the JavaScript implementation at
 # https://github.com/oracle/graal/blob/master/vm/benchmarks/compiler/dispatch.js
 
-import math
-
 var funcs = [
   @(a) {
     var x = a[0]
