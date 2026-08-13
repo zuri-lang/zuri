@@ -224,6 +224,24 @@ pub struct JitInfo {
   /// other `JitInfo` field: the background thread never reads or
   /// writes `JitInfo` at all (see `jit::background`'s module docs).
   pub compiling: Cell<bool>,
+  /// Argument-type feedback accumulated, via bitwise AND, across EVERY
+  /// call recorded by `VM::record_call_feedback` since this function
+  /// started warming up -- bit `i` survives only if parameter `i` was
+  /// observed numeric on every single call seen so far, exactly the
+  /// polymorphic-inline-cache pattern of "keep believing the guess
+  /// until a call actually contradicts it". Starts at `!0` (every bit
+  /// "unfalsified") rather than `0`, so the first real sample fully
+  /// determines the mask instead of an empty AND collapsing everything
+  /// to non-numeric; `feedback_samples` is what distinguishes "no
+  /// evidence yet" from "confirmed by evidence" for a caller that only
+  /// has this field to look at. Read at compile-enqueue time instead of
+  /// a one-shot single-call sample -- see `VM::combined_param_feedback`.
+  pub numeric_feedback: Cell<u64>,
+  /// Number of calls that have contributed to `numeric_feedback` so
+  /// far. Needed because `numeric_feedback` alone can't distinguish
+  /// "every call observed had numeric args" from "no call has been
+  /// observed yet" -- both read as `!0`.
+  pub feedback_samples: Cell<u32>,
 }
 
 impl JitInfo {
@@ -237,6 +255,8 @@ impl JitInfo {
       ineligible: Cell::new(false),
       osr_counts: RefCell::new(FxHashMap::default()),
       compiling: Cell::new(false),
+      numeric_feedback: Cell::new(!0u64),
+      feedback_samples: Cell::new(0),
     }
   }
 }

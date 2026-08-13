@@ -749,7 +749,7 @@ impl VM {
   /// just without the (now background-only) backend-compile step ever
   /// getting a chance to also fail here.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
-    let speculative_params = self.sample_param_types(proto);
+    let speculative_params = self.combined_param_feedback(proto);
     let pending = match self.jit_engine().build_ir(proto, speculative_params) {
       Ok(pending) => pending,
       Err(reason) => {
@@ -840,20 +840,22 @@ impl VM {
     }
   }
 
-  /// A ONE-SHOT type sample of `proto`'s FIXED-arity parameters, read
-  /// from whichever call/OSR trigger is causing `proto` to compile
-  /// right now (`try_compile`'s only caller-side precondition: by the
-  /// time compilation is ever triggered, `self.frames.last()` is
-  /// ALWAYS a frame for `proto` -- either just pushed with real
-  /// argument values already placed at its own `base` by
-  /// `setup_closure_call`/`call_value`, for an ordinary call, or the
+  /// A single-call type sample of `proto`'s FIXED-arity parameters,
+  /// read from THE CURRENT TOP FRAME (by the time this is ever called,
+  /// `self.frames.last()` is ALWAYS a frame for `proto` -- either just
+  /// pushed with real argument values already placed at its own `base`
+  /// by `setup_closure_call`/`call_value`, for an ordinary call, or the
   /// currently-executing frame itself, for an OSR trigger, whose
   /// parameter registers still hold whatever this same invocation's
-  /// arguments evolved into by now). Feeds `codegen`'s optional
-  /// second, specialized compiled body -- see `jit::codegen::compile`'s
-  /// own docs on why betting on THIS ONE call's argument types is
-  /// sound: the guard it emits re-validates the same registers before
-  /// ever trusting them on any LATER call.
+  /// arguments evolved into by now). Two callers: `record_call_feedback`
+  /// (one sample per call, folded into a running multi-call AND) and
+  /// `combined_param_feedback`'s fallback (no accumulated evidence
+  /// exists yet, so bet on this one call same as before that existed).
+  /// Either way, betting on real observed values here is sound because
+  /// whatever mask a caller ends up passing to `codegen::compile` only
+  /// ever seeds a GUARD that re-validates the same registers for real
+  /// before ever trusting them on any later call -- see
+  /// `jit::codegen::compile`'s own docs.
   fn sample_param_types(&self, proto: &ObjFunction) -> Option<u64> {
     let frame = self.frames.last()?;
     if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
@@ -877,6 +879,61 @@ impl VM {
     Some(mask)
   }
 
+  /// Folds ONE call's argument types into `proto`'s running
+  /// `numeric_feedback` accumulator (bitwise AND) -- called at every
+  /// site that increments `call_count`, right after `proto`'s own
+  /// frame has been pushed, so `sample_param_types` always samples
+  /// THIS call. Unlike a one-shot bet on whichever single call happens
+  /// to tip the warm-up threshold, this observes EVERY call along the
+  /// way: a parameter's bit only survives to compile time if it was
+  /// numeric on every call seen so far, exactly the "keep believing
+  /// the guess until a real call contradicts it" pattern of a
+  /// polymorphic inline cache. Skipped once `proto` is compiled,
+  /// already enqueued, or ineligible -- feedback stops mattering (and
+  /// costing anything) the moment it can no longer inform a
+  /// not-yet-made decision.
+  #[inline]
+  fn record_call_feedback(&self, proto: &ObjFunction) {
+    if proto.jit.entry.get().is_some()
+      || proto.jit.compiling.get()
+      || proto.jit.ineligible.get()
+    {
+      return;
+    }
+    let Some(mask) = self.sample_param_types(proto) else {
+      return;
+    };
+    proto
+      .jit
+      .numeric_feedback
+      .set(proto.jit.numeric_feedback.get() & mask);
+    proto
+      .jit
+      .feedback_samples
+      .set(proto.jit.feedback_samples.get().saturating_add(1));
+  }
+
+  /// The type-feedback mask actually consulted at the moment `proto`
+  /// is enqueued for compilation: the AND-accumulated result of every
+  /// call `record_call_feedback` has recorded since `proto` started
+  /// warming up (which, by construction, already includes this exact
+  /// triggering call -- it's recorded at the very same call sites that
+  /// increment `call_count`, before `tiered_entry`/`maybe_osr` can ever
+  /// decide to compile). Falls back to a fresh one-shot
+  /// `sample_param_types` only if NO call was ever recorded through
+  /// that path -- e.g. a top-level script's own OSR-triggered compile,
+  /// whose outermost frame is never pushed via a "call" at all -- so
+  /// this is never any worse than the single-sample behavior it
+  /// replaces, only better-informed when real accumulated evidence
+  /// exists.
+  fn combined_param_feedback(&self, proto: &ObjFunction) -> Option<u64> {
+    if proto.jit.feedback_samples.get() > 0 {
+      Some(proto.jit.numeric_feedback.get())
+    } else {
+      self.sample_param_types(proto)
+    }
+  }
+
   /// Given a frame that was JUST pushed for `proto`/`closure_val` (so
   /// `stop_depth` is exactly what `run_until` needs to know when to
   /// stop), either interpret it (today's unbounded-depth behavior,
@@ -895,6 +952,7 @@ impl VM {
       .jit
       .call_count
       .set(proto.jit.call_count.get().saturating_add(1));
+    self.record_call_feedback(proto);
     let proto_value = closure_val.as_closure().function;
     if let Some(entry) = self.tiered_entry(proto, proto_value) {
       return self.invoke_compiled(entry, closure_val, -1);
@@ -1351,6 +1409,7 @@ impl VM {
             .jit
             .call_count
             .set(callee_fn.jit.call_count.get().saturating_add(1));
+          self.record_call_feedback(callee_fn);
           if let Some(entry) = self.tiered_entry(callee_fn, callee_closure.function) {
             let ret = self.invoke_compiled(entry, callee, -1)?;
             self.set_reg(base, dst, ret);
@@ -1456,6 +1515,7 @@ impl VM {
         .jit
         .call_count
         .set(callee_fn.jit.call_count.get().saturating_add(1));
+      self.record_call_feedback(callee_fn);
       if let Some(entry) = self.tiered_entry(callee_fn, callee_closure.function) {
         let ret = self.invoke_compiled(entry, callee, -1)?;
         self.set_reg(base, dst, ret);
