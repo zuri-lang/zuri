@@ -108,5 +108,4 @@ class Dog < Animal {
 }
 
 Animal().setName()
-# Animal()._print('hello again')
 Dog().getName()

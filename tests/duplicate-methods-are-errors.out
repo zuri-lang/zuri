@@ -1,2 +1,2 @@
-SyntaxError at 'c': multiple declaration for method 'c' found in class 'Class'
+SyntaxError at 'c': multiple declaration for method 'c' found in class 'Class' on line 3 column 4
   @@ROOT/tests/duplicate-methods-are-errors.zu:3
