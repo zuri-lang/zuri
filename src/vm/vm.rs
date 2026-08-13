@@ -6,7 +6,7 @@ use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::builtins;
-use crate::jit::{EntryFn, JitEngine, background};
+use crate::jit::{EntryFn, JitEngine, background, typeflow};
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -750,7 +750,11 @@ impl VM {
   /// getting a chance to also fail here.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
     let speculative_params = self.combined_param_feedback(proto);
-    let pending = match self.jit_engine().build_ir(proto, speculative_params) {
+    let speculative_regs = self.sample_all_reg_types(proto);
+    let pending = match self
+      .jit_engine()
+      .build_ir(proto, speculative_params, speculative_regs)
+    {
       Ok(pending) => pending,
       Err(reason) => {
         if crate::jit::log_enabled() {
@@ -769,6 +773,7 @@ impl VM {
       osr_ids: pending.osr_ids,
       proto: background::SendPtr(proto as *const ObjFunction),
       speculative_params,
+      speculative_regs,
     };
     if self.jit_compiler().job_tx.send(job).is_err() {
       // The background thread is gone -- shouldn't happen (it lives
@@ -812,11 +817,12 @@ impl VM {
         Ok(entry) => {
           if crate::jit::log_enabled() {
             eprintln!(
-              "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x})",
+              "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x})",
               proto.name,
               proto.chunk.code.len(),
               result.osr_ids.len(),
               result.speculative_params.unwrap_or(0),
+              result.speculative_regs.unwrap_or(0),
             );
           }
           *proto.jit.osr_ids.borrow_mut() = Some(result.osr_ids);
@@ -869,6 +875,47 @@ impl VM {
     let base = frame.base;
     let mut mask: u64 = 0;
     for i in 0..(required as usize).min(64) {
+      let Some(v) = self.registers.get(base + i) else {
+        break;
+      };
+      if v.is_number() {
+        mask |= 1u64 << i;
+      }
+    }
+    Some(mask)
+  }
+
+  /// A ONE-SHOT type sample of EVERY register in `proto`'s currently
+  /// executing frame (not just its fixed-arity parameters -- compare
+  /// `sample_param_types`), taken at the same moment and under the
+  /// same precondition (`self.frames.last()` is `proto`'s own frame).
+  /// Feeds `jit::typeflow::SpeculativeRegs`: a register whose value
+  /// came from a `GetField`/`Call`/`GetIndex`/... result that happens
+  /// to be a number RIGHT NOW gets a real runtime guard planted at that
+  /// instruction's own definition site in the specialized body (see
+  /// `codegen::FuncCompiler::emit_speculative_guard`), which is what
+  /// makes betting on it here sound: nothing downstream ever trusts
+  /// this sample directly, only whatever guard it results in re-
+  /// validating the ACTUAL value on every future execution.
+  ///
+  /// Deliberately a single one-shot sample, not accumulated across
+  /// calls the way `record_call_feedback` accumulates parameter
+  /// feedback -- a register beyond the parameter range doesn't have a
+  /// stable, call-independent "value at this call" the way a parameter
+  /// does (it might be a totally different bytecode-level variable at
+  /// different points across different calls), so continuous
+  /// accumulation isn't the natural fit here the way it was for
+  /// parameters. A future increment could add per-definition-site
+  /// accumulation if the one-shot version proves too noisy in
+  /// practice.
+  fn sample_all_reg_types(&self, proto: &ObjFunction) -> Option<typeflow::SpeculativeRegs> {
+    let frame = self.frames.last()?;
+    if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
+      return None;
+    }
+    let base = frame.base;
+    let mut mask: u64 = 0;
+    for i in 0..(proto.num_registers as usize).min(64) {
       let Some(v) = self.registers.get(base + i) else {
         break;
       };

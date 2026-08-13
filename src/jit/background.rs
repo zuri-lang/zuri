@@ -55,6 +55,7 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, ModuleReloc};
 use rustc_hash::FxHashMap;
 
+use crate::jit::typeflow;
 use crate::vm::object::ObjFunction;
 
 /// A raw pointer wrapper that's `Send` purely as an opaque token --
@@ -70,6 +71,9 @@ pub struct CompileJob {
   /// Carried through purely for `VM::drain_jit_results`'s log line --
   /// see `codegen::compile`'s own docs on what this means.
   pub speculative_params: Option<u64>,
+  /// Same purpose as `speculative_params`, carried through purely for
+  /// the log line -- see `jit::typeflow::SpeculativeRegs`'s own docs.
+  pub speculative_regs: Option<typeflow::SpeculativeRegs>,
 }
 
 pub struct CompileResult {
@@ -77,6 +81,7 @@ pub struct CompileResult {
   pub func_id: FuncId,
   pub osr_ids: FxHashMap<usize, i32>,
   pub speculative_params: Option<u64>,
+  pub speculative_regs: Option<typeflow::SpeculativeRegs>,
   /// `Ok((code_bytes, alignment, relocations))` on success -- exactly
   /// what `JitEngine::install_compiled` needs -- or a human-readable
   /// failure reason (mirrors `codegen::compile`'s own `Err(String)`
@@ -147,6 +152,7 @@ fn compiler_loop(
       func_id: job.func_id,
       osr_ids: std::mem::take(&mut job.osr_ids),
       speculative_params: job.speculative_params,
+      speculative_regs: job.speculative_regs,
       outcome,
     };
     // A closed result channel means the VM has shut down -- nothing

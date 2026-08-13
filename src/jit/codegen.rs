@@ -74,6 +74,7 @@ pub fn compile(
   helpers: &HashMap<&'static str, FuncId>,
   proto: &ObjFunction,
   speculative_params: Option<u64>,
+  speculative_regs: Option<typeflow::SpeculativeRegs>,
 ) -> Result<FxHashMap<usize, i32>, String> {
   // Exception-handling bytecode is never compiled -- see this crate's
   // `jit` module docs on why "bail to the interpreter" is implemented
@@ -102,7 +103,16 @@ pub fn compile(
   }
 
   let speculative_params = speculative_params.filter(|&m| m != 0);
-  let mut fc = FuncCompiler::new(fb, module, helpers, proto, code_len, speculative_params);
+  let speculative_regs = speculative_regs.filter(|&m| m != 0);
+  let mut fc = FuncCompiler::new(
+    fb,
+    module,
+    helpers,
+    proto,
+    code_len,
+    speculative_params,
+    speculative_regs,
+  );
   fc.run()
 }
 
@@ -161,6 +171,12 @@ struct FuncCompiler<'a, 'b> {
   /// number) -- `None` after filtering out an all-zero sample. See
   /// `compile`'s own docs and `emit_entry_dispatch`.
   speculative_params: Option<u64>,
+  /// A ONE-SHOT, WHOLE-FRAME type sample taken at the same moment as
+  /// `speculative_params`, but covering every register in the
+  /// triggering frame rather than only the fixed-arity parameters --
+  /// see `jit::typeflow::SpeculativeRegs`'s own docs. `None` after
+  /// filtering out an all-zero sample.
+  speculative_regs: Option<typeflow::SpeculativeRegs>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -171,9 +187,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     proto: &'a ObjFunction,
     code_len: usize,
     speculative_params: Option<u64>,
+    speculative_regs: Option<typeflow::SpeculativeRegs>,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
-    let type_facts = typeflow::analyze(proto, None);
+    let type_facts = typeflow::analyze(proto, None, None);
     FuncCompiler {
       fb,
       module,
@@ -190,6 +207,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       closure_out_slot: None,
       type_facts,
       speculative_params,
+      speculative_regs,
     }
   }
 
@@ -238,19 +256,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let eight = self.fb.ins().iconst(types::I64, 8);
     self.base_bytes = self.fb.ins().imul(self.base_param, eight);
 
-    // If speculating, allocate a SECOND set of blocks now (before the
-    // entry dispatch, which needs `specialized_blocks[0]` as a jump
-    // target) -- populated in a second pass below, after the general
-    // body. Creating a block doesn't require switching into it, so
-    // this doesn't disturb `entry_block`'s own not-yet-terminated
-    // state. Its type-facts are computed HERE too (not lazily during
-    // the second pass, as before) -- `emit_entry_dispatch` needs them
-    // NOW to build a SOUND per-OSR-target guard (see its own docs).
-    let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> = self.speculative_params.map(|mask| {
-      let blocks = (0..self.blocks.len()).map(|_| self.fb.create_block()).collect();
-      let facts = typeflow::analyze(self.proto, Some(mask));
-      (blocks, facts)
-    });
+    // If speculating on EITHER function parameters or a mid-function
+    // value (`speculative_regs` -- see `jit::typeflow::SpeculativeRegs`),
+    // allocate a SECOND set of blocks now (before the entry dispatch,
+    // which needs `specialized_blocks[0]` as a jump target) -- populated
+    // in a second pass below, after the general body. Creating a block
+    // doesn't require switching into it, so this doesn't disturb
+    // `entry_block`'s own not-yet-terminated state. Its type-facts are
+    // computed HERE too (not lazily during the second pass, as before)
+    // -- `emit_entry_dispatch` needs them NOW to build a SOUND per-OSR-
+    // target guard (see its own docs).
+    let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> =
+      if self.speculative_params.is_some() || self.speculative_regs.is_some() {
+        let blocks = (0..self.blocks.len()).map(|_| self.fb.create_block()).collect();
+        let facts = typeflow::analyze(self.proto, self.speculative_params, self.speculative_regs);
+        Some((blocks, facts))
+      } else {
+        None
+      };
 
     self.emit_entry_dispatch(osr_param, specialized.as_ref().map(|(b, f)| (b.as_slice(), f)));
 
@@ -277,13 +300,31 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if let Some((spec_blocks, spec_facts)) = specialized {
       self.type_facts = spec_facts;
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
-      for ip in 0..self.blocks.len() {
+      let code_len = self.blocks.len();
+      for ip in 0..code_len {
         self.fb.switch_to_block(self.blocks[ip]);
         let instr = self.proto.chunk.code[ip];
         let terminated = self.emit_instruction(ip, instr);
-        if !terminated {
-          let next = self.blocks.get(ip + 1).copied().unwrap_or(self.blocks[ip]);
-          self.fb.ins().jump(next, &[]);
+        if terminated {
+          continue;
+        }
+        let spec_next = self.blocks.get(ip + 1).copied().unwrap_or(self.blocks[ip]);
+        // Mid-function speculation: if this instruction's destination
+        // is one `speculative_regs` bet on AND the dataflow proof
+        // confirms that bet is still live heading into `ip + 1` (not
+        // immediately merged away by some other, unrelated predecessor
+        // edge into `ip + 1` -- see `emit_speculative_guard`'s own
+        // docs), plant a real runtime guard here instead of an
+        // unconditional jump: re-validate the ACTUAL value this
+        // instruction just computed, continue in the specialized body
+        // on a match, or fall into the general body's own block for
+        // this exact `ip + 1` on a mismatch -- exactly the entry-guard
+        // pattern already used for parameters/OSR, just triggered at
+        // an ordinary mid-function definition site instead of an
+        // external entry point.
+        let general_next = general_blocks.get(ip + 1).copied().unwrap_or(general_blocks[ip]);
+        if !self.emit_speculative_guard(ip, instr, spec_next, general_next) {
+          self.fb.ins().jump(spec_next, &[]);
         }
       }
       // `osr_ids` (returned to the caller) indexes into the GENERAL
@@ -376,7 +417,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.fb.switch_to_block(route_block);
         let mask = spec_facts.numeric_mask_at(ip);
         if mask == 0 {
-          self.fb.ins().jump(self.blocks[ip], &[]);
+          if self.speculative_regs.is_some() {
+            // Nothing is proven AT this exact entry point, but the
+            // specialized body may still contain its own, INDEPENDENT
+            // mid-function speculative guards further along (see
+            // `emit_speculative_guard`) -- route into it unconditionally
+            // rather than skipping straight to general, so ordinary
+            // (non-OSR) execution still reaches them. When only
+            // parameter speculation is in play (`speculative_regs` is
+            // `None`), `spec_blocks[ip]` onward is behaviorally
+            // identical to `self.blocks[ip]` in this case -- exactly
+            // the reasoning that already justified the unconditional
+            // general jump below, still applies whenever there's no
+            // OTHER kind of speculation that could benefit downstream.
+            self.fb.ins().jump(spec_blocks[ip], &[]);
+          } else {
+            self.fb.ins().jump(self.blocks[ip], &[]);
+          }
           continue;
         }
         let mut guard: Option<IrValue> = None;
@@ -394,6 +451,49 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.fb.ins().brif(guard, spec_blocks[ip], &[], self.blocks[ip], &[]);
       }
     }
+  }
+
+  /// Mid-function counterpart to `emit_entry_dispatch`'s guards: called
+  /// right after translating `instr` at bytecode position `ip`, while
+  /// populating the SPECIALIZED body (never during the general pass --
+  /// callers only reach this from `run`'s pass-2 loop). If `instr`'s
+  /// destination register is one the profiling sample bet on
+  /// (`speculative_regs`) AND the dataflow proof confirms that bet is
+  /// still live heading into `ip + 1` (`self.type_facts`, computed with
+  /// `speculative_regs` folded in -- see `jit::typeflow::SpeculativeRegs`),
+  /// re-validates the ACTUAL value `instr` just computed and either
+  /// continues into `spec_next` (the specialized body's own block for
+  /// `ip + 1`) on a match, or falls into `general_next` (the GENERAL
+  /// body's block for that SAME `ip + 1`) on a mismatch. Returns `true`
+  /// iff it terminated the current block this way -- the caller emits
+  /// its own unconditional jump to `spec_next` when this returns
+  /// `false` (nothing to guard here).
+  ///
+  /// The cross-jump into `general_next` is sound because NEITHER body
+  /// ever carries state across an instruction boundary as a Cranelift
+  /// SSA value -- both re-read every register fresh from the shared VM
+  /// register file (`load_reg`) on demand. Whatever the specialized
+  /// body did to reach `ip + 1` already wrote back the same real values
+  /// the general body would have, so resuming general translation there
+  /// needs no state reconciliation at all, unlike a real deoptimization
+  /// would.
+  fn emit_speculative_guard(
+    &mut self,
+    ip: usize,
+    instr: Instr,
+    spec_next: Block,
+    general_next: Block,
+  ) -> bool {
+    let Some(dst) = typeflow::conservative_dst(&instr) else {
+      return false;
+    };
+    if ip + 1 >= self.proto.chunk.code.len() || !self.type_facts.is_numeric(ip + 1, dst) {
+      return false;
+    }
+    let v = self.load_reg(dst);
+    let is_num = self.is_number(v);
+    self.fb.ins().brif(is_num, spec_next, &[], general_next, &[]);
+    true
   }
 
   // ---------------------------------------------------------------

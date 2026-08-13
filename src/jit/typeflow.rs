@@ -175,7 +175,38 @@ impl TypeFacts {
   }
 }
 
-/// Runs the analysis. `speculative_numeric_params`, if given, seeds
+/// Every register (among the first 64) that a WHOLE-FRAME profile
+/// sample observed holding a number at the moment compilation
+/// triggered -- consulted by `transfer` wherever an instruction's
+/// result would otherwise be unconditionally treated as unproven
+/// (`GetField`, `Call`, `Invoke`, `GetGlobal`, `GetUpval`, `GetIndex`,
+/// ...: anything whose value depends on something this pass can't see
+/// statically). Unlike `speculative_params` (which seeds function
+/// ENTRY, `ip == 0`, since a parameter genuinely holds its real value
+/// before any code runs), this has no single seed point: it changes
+/// what `transfer` computes for the OUT set at whatever ip the
+/// matching instruction actually executes at, and the existing
+/// fixed-point worklist propagates that forward exactly like any other
+/// fact -- no changes needed to the merge/iteration logic itself.
+///
+/// Deliberately NOT restricted to a hardcoded instruction allowlist:
+/// any instruction whose result is semantically NEVER a number (a
+/// `Closure`, a `List`, ...) simply never samples as numeric in the
+/// first place, so the profiling itself is what keeps this
+/// self-limited to instructions where speculating is actually
+/// meaningful, rather than a second, separately-maintained list that
+/// could drift out of sync with `transfer`'s own instruction match.
+///
+/// Soundness comes from the same place it always does in this JIT:
+/// `codegen` never trusts this seed's claim without a real runtime
+/// guard planted exactly at the instruction's own definition site
+/// (checking the ACTUAL value just computed, not a proxy for it) --
+/// see `jit::codegen::FuncCompiler`'s own docs on the mid-function
+/// guard-and-fork this drives. A wrong guess here costs a fallback
+/// jump into the general body's continuation, never a wrong answer.
+pub type SpeculativeRegs = u64;
+
+/// Runs the analysis. `speculative_params`, if given, seeds
 /// register-0-based parameter slots as ALREADY proven numeric at
 /// function entry instead of starting from nothing -- this is the hook
 /// `jit::engine`'s profile-guided specialization (a SEPARATE, second
@@ -197,7 +228,14 @@ impl TypeFacts {
 /// lose correctness, just the ability to speculate on the overflow
 /// ones (`codegen`'s own entry guard is built from the same mask, so
 /// the two always agree on which registers are actually being bet on).
-pub fn analyze(proto: &ObjFunction, speculative_params: Option<u64>) -> TypeFacts {
+///
+/// `speculative_regs` is the SAME kind of bitmask, but for values
+/// beyond function parameters -- see `SpeculativeRegs`'s own docs.
+pub fn analyze(
+  proto: &ObjFunction,
+  speculative_params: Option<u64>,
+  speculative_regs: Option<SpeculativeRegs>,
+) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
@@ -229,13 +267,15 @@ pub fn analyze(proto: &ObjFunction, speculative_params: Option<u64>) -> TypeFact
     entry[0] = seed.clone();
   }
 
+  let spec_regs = speculative_regs.unwrap_or(0);
+
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   // Seed every OUT from its (possibly still-`full()`, not-yet-
   // converged) IN, so the worklist loop below has a real starting
   // point to compare against.
   let mut out: Vec<RegSet> = (0..code_len)
-    .map(|ip| transfer(&entry[ip], &code[ip], proto))
+    .map(|ip| transfer(&entry[ip], &code[ip], proto, spec_regs))
     .collect();
 
   while let Some(ip) = worklist.pop() {
@@ -264,7 +304,7 @@ pub fn analyze(proto: &ObjFunction, speculative_params: Option<u64>) -> TypeFact
 
     if new_in != entry[ip] {
       entry[ip] = new_in;
-      out[ip] = transfer(&entry[ip], &code[ip], proto);
+      out[ip] = transfer(&entry[ip], &code[ip], proto, spec_regs);
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
@@ -279,7 +319,10 @@ pub fn analyze(proto: &ObjFunction, speculative_params: Option<u64>) -> TypeFact
 
 /// What a single bytecode instruction proves/invalidates about
 /// register numeric-ness, given what was proven on entry to it.
-fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
+/// `speculative_regs` overrides the "conservative, always unproven"
+/// destinations below to numeric where the caller's profiling sample
+/// says so -- see `SpeculativeRegs`'s own docs.
+fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_regs: u64) -> RegSet {
   let mut out = in_set.clone();
   match *instr {
     Instr::LoadConst { dst, const_idx } => {
@@ -335,7 +378,13 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
 
     // Any instruction whose result depends on something this pass
     // can't see statically (heap contents, globals, call results, ...)
-    // -- conservatively not proven.
+    // -- conservatively not proven, UNLESS the caller's profiling
+    // sample observed this exact destination register holding a
+    // number at the moment compilation triggered (`speculative_regs`)
+    // -- see `SpeculativeRegs`'s own docs. `codegen` is what actually
+    // makes this safe: it never emits code that trusts this without a
+    // real runtime guard planted right here, at this instruction's own
+    // definition site.
     Instr::Call { dst, .. }
     | Instr::GetGlobal { dst, .. }
     | Instr::Closure { dst, .. }
@@ -351,7 +400,10 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
     | Instr::MakePromoted { dst, .. }
     | Instr::GetIndex { dst, .. }
     | Instr::GetSlice { dst, .. }
-    | Instr::MakeRange { dst, .. } => out.set(dst, false),
+    | Instr::MakeRange { dst, .. } => {
+      let speculated = dst < 64 && (speculative_regs >> dst) & 1 != 0;
+      out.set(dst, speculated);
+    },
 
     // No destination register written at all -- facts pass through
     // unchanged.
@@ -379,6 +431,39 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
     },
   }
   out
+}
+
+/// The destination register of `instr`, if it's one of `transfer`'s
+/// "conservative, always unproven unless speculated" instructions --
+/// exactly the SAME instruction list as that match arm above (kept as
+/// a single source of truth would require restructuring `transfer`
+/// itself; until then, the two must be kept in sync by hand, the same
+/// way `zuri_jit_invoke_prepare`'s own doc comment already flags its
+/// parameter order needing to match `emit_fast_call`'s calling
+/// convention by hand). `codegen::FuncCompiler` calls this once per
+/// instruction, right after emitting it in the specialized body, to
+/// decide whether a mid-function guard-and-fork belongs there -- see
+/// its own docs.
+pub fn conservative_dst(instr: &Instr) -> Option<u8> {
+  match *instr {
+    Instr::Call { dst, .. }
+    | Instr::GetGlobal { dst, .. }
+    | Instr::Closure { dst, .. }
+    | Instr::GetUpval { dst, .. }
+    | Instr::MakeList { dst, .. }
+    | Instr::MakeDict { dst, .. }
+    | Instr::MakeClass { dst, .. }
+    | Instr::GetField { dst, .. }
+    | Instr::Invoke { dst, .. }
+    | Instr::InvokeSuper { dst, .. }
+    | Instr::CallSuperCtor { dst, .. }
+    | Instr::Import { dst, .. }
+    | Instr::MakePromoted { dst, .. }
+    | Instr::GetIndex { dst, .. }
+    | Instr::GetSlice { dst, .. }
+    | Instr::MakeRange { dst, .. } => Some(dst),
+    _ => None,
+  }
 }
 
 /// Every bytecode position `ip`'s instruction can transfer control to,
