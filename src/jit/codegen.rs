@@ -28,6 +28,7 @@ use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use rustc_hash::FxHashMap;
 
+use crate::jit::typeflow;
 use crate::vm::chunk::Instr;
 use crate::vm::object::{self, ObjFunction};
 use crate::vm::value::{self};
@@ -126,6 +127,12 @@ struct FuncCompiler<'a, 'b> {
   /// inside the helper's own class-method-table lookup, with no
   /// register holding it for generated code to read back directly.
   closure_out_slot: Option<StackSlot>,
+  /// Which registers are PROVEN numeric at each bytecode position --
+  /// see `jit::typeflow`'s own docs. Consulted before emitting any
+  /// guarded arithmetic op: when every operand is proven, the guard
+  /// and its slow-path fallback are skipped entirely (they'd never be
+  /// taken), leaving unconditional straight-line float math.
+  type_facts: typeflow::TypeFacts,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -137,6 +144,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     code_len: usize,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
+    let type_facts = typeflow::analyze(proto, None);
     FuncCompiler {
       fb,
       module,
@@ -151,7 +159,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       osr_ids: FxHashMap::default(),
       entry_sig: None,
       closure_out_slot: None,
+      type_facts,
     }
+  }
+
+  #[inline]
+  fn proven_numeric(&self, ip: usize, r: u8) -> bool {
+    self.type_facts.is_numeric(ip, r)
+  }
+
+  #[inline]
+  fn both_proven_numeric(&self, ip: usize, a: u8, b: u8) -> bool {
+    self.proven_numeric(ip, a) && self.proven_numeric(ip, b)
   }
 
   fn run(&mut self) -> Result<FxHashMap<usize, i32>, String> {
@@ -587,19 +606,35 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
 
       Instr::Add { dst, a, b } => {
-        self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
+        } else {
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
+        }
         false
       },
       Instr::Sub { dst, a, b } => {
-        self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_sub_slow", |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
+        } else {
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_sub_slow", |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
+        }
         false
       },
       Instr::Mul { dst, a, b } => {
-        self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mul_slow", |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
+        } else {
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mul_slow", |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
+        }
         false
       },
       Instr::Div { dst, a, b } => {
-        self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_div_slow", |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
+        } else {
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_div_slow", |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
+        }
         false
       },
       Instr::Pow { dst, a, b } => {
@@ -616,15 +651,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
 
       Instr::BitAnd { dst, a, b } => {
-        self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitand_slow", |fb, ia, ib| fb.ins().band(ia, ib));
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().band(ia, ib));
+        } else {
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitand_slow", |fb, ia, ib| fb.ins().band(ia, ib));
+        }
         false
       },
       Instr::BitOr { dst, a, b } => {
-        self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitor_slow", |fb, ia, ib| fb.ins().bor(ia, ib));
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().bor(ia, ib));
+        } else {
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitor_slow", |fb, ia, ib| fb.ins().bor(ia, ib));
+        }
         false
       },
       Instr::BitXor { dst, a, b } => {
-        self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitxor_slow", |fb, ia, ib| fb.ins().bxor(ia, ib));
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().bxor(ia, ib));
+        } else {
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitxor_slow", |fb, ia, ib| fb.ins().bxor(ia, ib));
+        }
         false
       },
       Instr::BitShl { dst, a, b } => {
@@ -640,55 +687,73 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::BitNot { dst, src } => {
-        let v = self.load_reg(src);
-        let is_num = self.is_number(v);
-        let fast_block = self.fb.create_block();
-        let slow_block = self.fb.create_block();
-        let done_block = self.fb.create_block();
-        self.fb.ins().brif(is_num, fast_block, &[], slow_block, &[]);
+        if self.proven_numeric(ip, src) {
+          let v = self.load_reg(src);
+          let f = self.to_f64(v);
+          let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+          let inv = self.fb.ins().bnot(i);
+          let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
+          let bits = self.from_f64(r);
+          self.store_reg(dst, bits);
+        } else {
+          let v = self.load_reg(src);
+          let is_num = self.is_number(v);
+          let fast_block = self.fb.create_block();
+          let slow_block = self.fb.create_block();
+          let done_block = self.fb.create_block();
+          self.fb.ins().brif(is_num, fast_block, &[], slow_block, &[]);
 
-        self.fb.switch_to_block(fast_block);
-        let f = self.to_f64(v);
-        let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-        let inv = self.fb.ins().bnot(i);
-        let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
-        let bits = self.from_f64(r);
-        self.store_reg(dst, bits);
-        self.fb.ins().jump(done_block, &[]);
+          self.fb.switch_to_block(fast_block);
+          let f = self.to_f64(v);
+          let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+          let inv = self.fb.ins().bnot(i);
+          let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
+          let bits = self.from_f64(r);
+          self.store_reg(dst, bits);
+          self.fb.ins().jump(done_block, &[]);
 
-        self.fb.switch_to_block(slow_block);
-        let base = self.base_param;
-        let dst_i = self.idx(dst);
-        let src_i = self.idx(src);
-        self.call_checked("zuri_jit_bitnot_slow", &[self.vm_param, base, dst_i, src_i]);
-        self.fb.ins().jump(done_block, &[]);
+          self.fb.switch_to_block(slow_block);
+          let base = self.base_param;
+          let dst_i = self.idx(dst);
+          let src_i = self.idx(src);
+          self.call_checked("zuri_jit_bitnot_slow", &[self.vm_param, base, dst_i, src_i]);
+          self.fb.ins().jump(done_block, &[]);
 
-        self.fb.switch_to_block(done_block);
+          self.fb.switch_to_block(done_block);
+        }
         false
       },
       Instr::Neg { dst, src } => {
-        let v = self.load_reg(src);
-        let is_num = self.is_number(v);
-        let fast_block = self.fb.create_block();
-        let slow_block = self.fb.create_block();
-        let done_block = self.fb.create_block();
-        self.fb.ins().brif(is_num, fast_block, &[], slow_block, &[]);
+        if self.proven_numeric(ip, src) {
+          let v = self.load_reg(src);
+          let f = self.to_f64(v);
+          let neg = self.fb.ins().fneg(f);
+          let bits = self.from_f64(neg);
+          self.store_reg(dst, bits);
+        } else {
+          let v = self.load_reg(src);
+          let is_num = self.is_number(v);
+          let fast_block = self.fb.create_block();
+          let slow_block = self.fb.create_block();
+          let done_block = self.fb.create_block();
+          self.fb.ins().brif(is_num, fast_block, &[], slow_block, &[]);
 
-        self.fb.switch_to_block(fast_block);
-        let f = self.to_f64(v);
-        let neg = self.fb.ins().fneg(f);
-        let bits = self.from_f64(neg);
-        self.store_reg(dst, bits);
-        self.fb.ins().jump(done_block, &[]);
+          self.fb.switch_to_block(fast_block);
+          let f = self.to_f64(v);
+          let neg = self.fb.ins().fneg(f);
+          let bits = self.from_f64(neg);
+          self.store_reg(dst, bits);
+          self.fb.ins().jump(done_block, &[]);
 
-        self.fb.switch_to_block(slow_block);
-        let base = self.base_param;
-        let dst_i = self.idx(dst);
-        let src_i = self.idx(src);
-        self.call_checked("zuri_jit_neg_slow", &[self.vm_param, base, dst_i, src_i]);
-        self.fb.ins().jump(done_block, &[]);
+          self.fb.switch_to_block(slow_block);
+          let base = self.base_param;
+          let dst_i = self.idx(dst);
+          let src_i = self.idx(src);
+          self.call_checked("zuri_jit_neg_slow", &[self.vm_param, base, dst_i, src_i]);
+          self.fb.ins().jump(done_block, &[]);
 
-        self.fb.switch_to_block(done_block);
+          self.fb.switch_to_block(done_block);
+        }
         false
       },
       Instr::Not { dst, src } => {
@@ -704,39 +769,63 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
 
       Instr::Eq { dst, a, b } => {
-        self.emit_compare_guarded(dst, a, b, "zuri_jit_eq_slow", IntCC::Equal);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_compare_proven_numeric(dst, a, b, IntCC::Equal);
+        } else {
+          self.emit_compare_guarded(dst, a, b, "zuri_jit_eq_slow", IntCC::Equal);
+        }
         false
       },
       Instr::Neq { dst, a, b } => {
-        self.emit_compare_guarded(dst, a, b, "zuri_jit_neq_slow", IntCC::NotEqual);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_compare_proven_numeric(dst, a, b, IntCC::NotEqual);
+        } else {
+          self.emit_compare_guarded(dst, a, b, "zuri_jit_neq_slow", IntCC::NotEqual);
+        }
         false
       },
       Instr::Lt { dst, a, b } => {
-        self.emit_fcompare_guarded(dst, a, b, "zuri_jit_lt_slow", cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+        } else {
+          self.emit_fcompare_guarded(dst, a, b, "zuri_jit_lt_slow", cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+        }
         false
       },
       Instr::Le { dst, a, b } => {
-        self.emit_fcompare_guarded(
-          dst,
-          a,
-          b,
-          "zuri_jit_le_slow",
-          cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
-        );
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual);
+        } else {
+          self.emit_fcompare_guarded(
+            dst,
+            a,
+            b,
+            "zuri_jit_le_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
+          );
+        }
         false
       },
       Instr::Gt { dst, a, b } => {
-        self.emit_fcompare_guarded(dst, a, b, "zuri_jit_gt_slow", cranelift_codegen::ir::condcodes::FloatCC::GreaterThan);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::GreaterThan);
+        } else {
+          self.emit_fcompare_guarded(dst, a, b, "zuri_jit_gt_slow", cranelift_codegen::ir::condcodes::FloatCC::GreaterThan);
+        }
         false
       },
       Instr::Ge { dst, a, b } => {
-        self.emit_fcompare_guarded(
-          dst,
-          a,
-          b,
-          "zuri_jit_ge_slow",
-          cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual,
-        );
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual);
+        } else {
+          self.emit_fcompare_guarded(
+            dst,
+            a,
+            b,
+            "zuri_jit_ge_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual,
+          );
+        }
         false
       },
 
@@ -1097,11 +1186,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
 
       Instr::AddImm { dst, a, imm_const } => {
-        self.emit_addimm(dst, a, imm_const);
+        if self.proven_numeric(ip, a) {
+          self.emit_addimm_proven(dst, a, imm_const);
+        } else {
+          self.emit_addimm(dst, a, imm_const);
+        }
         false
       },
       Instr::SubImm { dst, a, imm_const } => {
-        self.emit_imm_numeric_guarded(dst, a, imm_const, "zuri_jit_subimm_slow", |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
+        } else {
+          self.emit_imm_numeric_guarded(dst, a, imm_const, "zuri_jit_subimm_slow", |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
+        }
         false
       },
       Instr::MulImm { dst, a, imm_const } => {
@@ -1109,49 +1206,77 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // non-numeric fallback (string/list repeat) is common enough
         // (and cheap enough to check for) that `zuri_jit_mulimm_slow`
         // handles the WHOLE non-fast-path case uniformly; see its docs.
-        self.emit_imm_numeric_guarded(dst, a, imm_const, "zuri_jit_mulimm_slow", |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
+        } else {
+          self.emit_imm_numeric_guarded(dst, a, imm_const, "zuri_jit_mulimm_slow", |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
+        }
         false
       },
       Instr::LtImm { dst, a, imm_const } => {
-        self.emit_imm_compare_guarded(dst, a, imm_const, "zuri_jit_ltimm_slow", cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+        } else {
+          self.emit_imm_compare_guarded(dst, a, imm_const, "zuri_jit_ltimm_slow", cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+        }
         false
       },
       Instr::LeImm { dst, a, imm_const } => {
-        self.emit_imm_compare_guarded(
-          dst,
-          a,
-          imm_const,
-          "zuri_jit_leimm_slow",
-          cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
-        );
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual);
+        } else {
+          self.emit_imm_compare_guarded(
+            dst,
+            a,
+            imm_const,
+            "zuri_jit_leimm_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
+          );
+        }
         false
       },
       Instr::GtImm { dst, a, imm_const } => {
-        self.emit_imm_compare_guarded(
-          dst,
-          a,
-          imm_const,
-          "zuri_jit_gtimm_slow",
-          cranelift_codegen::ir::condcodes::FloatCC::GreaterThan,
-        );
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::GreaterThan);
+        } else {
+          self.emit_imm_compare_guarded(
+            dst,
+            a,
+            imm_const,
+            "zuri_jit_gtimm_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThan,
+          );
+        }
         false
       },
       Instr::GeImm { dst, a, imm_const } => {
-        self.emit_imm_compare_guarded(
-          dst,
-          a,
-          imm_const,
-          "zuri_jit_geimm_slow",
-          cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual,
-        );
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual);
+        } else {
+          self.emit_imm_compare_guarded(
+            dst,
+            a,
+            imm_const,
+            "zuri_jit_geimm_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual,
+          );
+        }
         false
       },
       Instr::EqImm { dst, a, imm_const } => {
-        self.emit_imm_eq(dst, a, imm_const, true);
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_eq_proven(dst, a, imm_const, true);
+        } else {
+          self.emit_imm_eq(dst, a, imm_const, true);
+        }
         false
       },
       Instr::NeqImm { dst, a, imm_const } => {
-        self.emit_imm_eq(dst, a, imm_const, false);
+        if self.proven_numeric(ip, a) {
+          self.emit_imm_eq_proven(dst, a, imm_const, false);
+        } else {
+          self.emit_imm_eq(dst, a, imm_const, false);
+        }
         false
       },
     }
@@ -1196,6 +1321,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `emit_binary_numeric_guarded`'s fast-path body with the guard,
+  /// branch, and slow-path fallback removed entirely -- valid only
+  /// when the caller has already confirmed (via `type_facts`) that `a`
+  /// and `b` are PROVEN numeric at this instruction, so the slow path
+  /// could never be reached anyway.
+  fn emit_binary_numeric_proven(&mut self, dst: u8, a: u8, b: u8, fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue) {
+    let va = self.load_reg(a);
+    let vb = self.load_reg(b);
+    let fa = self.to_f64(va);
+    let fb_ = self.to_f64(vb);
+    let fr = fast(self, fa, fb_);
+    let bits = self.from_f64(fr);
+    self.store_reg(dst, bits);
+  }
+
   fn emit_binary_numeric_guarded(
     &mut self,
     dst: u8,
@@ -1229,6 +1369,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+  }
+
+  /// `emit_bitwise_guarded`'s fast path, unguarded -- see
+  /// `emit_binary_numeric_proven`'s docs.
+  fn emit_bitwise_proven(&mut self, dst: u8, a: u8, b: u8, fast: impl FnOnce(&mut FunctionBuilder, IrValue, IrValue) -> IrValue) {
+    let va = self.load_reg(a);
+    let vb = self.load_reg(b);
+    let fa = self.to_f64(va);
+    let fb_ = self.to_f64(vb);
+    let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
+    let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+    let ir = fast(self.fb, ia, ib);
+    let fr = self.fb.ins().fcvt_from_sint(types::F64, ir);
+    let bits = self.from_f64(fr);
+    self.store_reg(dst, bits);
   }
 
   fn emit_bitwise_guarded(
@@ -1294,6 +1449,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `x == nil` chains through linked structures, `flag == true`, a
   /// number compared against a non-number, ...) is just one more
   /// branch away from the number fast path, no helper call at all.
+  /// `emit_compare_guarded`'s `num_block` path directly -- valid only
+  /// when `a`/`b` are PROVEN numeric, so the object/raw-bits cases can
+  /// never apply.
+  fn emit_compare_proven_numeric(&mut self, dst: u8, a: u8, b: u8, cc: IntCC) {
+    let va = self.load_reg(a);
+    let vb = self.load_reg(b);
+    let fa = self.to_f64(va);
+    let fb_ = self.to_f64(vb);
+    let cmp = self.fb.ins().fcmp(to_float_cc(cc), fa, fb_);
+    let bits = self.bool_value(cmp);
+    self.store_reg(dst, bits);
+  }
+
   fn emit_compare_guarded(&mut self, dst: u8, a: u8, b: u8, slow_helper: &'static str, cc: IntCC) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
@@ -1335,6 +1503,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `emit_fcompare_guarded`'s fast path, unguarded -- see
+  /// `emit_binary_numeric_proven`'s docs.
+  fn emit_fcompare_proven(&mut self, dst: u8, a: u8, b: u8, cc: cranelift_codegen::ir::condcodes::FloatCC) {
+    let va = self.load_reg(a);
+    let vb = self.load_reg(b);
+    let fa = self.to_f64(va);
+    let fb_ = self.to_f64(vb);
+    let cmp = self.fb.ins().fcmp(cc, fa, fb_);
+    let bits = self.bool_value(cmp);
+    self.store_reg(dst, bits);
+  }
+
   fn emit_fcompare_guarded(&mut self, dst: u8, a: u8, b: u8, slow_helper: &'static str, cc: cranelift_codegen::ir::condcodes::FloatCC) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
@@ -1363,6 +1543,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `emit_addimm`'s fast path, unguarded -- see
+  /// `emit_binary_numeric_proven`'s docs.
+  fn emit_addimm_proven(&mut self, dst: u8, a: u8, imm_const: u16) {
+    let va = self.load_reg(a);
+    let fa = self.to_f64(va);
+    let fimm_bits = self.bake_f64_bits(imm_const);
+    let fimm = self.to_f64(fimm_bits);
+    let fr = self.fb.ins().fadd(fa, fimm);
+    let bits = self.from_f64(fr);
+    self.store_reg(dst, bits);
+  }
+
   fn emit_addimm(&mut self, dst: u8, a: u8, imm_const: u16) {
     let va = self.load_reg(a);
     let guard = self.is_number(va);
@@ -1389,6 +1581,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+  }
+
+  /// `emit_imm_numeric_guarded`'s fast path, unguarded -- see
+  /// `emit_binary_numeric_proven`'s docs.
+  fn emit_imm_numeric_proven(&mut self, dst: u8, a: u8, imm_const: u16, fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue) {
+    let va = self.load_reg(a);
+    let fa = self.to_f64(va);
+    let fimm_bits = self.bake_f64_bits(imm_const);
+    let fimm = self.to_f64(fimm_bits);
+    let fr = fast(self, fa, fimm);
+    let bits = self.from_f64(fr);
+    self.store_reg(dst, bits);
   }
 
   fn emit_imm_numeric_guarded(
@@ -1426,6 +1630,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `emit_imm_compare_guarded`'s fast path, unguarded -- see
+  /// `emit_binary_numeric_proven`'s docs.
+  fn emit_imm_compare_proven(&mut self, dst: u8, a: u8, imm_const: u16, cc: cranelift_codegen::ir::condcodes::FloatCC) {
+    let va = self.load_reg(a);
+    let fa = self.to_f64(va);
+    let fimm_bits = self.bake_f64_bits(imm_const);
+    let fimm = self.to_f64(fimm_bits);
+    let cmp = self.fb.ins().fcmp(cc, fa, fimm);
+    let bits = self.bool_value(cmp);
+    self.store_reg(dst, bits);
+  }
+
   fn emit_imm_compare_guarded(&mut self, dst: u8, a: u8, imm_const: u16, slow_helper: &'static str, cc: cranelift_codegen::ir::condcodes::FloatCC) {
     let va = self.load_reg(a);
     let guard = self.is_number(va);
@@ -1461,6 +1677,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// it; otherwise `Value::equals` falls through to a raw bit compare
   /// (see `value.rs`), which is exactly what comparing the two `u64`s
   /// directly already gives here.
+  /// `emit_imm_eq`'s `num_block` path directly -- valid only when `a`
+  /// is PROVEN numeric.
+  fn emit_imm_eq_proven(&mut self, dst: u8, a: u8, imm_const: u16, want_eq: bool) {
+    let va = self.load_reg(a);
+    let fa = self.to_f64(va);
+    let imm_bits = self.bake_f64_bits(imm_const);
+    let fimm = self.to_f64(imm_bits);
+    let float_cc = if want_eq {
+      cranelift_codegen::ir::condcodes::FloatCC::Equal
+    } else {
+      cranelift_codegen::ir::condcodes::FloatCC::NotEqual
+    };
+    let cmp_num = self.fb.ins().fcmp(float_cc, fa, fimm);
+    let bits_num = self.bool_value(cmp_num);
+    self.store_reg(dst, bits_num);
+  }
+
   fn emit_imm_eq(&mut self, dst: u8, a: u8, imm_const: u16, want_eq: bool) {
     let va = self.load_reg(a);
     let is_num = self.is_number(va);

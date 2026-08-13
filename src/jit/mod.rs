@@ -75,6 +75,7 @@
 pub mod codegen;
 pub mod engine;
 pub mod runtime;
+pub mod typeflow;
 pub mod warmup;
 
 use std::sync::OnceLock;
