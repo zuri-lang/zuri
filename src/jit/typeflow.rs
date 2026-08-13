@@ -145,14 +145,6 @@ impl TypeFacts {
   pub fn is_numeric(&self, ip: usize, r: u8) -> bool {
     self.entry[ip].get(r)
   }
-
-  /// Same as `is_numeric`, but for a hypothetical `ip == code_len`
-  /// (function exit) is never queried -- only real instruction
-  /// positions are.
-  #[cfg(test)]
-  fn entry_set(&self, ip: usize) -> &RegSet {
-    &self.entry[ip]
-  }
 }
 
 /// Runs the analysis. `speculative_numeric_params`, if given, seeds
