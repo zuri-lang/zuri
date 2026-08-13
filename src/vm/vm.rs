@@ -167,10 +167,17 @@ pub struct VM {
   /// see `CatchHandler`'s own doc comment.
   catch_stack: Vec<CatchHandler>,
   /// Owns the Cranelift `JITModule` and drives whole-function
-  /// compilation -- see `crate::jit`. Lives for the whole process;
-  /// compiled machine code is never unloaded or recompiled once
-  /// produced.
-  pub(crate) jit_engine: JitEngine,
+  /// compilation -- see `crate::jit`. Lazily constructed (see
+  /// `VM::jit_engine`) on the FIRST actual compilation attempt, not at
+  /// `VM::new()` time -- setting up an ISA, a `JITModule`, and every
+  /// `jit::runtime` helper's signature is real, measurable work
+  /// (target/CPU-feature probing plus dozens of signature
+  /// declarations) that a short-lived script -- or any run with
+  /// `ZURI_JIT=0`, or one where nothing ever gets hot enough to
+  /// compile -- has no reason to pay at startup. Once built, it lives
+  /// for the rest of the process; compiled machine code is never
+  /// unloaded or recompiled.
+  jit_engine: Option<JitEngine>,
   /// Side channel a `crate::jit::runtime` helper sets to a non-nil
   /// exception `Value` exactly when it needs to propagate a failure
   /// out of currently-executing compiled code. Compiled code has no
@@ -234,7 +241,7 @@ impl VM {
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
       catch_stack: Vec::new(),
-      jit_engine: JitEngine::new(),
+      jit_engine: None,
       jit_pending_exception: Cell::new(Value::nil()),
       jit_enabled: !matches!(
         std::env::var("ZURI_JIT").as_deref(),
@@ -661,6 +668,13 @@ impl VM {
     self.try_compile(proto)
   }
 
+  /// The Cranelift engine, built on first use -- see `jit_engine`
+  /// field's own docs for why this is lazy rather than built in
+  /// `VM::new()`.
+  fn jit_engine(&mut self) -> &mut JitEngine {
+    self.jit_engine.get_or_insert_with(JitEngine::new)
+  }
+
   /// Compile `proto` right now (regardless of its own warm-up
   /// counters), memoizing either the resulting entry point (plus its
   /// OSR map) or a sticky "don't try again" flag on
@@ -676,7 +690,7 @@ impl VM {
     if proto.jit.ineligible.get() {
       return None;
     }
-    match self.jit_engine.compile_function(proto) {
+    match self.jit_engine().compile_function(proto) {
       Ok(compiled) => {
         if crate::jit::log_enabled() {
           eprintln!(
