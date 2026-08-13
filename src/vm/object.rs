@@ -183,10 +183,26 @@ pub struct JitInfo {
   /// still gets compiled without waiting for a second call that may
   /// never come.
   pub osr_threshold: u32,
-  /// Set once a compilation attempt has run and PRODUCED code. `None`
-  /// before that -- every call/loop-iteration checks this cheaply
-  /// before doing anything else.
-  pub compiled: RefCell<Option<Rc<crate::jit::CompiledFunction>>>,
+  /// Set once a compilation attempt has run and PRODUCED code -- the
+  /// single, allocation-free "is this compiled, and if so what do I
+  /// call" check consulted on EVERY `Instr::Call`/`Invoke`/... site,
+  /// deliberately a bare `Cell` of a `Copy` function pointer rather
+  /// than hidden behind a `RefCell<Option<Rc<...>>>`. A borrow-flag
+  /// check plus a refcount bump on every single hot call turned out to
+  /// cost real, measurable time once call-heavy code (recursive
+  /// fibonacci, tree traversal, ...) got compiled -- exactly the kind
+  /// of code a JIT most needs to win on -- so this field is the
+  /// leanest thing that can answer "do I have compiled code, and where
+  /// is its entry point" with nothing more than a single memory load.
+  pub entry: Cell<Option<crate::jit::EntryFn>>,
+  /// The bytecode-ip -> osr-id map for this function's own loop
+  /// headers, populated at the same time `entry` is. Kept OFF the hot
+  /// call path on purpose -- unlike `entry`, this is only ever
+  /// consulted from `VM::maybe_osr`, itself only reached from a
+  /// backward `Instr::Jmp` (cold relative to a call site in
+  /// call-dominated code), so the `RefCell`'s cost doesn't matter here
+  /// the way it does for `entry`.
+  pub osr_ids: RefCell<Option<FxHashMap<usize, i32>>>,
   /// Set once a compilation attempt has run and FAILED, or the
   /// function was found ineligible up front (contains `Raise`/
   /// `PushCatch`/`PopCatch` -- see the `crate::jit` module docs for why
@@ -208,7 +224,8 @@ impl JitInfo {
       call_count: Cell::new(0),
       call_threshold: crate::jit::warmup::call_threshold(code_len),
       osr_threshold: crate::jit::warmup::osr_threshold(code_len),
-      compiled: RefCell::new(None),
+      entry: Cell::new(None),
+      osr_ids: RefCell::new(None),
       ineligible: Cell::new(false),
       osr_counts: RefCell::new(FxHashMap::default()),
     }

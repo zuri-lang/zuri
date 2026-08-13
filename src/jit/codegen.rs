@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{Block, InstBuilder, Value as IrValue, types};
+use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, SigRef, StackSlot, StackSlotData, StackSlotKind, Value as IrValue, types};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
@@ -96,6 +96,22 @@ struct FuncCompiler<'a, 'b> {
   base_bytes: IrValue,
   closure_param: IrValue,
   osr_ids: FxHashMap<usize, i32>,
+  /// Cached `SigRef` for `jit::EntryFn`'s own shape
+  /// (`(i64,i64,i64,i32)->i64`) -- imported at most once per compiled
+  /// function (see `entry_sig_ref`), then reused by every
+  /// `call_indirect` this function's own fast, inline-cache-style call
+  /// sites need (`emit_fast_call`).
+  entry_sig: Option<SigRef>,
+  /// An 8-byte scratch stack slot, allocated at most once per compiled
+  /// function and reused by every fast-call site
+  /// (`closure_out_addr`/`emit_fast_call`) -- the out-parameter
+  /// `zuri_jit_call_prepare`/`zuri_jit_invoke_prepare` write the
+  /// resolved callee closure's `Value` bits into, since (unlike
+  /// `Instr::Call`, where the callee already sits in an ordinary
+  /// register) `Instr::Invoke`'s resolved METHOD closure exists only
+  /// inside the helper's own class-method-table lookup, with no
+  /// register holding it for generated code to read back directly.
+  closure_out_slot: Option<StackSlot>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -119,6 +135,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       base_bytes: IrValue::from_u32(0),
       closure_param: IrValue::from_u32(0),
       osr_ids: FxHashMap::default(),
+      entry_sig: None,
+      closure_out_slot: None,
     }
   }
 
@@ -309,6 +327,98 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(ok_block);
     self.refresh_regs();
+  }
+
+  /// `SigRef` for `jit::EntryFn`'s own call shape -- what every fast-
+  /// path `call_indirect` in `emit_fast_call` targets. Imported at most
+  /// once per compiled function and cached, since it's the exact same
+  /// shape at every call site.
+  fn entry_sig_ref(&mut self) -> SigRef {
+    if let Some(sig) = self.entry_sig {
+      return sig;
+    }
+    let mut sig = self.module.make_signature();
+    sig.params.push(AbiParam::new(types::I64)); // vm
+    sig.params.push(AbiParam::new(types::I64)); // base
+    sig.params.push(AbiParam::new(types::I64)); // closure
+    sig.params.push(AbiParam::new(types::I32)); // osr_id
+    sig.returns.push(AbiParam::new(types::I64));
+    let sig_ref = self.fb.import_signature(sig);
+    self.entry_sig = Some(sig_ref);
+    sig_ref
+  }
+
+  /// The 8-byte scratch stack slot `prepare` helpers write the resolved
+  /// callee closure's `Value` bits into -- see `closure_out_slot`'s own
+  /// docs. Allocated at most once per compiled function.
+  fn closure_out_slot(&mut self) -> StackSlot {
+    if let Some(slot) = self.closure_out_slot {
+      return slot;
+    }
+    let slot = self
+      .fb
+      .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
+    self.closure_out_slot = Some(slot);
+    slot
+  }
+
+  /// The fast, inline-cache-style direct-call pattern shared by
+  /// `Instr::Call` and `Instr::Invoke` -- see `jit::runtime`'s "Fast,
+  /// inline-cache-style direct calls" docs for the full protocol this
+  /// implements. `prepare_helper` is `zuri_jit_call_prepare` or
+  /// `zuri_jit_invoke_prepare`, called with `prepare_args` PLUS the
+  /// address of the scratch closure-out slot (appended here, not by the
+  /// caller); `new_base` is the callee's frame base (already computable
+  /// at compile time as `base + reg + 1`, so there's no need for
+  /// `prepare` to report it back). `slow_helper` (an ordinary
+  /// `call_checked` target -- `zuri_jit_call`/`zuri_jit_invoke`) is the
+  /// fully general fallback for a `0` (not-yet-compiled, or not even a
+  /// closure) result from `prepare`.
+  fn emit_fast_call(
+    &mut self,
+    prepare_helper: &'static str,
+    prepare_args: &[IrValue],
+    new_base: IrValue,
+    dst: u8,
+    slow_helper: &'static str,
+    slow_args: &[IrValue],
+  ) {
+    let closure_out_addr = {
+      let slot = self.closure_out_slot();
+      self.fb.ins().stack_addr(types::I64, slot, 0)
+    };
+    let mut args = prepare_args.to_vec();
+    args.push(closure_out_addr);
+    let prepare = self.call_helper(prepare_helper, &args);
+    self.refresh_regs();
+    let zero = self.i64c(0);
+    let is_fast = self.fb.ins().icmp(IntCC::NotEqual, prepare, zero);
+
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(is_fast, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let closure_bits = {
+      let slot = self.closure_out_slot();
+      self.fb.ins().stack_load(types::I64, types::I64, slot, 0)
+    };
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let sig = self.entry_sig_ref();
+    let call = self.fb.ins().call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1]);
+    let ret_bits = self.fb.inst_results(call)[0];
+    self.refresh_regs();
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    self.call_checked("zuri_jit_call_finish", &[self.vm_param, base, dst_i, new_base, ret_bits]);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.call_checked(slow_helper, slow_args);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
   }
 
   // ---------------------------------------------------------------
@@ -571,10 +681,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::Call { dst, func, num_args } => {
         self.emit_safepoint();
         let base = self.base_param;
+        let vm_p = self.vm_param;
         let func_i = self.idx(func);
         let num_args_i = self.idx(num_args);
         let dst_i = self.idx(dst);
-        self.call_checked("zuri_jit_call", &[self.vm_param, base, func_i, num_args_i, dst_i]);
+        let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+        self.emit_fast_call(
+          "zuri_jit_call_prepare",
+          &[vm_p, base, func_i, num_args_i, dst_i],
+          new_base,
+          dst,
+          "zuri_jit_call",
+          &[vm_p, base, func_i, num_args_i, dst_i],
+        );
         false
       },
       Instr::Return { src } => {
@@ -734,11 +853,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::Invoke { dst, obj, method_const, num_args } => {
         self.emit_safepoint();
         let base = self.base_param;
+        let vm_p = self.vm_param;
         let obj_i = self.idx(obj);
         let num_args_i = self.idx(num_args);
         let dst_i = self.idx(dst);
         let name = self.bake_const(method_const);
-        self.call_checked("zuri_jit_invoke", &[self.vm_param, base, obj_i, num_args_i, dst_i, name]);
+        let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
+        self.emit_fast_call(
+          "zuri_jit_invoke_prepare",
+          &[vm_p, base, obj_i, num_args_i, dst_i, name],
+          new_base,
+          dst,
+          "zuri_jit_invoke",
+          &[vm_p, base, obj_i, num_args_i, dst_i, name],
+        );
         false
       },
       Instr::InvokeSuper { dst, superclass, method_const, num_args } => {

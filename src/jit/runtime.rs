@@ -588,6 +588,144 @@ imm_compare_slow!(zuri_jit_gtimm_slow, ">", "@gt", |x: f64, y: f64| x > y);
 imm_compare_slow!(zuri_jit_geimm_slow, ">=", "@gte", |x: f64, y: f64| x >= y);
 
 // ---------------------------------------------------------------------
+// Fast, inline-cache-style direct calls -- `Instr::Call`/`Instr::Invoke`'s
+// PRIMARY path once their target has warmed up, bypassing
+// `dispatch_call_sync`'s fully general dispatch (which re-derives arity/
+// variadic/frame-setup logic AND pays real `Option`/`RunResult`
+// plumbing on every single call) entirely for the one case that matters
+// most for a JIT's own performance: a call from compiled code straight
+// into ANOTHER already-compiled function.
+//
+// The `*_prepare` helpers below are a PURE peek-and-set-up step: they
+// never trigger compilation and never touch `call_count`/the warm-up
+// counters. A cold callee (including the very first call that happens
+// to cross its own warm-up threshold) always returns `0` here and falls
+// through to the fully general slow path (`zuri_jit_call`/
+// `zuri_jit_invoke`), which already owns ALL of that bookkeeping --
+// duplicating it here would risk double-counting a single call toward
+// warm-up. Once a callee is compiled, every LATER call to it takes this
+// fast path instead.
+//
+// `codegen::FuncCompiler::emit_fast_call` is the generated-code half of
+// this protocol: call `*_prepare`, passing the address of an 8-byte
+// scratch stack slot as its LAST argument; if it returns a non-zero
+// entry pointer, read the closure bits `prepare` wrote into that slot
+// (needed for `GetUpval`/`SetUpval`/`Instr::Closure` inside the callee
+// -- for `Invoke` specifically, the resolved METHOD closure is never
+// sitting in any register the caller's own code has access to, only
+// inside `prepare`'s own class-method-table lookup, hence the out-
+// param rather than reading a register) and `call_indirect` straight
+// to the entry point (a real, direct machine call, no further helper
+// indirection at all) with `(vm, new_base, closure_bits, -1)`, then
+// call `zuri_jit_call_finish` to close upvalues, pop the frame, and
+// write the return value -- exactly what `VM::invoke_compiled` does,
+// just split across the call boundary so the actual call is a plain
+// `call_indirect` instead of a nested Rust function call.
+// ---------------------------------------------------------------------
+
+/// `Instr::Call`'s fast-path peek: `func_reg` must hold an already-
+/// compiled `Closure`. On success, ALSO performs every bit of frame
+/// setup `dispatch_call`'s Closure arm would (via
+/// `VM::setup_closure_call`), writes the callee's own `Value` bits to
+/// `*closure_out`, and enters one level of JIT call depth (matching
+/// `VM::invoke_compiled`'s bracket, mirrored on the other side by
+/// `zuri_jit_call_finish`), so by the time this returns non-zero,
+/// generated code can go straight to a `call_indirect` with no further
+/// setup at all.
+pub unsafe extern "C" fn zuri_jit_call_prepare(vm_ptr: *mut VM, base: u64, func_reg: u64, num_args: u64, dst: u64, closure_out: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let func_reg = func_reg as u8;
+  let callee = vm.get_reg(base, func_reg);
+  if !callee.is_closure() || !vm.jit_depth_ok() {
+    return 0;
+  }
+  let closure = callee.as_closure();
+  let proto = closure.function.as_func();
+  let Some(entry) = proto.jit.entry.get() else {
+    return 0;
+  };
+  let new_base = base + func_reg as usize + 1;
+  vm.setup_closure_call(callee, closure, proto, new_base, num_args as u8, dst as u8);
+  vm.jit_depth_enter();
+  unsafe { *(closure_out as *mut u64) = callee.to_bits() };
+  entry as usize as u64
+}
+
+/// `Instr::Invoke`'s fast-path peek: `obj` must hold an instance whose
+/// class resolves `method_name_bits` to an already-compiled `Closure`
+/// method (NOT a field holding a callable, and not a builtin/native
+/// fallback -- both of those still go through the fully general
+/// `zuri_jit_invoke`). Mirrors `zuri_jit_call_prepare` otherwise (see
+/// its docs for the full protocol), except the value written to
+/// `*closure_out` is the resolved METHOD, not the receiver in `obj`.
+pub unsafe extern "C" fn zuri_jit_invoke_prepare(
+  vm_ptr: *mut VM,
+  base: u64,
+  obj: u64,
+  num_args: u64,
+  dst: u64,
+  method_name_bits: u64,
+  closure_out: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let obj = obj as u8;
+  let receiver = vm.get_reg(base, obj);
+  if !receiver.is_instance() || !vm.jit_depth_ok() {
+    return 0;
+  }
+  let method_name = Value::from_bits(method_name_bits);
+  let method = {
+    let inst = receiver.as_instance();
+    let class = inst.class.as_class();
+    class.methods.get(method_name.as_str()).copied()
+  };
+  let Some(method) = method else {
+    return 0;
+  };
+  if !method.is_closure() {
+    return 0;
+  }
+  let closure = method.as_closure();
+  let proto = closure.function.as_func();
+  let Some(entry) = proto.jit.entry.get() else {
+    return 0;
+  };
+  // `1 + num_args`: the receiver the compiler already duplicated into
+  // `obj + 1` occupies the callee's own register 0 ("self") -- see
+  // `Instr::Invoke`'s own doc comment in chunk.rs, and
+  // `VM::invoke_prebound_inner`'s identical convention.
+  let new_base = base + obj as usize + 1;
+  vm.setup_closure_call(method, closure, proto, new_base, 1 + num_args as u8, dst as u8);
+  vm.jit_depth_enter();
+  unsafe { *(closure_out as *mut u64) = method.to_bits() };
+  entry as usize as u64
+}
+
+/// Completes a fast-path direct call after generated code's own
+/// `call_indirect` returns -- the other half of `zuri_jit_call_prepare`/
+/// `zuri_jit_invoke_prepare`'s bracket. `new_base` is the CALLEE's own
+/// frame base (needed to close its upvalues); `base`/`dst` are the
+/// CALLER's, to write the return value into the right place. Follows
+/// the ordinary OK(0)/ERR(1) helper convention -- on error, the pending
+/// exception is left exactly as the failing compiled call already set
+/// it (see this module's top-level docs), and the frame is left in
+/// place, matching `VM::invoke_compiled`'s own error-path semantics
+/// precisely (compiled code never pops its own frame on error).
+pub unsafe extern "C" fn zuri_jit_call_finish(vm_ptr: *mut VM, base: u64, dst: u64, new_base: u64, ret_bits: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.jit_depth_exit();
+  if !vm.jit_pending_exception.get().is_nil() {
+    return ERR;
+  }
+  vm.close_upvalues_from(new_base as usize);
+  vm.pop_frame();
+  vm.set_reg(base as usize, dst as u8, Value::from_bits(ret_bits));
+  OK
+}
+
+// ---------------------------------------------------------------------
 // Calls -- mixed-mode dispatch. `dispatch_call_sync`/`invoke_prebound_sync`
 // already fully implement "run interpreted, or run compiled if
 // warm/available, and return synchronously either way" (see vm.rs) --
@@ -1666,6 +1804,7 @@ type Fn3 = unsafe extern "C" fn(*mut VM, u64, u64) -> u64;
 type Fn4 = unsafe extern "C" fn(*mut VM, u64, u64, u64) -> u64;
 type Fn5 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64) -> u64;
 type Fn6 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64) -> u64;
+type Fn7 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64) -> u64;
 
 /// Reinterprets an already-coerced, concrete function-pointer value
 /// (one of the `FnN` aliases above -- NOT a bare function item, which
@@ -1726,6 +1865,15 @@ macro_rules! spec6 {
     }
   };
 }
+macro_rules! spec7 {
+  ($f:ident) => {
+    HelperSpec {
+      name: stringify!($f),
+      ptr: as_ptr($f as Fn7),
+      arity: 7,
+    }
+  };
+}
 
 pub fn helper_table() -> Vec<HelperSpec> {
   vec![
@@ -1769,6 +1917,9 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_gtimm_slow),
     spec5!(zuri_jit_geimm_slow),
     spec5!(zuri_jit_call),
+    spec6!(zuri_jit_call_prepare),
+    spec7!(zuri_jit_invoke_prepare),
+    spec5!(zuri_jit_call_finish),
     spec5!(zuri_jit_call_super_ctor),
     spec5!(zuri_jit_make_closure),
     spec5!(zuri_jit_get_upval),

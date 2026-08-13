@@ -1,13 +1,12 @@
 use std::cell::Cell;
 use std::ops::{Neg, Shl, Shr};
-use std::rc::Rc;
 
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::builtins;
-use crate::jit::{CompiledFunction, JitEngine};
+use crate::jit::{EntryFn, JitEngine};
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -641,12 +640,20 @@ impl VM {
   /// see the `jit` module's docs), it isn't warm enough yet, or the
   /// real call stack is already deep enough that handing it another
   /// native call risks overflowing it (see `MAX_JIT_CALL_DEPTH`).
-  pub(crate) fn tiered_entry(&mut self, proto: &ObjFunction) -> Option<Rc<CompiledFunction>> {
+  ///
+  /// This is THE hot-path check -- reached on every single
+  /// `Instr::Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`, so the
+  /// common case (already compiled) is nothing more than an enabled-
+  /// flag read, a depth-counter read, and one `Cell::get()` on
+  /// `proto.jit.entry`. See `object::JitInfo::entry`'s own docs for why
+  /// this is deliberately NOT behind a `RefCell<Option<Rc<...>>>`.
+  #[inline]
+  pub(crate) fn tiered_entry(&mut self, proto: &ObjFunction) -> Option<EntryFn> {
     if !self.jit_enabled || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
       return None;
     }
-    if let Some(c) = proto.jit.compiled.borrow().as_ref() {
-      return Some(c.clone());
+    if let Some(entry) = proto.jit.entry.get() {
+      return Some(entry);
     }
     if proto.jit.ineligible.get() || proto.jit.call_count.get() < proto.jit.call_threshold {
       return None;
@@ -655,14 +662,16 @@ impl VM {
   }
 
   /// Compile `proto` right now (regardless of its own warm-up
-  /// counters), memoizing either the resulting `CompiledFunction` or a
-  /// sticky "don't try again" flag on `proto.jit.ineligible`. Shared by
-  /// ordinary call-site warm-up (`tiered_entry`) and OSR (`maybe_osr`),
-  /// both of which want "compile it if we haven't already, then use
-  /// whatever's there" with no duplicated bookkeeping.
-  pub(crate) fn try_compile(&mut self, proto: &ObjFunction) -> Option<Rc<CompiledFunction>> {
-    if let Some(c) = proto.jit.compiled.borrow().as_ref() {
-      return Some(c.clone());
+  /// counters), memoizing either the resulting entry point (plus its
+  /// OSR map) or a sticky "don't try again" flag on
+  /// `proto.jit.ineligible`. Shared by ordinary call-site warm-up
+  /// (`tiered_entry`) and OSR (`maybe_osr`), both of which want
+  /// "compile it if we haven't already, then use whatever's there"
+  /// with no duplicated bookkeeping. Cold relative to `tiered_entry` --
+  /// runs at most once per prototype, ever.
+  pub(crate) fn try_compile(&mut self, proto: &ObjFunction) -> Option<EntryFn> {
+    if let Some(entry) = proto.jit.entry.get() {
+      return Some(entry);
     }
     if proto.jit.ineligible.get() {
       return None;
@@ -677,9 +686,9 @@ impl VM {
             compiled.osr_ids.len()
           );
         }
-        let rc = Rc::new(compiled);
-        *proto.jit.compiled.borrow_mut() = Some(rc.clone());
-        Some(rc)
+        *proto.jit.osr_ids.borrow_mut() = Some(compiled.osr_ids);
+        proto.jit.entry.set(Some(compiled.entry));
+        Some(compiled.entry)
       },
       Err(reason) => {
         if crate::jit::log_enabled() {
@@ -701,8 +710,8 @@ impl VM {
   /// `Instr::Call` does.
   fn run_frame(&mut self, stop_depth: usize, proto: &ObjFunction, closure_val: Value) -> RunResult<Value> {
     proto.jit.call_count.set(proto.jit.call_count.get().saturating_add(1));
-    if let Some(compiled) = self.tiered_entry(proto) {
-      return self.invoke_compiled(&compiled, closure_val, -1);
+    if let Some(entry) = self.tiered_entry(proto) {
+      return self.invoke_compiled(entry, closure_val, -1);
     }
     self.run_until(stop_depth)
   }
@@ -710,8 +719,8 @@ impl VM {
   /// Runs the CURRENT top frame (already pushed, `self.frames.last()`)
   /// as compiled machine code from `osr_id` (`-1` for an ordinary
   /// entry starting at bytecode ip 0; a non-negative id from
-  /// `CompiledFunction::osr_ids` to jump straight into a specific loop
-  /// header instead -- see `maybe_osr`).
+  /// `JitInfo::osr_ids` to jump straight into a specific loop header
+  /// instead -- see `maybe_osr`).
   ///
   /// On success, pops the frame and returns `Ok(value)` -- exactly
   /// `Instr::Return`'s own effect. On failure, the frame is left in
@@ -720,7 +729,7 @@ impl VM {
   /// eventually claims it, to be truncated in one shot by
   /// `handle_exception`" behavior -- compiled code never pops on error,
   /// only on success, for exactly that reason.
-  fn invoke_compiled(&mut self, compiled: &CompiledFunction, closure_val: Value, osr_id: i32) -> RunResult<Value> {
+  fn invoke_compiled(&mut self, entry: EntryFn, closure_val: Value, osr_id: i32) -> RunResult<Value> {
     let base = self
       .frames
       .last()
@@ -728,7 +737,6 @@ impl VM {
       .base;
 
     self.jit_call_depth.set(self.jit_call_depth.get() + 1);
-    let entry = compiled.entry;
     // SAFETY: `entry` was produced by `jit::engine::JitEngine::compile_function`
     // for THIS exact prototype; `base` is this (already-pushed) frame's
     // own register-window start, matching every other caller of this
@@ -761,11 +769,10 @@ impl VM {
       return None;
     }
 
-    if let Some(compiled) = func.jit.compiled.borrow().as_ref() {
-      let osr_id = *compiled.osr_ids.get(&target_ip)?;
-      let compiled = compiled.clone();
+    if let Some(entry) = func.jit.entry.get() {
+      let osr_id = *func.jit.osr_ids.borrow().as_ref()?.get(&target_ip)?;
       let closure_val = self.frames.last().unwrap().closure_val;
-      return Some(self.invoke_compiled(&compiled, closure_val, osr_id));
+      return Some(self.invoke_compiled(entry, closure_val, osr_id));
     }
 
     let hot = {
@@ -778,10 +785,91 @@ impl VM {
       return None;
     }
 
-    let compiled = self.try_compile(func)?;
-    let osr_id = *compiled.osr_ids.get(&target_ip)?;
+    let entry = self.try_compile(func)?;
+    let osr_id = *func.jit.osr_ids.borrow().as_ref()?.get(&target_ip)?;
     let closure_val = self.frames.last().unwrap().closure_val;
-    Some(self.invoke_compiled(&compiled, closure_val, osr_id))
+    Some(self.invoke_compiled(entry, closure_val, osr_id))
+  }
+
+  /// Pops the current top frame with no upvalue-closing/return-value
+  /// bookkeeping -- used only by `jit::runtime::zuri_jit_call_finish`
+  /// (and its `Invoke` counterpart), which need `VM::frames` itself
+  /// (private to this module) popped from OUTSIDE `vm.rs` after a
+  /// direct, inline-cached compiled-to-compiled call completes. Every
+  /// other frame-pop site in this file already has direct field access
+  /// and doesn't need this wrapper.
+  pub(crate) fn pop_frame(&mut self) {
+    self.frames.pop();
+  }
+
+  /// Is the real native call stack shallow enough to safely add one
+  /// more nested compiled call? See `MAX_JIT_CALL_DEPTH`'s own docs.
+  /// Exposed as its own cheap, side-effect-free check (rather than
+  /// folded into `tiered_entry`) specifically for
+  /// `jit::runtime::zuri_jit_call_prepare`/`zuri_jit_invoke_prepare`'s
+  /// PURE peek at whether the fast, inline-cache-style direct-call path
+  /// applies -- see those functions' own docs on why they never
+  /// trigger compilation or touch `call_count` themselves.
+  #[inline]
+  pub(crate) fn jit_depth_ok(&self) -> bool {
+    self.jit_enabled && self.jit_call_depth.get() < MAX_JIT_CALL_DEPTH
+  }
+
+  #[inline]
+  pub(crate) fn jit_depth_enter(&self) {
+    self.jit_call_depth.set(self.jit_call_depth.get() + 1);
+  }
+
+  #[inline]
+  pub(crate) fn jit_depth_exit(&self) {
+    self.jit_call_depth.set(self.jit_call_depth.get() - 1);
+  }
+
+  /// Sets up a new register window and pushes a `CallFrame` for
+  /// calling `closure` (whose prototype is `proto`) with `num_args`
+  /// argument slots ALREADY sitting at `new_base .. new_base+num_args`
+  /// -- the exact frame-setup both `dispatch_call`'s Closure arm,
+  /// `invoke_prebound`, and the JIT's own fast, inline-cache-style
+  /// direct-call path (`jit::runtime::zuri_jit_call_prepare`/
+  /// `zuri_jit_invoke_prepare`) all need, kept in exactly one place so
+  /// they can never drift apart. Fills any missing fixed parameters
+  /// with nil and collects any extra variadic arguments into a list,
+  /// matching this VM's established calling convention.
+  pub(crate) fn setup_closure_call(
+    &mut self,
+    closure_val: Value,
+    closure: &ObjClosure,
+    proto: &ObjFunction,
+    new_base: usize,
+    num_args: u8,
+    dst_in_caller: u8,
+  ) {
+    let required = if proto.variadic { proto.arity - 1 } else { proto.arity };
+    let needed = new_base + proto.num_registers as usize;
+    if self.registers.len() < needed {
+      self.registers.resize(needed, Value::nil());
+    }
+    for i in num_args..required {
+      self.registers[new_base + i as usize] = Value::nil();
+    }
+    if proto.variadic {
+      let extra_count = num_args.saturating_sub(required);
+      let mut items = Vec::with_capacity(extra_count as usize);
+      for i in 0..extra_count {
+        items.push(self.registers[new_base + required as usize + i as usize]);
+      }
+      let list_val = self.heap.alloc_list(items);
+      self.registers[new_base + required as usize] = list_val;
+    }
+
+    self.frames.push(CallFrame {
+      function: proto as *const ObjFunction,
+      closure: closure as *const ObjClosure,
+      closure_val,
+      ip: 0,
+      base: new_base,
+      dst_in_caller,
+    });
   }
 
   pub(crate) fn call_native(
@@ -969,38 +1057,8 @@ impl VM {
       Obj::Closure(_) => {
         let callee_closure = callee.as_closure();
         let callee_fn = callee_closure.function.as_func();
-        let required = if callee_fn.variadic {
-          callee_fn.arity - 1
-        } else {
-          callee_fn.arity
-        };
-
         let new_base = base + func_reg as usize + 1;
-        let needed = new_base + callee_fn.num_registers as usize;
-        if self.registers.len() < needed {
-          self.registers.resize(needed, Value::nil());
-        }
-        for i in num_args..required {
-          self.registers[new_base + i as usize] = Value::nil();
-        }
-        if callee_fn.variadic {
-          let extra_count = num_args.saturating_sub(required);
-          let mut items = Vec::with_capacity(extra_count as usize);
-          for i in 0..extra_count {
-            items.push(self.registers[new_base + required as usize + i as usize]);
-          }
-          let list_val = self.heap.alloc_list(items);
-          self.registers[new_base + required as usize] = list_val;
-        }
-
-        self.frames.push(CallFrame {
-          function: callee_fn as *const ObjFunction,
-          closure: callee_closure as *const ObjClosure,
-          closure_val: callee,
-          ip: 0,
-          base: new_base,
-          dst_in_caller: dst,
-        });
+        self.setup_closure_call(callee, callee_closure, callee_fn, new_base, num_args, dst);
         if sync {
           // No flat interpreter loop is waiting for this frame -- run
           // it to completion right now, interpreted or compiled
@@ -1019,8 +1077,8 @@ impl VM {
           // existing push-and-continue behavior is completely
           // unchanged.
           callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
-          if let Some(compiled) = self.tiered_entry(callee_fn) {
-            let ret = self.invoke_compiled(&compiled, callee, -1)?;
+          if let Some(entry) = self.tiered_entry(callee_fn) {
+            let ret = self.invoke_compiled(entry, callee, -1)?;
             self.set_reg(base, dst, ret);
           }
         }
@@ -1100,38 +1158,12 @@ impl VM {
 
     let callee_closure = callee.as_closure();
     let callee_fn = callee_closure.function.as_func();
-
-    let required = if callee_fn.variadic {
-      callee_fn.arity - 1
-    } else {
-      callee_fn.arity
-    };
     let new_base = base + recv_reg as usize + 1;
-    let needed = new_base + callee_fn.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-    }
-    for i in (1 + num_args)..required {
-      self.registers[new_base + i as usize] = Value::nil();
-    }
-    if callee_fn.variadic {
-      let extra_count = (1 + num_args).saturating_sub(required);
-      let mut items = Vec::with_capacity(extra_count as usize);
-      for i in 0..extra_count {
-        items.push(self.registers[new_base + required as usize + i as usize]);
-      }
-      let list_val = self.heap.alloc_list(items);
-      self.registers[new_base + required as usize] = list_val;
-    }
-
-    self.frames.push(CallFrame {
-      function: callee_fn as *const ObjFunction,
-      closure: callee_closure as *const ObjClosure,
-      closure_val: callee,
-      ip: 0,
-      base: new_base,
-      dst_in_caller: dst,
-    });
+    // `1 + num_args`: the receiver the compiler already duplicated
+    // into `recv_reg + 1` occupies the callee's own register 0 ("self"),
+    // ahead of the `num_args` user arguments -- see `Instr::Invoke`'s
+    // own doc comment in chunk.rs.
+    self.setup_closure_call(callee, callee_closure, callee_fn, new_base, 1 + num_args, dst);
     if sync {
       let stop_depth = self.frames.len() - 1;
       let ret = self.run_frame(stop_depth, callee_fn, callee)?;
@@ -1140,8 +1172,8 @@ impl VM {
       // Same mixed-mode tiering as `dispatch_call`'s Closure arm -- see
       // its comment for the full rationale.
       callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
-      if let Some(compiled) = self.tiered_entry(callee_fn) {
-        let ret = self.invoke_compiled(&compiled, callee, -1)?;
+      if let Some(entry) = self.tiered_entry(callee_fn) {
+        let ret = self.invoke_compiled(entry, callee, -1)?;
         self.set_reg(base, dst, ret);
       }
     }
