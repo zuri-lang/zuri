@@ -96,7 +96,12 @@ fn curve(k: f64, instruction_count: usize, min: u32, max: u32) -> u32 {
 /// How many real invocations this function needs before the VM
 /// compiles it -- see the module-level docs for the shape of the curve.
 pub fn call_threshold(instruction_count: usize) -> u32 {
-  curve(call_k(), instruction_count, CALL_WARMUP_MIN, CALL_WARMUP_MAX)
+  curve(
+    call_k(),
+    instruction_count,
+    CALL_WARMUP_MIN,
+    CALL_WARMUP_MAX,
+  )
 }
 
 /// How many times a SINGLE loop's own back-edge must run before it

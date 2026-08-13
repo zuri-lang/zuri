@@ -109,7 +109,11 @@ pub fn spawn(isa: Arc<dyn TargetIsa>) -> JitCompilerHandle {
   JitCompilerHandle { job_tx, result_rx }
 }
 
-fn compiler_loop(isa: Arc<dyn TargetIsa>, job_rx: Receiver<CompileJob>, result_tx: Sender<CompileResult>) {
+fn compiler_loop(
+  isa: Arc<dyn TargetIsa>,
+  job_rx: Receiver<CompileJob>,
+  result_tx: Sender<CompileResult>,
+) {
   let mut ctrl_plane = ControlPlane::default();
   for mut job in job_rx {
     // See this module's docs: `compile`'s own returned reference
@@ -121,7 +125,10 @@ fn compiler_loop(isa: Arc<dyn TargetIsa>, job_rx: Receiver<CompileJob>, result_t
     let compile_result = job.ctx.compile(&*isa, &mut ctrl_plane);
     let outcome = match compile_result {
       Ok(_) => {
-        let compiled_code = job.ctx.compiled_code().expect("Context::compile just succeeded");
+        let compiled_code = job
+          .ctx
+          .compiled_code()
+          .expect("Context::compile just succeeded");
         let alignment = compiled_code.buffer.alignment as u64;
         let bytes = compiled_code.code_buffer().to_vec();
         let relocs = compiled_code

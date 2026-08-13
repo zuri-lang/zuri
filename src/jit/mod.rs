@@ -123,7 +123,8 @@ pub fn log_ir_enabled() -> bool {
 ///   nil when this call returns -- a non-nil pending exception means
 ///   the return value is meaningless and the caller must propagate the
 ///   exception instead. See `runtime`'s module docs.
-pub type EntryFn = unsafe extern "C" fn(vm: *mut crate::vm::vm::VM, base: u64, closure: u64, osr_id: i32) -> u64;
+pub type EntryFn =
+  unsafe extern "C" fn(vm: *mut crate::vm::vm::VM, base: u64, closure: u64, osr_id: i32) -> u64;
 
 /// A successfully compiled function, cached on `ObjFunction::jit` for
 /// as long as the VM lives. Machine code is never unloaded or

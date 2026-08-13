@@ -22,7 +22,10 @@
 use std::collections::HashMap;
 
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, SigRef, StackSlot, StackSlotData, StackSlotKind, Value as IrValue, types};
+use cranelift_codegen::ir::{
+  AbiParam, Block, InstBuilder, SigRef, StackSlot, StackSlotData, StackSlotKind, Value as IrValue,
+  types,
+};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
@@ -44,7 +47,8 @@ const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
 /// loads + a compare) instead of an unconditional FFI call on every
 /// loop back-edge and call site, only actually calling into Rust on the
 /// rare branch where a collection is really about to happen.
-const HEAP_BYTES_ALLOCATED_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
+const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
 const HEAP_NEXT_GC_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NEXT_GC_OFFSET) as i32;
 
 /// Compiles `proto`'s bytecode into `fb`'s function body. Returns the
@@ -76,7 +80,10 @@ pub fn compile(
   // as "never enter compiled code for this function at all" rather
   // than generated unwind logic.
   for instr in &proto.chunk.code {
-    if matches!(instr, Instr::Raise { .. } | Instr::PushCatch { .. } | Instr::PopCatch) {
+    if matches!(
+      instr,
+      Instr::Raise { .. } | Instr::PushCatch { .. } | Instr::PopCatch
+    ) {
       return Err("contains exception-handling bytecode (raise/catch)".to_string());
     }
   }
@@ -237,8 +244,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // body. Creating a block doesn't require switching into it, so
     // this doesn't disturb `entry_block`'s own not-yet-terminated
     // state.
-    let specialized_blocks: Option<Vec<Block>> =
-      self.speculative_params.map(|_| (0..self.blocks.len()).map(|_| self.fb.create_block()).collect());
+    let specialized_blocks: Option<Vec<Block>> = self.speculative_params.map(|_| {
+      (0..self.blocks.len())
+        .map(|_| self.fb.create_block())
+        .collect()
+    });
 
     self.emit_entry_dispatch(osr_param, specialized_blocks.as_deref());
 
@@ -313,7 +323,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let normal_target = guard_block.unwrap_or(self.blocks[0]);
 
     let mut next_check = self.fb.create_block();
-    self.fb.ins().brif(is_normal, normal_target, &[], next_check, &[]);
+    self
+      .fb
+      .ins()
+      .brif(is_normal, normal_target, &[], next_check, &[]);
 
     let mut targets: Vec<(i32, Block)> = self
       .osr_ids
@@ -342,7 +355,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     if let (Some(guard_block), Some(spec_blocks)) = (guard_block, specialized_blocks) {
       self.fb.switch_to_block(guard_block);
-      let mask = self.speculative_params.expect("guard_block only created when speculative_params is Some");
+      let mask = self
+        .speculative_params
+        .expect("guard_block only created when speculative_params is Some");
       let mut guard: Option<IrValue> = None;
       for bit in 0..64u8 {
         if mask & (1u64 << bit) != 0 {
@@ -355,7 +370,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
       }
       let guard = guard.expect("non-empty speculative_params always sets at least one bit");
-      self.fb.ins().brif(guard, spec_blocks[0], &[], self.blocks[0], &[]);
+      self
+        .fb
+        .ins()
+        .brif(guard, spec_blocks[0], &[], self.blocks[0], &[]);
     }
   }
 
@@ -375,12 +393,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   fn load_reg(&mut self, r: u8) -> IrValue {
     let addr = self.reg_addr(r);
-    self.fb.ins().load(types::I64, cranelift_codegen::ir::MemFlagsData::trusted(), addr, 0)
+    self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      addr,
+      0,
+    )
   }
 
   fn store_reg(&mut self, r: u8, v: IrValue) {
     let addr = self.reg_addr(r);
-    self.fb.ins().store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
+    self
+      .fb
+      .ins()
+      .store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
   }
 
   /// Direct load of `VM::regs_ptr_cache` at its compile-time-baked
@@ -389,10 +415,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// invariant (see `VM::sync_regs_ptr_cache`), not something this
   /// compiler needs to re-establish.
   fn load_regs_ptr_cache(&mut self) -> IrValue {
-    self
-      .fb
-      .ins()
-      .load(types::I64, cranelift_codegen::ir::MemFlagsData::trusted(), self.vm_param, REGS_PTR_CACHE_OFFSET)
+    self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      self.vm_param,
+      REGS_PTR_CACHE_OFFSET,
+    )
   }
 
   fn refresh_regs(&mut self) {
@@ -498,9 +526,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if let Some(slot) = self.closure_out_slot {
       return slot;
     }
-    let slot = self
-      .fb
-      .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
+    let slot =
+      self
+        .fb
+        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
     self.closure_out_slot = Some(slot);
     slot
   }
@@ -540,7 +569,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self.fb.ins().brif(is_fast, fast_block, &[], slow_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(is_fast, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let closure_bits = {
@@ -549,12 +581,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     };
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let sig = self.entry_sig_ref();
-    let call = self.fb.ins().call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1]);
+    let call =
+      self
+        .fb
+        .ins()
+        .call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1]);
     let ret_bits = self.fb.inst_results(call)[0];
     self.refresh_regs();
     let base = self.base_param;
     let dst_i = self.idx(dst);
-    self.call_checked("zuri_jit_call_finish", &[self.vm_param, base, dst_i, new_base, ret_bits]);
+    self.call_checked(
+      "zuri_jit_call_finish",
+      &[self.vm_param, base, dst_i, new_base, ret_bits],
+    );
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -602,11 +641,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn to_f64(&mut self, bits: IrValue) -> IrValue {
-    self.fb.ins().bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), bits)
+    self
+      .fb
+      .ins()
+      .bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), bits)
   }
 
   fn from_f64(&mut self, f: IrValue) -> IrValue {
-    self.fb.ins().bitcast(types::I64, cranelift_codegen::ir::MemFlagsData::new(), f)
+    self
+      .fb
+      .ins()
+      .bitcast(types::I64, cranelift_codegen::ir::MemFlagsData::new(), f)
   }
 
   /// Wraps a boolean condition into a Zuri `Value` bit pattern (`nil`/
@@ -641,7 +686,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let obj_block = self.fb.create_block();
     let nonobj_block = self.fb.create_block();
     let merge_block = self.fb.create_block();
-    self.fb.ins().brif(is_obj, obj_block, &[], nonobj_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(is_obj, obj_block, &[], nonobj_block, &[]);
 
     self.fb.switch_to_block(obj_block);
     let base = self.base_param;
@@ -659,10 +707,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let is_num = self.is_number(v);
     let fv = self.to_f64(v);
     let zero_f = self.fb.ins().f64const(0.0);
-    let le_zero = self
-      .fb
-      .ins()
-      .fcmp(cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual, fv, zero_f);
+    let le_zero = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
+      fv,
+      zero_f,
+    );
     let num_falsey = self.fb.ins().band(is_num, le_zero);
     let nil_or_false = self.fb.ins().bor(is_nil, is_false);
     let falsey_bool = self.fb.ins().bor(nil_or_false, num_falsey);
@@ -693,7 +742,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::LoadBool { dst, val } => {
-        let v = self.u64c(if val { value::TRUE_VAL } else { value::FALSE_VAL });
+        let v = self.u64c(if val {
+          value::TRUE_VAL
+        } else {
+          value::FALSE_VAL
+        });
         self.store_reg(dst, v);
         false
       },
@@ -707,7 +760,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| {
+            fc.fb.ins().fadd(fa, fb)
+          });
         }
         false
       },
@@ -715,7 +770,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_sub_slow", |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_sub_slow", |fc, fa, fb| {
+            fc.fb.ins().fsub(fa, fb)
+          });
         }
         false
       },
@@ -723,7 +780,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mul_slow", |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mul_slow", |fc, fa, fb| {
+            fc.fb.ins().fmul(fa, fb)
+          });
         }
         false
       },
@@ -731,7 +790,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_div_slow", |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_div_slow", |fc, fa, fb| {
+            fc.fb.ins().fdiv(fa, fb)
+          });
         }
         false
       },
@@ -752,7 +813,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().band(ia, ib));
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitand_slow", |fb, ia, ib| fb.ins().band(ia, ib));
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitand_slow", |fb, ia, ib| {
+            fb.ins().band(ia, ib)
+          });
         }
         false
       },
@@ -760,7 +823,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().bor(ia, ib));
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitor_slow", |fb, ia, ib| fb.ins().bor(ia, ib));
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitor_slow", |fb, ia, ib| {
+            fb.ins().bor(ia, ib)
+          });
         }
         false
       },
@@ -768,7 +833,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().bxor(ia, ib));
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitxor_slow", |fb, ia, ib| fb.ins().bxor(ia, ib));
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitxor_slow", |fb, ia, ib| {
+            fb.ins().bxor(ia, ib)
+          });
         }
         false
       },
@@ -884,15 +951,31 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Lt { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+          self.emit_fcompare_proven(
+            dst,
+            a,
+            b,
+            cranelift_codegen::ir::condcodes::FloatCC::LessThan,
+          );
         } else {
-          self.emit_fcompare_guarded(dst, a, b, "zuri_jit_lt_slow", cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+          self.emit_fcompare_guarded(
+            dst,
+            a,
+            b,
+            "zuri_jit_lt_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::LessThan,
+          );
         }
         false
       },
       Instr::Le { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual);
+          self.emit_fcompare_proven(
+            dst,
+            a,
+            b,
+            cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
+          );
         } else {
           self.emit_fcompare_guarded(
             dst,
@@ -906,15 +989,31 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Gt { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::GreaterThan);
+          self.emit_fcompare_proven(
+            dst,
+            a,
+            b,
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThan,
+          );
         } else {
-          self.emit_fcompare_guarded(dst, a, b, "zuri_jit_gt_slow", cranelift_codegen::ir::condcodes::FloatCC::GreaterThan);
+          self.emit_fcompare_guarded(
+            dst,
+            a,
+            b,
+            "zuri_jit_gt_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThan,
+          );
         }
         false
       },
       Instr::Ge { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_fcompare_proven(dst, a, b, cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual);
+          self.emit_fcompare_proven(
+            dst,
+            a,
+            b,
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual,
+          );
         } else {
           self.emit_fcompare_guarded(
             dst,
@@ -943,7 +1042,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if offset < 0 {
           self.emit_safepoint();
         }
-        self.fb.ins().brif(is_falsey, self.blocks[target_ip], &[], self.blocks[ip + 1], &[]);
+        self.fb.ins().brif(
+          is_falsey,
+          self.blocks[target_ip],
+          &[],
+          self.blocks[ip + 1],
+          &[],
+        );
         true
       },
       Instr::JmpIfTrue { cond, offset } => {
@@ -954,11 +1059,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if offset < 0 {
           self.emit_safepoint();
         }
-        self.fb.ins().brif(is_truthy, self.blocks[target_ip], &[], self.blocks[ip + 1], &[]);
+        self.fb.ins().brif(
+          is_truthy,
+          self.blocks[target_ip],
+          &[],
+          self.blocks[ip + 1],
+          &[],
+        );
         true
       },
 
-      Instr::Call { dst, func, num_args } => {
+      Instr::Call {
+        dst,
+        func,
+        num_args,
+      } => {
         self.emit_safepoint();
         let base = self.base_param;
         let vm_p = self.vm_param;
@@ -998,7 +1113,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let func_ptr = self.func_ptr_const();
         let name = self.bake_const(name_const);
         let ip_c = self.u64c(ip as u64);
-        self.call_checked("zuri_jit_get_global", &[self.vm_param, base, dst_i, func_ptr, name, ip_c]);
+        self.call_checked(
+          "zuri_jit_get_global",
+          &[self.vm_param, base, dst_i, func_ptr, name, ip_c],
+        );
         false
       },
       Instr::SetGlobal { name_const, src } => {
@@ -1007,7 +1125,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let func_ptr = self.func_ptr_const();
         let name = self.bake_const(name_const);
         let ip_c = self.u64c(ip as u64);
-        self.call_checked("zuri_jit_set_global", &[self.vm_param, base, src_i, func_ptr, name, ip_c]);
+        self.call_checked(
+          "zuri_jit_set_global",
+          &[self.vm_param, base, src_i, func_ptr, name, ip_c],
+        );
         false
       },
       Instr::AssignGlobal { name_const, src } => {
@@ -1016,7 +1137,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let func_ptr = self.func_ptr_const();
         let name = self.bake_const(name_const);
         let ip_c = self.u64c(ip as u64);
-        self.call_checked("zuri_jit_assign_global", &[self.vm_param, base, src_i, func_ptr, name, ip_c]);
+        self.call_checked(
+          "zuri_jit_assign_global",
+          &[self.vm_param, base, src_i, func_ptr, name, ip_c],
+        );
         false
       },
 
@@ -1024,21 +1148,30 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let proto_v = self.bake_const(proto_const);
-        self.call_checked("zuri_jit_make_closure", &[self.vm_param, base, dst_i, proto_v, self.closure_param]);
+        self.call_checked(
+          "zuri_jit_make_closure",
+          &[self.vm_param, base, dst_i, proto_v, self.closure_param],
+        );
         false
       },
       Instr::GetUpval { dst, idx: uidx } => {
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let uidx_i = self.idx(uidx);
-        self.call_checked("zuri_jit_get_upval", &[self.vm_param, base, dst_i, uidx_i, self.closure_param]);
+        self.call_checked(
+          "zuri_jit_get_upval",
+          &[self.vm_param, base, dst_i, uidx_i, self.closure_param],
+        );
         false
       },
       Instr::SetUpval { idx: uidx, src } => {
         let base = self.base_param;
         let src_i = self.idx(src);
         let uidx_i = self.idx(uidx);
-        self.call_checked("zuri_jit_set_upval", &[self.vm_param, base, src_i, uidx_i, self.closure_param]);
+        self.call_checked(
+          "zuri_jit_set_upval",
+          &[self.vm_param, base, src_i, uidx_i, self.closure_param],
+        );
         false
       },
       Instr::CloseUpvalues { from } => {
@@ -1053,7 +1186,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let dst_i = self.idx(dst);
         let start_i = self.idx(start);
         let count_i = self.idx(count);
-        self.call_checked("zuri_jit_make_list", &[self.vm_param, base, dst_i, start_i, count_i]);
+        self.call_checked(
+          "zuri_jit_make_list",
+          &[self.vm_param, base, dst_i, start_i, count_i],
+        );
         false
       },
       Instr::MakeDict { dst, start, count } => {
@@ -1061,11 +1197,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let dst_i = self.idx(dst);
         let start_i = self.idx(start);
         let count_i = self.idx(count);
-        self.call_checked("zuri_jit_make_dict", &[self.vm_param, base, dst_i, start_i, count_i]);
+        self.call_checked(
+          "zuri_jit_make_dict",
+          &[self.vm_param, base, dst_i, start_i, count_i],
+        );
         false
       },
 
-      Instr::MakeClass { dst, name_const, superclass } => {
+      Instr::MakeClass {
+        dst,
+        name_const,
+        superclass,
+      } => {
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let name = self.bake_const(name_const);
@@ -1073,68 +1216,113 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           Some(r) => (self.i64c(1), self.idx(r)),
           None => (self.i64c(0), self.i64c(0)),
         };
-        self.call_checked("zuri_jit_make_class", &[self.vm_param, base, dst_i, name, has_super, super_reg]);
+        self.call_checked(
+          "zuri_jit_make_class",
+          &[self.vm_param, base, dst_i, name, has_super, super_reg],
+        );
         false
       },
       Instr::DeclareField { class, name_const } => {
         let base = self.base_param;
         let class_i = self.idx(class);
         let name = self.bake_const(name_const);
-        self.call_checked("zuri_jit_declare_field", &[self.vm_param, base, class_i, name]);
+        self.call_checked(
+          "zuri_jit_declare_field",
+          &[self.vm_param, base, class_i, name],
+        );
         false
       },
       Instr::SetFieldInit { class, src } => {
         let base = self.base_param;
         let class_i = self.idx(class);
         let src_i = self.idx(src);
-        self.call_checked("zuri_jit_set_field_init", &[self.vm_param, base, class_i, src_i]);
+        self.call_checked(
+          "zuri_jit_set_field_init",
+          &[self.vm_param, base, class_i, src_i],
+        );
         false
       },
-      Instr::SetMethod { class, name_const, src } => {
+      Instr::SetMethod {
+        class,
+        name_const,
+        src,
+      } => {
         let base = self.base_param;
         let class_i = self.idx(class);
         let name = self.bake_const(name_const);
         let src_i = self.idx(src);
-        self.call_checked("zuri_jit_set_method", &[self.vm_param, base, class_i, name, src_i]);
+        self.call_checked(
+          "zuri_jit_set_method",
+          &[self.vm_param, base, class_i, name, src_i],
+        );
         false
       },
-      Instr::DeclareStatic { class, name_const, src } => {
+      Instr::DeclareStatic {
+        class,
+        name_const,
+        src,
+      } => {
         let base = self.base_param;
         let class_i = self.idx(class);
         let name = self.bake_const(name_const);
         let src_i = self.idx(src);
-        self.call_checked("zuri_jit_declare_static", &[self.vm_param, base, class_i, name, src_i]);
+        self.call_checked(
+          "zuri_jit_declare_static",
+          &[self.vm_param, base, class_i, name, src_i],
+        );
         false
       },
       Instr::FinalizeClass { class } => {
         let base = self.base_param;
         let class_i = self.idx(class);
         let func_ptr = self.func_ptr_const();
-        self.call_checked("zuri_jit_finalize_class", &[self.vm_param, base, class_i, func_ptr]);
+        self.call_checked(
+          "zuri_jit_finalize_class",
+          &[self.vm_param, base, class_i, func_ptr],
+        );
         false
       },
-      Instr::GetField { dst, obj, name_const } => {
+      Instr::GetField {
+        dst,
+        obj,
+        name_const,
+      } => {
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let obj_i = self.idx(obj);
         let name = self.bake_const(name_const);
         let func_ptr = self.func_ptr_const();
         let ip_c = self.u64c(ip as u64);
-        self.call_checked("zuri_jit_get_field", &[self.vm_param, base, dst_i, obj_i, name, func_ptr, ip_c]);
+        self.call_checked(
+          "zuri_jit_get_field",
+          &[self.vm_param, base, dst_i, obj_i, name, func_ptr, ip_c],
+        );
         false
       },
-      Instr::SetField { obj, name_const, src } => {
+      Instr::SetField {
+        obj,
+        name_const,
+        src,
+      } => {
         let base = self.base_param;
         let obj_i = self.idx(obj);
         let name = self.bake_const(name_const);
         let src_i = self.idx(src);
         let func_ptr = self.func_ptr_const();
         let ip_c = self.u64c(ip as u64);
-        self.call_checked("zuri_jit_set_field", &[self.vm_param, base, obj_i, name, src_i, func_ptr, ip_c]);
+        self.call_checked(
+          "zuri_jit_set_field",
+          &[self.vm_param, base, obj_i, name, src_i, func_ptr, ip_c],
+        );
         false
       },
 
-      Instr::Invoke { dst, obj, method_const, num_args } => {
+      Instr::Invoke {
+        dst,
+        obj,
+        method_const,
+        num_args,
+      } => {
         self.emit_safepoint();
         let base = self.base_param;
         let vm_p = self.vm_param;
@@ -1155,65 +1343,111 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         );
         false
       },
-      Instr::InvokeSuper { dst, superclass, method_const, num_args } => {
+      Instr::InvokeSuper {
+        dst,
+        superclass,
+        method_const,
+        num_args,
+      } => {
         self.emit_safepoint();
         let base = self.base_param;
         let super_i = self.idx(superclass);
         let num_args_i = self.idx(num_args);
         let dst_i = self.idx(dst);
         let name = self.bake_const(method_const);
-        self.call_checked("zuri_jit_invoke_super", &[self.vm_param, base, super_i, num_args_i, dst_i, name]);
+        self.call_checked(
+          "zuri_jit_invoke_super",
+          &[self.vm_param, base, super_i, num_args_i, dst_i, name],
+        );
         false
       },
-      Instr::CallSuperCtor { dst, superclass, num_args } => {
+      Instr::CallSuperCtor {
+        dst,
+        superclass,
+        num_args,
+      } => {
         self.emit_safepoint();
         let base = self.base_param;
         let super_i = self.idx(superclass);
         let num_args_i = self.idx(num_args);
         let dst_i = self.idx(dst);
-        self.call_checked("zuri_jit_call_super_ctor", &[self.vm_param, base, super_i, num_args_i, dst_i]);
+        self.call_checked(
+          "zuri_jit_call_super_ctor",
+          &[self.vm_param, base, super_i, num_args_i, dst_i],
+        );
         false
       },
 
-      Instr::Import { dst, path_const, importer_const } => {
+      Instr::Import {
+        dst,
+        path_const,
+        importer_const,
+      } => {
         self.emit_safepoint();
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let path = self.bake_const(path_const);
         let importer = self.bake_const(importer_const);
-        self.call_checked("zuri_jit_import", &[self.vm_param, base, dst_i, path, importer]);
+        self.call_checked(
+          "zuri_jit_import",
+          &[self.vm_param, base, dst_i, path, importer],
+        );
         false
       },
       Instr::ImportAll { module } => {
         let base = self.base_param;
         let module_i = self.idx(module);
         let func_ptr = self.func_ptr_const();
-        self.call_checked("zuri_jit_import_all", &[self.vm_param, base, module_i, func_ptr]);
+        self.call_checked(
+          "zuri_jit_import_all",
+          &[self.vm_param, base, module_i, func_ptr],
+        );
         false
       },
-      Instr::MakePromoted { dst, module, name_const } => {
+      Instr::MakePromoted {
+        dst,
+        module,
+        name_const,
+      } => {
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let module_i = self.idx(module);
         let name = self.bake_const(name_const);
-        self.call_checked("zuri_jit_make_promoted", &[self.vm_param, base, dst_i, module_i, name]);
+        self.call_checked(
+          "zuri_jit_make_promoted",
+          &[self.vm_param, base, dst_i, module_i, name],
+        );
         false
       },
 
-      Instr::GetIndex { dst, obj, idx: iidx } => {
+      Instr::GetIndex {
+        dst,
+        obj,
+        idx: iidx,
+      } => {
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let obj_i = self.idx(obj);
         let idx_i = self.idx(iidx);
-        self.call_checked("zuri_jit_get_index", &[self.vm_param, base, dst_i, obj_i, idx_i]);
+        self.call_checked(
+          "zuri_jit_get_index",
+          &[self.vm_param, base, dst_i, obj_i, idx_i],
+        );
         false
       },
-      Instr::SetIndex { obj, idx: iidx, src } => {
+      Instr::SetIndex {
+        obj,
+        idx: iidx,
+        src,
+      } => {
         let base = self.base_param;
         let obj_i = self.idx(obj);
         let idx_i = self.idx(iidx);
         let src_i = self.idx(src);
-        self.call_checked("zuri_jit_set_index", &[self.vm_param, base, obj_i, idx_i, src_i]);
+        self.call_checked(
+          "zuri_jit_set_index",
+          &[self.vm_param, base, obj_i, idx_i, src_i],
+        );
         false
       },
       Instr::GetSlice { dst, obj, lo, hi } => {
@@ -1222,7 +1456,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let obj_i = self.idx(obj);
         let lo_i = self.idx(lo);
         let hi_i = self.idx(hi);
-        self.call_checked("zuri_jit_get_slice", &[self.vm_param, base, dst_i, obj_i, lo_i, hi_i]);
+        self.call_checked(
+          "zuri_jit_get_slice",
+          &[self.vm_param, base, dst_i, obj_i, lo_i, hi_i],
+        );
         false
       },
 
@@ -1231,7 +1468,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let dst_i = self.idx(dst);
         let lower_i = self.idx(lower);
         let upper_i = self.idx(upper);
-        self.call_checked("zuri_jit_make_range", &[self.vm_param, base, dst_i, lower_i, upper_i]);
+        self.call_checked(
+          "zuri_jit_make_range",
+          &[self.vm_param, base, dst_i, lower_i, upper_i],
+        );
         false
       },
 
@@ -1240,7 +1480,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let subject_i = self.idx(subject);
         let func_ptr = self.func_ptr_const();
         let table_i = self.i64c(table_idx as i64);
-        let target = self.call_helper("zuri_jit_using_jump", &[self.vm_param, base, subject_i, func_ptr, table_i]);
+        let target = self.call_helper(
+          "zuri_jit_using_jump",
+          &[self.vm_param, base, subject_i, func_ptr, table_i],
+        );
         let no_match = self.u64c(runtime_using_no_match());
         let matched = self.fb.ins().icmp(IntCC::NotEqual, target, no_match);
 
@@ -1255,9 +1498,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // `chunk.jump_tables[table_idx]`.
         let miss_block = self.fb.create_block();
         let mut next_check = self.fb.create_block();
-        self.fb.ins().brif(matched, next_check, &[], miss_block, &[]);
+        self
+          .fb
+          .ins()
+          .brif(matched, next_check, &[], miss_block, &[]);
 
-        let mut targets: Vec<usize> = self.proto.chunk.jump_tables[table_idx as usize].values().copied().collect();
+        let mut targets: Vec<usize> = self.proto.chunk.jump_tables[table_idx as usize]
+          .values()
+          .copied()
+          .collect();
         targets.sort_unstable();
         targets.dedup();
         for target_ip in targets {
@@ -1265,7 +1514,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let want = self.u64c(target_ip as u64);
           let is_this = self.fb.ins().icmp(IntCC::Equal, target, want);
           let after = self.fb.create_block();
-          self.fb.ins().brif(is_this, self.blocks[target_ip], &[], after, &[]);
+          self
+            .fb
+            .ins()
+            .brif(is_this, self.blocks[target_ip], &[], after, &[]);
           next_check = after;
         }
         // Exhausted every known constant target without a match --
@@ -1293,9 +1545,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::SubImm { dst, a, imm_const } => {
         if self.proven_numeric(ip, a) {
-          self.emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
+          self
+            .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
         } else {
-          self.emit_imm_numeric_guarded(dst, a, imm_const, "zuri_jit_subimm_slow", |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
+          self.emit_imm_numeric_guarded(
+            dst,
+            a,
+            imm_const,
+            "zuri_jit_subimm_slow",
+            |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm),
+          );
         }
         false
       },
@@ -1305,23 +1564,46 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // (and cheap enough to check for) that `zuri_jit_mulimm_slow`
         // handles the WHOLE non-fast-path case uniformly; see its docs.
         if self.proven_numeric(ip, a) {
-          self.emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
+          self
+            .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
         } else {
-          self.emit_imm_numeric_guarded(dst, a, imm_const, "zuri_jit_mulimm_slow", |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
+          self.emit_imm_numeric_guarded(
+            dst,
+            a,
+            imm_const,
+            "zuri_jit_mulimm_slow",
+            |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm),
+          );
         }
         false
       },
       Instr::LtImm { dst, a, imm_const } => {
         if self.proven_numeric(ip, a) {
-          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+          self.emit_imm_compare_proven(
+            dst,
+            a,
+            imm_const,
+            cranelift_codegen::ir::condcodes::FloatCC::LessThan,
+          );
         } else {
-          self.emit_imm_compare_guarded(dst, a, imm_const, "zuri_jit_ltimm_slow", cranelift_codegen::ir::condcodes::FloatCC::LessThan);
+          self.emit_imm_compare_guarded(
+            dst,
+            a,
+            imm_const,
+            "zuri_jit_ltimm_slow",
+            cranelift_codegen::ir::condcodes::FloatCC::LessThan,
+          );
         }
         false
       },
       Instr::LeImm { dst, a, imm_const } => {
         if self.proven_numeric(ip, a) {
-          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual);
+          self.emit_imm_compare_proven(
+            dst,
+            a,
+            imm_const,
+            cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
+          );
         } else {
           self.emit_imm_compare_guarded(
             dst,
@@ -1335,7 +1617,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::GtImm { dst, a, imm_const } => {
         if self.proven_numeric(ip, a) {
-          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::GreaterThan);
+          self.emit_imm_compare_proven(
+            dst,
+            a,
+            imm_const,
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThan,
+          );
         } else {
           self.emit_imm_compare_guarded(
             dst,
@@ -1349,7 +1636,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::GeImm { dst, a, imm_const } => {
         if self.proven_numeric(ip, a) {
-          self.emit_imm_compare_proven(dst, a, imm_const, cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual);
+          self.emit_imm_compare_proven(
+            dst,
+            a,
+            imm_const,
+            cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual,
+          );
         } else {
           self.emit_imm_compare_guarded(
             dst,
@@ -1395,15 +1687,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// read here (never possible mid-single-threaded-execution anyway)
   /// couldn't cause an incorrect collection either way.
   fn emit_safepoint(&mut self) {
-    let bytes = self
+    let bytes = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      self.vm_param,
+      HEAP_BYTES_ALLOCATED_OFFSET,
+    );
+    let next_gc = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      self.vm_param,
+      HEAP_NEXT_GC_OFFSET,
+    );
+    let needs_gc = self
       .fb
       .ins()
-      .load(types::I64, cranelift_codegen::ir::MemFlagsData::trusted(), self.vm_param, HEAP_BYTES_ALLOCATED_OFFSET);
-    let next_gc = self
-      .fb
-      .ins()
-      .load(types::I64, cranelift_codegen::ir::MemFlagsData::trusted(), self.vm_param, HEAP_NEXT_GC_OFFSET);
-    let needs_gc = self.fb.ins().icmp(IntCC::UnsignedGreaterThan, bytes, next_gc);
+      .icmp(IntCC::UnsignedGreaterThan, bytes, next_gc);
 
     let gc_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -1424,7 +1723,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// when the caller has already confirmed (via `type_facts`) that `a`
   /// and `b` are PROVEN numeric at this instruction, so the slow path
   /// could never be reached anyway.
-  fn emit_binary_numeric_proven(&mut self, dst: u8, a: u8, b: u8, fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue) {
+  fn emit_binary_numeric_proven(
+    &mut self,
+    dst: u8,
+    a: u8,
+    b: u8,
+    fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
+  ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
     let fa = self.to_f64(va);
@@ -1471,7 +1776,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `emit_bitwise_guarded`'s fast path, unguarded -- see
   /// `emit_binary_numeric_proven`'s docs.
-  fn emit_bitwise_proven(&mut self, dst: u8, a: u8, b: u8, fast: impl FnOnce(&mut FunctionBuilder, IrValue, IrValue) -> IrValue) {
+  fn emit_bitwise_proven(
+    &mut self,
+    dst: u8,
+    a: u8,
+    b: u8,
+    fast: impl FnOnce(&mut FunctionBuilder, IrValue, IrValue) -> IrValue,
+  ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
     let fa = self.to_f64(va);
@@ -1571,7 +1882,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let obj_block = self.fb.create_block();
     let bits_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self.fb.ins().brif(both_num, num_block, &[], check_obj_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(both_num, num_block, &[], check_obj_block, &[]);
 
     self.fb.switch_to_block(num_block);
     let fa = self.to_f64(va);
@@ -1582,7 +1896,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(check_obj_block);
-    self.fb.ins().brif(both_obj, obj_block, &[], bits_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(both_obj, obj_block, &[], bits_block, &[]);
 
     self.fb.switch_to_block(obj_block);
     let base = self.base_param;
@@ -1603,7 +1920,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `emit_fcompare_guarded`'s fast path, unguarded -- see
   /// `emit_binary_numeric_proven`'s docs.
-  fn emit_fcompare_proven(&mut self, dst: u8, a: u8, b: u8, cc: cranelift_codegen::ir::condcodes::FloatCC) {
+  fn emit_fcompare_proven(
+    &mut self,
+    dst: u8,
+    a: u8,
+    b: u8,
+    cc: cranelift_codegen::ir::condcodes::FloatCC,
+  ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
     let fa = self.to_f64(va);
@@ -1613,7 +1936,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.store_reg(dst, bits);
   }
 
-  fn emit_fcompare_guarded(&mut self, dst: u8, a: u8, b: u8, slow_helper: &'static str, cc: cranelift_codegen::ir::condcodes::FloatCC) {
+  fn emit_fcompare_guarded(
+    &mut self,
+    dst: u8,
+    a: u8,
+    b: u8,
+    slow_helper: &'static str,
+    cc: cranelift_codegen::ir::condcodes::FloatCC,
+  ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
     let guard = self.both_numbers(va, vb);
@@ -1675,7 +2005,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let dst_i = self.idx(dst);
     let a_i = self.idx(a);
     let imm_bits = self.bake_f64_bits(imm_const);
-    self.call_checked("zuri_jit_addimm_slow", &[self.vm_param, base, dst_i, a_i, imm_bits]);
+    self.call_checked(
+      "zuri_jit_addimm_slow",
+      &[self.vm_param, base, dst_i, a_i, imm_bits],
+    );
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
@@ -1683,7 +2016,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `emit_imm_numeric_guarded`'s fast path, unguarded -- see
   /// `emit_binary_numeric_proven`'s docs.
-  fn emit_imm_numeric_proven(&mut self, dst: u8, a: u8, imm_const: u16, fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue) {
+  fn emit_imm_numeric_proven(
+    &mut self,
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+    fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
+  ) {
     let va = self.load_reg(a);
     let fa = self.to_f64(va);
     let fimm_bits = self.bake_f64_bits(imm_const);
@@ -1730,7 +2069,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `emit_imm_compare_guarded`'s fast path, unguarded -- see
   /// `emit_binary_numeric_proven`'s docs.
-  fn emit_imm_compare_proven(&mut self, dst: u8, a: u8, imm_const: u16, cc: cranelift_codegen::ir::condcodes::FloatCC) {
+  fn emit_imm_compare_proven(
+    &mut self,
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+    cc: cranelift_codegen::ir::condcodes::FloatCC,
+  ) {
     let va = self.load_reg(a);
     let fa = self.to_f64(va);
     let fimm_bits = self.bake_f64_bits(imm_const);
@@ -1740,7 +2085,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.store_reg(dst, bits);
   }
 
-  fn emit_imm_compare_guarded(&mut self, dst: u8, a: u8, imm_const: u16, slow_helper: &'static str, cc: cranelift_codegen::ir::condcodes::FloatCC) {
+  fn emit_imm_compare_guarded(
+    &mut self,
+    dst: u8,
+    a: u8,
+    imm_const: u16,
+    slow_helper: &'static str,
+    cc: cranelift_codegen::ir::condcodes::FloatCC,
+  ) {
     let va = self.load_reg(a);
     let guard = self.is_number(va);
     let fast_block = self.fb.create_block();
@@ -1816,7 +2168,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(merge_block, &[]);
 
     self.fb.switch_to_block(raw_block);
-    let int_cc = if want_eq { IntCC::Equal } else { IntCC::NotEqual };
+    let int_cc = if want_eq {
+      IntCC::Equal
+    } else {
+      IntCC::NotEqual
+    };
     let cmp_raw = self.fb.ins().icmp(int_cc, va, imm_bits);
     let bits_raw = self.bool_value(cmp_raw);
     self.store_reg(dst, bits_raw);

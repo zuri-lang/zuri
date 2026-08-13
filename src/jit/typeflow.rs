@@ -61,7 +61,9 @@ impl RegSet {
   /// known to be a number, nor is anything else, before any code has
   /// run).
   fn empty(num_registers: usize) -> Self {
-    RegSet { words: vec![0u64; Self::word_count(num_registers)] }
+    RegSet {
+      words: vec![0u64; Self::word_count(num_registers)],
+    }
   }
 
   /// Everything (optimistically) proven -- the correct starting point
@@ -92,7 +94,11 @@ impl RegSet {
   pub fn get(&self, r: u8) -> bool {
     let idx = r as usize / 64;
     let bit = r as usize % 64;
-    self.words.get(idx).map(|w| (w >> bit) & 1 != 0).unwrap_or(false)
+    self
+      .words
+      .get(idx)
+      .map(|w| (w >> bit) & 1 != 0)
+      .unwrap_or(false)
   }
 
   #[inline]
@@ -189,7 +195,13 @@ pub fn analyze(proto: &ObjFunction, speculative_params: Option<u64>) -> TypeFact
   });
 
   let mut entry: Vec<RegSet> = (0..code_len)
-    .map(|ip| if ip == 0 { RegSet::empty(num_registers) } else { RegSet::full(num_registers) })
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
     .collect();
   if let Some(seed) = &seed
     && code_len > 0
@@ -202,7 +214,9 @@ pub fn analyze(proto: &ObjFunction, speculative_params: Option<u64>) -> TypeFact
   // Seed every OUT from its (possibly still-`full()`, not-yet-
   // converged) IN, so the worklist loop below has a real starting
   // point to compare against.
-  let mut out: Vec<RegSet> = (0..code_len).map(|ip| transfer(&entry[ip], &code[ip], proto)).collect();
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer(&entry[ip], &code[ip], proto))
+    .collect();
 
   while let Some(ip) = worklist.pop() {
     in_worklist[ip] = false;
@@ -295,7 +309,9 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
 
     // Never numeric results (string, or otherwise never-a-number).
     Instr::Concat { dst, .. } => out.set(dst, false),
-    Instr::Pow { dst, .. } | Instr::Floor { dst, .. } | Instr::Mod { dst, .. } => out.set(dst, false),
+    Instr::Pow { dst, .. } | Instr::Floor { dst, .. } | Instr::Mod { dst, .. } => {
+      out.set(dst, false)
+    },
 
     // Any instruction whose result depends on something this pass
     // can't see statically (heap contents, globals, call results, ...)
@@ -355,7 +371,10 @@ fn successors(ip: usize, instr: &Instr, proto: &ObjFunction) -> Vec<usize> {
       vec![(ip as isize + 1 + offset as isize) as usize, ip + 1]
     },
     Instr::UsingJump { table_idx, .. } => {
-      let mut targets: Vec<usize> = proto.chunk.jump_tables[table_idx as usize].values().copied().collect();
+      let mut targets: Vec<usize> = proto.chunk.jump_tables[table_idx as usize]
+        .values()
+        .copied()
+        .collect();
       targets.push(ip + 1); // miss falls through
       targets
     },

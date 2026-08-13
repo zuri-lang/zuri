@@ -627,7 +627,14 @@ imm_compare_slow!(zuri_jit_geimm_slow, ">=", "@gte", |x: f64, y: f64| x >= y);
 /// `zuri_jit_call_finish`), so by the time this returns non-zero,
 /// generated code can go straight to a `call_indirect` with no further
 /// setup at all.
-pub unsafe extern "C" fn zuri_jit_call_prepare(vm_ptr: *mut VM, base: u64, func_reg: u64, num_args: u64, dst: u64, closure_out: u64) -> u64 {
+pub unsafe extern "C" fn zuri_jit_call_prepare(
+  vm_ptr: *mut VM,
+  base: u64,
+  func_reg: u64,
+  num_args: u64,
+  dst: u64,
+  closure_out: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
   let func_reg = func_reg as u8;
@@ -704,7 +711,11 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
     let class = inst.class.as_class();
     let resolved = class.methods.get(method_name.as_str()).copied();
     if let Some(m) = resolved {
-      func.chunk.method_cache.borrow_mut().insert(instr_ip, (class_bits, m.to_bits()));
+      func
+        .chunk
+        .method_cache
+        .borrow_mut()
+        .insert(instr_ip, (class_bits, m.to_bits()));
     }
     resolved
   };
@@ -724,7 +735,14 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   // `Instr::Invoke`'s own doc comment in chunk.rs, and
   // `VM::invoke_prebound_inner`'s identical convention.
   let new_base = base + obj as usize + 1;
-  vm.setup_closure_call(method, closure, proto, new_base, 1 + num_args as u8, dst as u8);
+  vm.setup_closure_call(
+    method,
+    closure,
+    proto,
+    new_base,
+    1 + num_args as u8,
+    dst as u8,
+  );
   vm.jit_depth_enter();
   unsafe { *(closure_out as *mut u64) = method.to_bits() };
   entry as usize as u64
@@ -740,7 +758,13 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
 /// it (see this module's top-level docs), and the frame is left in
 /// place, matching `VM::invoke_compiled`'s own error-path semantics
 /// precisely (compiled code never pops its own frame on error).
-pub unsafe extern "C" fn zuri_jit_call_finish(vm_ptr: *mut VM, base: u64, dst: u64, new_base: u64, ret_bits: u64) -> u64 {
+pub unsafe extern "C" fn zuri_jit_call_finish(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  new_base: u64,
+  ret_bits: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.jit_depth_exit();
   if !vm.jit_pending_exception.get().is_nil() {
@@ -1567,7 +1591,11 @@ pub unsafe extern "C" fn zuri_jit_get_field(
     } else {
       let class = inst.class.as_class();
       if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
-        func.chunk.field_cache.borrow_mut().insert(instr_ip, (class_bits, idx));
+        func
+          .chunk
+          .field_cache
+          .borrow_mut()
+          .insert(instr_ip, (class_bits, idx));
         Ok(inst.fields[idx as usize].get())
       } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
         Ok(vm.heap.alloc_bound_method(receiver, method))
@@ -1683,7 +1711,11 @@ pub unsafe extern "C" fn zuri_jit_set_field(
       let class = inst.class.as_class();
       match class.field_slots.get(name_val.as_str()).copied() {
         Some(idx) => {
-          func.chunk.field_cache.borrow_mut().insert(instr_ip, (class_bits, idx));
+          func
+            .chunk
+            .field_cache
+            .borrow_mut()
+            .insert(instr_ip, (class_bits, idx));
           inst.fields[idx as usize].set(value);
           Ok(())
         },

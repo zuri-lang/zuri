@@ -700,7 +700,11 @@ impl VM {
   /// owns `proto` -- used to pin it as a GC root if this call ends up
   /// enqueueing a new compile (see `enqueue_compile`).
   #[inline]
-  pub(crate) fn tiered_entry(&mut self, proto: &ObjFunction, proto_value: Value) -> Option<EntryFn> {
+  pub(crate) fn tiered_entry(
+    &mut self,
+    proto: &ObjFunction,
+    proto_value: Value,
+  ) -> Option<EntryFn> {
     if !self.jit_enabled || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
       return None;
     }
@@ -708,7 +712,10 @@ impl VM {
     if let Some(entry) = proto.jit.entry.get() {
       return Some(entry);
     }
-    if proto.jit.ineligible.get() || proto.jit.compiling.get() || proto.jit.call_count.get() < proto.jit.call_threshold {
+    if proto.jit.ineligible.get()
+      || proto.jit.compiling.get()
+      || proto.jit.call_count.get() < proto.jit.call_threshold
+    {
       return None;
     }
     self.enqueue_compile(proto, proto_value);
@@ -796,9 +803,11 @@ impl VM {
       // from the moment its job was enqueued until right here -- see
       // `jit::background`'s module docs.
       let proto = unsafe { &*result.proto.0 };
-      let install_outcome = result
-        .outcome
-        .and_then(|(bytes, alignment, relocs)| self.jit_engine().install_compiled(result.func_id, alignment, &bytes, &relocs));
+      let install_outcome = result.outcome.and_then(|(bytes, alignment, relocs)| {
+        self
+          .jit_engine()
+          .install_compiled(result.func_id, alignment, &bytes, &relocs)
+      });
       match install_outcome {
         Ok(entry) => {
           if crate::jit::log_enabled() {
@@ -821,7 +830,11 @@ impl VM {
         },
       }
       proto.jit.compiling.set(false);
-      if let Some(pos) = self.pending_jit_compiles.iter().position(|v| std::ptr::eq(v.as_func(), proto)) {
+      if let Some(pos) = self
+        .pending_jit_compiles
+        .iter()
+        .position(|v| std::ptr::eq(v.as_func(), proto))
+      {
         self.pending_jit_compiles.swap_remove(pos);
       }
     }
@@ -846,11 +859,17 @@ impl VM {
     if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
       return None;
     }
-    let required = if proto.variadic { proto.arity.saturating_sub(1) } else { proto.arity };
+    let required = if proto.variadic {
+      proto.arity.saturating_sub(1)
+    } else {
+      proto.arity
+    };
     let base = frame.base;
     let mut mask: u64 = 0;
     for i in 0..(required as usize).min(64) {
-      let Some(v) = self.registers.get(base + i) else { break };
+      let Some(v) = self.registers.get(base + i) else {
+        break;
+      };
       if v.is_number() {
         mask |= 1u64 << i;
       }
@@ -866,8 +885,16 @@ impl VM {
   /// `call_value` (natives/builtins calling back into Zuri code) so
   /// that path benefits from tiering exactly like ordinary bytecode
   /// `Instr::Call` does.
-  fn run_frame(&mut self, stop_depth: usize, proto: &ObjFunction, closure_val: Value) -> RunResult<Value> {
-    proto.jit.call_count.set(proto.jit.call_count.get().saturating_add(1));
+  fn run_frame(
+    &mut self,
+    stop_depth: usize,
+    proto: &ObjFunction,
+    closure_val: Value,
+  ) -> RunResult<Value> {
+    proto
+      .jit
+      .call_count
+      .set(proto.jit.call_count.get().saturating_add(1));
     let proto_value = closure_val.as_closure().function;
     if let Some(entry) = self.tiered_entry(proto, proto_value) {
       return self.invoke_compiled(entry, closure_val, -1);
@@ -888,7 +915,12 @@ impl VM {
   /// eventually claims it, to be truncated in one shot by
   /// `handle_exception`" behavior -- compiled code never pops on error,
   /// only on success, for exactly that reason.
-  fn invoke_compiled(&mut self, entry: EntryFn, closure_val: Value, osr_id: i32) -> RunResult<Value> {
+  fn invoke_compiled(
+    &mut self,
+    entry: EntryFn,
+    closure_val: Value,
+    osr_id: i32,
+  ) -> RunResult<Value> {
     let base = self
       .frames
       .last()
@@ -923,8 +955,15 @@ impl VM {
   /// frame to completion, and the caller must treat that exactly like
   /// `Instr::Return` (`Ok`) or an unhandled exception (`Err`) firing
   /// for this same frame -- NOT resume interpreting it.
-  pub(crate) fn maybe_osr(&mut self, func: &ObjFunction, target_ip: usize) -> Option<RunResult<Value>> {
-    if !self.jit_enabled || func.jit.ineligible.get() || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
+  pub(crate) fn maybe_osr(
+    &mut self,
+    func: &ObjFunction,
+    target_ip: usize,
+  ) -> Option<RunResult<Value>> {
+    if !self.jit_enabled
+      || func.jit.ineligible.get()
+      || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH
+    {
       return None;
     }
     self.drain_jit_results();
@@ -1011,7 +1050,11 @@ impl VM {
     num_args: u8,
     dst_in_caller: u8,
   ) {
-    let required = if proto.variadic { proto.arity - 1 } else { proto.arity };
+    let required = if proto.variadic {
+      proto.arity - 1
+    } else {
+      proto.arity
+    };
     let needed = new_base + proto.num_registers as usize;
     if self.registers.len() < needed {
       self.registers.resize(needed, Value::nil());
@@ -1209,7 +1252,13 @@ impl VM {
   /// and `dst` are relative to `base`; arguments must already sit at
   /// `func_reg+1 ..= func_reg+num_args` -- ordinary data-call convention,
   /// arity does NOT include any implicit receiver.
-  pub(crate) fn dispatch_call(&mut self, base: usize, func_reg: u8, num_args: u8, dst: u8) -> RunResult<()> {
+  pub(crate) fn dispatch_call(
+    &mut self,
+    base: usize,
+    func_reg: u8,
+    num_args: u8,
+    dst: u8,
+  ) -> RunResult<()> {
     self.dispatch_call_inner(base, func_reg, num_args, dst, false)
   }
 
@@ -1222,7 +1271,13 @@ impl VM {
   /// calling back into Zuri) rather than being left on `self.frames`
   /// for a caller's own dispatch loop to continue -- there is no such
   /// loop to hand it to.
-  pub(crate) fn dispatch_call_sync(&mut self, base: usize, func_reg: u8, num_args: u8, dst: u8) -> RunResult<()> {
+  pub(crate) fn dispatch_call_sync(
+    &mut self,
+    base: usize,
+    func_reg: u8,
+    num_args: u8,
+    dst: u8,
+  ) -> RunResult<()> {
     self.dispatch_call_inner(base, func_reg, num_args, dst, true)
   }
 
@@ -1292,7 +1347,10 @@ impl VM {
           // cold, this falls straight through to `Ok(())` and the
           // existing push-and-continue behavior is completely
           // unchanged.
-          callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
+          callee_fn
+            .jit
+            .call_count
+            .set(callee_fn.jit.call_count.get().saturating_add(1));
           if let Some(entry) = self.tiered_entry(callee_fn, callee_closure.function) {
             let ret = self.invoke_compiled(entry, callee, -1)?;
             self.set_reg(base, dst, ret);
@@ -1379,7 +1437,14 @@ impl VM {
     // into `recv_reg + 1` occupies the callee's own register 0 ("self"),
     // ahead of the `num_args` user arguments -- see `Instr::Invoke`'s
     // own doc comment in chunk.rs.
-    self.setup_closure_call(callee, callee_closure, callee_fn, new_base, 1 + num_args, dst);
+    self.setup_closure_call(
+      callee,
+      callee_closure,
+      callee_fn,
+      new_base,
+      1 + num_args,
+      dst,
+    );
     if sync {
       let stop_depth = self.frames.len() - 1;
       let ret = self.run_frame(stop_depth, callee_fn, callee)?;
@@ -1387,7 +1452,10 @@ impl VM {
     } else {
       // Same mixed-mode tiering as `dispatch_call`'s Closure arm -- see
       // its comment for the full rationale.
-      callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
+      callee_fn
+        .jit
+        .call_count
+        .set(callee_fn.jit.call_count.get().saturating_add(1));
       if let Some(entry) = self.tiered_entry(callee_fn, callee_closure.function) {
         let ret = self.invoke_compiled(entry, callee, -1)?;
         self.set_reg(base, dst, ret);
@@ -2862,7 +2930,12 @@ impl VM {
   }
 
   #[inline]
-  pub(crate) fn binary_add_values(&mut self, va: Value, vb: Value, op_name: &str) -> RunResult<Value> {
+  pub(crate) fn binary_add_values(
+    &mut self,
+    va: Value,
+    vb: Value,
+    op_name: &str,
+  ) -> RunResult<Value> {
     if va.is_number() && vb.is_number() {
       return Ok(Value::number(va.as_number() + vb.as_number()));
     } else if va.is_bigint() && vb.is_bigint() {
@@ -2907,7 +2980,14 @@ impl VM {
   }
 
   #[inline]
-  pub(crate) fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
+  pub(crate) fn binary_add(
+    &mut self,
+    base: usize,
+    dst: u8,
+    a: u8,
+    b: u8,
+    op_name: &str,
+  ) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
     let result = self.binary_add_values(va, vb, op_name)?;
@@ -2915,7 +2995,14 @@ impl VM {
   }
 
   #[inline(always)]
-  pub(crate) fn binary_mult(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
+  pub(crate) fn binary_mult(
+    &mut self,
+    base: usize,
+    dst: u8,
+    a: u8,
+    b: u8,
+    op_name: &str,
+  ) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
 

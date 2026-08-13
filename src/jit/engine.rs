@@ -7,10 +7,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use cranelift_codegen::Context;
 use cranelift_codegen::ir::{AbiParam, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{self, Configurable};
-use cranelift_codegen::Context;
 use cranelift_frontend::FunctionBuilderContext;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleReloc};
@@ -82,7 +82,8 @@ impl JitEngine {
     // to the same target config.
     let isa_for_module = isa.clone();
 
-    let mut jit_builder = JITBuilder::with_isa(isa_for_module, cranelift_module::default_libcall_names());
+    let mut jit_builder =
+      JITBuilder::with_isa(isa_for_module, cranelift_module::default_libcall_names());
     let specs = runtime::helper_table();
     for spec in &specs {
       jit_builder.symbol(spec.name, spec.ptr);
@@ -130,7 +131,11 @@ impl JitEngine {
   /// caller marks it as such and never asks again. `speculative_params`
   /// is passed straight through to `codegen::compile` -- see its own
   /// docs.
-  pub fn build_ir(&mut self, proto: &ObjFunction, speculative_params: Option<u64>) -> Result<PendingCompile, String> {
+  pub fn build_ir(
+    &mut self,
+    proto: &ObjFunction,
+    speculative_params: Option<u64>,
+  ) -> Result<PendingCompile, String> {
     self.next_id += 1;
     let name = format!("zuri_fn_{}", self.next_id);
 
@@ -156,8 +161,15 @@ impl JitEngine {
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
     let osr_ids = {
-      let mut builder = cranelift_frontend::FunctionBuilder::new(&mut ctx.func, &mut self.builder_ctx);
-      let osr_ids = codegen::compile(&mut builder, &mut self.module, &self.helper_ids, proto, speculative_params)?;
+      let mut builder =
+        cranelift_frontend::FunctionBuilder::new(&mut ctx.func, &mut self.builder_ctx);
+      let osr_ids = codegen::compile(
+        &mut builder,
+        &mut self.module,
+        &self.helper_ids,
+        proto,
+        speculative_params,
+      )?;
       builder.seal_all_blocks();
       builder.finalize(self.module.target_config());
       osr_ids
@@ -167,7 +179,11 @@ impl JitEngine {
       eprintln!("[jit] IR for '{}':\n{}", proto.name, ctx.func.display());
     }
 
-    Ok(PendingCompile { ctx, func_id, osr_ids })
+    Ok(PendingCompile {
+      ctx,
+      func_id,
+      osr_ids,
+    })
   }
 
   /// Stage 2 of compiling a function: install ALREADY BACKEND-COMPILED
@@ -178,7 +194,13 @@ impl JitEngine {
   /// allocation -- so this is cheap enough to run synchronously on the
   /// VM's own thread every time a background result is drained (see
   /// `VM::drain_jit_results`).
-  pub fn install_compiled(&mut self, func_id: FuncId, alignment: u64, bytes: &[u8], relocs: &[ModuleReloc]) -> Result<EntryFn, String> {
+  pub fn install_compiled(
+    &mut self,
+    func_id: FuncId,
+    alignment: u64,
+    bytes: &[u8],
+    relocs: &[ModuleReloc],
+  ) -> Result<EntryFn, String> {
     self
       .module
       .define_function_bytes(func_id, alignment, bytes, relocs)
