@@ -10,7 +10,7 @@ use crate::{
   },
   vm::{
     chunk::{Chunk, Instr, JumpKey},
-    object::{Heap, ObjFunction, UpvalueDescriptor},
+    object::{Heap, JitInfo, ObjFunction, UpvalueDescriptor},
     value::Value,
   },
 };
@@ -435,6 +435,7 @@ impl<'a> Compiler<'a> {
     }
 
     let finished = self.scopes.pop().unwrap();
+    let jit = JitInfo::new(finished.chunk.code.len());
     ObjFunction {
       name,
       arity: param_names.len() as u8,
@@ -445,6 +446,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method,
+      jit,
     }
   }
 
@@ -544,6 +546,7 @@ impl<'a> Compiler<'a> {
     }
 
     let finished = self.scopes.pop().unwrap();
+    let jit = JitInfo::new(finished.chunk.code.len());
     ObjFunction {
       name,
       arity: (param_names.len() + 1) as u8, // +1 for the always-reserved receiver slot
@@ -554,6 +557,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method: true,
+      jit,
     }
   }
 
@@ -598,6 +602,7 @@ impl<'a> Compiler<'a> {
     self.emit(Instr::Return { src: nil_reg });
 
     let finished = self.scopes.pop().unwrap();
+    let jit = JitInfo::new(finished.chunk.code.len());
     ObjFunction {
       name: format!("@{}_init_fields", Self::identifier_name(class_token)),
       arity: 1,
@@ -608,6 +613,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method: true,
+      jit,
     }
   }
 
@@ -2489,6 +2495,7 @@ impl<'a> Compiler<'a> {
     }
 
     let top = self.scopes.into_iter().next().unwrap();
+    let jit = JitInfo::new(top.chunk.code.len());
     let main_fn = ObjFunction {
       name: if self.is_repl {
         "@.repl".to_string()
@@ -2503,6 +2510,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method: false,
+      jit,
     };
 
     #[cfg(feature = "instr-log")]

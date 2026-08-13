@@ -1,11 +1,13 @@
 use std::cell::Cell;
 use std::ops::{Neg, Shl, Shr};
+use std::rc::Rc;
 
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::builtins;
+use crate::jit::{CompiledFunction, JitEngine};
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -13,6 +15,19 @@ use crate::vm::object::{
   ZuriContext,
 };
 use crate::vm::value::Value;
+
+/// Ceiling on how many compiled-function calls may be nested on the
+/// REAL Rust/OS call stack at once. Pure interpreted recursion never
+/// touches the native stack (see `run_until`'s frame-stack design), so
+/// it's bounded only by heap memory; a call INTO compiled machine code
+/// is an ordinary native call, so it IS bounded by the thread's stack.
+/// Once nesting hits this depth, `VM::tiered_entry`/`maybe_osr` simply
+/// stop offering compiled entry points and let the (stack-safe)
+/// interpreter take over for the rest of the recursion, exactly the
+/// same fallback already used for a function that isn't warm/compiled
+/// yet -- so a pathologically deep recursion degrades to "slower" NOT
+/// to "the process crashes with a native stack overflow".
+const MAX_JIT_CALL_DEPTH: u32 = 1024;
 
 /// Inline capacity for a native/operator-override/constructor call's
 /// argument list. `Value` is a plain Copy u64, so this is a handful of
@@ -152,6 +167,30 @@ pub struct VM {
   /// Active `catch` handlers, innermost (most recently pushed) last --
   /// see `CatchHandler`'s own doc comment.
   catch_stack: Vec<CatchHandler>,
+  /// Owns the Cranelift `JITModule` and drives whole-function
+  /// compilation -- see `crate::jit`. Lives for the whole process;
+  /// compiled machine code is never unloaded or recompiled once
+  /// produced.
+  pub(crate) jit_engine: JitEngine,
+  /// Side channel a `crate::jit::runtime` helper sets to a non-nil
+  /// exception `Value` exactly when it needs to propagate a failure
+  /// out of currently-executing compiled code. Compiled code has no
+  /// unwinder of its own (see the `jit` module's top-level docs on why
+  /// exceptions always cause a bailout rather than being handled
+  /// in-place) -- this is what `VM::invoke_compiled` checks immediately
+  /// after a compiled call returns to decide `Ok(value)` vs
+  /// `Err(exception)`. Always nil outside the brief window between a
+  /// helper setting it and `invoke_compiled` observing + clearing it.
+  pub(crate) jit_pending_exception: Cell<Value>,
+  /// Master on/off switch for tiering up at all, read once from
+  /// `ZURI_JIT` at startup (`"0"`/`"off"`/`"false"` disables it) --
+  /// purely a benchmarking/debugging escape hatch. Every program
+  /// behaves identically either way, just slower with it off (always
+  /// interpreted, exactly like this VM before this tier existed).
+  jit_enabled: bool,
+  /// How many compiled-function calls are currently nested on the REAL
+  /// native call stack -- see `MAX_JIT_CALL_DEPTH`.
+  jit_call_depth: Cell<u32>,
   /// Cached by name after `prelude::install` runs, for O(1) lookup from
   /// `VM::raise` rather than a `self.globals` hashmap hit on every
   /// internal error.
@@ -196,6 +235,13 @@ impl VM {
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
       catch_stack: Vec::new(),
+      jit_engine: JitEngine::new(),
+      jit_pending_exception: Cell::new(Value::nil()),
+      jit_enabled: !matches!(
+        std::env::var("ZURI_JIT").as_deref(),
+        Ok("0") | Ok("off") | Ok("false")
+      ),
+      jit_call_depth: Cell::new(0),
       builtin_exceptions: FxHashMap::default(),
       global_slots: Vec::new(),
       global_names: FxHashMap::default(),
@@ -256,14 +302,14 @@ impl VM {
   /// before. Never touches any OTHER table -- this is what keeps two
   /// modules (or a module and the root script) that happen to declare
   /// the same name from colliding with each other.
-  fn get_or_create_slot_in(&mut self, module: Option<Value>, name: String) -> u32 {
+  pub(crate) fn get_or_create_slot_in(&mut self, module: Option<Value>, name: String) -> u32 {
     match module {
       None => self.get_or_create_global_slot(name),
       Some(m) => m.as_module_mut().namespace.get_or_create_slot(&name),
     }
   }
 
-  fn lookup_slot_in(&self, module: Option<Value>, name: &str) -> Option<u32> {
+  pub(crate) fn lookup_slot_in(&self, module: Option<Value>, name: &str) -> Option<u32> {
     match module {
       None => self.global_names.get(name).copied(),
       Some(m) => m.as_module().namespace.names.get(name).copied(),
@@ -280,7 +326,7 @@ impl VM {
   }
 
   #[inline]
-  fn write_slot_in(&self, module: Option<Value>, slot: u32, v: Value) {
+  pub(crate) fn write_slot_in(&self, module: Option<Value>, slot: u32, v: Value) {
     match module {
       None => self.global_slots[slot as usize].set(v),
       Some(m) => m.as_module().namespace.slots[slot as usize].set(v),
@@ -295,7 +341,7 @@ impl VM {
   /// while still letting a module shadow any of those names with its
   /// own declaration. `None` (main script/REPL) has nothing to fall
   /// back FROM -- it just resolves against root directly.
-  fn resolve_global(&self, module: Option<Value>, name: &str) -> Option<(bool, u32)> {
+  pub(crate) fn resolve_global(&self, module: Option<Value>, name: &str) -> Option<(bool, u32)> {
     match module {
       None => self.global_names.get(name).copied().map(|s| (true, s)),
       Some(m) => {
@@ -308,7 +354,7 @@ impl VM {
   }
 
   #[inline]
-  fn read_resolved(&self, module: Option<Value>, is_root: bool, slot: u32) -> Value {
+  pub(crate) fn read_resolved(&self, module: Option<Value>, is_root: bool, slot: u32) -> Value {
     if is_root {
       self.global_slots[slot as usize].get()
     } else {
@@ -317,7 +363,7 @@ impl VM {
   }
 
   #[inline]
-  fn write_resolved(&self, module: Option<Value>, is_root: bool, slot: u32, v: Value) {
+  pub(crate) fn write_resolved(&self, module: Option<Value>, is_root: bool, slot: u32, v: Value) {
     if is_root {
       self.global_slots[slot as usize].set(v);
     } else {
@@ -563,10 +609,182 @@ impl VM {
       base: new_base,
       dst_in_caller: 0,
     });
+    self.run_frame(stop_depth, proto, callee)
+  }
+
+  //-----------------------------------------------------------------------------------
+  // JIT tiering -- see `crate::jit` for the compiled-code side of all of
+  // this. Every entry point below assumes its caller has ALREADY pushed
+  // the `CallFrame` this call/loop is executing (matching `run_until`'s
+  // own precondition) -- these methods only ever decide "run the
+  // already-active top frame interpreted, or hand it to compiled code",
+  // never frame setup itself.
+  //-----------------------------------------------------------------------------------
+
+  /// Absolute pointer to the current backing buffer of `VM::registers`.
+  /// Deliberately NOT safe to cache across any call that could push a
+  /// deeper frame (`Instr::Call`/`Invoke`/... , or an operator-override
+  /// dispatch) -- `self.registers.resize` can reallocate, which would
+  /// silently invalidate a stale copy of this pointer. Compiled code
+  /// (see `jit::codegen`) re-fetches this via `jit::runtime::zuri_jit_regs_ptr`
+  /// immediately after every call site for exactly this reason, the
+  /// same way `get_reg`/`set_reg` always index through `&self`/`&mut
+  /// self` fresh rather than a cached slice.
+  pub(crate) fn registers_ptr(&mut self) -> *mut Value {
+    self.registers.as_mut_ptr()
+  }
+
+  /// Does `proto` have (or should it now get) a compiled entry point
+  /// ready for a call about to happen? `None` means "run it
+  /// interpreted" -- because the JIT is disabled, this exact prototype
+  /// was found ineligible (contains `Raise`/`PushCatch`/`PopCatch` --
+  /// see the `jit` module's docs), it isn't warm enough yet, or the
+  /// real call stack is already deep enough that handing it another
+  /// native call risks overflowing it (see `MAX_JIT_CALL_DEPTH`).
+  pub(crate) fn tiered_entry(&mut self, proto: &ObjFunction) -> Option<Rc<CompiledFunction>> {
+    if !self.jit_enabled || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
+      return None;
+    }
+    if let Some(c) = proto.jit.compiled.borrow().as_ref() {
+      return Some(c.clone());
+    }
+    if proto.jit.ineligible.get() || proto.jit.call_count.get() < proto.jit.call_threshold {
+      return None;
+    }
+    self.try_compile(proto)
+  }
+
+  /// Compile `proto` right now (regardless of its own warm-up
+  /// counters), memoizing either the resulting `CompiledFunction` or a
+  /// sticky "don't try again" flag on `proto.jit.ineligible`. Shared by
+  /// ordinary call-site warm-up (`tiered_entry`) and OSR (`maybe_osr`),
+  /// both of which want "compile it if we haven't already, then use
+  /// whatever's there" with no duplicated bookkeeping.
+  pub(crate) fn try_compile(&mut self, proto: &ObjFunction) -> Option<Rc<CompiledFunction>> {
+    if let Some(c) = proto.jit.compiled.borrow().as_ref() {
+      return Some(c.clone());
+    }
+    if proto.jit.ineligible.get() {
+      return None;
+    }
+    match self.jit_engine.compile_function(proto) {
+      Ok(compiled) => {
+        if crate::jit::log_enabled() {
+          eprintln!(
+            "[jit] compiled '{}' ({} bytecode ops, {} osr point(s))",
+            proto.name,
+            proto.chunk.code.len(),
+            compiled.osr_ids.len()
+          );
+        }
+        let rc = Rc::new(compiled);
+        *proto.jit.compiled.borrow_mut() = Some(rc.clone());
+        Some(rc)
+      },
+      Err(reason) => {
+        if crate::jit::log_enabled() {
+          eprintln!("[jit] '{}' ineligible: {}", proto.name, reason);
+        }
+        proto.jit.ineligible.set(true);
+        None
+      },
+    }
+  }
+
+  /// Given a frame that was JUST pushed for `proto`/`closure_val` (so
+  /// `stop_depth` is exactly what `run_until` needs to know when to
+  /// stop), either interpret it (today's unbounded-depth behavior,
+  /// unchanged) or -- once it's warm enough, compiling it right now if
+  /// needed -- run it as compiled machine code instead. Used by
+  /// `call_value` (natives/builtins calling back into Zuri code) so
+  /// that path benefits from tiering exactly like ordinary bytecode
+  /// `Instr::Call` does.
+  fn run_frame(&mut self, stop_depth: usize, proto: &ObjFunction, closure_val: Value) -> RunResult<Value> {
+    proto.jit.call_count.set(proto.jit.call_count.get().saturating_add(1));
+    if let Some(compiled) = self.tiered_entry(proto) {
+      return self.invoke_compiled(&compiled, closure_val, -1);
+    }
     self.run_until(stop_depth)
   }
 
-  fn call_native(
+  /// Runs the CURRENT top frame (already pushed, `self.frames.last()`)
+  /// as compiled machine code from `osr_id` (`-1` for an ordinary
+  /// entry starting at bytecode ip 0; a non-negative id from
+  /// `CompiledFunction::osr_ids` to jump straight into a specific loop
+  /// header instead -- see `maybe_osr`).
+  ///
+  /// On success, pops the frame and returns `Ok(value)` -- exactly
+  /// `Instr::Return`'s own effect. On failure, the frame is left in
+  /// place, matching `run_until`'s existing "an uncaught exception
+  /// leaves every frame between here and whichever ancestor `catch`
+  /// eventually claims it, to be truncated in one shot by
+  /// `handle_exception`" behavior -- compiled code never pops on error,
+  /// only on success, for exactly that reason.
+  fn invoke_compiled(&mut self, compiled: &CompiledFunction, closure_val: Value, osr_id: i32) -> RunResult<Value> {
+    let base = self
+      .frames
+      .last()
+      .expect("invoke_compiled: no active frame")
+      .base;
+
+    self.jit_call_depth.set(self.jit_call_depth.get() + 1);
+    let entry = compiled.entry;
+    // SAFETY: `entry` was produced by `jit::engine::JitEngine::compile_function`
+    // for THIS exact prototype; `base` is this (already-pushed) frame's
+    // own register-window start, matching every other caller of this
+    // machine code's calling convention (see `jit::EntryFn`'s docs).
+    let result_bits = unsafe { entry(self as *mut VM, base as u64, closure_val.to_bits(), osr_id) };
+    self.jit_call_depth.set(self.jit_call_depth.get() - 1);
+
+    let pending = self.jit_pending_exception.get();
+    if !pending.is_nil() {
+      self.jit_pending_exception.set(Value::nil());
+      return Err(pending);
+    }
+
+    self.close_upvalues_from(base);
+    self.frames.pop();
+    Ok(Value::from_bits(result_bits))
+  }
+
+  /// Checked by `run_until`'s own `Instr::Jmp` handler on every
+  /// BACKWARD jump (a loop back-edge) -- `target_ip` is where that
+  /// back-edge lands (the loop header). Returns `None` to mean "keep
+  /// interpreting this loop normally" (not hot yet, ineligible, or the
+  /// native call stack is already too deep); `Some(outcome)` means
+  /// on-stack replacement into compiled code just ran the CURRENT
+  /// frame to completion, and the caller must treat that exactly like
+  /// `Instr::Return` (`Ok`) or an unhandled exception (`Err`) firing
+  /// for this same frame -- NOT resume interpreting it.
+  pub(crate) fn maybe_osr(&mut self, func: &ObjFunction, target_ip: usize) -> Option<RunResult<Value>> {
+    if !self.jit_enabled || func.jit.ineligible.get() || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
+      return None;
+    }
+
+    if let Some(compiled) = func.jit.compiled.borrow().as_ref() {
+      let osr_id = *compiled.osr_ids.get(&target_ip)?;
+      let compiled = compiled.clone();
+      let closure_val = self.frames.last().unwrap().closure_val;
+      return Some(self.invoke_compiled(&compiled, closure_val, osr_id));
+    }
+
+    let hot = {
+      let mut counts = func.jit.osr_counts.borrow_mut();
+      let count = counts.entry(target_ip).or_insert(0);
+      *count += 1;
+      *count >= func.jit.osr_threshold
+    };
+    if !hot {
+      return None;
+    }
+
+    let compiled = self.try_compile(func)?;
+    let osr_id = *compiled.osr_ids.get(&target_ip)?;
+    let closure_val = self.frames.last().unwrap().closure_val;
+    Some(self.invoke_compiled(&compiled, closure_val, osr_id))
+  }
+
+  pub(crate) fn call_native(
     &mut self,
     native: &crate::vm::object::NativeFunction,
     args: &[Value],
@@ -687,7 +905,31 @@ impl VM {
   /// and `dst` are relative to `base`; arguments must already sit at
   /// `func_reg+1 ..= func_reg+num_args` -- ordinary data-call convention,
   /// arity does NOT include any implicit receiver.
-  fn dispatch_call(&mut self, base: usize, func_reg: u8, num_args: u8, dst: u8) -> RunResult<()> {
+  pub(crate) fn dispatch_call(&mut self, base: usize, func_reg: u8, num_args: u8, dst: u8) -> RunResult<()> {
+    self.dispatch_call_inner(base, func_reg, num_args, dst, false)
+  }
+
+  /// Same dispatch as `dispatch_call`, but for a call site that has NO
+  /// flat interpreter loop waiting to pick up a merely-pushed frame --
+  /// i.e. a call issued from within already-COMPILED code (see
+  /// `jit::runtime::zuri_jit_call`). A `Closure` callee therefore
+  /// always runs to full completion synchronously here (through
+  /// `run_frame`, exactly like `call_value` already does for a native
+  /// calling back into Zuri) rather than being left on `self.frames`
+  /// for a caller's own dispatch loop to continue -- there is no such
+  /// loop to hand it to.
+  pub(crate) fn dispatch_call_sync(&mut self, base: usize, func_reg: u8, num_args: u8, dst: u8) -> RunResult<()> {
+    self.dispatch_call_inner(base, func_reg, num_args, dst, true)
+  }
+
+  fn dispatch_call_inner(
+    &mut self,
+    base: usize,
+    func_reg: u8,
+    num_args: u8,
+    dst: u8,
+    sync: bool,
+  ) -> RunResult<()> {
     let callee = self.get_reg(base, func_reg);
 
     if !callee.is_obj() {
@@ -759,6 +1001,29 @@ impl VM {
           base: new_base,
           dst_in_caller: dst,
         });
+        if sync {
+          // No flat interpreter loop is waiting for this frame -- run
+          // it to completion right now, interpreted or compiled
+          // (`run_frame` decides), exactly like `call_value` already
+          // does for a native calling back into Zuri.
+          let stop_depth = self.frames.len() - 1;
+          let ret = self.run_frame(stop_depth, callee_fn, callee)?;
+          self.set_reg(base, dst, ret);
+        } else {
+          // Mixed-mode dispatch: if `callee_fn` is already warm/
+          // compiled (or this exact call is the one that tips it over
+          // its own warm-up threshold), run it as compiled machine
+          // code RIGHT NOW instead of leaving the frame for the
+          // interpreter loop to pick up next iteration. If it's still
+          // cold, this falls straight through to `Ok(())` and the
+          // existing push-and-continue behavior is completely
+          // unchanged.
+          callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
+          if let Some(compiled) = self.tiered_entry(callee_fn) {
+            let ret = self.invoke_compiled(&compiled, callee, -1)?;
+            self.set_reg(base, dst, ret);
+          }
+        }
         Ok(())
       },
       Obj::ModuleBinding(b) => {
@@ -770,7 +1035,7 @@ impl VM {
             // path (closure/native/etc.) for free instead of duplicating
             // it here.
             self.set_reg(base, func_reg, f);
-            self.dispatch_call(base, func_reg, num_args, dst)
+            self.dispatch_call_inner(base, func_reg, num_args, dst, sync)
           },
           None => {
             let msg = format!("module '{}' is not callable", b.bind_name);
@@ -793,13 +1058,40 @@ impl VM {
   /// consulted only for its function pointers, since the receiver
   /// occupying what would otherwise be the callee's register is exactly
   /// the point of the fused Invoke/InvokeSuper instructions.
-  fn invoke_prebound(
+  pub(crate) fn invoke_prebound(
     &mut self,
     base: usize,
     recv_reg: u8,
     callee: Value,
     num_args: u8,
     dst: u8,
+  ) -> RunResult<()> {
+    self.invoke_prebound_inner(base, recv_reg, callee, num_args, dst, false)
+  }
+
+  /// `invoke_prebound`'s counterpart for a call site with no flat
+  /// interpreter loop waiting -- see `dispatch_call_sync`'s doc
+  /// comment, the exact same reasoning applies here for
+  /// `Invoke`/`InvokeSuper`/`CallSuperCtor`'s own compiled call sites.
+  pub(crate) fn invoke_prebound_sync(
+    &mut self,
+    base: usize,
+    recv_reg: u8,
+    callee: Value,
+    num_args: u8,
+    dst: u8,
+  ) -> RunResult<()> {
+    self.invoke_prebound_inner(base, recv_reg, callee, num_args, dst, true)
+  }
+
+  fn invoke_prebound_inner(
+    &mut self,
+    base: usize,
+    recv_reg: u8,
+    callee: Value,
+    num_args: u8,
+    dst: u8,
+    sync: bool,
   ) -> RunResult<()> {
     if !callee.is_closure() {
       let msg = format!("cannot call a {}", callee.type_name());
@@ -840,6 +1132,19 @@ impl VM {
       base: new_base,
       dst_in_caller: dst,
     });
+    if sync {
+      let stop_depth = self.frames.len() - 1;
+      let ret = self.run_frame(stop_depth, callee_fn, callee)?;
+      self.set_reg(base, dst, ret);
+    } else {
+      // Same mixed-mode tiering as `dispatch_call`'s Closure arm -- see
+      // its comment for the full rationale.
+      callee_fn.jit.call_count.set(callee_fn.jit.call_count.get().saturating_add(1));
+      if let Some(compiled) = self.tiered_entry(callee_fn) {
+        let ret = self.invoke_compiled(&compiled, callee, -1)?;
+        self.set_reg(base, dst, ret);
+      }
+    }
     Ok(())
   }
 
@@ -847,7 +1152,7 @@ impl VM {
   // Indexing and slicing
   //-----------------------------------------------------------------------------------
 
-  fn index_get(&mut self, receiver: Value, index: Value) -> RunResult<Value> {
+  pub(crate) fn index_get(&mut self, receiver: Value, index: Value) -> RunResult<Value> {
     if receiver.is_list() {
       let i = self.coerce_index(index, receiver.list_len())?;
       Ok(receiver.list_get(i).unwrap())
@@ -875,7 +1180,7 @@ impl VM {
     }
   }
 
-  fn index_set(&mut self, receiver: Value, index: Value, value: Value) -> RunResult<()> {
+  pub(crate) fn index_set(&mut self, receiver: Value, index: Value, value: Value) -> RunResult<()> {
     if receiver.is_list() {
       let i = self.coerce_index(index, receiver.list_len())?;
       receiver.list_set(i, value);
@@ -909,7 +1214,7 @@ impl VM {
     }
   }
 
-  fn index_slice(&mut self, receiver: Value, lo: Value, hi: Value) -> RunResult<Value> {
+  pub(crate) fn index_slice(&mut self, receiver: Value, lo: Value, hi: Value) -> RunResult<Value> {
     if receiver.is_obj() {
       match unsafe { &*receiver.as_obj() } {
         Obj::List(_) => {
@@ -980,7 +1285,7 @@ impl VM {
     let mut closure_ptr = self.frames[frame_idx].closure;
     let mut ip = self.frames[frame_idx].ip;
 
-    loop {
+    'dispatch: loop {
       if self.heap.needs_gc() {
         self.collect_garbage();
       }
@@ -1248,7 +1553,52 @@ impl VM {
           },
 
           Instr::Jmp { offset } => {
-            ip = (ip as isize + offset as isize) as usize;
+            let target = (ip as isize + offset as isize) as usize;
+            // A backward jump is a loop back-edge -- exactly where a
+            // baseline JIT is expected to offer on-stack replacement
+            // (see `crate::jit`'s module docs). `maybe_osr` returns
+            // `None` the overwhelming majority of the time (loop not
+            // hot yet, function ineligible, or JIT disabled), in which
+            // case this behaves exactly like the plain jump it always
+            // was.
+            if offset < 0 {
+              // Captured BEFORE `maybe_osr` runs -- on an `Ok` outcome
+              // it has ALREADY closed this frame's upvalues and popped
+              // it (see `VM::invoke_compiled`), so `self.frames[frame_idx]`
+              // itself is no longer valid to read afterward.
+              let dst_in_caller = self.frames[frame_idx].dst_in_caller;
+              if let Some(outcome) = self.maybe_osr(func, target) {
+                match outcome {
+                  // Mirrors Instr::Return's own handler exactly --
+                  // on-stack replacement just ran the CURRENT frame to
+                  // completion, so from here on this is a return, not
+                  // a jump. `invoke_compiled` already closed upvalues
+                  // and popped the frame; this just refreshes the
+                  // dispatch loop's own cached state to the caller's.
+                  Ok(ret) => {
+                    if self.frames.len() == stop_depth {
+                      return Ok(ret);
+                    }
+                    frame_idx = self.frames.len() - 1;
+                    let caller = &self.frames[frame_idx];
+                    base = caller.base;
+                    func_ptr = caller.function;
+                    closure_ptr = caller.closure;
+                    ip = caller.ip;
+                    self.set_reg(base, dst_in_caller, ret);
+                    continue 'dispatch;
+                  },
+                  // Feed into the SAME exception machinery any other
+                  // failing instruction uses -- compiled code never
+                  // pops its own frame on error (see
+                  // `VM::invoke_compiled`), so `catch_stack`/
+                  // `handle_exception` see this exactly as if an
+                  // ordinary interpreted instruction had failed.
+                  Err(exc) => break 'step Err(exc),
+                }
+              }
+            }
+            ip = target;
           },
           Instr::JmpIfFalse { cond, offset } => {
             if self.get_reg(base, cond).is_falsey() {
@@ -2108,7 +2458,7 @@ impl VM {
   /// one) is what makes two closures created from the same enclosing
   /// scope, over the same local, actually share state.
   #[inline]
-  fn capture_upvalue(&mut self, abs_index: usize) -> Value {
+  pub(crate) fn capture_upvalue(&mut self, abs_index: usize) -> Value {
     if let Some((_, v)) = self.open_upvalues.iter().find(|(idx, _)| *idx == abs_index) {
       return *v;
     }
@@ -2120,7 +2470,7 @@ impl VM {
   /// Close every open upvalue pointing at a register >= `from_abs_index`,
   /// copying the register's current value into the upvalue's own
   /// storage. Called on block exit and on Return.
-  fn close_upvalues_from(&mut self, from_abs_index: usize) {
+  pub(crate) fn close_upvalues_from(&mut self, from_abs_index: usize) {
     let mut i = 0;
     while i < self.open_upvalues.len() {
       let (idx, v) = self.open_upvalues[i];
@@ -2144,21 +2494,41 @@ impl VM {
   }
 
   #[inline(always)]
-  fn get_reg(&self, base: usize, r: u8) -> Value {
+  pub(crate) fn get_reg(&self, base: usize, r: u8) -> Value {
     debug_assert!((base + r as usize) < self.registers.len());
     unsafe { *self.registers.get_unchecked(base + r as usize) }
   }
 
   #[inline(always)]
-  fn set_reg(&mut self, base: usize, r: u8, v: Value) {
+  pub(crate) fn set_reg(&mut self, base: usize, r: u8, v: Value) {
     debug_assert!((base + r as usize) < self.registers.len());
     unsafe {
       *self.registers.get_unchecked_mut(base + r as usize) = v;
     }
   }
 
+  /// Like `get_reg`/`set_reg`, but for an ABSOLUTE register index
+  /// rather than one relative to some frame's `base` -- needed only for
+  /// open-upvalue access (`UpvalueState::Open` already stores an
+  /// absolute index; see `object::UpvalueState`), where the index can
+  /// belong to a DIFFERENT, outer frame than the one currently reading/
+  /// writing through the upvalue.
   #[inline(always)]
-  fn bitwise_numeric<F, G>(
+  pub(crate) fn get_reg_abs(&self, abs: usize) -> Value {
+    debug_assert!(abs < self.registers.len());
+    unsafe { *self.registers.get_unchecked(abs) }
+  }
+
+  #[inline(always)]
+  pub(crate) fn set_reg_abs(&mut self, abs: usize, v: Value) {
+    debug_assert!(abs < self.registers.len());
+    unsafe {
+      *self.registers.get_unchecked_mut(abs) = v;
+    }
+  }
+
+  #[inline(always)]
+  pub(crate) fn bitwise_numeric<F, G>(
     &mut self,
     base: usize,
     dst: u8,
@@ -2203,7 +2573,7 @@ impl VM {
   }
 
   #[inline(always)]
-  fn binary_numeric<F, G>(
+  pub(crate) fn binary_numeric<F, G>(
     &mut self,
     base: usize,
     dst: u8,
@@ -2244,7 +2614,7 @@ impl VM {
   }
 
   #[inline]
-  fn binary_add_values(&mut self, va: Value, vb: Value, op_name: &str) -> RunResult<Value> {
+  pub(crate) fn binary_add_values(&mut self, va: Value, vb: Value, op_name: &str) -> RunResult<Value> {
     if va.is_number() && vb.is_number() {
       return Ok(Value::number(va.as_number() + vb.as_number()));
     } else if va.is_bigint() && vb.is_bigint() {
@@ -2289,7 +2659,7 @@ impl VM {
   }
 
   #[inline]
-  fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
+  pub(crate) fn binary_add(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
     let result = self.binary_add_values(va, vb, op_name)?;
@@ -2297,7 +2667,7 @@ impl VM {
   }
 
   #[inline(always)]
-  fn binary_mult(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
+  pub(crate) fn binary_mult(&mut self, base: usize, dst: u8, a: u8, b: u8, op_name: &str) -> RunResult<()> {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
 
@@ -2340,7 +2710,7 @@ impl VM {
   }
 
   #[inline(always)]
-  fn compare<F, G>(
+  pub(crate) fn compare<F, G>(
     &mut self,
     base: usize,
     dst: u8,
@@ -2381,7 +2751,7 @@ impl VM {
   }
 
   #[inline]
-  fn binary_numeric_imm<F>(
+  pub(crate) fn binary_numeric_imm<F>(
     &mut self,
     base: usize,
     dst: u8,
@@ -2410,7 +2780,7 @@ impl VM {
   }
 
   #[inline]
-  fn compare_imm<F>(
+  pub(crate) fn compare_imm<F>(
     &mut self,
     base: usize,
     dst: u8,
@@ -2693,7 +3063,7 @@ impl VM {
   /// Returns `Ok(None)` if `receiver` has no such override at all (caller
   /// falls through to its own type-mismatch error), or the override's
   /// result / propagated exception once it's actually been invoked.
-  fn try_operator_override(
+  pub(crate) fn try_operator_override(
     &mut self,
     receiver: Value,
     deco: &str,
@@ -2801,7 +3171,7 @@ impl VM {
 /// named `name`, checking each class's own (never inherited-in)
 /// `static_slots` table -- see `ObjClass`'s doc comment for why statics
 /// aren't pre-merged the way methods/fields are.
-fn lookup_static(class_val: Value, name: &str) -> Option<Value> {
+pub(crate) fn lookup_static(class_val: Value, name: &str) -> Option<Value> {
   let mut cur = Some(class_val);
   while let Some(c) = cur {
     let class = c.as_class();
@@ -2813,7 +3183,7 @@ fn lookup_static(class_val: Value, name: &str) -> Option<Value> {
   None
 }
 
-fn set_static(class_val: Value, name: &str, value: Value) -> Result<(), String> {
+pub(crate) fn set_static(class_val: Value, name: &str, value: Value) -> Result<(), String> {
   let mut cur = Some(class_val);
   while let Some(c) = cur {
     let class = c.as_class();

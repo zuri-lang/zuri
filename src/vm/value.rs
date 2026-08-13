@@ -37,22 +37,32 @@ use crate::vm::object::{
   ObjModule, ObjModuleBinding, ObjPtr, UpvalueState,
 };
 
-const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
-const SIGN_BIT: u64 = 0x8000_0000_0000_0000;
+// Visible at `pub(crate)` (not just private) because the Cranelift JIT
+// backend (see `jit::codegen`) needs to replicate these exact bit tests
+// as inline machine code for its fast paths -- e.g. "is both operands a
+// plain number" -- rather than paying a real function-call round trip
+// into `Value::is_number()` for the hottest possible check in the
+// entire VM. `Value` being `#[repr(transparent)]` around a `u64` is
+// what makes this safe to do from outside this module: the JIT never
+// needs to know anything about `Obj`'s layout (which is NOT replicated
+// this way -- see `jit::runtime` for why anything touching a heap
+// object's contents instead calls back into real Rust code).
+pub(crate) const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
+pub(crate) const SIGN_BIT: u64 = 0x8000_0000_0000_0000;
 
-const TAG_NIL: u64 = 0b01;
-const TAG_FALSE: u64 = 0b10;
-const TAG_TRUE: u64 = 0b11;
+pub(crate) const TAG_NIL: u64 = 0b01;
+pub(crate) const TAG_FALSE: u64 = 0b10;
+pub(crate) const TAG_TRUE: u64 = 0b11;
 
 // set only for boxed integers; unset for nil/true/false and for pointers
 // const TAG_INT: u64 = 1 << 49;
 
-const NIL_VAL: u64 = QNAN | TAG_NIL;
-const FALSE_VAL: u64 = QNAN | TAG_FALSE;
-const TRUE_VAL: u64 = QNAN | TAG_TRUE;
+pub(crate) const NIL_VAL: u64 = QNAN | TAG_NIL;
+pub(crate) const FALSE_VAL: u64 = QNAN | TAG_FALSE;
+pub(crate) const TRUE_VAL: u64 = QNAN | TAG_TRUE;
 
 /// Mask covering exactly the low 48 bits, where we stash a pointer.
-const PTR_MASK: u64 = 0x0000_ffff_ffff_ffff;
+pub(crate) const PTR_MASK: u64 = 0x0000_ffff_ffff_ffff;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
@@ -62,6 +72,26 @@ impl Value {
   #[inline]
   pub fn nil() -> Value {
     Value(NIL_VAL)
+  }
+
+  /// Reconstruct a `Value` from its raw NaN-boxed bit pattern -- used
+  /// only at the JIT/native-code boundary (see `jit::runtime`), where
+  /// compiled code passes register contents across the ABI as plain
+  /// `u64`s rather than `Value`s. Every bit pattern this can be called
+  /// with was itself produced by `to_bits()` on a real `Value` sitting
+  /// in `VM::registers`, so this never manufactures an invalid tag.
+  #[inline(always)]
+  pub fn from_bits(bits: u64) -> Value {
+    Value(bits)
+  }
+
+  /// The inverse of `from_bits` -- the raw bit pattern the JIT stores
+  /// directly into a register slot (`VM::registers` is just `[Value]`,
+  /// and `Value` is `#[repr(transparent)]` around a `u64`, so this is a
+  /// same-layout reinterpretation, not a real conversion).
+  #[inline(always)]
+  pub fn to_bits(&self) -> u64 {
+    self.0
   }
 
   #[inline]

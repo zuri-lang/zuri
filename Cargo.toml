@@ -54,6 +54,12 @@ argon2 = "0.5"
 zlib-rs = "0.6.7"
 zrip = "0.8.5"
 lz4_flex = "0.14.0"
+cranelift-jit = "0.134"
+cranelift-codegen = "0.134"
+cranelift-frontend = "0.134"
+cranelift-module = "0.134"
+cranelift-native = "0.134"
+target-lexicon = "0.13"
 
 
 [build-dependencies]

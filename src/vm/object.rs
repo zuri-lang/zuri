@@ -149,6 +149,70 @@ pub struct ObjFunction {
   /// produces, via `Compiler::set_current_module` -- see
   /// `vm::modules::run_module_source`.
   pub globals_module: Option<Value>,
+
+  /// Tiering/JIT state for this prototype -- see `crate::jit`. Lives
+  /// here (not on `ObjClosure`) because every closure created from the
+  /// same prototype shares the same compiled machine code; a closure
+  /// only contributes its own upvalues on top.
+  pub jit: JitInfo,
+}
+
+/// Per-function tiering state consulted by both the interpreter (to
+/// decide when to compile, and whether a call/loop should route into
+/// already-compiled code) and the JIT compiler itself (see
+/// `crate::jit::codegen`). Every field here uses interior mutability
+/// because `ObjFunction` is reached only through a shared `*const
+/// ObjFunction` / `&ObjFunction` for its whole life -- exactly like
+/// `Chunk::global_cache` already does for its own inline cache.
+pub struct JitInfo {
+  /// Real invocations of this prototype (via `Instr::Call`, `Invoke`,
+  /// `call_value`, ...) since the VM started -- NOT bytecode
+  /// instructions executed. Compared against `call_threshold`.
+  pub call_count: Cell<u32>,
+  /// This function's own whole-function warmup threshold, precomputed
+  /// once at construction time from its bytecode length -- see
+  /// `crate::jit::warmup::call_threshold`. Larger functions amortize
+  /// the fixed cost of compilation over fewer calls, so they warm up
+  /// sooner than tiny ones.
+  pub call_threshold: u32,
+  /// This function's threshold for a single loop's own back-edge count
+  /// to trigger on-stack replacement -- see
+  /// `crate::jit::warmup::osr_threshold`. Deliberately smaller than
+  /// `call_threshold` scaled the same way, so a function that's called
+  /// exactly once (e.g. a `main`) but immediately enters a long loop
+  /// still gets compiled without waiting for a second call that may
+  /// never come.
+  pub osr_threshold: u32,
+  /// Set once a compilation attempt has run and PRODUCED code. `None`
+  /// before that -- every call/loop-iteration checks this cheaply
+  /// before doing anything else.
+  pub compiled: RefCell<Option<Rc<crate::jit::CompiledFunction>>>,
+  /// Set once a compilation attempt has run and FAILED, or the
+  /// function was found ineligible up front (contains `Raise`/
+  /// `PushCatch`/`PopCatch` -- see the `crate::jit` module docs for why
+  /// exception-handling bytecode is never compiled). Sticky: later warm
+  /// call sites see this and stop trying, rather than re-attempting a
+  /// doomed compilation on every single call.
+  pub ineligible: Cell<bool>,
+  /// Per-loop-header back-edge hit counts, keyed by the bytecode `ip`
+  /// the loop's `Instr::Jmp` back-edge targets -- consulted only by
+  /// that instruction's own handler in `vm.rs` to decide when a
+  /// specific loop is hot enough to trigger (or use, if compilation
+  /// already happened) on-stack replacement.
+  pub osr_counts: RefCell<FxHashMap<usize, u32>>,
+}
+
+impl JitInfo {
+  pub fn new(code_len: usize) -> JitInfo {
+    JitInfo {
+      call_count: Cell::new(0),
+      call_threshold: crate::jit::warmup::call_threshold(code_len),
+      osr_threshold: crate::jit::warmup::osr_threshold(code_len),
+      compiled: RefCell::new(None),
+      ineligible: Cell::new(false),
+      osr_counts: RefCell::new(FxHashMap::default()),
+    }
+  }
 }
 
 /// A method value bound to a specific receiver -- produced only when a
