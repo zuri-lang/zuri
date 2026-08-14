@@ -107,6 +107,28 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 /// cached copy) -- so the collector's normal root scan already sees
 /// this frame correctly with no JIT-specific support needed, for
 /// either a major or a minor collection.
+/// Real deoptimization -- records `ip` as where compiled code is
+/// giving up, so `VM::invoke_compiled` picks it up right after this
+/// call's caller returns. Codegen always follows a call to this with
+/// an immediate `return_` out of the WHOLE compiled function (never
+/// falls through to more translated instructions), so the actual
+/// return value here is never observed -- unlike every other helper,
+/// its result is dead by construction.
+///
+/// Sound for the same reason the GC safepoint above is: every VM
+/// register a compiled function operates on lives in `VM::registers`
+/// at every instruction boundary, never only in a native machine
+/// register that would need to be found and translated back. So
+/// "deoptimizing" needs no state reconstruction at all -- the
+/// interpreter reads the exact same array it always does, starting
+/// fresh at `ip`. See `VM::pending_deopt_ip`'s own docs for the full
+/// reasoning and `VM::invoke_compiled` for where this is consumed.
+pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.pending_deopt_ip.set(Some(ip as usize));
+  OK
+}
+
 pub unsafe extern "C" fn zuri_jit_gc_safepoint(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if vm.heap.needs_major_gc() {
@@ -647,6 +669,14 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
   if !callee.is_closure() || !vm.jit_depth_ok() {
     return 0;
   }
+  // MUST happen before `closure`/`proto` are derived: `closure_out`'s
+  // write below becomes the CALLEE's own `closure_param` -- a plain
+  // Cranelift SSA value the compiled callee reuses for its WHOLE
+  // invocation, never reloaded from anywhere GC-scannable -- so this
+  // closure must never be free to move for as long as that compiled
+  // call might still be running. See
+  // `VM::ensure_stable_for_compiled_entry`'s own docs.
+  let callee = vm.ensure_stable_for_compiled_entry(callee);
   let closure = callee.as_closure();
   let proto = closure.function.as_func();
   let Some(entry) = proto.jit.entry.get() else {
@@ -730,6 +760,9 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   if !method.is_closure() {
     return 0;
   }
+  // See `zuri_jit_call_prepare`'s identical call for why this must
+  // happen before `closure`/`proto` are derived.
+  let method = vm.ensure_stable_for_compiled_entry(method);
   let closure = method.as_closure();
   let proto = closure.function.as_func();
   let Some(entry) = proto.jit.entry.get() else {
@@ -772,6 +805,24 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.jit_depth_exit();
+
+  // MUST be checked before anything else treats `ret_bits` as a real
+  // return value: this is the direct compiled-to-compiled fast path
+  // (`codegen::FuncCompiler::emit_fast_call`'s own `call_indirect`,
+  // never going through `VM::invoke_compiled` at all), so it's the
+  // ONLY place that would ever see a deopt from a callee reached this
+  // way -- e.g. a self-recursive call. See
+  // `VM::resolve_possible_deopt`'s own docs.
+  if let Some(result) = vm.resolve_possible_deopt() {
+    return match result {
+      Ok(v) => {
+        vm.set_reg(base as usize, dst as u8, v);
+        OK
+      },
+      Err(e) => fail(vm, e),
+    };
+  }
+
   if !vm.jit_pending_exception.get().is_nil() {
     return ERR;
   }
@@ -1564,6 +1615,8 @@ pub unsafe extern "C" fn zuri_jit_finalize_class(
   }
   if let Some(ctor) = c.methods.get(&name).copied() {
     c.constructor = Some(ctor);
+    drop(c);
+    write_barrier(class_val.as_obj());
   }
   OK
 }
@@ -1920,6 +1973,7 @@ pub struct HelperSpec {
 }
 
 type Fn1 = unsafe extern "C" fn(*mut VM) -> u64;
+type Fn2 = unsafe extern "C" fn(*mut VM, u64) -> u64;
 type Fn3 = unsafe extern "C" fn(*mut VM, u64, u64) -> u64;
 type Fn4 = unsafe extern "C" fn(*mut VM, u64, u64, u64) -> u64;
 type Fn5 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64) -> u64;
@@ -1947,6 +2001,15 @@ macro_rules! spec1 {
       name: stringify!($f),
       ptr: as_ptr($f as Fn1),
       arity: 1,
+    }
+  };
+}
+macro_rules! spec2 {
+  ($f:ident) => {
+    HelperSpec {
+      name: stringify!($f),
+      ptr: as_ptr($f as Fn2),
+      arity: 2,
     }
   };
 }
@@ -2008,6 +2071,7 @@ macro_rules! spec9 {
 pub fn helper_table() -> Vec<HelperSpec> {
   vec![
     spec1!(zuri_jit_gc_safepoint),
+    spec2!(zuri_jit_deopt),
     spec3!(zuri_jit_is_falsey),
     spec3!(zuri_jit_print),
     spec3!(zuri_jit_close_upvalues),

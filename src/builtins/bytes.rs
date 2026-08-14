@@ -343,9 +343,13 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
   let bytes = ctx.args[0].as_bytes();
-  let callback = ctx.args[1];
+  // See `string.rs::each`'s identical pin -- `ctx.args` itself isn't
+  // a GC root, so both the returned bytes object and the reused
+  // `callback` need to survive here via `gc_pins` instead.
+  let mark = ctx.vm.pin_values([ctx.args[0], ctx.args[1]]);
 
   for (i, b) in bytes.into_iter().enumerate() {
+    let callback = ctx.vm.pinned(mark + 1);
     ctx
       .vm
       .call_value(
@@ -355,7 +359,9 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
       .map_err(|e| ctx.vm.describe_exception(e))?;
   }
 
-  Ok(ctx.args[0])
+  let bytes_val = ctx.vm.pinned(mark);
+  ctx.vm.unpin(mark);
+  Ok(bytes_val)
 }
 
 //-----------------------------------------------------------------------------------

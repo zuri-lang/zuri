@@ -587,6 +587,11 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
   let re = compile_regex(pattern, modifiers)?;
 
   let whole = ctx.vm.heap_mut().alloc_string(s.clone());
+  // `callback` and `whole` are both reused across EVERY match below --
+  // if either is still Young and a later match's own `call_value`
+  // triggers a collection that relocates it, an un-pinned local would
+  // go stale from that point on. See `VM::pin_values`'s own docs.
+  let mark = ctx.vm.pin_values([callback, whole]);
   let mut result = String::new();
   let mut last_end = 0;
 
@@ -602,8 +607,9 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
       });
     }
     call_args.push(Value::number(m.start() as f64));
-    call_args.push(whole);
+    call_args.push(ctx.vm.pinned(mark + 1));
 
+    let callback = ctx.vm.pinned(mark);
     let replaced = ctx
       .vm
       .call_value(callback, &call_args)
@@ -613,6 +619,7 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
     last_end = m.end();
   }
   result.push_str(&s[last_end..]);
+  ctx.vm.unpin(mark);
 
   Ok(ctx.vm.heap_mut().alloc_string(result))
 }
@@ -622,17 +629,25 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
   let s = ctx.args[0].as_str().to_string();
-  let callback = ctx.args[1];
+  // `ctx.args` itself is not a GC root (see `VM::pin_values`'s own
+  // docs) -- pinning the original string here is what keeps the
+  // final `Ok(...)` below safe to return, in addition to `callback`
+  // needing it for the same reason every other iterate+callback
+  // native does.
+  let mark = ctx.vm.pin_values([ctx.args[0], ctx.args[1]]);
 
   for (i, c) in s.chars().enumerate() {
     let char_val = ctx.vm.heap_mut().alloc_string(c.to_string());
+    let callback = ctx.vm.pinned(mark + 1);
     ctx
       .vm
       .call_value(callback, &[char_val, Value::number(i as f64)])
       .map_err(|e| ctx.vm.describe_exception(e))?;
   }
 
-  Ok(ctx.args[0])
+  let str_val = ctx.vm.pinned(mark);
+  ctx.vm.unpin(mark);
+  Ok(str_val)
 }
 
 //-----------------------------------------------------------------------------------

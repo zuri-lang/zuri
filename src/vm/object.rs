@@ -546,6 +546,20 @@ impl DictStorage {
   pub fn index_of(&self, key: &Value) -> Option<usize> {
     self.index.get(&DictKey(*key)).copied()
   }
+
+  /// Rebuilds `index` from scratch against `entries`' CURRENT key
+  /// bits. Needed after anything rewrites a key's `Value` in place
+  /// without going through `set` -- specifically, a minor collection
+  /// relocating a reference-type key (`DictKey`'s `Hash` impl hashes
+  /// the raw pointer for exactly those, see its own docs), which
+  /// changes that key's hash without `index`'s stored bucket knowing
+  /// to move with it. See `VM::walk_children_mut`'s `Obj::Dict` case.
+  pub(crate) fn reindex(&mut self) {
+    self.index.clear();
+    for (i, (k, _)) in self.entries.iter().enumerate() {
+      self.index.insert(DictKey(*k), i);
+    }
+  }
 }
 
 /// Runtime state behind a `file(...)` object -- see `Obj::File`.
@@ -650,9 +664,10 @@ impl<'a> ZuriContext<'a> {
 pub type NativeFn = fn(&mut ZuriContext) -> Result<Value, String>;
 
 /// Which generation a `GcBox` currently belongs to. Every object is
-/// born `Young`; it's promoted to `Old` in place (never moved -- see
-/// `GcBox`'s own docs on why that matters) the first time it survives
-/// a minor collection.
+/// born `Young`, living in the nursery; the first time it survives a
+/// minor collection, it's promoted -- copied for real into old-
+/// generation chunk storage (see `Heap::forward_or_promote`), never
+/// moved again after that.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Generation {
   Young,
@@ -716,15 +731,23 @@ pub(crate) fn write_barrier(container: *const Obj) {
 /// pointer dereference instead of a HashSet insert.
 ///
 /// Also carries the generational-GC bookkeeping (`generation`,
-/// `remembered`/`list_next`, `chunk_idx`). This GC
-/// is **non-moving**: an object's address, once handed out, never
-/// changes for its whole lifetime (see `Heap`'s own doc comment). That
-/// invariant is what lets `Value` stay a bare `Copy` pointer with no
-/// indirection, and it's also exactly what makes generational
-/// promotion free -- "promoting" an object is just flipping
-/// `generation` from `Young` to `Old` in place, never relocating it,
-/// so nothing that already holds a pointer to it needs to be found and
-/// fixed up.
+/// `remembered`/`list_next`, `chunk_idx`). The OLD generation is
+/// non-moving: once a `GcBox` lives in `Heap::chunks`, its address
+/// never changes for the rest of its life, which is what lets a
+/// `Value` stay a bare `Copy` pointer with no indirection for
+/// anything that's ever been promoted. The YOUNG generation is NOT
+/// non-moving, though: an object born into the nursery (see
+/// `Heap::alloc`) gets relocated for real, via an actual copy, the
+/// first time it survives a minor collection (see
+/// `Heap::forward_or_promote`/`VM::collect_minor`) -- "promotion" is
+/// a genuine address change, not a bit-flip. `Value` still stays a
+/// bare pointer safely, but the invariant that makes it sound is
+/// broader now: every reference to a young object gets found and
+/// rewritten as part of that same collection, not that addresses
+/// never change at all. `GcBox`'s own layout is shared identically by
+/// both generations specifically so that fixed-offset trick
+/// (`gcbox_of`) doesn't need to know or care which one a given
+/// pointer currently belongs to.
 /// Field order here is deliberate, not incidental: `#[repr(C)]` lays
 /// fields out in DECLARATION order with natural alignment padding, no
 /// reordering, so the four single-byte flags plus `chunk_idx` (a
@@ -807,20 +830,41 @@ pub struct Heap {
   /// thrashing on a fixed budget.
   next_gc: usize,
   live_count: usize,
-  /// Head of the intrusive young-generation list (threaded through
-  /// `GcBox::list_next`) -- every currently-young object, in no
-  /// particular order. Rebuilt from scratch by a minor collection's
-  /// own sweep (survivors get promoted and dropped from it, the dead
-  /// get freed and dropped from it) and by a major collection's sweep
-  /// (which visits every slot anyway, so it re-links the young
-  /// survivors it finds along the way). `null` = empty.
-  young_head: Cell<*const GcBox>,
   /// Bytes allocated into the young generation since the last minor
   /// (or major) collection -- deliberately tracked separately from
   /// `bytes_allocated`, which is the whole-heap total major collection
   /// already keys off. This is what lets a minor collection trigger
   /// far more often, on a far smaller budget.
   young_bytes_allocated: usize,
+  /// The young generation's own storage: bump-allocated, chunked
+  /// EXACTLY like `chunks` is for the old generation, and for the
+  /// same reason -- each individual `NurseryChunk`'s own buffer is
+  /// reserved at a fixed capacity and never reallocates once
+  /// created, so a `Value` pointing into one stays valid for as long
+  /// as that chunk exists, but the OUTER `Vec` here is free to grow
+  /// without bound: growing it only ever moves lightweight `(ptr,
+  /// len, cap)` headers, never the `GcBox` storage a chunk's own
+  /// `slots` buffer owns (identical reasoning to `chunks`' own doc
+  /// comment on `GcChunk`). This is what lets young allocation grow
+  /// completely unbounded between minor collections with no capacity
+  /// to guess, overflow, or synchronously collect against mid-alloc.
+  ///
+  /// Every object here lives at wherever `alloc`'s bump-push left it
+  /// until the next minor collection either copies it out to old-gen
+  /// storage (it survived) or drops it in place (it didn't) -- see
+  /// `VM::collect_minor` and `reset_nursery`.
+  nursery_chunks: Vec<NurseryChunk>,
+}
+
+/// One fixed-capacity block of nursery `GcBox` storage -- the young
+/// generation's counterpart to `GcChunk`, deliberately a separate,
+/// leaner type: nursery objects are never individually freed or
+/// reused mid-cycle (every survivor is copied OUT, every non-survivor
+/// dies with the whole chunk reset at once -- see `reset_nursery`),
+/// so there's no need for `GcChunk`'s own `free`-list/`live_count`
+/// bookkeeping here at all.
+struct NurseryChunk {
+  slots: Vec<GcBox>,
 }
 
 /// Byte offsets of `Heap::bytes_allocated`/`next_gc` -- combined with
@@ -861,8 +905,8 @@ impl Heap {
       bytes_allocated: 0,
       next_gc: Self::MIN_NEXT_GC,
       live_count: 0,
-      young_head: Cell::new(std::ptr::null()),
       young_bytes_allocated: 0,
+      nursery_chunks: Vec::new(),
     }
   }
 
@@ -903,6 +947,17 @@ impl Heap {
     // SAFETY: every `*const Obj` reachable from a Value was produced by
     // `alloc`, above, from the `obj` field of a real `GcBox`.
     unsafe { (ptr as *const u8).sub(offset) as *const GcBox }
+  }
+
+  /// Is the object behind `ptr` currently in the young generation?
+  /// A cheap, read-only peek -- unlike `forward_or_promote`, this
+  /// never relocates anything, just answers the question. Used by
+  /// `VM::ensure_stable_for_compiled_entry` to decide, before paying
+  /// for a full minor collection, whether one is even needed.
+  #[inline]
+  pub(crate) fn is_young(ptr: *const Obj) -> bool {
+    let gcbox = unsafe { &*Self::gcbox_of(ptr) };
+    gcbox.generation.get() == Generation::Young
   }
 
   /// Mark the object behind `ptr` reachable this cycle. Returns true
@@ -961,25 +1016,120 @@ impl Heap {
       }
   }
 
-  /// Links `gcbox` onto the head of the young-generation intrusive
-  /// list. Every new object goes through this exactly once, at birth;
-  /// a minor (or major) collection fully drains and rebuilds the list
-  /// on every cycle (see `sweep`/`sweep_young`), so this is the only
-  /// place anything is ever pushed onto it.
-  #[inline]
-  fn push_young(&self, gcbox: &GcBox) {
-    gcbox.list_next.set(self.young_head.get());
-    self.young_head.set(gcbox as *const GcBox);
-  }
-
+  /// Every new object is born here: a plain bump-push into the
+  /// nursery's current chunk (a fresh one appended whenever the last
+  /// one is full -- see `NurseryChunk`'s own docs on why this never
+  /// needs to reallocate an EXISTING chunk's buffer, so every `Value`
+  /// already handed out stays valid no matter how much more gets
+  /// allocated afterward). Old-generation allocation only happens
+  /// indirectly, via `promote_into_old`, when a minor collection finds
+  /// this object still reachable.
   fn alloc(&mut self, obj: Obj) -> Value {
     let size = Self::approx_size(&obj);
     self.bytes_allocated += size;
     self.young_bytes_allocated += size;
     self.live_count += 1;
 
-    // Try the most recently useful chunk(s) first, discarding any that
-    // turn out to be exhausted or already reclaimed.
+    let needs_new_chunk = match self.nursery_chunks.last() {
+      Some(chunk) => chunk.slots.len() >= chunk.slots.capacity(),
+      None => true,
+    };
+    if needs_new_chunk {
+      self.nursery_chunks.push(NurseryChunk {
+        slots: Vec::with_capacity(CHUNK_SIZE),
+      });
+    }
+    // SAFETY: just ensured above that the last chunk exists and has
+    // spare capacity.
+    let chunk = self.nursery_chunks.last_mut().unwrap();
+    chunk.slots.push(GcBox {
+      live: Cell::new(true),
+      marked: Cell::new(false),
+      size,
+      obj,
+      generation: Cell::new(Generation::Young),
+      remembered: Cell::new(false),
+      list_next: Cell::new(std::ptr::null()),
+      // Unused for nursery objects -- see `GcBox::chunk_idx`'s own
+      // docs; nothing ever looks this up for a `Young` box, since
+      // nursery chunks are never individually freed/reused mid-cycle.
+      chunk_idx: 0,
+    });
+    let gcbox_ptr: *const GcBox = chunk.slots.last().unwrap();
+    let obj_ptr: *const Obj = unsafe { &(*gcbox_ptr).obj };
+    Value::obj(obj_ptr)
+  }
+
+  /// Allocates directly into OLD-generation storage, never the
+  /// nursery -- for object kinds that must NEVER move, because
+  /// something outside the GC's own reach caches their address as a
+  /// raw pointer with no relocation hook of its own. `ObjFunction` is
+  /// the one real case today: `jit::codegen` bakes a compiled
+  /// function's OWN prototype address as a machine-code IMMEDIATE
+  /// (see `FuncCompiler`'s use of `self.proto as *const ObjFunction`)
+  /// -- once that's baked into installed machine code, there is no
+  /// second chance to fix it up the way a `Value` sitting in a
+  /// register or object field gets fixed up by `VM::collect_minor`.
+  /// Since a function prototype is compiled once (into the enclosing
+  /// chunk's constant pool -- see `Instr::Closure`) and referenced
+  /// for the rest of the program's life, it gains nothing from young-
+  /// gen's fast bump-allocate/early-death optimization anyway, so
+  /// skipping the nursery entirely costs nothing real.
+  ///
+  /// Unconditionally write-barriers the object it just created before
+  /// returning it -- NOT an optional safety margin. The usual "a
+  /// freshly allocated object never needs a barrier for its own
+  /// construction-time writes" exemption (see `write_barrier`'s own
+  /// docs) relies specifically on the object being born Young, so
+  /// that ANY of its fields still pointing at other young objects get
+  /// found for free by the very next minor collection's normal
+  /// root+worklist walk. An object born straight into the old
+  /// generation gets NO such free pass: nothing walks an old object's
+  /// children again after its own one-time promotion visit unless
+  /// it's in the remembered set, and something created here via
+  /// `alloc_old` was never promoted at all, so it never had that
+  /// visit in the first place. A field set at construction time to a
+  /// still-young value (`ObjFunction::globals_module`, pointing at a
+  /// module that's often still Young at compile time, is the
+  /// confirmed real case -- caught by this project's own testing as
+  /// an `assertion failed: self.is_module()` panic reading a stale
+  /// reference days after the module itself had long since moved)
+  /// would otherwise never get discovered and relocated at all.
+  /// Queuing it into the remembered set right away is what gives it
+  /// the SAME guarantee a young-born object gets automatically: its
+  /// children get walked (via the remembered-set scan this time,
+  /// instead of the promotion worklist) the very next minor collection.
+  pub fn alloc_old(&mut self, obj: Obj) -> Value {
+    let size = Self::approx_size(&obj);
+    self.bytes_allocated += size;
+    self.live_count += 1;
+    let gcbox_ptr = self.promote_into_old(size, obj);
+    let obj_ptr = unsafe { &(*gcbox_ptr).obj as *const Obj };
+    write_barrier(obj_ptr);
+    Value::obj(obj_ptr)
+  }
+
+  /// Moves an already-computed `(size, obj)` pair -- the payload of a
+  /// young object a minor collection just found still reachable --
+  /// directly into old-generation chunk storage. Exactly the
+  /// candidate/free/new-chunk search `alloc` used to run for every
+  /// object back when young and old shared the same storage, just
+  /// parameterized on an already-known size/payload instead of
+  /// computing them fresh, and tagging the result `Old` immediately
+  /// rather than `Young` -- a promoted object is never "young" for
+  /// even one instant, since it only exists because it already
+  /// survived a full minor collection.
+  ///
+  /// Deliberately does NOT touch `bytes_allocated`/`live_count`: this
+  /// object was already counted once, when `alloc` first created it
+  /// in the nursery: relocating it during a collection isn't a new
+  /// allocation event, so counting it again here would double-count
+  /// every survivor.
+  ///
+  /// Returns the new `GcBox`'s address -- for the caller
+  /// (`forward_or_promote`) to record as this object's forwarding
+  /// target and to walk its children from.
+  fn promote_into_old(&mut self, size: usize, obj: Obj) -> *const GcBox {
     loop {
       let Some(&idx) = self.candidates.last() else {
         break;
@@ -999,12 +1149,12 @@ impl Heap {
           (*ptr).marked.set(false);
           (*ptr).size = size;
           (*ptr).obj = obj;
-          (*ptr).generation.set(Generation::Young);
+          (*ptr).generation.set(Generation::Old);
           (*ptr).remembered.set(false);
           (*ptr).chunk_idx = idx as u32;
-          self.push_young(&*ptr);
-          return Value::obj(&(*ptr).obj as *const Obj);
+          (*ptr).list_next.set(std::ptr::null());
         }
+        return ptr;
       }
 
       if chunk.slots.len() < chunk.slots.capacity() {
@@ -1013,18 +1163,13 @@ impl Heap {
           marked: Cell::new(false),
           size,
           obj,
-          generation: Cell::new(Generation::Young),
+          generation: Cell::new(Generation::Old),
           remembered: Cell::new(false),
           list_next: Cell::new(std::ptr::null()),
           chunk_idx: idx as u32,
         });
         chunk.live_count += 1;
-        let gcbox_ptr: *const GcBox = chunk.slots.last().unwrap();
-        // SAFETY: just pushed into this chunk's stable (with_capacity'd,
-        // never-reallocating) buffer.
-        self.push_young(unsafe { &*gcbox_ptr });
-        let obj_ptr: *const Obj = unsafe { &(*gcbox_ptr).obj };
-        return Value::obj(obj_ptr);
+        return chunk.slots.last().unwrap();
       }
 
       // Neither a free slot nor spare capacity left -- stale candidate.
@@ -1043,21 +1188,159 @@ impl Heap {
       marked: Cell::new(false),
       size,
       obj,
-      generation: Cell::new(Generation::Young),
+      generation: Cell::new(Generation::Old),
       remembered: Cell::new(false),
       list_next: Cell::new(std::ptr::null()),
       chunk_idx: idx as u32,
     });
     self.chunks.push(Some(chunk));
     let gcbox_ptr: *const GcBox = self.chunks[idx].as_ref().unwrap().slots.last().unwrap();
-    self.push_young(unsafe { &*gcbox_ptr });
     self.candidates.push(idx);
-    let obj_ptr: *const Obj = unsafe { &(*gcbox_ptr).obj };
-    Value::obj(obj_ptr)
+    gcbox_ptr
+  }
+
+  /// Resolves ONE possibly-young pointer during a minor collection's
+  /// copy phase: if `ptr` isn't currently `Young`, it's already old
+  /// (or was already forwarded earlier THIS SAME cycle -- see below)
+  /// and needs no relocation, so it's returned unchanged. Otherwise:
+  ///
+  /// - If this exact object was already forwarded earlier in this
+  ///   cycle (`marked` -- repurposed here as "already forwarded", not
+  ///   its usual mark-sweep meaning -- see `GcBox::marked`'s sibling
+  ///   docs), `list_next` (repurposed the same way as the forwarding
+  ///   target) already holds its new address; every reference to the
+  ///   SAME object converges on the SAME new copy this way, which is
+  ///   what keeps pointer-identity semantics (`Value::equals`'s
+  ///   pointer-equality cases) correct across a collection.
+  /// - Otherwise, this is the FIRST reference to it found this cycle:
+  ///   move its `Obj` payload out (a real, ownership-transferring
+  ///   move via `ptr::read` -- copying the bytes would leave the
+  ///   nursery slot and the new slot both "owning" e.g. the same
+  ///   `String`'s heap buffer, a double-free waiting to happen),
+  ///   promote it into old-gen storage, mark the OLD slot forwarded,
+  ///   and queue the new copy for `collect_minor`'s own worklist to
+  ///   walk its children next.
+  pub(crate) fn forward_or_promote(
+    &mut self,
+    ptr: *const Obj,
+    worklist: &mut Vec<*const Obj>,
+  ) -> *const Obj {
+    let gcbox_ptr = Self::gcbox_of(ptr) as *mut GcBox;
+    let gcbox = unsafe { &*gcbox_ptr };
+    if gcbox.generation.get() != Generation::Young {
+      return ptr;
+    }
+    if gcbox.marked.get() {
+      let new_gcbox = gcbox.list_next.get();
+      return unsafe { &(*new_gcbox).obj };
+    }
+    let size = gcbox.size;
+    // SAFETY: not yet forwarded (checked above), so `obj` hasn't been
+    // read out yet -- this takes ownership exactly once. Every future
+    // reference to this SAME nursery slot takes the `marked` branch
+    // above instead of reaching this read again.
+    let moved = unsafe { std::ptr::read(&gcbox.obj) };
+    // `ptr::read` copies the bytes out but does NOT erase the source
+    // -- without overwriting it right now, this slot would still look
+    // like a perfectly valid `Obj` sharing ownership of the SAME
+    // Rust-level allocations (a `String`'s buffer, a `Vec<Value>`'s
+    // backing store, ...) the new promoted copy now legitimately owns.
+    // `reset_nursery` skips `marked` slots when IT runs, but this
+    // object might never see another minor collection before the
+    // program exits (e.g. `VM::ensure_stable_for_compiled_entry`
+    // promoting something out of cycle, in a short-lived program) --
+    // at which point `Heap`'s own ordinary drop glue would run over
+    // this slot with no idea it's already been moved from, a genuine
+    // double-free. Writing a value that owns nothing here is what
+    // makes EITHER of those eventual drops safe regardless of when
+    // (or whether) they happen.
+    // SAFETY: writes through a raw pointer derived straight from
+    // `gcbox_ptr`, never through the shared `gcbox` reference above
+    // (casting `&T` to `*mut T` and writing through THAT is UB even
+    // when nothing else is aliasing it) -- `gcbox_ptr` itself is sound
+    // to write through for the same reason every other GC-internal
+    // mutation in this file is: collection-time access to a `GcBox` is
+    // always effectively exclusive.
+    unsafe {
+      std::ptr::write(
+        &mut (*gcbox_ptr).obj,
+        Obj::Range {
+          lower: 0.0,
+          upper: 0.0,
+          step: Cell::new(1.0),
+        },
+      );
+    }
+    let new_gcbox = self.promote_into_old(size, moved);
+    gcbox.marked.set(true);
+    gcbox.list_next.set(new_gcbox);
+    worklist.push(unsafe { &(*new_gcbox).obj });
+    unsafe { &(*new_gcbox).obj }
+  }
+
+  /// Reclaims the nursery after a minor collection's copy phase has
+  /// fully drained its worklist: by construction, every slot NOT
+  /// forwarded this cycle (`marked == false`) is garbage -- nothing
+  /// still reachable can point at it, since `collect_minor` visited
+  /// every root and every live object's children before calling this.
+  /// Its `Obj` payload (and whatever it owns -- a `String`'s buffer, a
+  /// `List`'s backing `SmallVec`, ...) is dropped in place, exactly
+  /// what `sweep`/the old `sweep_young` used to do for a dead slot. A
+  /// forwarded slot's `obj` was already MOVED OUT via `ptr::read` in
+  /// `forward_or_promote` -- dropping it again here would be a
+  /// double-free, which is exactly what `marked` (this cycle's
+  /// forwarding flag) exists to distinguish.
+  ///
+  /// After every slot in a chunk is handled, `set_len(0)` reclaims
+  /// that chunk's WHOLE buffer for the next cycle's allocations in
+  /// one step, without running `Vec`'s own per-element `Drop` glue a
+  /// second time over slots this function already handled by hand.
+  /// Only the first chunk's buffer is kept around for immediate reuse
+  /// next cycle; any extras a burst needed are dropped here, returning
+  /// their memory rather than holding it as permanent inventory --
+  /// mirrors `sweep`'s own "drop a chunk once nothing's left in it"
+  /// policy for the old generation.
+  pub(crate) fn reset_nursery(&mut self) {
+    let mut freed_count = 0usize;
+    let mut freed_bytes = 0usize;
+    for chunk in self.nursery_chunks.iter_mut() {
+      for gcbox in chunk.slots.iter_mut() {
+        if !gcbox.marked.get() {
+          freed_bytes += gcbox.size;
+          // SAFETY: never forwarded (checked above), so `obj` was
+          // never moved out -- this is its one and only drop.
+          unsafe { std::ptr::drop_in_place(&mut gcbox.obj) };
+          freed_count += 1;
+        }
+      }
+      // SAFETY: every slot in this chunk has either been moved out
+      // (forwarded) or dropped in place (above) -- none of them owns
+      // anything that still needs cleanup, so shrinking the logical
+      // length to 0 without running element destructors a second
+      // time is exactly right.
+      unsafe { chunk.slots.set_len(0) };
+    }
+    self.nursery_chunks.truncate(1);
+    self.bytes_allocated = self.bytes_allocated.saturating_sub(freed_bytes);
+    self.live_count -= freed_count;
+    self.young_bytes_allocated = 0;
   }
 
   pub fn alloc_string(&mut self, s: impl Into<String>) -> Value {
     self.alloc(Obj::Str(s.into()))
+  }
+
+  /// Deliberately `alloc_old`, not `alloc` -- for `Compiler`'s own
+  /// use building a chunk's CONSTANT POOL (method/field/class names,
+  /// string literals, ...) specifically, never for runtime string
+  /// creation. See `alloc_old`'s own docs: `jit::codegen::bake_const`
+  /// bakes a constant's raw bits as a machine-code immediate, so
+  /// anything that can end up in `Chunk::constants` needs the exact
+  /// same "never moves" guarantee `ObjFunction` needs, for the exact
+  /// same reason -- and gains nothing from the nursery either way,
+  /// since a constant pool entry lives exactly as long as its chunk.
+  pub fn alloc_string_old(&mut self, s: impl Into<String>) -> Value {
+    self.alloc_old(Obj::Str(s.into()))
   }
 
   pub fn alloc_bytes(&mut self, b: impl Into<Vec<u8>>) -> Value {
@@ -1066,6 +1349,14 @@ impl Heap {
 
   pub fn alloc_bigint(&mut self, s: impl Into<BigInt>) -> Value {
     self.alloc(Obj::BigInt(s.into()))
+  }
+
+  /// `alloc_bigint`'s `alloc_old` counterpart -- see
+  /// `alloc_string_old`'s own docs; a `BigInt` literal can ALSO end
+  /// up baked as a constant-pool immediate the same way a string
+  /// literal can.
+  pub fn alloc_bigint_old(&mut self, s: impl Into<BigInt>) -> Value {
+    self.alloc_old(Obj::BigInt(s.into()))
   }
 
   pub fn alloc_list(&mut self, list: impl Into<ListStorage>) -> Value {
@@ -1082,8 +1373,10 @@ impl Heap {
     self.alloc(Obj::Dict(RefCell::new(storage)))
   }
 
+  /// Deliberately `alloc_old`, not `alloc` -- see `alloc_old`'s own
+  /// docs on why a function prototype must never be young.
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {
-    self.alloc(Obj::Func(Box::new(f)))
+    self.alloc_old(Obj::Func(Box::new(f)))
   }
 
   pub fn alloc_closure(&mut self, c: ObjClosure) -> Value {
@@ -1169,15 +1462,12 @@ impl Heap {
   /// underlying pages) to the allocator instead of holding it as
   /// permanent inventory.
   /// Full (major) sweep -- visits every slot in every chunk, exactly
-  /// as before generational collection existed. Also rebuilds the
-  /// young-generation list from scratch as it goes: since it's
-  /// already visiting every live slot anyway, re-linking the ones that
-  /// are still `Young` costs nothing extra and keeps that list
-  /// accurate without a separate pass.
+  /// as before generational collection existed. `VM::collect_garbage`
+  /// always flushes the nursery (via `VM::collect_minor`) before this
+  /// runs, so by the time it does, nothing chunk-resident is ever
+  /// `Young` -- every live slot found here is definitionally `Old`.
   pub fn sweep(&mut self) -> usize {
     let mut freed = 0;
-    let mut young_head: *const GcBox = std::ptr::null();
-    let mut young_bytes = 0usize;
 
     for idx in 0..self.chunks.len() {
       let live_count_after;
@@ -1195,11 +1485,6 @@ impl Heap {
           }
           if gcbox.marked.get() {
             gcbox.marked.set(false);
-            if gcbox.generation.get() == Generation::Young {
-              gcbox.list_next.set(young_head);
-              young_head = gcbox as *const GcBox;
-              young_bytes += gcbox.size;
-            }
           } else {
             self.bytes_allocated = self.bytes_allocated.saturating_sub(gcbox.size);
             gcbox.obj = Obj::Range {
@@ -1228,86 +1513,7 @@ impl Heap {
     self.live_count -= freed;
     self.next_gc =
       ((self.bytes_allocated as f32 * Self::GC_HEAP_GROW_FACTOR) as usize).max(Self::MIN_NEXT_GC);
-    self.young_head.set(young_head);
-    self.young_bytes_allocated = young_bytes;
     freed
-  }
-
-  /// Minor-collection counterpart to `sweep`: instead of visiting
-  /// every slot in every chunk, walks ONLY the young-generation
-  /// intrusive list -- cost proportional to how much has been
-  /// allocated since the last collection (of either kind), never to
-  /// the size of the old generation, which is the entire point of
-  /// having a young generation at all.
-  ///
-  /// Every entry the list is fully consumed: a survivor (still
-  /// marked) is promoted to `Old` in place and dropped from the young
-  /// list for good; a non-survivor is freed exactly like `sweep` frees
-  /// a dead slot, going back on its OWN owning chunk's free list (via
-  /// `chunk_idx`, since this traversal doesn't visit chunks in order
-  /// the way `sweep` does).
-  pub(crate) fn sweep_young(&mut self) -> usize {
-    let mut freed = 0;
-    let mut ptr = self.young_head.replace(std::ptr::null());
-
-    while !ptr.is_null() {
-      // SAFETY: every pointer in the young list was pushed by `alloc`
-      // (or re-linked by `sweep`) and nothing frees a `GcBox` except
-      // the two sweep paths, both of which fully drain this exact
-      // list before either could run again -- so `ptr` is guaranteed
-      // to still be a live, valid `GcBox` here.
-      let gcbox = unsafe { &mut *(ptr as *mut GcBox) };
-      let next = gcbox.list_next.get();
-
-      if gcbox.marked.get() {
-        gcbox.marked.set(false);
-        gcbox.generation.set(Generation::Old);
-      } else {
-        self.bytes_allocated = self.bytes_allocated.saturating_sub(gcbox.size);
-        gcbox.obj = Obj::Range {
-          lower: 0.0,
-          upper: 0.0,
-          step: Cell::new(1.0),
-        }; // drops old contents
-        gcbox.live.set(false);
-
-        let idx = gcbox.chunk_idx as usize;
-        let live_count_after;
-        let became_reusable;
-        {
-          let chunk = self.chunks[idx]
-            .as_mut()
-            .expect("owning chunk of a live young object was reclaimed out from under it");
-          let had_capacity = !chunk.free.is_empty() || chunk.slots.len() < chunk.slots.capacity();
-          chunk.live_count -= 1;
-          chunk.free.push(ptr as *mut GcBox);
-          live_count_after = chunk.live_count;
-          became_reusable = !had_capacity && !chunk.free.is_empty();
-        }
-        if live_count_after == 0 {
-          self.chunks[idx] = None;
-        } else if became_reusable {
-          self.candidates.push(idx);
-        }
-
-        self.live_count -= 1;
-        freed += 1;
-      }
-
-      ptr = next;
-    }
-
-    self.young_bytes_allocated = 0;
-    freed
-  }
-
-  /// Is the object behind `ptr` currently in the young generation?
-  /// Used by minor collection's mark phase to decide whether to keep
-  /// tracing into a child at all -- see `VM::collect_minor`.
-  #[inline]
-  pub(crate) fn is_young(ptr: *const Obj) -> bool {
-    let gcbox = unsafe { &*Self::gcbox_of(ptr) };
-    gcbox.generation.get() == Generation::Young
   }
 
   /// Drains the remembered set, clearing each entry's `remembered`
@@ -1330,5 +1536,24 @@ impl Heap {
       }
     });
     out
+  }
+}
+
+#[cfg(test)]
+mod size_probe {
+  use super::*;
+  #[test]
+  fn print_sizes() {
+    eprintln!("size_of::<Obj>() = {}", std::mem::size_of::<Obj>());
+    eprintln!("size_of::<GcBox>() = {}", std::mem::size_of::<GcBox>());
+    eprintln!(
+      "size_of::<NurseryChunk>() = {}",
+      std::mem::size_of::<NurseryChunk>()
+    );
+    eprintln!("CHUNK_SIZE = {}", CHUNK_SIZE);
+    eprintln!(
+      "one chunk bytes = {}",
+      CHUNK_SIZE * std::mem::size_of::<GcBox>()
+    );
   }
 }

@@ -325,16 +325,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // docs), plant a real runtime guard here instead of an
         // unconditional jump: re-validate the ACTUAL value this
         // instruction just computed, continue in the specialized body
-        // on a match, or fall into the general body's own block for
-        // this exact `ip + 1` on a mismatch -- exactly the entry-guard
+        // on a match, or deoptimize to the interpreter at `ip + 1` on
+        // a mismatch (see `emit_deopt`) -- exactly the entry-guard
         // pattern already used for parameters/OSR, just triggered at
         // an ordinary mid-function definition site instead of an
-        // external entry point.
-        let general_next = general_blocks
-          .get(ip + 1)
-          .copied()
-          .unwrap_or(general_blocks[ip]);
-        if !self.emit_speculative_guard(ip, instr, spec_next, general_next) {
+        // external entry point, and bailing out to the interpreter
+        // instead of a compiled fallback body.
+        if !self.emit_speculative_guard(ip, instr, spec_next) {
           self.fb.ins().jump(spec_next, &[]);
         }
       }
@@ -487,27 +484,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `speculative_regs` folded in -- see `jit::typeflow::SpeculativeRegs`),
   /// re-validates the ACTUAL value `instr` just computed and either
   /// continues into `spec_next` (the specialized body's own block for
-  /// `ip + 1`) on a match, or falls into `general_next` (the GENERAL
-  /// body's block for that SAME `ip + 1`) on a mismatch. Returns `true`
-  /// iff it terminated the current block this way -- the caller emits
-  /// its own unconditional jump to `spec_next` when this returns
-  /// `false` (nothing to guard here).
+  /// `ip + 1`) on a match, or deoptimizes to the interpreter at `ip + 1`
+  /// (see `emit_deopt`) on a mismatch. Returns `true` iff it terminated
+  /// the current block this way -- the caller emits its own
+  /// unconditional jump to `spec_next` when this returns `false`
+  /// (nothing to guard here).
   ///
-  /// The cross-jump into `general_next` is sound because NEITHER body
-  /// ever carries state across an instruction boundary as a Cranelift
-  /// SSA value -- both re-read every register fresh from the shared VM
-  /// register file (`load_reg`) on demand. Whatever the specialized
-  /// body did to reach `ip + 1` already wrote back the same real values
-  /// the general body would have, so resuming general translation there
-  /// needs no state reconciliation at all, unlike a real deoptimization
-  /// would.
-  fn emit_speculative_guard(
-    &mut self,
-    ip: usize,
-    instr: Instr,
-    spec_next: Block,
-    general_next: Block,
-  ) -> bool {
+  /// Used to cross-jump into the general body's own block for this same
+  /// `ip + 1` instead, back when this guard predates real
+  /// deoptimization -- that was ALSO sound (neither body ever carries
+  /// state across an instruction boundary as a Cranelift SSA value, so
+  /// resuming general-body translation needed no reconciliation
+  /// either), but strictly less general: it only ever worked because a
+  /// compiled fallback happened to already exist. Deopting to the
+  /// interpreter needs no fallback body to exist at all.
+  fn emit_speculative_guard(&mut self, ip: usize, instr: Instr, spec_next: Block) -> bool {
     let Some(dst) = typeflow::conservative_dst(&instr) else {
       return false;
     };
@@ -516,11 +507,30 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
     let v = self.load_reg(dst);
     let is_num = self.is_number(v);
+    let deopt_block = self.fb.create_block();
     self
       .fb
       .ins()
-      .brif(is_num, spec_next, &[], general_next, &[]);
+      .brif(is_num, spec_next, &[], deopt_block, &[]);
+    self.fb.switch_to_block(deopt_block);
+    self.emit_deopt(ip + 1);
     true
+  }
+
+  /// Real deoptimization: calls `zuri_jit_deopt` to record `ip` as
+  /// where the interpreter should resume, then immediately returns
+  /// from the WHOLE compiled function -- never falls through to more
+  /// translated instructions afterward. The returned value is never
+  /// observed (`VM::invoke_compiled` checks `pending_deopt_ip` before
+  /// it would ever look at the real return bits), so the junk `0`
+  /// here costs nothing. See `zuri_jit_deopt`'s own docs for why this
+  /// needs no state reconstruction at all.
+  fn emit_deopt(&mut self, ip: usize) {
+    let vm = self.vm_param;
+    let ip_c = self.u64c(ip as u64);
+    self.call_helper("zuri_jit_deopt", &[vm, ip_c]);
+    let junk = self.i64c(0);
+    self.fb.ins().return_(&[junk]);
   }
 
   // ---------------------------------------------------------------
@@ -588,7 +598,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Bakes `proto.chunk.constants[idx]`'s raw `Value` bits as an
   /// immediate -- see this module's docs on why this never needs a
-  /// runtime `chunk.constants[idx]` load.
+  /// runtime `chunk.constants[idx]` load. Sound specifically because
+  /// `Compiler` allocates every object-typed constant (strings,
+  /// bigints, nested function prototypes) via `Heap::alloc_old`/
+  /// `alloc_function`, NEVER the young-generation nursery a minor
+  /// collection can relocate out from under an already-baked
+  /// immediate with no way to fix it back up -- see those functions'
+  /// own docs. A plain number/nil/bool constant has no address to go
+  /// stale in the first place.
   fn bake_const(&mut self, idx: u16) -> IrValue {
     let v = self.proto.chunk.constants[idx as usize];
     self.u64c(v.to_bits())
@@ -601,9 +618,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// A stable pointer to the CURRENTLY COMPILING `ObjFunction` itself,
-  /// baked as an immediate -- sound because heap objects never move
-  /// (see `object::Heap`'s docs) and `proto` outlives this compiled
-  /// function (it owns the very bytecode this IS the compilation of).
+  /// baked as an immediate -- sound because `Heap::alloc_function`
+  /// always allocates directly into old-generation storage (see its
+  /// own docs on why a moving young generation makes that necessary),
+  /// so `proto`'s address is fixed for its whole life, and `proto`
+  /// itself outlives this compiled function (it owns the very
+  /// bytecode this IS the compilation of).
   fn func_ptr_const(&mut self) -> IrValue {
     self.u64c(self.proto as *const ObjFunction as u64)
   }

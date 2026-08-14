@@ -124,7 +124,7 @@ impl<'a> Compiler<'a> {
     top.chunk = *chunk;
 
     // The first constant is always the class constructor name, which is "@new"
-    top.chunk.add_constant(heap.alloc_string("@new"));
+    top.chunk.add_constant(heap.alloc_string_old("@new"));
 
     Compiler {
       decls,
@@ -471,7 +471,7 @@ impl<'a> Compiler<'a> {
       dst,
       proto_const: const_idx,
     });
-    let name_val = self.heap.alloc_string(name);
+    let name_val = self.heap.alloc_string_old(name);
     let name_const = self.add_constant(name_val);
     self.emit(Instr::SetGlobal {
       name_const,
@@ -586,7 +586,7 @@ impl<'a> Compiler<'a> {
       if let Decl::Property(fname, value, ..) = prop {
         let mark = self.cur().next_reg;
         let value_reg = self.compile_expression(value);
-        let fname_val = self.heap.alloc_string(Self::identifier_name(fname));
+        let fname_val = self.heap.alloc_string_old(Self::identifier_name(fname));
         let fname_const = self.add_constant(fname_val);
         self.emit(Instr::SetField {
           obj: self_reg,
@@ -646,7 +646,7 @@ impl<'a> Compiler<'a> {
       .map(|expr| self.compile_expression(expr));
 
     let dst = self.alloc_reg();
-    let name_val = self.heap.alloc_string(class_name.clone());
+    let name_val = self.heap.alloc_string_old(class_name.clone());
     let name_const = self.add_constant(name_val);
 
     self.cur_mut().current_line = name.line as u32;
@@ -682,7 +682,7 @@ impl<'a> Compiler<'a> {
 
     for prop in &own_fields {
       if let Decl::Property(fname, ..) = prop {
-        let fname_val = self.heap.alloc_string(Self::identifier_name(fname));
+        let fname_val = self.heap.alloc_string_old(Self::identifier_name(fname));
         let fname_const = self.add_constant(fname_val);
         self.emit(Instr::DeclareField {
           class: dst,
@@ -721,7 +721,7 @@ impl<'a> Compiler<'a> {
     implicit_names.retain(|n| !explicit_names.contains(n));
 
     for fname in &implicit_names {
-      let fname_val = self.heap.alloc_string(fname.clone());
+      let fname_val = self.heap.alloc_string_old(fname.clone());
       let fname_const = self.add_constant(fname_val);
       self.emit(Instr::DeclareField {
         class: dst,
@@ -749,7 +749,7 @@ impl<'a> Compiler<'a> {
       if let Decl::Property(pname, value, _, true, _) = prop {
         let mark2 = self.cur().next_reg;
         let vreg = self.compile_expression(value);
-        let pname_val = self.heap.alloc_string(Self::identifier_name(pname));
+        let pname_val = self.heap.alloc_string_old(Self::identifier_name(pname));
         let pname_const = self.add_constant(pname_val);
         self.emit(Instr::DeclareStatic {
           class: dst,
@@ -788,7 +788,7 @@ impl<'a> Compiler<'a> {
           dst: mreg,
           proto_const: const_idx,
         });
-        let mname_val = self.heap.alloc_string(Self::identifier_name(mname));
+        let mname_val = self.heap.alloc_string_old(Self::identifier_name(mname));
         let mname_const = self.add_constant(mname_val);
         if *is_static {
           self.emit(Instr::DeclareStatic {
@@ -883,7 +883,7 @@ impl<'a> Compiler<'a> {
           dst: mreg,
           proto_const: const_idx,
         });
-        let mname_val = self.heap.alloc_string(Self::identifier_name(mname));
+        let mname_val = self.heap.alloc_string_old(Self::identifier_name(mname));
         let mname_const = self.add_constant(mname_val);
         self.emit(Instr::SetMethod {
           class: target_reg,
@@ -980,7 +980,7 @@ impl<'a> Compiler<'a> {
       num_args = self.checked_arg_count(num_args, Some(method));
     }
 
-    let method_val = self.heap.alloc_string(method_name);
+    let method_val = self.heap.alloc_string_old(method_name);
     let method_const = self.add_constant(method_val);
 
     let dst = obj_reg;
@@ -1045,7 +1045,7 @@ impl<'a> Compiler<'a> {
     }
 
     let method_name = Self::identifier_name(method);
-    let method_val = self.heap.alloc_string(method_name);
+    let method_val = self.heap.alloc_string_old(method_name);
     let method_const = self.add_constant(method_val);
 
     let dst = call_reg;
@@ -1281,7 +1281,7 @@ impl<'a> Compiler<'a> {
   /// convention is simpler than special-casing "this call happens to
   /// target a native."
   fn emit_extend_call(&mut self, receiver_reg: u8, arg_reg: u8) {
-    let name_val = self.heap.alloc_string("extend".to_string());
+    let name_val = self.heap.alloc_string_old("extend".to_string());
     let name_const = self.add_constant(name_val);
 
     let obj_reg = self.alloc_reg();
@@ -1338,7 +1338,7 @@ impl<'a> Compiler<'a> {
         // String literal: intern it on the heap now, at compile time, and
         // reference the resulting Value from the constant pool.
         let dst = self.alloc_reg();
-        let str_val = self.heap.alloc_string(literal.clone());
+        let str_val = self.heap.alloc_string_old(literal.clone());
         let const_idx = self.add_constant(str_val);
         self.emit(Instr::LoadConst { dst, const_idx });
         dst
@@ -1347,7 +1347,7 @@ impl<'a> Compiler<'a> {
         // String literal: intern it on the heap now, at compile time, and
         // reference the resulting Value from the constant pool.
         let dst = self.alloc_reg();
-        let str_val = self.heap.alloc_bigint(number.clone());
+        let str_val = self.heap.alloc_bigint_old(number.clone());
         let const_idx = self.add_constant(str_val);
         self.emit(Instr::LoadConst { dst, const_idx });
         dst
@@ -1363,7 +1363,7 @@ impl<'a> Compiler<'a> {
           },
           VarLoc::Global => {
             let dst = self.alloc_reg();
-            let str_val = self.heap.alloc_string(name);
+            let str_val = self.heap.alloc_string_old(name);
             let name_const = self.add_constant(str_val);
             self.cur_mut().current_line = token.line as u32;
             self.emit(Instr::GetGlobal { dst, name_const });
@@ -1590,7 +1590,7 @@ impl<'a> Compiler<'a> {
             },
             VarLoc::Global => {
               let value_reg = self.compile_expression(value);
-              let str_val = self.heap.alloc_string(name);
+              let str_val = self.heap.alloc_string_old(name);
               let name_const = self.add_constant(str_val);
 
               if self.scopes.last().unwrap().scope_depth > 0 {
@@ -1715,7 +1715,7 @@ impl<'a> Compiler<'a> {
 
         let obj_reg = self.compile_receiver(obj);
         let dst = self.alloc_reg();
-        let fname_val = self.heap.alloc_string(field_name);
+        let fname_val = self.heap.alloc_string_old(field_name);
         let fname_const = self.add_constant(fname_val);
         self.cur_mut().current_line = field.line as u32;
         self.emit(Instr::GetField {
@@ -1736,7 +1736,7 @@ impl<'a> Compiler<'a> {
 
         let obj_reg = self.compile_receiver(obj);
         let value_reg = self.compile_expression(value);
-        let fname_val = self.heap.alloc_string(field_name);
+        let fname_val = self.heap.alloc_string_old(field_name);
         let fname_const = self.add_constant(fname_val);
         self.cur_mut().current_line = field.line as u32;
         self.emit(Instr::SetField {
@@ -1965,7 +1965,7 @@ impl<'a> Compiler<'a> {
     self.free_regs_to(mark);
 
     let class_reg = self.alloc_reg();
-    let class_name_val = self.heap.alloc_string("AssertError".to_string());
+    let class_name_val = self.heap.alloc_string_old("AssertError".to_string());
     let class_name_const = self.add_constant(class_name_val);
     self.emit(Instr::GetGlobal {
       dst: class_reg,
@@ -1985,7 +1985,7 @@ impl<'a> Compiler<'a> {
         expected_msg_reg
       },
       None => {
-        let default_val = self.heap.alloc_string("Assertion failed".to_string());
+        let default_val = self.heap.alloc_string_old("Assertion failed".to_string());
         let default_const = self.add_constant(default_val);
         self.emit(Instr::LoadConst {
           dst: expected_msg_reg,
@@ -2062,7 +2062,7 @@ impl<'a> Compiler<'a> {
     // catch statement that declared it.
     if let Some((reg, name)) = &var_reg {
       if self.is_repl && self.cur().scope_depth == 0 {
-        let name_val = self.heap.alloc_string(name.clone());
+        let name_val = self.heap.alloc_string_old(name.clone());
         let name_const = self.add_constant(name_val);
         self.emit(Instr::SetGlobal {
           name_const,
@@ -2108,7 +2108,7 @@ impl<'a> Compiler<'a> {
   /// only when the enclosing scope closes), never freed here.
   fn declare_import_binding(&mut self, name: String, token: &Token, value_reg: u8, exported: bool) {
     if (self.is_repl && self.cur().scope_depth == 0) || exported {
-      let name_val = self.heap.alloc_string(name.clone());
+      let name_val = self.heap.alloc_string_old(name.clone());
       let name_const = self.add_constant(name_val);
       self.emit(Instr::SetGlobal {
         name_const,
@@ -2163,9 +2163,9 @@ impl<'a> Compiler<'a> {
     imports_all: bool,
     exported: bool,
   ) {
-    let path_val = self.heap.alloc_string(path.to_string());
+    let path_val = self.heap.alloc_string_old(path.to_string());
     let path_const = self.add_constant(path_val);
-    let importer_val = self.heap.alloc_string(self.source_path.to_string());
+    let importer_val = self.heap.alloc_string_old(self.source_path.to_string());
     let importer_const = self.add_constant(importer_val);
 
     let mod_reg = self.alloc_reg();
@@ -2192,7 +2192,7 @@ impl<'a> Compiler<'a> {
         };
         let field_name = Self::identifier_name(token);
         let dst = self.alloc_reg();
-        let fname_val = self.heap.alloc_string(field_name.clone());
+        let fname_val = self.heap.alloc_string_old(field_name.clone());
         let fname_const = self.add_constant(fname_val);
         self.cur_mut().current_line = token.line as u32;
         self.emit(Instr::GetField {
@@ -2212,7 +2212,7 @@ impl<'a> Compiler<'a> {
       );
     };
     let bind_name = Self::identifier_name(name_token);
-    let name_val = self.heap.alloc_string(bind_name.clone());
+    let name_val = self.heap.alloc_string_old(bind_name.clone());
     let name_const = self.add_constant(name_val);
 
     let dst = self.alloc_reg();
@@ -2388,7 +2388,7 @@ impl<'a> Compiler<'a> {
         if self.at_module_top_level() {
           let src = self.compile_expression(initializer);
 
-          let name_val = self.heap.alloc_string(name.clone());
+          let name_val = self.heap.alloc_string_old(name.clone());
           let name_const = self.add_constant(name_val);
           self.emit(Instr::SetGlobal { name_const, src });
         } else {

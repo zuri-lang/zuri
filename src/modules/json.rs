@@ -166,61 +166,87 @@ fn encode_value(
     let items = v.as_list();
     if items.is_empty() {
       out.push_str("[]");
-    } else if opts.compact {
-      out.push('[');
-      for (i, item) in items.into_iter().enumerate() {
-        if i > 0 {
-          out.push(',');
-        }
-        encode_value(ctx, item, out, depth + 1, opts)?;
-      }
-      out.push(']');
     } else {
-      out.push_str("[\n");
+      // Pinned, and re-read via `ctx.vm.pinned(mark + i)` right before
+      // EACH recursive call below, rather than iterated directly out
+      // of `items` -- a sibling element's own `@to_json` call
+      // (reached recursively from `encode_value` below) can trigger a
+      // collection, and `items` itself is just a plain owned `Vec`,
+      // not a GC root, so any not-yet-visited element still sitting
+      // in it would go stale the moment that happens. See
+      // `VM::pin_values`'s own docs.
       let n = items.len();
-      for (i, item) in items.into_iter().enumerate() {
-        push_indent(out, depth + 1);
-        encode_value(ctx, item, out, depth + 1, opts)?;
-        if i + 1 < n {
-          out.push(',');
+      let mark = ctx.vm.pin_values(items);
+      if opts.compact {
+        out.push('[');
+        for i in 0..n {
+          if i > 0 {
+            out.push(',');
+          }
+          let item = ctx.vm.pinned(mark + i);
+          encode_value(ctx, item, out, depth + 1, opts)?;
         }
-        out.push('\n');
+        out.push(']');
+      } else {
+        out.push_str("[\n");
+        for i in 0..n {
+          push_indent(out, depth + 1);
+          let item = ctx.vm.pinned(mark + i);
+          encode_value(ctx, item, out, depth + 1, opts)?;
+          if i + 1 < n {
+            out.push(',');
+          }
+          out.push('\n');
+        }
+        push_indent(out, depth);
+        out.push(']');
       }
-      push_indent(out, depth);
-      out.push(']');
+      ctx.vm.unpin(mark);
     }
   } else if v.is_dict() {
     let pairs = v.as_dict();
     if pairs.is_empty() {
       out.push_str("{}");
-    } else if opts.compact {
-      out.push('{');
-      for (i, (k, val)) in pairs.into_iter().enumerate() {
-        if i > 0 {
-          out.push(',');
-        }
-        let key_str = format!("{}", k);
-        encode_json_string(&key_str, out);
-        out.push(':');
-        encode_value(ctx, val, out, depth + 1, opts)?;
-      }
-      out.push('}');
     } else {
-      out.push_str("{\n");
+      // Same reasoning as the list case above -- `mark + 2*i` is key
+      // `i`, `mark + 2*i + 1` is value `i`.
       let n = pairs.len();
-      for (i, (k, val)) in pairs.into_iter().enumerate() {
-        push_indent(out, depth + 1);
-        let key_str = format!("{}", k);
-        encode_json_string(&key_str, out);
-        out.push_str(": ");
-        encode_value(ctx, val, out, depth + 1, opts)?;
-        if i + 1 < n {
-          out.push(',');
+      let mark = ctx
+        .vm
+        .pin_values(pairs.into_iter().flat_map(|(k, val)| [k, val]));
+      if opts.compact {
+        out.push('{');
+        for i in 0..n {
+          if i > 0 {
+            out.push(',');
+          }
+          let k = ctx.vm.pinned(mark + 2 * i);
+          let val = ctx.vm.pinned(mark + 2 * i + 1);
+          let key_str = format!("{}", k);
+          encode_json_string(&key_str, out);
+          out.push(':');
+          encode_value(ctx, val, out, depth + 1, opts)?;
         }
-        out.push('\n');
+        out.push('}');
+      } else {
+        out.push_str("{\n");
+        for i in 0..n {
+          push_indent(out, depth + 1);
+          let k = ctx.vm.pinned(mark + 2 * i);
+          let val = ctx.vm.pinned(mark + 2 * i + 1);
+          let key_str = format!("{}", k);
+          encode_json_string(&key_str, out);
+          out.push_str(": ");
+          encode_value(ctx, val, out, depth + 1, opts)?;
+          if i + 1 < n {
+            out.push(',');
+          }
+          out.push('\n');
+        }
+        push_indent(out, depth);
+        out.push('}');
       }
-      push_indent(out, depth);
-      out.push('}');
+      ctx.vm.unpin(mark);
     }
   } else if v.is_instance() {
     let method = {

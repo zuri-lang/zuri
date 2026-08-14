@@ -28,6 +28,45 @@ use crate::vm::value::Value;
 /// to "the process crashes with a native stack overflow".
 const MAX_JIT_CALL_DEPTH: u32 = 1024;
 
+/// How many `VM::resolve_possible_deopt` calls may be nested on the
+/// REAL native call stack at once (see `VM::deopt_reentrancy_depth`)
+/// before the currently-deopting function gets permanently disabled.
+///
+/// This is deliberately a REENTRANCY-DEPTH bound, not a lifetime
+/// total: a guard that fails once, in isolation, is normal and cheap
+/// (see `VM::invoke_compiled`) no matter how many times that happens
+/// over a function's lifetime, AS LONG AS each occurrence resolves
+/// and returns before the next one starts -- e.g. a hot loop that
+/// calls the same function 500,000 times and mispredicts a handful of
+/// times, scattered and non-overlapping, never grows the native stack
+/// at all, since each deopt's nested interpreter call fully unwinds
+/// before the next TOP-LEVEL call even begins. A per-function
+/// lifetime counter would (and, in an earlier version of this
+/// mechanism, DID) misfire on exactly that harmless case, permanently
+/// falling back to pure interpretation for a function that was
+/// otherwise an excellent compile target.
+///
+/// The real danger is NESTED deopts: a compiled call that's still
+/// on-stack (hasn't returned) when a callee it invoked -- directly or
+/// via further recursion -- ALSO deopts, resuming via a NEW nested
+/// interpreter call from inside `resolve_possible_deopt` rather than
+/// a true non-recursive return. A call site that's genuinely
+/// polymorphic (e.g. alternating types every invocation, never
+/// settling on the speculative guess) can keep this nesting growing
+/// with no bound, and each level costs much more native stack than an
+/// ordinary compiled call frame (a whole `invoke_compiled` +
+/// `resolve_possible_deopt` + interpreter-dispatch frame, not just
+/// one), so this is bounded far more tightly than the general
+/// `MAX_JIT_CALL_DEPTH`. Past this bound, `resolve_possible_deopt`
+/// gives up on compiled code for the function AT THE DEEPEST NESTED
+/// LEVEL permanently (mirrors the existing sticky `ineligible`
+/// pattern), which is what actually breaks the recursion: once
+/// `entry` is cleared, `tiered_entry`/`maybe_osr` never offer compiled
+/// code for that function again, so nothing re-enters
+/// `resolve_possible_deopt` from inside the interpreter run this
+/// deopt just started.
+const MAX_DEOPT_REENTRANCY: u32 = 64;
+
 /// Inline capacity for a native/operator-override/constructor call's
 /// argument list. `Value` is a plain Copy u64, so this is a handful of
 /// stack bytes -- covers the overwhelming majority of real calls (few
@@ -210,6 +249,24 @@ pub struct VM {
   /// `Err(exception)`. Always nil outside the brief window between a
   /// helper setting it and `invoke_compiled` observing + clearing it.
   pub(crate) jit_pending_exception: Cell<Value>,
+  /// Side channel a `crate::jit::runtime` deopt helper sets to the
+  /// bytecode `ip` compiled code should resume interpreting at, right
+  /// before returning early out of the currently-executing compiled
+  /// function. Unlike `jit_pending_exception`, this is a genuine
+  /// "give up on compiled code for this invocation, but nothing went
+  /// wrong" signal -- it's what backs real deoptimization: a
+  /// speculative guard that turns out wrong bails all the way out to
+  /// the interpreter with `VM::registers` already holding the correct
+  /// state (every VM register lives there for the whole time compiled
+  /// code runs, never only in a native machine register -- see
+  /// `jit::codegen`'s module docs), so "resuming" is just "let the
+  /// interpreter's own dispatch loop take over at this `ip`", no
+  /// state reconstruction needed. `VM::invoke_compiled` checks this
+  /// FIRST (before the exception channel above), since a deopt is
+  /// orthogonal to a real error. Always `None` outside the brief
+  /// window between a deopt helper setting it and `invoke_compiled`
+  /// observing + clearing it.
+  pub(crate) pending_deopt_ip: Cell<Option<usize>>,
   /// Master on/off switch for tiering up at all, read once from
   /// `ZURI_JIT` at startup (`"0"`/`"off"`/`"false"` disables it) --
   /// purely a benchmarking/debugging escape hatch. Every program
@@ -219,6 +276,9 @@ pub struct VM {
   /// How many compiled-function calls are currently nested on the REAL
   /// native call stack -- see `MAX_JIT_CALL_DEPTH`.
   jit_call_depth: Cell<u32>,
+  /// How many `resolve_possible_deopt` calls are currently nested on
+  /// the REAL native call stack -- see `MAX_DEOPT_REENTRANCY`.
+  deopt_reentrancy_depth: Cell<u32>,
   /// Cached by name after `prelude::install` runs, for O(1) lookup from
   /// `VM::raise` rather than a `self.globals` hashmap hit on every
   /// internal error.
@@ -278,11 +338,13 @@ impl VM {
       jit_compiler: None,
       pending_jit_compiles: Vec::new(),
       jit_pending_exception: Cell::new(Value::nil()),
+      pending_deopt_ip: Cell::new(None),
       jit_enabled: !matches!(
         std::env::var("ZURI_JIT").as_deref(),
         Ok("0") | Ok("off") | Ok("false")
       ),
       jit_call_depth: Cell::new(0),
+      deopt_reentrancy_depth: Cell::new(0),
       builtin_exceptions: FxHashMap::default(),
       global_slots: Vec::new(),
       global_names: FxHashMap::default(),
@@ -1012,6 +1074,111 @@ impl VM {
     self.run_until(stop_depth)
   }
 
+  /// Pins every value in `values` into `gc_pins` for the duration the
+  /// caller needs them to survive a re-entrant `call_value` (which
+  /// runs arbitrary Zuri code and can trigger a collection), and
+  /// returns the index the FIRST one landed at -- every value is at
+  /// `mark + i` for its position `i` in the iterator, and also
+  /// exactly the mark `unpin` needs to release them all again.
+  ///
+  /// This exists because a `Value` sitting only in a plain Rust local
+  /// (or a `Vec` cloned out of a list/dict's own storage, or a
+  /// borrowed argument slice like `ZuriContext::args`) has NO way to
+  /// be found and rewritten if the object it names gets relocated by
+  /// a collection that runs mid-loop, inside some earlier iteration's
+  /// own `call_value`. `gc_pins` is a real GC root (scanned by both
+  /// `collect_garbage` and `collect_minor`), so a value pinned here
+  /// stays correctly address-updated across any number of further
+  /// re-entrant calls -- AS LONG AS every subsequent read goes back
+  /// to `self.gc_pins[idx]` fresh each time, rather than trusting a
+  /// copy taken before an intervening call. See `VM::instantiate` for
+  /// the pattern this generalizes (and the bug -- a `Box(...)`
+  /// constructor call intermittently reading a relocated-and-
+  /// neutralized slot back as `Obj::Range` -- that motivated it).
+  pub(crate) fn pin_values(&mut self, values: impl IntoIterator<Item = Value>) -> usize {
+    let mark = self.gc_pins.len();
+    self.gc_pins.extend(values);
+    mark
+  }
+
+  /// Releases every pin taken since `mark` (a value previously
+  /// returned by `pin_values`) -- see its own docs.
+  pub(crate) fn unpin(&mut self, mark: usize) {
+    self.gc_pins.truncate(mark);
+  }
+
+  /// Reads back a value pinned by `pin_values`, fresh -- the whole
+  /// point being that this reflects any relocation a collection made
+  /// since the pin, unlike whatever local variable/slice the caller
+  /// originally had it in.
+  #[inline]
+  pub(crate) fn pinned(&self, idx: usize) -> Value {
+    self.gc_pins[idx]
+  }
+
+  /// Guarantees `closure_val` (the closure a compiled function is
+  /// about to be ENTERED through) is not currently `Young` before
+  /// handing it to compiled code, relocating it right now if it is.
+  /// `jit::codegen`'s `closure_param` is a plain Cranelift SSA value,
+  /// loaded once at function entry and reused for the WHOLE compiled
+  /// invocation -- every `Instr::Closure`/`GetUpval`/`SetUpval` in
+  /// the function body reuses that exact same value, never reloading
+  /// it from `VM::registers` or anywhere else GC-scannable. Unlike an
+  /// ordinary register, there is NO memory location `VM::collect_minor`
+  /// could write a relocated address back into if this object moved
+  /// partway through the invocation (say, at a loop back-edge
+  /// safepoint) -- so instead, it must simply never be free to move
+  /// at all for as long as compiled code might still be holding it.
+  ///
+  /// Cheap in the overwhelmingly common case: a closure invoked
+  /// repeatedly through a warm call site has almost always long since
+  /// survived a minor collection already, costing one `generation`
+  /// read and nothing else. Only a genuinely still-young closure pays
+  /// for a real, full minor collection here.
+  pub(crate) fn ensure_stable_for_compiled_entry(&mut self, closure_val: Value) -> Value {
+    let ptr = closure_val.as_obj();
+    if !Heap::is_young(ptr) {
+      return closure_val;
+    }
+    // Pinned BEFORE the collection, not read back afterward via its
+    // original (pre-collection) pointer -- an earlier version of this
+    // function did the latter, re-resolving through
+    // `Heap::forward_or_promote`'s "already forwarded" branch, which
+    // needs the OLD nursery slot's own memory to still be valid to
+    // read from. That's true right up until `collect_minor` finishes
+    // -- but `reset_nursery` (its very last step) doesn't just wipe
+    // the young generation's CONTENTS, it deallocates every nursery
+    // chunk beyond the first ENTIRELY (see `Heap::reset_nursery`'s
+    // own docs), so if this closure happened to live in a chunk
+    // beyond the first -- plausible under real allocation pressure,
+    // not an exotic corner case -- the "old slot" the stale pointer
+    // named was already freed by the time this looked it up: a
+    // genuine use-after-free, caught by this project's own testing as
+    // an intermittent segfault inside `Cell::get` reading a class's
+    // `generation` field, deep in `string.each`'s own callback
+    // invocation. Pinning first sidesteps the whole problem: a real
+    // `gc_pins` root gets correctly updated by the SAME collection's
+    // own root scan, the ordinary way, before `reset_nursery` ever
+    // runs.
+    let mark = self.pin_values([closure_val]);
+    // A REAL, full minor collection -- not a one-off relocation of
+    // just this object -- and deliberately so: this closure is
+    // necessarily ALSO reachable from wherever `closure_val` itself
+    // came from (a register, a class's `methods` table, an instance
+    // field, ...), and relocating it in isolation would fix up only
+    // the pinned copy, leaving every OTHER reference to the same
+    // object pointing at a slot the collection has since reused or
+    // neutralized -- exactly the bug an even earlier version of this
+    // function had (caught by `tests/inheritance.zu` reading a
+    // leftover placeholder as "cannot call a range"). A full cycle's
+    // comprehensive root/child scan is what finds and rewrites every
+    // one of those together, the same way it always does.
+    self.collect_minor();
+    let new_val = self.pinned(mark);
+    self.unpin(mark);
+    new_val
+  }
+
   /// Runs the CURRENT top frame (already pushed, `self.frames.last()`)
   /// as compiled machine code from `osr_id` (`-1` for an ordinary
   /// entry starting at bytecode ip 0; a non-negative id from
@@ -1036,6 +1203,7 @@ impl VM {
       .last()
       .expect("invoke_compiled: no active frame")
       .base;
+    let closure_val = self.ensure_stable_for_compiled_entry(closure_val);
 
     self.jit_call_depth.set(self.jit_call_depth.get() + 1);
     // SAFETY: `entry` was produced by `jit::engine::JitEngine::compile_function`
@@ -1044,6 +1212,22 @@ impl VM {
     // machine code's calling convention (see `jit::EntryFn`'s docs).
     let result_bits = unsafe { entry(self as *mut VM, base as u64, closure_val.to_bits(), osr_id) };
     self.jit_call_depth.set(self.jit_call_depth.get() - 1);
+
+    // A real deopt takes priority over everything else -- see
+    // `resolve_possible_deopt`'s own docs. This exact check (and the
+    // recursive-interpreter resolution behind it) is ALSO needed by
+    // `jit::runtime::zuri_jit_call_finish`, the OTHER place compiled
+    // code's return value gets processed: the direct compiled-to-
+    // compiled fast path (`emit_fast_call`'s own `call_indirect`,
+    // used for e.g. self-recursive calls) never goes through THIS
+    // function at all, so a deopt happening there would otherwise go
+    // completely unnoticed -- exactly the bug that shipped first and
+    // got caught by `tests/inheritance.zu`/`osr_speculation_stress.zu`
+    // regressing. Both call sites MUST resolve a pending deopt before
+    // doing anything else with compiled code's return value.
+    if let Some(result) = self.resolve_possible_deopt() {
+      return result;
+    }
 
     let pending = self.jit_pending_exception.get();
     if !pending.is_nil() {
@@ -1054,6 +1238,74 @@ impl VM {
     self.close_upvalues_from(base);
     self.frames.pop();
     Ok(Value::from_bits(result_bits))
+  }
+
+  /// Checks (and clears) `pending_deopt_ip`. If compiled code just
+  /// bailed out, the CURRENT top frame -- whichever one that is; this
+  /// is called from both `invoke_compiled` (a freshly-pushed frame on
+  /// a regular call, or an already-active frame OSR'd into mid-loop)
+  /// and `jit::runtime::zuri_jit_call_finish` (the direct compiled-
+  /// to-compiled fast path's own callee frame) -- is still exactly as
+  /// valid as it always was; the only thing wrong is compiled code
+  /// gave up on it partway through. Point its own `ip` at the deopt
+  /// target and hand it to a fresh, depth-bounded interpreter run --
+  /// `run_until` seeds its `ip`/`base`/etc. straight from
+  /// `self.frames[frame_idx]` (see its own top), so this is the
+  /// entire fix-up needed, and this exact "recurse into the
+  /// interpreter for one bounded frame" shape is already proven sound
+  /// by `run_frame`'s native-callback path. Both callers see an
+  /// ordinary `RunResult<Value>` either way -- deopt is fully
+  /// invisible above this function.
+  /// Tiny, always-inlined fast-path check -- the overwhelming common
+  /// case (no deopt pending) is just one `Cell<Option<usize>>` read,
+  /// kept as small as possible so it disappears into its callers'
+  /// own hot paths (`invoke_compiled`, `zuri_jit_call_finish`) rather
+  /// than costing a real out-of-line call on every single compiled
+  /// call, deopt or not. The actual (rare) resolution logic is kept
+  /// OUT of line in `resolve_deopt_slow`, both so it doesn't bloat
+  /// the hot path's icache footprint and so its own locals/borrows
+  /// don't fight this function's inlining eligibility.
+  #[inline(always)]
+  pub(crate) fn resolve_possible_deopt(&mut self) -> Option<RunResult<Value>> {
+    let deopt_ip = self.pending_deopt_ip.take()?;
+    Some(self.resolve_deopt_slow(deopt_ip))
+  }
+
+  /// The actual (rare) deopt-resolution logic -- see
+  /// `resolve_possible_deopt`'s own docs for why this is split out.
+  #[cold]
+  #[inline(never)]
+  fn resolve_deopt_slow(&mut self, deopt_ip: usize) -> RunResult<Value> {
+    let frame_idx = self.frames.len() - 1;
+    // SAFETY: this frame's `function` has been a valid, live
+    // `ObjFunction` for as long as the frame itself has existed --
+    // same pointer every other `unsafe { &*frame.function }` site in
+    // this file already trusts.
+    let deopting_fn = unsafe { &*self.frames[frame_idx].function };
+    let depth = self.deopt_reentrancy_depth.get() + 1;
+    self.deopt_reentrancy_depth.set(depth);
+    if depth > MAX_DEOPT_REENTRANCY {
+      // See `MAX_DEOPT_REENTRANCY`'s own docs: this nested deopt chain
+      // has grown deep enough that continuing to let it grow risks a
+      // real native stack overflow -- give up on compiled code for
+      // the function at THIS deepest level FOR GOOD, which is what
+      // actually stops the chain from growing on the very next nested
+      // call. Clearing `entry` (not just `ineligible`) matters:
+      // `tiered_entry` checks `entry` first.
+      deopting_fn.jit.entry.set(None);
+      deopting_fn.jit.ineligible.set(true);
+      if crate::jit::log_enabled() {
+        eprintln!(
+          "[jit] '{}' permanently deoptimized: nested deopt depth reached {}",
+          deopting_fn.name, depth
+        );
+      }
+    }
+    self.frames[frame_idx].ip = deopt_ip;
+    let stop_depth = frame_idx;
+    let result = self.run_until(stop_depth);
+    self.deopt_reentrancy_depth.set(self.deopt_reentrancy_depth.get() - 1);
+    result
   }
 
   /// Checked by `run_until`'s own `Instr::Jmp` handler on every
@@ -1239,12 +1491,27 @@ impl VM {
       return Err(self.raise("ArgumentError", msg));
     }
 
+    // Safety net for `gc_pins`: a native that pins values (see
+    // `pin_values`) to survive its own re-entrant `call_value`s is
+    // expected to `unpin` them again before returning, but an early
+    // return via `?` on an error path is easy to miss doing that for
+    // (a caught exception from a user callback is an entirely normal
+    // outcome here, not a rare edge case). Truncating back to
+    // whatever `gc_pins` looked like right before this call, no
+    // matter how the native returns, means a missed `unpin` costs
+    // nothing worse than holding its pins a little longer than
+    // strictly necessary -- never a permanent leak (which would ALSO
+    // be a correctness bug, not just wasted memory: `gc_pins` is a
+    // real GC root, so anything stuck in it stays uncollectable
+    // forever).
+    let pin_mark = self.gc_pins.len();
     let mut ctx = ZuriContext {
       vm: self,
       args,
       name: native.name,
     };
     let result = (native.func)(&mut ctx);
+    self.gc_pins.truncate(pin_mark);
     result.map_err(|msg| self.raise("Error", msg))
   }
 
@@ -1285,73 +1552,80 @@ impl VM {
       cur = cobj.superclass;
     }
 
-    if !has_field_init {
-      let pin_mark = self.gc_pins.len();
-      self.gc_pins.push(class_val);
-      if let Some(c) = constructor {
-        self.gc_pins.push(c);
-      }
-      for a in args {
-        self.gc_pins.push(*a);
-      }
-      let instance_val = self.heap.alloc_instance(class_val, field_count as usize);
-      self.gc_pins.push(instance_val);
-
-      let result: RunResult<()> = (|| {
-        if let Some(ctor) = constructor {
-          let mut ctor_args = CallArgs::new();
-          ctor_args.push(instance_val);
-          ctor_args.extend_from_slice(args);
-          self.call_value(ctor, ctor_args.as_slice())?;
-        }
-        Ok(())
-      })();
-
-      self.gc_pins.truncate(pin_mark);
-      result?;
-      return Ok(instance_val);
-    }
-
     let mut field_inits = Vec::new();
-    let mut cur = Some(class_val);
-    while let Some(c) = cur {
-      let cobj = c.as_class();
-      field_inits.push(cobj.own_field_initializer);
-      cur = cobj.superclass;
+    if has_field_init {
+      let mut cur = Some(class_val);
+      while let Some(c) = cur {
+        let cobj = c.as_class();
+        field_inits.push(cobj.own_field_initializer);
+        cur = cobj.superclass;
+      }
+      field_inits.reverse(); // root to leaf
     }
-    field_inits.reverse(); // root to leaf
 
+    // Every one of these gets pinned, and -- crucially -- EVERY use of
+    // one from here on re-reads it from its pinned slot instead of
+    // whatever local variable it started in. `call_value` below can
+    // trigger a collection (a field initializer or constructor body
+    // is arbitrary Zuri code, free to allocate), and unlike a register
+    // or global, a plain Rust local has no way to be found and
+    // rewritten if the object it names gets relocated -- `gc_pins`
+    // only gives it one AS LONG AS every subsequent read goes back to
+    // the pinned slot. A local variable captured before the pin (like
+    // this function's old `instance_val`/`constructor`/`args` reads
+    // used to be, straight through several back-to-back `call_value`s)
+    // stays frozen at whatever address it had at THAT moment even
+    // after the pinned copy gets moved -- exactly the bug caught by
+    // `tmp/gc_write_barrier_stress.zu` intermittently reading a
+    // relocated-and-neutralized slot back as `Obj::Range`.
     let pin_mark = self.gc_pins.len();
     self.gc_pins.push(class_val);
-    for f in field_inits.iter().flatten() {
-      self.gc_pins.push(*f);
+    let class_idx = pin_mark;
+
+    let mut field_init_idxs = Vec::with_capacity(field_inits.len());
+    for f in field_inits.into_iter().flatten() {
+      self.gc_pins.push(f);
+      field_init_idxs.push(self.gc_pins.len() - 1);
     }
-    if let Some(c) = constructor {
+
+    let ctor_idx = constructor.map(|c| {
       self.gc_pins.push(c);
-    }
+      self.gc_pins.len() - 1
+    });
+
+    let args_start = self.gc_pins.len();
     for a in args {
       self.gc_pins.push(*a);
     }
+    let args_end = self.gc_pins.len();
 
-    let instance_val = self.heap.alloc_instance(class_val, field_count as usize);
+    let instance_val = self
+      .heap
+      .alloc_instance(self.gc_pins[class_idx], field_count as usize);
     self.gc_pins.push(instance_val);
+    let instance_idx = self.gc_pins.len() - 1;
 
     let result: RunResult<()> = (|| {
-      for init in field_inits.iter().flatten() {
-        self.call_value(*init, &[instance_val])?;
+      for &idx in &field_init_idxs {
+        let init = self.gc_pins[idx];
+        let instance_now = self.gc_pins[instance_idx];
+        self.call_value(init, &[instance_now])?;
       }
-      if let Some(ctor) = constructor {
+      if let Some(idx) = ctor_idx {
+        let ctor = self.gc_pins[idx];
+        let instance_now = self.gc_pins[instance_idx];
         let mut ctor_args = CallArgs::new();
-        ctor_args.push(instance_val);
-        ctor_args.extend_from_slice(args);
+        ctor_args.push(instance_now);
+        ctor_args.extend_from_slice(&self.gc_pins[args_start..args_end]);
         self.call_value(ctor, ctor_args.as_slice())?;
       }
       Ok(())
     })();
 
+    let final_instance = self.gc_pins[instance_idx];
     self.gc_pins.truncate(pin_mark);
     result?;
-    Ok(instance_val)
+    Ok(final_instance)
   }
 
   /// Shared "call whatever's in register `func_reg`" logic -- the exact
@@ -1716,8 +1990,27 @@ impl VM {
     'dispatch: loop {
       if self.heap.needs_major_gc() {
         self.collect_garbage();
+        closure_ptr = self.frames[frame_idx].closure;
       } else if self.heap.needs_minor_gc() {
         self.collect_minor();
+        // `func_ptr` never needs this: `ObjFunction` always allocates
+        // directly into old-generation storage (see
+        // `Heap::alloc_function`'s own docs) specifically so it, like
+        // this cached pointer to it, never moves. `closure_ptr` has no
+        // such guarantee -- an `ObjClosure` is an ordinary young
+        // allocation, and unlike `func_ptr`/`base` (a plain index,
+        // unaffected by anything a collection relocates),
+        // `run_until`'s own local cache of it is exactly the same
+        // hazard `VM::ensure_stable_for_compiled_entry` exists to
+        // prevent for JIT-compiled code's `closure_param`: a raw
+        // pointer held OUTSIDE any GC-scannable location for longer
+        // than one instruction. Unlike compiled code, though, the
+        // interpreter re-derives this on EVERY safepoint instead of
+        // needing the object pinned non-young for a whole invocation
+        // -- cheap, and `collect_minor` has already relocated it (via
+        // the per-frame loop that keeps `self.frames[..].closure` in
+        // sync) by the time this reads it back out.
+        closure_ptr = self.frames[frame_idx].closure;
       }
 
       let func = unsafe { &*func_ptr };
@@ -2359,6 +2652,8 @@ impl VM {
 
             if let Some(ctor) = c.methods.get(&name).copied() {
               c.constructor = Some(ctor);
+              drop(c);
+              write_barrier(class_val.as_obj());
             }
           },
 
@@ -3290,6 +3585,14 @@ impl VM {
   /// cheaper, far-more-frequent counterpart this collector normally
   /// relies on instead.
   pub(crate) fn collect_garbage(&mut self) {
+    // A major collection's own mark-sweep below only ever visits
+    // `Heap::chunks` -- flushing the nursery FIRST (promoting
+    // everything in it that's still reachable, discarding the rest)
+    // means every live object is uniformly chunk-resident by the
+    // time that pass runs, so it needs no nursery-awareness of its
+    // own at all. See `VM::collect_minor`'s own docs.
+    self.collect_minor();
+
     #[cfg(feature = "gc-log")]
     let before_bytes = self.heap.bytes_allocated();
     #[cfg(feature = "gc-log")]
@@ -3330,6 +3633,10 @@ impl VM {
     for v in self.modules.values() {
       Self::mark_root(*v, &mut worklist);
     }
+    for v in self.builtin_exceptions.values() {
+      Self::mark_root(*v, &mut worklist);
+    }
+    Self::mark_root(self.jit_pending_exception.get(), &mut worklist);
 
     while let Some(ptr) = worklist.pop() {
       // SAFETY: every pointer on the worklist was pulled out of a Value
@@ -3365,23 +3672,36 @@ impl VM {
   }
 
   /// Minor collection -- the cheap, frequent counterpart to
-  /// `collect_garbage` that this collector normally relies on. Scans
-  /// the SAME roots `collect_garbage` does, but only ever marks and
-  /// transitively walks into objects that are still `Young`: an `Old`
-  /// object reached from a root is simply skipped (never re-verified,
-  /// never traversed into), since minor collection never sweeps old
-  /// objects and therefore never needs to reprove their liveness.
+  /// `collect_garbage` that this collector normally relies on, and
+  /// the young generation's whole reason to exist: a REAL, moving,
+  /// copying collection rather than mark-sweep. Scans the SAME roots
+  /// `collect_garbage` does, but instead of just marking reachable
+  /// objects, actively RELOCATES every still-`Young` one it finds
+  /// (via `Heap::forward_or_promote`) into old-generation storage,
+  /// rewriting every reference to it -- root or child slot -- to
+  /// point at the new copy. An `Old` object reached from a root is
+  /// left completely alone (`forward_or_promote` returns it
+  /// unchanged), since a copying collection never needs to prove an
+  /// old object's liveness at all -- unlike mark-sweep, nothing about
+  /// this pass depends on visiting every live object, only on
+  /// visiting every POINTER TO A YOUNG one.
   ///
   /// The one thing that reasoning alone can't see: an old object that
   /// was MUTATED since its last full scan could now point at a young
   /// object that's otherwise unreachable from any of today's roots.
   /// That's exactly what `write_barrier` and the remembered set exist
   /// to cover -- every remembered old object's direct children are
-  /// walked here too (but the old object itself is never marked; only
-  /// its children can be young). See `object.rs`'s module docs on
-  /// `write_barrier` for why this is sound: the barrier fires on EVERY
-  /// mutation of an old container, so an old->young edge can only
-  /// exist via an object currently in the remembered set.
+  /// walked (and relocated in place) here too. See `object.rs`'s
+  /// module docs on `write_barrier` for why this is sound: the
+  /// barrier fires on EVERY mutation of an old container, so an
+  /// old->young edge can only exist via an object currently in the
+  /// remembered set.
+  ///
+  /// Once every root and every live object's children have been
+  /// walked, EVERYTHING still in the nursery is, by construction,
+  /// unreachable -- `Heap::reset_nursery` reclaims it in one step,
+  /// with no per-object free-list bookkeeping needed at all (compare
+  /// `collect_garbage`'s `sweep`, which visits every chunk slot).
   pub(crate) fn collect_minor(&mut self) {
     #[cfg(feature = "gc-log")]
     let before_count = self.heap.object_count();
@@ -3395,49 +3715,103 @@ impl VM {
       .unwrap_or(0)
       .min(self.registers.len());
 
-    for v in &self.registers[..regs_top] {
-      Self::mark_root_young(*v, &mut worklist);
+    for v in &mut self.registers[..regs_top] {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
-    for cell in &self.global_slots {
-      Self::mark_root_young(cell.get(), &mut worklist);
+    for cell in &mut self.global_slots {
+      Self::forward_slot(&mut self.heap, cell.get_mut(), &mut worklist);
     }
-    for frame in &self.frames {
-      Self::mark_root_young(frame.closure_val, &mut worklist);
+    for frame in &mut self.frames {
+      if Self::forward_slot(&mut self.heap, &mut frame.closure_val, &mut worklist) {
+        // `function`/`closure` are raw pointers CACHED from
+        // `closure_val` at frame-push time purely for hot-path speed
+        // (see `CallFrame`'s own docs) -- relocating the object
+        // `closure_val` points at invalidates them just as much as
+        // `closure_val` itself, so they need the exact same
+        // re-derivation a fresh frame push would do, every time this
+        // branch fires.
+        let closure = frame.closure_val.as_closure();
+        frame.closure = closure as *const ObjClosure;
+        frame.function = closure.function.as_func() as *const ObjFunction;
+      }
     }
-    for (_, v) in &self.open_upvalues {
-      Self::mark_root_young(*v, &mut worklist);
+    for (_, v) in &mut self.open_upvalues {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
-    for v in &self.gc_pins {
-      Self::mark_root_young(*v, &mut worklist);
+    for v in &mut self.gc_pins {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
-    for v in &self.pending_jit_compiles {
-      Self::mark_root_young(*v, &mut worklist);
+    for v in self.builtin_exceptions.values_mut() {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
-    for v in self.modules.values() {
-      Self::mark_root_young(*v, &mut worklist);
+    {
+      let mut pending = self.jit_pending_exception.get();
+      if Self::forward_slot(&mut self.heap, &mut pending, &mut worklist) {
+        self.jit_pending_exception.set(pending);
+      }
+    }
+    for v in &mut self.pending_jit_compiles {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
+    }
+    for v in self.modules.values_mut() {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
 
     for remembered_ptr in self.heap.drain_remembered() {
-      Self::walk_children(remembered_ptr, |v| Self::mark_root_young(v, &mut worklist));
+      Self::walk_children_mut(remembered_ptr, |slot| {
+        // SAFETY: `remembered_ptr` is a live old object (see
+        // `drain_remembered`'s own docs); `walk_children_mut` only
+        // ever yields pointers to genuine `Value` slots owned by it.
+        Self::forward_slot(&mut self.heap, unsafe { &mut *slot }, &mut worklist)
+      });
     }
 
     while let Some(ptr) = worklist.pop() {
-      Self::walk_children(ptr, |v| Self::mark_root_young(v, &mut worklist));
+      Self::walk_children_mut(ptr, |slot| {
+        Self::forward_slot(&mut self.heap, unsafe { &mut *slot }, &mut worklist)
+      });
     }
 
     #[cfg(feature = "gc-log")]
     {
-      let freed = self.heap.sweep_young();
+      let before_bytes = self.heap.bytes_allocated();
+      self.heap.reset_nursery();
       if std::env::var_os("ZURI_GC_LOG").is_some() {
         eprintln!(
-          "[gc-minor] freed {}/{} young objects",
-          freed,
-          before_count
+          "[gc-minor] promoted/freed across {} -> {} objects, {} -> {} bytes",
+          before_count,
+          self.heap.object_count(),
+          before_bytes,
+          self.heap.bytes_allocated(),
         );
       }
     }
     #[cfg(not(feature = "gc-log"))]
-    self.heap.sweep_young();
+    self.heap.reset_nursery();
+  }
+
+  /// Resolves ONE slot that might currently hold a pointer to a young
+  /// object, relocating it (see `Heap::forward_or_promote`) and
+  /// rewriting `*slot` in place if so. Returns whether `slot` was
+  /// actually rewritten -- `walk_children_mut`'s `Obj::Dict` case
+  /// needs to know this, to decide whether a key's hash may have
+  /// changed and its index needs rebuilding (see
+  /// `DictStorage::reindex`'s own docs). Free-standing (takes `heap`
+  /// explicitly rather than `&mut self`) so callers can borrow it
+  /// alongside other, disjoint fields of `self` -- see every root
+  /// loop in `collect_minor` for the pattern this enables.
+  #[inline(always)]
+  fn forward_slot(heap: &mut Heap, slot: &mut Value, worklist: &mut Vec<*const Obj>) -> bool {
+    if !slot.is_obj() {
+      return false;
+    }
+    let old_ptr = slot.as_obj();
+    let new_ptr = heap.forward_or_promote(old_ptr, worklist);
+    if std::ptr::eq(new_ptr, old_ptr) {
+      return false;
+    }
+    *slot = Value::obj(new_ptr);
+    true
   }
 
   /// Enumerates every `Value` held directly by the object behind
@@ -3531,6 +3905,122 @@ impl VM {
     }
   }
 
+  /// `walk_children`'s mutable counterpart, used only by
+  /// `collect_minor`'s copying pass: instead of handing each child
+  /// `Value` to `mark` BY COPY (read-only), hands `relocate` a raw
+  /// `*mut Value` pointing at the ACTUAL slot the child lives in --
+  /// letting the caller rewrite it in place if it turns out to point
+  /// at a young object that just got promoted. Sound via a single
+  /// `&mut Obj` cast at the top: collection is always fully
+  /// stop-the-world (no interpreter or JIT code runs concurrently
+  /// with it), so nothing else can be aliasing `ptr` while this runs,
+  /// regardless of whether the object's OWN fields are `Cell`-wrapped
+  /// or not.
+  ///
+  /// Kept as a genuinely separate function from `walk_children`
+  /// (rather than one traversal parameterized over both callback
+  /// shapes) because about a third of its variants need real
+  /// mutable-borrow machinery (`RefCell::get_mut`, `Cell::get_mut`,
+  /// `Vec::iter_mut`) that a read-only `mark: impl FnMut(Value)`
+  /// has no reason to carry -- see each variant for specifics.
+  ///
+  /// `Obj::Dict` is the one case that needs MORE than just rewriting
+  /// each slot: `DictKey`'s hash is the raw pointer for every
+  /// reference-type key (see its own docs), so relocating a KEY
+  /// changes its hash out from under `DictStorage::index` -- tracked
+  /// here via `relocate`'s own return value and repaired with one
+  /// `reindex()` call, only when a key actually moved.
+  fn walk_children_mut(ptr: *const Obj, mut relocate: impl FnMut(*mut Value) -> bool) {
+    // SAFETY: see this function's own docs -- collection is always
+    // stop-the-world, so exclusive access to every reachable object
+    // is sound for its whole duration.
+    let obj = unsafe { &mut *(ptr as *mut Obj) };
+    match obj {
+      Obj::List(items) => {
+        for v in items.get_mut().iter_mut() {
+          relocate(v as *mut Value);
+        }
+      },
+      Obj::Dict(storage) => {
+        let storage = storage.get_mut();
+        let mut key_moved = false;
+        for (k, v) in storage.entries.iter_mut() {
+          key_moved |= relocate(k as *mut Value);
+          relocate(v as *mut Value);
+        }
+        if key_moved {
+          storage.reindex();
+        }
+      },
+      Obj::Func(f) => {
+        for c in f.chunk.constants.iter_mut() {
+          relocate(c as *mut Value);
+        }
+        if let Some(m) = f.globals_module.as_mut() {
+          relocate(m as *mut Value);
+        }
+      },
+      Obj::Closure(c) => {
+        relocate(&mut c.function as *mut Value);
+        for u in c.upvalues.iter_mut() {
+          relocate(u as *mut Value);
+        }
+      },
+      Obj::Upvalue(cell) => {
+        if let UpvalueState::Closed(v) = cell.get_mut() {
+          relocate(v as *mut Value);
+        }
+      },
+      Obj::Class(c) => {
+        let class = c.get_mut();
+        if let Some(sup) = class.superclass.as_mut() {
+          relocate(sup as *mut Value);
+        }
+        for m in class.methods.values_mut() {
+          relocate(m as *mut Value);
+        }
+        if let Some(init) = class.own_field_initializer.as_mut() {
+          relocate(init as *mut Value);
+        }
+        if let Some(ctor) = class.constructor.as_mut() {
+          relocate(ctor as *mut Value);
+        }
+        for cell in class.statics.iter_mut() {
+          relocate(cell.get_mut() as *mut Value);
+        }
+      },
+      Obj::Instance(inst) => {
+        relocate(&mut inst.class as *mut Value);
+        for cell in inst.fields.iter_mut() {
+          relocate(cell.get_mut() as *mut Value);
+        }
+      },
+      Obj::BoundMethod(b) => {
+        relocate(&mut b.receiver as *mut Value);
+        relocate(&mut b.method as *mut Value);
+      },
+      Obj::Module(m) => {
+        let m = m.get_mut();
+        for cell in m.namespace.slots.iter_mut() {
+          relocate(cell.get_mut() as *mut Value);
+        }
+      },
+      Obj::ModuleBinding(b) => {
+        relocate(&mut b.module as *mut Value);
+        if let Some(p) = b.promoted.as_mut() {
+          relocate(p as *mut Value);
+        }
+      },
+      Obj::Str(_)
+      | Obj::Bytes(_)
+      | Obj::BigInt(_)
+      | Obj::Native(_)
+      | Obj::File(_)
+      | Obj::Ptr(_)
+      | Obj::Range { .. } => {},
+    }
+  }
+
   /// Add `v` to the reachable set and, the first time it's seen, queue
   /// it so `collect_garbage` walks its children too. A no-op on repeat
   /// visits, which is what makes cycles (e.g. a closure capturing a
@@ -3541,23 +4031,6 @@ impl VM {
       return;
     }
     let ptr = v.as_obj();
-    if Heap::mark_object(ptr) {
-      worklist.push(ptr);
-    }
-  }
-
-  /// `mark_root`'s minor-collection counterpart: skips (and does NOT
-  /// transitively walk into) anything that isn't currently `Young`.
-  /// See `collect_minor`'s own docs for why that's sufficient.
-  #[inline(always)]
-  fn mark_root_young(v: Value, worklist: &mut Vec<*const Obj>) {
-    if !v.is_obj() {
-      return;
-    }
-    let ptr = v.as_obj();
-    if !Heap::is_young(ptr) {
-      return;
-    }
     if Heap::mark_object(ptr) {
       worklist.push(ptr);
     }

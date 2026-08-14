@@ -91,11 +91,18 @@ fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
   let (l, u) = ctx.args[0].as_range();
-  let callback = ctx.args[1];
+  // Pinned (not just a plain local) because `callback` is reused
+  // across every iteration below -- if it's still Young and a later
+  // iteration's own `call_value` triggers a collection that relocates
+  // it, an un-pinned local would go stale from that point on. `i`
+  // itself needs no such treatment: it's always a plain number, never
+  // a heap reference.
+  let mark = ctx.vm.pin_values([ctx.args[1]]);
 
   if l <= u {
     let mut i = l;
     while i < u {
+      let callback = ctx.vm.pinned(mark);
       ctx
         .vm
         .call_value(callback, &[Value::number(i)])
@@ -105,6 +112,7 @@ fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   } else {
     let mut i = l;
     while i > u {
+      let callback = ctx.vm.pinned(mark);
       ctx
         .vm
         .call_value(callback, &[Value::number(i)])
@@ -113,6 +121,7 @@ fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     }
   }
 
+  ctx.vm.unpin(mark);
   Ok(Value::nil())
 }
 

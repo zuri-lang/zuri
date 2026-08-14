@@ -229,40 +229,67 @@ fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.vm.heap_mut().alloc_list(vec![keys_list, values_list]))
 }
 
+/// `list.rs`'s `pin_each_call` counterpart for a dict's (key, value)
+/// pairs -- see its own docs for why every read from `gc_pins` here
+/// must be fresh, never cached across a `call_value`. Layout: `mark`
+/// = `dict_val`, `mark + 1` = `callback`, `mark + 2 + 2*i` = key `i`,
+/// `mark + 3 + 2*i` = value `i`.
+fn pin_each_call(ctx: &mut ZuriContext, dict_val: Value, callback: Value) -> (usize, usize) {
+  let pairs = dict_val.as_dict();
+  let count = pairs.len();
+  let mark = ctx.vm.pin_values(
+    std::iter::once(dict_val)
+      .chain(std::iter::once(callback))
+      .chain(pairs.into_iter().flat_map(|(k, v)| [k, v])),
+  );
+  (mark, count)
+}
+
 fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
-  let pairs = ctx.args[0].as_dict();
-  let callback = ctx.args[1];
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
-  for (k, v) in pairs {
+  for i in 0..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let k = ctx.vm.pinned(mark + 2 + 2 * i);
+    let v = ctx.vm.pinned(mark + 3 + 2 * i);
     ctx
       .vm
       .call_value(callback, &[v, k])
       .map_err(|e| ctx.vm.describe_exception(e))?;
   }
 
-  Ok(ctx.args[0])
+  let dict_val = ctx.vm.pinned(mark);
+  ctx.vm.unpin(mark);
+  Ok(dict_val)
 }
 
 fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
-  let pairs = ctx.args[0].as_dict();
-  let callback = ctx.args[1];
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
   let mut kept = Vec::new();
-  for (k, v) in pairs {
+  for i in 0..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let k = ctx.vm.pinned(mark + 2 + 2 * i);
+    let v = ctx.vm.pinned(mark + 3 + 2 * i);
     let keep = ctx
       .vm
       .call_value(callback, &[v, k])
       .map_err(|e| ctx.vm.describe_exception(e))?;
     if !keep.is_falsey() {
+      // Re-read again: `call_value` above may have relocated either
+      // one since the copies taken just before the call.
+      let k = ctx.vm.pinned(mark + 2 + 2 * i);
+      let v = ctx.vm.pinned(mark + 3 + 2 * i);
       kept.push((k, v));
     }
   }
+  ctx.vm.unpin(mark);
   Ok(ctx.vm.heap_mut().alloc_dict(kept))
 }
 
@@ -270,18 +297,22 @@ fn some_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
-  let pairs = ctx.args[0].as_dict();
-  let callback = ctx.args[1];
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
-  for (k, v) in pairs {
+  for i in 0..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let k = ctx.vm.pinned(mark + 2 + 2 * i);
+    let v = ctx.vm.pinned(mark + 3 + 2 * i);
     let result = ctx
       .vm
       .call_value(callback, &[v, k])
       .map_err(|e| ctx.vm.describe_exception(e))?;
     if !result.is_falsey() {
+      ctx.vm.unpin(mark);
       return Ok(Value::bool(true));
     }
   }
+  ctx.vm.unpin(mark);
   Ok(Value::bool(false))
 }
 
@@ -289,18 +320,22 @@ fn every(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
-  let pairs = ctx.args[0].as_dict();
-  let callback = ctx.args[1];
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
-  for (k, v) in pairs {
+  for i in 0..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let k = ctx.vm.pinned(mark + 2 + 2 * i);
+    let v = ctx.vm.pinned(mark + 3 + 2 * i);
     let result = ctx
       .vm
       .call_value(callback, &[v, k])
       .map_err(|e| ctx.vm.describe_exception(e))?;
     if result.is_falsey() {
+      ctx.vm.unpin(mark);
       return Ok(Value::bool(false));
     }
   }
+  ctx.vm.unpin(mark);
   Ok(Value::bool(true))
 }
 
@@ -310,28 +345,32 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
-  let callback = ctx.args[1];
-  let dict_val = ctx.args[0];
-  let pairs = ctx.args[0].as_dict();
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
+  let initial_idx = ctx.args.get(2).map(|&v| ctx.vm.pin_values([v]));
 
-  let (mut acc, start_idx) = match ctx.args.get(2) {
-    Some(&initial) => (initial, 0usize),
+  let (mut acc, start_idx) = match initial_idx {
+    Some(idx) => (ctx.vm.pinned(idx), 0usize),
     None => {
-      if pairs.is_empty() {
+      if count == 0 {
+        ctx.vm.unpin(mark);
         return Ok(Value::nil());
       }
-      (pairs[0].1, 1usize)
+      (ctx.vm.pinned(mark + 3), 1usize)
     },
   };
 
-  for i in start_idx..pairs.len() {
-    let (k, v) = pairs[i];
+  for i in start_idx..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let k = ctx.vm.pinned(mark + 2 + 2 * i);
+    let v = ctx.vm.pinned(mark + 3 + 2 * i);
+    let dict_val = ctx.vm.pinned(mark);
     acc = ctx
       .vm
       .call_value(callback, &[acc, v, k, dict_val])
       .map_err(|e| ctx.vm.describe_exception(e))?;
   }
 
+  ctx.vm.unpin(mark);
   Ok(acc)
 }
 

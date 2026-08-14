@@ -21,7 +21,7 @@ use std::rc::Rc;
 
 use crate::compiler::{compiler::Compiler, lexer::Lexer, parser::Parser};
 use crate::vm::chunk::Chunk;
-use crate::vm::object::{ModuleNamespace, ObjModule};
+use crate::vm::object::{ModuleNamespace, ObjModule, write_barrier};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
@@ -204,6 +204,17 @@ fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> ImportResult
     return Err(e);
   }
 
+  // Re-read from `vm.modules` rather than trusting the `module_val`
+  // local from before the call above: `run_module_source` executes
+  // the module's entire top-level body, arbitrary Zuri code free to
+  // allocate and trigger a collection -- if `module_val`'s own object
+  // was still Young at the `insert` above (common: this module is the
+  // very first thing loaded, nothing has promoted it yet) and gets
+  // relocated during its own body's execution, the pre-call local
+  // would silently go stale exactly like `VM::instantiate`'s old
+  // `instance_val` did. `vm.modules`'s own copy, being a real root,
+  // is always current.
+  let module_val = vm.modules[&canonical];
   module_val.as_module_mut().loaded = true;
   Ok(module_val)
 }
@@ -218,6 +229,7 @@ fn seed_module_vars(vm: &mut VM, module_val: Value, canonical_path: &str) {
     .as_module_mut()
     .namespace
     .set("__file__", file_val);
+  write_barrier(module_val.as_obj());
 
   if let Some(root) = vm.root_path.clone() {
     let root_val = vm.heap.alloc_string(root);
@@ -225,6 +237,7 @@ fn seed_module_vars(vm: &mut VM, module_val: Value, canonical_path: &str) {
       .as_module_mut()
       .namespace
       .set("__root__", root_val);
+    write_barrier(module_val.as_obj());
   }
 }
 
@@ -304,11 +317,25 @@ fn builtin_module(vm: &mut VM, name: &str) -> Option<Value> {
     namespace: ModuleNamespace::new(),
     loaded: true,
   });
+  // Cache BEFORE `(def.build)(vm)` runs -- that call can allocate
+  // (and therefore trigger a collection) arbitrarily, and until this
+  // insert, `module_val` was a bare local nothing in `VM` roots on
+  // its own, unlike `load_from_candidate`'s own module (see ITS
+  // identical early-insert, right above `run_module_source`'s own
+  // call, for the same reason).
+  vm.modules.insert(cache_key.clone(), module_val);
 
-  for (member, value) in (def.build)(vm) {
+  let members = (def.build)(vm);
+  // Re-read rather than trust the pre-call `module_val` local -- see
+  // `load_from_candidate`'s identical re-read for why: `def.build`
+  // is native Rust code, not Zuri, but nothing here guarantees it
+  // never allocates enough to cross a collection threshold, and
+  // `vm.modules`'s own copy is guaranteed current either way.
+  let module_val = vm.modules[&cache_key];
+  for (member, value) in members {
     module_val.as_module_mut().namespace.set(member, value);
+    write_barrier(module_val.as_obj());
   }
 
-  vm.modules.insert(cache_key, module_val);
   Some(module_val)
 }

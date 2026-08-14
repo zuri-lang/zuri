@@ -267,7 +267,29 @@ pub fn analyze(
     entry[0] = seed.clone();
   }
 
-  let spec_regs = speculative_regs.unwrap_or(0);
+  // `speculative_regs` is a single REGISTER-indexed bitmask, sampled
+  // as a one-shot runtime snapshot of "whatever's currently in this
+  // register" (see `VM::sample_all_reg_types`) -- it carries no
+  // memory of WHICH instruction produced that value. `transfer`
+  // applies a set bit to EVERY unprovable instruction (`Call`,
+  // `GetGlobal`, `GetField`, ...) that happens to write that same
+  // register number, anywhere in the function. That's unsound
+  // whenever the bytecode compiler's register allocator reuses one
+  // register slot for two DIFFERENT unprovable definitions -- the
+  // single most common case being a call's own callee slot getting
+  // reused, in place, for the call's result (`GetGlobal dst=r` to
+  // load the callee, immediately followed by `Call dst=r, func=r`):
+  // the snapshot naturally observes the RESULT (often numeric), but
+  // the same bit then also claims the callee load itself is numeric
+  // -- which a closure/function value never is, so that guard would
+  // fail on EVERY single invocation, not occasionally. Strip any
+  // register written by more than one distinct speculatable
+  // instruction before it ever reaches `transfer`, so a seed only
+  // ever attaches to the ONE definition site it was actually sampled
+  // from.
+  let spec_regs = speculative_regs
+    .map(|mask| mask & !ambiguous_speculative_regs(code))
+    .unwrap_or(0);
 
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
@@ -464,6 +486,110 @@ pub fn conservative_dst(instr: &Instr) -> Option<u8> {
     | Instr::MakeRange { dst, .. } => Some(dst),
     _ => None,
   }
+}
+
+/// The destination register ANY instruction writes, if it writes one
+/// at all -- a strict superset of `conservative_dst` (which only
+/// covers the "unprovable, needs a runtime guard to speculate on"
+/// subset). Used by `ambiguous_speculative_regs` to see EVERY
+/// definition of a register, not just the speculatable ones -- kept
+/// as its own function, deliberately not folded into `conservative_dst`
+/// itself, since callers that only care about "which registers might
+/// need a runtime guard" (`codegen::FuncCompiler::emit_speculative_guard`)
+/// would otherwise have to filter this broader set back down by hand.
+fn any_dst(instr: &Instr) -> Option<u8> {
+  match *instr {
+    Instr::LoadConst { dst, .. }
+    | Instr::LoadNil { dst }
+    | Instr::LoadBool { dst, .. }
+    | Instr::Move { dst, .. }
+    | Instr::Add { dst, .. }
+    | Instr::Sub { dst, .. }
+    | Instr::Mul { dst, .. }
+    | Instr::Div { dst, .. }
+    | Instr::Pow { dst, .. }
+    | Instr::Floor { dst, .. }
+    | Instr::Mod { dst, .. }
+    | Instr::Neg { dst, .. }
+    | Instr::Not { dst, .. }
+    | Instr::Concat { dst, .. }
+    | Instr::BitAnd { dst, .. }
+    | Instr::BitOr { dst, .. }
+    | Instr::BitXor { dst, .. }
+    | Instr::BitShl { dst, .. }
+    | Instr::BitShr { dst, .. }
+    | Instr::BitUshr { dst, .. }
+    | Instr::BitNot { dst, .. }
+    | Instr::Eq { dst, .. }
+    | Instr::Neq { dst, .. }
+    | Instr::Lt { dst, .. }
+    | Instr::Le { dst, .. }
+    | Instr::Gt { dst, .. }
+    | Instr::Ge { dst, .. }
+    | Instr::Call { dst, .. }
+    | Instr::GetGlobal { dst, .. }
+    | Instr::Closure { dst, .. }
+    | Instr::GetUpval { dst, .. }
+    | Instr::MakeList { dst, .. }
+    | Instr::MakeDict { dst, .. }
+    | Instr::MakeClass { dst, .. }
+    | Instr::GetField { dst, .. }
+    | Instr::Invoke { dst, .. }
+    | Instr::InvokeSuper { dst, .. }
+    | Instr::CallSuperCtor { dst, .. }
+    | Instr::Import { dst, .. }
+    | Instr::MakePromoted { dst, .. }
+    | Instr::GetIndex { dst, .. }
+    | Instr::GetSlice { dst, .. }
+    | Instr::MakeRange { dst, .. }
+    | Instr::AddImm { dst, .. }
+    | Instr::SubImm { dst, .. }
+    | Instr::MulImm { dst, .. }
+    | Instr::LtImm { dst, .. }
+    | Instr::LeImm { dst, .. }
+    | Instr::GtImm { dst, .. }
+    | Instr::GeImm { dst, .. }
+    | Instr::EqImm { dst, .. }
+    | Instr::NeqImm { dst, .. } => Some(dst),
+    _ => None,
+  }
+}
+
+/// Registers written by more than one distinct static definition site
+/// in `code` (ANY instruction that writes a register at all, not just
+/// speculatable ones) -- unsafe to seed a speculative guess onto,
+/// since a one-shot runtime snapshot of "what's in this register right
+/// now" (see `VM::sample_all_reg_types`) can't say which of the
+/// register's multiple, possibly-unrelated definitions it actually
+/// observed. Two confirmed real patterns this catches: a call's own
+/// callee-load register reused, in place, for the call's result
+/// (`GetGlobal dst=r` immediately followed by `Call dst=r, func=r`) --
+/// the snapshot sees the numeric RESULT and wrongly also credits the
+/// callee load, which is never a number; and a receiver register
+/// reused for a method call's (non-numeric) return value while ALSO
+/// being written elsewhere by something that genuinely is numeric
+/// (e.g. sharing a slot with a loop counter across non-overlapping
+/// live ranges) -- the snapshot can catch either moment and wrongly
+/// credit the other. Both make an `emit_speculative_guard` check that
+/// fails on EVERY invocation, not occasionally -- see `analyze`'s own
+/// docs at its `spec_regs` computation.
+fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
+  let mut seen: u64 = 0;
+  let mut ambiguous: u64 = 0;
+  for instr in code {
+    let Some(dst) = any_dst(instr) else {
+      continue;
+    };
+    if dst >= 64 {
+      continue;
+    }
+    let bit = 1u64 << dst;
+    if seen & bit != 0 {
+      ambiguous |= bit;
+    }
+    seen |= bit;
+  }
+  ambiguous
 }
 
 /// Every bytecode position `ip`'s instruction can transfer control to,

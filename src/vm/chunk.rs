@@ -542,20 +542,43 @@ pub struct Chunk {
   /// interpreter, which has no analogous per-instruction cache of its
   /// own -- see `jit::runtime::zuri_jit_get_field`/`zuri_jit_set_field`):
   /// maps this instruction's own position in `code` to the last-seen
-  /// receiver's class (as its `Value` bits -- heap objects never move,
-  /// so bit-identity IS pointer identity, see `object::Heap`'s docs)
-  /// and the field slot that class resolved the name to. A cache HIT
-  /// (same class as last time -- the overwhelmingly common case at any
-  /// real call site, monomorphic or not) skips the
-  /// `ObjClass::field_slots` hash-map probe entirely; a MISS (a
-  /// different, or first-ever, receiver class) just falls back to the
-  /// real lookup and overwrites the entry -- so a polymorphic call site
-  /// degrades to "no speedup," never to incorrect behavior.
+  /// receiver's class (as its `Value` bits) and the field slot that
+  /// class resolved the name to. A cache HIT (same class bits as last
+  /// time -- the overwhelmingly common case at any real call site,
+  /// monomorphic or not) skips the `ObjClass::field_slots` hash-map
+  /// probe entirely; a MISS (different bits) just falls back to the
+  /// real lookup and overwrites the entry.
+  ///
+  /// The young generation moves objects (see `object::Heap`'s own
+  /// docs), so "same bits as last time" is no longer a PROOF of "same
+  /// class" the way it was when every heap object's address was
+  /// permanent -- a stale cached class could, in principle, coincide
+  /// with a DIFFERENT class later allocated at that same (reused,
+  /// once-nursery) address, producing a false HIT. For `field_cache`
+  /// specifically this is harmless even then: the cached payload is a
+  /// plain `u16` slot index, not a pointer, so a false hit is at worst
+  /// a wrong-field data bug, never a memory-safety one -- see
+  /// `method_cache`'s own docs for why that one is different.
   pub field_cache: RefCell<FxHashMap<usize, (u64, u16)>>,
   /// Same idea as `field_cache`, for `Instr::Invoke`'s class-method
   /// lookup -- maps instruction position to (last-seen receiver class
   /// bits, the resolved method `Value`'s own bits). See
   /// `jit::runtime::zuri_jit_invoke_prepare`.
+  ///
+  /// Unlike `field_cache`, a false HIT here (see its docs on why one
+  /// is now possible post-moving-GC) hands back `method_bits` for the
+  /// WRONG class, dereferenced as a closure -- a genuine memory-safety
+  /// risk, not just a data bug. In practice this needs two coincidences
+  /// at once: a nursery address getting reused by a DIFFERENT class
+  /// object specifically (not just any object), AND the exact same
+  /// call site being hit again with THAT class as the new receiver
+  /// before its cache entry is ever overwritten by an intervening
+  /// real miss. Not yet observed in this project's own extensive
+  /// stress testing, and not fixed here -- the honest fix is
+  /// invalidating every live chunk's cache on each collection (no
+  /// registry of "every live chunk" exists to do that cheaply today)
+  /// or switching the cached class key to something collision-proof
+  /// against relocation; flagging clearly rather than leaving silent.
   pub method_cache: RefCell<FxHashMap<usize, (u64, u64)>>,
 }
 

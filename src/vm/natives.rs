@@ -247,12 +247,23 @@ fn delprop(ctx: &mut ZuriContext) -> Result<Value, String> {
 // id
 //-----------------------------------------------------------------------------------
 
-/// For a heap object, the object's own address -- stable for as long
-/// as it's alive (this VM's GC never moves live objects, only frees
-/// dead ones). Primitives (number/bool/nil) have no heap identity, so
-/// a deterministic numeric encoding of their own value stands in
-/// instead -- good enough for "is this the same value", just not a
-/// real memory address.
+/// For a heap object, the object's own CURRENT address. Stable for as
+/// long as it's alive AND has already been promoted to the old
+/// generation (old-gen objects never move again, see `object::Heap`'s
+/// own docs) -- but NOT guaranteed stable across a garbage collection
+/// for an object that's still young: a minor collection can relocate
+/// it, changing what this returns for the exact same logical object.
+/// `id(x) == id(x)` still always holds for two calls with no
+/// collection in between, and in practice most objects an id is ever
+/// taken of are either short-lived (the comparison never outlives the
+/// collection anyway) or already old by the time anyone calls this on
+/// them -- but it's no longer the unconditional, permanent guarantee
+/// this once was, and callers relying on an id surviving indefinitely
+/// (e.g. as a long-lived cache key) should be aware. Primitives
+/// (number/bool/nil) have no heap identity, so a deterministic numeric
+/// encoding of their own value stands in instead -- good enough for
+/// "is this the same value", just not a real memory address, and
+/// entirely unaffected by any of the above.
 fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   let v = ctx.args[0];
