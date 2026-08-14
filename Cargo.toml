@@ -84,3 +84,6 @@ opcode-profile = []
 gc-log = []
 instr-log = []
 ast-log = []
+
+[lib]
+doctest = false

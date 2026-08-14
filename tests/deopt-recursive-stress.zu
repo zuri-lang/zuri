@@ -1,0 +1,32 @@
+# Adversarial stress test for the deopt REENTRANCY-DEPTH guard
+# specifically (as opposed to deopt_megamorphic_stress.zu, which is a
+# flat loop and never nests deopts on the native stack at all).
+#
+# `rec` is genuinely self-recursive -- each call is still on-stack
+# when its own recursive call happens -- and its return value
+# alternates type by depth parity, the worst case for a speculative
+# guard on `v = rec(n - 1)`'s result. If the guard mismatches at
+# EVERY nesting level, a naive (unbounded) deopt-resume would recurse
+# one native stack frame per recursion level, unboundedly, exactly
+# the failure mode MAX_DEOPT_REENTRANCY exists to bound. Depth is
+# picked well above both MAX_JIT_CALL_DEPTH (1024) and
+# MAX_DEOPT_REENTRANCY (64) so this exercises the guard for real
+# rather than staying under it by accident.
+
+def rec(n) {
+  if n <= 0 {
+    return 0
+  }
+  var v = rec(n - 1)
+  if is_number(v) {
+    v = v + 1
+  }
+  if n % 2 == 0 {
+    return n
+  }
+  return 's'
+}
+
+iter var i = 0; i < 50; i++ {
+  echo rec(5000)
+}

@@ -1,0 +1,74 @@
+# Inlining stress test: exercises the guard (correct fallback on a
+# WRONG cached guess), num_registers widening + GC-root correctness
+# under real allocation pressure from INSIDE an inlined callee, and a
+# self-recursive function (must never be inlined into itself, but must
+# still produce correct results via the ordinary fast-call path).
+
+def helper_a(x) {
+  return x * 2
+}
+def helper_b(x) {
+  return x + 100
+}
+
+def caller(f, x) {
+  return f(x)
+}
+
+# Warm `caller` up calling ONLY helper_a, so its call_target_cache
+# learns helper_a as the guess at this call site.
+var i = 0
+while i < 300000 {
+  caller(helper_a, i)
+  i = i + 1
+}
+
+echo caller(helper_a, 10)
+# The guard must catch this -- a different closure at the SAME call
+# site the cache learned helper_a from. If the guard were missing or
+# broken, this would wrongly run helper_a's inlined body (x*2 = 20)
+# instead of falling back to a real call to helper_b (x+100 = 110).
+echo caller(helper_b, 10)
+
+# GC pressure from inside an inlined callee: `make_node` is a strong
+# inlining candidate for `build`'s own hot loop. Each iteration
+# allocates a real heap object THROUGH the (potentially inlined) call,
+# forcing real GC passes to run while the inlined body's own widened
+# register range is live -- exactly the scenario `num_registers`
+# widening exists to keep sound (see `Chunk::num_registers`'s own
+# docs): if GC's root-scan didn't cover the inlined callee's own
+# registers, a live `Node` held only in an inlined-body-local register
+# could be collected out from under still-executing code.
+class Node {
+  @new(v) {
+    self.v = v
+  }
+}
+
+def make_node(v) {
+  return Node(v)
+}
+
+def build(n) {
+  var total = 0
+  var j = 0
+  while j < n {
+    var node = make_node(j)
+    total = total + node.v
+    j = j + 1
+  }
+  return total
+}
+
+echo build(500000)
+
+# Self-recursion: fib must never inline a call to itself (see
+# `jit::inlining`'s own docs), but must still produce correct results
+# via the existing compiled-to-compiled fast-call path.
+def fib(n) {
+  if n < 2 {
+    return n
+  }
+  return fib(n - 1) + fib(n - 2)
+}
+echo fib(24)

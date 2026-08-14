@@ -1,0 +1,15 @@
+def identity(x) { return x }
+
+var n = 20000
+
+var sum = 0
+iter var i = 0; i < n; i++ {
+  sum = sum + identity(i)
+}
+
+var sum2 = 0
+iter var i = 0; i < n; i++ {
+  sum2 = sum2 + i
+}
+
+echo 'done ${sum} ${sum2}'

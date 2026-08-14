@@ -1,0 +1,103 @@
+def mk(op) {
+  return op
+}
+
+def f0(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + i
+    i = i + 1
+  }
+  return s
+}
+def f1(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + i * 2
+    i = i + 1
+  }
+  return s
+}
+def f2(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + i - 1
+    i = i + 1
+  }
+  return s
+}
+def f3(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + i % 7
+    i = i + 1
+  }
+  return s
+}
+def f4(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + i / 3
+    i = i + 1
+  }
+  return s
+}
+def f5(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + (i + 1) * (i + 2)
+    i = i + 1
+  }
+  return s
+}
+def f6(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s - i
+    i = i + 1
+  }
+  return s
+}
+def f7(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + i * i
+    i = i + 1
+  }
+  return s
+}
+def f8(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + (i & 15)
+    i = i + 1
+  }
+  return s
+}
+def f9(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + (i | 1)
+    i = i + 1
+  }
+  return s
+}
+
+var total = 0
+var round = 0
+while round < 3000 {
+  total = total + f0(30) + f1(30) + f2(30) + f3(30) + f4(30)
+  total = total + f5(30) + f6(30) + f7(30) + f8(30) + f9(30)
+  round = round + 1
+}
+echo total

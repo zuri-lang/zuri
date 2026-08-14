@@ -1,0 +1,59 @@
+# Non-parameter ("beyond function parameters") speculation stress test.
+# `box.v`'s GetField result feeds directly into arithmetic -- if the
+# mid-function guard-and-fork (planted right after the GetField in the
+# specialized body, see FuncCompiler::emit_speculative_guard) is
+# missing or wrong, a non-numeric `box.v` would either crash (raw
+# float-bitcast of a string's tagged bits) or silently produce a wrong
+# (non-concatenated) result instead of falling back to the general
+# body's own correct string-concat codegen.
+
+class Box {
+  @new(v) {
+    self.v = v
+  }
+}
+
+# Direct, single-use case: warm up numeric, then hit with a string,
+# with NO interpreted-visible is_number() gate at all -- the risky
+# fast-path Add genuinely executes on a non-numeric operand if the
+# guard-and-fork doesn't correctly intercept it first.
+def double_field(box) {
+  var y = box.v
+  return y + y
+}
+
+var i = 0
+while i < 300000 {
+  double_field(Box(i))
+  i = i + 1
+}
+echo double_field(Box(21))
+echo double_field(Box("ab"))
+
+# Loop-carried case: the field's proven-numeric status (from the new
+# mid-function speculation) is what lets the LOOP's own arithmetic take
+# the fast path at all -- `sum` starts at a provable constant (0), so
+# the "taken" branch's `sum = sum + y` is the ONLY place `y`'s own
+# proof matters; without it, the whole if-merge (and therefore the
+# loop after it) stays on the general/guarded path.
+def sum_field(box, n) {
+  var y = box.v
+  var sum = 0
+  if is_number(y) {
+    sum = sum + y
+  }
+  var i = 0
+  while i < n {
+    sum = sum + 1
+    i = i + 1
+  }
+  return sum
+}
+
+var j = 0
+while j < 300000 {
+  sum_field(Box(j), 50)
+  j = j + 1
+}
+echo sum_field(Box(3), 100000)
+echo sum_field(Box("solo"), 100000)

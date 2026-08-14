@@ -1,0 +1,12 @@
+var t = 1n
+var i = 0
+while i < 100000 {
+  t = t * 3n
+  t = t + 7n
+  var x = t.to_number()
+  i += 1
+  if i % 1000 == 0 {
+    t = 1n
+  }
+}
+echo 'done ${i}'

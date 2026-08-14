@@ -1,0 +1,18 @@
+def identity(x) {
+  return x
+}
+
+def run(n) {
+  const marker = "hello"
+  var i = 0
+  iter ; i < n; i += 1 {
+    var m = identity(marker)
+    if (m != "hello") {
+      echo 'BUG at i=${i}: got ${m}'
+      return
+    }
+  }
+  echo 'ok, checked ${n} iterations'
+}
+
+run(50000)

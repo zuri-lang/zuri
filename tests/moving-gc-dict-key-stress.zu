@@ -1,0 +1,44 @@
+# Stress test for the moving GC's DictStorage::reindex fix.
+#
+# DictKey hashes reference-type values (lists, instances, closures,
+# ...) by raw pointer bits. If a key object gets relocated by a minor
+# collection and the dict's `index` hashmap isn't rebuilt afterward,
+# the key becomes unfindable under its NEW hash while the OLD bucket
+# still points at a slot that's since been reset/reused -- either a
+# silent lookup failure or, worse, a wrong-entry collision.
+#
+# Uses lists as keys (list identity, not content, is what dict lookup
+# keys off per Value::equals' reference-type semantics), builds many
+# entries across enough allocation to force several minor collections
+# mid-test, and verifies every key is STILL correctly retrievable
+# (and distinguishable from every other key) afterward.
+
+class Box {
+  @new(n) {
+    self.n = n
+  }
+}
+
+var d = {}
+var keys = []
+var n = 20000
+
+iter var i = 0; i < n; i++ {
+  var k = Box(i)
+  keys.append(k)
+  d[k] = i * 2
+  # Churn extra young garbage between insertions to force minor
+  # collections to actually run mid-test, not just at the end.
+  var junk = [i, i + 1, i + 2, "junk" + i.to_string()]
+}
+
+var errors = 0
+iter var i = 0; i < n; i++ {
+  var k = keys[i]
+  if d[k] != i * 2 {
+    errors += 1
+  }
+}
+
+echo 'errors: ${errors}'
+echo 'dict size: ${d.length()}'

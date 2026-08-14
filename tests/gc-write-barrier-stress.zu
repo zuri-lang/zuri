@@ -1,0 +1,135 @@
+# Adversarial write-barrier stress test for the generational GC.
+#
+# Strategy: allocate a handful of long-lived containers (instance,
+# list, dict, closure-captured-variable, class static), churn enough
+# throwaway garbage between each mutation to force many minor
+# collections (and eventually promote the long-lived containers to
+# the old generation), then repeatedly overwrite each container with
+# a freshly-allocated young object and verify the read-back value is
+# correct immediately after -- and again after further GC pressure.
+#
+# If any write-barrier call site were missing, a young object stored
+# into an already-promoted (old) container would eventually get
+# collected out from under it by a minor collection while still
+# referenced only from that container, producing a wrong (stale, nil,
+# or corrupted) read-back or an outright crash.
+
+class Box {
+  var v
+
+  @new(x) {
+    self.v = x
+  }
+}
+
+class Holder {
+  var item
+  static var counter = 0
+
+  @new() {
+    self.item = nil
+  }
+
+  set_item(x) {
+    self.item = x
+  }
+
+  get_item() {
+    return self.item
+  }
+}
+
+def mutate_field(h, i) {
+  h.set_item(Box(i))
+  return h.get_item().v
+}
+
+def mutate_list(lst, i) {
+  lst[0] = Box(i)
+  return lst[0].v
+}
+
+def mutate_dict(d, i) {
+  d['k'] = Box(i)
+  return d['k'].v
+}
+
+def make_pair() {
+  var captured = Box(-1)
+  def getter() {
+    return captured.v
+  }
+  def setter(x) {
+    captured = Box(x)
+  }
+  return [getter, setter]
+}
+
+var holder = Holder()
+var lst = [nil]
+var d = {'k': nil}
+var pair = make_pair()
+var getter = pair[0]
+var setter = pair[1]
+
+var i = 0
+var errors = 0
+var n = 15000
+
+while i < n {
+  # Churn throwaway garbage between mutations -- forces many minor
+  # (and, periodically, major) collections over the course of the
+  # loop, and is what eventually promotes `holder`/`lst`/`d`/the
+  # closure's captured `Box`/`Holder`'s class object into the old
+  # generation.
+  var junk = [Box(i), Box(i + 1), Box(i + 2), Box(i + 3)]
+  if junk[0].v != i {
+    errors += 1
+  }
+
+  if mutate_field(holder, i) != i {
+    errors += 1
+  }
+  if mutate_list(lst, i) != i {
+    errors += 1
+  }
+  if mutate_dict(d, i) != i {
+    errors += 1
+  }
+
+  setter(i)
+  if getter() != i {
+    errors += 1
+  }
+
+  Holder.counter = i
+  if Holder.counter != i {
+    errors += 1
+  }
+
+  # Re-verify all five AFTER further allocation pressure within the
+  # same iteration, to catch a value that was correct right after the
+  # write but got collected before the next minor GC's mark phase
+  # properly saw it as reachable.
+  var more_junk = [Box(i * 2), [Box(i), Box(i)], {'a': Box(i)}]
+  if holder.get_item().v != i {
+    errors += 1
+  }
+  if lst[0].v != i {
+    errors += 1
+  }
+  if d['k'].v != i {
+    errors += 1
+  }
+  if getter() != i {
+    errors += 1
+  }
+  if Holder.counter != i {
+    errors += 1
+  }
+
+  i += 1
+}
+
+echo 'errors: ${errors}'
+echo 'final: ${holder.get_item().v} ${lst[0].v} ${d["k"].v} ${getter()} ${Holder.counter}'

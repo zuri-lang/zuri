@@ -1,0 +1,77 @@
+# Stress test for the moving GC's "every reference must be found and
+# rewritten together, not just one local copy" requirement.
+#
+# The SAME closure gets stored in several DIFFERENT places at once (a
+# list, an instance field, a class static, and a local variable) --
+# every one of those is a SEPARATE `Value` copy of the same pointer.
+# If a minor collection (or `VM::ensure_stable_for_compiled_entry`'s
+# JIT-entry promotion) relocates the underlying object but only fixes
+# up ONE of those copies, the others would read a stale/neutralized
+# slot the next time they're called through.
+#
+# Calls the SAME closure repeatedly through EVERY one of those
+# references, interleaved with enough allocation churn to force
+# several minor collections along the way, and checks every call
+# path still produces the correct result throughout.
+
+class Holder {
+  @new(f) {
+    self.fn = f
+  }
+}
+
+class StaticHolder {
+  static var held = nil
+}
+
+def makeCounter() {
+  var count = 0
+  def inc() {
+    count = count + 1
+    return count
+  }
+  return inc
+}
+
+var counter = makeCounter()
+var list_ref = [counter]
+var holder = Holder(counter)
+StaticHolder.held = counter
+var local_ref = counter
+
+var n = 30000
+var errors = 0
+var expected = 0
+
+iter var i = 0; i < n; i++ {
+  # Churn young garbage to force minor collections mid-run.
+  var junk = [i, "x" + i.to_string(), [i, i]]
+
+  var which = i % 4
+  var result = 0
+  if which == 0 {
+    result = counter()
+  } else if which == 1 {
+    result = list_ref[0]()
+  } else if which == 2 {
+    result = holder.fn()
+  } else {
+    result = local_ref()
+  }
+  expected += 1
+  if result != expected {
+    errors += 1
+  }
+}
+
+# Also verify StaticHolder's OWN reference is still consistent with
+# everything else (never called through directly above, only checked
+# for identity/consistency at the end).
+var final_via_static = StaticHolder.held()
+expected += 1
+if final_via_static != expected {
+  errors += 1
+}
+
+echo 'errors: ${errors}'
+echo 'final count: ${expected}'

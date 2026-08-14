@@ -1,0 +1,35 @@
+# Adversarial stress test for real deoptimization's bailout counter.
+#
+# `get_val`'s return value alternates between a number and a string on
+# EVERY call -- the worst case for a speculative guard that bets on a
+# single type: whichever type the guess locks onto, the OPPOSITE
+# happens on (about) every other invocation once compiled. Before the
+# MAX_DEOPTS_BEFORE_BAILOUT fix, each mismatch inside `run`'s hot loop
+# would deoptimize by recursing into a NEW nested interpreter call
+# from inside invoke_compiled/zuri_jit_call_finish -- one native stack
+# frame per loop iteration, with no bound, guaranteed to blow the
+# stack well before this loop's half-million iterations complete. The
+# fix should make this fall back to pure interpretation permanently
+# after a small, bounded number of deopts, and finish correctly.
+
+def get_val(i) {
+  if i % 2 == 0 {
+    return i
+  }
+  return 's'
+}
+
+def run(n) {
+  var count = 0
+  var i = 0
+  while i < n {
+    var v = get_val(i)
+    if is_number(v) {
+      count = count + 1
+    }
+    i = i + 1
+  }
+  return count
+}
+
+echo run(500000)

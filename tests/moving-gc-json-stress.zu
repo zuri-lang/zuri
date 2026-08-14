@@ -1,0 +1,32 @@
+import json
+
+class Box {
+  @new(x) {
+    self.v = x
+  }
+  @to_json() {
+    return {'v': self.v}
+  }
+}
+
+var n = 6000
+var items = []
+iter var i = 0; i < n; i++ {
+  items.append(Box(i))
+}
+
+var d = {}
+iter var i = 0; i < n; i++ {
+  d['k' + i.to_string()] = Box(i)
+}
+
+var encoded_list = json.encode(items)
+var encoded_dict = json.encode(d)
+
+var decoded_list = json.decode(encoded_list)
+echo decoded_list.length()
+echo decoded_list[0]['v']
+echo decoded_list[n - 1]['v']
+
+var decoded_dict = json.decode(encoded_dict)
+echo decoded_dict.length()

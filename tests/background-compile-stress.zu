@@ -1,0 +1,68 @@
+# Several distinct hot functions warming up around the same time
+# (several concurrent pending background compiles), each doing real
+# work across enough iterations to make it very likely the compile
+# finishes and gets installed mid-run, not just once at the very end.
+# Interleaved with heavy allocation (forcing real GC passes) so any
+# pinning bug in `pending_jit_compiles` would show up as either a
+# crash/corruption or a wrong final value.
+
+class Node {
+  @new(v, next) {
+    self.v = v
+    self.next = next
+  }
+}
+
+def alloc_garbage(n) {
+  var head = nil
+  var i = 0
+  while i < n {
+    head = Node(i, head)
+    i = i + 1
+  }
+  return head
+}
+
+def fA(n) {
+  if n < 2 { return n }
+  return fA(n - 1) + fA(n - 2)
+}
+
+def fB(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = s + i * 2 - 1
+    i = i + 1
+  }
+  return s
+}
+
+def fC(n) {
+  var s = 0.0
+  var i = 0
+  while i < n {
+    s = s + (i * 3) % 7
+    i = i + 1
+  }
+  return s
+}
+
+var totalA = 0
+var totalB = 0
+var totalC = 0
+var round = 0
+while round < 400 {
+  totalA = totalA + fA(12)
+  totalB = totalB + fB(500)
+  totalC = totalC + fC(500)
+  # Force allocation/GC pressure right in the middle of warm-up.
+  if round % 20 == 0 {
+    alloc_garbage(3000)
+  }
+  round = round + 1
+}
+
+echo totalA
+echo totalB
+echo totalC

@@ -1,0 +1,58 @@
+# f gets warmed up and JIT-compiled while called ONLY with numbers,
+# so try_compile's one-shot sample should bet on `n` being numeric and
+# build a specialized body for it. Then we call it with a STRING,
+# which the entry guard must catch and route to the general body --
+# if it didn't, the specialized body would blindly float-bitcast the
+# string's tagged Value bits and produce garbage (or crash).
+def f(n) {
+  return n + n
+}
+
+var i = 0
+while i < 200 {
+  f(i)
+  i = i + 1
+}
+
+echo f(21)
+echo f("ab")
+echo f(3.5)
+
+# Same shape but through a recursive numeric-heavy function (closer to
+# fib/binary-tree), then one polymorphic call after it's compiled.
+def g(n) {
+  if n < 2 {
+    return n
+  }
+  return g(n - 1) + g(n - 2)
+}
+
+var j = 0
+while j < 50 {
+  g(10)
+  j = j + 1
+}
+echo g(15)
+
+class Box {
+  @new(v) {
+    self.v = v
+  }
+  @add(other) {
+    return Box(self.v + other.v)
+  }
+}
+
+# h is warmed up with numeric args, then later called with an object
+# that overloads +  -- must still dispatch to the operator override,
+# not treat it as a number.
+def h(a, b) {
+  return a + b
+}
+var k = 0
+while k < 200 {
+  h(k, k)
+  k = k + 1
+}
+echo h(4, 5)
+echo h(Box(1), Box(2)).v

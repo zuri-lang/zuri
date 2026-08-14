@@ -1,0 +1,25 @@
+class Box {
+  @new(n) {
+    self.n = n
+  }
+}
+
+var d = {}
+var keys = []
+var n = 20000
+
+iter var i = 0; i < n; i++ {
+  var k = Box(i)
+  keys.append(k)
+  d[k] = i * 2
+}
+
+var errors = 0
+iter var i = 0; i < n; i++ {
+  var k = keys[i]
+  if d[k] != i * 2 {
+    errors += 1
+  }
+}
+
+echo 'errors: ${errors}'

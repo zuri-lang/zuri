@@ -1,0 +1,120 @@
+# Stress test for list/dict/range/string/bytes "iterate + call back
+# into Zuri code" natives (each/map/filter/some/every/reduce), which
+# used to capture their items/callback in plain Rust locals that went
+# stale the moment an earlier iteration's own callback invocation
+# triggered a minor collection relocating a not-yet-visited element.
+#
+# Every callback below allocates enough garbage to make a collection
+# during the loop itself likely, not just theoretically possible.
+
+class Box {
+  @new(x) {
+    self.v = x
+  }
+}
+
+var n = 8000
+var errors = 0
+
+# --- list ---
+var lst = []
+iter var i = 0; i < n; i++ {
+  lst.append(Box(i))
+}
+
+var sum = 0
+lst.each(@(item, i) {
+  var junk = [Box(i), Box(i + 1), "x" + i.to_string()]
+  sum = sum + item.v
+})
+if sum != (n * (n - 1)) / 2 {
+  errors += 1
+}
+
+var mapped = lst.map(@(item, i) {
+  var junk = [Box(i), {'a': Box(i)}]
+  return item.v * 2
+})
+iter var i = 0; i < n; i++ {
+  if mapped[i] != i * 2 {
+    errors += 1
+  }
+}
+
+var filtered = lst.filter(@(item, i) {
+  var junk = Box(i)
+  return item.v % 2 == 0
+})
+if filtered.length() != n / 2 {
+  errors += 1
+}
+
+var anyOdd = lst.some(@(item, i) {
+  var junk = Box(i)
+  return item.v % 2 == 1
+})
+if !anyOdd {
+  errors += 1
+}
+
+var allNonNeg = lst.every(@(item, i) {
+  var junk = Box(i)
+  return item.v >= 0
+})
+if !allNonNeg {
+  errors += 1
+}
+
+var reduced = lst.reduce(@(acc, item, i, l) {
+  var junk = Box(i)
+  return acc + item.v
+}, 0)
+if reduced != (n * (n - 1)) / 2 {
+  errors += 1
+}
+
+# --- dict ---
+var d = {}
+iter var i = 0; i < n; i++ {
+  d['k' + i.to_string()] = Box(i)
+}
+
+var dsum = 0
+d.each(@(v, k) {
+  var junk = [Box(1), Box(2)]
+  dsum = dsum + v.v
+})
+if dsum != (n * (n - 1)) / 2 {
+  errors += 1
+}
+
+var dfiltered = d.filter(@(v, k) {
+  var junk = Box(v.v)
+  return v.v % 2 == 0
+})
+if dfiltered.length() != n / 2 {
+  errors += 1
+}
+
+# --- range ---
+var rsum = 0
+(0..n).loop(@(i) {
+  var junk = Box(i)
+  rsum = rsum + i
+})
+if rsum != (n * (n - 1)) / 2 {
+  errors += 1
+}
+
+# --- string ---
+var s = "abcdefghij" * 500
+var scount = 0
+s.each(@(c, i) {
+  var junk = Box(i)
+  scount += 1
+})
+if scount != s.length() {
+  errors += 1
+}
+
+echo 'errors: ${errors}'

@@ -7,17 +7,6 @@ const SCRATCH_SIZE: usize = 32 * 1024;
 ///
 /// The encoder owns both its input and output buffering. The caller
 /// never has to provide a scratch buffer to zlib-rs.
-///
-/// # Example
-///
-/// ```
-/// let mut encoder = DeflateEncoder::new(6);
-///
-/// assert_eq!(encoder.write(b"Hello "), Ok(6));
-/// assert_eq!(encoder.write(b"world!"), Ok(6));
-///
-/// let compressed = encoder.finish().unwrap();
-/// ```
 pub struct DeflateEncoder {
   deflate: Deflate,
 

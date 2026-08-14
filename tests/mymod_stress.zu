@@ -1,0 +1,20 @@
+class Box {
+  @new(x) {
+    self.v = x
+  }
+}
+
+# Allocate enough garbage during this module's OWN top-level execution
+# to force a minor collection while this module's own object is still
+# very likely to be Young -- exactly the window
+# VM::modules.rs::load_from_candidate's fix targets.
+var junk = []
+iter var i = 0; i < 20000; i++ {
+  junk.append(Box(i))
+}
+
+var NAME = "mymod_stress"
+
+def get_value() {
+  return 42
+}

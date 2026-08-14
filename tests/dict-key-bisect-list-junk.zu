@@ -1,0 +1,18 @@
+class Box {
+  @new(n) {
+    self.n = n
+  }
+}
+
+var d = {}
+var keys = []
+var n = 20000
+
+iter var i = 0; i < n; i++ {
+  var k = Box(i)
+  keys.append(k)
+  d[k] = i * 2
+  var junk = [i, i + 1, i + 2]
+}
+
+echo 'done'

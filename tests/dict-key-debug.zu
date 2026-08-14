@@ -1,0 +1,21 @@
+class Box {
+  @new(n) {
+    self.n = n
+  }
+}
+
+var d = {}
+var keys = []
+var n = 20000
+
+iter var i = 0; i < n; i++ {
+  if i % 1000 == 0 {
+    echo 'i=${i} n=${n}'
+  }
+  var k = Box(i)
+  keys.append(k)
+  d[k] = i * 2
+  var junk = [i, i + 1, i + 2, "junk" + i.to_string()]
+}
+
+echo 'done'

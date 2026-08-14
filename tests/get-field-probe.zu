@@ -1,0 +1,58 @@
+class Point {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  greet() {
+    return 'point'
+  }
+}
+
+class Point3D {
+  @new(x, y, z) {
+    self.x = x
+    self.y = y
+    self.z = z
+  }
+}
+
+def read_x(p) {
+  return p.x
+}
+
+def read_method(p) {
+  return p.greet
+}
+
+var p2 = Point(1, 2)
+var p3 = Point3D(10, 20, 30)
+
+var sum = 0
+iter var i = 0; i < 50000; i++ {
+  # Monomorphic for most of the loop, then polymorphic at the tail to
+  # exercise the class-mismatch fallback after the cache is warm.
+  if i < 40000 {
+    sum += read_x(p2)
+  } else {
+    sum += read_x(p2)
+    sum += read_x(p3)
+  }
+}
+
+echo sum
+echo read_x(p2)
+echo read_x(p3)
+echo (read_method(p2) != nil)
+
+# Undefined field should still raise correctly through the fast path's
+# miss fallback.
+class Empty {
+  @new() {}
+}
+var e = Empty()
+catch {
+  echo e.nope
+} as err {
+  echo 'caught: ${err.message}'
+}

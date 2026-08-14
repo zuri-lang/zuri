@@ -1,0 +1,53 @@
+class Box {
+  @new() {
+    self.x = 0
+    self.y = 0
+  }
+}
+
+class Box3D {
+  @new() {
+    self.x = 0
+    self.y = 0
+    self.z = 0
+  }
+}
+
+def write_x(b, v) {
+  b.x = v
+}
+
+var b2 = Box()
+var b3 = Box3D()
+
+# Force b2/b3 old enough to promote before the hot loop below, so the
+# write barrier's "generation == Old" branch is genuinely exercised
+# (not just the young-object no-op case).
+iter var warm = 0; warm < 50000; warm++ {
+  var junk = [warm, warm + 1, warm + 2]
+}
+
+# Hot loop: repeatedly write a FRESH (young) object into b2's own field
+# -- this is exactly the pattern write_barrier exists for (an old
+# container's field pointing at a young object must be found by the
+# next minor collection via the remembered set, not missed).
+var last_len = 0
+iter var i = 0; i < 60000; i++ {
+  var fresh = [i, i * 2, i * 3]
+  if i < 50000 {
+    write_x(b2, fresh)
+  } else {
+    write_x(b2, fresh)
+    write_x(b3, fresh)
+  }
+  # Force enough allocation to trigger real minor collections while
+  # b2.x/b3.x hold a live reference to a young object.
+  var churn = [i, i, i, i, i, i, i, i]
+  last_len = churn.length()
+}
+
+echo b2.x
+echo b2.x.length()
+echo b2.x[0]
+echo b3.x[0]
+echo last_len

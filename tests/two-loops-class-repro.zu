@@ -1,0 +1,20 @@
+class Box {
+  @new(n) {
+    self.n = n
+  }
+}
+
+var n = 20000
+var keys = []
+
+iter var i = 0; i < n; i++ {
+  var k = Box(i)
+  keys.append(k)
+}
+
+var sum2 = 0
+iter var i = 0; i < n; i++ {
+  sum2 = sum2 + i
+}
+
+echo 'done ${sum2}'

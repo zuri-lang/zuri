@@ -1,0 +1,17 @@
+class Point {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+}
+
+var kept = nil
+iter var i = 0; i < 20000; i++ {
+  var p = Point(i, i * 2)
+  if i % 5000 == 0 {
+    kept = p
+  }
+}
+
+echo kept.x
+echo kept.y

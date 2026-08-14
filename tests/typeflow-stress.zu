@@ -1,0 +1,63 @@
+class Vec2 {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+  @add(other) {
+    return Vec2(self.x + other.x, self.y + other.y)
+  }
+}
+
+# Pure-numeric loop -- every register here should get its guard elided.
+var sum = 0
+var i = 0
+while i < 200000 {
+  sum = sum + i * 2 - 1
+  i = i + 1
+}
+echo sum
+
+# String concatenation via + -- must still hit the slow path correctly.
+var s = "a"
+var j = 0
+while j < 5 {
+  s = s + "b"
+  j = j + 1
+}
+echo s
+
+# Operator-overloaded objects via + -- must still hit the slow path.
+var v = Vec2(0, 0)
+var k = 0
+while k < 5 {
+  v = v + Vec2(1, 2)
+  k = k + 1
+}
+echo v.x
+echo v.y
+
+# Mixed: same register reused across types (numeric, then not) --
+# must never let a proof for the numeric use leak into the non-numeric one.
+var mixed = 10
+mixed = mixed + 5
+echo mixed
+mixed = "now a string"
+echo mixed
+
+# Comparisons feeding a proven-numeric branch.
+var n = 0
+var evens = 0
+while n < 1000 {
+  if n % 2 == 0 {
+    evens = evens + 1
+  }
+  n = n + 1
+}
+echo evens
+
+# List/number mixed via * (list repeat) on a register also used numerically.
+var rep = [1, 2] * 3
+echo rep
+var num = 3
+num = num * 2
+echo num

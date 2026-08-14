@@ -1,0 +1,25 @@
+class Foo {
+  @new() {}
+}
+
+def check(label, v) {
+  if v {
+    echo '${label}: truthy'
+  } else {
+    echo '${label}: falsey'
+  }
+}
+
+iter var i = 0; i < 300; i++ {
+  check('empty_string', '')
+  check('nonempty_string', 'x')
+  check('empty_bytes', bytes(0))
+  check('empty_list', [])
+  check('nonempty_list', [1])
+  check('empty_dict', {})
+  check('instance', Foo())
+  check('zero_bigint', 0n)
+  check('pos_bigint', 5n)
+  check('neg_bigint', -5n)
+  check('range', 1..5)
+}

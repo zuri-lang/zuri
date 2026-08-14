@@ -1,0 +1,14 @@
+# Stress test for VM::modules.rs::load_from_candidate's module_val
+# staleness fix: importing a module whose OWN top-level body allocates
+# enough to promote the module object itself mid-load, then verifying
+# the returned/cached module handle is still correct (not a dangling
+# reference to a relocated-and-neutralized nursery slot).
+
+import .mymod_stress
+
+var total = 0
+iter var i = 0; i < 10; i++ {
+  total += mymod_stress.get_value()
+}
+echo total
+echo mymod_stress.NAME
