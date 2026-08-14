@@ -129,6 +129,55 @@ impl RegSet {
     }
     changed
   }
+
+  /// Unions `self` with `other`, returning whether anything actually
+  /// changed -- the merge operator `liveness`'s "may" fixed point uses
+  /// (a register is live if it's needed on ANY path forward, unlike
+  /// `and_assign`'s "must hold on every path" used by the numeric-facts
+  /// analysis above).
+  fn or_assign(&mut self, other: &RegSet) -> bool {
+    let mut changed = false;
+    for (a, b) in self.words.iter_mut().zip(other.words.iter()) {
+      let merged = *a | *b;
+      if merged != *a {
+        changed = true;
+      }
+      *a = merged;
+    }
+    changed
+  }
+
+  /// Sets every register in `start..start+count` (saturating at the
+  /// representable range) -- used for instructions whose operands are a
+  /// whole contiguous register WINDOW rather than a fixed handful of
+  /// named fields (`Call`'s argument window, `MakeList`/`MakeDict`'s
+  /// element run, `Invoke`'s receiver+self+argument window, ...).
+  fn set_range(&mut self, start: u8, count: usize) {
+    let mut r = start as usize;
+    for _ in 0..count {
+      if r > u8::MAX as usize {
+        break;
+      }
+      self.set(r as u8, true);
+      r += 1;
+    }
+  }
+
+  /// Every register index currently set, low to high -- what a caller
+  /// that needs to actually enumerate (not just test) the live set at a
+  /// program point iterates over (e.g. `jit::codegen`'s spill-site
+  /// emission, driven by exactly this at every sync point).
+  pub fn iter_set(&self) -> impl Iterator<Item = u8> + '_ {
+    self.words.iter().enumerate().flat_map(|(word_idx, &w)| {
+      (0..64u32).filter_map(move |bit| {
+        if (w >> bit) & 1 != 0 {
+          Some((word_idx * 64 + bit as usize) as u8)
+        } else {
+          None
+        }
+      })
+    })
+  }
 }
 
 /// The result of analyzing one function: `entry[ip]` is exactly the
@@ -339,6 +388,251 @@ pub fn analyze(
   TypeFacts { entry }
 }
 
+//-----------------------------------------------------------------------------------
+// Reference classification
+//-----------------------------------------------------------------------------------
+
+/// The result of analyzing one function: `entry[ip]` is exactly the set
+/// of registers PROVEN to never hold a GC-managed reference (a String,
+/// BigInt, List, Dict, Func, Closure, Class, Instance, Range, Module,
+/// ...) on every path reaching bytecode position `ip` -- i.e. always
+/// one of the three non-reference NaN-boxed types (number, bool, nil)
+/// there. This is a "must" analysis with the exact same shape as
+/// `TypeFacts` (optimistic `full()` seed at every non-entry block,
+/// narrowed by intersection at merges) for the same reason: a register
+/// only counts as proven non-reference if EVERY path agrees, and a
+/// register never proven here is conservatively treated as "might be a
+/// reference" -- the safe direction to be wrong in, since this feeds a
+/// GC safepoint's decision about which registers need to be spilled and
+/// scanned as roots (see the JIT SSA plan's Stage 4). Getting this
+/// backwards (falsely proving "never a reference") would be a genuine
+/// memory-safety bug, not just a missed optimization, so unlike
+/// `TypeFacts`'s `speculative_regs` hook, THIS analysis has no
+/// profiling-based speculation escape hatch at all -- every fact here
+/// is a real proof or nothing.
+pub struct RefFacts {
+  entry: Vec<RegSet>,
+}
+
+impl RefFacts {
+  #[inline]
+  pub fn is_never_ref(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+}
+
+/// Runs the reference-classification analysis, given `type_facts` (the
+/// result of `analyze` on the SAME function) as an auxiliary input.
+/// Several instructions here (`Add`, `Sub`, `Mul`, `Lt`, `BitAnd`, ...)
+/// can each produce EITHER a plain number OR a genuine reference at
+/// runtime depending on their OPERANDS' types -- e.g. `Add` allocates a
+/// new `BigInt`/`String`/`List` when its operands call for one (see
+/// `VM::binary_add_values`), and `Lt`/`Le`/`Gt`/`Ge` fall through to a
+/// user-defined `try_operator_override` (which can return literally
+/// anything) whenever their operands aren't both provably numeric --
+/// but the moment BOTH operands are proven numeric by `type_facts`, the
+/// interpreter's own plain-number fast path is the ONLY branch that can
+/// possibly fire (every other branch requires an operand that isn't a
+/// number), so the result is provably a plain number too. This is
+/// exactly why `type_facts` -- not a redundant, independently-computed
+/// copy of the same fact -- is threaded in as a parameter: reusing the
+/// SAME proof `codegen` already relies on for guard elision keeps the
+/// two analyses from ever silently drifting apart.
+///
+/// `Eq`/`Neq`/`EqImm`/`NeqImm` are the one case that's unconditionally
+/// non-reference regardless of operand types at all: they call
+/// `Value::equals` directly with no operator-override hook whatsoever
+/// (unlike every OTHER comparison), so their result is provably a bool
+/// no matter what `a`/`b` are.
+pub fn classify_refs(proto: &ObjFunction, type_facts: &TypeFacts) -> RefFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let preds = build_predecessors(proto);
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| ref_transfer(&entry[ip], ip, &code[ip], proto, type_facts))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      // Unreachable code -- vacuously "everything proven" is safe, same
+      // reasoning as `analyze`'s identical case.
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = ref_transfer(&entry[ip], ip, &code[ip], proto, type_facts);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  RefFacts { entry }
+}
+
+/// What a single bytecode instruction proves/invalidates about
+/// register reference-freedom, given what was proven on entry to it
+/// (`in_set`) and the numeric proof already established for the SAME
+/// `ip` by `analyze` (`type_facts`). See `classify_refs`'s own docs for
+/// why arithmetic/comparison instructions consult `type_facts` rather
+/// than re-deriving numeric-ness independently, and for the verified,
+/// source-checked justification behind every branch below -- this is
+/// NOT inferred from instruction names, it was confirmed against each
+/// instruction's actual `VM` handler in `vm.rs`.
+fn ref_transfer(
+  in_set: &RegSet,
+  ip: usize,
+  instr: &Instr,
+  proto: &ObjFunction,
+  type_facts: &TypeFacts,
+) -> RegSet {
+  let mut out = in_set.clone();
+  let both_numeric = |a: u8, b: u8| type_facts.is_numeric(ip, a) && type_facts.is_numeric(ip, b);
+
+  match *instr {
+    // Never a reference, unconditionally.
+    Instr::LoadNil { dst } | Instr::LoadBool { dst, .. } | Instr::Not { dst, .. } => {
+      out.set(dst, true)
+    },
+    // `Eq`/`Neq` call `Value::equals` directly -- no operator-override
+    // hook at all, unlike every other comparison -- so the result is
+    // provably a bool regardless of operand types.
+    Instr::Eq { dst, .. }
+    | Instr::Neq { dst, .. }
+    | Instr::EqImm { dst, .. }
+    | Instr::NeqImm { dst, .. } => out.set(dst, true),
+
+    // A compile-time constant's own reference-ness is a fixed, static
+    // fact -- `!is_obj()` covers all three non-reference NaN-boxed
+    // types at once (number, bool, nil), unlike `transfer`'s own
+    // `is_number()`-only check for its narrower numeric-provenance
+    // purpose.
+    Instr::LoadConst { dst, const_idx } => {
+      let is_obj = proto.chunk.constants[const_idx as usize].is_obj();
+      out.set(dst, !is_obj);
+    },
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+
+    // Provably non-reference ONLY when both operands are provably
+    // numeric -- that's exactly what forces the interpreter down its
+    // plain-number fast path, bypassing every bigint/string/list/
+    // operator-override branch that could otherwise produce a
+    // reference. See `VM::binary_numeric`/`binary_add_values`/
+    // `binary_mult`/`bitwise_numeric`/`compare`.
+    Instr::Add { dst, a, b }
+    | Instr::Sub { dst, a, b }
+    | Instr::Mul { dst, a, b }
+    | Instr::Div { dst, a, b }
+    | Instr::Pow { dst, a, b }
+    | Instr::Floor { dst, a, b }
+    | Instr::Mod { dst, a, b }
+    | Instr::BitAnd { dst, a, b }
+    | Instr::BitOr { dst, a, b }
+    | Instr::BitXor { dst, a, b }
+    | Instr::BitShl { dst, a, b }
+    | Instr::BitShr { dst, a, b }
+    | Instr::BitUshr { dst, a, b }
+    | Instr::Lt { dst, a, b }
+    | Instr::Le { dst, a, b }
+    | Instr::Gt { dst, a, b }
+    | Instr::Ge { dst, a, b } => out.set(dst, both_numeric(a, b)),
+    Instr::Neg { dst, src } | Instr::BitNot { dst, src } => {
+      out.set(dst, type_facts.is_numeric(ip, src))
+    },
+    // The immediate operand is always a numeric constant by
+    // construction (same fact `analyze`'s own `AddImm`/`SubImm`/
+    // `MulImm` case relies on) -- only `a` needs checking.
+    Instr::AddImm { dst, a, .. }
+    | Instr::SubImm { dst, a, .. }
+    | Instr::MulImm { dst, a, .. }
+    | Instr::LtImm { dst, a, .. }
+    | Instr::LeImm { dst, a, .. }
+    | Instr::GtImm { dst, a, .. }
+    | Instr::GeImm { dst, a, .. } => out.set(dst, type_facts.is_numeric(ip, a)),
+
+    // Always a reference, unconditionally, on every successful path --
+    // see `classify_refs`'s own docs / this pass's verification notes
+    // for the source citations behind each of these.
+    Instr::Concat { dst, .. }
+    | Instr::MakeRange { dst, .. }
+    | Instr::MakeList { dst, .. }
+    | Instr::MakeDict { dst, .. }
+    | Instr::MakeClass { dst, .. }
+    | Instr::Closure { dst, .. }
+    | Instr::Import { dst, .. }
+    | Instr::MakePromoted { dst, .. }
+    | Instr::GetSlice { dst, .. } => out.set(dst, false),
+
+    // Never staticly provable either way -- depends on arbitrary
+    // runtime container contents, field values, or user/native code.
+    Instr::Call { dst, .. }
+    | Instr::GetGlobal { dst, .. }
+    | Instr::GetUpval { dst, .. }
+    | Instr::GetField { dst, .. }
+    | Instr::Invoke { dst, .. }
+    | Instr::InvokeSuper { dst, .. }
+    | Instr::CallSuperCtor { dst, .. }
+    | Instr::GetIndex { dst, .. } => out.set(dst, false),
+
+    // No destination register written at all -- facts pass through
+    // unchanged, same instruction list `transfer` uses for the same
+    // reason.
+    Instr::SetGlobal { .. }
+    | Instr::AssignGlobal { .. }
+    | Instr::SetUpval { .. }
+    | Instr::CloseUpvalues { .. }
+    | Instr::DeclareField { .. }
+    | Instr::SetFieldInit { .. }
+    | Instr::SetMethod { .. }
+    | Instr::DeclareStatic { .. }
+    | Instr::FinalizeClass { .. }
+    | Instr::SetField { .. }
+    | Instr::ImportAll { .. }
+    | Instr::SetIndex { .. }
+    | Instr::UsingJump { .. }
+    | Instr::Print { .. }
+    | Instr::Return { .. }
+    | Instr::Jmp { .. }
+    | Instr::JmpIfFalse { .. }
+    | Instr::JmpIfTrue { .. } => {},
+
+    Instr::Raise { .. } | Instr::PushCatch { .. } | Instr::PopCatch => {
+      unreachable!("excluded from compilation before this analysis ever runs")
+    },
+  }
+  out
+}
+
 /// What a single bytecode instruction proves/invalidates about
 /// register numeric-ness, given what was proven on entry to it.
 /// `speculative_regs` overrides the "conservative, always unproven"
@@ -497,7 +791,11 @@ pub fn conservative_dst(instr: &Instr) -> Option<u8> {
 /// itself, since callers that only care about "which registers might
 /// need a runtime guard" (`codegen::FuncCompiler::emit_speculative_guard`)
 /// would otherwise have to filter this broader set back down by hand.
-fn any_dst(instr: &Instr) -> Option<u8> {
+/// `pub(crate)` (not just used internally) so `codegen::FuncCompiler::
+/// call_helper` can also use it -- see its own docs on why a helper-
+/// backed instruction's `dst` needs staling even when it's not part of
+/// `live_in` at that `ip`.
+pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
   match *instr {
     Instr::LoadConst { dst, .. }
     | Instr::LoadNil { dst }
@@ -630,4 +928,600 @@ fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
     }
   }
   preds
+}
+
+/// How many DISTINCT bytecode positions can transfer control directly
+/// to `ip`, for every `ip` in `proto`'s own bytecode -- exposed
+/// specifically so `jit::codegen` can identify genuine CFG JOIN points
+/// (a loop header reached by both its forward entry and its own back-
+/// edge; an if/else merge point reached from both arms), which is
+/// exactly where a per-register "is my cached value still trustworthy"
+/// fact CANNOT be soundly tracked by a single linear compile-time walk
+/// -- see `jit::codegen::FuncCompiler::reg_cache`'s own docs for the
+/// full reasoning. A count of 0 or 1 means no real merge happens there
+/// (0 only for genuinely unreachable code, or `ip == 0` itself, whose
+/// only "predecessor" is the function's own entry, handled separately).
+pub fn predecessor_counts(proto: &ObjFunction) -> Vec<usize> {
+  build_predecessors(proto).iter().map(Vec::len).collect()
+}
+
+//-----------------------------------------------------------------------------------
+// Liveness analysis
+//-----------------------------------------------------------------------------------
+
+/// The result of analyzing one function: `live_in[ip]` is exactly the
+/// set of registers that MIGHT still be needed on some path forward
+/// from bytecode position `ip`, INCLUDING whatever `ip`'s own
+/// instruction itself reads -- i.e. precisely the registers that must
+/// hold a correct, up-to-date value in `VM::registers` at the moment
+/// `ip` is about to execute. This is what `jit::codegen` consults at
+/// every sync point (a call, a GC safepoint, a deopt/guard branch, a
+/// stack-map spill site) to decide exactly which cached register
+/// values need a real `store_reg` there -- never "everything," never
+/// "nothing," just what's actually live. See this module's own
+/// `liveness` doc comment for why "live_in" (not "live_out") is the
+/// right quantity for that: it already folds in both what `ip` itself
+/// is about to read AND whatever survives it for later, via the
+/// standard equation `live_in[ip] = uses(ip) ∪ (live_out[ip] -
+/// defs(ip))`.
+pub struct LivenessFacts {
+  live_in: Vec<RegSet>,
+}
+
+impl LivenessFacts {
+  #[inline]
+  pub fn is_live(&self, ip: usize, r: u8) -> bool {
+    self.live_in[ip].get(r)
+  }
+
+  /// Every register live immediately before `ip`'s own instruction
+  /// executes, low to high -- what a spill-site emitter actually
+  /// iterates over to know which cached values need flushing.
+  pub fn live_regs_at(&self, ip: usize) -> impl Iterator<Item = u8> + '_ {
+    self.live_in[ip].iter_set()
+  }
+}
+
+/// Runs a standard backward "may" liveness analysis: a register is live
+/// at a point if there EXISTS some path forward from there on which its
+/// current value is read before being overwritten. Unlike `analyze`'s
+/// numeric-facts pass (a "must" analysis, seeded optimistically full and
+/// narrowed by intersection at merges, since a fact only holds if every
+/// path agrees), this is seeded empty and grows by UNION at merges,
+/// since a register only needs to be considered dead if NO path forward
+/// needs it -- the textbook fixed point for liveness, guaranteed to
+/// converge because each `RegSet` only ever grows and is bounded above
+/// by "every register."
+pub fn liveness(proto: &ObjFunction) -> LivenessFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let preds = build_predecessors(proto);
+
+  let mut live_in: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
+  let mut live_out: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
+
+  let mut worklist: Vec<usize> = (0..code_len).rev().collect();
+  let mut in_worklist = vec![true; code_len];
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_out = RegSet::empty(num_registers);
+    for &s in &successors(ip, &code[ip], proto) {
+      if s < code_len {
+        new_out.or_assign(&live_in[s]);
+      }
+    }
+    let out_changed = new_out != live_out[ip];
+    if out_changed {
+      live_out[ip] = new_out;
+    }
+
+    let mut new_in = live_out[ip].clone();
+    if let Some(d) = any_dst(&code[ip]) {
+      new_in.set(d, false);
+    }
+    mark_uses(&code[ip], proto, &mut new_in);
+
+    if new_in != live_in[ip] {
+      live_in[ip] = new_in;
+      for &p in &preds[ip] {
+        if !in_worklist[p] {
+          in_worklist[p] = true;
+          worklist.push(p);
+        }
+      }
+    }
+  }
+
+  LivenessFacts { live_in }
+}
+
+/// Marks every register `instr` READS (never what it writes -- see
+/// `any_dst` for that) into `set`. Kept as its own pass over the SAME
+/// field layout `transfer`/`any_dst` already match on, rather than
+/// folding into either: `transfer` cares about numeric-ness of a
+/// destination, `any_dst` cares only about the (single, if any)
+/// destination, and this cares only about sources -- three genuinely
+/// different questions asked of the same instruction shape, no single
+/// match arm answers all three without being harder to read than three
+/// smaller ones.
+///
+/// A few instructions read a whole contiguous register WINDOW rather
+/// than a fixed handful of named operands (`Call`'s own callee register
+/// plus its `num_args` argument registers immediately after it;
+/// `Invoke`/`InvokeSuper`/`CallSuperCtor`'s receiver/superclass register
+/// plus the duplicated-`self` and argument registers per their own doc
+/// comments in `vm::chunk::Instr`; `MakeList`/`MakeDict`'s element run)
+/// -- `RegSet::set_range` covers those directly from the instruction's
+/// own `start`/`count`-style fields, needing no extra bookkeeping beyond
+/// what's already encoded in the bytecode.
+///
+/// `Closure` is the one case that reads registers NOT named anywhere in
+/// the instruction itself: it captures its nested prototype's own
+/// `UpvalueDescriptor::Local(n)` entries out of the CURRENTLY EXECUTING
+/// (enclosing) function's registers at the moment the closure is
+/// created (see `ObjFunction::upvalues`'s own doc comment) -- missing
+/// one of these would let a captured local's register be treated as
+/// dead and reused/discarded before the closure actually reads it,
+/// silently capturing the wrong value.
+fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
+  use crate::vm::object::UpvalueDescriptor;
+
+  match *instr {
+    Instr::LoadConst { .. } | Instr::LoadNil { .. } | Instr::LoadBool { .. } => {},
+
+    Instr::Move { src, .. }
+    | Instr::Neg { src, .. }
+    | Instr::BitNot { src, .. }
+    | Instr::Not { src, .. } => set.set(src, true),
+
+    Instr::Add { a, b, .. }
+    | Instr::Sub { a, b, .. }
+    | Instr::Mul { a, b, .. }
+    | Instr::Div { a, b, .. }
+    | Instr::Pow { a, b, .. }
+    | Instr::Floor { a, b, .. }
+    | Instr::Mod { a, b, .. }
+    | Instr::Concat { a, b, .. }
+    | Instr::BitAnd { a, b, .. }
+    | Instr::BitOr { a, b, .. }
+    | Instr::BitXor { a, b, .. }
+    | Instr::BitShl { a, b, .. }
+    | Instr::BitShr { a, b, .. }
+    | Instr::BitUshr { a, b, .. }
+    | Instr::Eq { a, b, .. }
+    | Instr::Neq { a, b, .. }
+    | Instr::Lt { a, b, .. }
+    | Instr::Le { a, b, .. }
+    | Instr::Gt { a, b, .. }
+    | Instr::Ge { a, b, .. } => {
+      set.set(a, true);
+      set.set(b, true);
+    },
+    Instr::AddImm { a, .. }
+    | Instr::SubImm { a, .. }
+    | Instr::MulImm { a, .. }
+    | Instr::LtImm { a, .. }
+    | Instr::LeImm { a, .. }
+    | Instr::GtImm { a, .. }
+    | Instr::GeImm { a, .. }
+    | Instr::EqImm { a, .. }
+    | Instr::NeqImm { a, .. } => set.set(a, true),
+
+    Instr::Jmp { .. } => {},
+    Instr::JmpIfFalse { cond, .. } | Instr::JmpIfTrue { cond, .. } => set.set(cond, true),
+
+    Instr::Call { func, num_args, .. } => set.set_range(func, num_args as usize + 1),
+    Instr::Return { src } | Instr::Print { src } | Instr::Raise { src } => set.set(src, true),
+
+    Instr::GetGlobal { .. } => {},
+    Instr::SetGlobal { src, .. } | Instr::AssignGlobal { src, .. } => set.set(src, true),
+
+    Instr::Closure { proto_const, .. } => {
+      let nested = proto.chunk.constants[proto_const as usize].as_func();
+      for desc in &nested.upvalues {
+        if let UpvalueDescriptor::Local(n) = *desc {
+          set.set(n, true);
+        }
+      }
+    },
+    Instr::GetUpval { .. } => {},
+    Instr::SetUpval { src, .. } => set.set(src, true),
+    Instr::CloseUpvalues { from } => {
+      // Conservatively "reads" every register from `from` up to the
+      // function's own top -- we don't statically know which of them
+      // currently has an open upvalue, and this only runs once per
+      // block exit, so there's no meaningful cost to being precise-but-
+      // safe here rather than plumbing open-upvalue tracking into a
+      // purely static pass.
+      set.set_range(from, proto.num_registers as usize - from as usize);
+    },
+
+    Instr::MakeList { start, count, .. } => set.set_range(start, count as usize),
+    Instr::MakeDict { start, count, .. } => set.set_range(start, count as usize * 2),
+
+    Instr::MakeClass { superclass, .. } => {
+      if let Some(s) = superclass {
+        set.set(s, true);
+      }
+    },
+    Instr::DeclareField { class, .. } | Instr::FinalizeClass { class } => set.set(class, true),
+    Instr::SetFieldInit { class, src }
+    | Instr::SetMethod { class, src, .. }
+    | Instr::DeclareStatic { class, src, .. } => {
+      set.set(class, true);
+      set.set(src, true);
+    },
+
+    Instr::GetField { obj, .. } => set.set(obj, true),
+    Instr::SetField { obj, src, .. } => {
+      set.set(obj, true);
+      set.set(src, true);
+    },
+
+    // `obj` itself, plus the compiler-duplicated `self` at `obj + 1`,
+    // plus `num_args` more argument registers after that -- see these
+    // variants' own doc comments in `vm::chunk::Instr`.
+    Instr::Invoke {
+      obj, num_args, ..
+    } => set.set_range(obj, num_args as usize + 2),
+    Instr::InvokeSuper {
+      superclass,
+      num_args,
+      ..
+    }
+    | Instr::CallSuperCtor {
+      superclass,
+      num_args,
+      ..
+    } => set.set_range(superclass, num_args as usize + 2),
+
+    Instr::Import { .. } => {},
+    Instr::ImportAll { module } => set.set(module, true),
+    Instr::MakePromoted { module, .. } => set.set(module, true),
+
+    Instr::GetIndex { obj, idx, .. } => {
+      set.set(obj, true);
+      set.set(idx, true);
+    },
+    Instr::SetIndex { obj, idx, src } => {
+      set.set(obj, true);
+      set.set(idx, true);
+      set.set(src, true);
+    },
+    Instr::GetSlice { obj, lo, hi, .. } => {
+      set.set(obj, true);
+      set.set(lo, true);
+      set.set(hi, true);
+    },
+    Instr::MakeRange { lower, upper, .. } => {
+      set.set(lower, true);
+      set.set(upper, true);
+    },
+
+    Instr::UsingJump { subject, .. } => set.set(subject, true),
+
+    Instr::PushCatch { .. } | Instr::PopCatch => {
+      unreachable!("excluded from compilation before this analysis ever runs")
+    },
+  }
+}
+
+#[cfg(test)]
+mod liveness_tests {
+  use std::rc::Rc;
+
+  use super::*;
+  use crate::vm::chunk::Chunk;
+  use crate::vm::object::{JitInfo, Obj, UpvalueDescriptor};
+  use crate::vm::value::Value;
+
+  fn make_func(code: Vec<Instr>, constants: Vec<Value>, num_registers: u8) -> ObjFunction {
+    let mut chunk = Chunk::new();
+    chunk.code = code;
+    chunk.constants = constants;
+    let code_len = chunk.code.len();
+    ObjFunction {
+      name: "test".to_string(),
+      variadic: false,
+      chunk,
+      arity: 0,
+      num_registers,
+      upvalues: Vec::new(),
+      is_method: false,
+      source_path: Rc::from("test"),
+      globals_module: None,
+      jit: JitInfo::new(code_len),
+    }
+  }
+
+  #[test]
+  fn straight_line_dead_after_last_use() {
+    let code = vec![
+      Instr::LoadConst {
+        dst: 0,
+        const_idx: 0,
+      },
+      Instr::LoadConst {
+        dst: 1,
+        const_idx: 1,
+      },
+      Instr::Add { dst: 2, a: 0, b: 1 },
+      Instr::Return { src: 2 },
+    ];
+    let f = make_func(code, vec![Value::number(1.0), Value::number(2.0)], 3);
+    let facts = liveness(&f);
+    assert!(facts.is_live(3, 2), "Return reads r2");
+    assert!(!facts.is_live(3, 0));
+    assert!(!facts.is_live(3, 1));
+    assert!(facts.is_live(2, 0), "Add reads r0");
+    assert!(facts.is_live(2, 1), "Add reads r1");
+    assert!(!facts.is_live(2, 2), "r2 not yet defined before ip2 runs");
+    assert!(facts.is_live(1, 0), "r0 must survive to ip2");
+    assert!(!facts.is_live(0, 0), "not live before its own definition");
+    assert!(!facts.is_live(0, 1));
+  }
+
+  #[test]
+  fn loop_back_edge_keeps_register_live_across_iterations() {
+    let code = vec![
+      Instr::LoadConst {
+        dst: 0,
+        const_idx: 0,
+      }, // ip0: r0 = outer value
+      Instr::LoadConst {
+        dst: 1,
+        const_idx: 1,
+      }, // ip1: r1 = acc = 0
+      Instr::Add { dst: 1, a: 1, b: 0 }, // ip2: r1 = r1 + r0 (loop body)
+      Instr::JmpIfTrue {
+        cond: 1,
+        offset: -2,
+      }, // ip3: back to ip2 if r1 truthy
+      Instr::Return { src: 1 }, // ip4
+    ];
+    let f = make_func(code, vec![Value::number(5.0), Value::number(0.0)], 2);
+    let facts = liveness(&f);
+    assert!(facts.is_live(2, 0), "r0 needed inside loop body");
+    assert!(facts.is_live(3, 0), "r0 still needed across the back-edge");
+    assert!(facts.is_live(1, 0), "r0 needed before first loop entry");
+    assert!(!facts.is_live(4, 0), "r0 dead once the loop has exited");
+    assert!(!facts.is_live(0, 0), "not live before its own definition");
+    assert!(facts.is_live(4, 1), "Return reads r1");
+    assert!(!facts.is_live(0, 1));
+  }
+
+  #[test]
+  fn call_uses_callee_and_argument_window() {
+    let code = vec![
+      Instr::LoadConst {
+        dst: 5,
+        const_idx: 0,
+      },
+      Instr::Call {
+        dst: 5,
+        func: 5,
+        num_args: 2,
+      }, // reads r5(func), r6, r7
+      Instr::Return { src: 5 },
+    ];
+    let f = make_func(code, vec![Value::number(1.0)], 8);
+    let facts = liveness(&f);
+    assert!(facts.is_live(1, 5), "Call reads its own callee register");
+    assert!(facts.is_live(1, 6), "Call reads argument 0");
+    assert!(facts.is_live(1, 7), "Call reads argument 1");
+    assert!(!facts.is_live(1, 8), "one past the argument window");
+  }
+
+  #[test]
+  fn closure_marks_captured_locals_live() {
+    let mut nested = make_func(vec![Instr::Return { src: 0 }], vec![], 1);
+    // Captures the ENCLOSING function's local register 3.
+    nested.upvalues = vec![UpvalueDescriptor::Local(3)];
+    let nested_ptr: &'static Obj = Box::leak(Box::new(Obj::Func(Box::new(nested))));
+    let nested_val = Value::obj(nested_ptr as *const Obj);
+
+    let code = vec![
+      Instr::LoadConst {
+        dst: 3,
+        const_idx: 0,
+      }, // ip0: define r3
+      Instr::Closure {
+        dst: 4,
+        proto_const: 1,
+      }, // ip1: captures r3
+      Instr::Return { src: 4 }, // ip2
+    ];
+    let f = make_func(code, vec![Value::number(9.0), nested_val], 5);
+    let facts = liveness(&f);
+    assert!(
+      facts.is_live(1, 3),
+      "Closure must keep its captured local live"
+    );
+    assert!(
+      !facts.is_live(2, 3),
+      "r3 is dead once the closure has captured it"
+    );
+  }
+}
+
+#[cfg(test)]
+mod ref_classify_tests {
+  use std::rc::Rc;
+
+  use super::*;
+  use crate::vm::chunk::Chunk;
+  use crate::vm::object::{JitInfo, Obj};
+  use crate::vm::value::Value;
+
+  fn make_func(code: Vec<Instr>, constants: Vec<Value>, num_registers: u8) -> ObjFunction {
+    let mut chunk = Chunk::new();
+    chunk.code = code;
+    chunk.constants = constants;
+    let code_len = chunk.code.len();
+    ObjFunction {
+      name: "test".to_string(),
+      variadic: false,
+      chunk,
+      arity: 0,
+      num_registers,
+      upvalues: Vec::new(),
+      is_method: false,
+      source_path: Rc::from("test"),
+      globals_module: None,
+      jit: JitInfo::new(code_len),
+    }
+  }
+
+  #[test]
+  fn nil_and_bool_never_reference() {
+    let code = vec![
+      Instr::LoadNil { dst: 0 },
+      Instr::LoadBool { dst: 1, val: true },
+      Instr::Return { src: 0 },
+    ];
+    let f = make_func(code, vec![], 2);
+    let types = analyze(&f, None, None);
+    let refs = classify_refs(&f, &types);
+    assert!(refs.is_never_ref(2, 0));
+    assert!(refs.is_never_ref(2, 1));
+  }
+
+  #[test]
+  fn load_const_reflects_actual_constant_type() {
+    let string_val: &'static Obj = Box::leak(Box::new(Obj::Str("hello".to_string())));
+    let string_val = Value::obj(string_val as *const Obj);
+    let code = vec![
+      Instr::LoadConst {
+        dst: 0,
+        const_idx: 0,
+      }, // numeric constant
+      Instr::LoadConst {
+        dst: 1,
+        const_idx: 1,
+      }, // string constant (a reference)
+      Instr::Return { src: 0 },
+    ];
+    let f = make_func(code, vec![Value::number(3.0), string_val], 2);
+    let types = analyze(&f, None, None);
+    let refs = classify_refs(&f, &types);
+    assert!(refs.is_never_ref(2, 0), "numeric constant is never a ref");
+    assert!(
+      !refs.is_never_ref(2, 1),
+      "string constant IS a ref -- must not be misclassified"
+    );
+  }
+
+  #[test]
+  fn add_is_nonref_only_when_both_operands_proven_numeric() {
+    // r0, r1 both proven numeric (constants) -> Add's result is proven
+    // non-ref, since that forces the plain-number fast path.
+    let code = vec![
+      Instr::LoadConst {
+        dst: 0,
+        const_idx: 0,
+      },
+      Instr::LoadConst {
+        dst: 1,
+        const_idx: 1,
+      },
+      Instr::Add { dst: 2, a: 0, b: 1 },
+      Instr::Return { src: 2 },
+    ];
+    let f = make_func(code, vec![Value::number(1.0), Value::number(2.0)], 3);
+    let types = analyze(&f, None, None);
+    let refs = classify_refs(&f, &types);
+    assert!(
+      refs.is_never_ref(3, 2),
+      "both operands proven numeric -> Add's result is proven non-ref"
+    );
+  }
+
+  #[test]
+  fn add_is_conservative_when_operand_not_proven_numeric() {
+    // r0 comes from an unprovable GetGlobal -- Add could hit the
+    // bigint/string/list/operator-override path, so its result must
+    // NOT be proven non-ref.
+    let code = vec![
+      Instr::GetGlobal {
+        dst: 0,
+        name_const: 0,
+      },
+      Instr::LoadConst {
+        dst: 1,
+        const_idx: 1,
+      },
+      Instr::Add { dst: 2, a: 0, b: 1 },
+      Instr::Return { src: 2 },
+    ];
+    let f = make_func(code, vec![Value::number(0.0), Value::number(2.0)], 3);
+    let types = analyze(&f, None, None);
+    let refs = classify_refs(&f, &types);
+    assert!(
+      !refs.is_never_ref(3, 2),
+      "unprovable operand -> Add's result must be conservatively 'maybe a ref'"
+    );
+  }
+
+  #[test]
+  fn eq_always_nonref_regardless_of_operand_types() {
+    // Eq calls Value::equals directly, no operator-override hook --
+    // provably non-ref even though neither operand is proven numeric.
+    let code = vec![
+      Instr::GetGlobal {
+        dst: 0,
+        name_const: 0,
+      },
+      Instr::GetGlobal {
+        dst: 1,
+        name_const: 1,
+      },
+      Instr::Eq { dst: 2, a: 0, b: 1 },
+      Instr::Return { src: 2 },
+    ];
+    let f = make_func(code, vec![Value::number(0.0), Value::number(0.0)], 3);
+    let types = analyze(&f, None, None);
+    let refs = classify_refs(&f, &types);
+    assert!(
+      refs.is_never_ref(3, 2),
+      "Eq is always a bool, no matter what its operands are"
+    );
+  }
+
+  #[test]
+  fn always_reference_producing_instructions() {
+    let code = vec![
+      Instr::MakeList {
+        dst: 0,
+        start: 0,
+        count: 0,
+      },
+      Instr::Concat { dst: 1, a: 0, b: 0 },
+      Instr::Return { src: 0 },
+    ];
+    let f = make_func(code, vec![], 2);
+    let types = analyze(&f, None, None);
+    let refs = classify_refs(&f, &types);
+    assert!(!refs.is_never_ref(2, 0), "MakeList always allocates a ref");
+    assert!(!refs.is_never_ref(2, 1), "Concat always allocates a String");
+  }
+
+  #[test]
+  fn move_propagates_the_fact() {
+    let code = vec![
+      Instr::LoadConst {
+        dst: 0,
+        const_idx: 0,
+      },
+      Instr::Move { dst: 1, src: 0 },
+      Instr::Return { src: 1 },
+    ];
+    let f = make_func(code, vec![Value::number(4.0)], 2);
+    let types = analyze(&f, None, None);
+    let refs = classify_refs(&f, &types);
+    assert!(refs.is_never_ref(2, 1), "Move should propagate non-ref-ness");
+  }
 }

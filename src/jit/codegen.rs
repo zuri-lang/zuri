@@ -119,6 +119,31 @@ pub fn compile(
   fc.run()
 }
 
+/// A bytecode register's compile-time cache state, tracking whether its
+/// Cranelift `Variable` (see `FuncCompiler::reg_vars`) can be trusted
+/// as-is or needs a real memory operation before its next use:
+///
+/// - `Clean`: the `Variable`'s current value is known to match
+///   `VM::registers` exactly (nothing has diverged either direction).
+/// - `Dirty`: the `Variable` has been written (via `store_reg`) since
+///   the last time it matched memory -- a genuine `store_reg`-to-memory
+///   is owed before any point that needs memory to be authoritative
+///   (a call, a GC safepoint, a deopt, a return).
+/// - `Stale`: memory may have changed since the `Variable` was last
+///   established (a call/safepoint just ran, and this register was
+///   live through it) -- the `Variable`'s value must NOT be trusted;
+///   the next `load_reg` for it must issue a real memory load.
+///
+/// `Clean` and `Dirty` are collapsed into ONE "trust the `Variable`"
+/// branch in `load_reg` -- they only differ in whether `flush_live`
+/// still owes a write, never in whether a READ can trust the cache.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RegCache {
+  Clean,
+  Dirty,
+  Stale,
+}
+
 struct FuncCompiler<'a, 'b> {
   fb: &'a mut FunctionBuilder<'b>,
   module: &'a mut JITModule,
@@ -180,6 +205,50 @@ struct FuncCompiler<'a, 'b> {
   /// see `jit::typeflow::SpeculativeRegs`'s own docs. `None` after
   /// filtering out an all-zero sample.
   speculative_regs: Option<typeflow::SpeculativeRegs>,
+  /// One persistent Cranelift `Variable` per bytecode register, live
+  /// for the WHOLE compiled function (both the general and, if present,
+  /// specialized body -- see `run`'s own docs on why sharing them
+  /// across both is sound). Declared and eagerly initialized once, in
+  /// `run`, right after `base_bytes` is available -- see `load_reg`/
+  /// `store_reg` for how these replace the old "every register access
+  /// is a real memory op" design, and `flush_live`/`mark_stale_live`
+  /// for how a call/GC-safepoint/deopt/return still gets a fully
+  /// memory-authoritative view exactly where one is actually needed.
+  reg_vars: Vec<Variable>,
+  /// Parallel to `reg_vars` -- see `RegCache`'s own docs.
+  reg_cache: Vec<RegCache>,
+  /// The bytecode position `emit_instruction` is CURRENTLY translating
+  /// -- set once at the top of every `emit_instruction` call, read by
+  /// `flush_live`/`mark_stale_live` (via `call_helper`'s own automatic
+  /// wrapping) so every nested helper/`call_indirect` this one bytecode
+  /// instruction's codegen might issue consults the SAME liveness
+  /// query, regardless of how many separate Cranelift-level calls that
+  /// translation happens to need (see `emit_fast_call`, which issues
+  /// two).
+  current_ip: usize,
+  /// Which registers are live (per the standard `uses(ip) ∪
+  /// (live_out(ip) - defs(ip))` equation -- see `typeflow::liveness`'s
+  /// own docs) at every bytecode position, for THIS prototype's
+  /// bytecode. Unlike `type_facts`, this doesn't depend on which body
+  /// (general/specialized) is currently being populated -- it's a pure
+  /// property of the bytecode's own shape -- so it's computed once and
+  /// never swapped.
+  liveness: typeflow::LivenessFacts,
+  /// `true` for every bytecode position that's a genuine CFG join
+  /// point: reachable from more than one distinct predecessor (a loop
+  /// header via both its forward entry and its own back-edge; an
+  /// if/else merge), OR an OSR target (an EXTRA, synthetic predecessor
+  /// `typeflow::predecessor_counts` can't see, since OSR dispatch lives
+  /// entirely in `emit_entry_dispatch`, outside the ordinary bytecode
+  /// CFG). `emit_instruction` forces every live register `Stale` right
+  /// before translating such an instruction -- see `reg_cache`'s own
+  /// docs for why a single linear compile-time walk cannot otherwise
+  /// know which of several predecessors' cache states is actually true
+  /// at a join point, and why treating it as untrustworthy there is the
+  /// sound, conservative resolution. Computed once, in `run`, after
+  /// `osr_ids` is known (needs it) and before either body is populated
+  /// (both need it, unchanged).
+  merge_points: Vec<bool>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -194,6 +263,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let type_facts = typeflow::analyze(proto, None, None);
+    let liveness = typeflow::liveness(proto);
     FuncCompiler {
       fb,
       module,
@@ -211,6 +281,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       type_facts,
       speculative_params,
       speculative_regs,
+      // Populated in `run`, once `base_bytes` is available -- empty
+      // placeholders here are never actually read before that, since
+      // `run` always executes before any `emit_instruction` call.
+      reg_vars: Vec::new(),
+      reg_cache: Vec::new(),
+      current_ip: 0,
+      liveness,
+      merge_points: Vec::new(),
     }
   }
 
@@ -243,6 +321,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
     }
 
+    // See `merge_points`'s own docs. Needs `osr_ids` (just computed
+    // above) as well as the ordinary bytecode CFG's own predecessor
+    // counts.
+    let pred_counts = typeflow::predecessor_counts(self.proto);
+    self.merge_points = (0..pred_counts.len())
+      .map(|ip| pred_counts[ip] > 1 || self.osr_ids.contains_key(&ip))
+      .collect();
+
     let entry_block = self.fb.create_block();
     self.fb.append_block_params_for_function_params(entry_block);
     self.fb.switch_to_block(entry_block);
@@ -258,6 +344,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let eight = self.fb.ins().iconst(types::I64, 8);
     self.base_bytes = self.fb.ins().imul(self.base_param, eight);
+
+    // One `Variable` per bytecode register, declared here (entry_block
+    // dominates every other block in the function, general body AND
+    // specialized body alike, so a `Variable` declared/initialized here
+    // is valid to `use_var` anywhere downstream) and eagerly loaded
+    // from whatever's ALREADY in `VM::registers` right now -- correct
+    // regardless of whether a given register is a real parameter
+    // (holds the caller's actual argument) or a not-yet-defined local
+    // (holds leftover bits from a previous frame that occupied this
+    // slot -- never observed by well-formed bytecode, since the
+    // compiler only ever emits a read of a register that's already
+    // been written on every path reaching it), and regardless of
+    // whether this is an ordinary call OR an OSR jump into the middle
+    // of an already-executing loop (the interpreter has been running
+    // up to this exact point, so `VM::registers` already holds the
+    // real, current values `load_reg`'s `Stale` branch below picks up
+    // fresh -- see its own docs). `load_reg` initializes each one via
+    // its own existing `Stale` handling, so there's no separate
+    // "eager load" code path to keep in sync with it.
+    let num_regs = self.proto.num_registers as usize;
+    self.reg_vars = (0..num_regs)
+      .map(|_| self.fb.declare_var(types::I64))
+      .collect();
+    self.reg_cache = vec![RegCache::Stale; num_regs];
+    for r in 0..num_regs {
+      self.load_reg(r as u8);
+    }
 
     // If speculating on EITHER function parameters or a mid-function
     // value (`speculative_regs` -- see `jit::typeflow::SpeculativeRegs`),
@@ -293,7 +406,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let instr = self.proto.chunk.code[ip];
       let terminated = self.emit_instruction(ip, instr);
       if !terminated {
-        let next = self.blocks.get(ip + 1).copied().unwrap_or(self.blocks[ip]);
+        let next_ip = ip + 1;
+        let next = self.blocks.get(next_ip).copied().unwrap_or(self.blocks[ip]);
+        if next_ip < self.blocks.len() {
+          self.flush_before_jump(next_ip);
+        }
         self.fb.ins().jump(next, &[]);
       }
     }
@@ -307,6 +424,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // path needed.
     if let Some((spec_blocks, spec_facts)) = specialized {
       self.type_facts = spec_facts;
+      // `specialized_blocks[0]` (and every OSR route into the
+      // specialized body) is reached directly from `entry_block`'s own
+      // dispatch guards, NEVER from any block pass 1 just finished
+      // populating -- pass 1's blocks are a sibling subgraph, not an
+      // ancestor, so Cranelift's own SSA dominance already resolves a
+      // `use_var` at the start of the specialized body straight back
+      // to entry_block's eager initialization above, regardless of
+      // whatever pass 1 did to `reg_cache`. Resetting to `Clean` here
+      // makes this compiler's OWN bookkeeping match that same fact
+      // (matching memory, not stale) -- see `RegCache`'s own docs.
+      self.reg_cache = vec![RegCache::Clean; self.reg_vars.len()];
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       let code_len = self.blocks.len();
       for ip in 0..code_len {
@@ -332,6 +460,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // external entry point, and bailing out to the interpreter
         // instead of a compiled fallback body.
         if !self.emit_speculative_guard(ip, instr, spec_next) {
+          if ip + 1 < code_len {
+            self.flush_before_jump(ip + 1);
+          }
           self.fb.ins().jump(spec_next, &[]);
         }
       }
@@ -342,6 +473,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // happened.
       self.blocks = general_blocks;
     }
+
+    // Every block's predecessors are now fully known (every `jump`/
+    // `brif`/`call_indirect`-adjacent branch this function will ever
+    // emit, including every loop's own back-edge, has already been
+    // added above) -- only NOW is it sound to seal them all at once.
+    // This matters specifically because of `reg_vars`: unlike
+    // `regs_var` (always freshly `def_var`'d within the SAME block as
+    // any `use_var` of it, so it never actually depended on cross-
+    // block SSA resolution), a bytecode register's `Variable` is
+    // genuinely defined in one block and read in another -- including
+    // across a loop back-edge, where the LATER-compiled block (the
+    // back-edge's own source) adds a NEW predecessor edge to a block
+    // (the loop header) that was already fully populated earlier in
+    // this same pass. Before this edge is added, Cranelift's SSA
+    // construction cannot know the loop header has more than one
+    // predecessor, and sealing it too early would permanently bake in
+    // an incomplete/incorrect resolution for any `use_var` inside the
+    // loop that (transitively) depends on the value carried across
+    // that back-edge.
+    self.fb.seal_all_blocks();
 
     Ok(std::mem::take(&mut self.osr_ids))
   }
@@ -508,6 +659,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let v = self.load_reg(dst);
     let is_num = self.is_number(v);
     let deopt_block = self.fb.create_block();
+    // `emit_deopt` below flushes the deopt edge itself; the fast edge
+    // to `spec_next` (a possible merge point, e.g. a loop header) needs
+    // the same predecessor-side flush every other forward branch into
+    // a merge point gets -- see `flush_before_jump`'s own docs.
+    self.flush_before_jump(ip + 1);
     self
       .fb
       .ins()
@@ -517,18 +673,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     true
   }
 
-  /// Real deoptimization: calls `zuri_jit_deopt` to record `ip` as
-  /// where the interpreter should resume, then immediately returns
-  /// from the WHOLE compiled function -- never falls through to more
-  /// translated instructions afterward. The returned value is never
-  /// observed (`VM::invoke_compiled` checks `pending_deopt_ip` before
-  /// it would ever look at the real return bits), so the junk `0`
-  /// here costs nothing. See `zuri_jit_deopt`'s own docs for why this
-  /// needs no state reconstruction at all.
+  /// Real deoptimization: flushes every register live at the RESUME
+  /// point (`ip` -- NOT `self.current_ip`, which is wherever the guard
+  /// that triggered this deopt happens to sit; `ip` is where the
+  /// interpreter picks up from, e.g. `emit_speculative_guard` deopts to
+  /// `ip + 1`) to real `VM::registers` memory, calls `zuri_jit_deopt` to
+  /// record `ip` itself, then immediately returns from the WHOLE
+  /// compiled function -- never falls through to more translated
+  /// instructions afterward, so there's no need to mark anything
+  /// `Stale` afterward the way `call_helper` does. The returned value is
+  /// never observed (`VM::invoke_compiled` checks `pending_deopt_ip`
+  /// before it would ever look at the real return bits), so the junk
+  /// `0` here costs nothing.
+  ///
+  /// Goes through `call_helper_raw`, NOT the auto-flushing
+  /// `call_helper` -- that wrapper flushes against `self.current_ip`,
+  /// which is the WRONG bytecode position for a deopt (the guard site,
+  /// not the resume site); flushing here is explicit, against the
+  /// correct `ip`, instead.
   fn emit_deopt(&mut self, ip: usize) {
+    self.flush_live(ip);
     let vm = self.vm_param;
     let ip_c = self.u64c(ip as u64);
-    self.call_helper("zuri_jit_deopt", &[vm, ip_c]);
+    self.call_helper_raw("zuri_jit_deopt", &[vm, ip_c]);
     let junk = self.i64c(0);
     self.fb.ins().return_(&[junk]);
   }
@@ -547,7 +714,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  fn load_reg(&mut self, r: u8) -> IrValue {
+  /// The REAL memory read this used to be the whole implementation of
+  /// -- now used only by `load_reg`'s own `Stale` branch (a genuine
+  /// reload is owed) and nowhere else. See this module's docs / the JIT
+  /// SSA plan for why every OTHER register access goes through the
+  /// `Variable`-backed `load_reg`/`store_reg` instead.
+  fn load_reg_mem(&mut self, r: u8) -> IrValue {
     let addr = self.reg_addr(r);
     self.fb.ins().load(
       types::I64,
@@ -557,12 +729,168 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     )
   }
 
-  fn store_reg(&mut self, r: u8, v: IrValue) {
+  /// The REAL memory write this used to be the whole implementation of
+  /// -- now used only by `flush_live`, which owes memory a write for
+  /// every live `Dirty` register right before a genuine sync point (a
+  /// call, a GC safepoint, a deopt, a return).
+  fn store_reg_mem(&mut self, r: u8, v: IrValue) {
     let addr = self.reg_addr(r);
     self
       .fb
       .ins()
       .store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
+  }
+
+  /// Reads bytecode register `r`'s CURRENT value -- a plain `use_var`
+  /// against its persistent `Variable` (see `reg_vars`) the overwhelming
+  /// majority of the time, letting Cranelift's own optimizer/register
+  /// allocator treat it as a real SSA value with no memory traffic at
+  /// all. Only actually touches memory when `reg_cache[r]` says
+  /// `Stale` -- a call/GC-safepoint/deopt this register was live
+  /// through just ran, so the `Variable`'s last-known value can no
+  /// longer be trusted (a moving collection could have relocated a
+  /// pointer stored here, for instance) and a fresh read is owed before
+  /// this register is used again. See `RegCache`'s own docs for the
+  /// full state machine.
+  fn load_reg(&mut self, r: u8) -> IrValue {
+    match self.reg_cache[r as usize] {
+      RegCache::Clean | RegCache::Dirty => self.fb.use_var(self.reg_vars[r as usize]),
+      RegCache::Stale => {
+        let v = self.load_reg_mem(r);
+        self.fb.def_var(self.reg_vars[r as usize], v);
+        self.reg_cache[r as usize] = RegCache::Clean;
+        v
+      },
+    }
+  }
+
+  /// Writes bytecode register `r`'s CURRENT value -- a plain `def_var`
+  /// against its persistent `Variable`, no memory traffic. Marks the
+  /// register `Dirty`: memory doesn't reflect this write yet, and won't
+  /// until `flush_live` runs (right before the next genuine sync
+  /// point this register happens to still be live at).
+  fn store_reg(&mut self, r: u8, v: IrValue) {
+    self.fb.def_var(self.reg_vars[r as usize], v);
+    self.reg_cache[r as usize] = RegCache::Dirty;
+  }
+
+  /// Writes real `VM::registers` memory for every register that's both
+  /// (a) live at bytecode position `ip` and (b) currently `Dirty`.
+  /// Called automatically by `call_helper` (and explicitly wherever a
+  /// sync point doesn't go through it -- see `emit_deopt`, and the
+  /// `call_indirect` fast-call site in `emit_fast_call`) immediately
+  /// BEFORE the actual call/branch, so whatever Rust/native code, the
+  /// interpreter, or a GC root scan is about to run sees a fully
+  /// correct, current view of every register it could touch.
+  ///
+  /// NOTE: an "always flush every register, ignore liveness entirely"
+  /// variant of this function was tried and measured against the real
+  /// bug this is chasing (see git history) -- it did NOT fix it, which
+  /// is itself real evidence: the bug is NOT about which registers get
+  /// selected for flushing, so this stays liveness-scoped rather than
+  /// paying an unnecessary, unjustified performance cost for a fix that
+  /// doesn't fix anything.
+  fn flush_live(&mut self, ip: usize) {
+    let live: Vec<u8> = self.liveness.live_regs_at(ip).collect();
+    for r in live {
+      if self.reg_cache[r as usize] == RegCache::Dirty {
+        let v = self.fb.use_var(self.reg_vars[r as usize]);
+        self.store_reg_mem(r, v);
+        self.reg_cache[r as usize] = RegCache::Clean;
+      }
+    }
+  }
+
+  /// Marks every register live at bytecode position `ip` `Stale` --
+  /// called automatically by `call_helper` immediately AFTER the actual
+  /// call/branch, so the NEXT `load_reg` for any of them is forced to
+  /// re-read memory rather than trust a `Variable` value that may have
+  /// been invalidated by whatever just ran (a GC safepoint relocating a
+  /// pointer, a callee/native function, the interpreter during a
+  /// deopt-and-resume). See `flush_live`'s own docs on why this stays
+  /// liveness-scoped.
+  fn mark_stale_live(&mut self, ip: usize) {
+    for r in self.liveness.live_regs_at(ip) {
+      self.reg_cache[r as usize] = RegCache::Stale;
+    }
+  }
+
+  /// Flushes, in the CURRENT block, every register that's both Dirty
+  /// and live-into `target_ip` -- called right before emitting a
+  /// FORWARD branch/fallthrough into a genuine merge point (`Instr::
+  /// Jmp`'s forward case, `JmpIfFalse`/`JmpIfTrue`'s targets, and the
+  /// automatic fallthrough `run`'s own driver loop appends for a non-
+  /// terminated instruction). This is the ONLY place a merge point's
+  /// "the fall-through/forward edge might carry an unflushed Dirty
+  /// value" case gets handled -- deliberately NOT inside the merge
+  /// block itself (see `emit_instruction`'s own docs on why that's
+  /// actively unsound for any merge point that's also a loop header:
+  /// `use_var` there would resolve, on the BACK edge specifically, to
+  /// whatever Cranelift's own SSA construction is holding in a machine
+  /// register/spill slot for that `Variable` -- a location GC has zero
+  /// visibility into and cannot fix up -- and writing THAT back over
+  /// memory can clobber a relocation `emit_safepoint`'s own call just
+  /// performed moments earlier, using the CORRECT, already-flushed
+  /// value). The back edge needs no separate handling here: it always
+  /// runs through `emit_safepoint` first, which flushes (and marks
+  /// stale) against ITS OWN block's `current_ip` before ever branching,
+  /// so by the time control reaches the merge point via that edge,
+  /// memory is already correct and this function has nothing to do for
+  /// it (`flush_live` only touches registers still `Dirty`).
+  fn flush_before_jump(&mut self, target_ip: usize) {
+    if self.merge_points[target_ip] {
+      self.flush_live(target_ip);
+    }
+  }
+
+  /// Snapshots `reg_cache` before a guarded instruction's own internal
+  /// fast/slow branch split (see `restore_dirty_from_snapshot`'s own
+  /// docs for why this pairing exists and what bug it closes).
+  fn snapshot_reg_cache(&self) -> Vec<RegCache> {
+    self.reg_cache.clone()
+  }
+
+  /// Undoes a specific, confirmed-real bug class: the slow path of a
+  /// guarded instruction (`emit_binary_numeric_guarded` and its
+  /// siblings) calls its helper through `call_checked`/`call_helper`,
+  /// which -- entirely correctly FOR THAT CALL SITE -- flushes and
+  /// stale-marks every register live at `self.current_ip` (this WHOLE
+  /// instruction's own bytecode position), not just `a`/`b`/`dst`. That
+  /// breadth is fine for a call that ALWAYS executes; it's wrong here,
+  /// because the slow path is one arm of a runtime branch the fast path
+  /// (which never flushes anything) might take instead. Cranelift
+  /// compiles BOTH arms unconditionally, so this compiler's OWN
+  /// `reg_cache` bookkeeping -- despite being purely compile-time state
+  /// -- got mutated by code that may never execute at runtime, for
+  /// registers this instruction has no business touching at all (e.g.
+  /// a completely unrelated call argument two instructions away that
+  /// merely happened to share a live range with this one). Confirmed by
+  /// direct reproduction (`tmp/osr_speculation_stress.zu`, a recursive
+  /// call whose OWN argument register got silently marked flushed by a
+  /// sibling `depth - 1` guarded-arithmetic slow path that never ran,
+  /// so the real flush at the call site was skipped and the callee read
+  /// nil) and by per-register write-forcing bisection pinpointing that
+  /// exact register before this fix existed.
+  ///
+  /// The fix: after both arms rejoin at `done_block`, restore every
+  /// register OTHER than this instruction's own `dst` (already handled
+  /// correctly and independently by `resync_dst_from_memory`/explicit
+  /// `Stale`-marking) back to `Dirty` if it was `Dirty` in the snapshot
+  /// and is anything else now. This is always safe to do even when the
+  /// slow path DID run at runtime: `Dirty` only means "the next
+  /// sync point must flush this before trusting memory," never "this
+  /// value is wrong" -- `reg_vars[r]` itself was never touched by
+  /// either arm, so `use_var` still returns the correct value either
+  /// way, just possibly triggering one harmless redundant future flush.
+  fn restore_dirty_from_snapshot(&mut self, before: &[RegCache], dst: u8) {
+    for (r, &prev) in before.iter().enumerate() {
+      if r as u8 == dst {
+        continue;
+      }
+      if prev == RegCache::Dirty && self.reg_cache[r] != RegCache::Dirty {
+        self.reg_cache[r] = RegCache::Dirty;
+      }
+    }
   }
 
   /// Direct load of `VM::regs_ptr_cache` at its compile-time-baked
@@ -632,7 +960,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   // Helper calls
   // ---------------------------------------------------------------
 
-  fn call_helper(&mut self, name: &str, args: &[IrValue]) -> IrValue {
+  /// The REAL call instruction -- no register-cache bookkeeping at all.
+  /// Used directly ONLY by `call_helper` (below) and `emit_deopt`
+  /// (which needs to flush against the DEOPT TARGET ip, not
+  /// `self.current_ip`, so it can't go through the automatic wrapper --
+  /// see its own docs). Every other call site in this file goes through
+  /// `call_helper` instead.
+  fn call_helper_raw(&mut self, name: &str, args: &[IrValue]) -> IrValue {
     let func_id = *self
       .helpers
       .get(name)
@@ -640,6 +974,45 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let func_ref = self.module.declare_func_in_func(func_id, self.fb.func);
     let call = self.fb.ins().call(func_ref, args);
     self.fb.inst_results(call)[0]
+  }
+
+  /// `call_helper_raw`, automatically bracketed with `flush_live`/
+  /// `mark_stale_live` against `self.current_ip` -- the register-cache
+  /// half of "every helper call is conservatively treated as a genuine
+  /// sync point" (the OTHER half, `refresh_regs`'s pointer refresh, is
+  /// unchanged and still each call site's own responsibility, exactly
+  /// as before this cache existed). Centralizing this here, rather than
+  /// in each of `call_checked`/`emit_fast_call`/`emit_is_falsey`/
+  /// `emit_safepoint`/`UsingJump`'s own codegen, means every one of
+  /// this file's ~40 call sites gets correct treatment automatically,
+  /// keyed off whichever bytecode instruction is currently being
+  /// translated -- see `current_ip`'s own docs.
+  fn call_helper(&mut self, name: &str, args: &[IrValue]) -> IrValue {
+    self.flush_live(self.current_ip);
+    let result = self.call_helper_raw(name, args);
+    self.mark_stale_live(self.current_ip);
+    // `live_regs_at` is `live_in`, which by definition EXCLUDES the
+    // current instruction's own destination register (a `def` gets
+    // subtracted, never added, by the standard liveness equation --
+    // see `typeflow::liveness`'s own docs). That's correct for
+    // ordinary register writes going through `store_reg`, but MANY of
+    // the helpers this call reaches (`zuri_jit_get_global`,
+    // `zuri_jit_call_finish`, `zuri_jit_get_field`, ...) write their
+    // result DIRECTLY to `VM::registers[base+dst]` on the Rust side,
+    // completely bypassing `store_reg`/`reg_cache` -- meaning the
+    // JIT-generated Cranelift `Variable` for `dst` (whatever it held
+    // BEFORE this call, possibly stale garbage from a previous
+    // definition or even function entry) would otherwise never get
+    // invalidated, and a LATER `load_reg(dst)` would wrongly trust it
+    // instead of the fresh value the helper actually wrote to memory.
+    // Explicitly staling `dst` too (regardless of whether it happens
+    // to ALSO be a genuine "use" at this `ip`, which is what would
+    // otherwise be needed for `live_in` to include it) closes that gap
+    // for every helper-backed instruction uniformly.
+    if let Some(dst) = typeflow::any_dst(&self.proto.chunk.code[self.current_ip]) {
+      self.reg_cache[dst as usize] = RegCache::Stale;
+    }
+    result
   }
 
   /// Calls a `jit::runtime` helper that follows the OK(0)/ERR(1) status
@@ -747,12 +1120,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     };
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let sig = self.entry_sig_ref();
+    // A genuine nested call into another compiled Zuri function's own
+    // entry point -- NOT routed through `call_helper` (this is a
+    // `call_indirect` to JIT-compiled code, not a `jit::runtime`
+    // helper), so the flush/stale-mark bracketing it gets automatically
+    // there has to be done explicitly here instead. The callee is free
+    // to allocate, trigger a GC safepoint, or recurse arbitrarily
+    // deep -- exactly the kind of call this cache exists to stay
+    // correct across.
+    self.flush_live(self.current_ip);
     let call =
       self
         .fb
         .ins()
         .call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1]);
     let ret_bits = self.fb.inst_results(call)[0];
+    self.mark_stale_live(self.current_ip);
     self.refresh_regs();
     let base = self.base_param;
     let dst_i = self.idx(dst);
@@ -849,6 +1232,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let is_obj = self.is_obj(v);
     let result_var = self.fb.declare_var(types::I64);
 
+    // See `emit_safepoint`'s own docs on why the flush has to be
+    // unconditional, in shared code, rather than living inside
+    // `call_helper`'s automatic wrapping bundled into `obj_block`
+    // below: `obj_block` only actually runs at runtime when `cond`
+    // holds a heap object, which is FAR from every call (a loop
+    // condition or `if` on a bool/number never takes it) -- the
+    // register cache can't know in advance which way THIS particular
+    // check will go, so it has to assume the conservative case (a
+    // helper call, and therefore a real safepoint, COULD happen here)
+    // unconditionally.
+    self.flush_live(self.current_ip);
+
     let obj_block = self.fb.create_block();
     let nonobj_block = self.fb.create_block();
     let merge_block = self.fb.create_block();
@@ -861,7 +1256,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let base = self.base_param;
     let vm_p = self.vm_param;
     let cond_i = self.idx(cond);
-    let falsey = self.call_helper("zuri_jit_is_falsey", &[vm_p, base, cond_i]);
+    let falsey = self.call_helper_raw("zuri_jit_is_falsey", &[vm_p, base, cond_i]);
     self.fb.def_var(result_var, falsey);
     self.fb.ins().jump(merge_block, &[]);
 
@@ -886,6 +1281,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(merge_block, &[]);
 
     self.fb.switch_to_block(merge_block);
+    // Mirrors the unconditional flush above -- `obj_block`'s helper
+    // call, if it ran, could have relocated/invalidated other live
+    // registers, and there's no way to tell from here which branch
+    // was actually taken.
+    self.mark_stale_live(self.current_ip);
     self.fb.use_var(result_var)
   }
 
@@ -896,6 +1296,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   // ---------------------------------------------------------------
 
   fn emit_instruction(&mut self, ip: usize, instr: Instr) -> bool {
+    // See `current_ip`'s own docs -- every nested helper/`call_indirect`
+    // this instruction's own codegen issues (there can be more than
+    // one, e.g. `emit_fast_call`'s prepare call plus its fast-path
+    // `call_indirect`) consults this SAME value.
+    self.current_ip = ip;
+    // See `merge_points`'s own docs: a genuine CFG join point can't
+    // trust whichever single predecessor's `reg_cache` state happened
+    // to be active when THIS compile-time walk last touched it --
+    // force a fresh memory read for every live register's next use
+    // instead, regardless of which predecessor is ACTUALLY taken at
+    // runtime. Every predecessor edge is responsible for its OWN
+    // flush before branching HERE (see `flush_before_jump` for forward/
+    // fall-through edges, `emit_safepoint` for back edges) -- this
+    // block itself must NOT also flush via `use_var`: on the back
+    // edge specifically, that would read whatever Cranelift's own SSA
+    // construction is holding for the `Variable` in a machine
+    // register/spill slot, a location GC cannot see or fix up, and
+    // writing it back over memory can clobber a relocation that
+    // already ran (see `flush_before_jump`'s own docs for the full
+    // reasoning -- this was a real, confirmed bug, not a hypothetical
+    // one). By the time control reaches here via ANY edge, memory is
+    // already correct; all that's needed is invalidating this
+    // compiler's OWN bookkeeping so later code in/after this block
+    // re-reads it instead of trusting a stale `Variable`.
+    if self.merge_points[ip] {
+      self.mark_stale_live(ip);
+    }
     match instr {
       Instr::LoadConst { dst, const_idx } => {
         let v = self.bake_const(const_idx);
@@ -1029,6 +1456,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         } else {
           let v = self.load_reg(src);
           let is_num = self.is_number(v);
+          let snapshot = self.snapshot_reg_cache();
           let fast_block = self.fb.create_block();
           let slow_block = self.fb.create_block();
           let done_block = self.fb.create_block();
@@ -1048,9 +1476,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let dst_i = self.idx(dst);
           let src_i = self.idx(src);
           self.call_checked("zuri_jit_bitnot_slow", &[self.vm_param, base, dst_i, src_i]);
+          self.resync_dst_from_memory(dst);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(done_block);
+          self.restore_dirty_from_snapshot(&snapshot, dst);
         }
         false
       },
@@ -1064,6 +1494,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         } else {
           let v = self.load_reg(src);
           let is_num = self.is_number(v);
+          let snapshot = self.snapshot_reg_cache();
           let fast_block = self.fb.create_block();
           let slow_block = self.fb.create_block();
           let done_block = self.fb.create_block();
@@ -1081,9 +1512,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let dst_i = self.idx(dst);
           let src_i = self.idx(src);
           self.call_checked("zuri_jit_neg_slow", &[self.vm_param, base, dst_i, src_i]);
+          self.resync_dst_from_memory(dst);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(done_block);
+          self.restore_dirty_from_snapshot(&snapshot, dst);
         }
         false
       },
@@ -1196,6 +1629,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
         if offset < 0 {
           self.emit_safepoint();
+        } else {
+          self.flush_before_jump(target_ip);
         }
         self.fb.ins().jump(self.blocks[target_ip], &[]);
         true
@@ -1207,7 +1642,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let is_falsey = self.fb.ins().icmp(IntCC::NotEqual, falsey, zero);
         if offset < 0 {
           self.emit_safepoint();
+        } else {
+          self.flush_before_jump(target_ip);
         }
+        self.flush_before_jump(ip + 1);
         self.fb.ins().brif(
           is_falsey,
           self.blocks[target_ip],
@@ -1224,7 +1662,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let is_truthy = self.fb.ins().icmp(IntCC::Equal, truthy, zero);
         if offset < 0 {
           self.emit_safepoint();
+        } else {
+          self.flush_before_jump(target_ip);
         }
+        self.flush_before_jump(ip + 1);
         self.fb.ins().brif(
           is_truthy,
           self.blocks[target_ip],
@@ -1888,6 +2329,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let needs_some_gc = self.fb.ins().bor(needs_major, needs_minor);
 
+    // `flush_live`/`mark_stale_live` MUST run unconditionally, in
+    // shared code BEFORE this branch -- not inside `gc_block` (which
+    // is only entered at runtime if `needs_some_gc` is actually true).
+    // This is a genuine safepoint regardless of whether a collection
+    // ends up running THIS time: at compile time we can't know which
+    // way `needs_some_gc` will go on any given call, so the register
+    // cache has to assume the conservative case (a collection COULD
+    // happen right here) every single time. Bundling this inside
+    // `call_helper`'s automatic wrapping (as every OTHER call site in
+    // this file correctly does) would silently condition it on
+    // `gc_block` actually being entered -- on the overwhelmingly
+    // common "no collection needed this time" path, that call (and
+    // therefore the flush) would never actually execute, while every
+    // instruction compiled AFTER this one would wrongly believe
+    // memory was already made current. Using `call_helper_raw` inside
+    // `gc_block` avoids double-flushing/double-staling against the
+    // unconditional calls below.
+    self.flush_live(self.current_ip);
+
     let gc_block = self.fb.create_block();
     let done_block = self.fb.create_block();
     self
@@ -1896,13 +2356,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(needs_some_gc, gc_block, &[], done_block, &[]);
 
     self.fb.switch_to_block(gc_block);
-    self.call_helper("zuri_jit_gc_safepoint", &[self.vm_param]);
+    self.call_helper_raw("zuri_jit_gc_safepoint", &[self.vm_param]);
     // Neither collection touches `VM::registers`'s backing buffer
     // (they only read register contents for root-marking, and free
     // `Obj` storage on `heap`), so no `refresh_regs()` is needed here.
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.mark_stale_live(self.current_ip);
   }
 
   /// `emit_binary_numeric_guarded`'s fast-path body with the guard,
@@ -1926,6 +2387,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.store_reg(dst, bits);
   }
 
+  /// Re-establishes `reg_vars[dst]` (via a real memory read, then a
+  /// normal `store_reg`) immediately after a helper call that just
+  /// wrote `dst`'s result DIRECTLY to memory, bypassing `store_reg`
+  /// entirely. Needed specifically when this happens on ONE internal
+  /// branch of a fast/slow split whose OTHER branch (the fast path)
+  /// defines the SAME `reg_vars[dst]` via an ordinary `store_reg` call:
+  /// without this, Cranelift's own SSA construction never sees a
+  /// `def_var` for `dst` on the slow side at all, so its merge at the
+  /// branches' join point would resolve a later `use_var` to whatever
+  /// pre-instruction value dominated the slow edge -- silently
+  /// discarding the slow path's real result if that's the path actually
+  /// taken at runtime. Simply marking `dst` `Stale` (what `call_helper`'s
+  /// generic `any_dst` handling already does for every helper-written
+  /// destination) is NOT sufficient here specifically: `Stale` means
+  /// "trust memory on the next read," but the FAST path's own result is
+  /// deliberately never written to memory at all (that's the entire
+  /// point of `store_reg`'s laziness) -- a stale-triggered reload would
+  /// silently return the OLD, pre-instruction value if the fast path is
+  /// the one that actually ran. Calling this right after the slow
+  /// helper makes both branches leave `dst` in the exact same kind of
+  /// state (a real `Variable` definition), so Cranelift's own merge
+  /// handles the rest correctly regardless of which path is taken.
+  fn resync_dst_from_memory(&mut self, dst: u8) {
+    let v = self.load_reg_mem(dst);
+    self.store_reg(dst, v);
+  }
+
   fn emit_binary_numeric_guarded(
     &mut self,
     dst: u8,
@@ -1937,6 +2425,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
     let guard = self.both_numbers(va, vb);
+    let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -1956,9 +2445,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let a_i = self.idx(a);
     let b_i = self.idx(b);
     self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `emit_bitwise_guarded`'s fast path, unguarded -- see
@@ -1993,6 +2484,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
     let guard = self.both_numbers(va, vb);
+    let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -2015,9 +2507,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let a_i = self.idx(a);
     let b_i = self.idx(b);
     self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   fn emit_always_helper(&mut self, helper: &'static str, dst: u8, a: u8, b: u8) {
@@ -2063,6 +2557,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let vb = self.load_reg(b);
     let both_num = self.both_numbers(va, vb);
     let both_obj = self.both_obj(va, vb);
+    let snapshot = self.snapshot_reg_cache();
 
     let num_block = self.fb.create_block();
     let check_obj_block = self.fb.create_block();
@@ -2094,6 +2589,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let a_i = self.idx(a);
     let b_i = self.idx(b);
     self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(bits_block);
@@ -2103,6 +2599,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `emit_fcompare_guarded`'s fast path, unguarded -- see
@@ -2134,6 +2631,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
     let guard = self.both_numbers(va, vb);
+    let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -2153,9 +2651,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let a_i = self.idx(a);
     let b_i = self.idx(b);
     self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `emit_addimm`'s fast path, unguarded -- see
@@ -2173,6 +2673,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn emit_addimm(&mut self, dst: u8, a: u8, imm_const: u16) {
     let va = self.load_reg(a);
     let guard = self.is_number(va);
+    let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -2196,9 +2697,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       "zuri_jit_addimm_slow",
       &[self.vm_param, base, dst_i, a_i, imm_bits],
     );
+    self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `emit_imm_numeric_guarded`'s fast path, unguarded -- see
@@ -2229,6 +2732,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) {
     let va = self.load_reg(a);
     let guard = self.is_number(va);
+    let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -2249,9 +2753,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let a_i = self.idx(a);
     let imm_bits = self.bake_f64_bits(imm_const);
     self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, imm_bits]);
+    self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `emit_imm_compare_guarded`'s fast path, unguarded -- see
@@ -2282,6 +2788,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) {
     let va = self.load_reg(a);
     let guard = self.is_number(va);
+    let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -2302,9 +2809,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let a_i = self.idx(a);
     let imm_bits = self.bake_f64_bits(imm_const);
     self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, imm_bits]);
+    self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `EqImm`/`NeqImm` -- like the interpreter's own handler, this is
