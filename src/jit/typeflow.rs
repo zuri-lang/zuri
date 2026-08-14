@@ -1165,9 +1165,7 @@ fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
     // `obj` itself, plus the compiler-duplicated `self` at `obj + 1`,
     // plus `num_args` more argument registers after that -- see these
     // variants' own doc comments in `vm::chunk::Instr`.
-    Instr::Invoke {
-      obj, num_args, ..
-    } => set.set_range(obj, num_args as usize + 2),
+    Instr::Invoke { obj, num_args, .. } => set.set_range(obj, num_args as usize + 2),
     Instr::InvokeSuper {
       superclass,
       num_args,
@@ -1281,7 +1279,7 @@ mod liveness_tests {
         cond: 1,
         offset: -2,
       }, // ip3: back to ip2 if r1 truthy
-      Instr::Return { src: 1 }, // ip4
+      Instr::Return { src: 1 },          // ip4
     ];
     let f = make_func(code, vec![Value::number(5.0), Value::number(0.0)], 2);
     let facts = liveness(&f);
@@ -1522,6 +1520,9 @@ mod ref_classify_tests {
     let f = make_func(code, vec![Value::number(4.0)], 2);
     let types = analyze(&f, None, None);
     let refs = classify_refs(&f, &types);
-    assert!(refs.is_never_ref(2, 1), "Move should propagate non-ref-ness");
+    assert!(
+      refs.is_never_ref(2, 1),
+      "Move should propagate non-ref-ness"
+    );
   }
 }

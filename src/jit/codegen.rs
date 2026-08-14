@@ -40,6 +40,9 @@ use crate::vm::vm;
 /// (entry-block init and `refresh_regs`) instead of calling into Rust,
 /// since this is re-fetched at essentially every helper-call site.
 const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
+/// Byte offset of `VM::global_slots_ptr_cache` -- see that field's own
+/// docs and `emit_get_global`'s use of it.
+const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
 /// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
 /// (major) and `young_bytes_allocated` (minor) -- lets `emit_safepoint`
 /// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
@@ -664,10 +667,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // the same predecessor-side flush every other forward branch into
     // a merge point gets -- see `flush_before_jump`'s own docs.
     self.flush_before_jump(ip + 1);
-    self
-      .fb
-      .ins()
-      .brif(is_num, spec_next, &[], deopt_block, &[]);
+    self.fb.ins().brif(is_num, spec_next, &[], deopt_block, &[]);
     self.fb.switch_to_block(deopt_block);
     self.emit_deopt(ip + 1);
     true
@@ -1150,6 +1150,167 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+  }
+
+  /// `Instr::GetGlobal`'s inline-cache-style fast path: once this exact
+  /// instruction has resolved its name to a ROOT global slot once (see
+  /// `JitInfo::global_slot_cache`'s own docs -- a qualified-module
+  /// resolution never populates this cache, so those always take the
+  /// helper path below), every later execution reads the slot straight
+  /// out of `VM::global_slots` with two loads and an add, no helper
+  /// call, no name lookup at all -- this is what makes a self-recursive
+  /// top-level call (`fib` referencing itself, the single most common
+  /// hot pattern in real recursive code) cost the same as reading an
+  /// already-resolved local instead of paying a full FFI call on every
+  /// single reference.
+  ///
+  /// `flush_live`/`mark_stale_live` follow the exact same unconditional,
+  /// outside-the-branch discipline `emit_safepoint`/`emit_is_falsey` use
+  /// and for the identical reason: the helper call in `miss_block` is
+  /// only actually reached the FIRST time this instruction ever runs,
+  /// but compile-time bookkeeping can't know that in advance, so the
+  /// conservative flush has to happen unconditionally before the branch,
+  /// not bundled inside the block that happens to call the helper. Uses
+  /// `call_helper_raw` (not `call_checked`) for exactly the same reason
+  /// `emit_safepoint`'s `gc_block` does -- avoiding a second, redundant
+  /// flush/stale-mark from `call_helper`'s own automatic wrapping.
+  fn emit_get_global(&mut self, ip: usize, dst: u8, name_const: u16) {
+    let cache_ptr = self.proto.jit.global_slot_cache.as_ptr() as i64;
+    let cache_base = self.i64c(cache_ptr);
+    let cached = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      cache_base,
+      (ip as i32) * 8,
+    );
+    let neg1 = self.i64c(-1);
+    let is_hit = self.fb.ins().icmp(IntCC::NotEqual, cached, neg1);
+
+    self.flush_live(ip);
+
+    let hit_block = self.fb.create_block();
+    let miss_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(is_hit, hit_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(hit_block);
+    let slots_ptr = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      self.vm_param,
+      GLOBAL_SLOTS_PTR_CACHE_OFFSET,
+    );
+    let byte_off = self.fb.ins().imul_imm_s(cached, 8);
+    let addr = self.fb.ins().iadd(slots_ptr, byte_off);
+    let v = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      addr,
+      0,
+    );
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(miss_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let func_ptr = self.func_ptr_const();
+    let name = self.bake_const(name_const);
+    let ip_c = self.u64c(ip as u64);
+    let status = self.call_helper_raw(
+      "zuri_jit_get_global",
+      &[self.vm_param, base, dst_i, func_ptr, name, ip_c],
+    );
+    let zero = self.i64c(0);
+    let is_err = self.fb.ins().icmp(IntCC::NotEqual, status, zero);
+    let err_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
+
+    self.fb.switch_to_block(err_block);
+    let junk = self.i64c(0);
+    self.fb.ins().return_(&[junk]);
+
+    self.fb.switch_to_block(ok_block);
+    self.refresh_regs();
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.mark_stale_live(ip);
+  }
+
+  /// `Instr::SetGlobal`/`Instr::AssignGlobal`'s inline-cache-style fast
+  /// path -- the write-side counterpart of `emit_get_global`, sharing
+  /// its cache array (`JitInfo::global_slot_cache`) and the same
+  /// unconditional flush/stale-mark discipline around the branch (see
+  /// that method's own docs for why). No `resync_dst_from_memory` call
+  /// is needed on the miss path here the way `emit_get_global` needs
+  /// one for its `dst` -- neither instruction defines a register at
+  /// all, only reads `src` and writes to `VM::global_slots`, so there's
+  /// no register-`Variable` SSA merge at `done_block` to keep
+  /// consistent between the two paths.
+  fn emit_set_global(&mut self, ip: usize, src: u8, name_const: u16, slow_helper: &'static str) {
+    let cache_ptr = self.proto.jit.global_slot_cache.as_ptr() as i64;
+    let cache_base = self.i64c(cache_ptr);
+    let cached = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      cache_base,
+      (ip as i32) * 8,
+    );
+    let neg1 = self.i64c(-1);
+    let is_hit = self.fb.ins().icmp(IntCC::NotEqual, cached, neg1);
+
+    self.flush_live(ip);
+
+    let hit_block = self.fb.create_block();
+    let miss_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(is_hit, hit_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(hit_block);
+    let slots_ptr = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      self.vm_param,
+      GLOBAL_SLOTS_PTR_CACHE_OFFSET,
+    );
+    let byte_off = self.fb.ins().imul_imm_s(cached, 8);
+    let addr = self.fb.ins().iadd(slots_ptr, byte_off);
+    let v = self.load_reg(src);
+    self
+      .fb
+      .ins()
+      .store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(miss_block);
+    let base = self.base_param;
+    let src_i = self.idx(src);
+    let func_ptr = self.func_ptr_const();
+    let name = self.bake_const(name_const);
+    let ip_c = self.u64c(ip as u64);
+    let status = self.call_helper_raw(
+      slow_helper,
+      &[self.vm_param, base, src_i, func_ptr, name, ip_c],
+    );
+    let zero = self.i64c(0);
+    let is_err = self.fb.ins().icmp(IntCC::NotEqual, status, zero);
+    let err_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
+
+    self.fb.switch_to_block(err_block);
+    let junk = self.i64c(0);
+    self.fb.ins().return_(&[junk]);
+
+    self.fb.switch_to_block(ok_block);
+    self.refresh_regs();
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.mark_stale_live(ip);
   }
 
   // ---------------------------------------------------------------
@@ -1715,39 +1876,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
 
       Instr::GetGlobal { dst, name_const } => {
-        let base = self.base_param;
-        let dst_i = self.idx(dst);
-        let func_ptr = self.func_ptr_const();
-        let name = self.bake_const(name_const);
-        let ip_c = self.u64c(ip as u64);
-        self.call_checked(
-          "zuri_jit_get_global",
-          &[self.vm_param, base, dst_i, func_ptr, name, ip_c],
-        );
+        self.emit_get_global(ip, dst, name_const);
         false
       },
       Instr::SetGlobal { name_const, src } => {
-        let base = self.base_param;
-        let src_i = self.idx(src);
-        let func_ptr = self.func_ptr_const();
-        let name = self.bake_const(name_const);
-        let ip_c = self.u64c(ip as u64);
-        self.call_checked(
-          "zuri_jit_set_global",
-          &[self.vm_param, base, src_i, func_ptr, name, ip_c],
-        );
+        self.emit_set_global(ip, src, name_const, "zuri_jit_set_global");
         false
       },
       Instr::AssignGlobal { name_const, src } => {
-        let base = self.base_param;
-        let src_i = self.idx(src);
-        let func_ptr = self.func_ptr_const();
-        let name = self.bake_const(name_const);
-        let ip_c = self.u64c(ip as u64);
-        self.call_checked(
-          "zuri_jit_assign_global",
-          &[self.vm_param, base, src_i, func_ptr, name, ip_c],
-        );
+        self.emit_set_global(ip, src, name_const, "zuri_jit_assign_global");
         false
       },
 

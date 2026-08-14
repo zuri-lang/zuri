@@ -522,9 +522,11 @@ fn to_dict(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn pin_each_call(ctx: &mut ZuriContext, list_val: Value, callback: Value) -> (usize, usize) {
   let items = list_val.as_list();
   let count = items.len();
-  let mark = ctx
-    .vm
-    .pin_values(std::iter::once(list_val).chain(std::iter::once(callback)).chain(items));
+  let mark = ctx.vm.pin_values(
+    std::iter::once(list_val)
+      .chain(std::iter::once(callback))
+      .chain(items),
+  );
   (mark, count)
 }
 

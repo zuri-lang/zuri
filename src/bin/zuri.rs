@@ -126,6 +126,16 @@ fn run_file(vm: &mut VM, file: &str) {
           vm.dump_opcode_profile();
         }
 
+        if std::env::var_os("ZURI_DIAG_CALLS").is_some() {
+          use std::sync::atomic::Ordering;
+          let fast = zuri::jit::runtime::DIAG_FAST_CALLS.load(Ordering::Relaxed);
+          let slow = zuri::jit::runtime::DIAG_SLOW_CALLS.load(Ordering::Relaxed);
+          eprintln!(
+            "[diag] fast-path calls: {fast}, slow-path calls: {slow} ({:.1}% fast)",
+            100.0 * fast as f64 / (fast + slow).max(1) as f64
+          );
+        }
+
         if let Err(e) = result {
           eprintln!("{}", vm.format_uncaught(e));
           process::exit(1);

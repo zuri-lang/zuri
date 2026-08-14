@@ -254,6 +254,24 @@ pub struct JitInfo {
   /// "every call observed had numeric args" from "no call has been
   /// observed yet" -- both read as `!0`.
   pub feedback_samples: Cell<u32>,
+  /// Per-`GetGlobal`-instruction inline cache for compiled code ONLY
+  /// (the interpreter has its own, separate `Chunk::global_cache` --
+  /// see that field's docs): `global_slot_cache[ip]` is the resolved
+  /// slot for the `GetGlobal` at that bytecode position, or `-1` if
+  /// never resolved (or resolved against a QUALIFIED module namespace
+  /// rather than the root globals table -- see
+  /// `jit::runtime::zuri_jit_get_global`'s own docs on why only a root
+  /// resolution ever gets cached here). Unlike `Chunk::global_cache`
+  /// (a `RefCell<HashMap>`, fine for the interpreter's own Rust-side
+  /// lookups but not something generated machine code can probe), this
+  /// is a flat, fixed-size array living at a STABLE address for
+  /// exactly as long as this `ObjFunction` does (old-generation,
+  /// non-moving -- see `Heap::alloc_old`'s own docs) -- safe to bake as
+  /// a compile-time-constant base pointer and index straight into with
+  /// two Cranelift `load`s and a compare, no helper call at all on a
+  /// cache hit. Sized once, at construction, to this function's own
+  /// bytecode length, since every valid `ip` is already known then.
+  pub global_slot_cache: Box<[Cell<i64>]>,
 }
 
 impl JitInfo {
@@ -269,6 +287,7 @@ impl JitInfo {
       compiling: Cell::new(false),
       numeric_feedback: Cell::new(!0u64),
       feedback_samples: Cell::new(0),
+      global_slot_cache: vec![Cell::new(-1i64); code_len].into_boxed_slice(),
     }
   }
 }
@@ -1360,7 +1379,8 @@ impl Heap {
       // time is exactly right.
       unsafe { chunk.slots.set_len(0) };
     }
-    self.nursery_chunks
+    self
+      .nursery_chunks
       .truncate(Self::MAX_RETAINED_NURSERY_CHUNKS.max(1));
     self.nursery_fill_idx = 0;
     self.bytes_allocated = self.bytes_allocated.saturating_sub(freed_bytes);

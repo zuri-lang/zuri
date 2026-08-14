@@ -69,6 +69,15 @@
 //! `Chunk::jump_tables` access.
 
 use std::cell::Cell;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// TEMPORARY diagnostic counters -- how often `zuri_jit_call_prepare`'s
+// fast, call_indirect-eligible path is actually taken vs. falling back
+// to the slow `zuri_jit_call`/interpreter path. Printed by `ZURI_DIAG_CALLS=1`
+// at process exit (see src/bin/zuri.rs). Remove once the investigation
+// this instruments is done.
+pub static DIAG_FAST_CALLS: AtomicU64 = AtomicU64::new(0);
+pub static DIAG_SLOW_CALLS: AtomicU64 = AtomicU64::new(0);
 
 use crate::vm::chunk::JumpKey;
 use crate::vm::object::{
@@ -667,6 +676,7 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
   let func_reg = func_reg as u8;
   let callee = vm.get_reg(base, func_reg);
   if !callee.is_closure() || !vm.jit_depth_ok() {
+    DIAG_SLOW_CALLS.fetch_add(1, Ordering::Relaxed);
     return 0;
   }
   // MUST happen before `closure`/`proto` are derived: `closure_out`'s
@@ -680,8 +690,10 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
   let closure = callee.as_closure();
   let proto = closure.function.as_func();
   let Some(entry) = proto.jit.entry.get() else {
+    DIAG_SLOW_CALLS.fetch_add(1, Ordering::Relaxed);
     return 0;
   };
+  DIAG_FAST_CALLS.fetch_add(1, Ordering::Relaxed);
   let new_base = base + func_reg as usize + 1;
   vm.setup_closure_call(callee, closure, proto, new_base, num_args as u8, dst as u8);
   vm.jit_depth_enter();
@@ -1136,6 +1148,18 @@ pub unsafe extern "C" fn zuri_jit_get_global(
         .global_cache
         .borrow_mut()
         .insert(instr_ip, (is_root, slot));
+      // Also populate the JIT-only array cache (`codegen::FuncCompiler`'s
+      // inline fast path -- see `JitInfo::global_slot_cache`'s own docs)
+      // so every LATER execution of this instruction, from compiled
+      // code, skips this whole helper call. Root-globals only: a
+      // qualified-module resolution (`is_root == false`) would need the
+      // module's own namespace-slots pointer cached the same careful
+      // way `VM::global_slots_ptr_cache` is, which nothing here does
+      // yet -- left as a real helper-call miss every time rather than
+      // baking in an unsound fast path.
+      if is_root {
+        func.jit.global_slot_cache[instr_ip].set(slot as i64);
+      }
       let v = vm.read_resolved(gmod, is_root, slot);
       vm.set_reg(base as usize, dst as u8, v);
       OK
@@ -1167,11 +1191,17 @@ pub unsafe extern "C" fn zuri_jit_set_global(
   } else {
     let name_val = Value::from_bits(name_bits);
     let s = vm.get_or_create_slot_in(gmod, name_val.as_str().to_string());
+    let is_root = gmod.is_none();
     func
       .chunk
       .global_cache
       .borrow_mut()
-      .insert(instr_ip, (gmod.is_none(), s));
+      .insert(instr_ip, (is_root, s));
+    // See `zuri_jit_get_global`'s identical comment -- only a root
+    // resolution is safe to fast-path from generated code today.
+    if is_root {
+      func.jit.global_slot_cache[instr_ip].set(s as i64);
+    }
     s
   };
   let v = vm.get_reg(base as usize, src as u8);
@@ -1206,6 +1236,9 @@ pub unsafe extern "C" fn zuri_jit_assign_global(
         .global_cache
         .borrow_mut()
         .insert(instr_ip, (is_root, slot));
+      if is_root {
+        func.jit.global_slot_cache[instr_ip].set(slot as i64);
+      }
       let v = vm.get_reg(base as usize, src as u8);
       vm.write_resolved(gmod, is_root, slot, v);
       OK

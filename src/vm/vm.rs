@@ -198,6 +198,14 @@ pub struct VM {
   /// lets `Chunk::global_cache` cache a slot index permanently with no
   /// invalidation logic needed.
   global_slots: Vec<Cell<Value>>,
+  /// Mirrors `global_slots.as_ptr()`, updated at the one site that can
+  /// reallocate `global_slots` (see `get_or_create_global_slot`) --
+  /// same purpose and pattern as `regs_ptr_cache`, letting compiled
+  /// code's `GetGlobal` fast path (see `jit::codegen`'s own docs on
+  /// `JitInfo::global_slot_cache`) index straight into current storage
+  /// with a direct load at a compile-time-baked offset
+  /// (`VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET`) instead of a helper call.
+  global_slots_ptr_cache: Cell<*const Cell<Value>>,
   /// name -> slot, consulted only on a `global_cache` MISS -- i.e. the
   /// very first time a particular Get/Set/AssignGlobal instruction
   /// executes, ever. Every later execution of that instruction goes
@@ -321,6 +329,9 @@ pub struct VM {
 pub(crate) const VM_HEAP_OFFSET: usize = std::mem::offset_of!(VM, heap);
 /// Byte offset of `VM::regs_ptr_cache` -- see that field's own docs.
 pub(crate) const VM_REGS_PTR_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs_ptr_cache);
+/// Byte offset of `VM::global_slots_ptr_cache` -- see that field's own docs.
+pub(crate) const VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET: usize =
+  std::mem::offset_of!(VM, global_slots_ptr_cache);
 
 type RunResult<T> = Result<T, Value>;
 
@@ -330,6 +341,7 @@ impl VM {
       is_repl: false,
       registers: Vec::new(),
       regs_ptr_cache: Cell::new(std::ptr::null_mut()),
+      global_slots_ptr_cache: Cell::new(std::ptr::null()),
       frames: Vec::new(),
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
@@ -389,6 +401,7 @@ impl VM {
     }
     let slot = self.global_slots.len() as u32;
     self.global_slots.push(Cell::new(Value::nil()));
+    self.sync_global_slots_ptr_cache();
     self.global_names.insert(name, slot);
     slot
   }
@@ -741,6 +754,10 @@ impl VM {
     self.regs_ptr_cache.set(self.registers.as_mut_ptr());
   }
 
+  fn sync_global_slots_ptr_cache(&mut self) {
+    self.global_slots_ptr_cache.set(self.global_slots.as_ptr());
+  }
+
   /// Does `proto` have a compiled entry point ready to use RIGHT NOW?
   /// Never blocks: because the JIT is disabled, this exact prototype
   /// was found ineligible (contains `Raise`/`PushCatch`/`PopCatch` --
@@ -818,6 +835,7 @@ impl VM {
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
     let speculative_params = self.combined_param_feedback(proto);
     let speculative_regs = self.sample_all_reg_types(proto);
+    let __diag_start = std::time::Instant::now();
     let pending = match self
       .jit_engine()
       .build_ir(proto, speculative_params, speculative_regs)
@@ -831,6 +849,13 @@ impl VM {
         return;
       },
     };
+    if std::env::var_os("ZURI_DIAG_CALLS").is_some() {
+      eprintln!(
+        "[diag] synchronous build_ir for '{}' took {:?}",
+        proto.name,
+        __diag_start.elapsed()
+      );
+    }
 
     proto.jit.compiling.set(true);
     self.pending_jit_compiles.push(proto_value);
@@ -1008,10 +1033,7 @@ impl VM {
   /// not-yet-made decision.
   #[inline]
   fn record_call_feedback(&self, proto: &ObjFunction) {
-    if proto.jit.entry.get().is_some()
-      || proto.jit.compiling.get()
-      || proto.jit.ineligible.get()
-    {
+    if proto.jit.entry.get().is_some() || proto.jit.compiling.get() || proto.jit.ineligible.get() {
       return;
     }
     let Some(mask) = self.sample_param_types(proto) else {
@@ -1304,7 +1326,9 @@ impl VM {
     self.frames[frame_idx].ip = deopt_ip;
     let stop_depth = frame_idx;
     let result = self.run_until(stop_depth);
-    self.deopt_reentrancy_depth.set(self.deopt_reentrancy_depth.get() - 1);
+    self
+      .deopt_reentrancy_depth
+      .set(self.deopt_reentrancy_depth.get() - 1);
     result
   }
 
@@ -2524,8 +2548,7 @@ impl VM {
             // switching `Obj::List`'s storage to `SmallVec` at all.
             // Collecting into a `Vec` first and converting after would
             // still pay for a heap allocation on every list literal.
-            let items: ListStorage =
-              (0..count).map(|i| self.get_reg(base, start + i)).collect();
+            let items: ListStorage = (0..count).map(|i| self.get_reg(base, start + i)).collect();
             let list_val = self.heap.alloc_list(items);
             self.set_reg(base, dst, list_val);
           },
