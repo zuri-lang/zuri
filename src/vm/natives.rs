@@ -1,5 +1,5 @@
 use crate::builtins::enforce::ArgType;
-use crate::vm::object::{FileHandle, NativeFn, NativeFunction, ZuriContext};
+use crate::vm::object::{FileHandle, NativeFn, NativeFunction, ZuriContext, write_barrier};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use crate::{
@@ -221,6 +221,7 @@ fn setprop(ctx: &mut ZuriContext) -> Result<Value, String> {
     Some(idx) => {
       let value = ctx.args[2];
       ctx.args[0].as_instance().fields[idx as usize].set(value);
+      write_barrier(ctx.args[0].as_obj());
       Ok(Value::bool(true))
     },
     None => Ok(Value::bool(false)),
@@ -235,6 +236,7 @@ fn delprop(ctx: &mut ZuriContext) -> Result<Value, String> {
   match field_slot(ctx, 0, 1) {
     Some(idx) => {
       ctx.args[0].as_instance().fields[idx as usize].set(Value::nil());
+      write_barrier(ctx.args[0].as_obj());
       Ok(Value::bool(true))
     },
     None => Ok(Value::bool(false)),

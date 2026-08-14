@@ -19,8 +19,6 @@
 //!   (`Obj`'s layout is not, and must never be treated as, stable
 //!   across compiler versions) always calls back into `jit::runtime`.
 
-use std::collections::HashMap;
-
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
   AbiParam, Block, InstBuilder, SigRef, StackSlot, StackSlotData, StackSlotKind, Value as IrValue,
@@ -43,13 +41,18 @@ use crate::vm::vm;
 /// since this is re-fetched at essentially every helper-call site.
 const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
 /// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
-/// -- lets `emit_safepoint` inline `Heap::needs_gc()`'s check (two
-/// loads + a compare) instead of an unconditional FFI call on every
-/// loop back-edge and call site, only actually calling into Rust on the
-/// rare branch where a collection is really about to happen.
+/// (major) and `young_bytes_allocated` (minor) -- lets `emit_safepoint`
+/// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
+/// (three loads + two compares -- the young threshold itself is a
+/// compile-time immediate, see `Heap::YOUNG_NEXT_GC`) instead of an
+/// unconditional FFI call on every loop back-edge and call site, only
+/// actually calling into Rust on the rare branch where a collection
+/// (of either kind) is really about to happen.
 const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
 const HEAP_NEXT_GC_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NEXT_GC_OFFSET) as i32;
+const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
 
 /// Compiles `proto`'s bytecode into `fb`'s function body. Returns the
 /// bytecode-ip -> osr-id map (`CompiledFunction::osr_ids`) on success,
@@ -71,7 +74,7 @@ const HEAP_NEXT_GC_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NEXT_GC_OFFS
 pub fn compile(
   fb: &mut FunctionBuilder,
   module: &mut JITModule,
-  helpers: &HashMap<&'static str, FuncId>,
+  helpers: &FxHashMap<&'static str, FuncId>,
   proto: &ObjFunction,
   speculative_params: Option<u64>,
   speculative_regs: Option<typeflow::SpeculativeRegs>,
@@ -119,7 +122,7 @@ pub fn compile(
 struct FuncCompiler<'a, 'b> {
   fb: &'a mut FunctionBuilder<'b>,
   module: &'a mut JITModule,
-  helpers: &'a HashMap<&'static str, FuncId>,
+  helpers: &'a FxHashMap<&'static str, FuncId>,
   proto: &'a ObjFunction,
   /// One block per bytecode instruction index -- `blocks[ip]` is where
   /// that instruction's own codegen begins, and the only valid jump
@@ -183,7 +186,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn new(
     fb: &'a mut FunctionBuilder<'b>,
     module: &'a mut JITModule,
-    helpers: &'a HashMap<&'static str, FuncId>,
+    helpers: &'a FxHashMap<&'static str, FuncId>,
     proto: &'a ObjFunction,
     code_len: usize,
     speculative_params: Option<u64>,
@@ -268,14 +271,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // target guard (see its own docs).
     let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> =
       if self.speculative_params.is_some() || self.speculative_regs.is_some() {
-        let blocks = (0..self.blocks.len()).map(|_| self.fb.create_block()).collect();
+        let blocks = (0..self.blocks.len())
+          .map(|_| self.fb.create_block())
+          .collect();
         let facts = typeflow::analyze(self.proto, self.speculative_params, self.speculative_regs);
         Some((blocks, facts))
       } else {
         None
       };
 
-    self.emit_entry_dispatch(osr_param, specialized.as_ref().map(|(b, f)| (b.as_slice(), f)));
+    self.emit_entry_dispatch(
+      osr_param,
+      specialized.as_ref().map(|(b, f)| (b.as_slice(), f)),
+    );
 
     // Pass 1: the general body, exactly as before this function ever
     // had a `speculative_params` concept -- `type_facts` was already
@@ -322,7 +330,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // pattern already used for parameters/OSR, just triggered at
         // an ordinary mid-function definition site instead of an
         // external entry point.
-        let general_next = general_blocks.get(ip + 1).copied().unwrap_or(general_blocks[ip]);
+        let general_next = general_blocks
+          .get(ip + 1)
+          .copied()
+          .unwrap_or(general_blocks[ip]);
         if !self.emit_speculative_guard(ip, instr, spec_next, general_next) {
           self.fb.ins().jump(spec_next, &[]);
         }
@@ -365,7 +376,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// empty -- the loop never touches the speculated value at all)
   /// skips the guard and routes straight to the general body: the
   /// specialized block there would be behaviorally identical anyway.
-  fn emit_entry_dispatch(&mut self, osr_param: IrValue, specialized: Option<(&[Block], &typeflow::TypeFacts)>) {
+  fn emit_entry_dispatch(
+    &mut self,
+    osr_param: IrValue,
+    specialized: Option<(&[Block], &typeflow::TypeFacts)>,
+  ) {
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
 
@@ -373,7 +388,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let normal_target = normal_route.unwrap_or(self.blocks[0]);
 
     let mut next_check = self.fb.create_block();
-    self.fb.ins().brif(is_normal, normal_target, &[], next_check, &[]);
+    self
+      .fb
+      .ins()
+      .brif(is_normal, normal_target, &[], next_check, &[]);
 
     let mut targets: Vec<(i32, usize)> = self.osr_ids.iter().map(|(&ip, &id)| (id, ip)).collect();
     targets.sort_by_key(|&(id, _)| id);
@@ -397,7 +415,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.fb.ins().brif(is_this, route, &[], after, &[]);
         routes.push((route, ip));
       } else {
-        self.fb.ins().brif(is_this, self.blocks[ip], &[], after, &[]);
+        self
+          .fb
+          .ins()
+          .brif(is_this, self.blocks[ip], &[], after, &[]);
       }
       next_check = after;
     }
@@ -448,7 +469,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
         }
         let guard = guard.expect("mask != 0 always sets at least one bit");
-        self.fb.ins().brif(guard, spec_blocks[ip], &[], self.blocks[ip], &[]);
+        self
+          .fb
+          .ins()
+          .brif(guard, spec_blocks[ip], &[], self.blocks[ip], &[]);
       }
     }
   }
@@ -492,7 +516,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
     let v = self.load_reg(dst);
     let is_num = self.is_number(v);
-    self.fb.ins().brif(is_num, spec_next, &[], general_next, &[]);
+    self
+      .fb
+      .ins()
+      .brif(is_num, spec_next, &[], general_next, &[]);
     true
   }
 
@@ -1796,14 +1823,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// matching the standard "safepoints at back-edges and calls"
   /// baseline-JIT policy this project's design calls for.
   ///
-  /// `Heap::needs_gc()` itself is just `bytes_allocated > next_gc`, two
-  /// plain integer loads -- inlined here so the overwhelmingly common
-  /// case (heap nowhere near its threshold) costs two loads and a
-  /// compare instead of an unconditional FFI call at EVERY loop
-  /// iteration and call site. The real `zuri_jit_gc_safepoint` helper
-  /// is only actually invoked on the rare branch where a collection is
-  /// about to happen; it re-checks `needs_gc()` itself too, so a stale
-  /// read here (never possible mid-single-threaded-execution anyway)
+  /// `Heap::needs_major_gc()`/`needs_minor_gc()` are each just a
+  /// threshold compare -- inlined here (four loads + two compares, one
+  /// pair per generation) so the overwhelmingly common case (neither
+  /// generation near its threshold) costs that instead of an
+  /// unconditional FFI call at EVERY loop iteration and call site. The
+  /// real `zuri_jit_gc_safepoint` helper is only actually invoked on
+  /// the rare branch where a collection of some kind is about to
+  /// happen; it re-checks both thresholds itself too, so a stale read
+  /// here (never possible mid-single-threaded-execution anyway)
   /// couldn't cause an incorrect collection either way.
   fn emit_safepoint(&mut self) {
     let bytes = self.fb.ins().load(
@@ -1818,19 +1846,39 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.vm_param,
       HEAP_NEXT_GC_OFFSET,
     );
-    let needs_gc = self
+    let needs_major = self
       .fb
       .ins()
       .icmp(IntCC::UnsignedGreaterThan, bytes, next_gc);
 
+    let young_bytes = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      self.vm_param,
+      HEAP_YOUNG_BYTES_ALLOCATED_OFFSET,
+    );
+    // `YOUNG_NEXT_GC` is the one threshold in this collector that's
+    // truly fixed (never grows the way `next_gc` does), so it's baked
+    // in as a compile-time immediate instead of a third runtime load.
+    let young_next_gc = self.i64c(object::Heap::YOUNG_NEXT_GC as i64);
+    let needs_minor = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThan, young_bytes, young_next_gc);
+
+    let needs_some_gc = self.fb.ins().bor(needs_major, needs_minor);
+
     let gc_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self.fb.ins().brif(needs_gc, gc_block, &[], done_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(needs_some_gc, gc_block, &[], done_block, &[]);
 
     self.fb.switch_to_block(gc_block);
     self.call_helper("zuri_jit_gc_safepoint", &[self.vm_param]);
-    // `collect_garbage` never touches `VM::registers`'s backing buffer
-    // (it only reads register contents for root-marking, and frees
+    // Neither collection touches `VM::registers`'s backing buffer
+    // (they only read register contents for root-marking, and free
     // `Obj` storage on `heap`), so no `refresh_regs()` is needed here.
     self.fb.ins().jump(done_block, &[]);
 

@@ -11,7 +11,7 @@ use crate::{
     method, method_n, method_opt, to_string,
   },
   vm::{
-    object::{DictStorage, Obj, ZuriContext},
+    object::{DictStorage, Obj, ZuriContext, write_barrier},
     value::Value,
   },
 };
@@ -56,10 +56,14 @@ fn with_dict_mut<F, R>(v: Value, f: F) -> R
 where
   F: FnOnce(&mut DictStorage) -> R,
 {
-  match unsafe { &*v.as_obj() } {
+  let result = match unsafe { &*v.as_obj() } {
     Obj::Dict(storage) => f(&mut storage.borrow_mut()),
     _ => unreachable!("with_dict_mut called on a non-dict Value"),
-  }
+  };
+  // Coarse and unconditional -- see `write_barrier`'s own docs, and
+  // `list.rs`'s `with_list_mut` (its exact counterpart).
+  write_barrier(v.as_obj());
+  result
 }
 
 /// Recursively clones List/Dict CONTENTS (not just their top-level

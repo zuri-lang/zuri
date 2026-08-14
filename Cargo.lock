@@ -2236,6 +2236,7 @@ dependencies = [
  "sha3",
  "signature",
  "sm3",
+ "smallvec",
  "target-lexicon",
  "toml",
  "whirlpool",

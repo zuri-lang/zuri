@@ -13,7 +13,7 @@ use crate::{
     method, method_n, method_opt, to_string,
   },
   vm::{
-    object::{Obj, ZuriContext},
+    object::{ListStorage, Obj, ZuriContext, write_barrier},
     value::Value,
   },
 };
@@ -69,12 +69,18 @@ pub static LIST_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
 /// be an internal bug, not a user-triggerable error.
 fn with_list_mut<F, R>(v: Value, f: F) -> R
 where
-  F: FnOnce(&mut Vec<Value>) -> R,
+  F: FnOnce(&mut ListStorage) -> R,
 {
-  match unsafe { &*v.as_obj() } {
+  let result = match unsafe { &*v.as_obj() } {
     Obj::List(items) => f(&mut items.borrow_mut()),
     _ => unreachable!("with_list_mut called on a non-list Value"),
-  }
+  };
+  // Coarse and unconditional -- see `write_barrier`'s own docs. Costs
+  // one no-op branch on the (overwhelmingly common) read-only/young
+  // calls through here, in exchange for never having to audit which of
+  // this file's many list methods actually mutate.
+  write_barrier(v.as_obj());
+  result
 }
 
 //-----------------------------------------------------------------------------------

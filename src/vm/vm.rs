@@ -10,8 +10,8 @@ use crate::jit::{EntryFn, JitEngine, background, typeflow};
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
-  Heap, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding, UpvalueDescriptor, UpvalueState,
-  ZuriContext,
+  Heap, ListStorage, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding, UpvalueDescriptor,
+  UpvalueState, ZuriContext, write_barrier,
 };
 use crate::vm::value::Value;
 
@@ -370,7 +370,10 @@ impl VM {
   pub(crate) fn write_slot_in(&self, module: Option<Value>, slot: u32, v: Value) {
     match module {
       None => self.global_slots[slot as usize].set(v),
-      Some(m) => m.as_module().namespace.slots[slot as usize].set(v),
+      Some(m) => {
+        m.as_module().namespace.slots[slot as usize].set(v);
+        write_barrier(m.as_obj());
+      },
     }
   }
 
@@ -408,7 +411,9 @@ impl VM {
     if is_root {
       self.global_slots[slot as usize].set(v);
     } else {
-      module.unwrap().as_module().namespace.slots[slot as usize].set(v);
+      let m = module.unwrap();
+      m.as_module().namespace.slots[slot as usize].set(v);
+      write_barrier(m.as_obj());
     }
   }
 
@@ -1709,8 +1714,10 @@ impl VM {
     let mut ip = self.frames[frame_idx].ip;
 
     'dispatch: loop {
-      if self.heap.needs_gc() {
+      if self.heap.needs_major_gc() {
         self.collect_garbage();
+      } else if self.heap.needs_minor_gc() {
+        self.collect_minor();
       }
 
       let func = unsafe { &*func_ptr };
@@ -2208,14 +2215,24 @@ impl VM {
             let cell = upval_val.as_upvalue();
             match cell.get() {
               UpvalueState::Open(abs_idx) => self.registers[abs_idx] = v,
-              UpvalueState::Closed(_) => cell.set(UpvalueState::Closed(v)),
+              UpvalueState::Closed(_) => {
+                cell.set(UpvalueState::Closed(v));
+                write_barrier(upval_val.as_obj());
+              },
             }
           },
           Instr::CloseUpvalues { from } => {
             self.close_upvalues_from(base + from as usize);
           },
           Instr::MakeList { dst, start, count } => {
-            let items: Vec<Value> = (0..count).map(|i| self.get_reg(base, start + i)).collect();
+            // Collect straight into `ListStorage`, not a `Vec` -- for
+            // `count` within the inline capacity (the common case:
+            // small literal arrays), this is the whole point of
+            // switching `Obj::List`'s storage to `SmallVec` at all.
+            // Collecting into a `Vec` first and converting after would
+            // still pay for a heap allocation on every list literal.
+            let items: ListStorage =
+              (0..count).map(|i| self.get_reg(base, start + i)).collect();
             let list_val = self.heap.alloc_list(items);
             self.set_reg(base, dst, list_val);
           },
@@ -2297,6 +2314,7 @@ impl VM {
             let class_val = self.get_reg(base, class);
             let init = self.get_reg(base, src);
             class_val.as_class_mut().own_field_initializer = Some(init);
+            write_barrier(class_val.as_obj());
           },
 
           Instr::SetMethod {
@@ -2308,6 +2326,7 @@ impl VM {
             let name = tri!(self.const_as_str(func, name_const), 'step);
             let method = self.get_reg(base, src);
             class_val.as_class_mut().methods.insert(name, method);
+            write_barrier(class_val.as_obj());
           },
 
           Instr::DeclareStatic {
@@ -2322,6 +2341,8 @@ impl VM {
             let idx = c.statics.len() as u16;
             c.static_slots.insert(name, idx);
             c.statics.push(Cell::new(value));
+            drop(c);
+            write_barrier(class_val.as_obj());
           },
 
           Instr::FinalizeClass { class } => {
@@ -2457,6 +2478,7 @@ impl VM {
                 'step
               );
               inst.fields[idx as usize].set(value);
+              write_barrier(receiver.as_obj());
             } else if receiver.is_class() {
               tri!(
                 set_static(receiver, name_val.as_str(), value)
@@ -2900,6 +2922,7 @@ impl VM {
       if idx >= from_abs_index {
         let current_val = self.registers[idx];
         v.as_upvalue().set(UpvalueState::Closed(current_val));
+        write_barrier(v.as_obj());
         self.open_upvalues.swap_remove(i);
       } else {
         i += 1;
@@ -3254,16 +3277,18 @@ impl VM {
   // Garbage collection
   //-----------------------------------------------------------------------------------
 
-  /// Mark-and-sweep collection. Roots are: every register within reach
-  /// of a currently active frame, every global, the closure each active
-  /// call frame is executing, and any upvalue still open. From there,
-  /// every `Value` those objects transitively hold is walked with an
-  /// explicit work-list (not recursion, so a long chain can't blow the
-  /// stack) before anything unreached gets swept.
+  /// Full mark-and-sweep collection. Roots are: every register within
+  /// reach of a currently active frame, every global, the closure each
+  /// active call frame is executing, and any upvalue still open. From
+  /// there, every `Value` those objects transitively hold is walked
+  /// with an explicit work-list (not recursion, so a long chain can't
+  /// blow the stack) before anything unreached gets swept.
   ///
   /// Called automatically from `run_until` once the heap has grown past
   /// its threshold; also exposed to native code (see the `gc` native)
-  /// for forcing a collection on demand.
+  /// for forcing a collection on demand. See `collect_minor` for the
+  /// cheaper, far-more-frequent counterpart this collector normally
+  /// relies on instead.
   pub(crate) fn collect_garbage(&mut self) {
     #[cfg(feature = "gc-log")]
     let before_bytes = self.heap.bytes_allocated();
@@ -3311,93 +3336,22 @@ impl VM {
       // that was itself still live when we queued it, and nothing is
       // freed until `sweep` runs below -- well after this loop -- so the
       // object behind `ptr` is guaranteed to still be valid here.
-      match unsafe { &*ptr } {
-        Obj::List(items) => {
-          for v in items.borrow().iter() {
-            Self::mark_root(*v, &mut worklist);
-          }
-        },
-        Obj::Dict(storage) => {
-          for (k, v) in storage.borrow().entries.iter() {
-            Self::mark_root(*k, &mut worklist);
-            Self::mark_root(*v, &mut worklist);
-          }
-        },
-        Obj::Func(f) => {
-          for c in &f.chunk.constants {
-            Self::mark_root(*c, &mut worklist);
-          }
-          if let Some(m) = f.globals_module {
-            Self::mark_root(m, &mut worklist);
-          }
-        },
-        Obj::Closure(c) => {
-          Self::mark_root(c.function, &mut worklist);
-          for u in &c.upvalues {
-            Self::mark_root(*u, &mut worklist);
-          }
-        },
-        Obj::Upvalue(cell) => {
-          if let UpvalueState::Closed(v) = cell.get() {
-            Self::mark_root(v, &mut worklist);
-          }
-        },
-        Obj::Class(c) => {
-          let class = c.borrow();
-          if let Some(sup) = class.superclass {
-            Self::mark_root(sup, &mut worklist);
-          }
-          for m in class.methods.values() {
-            Self::mark_root(*m, &mut worklist);
-          }
-          if let Some(init) = class.own_field_initializer {
-            Self::mark_root(init, &mut worklist);
-          }
-          if let Some(ctor) = class.constructor {
-            Self::mark_root(ctor, &mut worklist);
-          }
-          for cell in &class.statics {
-            Self::mark_root(cell.get(), &mut worklist);
-          }
-        },
-        Obj::Instance(inst) => {
-          Self::mark_root(inst.class, &mut worklist);
-          for cell in &inst.fields {
-            Self::mark_root(cell.get(), &mut worklist);
-          }
-        },
-        Obj::BoundMethod(b) => {
-          Self::mark_root(b.receiver, &mut worklist);
-          Self::mark_root(b.method, &mut worklist);
-        },
-        Obj::Module(m) => {
-          let m = m.borrow();
-          for cell in &m.namespace.slots {
-            Self::mark_root(cell.get(), &mut worklist);
-          }
-        },
-        Obj::ModuleBinding(b) => {
-          Self::mark_root(b.module, &mut worklist);
-          if let Some(p) = b.promoted {
-            Self::mark_root(p, &mut worklist);
-          }
-        },
-        Obj::Str(_)
-        | Obj::Bytes(_)
-        | Obj::BigInt(_)
-        | Obj::Native(_)
-        | Obj::File(_)
-        | Obj::Ptr(_)
-        | Obj::Range { .. } => {},
-      }
+      Self::walk_children(ptr, |v| Self::mark_root(v, &mut worklist));
     }
+
+    // A full scan just proved everything currently reachable, old
+    // objects included -- every remembered-set entry is now
+    // redundant. Drop them (clearing their `remembered` flags) so a
+    // future write to any of them properly re-queues it; see
+    // `Heap::drain_remembered`'s own docs.
+    self.heap.drain_remembered();
 
     #[cfg(feature = "gc-log")]
     {
       let freed = self.heap.sweep();
       if std::env::var_os("ZURI_GC_LOG").is_some() {
         eprintln!(
-          "[gc] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
+          "[gc-major] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
           freed,
           before_count,
           before_bytes,
@@ -3410,6 +3364,173 @@ impl VM {
     self.heap.sweep();
   }
 
+  /// Minor collection -- the cheap, frequent counterpart to
+  /// `collect_garbage` that this collector normally relies on. Scans
+  /// the SAME roots `collect_garbage` does, but only ever marks and
+  /// transitively walks into objects that are still `Young`: an `Old`
+  /// object reached from a root is simply skipped (never re-verified,
+  /// never traversed into), since minor collection never sweeps old
+  /// objects and therefore never needs to reprove their liveness.
+  ///
+  /// The one thing that reasoning alone can't see: an old object that
+  /// was MUTATED since its last full scan could now point at a young
+  /// object that's otherwise unreachable from any of today's roots.
+  /// That's exactly what `write_barrier` and the remembered set exist
+  /// to cover -- every remembered old object's direct children are
+  /// walked here too (but the old object itself is never marked; only
+  /// its children can be young). See `object.rs`'s module docs on
+  /// `write_barrier` for why this is sound: the barrier fires on EVERY
+  /// mutation of an old container, so an old->young edge can only
+  /// exist via an object currently in the remembered set.
+  pub(crate) fn collect_minor(&mut self) {
+    #[cfg(feature = "gc-log")]
+    let before_count = self.heap.object_count();
+
+    let mut worklist: Vec<*const Obj> = Vec::new();
+
+    let regs_top = self
+      .frames
+      .last()
+      .map(|f| f.base + unsafe { &*f.function }.num_registers as usize)
+      .unwrap_or(0)
+      .min(self.registers.len());
+
+    for v in &self.registers[..regs_top] {
+      Self::mark_root_young(*v, &mut worklist);
+    }
+    for cell in &self.global_slots {
+      Self::mark_root_young(cell.get(), &mut worklist);
+    }
+    for frame in &self.frames {
+      Self::mark_root_young(frame.closure_val, &mut worklist);
+    }
+    for (_, v) in &self.open_upvalues {
+      Self::mark_root_young(*v, &mut worklist);
+    }
+    for v in &self.gc_pins {
+      Self::mark_root_young(*v, &mut worklist);
+    }
+    for v in &self.pending_jit_compiles {
+      Self::mark_root_young(*v, &mut worklist);
+    }
+    for v in self.modules.values() {
+      Self::mark_root_young(*v, &mut worklist);
+    }
+
+    for remembered_ptr in self.heap.drain_remembered() {
+      Self::walk_children(remembered_ptr, |v| Self::mark_root_young(v, &mut worklist));
+    }
+
+    while let Some(ptr) = worklist.pop() {
+      Self::walk_children(ptr, |v| Self::mark_root_young(v, &mut worklist));
+    }
+
+    #[cfg(feature = "gc-log")]
+    {
+      let freed = self.heap.sweep_young();
+      if std::env::var_os("ZURI_GC_LOG").is_some() {
+        eprintln!(
+          "[gc-minor] freed {}/{} young objects",
+          freed,
+          before_count
+        );
+      }
+    }
+    #[cfg(not(feature = "gc-log"))]
+    self.heap.sweep_young();
+  }
+
+  /// Enumerates every `Value` held directly by the object behind
+  /// `ptr` -- its immediate children in the object graph -- invoking
+  /// `mark` for each. Shared between `collect_garbage` (which marks
+  /// unconditionally) and `collect_minor` (which only marks, and
+  /// therefore only transitively walks into, objects that are still
+  /// `Young`), so this per-`Obj`-variant traversal exists in exactly
+  /// one place instead of two copies that could drift apart.
+  fn walk_children(ptr: *const Obj, mut mark: impl FnMut(Value)) {
+    // SAFETY: see the two call sites' own safety comments -- both only
+    // ever call this with a pointer that's still guaranteed live.
+    match unsafe { &*ptr } {
+      Obj::List(items) => {
+        for v in items.borrow().iter() {
+          mark(*v);
+        }
+      },
+      Obj::Dict(storage) => {
+        for (k, v) in storage.borrow().entries.iter() {
+          mark(*k);
+          mark(*v);
+        }
+      },
+      Obj::Func(f) => {
+        for c in &f.chunk.constants {
+          mark(*c);
+        }
+        if let Some(m) = f.globals_module {
+          mark(m);
+        }
+      },
+      Obj::Closure(c) => {
+        mark(c.function);
+        for u in &c.upvalues {
+          mark(*u);
+        }
+      },
+      Obj::Upvalue(cell) => {
+        if let UpvalueState::Closed(v) = cell.get() {
+          mark(v);
+        }
+      },
+      Obj::Class(c) => {
+        let class = c.borrow();
+        if let Some(sup) = class.superclass {
+          mark(sup);
+        }
+        for m in class.methods.values() {
+          mark(*m);
+        }
+        if let Some(init) = class.own_field_initializer {
+          mark(init);
+        }
+        if let Some(ctor) = class.constructor {
+          mark(ctor);
+        }
+        for cell in &class.statics {
+          mark(cell.get());
+        }
+      },
+      Obj::Instance(inst) => {
+        mark(inst.class);
+        for cell in &inst.fields {
+          mark(cell.get());
+        }
+      },
+      Obj::BoundMethod(b) => {
+        mark(b.receiver);
+        mark(b.method);
+      },
+      Obj::Module(m) => {
+        let m = m.borrow();
+        for cell in &m.namespace.slots {
+          mark(cell.get());
+        }
+      },
+      Obj::ModuleBinding(b) => {
+        mark(b.module);
+        if let Some(p) = b.promoted {
+          mark(p);
+        }
+      },
+      Obj::Str(_)
+      | Obj::Bytes(_)
+      | Obj::BigInt(_)
+      | Obj::Native(_)
+      | Obj::File(_)
+      | Obj::Ptr(_)
+      | Obj::Range { .. } => {},
+    }
+  }
+
   /// Add `v` to the reachable set and, the first time it's seen, queue
   /// it so `collect_garbage` walks its children too. A no-op on repeat
   /// visits, which is what makes cycles (e.g. a closure capturing a
@@ -3420,6 +3541,23 @@ impl VM {
       return;
     }
     let ptr = v.as_obj();
+    if Heap::mark_object(ptr) {
+      worklist.push(ptr);
+    }
+  }
+
+  /// `mark_root`'s minor-collection counterpart: skips (and does NOT
+  /// transitively walk into) anything that isn't currently `Young`.
+  /// See `collect_minor`'s own docs for why that's sufficient.
+  #[inline(always)]
+  fn mark_root_young(v: Value, worklist: &mut Vec<*const Obj>) {
+    if !v.is_obj() {
+      return;
+    }
+    let ptr = v.as_obj();
+    if !Heap::is_young(ptr) {
+      return;
+    }
     if Heap::mark_object(ptr) {
       worklist.push(ptr);
     }
@@ -3634,6 +3772,7 @@ pub(crate) fn set_static(class_val: Value, name: &str, value: Value) -> Result<(
     let class = c.as_class();
     if let Some(&idx) = class.static_slots.get(name) {
       class.statics[idx as usize].set(value);
+      write_barrier(c.as_obj());
       return Ok(());
     }
     cur = class.superclass;

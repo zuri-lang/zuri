@@ -71,7 +71,9 @@
 use std::cell::Cell;
 
 use crate::vm::chunk::JumpKey;
-use crate::vm::object::{ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState};
+use crate::vm::object::{
+  ListStorage, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, write_barrier,
+};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
@@ -95,19 +97,22 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 
 /// GC safepoint -- called at every loop back-edge and call site in
 /// compiled code (see `codegen::FuncCompiler::emit_safepoint`), mirrors
-/// the interpreter's own per-instruction `if self.heap.needs_gc() {
-/// self.collect_garbage() }` check. Sound for exactly the same reason
-/// the interpreter's root scan is: this frame's `CallFrame` (base +
-/// function pointer) is already on `VM::frames` for the whole duration
-/// compiled code runs (pushed by `VM::invoke_compiled`'s caller before
-/// entry, popped after), and every register's actual content lives in
-/// `VM::registers` at all times (never a separate cached copy) -- so
-/// the collector's normal root scan already sees this frame correctly
-/// with no JIT-specific support needed.
+/// the interpreter's own per-instruction `if needs_major_gc() { ... }
+/// else if needs_minor_gc() { ... }` check. Sound for exactly the same
+/// reason the interpreter's root scan is: this frame's `CallFrame`
+/// (base + function pointer) is already on `VM::frames` for the whole
+/// duration compiled code runs (pushed by `VM::invoke_compiled`'s
+/// caller before entry, popped after), and every register's actual
+/// content lives in `VM::registers` at all times (never a separate
+/// cached copy) -- so the collector's normal root scan already sees
+/// this frame correctly with no JIT-specific support needed, for
+/// either a major or a minor collection.
 pub unsafe extern "C" fn zuri_jit_gc_safepoint(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
-  if vm.heap.needs_gc() {
+  if vm.heap.needs_major_gc() {
     vm.collect_garbage();
+  } else if vm.heap.needs_minor_gc() {
+    vm.collect_minor();
   }
   OK
 }
@@ -1247,7 +1252,10 @@ pub unsafe extern "C" fn zuri_jit_set_upval(
   let cell = upval_val.as_upvalue();
   match cell.get() {
     UpvalueState::Open(abs_idx) => vm.set_reg_abs(abs_idx, v),
-    UpvalueState::Closed(_) => cell.set(UpvalueState::Closed(v)),
+    UpvalueState::Closed(_) => {
+      cell.set(UpvalueState::Closed(v));
+      write_barrier(upval_val.as_obj());
+    },
   }
   OK
 }
@@ -1271,7 +1279,9 @@ pub unsafe extern "C" fn zuri_jit_make_list(
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
-  let items: Vec<Value> = (0..count as u8)
+  // See the interpreter's own `Instr::MakeList` handler for why this
+  // collects directly into `ListStorage` rather than a `Vec` first.
+  let items: ListStorage = (0..count as u8)
     .map(|i| vm.get_reg(base, start as u8 + i))
     .collect();
   let list_val = vm.heap.alloc_list(items);
@@ -1484,6 +1494,7 @@ pub unsafe extern "C" fn zuri_jit_set_field_init(
   let class_val = vm.get_reg(base, class as u8);
   let init = vm.get_reg(base, src as u8);
   class_val.as_class_mut().own_field_initializer = Some(init);
+  write_barrier(class_val.as_obj());
   OK
 }
 
@@ -1500,6 +1511,7 @@ pub unsafe extern "C" fn zuri_jit_set_method(
   let name = Value::from_bits(name_bits).as_str().to_string();
   let method = vm.get_reg(base, src as u8);
   class_val.as_class_mut().methods.insert(name, method);
+  write_barrier(class_val.as_obj());
   OK
 }
 
@@ -1519,6 +1531,8 @@ pub unsafe extern "C" fn zuri_jit_declare_static(
   let idx = c.statics.len() as u16;
   c.static_slots.insert(name, idx);
   c.statics.push(Cell::new(value));
+  drop(c);
+  write_barrier(class_val.as_obj());
   OK
 }
 
@@ -1706,6 +1720,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
 
     if let Some(idx) = cached_slot {
       inst.fields[idx as usize].set(value);
+      write_barrier(receiver.as_obj());
       Ok(())
     } else {
       let class = inst.class.as_class();
@@ -1717,6 +1732,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
             .borrow_mut()
             .insert(instr_ip, (class_bits, idx));
           inst.fields[idx as usize].set(value);
+          write_barrier(receiver.as_obj());
           Ok(())
         },
         None => {

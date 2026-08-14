@@ -34,8 +34,11 @@ use num_bigint::BigInt;
 
 use crate::vm::object::{
   FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance,
-  ObjModule, ObjModuleBinding, ObjPtr, UpvalueState,
+  ObjModule, ObjModuleBinding, ObjPtr, UpvalueState, write_barrier,
 };
+
+#[cfg(not(debug_assertions))]
+use crate::vm::object::ListStorage;
 
 // Visible at `pub(crate)` (not just private) because the Cranelift JIT
 // backend (see `jit::codegen`) needs to replicate these exact bit tests
@@ -338,7 +341,7 @@ impl Value {
   pub fn as_list(&self) -> Vec<Value> {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
-      Obj::List(items) => items.borrow().clone(),
+      Obj::List(items) => items.borrow().to_vec(),
       _ => unreachable!("as_list() called on a non-list Value"),
     }
   }
@@ -358,7 +361,7 @@ impl Value {
         // RefCell's runtime flag can't observe real aliasing. Checked
         // via the ordinary borrow() above in debug builds.
         {
-          let vec_ref: &Vec<Value> = unsafe { &*items.as_ptr() };
+          let vec_ref: &ListStorage = unsafe { &*items.as_ptr() };
           vec_ref.len()
         }
       },
@@ -376,7 +379,7 @@ impl Value {
         }
         #[cfg(not(debug_assertions))]
         {
-          let vec_ref: &Vec<Value> = unsafe { &*items.as_ptr() };
+          let vec_ref: &ListStorage = unsafe { &*items.as_ptr() };
           vec_ref.get(index).copied()
         }
       },
@@ -386,7 +389,7 @@ impl Value {
 
   pub fn list_set(&self, index: usize, value: Value) -> bool {
     debug_assert!(self.is_list());
-    match unsafe { &*self.as_obj() } {
+    let ok = match unsafe { &*self.as_obj() } {
       Obj::List(items) => {
         #[cfg(debug_assertions)]
         {
@@ -400,7 +403,7 @@ impl Value {
         }
         #[cfg(not(debug_assertions))]
         {
-          let vec_ref: &mut Vec<Value> = unsafe { &mut *items.as_ptr() };
+          let vec_ref: &mut ListStorage = unsafe { &mut *items.as_ptr() };
           match vec_ref.get_mut(index) {
             Some(slot) => {
               *slot = value;
@@ -411,7 +414,11 @@ impl Value {
         }
       },
       _ => unreachable!("list_set() called on a non-list Value"),
+    };
+    if ok {
+      write_barrier(self.as_obj());
     }
+    ok
   }
 
   pub fn as_dict(&self) -> Vec<(Value, Value)> {
@@ -444,6 +451,7 @@ impl Value {
       Obj::Dict(storage) => storage.borrow_mut().set(key, value),
       _ => unreachable!("dict_set() called on a non-dict Value"),
     }
+    write_barrier(self.as_obj());
   }
 
   /// Position of `key` in insertion order -- O(1) average via the

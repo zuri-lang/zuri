@@ -4,7 +4,6 @@
 //! plumbing -- the actual bytecode -> IR translation lives in
 //! `jit::codegen`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use cranelift_codegen::Context;
@@ -14,7 +13,7 @@ use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::FunctionBuilderContext;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleReloc};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::jit::runtime;
 use crate::jit::{EntryFn, codegen, typeflow};
@@ -46,7 +45,7 @@ pub struct JitEngine {
   /// name -- declared ONCE, up front, and reused (via
   /// `Module::declare_func_in_func`) by every subsequent function this
   /// engine compiles.
-  helper_ids: HashMap<&'static str, FuncId>,
+  helper_ids: FxHashMap<&'static str, FuncId>,
   /// Monotonic counter giving every compiled function a distinct
   /// module-local symbol name (`cranelift_module::Module` requires
   /// unique names for `declare_function`) -- purely an internal detail,
@@ -76,7 +75,9 @@ impl JitEngine {
     // to make once compilation moved off the interpreter's own thread
     // (see `jit::background`): there is no longer a reason to economize
     // on compile time by settling for the cheaper allocator.
-    flag_builder.set("regalloc_algorithm", "backtracking").unwrap();
+    flag_builder
+      .set("regalloc_algorithm", "backtracking")
+      .unwrap();
 
     let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
       panic!("zuri: host machine is not supported by the JIT backend: {msg}")
@@ -98,7 +99,7 @@ impl JitEngine {
 
     let mut module = JITModule::new(jit_builder);
 
-    let mut helper_ids = HashMap::with_capacity(specs.len());
+    let mut helper_ids = FxHashMap::with_capacity_and_hasher(specs.len(), FxBuildHasher::default());
     for spec in &specs {
       let mut sig = module.make_signature();
       for _ in 0..spec.arity {
