@@ -3898,7 +3898,7 @@ impl VM {
       },
       Obj::Instance(inst) => {
         mark(inst.class);
-        for cell in &inst.fields {
+        for cell in inst.fields.iter() {
           mark(cell.get());
         }
       },

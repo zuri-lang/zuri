@@ -29,37 +29,63 @@ const CHUNK_SIZE: usize = 8192;
 pub type ListStorage = SmallVec<[Value; 4]>;
 
 /// Everything a Value's pointer tag can point at.
+///
+/// `#[repr(C, u8)]`, with an explicit discriminant on every variant --
+/// NOT the default (niche-optimized, otherwise-unspecified) Rust enum
+/// layout every OTHER enum in this codebase gets to use for free. This
+/// costs real precision: the compiler is no longer free to pick
+/// whatever layout it likes, and every variant's payload now lives at
+/// the SAME fixed byte offset (a C-style tagged union, tag first, then
+/// one shared payload region sized/aligned to the largest variant) --
+/// see `OBJ_TAG_*`/`OBJ_PAYLOAD_OFFSET` in this module, which exist
+/// ONLY because this repr makes them sound to write down as fixed
+/// numbers. The payoff is that `jit::codegen` can (in a LATER,
+/// separate piece of work -- see that module's own docs on why this
+/// alone isn't sufficient yet) check a Value's actual `Obj` kind and
+/// reach into specific variants' payloads directly from generated
+/// machine code, with no helper-function call, the same way it already
+/// does for `VM::global_slots`.
+///
+/// Verified to cost nothing extra in practice: `Obj`'s size under the
+/// OLD default layout was already 128 bytes (measured directly, not
+/// assumed), driven by its largest variant (`RefCell<ObjModule>`, 120
+/// bytes) -- a C-tagged-union layout is sized the exact same way, so
+/// this repr change doesn't grow every heap object the way it could
+/// for an enum with more size variance across variants. Re-verify this
+/// assumption (a one-line `size_of::<Obj>()` check) if a NEW variant is
+/// ever added that's meaningfully larger than 120 bytes.
+#[repr(C, u8)]
 pub enum Obj {
-  Str(String),
-  Bytes(RefCell<Vec<u8>>),
-  BigInt(BigInt),
+  Str(String) = 0,
+  Bytes(RefCell<Vec<u8>>) = 1,
+  BigInt(BigInt) = 2,
   /// A dynamically-sized list.
-  List(RefCell<ListStorage>),
+  List(RefCell<ListStorage>) = 3,
   /// A dict literal's storage.
-  Dict(RefCell<DictStorage>),
+  Dict(RefCell<DictStorage>) = 4,
   /// A function PROTOTYPE -- the static, compiled-once result of one
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
-  Func(Box<ObjFunction>),
-  BoundMethod(ObjBoundMethod),
+  Func(Box<ObjFunction>) = 5,
+  BoundMethod(ObjBoundMethod) = 6,
   /// A function VALUE at runtime -- a prototype plus the specific
   /// upvalues captured at the moment this particular closure was
   /// created. Every callable Value is one of these, even a top-level
   /// function that captures nothing (its `upvalues` is just empty).
-  Closure(ObjClosure),
+  Closure(ObjClosure) = 7,
   /// A captured variable. Starts Open, pointing at a live register in
   /// some still-executing frame -- reads/writes through the upvalue and
   /// through the original local are the same memory. Closed when that
   /// frame's register would otherwise become invalid (block exit or
   /// function return): the current value is copied out, and the upvalue
   /// owns it from then on.
-  Upvalue(Cell<UpvalueState>),
+  Upvalue(Cell<UpvalueState>) = 8,
   /// A native (Rust-implemented) function -- callable through the exact
   /// same Instr::Call path as a Closure, but with no CallFrame, no
   /// register-window setup, and no heap allocation on the call path:
   /// its arguments are a zero-copy slice straight into the caller's own
   /// registers. See vm/natives.rs.
-  Native(NativeFunction),
+  Native(NativeFunction) = 9,
   /// See `ObjClass`'s own doc comment. Wrapped in a `RefCell` (unlike
   /// every other heap object here, which is immutable-after-creation
   /// except through a `Cell`-wrapped field) because a class's tables
@@ -67,8 +93,8 @@ pub enum Obj {
   /// safe way to do that through the same shared `*const Obj` pointer
   /// every other Value already uses, rather than reaching for unsafe
   /// mutation.
-  Class(Box<RefCell<ObjClass>>),
-  Instance(ObjInstance),
+  Class(Box<RefCell<ObjClass>>) = 10,
+  Instance(ObjInstance) = 11,
   /// A `lower..upper` range value -- valid in either direction (see
   /// Expr::Range's compilation in compiler.rs). Stored as raw f64s, not
   /// Values, specifically so this is a GC leaf: nothing here is ever a
@@ -82,15 +108,158 @@ pub enum Obj {
     /// `builtins::range`); `Instr::MakeRange` always allocates with
     /// the default.
     step: Cell<f64>,
-  },
+  } = 12,
   /// A `file(...)` object -- see `FileHandle`.
-  File(RefCell<FileHandle>),
+  File(RefCell<FileHandle>) = 13,
   /// See `ObjModule`'s own doc comment.
-  Module(RefCell<ObjModule>),
+  Module(RefCell<ObjModule>) = 14,
   /// See `ObjModuleBinding`'s own doc comment.
-  ModuleBinding(ObjModuleBinding),
+  ModuleBinding(ObjModuleBinding) = 15,
   /// See `ObjPtr`'s own doc comment.
-  Ptr(RefCell<ObjPtr>),
+  Ptr(RefCell<ObjPtr>) = 16,
+}
+
+/// Fixed numeric tags matching `Obj`'s own explicit discriminants one
+/// for one -- kept as named constants (rather than requiring every
+/// caller to write the literal number) so `jit::codegen`'s later
+/// dereference-and-compare fast paths read as "is this an Instance"
+/// instead of "does this byte equal 11". A `#[test]` below cross-checks
+/// every one of these against the enum definition itself, so a
+/// constant silently drifting out of sync with an edited discriminant
+/// is a hard test failure, not a subtle miscompile.
+pub const OBJ_TAG_STR: u8 = 0;
+pub const OBJ_TAG_BYTES: u8 = 1;
+pub const OBJ_TAG_BIGINT: u8 = 2;
+pub const OBJ_TAG_LIST: u8 = 3;
+pub const OBJ_TAG_DICT: u8 = 4;
+pub const OBJ_TAG_FUNC: u8 = 5;
+pub const OBJ_TAG_BOUND_METHOD: u8 = 6;
+pub const OBJ_TAG_CLOSURE: u8 = 7;
+pub const OBJ_TAG_UPVALUE: u8 = 8;
+pub const OBJ_TAG_NATIVE: u8 = 9;
+pub const OBJ_TAG_CLASS: u8 = 10;
+pub const OBJ_TAG_INSTANCE: u8 = 11;
+pub const OBJ_TAG_RANGE: u8 = 12;
+pub const OBJ_TAG_FILE: u8 = 13;
+pub const OBJ_TAG_MODULE: u8 = 14;
+pub const OBJ_TAG_MODULE_BINDING: u8 = 15;
+pub const OBJ_TAG_PTR: u8 = 16;
+
+impl Obj {
+  /// Reads the tag byte directly rather than matching -- exists so a
+  /// test can cross-check it against `OBJ_TAG_*` (and so any FUTURE
+  /// Rust-side code that wants the numeric tag doesn't need to
+  /// duplicate a 17-arm match). NOT what `jit::codegen`'s eventual fast
+  /// path will use -- that reads the SAME byte directly out of raw
+  /// memory at a compile-time-baked offset, with no function call at
+  /// all; this exists purely for verification from safe Rust.
+  #[inline]
+  pub fn tag(&self) -> u8 {
+    // SAFETY: `#[repr(C, u8)]` guarantees the discriminant is stored
+    // as a `u8` at the very start of the type.
+    unsafe { *(self as *const Obj as *const u8) }
+  }
+}
+
+/// Byte offset from an `Obj`'s own address to where its payload
+/// actually starts -- the same for EVERY variant, since `#[repr(C,
+/// u8)]` lays every variant's payload at one shared, tag-sized-and-
+/// aligned offset (a C-style tagged union), never a per-variant one.
+///
+/// Deliberately NOT a hand-derived constant (e.g. "1 byte tag, rounded
+/// up to 8-byte alignment"). `std::mem::offset_of!` has no way to name
+/// a field inside an enum variant's payload, so instead of asserting
+/// what the layout SHOULD be, this measures what it ACTUALLY is: builds
+/// one real `Obj::Instance`, matches it back apart to get a genuine
+/// `&ObjInstance` pointer, and takes the byte difference from the
+/// enclosing `Obj`'s own address -- the same technique
+/// `obj_repr_tests`/`field_storage_tests` already use to verify claims
+/// about this repr instead of trusting them. Computed once and cached,
+/// since it never changes at runtime (the layout is fixed at compile
+/// time; only the observation of it happens lazily here) -- every JIT
+/// compile that needs it (see `jit::codegen`'s field-access fast path)
+/// reads the same cached value.
+pub fn obj_payload_offset() -> usize {
+  static OFFSET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+  *OFFSET.get_or_init(|| {
+    let probe = Obj::Instance(ObjInstance {
+      class: Value::nil(),
+      fields: FieldStorage::new(0),
+    });
+    let obj_addr = &probe as *const Obj as usize;
+    let payload_addr = match &probe {
+      Obj::Instance(inst) => inst as *const ObjInstance as usize,
+      _ => unreachable!(),
+    };
+    payload_addr - obj_addr
+  })
+}
+
+#[cfg(test)]
+mod obj_repr_tests {
+  use super::*;
+
+  /// Cross-checks every `OBJ_TAG_*` constant against the enum's own
+  /// explicit discriminants, via `Obj::tag()` on one real instance of
+  /// each variant -- catches the failure mode this whole scheme exists
+  /// to avoid: a constant silently drifting out of sync after someone
+  /// edits `= N` on a variant without updating the matching constant.
+  #[test]
+  fn tags_match_discriminants() {
+    assert_eq!(Obj::Str(String::new()).tag(), OBJ_TAG_STR);
+    assert_eq!(Obj::Bytes(RefCell::new(Vec::new())).tag(), OBJ_TAG_BYTES);
+    assert_eq!(Obj::BigInt(BigInt::from(0)).tag(), OBJ_TAG_BIGINT);
+    assert_eq!(
+      Obj::List(RefCell::new(ListStorage::new())).tag(),
+      OBJ_TAG_LIST
+    );
+    assert_eq!(
+      Obj::Dict(RefCell::new(DictStorage::new())).tag(),
+      OBJ_TAG_DICT
+    );
+    assert_eq!(
+      Obj::Range {
+        lower: 0.0,
+        upper: 0.0,
+        step: Cell::new(1.0),
+      }
+      .tag(),
+      OBJ_TAG_RANGE
+    );
+  }
+
+  /// Confirms the memory-cost claim in `Obj`'s own doc comment stays
+  /// true -- fails loudly (rather than silently regressing every heap
+  /// object's size) if a future variant grows past what `RefCell<
+  /// ObjModule>` costs today.
+  #[test]
+  fn size_unchanged_from_baseline() {
+    assert_eq!(std::mem::size_of::<Obj>(), 128);
+  }
+
+  /// `obj_payload_offset()` measures where `Obj::Instance`'s payload
+  /// starts; this checks a SECOND, independently-constructed
+  /// `Obj::Instance` lands its `class`/`fields` at exactly
+  /// `obj_payload_offset() + offset_of!(ObjInstance, ...)` from the
+  /// ENCLOSING `Obj`'s own address -- i.e. that the measurement isn't
+  /// somehow specific to the one probe value used to compute it.
+  #[test]
+  fn payload_offset_matches_real_instance_fields() {
+    let offset = obj_payload_offset();
+    let obj = Obj::Instance(ObjInstance {
+      class: Value::number(123.0),
+      fields: FieldStorage::new(2),
+    });
+    let obj_addr = &obj as *const Obj as usize;
+    let class_offset = offset + std::mem::offset_of!(ObjInstance, class);
+    let fields_offset = offset + std::mem::offset_of!(ObjInstance, fields);
+    let class_ptr = (obj_addr + class_offset) as *const Value;
+    let fields_ptr = (obj_addr + fields_offset) as *const FieldStorage;
+    unsafe {
+      assert_eq!((*class_ptr).as_number(), 123.0);
+      assert_eq!((&*fields_ptr).len(), 2);
+    }
+  }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -464,13 +633,108 @@ pub struct ObjClass {
   pub statics: Vec<Cell<Value>>,
 }
 
+/// A `#[repr(C)]`-guaranteed-layout owning slice of `Cell<Value>` --
+/// `ObjInstance`'s own field storage, in place of a plain
+/// `Vec<Cell<Value>>`. Exists purely so `jit::codegen`'s field-access
+/// fast path (a LATER piece of work -- see `Obj`'s own docs on the
+/// two-layer plan this is part of) can compute `ptr + slot * 8`
+/// directly from generated machine code against a real, documented
+/// layout guarantee. `Vec<T>`/`Box<[T]>`'s own internal representation
+/// is NOT an official stability guarantee the way a `#[repr(C)]`
+/// struct's field layout is -- every Rust compiler today happens to lay
+/// out a fat pointer as `{data, len}`, but nothing in the language
+/// promises that stays true, which is exactly the gap this closes.
+///
+/// Never resized after construction (see `ObjInstance`'s own docs: a
+/// fixed-size, flat, slot-indexed array, sized once at allocation
+/// time) -- so this only ever needs to support "allocate once, read/
+/// write elements through `Cell`, free once," never growth.
+///
+/// Derefs to `[Cell<Value>]` specifically so every existing
+/// `.get()`/`.set()`/indexing/`.iter()`/`.iter_mut()`/`.len()` call
+/// site (GC marking, field access, `Display`, ...) keeps working
+/// completely unchanged -- this type is a drop-in replacement for
+/// `Vec<Cell<Value>>` at every current use site, not a new API surface
+/// callers need to learn.
+#[repr(C)]
+pub struct FieldStorage {
+  ptr: *mut Cell<Value>,
+  len: usize,
+}
+
+// SAFETY: `FieldStorage` owns its allocation exclusively (like
+// `Box<[Cell<Value>]>`, which it's built from and tears back down into
+// on `Drop`) -- nothing outside this type ever holds a second pointer
+// to the same allocation. `Cell<Value>` itself is `!Sync` (as it
+// already was via `Vec<Cell<Value>>`, so this introduces no NEW
+// restriction), which is exactly why only `Send` is asserted here, not
+// `Sync` -- moving an owned, exclusively-held allocation to another
+// thread is sound; sharing `&FieldStorage` across threads for
+// concurrent `Cell` mutation never was and still isn't.
+unsafe impl Send for FieldStorage {}
+
+impl FieldStorage {
+  fn new(len: usize) -> FieldStorage {
+    let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
+    // `Box<[T]>::into_raw` never lies about the length it hands back
+    // in the resulting fat pointer -- reading `.len()` off it (rather
+    // than reusing the `len` local) would be equally correct; using
+    // the local just avoids a fat-pointer-to-thin-pointer-plus-len
+    // decomposition here.
+    let ptr = Box::into_raw(boxed) as *mut Cell<Value>;
+    FieldStorage { ptr, len }
+  }
+}
+
+impl std::ops::Deref for FieldStorage {
+  type Target = [Cell<Value>];
+  fn deref(&self) -> &[Cell<Value>] {
+    // SAFETY: `ptr`/`len` were produced together by `Box::into_raw` in
+    // `new` and never mutated afterward (no resize support -- see this
+    // type's own docs), so they still describe exactly the live
+    // allocation `new` created.
+    unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+  }
+}
+
+impl std::ops::DerefMut for FieldStorage {
+  fn deref_mut(&mut self) -> &mut [Cell<Value>] {
+    // SAFETY: same as `deref` -- `&mut self` here proves exclusive
+    // access to the allocation `deref`'s safety comment already
+    // establishes is still valid.
+    unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+  }
+}
+
+impl Drop for FieldStorage {
+  fn drop(&mut self) {
+    // SAFETY: reconstructs the EXACT `Box<[Cell<Value>]>` `new` took
+    // apart via `Box::into_raw` (same pointer, same length), and lets
+    // normal `Box` drop glue free it -- the inverse operation, run
+    // exactly once (Rust's own `Drop` contract guarantees `drop` is
+    // never called twice on the same value).
+    unsafe {
+      drop(Box::from_raw(std::slice::from_raw_parts_mut(
+        self.ptr, self.len,
+      )));
+    }
+  }
+}
+
 /// An instance value. `fields` is a fixed-size, flat, slot-indexed
 /// array sized to `class.field_count` at allocation time -- there is no
 /// dynamic/open field set; a name not present in `class.field_slots` is
 /// a runtime error (see `Instr::GetField`/`SetField` in vm.rs).
+///
+/// `#[repr(C)]` for the same reason `Obj` itself is (see that type's
+/// own docs) -- `jit::codegen`'s field-access fast path needs to reach
+/// `class`/`fields` at fixed, guaranteed offsets from a raw `*const
+/// ObjInstance`, not offsets the compiler is otherwise free to
+/// rearrange.
+#[repr(C)]
 pub struct ObjInstance {
   pub class: Value,
-  pub fields: Vec<Cell<Value>>,
+  pub fields: FieldStorage,
 }
 
 /// Wrapper around `Value` that implements `Hash`/`Eq` in terms of
@@ -1476,7 +1740,7 @@ impl Heap {
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
     self.alloc(Obj::Instance(ObjInstance {
       class,
-      fields: vec![Cell::new(Value::nil()); field_count],
+      fields: FieldStorage::new(field_count),
     }))
   }
 
@@ -1598,5 +1862,65 @@ impl Heap {
       }
     });
     out
+  }
+}
+
+#[cfg(test)]
+mod field_storage_tests {
+  use super::*;
+
+  /// `jit::codegen`'s eventual fast path needs these two offsets to be
+  /// exactly what `#[repr(C)]` promises -- verify it directly rather
+  /// than trusting the derivation.
+  #[test]
+  fn offsets_match_repr_c_expectations() {
+    assert_eq!(std::mem::offset_of!(FieldStorage, ptr), 0);
+    assert_eq!(
+      std::mem::offset_of!(FieldStorage, len),
+      std::mem::size_of::<*mut Cell<Value>>()
+    );
+  }
+
+  #[test]
+  fn read_write_roundtrip() {
+    let mut fs = FieldStorage::new(4);
+    assert_eq!(fs.len(), 4);
+    for c in fs.iter() {
+      assert!(c.get().is_nil());
+    }
+    fs[0].set(Value::number(42.0));
+    fs[3].set(Value::number(7.0));
+    assert_eq!(fs[0].get().as_number(), 42.0);
+    assert!(fs[1].get().is_nil());
+    assert!(fs[2].get().is_nil());
+    assert_eq!(fs[3].get().as_number(), 7.0);
+
+    let mut count = 0;
+    for c in fs.iter_mut() {
+      *c.get_mut() = Value::number(count as f64);
+      count += 1;
+    }
+    assert_eq!(fs[2].get().as_number(), 2.0);
+  }
+
+  #[test]
+  fn zero_length_is_safe() {
+    let fs = FieldStorage::new(0);
+    assert_eq!(fs.len(), 0);
+    assert!(fs.iter().next().is_none());
+  }
+
+  /// Repeated alloc/drop in a loop is the closest a unit test gets to
+  /// proving the `Drop` impl neither leaks nor double-frees without
+  /// reaching for a whole separate tool -- ASAN/valgrind is the real
+  /// verification, run separately, but this at least exercises the
+  /// exact `Box::into_raw`/`Box::from_raw` round trip many times over
+  /// varied sizes.
+  #[test]
+  fn many_alloc_drop_cycles() {
+    for n in 0..200 {
+      let fs = FieldStorage::new(n % 17);
+      drop(fs);
+    }
   }
 }

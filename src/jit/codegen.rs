@@ -1313,6 +1313,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.mark_stale_live(ip);
   }
 
+  // NOTE: `GetField`/`SetField` inline fast paths were built, verified
+  // memory-safe (every field read individually correct, valgrind-clean),
+  // then reverted -- a real, reproducible run-to-run FLOATING-POINT
+  // result divergence showed up on `benchmarks/nbody.zu`, isolated via
+  // bisection to this fast path's mere PRESENCE (not to any specific
+  // value it read -- a debug validator confirmed every read was
+  // correct). Leading theory: the added IR complexity changes how
+  // Cranelift schedules/reassociates the SURROUNDING floating-point
+  // arithmetic, which is legitimately non-deterministic to reorder
+  // under IEEE-754. Not confirmed further; reverted rather than shipped
+  // unresolved. `Obj`'s `#[repr(C, u8)]` tag stabilization,
+  // `FieldStorage`, `ObjInstance`'s `#[repr(C)]`, and
+  // `object::obj_payload_offset()` are UNAFFECTED by this and remain in
+  // use (see `emit_is_falsey`'s tag-check fast path) -- only the
+  // field-access fast path itself was reverted.
+
   // ---------------------------------------------------------------
   // Guards
   // ---------------------------------------------------------------
@@ -1333,15 +1349,45 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `(bits & (QNAN|SIGN_BIT)) == (QNAN|SIGN_BIT)` -- `Value::is_obj()`'s
-  /// exact bit test (see `value.rs`). Like `is_number`, safe to inline
-  /// because it only inspects the tagged `u64` itself; telling WHICH
-  /// heap type it is still always needs a real dereference (`Obj`'s
-  /// layout is never hand-encoded here), so this is only ever used to
-  /// decide "must call a helper" vs "provably not an object."
+  /// exact bit test (see `value.rs`). Safe to inline because it only
+  /// inspects the tagged `u64` itself, never dereferences anything.
+  /// Telling WHICH heap type a confirmed object is needs a real
+  /// dereference -- see `obj_ptr`/`obj_tag` for the (now sound, since
+  /// `Obj` is `#[repr(C, u8)]`) way to do that inline too.
   fn is_obj(&mut self, v: IrValue) -> IrValue {
     let mask = self.u64c(value::QNAN | value::SIGN_BIT);
     let masked = self.fb.ins().band(v, mask);
     self.fb.ins().icmp(IntCC::Equal, masked, mask)
+  }
+
+  /// Recovers the raw `*const Obj` pointer from a tagged `Value` known
+  /// (by an already-checked `is_obj`) to actually hold one -- the exact
+  /// inverse of `Value::obj`'s own tagging (`SIGN_BIT | QNAN | ptr`),
+  /// masking the tag bits back off. Callers must not call this on a
+  /// `Value` that hasn't already been proven `is_obj` -- the result is
+  /// garbage (though not unsound to COMPUTE; it's only unsound to
+  /// DEREFERENCE) otherwise.
+  fn obj_ptr(&mut self, v: IrValue) -> IrValue {
+    let mask = self.u64c(value::PTR_MASK);
+    self.fb.ins().band(v, mask)
+  }
+
+  /// Reads `Obj`'s own tag byte straight out of memory -- sound only
+  /// because `Obj` is `#[repr(C, u8)]` with an explicit discriminant on
+  /// every variant (see that type's own docs), which is what makes
+  /// "the tag is a `u8` at offset 0" a real, load-bearing guarantee
+  /// instead of an assumption about a layout the compiler is otherwise
+  /// free to change. Compare against `object::OBJ_TAG_*` constants, the
+  /// SAME ones `Obj::tag()` and this type's own `#[cfg(test)]` module
+  /// cross-check against the enum's actual discriminants.
+  fn obj_tag(&mut self, ptr: IrValue) -> IrValue {
+    let tag8 = self.fb.ins().load(
+      types::I8,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      ptr,
+      0,
+    );
+    self.fb.ins().uextend(types::I64, tag8)
   }
 
   fn both_obj(&mut self, va: IrValue, vb: IrValue) -> IrValue {
@@ -1414,11 +1460,42 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(is_obj, obj_block, &[], nonobj_block, &[]);
 
     self.fb.switch_to_block(obj_block);
+    // `Value::is_falsey`'s own definition (value.rs) never treats ANY
+    // object as falsey except an empty Str/Bytes or a non-positive
+    // BigInt -- every other heap kind (List, Dict, Instance, Closure,
+    // ...) is unconditionally NOT falsey, decidable from the tag byte
+    // alone with no payload inspection. So: check the tag first, and
+    // only actually call the helper (to inspect the payload) for the
+    // three kinds where the answer can vary.
+    let ptr = self.obj_ptr(v);
+    let tag = self.obj_tag(ptr);
+    let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+    let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
+    let tag_bigint = self.i64c(object::OBJ_TAG_BIGINT as i64);
+    let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
+    let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
+    let is_bigint = self.fb.ins().icmp(IntCC::Equal, tag, tag_bigint);
+    let is_str_or_bytes = self.fb.ins().bor(is_str, is_bytes);
+    let maybe_falsey = self.fb.ins().bor(is_str_or_bytes, is_bigint);
+
+    let payload_block = self.fb.create_block();
+    let never_falsey_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(maybe_falsey, payload_block, &[], never_falsey_block, &[]);
+
+    self.fb.switch_to_block(payload_block);
     let base = self.base_param;
     let vm_p = self.vm_param;
     let cond_i = self.idx(cond);
     let falsey = self.call_helper_raw("zuri_jit_is_falsey", &[vm_p, base, cond_i]);
     self.fb.def_var(result_var, falsey);
+    self.fb.ins().jump(merge_block, &[]);
+
+    self.fb.switch_to_block(never_falsey_block);
+    let not_falsey = self.i64c(0);
+    self.fb.def_var(result_var, not_falsey);
     self.fb.ins().jump(merge_block, &[]);
 
     self.fb.switch_to_block(nonobj_block);
