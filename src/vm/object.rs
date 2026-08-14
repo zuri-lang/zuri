@@ -854,6 +854,15 @@ pub struct Heap {
   /// storage (it survived) or drops it in place (it didn't) -- see
   /// `VM::collect_minor` and `reset_nursery`.
   nursery_chunks: Vec<NurseryChunk>,
+  /// Index into `nursery_chunks` of the chunk `alloc` is currently
+  /// bump-allocating into. Reset to 0 by `reset_nursery`, since every
+  /// retained chunk starts that next cycle empty and ready for reuse
+  /// in order -- see `MAX_RETAINED_NURSERY_CHUNKS`'s own docs for why
+  /// `alloc` walks forward through already-allocated chunks instead of
+  /// just always using `nursery_chunks.last()` (which would skip past
+  /// every retained-but-not-yet-touched chunk straight to allocating a
+  /// brand new one, defeating the whole point of retaining them).
+  nursery_fill_idx: usize,
 }
 
 /// One fixed-capacity block of nursery `GcBox` storage -- the young
@@ -898,6 +907,23 @@ impl Heap {
   /// threshold in this collector that's truly constant.
   pub(crate) const YOUNG_NEXT_GC: usize = 32 * 1024 * 1024;
 
+  /// Upper bound on how many nursery chunk buffers `reset_nursery`
+  /// keeps allocated (emptied, not dropped) between cycles for
+  /// immediate reuse. Sized to comfortably cover one full
+  /// `YOUNG_NEXT_GC` budget's worth of chunks with some headroom for a
+  /// burst that slightly overruns before the next safepoint check
+  /// catches it -- see `reset_nursery`'s own docs for why retaining
+  /// these (instead of freeing every cycle down to one) matters: with
+  /// the old "always truncate to 1" policy, a long-running,
+  /// allocation-heavy program was measured driving thousands of
+  /// ~1.2MB chunk alloc/free cycles through the allocator, which is
+  /// exactly the pattern that pushes glibc's malloc into retaining
+  /// fragmented, never-returned-to-the-OS memory -- observed directly
+  /// as the resident set staying stuck multiple times higher than the
+  /// GC's own live-byte accounting justified, on `binary-tree-2.zu`.
+  const MAX_RETAINED_NURSERY_CHUNKS: usize =
+    (Self::YOUNG_NEXT_GC / (CHUNK_SIZE * std::mem::size_of::<GcBox>())) + 4;
+
   pub fn new() -> Self {
     Heap {
       chunks: Vec::new(),
@@ -907,6 +933,7 @@ impl Heap {
       live_count: 0,
       young_bytes_allocated: 0,
       nursery_chunks: Vec::new(),
+      nursery_fill_idx: 0,
     }
   }
 
@@ -1030,18 +1057,25 @@ impl Heap {
     self.young_bytes_allocated += size;
     self.live_count += 1;
 
-    let needs_new_chunk = match self.nursery_chunks.last() {
-      Some(chunk) => chunk.slots.len() >= chunk.slots.capacity(),
-      None => true,
-    };
-    if needs_new_chunk {
+    // Walk forward from `nursery_fill_idx` rather than always trusting
+    // `nursery_chunks.last()`: `reset_nursery` retains a batch of
+    // already-allocated, now-empty chunks (up to
+    // `MAX_RETAINED_NURSERY_CHUNKS`) for exactly this loop to bump-
+    // allocate back into with zero new `malloc` calls -- jumping
+    // straight to `.last()` would skip past all of them to whatever
+    // chunk was touched last cycle, missing the reuse entirely.
+    while self.nursery_fill_idx < self.nursery_chunks.len()
+      && self.nursery_chunks[self.nursery_fill_idx].slots.len()
+        >= self.nursery_chunks[self.nursery_fill_idx].slots.capacity()
+    {
+      self.nursery_fill_idx += 1;
+    }
+    if self.nursery_fill_idx >= self.nursery_chunks.len() {
       self.nursery_chunks.push(NurseryChunk {
         slots: Vec::with_capacity(CHUNK_SIZE),
       });
     }
-    // SAFETY: just ensured above that the last chunk exists and has
-    // spare capacity.
-    let chunk = self.nursery_chunks.last_mut().unwrap();
+    let chunk = &mut self.nursery_chunks[self.nursery_fill_idx];
     chunk.slots.push(GcBox {
       live: Cell::new(true),
       marked: Cell::new(false),
@@ -1295,11 +1329,17 @@ impl Heap {
   /// that chunk's WHOLE buffer for the next cycle's allocations in
   /// one step, without running `Vec`'s own per-element `Drop` glue a
   /// second time over slots this function already handled by hand.
-  /// Only the first chunk's buffer is kept around for immediate reuse
-  /// next cycle; any extras a burst needed are dropped here, returning
-  /// their memory rather than holding it as permanent inventory --
-  /// mirrors `sweep`'s own "drop a chunk once nothing's left in it"
-  /// policy for the old generation.
+  /// Every chunk up to `MAX_RETAINED_NURSERY_CHUNKS` is kept around
+  /// (emptied, not dropped) for the next cycle to bump-allocate into
+  /// with zero further allocator calls -- unlike the old generation's
+  /// `sweep`, which genuinely wants to return a fully-empty chunk's
+  /// memory (old objects can live indefinitely, so an idle old chunk
+  /// is likely to stay idle), the nursery refills every single minor
+  /// collection by design, so a chunk it just emptied is overwhelmingly
+  /// likely to be needed again within the next `YOUNG_NEXT_GC` bytes
+  /// of allocation. Only genuinely excess chunks (beyond the cap, from
+  /// an unusually large one-off burst) get dropped, returning their
+  /// memory instead of holding it as permanent inventory forever.
   pub(crate) fn reset_nursery(&mut self) {
     let mut freed_count = 0usize;
     let mut freed_bytes = 0usize;
@@ -1320,7 +1360,9 @@ impl Heap {
       // time is exactly right.
       unsafe { chunk.slots.set_len(0) };
     }
-    self.nursery_chunks.truncate(1);
+    self.nursery_chunks
+      .truncate(Self::MAX_RETAINED_NURSERY_CHUNKS.max(1));
+    self.nursery_fill_idx = 0;
     self.bytes_allocated = self.bytes_allocated.saturating_sub(freed_bytes);
     self.live_count -= freed_count;
     self.young_bytes_allocated = 0;
@@ -1536,24 +1578,5 @@ impl Heap {
       }
     });
     out
-  }
-}
-
-#[cfg(test)]
-mod size_probe {
-  use super::*;
-  #[test]
-  fn print_sizes() {
-    eprintln!("size_of::<Obj>() = {}", std::mem::size_of::<Obj>());
-    eprintln!("size_of::<GcBox>() = {}", std::mem::size_of::<GcBox>());
-    eprintln!(
-      "size_of::<NurseryChunk>() = {}",
-      std::mem::size_of::<NurseryChunk>()
-    );
-    eprintln!("CHUNK_SIZE = {}", CHUNK_SIZE);
-    eprintln!(
-      "one chunk bytes = {}",
-      CHUNK_SIZE * std::mem::size_of::<GcBox>()
-    );
   }
 }
