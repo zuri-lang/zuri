@@ -71,22 +71,11 @@ const MAX_DEOPT_REENTRANCY: u32 = 64;
 /// argument list. `Value` is a plain Copy u64, so this is meant to be a
 /// handful of stack bytes -- covers the overwhelming majority of real
 /// calls (few natives or constructors take more than a handful of
-/// arguments) with zero heap allocation. A call that genuinely needs
-/// more spills into a Vec exactly once, the same cost the old
-/// always-Vec version paid on every call.
-///
-/// Was `255` (the theoretical max `num_args: u8` can encode) until
-/// profiling binary-tree found `CallArgs::new`'s own `[Value::nil();
-/// INLINE_ARGS]` zero-init costing 10% of TOTAL program time on its
-/// own (`perf report` on the real `TreeNode(left, right)` constructor-
-/// call-heavy workload) -- 255 slots is 2040 bytes zeroed on EVERY
-/// single call through this path, regardless of how many arguments it
-/// actually has, which flatly contradicts this comment's own "handful
-/// of stack bytes" framing. `8` still covers the SAME "overwhelming
-/// majority" this was always meant to (constructors/methods with more
-/// than 8 parameters are rare), at 1/32 the zeroing cost; anything
-/// genuinely needing more still spills to a `Vec`, exactly the same
-/// fallback path that already existed, not a new cost.
+/// arguments) with zero heap allocation. Every slot is zero-initialized
+/// on construction regardless of how many arguments a given call
+/// actually has, so this needs to stay small: a call that genuinely
+/// needs more spills into a `Vec` exactly once, the same cost an
+/// always-`Vec` version would pay on every call.
 const INLINE_ARGS: usize = 8;
 
 enum CallArgs {

@@ -46,14 +46,15 @@ pub type ListStorage = SmallVec<[Value; 4]>;
 /// machine code, with no helper-function call, the same way it already
 /// does for `VM::global_slots`.
 ///
-/// Verified to cost nothing extra in practice: `Obj`'s size under the
-/// OLD default layout was already 128 bytes (measured directly, not
-/// assumed), driven by its largest variant (`RefCell<ObjModule>`, 120
-/// bytes) -- a C-tagged-union layout is sized the exact same way, so
-/// this repr change doesn't grow every heap object the way it could
-/// for an enum with more size variance across variants. Re-verify this
-/// assumption (a one-line `size_of::<Obj>()` check) if a NEW variant is
-/// ever added that's meaningfully larger than 120 bytes.
+/// Costs nothing extra in practice: a C-tagged-union layout is sized
+/// the same way the default Rust layout already would be (tag plus a
+/// payload region sized to the largest variant), so this repr doesn't
+/// grow every heap object the way it could for an enum with more size
+/// variance across variants. Every large-relative-to-the-rest variant
+/// is boxed (see `Func`/`Class`/`Module`'s own doc comments) precisely
+/// to keep that shared payload region small, since it sets every OTHER
+/// variant's size too -- re-verify with `size_of::<Obj>()` if a new
+/// variant is ever added that's meaningfully larger than the rest.
 #[repr(C, u8)]
 pub enum Obj {
   Str(String) = 0,
@@ -111,8 +112,15 @@ pub enum Obj {
   } = 12,
   /// A `file(...)` object -- see `FileHandle`.
   File(RefCell<FileHandle>) = 13,
-  /// See `ObjModule`'s own doc comment.
-  Module(RefCell<ObjModule>) = 14,
+  /// See `ObjModule`'s own doc comment. Boxed like `Func`/`Class` --
+  /// `ObjModule` (two `String`s plus a `ModuleNamespace`, itself a
+  /// `Vec` and an `FxHashMap`) is the largest variant in this enum,
+  /// which sets `Obj`'s size for EVERY variant, including tiny,
+  /// extremely common ones like `List`. A module is created once per
+  /// imported file, not once per value the program manipulates --
+  /// paying one extra pointer indirection on that rare path to shrink
+  /// every common allocation is a clear win.
+  Module(Box<RefCell<ObjModule>>) = 14,
   /// See `ObjModuleBinding`'s own doc comment.
   ModuleBinding(ObjModuleBinding) = 15,
   /// See `ObjPtr`'s own doc comment.
@@ -231,10 +239,11 @@ mod obj_repr_tests {
   /// Confirms the memory-cost claim in `Obj`'s own doc comment stays
   /// true -- fails loudly (rather than silently regressing every heap
   /// object's size) if a future variant grows past what `RefCell<
-  /// ObjModule>` costs today.
+  /// DictStorage>`/`RefCell<FileHandle>` (tied as the largest
+  /// currently-unboxed variants) cost today.
   #[test]
   fn size_unchanged_from_baseline() {
-    assert_eq!(std::mem::size_of::<Obj>(), 128);
+    assert_eq!(std::mem::size_of::<Obj>(), 72);
   }
 
   /// `obj_payload_offset()` measures where `Obj::Instance`'s payload
@@ -1218,22 +1227,16 @@ struct NurseryChunk {
 }
 
 /// Cap on how many recycled buffers `Heap::field_storage_pool` retains
-/// PER field-count size class. Was `4096` from an initial (WRONG)
-/// guess of "thousands" -- `ZURI_GC_LOG` on the real binary-tree
-/// workload shows a single minor collection reclaiming upward of
-/// 100,000 same-field-count instances at once (e.g. "promoted/freed
-/// across 116418 -> 254 objects"), so a 4096 cap meant well over 95%
-/// of frees on the single hottest size class fell straight back to
-/// real `malloc`/`free` every cycle regardless of pooling existing at
-/// all -- silently defeating almost the entire point of this pool.
-/// Raised to comfortably cover a full cycle's worth of a hot size
-/// class; each pooled entry is one `*mut Cell<Value>` (8 bytes), so
-/// even this new cap cost only a few megabytes of pointer-array
-/// overhead at its absolute worst (every class in the program sharing
-/// one field count AND all dying in the same cycle). Past the cap, a
-/// freed buffer is still dropped for real instead of hoarded forever
-/// -- the exact same "retain some, drop the rest" shape
-/// `MAX_RETAINED_NURSERY_CHUNKS` already uses.
+/// PER field-count size class -- large enough to cover a single hot
+/// size class's worth of survivors from one collection cycle in an
+/// allocation-heavy, deep-recursion workload (tens of thousands of
+/// same-field-count instances dying at once is normal there), without
+/// needing to fall back to real `malloc`/`free` mid-cycle. Each pooled
+/// entry is one `*mut Cell<Value>` (8 bytes), so even this cap costs
+/// only a few megabytes of pointer-array overhead at its absolute
+/// worst. Past the cap, a freed buffer is still dropped for real
+/// instead of hoarded forever -- the exact same "retain some, drop the
+/// rest" shape `MAX_RETAINED_NURSERY_CHUNKS` already uses.
 const FIELD_STORAGE_POOL_CAP: usize = 1 << 20; // ~1,048,576
 
 /// Byte offsets of `Heap::bytes_allocated`/`next_gc` -- combined with
@@ -1256,11 +1259,7 @@ pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
 /// Without this, every pooled `*mut Cell<Value>` is just a raw pointer
 /// with no owning Rust value anywhere -- `Vec<*mut T>`'s own `Drop`
 /// only frees the `Vec`'s OWN backing array, never what its pointers
-/// point AT, so skipping this is a genuine leak, not a false positive:
-/// caught by `valgrind --tool=memcheck` reporting real "definitely
-/// lost" bytes once `FIELD_STORAGE_POOL_CAP` was raised high enough
-/// for the pool to actually hold something at process exit (the
-/// original, much smaller cap leaked too, just too little to notice).
+/// point AT, so skipping this would be a genuine leak.
 impl Drop for Heap {
   fn drop(&mut self) {
     for (&len, ptrs) in self.field_storage_pool.iter() {
@@ -1925,7 +1924,7 @@ impl Heap {
   }
 
   pub fn alloc_module(&mut self, m: ObjModule) -> Value {
-    self.alloc(Obj::Module(RefCell::new(m)))
+    self.alloc(Obj::Module(Box::new(RefCell::new(m))))
   }
 
   pub fn alloc_module_binding(&mut self, b: ObjModuleBinding) -> Value {
