@@ -22,8 +22,6 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   build,
 };
 
-// TODO: Remove this
-#[allow(unused_imports)]
 use super::compress_util::{DeflateDecoder, DeflateEncoder};
 
 /// Re-exports the already globally-registered `sum` native under the

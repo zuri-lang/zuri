@@ -1717,8 +1717,9 @@ impl VM {
       Obj::Class(_) => {
         let args_start = base + func_reg as usize + 1;
         let args_end = args_start + num_args as usize;
-        let user_args: Vec<Value> = self.registers[args_start..args_end].to_vec();
-        let instance = self.instantiate(callee, &user_args)?;
+        let mut user_args = CallArgs::new();
+        user_args.extend_from_slice(&self.registers[args_start..args_end]);
+        let instance = self.instantiate(callee, user_args.as_slice())?;
         self.set_reg(base, dst, instance);
         Ok(())
       },

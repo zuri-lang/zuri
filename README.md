@@ -6,11 +6,10 @@ This project will also support more operating systems and more processor archite
 
 ## Roadmap
 
-- [ ] 100% compatibility with the original Zuri language
+- [x] 100% compatibility with the original Zuri language
 - [x] Just-In-Time compiler
 - [ ] Self-Hosted repository server
-- [ ] C FFI Interop
-- [ ] Rust FFI Interop
+- [ ] C and Rust compartible FFI Interop
 
 ## License
 
