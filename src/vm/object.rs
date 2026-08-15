@@ -1981,11 +1981,23 @@ impl Heap {
             gcbox.marked.set(false);
           } else {
             self.bytes_allocated = self.bytes_allocated.saturating_sub(gcbox.size);
-            gcbox.obj = Obj::Range {
-              lower: 0.0,
-              upper: 0.0,
-              step: Cell::new(1.0),
-            }; // drops old contents
+            // Route through the same FieldStorage-recycling path
+            // `reset_nursery` uses instead of a plain assignment-drop:
+            // most of a binary-tree-shaped workload's garbage survives
+            // long enough to be promoted (see `reclaim_dead_obj`'s own
+            // docs), so THIS is where the majority of its FieldStorage
+            // actually dies -- skipping the pool here left it fed
+            // almost exclusively by the rare object that dies still in
+            // the nursery.
+            let obj = std::mem::replace(
+              &mut gcbox.obj,
+              Obj::Range {
+                lower: 0.0,
+                upper: 0.0,
+                step: Cell::new(1.0),
+              },
+            );
+            Self::reclaim_dead_obj(&mut self.field_storage_pool, obj);
             gcbox.live.set(false);
             chunk.live_count -= 1;
             chunk.free.push(gcbox as *mut GcBox);
