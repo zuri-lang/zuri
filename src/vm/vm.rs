@@ -318,6 +318,8 @@ pub struct VM {
   opcode_bigrams: FxHashMap<(&'static str, &'static str), u64>,
   #[cfg(feature = "opcode-profile")]
   last_opcode: Option<&'static str>,
+  #[cfg(feature = "gc-log")]
+  log_gc: bool,
 }
 
 /// Byte offset of `VM::heap` within `VM` -- combined in `crate::jit` with
@@ -368,6 +370,8 @@ impl VM {
       opcode_bigrams: FxHashMap::default(),
       #[cfg(feature = "opcode-profile")]
       last_opcode: None,
+      #[cfg(feature = "gc-log")]
+      log_gc: std::env::var_os("ZURI_GC_LOG").is_some(),
       heap,
     }
   }
@@ -3680,7 +3684,7 @@ impl VM {
     #[cfg(feature = "gc-log")]
     {
       let freed = self.heap.sweep();
-      if std::env::var_os("ZURI_GC_LOG").is_some() {
+      if self.log_gc {
         eprintln!(
           "[gc-major] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
           freed,
@@ -3800,7 +3804,7 @@ impl VM {
     {
       let before_bytes = self.heap.bytes_allocated();
       self.heap.reset_nursery();
-      if std::env::var_os("ZURI_GC_LOG").is_some() {
+      if self.log_gc {
         eprintln!(
           "[gc-minor] promoted/freed across {} -> {} objects, {} -> {} bytes",
           before_count,
