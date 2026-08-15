@@ -62,8 +62,14 @@ pub enum Obj {
   BigInt(BigInt) = 2,
   /// A dynamically-sized list.
   List(RefCell<ListStorage>) = 3,
-  /// A dict literal's storage.
-  Dict(RefCell<DictStorage>) = 4,
+  /// A dict literal's storage. Boxed for the same reason `Module` is
+  /// (see that variant's own doc comment): `DictStorage` (an
+  /// insertion-order `Vec` plus an `FxHashMap` index) is large relative
+  /// to the common case, and no current benchmark or hot path indexes
+  /// through a `Dict` anywhere near as often as it does a `List` or
+  /// `Instance` -- unlike `List`, there's no small-N inline case worth
+  /// preserving here.
+  Dict(Box<RefCell<DictStorage>>) = 4,
   /// A function PROTOTYPE -- the static, compiled-once result of one
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
@@ -110,8 +116,10 @@ pub enum Obj {
     /// the default.
     step: Cell<f64>,
   } = 12,
-  /// A `file(...)` object -- see `FileHandle`.
-  File(RefCell<FileHandle>) = 13,
+  /// A `file(...)` object -- see `FileHandle`. Boxed: a file handle is
+  /// created once per `file(...)` call, not once per value the program
+  /// manipulates -- same rarity argument as `Module`.
+  File(Box<RefCell<FileHandle>>) = 13,
   /// See `ObjModule`'s own doc comment. Boxed like `Func`/`Class` --
   /// `ObjModule` (two `String`s plus a `ModuleNamespace`, itself a
   /// `Vec` and an `FxHashMap`) is the largest variant in this enum,
@@ -121,8 +129,10 @@ pub enum Obj {
   /// paying one extra pointer indirection on that rare path to shrink
   /// every common allocation is a clear win.
   Module(Box<RefCell<ObjModule>>) = 14,
-  /// See `ObjModuleBinding`'s own doc comment.
-  ModuleBinding(ObjModuleBinding) = 15,
+  /// See `ObjModuleBinding`'s own doc comment. Boxed: created once per
+  /// `import` site, not once per value the program manipulates -- same
+  /// rarity argument as `Module`.
+  ModuleBinding(Box<ObjModuleBinding>) = 15,
   /// See `ObjPtr`'s own doc comment.
   Ptr(RefCell<ObjPtr>) = 16,
 }
@@ -222,7 +232,7 @@ mod obj_repr_tests {
       OBJ_TAG_LIST
     );
     assert_eq!(
-      Obj::Dict(RefCell::new(DictStorage::new())).tag(),
+      Obj::Dict(Box::new(RefCell::new(DictStorage::new()))).tag(),
       OBJ_TAG_DICT
     );
     assert_eq!(
@@ -238,12 +248,12 @@ mod obj_repr_tests {
 
   /// Confirms the memory-cost claim in `Obj`'s own doc comment stays
   /// true -- fails loudly (rather than silently regressing every heap
-  /// object's size) if a future variant grows past what `RefCell<
-  /// DictStorage>`/`RefCell<FileHandle>` (tied as the largest
-  /// currently-unboxed variants) cost today.
+  /// object's size) if a future variant grows past what
+  /// `RefCell<ListStorage>` (the largest currently-unboxed variant)
+  /// costs today.
   #[test]
   fn size_unchanged_from_baseline() {
-    assert_eq!(std::mem::size_of::<Obj>(), 72);
+    assert_eq!(std::mem::size_of::<Obj>(), 56);
   }
 
   /// `obj_payload_offset()` measures where `Obj::Instance`'s payload
@@ -1845,7 +1855,7 @@ impl Heap {
   /// of any repeated key.
   pub fn alloc_dict(&mut self, pairs: Vec<(Value, Value)>) -> Value {
     let storage = DictStorage::from_pairs(pairs);
-    self.alloc(Obj::Dict(RefCell::new(storage)))
+    self.alloc(Obj::Dict(Box::new(RefCell::new(storage))))
   }
 
   /// Deliberately `alloc_old`, not `alloc` -- see `alloc_old`'s own
@@ -1920,7 +1930,7 @@ impl Heap {
   }
 
   pub fn alloc_file(&mut self, fh: FileHandle) -> Value {
-    self.alloc(Obj::File(RefCell::new(fh)))
+    self.alloc(Obj::File(Box::new(RefCell::new(fh))))
   }
 
   pub fn alloc_module(&mut self, m: ObjModule) -> Value {
@@ -1928,7 +1938,7 @@ impl Heap {
   }
 
   pub fn alloc_module_binding(&mut self, b: ObjModuleBinding) -> Value {
-    self.alloc(Obj::ModuleBinding(b))
+    self.alloc(Obj::ModuleBinding(Box::new(b)))
   }
 
   pub fn alloc_ptr<T: 'static>(&mut self, type_name: &'static str, value: T) -> Value {
