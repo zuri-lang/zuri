@@ -1283,7 +1283,7 @@ impl Heap {
   const MIN_NEXT_GC: usize = 16 * 1024 * 1024;
   /// After a sweep, the next collection is scheduled at this multiple of
   /// the heap's current live size.
-  const GC_HEAP_GROW_FACTOR: f32 = 1.5;
+  const GC_HEAP_GROW_FACTOR: f32 = 2.0;
   /// Fixed (not growing) budget for the young generation -- kept
   /// small and constant, unlike `next_gc`, specifically so minor
   /// collections stay cheap and frequent for the whole run instead of
