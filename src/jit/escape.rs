@@ -163,6 +163,178 @@ impl AliasSet {
   }
 }
 
+/// A bitset over registers for a "must" (intersect-at-merge) fact --
+/// used below by `self_reference_facts` to prove a register DEFINITELY
+/// (on every path, not just possibly) still holds an unmodified
+/// self-reference. A separate type from `AliasSet`, on purpose -- see
+/// that type's own docs on why mixing "may" and "must" merge operators
+/// under one type invites a silent logic bug instead of a compile
+/// error.
+#[derive(Clone, PartialEq, Eq)]
+struct MustSet {
+  words: Vec<u64>,
+}
+
+impl MustSet {
+  fn word_count(num_registers: usize) -> usize {
+    num_registers.div_ceil(64).max(1)
+  }
+
+  /// Nothing proven -- the correct seed for the entry block (register
+  /// 0's caller-supplied argument is never statically a self-
+  /// reference, nor is anything else, before any code has run).
+  fn empty(num_registers: usize) -> Self {
+    MustSet {
+      words: vec![0u64; Self::word_count(num_registers)],
+    }
+  }
+
+  /// Everything (optimistically) proven -- the correct seed for every
+  /// OTHER block, so a real predecessor's facts only ever narrow it
+  /// down via `and_assign`, never widen it (the same reasoning
+  /// `typeflow::RegSet::full` documents for its own analogous role).
+  fn full(num_registers: usize) -> Self {
+    let words = Self::word_count(num_registers);
+    let mut v = vec![u64::MAX; words];
+    let extra_bits = words * 64 - num_registers;
+    if extra_bits > 0
+      && let Some(last) = v.last_mut()
+    {
+      *last >>= extra_bits;
+    }
+    MustSet { words: v }
+  }
+
+  fn get(&self, r: u8) -> bool {
+    let r = r as usize;
+    let word = r / 64;
+    if word >= self.words.len() {
+      return false;
+    }
+    (self.words[word] >> (r % 64)) & 1 != 0
+  }
+
+  fn set(&mut self, r: u8, v: bool) {
+    let r = r as usize;
+    let word = r / 64;
+    if word >= self.words.len() {
+      return;
+    }
+    if v {
+      self.words[word] |= 1 << (r % 64);
+    } else {
+      self.words[word] &= !(1 << (r % 64));
+    }
+  }
+
+  /// Intersect merge -- a "must" analysis's fixed point only ever
+  /// narrows at a merge point (a fact holds after the merge only if
+  /// EVERY predecessor path already proved it).
+  fn and_assign(&mut self, other: &MustSet) {
+    for (a, b) in self.words.iter_mut().zip(other.words.iter()) {
+      *a &= b;
+    }
+  }
+}
+
+/// For every bytecode position in `proto`, which registers are
+/// DEFINITELY (on every path reaching that position) still holding an
+/// unmodified self-reference -- the result of a `GetGlobal` whose name
+/// matches `proto`'s own name, never redefined since. This is what
+/// lets `Call`/`Invoke` sites be recognized as PROVABLY self-recursive
+/// (calling this exact function, not some other value that merely
+/// happens to occupy the same register) without needing live access to
+/// the actual runtime global table -- see the module-level "Phase 2"
+/// docs for why self-recursion specifically is the one call-target
+/// case this analysis can resolve without that.
+///
+/// A "must" analysis, the same shape as `typeflow::analyze` (optimistic
+/// `full()` seed at every non-entry block, narrowed by intersection at
+/// merges): a register only counts as a proven self-reference if EVERY
+/// path agrees, and anything not proven here is conservatively treated
+/// as "might not be self" -- the safe direction to be wrong in, since
+/// a false "is definitely self" would misapply this function's OWN
+/// (possibly still-escaping) parameter summary to what's actually a
+/// call to something else entirely.
+fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+  let preds = typeflow::build_predecessors(proto);
+
+  let is_self_name = |name_const: u16| -> bool {
+    match proto.chunk.constants.get(name_const as usize) {
+      Some(v) if v.is_string() => v.as_str() == proto.name,
+      _ => false,
+    }
+  };
+
+  let mut entry: Vec<MustSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        MustSet::empty(num_registers)
+      } else {
+        MustSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let transfer = |in_set: &MustSet, instr: &Instr| -> MustSet {
+    let mut out = in_set.clone();
+    match *instr {
+      Instr::GetGlobal { dst, name_const } => {
+        out.set(dst, is_self_name(name_const));
+      },
+      Instr::Move { dst, src } => {
+        out.set(dst, in_set.get(src));
+      },
+      _ => {
+        if let Some(dst) = typeflow::any_dst(instr) {
+          out.set(dst, false);
+        }
+      },
+    }
+    out
+  };
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<MustSet> = (0..code_len)
+    .map(|ip| transfer(&entry[ip], &code[ip]))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = MustSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if ip == 0 {
+      new_in = MustSet::empty(num_registers);
+    } else if !any_pred {
+      // Unreachable code -- vacuously "everything proven" is safe,
+      // same reasoning as `typeflow::analyze`'s own identical case.
+      new_in = MustSet::full(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer(&entry[ip], &code[ip]);
+      for &s in &typeflow::successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  entry
+}
+
 /// Does this instruction's normal (non-tracked-register) behavior
 /// write some OTHER, unrelated value into a register -- i.e. should
 /// that register be KILLED from the alias set (it no longer holds
@@ -331,6 +503,17 @@ pub struct EscapeResult {
 /// register (checked via `typeflow::any_dst`); the analysis tracks
 /// THAT register (and whatever it's copied into via `Move`) forward
 /// from `alloc_ip`'s own successor(s) to the end of the function.
+///
+/// Consults `proto`'s OWN self-recursive parameter summary (Phase 2 --
+/// see that section's own docs) for any `Call` PROVABLY targeting
+/// `proto` itself: an allocation passed as an argument to such a call,
+/// in a position mapping onto a parameter Phase 2 already proved
+/// doesn't escape, is no longer conservatively flagged just because
+/// SOME call touched it -- e.g. `TreeNode(...)` built once and then
+/// threaded unchanged through further recursive calls of the SAME
+/// function that never store it anywhere. Every OTHER call target
+/// (anything not provably self) is still fully conservative, exactly
+/// as Phase 1 alone treats it.
 pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -343,6 +526,9 @@ pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
     // light).
     return EscapeResult { escapes: true };
   };
+
+  let self_ref = self_reference_facts(proto);
+  let self_summary = compute_param_summary(proto);
 
   let preds = typeflow::build_predecessors(proto);
 
@@ -410,9 +596,34 @@ pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
       }
     }
 
-    for reg in escaping_reads(instr) {
-      if entry[ip].get(reg) {
-        escaped = true;
+    // See `analyze_one`'s own docs on the Phase 2 refinement: a
+    // provably self-recursive `Call`'s arguments are checked against
+    // `proto`'s own parameter summary instead of unconditionally
+    // escaping -- everything else falls through to Phase 1's plain
+    // `escaping_reads`.
+    if let Instr::Call { func, num_args, .. } = *instr
+      && self_ref[ip].get(func)
+    {
+      for k in 1..=num_args {
+        let arg_reg = func.saturating_add(k);
+        if !entry[ip].get(arg_reg) {
+          continue;
+        }
+        let param_idx = (k - 1) as usize;
+        let escapes_here = self_summary
+          .param_escapes
+          .get(param_idx)
+          .copied()
+          .unwrap_or(true);
+        if escapes_here {
+          escaped = true;
+        }
+      }
+    } else {
+      for reg in escaping_reads(instr) {
+        if entry[ip].get(reg) {
+          escaped = true;
+        }
       }
     }
 
@@ -434,6 +645,217 @@ pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
   }
 
   EscapeResult { escapes: escaped }
+}
+
+// ---------------------------------------------------------------------
+// PHASE 2: self-recursive parameter-escape summaries.
+// ---------------------------------------------------------------------
+//
+// Extends Phase 1 with exactly ONE interprocedural case: a function
+// calling ITSELF (detected via `self_reference_facts`, above -- the
+// one call-target case resolvable without live access to the runtime
+// global table; see this module's top-level docs). For a self-
+// recursive call, an argument that maps onto one of THIS function's
+// own parameters no longer escapes unconditionally -- it escapes only
+// if that SAME parameter is (from the rest of this computation)
+// already known to escape, which is exactly the parameter-escape
+// summary this section computes, via a small Kleene/Tarski fixed-point
+// iteration: seed every parameter optimistically as `Local`, recompute
+// the summary using that guess for self-recursive call sites, and
+// repeat until it stops changing.
+//
+// This is monotonic (a parameter can only ever flip from `Local` to
+// `Escapes`, never back), so the iteration is bounded by `arity` steps
+// and converges to the LEAST fixed point -- the most PRECISE summary
+// that is still fully sound, the same Kleene-iteration shape any
+// recursive dataflow summary computation uses.
+//
+// STILL NOT ENOUGH, on its own, to prove real recursive-return patterns
+// like `tree_with(depth).count()` non-escaping -- two gaps remain,
+// deliberately left for a later phase rather than rushed here:
+// - `Return` is still treated as an unconditional escape (inherited
+//   from `escaping_reads`), not "escapes only if the CALLER'S use of
+//   the return value escapes". Modeling that needs a three-state
+//   lattice (`Local` / `EscapesViaReturn` / `Escapes`), not attempted
+//   here.
+// - `GetField`'s receiver is still conservatively escaping (the
+//   `BoundMethod`-wrapping risk -- see module docs), which is exactly
+//   what `count()`'s `self.left`/`self.right` reads hit. Resolving
+//   that needs proving a specific `GetField` site resolves to a FIELD,
+//   never a method, which needs class-shape knowledge this analysis
+//   doesn't have.
+// - Method calls (`Invoke`) are not resolved for self-recursion at
+//   all -- `count()` recurses via `self.left.count()`, an `Invoke`,
+//   not a `Call`; only direct `GetGlobal`-based self-calls (like
+//   `tree_with`'s own recursion) are handled here.
+
+/// One function's parameter-escape summary: `param_escapes[i]` is
+/// whether register `i` (parameter `i`, for `i < proto.arity`)
+/// escapes this function's own body -- see this section's own docs on
+/// exactly what's (and isn't) accounted for.
+pub struct FuncEscapeSummary {
+  pub param_escapes: Vec<bool>,
+}
+
+/// Same core walk as `analyze_one`, but seeded at a PARAMETER register
+/// from the function's entry (`ip = 0`) instead of an allocation
+/// site's own destination, and -- the one real difference -- consults
+/// `guess` (the in-progress summary from the current fixed-point
+/// iteration) instead of unconditionally flagging a self-recursive
+/// call's argument as escaping.
+///
+/// Deliberately a near-duplicate of `analyze_one`'s loop rather than a
+/// shared refactor: sharing the loop would mean threading the self-
+/// recursion-aware Call/Invoke classification through Phase 1's
+/// already-tested path too, which is a real risk to something that
+/// works today for a code-sharing win that isn't worth that risk here.
+fn analyze_param_escape(
+  proto: &ObjFunction,
+  param_reg: u8,
+  self_ref: &[MustSet],
+  guess: &[bool],
+) -> bool {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+  let preds = typeflow::build_predecessors(proto);
+
+  if code_len == 0 {
+    return false;
+  }
+
+  let mut entry: Vec<AliasSet> = vec![AliasSet::empty(num_registers); code_len];
+  let mut out: Vec<AliasSet> = vec![AliasSet::empty(num_registers); code_len];
+  let mut escaped = false;
+
+  // The seed: `param_reg` holds the tracked parameter from the very
+  // first instruction onward (unlike `analyze_one`'s `alloc_ip`, whose
+  // OWN operands aren't reads of the not-yet-existing tracked
+  // allocation, a parameter is live from instruction 0 itself -- `ip =
+  // 0` is an ordinary instruction here, not a seed-only site, so it
+  // goes through the exact same loop body as everything else below).
+  entry[0].set(param_reg, true);
+
+  let mut worklist: Vec<usize> = vec![0];
+  let mut in_worklist = vec![false; code_len];
+  in_worklist[0] = true;
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let new_in = if ip == 0 {
+      entry[0].clone()
+    } else {
+      let mut merged = AliasSet::empty(num_registers);
+      for &p in &preds[ip] {
+        merged.or_assign(&out[p]);
+      }
+      merged
+    };
+
+    if ip != 0 && new_in == entry[ip] {
+      continue;
+    }
+    entry[ip] = new_in;
+
+    let instr = &code[ip];
+    let mut new_out = entry[ip].clone();
+
+    if let Instr::Closure { proto_const, .. } = *instr {
+      let nested = proto.chunk.constants[proto_const as usize].as_func();
+      for desc in &nested.upvalues {
+        if let UpvalueDescriptor::Local(n) = *desc
+          && entry[ip].get(n)
+        {
+          escaped = true;
+        }
+      }
+    }
+
+    // The one real difference from `analyze_one`: a PROVABLY self-
+    // recursive `Call` (see `self_reference_facts`) maps each argument
+    // register onto the callee's (= this same function's) parameter
+    // at the matching position, and consults `guess` for THAT
+    // parameter instead of unconditionally escaping. Any argument
+    // register beyond `proto.arity` (an arity mismatch, or a variadic
+    // tail) has no corresponding parameter to consult -- conservatively
+    // escapes, same as an ordinary unresolved call.
+    if let Instr::Call { func, num_args, .. } = *instr
+      && self_ref[ip].get(func)
+    {
+      for k in 1..=num_args {
+        let arg_reg = func.saturating_add(k);
+        if !entry[ip].get(arg_reg) {
+          continue;
+        }
+        let param_idx = (k - 1) as usize;
+        let escapes_here = guess.get(param_idx).copied().unwrap_or(true);
+        if escapes_here {
+          escaped = true;
+        }
+      }
+    } else {
+      for reg in escaping_reads(instr) {
+        if entry[ip].get(reg) {
+          escaped = true;
+        }
+      }
+    }
+
+    if let Instr::Move { dst, src } = *instr {
+      new_out.set(dst, entry[ip].get(src));
+    } else if let Some(dst) = kill_target(instr) {
+      new_out.set(dst, false);
+    }
+
+    if new_out != out[ip] || ip == 0 {
+      out[ip] = new_out;
+      for &s in &typeflow::successors(ip, instr, proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  escaped
+}
+
+/// Computes `proto`'s own parameter-escape summary -- see this
+/// section's own docs for the fixed-point shape and its known limits.
+pub fn compute_param_summary(proto: &ObjFunction) -> FuncEscapeSummary {
+  let arity = proto.arity as usize;
+  if arity == 0 {
+    return FuncEscapeSummary {
+      param_escapes: Vec::new(),
+    };
+  }
+
+  let self_ref = self_reference_facts(proto);
+  let mut guess = vec![false; arity];
+
+  loop {
+    let mut next = guess.clone();
+    let mut changed = false;
+    for i in 0..arity {
+      if guess[i] {
+        continue; // already escaping -- monotonic, can't un-escape
+      }
+      if analyze_param_escape(proto, i as u8, &self_ref, &guess) {
+        next[i] = true;
+        changed = true;
+      }
+    }
+    guess = next;
+    if !changed {
+      break;
+    }
+  }
+
+  FuncEscapeSummary {
+    param_escapes: guess,
+  }
 }
 
 #[cfg(test)]
@@ -462,6 +884,16 @@ mod tests {
       globals_module: None,
       jit: JitInfo::new(code_len),
     }
+  }
+
+  /// A heap-allocated (deliberately leaked -- this is test-only code)
+  /// `Obj::Str`, wrapped as a `Value` -- constants that name a global
+  /// (`GetGlobal`/`SetGlobal`'s `name_const`) need a real string Value,
+  /// not just a placeholder, since `self_reference_facts` compares
+  /// their actual text against `proto.name`.
+  fn test_str(s: &str) -> Value {
+    let boxed = Box::new(crate::vm::object::Obj::Str(s.to_string()));
+    Value::obj(Box::leak(boxed))
   }
 
   /// Never read, never stored anywhere -- the simplest possible
@@ -778,5 +1210,236 @@ mod tests {
     ];
     let f = make_func(code, vec![], 10);
     assert!(analyze_one(&f, 0).escapes);
+  }
+
+  // -----------------------------------------------------------------
+  // PHASE 2: self-recursion detection and parameter-escape summaries.
+  // -----------------------------------------------------------------
+
+  fn make_named_func(
+    name: &str,
+    code: Vec<Instr>,
+    constants: Vec<Value>,
+    num_registers: u8,
+    arity: u8,
+  ) -> ObjFunction {
+    let mut f = make_func(code, constants, num_registers);
+    f.name = name.to_string();
+    f.arity = arity;
+    f
+  }
+
+  #[test]
+  fn self_reference_facts_recognizes_own_name_only() {
+    let code = vec![
+      Instr::GetGlobal {
+        dst: 0,
+        name_const: 0,
+      }, // "f" -- self
+      Instr::GetGlobal {
+        dst: 1,
+        name_const: 1,
+      }, // "g" -- NOT self
+      Instr::Return { src: 0 },
+    ];
+    let f = make_named_func(
+      "f",
+      code,
+      vec![test_str("f"), test_str("g")],
+      2,
+      0,
+    );
+    let facts = self_reference_facts(&f);
+    // After ip=1 (both GetGlobals have executed), r0 is definitely
+    // self, r1 is definitely not.
+    assert!(facts[2].get(0));
+    assert!(!facts[2].get(1));
+  }
+
+  #[test]
+  fn self_reference_killed_by_redefinition() {
+    let code = vec![
+      Instr::GetGlobal {
+        dst: 0,
+        name_const: 0,
+      }, // "f" -- self
+      Instr::LoadNil { dst: 0 }, // overwritten -- no longer self
+      Instr::Return { src: 0 },
+    ];
+    let f = make_named_func("f", code, vec![test_str("f")], 1, 0);
+    let facts = self_reference_facts(&f);
+    assert!(!facts[2].get(0));
+  }
+
+  /// A parameter passed through a self-recursive call's SAME argument
+  /// position, and never otherwise touched, must be proven non-
+  /// escaping -- the whole point of Phase 2 over Phase 1.
+  #[test]
+  fn param_passed_through_self_recursion_does_not_escape() {
+    // def f(n, obj) {
+    //   if n == 0 { return 0 }
+    //   return f(n - 1, obj)   // `obj` passed through unchanged
+    // }
+    let code = vec![
+      Instr::LoadConst {
+        dst: 2,
+        const_idx: 1,
+      }, // ip0: 0
+      Instr::Eq { dst: 3, a: 0, b: 2 }, // ip1: n == 0
+      Instr::JmpIfFalse {
+        cond: 3,
+        offset: 2,
+      }, // ip2: false -> ip5, true -> ip3
+      Instr::LoadConst {
+        dst: 4,
+        const_idx: 1,
+      }, // ip3: 0
+      Instr::Return { src: 4 }, // ip4: base case, doesn't touch obj
+      Instr::GetGlobal {
+        dst: 5,
+        name_const: 0,
+      }, // ip5: "f" (self)
+      Instr::SubImm {
+        dst: 6,
+        a: 0,
+        imm_const: 1,
+      }, // ip6: n - 1
+      Instr::Move { dst: 7, src: 1 }, // ip7: obj -> arg slot (func+2)
+      Instr::Call {
+        dst: 8,
+        func: 5,
+        num_args: 2,
+      }, // ip8: f(n-1, obj)
+      Instr::Return { src: 8 }, // ip9: returns the recursive result, not obj
+    ];
+    let f = make_named_func(
+      "f",
+      code,
+      vec![test_str("f"), Value::number(0.0)],
+      9,
+      2,
+    );
+    let summary = compute_param_summary(&f);
+    assert_eq!(summary.param_escapes.len(), 2);
+    assert!(
+      !summary.param_escapes[1],
+      "obj (param 1) is only ever passed through the self-recursive \
+       call in its own argument position, and never read/stored/\
+       returned directly -- must be proven non-escaping"
+    );
+  }
+
+  /// The same shape as above, but `obj` is ALSO stored to a global
+  /// inside the function -- the summary must correctly flag it as
+  /// escaping, proving the analysis isn't just unconditionally
+  /// optimistic about self-recursive parameters.
+  #[test]
+  fn param_escapes_despite_self_recursion_if_also_stored_globally() {
+    let code = vec![
+      Instr::LoadConst {
+        dst: 2,
+        const_idx: 1,
+      }, // ip0: 0
+      Instr::Eq { dst: 3, a: 0, b: 2 }, // ip1: n == 0
+      Instr::JmpIfFalse {
+        cond: 3,
+        offset: 2,
+      }, // ip2
+      Instr::LoadConst {
+        dst: 4,
+        const_idx: 1,
+      }, // ip3
+      Instr::Return { src: 4 }, // ip4: base case
+      Instr::GetGlobal {
+        dst: 5,
+        name_const: 0,
+      }, // ip5: "f"
+      Instr::SubImm {
+        dst: 6,
+        a: 0,
+        imm_const: 1,
+      }, // ip6: n - 1
+      Instr::Move { dst: 7, src: 1 }, // ip7: obj -> arg slot
+      Instr::SetGlobal {
+        name_const: 2,
+        src: 1,
+      }, // ip8: ALSO stash obj in a global
+      Instr::Call {
+        dst: 8,
+        func: 5,
+        num_args: 2,
+      }, // ip9: f(n-1, obj)
+      Instr::Return { src: 8 }, // ip10
+    ];
+    let f = make_named_func(
+      "f",
+      code,
+      vec![
+        test_str("f"),
+        Value::number(0.0),
+        test_str("leaked"),
+      ],
+      9,
+      2,
+    );
+    let summary = compute_param_summary(&f);
+    assert!(summary.param_escapes[1]);
+  }
+
+  /// A call to a DIFFERENT (non-self) global is not resolved by Phase
+  /// 2 at all -- its arguments must remain conservatively escaping,
+  /// exactly like Phase 1 alone would treat them.
+  #[test]
+  fn non_self_call_argument_stays_conservatively_escaping() {
+    let code = vec![
+      Instr::GetGlobal {
+        dst: 1,
+        name_const: 0,
+      }, // ip0: "other", NOT self
+      Instr::Move { dst: 2, src: 0 }, // ip1: param -> arg slot
+      Instr::Call {
+        dst: 3,
+        func: 1,
+        num_args: 1,
+      }, // ip2: other(param)
+      Instr::Return { src: 3 }, // ip3
+    ];
+    let f = make_named_func("f", code, vec![test_str("other")], 4, 1);
+    let summary = compute_param_summary(&f);
+    assert!(summary.param_escapes[0]);
+  }
+
+  /// End-to-end: `analyze_one` (Phase 1's OWN allocation tracking),
+  /// not just a bare parameter summary, benefits from Phase 2 -- an
+  /// object allocated once and threaded unchanged through further
+  /// self-recursive calls, never otherwise touched, is proven
+  /// non-escaping.
+  #[test]
+  fn allocation_threaded_through_self_recursion_does_not_escape() {
+    // def f(n) {                 -- n (r0) itself is never touched
+    //   var obj = alloc()        -- ip0: the tracked allocation
+    //   return f(obj)            -- self-recursive, obj threaded as
+    //                                the argument in n's OWN position
+    // }
+    let code = vec![
+      Instr::Call {
+        dst: 1,
+        func: 5,
+        num_args: 0,
+      }, // ip0: allocation
+      Instr::GetGlobal {
+        dst: 2,
+        name_const: 0,
+      }, // ip1: "f" -- self
+      Instr::Move { dst: 3, src: 1 }, // ip2: obj -> arg slot
+      Instr::Call {
+        dst: 4,
+        func: 2,
+        num_args: 1,
+      }, // ip3: f(obj) -- self-recursive
+      Instr::Return { src: 4 }, // ip4: returns the recursive result, not obj
+    ];
+    let f = make_named_func("f", code, vec![test_str("f")], 6, 1);
+    assert!(!analyze_one(&f, 0).escapes);
   }
 }
