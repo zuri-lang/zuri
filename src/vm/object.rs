@@ -314,6 +314,26 @@ pub struct ObjFunction {
   /// false.
   pub is_method: bool,
 
+  /// The name of the class this method was declared inside, if any --
+  /// `None` for every ordinary function/closure/anonymous function,
+  /// and for a method compiled outside a NAMED top-level class
+  /// declaration (this project doesn't have those today, but nothing
+  /// stops a future local/nested class from producing one). A NAME,
+  /// not a `*const ObjClass`, because the class object itself doesn't
+  /// exist yet at compile time -- it's built at RUNTIME when the
+  /// `class Foo { ... }` declaration statement actually executes (see
+  /// `Instr::MakeClass`/`FinalizeClass`). Resolving this to the real,
+  /// live `ObjClass` (to inspect its `field_slots`/`methods` for a
+  /// name collision -- see `jit::escape`'s GetField-safety docs) is
+  /// the JIT compiler's own job, done once at JIT-compile time (main-
+  /// thread, real VM access available) by looking up the CURRENT
+  /// global bound to this name -- sound because Zuri classes are
+  /// immutable after construction (NOTES.md: "new fields and methods
+  /// cannot be added at runtime"), so whatever `field_slots`/`methods`
+  /// that lookup finds are permanent facts, not a one-shot snapshot
+  /// that could go stale.
+  pub owning_class_name: Option<String>,
+
   /// The file this function was compiled from, shared (via `Rc`, not
   /// cloned) by every function compiled in the same `Compiler` run --
   /// see `Compiler::new`. Read per-frame by `VM::build_stacktrace`,

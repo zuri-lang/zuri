@@ -446,6 +446,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method,
+      owning_class_name: None,
       jit,
     }
   }
@@ -495,6 +496,7 @@ impl<'a> Compiler<'a> {
     body: &Stmt,
     is_variadic: bool,
     is_static: bool,
+    class_name: &str,
   ) -> ObjFunction {
     let name = Self::identifier_name(token);
 
@@ -557,6 +559,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method: true,
+      owning_class_name: Some(class_name.to_string()),
       jit,
     }
   }
@@ -613,6 +616,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method: true,
+      owning_class_name: Some(Self::identifier_name(class_token)),
       jit,
     }
   }
@@ -780,7 +784,8 @@ impl<'a> Compiler<'a> {
 
     for m in methods {
       if let Decl::Method(mname, params, body, is_variadic, is_static) = m {
-        let obj_fn = self.compile_method_prototype(mname, params, body, *is_variadic, *is_static);
+        let obj_fn =
+          self.compile_method_prototype(mname, params, body, *is_variadic, *is_static, &class_name);
         let proto_val = self.heap.alloc_function(obj_fn);
         let const_idx = self.add_constant(proto_val);
         let mreg = self.alloc_reg();
@@ -2510,6 +2515,7 @@ impl<'a> Compiler<'a> {
       source_path: self.source_path.clone(),
       globals_module: self.module,
       is_method: false,
+      owning_class_name: None,
       jit,
     };
 
@@ -2737,5 +2743,117 @@ fn imm_logical_ctor(op: &TokenKind) -> Option<fn(u8, u8, u16) -> Instr> {
     TokenKind::EqualEq => Some(|dst, a, imm_const| Instr::EqImm { dst, a, imm_const }),
     TokenKind::BangEq => Some(|dst, a, imm_const| Instr::NeqImm { dst, a, imm_const }),
     _ => None,
+  }
+}
+
+#[cfg(test)]
+mod owning_class_name_tests {
+  use super::*;
+  use crate::compiler::lexer::Lexer;
+  use crate::compiler::parser::Parser;
+
+  /// Returns the compiled top-level `ObjFunction` TOGETHER WITH the
+  /// `Heap` it was compiled against, and the caller must keep BOTH
+  /// alive for as long as it inspects the result -- the returned
+  /// function's own constant pool holds raw `Value` pointers into
+  /// this exact heap's backing storage (every string/nested-function
+  /// constant the compiler allocates via `heap.alloc_string_old`/
+  /// `heap.alloc_function`), so dropping the heap first and reading
+  /// the function's constants after is a genuine dangling-pointer
+  /// use-after-free -- caught by hand the first time this helper
+  /// returned just the `ObjFunction` alone and segfaulted immediately
+  /// on the very next line reading `constants`.
+  fn compile_source(src: &str) -> (Heap, ObjFunction) {
+    let mut lex = Lexer::new(src);
+    let mut parser = Parser::new(&mut lex);
+    let decls = parser.parse().expect("test source must parse");
+    let mut heap = Heap::new();
+    let chunk = Box::new(Chunk::new());
+    let compiler = Compiler::new(decls, chunk, &mut heap, Rc::from("test"));
+    let result = compiler.compile().expect("test source must compile");
+    (heap, result)
+  }
+
+  /// A method's `owning_class_name` must name the class it was
+  /// actually declared inside -- the whole point of the link (see
+  /// `ObjFunction::owning_class_name`'s own docs).
+  #[test]
+  fn method_gets_owning_class_name() {
+    let (_heap, main) = compile_source(
+      r#"
+      class TreeNode {
+        @new(left, right) {
+          self.left = left
+          self.right = right
+        }
+
+        count() {
+          if self.left == nil return 1
+          return 1 + self.left.count() + self.right.count()
+        }
+      }
+      "#,
+    );
+    let mut found_new = false;
+    let mut found_count = false;
+    for c in &main.chunk.constants {
+      if c.is_func() {
+        let f = c.as_func();
+        if f.name == "@new" {
+          found_new = true;
+          assert_eq!(f.owning_class_name.as_deref(), Some("TreeNode"));
+        }
+        if f.name == "count" {
+          found_count = true;
+          assert_eq!(f.owning_class_name.as_deref(), Some("TreeNode"));
+        }
+      }
+    }
+    assert!(found_new, "expected to find the @new method constant");
+    assert!(found_count, "expected to find the count method constant");
+  }
+
+  /// An ordinary (non-method) function must NOT get an owning class.
+  #[test]
+  fn plain_function_has_no_owning_class_name() {
+    let (_heap, main) = compile_source("def f(n) { return n }");
+    let mut found = false;
+    for c in &main.chunk.constants {
+      if c.is_func() {
+        let f = c.as_func();
+        if f.name == "f" {
+          found = true;
+          assert_eq!(f.owning_class_name, None);
+        }
+      }
+    }
+    assert!(found, "expected to find the 'f' function constant");
+  }
+
+  /// The field-initializer function synthesized for a class with
+  /// property declarations should ALSO carry the owning class name --
+  /// it's just as much "code that belongs to this class" as an
+  /// explicit method.
+  #[test]
+  fn field_initializer_gets_owning_class_name() {
+    let (_heap, main) = compile_source(
+      r#"
+      class Point {
+        var x = 0
+        var y = 0
+      }
+      "#,
+    );
+    let mut found = false;
+    for c in &main.chunk.constants {
+      if c.is_func() {
+        let f = c.as_func();
+        if f.name.contains("init_fields") {
+          found = true;
+          assert_eq!(f.owning_class_name.as_deref(), Some("Point"));
+        }
+      }
+    }
+    assert!(found, "expected to find the field-initializer constant");
   }
 }

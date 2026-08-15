@@ -880,6 +880,7 @@ mod tests {
       num_registers,
       upvalues: Vec::new(),
       is_method: false,
+      owning_class_name: None,
       source_path: Rc::from("test"),
       globals_module: None,
       jit: JitInfo::new(code_len),
