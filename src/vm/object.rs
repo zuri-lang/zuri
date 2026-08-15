@@ -704,6 +704,29 @@ impl FieldStorage {
     let ptr = Box::into_raw(boxed) as *mut Cell<Value>;
     FieldStorage { ptr, len }
   }
+
+  /// Tears down a `FieldStorage` WITHOUT freeing its backing allocation
+  /// -- the exact inverse of `new`/`from_raw_parts`, for `Heap::
+  /// reset_nursery`'s pooling path, which wants to recycle a dead
+  /// instance's buffer rather than hand it back to the allocator. Every
+  /// cell keeps whatever value it last held; the caller (`reset_nursery`)
+  /// is responsible for resetting them to `Value::nil()` before the
+  /// buffer is ever handed back out by `from_raw_parts`, since that's
+  /// `new`'s own guarantee callers of `alloc_instance` rely on.
+  fn into_raw_parts(self) -> (*mut Cell<Value>, usize) {
+    let this = std::mem::ManuallyDrop::new(self);
+    (this.ptr, this.len)
+  }
+
+  /// Reconstructs a `FieldStorage` from a `(ptr, len)` pair previously
+  /// produced by `into_raw_parts` on a `FieldStorage` of this SAME
+  /// `len` -- reusing a buffer at any other length would read/write out
+  /// of bounds. The caller must also have already reset every cell to
+  /// `Value::nil()` (see `into_raw_parts`'s own docs); this function
+  /// does not re-check either invariant.
+  unsafe fn from_raw_parts(ptr: *mut Cell<Value>, len: usize) -> FieldStorage {
+    FieldStorage { ptr, len }
+  }
 }
 
 impl std::ops::Deref for FieldStorage {
@@ -1166,6 +1189,21 @@ pub struct Heap {
   /// every retained-but-not-yet-touched chunk straight to allocating a
   /// brand new one, defeating the whole point of retaining them).
   nursery_fill_idx: usize,
+  /// Recycled `FieldStorage` buffers, keyed by their exact field count
+  /// (a class's `field_count` is fixed for its whole lifetime, so a
+  /// buffer freed for one instance of a class is immediately valid for
+  /// the NEXT instance of any class with that same field count -- no
+  /// bug-prone "close enough" resizing). Populated by `reset_nursery`
+  /// when a dead `Obj::Instance` is reclaimed (its `FieldStorage`'s
+  /// backing allocation is pulled out via `into_raw_parts` instead of
+  /// being freed) and drained by `alloc_instance`, turning what used to
+  /// be a real `malloc`+`free` pair on every short-lived instance into
+  /// a plain `Vec::pop`/`push` most of the time. Bounded per size class
+  /// by `FIELD_STORAGE_POOL_CAP` so a one-off burst of a rarely-used
+  /// field count doesn't hold memory forever -- exactly the same
+  /// "retain some, drop the rest" tradeoff `MAX_RETAINED_NURSERY_CHUNKS`
+  /// already makes for nursery chunks.
+  field_storage_pool: FxHashMap<usize, Vec<*mut Cell<Value>>>,
 }
 
 /// One fixed-capacity block of nursery `GcBox` storage -- the young
@@ -1178,6 +1216,18 @@ pub struct Heap {
 struct NurseryChunk {
   slots: Vec<GcBox>,
 }
+
+/// Cap on how many recycled buffers `Heap::field_storage_pool` retains
+/// PER field-count size class. A binary-tree-shaped workload dies (and
+/// is reclaimed) thousands of instances of the SAME field count per
+/// minor collection, so this needs to be generous enough to cover a
+/// single collection's worth of a hot size class without falling back
+/// to real `malloc` mid-cycle; past the cap, a freed buffer is dropped
+/// for real instead -- the exact same "retain some, drop the rest"
+/// shape `MAX_RETAINED_NURSERY_CHUNKS` already uses, so an unusual
+/// class (rarely instantiated, or with a field count nothing else
+/// shares) can't hoard memory across the program's whole lifetime.
+const FIELD_STORAGE_POOL_CAP: usize = 4096;
 
 /// Byte offsets of `Heap::bytes_allocated`/`next_gc` -- combined with
 /// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
@@ -1237,6 +1287,7 @@ impl Heap {
       young_bytes_allocated: 0,
       nursery_chunks: Vec::new(),
       nursery_fill_idx: 0,
+      field_storage_pool: FxHashMap::default(),
     }
   }
 
@@ -1615,18 +1666,59 @@ impl Heap {
     unsafe { &(*new_gcbox).obj }
   }
 
+  /// Shared cleanup for one dead `Obj` found during `reset_nursery`'s
+  /// scan. `FieldStorage`'s backing allocation is recycled into `pool`
+  /// instead of freed (see `field_storage_pool`'s own docs); every
+  /// other `Obj` variant is dropped exactly as `drop_in_place` used to
+  /// drop it.
+  ///
+  /// Free-standing (takes `pool` explicitly rather than `&mut self`)
+  /// so `reset_nursery` can call it from inside a loop that's already
+  /// borrowing a DIFFERENT field of `self` (`nursery_chunks`) -- the
+  /// same disjoint-field-borrow pattern `VM::forward_slot` uses, and
+  /// for the identical reason (see that function's own docs): a
+  /// `&mut self` method here would make the borrow checker treat it as
+  /// touching all of `self`, conflicting with the loop's own borrow
+  /// even though the two never actually overlap.
+  fn reclaim_dead_obj(pool: &mut FxHashMap<usize, Vec<*mut Cell<Value>>>, obj: Obj) {
+    match obj {
+      Obj::Instance(instance) => {
+        let (ptr, len) = instance.fields.into_raw_parts();
+        // SAFETY: `ptr` was just produced by `into_raw_parts` on a
+        // `FieldStorage` of exactly `len` cells -- valid to index
+        // `0..len`.
+        for i in 0..len {
+          unsafe { (*ptr.add(i)).set(Value::nil()) };
+        }
+        let list = pool.entry(len).or_default();
+        if list.len() < FIELD_STORAGE_POOL_CAP {
+          list.push(ptr);
+        } else {
+          // Past the cap for this size class -- drop it for real
+          // rather than hoarding it forever.
+          // SAFETY: same `(ptr, len)` pair `into_raw_parts` just
+          // handed back, reconstructed exactly once.
+          drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
+        }
+        // `instance.class` is a plain `Value` (Copy, no `Drop`) --
+        // nothing else in this variant needs cleanup.
+      },
+      other => drop(other),
+    }
+  }
+
   /// Reclaims the nursery after a minor collection's copy phase has
   /// fully drained its worklist: by construction, every slot NOT
   /// forwarded this cycle (`marked == false`) is garbage -- nothing
   /// still reachable can point at it, since `collect_minor` visited
   /// every root and every live object's children before calling this.
   /// Its `Obj` payload (and whatever it owns -- a `String`'s buffer, a
-  /// `List`'s backing `SmallVec`, ...) is dropped in place, exactly
-  /// what `sweep`/the old `sweep_young` used to do for a dead slot. A
-  /// forwarded slot's `obj` was already MOVED OUT via `ptr::read` in
-  /// `forward_or_promote` -- dropping it again here would be a
-  /// double-free, which is exactly what `marked` (this cycle's
-  /// forwarding flag) exists to distinguish.
+  /// `List`'s backing `SmallVec`, ...) is dropped in place via
+  /// `reclaim_dead_obj`, exactly what `sweep`/the old `sweep_young`
+  /// used to do for a dead slot. A forwarded slot's `obj` was already
+  /// MOVED OUT via `ptr::read` in `forward_or_promote` -- dropping it
+  /// again here would be a double-free, which is exactly what `marked`
+  /// (this cycle's forwarding flag) exists to distinguish.
   ///
   /// After every slot in a chunk is handled, `set_len(0)` reclaims
   /// that chunk's WHOLE buffer for the next cycle's allocations in
@@ -1651,8 +1743,12 @@ impl Heap {
         if !gcbox.marked.get() {
           freed_bytes += gcbox.size;
           // SAFETY: never forwarded (checked above), so `obj` was
-          // never moved out -- this is its one and only drop.
-          unsafe { std::ptr::drop_in_place(&mut gcbox.obj) };
+          // never moved out before now -- this is its one and only
+          // move, mirroring `forward_or_promote`'s own `ptr::read` for
+          // the forwarded case. `chunk.slots.set_len(0)` below never
+          // runs any destructor over this slot again either way.
+          let obj = unsafe { std::ptr::read(&gcbox.obj) };
+          Self::reclaim_dead_obj(&mut self.field_storage_pool, obj);
           freed_count += 1;
         }
       }
@@ -1758,10 +1854,28 @@ impl Heap {
   }
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
-    self.alloc(Obj::Instance(ObjInstance {
-      class,
-      fields: FieldStorage::new(field_count),
-    }))
+    let fields = self.take_field_storage(field_count);
+    self.alloc(Obj::Instance(ObjInstance { class, fields }))
+  }
+
+  /// Pops a recycled buffer of exactly `len` cells off
+  /// `field_storage_pool` if one's available, otherwise falls back to a
+  /// real allocation -- see `field_storage_pool`'s own docs. Every
+  /// pooled buffer was reset to all-`Value::nil()` before being pushed
+  /// (`reset_nursery`), so this upholds `FieldStorage::new`'s exact
+  /// postcondition either way.
+  fn take_field_storage(&mut self, len: usize) -> FieldStorage {
+    if let Some(list) = self.field_storage_pool.get_mut(&len)
+      && let Some(ptr) = list.pop()
+    {
+      // SAFETY: every pointer in this list was produced by
+      // `FieldStorage::into_raw_parts` on a `FieldStorage` of this
+      // exact `len` (the list is keyed by it), had every cell reset to
+      // `Value::nil()` before being pushed, and is pushed at most once
+      // (popped here removes it, so it can never be handed out twice).
+      return unsafe { FieldStorage::from_raw_parts(ptr, len) };
+    }
+    FieldStorage::new(len)
   }
 
   pub fn alloc_range(&mut self, lower: f64, upper: f64) -> Value {
