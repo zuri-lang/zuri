@@ -893,7 +893,12 @@ fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
 /// Every bytecode position `ip`'s instruction can transfer control to,
 /// including the implicit fallthrough to `ip + 1` where applicable --
 /// the forward edges the fixed-point worklist propagates facts along.
-fn successors(ip: usize, instr: &Instr, proto: &ObjFunction) -> Vec<usize> {
+/// `pub(crate)` (not just used internally) so OTHER fixed-point passes
+/// over the same bytecode shape (e.g. `jit::escape`'s may-alias
+/// analysis) reuse this exact, already-correct control-flow edge logic
+/// instead of each re-deriving their own copy that could drift out of
+/// sync with real jump/branch/dispatch semantics.
+pub(crate) fn successors(ip: usize, instr: &Instr, proto: &ObjFunction) -> Vec<usize> {
   match *instr {
     Instr::Jmp { offset } => vec![(ip as isize + 1 + offset as isize) as usize],
     Instr::JmpIfFalse { offset, .. } | Instr::JmpIfTrue { offset, .. } => {
@@ -914,8 +919,9 @@ fn successors(ip: usize, instr: &Instr, proto: &ObjFunction) -> Vec<usize> {
 
 /// Predecessor list for every bytecode position, built once up front
 /// (a single forward scan) rather than inverting `successors` on every
-/// worklist pop.
-fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
+/// worklist pop. `pub(crate)` for the same reason `successors` is --
+/// see its own docs.
+pub(crate) fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let mut preds: Vec<Vec<usize>> = vec![Vec::new(); code_len];

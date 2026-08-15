@@ -75,6 +75,7 @@
 pub mod background;
 pub mod codegen;
 pub mod engine;
+pub mod escape;
 pub mod runtime;
 pub mod typeflow;
 pub mod warmup;
