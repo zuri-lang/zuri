@@ -24,4 +24,6 @@ f2.write(bytes([
 var f = file('image.png', 'rb')
 var data = f.read()
 
+f.delete()
+
 echo 'Successfully created and read file image.png in ${time() - start}s'
