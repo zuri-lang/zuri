@@ -1218,16 +1218,23 @@ struct NurseryChunk {
 }
 
 /// Cap on how many recycled buffers `Heap::field_storage_pool` retains
-/// PER field-count size class. A binary-tree-shaped workload dies (and
-/// is reclaimed) thousands of instances of the SAME field count per
-/// minor collection, so this needs to be generous enough to cover a
-/// single collection's worth of a hot size class without falling back
-/// to real `malloc` mid-cycle; past the cap, a freed buffer is dropped
-/// for real instead -- the exact same "retain some, drop the rest"
-/// shape `MAX_RETAINED_NURSERY_CHUNKS` already uses, so an unusual
-/// class (rarely instantiated, or with a field count nothing else
-/// shares) can't hoard memory across the program's whole lifetime.
-const FIELD_STORAGE_POOL_CAP: usize = 4096;
+/// PER field-count size class. Was `4096` from an initial (WRONG)
+/// guess of "thousands" -- `ZURI_GC_LOG` on the real binary-tree
+/// workload shows a single minor collection reclaiming upward of
+/// 100,000 same-field-count instances at once (e.g. "promoted/freed
+/// across 116418 -> 254 objects"), so a 4096 cap meant well over 95%
+/// of frees on the single hottest size class fell straight back to
+/// real `malloc`/`free` every cycle regardless of pooling existing at
+/// all -- silently defeating almost the entire point of this pool.
+/// Raised to comfortably cover a full cycle's worth of a hot size
+/// class; each pooled entry is one `*mut Cell<Value>` (8 bytes), so
+/// even this new cap cost only a few megabytes of pointer-array
+/// overhead at its absolute worst (every class in the program sharing
+/// one field count AND all dying in the same cycle). Past the cap, a
+/// freed buffer is still dropped for real instead of hoarded forever
+/// -- the exact same "retain some, drop the rest" shape
+/// `MAX_RETAINED_NURSERY_CHUNKS` already uses.
+const FIELD_STORAGE_POOL_CAP: usize = 1 << 20; // ~1,048,576
 
 /// Byte offsets of `Heap::bytes_allocated`/`next_gc` -- combined with
 /// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
@@ -1242,6 +1249,33 @@ pub(crate) const HEAP_NEXT_GC_OFFSET: usize = std::mem::offset_of!(Heap, next_gc
 /// of read from memory; see that const's own docs.
 pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
   std::mem::offset_of!(Heap, young_bytes_allocated);
+
+/// Frees every buffer still sitting in `field_storage_pool` when the
+/// `Heap` itself is torn down (process exit -- there's exactly one
+/// `Heap` for the VM's whole life, so this runs once, not a hot path).
+/// Without this, every pooled `*mut Cell<Value>` is just a raw pointer
+/// with no owning Rust value anywhere -- `Vec<*mut T>`'s own `Drop`
+/// only frees the `Vec`'s OWN backing array, never what its pointers
+/// point AT, so skipping this is a genuine leak, not a false positive:
+/// caught by `valgrind --tool=memcheck` reporting real "definitely
+/// lost" bytes once `FIELD_STORAGE_POOL_CAP` was raised high enough
+/// for the pool to actually hold something at process exit (the
+/// original, much smaller cap leaked too, just too little to notice).
+impl Drop for Heap {
+  fn drop(&mut self) {
+    for (&len, ptrs) in self.field_storage_pool.iter() {
+      for &ptr in ptrs.iter() {
+        // SAFETY: every pointer in this list was produced by
+        // `FieldStorage::into_raw_parts` on a `FieldStorage` of
+        // exactly `len` cells, pushed at most once (nothing else
+        // pops from this pool during teardown), and never
+        // reconstructed elsewhere once here -- reconstructing and
+        // dropping it now is its one and only free.
+        drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
+      }
+    }
+  }
+}
 
 impl Heap {
   /// Floor for `next_gc` -- keeps a small/short-lived program from
