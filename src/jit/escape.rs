@@ -93,9 +93,51 @@
 //! operand, `Raise`, arithmetic/bitwise/concat/unary ops -- is
 //! escaping.
 
+use rustc_hash::FxHashSet;
+
 use crate::jit::typeflow;
 use crate::vm::chunk::Instr;
-use crate::vm::object::{ObjFunction, UpvalueDescriptor};
+use crate::vm::object::{ObjClass, ObjFunction, UpvalueDescriptor};
+
+/// Resolves `GetField`'s `BoundMethod`-wrapping risk (see this
+/// module's top-level docs) for ONE specific, already-known class:
+/// which of ITS OWN field names are safe to read via `GetField`
+/// because NO method of that same name would ever shadow them.
+/// Computed once, from a live `&ObjClass`, by whatever caller has VM
+/// access to resolve one (this module itself deliberately never
+/// touches the VM -- see its own docs) -- sound as a PERMANENT fact,
+/// not a one-shot snapshot, because Zuri classes are immutable after
+/// construction (NOTES.md: "new fields and methods cannot be added at
+/// runtime"; see `ObjFunction::owning_class_name`'s own docs for the
+/// same reasoning). Currently only consulted for a method's own
+/// `self` (register 0) -- see `analyze_one`/`compute_param_summary`'s
+/// own docs on why that's the one case resolvable without further
+/// receiver-type inference.
+pub struct ClassFieldSafety {
+  safe_field_names: FxHashSet<String>,
+}
+
+impl ClassFieldSafety {
+  /// `field_slots`/`methods` are pre-merged with every ancestor class
+  /// already (see `ObjClass`'s own field docs), so this automatically
+  /// accounts for inherited collisions too -- a subclass overriding
+  /// an inherited field with a same-named method (or vice versa) is
+  /// exactly as unsafe as a same-class collision, and already shows
+  /// up here without any extra superclass-walking.
+  pub fn from_class(class: &ObjClass) -> Self {
+    let safe_field_names = class
+      .field_slots
+      .keys()
+      .filter(|name| !class.methods.contains_key(*name))
+      .cloned()
+      .collect();
+    ClassFieldSafety { safe_field_names }
+  }
+
+  fn is_field_safe(&self, name: &str) -> bool {
+    self.safe_field_names.contains(name)
+  }
+}
 
 /// A bitset over bytecode register indices, tracking which registers
 /// MAY currently hold a reference to the ONE allocation this analysis
@@ -350,6 +392,33 @@ fn kill_target(instr: &Instr) -> Option<u8> {
   typeflow::any_dst(instr)
 }
 
+/// Is `GetField{obj: 0, name_const, ..}` (i.e. `self.NAME` inside a
+/// method) proven safe -- name resolves to a field, never a method, on
+/// `proto`'s OWN class, so no `BoundMethod` wrapping can happen? Needs
+/// BOTH: `proto` actually knows which class it belongs to
+/// (`owning_class_name`, set for every method -- see that field's own
+/// docs), AND the caller supplied that class's ALREADY-RESOLVED
+/// `ClassFieldSafety` (this module never touches the VM itself to
+/// resolve the name -> live `ObjClass` step -- see `ClassFieldSafety`'s
+/// own docs). Absent either one, conservatively unsafe -- exactly
+/// Phase 1's original behavior, never worse.
+fn self_getfield_is_safe(
+  proto: &ObjFunction,
+  name_const: u16,
+  self_class_safety: Option<&ClassFieldSafety>,
+) -> bool {
+  let (Some(safety), Some(_)) = (self_class_safety, &proto.owning_class_name) else {
+    return false;
+  };
+  let Some(name_val) = proto.chunk.constants.get(name_const as usize) else {
+    return false;
+  };
+  if !name_val.is_string() {
+    return false;
+  }
+  safety.is_field_safe(name_val.as_str())
+}
+
 /// Every register whose use by `instr`, IF it currently aliases the
 /// tracked allocation, proves the allocation escapes -- see this
 /// module's own docs for the verified-safe allowlist this is the
@@ -514,7 +583,17 @@ pub struct EscapeResult {
 /// function that never store it anywhere. Every OTHER call target
 /// (anything not provably self) is still fully conservative, exactly
 /// as Phase 1 alone treats it.
-pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
+///
+/// `self_class_safety`, if supplied, ALSO resolves `GetField` on
+/// `self` for a name proven collision-free on `proto`'s own class
+/// (see `ClassFieldSafety`'s own docs and `self_getfield_is_safe`) --
+/// `None` reproduces Phase 1's original, fully conservative GetField
+/// treatment exactly.
+pub fn analyze_one(
+  proto: &ObjFunction,
+  alloc_ip: usize,
+  self_class_safety: Option<&ClassFieldSafety>,
+) -> EscapeResult {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
@@ -528,7 +607,7 @@ pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
   };
 
   let self_ref = self_reference_facts(proto);
-  let self_summary = compute_param_summary(proto);
+  let self_summary = compute_param_summary(proto, self_class_safety);
 
   let preds = typeflow::build_predecessors(proto);
 
@@ -599,8 +678,14 @@ pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
     // See `analyze_one`'s own docs on the Phase 2 refinement: a
     // provably self-recursive `Call`'s arguments are checked against
     // `proto`'s own parameter summary instead of unconditionally
-    // escaping -- everything else falls through to Phase 1's plain
+    // escaping; a `GetField` reading `self` (register 0, only in a
+    // method) for a name proven collision-free on `proto`'s OWN
+    // class is not escaping at all, REPLACING (not supplementing)
+    // `escaping_reads`' normal `vec![obj]` for this one instruction
+    // shape. Everything else falls through to Phase 1's plain
     // `escaping_reads`.
+    let is_self_get_field = matches!(instr, Instr::GetField { obj, .. } if *obj == 0)
+      && proto.is_method;
     if let Instr::Call { func, num_args, .. } = *instr
       && self_ref[ip].get(func)
     {
@@ -618,6 +703,13 @@ pub fn analyze_one(proto: &ObjFunction, alloc_ip: usize) -> EscapeResult {
         if escapes_here {
           escaped = true;
         }
+      }
+    } else if is_self_get_field {
+      let Instr::GetField { name_const, .. } = *instr else {
+        unreachable!("is_self_get_field only true for GetField");
+      };
+      if entry[ip].get(0) && !self_getfield_is_safe(proto, name_const, self_class_safety) {
+        escaped = true;
       }
     } else {
       for reg in escaping_reads(instr) {
@@ -714,6 +806,7 @@ fn analyze_param_escape(
   param_reg: u8,
   self_ref: &[MustSet],
   guess: &[bool],
+  self_class_safety: Option<&ClassFieldSafety>,
 ) -> bool {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -772,14 +865,18 @@ fn analyze_param_escape(
       }
     }
 
-    // The one real difference from `analyze_one`: a PROVABLY self-
-    // recursive `Call` (see `self_reference_facts`) maps each argument
-    // register onto the callee's (= this same function's) parameter
-    // at the matching position, and consults `guess` for THAT
-    // parameter instead of unconditionally escaping. Any argument
-    // register beyond `proto.arity` (an arity mismatch, or a variadic
-    // tail) has no corresponding parameter to consult -- conservatively
-    // escapes, same as an ordinary unresolved call.
+    // The one real difference from `analyze_one`'s OWN Call handling:
+    // a PROVABLY self-recursive `Call` (see `self_reference_facts`)
+    // maps each argument register onto the callee's (= this same
+    // function's) parameter at the matching position, and consults
+    // `guess` for THAT parameter instead of unconditionally escaping.
+    // Any argument register beyond `proto.arity` (an arity mismatch,
+    // or a variadic tail) has no corresponding parameter to consult
+    // -- conservatively escapes, same as an ordinary unresolved call.
+    // `GetField` on `self` is handled exactly like `analyze_one`'s own
+    // -- see `self_getfield_is_safe`'s own docs.
+    let is_self_get_field = matches!(instr, Instr::GetField { obj, .. } if *obj == 0)
+      && proto.is_method;
     if let Instr::Call { func, num_args, .. } = *instr
       && self_ref[ip].get(func)
     {
@@ -793,6 +890,13 @@ fn analyze_param_escape(
         if escapes_here {
           escaped = true;
         }
+      }
+    } else if is_self_get_field {
+      let Instr::GetField { name_const, .. } = *instr else {
+        unreachable!("is_self_get_field only true for GetField");
+      };
+      if entry[ip].get(0) && !self_getfield_is_safe(proto, name_const, self_class_safety) {
+        escaped = true;
       }
     } else {
       for reg in escaping_reads(instr) {
@@ -824,7 +928,10 @@ fn analyze_param_escape(
 
 /// Computes `proto`'s own parameter-escape summary -- see this
 /// section's own docs for the fixed-point shape and its known limits.
-pub fn compute_param_summary(proto: &ObjFunction) -> FuncEscapeSummary {
+pub fn compute_param_summary(
+  proto: &ObjFunction,
+  self_class_safety: Option<&ClassFieldSafety>,
+) -> FuncEscapeSummary {
   let arity = proto.arity as usize;
   if arity == 0 {
     return FuncEscapeSummary {
@@ -842,7 +949,7 @@ pub fn compute_param_summary(proto: &ObjFunction) -> FuncEscapeSummary {
       if guess[i] {
         continue; // already escaping -- monotonic, can't un-escape
       }
-      if analyze_param_escape(proto, i as u8, &self_ref, &guess) {
+      if analyze_param_escape(proto, i as u8, &self_ref, &guess, self_class_safety) {
         next[i] = true;
         changed = true;
       }
@@ -911,7 +1018,7 @@ mod tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![], 3);
-    assert!(!analyze_one(&f, 0).escapes);
+    assert!(!analyze_one(&f, 0, None).escapes);
   }
 
   #[test]
@@ -925,7 +1032,7 @@ mod tests {
       Instr::Return { src: 1 },
     ];
     let f = make_func(code, vec![], 2);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   #[test]
@@ -943,7 +1050,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![Value::nil()], 2);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   #[test]
@@ -958,7 +1065,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 2);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   /// A `Move` chain must still propagate tracking -- an allocation
@@ -976,7 +1083,7 @@ mod tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![], 3);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   /// The register that held the allocation gets overwritten with
@@ -996,7 +1103,7 @@ mod tests {
       Instr::Return { src: 1 },  // returns nil, not the tracked allocation
     ];
     let f = make_func(code, vec![], 2);
-    assert!(!analyze_one(&f, 0).escapes);
+    assert!(!analyze_one(&f, 0, None).escapes);
   }
 
   /// Writing INTO the allocation's own field (`obj` is the container)
@@ -1018,7 +1125,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![Value::nil()], 3);
-    assert!(!analyze_one(&f, 0).escapes);
+    assert!(!analyze_one(&f, 0, None).escapes);
   }
 
   /// Storing the TRACKED allocation as a field's VALUE (into some
@@ -1045,7 +1152,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![Value::nil()], 3);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   /// Passing the tracked allocation as a call argument escapes --
@@ -1066,7 +1173,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 6);
-    assert!(!analyze_one(&f, 0).escapes, "r1 is never read by the second Call above -- sanity check");
+    assert!(!analyze_one(&f, 0, None).escapes, "r1 is never read by the second Call above -- sanity check");
 
     let code2 = vec![
       Instr::Call {
@@ -1083,7 +1190,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f2 = make_func(code2, vec![], 6);
-    assert!(analyze_one(&f2, 0).escapes);
+    assert!(analyze_one(&f2, 0, None).escapes);
   }
 
   /// Identity comparison (`Eq`/`Neq`) is verified safe -- see module
@@ -1102,7 +1209,7 @@ mod tests {
       Instr::Return { src: 3 },
     ];
     let f = make_func(code, vec![], 4);
-    assert!(!analyze_one(&f, 0).escapes);
+    assert!(!analyze_one(&f, 0, None).escapes);
   }
 
   /// `Print` is verified safe -- see module docs (no user-overridable
@@ -1120,7 +1227,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 2);
-    assert!(!analyze_one(&f, 0).escapes);
+    assert!(!analyze_one(&f, 0, None).escapes);
   }
 
   /// `GetField`'s `obj` operand is treated as escaping (the implicit
@@ -1142,7 +1249,7 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![Value::nil()], 3);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   /// A branch merge must UNION, not intersect: an escape reachable
@@ -1164,7 +1271,7 @@ mod tests {
       Instr::Return { src: 9 }, // ip 3: non-escaping path
     ];
     let f = make_func(code, vec![], 10);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   /// The mirror of the above: if NEITHER branch ever touches the
@@ -1186,7 +1293,7 @@ mod tests {
       Instr::Return { src: 9 }, // ip 3
     ];
     let f = make_func(code, vec![], 10);
-    assert!(!analyze_one(&f, 0).escapes);
+    assert!(!analyze_one(&f, 0, None).escapes);
   }
 
   /// A loop back-edge (the allocation is live across a jump backward)
@@ -1210,7 +1317,7 @@ mod tests {
       Instr::Return { src: 1 }, // ip 4: exit path -- escapes
     ];
     let f = make_func(code, vec![], 10);
-    assert!(analyze_one(&f, 0).escapes);
+    assert!(analyze_one(&f, 0, None).escapes);
   }
 
   // -----------------------------------------------------------------
@@ -1320,7 +1427,7 @@ mod tests {
       9,
       2,
     );
-    let summary = compute_param_summary(&f);
+    let summary = compute_param_summary(&f, None);
     assert_eq!(summary.param_escapes.len(), 2);
     assert!(
       !summary.param_escapes[1],
@@ -1383,7 +1490,7 @@ mod tests {
       9,
       2,
     );
-    let summary = compute_param_summary(&f);
+    let summary = compute_param_summary(&f, None);
     assert!(summary.param_escapes[1]);
   }
 
@@ -1406,7 +1513,7 @@ mod tests {
       Instr::Return { src: 3 }, // ip3
     ];
     let f = make_named_func("f", code, vec![test_str("other")], 4, 1);
-    let summary = compute_param_summary(&f);
+    let summary = compute_param_summary(&f, None);
     assert!(summary.param_escapes[0]);
   }
 
@@ -1441,6 +1548,165 @@ mod tests {
       Instr::Return { src: 4 }, // ip4: returns the recursive result, not obj
     ];
     let f = make_named_func("f", code, vec![test_str("f")], 6, 1);
-    assert!(!analyze_one(&f, 0).escapes);
+    assert!(!analyze_one(&f, 0, None).escapes);
+  }
+
+  // -----------------------------------------------------------------
+  // GetField-on-self resolution (ClassFieldSafety).
+  // -----------------------------------------------------------------
+
+  fn make_class(
+    field_names: &[&str],
+    method_names: &[&str],
+  ) -> crate::vm::object::ObjClass {
+    let mut field_slots = rustc_hash::FxHashMap::default();
+    for (i, name) in field_names.iter().enumerate() {
+      field_slots.insert(name.to_string(), i as u16);
+    }
+    let mut methods = rustc_hash::FxHashMap::default();
+    for name in method_names {
+      methods.insert(name.to_string(), Value::nil());
+    }
+    crate::vm::object::ObjClass {
+      name: "TestClass".to_string(),
+      superclass: None,
+      methods,
+      field_slots,
+      field_count: field_names.len() as u16,
+      own_field_initializer: None,
+      constructor: None,
+      static_slots: rustc_hash::FxHashMap::default(),
+      statics: Vec::new(),
+    }
+  }
+
+  #[test]
+  fn class_field_safety_excludes_name_collisions() {
+    // A (pathological, but the collision this whole mechanism exists
+    // to catch) class with a field AND a method both named "count".
+    let class = make_class(&["left", "right", "count"], &["count"]);
+    let safety = ClassFieldSafety::from_class(&class);
+    assert!(safety.is_field_safe("left"));
+    assert!(safety.is_field_safe("right"));
+    assert!(
+      !safety.is_field_safe("count"),
+      "a field/method name collision must never be reported safe"
+    );
+    assert!(!safety.is_field_safe("nonexistent"));
+  }
+
+  fn make_method_func(
+    class_name: &str,
+    code: Vec<Instr>,
+    constants: Vec<Value>,
+    num_registers: u8,
+  ) -> ObjFunction {
+    let mut f = make_named_func("someMethod", code, constants, num_registers, 1);
+    f.is_method = true;
+    f.owning_class_name = Some(class_name.to_string());
+    f
+  }
+
+  /// `self.left` (a name proven collision-free on the method's own
+  /// class) must NOT be treated as escaping when `self_class_safety`
+  /// is supplied -- the whole point of this section.
+  #[test]
+  fn self_getfield_on_safe_field_does_not_escape_param() {
+    let code = vec![
+      Instr::GetField {
+        dst: 1,
+        obj: 0,
+        name_const: 0,
+      }, // ip0: self.left
+      Instr::Return { src: 1 }, // ip1: returns the FIELD's value, not self
+    ];
+    let f = make_method_func("TreeNode", code, vec![test_str("left")], 2);
+    let class = make_class(&["left", "right"], &["count"]);
+    let safety = ClassFieldSafety::from_class(&class);
+
+    let summary = compute_param_summary(&f, Some(&safety));
+    assert!(
+      !summary.param_escapes[0],
+      "self.left is proven safe and never otherwise used -- self must not escape"
+    );
+  }
+
+  /// The exact same code, WITHOUT `self_class_safety` supplied, must
+  /// stay fully conservative -- confirms this is additive (an opt-in
+  /// refinement), never a behavior change for callers that don't have
+  /// a resolved class on hand.
+  #[test]
+  fn self_getfield_without_safety_info_stays_conservative() {
+    let code = vec![
+      Instr::GetField {
+        dst: 1,
+        obj: 0,
+        name_const: 0,
+      },
+      Instr::Return { src: 1 },
+    ];
+    let f = make_method_func("TreeNode", code, vec![test_str("left")], 2);
+
+    let summary = compute_param_summary(&f, None);
+    assert!(summary.param_escapes[0]);
+  }
+
+  /// `self.count` where `count` collides with a method name on the
+  /// SAME class must still escape, even with `self_class_safety`
+  /// supplied -- the safety check itself must correctly say "unsafe"
+  /// for a real collision, not just default to "safe whenever
+  /// provided".
+  #[test]
+  fn self_getfield_on_colliding_field_still_escapes() {
+    let code = vec![
+      Instr::GetField {
+        dst: 1,
+        obj: 0,
+        name_const: 0,
+      }, // ip0: self.count -- collides with a method
+      Instr::Return { src: 1 },
+    ];
+    let f = make_method_func("Weird", code, vec![test_str("count")], 2);
+    let class = make_class(&["count"], &["count"]);
+    let safety = ClassFieldSafety::from_class(&class);
+
+    let summary = compute_param_summary(&f, Some(&safety));
+    assert!(summary.param_escapes[0]);
+  }
+
+  /// End-to-end: `analyze_one` tracking a CONSTRUCTED allocation
+  /// (not just a bare parameter) also benefits -- a `TreeNode` built,
+  /// read via safe `self`-shaped field access is a DIFFERENT scenario
+  /// than this test (the tracked value here is `self` itself, via a
+  /// method's own parameter tracking through `compute_param_summary`,
+  /// which `analyze_one` already delegates to for self-recursive
+  /// calls -- see `analyze_one`'s own Call handling). This test
+  /// instead confirms `analyze_one`'s OWN direct GetField dispatch
+  /// path (not just via a nested `compute_param_summary` call) honors
+  /// `self_class_safety` when the TRACKED allocation itself is read
+  /// back via `self.field` inside the SAME method that constructed it.
+  #[test]
+  fn analyze_one_honors_self_class_safety_directly() {
+    let code = vec![
+      Instr::Call {
+        dst: 1,
+        func: 5,
+        num_args: 0,
+      }, // ip0: allocation, held in r1 (NOT self/r0)
+      Instr::GetField {
+        dst: 2,
+        obj: 0,
+        name_const: 0,
+      }, // ip1: self.left -- safe, unrelated to r1's tracking
+      Instr::Return { src: 2 }, // ip2: returns the field read, not r1
+    ];
+    let f = make_method_func("TreeNode", code, vec![test_str("left")], 6);
+    let class = make_class(&["left", "right"], &["count"]);
+    let safety = ClassFieldSafety::from_class(&class);
+
+    // r1 (the allocation) is never touched by the GetField at all --
+    // this mainly confirms `self_class_safety` threads through
+    // `analyze_one` without breaking its unrelated-allocation tracking.
+    assert!(!analyze_one(&f, 0, Some(&safety)).escapes);
   }
 }
