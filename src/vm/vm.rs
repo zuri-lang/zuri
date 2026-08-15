@@ -317,6 +317,7 @@ pub struct VM {
   /// becomes every module's `__root__`. `None` in REPL mode, per spec.
   pub(crate) root_path: Option<String>,
   pub heap: Heap,
+  log_gc: bool,
   /// Per-opcode execution counts, gathered only under
   /// ZURI_OPCODE_PROFILE -- checked once per instruction (a single
   /// bool read via LazyLock, same cost every other debug flag here
@@ -331,8 +332,6 @@ pub struct VM {
   opcode_bigrams: FxHashMap<(&'static str, &'static str), u64>,
   #[cfg(feature = "opcode-profile")]
   last_opcode: Option<&'static str>,
-  #[cfg(feature = "gc-log")]
-  log_gc: bool,
 }
 
 /// Byte offset of `VM::heap` within `VM` -- combined in `crate::jit` with
@@ -383,7 +382,6 @@ impl VM {
       opcode_bigrams: FxHashMap::default(),
       #[cfg(feature = "opcode-profile")]
       last_opcode: None,
-      #[cfg(feature = "gc-log")]
       log_gc: std::env::var_os("ZURI_GC_LOG").is_some(),
       heap,
     }
@@ -3634,9 +3632,7 @@ impl VM {
     // own at all. See `VM::collect_minor`'s own docs.
     self.collect_minor();
 
-    #[cfg(feature = "gc-log")]
     let before_bytes = self.heap.bytes_allocated();
-    #[cfg(feature = "gc-log")]
     let before_count = self.heap.object_count();
 
     let mut worklist: Vec<*const Obj> = Vec::new();
@@ -3694,22 +3690,17 @@ impl VM {
     // `Heap::drain_remembered`'s own docs.
     self.heap.drain_remembered();
 
-    #[cfg(feature = "gc-log")]
-    {
-      let freed = self.heap.sweep();
-      if self.log_gc {
-        eprintln!(
-          "[gc-major] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
-          freed,
-          before_count,
-          before_bytes,
-          self.heap.bytes_allocated(),
-          self.heap.next_gc()
-        );
-      }
+    let freed = self.heap.sweep();
+    if self.log_gc {
+      eprintln!(
+        "[gc-major] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
+        freed,
+        before_count,
+        before_bytes,
+        self.heap.bytes_allocated(),
+        self.heap.next_gc()
+      );
     }
-    #[cfg(not(feature = "gc-log"))]
-    self.heap.sweep();
   }
 
   /// Minor collection -- the cheap, frequent counterpart to
@@ -3744,7 +3735,6 @@ impl VM {
   /// with no per-object free-list bookkeeping needed at all (compare
   /// `collect_garbage`'s `sweep`, which visits every chunk slot).
   pub(crate) fn collect_minor(&mut self) {
-    #[cfg(feature = "gc-log")]
     let before_count = self.heap.object_count();
 
     let mut worklist: Vec<*const Obj> = Vec::new();
@@ -3813,22 +3803,17 @@ impl VM {
       });
     }
 
-    #[cfg(feature = "gc-log")]
-    {
-      let before_bytes = self.heap.bytes_allocated();
-      self.heap.reset_nursery();
-      if self.log_gc {
-        eprintln!(
-          "[gc-minor] promoted/freed across {} -> {} objects, {} -> {} bytes",
-          before_count,
-          self.heap.object_count(),
-          before_bytes,
-          self.heap.bytes_allocated(),
-        );
-      }
-    }
-    #[cfg(not(feature = "gc-log"))]
+    let before_bytes = self.heap.bytes_allocated();
     self.heap.reset_nursery();
+    if self.log_gc {
+      eprintln!(
+        "[gc-minor] promoted/freed across {} -> {} objects, {} -> {} bytes",
+        before_count,
+        self.heap.object_count(),
+        before_bytes,
+        self.heap.bytes_allocated(),
+      );
+    }
   }
 
   /// Resolves ONE slot that might currently hold a pointer to a young
