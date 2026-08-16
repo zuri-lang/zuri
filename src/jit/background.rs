@@ -47,6 +47,7 @@
 //! -- so the pointer is always valid whenever anyone actually uses it.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use cranelift_codegen::Context;
@@ -92,6 +93,33 @@ pub struct CompileResult {
 pub struct JitCompilerHandle {
   pub job_tx: Sender<CompileJob>,
   pub result_rx: Receiver<CompileResult>,
+  /// Set by the compiler thread AFTER a finished result is already in
+  /// `result_rx`; cleared by `VM::drain_jit_results` BEFORE it drains.
+  ///
+  /// Exists purely so the VM can skip `result_rx` entirely on the
+  /// overwhelmingly common path. `VM::tiered_entry` runs on every
+  /// single `Instr::Call`/`Invoke`, but a real compile result lands
+  /// only a handful of times in an entire process lifetime -- and
+  /// `Receiver::try_recv` is not free (it walks the channel's own
+  /// atomic state machine), so unconditionally polling it per call
+  /// costs several percent of total runtime on call-heavy code. A
+  /// relaxed load of an uncontended, read-mostly flag costs nothing by
+  /// comparison.
+  ///
+  /// The store/clear ORDER on both sides is what makes this safe, and
+  /// neither may be swapped:
+  ///
+  /// - Producer sends first, THEN sets. So observing `true` guarantees
+  ///   the corresponding `send` has already happened and a following
+  ///   `try_recv` is certain to see it -- the reverse order could set
+  ///   the flag for a result not yet in the channel, let the VM clear
+  ///   it and find nothing, and strand that result forever (its
+  ///   function would keep `compiling` set and never be installed).
+  /// - Consumer clears first, THEN drains. A result arriving during
+  ///   the drain therefore re-sets the flag rather than being lost;
+  ///   worst case it was already drained by the in-flight loop and the
+  ///   next call does one spurious (empty, harmless) drain.
+  pub results_pending: Arc<AtomicBool>,
 }
 
 /// Spawns the single background compiler thread and returns the
@@ -105,19 +133,26 @@ pub struct JitCompilerHandle {
 pub fn spawn(isa: Arc<dyn TargetIsa>) -> JitCompilerHandle {
   let (job_tx, job_rx) = channel::<CompileJob>();
   let (result_tx, result_rx) = channel::<CompileResult>();
+  let results_pending = Arc::new(AtomicBool::new(false));
+  let worker_pending = Arc::clone(&results_pending);
 
   std::thread::Builder::new()
     .name("zuri-jit-compiler".to_string())
-    .spawn(move || compiler_loop(isa, job_rx, result_tx))
+    .spawn(move || compiler_loop(isa, job_rx, result_tx, worker_pending))
     .expect("zuri: failed to spawn the background JIT compiler thread");
 
-  JitCompilerHandle { job_tx, result_rx }
+  JitCompilerHandle {
+    job_tx,
+    result_rx,
+    results_pending,
+  }
 }
 
 fn compiler_loop(
   isa: Arc<dyn TargetIsa>,
   job_rx: Receiver<CompileJob>,
   result_tx: Sender<CompileResult>,
+  results_pending: Arc<AtomicBool>,
 ) {
   let mut ctrl_plane = ControlPlane::default();
   for mut job in job_rx {
@@ -160,5 +195,7 @@ fn compiler_loop(
     if result_tx.send(result).is_err() {
       return;
     }
+    // Strictly after the `send` above -- see `results_pending`'s docs.
+    results_pending.store(true, Ordering::Release);
   }
 }

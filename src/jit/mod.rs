@@ -167,10 +167,26 @@ pub struct CompiledFunction {
 ///   `EntryFn` address, sound to bake as a compile-time immediate
 ///   because `CompiledFunction`'s own docs guarantee compiled code is
 ///   never unloaded or recompiled once produced.
+/// - `Construct`: same proof as `Known`, except the global resolved to
+///   a CLASS -- so this site is a constructor call, and codegen emits
+///   `jit::runtime::zuri_jit_new_prepare`'s construction shape (which
+///   yields the new instance) rather than
+///   `zuri_jit_call_prepare`'s ordinary-call shape (which yields the
+///   callee's return value). Carries nothing else because, unlike
+///   `Known`, there is nothing worth baking: the constructor's own
+///   compiled entry generally does not exist yet when the site's
+///   CALLER is compiled, so it still gets resolved per call. This is
+///   purely a "which of the two shapes belongs here" hint and needs no
+///   guard of its own -- `zuri_jit_new_prepare` re-checks the callee
+///   register itself and returns zero (falling through to exactly the
+///   same general path an unclassified site would have taken) if the
+///   global has since been reassigned to something that is not a
+///   class.
 #[derive(Clone, Copy)]
 pub enum CallTarget {
   SelfRecursive,
   Known { entry: usize, guard_bits: u64 },
+  Construct,
 }
 
 /// Everything `vm::vm::VM::enqueue_compile` resolves ahead of time

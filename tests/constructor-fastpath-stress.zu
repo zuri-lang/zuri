@@ -1,0 +1,168 @@
+/* Covers every constructor shape the compiled-code fast path
+ * (VM::prepare_compiled_construction / zuri_jit_new_prepare) either
+ * accepts or must decline cleanly, plus the GC and deoptimization
+ * paths that fast path has to stay correct across.
+ */
+
+class Point {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+  sum() { return self.x + self.y }
+}
+
+class Empty {
+  @new() { self.tag = 'empty' }
+}
+
+class Wide {
+  @new(a, b, c, d, e, f, g) {
+    self.a = a
+    self.b = b
+    self.c = c
+    self.d = d
+    self.e = e
+    self.f = f
+    self.g = g
+  }
+  total() { return self.a + self.b + self.c + self.d + self.e + self.f + self.g }
+}
+
+class Two {
+  @new(p, q) {
+    self.p = p
+    self.q = q
+  }
+}
+
+class WithInit {
+  var base = 100
+  @new(k) { self.k = k }
+  total() { return self.base + self.k }
+}
+
+class ChildOfInit < WithInit {
+  @new(k) {
+    parent(k * 2)
+  }
+}
+
+class Base {
+  @new(n) { self.n = n }
+}
+
+class Derived < Base {
+  @new(n) { parent(n + 1) }
+}
+
+class Variadic {
+  @new(head, ...rest) {
+    self.head = head
+    self.rest = rest
+  }
+}
+
+class NoCtor {
+  var v = 7
+}
+
+echo Point(3, 4).sum()
+echo Empty().tag
+echo Wide(1, 2, 3, 4, 5, 6, 7).total()
+
+/* too few arguments: the missing parameter must read back as nil */
+var t = Two(1)
+echo t.p
+echo t.q
+
+/* too many arguments: the extra one must simply be dropped */
+var t2 = Two(1, 2, 3)
+echo t2.p
+echo t2.q
+
+echo WithInit(5).total()
+echo ChildOfInit(5).total()
+echo Base(1).n
+echo Derived(1).n
+
+var v = Variadic(1, 2, 3, 4)
+echo v.head
+echo v.rest
+
+echo NoCtor().v
+
+/* Hot enough to compile every construction site above, and allocating
+ * hard enough to force many collections with real promotion.
+ */
+def churn(n) {
+  var kept = []
+  var acc = 0
+  iter var i = 0; i < n; i++ {
+    var p = Point(i, i + 1)
+    acc += p.sum()
+
+    var d = Derived(i)
+    acc += d.n
+
+    var w = WithInit(i)
+    acc += w.total()
+
+    if i % 5000 == 0 {
+      kept.append(Point(i, i))
+    }
+  }
+  echo acc
+  echo kept.length()
+  echo kept[0].sum()
+  echo kept[kept.length() - 1].sum()
+}
+
+churn(200000)
+
+/* One construction site fed genuinely polymorphic arguments, so the
+ * constructor's speculative guards fail and it deoptimizes mid-call --
+ * the path where the new instance must stay GC-rooted across the
+ * interpreted continuation.
+ */
+def mixed(n) {
+  var strs = 0
+  var nums = 0
+  var nils = 0
+  iter var i = 0; i < n; i++ {
+    var p
+    if i % 3 == 0 {
+      p = Point('a', 'b')
+    } else if i % 3 == 1 {
+      p = Point(i, i)
+    } else {
+      p = Point(nil, i)
+    }
+    if p.x == nil {
+      nils++
+    } else if p.x == 'a' {
+      strs++
+    } else {
+      nums++
+    }
+  }
+  echo strs
+  echo nums
+  echo nils
+}
+
+mixed(150000)
+
+/* The site below is statically classified as a construction site, then
+ * the global it resolves through is reassigned to a different class --
+ * the hint must degrade to the general path rather than misbehave.
+ */
+var Shape = Point
+def build(k) { return Shape(k, k) }
+
+iter var i = 0; i < 20000; i++ {
+  build(i)
+}
+echo build(2).sum()
+Shape = Base
+echo build(3).n

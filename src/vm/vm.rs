@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::ops::{Neg, Shl, Shr};
+use std::sync::atomic::Ordering;
 
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -850,8 +851,9 @@ impl VM {
   /// This is THE hot-path check -- reached on every single
   /// `Instr::Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`, so the
   /// common case (already compiled) is nothing more than an enabled-
-  /// flag read, a depth-counter read, a non-blocking channel drain,
-  /// and one `Cell::get()` on `proto.jit.entry`. See
+  /// flag read, a depth-counter read, and one `Cell::get()` on
+  /// `proto.jit.entry` -- the result-channel drain is reached only
+  /// when there is no entry point yet. See
   /// `object::JitInfo::entry`'s own docs for why this is deliberately
   /// NOT behind a `RefCell<Option<Rc<...>>>`.
   ///
@@ -866,6 +868,15 @@ impl VM {
   ) -> Option<EntryFn> {
     if !self.jit_enabled || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH {
       return None;
+    }
+    // Checked BEFORE draining, not after: once `proto` has an entry
+    // point installed there is nothing a pending compile result could
+    // change about the answer, and this is by far the common case on
+    // any hot call site. Draining first would put a channel poll on
+    // literally every call in the program to serve the handful of
+    // calls that actually witness a compile landing.
+    if let Some(entry) = proto.jit.entry.get() {
+      return Some(entry);
     }
     self.drain_jit_results();
     if let Some(entry) = proto.jit.entry.get() {
@@ -1054,6 +1065,10 @@ impl VM {
           continue;
         };
         let resolved = self.read_resolved(proto.globals_module, is_root, slot);
+        if resolved.is_class() {
+          targets.insert(ip, CallTarget::Construct);
+          break;
+        }
         if !resolved.is_closure() {
           continue;
         }
@@ -1156,9 +1171,15 @@ impl VM {
   /// get installed lazily, exactly when something asks, with no
   /// separate polling thread/timer needed.
   fn drain_jit_results(&mut self) {
-    if self.jit_compiler.is_none() {
+    let Some(handle) = self.jit_compiler.as_ref() else {
+      return;
+    };
+    // See `JitCompilerHandle::results_pending`: the clear MUST precede
+    // the drain loop below, never follow it.
+    if !handle.results_pending.load(Ordering::Acquire) {
       return;
     }
+    handle.results_pending.store(false, Ordering::Relaxed);
     // Collect into an owned `Vec` first rather than looping directly
     // on `try_recv` while also calling `self.jit_engine()` for each --
     // avoids overlapping the channel's borrow of `self.jit_compiler`
@@ -1429,11 +1450,22 @@ impl VM {
   /// survived a minor collection already, costing one `generation`
   /// read and nothing else. Only a genuinely still-young closure pays
   /// for a real, full minor collection here.
+  #[inline]
   pub(crate) fn ensure_stable_for_compiled_entry(&mut self, closure_val: Value) -> Value {
-    let ptr = closure_val.as_obj();
-    if !Heap::is_young(ptr) {
+    // Split so the common answer -- "already old, nothing to do" --
+    // inlines into the per-call helpers that ask it
+    // (`zuri_jit_call_prepare`, `zuri_jit_invoke_prepare`,
+    // `prepare_compiled_construction`) as a single generation read,
+    // instead of a real call that almost always returns immediately.
+    if !Heap::is_young(closure_val.as_obj()) {
       return closure_val;
     }
+    self.relocate_for_compiled_entry(closure_val)
+  }
+
+  #[cold]
+  #[inline(never)]
+  fn relocate_for_compiled_entry(&mut self, closure_val: Value) -> Value {
     // Pinned BEFORE the collection, not read back afterward via its
     // original (pre-collection) pointer -- an earlier version of this
     // function did the latter, re-resolving through
@@ -1959,6 +1991,162 @@ impl VM {
     self.gc_pins.truncate(pin_mark);
     result?;
     Ok(final_instance)
+  }
+
+  /// `instantiate`'s fast, inline-cache-style twin for a `Class` callee
+  /// reached from ALREADY-COMPILED code, and the frame-setup half of
+  /// `jit::runtime::zuri_jit_new_prepare` -- see that function's docs
+  /// for the generated-code protocol it belongs to.
+  ///
+  /// Why this exists at all: `instantiate` is the fully general path,
+  /// and a constructor call is the ONE call shape the JIT's existing
+  /// fast paths never covered. `zuri_jit_call_prepare` bails the
+  /// instant it sees a non-`Closure` callee, so every `Point(x, y)` in
+  /// compiled code fell all the way through to `zuri_jit_call` ->
+  /// `dispatch_call_sync` -> `dispatch_call_inner` -> `instantiate` ->
+  /// `call_value` -> `run_frame` -> `tiered_entry` ->
+  /// `invoke_compiled`, re-deriving arity, dispatch kind, pins and
+  /// frame layout from scratch every time -- on allocation-heavy code
+  /// (a tree of a million nodes) that machinery, not the allocation or
+  /// the constructor body, dominates the profile.
+  ///
+  /// Deliberately narrow. It handles only the shape where none of that
+  /// generality is needed and bails to the general path otherwise:
+  ///
+  /// - the callee is a real `Class` (not a module binding wrapping one),
+  /// - NO class in the ancestor chain declares its own field
+  ///   initializer, so there is no root-to-leaf initializer sequence to
+  ///   run before the constructor,
+  /// - the class HAS a constructor, it is a `Closure`, it is not
+  ///   variadic (so `setup_closure_call` cannot allocate), and it is
+  ///   already compiled.
+  ///
+  /// Returns `(entry, constructor_closure)` for generated code to
+  /// `call_indirect`, exactly like `zuri_jit_call_prepare`, having
+  /// already placed the fresh instance and the arguments in the
+  /// constructor's own register window and pushed its frame. The
+  /// instance is left pinned (`gc_pins`) for the duration of the call;
+  /// `finish_compiled_construction` is what releases it and is the
+  /// reason the pair must always run together.
+  pub(crate) fn prepare_compiled_construction(
+    &mut self,
+    base: usize,
+    func_reg: u8,
+    num_args: u8,
+    dst: u8,
+  ) -> Option<(EntryFn, Value)> {
+    // `num_args + 1` (the implicit `self`) has to stay a valid `u8`
+    // register count, and the whole point is to skip the general path
+    // only when it is safe to do so.
+    if !self.jit_depth_ok() || num_args == u8::MAX {
+      return None;
+    }
+    let class_val = self.get_reg(base, func_reg);
+    if !class_val.is_class() {
+      return None;
+    }
+
+    // Everything needed from the class itself comes out under ONE
+    // borrow. `as_class` is a real `RefCell` borrow/release pair, and
+    // on a constructor-heavy workload this runs millions of times --
+    // taking it twice here measured as a visible cost in its own right.
+    let (field_count, ctor, superclass) = {
+      let class = class_val.as_class();
+      if class.own_field_initializer.is_some() {
+        return None;
+      }
+      (
+        class.field_count as usize,
+        class.constructor?,
+        class.superclass,
+      )
+    };
+    if !ctor.is_closure() {
+      return None;
+    }
+    // An inherited field initializer is just as disqualifying as an own
+    // one -- `instantiate` runs every ancestor's, root to leaf.
+    let mut cur = superclass;
+    while let Some(c) = cur {
+      let next = {
+        let cobj = c.as_class();
+        if cobj.own_field_initializer.is_some() {
+          return None;
+        }
+        cobj.superclass
+      };
+      cur = next;
+    }
+
+    // Order below is load-bearing, for the same reason `instantiate`'s
+    // pinning is: this is the only collection point in the whole
+    // function, so everything that could be relocated by it is either
+    // re-read afterwards or (for `ctor`) made immovable by it.
+    let ctor = self.ensure_stable_for_compiled_entry(ctor);
+    // Re-read through the register -- a real GC root the collection
+    // above would have updated -- rather than reusing the local, which
+    // it could not.
+    let class_val = self.get_reg(base, func_reg);
+
+    let closure = ctor.as_closure();
+    let proto = closure.function.as_func();
+    if proto.variadic {
+      return None;
+    }
+    let entry = proto.jit.entry.get()?;
+
+    // From here on nothing can collect: `Heap::alloc` only ever bump-
+    // allocates (collections are driven from `run_until`'s own
+    // safepoint checks, never from inside an allocation), and the
+    // non-variadic check above is exactly what rules out
+    // `setup_closure_call`'s one allocating branch.
+    let instance = self.heap.alloc_instance(class_val, field_count);
+
+    // The constructor's window is laid out `[self, arg0, ..]`, but an
+    // `Instr::Call` on a class left `[class, arg0, ..]` -- so the
+    // arguments shift up one slot to make room for the receiver, high
+    // to low so a slot is never read after being overwritten. The
+    // window has to be grown BEFORE the shift, since the topmost
+    // argument's new home is one past where the call site itself ever
+    // wrote.
+    let new_base = base + func_reg as usize + 1;
+    let needed = new_base + proto.num_registers as usize;
+    if self.registers.len() < needed {
+      self.registers.resize(needed, Value::nil());
+      self.sync_regs_ptr_cache();
+    }
+    for i in (0..num_args as usize).rev() {
+      self.registers[new_base + i + 1] = self.registers[new_base + i];
+    }
+    self.registers[new_base] = instance;
+
+    self.setup_closure_call(ctor, closure, proto, new_base, num_args + 1, dst);
+    self.jit_depth_enter();
+    // Pinned rather than remembered in a local (or read back out of the
+    // frame afterwards): the constructor body is arbitrary Zuri code
+    // that may collect any number of times, and this is the value the
+    // call site's own `dst` ultimately receives -- `gc_pins` is the one
+    // place a moving collector will keep it correct while nothing else
+    // references it.
+    self.gc_pins.push(instance);
+    Some((entry, ctor))
+  }
+
+  /// Completes `prepare_compiled_construction`'s bracket: releases the
+  /// instance pin it took and hands back the (possibly relocated)
+  /// instance, which is the constructor call's real result -- a
+  /// constructor's own return value is discarded, exactly as
+  /// `instantiate` discards it.
+  ///
+  /// Pairs strictly LIFO with `prepare_compiled_construction`, so the
+  /// pin to release is always the most recent one: a nested
+  /// construction inside a constructor body pushes and pops its own
+  /// entirely within this one's lifetime.
+  pub(crate) fn take_constructed_instance(&mut self) -> Value {
+    self
+      .gc_pins
+      .pop()
+      .expect("a matching prepare_compiled_construction always pinned one")
   }
 
   /// Shared "call whatever's in register `func_reg`" logic -- the exact
@@ -3544,7 +3732,21 @@ impl VM {
   /// Close every open upvalue pointing at a register >= `from_abs_index`,
   /// copying the register's current value into the upvalue's own
   /// storage. Called on block exit and on Return.
+  #[inline]
   pub(crate) fn close_upvalues_from(&mut self, from_abs_index: usize) {
+    // Split so this check -- and nothing else -- inlines into the
+    // callers that run on every single return
+    // (`jit::runtime::zuri_jit_call_finish`, `Instr::Return`). A
+    // program that never captures a local in a closure keeps this list
+    // empty for its entire run, and even one that does keeps it empty
+    // outside the handful of frames actually involved.
+    if self.open_upvalues.is_empty() {
+      return;
+    }
+    self.close_upvalues_from_slow(from_abs_index);
+  }
+
+  fn close_upvalues_from_slow(&mut self, from_abs_index: usize) {
     let mut i = 0;
     while i < self.open_upvalues.len() {
       let (idx, v) = self.open_upvalues[i];

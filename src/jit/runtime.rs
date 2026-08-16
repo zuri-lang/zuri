@@ -786,6 +786,84 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   entry as usize as u64
 }
 
+/// `Instr::Call`'s fast-path peek for a CLASS callee -- the
+/// constructor equivalent of `zuri_jit_call_prepare`, following the
+/// exact same generated-code protocol (see that function's docs, and
+/// `codegen::FuncCompiler::emit_fast_call`): non-zero return means
+/// "frame is set up, `*closure_out` holds the callee closure bits,
+/// `call_indirect` straight to this entry point", zero means "nothing
+/// happened here, take the general slow path".
+///
+/// The one place it diverges is the finish half: a constructor call
+/// evaluates to the INSTANCE, never to whatever the constructor body
+/// returned, so generated code must pair this with
+/// `zuri_jit_new_finish` and not `zuri_jit_call_finish`. See
+/// `VM::prepare_compiled_construction` for which constructor shapes
+/// this accepts and why.
+pub unsafe extern "C" fn zuri_jit_new_prepare(
+  vm_ptr: *mut VM,
+  base: u64,
+  func_reg: u64,
+  num_args: u64,
+  dst: u64,
+  closure_out: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let Some((entry, ctor)) =
+    vm.prepare_compiled_construction(base as usize, func_reg as u8, num_args as u8, dst as u8)
+  else {
+    return 0;
+  };
+  unsafe { *(closure_out as *mut u64) = ctor.to_bits() };
+  entry as usize as u64
+}
+
+/// `zuri_jit_new_prepare`'s other half -- `zuri_jit_call_finish` with
+/// the constructor's own return value discarded in favour of the
+/// instance, which is why it takes no `ret_bits` at all.
+pub unsafe extern "C" fn zuri_jit_new_finish(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  new_base: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.jit_depth_exit();
+
+  // Same reasoning (and same ordering requirement) as
+  // `zuri_jit_call_finish`'s -- see its docs.
+  let deopt = vm.resolve_possible_deopt();
+
+  // Released on EVERY path out of here, error ones included -- the pin
+  // is `prepare`'s, and nothing further down would ever drop it.
+  //
+  // Strictly AFTER `resolve_possible_deopt`, never before: that call
+  // resumes the constructor in the interpreter and runs arbitrary Zuri
+  // code, collections included. Reading the instance out first would
+  // leave it in nothing but a local for that whole window -- the exact
+  // stale-after-relocation hazard `gc_pins` exists to close. By here
+  // no further Zuri code can run, so the pin has done its job.
+  let instance = vm.take_constructed_instance();
+
+  if let Some(result) = deopt {
+    return match result {
+      Ok(_) => {
+        vm.set_reg(base as usize, dst as u8, instance);
+        OK
+      },
+      Err(e) => fail(vm, e),
+    };
+  }
+
+  if !vm.jit_pending_exception.get().is_nil() {
+    return ERR;
+  }
+  vm.close_upvalues_from(new_base as usize);
+  vm.pop_frame();
+  vm.set_reg(base as usize, dst as u8, instance);
+  OK
+}
+
 /// The lean frame-setup half of `codegen::FuncCompiler`'s STATICALLY-
 /// resolved direct-call paths (`emit_self_call`/`emit_known_call`/
 /// `emit_self_invoke` -- see `jit::CallTarget`'s own docs for how those
@@ -2283,6 +2361,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_geimm_slow),
     spec5!(zuri_jit_call),
     spec6!(zuri_jit_call_prepare),
+    spec6!(zuri_jit_new_prepare),
+    spec4!(zuri_jit_new_finish),
     spec9!(zuri_jit_invoke_prepare),
     spec5!(zuri_jit_direct_call_prepare),
     spec5!(zuri_jit_call_finish),

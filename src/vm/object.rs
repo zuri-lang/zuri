@@ -1317,9 +1317,22 @@ impl Heap {
   /// Floor for `next_gc` -- keeps a small/short-lived program from
   /// triggering a collection after every third allocation.
   const MIN_NEXT_GC: usize = 16 * 1024 * 1024;
-  /// After a sweep, the next collection is scheduled at this multiple of
-  /// the heap's current live size.
-  const GC_HEAP_GROW_FACTOR: f32 = 1.5;
+  /// After a sweep, the next major collection is scheduled at this
+  /// multiple of the OLD generation's surviving size (see
+  /// `needs_major_gc`) -- so it directly sets how much dead-but-
+  /// promoted garbage the old generation may accumulate before being
+  /// swept again, and therefore trades peak RSS against major-GC
+  /// frequency.
+  ///
+  /// 1.25 rather than a looser 1.5: once `needs_major_gc` stopped
+  /// firing on every cycle, the slack this grants became real
+  /// retained memory instead of a threshold nothing ever reached.
+  /// Measured on the N=21 binary-tree benchmarks, 1.5 bought a further
+  /// ~2-9% wall-clock over 1.25 while costing ~30-45% more peak RSS
+  /// (1.43GB vs 1.00GB on the class-based one, where 1.25 lands BELOW
+  /// the pre-generational-fix baseline's own 1.06GB while still
+  /// running ~1.48x faster than it).
+  const GC_HEAP_GROW_FACTOR: f32 = 1.25;
   /// Fixed (not growing) budget for the young generation -- kept
   /// small and constant, unlike `next_gc`, specifically so minor
   /// collections stay cheap and frequent for the whole run instead of
@@ -1376,12 +1389,39 @@ impl Heap {
     self.live_count
   }
 
-  /// Has the heap grown enough since the last collection that the VM
-  /// should pause and run a full (major) collection before allocating
-  /// further?
+  /// Live bytes outside the nursery. `young_bytes_allocated` is only
+  /// ever bumped alongside `bytes_allocated` (see `alloc`), and zeroed
+  /// together with the nursery it accounts for (see `reset_nursery`),
+  /// so this can never underflow.
+  #[inline]
+  pub fn old_bytes_allocated(&self) -> usize {
+    self.bytes_allocated - self.young_bytes_allocated
+  }
+
+  /// Has the OLD generation grown enough since the last collection that
+  /// the VM should pause and run a full (major) collection before
+  /// allocating further?
+  ///
+  /// Deliberately measured against `old_bytes_allocated` rather than
+  /// total `bytes_allocated`, which is what makes this collector
+  /// generational in practice and not just in structure. Nursery
+  /// allocation walks the total up continuously, so a total-based
+  /// threshold is really a threshold on ALLOCATION RATE -- and since
+  /// `run_until`'s safepoint checks this before `needs_minor_gc`, the
+  /// major collection then wins every race, running a full mark and
+  /// sweep of the whole old generation on a schedule that has nothing
+  /// to do with whether the old generation grew at all. Measured on an
+  /// allocation-heavy tree benchmark, that meant EVERY collection was
+  /// a major one, each sweeping ~131k live old objects to free 2.
+  ///
+  /// Against the old generation instead, the two thresholds finally
+  /// describe two different things: `YOUNG_NEXT_GC` bounds how much
+  /// garbage the nursery accumulates between cheap minor cycles, and
+  /// this bounds how far the genuinely long-lived set may grow between
+  /// expensive full ones.
   #[inline]
   pub fn needs_major_gc(&self) -> bool {
-    self.bytes_allocated > self.next_gc
+    self.old_bytes_allocated() > self.next_gc
   }
 
   /// Has the young generation grown enough that a cheap minor
@@ -2053,8 +2093,12 @@ impl Heap {
     }
 
     self.live_count -= freed;
-    self.next_gc =
-      ((self.bytes_allocated as f32 * Self::GC_HEAP_GROW_FACTOR) as usize).max(Self::MIN_NEXT_GC);
+    // Re-armed against the surviving OLD set specifically -- the same
+    // quantity `needs_major_gc` now tests, so `GC_HEAP_GROW_FACTOR`
+    // means what it says: allow the long-lived set to grow by half
+    // again before paying for another full collection.
+    self.next_gc = ((self.old_bytes_allocated() as f32 * Self::GC_HEAP_GROW_FACTOR) as usize)
+      .max(Self::MIN_NEXT_GC);
     freed
   }
 

@@ -302,6 +302,24 @@ struct FuncCompiler<'a, 'b> {
   /// could ever need to reuse this register for something unrelated
   /// that would make a STALE entry here observably wrong).
   scalar_lists: FxHashMap<u8, (StackSlot, u8)>,
+  /// Can any upvalue ever be OPEN over this frame's own registers?
+  ///
+  /// Only `Instr::Closure` opens one (it is the sole caller of
+  /// `VM::capture_upvalue`, both interpreted and via
+  /// `jit::runtime::zuri_jit_make_closure`), and the index it captures
+  /// is always inside the frame that executes it. So a function whose
+  /// bytecode contains no `Instr::Closure` at all cannot have a single
+  /// open upvalue pointing into its window, and its `Instr::Return`
+  /// has nothing to close -- a callee's own upvalues live at strictly
+  /// higher indices and are already closed by that callee's return.
+  ///
+  /// Worth proving statically rather than letting the helper discover
+  /// it at runtime: the close is emitted on EVERY return, and going
+  /// through `call_checked` costs an ABI call, an error-status branch,
+  /// and a full `refresh_regs` reload, all to walk an empty list. The
+  /// overwhelming majority of functions -- every one that never builds
+  /// a closure -- pay that on every single call for nothing.
+  frame_can_open_upvalues: bool,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -350,6 +368,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self_class_bits: facts.self_class_bits,
       call_targets: facts.call_targets,
       scalar_lists: FxHashMap::default(),
+      frame_can_open_upvalues: proto
+        .chunk
+        .code
+        .iter()
+        .any(|i| matches!(i, Instr::Closure { .. })),
     }
   }
 
@@ -1234,6 +1257,88 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(slow_block);
     self.call_checked(slow_helper, slow_args);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
+  /// `Instr::Call`'s CONSTRUCTOR shape (`jit::CallTarget::Construct`):
+  /// same `prepare` / `call_indirect` / `finish` protocol as
+  /// `emit_fast_call`, differing only in that the value delivered to
+  /// `dst` is the newly built instance rather than the callee's return
+  /// value -- hence `zuri_jit_new_finish`, which takes no return-value
+  /// operand at all, in place of `zuri_jit_call_finish`.
+  ///
+  /// The miss path is deliberately the ORDINARY fast call rather than
+  /// the general slow helper: `CallTarget::Construct` is only a
+  /// statically-resolved hint about which shape this site most likely
+  /// needs, and a global reassigned from a class to a plain function
+  /// between compile time and run time should degrade to the normal
+  /// compiled-to-compiled call path, not all the way to
+  /// `dispatch_call_sync`.
+  fn emit_construct_call(&mut self, dst: u8, func: u8, num_args: u8) {
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let func_i = self.idx(func);
+    let num_args_i = self.idx(num_args);
+    let dst_i = self.idx(dst);
+    let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+    let closure_out_addr = {
+      let slot = self.closure_out_slot();
+      self.fb.ins().stack_addr(types::I64, slot, 0)
+    };
+
+    let prepare = self.call_helper(
+      "zuri_jit_new_prepare",
+      &[vm_p, base, func_i, num_args_i, dst_i, closure_out_addr],
+    );
+    self.refresh_regs();
+    let zero = self.i64c(0);
+    let is_fast = self.fb.ins().icmp(IntCC::NotEqual, prepare, zero);
+
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_fast, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let closure_bits = {
+      let slot = self.closure_out_slot();
+      self.fb.ins().stack_load(types::I64, types::I64, slot, 0)
+    };
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let sig = self.entry_sig_ref();
+    // Identical bracketing requirement to `emit_fast_call`'s own
+    // `call_indirect` -- see the note there.
+    self.flush_live(self.current_ip);
+    self
+      .fb
+      .ins()
+      .call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1]);
+    self.mark_stale_live(self.current_ip);
+    self.refresh_regs();
+    // Reuses the operands materialized before the branch rather than
+    // re-emitting them here: anything defined in THIS block would not
+    // dominate `slow_block` below, and Cranelift's verifier rejects
+    // that outright.
+    self.call_checked(
+      "zuri_jit_new_finish",
+      &[vm_p, base, dst_i, new_base],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_fast_call(
+      "zuri_jit_call_prepare",
+      &[vm_p, base, func_i, num_args_i, dst_i],
+      new_base,
+      dst,
+      "zuri_jit_call",
+      &[vm_p, base, func_i, num_args_i, dst_i],
+    );
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
@@ -3060,6 +3165,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           Some(CallTarget::Known { entry, guard_bits }) => {
             self.emit_known_call(dst, func, num_args, entry, guard_bits)
           },
+          Some(CallTarget::Construct) => self.emit_construct_call(dst, func, num_args),
           None => {
             let base = self.base_param;
             let vm_p = self.vm_param;
@@ -3080,9 +3186,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::Return { src } => {
-        let base = self.base_param;
-        let zero = self.i64c(0);
-        self.call_checked("zuri_jit_close_upvalues", &[self.vm_param, base, zero]);
+        if self.frame_can_open_upvalues {
+          let base = self.base_param;
+          let zero = self.i64c(0);
+          self.call_checked("zuri_jit_close_upvalues", &[self.vm_param, base, zero]);
+        }
         let v = self.load_reg(src);
         self.fb.ins().return_(&[v]);
         true
@@ -3674,17 +3782,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.vm_param,
       HEAP_NEXT_GC_OFFSET,
     );
-    let needs_major = self
-      .fb
-      .ins()
-      .icmp(IntCC::UnsignedGreaterThan, bytes, next_gc);
-
     let young_bytes = self.fb.ins().load(
       types::I64,
       cranelift_codegen::ir::MemFlagsData::trusted(),
       self.vm_param,
       HEAP_YOUNG_BYTES_ALLOCATED_OFFSET,
     );
+    // Must stay EXACTLY `Heap::needs_major_gc`'s own comparison, not a
+    // conservative approximation of it: this test gates a real helper
+    // call, so a version that over-fires would pay a full FFI round
+    // trip at every safepoint for as long as the two disagreed, and
+    // the helper would decline to collect each time. Hence the
+    // subtraction here rather than reusing `bytes` directly -- see
+    // `Heap::old_bytes_allocated` for why it cannot underflow.
+    let old_bytes = self.fb.ins().isub(bytes, young_bytes);
+    let needs_major = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThan, old_bytes, next_gc);
+
     // `YOUNG_NEXT_GC` is the one threshold in this collector that's
     // truly fixed (never grows the way `next_gc` does), so it's baked
     // in as a compile-time immediate instead of a third runtime load.
