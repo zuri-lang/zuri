@@ -1,0 +1,74 @@
+def sum3(a, b, c) {
+  var tmp = [a, b, c]
+  var total = 0
+  var i = 0
+  while i < 3 {
+    total = total + tmp[i]
+    i = i + 1
+  }
+  return total
+}
+
+var total = 0
+iter var i = 0; i < 200000; i++ {
+  total = total + sum3(i, i + 1, i + 2)
+}
+echo total
+
+def mutate_sum(a, b, c) {
+  var tmp = [a, b, c]
+  var i = 0
+  while i < 3 {
+    tmp[i] = tmp[i] * 2
+    i = i + 1
+  }
+  return tmp[0] + tmp[1] + tmp[2]
+}
+
+var total2 = 0
+iter var i = 0; i < 200000; i++ {
+  total2 = total2 + mutate_sum(i, i + 1, i + 2)
+}
+echo total2
+
+def bad_index(a, b, c, idx) {
+  var tmp = [a, b, c]
+  return tmp[idx]
+}
+
+echo bad_index(10, 20, 30, -1)
+echo bad_index(10, 20, 30, 2)
+
+catch {
+  echo bad_index(1, 2, 3, 5)
+} as e {
+  echo e.message
+}
+
+def bad_set(a, b, c, idx) {
+  var tmp = [a, b, c]
+  tmp[idx] = 99
+  return tmp[0]
+}
+
+catch {
+  echo bad_set(1, 2, 3, 9)
+} as e {
+  echo e.message
+}
+
+def gcstress(n) {
+  var acc = 0
+  var i = 0
+  while i < n {
+    var a = [i, i + 1]
+    var b = [i + 2, i + 3]
+    var tmp = [a, b, a]
+    acc = acc + tmp[0][0] + tmp[1][1] + tmp[2][0]
+    var junk = [i, i, i, i, i, i, i, i]
+    i = i + 1
+  }
+  return acc
+}
+
+echo gcstress(60000)

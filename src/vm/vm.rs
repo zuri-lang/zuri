@@ -6,7 +6,7 @@ use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::builtins;
-use crate::jit::{EntryFn, JitEngine, background, typeflow};
+use crate::jit::{CallTarget, CompileFacts, EntryFn, JitEngine, background, escape, typeflow};
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -141,6 +141,17 @@ struct CallFrame {
   /// Register (in the *caller's* window) that the return value should be
   /// written to. Unused for the outermost frame.
   dst_in_caller: u8,
+  /// `VM::jit_scalar_roots.len()` at the moment this frame was pushed
+  /// -- see that field's own docs. Every one of the small, fixed set
+  /// of places a frame gets removed (`VM::pop_frame_inner`, the catch-
+  /// unwind truncate, `clear_frames`) truncates `jit_scalar_roots` back
+  /// to this value, so a scalar-replaced allocation a compiled function
+  /// registered stops being a GC root at EXACTLY the moment its own
+  /// native stack frame goes away by ANY exit path -- normal return,
+  /// the JIT's direct compiled-to-compiled fast path, or exception
+  /// unwinding -- with no bracketing needed at the codegen call sites
+  /// that create one.
+  scalar_roots_mark: usize,
 }
 
 /// One active `catch` statement's unwind target -- see the module-level
@@ -221,6 +232,30 @@ pub struct VM {
   /// it, is invisible to the normal root scan; push it here for exactly
   /// as long as it needs to survive, then truncate back off.
   gc_pins: Vec<Value>,
+  /// `(base pointer, element count)` for every scalar-replaced
+  /// allocation a JIT-compiled function currently has live in its OWN
+  /// native (Cranelift) stack frame -- see `jit::codegen::FuncCompiler
+  /// ::emit_scalar_make_list`'s own docs for how/when one of these gets
+  /// created, and `CallFrame::scalar_roots_mark` for how entries here
+  /// get retired in lockstep with the frame that owns them.
+  ///
+  /// Each entry is `count` CONSECUTIVE, ORDINARY `Value` slots (NOT a
+  /// heap `Obj` -- there is no tagged pointer, no `GcBox`, nothing
+  /// `Heap::forward_or_promote`'s `gcbox_of` could recover a real
+  /// object header from). This is the load-bearing reason scalar
+  /// replacement represents an allocation as a raw run of `Value`s
+  /// living in a Cranelift stack slot, rather than as a fake `Obj`
+  /// header pointing at one: a `*const Obj` handed to the ordinary
+  /// root-scanning machinery (`mark_root`/`forward_slot`, both of which
+  /// assume every object pointer they see is embedded in a real
+  /// `GcBox`) would read garbage stack bytes as GC bookkeeping the
+  /// moment it got promoted or marked -- see this project's own git
+  /// history for the exact reasoning that ruled that design out.
+  /// `collect_minor`/`collect_garbage` instead treat each entry exactly
+  /// like an extra `gc_pins` run: `forward_slot`/`mark_root` applied
+  /// DIRECTLY to each of the `count` `Value` slots in place, no `Obj`
+  /// layer involved at all.
+  jit_scalar_roots: Vec<(*mut Value, usize)>,
   /// Active `catch` handlers, innermost (most recently pushed) last --
   /// see `CatchHandler`'s own doc comment.
   catch_stack: Vec<CatchHandler>,
@@ -321,6 +356,25 @@ pub struct VM {
   opcode_bigrams: FxHashMap<(&'static str, &'static str), u64>,
   #[cfg(feature = "opcode-profile")]
   last_opcode: Option<&'static str>,
+  /// Bumped by every `Instr::SetMethod` execution (interpreted -- see
+  /// its own handler below -- or compiled, via `jit::runtime::
+  /// zuri_jit_set_method`), NEVER decremented. Exists purely to
+  /// invalidate `codegen::FuncCompiler::emit_self_invoke`'s baked
+  /// "receiver's class == this compiled method's owning class" guard:
+  /// that proof is only sound as long as the class's method table
+  /// hasn't been monkey-patched (`class Name > Target { ... }` --
+  /// `compiler::compile_extension_decl` -- CAN legally call `SetMethod`
+  /// on an already-declared, already-live class at any point in a
+  /// running program) since the compile that baked it. `VM::
+  /// resolve_self_class` snapshots this counter at compile time
+  /// alongside the class identity; `emit_self_invoke`'s guard also
+  /// compares the CURRENT counter (one more inline load) against that
+  /// snapshot, falling back to the general resolver on any mismatch.
+  /// A single global counter, not per-class, since `SetMethod` is rare
+  /// (class-declaration-time only, in ordinary programs) -- the
+  /// coarser invalidation this trades for is free in practice and
+  /// costs nothing to get right.
+  method_table_generation: Cell<u64>,
 }
 
 /// Byte offset of `VM::heap` within `VM` -- combined in `crate::jit` with
@@ -335,6 +389,10 @@ pub(crate) const VM_REGS_PTR_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs
 /// Byte offset of `VM::global_slots_ptr_cache` -- see that field's own docs.
 pub(crate) const VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET: usize =
   std::mem::offset_of!(VM, global_slots_ptr_cache);
+/// Byte offset of `VM::method_table_generation` -- see that field's own
+/// docs.
+pub(crate) const VM_METHOD_TABLE_GENERATION_OFFSET: usize =
+  std::mem::offset_of!(VM, method_table_generation);
 
 type RunResult<T> = Result<T, Value>;
 
@@ -348,6 +406,7 @@ impl VM {
       frames: Vec::new(),
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
+      jit_scalar_roots: Vec::new(),
       catch_stack: Vec::new(),
       jit_engine: None,
       jit_compiler: None,
@@ -373,6 +432,7 @@ impl VM {
       last_opcode: None,
       log_gc: std::env::var_os("ZURI_GC_LOG").is_some(),
       heap,
+      method_table_generation: Cell::new(0),
     }
   }
 
@@ -669,6 +729,7 @@ impl VM {
       ip: 0,
       base: 0,
       dst_in_caller: 0,
+      scalar_roots_mark: self.jit_scalar_roots.len(),
     });
     self.run_until(0)?;
     Ok(())
@@ -735,6 +796,7 @@ impl VM {
       ip: 0,
       base: new_base,
       dst_in_caller: 0,
+      scalar_roots_mark: self.jit_scalar_roots.len(),
     });
     self.run_frame(stop_depth, proto, callee)
   }
@@ -760,6 +822,15 @@ impl VM {
 
   fn sync_global_slots_ptr_cache(&mut self) {
     self.global_slots_ptr_cache.set(self.global_slots.as_ptr());
+  }
+
+  /// See `method_table_generation`'s own docs -- called by every
+  /// `Instr::SetMethod` execution, interpreted (above) or compiled
+  /// (`jit::runtime::zuri_jit_set_method`).
+  pub(crate) fn bump_method_table_generation(&self) {
+    self
+      .method_table_generation
+      .set(self.method_table_generation.get() + 1);
   }
 
   /// Does `proto` have a compiled entry point ready to use RIGHT NOW?
@@ -881,6 +952,131 @@ impl VM {
     )
   }
 
+  /// `self.field`'s sibling for method calls: `self`'s own class, as
+  /// `Value` bits, exactly when `proto` is a method whose owning
+  /// class's method table maps `proto`'s own name back to `proto`
+  /// itself -- the SAME "owns_proto" proof `resolve_self_field_slots`
+  /// needs, just returning the class identity itself rather than a
+  /// field map. See `jit::CompileFacts::self_class_bits`'s own docs for
+  /// how codegen uses this: ANY `Instr::Invoke` naming this exact
+  /// method, on a receiver whose class bit-matches this value at
+  /// runtime, is guaranteed to resolve to this exact compiled function
+  /// -- regardless of which register/expression the receiver came from
+  /// (`self`, `self.left`, a local, ...), since the guard is checked
+  /// against the receiver's ACTUAL class at the call site, not against
+  /// any static provenance of the receiver register itself.
+  fn resolve_self_class(&self, proto: &ObjFunction) -> Option<(u64, u64)> {
+    let class_name = proto.owning_class_name.as_ref()?;
+    let (is_root, slot) = self.resolve_global(proto.globals_module, class_name)?;
+    let class_val = self.read_resolved(proto.globals_module, is_root, slot);
+    if !class_val.is_class() {
+      return None;
+    }
+    let class = class_val.as_class();
+    let proto_ptr = proto as *const ObjFunction;
+    let owns_proto = class
+      .methods
+      .values()
+      .any(|m| m.is_closure() && std::ptr::eq(m.as_closure().function.as_func(), proto_ptr));
+    if !owns_proto {
+      return None;
+    }
+    Some((class_val.to_bits(), self.method_table_generation.get()))
+  }
+
+  /// Resolves every `Instr::Call` site in `proto` whose callee register
+  /// is PROVEN (see `escape::self_reference_facts`/
+  /// `escape::global_ref_facts`) to hold an unmodified global read, into
+  /// a `CallTarget` `codegen::FuncCompiler` can use to skip
+  /// `jit::runtime::zuri_jit_call_prepare`'s resolver entirely -- see
+  /// `CallTarget`'s own docs for the two cases (`SelfRecursive` needs no
+  /// runtime guard at all; `Known` still needs a value-identity guard,
+  /// since an arbitrary global binding, unlike a function's own name,
+  /// can be reassigned) and their respective soundness arguments.
+  ///
+  /// Candidate names are collected first (every string a `GetGlobal` in
+  /// `proto` ever names) so the dataflow only runs once per DISTINCT
+  /// name actually referenced -- bounded by how many different globals
+  /// this function's own source text mentions, not by code size.
+  fn resolve_call_targets(&self, proto: &ObjFunction) -> FxHashMap<usize, CallTarget> {
+    let mut targets = FxHashMap::default();
+    let proto_ptr = proto as *const ObjFunction;
+
+    // Owned `String`s throughout, not borrowed `&str`s: this runs once
+    // per JIT compile (not per call), so the allocation cost is
+    // irrelevant, and it sidesteps tying this whole function's return
+    // value's lifetime to `proto.chunk.constants`' borrow for no
+    // benefit.
+    let mut candidate_names: Vec<String> = Vec::new();
+    for instr in &proto.chunk.code {
+      if let Instr::GetGlobal { name_const, .. } = instr
+        && let Some(v) = proto.chunk.constants.get(*name_const as usize)
+        && v.is_string()
+      {
+        let s = v.as_str();
+        if !candidate_names.iter().any(|n| n == s) {
+          candidate_names.push(s.to_string());
+        }
+      }
+    }
+    if candidate_names.is_empty() {
+      return targets;
+    }
+
+    let self_facts = escape::self_reference_facts(proto);
+    let named_facts: Vec<(String, Vec<escape::MustSet>)> = candidate_names
+      .into_iter()
+      // `proto.name` itself is already covered by `self_facts`, with no
+      // runtime guard needed at all -- running a second, redundant
+      // analysis for it would only ever produce a strictly weaker
+      // (guard-requiring) `Known` classification for sites `self_facts`
+      // already proves need no guard.
+      .filter(|name| name != &proto.name)
+      .map(|name| {
+        let facts = escape::global_ref_facts(proto, &name);
+        (name, facts)
+      })
+      .collect();
+
+    for (ip, instr) in proto.chunk.code.iter().enumerate() {
+      let Instr::Call { func, .. } = instr else {
+        continue;
+      };
+      if self_facts[ip].get(*func) {
+        targets.insert(ip, CallTarget::SelfRecursive);
+        continue;
+      }
+      for (name, facts) in &named_facts {
+        if !facts[ip].get(*func) {
+          continue;
+        }
+        let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name) else {
+          continue;
+        };
+        let resolved = self.read_resolved(proto.globals_module, is_root, slot);
+        if !resolved.is_closure() {
+          continue;
+        }
+        let callee_proto = resolved.as_closure().function.as_func();
+        if std::ptr::eq(callee_proto, proto_ptr) {
+          targets.insert(ip, CallTarget::SelfRecursive);
+          break;
+        }
+        if let Some(entry) = callee_proto.jit.entry.get() {
+          targets.insert(
+            ip,
+            CallTarget::Known {
+              entry: entry as usize,
+              guard_bits: resolved.to_bits(),
+            },
+          );
+          break;
+        }
+      }
+    }
+    targets
+  }
+
   /// Builds `proto`'s IR right now (synchronously -- the only stage
   /// that touches `proto`, see `jit::background`'s module docs) and
   /// hands the result to the background compiler thread for the
@@ -891,25 +1087,48 @@ impl VM {
   /// just without the (now background-only) backend-compile step ever
   /// getting a chance to also fail here.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
-    let speculative_params = self.combined_param_feedback(proto);
-    let speculative_regs = self.sample_all_reg_types(proto);
-    let self_field_slots = self.resolve_self_field_slots(proto);
-    let __diag_start = std::time::Instant::now();
-    let pending = match self.jit_engine().build_ir(
-      proto,
-      speculative_params,
-      speculative_regs,
-      self_field_slots,
-    ) {
-      Ok(pending) => pending,
-      Err(reason) => {
-        if crate::jit::log_enabled() {
-          eprintln!("[jit] '{}' ineligible: {}", proto.name, reason);
-        }
-        proto.jit.ineligible.set(true);
-        return;
-      },
+    // Bisection/debugging knob for a confirmed, not-yet-root-caused
+    // data-corruption bug in the specialized-body machinery (see
+    // `jit::codegen::FuncCompiler::scalar_replace_eligible`'s own docs
+    // for the full reproduction): a value read via a variable-index
+    // `Instr::GetIndex`, once returned from a function that later gets
+    // a specialized body, can silently freeze at a stale value on
+    // every subsequent call. Setting this forces EVERY function to
+    // compile general-body-only, isolating whether a given symptom
+    // depends on specialized-body compilation at all -- exactly how
+    // that bug was originally bisected. Not a general performance
+    // knob (unlike `ZURI_JIT=0`, which disables the JIT tier
+    // entirely): every function still tiers up, just without ever
+    // gaining a specialized body.
+    let (speculative_params, speculative_regs) =
+      if std::env::var_os("ZURI_JIT_NO_SPECIALIZATION").is_some() {
+        (None, None)
+      } else {
+        (
+          self.combined_param_feedback(proto),
+          self.sample_all_reg_types(proto),
+        )
+      };
+    let facts = CompileFacts {
+      self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
+      self_class_bits: self.resolve_self_class(proto),
+      call_targets: self.resolve_call_targets(proto),
     };
+    let __diag_start = std::time::Instant::now();
+    let pending =
+      match self
+        .jit_engine()
+        .build_ir(proto, speculative_params, speculative_regs, facts)
+      {
+        Ok(pending) => pending,
+        Err(reason) => {
+          if crate::jit::log_enabled() {
+            eprintln!("[jit] '{}' ineligible: {}", proto.name, reason);
+          }
+          proto.jit.ineligible.set(true);
+          return;
+        },
+      };
     if std::env::var_os("ZURI_DIAG_CALLS").is_some() {
       eprintln!(
         "[diag] synchronous build_ir for '{}' took {:?}",
@@ -1319,7 +1538,7 @@ impl VM {
     }
 
     self.close_upvalues_from(base);
-    self.frames.pop();
+    self.pop_frame_inner();
     Ok(Value::from_bits(result_bits))
   }
 
@@ -1444,6 +1663,25 @@ impl VM {
     None
   }
 
+  /// The ONE choke point every single-frame removal in this file
+  /// funnels through (`VM::pop_frame`, `invoke_compiled`'s own success
+  /// path, `Instr::Return`'s interpreter handling) -- truncates
+  /// `jit_scalar_roots` back to whatever it held right before THIS
+  /// frame was pushed (`CallFrame::scalar_roots_mark`), so a scalar-
+  /// replaced allocation a compiled function registered stops being a
+  /// GC root at exactly the moment its own native stack frame goes
+  /// away, regardless of which of those three paths got here. The
+  /// MULTI-frame removal sites (the catch-unwind truncate,
+  /// `clear_frames`) do the same truncation inline instead of calling
+  /// this, since they're removing more than one frame's worth in one
+  /// step -- see their own call sites for the identical reasoning
+  /// applied there.
+  fn pop_frame_inner(&mut self) -> CallFrame {
+    let frame = self.frames.pop().expect("pop_frame_inner: no frame to pop");
+    self.jit_scalar_roots.truncate(frame.scalar_roots_mark);
+    frame
+  }
+
   /// Pops the current top frame with no upvalue-closing/return-value
   /// bookkeeping -- used only by `jit::runtime::zuri_jit_call_finish`
   /// (and its `Invoke` counterpart), which need `VM::frames` itself
@@ -1452,7 +1690,24 @@ impl VM {
   /// other frame-pop site in this file already has direct field access
   /// and doesn't need this wrapper.
   pub(crate) fn pop_frame(&mut self) {
-    self.frames.pop();
+    self.pop_frame_inner();
+  }
+
+  /// Registers a scalar-replaced allocation's backing memory
+  /// (`count` consecutive `Value` slots at `ptr`, living in the
+  /// CURRENTLY-EXECUTING compiled function's own Cranelift stack frame)
+  /// as a GC root -- called by `jit::runtime::zuri_jit_push_scalar_root`
+  /// the moment `jit::codegen::FuncCompiler::emit_scalar_make_list`
+  /// finishes populating every slot (never before -- see that
+  /// function's own docs on why populating first matters: an
+  /// uninitialized slot isn't a valid `Value` a GC walk could safely
+  /// inspect). Retired automatically, in lockstep with the frame that
+  /// registered it, via `CallFrame::scalar_roots_mark` -- see
+  /// `jit_scalar_roots`'s own docs for the full mechanism and the
+  /// soundness argument for why this is safe where a fake `Obj` header
+  /// pointing at the same memory would NOT have been.
+  pub(crate) fn push_scalar_root(&mut self, ptr: *mut Value, count: usize) {
+    self.jit_scalar_roots.push((ptr, count));
   }
 
   /// Is the real native call stack shallow enough to safely add one
@@ -1527,6 +1782,7 @@ impl VM {
       ip: 0,
       base: new_base,
       dst_in_caller,
+      scalar_roots_mark: self.jit_scalar_roots.len(),
     });
   }
 
@@ -2440,7 +2696,7 @@ impl VM {
           Instr::Return { src } => {
             let ret = self.get_reg(base, src);
             self.close_upvalues_from(base);
-            let finished = self.frames.pop().unwrap();
+            let finished = self.pop_frame_inner();
             if self.frames.len() == stop_depth {
               return Ok(ret);
             }
@@ -2705,6 +2961,7 @@ impl VM {
             let method = self.get_reg(base, src);
             class_val.as_class_mut().methods.insert(name, method);
             write_barrier(class_val.as_obj());
+            self.bump_method_table_generation();
           },
 
           Instr::DeclareStatic {
@@ -3710,6 +3967,20 @@ impl VM {
     for v in &self.gc_pins {
       Self::mark_root(*v, &mut worklist);
     }
+    // Each `jit_scalar_roots` entry is `count` ordinary `Value` slots
+    // (no `Obj`/`GcBox` layer -- see that field's own docs), so this is
+    // exactly the SAME treatment as the `gc_pins` loop just above, just
+    // reading through a raw pointer/count pair instead of a `Vec`.
+    for &(ptr, count) in &self.jit_scalar_roots {
+      // SAFETY: every entry is live for as long as its owning
+      // `CallFrame` is still on `self.frames` (see `CallFrame::
+      // scalar_roots_mark`'s own docs) -- every frame on `self.frames`
+      // right now is, by definition, still executing.
+      let slice = unsafe { std::slice::from_raw_parts(ptr, count) };
+      for &v in slice {
+        Self::mark_root(v, &mut worklist);
+      }
+    }
     for v in &self.pending_jit_compiles {
       Self::mark_root(*v, &mut worklist);
     }
@@ -3817,6 +4088,20 @@ impl VM {
     }
     for v in &mut self.gc_pins {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
+    }
+    // Same treatment as the `gc_pins` loop just above: each entry here
+    // is `count` live, ordinary `Value` slots (no `Obj`/`GcBox` layer
+    // -- see `jit_scalar_roots`'s own docs), forwarded in place exactly
+    // like any other root.
+    for &(ptr, count) in &self.jit_scalar_roots {
+      // SAFETY: every entry is live for as long as its owning
+      // `CallFrame` is still on `self.frames` (see `CallFrame::
+      // scalar_roots_mark`'s own docs) -- every frame on `self.frames`
+      // right now is, by definition, still executing.
+      let slice = unsafe { std::slice::from_raw_parts_mut(ptr, count) };
+      for v in slice {
+        Self::forward_slot(&mut self.heap, v, &mut worklist);
+      }
     }
     for v in self.builtin_exceptions.values_mut() {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
@@ -4123,7 +4408,7 @@ impl VM {
     Ok(i)
   }
 
-  fn coerce_index(&mut self, index: Value, len: usize) -> RunResult<usize> {
+  pub(crate) fn coerce_index(&mut self, index: Value, len: usize) -> RunResult<usize> {
     let mut i = self.value_as_index(index)?;
 
     // First attempt to coerce it into the range [0, len) by wrapping negative indices around to the end of the array.
@@ -4244,7 +4529,21 @@ impl VM {
     if let Some(discard_base) = self.frames.get(handler.frame_depth).map(|f| f.base) {
       self.close_upvalues_from(discard_base);
     }
+    // Every frame from `handler.frame_depth` onward is being discarded
+    // in one step -- roll `jit_scalar_roots` back to whatever it held
+    // right before the FIRST of them (`frames[handler.frame_depth]`)
+    // was pushed, same reasoning as `pop_frame_inner`'s single-frame
+    // case. `unwrap_or(self.jit_scalar_roots.len())` covers the case
+    // where `handler.frame_depth == self.frames.len()` already (the
+    // exception happened in the very frame that pushed this catch, no
+    // deeper frame was ever pushed) -- a no-op truncate, correctly.
+    let scalar_roots_mark = self
+      .frames
+      .get(handler.frame_depth)
+      .map(|f| f.scalar_roots_mark)
+      .unwrap_or(self.jit_scalar_roots.len());
     self.frames.truncate(handler.frame_depth);
+    self.jit_scalar_roots.truncate(scalar_roots_mark);
     let top = self.frames.last_mut().expect("catch handler left no frame");
     top.ip = handler.resume_ip;
     let top_base = top.base;
@@ -4292,6 +4591,13 @@ impl VM {
   #[inline]
   pub fn clear_frames(&mut self) {
     self.frames.clear();
+    // Every remaining frame is being wiped unconditionally (REPL error
+    // recovery) -- their own native stack frames are already gone by
+    // the time this runs, so any `jit_scalar_roots` entries they
+    // registered would otherwise dangle into freed/reused native stack
+    // memory for the NEXT GC to walk. See `CallFrame::scalar_roots_mark`'s
+    // own docs.
+    self.jit_scalar_roots.clear();
   }
 }
 

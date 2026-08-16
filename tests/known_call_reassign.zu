@@ -1,0 +1,27 @@
+def add_one(x) {
+  return x + 1
+}
+
+def add_two(x) {
+  return x + 2
+}
+
+var warm = 0
+iter var i = 0; i < 200000; i++ {
+  warm = warm + add_one(i)
+}
+
+def caller(x) {
+  return dispatch(x)
+}
+
+var dispatch = add_one
+
+var total = 0
+iter var i = 0; i < 200000; i++ {
+  total = total + caller(i)
+}
+echo total
+
+dispatch = add_two
+echo caller(10)

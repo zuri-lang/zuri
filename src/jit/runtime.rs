@@ -786,6 +786,48 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   entry as usize as u64
 }
 
+/// The lean frame-setup half of `codegen::FuncCompiler`'s STATICALLY-
+/// resolved direct-call paths (`emit_self_call`/`emit_known_call`/
+/// `emit_self_invoke` -- see `jit::CallTarget`'s own docs for how those
+/// callees get proven ahead of time). Unlike `zuri_jit_call_prepare`/
+/// `zuri_jit_invoke_prepare`, this does NO resolution work at all --
+/// `callee_bits` is already known to be exactly the right closure
+/// (either this function's own, for self-recursion, or one already
+/// guarded by a value/class-identity check in generated code), so this
+/// is purely `VM::setup_closure_call`'s frame push plus the depth
+/// bookkeeping every compiled-to-compiled call needs, with none of
+/// `is_closure`/`ensure_stable_for_compiled_entry`/`proto.jit.entry
+/// .get()`'s per-call overhead. Returns `1` (proceed with the direct
+/// call generated code already has the target address for) or `0`
+/// (native call-stack depth exhausted -- generated code falls back to
+/// the fully general slow helper on this result, exactly like
+/// `emit_fast_call`'s own miss path).
+pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
+  vm_ptr: *mut VM,
+  callee_bits: u64,
+  new_base: u64,
+  num_args: u64,
+  dst: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  if !vm.jit_depth_ok() {
+    return 0;
+  }
+  let callee = Value::from_bits(callee_bits);
+  let closure = callee.as_closure();
+  let proto = closure.function.as_func();
+  vm.setup_closure_call(
+    callee,
+    closure,
+    proto,
+    new_base as usize,
+    num_args as u8,
+    dst as u8,
+  );
+  vm.jit_depth_enter();
+  1
+}
+
 /// Completes a fast-path direct call after generated code's own
 /// `call_indirect` returns -- the other half of `zuri_jit_call_prepare`/
 /// `zuri_jit_invoke_prepare`'s bracket. `new_base` is the CALLEE's own
@@ -1449,6 +1491,79 @@ pub unsafe extern "C" fn zuri_jit_list_data(
   sv.as_ptr() as u64
 }
 
+/// Registers a scalar-replaced `Instr::MakeList` allocation's backing
+/// stack memory as a GC root -- see `VM::push_scalar_root`'s own docs
+/// for the full mechanism, and `jit::codegen::FuncCompiler::
+/// emit_scalar_make_list` for the ONE call site (always the very last
+/// step there, after every element slot has already been populated).
+pub unsafe extern "C" fn zuri_jit_push_scalar_root(
+  vm_ptr: *mut VM,
+  data_ptr: u64,
+  count: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.push_scalar_root(data_ptr as *mut Value, count as usize);
+  OK
+}
+
+/// `Instr::GetIndex`'s slow-path fallback for a scalar-replaced list
+/// (`jit::codegen::FuncCompiler::emit_scalar_list_get`'s own docs) --
+/// everything the inline fast path didn't prove safe (a non-numeric or
+/// non-integer index, or a genuinely out-of-bounds one) still needs the
+/// real error-raising logic, but there is no heap `Obj::List` to hand
+/// `VM::index_get`: `VM::coerce_index` is the one piece of that logic
+/// that operates on a bare `len: usize` instead of a real container,
+/// exactly what's needed here.
+pub unsafe extern "C" fn zuri_jit_scalar_get_index(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  data_ptr: u64,
+  count: u64,
+  idx_reg: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let idx_val = vm.get_reg(base, idx_reg as u8);
+  match vm.coerce_index(idx_val, count as usize) {
+    Ok(i) => {
+      // SAFETY: `data_ptr`/`count` describe the SAME live, currently-
+      // registered `jit_scalar_roots` entry the fast path itself would
+      // have read from -- see `emit_scalar_make_list`'s own docs.
+      let slice = unsafe { std::slice::from_raw_parts(data_ptr as *const Value, count as usize) };
+      vm.set_reg(base, dst as u8, slice[i]);
+      OK
+    },
+    Err(e) => fail(vm, e),
+  }
+}
+
+/// `Instr::SetIndex`'s slow-path fallback for a scalar-replaced list --
+/// the write-side counterpart of `zuri_jit_scalar_get_index`, see its
+/// own docs.
+pub unsafe extern "C" fn zuri_jit_scalar_set_index(
+  vm_ptr: *mut VM,
+  base: u64,
+  data_ptr: u64,
+  count: u64,
+  idx_reg: u64,
+  src_reg: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let idx_val = vm.get_reg(base, idx_reg as u8);
+  match vm.coerce_index(idx_val, count as usize) {
+    Ok(i) => {
+      let src_val = vm.get_reg(base, src_reg as u8);
+      // SAFETY: see `zuri_jit_scalar_get_index`'s identical reasoning.
+      let slice = unsafe { std::slice::from_raw_parts_mut(data_ptr as *mut Value, count as usize) };
+      slice[i] = src_val;
+      OK
+    },
+    Err(e) => fail(vm, e),
+  }
+}
+
 pub unsafe extern "C" fn zuri_jit_get_index(
   vm_ptr: *mut VM,
   base: u64,
@@ -1619,6 +1734,7 @@ pub unsafe extern "C" fn zuri_jit_set_method(
   let method = vm.get_reg(base, src as u8);
   class_val.as_class_mut().methods.insert(name, method);
   write_barrier(class_val.as_obj());
+  vm.bump_method_table_generation();
   OK
 }
 
@@ -2168,6 +2284,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_call),
     spec6!(zuri_jit_call_prepare),
     spec9!(zuri_jit_invoke_prepare),
+    spec5!(zuri_jit_direct_call_prepare),
     spec5!(zuri_jit_call_finish),
     spec5!(zuri_jit_call_super_ctor),
     spec5!(zuri_jit_make_closure),
@@ -2179,6 +2296,9 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_get_index),
     spec5!(zuri_jit_set_index),
     spec3!(zuri_jit_list_data),
+    spec3!(zuri_jit_push_scalar_root),
+    spec6!(zuri_jit_scalar_get_index),
+    spec6!(zuri_jit_scalar_set_index),
     spec5!(zuri_jit_set_method),
     spec5!(zuri_jit_declare_static),
     spec7!(zuri_jit_get_field),

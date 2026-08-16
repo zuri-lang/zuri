@@ -213,7 +213,7 @@ impl AliasSet {
 /// under one type invites a silent logic bug instead of a compile
 /// error.
 #[derive(Clone, PartialEq, Eq)]
-struct MustSet {
+pub(crate) struct MustSet {
   words: Vec<u64>,
 }
 
@@ -247,7 +247,7 @@ impl MustSet {
     MustSet { words: v }
   }
 
-  fn get(&self, r: u8) -> bool {
+  pub(crate) fn get(&self, r: u8) -> bool {
     let r = r as usize;
     let word = r / 64;
     if word >= self.words.len() {
@@ -298,18 +298,30 @@ impl MustSet {
 /// a false "is definitely self" would misapply this function's OWN
 /// (possibly still-escaping) parameter summary to what's actually a
 /// call to something else entirely.
-fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
-  let code = &proto.chunk.code;
-  let code_len = code.len();
-  let num_registers = proto.num_registers as usize;
-  let preds = typeflow::build_predecessors(proto);
-
+pub(crate) fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
   let is_self_name = |name_const: u16| -> bool {
     match proto.chunk.constants.get(name_const as usize) {
       Some(v) if v.is_string() => v.as_str() == proto.name,
       _ => false,
     }
   };
+  global_ref_facts_for(proto, is_self_name)
+}
+
+/// Generalization of `self_reference_facts`: same "must" analysis,
+/// same soundness argument, but proving a register DEFINITELY holds an
+/// unmodified read of `target_name` specifically, rather than always
+/// `proto`'s own name. `self_reference_facts` is the `target_name ==
+/// proto.name` special case (kept separate since self-recursion needs
+/// no runtime guard at all once proven, whereas a call to some OTHER
+/// named global -- see `global_ref_facts` -- still needs a value-
+/// identity guard, since unlike a function's own name, an arbitrary
+/// global binding can be reassigned).
+fn global_ref_facts_for(proto: &ObjFunction, is_target_name: impl Fn(u16) -> bool) -> Vec<MustSet> {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+  let preds = typeflow::build_predecessors(proto);
 
   let mut entry: Vec<MustSet> = (0..code_len)
     .map(|ip| {
@@ -325,7 +337,7 @@ fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
     let mut out = in_set.clone();
     match *instr {
       Instr::GetGlobal { dst, name_const } => {
-        out.set(dst, is_self_name(name_const));
+        out.set(dst, is_target_name(name_const));
       },
       Instr::Move { dst, src } => {
         out.set(dst, in_set.get(src));
@@ -375,6 +387,25 @@ fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
   }
 
   entry
+}
+
+/// Public entry point for `global_ref_facts_for`: for every bytecode
+/// position, which registers are DEFINITELY still holding an
+/// unmodified read of the global named `target_name`. Used by
+/// `VM::resolve_call_targets` to prove a `Call` site's callee register
+/// is a specific, statically-known top-level function -- unlike
+/// `self_reference_facts`, the proven identity here still needs a
+/// runtime value-identity guard before a direct call is safe (an
+/// arbitrary global binding, unlike a function's own name, can be
+/// reassigned), so the caller pairs this with the resolved `Value`'s
+/// bits for that guard.
+pub(crate) fn global_ref_facts(proto: &ObjFunction, target_name: &str) -> Vec<MustSet> {
+  global_ref_facts_for(proto, |name_const| {
+    match proto.chunk.constants.get(name_const as usize) {
+      Some(v) if v.is_string() => v.as_str() == target_name,
+      _ => false,
+    }
+  })
 }
 
 /// Does this instruction's normal (non-tracked-register) behavior
@@ -639,7 +670,7 @@ pub fn analyze_one(
   let mut worklist: Vec<usize> = Vec::new();
   let mut in_worklist = vec![false; code_len];
   for &s in &typeflow::successors(alloc_ip, &code[alloc_ip], proto) {
-    if s < code_len && !in_worklist[s] {
+    if s != alloc_ip && s < code_len && !in_worklist[s] {
       in_worklist[s] = true;
       worklist.push(s);
     }
@@ -731,8 +762,20 @@ pub fn analyze_one(
 
     if new_out != out[ip] {
       out[ip] = new_out;
+      // `alloc_ip` is NEVER re-queued here, no matter how it's
+      // reached: it's a real, ordinary successor of anything whose
+      // control flow loops back around to it (an allocation site
+      // inside a loop being reached again via the loop's own back
+      // edge is the everyday case, not an exotic one), but its
+      // `entry`/`out` are the fixed seed (`seeded_alloc_out`), never
+      // recomputed generically -- see this function's own docs on why
+      // processing it through the ordinary transfer function would
+      // silently overwrite that seed. Any OTHER ip whose predecessor
+      // is `alloc_ip` already gets the seed correctly via the `p ==
+      // alloc_ip` special case above; `alloc_ip` itself simply never
+      // needs a turn as `ip` in this loop.
       for &s in &typeflow::successors(ip, instr, proto) {
-        if s < code_len && !in_worklist[s] {
+        if s != alloc_ip && s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
           worklist.push(s);
         }

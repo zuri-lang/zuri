@@ -229,6 +229,17 @@ pub fn obj_instance_fields_ptr_offset() -> usize {
     + std::mem::offset_of!(FieldStorage, ptr)
 }
 
+/// Byte offset from a `*const Obj` known (via `obj_tag`) to be
+/// `Obj::Instance` to that instance's own `class` field -- same
+/// reasoning as `obj_instance_fields_ptr_offset`, just one field over.
+/// Consumed by `jit::codegen`'s self-invoke fast path
+/// (`emit_self_invoke`) to read a receiver's class directly for its
+/// own guard, with no `zuri_jit_invoke_prepare` call at all on the
+/// guard check itself.
+pub fn obj_instance_class_offset() -> usize {
+  obj_payload_offset() + std::mem::offset_of!(ObjInstance, class)
+}
+
 #[cfg(test)]
 mod obj_repr_tests {
   use super::*;

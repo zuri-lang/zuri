@@ -16,7 +16,7 @@ use cranelift_module::{FuncId, Linkage, Module, ModuleReloc};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::jit::runtime;
-use crate::jit::{EntryFn, codegen, typeflow};
+use crate::jit::{CompileFacts, EntryFn, codegen, typeflow};
 use crate::vm::object::ObjFunction;
 
 /// Everything `JitEngine::build_ir` extracts from a `&ObjFunction` --
@@ -144,7 +144,7 @@ impl JitEngine {
     proto: &ObjFunction,
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
-    self_field_slots: Option<FxHashMap<String, u16>>,
+    facts: CompileFacts,
   ) -> Result<PendingCompile, String> {
     self.next_id += 1;
     let name = format!("zuri_fn_{}", self.next_id);
@@ -178,9 +178,10 @@ impl JitEngine {
         &mut self.module,
         &self.helper_ids,
         proto,
+        func_id,
         speculative_params,
         speculative_regs,
-        self_field_slots,
+        facts,
       )?;
       builder.seal_all_blocks();
       builder.finalize(self.module.target_config());

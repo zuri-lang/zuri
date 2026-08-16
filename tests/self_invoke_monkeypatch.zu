@@ -1,0 +1,33 @@
+class TreeNode {
+  @new(left, right) {
+    self.left = left
+    self.right = right
+  }
+
+  count() {
+    if self.left == nil return 1
+    return 1 + self.left.count() + self.right.count()
+  }
+}
+
+def tree_with(depth) {
+  if depth > 0 {
+    return TreeNode(tree_with(depth - 1), tree_with(depth - 1))
+  }
+  return TreeNode(nil, nil)
+}
+
+var t = tree_with(8)
+var total = 0
+iter var i = 0; i < 4000; i++ {
+  total = total + t.count()
+}
+echo total
+
+class TreeNodeExt > TreeNode {
+  static count(node) {
+    return 999
+  }
+}
+
+echo t.count()

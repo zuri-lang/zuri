@@ -143,3 +143,60 @@ pub struct CompiledFunction {
   /// `JitInfo::osr_threshold`.
   pub osr_ids: FxHashMap<usize, i32>,
 }
+
+/// A `Call` site's statically-resolved callee, computed once by
+/// `vm::vm::VM::resolve_call_targets` (the only place with the live
+/// global-table access needed to resolve a name) and consumed by
+/// `codegen::FuncCompiler` to skip `jit::runtime::zuri_jit_call_prepare`'s
+/// resolver entirely.
+///
+/// - `SelfRecursive`: the callee register is PROVEN (see
+///   `escape::self_reference_facts`) to always hold this exact
+///   function's own closure -- no runtime guard needed at all, since
+///   there is nothing to misidentify; codegen emits a genuine
+///   relocation-resolved direct `call` to its own `FuncId`.
+/// - `Known`: the callee register is PROVEN (see
+///   `escape::global_ref_facts`) to hold an UNMODIFIED read of some
+///   OTHER global name that, at THIS function's compile time, already
+///   resolves to a different, already-JIT-compiled closure. Unlike
+///   `SelfRecursive`, the global binding itself could still be
+///   reassigned before this call site actually runs, so codegen still
+///   guards it with a cheap value-identity comparison (`guard_bits`)
+///   against the CURRENT contents of the callee register at runtime,
+///   falling back to the ordinary resolver on a miss. `entry` is a raw
+///   `EntryFn` address, sound to bake as a compile-time immediate
+///   because `CompiledFunction`'s own docs guarantee compiled code is
+///   never unloaded or recompiled once produced.
+#[derive(Clone, Copy)]
+pub enum CallTarget {
+  SelfRecursive,
+  Known { entry: usize, guard_bits: u64 },
+}
+
+/// Everything `vm::vm::VM::enqueue_compile` resolves ahead of time
+/// (via live VM/global-table access `jit::escape` deliberately never
+/// touches) and hands to `codegen::compile`, bundled into one struct
+/// rather than an ever-growing parameter list as this tier gains more
+/// static-proof-driven fast paths. See each field's producer for the
+/// soundness argument specific to it.
+#[derive(Default)]
+pub struct CompileFacts {
+  pub self_field_slots: FxHashMap<String, u16>,
+  /// `(self`'s own class as `Value` bits, `VM::method_table_generation`
+  /// at the moment this was resolved`)` -- set exactly when `proto` is
+  /// a method AND its owning class's method table maps `proto`'s own
+  /// name back to `proto` itself (the same "owns_proto" proof
+  /// `self_field_slots` already needs -- see
+  /// `vm::vm::VM::resolve_self_field_slots`). Lets `Instr::Invoke` sites
+  /// whose method name matches `proto`'s own name (e.g. `self.left
+  /// .count()` inside `count`'s own body) skip the resolver with just a
+  /// receiver-class guard: ANY receiver whose class is bit-identical to
+  /// this one is guaranteed, by that same proof, to resolve this exact
+  /// compiled method -- AS LONG AS the class's method table hasn't been
+  /// monkey-patched (`compiler::compile_extension_decl` can legally do
+  /// this to an already-live class at any point) since this proof was
+  /// taken, which is what the paired generation snapshot guards
+  /// against -- see `VM::method_table_generation`'s own docs.
+  pub self_class_bits: Option<(u64, u64)>,
+  pub call_targets: FxHashMap<usize, CallTarget>,
+}

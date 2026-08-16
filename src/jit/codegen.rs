@@ -29,7 +29,7 @@ use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use rustc_hash::FxHashMap;
 
-use crate::jit::typeflow;
+use crate::jit::{CallTarget, CompileFacts, escape, typeflow};
 use crate::vm::chunk::Instr;
 use crate::vm::object::{self, ObjFunction};
 use crate::vm::value::{self};
@@ -43,6 +43,9 @@ const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
 /// Byte offset of `VM::global_slots_ptr_cache` -- see that field's own
 /// docs and `emit_get_global`'s use of it.
 const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
+/// Byte offset of `VM::method_table_generation` -- see that field's own
+/// docs and `emit_self_invoke`'s use of it.
+const METHOD_TABLE_GENERATION_OFFSET: i32 = vm::VM_METHOD_TABLE_GENERATION_OFFSET as i32;
 /// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
 /// (major) and `young_bytes_allocated` (minor) -- lets `emit_safepoint`
 /// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
@@ -79,9 +82,10 @@ pub fn compile(
   module: &mut JITModule,
   helpers: &FxHashMap<&'static str, FuncId>,
   proto: &ObjFunction,
+  own_func_id: FuncId,
   speculative_params: Option<u64>,
   speculative_regs: Option<typeflow::SpeculativeRegs>,
-  self_field_slots: Option<FxHashMap<String, u16>>,
+  facts: CompileFacts,
 ) -> Result<FxHashMap<usize, i32>, String> {
   // Exception-handling bytecode is never compiled -- see this crate's
   // `jit` module docs on why "bail to the interpreter" is implemented
@@ -116,10 +120,11 @@ pub fn compile(
     module,
     helpers,
     proto,
+    own_func_id,
     code_len,
     speculative_params,
     speculative_regs,
-    self_field_slots.unwrap_or_default(),
+    facts,
   );
   fc.run()
 }
@@ -268,6 +273,35 @@ struct FuncCompiler<'a, 'b> {
   /// general helper path in that case, identical to before this field
   /// existed.
   self_field_slots: FxHashMap<String, u16>,
+  /// This compiled function's OWN `FuncId` in `module` -- known before
+  /// codegen starts (the caller, `JitEngine::build_ir`, always declares
+  /// it first). Lets `emit_call_instr`'s self-recursive case emit a
+  /// genuine relocation-resolved direct `call` (via
+  /// `Module::declare_func_in_func` on this SAME id) rather than an
+  /// indirect call through a runtime-loaded pointer.
+  own_func_id: FuncId,
+  /// `(self`'s own class as `Value` bits, the `VM::
+  /// method_table_generation` snapshot taken alongside it)` -- see
+  /// `jit::CompileFacts::self_class_bits`'s own docs. `None` for a
+  /// plain function or when `VM::resolve_self_class` couldn't prove
+  /// anything.
+  self_class_bits: Option<(u64, u64)>,
+  /// `Instr::Call` bytecode position -> statically-resolved callee --
+  /// see `jit::CallTarget`'s own docs. Consulted by `emit_call_instr`
+  /// before falling back to `emit_fast_call`'s general resolver path.
+  call_targets: FxHashMap<usize, CallTarget>,
+  /// Bytecode register -> (its backing stack slot, element count) for
+  /// every `Instr::MakeList` this compile has scalar-replaced (proven
+  /// non-escaping via `jit::escape::analyze_one`, with no `Move` ever
+  /// reading it -- see `scalar_replace_eligible`'s own docs for exactly
+  /// what that buys). Consulted by `Instr::GetIndex`/`SetIndex` to
+  /// route to `emit_scalar_list_get`/`emit_scalar_list_set` instead of
+  /// the general, real-`Obj::List`-assuming fast path. A register is
+  /// NEVER removed from this map once scalar-replaced (the eligibility
+  /// check's "no `Move` ever reads it" requirement means nothing else
+  /// could ever need to reuse this register for something unrelated
+  /// that would make a STALE entry here observably wrong).
+  scalar_lists: FxHashMap<u8, (StackSlot, u8)>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -276,10 +310,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     module: &'a mut JITModule,
     helpers: &'a FxHashMap<&'static str, FuncId>,
     proto: &'a ObjFunction,
+    own_func_id: FuncId,
     code_len: usize,
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
-    self_field_slots: FxHashMap<String, u16>,
+    facts: CompileFacts,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let type_facts = typeflow::analyze(proto, None, None);
@@ -310,7 +345,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       current_ip: 0,
       liveness,
       merge_points: Vec::new(),
-      self_field_slots,
+      self_field_slots: facts.self_field_slots,
+      own_func_id,
+      self_class_bits: facts.self_class_bits,
+      call_targets: facts.call_targets,
+      scalar_lists: FxHashMap::default(),
     }
   }
 
@@ -791,6 +830,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn store_reg(&mut self, r: u8, v: IrValue) {
     self.fb.def_var(self.reg_vars[r as usize], v);
     self.reg_cache[r as usize] = RegCache::Dirty;
+    // A register the bytecode compiler reused for a DIFFERENT, later
+    // local variable is no longer the scalar-replaced allocation
+    // `scalar_lists` might still be tracking it as -- see that field's
+    // own docs. `scalar_replace_eligible`'s "no `Move` ever reads it"
+    // requirement means nothing SAFE could have relied on this entry
+    // surviving past its own last real use anyway, so removing it
+    // unconditionally on any ordinary write is always correct, not
+    // just defensive.
+    self.scalar_lists.remove(&r);
   }
 
   /// Writes real `VM::registers` memory for every register that's both
@@ -1030,6 +1078,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // for every helper-backed instruction uniformly.
     if let Some(dst) = typeflow::any_dst(&self.proto.chunk.code[self.current_ip]) {
       self.reg_cache[dst as usize] = RegCache::Stale;
+      // Same reasoning as `store_reg`'s identical line: this register
+      // is being freshly (re)defined, by a DIFFERENT mechanism than
+      // `store_reg` but just as much a real write -- any stale
+      // `scalar_lists` entry for it needs to go.
+      self.scalar_lists.remove(&dst);
     }
     result
   }
@@ -1184,6 +1237,339 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+  }
+
+  /// `Instr::Call`'s PROVEN self-recursive fast path (`jit::CallTarget
+  /// ::SelfRecursive`, from `VM::resolve_call_targets`'s use of
+  /// `escape::self_reference_facts`): no runtime guard at all, since
+  /// there is nothing left to misidentify -- the callee register's
+  /// VALUE is never even read here, only its bytecode INDEX (needed for
+  /// `new_base`'s frame-layout math). Reuses `self.closure_param` (this
+  /// invocation's own closure, already held stable for as long as it's
+  /// running -- see `VM::ensure_stable_for_compiled_entry`'s own docs on
+  /// why that stability guarantee needs no re-establishing for a value
+  /// that's already the CURRENT frame's own closure) as the callee, and
+  /// a genuine relocation-resolved direct `call` to `own_func_id` --
+  /// NOT `call_indirect` on a runtime-loaded pointer -- as the actual
+  /// call instruction: `cranelift_module` resolves the target address
+  /// at link time, so there's no pointer load, no indirect-branch
+  /// misprediction risk, and no `zuri_jit_call_prepare` FFI round trip
+  /// at all on the common (native call stack not exhausted) path.
+  ///
+  /// Still needs `zuri_jit_direct_call_prepare` for the frame-setup
+  /// work itself (`VM::setup_closure_call`, which can resize/reallocate
+  /// `VM::registers` and therefore genuinely needs the same flush/
+  /// refresh bracketing as any other helper call) and the depth check
+  /// (native call-stack depth is a real resource `Instr::Call`
+  /// recursion has to respect even when the target is statically
+  /// known) -- this skips the RESOLVER, not frame setup.
+  fn emit_self_call(&mut self, dst: u8, func: u8, num_args: u8) {
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+    let num_args_i = self.idx(num_args);
+    let dst_i = self.idx(dst);
+    let closure_bits = self.closure_param;
+
+    let ok = self.call_helper(
+      "zuri_jit_direct_call_prepare",
+      &[vm_p, closure_bits, new_base, num_args_i, dst_i],
+    );
+    self.refresh_regs();
+    let zero = self.i64c(0);
+    let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
+
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
+
+    // No snapshot/restore needed around this split (unlike
+    // `emit_known_call`/`emit_self_invoke`, both of which guard BEFORE
+    // their first helper call): the ONE helper call above runs
+    // UNCONDITIONALLY, before either branch, so it's already flushed
+    // whatever was live-and-dirty on BOTH paths -- exactly
+    // `emit_fast_call`'s own proven-safe shape, just with a leaner
+    // prepare helper. See `restore_dirty_from_snapshot`'s own docs for
+    // the bug class this reasoning has to hold up against.
+    self.fb.switch_to_block(fast_block);
+    let func_ref = self
+      .module
+      .declare_func_in_func(self.own_func_id, self.fb.func);
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    self.flush_live(self.current_ip);
+    let call = self
+      .fb
+      .ins()
+      .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+    let ret_bits = self.fb.inst_results(call)[0];
+    self.mark_stale_live(self.current_ip);
+    self.refresh_regs();
+    self.call_checked(
+      "zuri_jit_call_finish",
+      &[vm_p, base, dst_i, new_base, ret_bits],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let func_i = self.idx(func);
+    self.call_checked("zuri_jit_call", &[vm_p, base, func_i, num_args_i, dst_i]);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
+  /// `Instr::Call`'s PROVEN-but-reassignable fast path (`jit::CallTarget
+  /// ::Known`, from `VM::resolve_call_targets`'s use of `escape::
+  /// global_ref_facts`): the callee register is proven to hold an
+  /// UNMODIFIED read of some OTHER global name that, at THIS function's
+  /// OWN compile time, already resolved to a different, already-
+  /// compiled function -- but unlike self-recursion, that global
+  /// binding could still be reassigned before this exact call site
+  /// actually runs, so a cheap value-identity guard against the
+  /// CURRENT register contents comes first. `entry` is baked as a raw
+  /// address constant -- sound because `CompiledFunction`'s own docs
+  /// guarantee compiled code is never unloaded or recompiled once
+  /// produced, so this address stays valid for the rest of the process.
+  /// On a guard miss (or the same depth-exhausted case `emit_self_call`
+  /// handles), falls all the way back to the fully general
+  /// `zuri_jit_call` slow helper -- exactly `emit_fast_call`'s own slow
+  /// path, since a miss here means "let the general path re-resolve
+  /// whatever this actually is right now," not "try again with stale
+  /// information."
+  ///
+  /// Guards BEFORE its first helper call (unlike `emit_self_call`), so
+  /// -- per `restore_dirty_from_snapshot`'s own docs -- this needs the
+  /// snapshot/reset discipline `emit_self_get_field`/`emit_list_get_index`
+  /// already established: two INDEPENDENT call sites
+  /// (`zuri_jit_direct_call_prepare` on the guard-pass path,
+  /// `zuri_jit_call` on the guard-fail path) sit in mutually exclusive
+  /// branches, so `self.reg_cache` is reset to the pre-branch snapshot
+  /// before generating the slow path, or its `flush_live` would
+  /// silently skip a store the OTHER (never-taken-at-runtime-for-this-
+  /// compile) branch's bookkeeping already "used up."
+  fn emit_known_call(&mut self, dst: u8, func: u8, num_args: u8, entry: usize, guard_bits: u64) {
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let callee_val = self.load_reg(func);
+    let target = self.u64c(guard_bits);
+    let is_hit = self.fb.ins().icmp(IntCC::Equal, callee_val, target);
+    let snapshot = self.snapshot_reg_cache();
+
+    let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+    let num_args_i = self.idx(num_args);
+    let dst_i = self.idx(dst);
+
+    let try_direct_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let fast_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_hit, try_direct_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(try_direct_block);
+    let ok = self.call_helper(
+      "zuri_jit_direct_call_prepare",
+      &[vm_p, callee_val, new_base, num_args_i, dst_i],
+    );
+    self.refresh_regs();
+    let zero = self.i64c(0);
+    let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
+    self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let entry_addr = self.u64c(entry as u64);
+    let sig = self.entry_sig_ref();
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    self.flush_live(self.current_ip);
+    let call = self
+      .fb
+      .ins()
+      .call_indirect(sig, entry_addr, &[vm_p, new_base, callee_val, neg1]);
+    let ret_bits = self.fb.inst_results(call)[0];
+    self.mark_stale_live(self.current_ip);
+    self.refresh_regs();
+    self.call_checked(
+      "zuri_jit_call_finish",
+      &[vm_p, base, dst_i, new_base, ret_bits],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.reg_cache = snapshot.clone();
+    self.fb.switch_to_block(slow_block);
+    let func_i = self.idx(func);
+    self.call_checked("zuri_jit_call", &[vm_p, base, func_i, num_args_i, dst_i]);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// `Instr::Invoke`'s eligibility check for `emit_self_invoke`: the
+  /// invoked method's name must equal THIS function's own name AND
+  /// `VM::resolve_self_class` must have proven `proto` owns that method
+  /// on its own class (`self.self_class_bits`, resolved once ahead of
+  /// compilation). Resolves the name via `proto.chunk.constants`
+  /// directly -- a compile-time lookup, like `self_field_slot`'s own --
+  /// never hands the name to generated code.
+  fn self_invoke_target(&self, method_const: u16) -> Option<(u64, u64)> {
+    let (class_bits, generation) = self.self_class_bits?;
+    let name = self.proto.chunk.constants[method_const as usize];
+    if name.is_string() && name.as_str() == self.proto.name {
+      Some((class_bits, generation))
+    } else {
+      None
+    }
+  }
+
+  /// `Instr::Invoke`'s PROVEN-same-method fast path (see
+  /// `self_invoke_target`/`jit::CompileFacts::self_class_bits`). The
+  /// runtime guard is a receiver CLASS check plus a method-table-
+  /// generation check, NOT a value-identity check (unlike
+  /// `emit_known_call`): ANY receiver whose class is bit-identical to
+  /// the baked class, REGARDLESS of which register/expression it came
+  /// from (`self`, `self.left`, a local, ...), is guaranteed by
+  /// `resolve_self_class`'s proof to resolve `method_const` to this
+  /// exact compiled function -- PROVIDED the class's method table
+  /// hasn't been monkey-patched since that proof was taken (see
+  /// `VM::method_table_generation`'s own docs for why that second check
+  /// is load-bearing, not defensive-programming boilerplate). On a
+  /// guard hit, this is genuine self-recursion (same `own_func_id`, a
+  /// real relocation-resolved direct `call`), not a `Known`-style guess
+  /// at some OTHER already-compiled function.
+  ///
+  /// Same two-stage `is_obj` -> tag-check discipline as
+  /// `emit_self_get_field` (a non-`Obj::Instance` `obj` falls straight
+  /// to the general path rather than being assumed away), and the same
+  /// snapshot/reset discipline as `emit_known_call` (the guard runs
+  /// before any helper call, so the guard-fail path's `zuri_jit_invoke`
+  /// and the guard-pass path's `zuri_jit_direct_call_prepare` are two
+  /// independent call sites in mutually exclusive branches).
+  fn emit_self_invoke(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+    class_bits: u64,
+    generation: u64,
+  ) {
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let receiver = self.load_reg(obj);
+    let is_obj = self.is_obj(receiver);
+    let snapshot = self.snapshot_reg_cache();
+    // Computed here, in the single entry block every later block is
+    // dominated by -- NOT inside `try_direct_block` (which is already
+    // unreachable-via-fallthrough by the time these would otherwise be
+    // needed, since Cranelift requires switching blocks before emitting
+    // further instructions once one is terminated).
+    let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
+    let num_args_i = self.idx(num_args);
+    // `1 + num_args`: the receiver the bytecode compiler already
+    // duplicated into `obj + 1` occupies the callee's own register 0
+    // ("self") -- see `Instr::Invoke`'s own doc comment in chunk.rs and
+    // `zuri_jit_invoke_prepare`'s identical `1 + num_args` convention.
+    // Passing bare `num_args` here would make `VM::setup_closure_call`
+    // treat register 0 as a MISSING positional argument and overwrite
+    // it with `nil` whenever `num_args < arity` -- exactly the "self.left
+    // on a nil" corruption this comment is here to prevent regressing.
+    let direct_num_args_i = self.i64c(num_args as i64 + 1);
+    let dst_i = self.idx(dst);
+    let closure_bits = self.closure_param;
+
+    let obj_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(receiver);
+    let tag = self.obj_tag(ptr);
+    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+    let class_check_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_instance, class_check_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(class_check_block);
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_val = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      ptr,
+      class_off,
+    );
+    let target_class = self.u64c(class_bits);
+    let class_hit = self.fb.ins().icmp(IntCC::Equal, class_val, target_class);
+    let gen_check_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(class_hit, gen_check_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(gen_check_block);
+    let cur_gen = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      vm_p,
+      METHOD_TABLE_GENERATION_OFFSET,
+    );
+    let target_gen = self.u64c(generation);
+    let gen_hit = self.fb.ins().icmp(IntCC::Equal, cur_gen, target_gen);
+    let try_direct_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(gen_hit, try_direct_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(try_direct_block);
+    let ok = self.call_helper(
+      "zuri_jit_direct_call_prepare",
+      &[vm_p, closure_bits, new_base, direct_num_args_i, dst_i],
+    );
+    self.refresh_regs();
+    let zero = self.i64c(0);
+    let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
+    let fast_block = self.fb.create_block();
+    self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let func_ref = self
+      .module
+      .declare_func_in_func(self.own_func_id, self.fb.func);
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    self.flush_live(ip);
+    let call = self
+      .fb
+      .ins()
+      .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+    let ret_bits = self.fb.inst_results(call)[0];
+    self.mark_stale_live(ip);
+    self.refresh_regs();
+    self.call_checked(
+      "zuri_jit_call_finish",
+      &[vm_p, base, dst_i, new_base, ret_bits],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.reg_cache = snapshot.clone();
+    self.fb.switch_to_block(slow_block);
+    let obj_i = self.idx(obj);
+    let name = self.bake_const(method_const);
+    self.call_checked(
+      "zuri_jit_invoke",
+      &[vm_p, base, obj_i, num_args_i, dst_i, name],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `Instr::GetGlobal`'s inline-cache-style fast path: once this exact
@@ -1685,6 +2071,308 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(done_block);
     self.restore_dirty_from_snapshot(&snapshot, obj);
+  }
+
+  /// Bounded so a single scalar-replaced allocation can't blow up this
+  /// compiled function's own native stack usage for a pathological
+  /// literal -- matches the spirit (not the letter) of similar caps
+  /// elsewhere in this file. Ordinary code overwhelmingly writes small,
+  /// fixed-size list literals; anything bigger just falls through to
+  /// the general, heap-allocating path unchanged.
+  const MAX_SCALAR_LIST_LEN: u8 = 16;
+
+  /// Is `Instr::MakeList{dst, start: _, count}` at `alloc_ip` safe to
+  /// scalar-replace -- keep its `count` elements as ordinary `Value`s
+  /// in a Cranelift stack slot (see `emit_scalar_make_list`) instead of
+  /// a real heap `Obj::List`, with `dst` never materialized as a
+  /// tagged `Value` at all?
+  ///
+  /// Three independent conditions, all required:
+  /// - `jit::escape::analyze_one` proves `dst` never escapes this
+  ///   function (see that module's docs for exactly what's whitelisted
+  ///   -- `GetIndex`/`SetIndex`'s container position already is, with
+  ///   no extension needed here).
+  /// - No `Instr::Move` ANYWHERE in this function ever reads `dst`.
+  ///   `analyze_one`'s own dataflow WOULD correctly follow a `Move`
+  ///   (propagating the "doesn't escape" proof to whatever register it
+  ///   copies into), but this compiler's OWN codegen-time tracking
+  ///   (`scalar_lists`) does NOT independently replicate that
+  ///   propagation -- deliberately: reimplementing the same
+  ///   reachability/aliasing logic a second time, in a completely
+  ///   separate piece of code, is exactly the kind of two-sources-of-
+  ///   truth setup that has ALREADY produced one real, silent-
+  ///   corruption bug this session (see `emit_list_get_index`'s own
+  ///   commit history). Ruling out `Move` entirely, unconditionally
+  ///   (not just on paths reachable from `alloc_ip`), is a safe, cheap
+  ///   over-approximation instead: `scalar_lists` then only ever needs
+  ///   to answer for the EXACT register `analyze_one` already reasoned
+  ///   about, with no second analysis to keep in sync. Real code
+  ///   essentially never copies a freshly-built temporary list into
+  ///   another register before indexing it, so this costs nothing in
+  ///   practice.
+  /// - `self.speculative_params`/`self.speculative_regs` are BOTH
+  ///   `None`, i.e. this compile has no specialized/speculative body at
+  ///   all. This is a confirmed-necessary, temporary safety gate, NOT
+  ///   a property scalar replacement itself needs: a real, reproduced
+  ///   data-corruption bug exists in `emit_speculative_guard`'s (or
+  ///   `emit_entry_dispatch`'s) interaction with a `GetIndex` whose
+  ///   index isn't a compile-time constant -- a value read via a
+  ///   variable list index, once returned from a function that later
+  ///   gets a specialized body, silently freezes at a stale value on
+  ///   every subsequent call. Reproduced identically with scalar
+  ///   replacement disabled entirely (a `Move`-forced real `Obj::List`
+  ///   hits the exact same corruption), so this is a PRE-EXISTING bug
+  ///   in the speculation machinery itself, not in this feature -- but
+  ///   until it's root-caused and fixed there, scalar-replacing a list
+  ///   whose reads could feed a speculatively-guarded register would
+  ///   inherit the same hazard. Revisit removing this condition once
+  ///   that bug is fixed.
+  fn scalar_replace_eligible(&self, alloc_ip: usize, dst: u8, count: u8) -> bool {
+    if self.speculative_params.is_some() || self.speculative_regs.is_some() {
+      return false;
+    }
+    if count == 0 || count > Self::MAX_SCALAR_LIST_LEN {
+      return false;
+    }
+    for instr in &self.proto.chunk.code {
+      if let Instr::Move { src, .. } = instr
+        && *src == dst
+      {
+        return false;
+      }
+    }
+    !escape::analyze_one(self.proto, alloc_ip, None).escapes
+  }
+
+  /// `Instr::MakeList{dst, start, count}`'s scalar-replaced fast path
+  /// (see `scalar_replace_eligible`): copies the `count` source
+  /// registers into a fresh Cranelift stack slot -- ordinary `Value`s,
+  /// never wrapped in a heap `Obj::List` -- records `dst -> (slot,
+  /// count)` in `scalar_lists` for `Instr::GetIndex`/`SetIndex` to
+  /// consult, and registers the slot as a GC root.
+  ///
+  /// Registration happens LAST, strictly after every element slot has
+  /// already been written: `VM::jit_scalar_roots`'s whole soundness
+  /// argument depends on every slot a GC walk might visit already
+  /// holding a valid `Value` (see that field's own docs) -- an
+  /// uninitialized stack slot is neither `nil` nor any other valid tag
+  /// pattern, and a GC safepoint CAN fire between two ordinary
+  /// instructions (a nested call inside one of the source expressions,
+  /// for instance), so there is a real window here to get right, not a
+  /// theoretical one.
+  fn emit_scalar_make_list(&mut self, dst: u8, start: u8, count: u8) {
+    let slot = self.fb.create_sized_stack_slot(StackSlotData::new(
+      StackSlotKind::ExplicitSlot,
+      count as u32 * 8,
+      3,
+    ));
+    for i in 0..count {
+      let v = self.load_reg(start + i);
+      self
+        .fb
+        .ins()
+        .stack_store(types::I64, v, slot, (i as i32) * 8);
+    }
+    let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+    let count_c = self.u64c(count as u64);
+    self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+    self.scalar_lists.insert(dst, (slot, count));
+  }
+
+  /// `Instr::GetIndex`'s fast path when `obj` is a scalar-replaced
+  /// list (`self.scalar_lists`) -- the SAME bounds-check shape as
+  /// `emit_list_get_index` (negative-index wraparound, integer-value
+  /// round-trip check), just against a COMPILE-TIME-KNOWN `count` and
+  /// a directly-addressable stack slot instead of a runtime-resolved
+  /// `Obj::List`: no `is_obj`/tag check at all, since `obj` being a key
+  /// in `scalar_lists` already proves what it is.
+  ///
+  /// Still needs `snapshot_reg_cache`/`restore_dirty_from_snapshot`
+  /// even though there's only ONE `call_helper` site here (unlike
+  /// `emit_list_get_index`'s two) -- the relevant condition for needing
+  /// this isn't "how many call_helper sites in this instruction," it's
+  /// "does this instruction have a call_helper site that ONLY runs on
+  /// a CONDITIONAL branch." `slow_block`'s `flush_live` mutates
+  /// `reg_cache` (Dirty -> Clean) the moment its code is GENERATED,
+  /// regardless of whether the runtime path taken is fast or slow; if
+  /// left unrestored, a LATER instruction's own `flush_live` -- even a
+  /// completely unrelated one several instructions later -- would see
+  /// a register as already-Clean and skip flushing it, even on a
+  /// runtime execution where THIS instruction actually took its fast
+  /// path (which never flushes anything) and that register genuinely
+  /// is still Dirty. Confirmed by direct reproduction: `tmp[0][0] +
+  /// tmp[1][1] + tmp[2][0]` (three separate scalar-list `GetIndex`
+  /// sites reading the same `tmp` in one expression) silently returned
+  /// a stale value from an EARLIER site's fast-path store once a
+  /// LATER site's slow-block flush was skipped this way.
+  fn emit_scalar_list_get(&mut self, dst: u8, slot: StackSlot, count: u8, iidx: u8) {
+    let idx_val = self.load_reg(iidx);
+    let is_num = self.is_number(idx_val);
+    let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+    let snapshot = self.snapshot_reg_cache();
+
+    let checked_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_num, checked_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(checked_block);
+    let f = self.to_f64(idx_val);
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let is_int = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::Equal,
+      f,
+      roundtrip,
+    );
+
+    let len = self.i64c(count as i64);
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+    let wrapped = self.fb.ins().iadd(as_int, len);
+    let i_adj = self.fb.ins().select(is_neg, wrapped, as_int);
+    let ge_zero = self
+      .fb
+      .ins()
+      .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
+    let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
+    let in_bounds = self.fb.ins().band(ge_zero, lt_len);
+    let ok = self.fb.ins().band(is_int, in_bounds);
+
+    let fast_block = self.fb.create_block();
+    self.fb.ins().brif(ok, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let byte_off = self.fb.ins().imul_imm_s(i_adj, 8);
+    let elem_addr = self.fb.ins().iadd(addr, byte_off);
+    let v = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      elem_addr,
+      0,
+    );
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    // See this function's own docs: undoes `checked_block`'s (never
+    // actually flushing anything, so a no-op here) and, more
+    // importantly, whatever an EARLIER instruction's own conditional
+    // `call_helper` site left behind, before `slow_block`'s OWN
+    // `flush_live` runs -- otherwise it could see a register as
+    // already-Clean from a branch that never actually executed.
+    self.reg_cache = snapshot.clone();
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let count_c = self.u64c(count as u64);
+    let idx_i = self.idx(iidx);
+    self.call_checked(
+      "zuri_jit_scalar_get_index",
+      &[self.vm_param, base, dst_i, addr, count_c, idx_i],
+    );
+    // `zuri_jit_scalar_get_index` writes `dst` DIRECTLY to `VM::
+    // registers`, bypassing `store_reg`/`reg_vars` entirely -- matches
+    // `emit_list_get_index`'s identical slow path, and for the exact
+    // same reason: `call_checked`'s automatic `Stale` mark alone isn't
+    // enough here, since `fast_block` DID call `store_reg` (a real
+    // `def_var`), so without giving THIS block its own `def_var` too,
+    // Cranelift's SSA merge at `done_block` would resolve `dst`'s
+    // `Variable` to whatever dominating definition existed BEFORE this
+    // instruction on this path -- silently stale, not merely absent.
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// `Instr::SetIndex`'s scalar-replaced fast path -- the write-side
+  /// counterpart of `emit_scalar_list_get`; see its own docs for the
+  /// shared bounds-check shape and the general reason a snapshot/
+  /// restore is needed around ANY conditionally-reached `call_helper`
+  /// site, not just ones with two or more sites in one instruction.
+  ///
+  /// `restore_dirty_from_snapshot`'s excluded register is normally
+  /// "this instruction's own freshly-redefined `dst`" (e.g.
+  /// `emit_list_set_index` excludes `obj`, since a SET's container
+  /// register is the one at risk of caching a since-relocated pointer
+  /// that specifically needs to stay `Stale`, not be trusted). There is
+  /// no analogous register here at all: `obj`/the list itself is never
+  /// a real `Value` in any register in the first place (it's scalar-
+  /// replaced), so `src` is passed purely to satisfy the signature --
+  /// its own value was already captured into `src_val` before either
+  /// branch, so which way its `reg_cache` entry ends up doesn't affect
+  /// correctness, only whether a later read of it costs one redundant
+  /// reload.
+  fn emit_scalar_list_set(&mut self, slot: StackSlot, count: u8, iidx: u8, src: u8) {
+    let idx_val = self.load_reg(iidx);
+    let src_val = self.load_reg(src);
+    let is_num = self.is_number(idx_val);
+    let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+    let snapshot = self.snapshot_reg_cache();
+
+    let checked_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_num, checked_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(checked_block);
+    let f = self.to_f64(idx_val);
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let is_int = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::Equal,
+      f,
+      roundtrip,
+    );
+
+    let len = self.i64c(count as i64);
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+    let wrapped = self.fb.ins().iadd(as_int, len);
+    let i_adj = self.fb.ins().select(is_neg, wrapped, as_int);
+    let ge_zero = self
+      .fb
+      .ins()
+      .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
+    let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
+    let in_bounds = self.fb.ins().band(ge_zero, lt_len);
+    let ok = self.fb.ins().band(is_int, in_bounds);
+
+    let fast_block = self.fb.create_block();
+    self.fb.ins().brif(ok, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let byte_off = self.fb.ins().imul_imm_s(i_adj, 8);
+    let elem_addr = self.fb.ins().iadd(addr, byte_off);
+    self.fb.ins().store(
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      src_val,
+      elem_addr,
+      0,
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.reg_cache = snapshot.clone();
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let count_c = self.u64c(count as u64);
+    let idx_i = self.idx(iidx);
+    let src_i = self.idx(src);
+    self.call_checked(
+      "zuri_jit_scalar_set_index",
+      &[self.vm_param, base, addr, count_c, idx_i, src_i],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, src);
   }
 
   /// `Instr::SetGlobal`/`Instr::AssignGlobal`'s inline-cache-style fast
@@ -2367,20 +3055,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         num_args,
       } => {
         self.emit_safepoint();
-        let base = self.base_param;
-        let vm_p = self.vm_param;
-        let func_i = self.idx(func);
-        let num_args_i = self.idx(num_args);
-        let dst_i = self.idx(dst);
-        let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
-        self.emit_fast_call(
-          "zuri_jit_call_prepare",
-          &[vm_p, base, func_i, num_args_i, dst_i],
-          new_base,
-          dst,
-          "zuri_jit_call",
-          &[vm_p, base, func_i, num_args_i, dst_i],
-        );
+        match self.call_targets.get(&ip).copied() {
+          Some(CallTarget::SelfRecursive) => self.emit_self_call(dst, func, num_args),
+          Some(CallTarget::Known { entry, guard_bits }) => {
+            self.emit_known_call(dst, func, num_args, entry, guard_bits)
+          },
+          None => {
+            let base = self.base_param;
+            let vm_p = self.vm_param;
+            let func_i = self.idx(func);
+            let num_args_i = self.idx(num_args);
+            let dst_i = self.idx(dst);
+            let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+            self.emit_fast_call(
+              "zuri_jit_call_prepare",
+              &[vm_p, base, func_i, num_args_i, dst_i],
+              new_base,
+              dst,
+              "zuri_jit_call",
+              &[vm_p, base, func_i, num_args_i, dst_i],
+            );
+          },
+        }
         false
       },
       Instr::Return { src } => {
@@ -2450,6 +3146,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
 
       Instr::MakeList { dst, start, count } => {
+        if self.scalar_replace_eligible(ip, dst, count) {
+          self.emit_scalar_make_list(dst, start, count);
+          return false;
+        }
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let start_i = self.idx(start);
@@ -2600,6 +3300,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         num_args,
       } => {
         self.emit_safepoint();
+        if let Some((class_bits, generation)) = self.self_invoke_target(method_const) {
+          self.emit_self_invoke(ip, dst, obj, method_const, num_args, class_bits, generation);
+          return false;
+        }
         let base = self.base_param;
         let vm_p = self.vm_param;
         let obj_i = self.idx(obj);
@@ -2701,6 +3405,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         obj,
         idx: iidx,
       } => {
+        if let Some(&(slot, count)) = self.scalar_lists.get(&obj) {
+          self.emit_scalar_list_get(dst, slot, count, iidx);
+          return false;
+        }
         self.emit_list_get_index(dst, obj, iidx);
         false
       },
@@ -2709,6 +3417,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         idx: iidx,
         src,
       } => {
+        if let Some(&(slot, count)) = self.scalar_lists.get(&obj) {
+          self.emit_scalar_list_set(slot, count, iidx, src);
+          return false;
+        }
         self.emit_list_set_index(obj, iidx, src);
         false
       },
