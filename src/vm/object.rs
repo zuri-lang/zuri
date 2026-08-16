@@ -213,6 +213,22 @@ pub fn obj_payload_offset() -> usize {
   })
 }
 
+/// Byte offset from a `*const Obj` known (via `obj_tag`) to be
+/// `Obj::Instance` to that instance's `fields` slice base pointer --
+/// `obj_payload_offset()` (tag -> `ObjInstance` start) plus
+/// `ObjInstance`/`FieldStorage`'s own `#[repr(C)]`-guaranteed field
+/// offsets, unlike `obj_payload_offset()` itself these don't need a
+/// runtime probe: `ObjInstance`/`FieldStorage` are plain `#[repr(C)]`
+/// structs (not a tagged union), so `offset_of!` on them is already a
+/// real compile-time constant. Consumed by `jit::codegen`'s
+/// self-field-access fast path to reach a proven-safe field directly,
+/// with no `zuri_jit_get_field`/`zuri_jit_set_field` call at all.
+pub fn obj_instance_fields_ptr_offset() -> usize {
+  obj_payload_offset()
+    + std::mem::offset_of!(ObjInstance, fields)
+    + std::mem::offset_of!(FieldStorage, ptr)
+}
+
 #[cfg(test)]
 mod obj_repr_tests {
   use super::*;

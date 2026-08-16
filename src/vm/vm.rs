@@ -827,6 +827,60 @@ impl VM {
     self.jit_compiler.as_mut().unwrap()
   }
 
+  /// Resolves the live `ObjClass` a method's `self` (register 0) is
+  /// guaranteed to be an instance of, then maps every field name that's
+  /// safe to read/write on it directly (no `BoundMethod`-wrapping risk
+  /// -- see `jit::escape::ClassFieldSafety`'s own docs) to its slot
+  /// index. `None` for a plain (non-method) function, or if resolution
+  /// can't prove soundness.
+  ///
+  /// Field slot indices are stable across inheritance: `Instr::Class`
+  /// clones the superclass's `field_slots`/`field_count` wholesale, and
+  /// `Instr::DeclareField` only ever APPENDS a genuinely new name at
+  /// the next free index, never renumbering an inherited one (see
+  /// their own bodies). So a slot resolved from the method's
+  /// DECLARING class is correct no matter which subclass `self`
+  /// actually is at runtime -- the compiled method body is shared,
+  /// unmodified, across every subclass that inherits it, and this is
+  /// exactly the same field layout the interpreter itself already
+  /// relies on for that sharing to be sound at all.
+  ///
+  /// Resolving the class by NAME (`owning_class_name`) instead of by
+  /// direct back-pointer needs one extra safety check: a global/module
+  /// binding can be REASSIGNED after the class was declared (unlike the
+  /// class OBJECT itself, which is immutable -- see
+  /// `ClassFieldSafety`'s own docs -- the NAME pointing at it isn't).
+  /// If the name no longer resolves to a class that actually owns
+  /// `proto` as one of its own methods, this returns `None` rather than
+  /// trusting a possibly-stale name -- the fast path just doesn't
+  /// apply; every `GetField`/`SetField` still works correctly through
+  /// the general helper.
+  fn resolve_self_field_slots(&self, proto: &ObjFunction) -> Option<FxHashMap<String, u16>> {
+    let class_name = proto.owning_class_name.as_ref()?;
+    let (is_root, slot) = self.resolve_global(proto.globals_module, class_name)?;
+    let class_val = self.read_resolved(proto.globals_module, is_root, slot);
+    if !class_val.is_class() {
+      return None;
+    }
+    let class = class_val.as_class();
+    let proto_ptr = proto as *const ObjFunction;
+    let owns_proto = class
+      .methods
+      .values()
+      .any(|m| m.is_closure() && std::ptr::eq(m.as_closure().function.as_func(), proto_ptr));
+    if !owns_proto {
+      return None;
+    }
+    Some(
+      class
+        .field_slots
+        .iter()
+        .filter(|(name, _)| !class.methods.contains_key(*name))
+        .map(|(name, &slot)| (name.clone(), slot))
+        .collect(),
+    )
+  }
+
   /// Builds `proto`'s IR right now (synchronously -- the only stage
   /// that touches `proto`, see `jit::background`'s module docs) and
   /// hands the result to the background compiler thread for the
@@ -839,11 +893,14 @@ impl VM {
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
     let speculative_params = self.combined_param_feedback(proto);
     let speculative_regs = self.sample_all_reg_types(proto);
+    let self_field_slots = self.resolve_self_field_slots(proto);
     let __diag_start = std::time::Instant::now();
-    let pending = match self
-      .jit_engine()
-      .build_ir(proto, speculative_params, speculative_regs)
-    {
+    let pending = match self.jit_engine().build_ir(
+      proto,
+      speculative_params,
+      speculative_regs,
+      self_field_slots,
+    ) {
       Ok(pending) => pending,
       Err(reason) => {
         if crate::jit::log_enabled() {

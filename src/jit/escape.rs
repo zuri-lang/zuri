@@ -543,7 +543,11 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
     // `obj` (container) and `idx` (compared via `Value::equals`, same
     // `ptr::eq` guarantee as `Eq`/`Neq` above) are safe; `src` escapes.
     Instr::GetIndex { .. } => vec![],
-    Instr::SetIndex { obj: _, idx: _, src } => vec![src],
+    Instr::SetIndex {
+      obj: _,
+      idx: _,
+      src,
+    } => vec![src],
     Instr::GetSlice { obj, lo, hi, .. } => vec![obj, lo, hi],
     Instr::MakeRange { lower, upper, .. } => vec![lower, upper],
 
@@ -684,8 +688,8 @@ pub fn analyze_one(
     // `escaping_reads`' normal `vec![obj]` for this one instruction
     // shape. Everything else falls through to Phase 1's plain
     // `escaping_reads`.
-    let is_self_get_field = matches!(instr, Instr::GetField { obj, .. } if *obj == 0)
-      && proto.is_method;
+    let is_self_get_field =
+      matches!(instr, Instr::GetField { obj, .. } if *obj == 0) && proto.is_method;
     if let Instr::Call { func, num_args, .. } = *instr
       && self_ref[ip].get(func)
     {
@@ -875,8 +879,8 @@ fn analyze_param_escape(
     // -- conservatively escapes, same as an ordinary unresolved call.
     // `GetField` on `self` is handled exactly like `analyze_one`'s own
     // -- see `self_getfield_is_safe`'s own docs.
-    let is_self_get_field = matches!(instr, Instr::GetField { obj, .. } if *obj == 0)
-      && proto.is_method;
+    let is_self_get_field =
+      matches!(instr, Instr::GetField { obj, .. } if *obj == 0) && proto.is_method;
     if let Instr::Call { func, num_args, .. } = *instr
       && self_ref[ip].get(func)
     {
@@ -1173,7 +1177,10 @@ mod tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 6);
-    assert!(!analyze_one(&f, 0, None).escapes, "r1 is never read by the second Call above -- sanity check");
+    assert!(
+      !analyze_one(&f, 0, None).escapes,
+      "r1 is never read by the second Call above -- sanity check"
+    );
 
     let code2 = vec![
       Instr::Call {
@@ -1263,12 +1270,9 @@ mod tests {
         func: 0,
         num_args: 0,
       }, // ip 0: allocation
-      Instr::JmpIfFalse {
-        cond: 9,
-        offset: 1,
-      }, // ip 1: false -> ip 3, true (fallthrough) -> ip 2
-      Instr::Return { src: 1 }, // ip 2: escaping path
-      Instr::Return { src: 9 }, // ip 3: non-escaping path
+      Instr::JmpIfFalse { cond: 9, offset: 1 }, // ip 1: false -> ip 3, true (fallthrough) -> ip 2
+      Instr::Return { src: 1 },                 // ip 2: escaping path
+      Instr::Return { src: 9 },                 // ip 3: non-escaping path
     ];
     let f = make_func(code, vec![], 10);
     assert!(analyze_one(&f, 0, None).escapes);
@@ -1285,12 +1289,9 @@ mod tests {
         func: 0,
         num_args: 0,
       }, // ip 0: allocation
-      Instr::JmpIfFalse {
-        cond: 9,
-        offset: 1,
-      }, // ip 1
-      Instr::Return { src: 9 }, // ip 2
-      Instr::Return { src: 9 }, // ip 3
+      Instr::JmpIfFalse { cond: 9, offset: 1 }, // ip 1
+      Instr::Return { src: 9 },                 // ip 2
+      Instr::Return { src: 9 },                 // ip 3
     ];
     let f = make_func(code, vec![], 10);
     assert!(!analyze_one(&f, 0, None).escapes);
@@ -1308,13 +1309,10 @@ mod tests {
         func: 0,
         num_args: 0,
       }, // ip 0: allocation
-      Instr::JmpIfFalse {
-        cond: 9,
-        offset: 2,
-      }, // ip 1: false -> ip 4 (exit), true -> ip 2 (loop body)
-      Instr::LoadNil { dst: 2 }, // ip 2: loop body, doesn't touch r1
-      Instr::Jmp { offset: -3 }, // ip 3: back-edge to ip 1
-      Instr::Return { src: 1 }, // ip 4: exit path -- escapes
+      Instr::JmpIfFalse { cond: 9, offset: 2 }, // ip 1: false -> ip 4 (exit), true -> ip 2 (loop body)
+      Instr::LoadNil { dst: 2 },                // ip 2: loop body, doesn't touch r1
+      Instr::Jmp { offset: -3 },                // ip 3: back-edge to ip 1
+      Instr::Return { src: 1 },                 // ip 4: exit path -- escapes
     ];
     let f = make_func(code, vec![], 10);
     assert!(analyze_one(&f, 0, None).escapes);
@@ -1350,13 +1348,7 @@ mod tests {
       }, // "g" -- NOT self
       Instr::Return { src: 0 },
     ];
-    let f = make_named_func(
-      "f",
-      code,
-      vec![test_str("f"), test_str("g")],
-      2,
-      0,
-    );
+    let f = make_named_func("f", code, vec![test_str("f"), test_str("g")], 2, 0);
     let facts = self_reference_facts(&f);
     // After ip=1 (both GetGlobals have executed), r0 is definitely
     // self, r1 is definitely not.
@@ -1393,16 +1385,13 @@ mod tests {
         dst: 2,
         const_idx: 1,
       }, // ip0: 0
-      Instr::Eq { dst: 3, a: 0, b: 2 }, // ip1: n == 0
-      Instr::JmpIfFalse {
-        cond: 3,
-        offset: 2,
-      }, // ip2: false -> ip5, true -> ip3
+      Instr::Eq { dst: 3, a: 0, b: 2 },         // ip1: n == 0
+      Instr::JmpIfFalse { cond: 3, offset: 2 }, // ip2: false -> ip5, true -> ip3
       Instr::LoadConst {
         dst: 4,
         const_idx: 1,
       }, // ip3: 0
-      Instr::Return { src: 4 }, // ip4: base case, doesn't touch obj
+      Instr::Return { src: 4 },                 // ip4: base case, doesn't touch obj
       Instr::GetGlobal {
         dst: 5,
         name_const: 0,
@@ -1412,21 +1401,15 @@ mod tests {
         a: 0,
         imm_const: 1,
       }, // ip6: n - 1
-      Instr::Move { dst: 7, src: 1 }, // ip7: obj -> arg slot (func+2)
+      Instr::Move { dst: 7, src: 1 },           // ip7: obj -> arg slot (func+2)
       Instr::Call {
         dst: 8,
         func: 5,
         num_args: 2,
       }, // ip8: f(n-1, obj)
-      Instr::Return { src: 8 }, // ip9: returns the recursive result, not obj
+      Instr::Return { src: 8 },                 // ip9: returns the recursive result, not obj
     ];
-    let f = make_named_func(
-      "f",
-      code,
-      vec![test_str("f"), Value::number(0.0)],
-      9,
-      2,
-    );
+    let f = make_named_func("f", code, vec![test_str("f"), Value::number(0.0)], 9, 2);
     let summary = compute_param_summary(&f, None);
     assert_eq!(summary.param_escapes.len(), 2);
     assert!(
@@ -1448,16 +1431,13 @@ mod tests {
         dst: 2,
         const_idx: 1,
       }, // ip0: 0
-      Instr::Eq { dst: 3, a: 0, b: 2 }, // ip1: n == 0
-      Instr::JmpIfFalse {
-        cond: 3,
-        offset: 2,
-      }, // ip2
+      Instr::Eq { dst: 3, a: 0, b: 2 },         // ip1: n == 0
+      Instr::JmpIfFalse { cond: 3, offset: 2 }, // ip2
       Instr::LoadConst {
         dst: 4,
         const_idx: 1,
       }, // ip3
-      Instr::Return { src: 4 }, // ip4: base case
+      Instr::Return { src: 4 },                 // ip4: base case
       Instr::GetGlobal {
         dst: 5,
         name_const: 0,
@@ -1467,7 +1447,7 @@ mod tests {
         a: 0,
         imm_const: 1,
       }, // ip6: n - 1
-      Instr::Move { dst: 7, src: 1 }, // ip7: obj -> arg slot
+      Instr::Move { dst: 7, src: 1 },           // ip7: obj -> arg slot
       Instr::SetGlobal {
         name_const: 2,
         src: 1,
@@ -1477,16 +1457,12 @@ mod tests {
         func: 5,
         num_args: 2,
       }, // ip9: f(n-1, obj)
-      Instr::Return { src: 8 }, // ip10
+      Instr::Return { src: 8 },                 // ip10
     ];
     let f = make_named_func(
       "f",
       code,
-      vec![
-        test_str("f"),
-        Value::number(0.0),
-        test_str("leaked"),
-      ],
+      vec![test_str("f"), Value::number(0.0), test_str("leaked")],
       9,
       2,
     );
@@ -1510,7 +1486,7 @@ mod tests {
         func: 1,
         num_args: 1,
       }, // ip2: other(param)
-      Instr::Return { src: 3 }, // ip3
+      Instr::Return { src: 3 },       // ip3
     ];
     let f = make_named_func("f", code, vec![test_str("other")], 4, 1);
     let summary = compute_param_summary(&f, None);
@@ -1545,7 +1521,7 @@ mod tests {
         func: 2,
         num_args: 1,
       }, // ip3: f(obj) -- self-recursive
-      Instr::Return { src: 4 }, // ip4: returns the recursive result, not obj
+      Instr::Return { src: 4 },       // ip4: returns the recursive result, not obj
     ];
     let f = make_named_func("f", code, vec![test_str("f")], 6, 1);
     assert!(!analyze_one(&f, 0, None).escapes);
@@ -1555,10 +1531,7 @@ mod tests {
   // GetField-on-self resolution (ClassFieldSafety).
   // -----------------------------------------------------------------
 
-  fn make_class(
-    field_names: &[&str],
-    method_names: &[&str],
-  ) -> crate::vm::object::ObjClass {
+  fn make_class(field_names: &[&str], method_names: &[&str]) -> crate::vm::object::ObjClass {
     let mut field_slots = rustc_hash::FxHashMap::default();
     for (i, name) in field_names.iter().enumerate() {
       field_slots.insert(name.to_string(), i as u16);

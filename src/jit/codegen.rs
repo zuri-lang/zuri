@@ -81,6 +81,7 @@ pub fn compile(
   proto: &ObjFunction,
   speculative_params: Option<u64>,
   speculative_regs: Option<typeflow::SpeculativeRegs>,
+  self_field_slots: Option<FxHashMap<String, u16>>,
 ) -> Result<FxHashMap<usize, i32>, String> {
   // Exception-handling bytecode is never compiled -- see this crate's
   // `jit` module docs on why "bail to the interpreter" is implemented
@@ -118,6 +119,7 @@ pub fn compile(
     code_len,
     speculative_params,
     speculative_regs,
+    self_field_slots.unwrap_or_default(),
   );
   fc.run()
 }
@@ -252,6 +254,16 @@ struct FuncCompiler<'a, 'b> {
   /// `osr_ids` is known (needs it) and before either body is populated
   /// (both need it, unchanged).
   merge_points: Vec<bool>,
+  /// Field name -> slot index, for every field on `self`'s (register
+  /// 0's) class that's safe to read/write directly, with no
+  /// `BoundMethod`-wrapping risk -- resolved once, before compilation
+  /// starts, by `VM::resolve_self_field_slots` (which has the VM access
+  /// this module deliberately never touches). Empty (not `None`) for a
+  /// plain function or when resolution couldn't prove anything safe --
+  /// `Instr::GetField`/`SetField` on `self` just falls through to the
+  /// general helper path in that case, identical to before this field
+  /// existed.
+  self_field_slots: FxHashMap<String, u16>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -263,6 +275,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     code_len: usize,
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
+    self_field_slots: FxHashMap<String, u16>,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let type_facts = typeflow::analyze(proto, None, None);
@@ -292,6 +305,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       current_ip: 0,
       liveness,
       merge_points: Vec::new(),
+      self_field_slots,
     }
   }
 
@@ -1240,6 +1254,174 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.mark_stale_live(ip);
   }
 
+  /// `Instr::GetField`/`SetField`'s self-field fast-path eligibility
+  /// check: `obj` must be register 0 (`self`) AND the field name must
+  /// be one `VM::resolve_self_field_slots` proved safe on this method's
+  /// own class (see that function's own docs for exactly what's
+  /// proven). Resolves the name via `proto.chunk.constants` directly --
+  /// a compile-time lookup, not `bake_const`'s runtime-immediate one --
+  /// since this only needs to know the STRING to check the map, never
+  /// hands the name itself to generated code.
+  fn self_field_slot(&self, obj: u8, name_const: u16) -> Option<u16> {
+    if obj != 0 {
+      return None;
+    }
+    let name = self.proto.chunk.constants[name_const as usize];
+    self.self_field_slots.get(name.as_str()).copied()
+  }
+
+  /// `self.field` read fast path for a field PROVEN (see
+  /// `self_field_slot`) to live at a fixed slot on `self`'s own class,
+  /// with no `BoundMethod`-wrapping risk. No helper call, no `RefCell`
+  /// borrow, no hashmap probe on the common path: a direct load at
+  /// `object::obj_instance_fields_ptr_offset()` (fixed since
+  /// `ObjInstance`/`FieldStorage` are `#[repr(C)]`) plus `slot * 8`.
+  /// Falls back to the ordinary `zuri_jit_get_field` helper on the
+  /// defensive (should be unreachable in practice -- a method's `self`
+  /// is always the instance it was invoked on -- but checked rather
+  /// than assumed) case that register 0 doesn't actually hold an
+  /// `Obj::Instance` right now.
+  ///
+  /// Follows `emit_binary_numeric_guarded`'s exact snapshot/restore
+  /// discipline around the fast/slow split -- see
+  /// `restore_dirty_from_snapshot`'s own docs for the real bug class
+  /// that protects against (Cranelift compiles both arms unconditionally,
+  /// so the slow arm's `call_checked` would otherwise corrupt this
+  /// compiler's OWN compile-time liveness bookkeeping for registers this
+  /// instruction never touches, even when the slow arm never runs at
+  /// runtime).
+  fn emit_self_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, slot: u16) {
+    let self_val = self.load_reg(obj);
+    let is_obj = self.is_obj(self_val);
+    let snapshot = self.snapshot_reg_cache();
+
+    let obj_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+    // `ptr`/`tag` are only ever computed/dereferenced INSIDE this
+    // block, proven reachable only when `is_obj` was true -- see
+    // `is_obj`'s own docs. Computing either unconditionally (e.g. via
+    // a plain boolean AND instead of a real branch) would mean
+    // dereferencing a masked-bits "pointer" for a nil/bool/number
+    // value, which is NOT a valid address and can fault.
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(self_val);
+    let tag = self.obj_tag(ptr);
+    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+    let fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_instance, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    let v = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      fields_ptr,
+      (slot as i32) * 8,
+    );
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let obj_i = self.idx(obj);
+    let name = self.bake_const(name_const);
+    let func_ptr = self.func_ptr_const();
+    let ip_c = self.u64c(ip as u64);
+    self.call_checked(
+      "zuri_jit_get_field",
+      &[self.vm_param, base, dst_i, obj_i, name, func_ptr, ip_c],
+    );
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// `self.field = ...` write fast path -- the write-side counterpart
+  /// of `emit_self_get_field`. Writes no VM register at all (only
+  /// reads `src`), so there's no `dst` for `restore_dirty_from_snapshot`
+  /// to skip; `obj` (register 0, `self`) is passed instead -- always
+  /// safe to exclude regardless, since neither arm ever changes ITS
+  /// own cache state (see that function's own docs on why any exclusion
+  /// choice is sound, just possibly minutely suboptimal).
+  fn emit_self_set_field(&mut self, ip: usize, obj: u8, name_const: u16, src: u8, slot: u16) {
+    let self_val = self.load_reg(obj);
+    let src_val = self.load_reg(src);
+    let is_obj = self.is_obj(self_val);
+    let snapshot = self.snapshot_reg_cache();
+
+    let obj_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+    // See `emit_self_get_field`'s identical two-stage branch for why
+    // `ptr`/`tag` must only ever be computed inside a block already
+    // proven reachable only when `is_obj` was true.
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(self_val);
+    let tag = self.obj_tag(ptr);
+    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+    let fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_instance, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    self.fb.ins().store(
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      src_val,
+      fields_ptr,
+      (slot as i32) * 8,
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let obj_i = self.idx(obj);
+    let name = self.bake_const(name_const);
+    let src_i = self.idx(src);
+    let func_ptr = self.func_ptr_const();
+    let ip_c = self.u64c(ip as u64);
+    self.call_checked(
+      "zuri_jit_set_field",
+      &[self.vm_param, base, obj_i, name, src_i, func_ptr, ip_c],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, obj);
+  }
+
+  /// Loads an `Obj::Instance`'s `fields` slice base pointer, given a
+  /// raw `*const Obj` already proven (by a runtime tag check against
+  /// `OBJ_TAG_INSTANCE`, in a block only reachable when `is_obj` was
+  /// ALSO already proven true -- see `emit_self_get_field`'s two-stage
+  /// branch) to actually be one -- see
+  /// `object::obj_instance_fields_ptr_offset()`'s own docs for why this
+  /// fixed offset is sound.
+  fn load_instance_fields_ptr(&mut self, obj_ptr: IrValue) -> IrValue {
+    let off = object::obj_instance_fields_ptr_offset() as i32;
+    self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      obj_ptr,
+      off,
+    )
+  }
+
   /// `Instr::SetGlobal`/`Instr::AssignGlobal`'s inline-cache-style fast
   /// path -- the write-side counterpart of `emit_get_global`, sharing
   /// its cache array (`JitInfo::global_slot_cache`) and the same
@@ -2108,6 +2290,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         obj,
         name_const,
       } => {
+        if let Some(slot) = self.self_field_slot(obj, name_const) {
+          self.emit_self_get_field(ip, dst, obj, name_const, slot);
+          return false;
+        }
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let obj_i = self.idx(obj);
@@ -2125,6 +2311,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         name_const,
         src,
       } => {
+        if let Some(slot) = self.self_field_slot(obj, name_const) {
+          self.emit_self_set_field(ip, obj, name_const, src, slot);
+          return false;
+        }
         let base = self.base_param;
         let obj_i = self.idx(obj);
         let name = self.bake_const(name_const);

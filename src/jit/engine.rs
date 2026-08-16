@@ -144,6 +144,7 @@ impl JitEngine {
     proto: &ObjFunction,
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
+    self_field_slots: Option<FxHashMap<String, u16>>,
   ) -> Result<PendingCompile, String> {
     self.next_id += 1;
     let name = format!("zuri_fn_{}", self.next_id);
@@ -179,6 +180,7 @@ impl JitEngine {
         proto,
         speculative_params,
         speculative_regs,
+        self_field_slots,
       )?;
       builder.seal_all_blocks();
       builder.finalize(self.module.target_config());
