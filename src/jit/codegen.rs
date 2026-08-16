@@ -191,6 +191,10 @@ struct FuncCompiler<'a, 'b> {
   /// inside the helper's own class-method-table lookup, with no
   /// register holding it for generated code to read back directly.
   closure_out_slot: Option<StackSlot>,
+  /// Same lazy-per-function pattern as `closure_out_slot`, for the
+  /// list-index fast path's `zuri_jit_list_data` out-parameter (the
+  /// resolved list's current length -- see that function's own docs).
+  list_len_slot: Option<StackSlot>,
   /// Which registers are PROVEN numeric at each bytecode position, for
   /// WHICHEVER body (general or specialized) is currently being
   /// populated -- see `jit::typeflow`'s own docs and `run`'s two-pass
@@ -294,6 +298,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       osr_ids: FxHashMap::default(),
       entry_sig: None,
       closure_out_slot: None,
+      list_len_slot: None,
       type_facts,
       speculative_params,
       speculative_regs,
@@ -1087,6 +1092,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     slot
   }
 
+  /// The 8-byte scratch stack slot `zuri_jit_list_data` writes the
+  /// resolved list's current length into -- see `list_len_slot`'s own
+  /// docs. Allocated at most once per compiled function.
+  fn list_len_slot(&mut self) -> StackSlot {
+    if let Some(slot) = self.list_len_slot {
+      return slot;
+    }
+    let slot =
+      self
+        .fb
+        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
+    self.list_len_slot = Some(slot);
+    slot
+  }
+
   /// The fast, inline-cache-style direct-call pattern shared by
   /// `Instr::Call` and `Instr::Invoke` -- see `jit::runtime`'s "Fast,
   /// inline-cache-style direct calls" docs for the full protocol this
@@ -1348,11 +1368,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `self.field = ...` write fast path -- the write-side counterpart
   /// of `emit_self_get_field`. Writes no VM register at all (only
-  /// reads `src`), so there's no `dst` for `restore_dirty_from_snapshot`
-  /// to skip; `obj` (register 0, `self`) is passed instead -- always
-  /// safe to exclude regardless, since neither arm ever changes ITS
-  /// own cache state (see that function's own docs on why any exclusion
-  /// choice is sound, just possibly minutely suboptimal).
+  /// reads `src`), so `obj` (`self`) is passed to
+  /// `restore_dirty_from_snapshot` as the register to leave alone --
+  /// its own reg_cache state after a call correctly reflects "may have
+  /// moved, re-read from memory next time" (`Stale`), which forcing
+  /// back to `Dirty` would wrongly override into "trust this cached
+  /// value," risking a stale/relocated pointer being flushed back over
+  /// a GC-updated one. Only one `call_helper` site exists in this
+  /// function (the slow path), so the OTHER real bug class this file's
+  /// snapshot/restore machinery guards against -- two INDEPENDENT
+  /// `call_helper` sites in different branches, see
+  /// `emit_list_set_index`'s own docs -- doesn't apply here.
   fn emit_self_set_field(&mut self, ip: usize, obj: u8, name_const: u16, src: u8, slot: u16) {
     let self_val = self.load_reg(obj);
     let src_val = self.load_reg(src);
@@ -1420,6 +1446,245 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       obj_ptr,
       off,
     )
+  }
+
+  /// `Instr::GetIndex`'s fast path for `list[i]` with a plain, already
+  /// in-bounds integer index. Falls back to the general
+  /// `zuri_jit_get_index` helper for everything else it doesn't prove
+  /// inline: a non-list receiver (Bytes/String/Dict indexing all still
+  /// go through the general path), a non-numeric or non-integer index,
+  /// or a genuinely out-of-bounds index (needs the general path's real
+  /// `RangeError` message). See `zuri_jit_list_data`'s own docs for why
+  /// resolving the list's data pointer still costs one small helper
+  /// call while the bounds check and element load are real inline
+  /// Cranelift code either way.
+  fn emit_list_get_index(&mut self, dst: u8, obj: u8, iidx: u8) {
+    let obj_val = self.load_reg(obj);
+    let idx_val = self.load_reg(iidx);
+    // Both safe to compute unconditionally regardless of the other's
+    // truth value -- neither dereferences memory, see `is_obj`/
+    // `is_number`'s own docs.
+    let is_obj = self.is_obj(obj_val);
+    let is_num = self.is_number(idx_val);
+    let cheap_guard = self.fb.ins().band(is_obj, is_num);
+    let snapshot = self.snapshot_reg_cache();
+
+    let checked_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(cheap_guard, checked_block, &[], slow_block, &[]);
+
+    // `ptr`/`tag` (dereferences memory) and the float round-trip check
+    // (pure arithmetic, but only MEANINGFUL once `is_num` is known
+    // true) are both only computed here, in a block reachable only
+    // when `cheap_guard` -- and therefore `is_obj` -- was already
+    // proven true. Same discipline `emit_self_get_field` uses for its
+    // own tag check.
+    self.fb.switch_to_block(checked_block);
+    let ptr = self.obj_ptr(obj_val);
+    let tag = self.obj_tag(ptr);
+    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+
+    let f = self.to_f64(idx_val);
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let is_int = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::Equal,
+      f,
+      roundtrip,
+    );
+    let list_and_int = self.fb.ins().band(is_list, is_int);
+
+    let resolve_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(resolve_block);
+    let len_slot = self.list_len_slot();
+    let len_addr = self.fb.ins().stack_addr(types::I64, len_slot, 0);
+    let data_ptr = self.call_helper("zuri_jit_list_data", &[self.vm_param, ptr, len_addr]);
+    let len = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      len_addr,
+      0,
+    );
+    // Negative-index wraparound (`list[-1]` == last element), matching
+    // `VM::coerce_index`'s own semantics exactly.
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+    let wrapped = self.fb.ins().iadd(as_int, len);
+    let i_adj = self.fb.ins().select(is_neg, wrapped, as_int);
+
+    let ge_zero = self
+      .fb
+      .ins()
+      .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
+    let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
+    let in_bounds = self.fb.ins().band(ge_zero, lt_len);
+
+    let fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(in_bounds, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let byte_off = self.fb.ins().imul_imm_s(i_adj, 8);
+    let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
+    let v = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      elem_addr,
+      0,
+    );
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    // See `emit_list_set_index`'s own docs on why this reset (not just
+    // the `restore_dirty_from_snapshot` at `done_block`) is needed:
+    // `resolve_block`'s own `call_helper` above already mutated
+    // `reg_cache` as a side effect of being GENERATED, regardless of
+    // whether it ever runs at runtime -- without resetting back to the
+    // true pre-instruction state here, `slow_block`'s own
+    // `call_checked` would see nothing left to flush and silently emit
+    // no flush instructions at all, even on the (here, only) runtime
+    // path where IT is the one that actually needs to.
+    self.reg_cache = snapshot.clone();
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let obj_i = self.idx(obj);
+    let idx_i = self.idx(iidx);
+    self.call_checked(
+      "zuri_jit_get_index",
+      &[self.vm_param, base, dst_i, obj_i, idx_i],
+    );
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// `Instr::SetIndex`'s fast path -- the write-side counterpart of
+  /// `emit_list_get_index`; see its own docs for the shared reasoning,
+  /// including why `reg_cache` needs a hard reset before `slow_block`
+  /// (two independent `call_helper` sites: `zuri_jit_list_data` here,
+  /// `zuri_jit_set_index` there).
+  fn emit_list_set_index(&mut self, obj: u8, iidx: u8, src: u8) {
+    let obj_val = self.load_reg(obj);
+    let idx_val = self.load_reg(iidx);
+    let src_val = self.load_reg(src);
+    let is_obj = self.is_obj(obj_val);
+    let is_num = self.is_number(idx_val);
+    let cheap_guard = self.fb.ins().band(is_obj, is_num);
+    let snapshot = self.snapshot_reg_cache();
+
+    let checked_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(cheap_guard, checked_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(checked_block);
+    let ptr = self.obj_ptr(obj_val);
+    let tag = self.obj_tag(ptr);
+    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+
+    let f = self.to_f64(idx_val);
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let is_int = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::Equal,
+      f,
+      roundtrip,
+    );
+    let list_and_int = self.fb.ins().band(is_list, is_int);
+    let resolve_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(resolve_block);
+    let len_slot = self.list_len_slot();
+    let len_addr = self.fb.ins().stack_addr(types::I64, len_slot, 0);
+    let data_ptr = self.call_helper("zuri_jit_list_data", &[self.vm_param, ptr, len_addr]);
+    let len = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      len_addr,
+      0,
+    );
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+    let wrapped = self.fb.ins().iadd(as_int, len);
+    let i_adj = self.fb.ins().select(is_neg, wrapped, as_int);
+
+    let ge_zero = self
+      .fb
+      .ins()
+      .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
+    let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
+    let in_bounds = self.fb.ins().band(ge_zero, lt_len);
+
+    let fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(in_bounds, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let byte_off = self.fb.ins().imul_imm_s(i_adj, 8);
+    let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
+    self.fb.ins().store(
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      src_val,
+      elem_addr,
+      0,
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    // See `restore_dirty_from_snapshot`'s own docs for the established
+    // half of this bug class; this is the OTHER half, specific to
+    // having more than one independent `call_helper` site across
+    // mutually-exclusive branches: `call_helper` mutates `reg_cache`
+    // (Dirty -> Stale) as a compile-time SIDE EFFECT of GENERATING its
+    // block's code, regardless of whether that block ever runs at
+    // runtime. With two such sites, the FIRST one generated "uses up"
+    // the Dirty flag at compile time, so the SECOND site's own
+    // `flush_live` sees nothing left to flush and emits no store
+    // instruction at all -- even when, at runtime, only the SECOND
+    // block ever actually executes and the first's flush never ran.
+    // Resetting back to the snapshot before generating EACH
+    // independent branch (not just restoring once at the very end)
+    // means every such branch's own `call_helper` sees the TRUE
+    // pre-instruction state and emits exactly the flush it actually
+    // needs, independent of what any sibling branch's codegen did.
+    self.reg_cache = snapshot.clone();
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let obj_i = self.idx(obj);
+    let idx_i = self.idx(iidx);
+    let src_i = self.idx(src);
+    self.call_checked(
+      "zuri_jit_set_index",
+      &[self.vm_param, base, obj_i, idx_i, src_i],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, obj);
   }
 
   /// `Instr::SetGlobal`/`Instr::AssignGlobal`'s inline-cache-style fast
@@ -2436,14 +2701,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         obj,
         idx: iidx,
       } => {
-        let base = self.base_param;
-        let dst_i = self.idx(dst);
-        let obj_i = self.idx(obj);
-        let idx_i = self.idx(iidx);
-        self.call_checked(
-          "zuri_jit_get_index",
-          &[self.vm_param, base, dst_i, obj_i, idx_i],
-        );
+        self.emit_list_get_index(dst, obj, iidx);
         false
       },
       Instr::SetIndex {
@@ -2451,14 +2709,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         idx: iidx,
         src,
       } => {
-        let base = self.base_param;
-        let obj_i = self.idx(obj);
-        let idx_i = self.idx(iidx);
-        let src_i = self.idx(src);
-        self.call_checked(
-          "zuri_jit_set_index",
-          &[self.vm_param, base, obj_i, idx_i, src_i],
-        );
+        self.emit_list_set_index(obj, iidx, src);
         false
       },
       Instr::GetSlice { dst, obj, lo, hi } => {
