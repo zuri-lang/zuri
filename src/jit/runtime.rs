@@ -69,15 +69,6 @@
 //! `Chunk::jump_tables` access.
 
 use std::cell::Cell;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-// TEMPORARY diagnostic counters -- how often `zuri_jit_call_prepare`'s
-// fast, call_indirect-eligible path is actually taken vs. falling back
-// to the slow `zuri_jit_call`/interpreter path. Printed by `ZURI_DIAG_CALLS=1`
-// at process exit (see src/bin/zuri.rs). Remove once the investigation
-// this instruments is done.
-pub static DIAG_FAST_CALLS: AtomicU64 = AtomicU64::new(0);
-pub static DIAG_SLOW_CALLS: AtomicU64 = AtomicU64::new(0);
 
 use crate::vm::chunk::JumpKey;
 use crate::vm::object::{
@@ -676,7 +667,6 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
   let func_reg = func_reg as u8;
   let callee = vm.get_reg(base, func_reg);
   if !callee.is_closure() || !vm.jit_depth_ok() {
-    DIAG_SLOW_CALLS.fetch_add(1, Ordering::Relaxed);
     return 0;
   }
   // MUST happen before `closure`/`proto` are derived: `closure_out`'s
@@ -690,10 +680,8 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
   let closure = callee.as_closure();
   let proto = closure.function.as_func();
   let Some(entry) = proto.jit.entry.get() else {
-    DIAG_SLOW_CALLS.fetch_add(1, Ordering::Relaxed);
     return 0;
   };
-  DIAG_FAST_CALLS.fetch_add(1, Ordering::Relaxed);
   let new_base = base + func_reg as usize + 1;
   vm.setup_closure_call(callee, closure, proto, new_base, num_args as u8, dst as u8);
   vm.jit_depth_enter();
