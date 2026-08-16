@@ -1,3 +1,4 @@
+use mimalloc::MiMalloc;
 use std::rc::Rc;
 use std::{env, fs, process};
 use zuri::compiler::parser::ParserError;
@@ -9,6 +10,9 @@ use zuri::vm::vm::VM;
 use zuri::vm::{chunk::Chunk, object::Heap};
 
 use crate::shared::repl::Repl;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 mod shared;
 

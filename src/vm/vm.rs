@@ -1114,7 +1114,6 @@ impl VM {
       self_class_bits: self.resolve_self_class(proto),
       call_targets: self.resolve_call_targets(proto),
     };
-    let __diag_start = std::time::Instant::now();
     let pending =
       match self
         .jit_engine()
@@ -1129,13 +1128,6 @@ impl VM {
           return;
         },
       };
-    if std::env::var_os("ZURI_DIAG_CALLS").is_some() {
-      eprintln!(
-        "[diag] synchronous build_ir for '{}' took {:?}",
-        proto.name,
-        __diag_start.elapsed()
-      );
-    }
 
     proto.jit.compiling.set(true);
     self.pending_jit_compiles.push(proto_value);

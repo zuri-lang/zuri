@@ -111,6 +111,7 @@ pub struct Compiler<'a> {
   /// compiling an imported module's own source instead.
   module: Option<Value>,
   pub errors: Vec<ParserError>,
+  log_instr: bool,
 }
 
 impl<'a> Compiler<'a> {
@@ -133,6 +134,7 @@ impl<'a> Compiler<'a> {
       scopes: vec![top],
       is_repl: false,
       module: None,
+      log_instr: std::env::var_os("ZURI_INSTR_LOG").is_some(),
       errors: Vec::new(),
     }
   }
@@ -2519,8 +2521,7 @@ impl<'a> Compiler<'a> {
       jit,
     };
 
-    #[cfg(feature = "instr-log")]
-    if std::env::var_os("ZURI_INSTR_LOG").is_some() {
+    if self.log_instr {
       for c in &main_fn.chunk.constants {
         if c.is_func() {
           let proto = c.as_func();
