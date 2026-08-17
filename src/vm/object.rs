@@ -1959,8 +1959,40 @@ impl Heap {
     self.alloc(Obj::Native(native))
   }
 
+  /// Deliberately `alloc_old`, not `alloc` -- the same decision, for
+  /// the same reason, as `alloc_function` right above.
+  ///
+  /// A class is a declaration-time entity: one is created per `class`
+  /// statement, never in a loop, and it stays reachable from every
+  /// instance's own `class` field for as long as any instance lives.
+  /// Born in the nursery it would survive every minor collection
+  /// anyway, so the only thing the young generation ever did for it
+  /// was copy it once -- and then RELOCATE it, which is the part that
+  /// actively broke things.
+  ///
+  /// Relocation is what makes this load-bearing rather than a micro-
+  /// optimization. `jit::CallTarget` and `jit::CompileFacts
+  /// ::self_class_bits` bake a class's `Value` bits into generated
+  /// code as a compile-time guard immediate. A function crosses its
+  /// warmup threshold long before the first minor collection has had
+  /// any reason to run, so those bits were routinely taken while the
+  /// class was still young -- and the moment it was promoted, every
+  /// guard baked against it stopped matching FOREVER. The optimization
+  /// did not misbehave, it silently stopped existing, permanently
+  /// falling back to the general path with no signal that anything was
+  /// wrong. Allocating old makes the address stable for the process's
+  /// lifetime, which is what those guards always assumed.
+  ///
+  /// Safe with respect to the generational invariant because every
+  /// mutation that stores a `Value` into a class -- `SetFieldInit`,
+  /// `SetMethod`, `DeclareStatic`, `FinalizeClass`, in both the
+  /// interpreter and `jit::runtime` -- already ends in a
+  /// `write_barrier` on the class, so old-to-young references out of
+  /// one are tracked by the remembered set exactly as they must be.
+  /// (`DeclareField` needs none: it stores only a name and a `u16`
+  /// slot index, never a `Value`.)
   pub fn alloc_class(&mut self, class: ObjClass) -> Value {
-    self.alloc(Obj::Class(Box::new(RefCell::new(class))))
+    self.alloc_old(Obj::Class(Box::new(RefCell::new(class))))
   }
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {

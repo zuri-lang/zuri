@@ -1262,6 +1262,131 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `Instr::Call`'s PROVEN constructor shape (`jit::CallTarget
+  /// ::ConstructKnown`): the class -> constructor -> prototype chain
+  /// `emit_construct_call` re-walks per instance was settled at
+  /// compile time, leaving one guard and a helper that does no
+  /// resolution -- see `VM::resolve_construct_target` for the proof
+  /// and `zuri_jit_construct_prepare` for what the guard licenses.
+  ///
+  /// The guard is class IDENTITY plus a `method_table_generation`
+  /// match, the same pair (and the same reasoning) as
+  /// `emit_self_invoke`'s. It only works because classes are
+  /// old-generation allocations and therefore never relocate -- see
+  /// `Heap::alloc_class`. On a miss (a global rebound to a different
+  /// class, or a class monkey-patched after this function compiled)
+  /// control falls into the ordinary dynamic construction path, which
+  /// re-resolves everything itself and is still correct.
+  fn emit_construct_known(
+    &mut self,
+    dst: u8,
+    func: u8,
+    num_args: u8,
+    guard_bits: u64,
+    generation: u64,
+    field_count: u16,
+    proto_ptr: usize,
+  ) {
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let callee = self.load_reg(func);
+    let target_class = self.u64c(guard_bits);
+    let class_hit = self.fb.ins().icmp(IntCC::Equal, callee, target_class);
+    let snapshot = self.snapshot_reg_cache();
+
+    // Every operand either arm needs is materialized HERE, in the
+    // block that dominates all of them. A value defined inside one arm
+    // and used from another is exactly the dominance error this file
+    // already tripped over once -- and it surfaces as a silent
+    // Cranelift verifier failure that makes the whole function
+    // JIT-ineligible, which reads as a performance regression rather
+    // than as the bug it is. Check `ZURI_JIT_LOG=1` for `ineligible:`
+    // after touching this.
+    let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+    let func_i = self.idx(func);
+    let num_args_i = self.idx(num_args);
+    let dst_i = self.idx(dst);
+    let proto_v = self.u64c(proto_ptr as u64);
+    let field_count_v = self.i64c(field_count as i64);
+    let closure_out_addr = {
+      let slot = self.closure_out_slot();
+      self.fb.ins().stack_addr(types::I64, slot, 0)
+    };
+
+    let gen_check_block = self.fb.create_block();
+    let dynamic_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(class_hit, gen_check_block, &[], dynamic_block, &[]);
+
+    self.fb.switch_to_block(gen_check_block);
+    let cur_gen = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      vm_p,
+      METHOD_TABLE_GENERATION_OFFSET,
+    );
+    let target_gen = self.u64c(generation);
+    let gen_hit = self.fb.ins().icmp(IntCC::Equal, cur_gen, target_gen);
+    let lean_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(gen_hit, lean_block, &[], dynamic_block, &[]);
+
+    self.fb.switch_to_block(lean_block);
+    let prepare = self.call_helper(
+      "zuri_jit_construct_prepare",
+      &[
+        vm_p,
+        base,
+        func_i,
+        num_args_i,
+        dst_i,
+        proto_v,
+        field_count_v,
+        closure_out_addr,
+      ],
+    );
+    self.refresh_regs();
+    let zero = self.i64c(0);
+    let is_fast = self.fb.ins().icmp(IntCC::NotEqual, prepare, zero);
+    let fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_fast, fast_block, &[], dynamic_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let closure_bits = {
+      let slot = self.closure_out_slot();
+      self.fb.ins().stack_load(types::I64, types::I64, slot, 0)
+    };
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let sig = self.entry_sig_ref();
+    // Identical bracketing requirement to `emit_fast_call`'s own
+    // `call_indirect` -- see the note there.
+    self.flush_live(self.current_ip);
+    self
+      .fb
+      .ins()
+      .call_indirect(sig, prepare, &[vm_p, new_base, closure_bits, neg1]);
+    self.mark_stale_live(self.current_ip);
+    self.refresh_regs();
+    self.call_checked("zuri_jit_new_finish", &[vm_p, base, dst_i, new_base]);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.reg_cache = snapshot.clone();
+    self.fb.switch_to_block(dynamic_block);
+    self.emit_construct_call(dst, func, num_args);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
   /// `Instr::Call`'s CONSTRUCTOR shape (`jit::CallTarget::Construct`):
   /// same `prepare` / `call_indirect` / `finish` protocol as
   /// `emit_fast_call`, differing only in that the value delivered to
@@ -3166,6 +3291,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             self.emit_known_call(dst, func, num_args, entry, guard_bits)
           },
           Some(CallTarget::Construct) => self.emit_construct_call(dst, func, num_args),
+          Some(CallTarget::ConstructKnown {
+            guard_bits,
+            generation,
+            field_count,
+            proto_ptr,
+          }) => self.emit_construct_known(
+            dst,
+            func,
+            num_args,
+            guard_bits,
+            generation,
+            field_count,
+            proto_ptr,
+          ),
           None => {
             let base = self.base_param;
             let vm_p = self.vm_param;

@@ -182,11 +182,38 @@ pub struct CompiledFunction {
 ///   same general path an unclassified site would have taken) if the
 ///   global has since been reassigned to something that is not a
 ///   class.
+/// - `ConstructKnown`: a `Construct` site whose whole construction
+///   shape was additionally PROVEN ahead of time (see
+///   `vm::vm::VM::resolve_construct_target`) -- no class in the
+///   ancestry declares a field initializer, and the constructor is a
+///   known non-variadic closure whose `ObjFunction` address is baked
+///   as `proto_ptr`. Codegen guards it the same way `emit_self_invoke`
+///   does, on class identity plus a `method_table_generation` match,
+///   and then uses the lean `jit::runtime::zuri_jit_construct_prepare`
+///   instead of re-walking the class -> constructor -> prototype chain
+///   for every instance built.
+///
+///   `guard_bits` being a stable thing to compare against is not
+///   automatic: it only holds because `Heap::alloc_class` allocates
+///   classes straight into the old generation. Baked against a
+///   still-young class, this guard (and `self_class_bits`, and
+///   `Known`'s) would stop matching the instant a minor collection
+///   relocated it, silently disabling the fast path for the rest of
+///   the process -- see `alloc_class`'s own docs.
 #[derive(Clone, Copy)]
 pub enum CallTarget {
   SelfRecursive,
-  Known { entry: usize, guard_bits: u64 },
+  Known {
+    entry: usize,
+    guard_bits: u64,
+  },
   Construct,
+  ConstructKnown {
+    guard_bits: u64,
+    generation: u64,
+    field_count: u16,
+    proto_ptr: usize,
+  },
 }
 
 /// Everything `vm::vm::VM::enqueue_compile` resolves ahead of time

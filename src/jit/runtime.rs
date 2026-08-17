@@ -818,6 +818,70 @@ pub unsafe extern "C" fn zuri_jit_new_prepare(
   entry as usize as u64
 }
 
+/// `zuri_jit_new_prepare`'s PROVEN twin (`jit::CallTarget
+/// ::ConstructKnown`): every resolution step the dynamic version pays
+/// per call -- the callee tag check, the `ObjClass` borrow for
+/// `field_count`, the ancestor field-initializer walk, the
+/// constructor tag check, the closure -> function hop, the variadic
+/// check -- was discharged at compile time by
+/// `VM::resolve_construct_target`, and is licensed here by the class-
+/// identity + `method_table_generation` guard generated code ran
+/// immediately before calling this.
+///
+/// What remains is genuinely per-call: the constructor's `jit.entry`
+/// read straight off the baked `proto_ptr` (a zero just means "not
+/// compiled yet", and generated code falls through to the general path
+/// exactly like any other prepare miss), and one read of the guarded
+/// class's `constructor`, deliberately not baked -- see
+/// `VM::resolve_construct_target` for why.
+///
+/// Pairs with `zuri_jit_new_finish`, not `zuri_jit_call_finish` -- the
+/// call still evaluates to the instance.
+pub unsafe extern "C" fn zuri_jit_construct_prepare(
+  vm_ptr: *mut VM,
+  base: u64,
+  func_reg: u64,
+  num_args: u64,
+  dst: u64,
+  proto_ptr: u64,
+  field_count: u64,
+  closure_out: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let num_args = num_args as u8;
+  if !vm.jit_depth_ok() || num_args == u8::MAX {
+    return 0;
+  }
+  // SAFETY: `proto_ptr` was baked by `VM::resolve_construct_target`
+  // from a live `ObjFunction`, which never moves and stays reachable
+  // through the very class the caller's guard just matched.
+  let proto = unsafe { &*(proto_ptr as *const ObjFunction) };
+  let Some(entry) = proto.jit.entry.get() else {
+    return 0;
+  };
+  let class_val = vm.get_reg(base as usize, func_reg as u8);
+  let Some(ctor) = class_val.as_class().constructor else {
+    return 0;
+  };
+  // Still required even though the constructor was proven: it becomes
+  // the compiled callee's `closure_param`, a raw SSA value held for
+  // the whole invocation with no GC-visible home, and nothing so far
+  // has established it is out of the nursery. Inlined down to a single
+  // generation read on the common path.
+  let ctor = vm.ensure_stable_for_compiled_entry(ctor);
+  vm.prepare_known_construction(
+    base as usize,
+    func_reg as u8,
+    num_args,
+    dst as u8,
+    ctor,
+    proto,
+    field_count as usize,
+  );
+  unsafe { *(closure_out as *mut u64) = ctor.to_bits() };
+  entry as usize as u64
+}
+
 /// `zuri_jit_new_prepare`'s other half -- `zuri_jit_call_finish` with
 /// the constructor's own return value discarded in favour of the
 /// instance, which is why it takes no `ret_bits` at all.
@@ -2229,6 +2293,7 @@ type Fn4 = unsafe extern "C" fn(*mut VM, u64, u64, u64) -> u64;
 type Fn5 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64) -> u64;
 type Fn6 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64) -> u64;
 type Fn7 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64) -> u64;
+type Fn8 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64) -> u64;
 type Fn9 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 /// Reinterprets an already-coerced, concrete function-pointer value
@@ -2308,6 +2373,15 @@ macro_rules! spec7 {
     }
   };
 }
+macro_rules! spec8 {
+  ($f:ident) => {
+    HelperSpec {
+      name: stringify!($f),
+      ptr: as_ptr($f as Fn8),
+      arity: 8,
+    }
+  };
+}
 macro_rules! spec9 {
   ($f:ident) => {
     HelperSpec {
@@ -2362,6 +2436,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_call),
     spec6!(zuri_jit_call_prepare),
     spec6!(zuri_jit_new_prepare),
+    spec8!(zuri_jit_construct_prepare),
     spec4!(zuri_jit_new_finish),
     spec9!(zuri_jit_invoke_prepare),
     spec5!(zuri_jit_direct_call_prepare),

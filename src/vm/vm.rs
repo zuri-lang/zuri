@@ -1009,6 +1009,84 @@ impl VM {
   /// `proto` ever names) so the dataflow only runs once per DISTINCT
   /// name actually referenced -- bounded by how many different globals
   /// this function's own source text mentions, not by code size.
+  /// Proves, at compile time, everything `zuri_jit_new_prepare` would
+  /// otherwise re-derive on EVERY construction, so a proven site can
+  /// use the lean `zuri_jit_construct_prepare` behind a single class-
+  /// identity guard instead. The constructor equivalent of what
+  /// `CallTarget::Known` already does for ordinary calls.
+  ///
+  /// Worth doing because the difference is not marginal: unproven, the
+  /// helper walks callee register -> `Obj` tag -> `ObjClass` (a real
+  /// `RefCell` borrow) -> `constructor` -> `Obj` tag -> `ObjClosure`
+  /// -> `function` -> `ObjFunction` -> `variadic`, a five-deep chase
+  /// of dependent loads across cold cache lines, per instance built.
+  /// Every link in it is a static fact about a class.
+  ///
+  /// `None` (fall back to the general path) unless BOTH of:
+  ///
+  /// - no class in the ancestor chain declares its own field
+  ///   initializer, so there is no root-to-leaf initializer sequence
+  ///   to run before the constructor,
+  /// - a constructor exists and is a non-variadic `Closure`.
+  ///
+  /// Note what is deliberately NOT baked: the constructor closure's
+  /// own `Value` bits. Closures are ordinary young allocations and
+  /// relocate, so a baked copy would go stale exactly the way class
+  /// bits used to before `Heap::alloc_class` started allocating old.
+  /// Reading `constructor` back off the guarded class at run time
+  /// costs one load and observes any relocation instead of being
+  /// broken by it. `proto_ptr` IS baked, because `ObjFunction` never
+  /// moves -- and it carries the two facts worth the most, the
+  /// non-variadic proof and a direct `jit.entry` read with no
+  /// closure -> function hop.
+  ///
+  /// The paired `method_table_generation` snapshot is what the guard
+  /// checks alongside class identity, exactly as `self_class_bits`
+  /// does -- see `VM::method_table_generation`'s own docs. It also
+  /// covers a dead class's address being recycled by a new one, since
+  /// declaring any method on a class bumps the generation.
+  fn resolve_construct_target(&self, class_val: Value) -> Option<CallTarget> {
+    let (field_count, ctor, superclass) = {
+      let class = class_val.as_class();
+      if class.own_field_initializer.is_some() {
+        return None;
+      }
+      (class.field_count, class.constructor?, class.superclass)
+    };
+
+    // An inherited field initializer disqualifies just as much as an
+    // own one -- `instantiate` runs every ancestor's, root to leaf.
+    let mut cur = superclass;
+    while let Some(c) = cur {
+      let next = {
+        let cobj = c.as_class();
+        if cobj.own_field_initializer.is_some() {
+          return None;
+        }
+        cobj.superclass
+      };
+      cur = next;
+    }
+
+    if !ctor.is_closure() {
+      return None;
+    }
+    let ctor_proto = ctor.as_closure().function.as_func();
+    if ctor_proto.variadic {
+      return None;
+    }
+
+    Some(CallTarget::ConstructKnown {
+      guard_bits: class_val.to_bits(),
+      generation: self.method_table_generation.get(),
+      field_count,
+      // `ObjFunction` is allocated straight into old-generation
+      // storage and never moves (see `Heap::alloc_function`), the same
+      // guarantee `run_until`'s own cached `func_ptr` relies on.
+      proto_ptr: ctor_proto as *const ObjFunction as usize,
+    })
+  }
+
   fn resolve_call_targets(&self, proto: &ObjFunction) -> FxHashMap<usize, CallTarget> {
     let mut targets = FxHashMap::default();
     let proto_ptr = proto as *const ObjFunction;
@@ -1066,7 +1144,12 @@ impl VM {
         };
         let resolved = self.read_resolved(proto.globals_module, is_root, slot);
         if resolved.is_class() {
-          targets.insert(ip, CallTarget::Construct);
+          targets.insert(
+            ip,
+            self
+              .resolve_construct_target(resolved)
+              .unwrap_or(CallTarget::Construct),
+          );
           break;
         }
         if !resolved.is_closure() {
@@ -2130,6 +2213,50 @@ impl VM {
     // references it.
     self.gc_pins.push(instance);
     Some((entry, ctor))
+  }
+
+  /// `prepare_compiled_construction` with every resolution step
+  /// already discharged at compile time -- the frame-setup half of
+  /// `jit::runtime::zuri_jit_construct_prepare`.
+  ///
+  /// Callers must hold `VM::resolve_construct_target`'s proof AND have
+  /// had generated code check its guard (class identity +
+  /// `method_table_generation`) immediately beforehand; that is what
+  /// licenses trusting `ctor`/`proto`/`field_count` here rather than
+  /// re-deriving any of them from the class. What remains is genuinely
+  /// per-call: the instance allocation, the argument shift, the frame
+  /// push.
+  pub(crate) fn prepare_known_construction(
+    &mut self,
+    base: usize,
+    func_reg: u8,
+    num_args: u8,
+    dst: u8,
+    ctor: Value,
+    proto: &ObjFunction,
+    field_count: usize,
+  ) {
+    let class_val = self.get_reg(base, func_reg);
+    let instance = self.heap.alloc_instance(class_val, field_count);
+
+    // Same window rearrangement as `prepare_compiled_construction` --
+    // see its own comment for why the grow must precede the shift and
+    // why the shift runs high to low.
+    let new_base = base + func_reg as usize + 1;
+    let needed = new_base + proto.num_registers as usize;
+    if self.registers.len() < needed {
+      self.registers.resize(needed, Value::nil());
+      self.sync_regs_ptr_cache();
+    }
+    for i in (0..num_args as usize).rev() {
+      self.registers[new_base + i + 1] = self.registers[new_base + i];
+    }
+    self.registers[new_base] = instance;
+
+    let closure = ctor.as_closure();
+    self.setup_closure_call(ctor, closure, proto, new_base, num_args + 1, dst);
+    self.jit_depth_enter();
+    self.gc_pins.push(instance);
   }
 
   /// Completes `prepare_compiled_construction`'s bracket: releases the
