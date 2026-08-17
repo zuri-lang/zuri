@@ -1270,7 +1270,7 @@ pub struct Heap {
   /// field count doesn't hold memory forever -- exactly the same
   /// "retain some, drop the rest" tradeoff `MAX_RETAINED_NURSERY_CHUNKS`
   /// already makes for nursery chunks.
-  field_storage_pool: FxHashMap<usize, Vec<*mut Cell<Value>>>,
+  field_storage_pool: FieldStoragePool,
 }
 
 /// One fixed-capacity block of nursery `GcBox` storage -- the young
@@ -1297,6 +1297,112 @@ struct NurseryChunk {
 /// rest" shape `MAX_RETAINED_NURSERY_CHUNKS` already uses.
 const FIELD_STORAGE_POOL_CAP: usize = 1 << 20; // ~1,048,576
 
+/// How many field counts `FieldStoragePool` serves from its direct,
+/// index-addressed free lists (`0..FIELD_STORAGE_DIRECT_CLASSES`);
+/// anything larger falls back to `FieldStoragePool::overflow`. Covers
+/// essentially every real class -- a type with more than 32 instance
+/// fields is rare, and the fallback is only slower, never wrong.
+const FIELD_STORAGE_DIRECT_CLASSES: usize = 33;
+
+/// Recycled `FieldStorage` buffers, ready to hand straight back to the
+/// next instance of any class with the same field count.
+///
+/// The direct classes are **intrusive singly-linked free lists**: a
+/// buffer sitting in the pool is dead memory, so the link to the next
+/// free buffer is stored in its own first cell rather than in any
+/// side table. Popping one is a load, a store, and a decrement, with
+/// no hashing and no `Vec` -- which is the point. This is on the path
+/// of every single instance allocation, and it is meant to be
+/// reproducible directly as generated machine code (`#[repr(C)]`, and
+/// `heads` first, so a head slot is reachable at a compile-time-known
+/// offset plus `field_count * 8`).
+///
+/// `counts` exists only to enforce `FIELD_STORAGE_POOL_CAP` per size
+/// class, which an intrusive list cannot answer by itself.
+///
+/// Field count 0 is never pooled: `FieldStorage::new(0)` allocates
+/// nothing at all (an empty `Box<[T]>` is a dangling pointer), so
+/// there is no buffer to recycle and nowhere to put a link.
+#[repr(C)]
+struct FieldStoragePool {
+  heads: [*mut Cell<Value>; FIELD_STORAGE_DIRECT_CLASSES],
+  counts: [u32; FIELD_STORAGE_DIRECT_CLASSES],
+  /// Field counts at or beyond `FIELD_STORAGE_DIRECT_CLASSES`, keyed
+  /// exactly as the whole pool used to be.
+  overflow: FxHashMap<usize, Vec<*mut Cell<Value>>>,
+}
+
+impl Default for FieldStoragePool {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl FieldStoragePool {
+  fn new() -> Self {
+    FieldStoragePool {
+      heads: [std::ptr::null_mut(); FIELD_STORAGE_DIRECT_CLASSES],
+      counts: [0; FIELD_STORAGE_DIRECT_CLASSES],
+      overflow: FxHashMap::default(),
+    }
+  }
+
+  /// Pops a recycled buffer of exactly `len` cells, or `None`.
+  /// Every cell of the returned buffer is `Value::nil()`, upholding
+  /// `FieldStorage::new`'s postcondition -- including the first, which
+  /// `give` overwrote with the free-list link.
+  fn take(&mut self, len: usize) -> Option<*mut Cell<Value>> {
+    if len == 0 {
+      return None;
+    }
+    if len < FIELD_STORAGE_DIRECT_CLASSES {
+      let head = self.heads[len];
+      if head.is_null() {
+        return None;
+      }
+      // SAFETY: `give` stored the next-free pointer in cell 0 of this
+      // very buffer, which it owns exclusively while pooled.
+      let next = unsafe { *(head as *const *mut Cell<Value>) };
+      self.heads[len] = next;
+      self.counts[len] -= 1;
+      unsafe { (*head).set(Value::nil()) };
+      return Some(head);
+    }
+    let list = self.overflow.get_mut(&len)?;
+    list.pop()
+  }
+
+  /// Returns a dead instance's buffer to the pool. `false` means the
+  /// pool declined it (size class full, or not poolable) and the
+  /// caller still owns the allocation.
+  ///
+  /// Every cell must already be `Value::nil()` on entry; cell 0 is
+  /// then repurposed as the free-list link, and `take` restores it.
+  fn give(&mut self, ptr: *mut Cell<Value>, len: usize) -> bool {
+    if len == 0 {
+      return false;
+    }
+    if len < FIELD_STORAGE_DIRECT_CLASSES {
+      if self.counts[len] as usize >= FIELD_STORAGE_POOL_CAP {
+        return false;
+      }
+      // SAFETY: this buffer is dead and exclusively owned from here
+      // until `take` hands it back out, so its first cell is free
+      // storage. `Cell<Value>` is 8 bytes, exactly a pointer.
+      unsafe { *(ptr as *mut *mut Cell<Value>) = self.heads[len] };
+      self.heads[len] = ptr;
+      self.counts[len] += 1;
+      return true;
+    }
+    let list = self.overflow.entry(len).or_default();
+    if list.len() >= FIELD_STORAGE_POOL_CAP {
+      return false;
+    }
+    list.push(ptr);
+    true
+  }
+}
+
 /// Byte offsets of `Heap::bytes_allocated`/`next_gc` -- combined with
 /// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
 /// `needs_major_gc()`'s check directly instead of an FFI call at every
@@ -1320,14 +1426,27 @@ pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
 /// point AT, so skipping this would be a genuine leak.
 impl Drop for Heap {
   fn drop(&mut self) {
-    for (&len, ptrs) in self.field_storage_pool.iter() {
+    // Direct classes: walk each intrusive free list, reading each
+    // buffer's link out of its own first cell BEFORE that buffer is
+    // handed to `FieldStorage`'s own `Drop`, which frees it.
+    for len in 1..FIELD_STORAGE_DIRECT_CLASSES {
+      let mut ptr = self.field_storage_pool.heads[len];
+      while !ptr.is_null() {
+        // SAFETY: cell 0 holds the next-free pointer (see
+        // `FieldStoragePool::give`); read it before the free below.
+        let next = unsafe { *(ptr as *const *mut Cell<Value>) };
+        // SAFETY: produced by `into_raw_parts` on a `FieldStorage` of
+        // exactly `len` cells, linked in at most once, and unreachable
+        // from anywhere else by the time the `Heap` is being torn down
+        // -- so this is its one and only free.
+        drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
+        ptr = next;
+      }
+      self.field_storage_pool.heads[len] = std::ptr::null_mut();
+    }
+    for (&len, ptrs) in self.field_storage_pool.overflow.iter() {
       for &ptr in ptrs.iter() {
-        // SAFETY: every pointer in this list was produced by
-        // `FieldStorage::into_raw_parts` on a `FieldStorage` of
-        // exactly `len` cells, pushed at most once (nothing else
-        // pops from this pool during teardown), and never
-        // reconstructed elsewhere once here -- reconstructing and
-        // dropping it now is its one and only free.
+        // SAFETY: same argument as the direct classes above.
         drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
       }
     }
@@ -1393,7 +1512,7 @@ impl Heap {
       nursery_fill_idx: 0,
       nursery_cur: std::ptr::null_mut(),
       nursery_end: std::ptr::null_mut(),
-      field_storage_pool: FxHashMap::default(),
+      field_storage_pool: FieldStoragePool::new(),
     }
   }
 
@@ -1865,7 +1984,7 @@ impl Heap {
   /// `&mut self` method here would make the borrow checker treat it as
   /// touching all of `self`, conflicting with the loop's own borrow
   /// even though the two never actually overlap.
-  fn reclaim_dead_obj(pool: &mut FxHashMap<usize, Vec<*mut Cell<Value>>>, obj: Obj) {
+  fn reclaim_dead_obj(pool: &mut FieldStoragePool, obj: Obj) {
     match obj {
       Obj::Instance(instance) => {
         let (ptr, len) = instance.fields.into_raw_parts();
@@ -1875,12 +1994,9 @@ impl Heap {
         for i in 0..len {
           unsafe { (*ptr.add(i)).set(Value::nil()) };
         }
-        let list = pool.entry(len).or_default();
-        if list.len() < FIELD_STORAGE_POOL_CAP {
-          list.push(ptr);
-        } else {
-          // Past the cap for this size class -- drop it for real
-          // rather than hoarding it forever.
+        if !pool.give(ptr, len) {
+          // Pool declined it (size class full, or not poolable) -- drop
+          // it for real rather than hoarding it forever.
           // SAFETY: same `(ptr, len)` pair `into_raw_parts` just
           // handed back, reconstructed exactly once.
           drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
@@ -2093,14 +2209,12 @@ impl Heap {
   /// (`reset_nursery`), so this upholds `FieldStorage::new`'s exact
   /// postcondition either way.
   fn take_field_storage(&mut self, len: usize) -> FieldStorage {
-    if let Some(list) = self.field_storage_pool.get_mut(&len)
-      && let Some(ptr) = list.pop()
-    {
-      // SAFETY: every pointer in this list was produced by
+    if let Some(ptr) = self.field_storage_pool.take(len) {
+      // SAFETY: every pointer the pool holds was produced by
       // `FieldStorage::into_raw_parts` on a `FieldStorage` of this
-      // exact `len` (the list is keyed by it), had every cell reset to
-      // `Value::nil()` before being pushed, and is pushed at most once
-      // (popped here removes it, so it can never be handed out twice).
+      // exact `len` (the free lists are indexed/keyed by it), had every
+      // cell reset to `Value::nil()`, and is handed out at most once
+      // (`take` unlinks it, so it can never be handed out twice).
       return unsafe { FieldStorage::from_raw_parts(ptr, len) };
     }
     FieldStorage::new(len)
