@@ -1235,6 +1235,27 @@ pub struct Heap {
   /// every retained-but-not-yet-touched chunk straight to allocating a
   /// brand new one, defeating the whole point of retaining them).
   nursery_fill_idx: usize,
+  /// Bump-allocation cursor into the ACTIVE nursery chunk
+  /// (`nursery_chunks[nursery_fill_idx]`): the address of the next free
+  /// `GcBox` slot. `nursery_end` is one past that chunk's last usable
+  /// slot, so `alloc`'s entire fast path is "compare, bump, write".
+  ///
+  /// Both are null before the first allocation of a cycle, which the
+  /// same `cur == end` comparison already routes to `refill_nursery` --
+  /// no separate initialization check.
+  ///
+  /// **While a chunk is active, this cursor -- NOT that chunk's
+  /// `slots.len()` -- is the source of truth for how many slots are in
+  /// use.** `Vec::push` cannot be the allocation step if generated code
+  /// is ever to perform it inline (see `jit::codegen`'s allocation fast
+  /// path and `Obj`'s own docs on the `#[repr(C, u8)]` layout that
+  /// exists for exactly this), so the length is written back lazily,
+  /// by `sync_active_chunk_len`, which MUST run before anything
+  /// iterates `nursery_chunks`.
+  nursery_cur: *mut GcBox,
+  /// One past the last usable slot of the active chunk -- see
+  /// `nursery_cur`.
+  nursery_end: *mut GcBox,
   /// Recycled `FieldStorage` buffers, keyed by their exact field count
   /// (a class's `field_count` is fixed for its whole lifetime, so a
   /// buffer freed for one instance of a class is immediately valid for
@@ -1370,6 +1391,8 @@ impl Heap {
       young_bytes_allocated: 0,
       nursery_chunks: Vec::new(),
       nursery_fill_idx: 0,
+      nursery_cur: std::ptr::null_mut(),
+      nursery_end: std::ptr::null_mut(),
       field_storage_pool: FxHashMap::default(),
     }
   }
@@ -1517,17 +1540,58 @@ impl Heap {
   /// this object still reachable.
   fn alloc(&mut self, obj: Obj) -> Value {
     let size = Self::approx_size(&obj);
+    if self.nursery_cur == self.nursery_end {
+      self.refill_nursery();
+    }
+
+    // SAFETY: `refill_nursery` above guarantees `nursery_cur` now
+    // points at a real, uninitialized, in-bounds slot of the active
+    // chunk's buffer, and that buffer never reallocates for the
+    // chunk's whole lifetime (see `NurseryChunk`'s own docs), so this
+    // write cannot invalidate any pointer already handed out.
+    let slot = self.nursery_cur;
+    self.nursery_cur = unsafe { slot.add(1) };
     self.bytes_allocated += size;
     self.young_bytes_allocated += size;
     self.live_count += 1;
 
-    // Walk forward from `nursery_fill_idx` rather than always trusting
-    // `nursery_chunks.last()`: `reset_nursery` retains a batch of
-    // already-allocated, now-empty chunks (up to
-    // `MAX_RETAINED_NURSERY_CHUNKS`) for exactly this loop to bump-
-    // allocate back into with zero new `malloc` calls -- jumping
-    // straight to `.last()` would skip past all of them to whatever
-    // chunk was touched last cycle, missing the reuse entirely.
+    unsafe {
+      std::ptr::write(
+        slot,
+        GcBox {
+          live: Cell::new(true),
+          marked: Cell::new(false),
+          size,
+          obj,
+          generation: Cell::new(Generation::Young),
+          remembered: Cell::new(false),
+          list_next: Cell::new(std::ptr::null()),
+          // Unused for nursery objects -- see `GcBox::chunk_idx`'s own
+          // docs; nothing ever looks this up for a `Young` box, since
+          // nursery chunks are never individually freed/reused
+          // mid-cycle.
+          chunk_idx: 0,
+        },
+      );
+      Value::obj(&(*slot).obj as *const Obj)
+    }
+  }
+
+  /// `alloc`'s slow path: the active chunk is full (or there isn't one
+  /// yet), so publish its final length and move the cursor to a chunk
+  /// with room.
+  ///
+  /// Walks forward from `nursery_fill_idx` rather than jumping to
+  /// `nursery_chunks.last()`: `reset_nursery` retains a batch of
+  /// already-allocated, now-empty chunks (up to
+  /// `MAX_RETAINED_NURSERY_CHUNKS`) for exactly this loop to bump-
+  /// allocate back into with zero new `malloc` calls, and `.last()`
+  /// would skip straight past all of them to allocate a brand new one,
+  /// defeating the point of retaining them.
+  #[cold]
+  #[inline(never)]
+  fn refill_nursery(&mut self) {
+    self.sync_active_chunk_len();
     while self.nursery_fill_idx < self.nursery_chunks.len()
       && self.nursery_chunks[self.nursery_fill_idx].slots.len()
         >= self.nursery_chunks[self.nursery_fill_idx].slots.capacity()
@@ -1539,23 +1603,34 @@ impl Heap {
         slots: Vec::with_capacity(CHUNK_SIZE),
       });
     }
+    // Read AFTER any push above: growing the outer `Vec` relocates the
+    // `NurseryChunk` headers, though never any chunk's own buffer.
     let chunk = &mut self.nursery_chunks[self.nursery_fill_idx];
-    chunk.slots.push(GcBox {
-      live: Cell::new(true),
-      marked: Cell::new(false),
-      size,
-      obj,
-      generation: Cell::new(Generation::Young),
-      remembered: Cell::new(false),
-      list_next: Cell::new(std::ptr::null()),
-      // Unused for nursery objects -- see `GcBox::chunk_idx`'s own
-      // docs; nothing ever looks this up for a `Young` box, since
-      // nursery chunks are never individually freed/reused mid-cycle.
-      chunk_idx: 0,
-    });
-    let gcbox_ptr: *const GcBox = chunk.slots.last().unwrap();
-    let obj_ptr: *const Obj = unsafe { &(*gcbox_ptr).obj };
-    Value::obj(obj_ptr)
+    let base = chunk.slots.as_mut_ptr();
+    let len = chunk.slots.len();
+    let cap = chunk.slots.capacity();
+    self.nursery_cur = unsafe { base.add(len) };
+    self.nursery_end = unsafe { base.add(cap) };
+  }
+
+  /// Writes the active chunk's bump cursor back into its `Vec`'s own
+  /// length, making `slots.len()` correct again.
+  ///
+  /// Must run before ANYTHING iterates `nursery_chunks` -- while a
+  /// chunk is active its `slots.len()` is deliberately stale and the
+  /// cursor is the truth (see `nursery_cur`). Idempotent, so callers
+  /// may run it defensively.
+  fn sync_active_chunk_len(&mut self) {
+    if self.nursery_cur.is_null() {
+      return;
+    }
+    let chunk = &mut self.nursery_chunks[self.nursery_fill_idx];
+    let base = chunk.slots.as_mut_ptr();
+    // SAFETY: `nursery_cur` was derived from this same buffer by
+    // `refill_nursery` and only ever bumped forward within it.
+    let len = unsafe { self.nursery_cur.offset_from(base) } as usize;
+    debug_assert!(len <= chunk.slots.capacity());
+    unsafe { chunk.slots.set_len(len) };
   }
 
   /// Allocates directly into OLD-generation storage, never the
@@ -1846,6 +1921,11 @@ impl Heap {
   /// an unusually large one-off burst) get dropped, returning their
   /// memory instead of holding it as permanent inventory forever.
   pub(crate) fn reset_nursery(&mut self) {
+    // The active chunk's `slots.len()` is stale by design while it is
+    // being bump-allocated into -- publish it before iterating, or
+    // every slot allocated since the last refill is invisible here and
+    // silently leaks its payload instead of being reclaimed.
+    self.sync_active_chunk_len();
     let mut freed_count = 0usize;
     let mut freed_bytes = 0usize;
     for chunk in self.nursery_chunks.iter_mut() {
@@ -1873,6 +1953,12 @@ impl Heap {
       .nursery_chunks
       .truncate(Self::MAX_RETAINED_NURSERY_CHUNKS.max(1));
     self.nursery_fill_idx = 0;
+    // Both null so the next `alloc`'s `cur == end` check routes
+    // straight to `refill_nursery`, which re-derives them against
+    // whichever chunks survived the truncate above. Leaving stale
+    // pointers here would bump into a freed chunk's buffer.
+    self.nursery_cur = std::ptr::null_mut();
+    self.nursery_end = std::ptr::null_mut();
     self.bytes_allocated = self.bytes_allocated.saturating_sub(freed_bytes);
     self.live_count -= freed_count;
     self.young_bytes_allocated = 0;
