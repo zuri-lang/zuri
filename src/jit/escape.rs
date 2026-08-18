@@ -770,7 +770,10 @@ pub fn analyze_one(
           escaped = true;
         }
       }
-    } else if let Instr::GetField { obj, name_const, .. } = *instr {
+    } else if let Instr::GetField {
+      obj, name_const, ..
+    } = *instr
+    {
       // `GetField` reads exactly one register (`obj`), so this arm
       // fully replaces `escaping_reads`' `vec![obj]` for it. The
       // receiver only matters when it currently aliases the tracked

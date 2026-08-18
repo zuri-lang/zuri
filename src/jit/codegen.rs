@@ -1590,10 +1590,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // re-emitting them here: anything defined in THIS block would not
     // dominate `slow_block` below, and Cranelift's verifier rejects
     // that outright.
-    self.call_checked(
-      "zuri_jit_new_finish",
-      &[vm_p, base, dst_i, new_base],
-    );
+    self.call_checked("zuri_jit_new_finish", &[vm_p, base, dst_i, new_base]);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -3444,15 +3441,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               return false;
             }
             self.emit_construct_known(
-            dst,
-            func,
-            num_args,
-            guard_bits,
-            generation,
-            field_count,
-            ctor_bits,
-            proto_ptr,
-          )
+              dst,
+              func,
+              num_args,
+              guard_bits,
+              generation,
+              field_count,
+              ctor_bits,
+              proto_ptr,
+            )
           },
           None => {
             let base = self.base_param;

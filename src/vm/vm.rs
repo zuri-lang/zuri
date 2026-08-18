@@ -1107,9 +1107,7 @@ impl VM {
             return None;
           }
           return match code[ip + 1] {
-            Instr::Return { src } if src == dst => {
-              slots.into_iter().collect::<Option<Vec<u16>>>()
-            },
+            Instr::Return { src } if src == dst => slots.into_iter().collect::<Option<Vec<u16>>>(),
             _ => None,
           };
         },

@@ -110,8 +110,8 @@ class NBodySystem {
         var dy = iy - bodyj.y
         var dz = iz - bodyj.z
 
-        var d2 = dx**2 + dy**2 + dz**2
-        var distance = (d2 ** 0.5) # d2 ** 0.5 = sqrt(d2)
+        var d2 = dx * dx + dy * dy + dz * dz
+        var distance = d2.sqrt()
         var mag = dt / (d2 * distance)
 
         var massj = bodyj.mass
@@ -141,7 +141,7 @@ class NBodySystem {
     iter var i = 0; i < size; i++ {
       var bodyi = bodies[i]
 
-      e += 0.5 * bodyi.mass * (bodyi.vx**2 + bodyi.vy**2 + bodyi.vz**2)
+      e += 0.5 * bodyi.mass * (bodyi.vx * bodyi.vx + bodyi.vy * bodyi.vy + bodyi.vz * bodyi.vz)
 
       iter var j = i + 1; j < size; j++ {
         var bodyj = bodies[j]
@@ -149,7 +149,7 @@ class NBodySystem {
         var dy = bodyi.y - bodyj.y
         var dz = bodyi.z - bodyj.z
 
-        var distance = (dx**2 + dy**2 + dz**2) ** 0.5
+        var distance = (dx * dx + dy * dy + dz * dz).sqrt()
         e -= (bodyi.mass * bodyj.mass) / distance
       }
     }
