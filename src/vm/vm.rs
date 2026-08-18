@@ -2310,17 +2310,33 @@ impl VM {
     let class_val = self.get_reg(base, func_reg);
     let instance = self.heap.alloc_instance(class_val, field_count);
 
-    // Same window rearrangement as `prepare_compiled_construction` --
-    // see its own comment for why the grow must precede the shift and
-    // why the shift runs high to low.
-    let new_base = base + func_reg as usize + 1;
+    // The callee's window starts at the CALLEE REGISTER ITSELF, one
+    // lower than an ordinary call's `func_reg + 1`. That single offset
+    // is what makes the argument shift unnecessary.
+    //
+    // A constructor's window has to read `[self, arg0, arg1, ..]`,
+    // while `Instr::Call` on a class leaves `[class, arg0, arg1, ..]`.
+    // Starting the frame one register earlier lines those up exactly:
+    // the fresh instance overwrites the class in its own slot and
+    // becomes register 0 ("self"), and every argument is ALREADY where
+    // the callee expects it. The alternative -- keeping the standard
+    // base and sliding every argument up one slot -- costs a
+    // load/store per argument on every single instance built, and
+    // measured as ~9% of this helper's own time.
+    //
+    // Safe because `func_reg` is dead to the caller once the call is
+    // issued: it exists only to hold the callee. Even when the call
+    // site reuses it as `dst` (`Call { dst: r1, func: r1, .. }`, which
+    // the bytecode compiler emits routinely), nothing is lost --
+    // `zuri_jit_new_finish` writes `dst` only AFTER popping the
+    // callee's frame, so the write lands once the window is gone. And
+    // while the constructor runs, that slot holds the instance as the
+    // callee's own `self`, which is exactly the GC root it needs to be.
+    let new_base = base + func_reg as usize;
     let needed = new_base + proto.num_registers as usize;
     if self.registers.len() < needed {
       self.registers.resize(needed, Value::nil());
       self.sync_regs_ptr_cache();
-    }
-    for i in (0..num_args as usize).rev() {
-      self.registers[new_base + i + 1] = self.registers[new_base + i];
     }
     self.registers[new_base] = instance;
 

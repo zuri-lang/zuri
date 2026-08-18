@@ -1303,7 +1303,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // JIT-ineligible, which reads as a performance regression rather
     // than as the bug it is. Check `ZURI_JIT_LOG=1` for `ineligible:`
     // after touching this.
-    let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+    // `func`, NOT `func + 1`: this path's callee window deliberately
+    // starts at the callee register itself so the constructor's
+    // arguments need no shifting -- see
+    // `VM::prepare_known_construction`, which must agree with this
+    // exactly. The dynamic path below (`emit_construct_call`) still
+    // uses the ordinary `func + 1` convention with a real shift.
+    let new_base = self.fb.ins().iadd_imm_s(base, func as i64);
     let func_i = self.idx(func);
     let num_args_i = self.idx(num_args);
     let dst_i = self.idx(dst);
