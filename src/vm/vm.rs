@@ -7,7 +7,10 @@ use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::builtins;
-use crate::jit::{CallTarget, CompileFacts, EntryFn, JitEngine, background, escape, typeflow};
+use crate::jit::{
+  CallTarget, CompileFacts, ConstructInfo as CompileConstructInfo, EntryFn, JitEngine, background,
+  escape, typeflow,
+};
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -1045,7 +1048,83 @@ impl VM {
   /// does -- see `VM::method_table_generation`'s own docs. It also
   /// covers a dead class's address being recycled by a new one, since
   /// declaring any method on a class bumps the generation.
-  fn resolve_construct_target(&self, class_val: Value) -> Option<CallTarget> {
+  /// Recognizes a constructor that does nothing but copy each of its
+  /// parameters into a field, and reports which field slot each
+  /// parameter lands in -- see `jit::ConstructInfo::simple_ctor_param_slots`.
+  ///
+  /// The accepted shape is exactly what `@new(x, y, z) { self.x = x;
+  /// self.y = y; self.z = z }` compiles to: a run of
+  /// `SetField { obj: 0, src: <a parameter register> }`, then
+  /// `LoadNil` + `Return` of that same register. Anything else at all
+  /// -- a computed value, a branch, a call, a field written twice, a
+  /// parameter used for something other than one direct store --
+  /// returns `None`, because then the constructor has behavior that
+  /// storing arguments into slots would not reproduce.
+  ///
+  /// Deliberately a syntactic match on the emitted bytecode rather
+  /// than anything cleverer: the whole point is to be certain, and the
+  /// common case is this literal shape.
+  fn simple_ctor_param_slots(ctor: &ObjFunction, class: &ObjClass) -> Option<Vec<u16>> {
+    let code = &ctor.chunk.code;
+    if ctor.variadic || code.len() < 2 {
+      return None;
+    }
+    // `arity` COUNTS the implicit `self`, so a `@new(x, y, z)` reports
+    // 4. The real parameters are registers `1..=params`.
+    let params = (ctor.arity as usize).checked_sub(1)?;
+    // `slots[i]` is where parameter `i` is stored.
+    let mut slots: Vec<Option<u16>> = vec![None; params];
+
+    let mut ip = 0;
+    while ip < code.len() {
+      match code[ip] {
+        Instr::SetField {
+          obj: 0,
+          name_const,
+          src,
+        } => {
+          if src == 0 || (src as usize) > params {
+            return None;
+          }
+          let name = ctor.chunk.constants.get(name_const as usize)?;
+          if !name.is_string() {
+            return None;
+          }
+          let slot = *class.field_slots.get(name.as_str())?;
+          let param = src as usize - 1;
+          // One store per parameter, and no field written twice --
+          // either would make the slot assignment ambiguous.
+          if slots[param].is_some() || slots.iter().any(|s| *s == Some(slot)) {
+            return None;
+          }
+          slots[param] = Some(slot);
+          ip += 1;
+        },
+        Instr::LoadNil { dst } => {
+          // Must be the trailing `LoadNil` + `Return` pair and nothing
+          // more.
+          if ip + 2 != code.len() {
+            return None;
+          }
+          return match code[ip + 1] {
+            Instr::Return { src } if src == dst => {
+              slots.into_iter().collect::<Option<Vec<u16>>>()
+            },
+            _ => None,
+          };
+        },
+        _ => return None,
+      }
+    }
+    None
+  }
+
+  fn resolve_construct_target(
+    &self,
+    class_val: Value,
+    ip: usize,
+    safety_sink: Option<&mut FxHashMap<usize, CompileConstructInfo>>,
+  ) -> Option<CallTarget> {
     let (field_count, ctor, superclass) = {
       let class = class_val.as_class();
       if class.own_field_initializer.is_some() {
@@ -1087,6 +1166,18 @@ impl VM {
       return None;
     }
 
+    if let Some(sink) = safety_sink {
+      let class = class_val.as_class();
+      sink.insert(
+        ip,
+        CompileConstructInfo {
+          safety: escape::ClassFieldSafety::from_class(&class),
+          field_slots: class.field_slots.clone(),
+          field_count,
+          simple_ctor_param_slots: Self::simple_ctor_param_slots(ctor_proto, &class),
+        },
+      );
+    }
     Some(CallTarget::ConstructKnown {
       guard_bits: class_val.to_bits(),
       generation: self.method_table_generation.get(),
@@ -1099,8 +1190,15 @@ impl VM {
     })
   }
 
-  fn resolve_call_targets(&self, proto: &ObjFunction) -> FxHashMap<usize, CallTarget> {
+  fn resolve_call_targets(
+    &self,
+    proto: &ObjFunction,
+  ) -> (
+    FxHashMap<usize, CallTarget>,
+    FxHashMap<usize, CompileConstructInfo>,
+  ) {
     let mut targets = FxHashMap::default();
+    let mut field_safety = FxHashMap::default();
     let proto_ptr = proto as *const ObjFunction;
 
     // Owned `String`s throughout, not borrowed `&str`s: this runs once
@@ -1121,7 +1219,7 @@ impl VM {
       }
     }
     if candidate_names.is_empty() {
-      return targets;
+      return (targets, field_safety);
     }
 
     let self_facts = escape::self_reference_facts(proto);
@@ -1159,7 +1257,7 @@ impl VM {
           targets.insert(
             ip,
             self
-              .resolve_construct_target(resolved)
+              .resolve_construct_target(resolved, ip, Some(&mut field_safety))
               .unwrap_or(CallTarget::Construct),
           );
           break;
@@ -1184,7 +1282,7 @@ impl VM {
         }
       }
     }
-    targets
+    (targets, field_safety)
   }
 
   /// Builds `proto`'s IR right now (synchronously -- the only stage
@@ -1219,10 +1317,12 @@ impl VM {
           self.sample_all_reg_types(proto),
         )
       };
+    let (call_targets, construct_info) = self.resolve_call_targets(proto);
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
       self_class_bits: self.resolve_self_class(proto),
-      call_targets: self.resolve_call_targets(proto),
+      call_targets,
+      construct_info,
     };
     let pending =
       match self

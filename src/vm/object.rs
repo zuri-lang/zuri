@@ -2238,9 +2238,20 @@ impl Heap {
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
     let fields = self.take_field_storage(field_count);
-    // Exactly `approx_size`'s own `Obj::Instance` arm, but computed
-    // from a count the caller already has instead of re-derived.
-    let size = field_count * size_of::<Cell<Value>>();
+    // Exactly what `approx_size` would return for this object --
+    // its `size_of::<Obj>()` BASE plus the `Obj::Instance` arm --
+    // just computed from a count the caller already has instead of
+    // re-derived by matching the variant.
+    //
+    // The base term is not optional. Dropping it under-reports every
+    // instance by ~56 bytes, which does not merely skew a statistic:
+    // `young_bytes_allocated` drives `needs_minor_gc`, so the nursery
+    // then admits roughly four times as many objects before collecting
+    // (measured: 2.26M live young objects per cycle instead of 601k),
+    // and since a `GcBox` costs real memory the accounting never sees,
+    // peak RSS more than doubled on binary-tree while the byte counter
+    // still looked normal.
+    let size = std::mem::size_of::<Obj>() + field_count * size_of::<Cell<Value>>();
     self.alloc_sized(Obj::Instance(ObjInstance { class, fields }), size)
   }
 

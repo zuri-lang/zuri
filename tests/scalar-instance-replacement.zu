@@ -1,0 +1,140 @@
+/* Covers instance scalar replacement (codegen::emit_scalar_construct):
+ * the cases it must fire on, and -- more importantly -- the cases it
+ * must NOT, where the object genuinely has to exist on the heap.
+ */
+
+class Vec3 {
+  @new(x, y, z) {
+    self.x = x
+    self.y = y
+    self.z = z
+  }
+}
+
+class Pair {
+  @new(a, b) {
+    self.a = a
+    self.b = b
+  }
+  sum() { return self.a + self.b }
+}
+
+/* A field and a method sharing a name: reading `.tag` could resolve to
+ * the method and materialize a BoundMethod, so ClassFieldSafety must
+ * refuse to call this field safe, and the object must stay real.
+ */
+class Shadowed {
+  var tag = 1
+  @new(v) { self.v = v }
+  tag() { return 'method' }
+}
+
+/* Constructor does more than copy parameters into fields, so it is not
+ * reproducible inline and must not be scalar-replaced.
+ */
+class Computed {
+  @new(a, b) {
+    self.a = a
+    self.sum = a + b
+  }
+}
+
+/* The plain fire case: built, read, discarded. */
+def dot(n) {
+  var acc = 0
+  iter var i = 0; i < n; i++ {
+    var v = Vec3(i, i + 1, i + 2)
+    acc += v.x * v.x + v.y * v.y + v.z * v.z
+  }
+  return acc
+}
+
+/* Written after construction, still non-escaping. */
+def mutated(n) {
+  var acc = 0
+  iter var i = 0; i < n; i++ {
+    var v = Vec3(i, 0, 0)
+    v.y = v.x * 2
+    v.z = v.y + 1
+    acc += v.x + v.y + v.z
+  }
+  return acc
+}
+
+/* ESCAPES by being returned -- must stay a real object. */
+def make(n) {
+  return Vec3(n, n + 1, n + 2)
+}
+
+/* ESCAPES by being stored into a list. */
+def collect(n) {
+  var out = []
+  iter var i = 0; i < n; i++ {
+    out.append(Vec3(i, i, i))
+  }
+  return out
+}
+
+/* ESCAPES by being passed to another function. */
+def consume(v) { return v.x + v.y + v.z }
+def passed(n) {
+  var acc = 0
+  iter var i = 0; i < n; i++ {
+    acc += consume(Vec3(i, i, i))
+  }
+  return acc
+}
+
+/* Invoking a method on it escapes (the receiver is handed to a call). */
+def via_method(n) {
+  var acc = 0
+  iter var i = 0; i < n; i++ {
+    var p = Pair(i, i + 1)
+    acc += p.sum()
+  }
+  return acc
+}
+
+def shadowed_use(n) {
+  var acc = 0
+  iter var i = 0; i < n; i++ {
+    var s = Shadowed(i)
+    acc += s.v
+  }
+  return acc
+}
+
+def computed_use(n) {
+  var acc = 0
+  iter var i = 0; i < n; i++ {
+    var c = Computed(i, i + 1)
+    acc += c.a + c.sum
+  }
+  return acc
+}
+
+/* Hot enough to compile every one of the above. */
+echo dot(50000)
+echo mutated(50000)
+echo make(7).y
+echo collect(3).length()
+echo passed(50000)
+echo via_method(50000)
+echo shadowed_use(50000)
+echo computed_use(50000)
+
+/* A scalar-replaced instance must still be a correct GC root: build one
+ * whose fields hold heap objects, allocate hard enough to force
+ * collections, then read the fields back.
+ */
+def roots(n) {
+  var last = nil
+  iter var i = 0; i < n; i++ {
+    var v = Vec3('s${i}', [i, i + 1], i)
+    if i % 10000 == 0 {
+      last = v.x + '|' + v.y[1].to_string()
+    }
+  }
+  return last
+}
+echo roots(60000)

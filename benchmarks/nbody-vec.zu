@@ -1,0 +1,163 @@
+/* The Computer Language Benchmarks Game
+ * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
+ *
+ * n-body, written in the idiomatic object-oriented style where the
+ * separation between two bodies is a short-lived Vec3 value rather
+ * than three loose local variables.
+ *
+ * This is the shape escape analysis exists for: one Vec3 is built per
+ * body pair per step, only ever read through its own fields, and dies
+ * immediately -- it is never stored, returned, captured, or passed
+ * anywhere. A JIT that can prove that should not be heap-allocating
+ * it at all. The plain-scalar `nbody.zu` in this directory is the
+ * control: same physics, no temporary objects.
+ */
+
+var PI = 3.141592653589793
+var SOLAR_MASS = 4 * PI * PI
+var DAYS_PER_YEAR = 365.24
+
+class Vec3 {
+  @new(x, y, z) {
+    self.x = x
+    self.y = y
+    self.z = z
+  }
+}
+
+class Body {
+  @new(x, y, z, vx, vy, vz, mass) {
+    self.x = x
+    self.y = y
+    self.z = z
+    self.vx = vx
+    self.vy = vy
+    self.vz = vz
+    self.mass = mass
+  }
+}
+
+def make_bodies() {
+  var sun = Body(0, 0, 0, 0, 0, 0, SOLAR_MASS)
+
+  var jupiter = Body(
+    4.84143144246472090e+00,
+    -1.16032004402742839e+00,
+    -1.03622044471123109e-01,
+    1.66007664274403694e-03 * DAYS_PER_YEAR,
+    7.69901118419740425e-03 * DAYS_PER_YEAR,
+    -6.90460016972063023e-05 * DAYS_PER_YEAR,
+    9.54791938424326609e-04 * SOLAR_MASS
+  )
+
+  var saturn = Body(
+    8.34336671824457987e+00,
+    4.12479856412430479e+00,
+    -4.03523417114321381e-01,
+    -2.76742510726862411e-03 * DAYS_PER_YEAR,
+    4.99852801234917238e-03 * DAYS_PER_YEAR,
+    2.30417297573763929e-05 * DAYS_PER_YEAR,
+    2.85885980666130812e-04 * SOLAR_MASS
+  )
+
+  var uranus = Body(
+    1.28943695621391310e+01,
+    -1.51111514016986312e+01,
+    -2.23307578892655734e-01,
+    2.96460137564761618e-03 * DAYS_PER_YEAR,
+    2.37847173959480950e-03 * DAYS_PER_YEAR,
+    -2.96589568540237556e-05 * DAYS_PER_YEAR,
+    4.36624404335156298e-05 * SOLAR_MASS
+  )
+
+  var neptune = Body(
+    1.53796971148509165e+01,
+    -2.59193146099879641e+01,
+    1.79258772950371181e-01,
+    2.68067772490389322e-03 * DAYS_PER_YEAR,
+    1.62824170038242295e-03 * DAYS_PER_YEAR,
+    -9.51592254519715870e-05 * DAYS_PER_YEAR,
+    5.15138902046611451e-05 * SOLAR_MASS
+  )
+
+  return [sun, jupiter, saturn, uranus, neptune]
+}
+
+def offset_momentum(bodies) {
+  var px = 0, py = 0, pz = 0
+  iter var i = 0; i < bodies.length(); i++ {
+    var b = bodies[i]
+    px += b.vx * b.mass
+    py += b.vy * b.mass
+    pz += b.vz * b.mass
+  }
+  var sun = bodies[0]
+  sun.vx = -px / SOLAR_MASS
+  sun.vy = -py / SOLAR_MASS
+  sun.vz = -pz / SOLAR_MASS
+}
+
+/* The hot loop. `d` is allocated here and consumed here -- nothing it
+ * touches outlives the iteration that built it.
+ */
+def advance(bodies, dt) {
+  var n = bodies.length()
+  iter var i = 0; i < n; i++ {
+    var bi = bodies[i]
+    iter var j = i + 1; j < n; j++ {
+      var bj = bodies[j]
+
+      var d = Vec3(bi.x - bj.x, bi.y - bj.y, bi.z - bj.z)
+
+      var d2 = d.x * d.x + d.y * d.y + d.z * d.z
+      var mag = dt / (d2 * d2.sqrt())
+
+      var bjm = bj.mass * mag
+      var bim = bi.mass * mag
+
+      bi.vx -= d.x * bjm
+      bi.vy -= d.y * bjm
+      bi.vz -= d.z * bjm
+
+      bj.vx += d.x * bim
+      bj.vy += d.y * bim
+      bj.vz += d.z * bim
+    }
+  }
+
+  iter var i = 0; i < n; i++ {
+    var b = bodies[i]
+    b.x += dt * b.vx
+    b.y += dt * b.vy
+    b.z += dt * b.vz
+  }
+}
+
+def energy(bodies) {
+  var n = bodies.length()
+  var e = 0
+  iter var i = 0; i < n; i++ {
+    var bi = bodies[i]
+    e += 0.5 * bi.mass * (bi.vx * bi.vx + bi.vy * bi.vy + bi.vz * bi.vz)
+    iter var j = i + 1; j < n; j++ {
+      var bj = bodies[j]
+      var d = Vec3(bi.x - bj.x, bi.y - bj.y, bi.z - bj.z)
+      var dist = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt()
+      e -= (bi.mass * bj.mass) / dist
+    }
+  }
+  return e
+}
+
+var N = 50_000_000
+var bodies = make_bodies()
+
+offset_momentum(bodies)
+
+var start = time()
+echo energy(bodies)
+iter var i = 0; i < N; i++ {
+  advance(bodies, 0.01)
+}
+echo energy(bodies)
+echo '\nTotal time taken: ${time() - start}s'

@@ -248,4 +248,39 @@ pub struct CompileFacts {
   /// against -- see `VM::method_table_generation`'s own docs.
   pub self_class_bits: Option<(u64, u64)>,
   pub call_targets: FxHashMap<usize, CallTarget>,
+  /// Everything a construction site needs in order to be a candidate
+  /// for SCALAR REPLACEMENT -- keyed by the site's bytecode ip, and
+  /// resolved in `vm::vm::VM::resolve_construct_target`, the one place
+  /// with the live `ObjClass` needed to answer any of it.
+  pub construct_info: FxHashMap<usize, ConstructInfo>,
+}
+
+/// One construction site's compile-time view of the class it builds.
+pub struct ConstructInfo {
+  /// Which field names are safe to read via `GetField` because no
+  /// method of the same name could shadow them.
+  ///
+  /// Lets `escape::analyze_one` treat `d.x` on a freshly constructed
+  /// `d` as the plain field read it almost always is, instead of
+  /// assuming it might materialize a `BoundMethod` that leaks `d`.
+  /// Without this, every object a function reads its own fields off
+  /// of is classified as escaping -- which is to say essentially every
+  /// object -- and nothing could ever be scalar-replaced.
+  pub safety: escape::ClassFieldSafety,
+  /// Field name -> slot index, for resolving `GetField`/`SetField` on
+  /// a scalar-replaced instance without any runtime lookup.
+  pub field_slots: FxHashMap<String, u16>,
+  pub field_count: u16,
+  /// `Some(slots)` when the constructor does nothing but copy each of
+  /// its parameters straight into a field: `slots[i]` is the field
+  /// slot parameter `i` ends up in. `None` disqualifies the site from
+  /// scalar replacement.
+  ///
+  /// This is what makes replacing the allocation possible at all. The
+  /// object cannot simply not exist if something has to CALL a
+  /// constructor with it as `self` -- so the constructor's effect has
+  /// to be reproducible inline, and "store these arguments into these
+  /// slots" is exactly that, with no call left to make. It is also by
+  /// far the most common constructor ever written.
+  pub simple_ctor_param_slots: Option<Vec<u16>>,
 }

@@ -302,6 +302,18 @@ struct FuncCompiler<'a, 'b> {
   /// could ever need to reuse this register for something unrelated
   /// that would make a STALE entry here observably wrong).
   scalar_lists: FxHashMap<u8, (StackSlot, u8)>,
+  /// Per-construction-site class facts -- see
+  /// `jit::CompileFacts::construct_info`.
+  construct_info: FxHashMap<usize, crate::jit::ConstructInfo>,
+  /// Registers holding a SCALAR-REPLACED instance: the object was
+  /// never allocated, and its fields live in a Cranelift stack slot.
+  /// Maps the register to that slot and to the construction site whose
+  /// `construct_info` resolves field names to slot indices.
+  ///
+  /// Same discipline as `scalar_lists`: an entry is only ever added
+  /// for a register `escape::analyze_one` already proved never leaves
+  /// this function, and any ordinary write to that register removes it.
+  scalar_instances: FxHashMap<u8, (StackSlot, usize)>,
   /// Can any upvalue ever be OPEN over this frame's own registers?
   ///
   /// Only `Instr::Closure` opens one (it is the sole caller of
@@ -367,6 +379,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       own_func_id,
       self_class_bits: facts.self_class_bits,
       call_targets: facts.call_targets,
+      construct_info: facts.construct_info,
+      scalar_instances: FxHashMap::default(),
       scalar_lists: FxHashMap::default(),
       frame_can_open_upvalues: proto
         .chunk
@@ -862,6 +876,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // unconditionally on any ordinary write is always correct, not
     // just defensive.
     self.scalar_lists.remove(&r);
+    // Same reasoning: this register is being redefined, so any
+    // scalar-replaced instance it used to name is no longer there.
+    self.scalar_instances.remove(&r);
   }
 
   /// Writes real `VM::registers` memory for every register that's both
@@ -1106,6 +1123,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // `store_reg` but just as much a real write -- any stale
       // `scalar_lists` entry for it needs to go.
       self.scalar_lists.remove(&dst);
+      self.scalar_instances.remove(&dst);
     }
     result
   }
@@ -1260,6 +1278,120 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+  }
+
+  /// Can this construction site skip allocating entirely, keeping the
+  /// instance's fields in a Cranelift stack slot instead?
+  ///
+  /// Mirrors `scalar_replace_eligible`'s conditions, for the same
+  /// reasons -- see its docs for why `Move` and the speculative-body
+  /// gate are ruled out wholesale rather than reasoned about:
+  /// - `escape::analyze_one` proves the constructed value never leaves
+  ///   this function (consulting this site's own class field-shadowing
+  ///   safety, without which reading `d.x` alone would count as an
+  ///   escape).
+  /// - The constructor is simple enough to reproduce inline, i.e. it
+  ///   only copies parameters into fields -- see
+  ///   `jit::ConstructInfo::simple_ctor_param_slots`.
+  /// - No `Instr::Move` anywhere reads the destination register, so
+  ///   `scalar_instances` only ever answers for the exact register
+  ///   `analyze_one` reasoned about.
+  ///
+  /// Deliberately does NOT inherit `scalar_replace_eligible`'s
+  /// "no specialized/speculative body" gate. That gate exists for a
+  /// specific, reproduced speculation bug involving a list read through
+  /// a VARIABLE index (see its docs) -- and a scalar-replaced instance
+  /// has no variable index anywhere: every field resolves to a
+  /// compile-time-constant slot, emitted as a fixed-offset
+  /// `stack_load`/`stack_store`. Keeping the gate here would disable
+  /// this optimization on essentially every real numeric workload,
+  /// since those are exactly the functions that get a specialized
+  /// body.
+  fn scalar_construct_eligible(&self, ip: usize, dst: u8) -> bool {
+    let Some(info) = self.construct_info.get(&ip) else {
+      return false;
+    };
+    if info.simple_ctor_param_slots.is_none() || info.field_count == 0 {
+      return false;
+    }
+    for instr in &self.proto.chunk.code {
+      if let Instr::Move { src, .. } = instr
+        && *src == dst
+      {
+        return false;
+      }
+    }
+    !escape::analyze_one(self.proto, ip, None, Some(&info.safety)).escapes
+  }
+
+  /// Builds a proven-non-escaping instance with NO heap allocation:
+  /// the constructor's parameter-to-field copies are replayed straight
+  /// into a stack slot, and no object, no `@new` call, and no GC work
+  /// happen at all.
+  ///
+  /// Every slot is initialized -- the ones the constructor writes from
+  /// its arguments, and any remaining declared field to nil -- before
+  /// the slot is registered as a GC root, for the same reason
+  /// `emit_scalar_make_list` populates first: an uninitialized slot is
+  /// not a valid `Value` for a root scan to walk.
+  fn emit_scalar_construct(&mut self, ip: usize, dst: u8, func: u8, num_args: u8) {
+    let (field_count, param_slots) = {
+      let info = &self.construct_info[&ip];
+      (
+        info.field_count,
+        info
+          .simple_ctor_param_slots
+          .clone()
+          .expect("eligibility checked simple_ctor_param_slots"),
+      )
+    };
+
+    let slot = self.fb.create_sized_stack_slot(StackSlotData::new(
+      StackSlotKind::ExplicitSlot,
+      field_count as u32 * 8,
+      3,
+    ));
+
+    let nil = self.u64c(crate::vm::value::Value::nil().to_bits());
+    for i in 0..field_count {
+      self
+        .fb
+        .ins()
+        .stack_store(types::I64, nil, slot, (i as i32) * 8);
+    }
+
+    // Arguments sit at `func + 1 ..= func + num_args`, exactly as the
+    // ordinary call convention leaves them.
+    for (param, &field_slot) in param_slots.iter().enumerate() {
+      if param >= num_args as usize {
+        break;
+      }
+      let v = self.load_reg(func + 1 + param as u8);
+      self
+        .fb
+        .ins()
+        .stack_store(types::I64, v, slot, (field_slot as i32) * 8);
+    }
+
+    let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+    let count_c = self.u64c(field_count as u64);
+    self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+    self.scalar_instances.insert(dst, (slot, ip));
+  }
+
+  /// Resolves `name_const` to a field slot on a scalar-replaced
+  /// instance held in `obj`, or `None` if `obj` isn't one (or the name
+  /// isn't a field of its class, which would mean a method read and
+  /// must go the general way).
+  fn scalar_instance_slot(&self, obj: u8, name_const: u16) -> Option<(StackSlot, u16)> {
+    let (slot, site) = *self.scalar_instances.get(&obj)?;
+    let info = self.construct_info.get(&site)?;
+    let name = self.proto.chunk.constants.get(name_const as usize)?;
+    if !name.is_string() {
+      return None;
+    }
+    let field = *info.field_slots.get(name.as_str())?;
+    Some((slot, field))
   }
 
   /// `Instr::Call`'s PROVEN constructor shape (`jit::CallTarget
@@ -2380,7 +2512,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         return false;
       }
     }
-    !escape::analyze_one(self.proto, alloc_ip, None).escapes
+    !escape::analyze_one(self.proto, alloc_ip, None, None).escapes
   }
 
   /// `Instr::MakeList{dst, start, count}`'s scalar-replaced fast path
@@ -3306,7 +3438,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             field_count,
             ctor_bits,
             proto_ptr,
-          }) => self.emit_construct_known(
+          }) => {
+            if self.scalar_construct_eligible(ip, dst) {
+              self.emit_scalar_construct(ip, dst, func, num_args);
+              return false;
+            }
+            self.emit_construct_known(
             dst,
             func,
             num_args,
@@ -3315,7 +3452,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             field_count,
             ctor_bits,
             proto_ptr,
-          ),
+          )
+          },
           None => {
             let base = self.base_param;
             let vm_p = self.vm_param;
@@ -3513,6 +3651,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         obj,
         name_const,
       } => {
+        // A scalar-replaced instance has no object to read from -- the
+        // field IS the stack slot, so this becomes a plain load.
+        if let Some((slot, field)) = self.scalar_instance_slot(obj, name_const) {
+          let v = self
+            .fb
+            .ins()
+            .stack_load(types::I64, types::I64, slot, (field as i32) * 8);
+          self.store_reg(dst, v);
+          return false;
+        }
         if let Some(slot) = self.self_field_slot(obj, name_const) {
           self.emit_self_get_field(ip, dst, obj, name_const, slot);
           return false;
@@ -3534,6 +3682,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         name_const,
         src,
       } => {
+        // Mirror of the `GetField` case above: a plain store into the
+        // stack slot standing in for the never-allocated instance.
+        if let Some((slot, field)) = self.scalar_instance_slot(obj, name_const) {
+          let v = self.load_reg(src);
+          self
+            .fb
+            .ins()
+            .stack_store(types::I64, v, slot, (field as i32) * 8);
+          return false;
+        }
         if let Some(slot) = self.self_field_slot(obj, name_const) {
           self.emit_self_set_field(ip, obj, name_const, src, slot);
           return false;

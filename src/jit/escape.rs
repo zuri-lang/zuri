@@ -450,6 +450,38 @@ fn self_getfield_is_safe(
   safety.is_field_safe(name_val.as_str())
 }
 
+/// `self_getfield_is_safe`'s counterpart for the TRACKED ALLOCATION
+/// itself rather than for `self`.
+///
+/// Same `BoundMethod`-shadowing question, asked about a different
+/// object: reading `d.x` off a freshly built `Vec3` is only a plain
+/// field read if `Vec3` has no method also called `x` -- otherwise it
+/// materializes a `BoundMethod` capturing `d`, which genuinely leaks
+/// it. The difference is only WHERE the class comes from: `self`'s is
+/// `proto.owning_class_name`, while an allocation's is known to
+/// whoever proved the construction site's target class (see
+/// `vm::vm::VM::resolve_construct_target`), so there is no
+/// `owning_class_name` precondition here.
+///
+/// Conservatively unsafe with no safety information supplied --
+/// identical to the original behavior, never worse.
+fn tracked_getfield_is_safe(
+  proto: &ObjFunction,
+  name_const: u16,
+  alloc_class_safety: Option<&ClassFieldSafety>,
+) -> bool {
+  let Some(safety) = alloc_class_safety else {
+    return false;
+  };
+  let Some(name_val) = proto.chunk.constants.get(name_const as usize) else {
+    return false;
+  };
+  if !name_val.is_string() {
+    return false;
+  }
+  safety.is_field_safe(name_val.as_str())
+}
+
 /// Every register whose use by `instr`, IF it currently aliases the
 /// tracked allocation, proves the allocation escapes -- see this
 /// module's own docs for the verified-safe allowlist this is the
@@ -628,6 +660,7 @@ pub fn analyze_one(
   proto: &ObjFunction,
   alloc_ip: usize,
   self_class_safety: Option<&ClassFieldSafety>,
+  alloc_class_safety: Option<&ClassFieldSafety>,
 ) -> EscapeResult {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -719,8 +752,6 @@ pub fn analyze_one(
     // `escaping_reads`' normal `vec![obj]` for this one instruction
     // shape. Everything else falls through to Phase 1's plain
     // `escaping_reads`.
-    let is_self_get_field =
-      matches!(instr, Instr::GetField { obj, .. } if *obj == 0) && proto.is_method;
     if let Instr::Call { func, num_args, .. } = *instr
       && self_ref[ip].get(func)
     {
@@ -739,12 +770,24 @@ pub fn analyze_one(
           escaped = true;
         }
       }
-    } else if is_self_get_field {
-      let Instr::GetField { name_const, .. } = *instr else {
-        unreachable!("is_self_get_field only true for GetField");
-      };
-      if entry[ip].get(0) && !self_getfield_is_safe(proto, name_const, self_class_safety) {
-        escaped = true;
+    } else if let Instr::GetField { obj, name_const, .. } = *instr {
+      // `GetField` reads exactly one register (`obj`), so this arm
+      // fully replaces `escaping_reads`' `vec![obj]` for it. The
+      // receiver only matters when it currently aliases the tracked
+      // allocation; when it does, the read is harmless precisely when
+      // the name cannot resolve to a method on the receiver's class.
+      // `self` and a tracked allocation differ only in where that
+      // class is known from -- see the two `*_getfield_is_safe`
+      // helpers.
+      if entry[ip].get(obj) {
+        let safe = if obj == 0 && proto.is_method {
+          self_getfield_is_safe(proto, name_const, self_class_safety)
+        } else {
+          tracked_getfield_is_safe(proto, name_const, alloc_class_safety)
+        };
+        if !safe {
+          escaped = true;
+        }
       }
     } else {
       for reg in escaping_reads(instr) {
