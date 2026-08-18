@@ -1285,6 +1285,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     guard_bits: u64,
     generation: u64,
     field_count: u16,
+    ctor_bits: u64,
     proto_ptr: usize,
   ) {
     let base = self.base_param;
@@ -1306,6 +1307,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let func_i = self.idx(func);
     let num_args_i = self.idx(num_args);
     let dst_i = self.idx(dst);
+    let ctor_v = self.u64c(ctor_bits);
     let proto_v = self.u64c(proto_ptr as u64);
     let field_count_v = self.i64c(field_count as i64);
     let closure_out_addr = {
@@ -1345,6 +1347,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         func_i,
         num_args_i,
         dst_i,
+        ctor_v,
         proto_v,
         field_count_v,
         closure_out_addr,
@@ -3295,6 +3298,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             guard_bits,
             generation,
             field_count,
+            ctor_bits,
             proto_ptr,
           }) => self.emit_construct_known(
             dst,
@@ -3303,6 +3307,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             guard_bits,
             generation,
             field_count,
+            ctor_bits,
             proto_ptr,
           ),
           None => {

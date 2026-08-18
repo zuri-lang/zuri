@@ -2148,7 +2148,31 @@ impl Heap {
     self.alloc_old(Obj::Func(Box::new(f)))
   }
 
+  /// Allocates a class METHOD's closure straight into the old
+  /// generation, and every other closure into the nursery as usual.
+  ///
+  /// Same argument as `alloc_class`, one level down. A method closure
+  /// is created once, by the `Instr::Closure`/`Instr::SetMethod` pair
+  /// that runs when its class is declared, and then lives in that
+  /// class's method table for as long as the class does -- so the
+  /// nursery never buys it anything, while its address moving out from
+  /// under a compile-time-baked guard costs real performance silently
+  /// (see `alloc_class`'s own docs for how that failure mode looks).
+  ///
+  /// Concretely, this is what makes `jit::CallTarget::ConstructKnown`
+  /// able to bake a constructor's `Value` bits at all: with the
+  /// closure immovable, `zuri_jit_construct_prepare` needs neither the
+  /// `ObjClass` read that finds `constructor` nor the
+  /// `ensure_stable_for_compiled_entry` generation probe -- two
+  /// dependent, cache-missing loads on every single instance built.
+  ///
+  /// Ordinary closures stay young deliberately: those genuinely are
+  /// short-lived (a callback built inside a loop is the common case),
+  /// which is exactly what the nursery is for.
   pub fn alloc_closure(&mut self, c: ObjClosure) -> Value {
+    if c.function.as_func().owning_class_name.is_some() {
+      return self.alloc_old(Obj::Closure(c));
+    }
     self.alloc(Obj::Closure(c))
   }
 

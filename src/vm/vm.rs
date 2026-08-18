@@ -1071,6 +1071,17 @@ impl VM {
     if !ctor.is_closure() {
       return None;
     }
+    // Immovable-by-construction (`Heap::alloc_closure` puts every class
+    // method straight into the old generation, which is mark-sweep and
+    // never relocates), so baking the closure's own bits is sound and
+    // this check should never actually fail. Kept as a real check
+    // rather than an assumption: it is the one thing that makes the
+    // bake safe, and if that allocation policy ever changes this
+    // quietly falls back to the dynamic path instead of handing
+    // generated code a stale pointer.
+    if Heap::is_young(ctor.as_obj()) {
+      return None;
+    }
     let ctor_proto = ctor.as_closure().function.as_func();
     if ctor_proto.variadic {
       return None;
@@ -1080,6 +1091,7 @@ impl VM {
       guard_bits: class_val.to_bits(),
       generation: self.method_table_generation.get(),
       field_count,
+      ctor_bits: ctor.to_bits(),
       // `ObjFunction` is allocated straight into old-generation
       // storage and never moves (see `Heap::alloc_function`), the same
       // guarantee `run_until`'s own cached `func_ptr` relies on.

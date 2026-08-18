@@ -212,6 +212,12 @@ pub enum CallTarget {
     guard_bits: u64,
     generation: u64,
     field_count: u16,
+    /// The constructor closure's own `Value` bits. Safe to bake only
+    /// because `Heap::alloc_closure` allocates class methods into the
+    /// non-relocating old generation -- see its docs, and
+    /// `VM::resolve_construct_target`, which re-checks that rather
+    /// than assuming it.
+    ctor_bits: u64,
     proto_ptr: usize,
   },
 }

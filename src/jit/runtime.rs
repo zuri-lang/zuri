@@ -843,6 +843,7 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
   func_reg: u64,
   num_args: u64,
   dst: u64,
+  ctor_bits: u64,
   proto_ptr: u64,
   field_count: u64,
   closure_out: u64,
@@ -859,16 +860,13 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
   let Some(entry) = proto.jit.entry.get() else {
     return 0;
   };
-  let class_val = vm.get_reg(base as usize, func_reg as u8);
-  let Some(ctor) = class_val.as_class().constructor else {
-    return 0;
-  };
-  // Still required even though the constructor was proven: it becomes
-  // the compiled callee's `closure_param`, a raw SSA value held for
-  // the whole invocation with no GC-visible home, and nothing so far
-  // has established it is out of the nursery. Inlined down to a single
-  // generation read on the common path.
-  let ctor = vm.ensure_stable_for_compiled_entry(ctor);
+  // Both the `ObjClass` read that used to find `constructor` and the
+  // `ensure_stable_for_compiled_entry` generation probe are gone:
+  // class methods live in the non-relocating old generation (see
+  // `Heap::alloc_closure`), so this closure cannot move and its bits
+  // were baked at compile time. Those were two dependent, cache-
+  // missing loads on the path of every instance built.
+  let ctor = Value::from_bits(ctor_bits);
   vm.prepare_known_construction(
     base as usize,
     func_reg as u8,
@@ -878,7 +876,7 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
     proto,
     field_count as usize,
   );
-  unsafe { *(closure_out as *mut u64) = ctor.to_bits() };
+  unsafe { *(closure_out as *mut u64) = ctor_bits };
   entry as usize as u64
 }
 
@@ -2293,7 +2291,6 @@ type Fn4 = unsafe extern "C" fn(*mut VM, u64, u64, u64) -> u64;
 type Fn5 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64) -> u64;
 type Fn6 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64) -> u64;
 type Fn7 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64) -> u64;
-type Fn8 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64) -> u64;
 type Fn9 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 /// Reinterprets an already-coerced, concrete function-pointer value
@@ -2373,15 +2370,6 @@ macro_rules! spec7 {
     }
   };
 }
-macro_rules! spec8 {
-  ($f:ident) => {
-    HelperSpec {
-      name: stringify!($f),
-      ptr: as_ptr($f as Fn8),
-      arity: 8,
-    }
-  };
-}
 macro_rules! spec9 {
   ($f:ident) => {
     HelperSpec {
@@ -2436,7 +2424,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_call),
     spec6!(zuri_jit_call_prepare),
     spec6!(zuri_jit_new_prepare),
-    spec8!(zuri_jit_construct_prepare),
+    spec9!(zuri_jit_construct_prepare),
     spec4!(zuri_jit_new_finish),
     spec9!(zuri_jit_invoke_prepare),
     spec5!(zuri_jit_direct_call_prepare),
