@@ -1859,6 +1859,73 @@ impl VM {
     num_args: u8,
     dst_in_caller: u8,
   ) {
+    // Split so the overwhelmingly common shape -- a non-variadic
+    // callee, called with exactly its declared arity, into a register
+    // window that already has room -- is a straight frame push with
+    // nothing else in it.
+    //
+    // Worth splitting rather than trusting the optimizer: the variadic
+    // branch below builds a `Vec` and allocates a list, and its mere
+    // presence gave this function a 168-byte stack frame plus a
+    // four-register prologue that every ordinary call paid for and
+    // none of them used. Since it is reached from every call helper
+    // (`zuri_jit_construct_prepare`, `zuri_jit_direct_call_prepare`,
+    // `dispatch_call_inner`, ...) that prologue alone measured as
+    // ~13% of the function's own time on constructor-heavy code.
+    if !proto.variadic
+      && num_args == proto.arity
+      && self.registers.len() >= new_base + proto.num_registers as usize
+    {
+      self.push_frame_fast(closure_val, closure, proto, new_base, dst_in_caller);
+      return;
+    }
+    self.setup_closure_call_slow(
+      closure_val,
+      closure,
+      proto,
+      new_base,
+      num_args,
+      dst_in_caller,
+    );
+  }
+
+  /// `setup_closure_call`'s fast path: arguments are already exactly
+  /// in place and the window is already big enough, so the entire call
+  /// setup is one `CallFrame` push.
+  #[inline]
+  fn push_frame_fast(
+    &mut self,
+    closure_val: Value,
+    closure: &ObjClosure,
+    proto: &ObjFunction,
+    new_base: usize,
+    dst_in_caller: u8,
+  ) {
+    self.frames.push(CallFrame {
+      function: proto as *const ObjFunction,
+      closure: closure as *const ObjClosure,
+      closure_val,
+      ip: 0,
+      base: new_base,
+      dst_in_caller,
+      scalar_roots_mark: self.jit_scalar_roots.len(),
+    });
+  }
+
+  /// `setup_closure_call`'s general path: grows the register window if
+  /// needed, nil-fills any missing fixed parameter, and collects extra
+  /// arguments into a variadic list.
+  #[cold]
+  #[inline(never)]
+  fn setup_closure_call_slow(
+    &mut self,
+    closure_val: Value,
+    closure: &ObjClosure,
+    proto: &ObjFunction,
+    new_base: usize,
+    num_args: u8,
+    dst_in_caller: u8,
+  ) {
     let required = if proto.variadic {
       proto.arity - 1
     } else {
@@ -1882,15 +1949,7 @@ impl VM {
       self.registers[new_base + required as usize] = list_val;
     }
 
-    self.frames.push(CallFrame {
-      function: proto as *const ObjFunction,
-      closure: closure as *const ObjClosure,
-      closure_val,
-      ip: 0,
-      base: new_base,
-      dst_in_caller,
-      scalar_roots_mark: self.jit_scalar_roots.len(),
-    });
+    self.push_frame_fast(closure_val, closure, proto, new_base, dst_in_caller);
   }
 
   pub(crate) fn call_native(

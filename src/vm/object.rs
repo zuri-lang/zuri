@@ -1659,6 +1659,21 @@ impl Heap {
   /// this object still reachable.
   fn alloc(&mut self, obj: Obj) -> Value {
     let size = Self::approx_size(&obj);
+    self.alloc_sized(obj, size)
+  }
+
+  /// `alloc` for a caller that ALREADY knows the object's accounted
+  /// size, skipping `approx_size`'s 17-arm match entirely.
+  ///
+  /// `size` must equal what `approx_size` would return for `obj` --
+  /// it feeds `bytes_allocated`/`young_bytes_allocated` and therefore
+  /// GC scheduling, so a wrong value skews collection timing (it is
+  /// not a memory-safety input). Worth having because instance
+  /// allocation, the hottest allocation site on object-oriented code,
+  /// knows the answer as a plain multiply from `field_count`, while
+  /// `approx_size` would re-derive it by matching the variant and
+  /// re-reading the field slice's length.
+  fn alloc_sized(&mut self, obj: Obj, size: usize) -> Value {
     if self.nursery_cur == self.nursery_end {
       self.refill_nursery();
     }
@@ -2199,7 +2214,10 @@ impl Heap {
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
     let fields = self.take_field_storage(field_count);
-    self.alloc(Obj::Instance(ObjInstance { class, fields }))
+    // Exactly `approx_size`'s own `Obj::Instance` arm, but computed
+    // from a count the caller already has instead of re-derived.
+    let size = field_count * size_of::<Cell<Value>>();
+    self.alloc_sized(Obj::Instance(ObjInstance { class, fields }), size)
   }
 
   /// Pops a recycled buffer of exactly `len` cells off
