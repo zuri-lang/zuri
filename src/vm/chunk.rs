@@ -1,5 +1,5 @@
 use core::fmt;
-use std::cell::RefCell;
+use std::cell::{Cell, OnceCell, RefCell};
 
 use rustc_hash::FxHashMap;
 
@@ -515,6 +515,27 @@ pub enum JumpKey {
   Str(String),
 }
 
+/// One `Instr::GetField`/`Instr::SetField` site's monomorphic inline
+/// cache entry -- see `Chunk::field_cache`.
+///
+/// `#[repr(C)]` because `jit::codegen` reads both fields by baked
+/// compile-time offset from a baked cell address, so declaration order
+/// here is part of the generated code's contract, not an implementation
+/// detail.
+#[derive(Clone, Debug, Default)]
+#[repr(C)]
+pub struct FieldCacheCell {
+  /// The last-seen receiver's class, as its `Value` bits. `0` means
+  /// "empty, never filled": no real `Value` is ever all-zero bits (a
+  /// heap value always carries `Value`'s own quiet-NaN + sign tagging),
+  /// so an empty cell can never accidentally match a live class.
+  pub class_bits: Cell<u64>,
+  /// That class's BYTE offset for this site's field name --
+  /// `slot * size_of::<Value>()`, pre-multiplied so generated code adds
+  /// it straight to the instance's fields base pointer with no shift.
+  pub byte_offset: Cell<u64>,
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Chunk {
   pub code: Vec<Instr>,
@@ -537,29 +558,29 @@ pub struct Chunk {
   /// to a slot it keeps that slot for the life of the VM (globals are
   /// never renamed or removed, only reassigned in place).
   pub global_cache: RefCell<FxHashMap<usize, (bool, u32)>>,
-  /// Monomorphic inline cache for JIT-compiled `Instr::GetField`/
-  /// `Instr::SetField` on an INSTANCE receiver (never consulted by the
-  /// interpreter, which has no analogous per-instruction cache of its
-  /// own -- see `jit::runtime::zuri_jit_get_field`/`zuri_jit_set_field`):
-  /// maps this instruction's own position in `code` to the last-seen
-  /// receiver's class (as its `Value` bits) and the field slot that
-  /// class resolved the name to. A cache HIT (same class bits as last
-  /// time -- the overwhelmingly common case at any real call site,
-  /// monomorphic or not) skips the `ObjClass::field_slots` hash-map
-  /// probe entirely; a MISS (different bits) just falls back to the
-  /// real lookup and overwrites the entry.
+  /// Monomorphic inline cache for `Instr::GetField`/`Instr::SetField`
+  /// on an INSTANCE receiver (never consulted by the interpreter, which
+  /// has no analogous per-instruction cache of its own) -- one cell per
+  /// instruction position, so both the `jit::runtime` helpers and
+  /// JIT-GENERATED CODE ITSELF can reach a site's entry by fixed
+  /// address, with no hash and no `RefCell` borrow. See
+  /// `FieldCacheCell` for the cell itself and
+  /// `jit::codegen::FuncCompiler::emit_ic_get_field` for the generated
+  /// fast path that reads it directly.
   ///
-  /// The young generation moves objects (see `object::Heap`'s own
-  /// docs), so "same bits as last time" is no longer a PROOF of "same
-  /// class" the way it was when every heap object's address was
-  /// permanent -- a stale cached class could, in principle, coincide
-  /// with a DIFFERENT class later allocated at that same (reused,
-  /// once-nursery) address, producing a false HIT. For `field_cache`
-  /// specifically this is harmless even then: the cached payload is a
-  /// plain `u16` slot index, not a pointer, so a false hit is at worst
-  /// a wrong-field data bug, never a memory-safety one -- see
-  /// `method_cache`'s own docs for why that one is different.
-  pub field_cache: RefCell<FxHashMap<usize, (u64, u16)>>,
+  /// Allocated once, lazily, at exactly `code.len()` cells (see
+  /// `field_cache_cell`) and never resized -- generated code bakes the
+  /// address of an individual cell as an immediate, so the backing
+  /// allocation must outlive the compiled code and never move.
+  ///
+  /// "Same class bits as last time" is a genuine proof of "same class"
+  /// here, not just a strong hint: `Heap::alloc_class` allocates every
+  /// `ObjClass` directly into the non-moving old generation, so a
+  /// class's address is fixed for its whole life and can never be
+  /// recycled underneath a cached entry the way a once-nursery address
+  /// can (contrast `method_cache`, whose own docs spell out the
+  /// relocation hazard that applies to it).
+  field_cache: OnceCell<Box<[FieldCacheCell]>>,
   /// Same idea as `field_cache`, for `Instr::Invoke`'s class-method
   /// lookup -- maps instruction position to (last-seen receiver class
   /// bits, the resolved method `Value`'s own bits). See
@@ -583,6 +604,19 @@ pub struct Chunk {
 }
 
 impl Chunk {
+  /// This instruction position's own inline-cache cell, allocating the
+  /// whole per-chunk array on first use. Returns `None` for an `ip`
+  /// past the array's length, which can only happen if `code` grew
+  /// AFTER the array was sized (the REPL appends to a live chunk);
+  /// callers just fall back to the uncached lookup, which is always
+  /// correct, only slower.
+  pub fn field_cache_cell(&self, ip: usize) -> Option<&FieldCacheCell> {
+    self
+      .field_cache
+      .get_or_init(|| (0..self.code.len()).map(|_| FieldCacheCell::default()).collect())
+      .get(ip)
+  }
+
   pub fn new() -> Chunk {
     Chunk {
       code: Vec::new(),
@@ -590,7 +624,7 @@ impl Chunk {
       jump_tables: Vec::new(),
       lines: Vec::new(),
       global_cache: RefCell::new(FxHashMap::default()),
-      field_cache: RefCell::new(FxHashMap::default()),
+      field_cache: OnceCell::new(),
       method_cache: RefCell::new(FxHashMap::default()),
     }
   }

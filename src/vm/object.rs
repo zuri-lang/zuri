@@ -1041,10 +1041,18 @@ pub type NativeFn = fn(&mut ZuriContext) -> Result<Value, String>;
 /// generation chunk storage (see `Heap::forward_or_promote`), never
 /// moved again after that.
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 enum Generation {
-  Young,
-  Old,
+  Young = 0,
+  Old = 1,
 }
+
+/// `Generation::Old`'s own discriminant, as the raw byte a
+/// `#[repr(u8)]` enum actually stores -- what `jit::codegen`'s inlined
+/// write barrier compares the byte it loads from `GcBox::generation`
+/// against, with no way to name the Rust enum itself. Cross-checked
+/// against the real discriminant by `gcbox_layout_tests`.
+pub const GENERATION_OLD_BYTE: u8 = 1;
 
 thread_local! {
   /// Head of the remembered set -- every `Old` object that's been
@@ -1096,6 +1104,69 @@ pub(crate) fn write_barrier(container: *const Obj) {
       gcbox.list_next.set(head.get());
       head.set(gcbox as *const GcBox);
     });
+  }
+}
+
+/// Byte offset from a `*const Obj` BACK to its owning `GcBox`'s
+/// `generation` byte -- negative, since the `obj` payload is the last
+/// field of the header (see `GcBox`'s own deliberate field ordering).
+///
+/// Exists so `jit::codegen` can inline `write_barrier`'s own guard
+/// (`generation == Old && !remembered`) as two byte loads and a branch,
+/// instead of paying a real call on every single field write -- the
+/// overwhelmingly common answer at a hot mutation site is "no barrier
+/// needed" (either the object is still young, or it's old and was
+/// already remembered earlier this cycle), and that answer costs
+/// nothing to reach inline. Only the rare true case calls out to
+/// `jit::runtime::zuri_jit_write_barrier`, which just re-runs the real
+/// `write_barrier` in full.
+///
+/// Derived from `offset_of!` rather than hand-written, and
+/// cross-checked against a real allocation by `gcbox_layout_tests`, for
+/// exactly the reason `obj_payload_offset` measures instead of
+/// asserting: a future reordering of `GcBox`'s fields must not silently
+/// turn generated code into a wild read.
+pub fn obj_to_gcbox_generation_offset() -> i32 {
+  std::mem::offset_of!(GcBox, generation) as i32 - std::mem::offset_of!(GcBox, obj) as i32
+}
+
+/// `obj_to_gcbox_generation_offset`'s sibling for the `remembered`
+/// flag -- see its docs.
+pub fn obj_to_gcbox_remembered_offset() -> i32 {
+  std::mem::offset_of!(GcBox, remembered) as i32 - std::mem::offset_of!(GcBox, obj) as i32
+}
+
+#[cfg(test)]
+mod gcbox_layout_tests {
+  use super::*;
+
+  /// The two offsets `jit::codegen`'s inlined write barrier reads
+  /// through, checked against a REAL allocated object rather than
+  /// against `offset_of!` again -- i.e. that applying them to a
+  /// `*const Obj` handed out by `Heap::alloc` actually lands on that
+  /// object's own header bytes, and that those bytes read back as the
+  /// values `write_barrier` itself would have inspected.
+  #[test]
+  fn barrier_offsets_land_on_real_header_bytes() {
+    assert_eq!(Generation::Old as u8, GENERATION_OLD_BYTE);
+
+    let mut heap = Heap::default();
+    let v = heap.alloc(Obj::Str(String::from("probe")));
+    let obj = v.as_obj();
+    let gen_addr = unsafe { (obj as *const u8).offset(obj_to_gcbox_generation_offset() as isize) };
+    let rem_addr = unsafe { (obj as *const u8).offset(obj_to_gcbox_remembered_offset() as isize) };
+
+    // Freshly allocated: young, never remembered.
+    assert_eq!(unsafe { *gen_addr }, Generation::Young as u8);
+    assert_eq!(unsafe { *rem_addr }, 0);
+
+    // Forcing the box old and running the real barrier must be visible
+    // through those same two addresses.
+    let gcbox = unsafe { &*Heap::gcbox_of(obj) };
+    gcbox.generation.set(Generation::Old);
+    assert_eq!(unsafe { *gen_addr }, GENERATION_OLD_BYTE);
+    write_barrier(obj);
+    assert_eq!(unsafe { *rem_addr }, 1);
   }
 }
 

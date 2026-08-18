@@ -1957,24 +1957,19 @@ pub unsafe extern "C" fn zuri_jit_get_field(
     // `Instr::GetField` ran -> reuse its resolved slot directly,
     // skipping `ObjClass::field_slots`'s hash-map probe entirely. See
     // `Chunk::field_cache`'s own docs.
-    let cached_slot = func
-      .chunk
-      .field_cache
-      .borrow()
-      .get(&instr_ip)
-      .filter(|&&(cached_class, _)| cached_class == class_bits)
-      .map(|&(_, slot)| slot);
+    let cell = func.chunk.field_cache_cell(instr_ip);
+    let hit = cell.is_some_and(|c| c.class_bits.get() == class_bits);
 
-    if let Some(idx) = cached_slot {
-      Ok(inst.fields[idx as usize].get())
+    if hit {
+      let idx = (cell.unwrap().byte_offset.get() as usize) / size_of::<Value>();
+      Ok(inst.fields[idx].get())
     } else {
       let class = inst.class.as_class();
       if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
-        func
-          .chunk
-          .field_cache
-          .borrow_mut()
-          .insert(instr_ip, (class_bits, idx));
+        if let Some(c) = cell {
+          c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
+          c.class_bits.set(class_bits);
+        }
         Ok(inst.fields[idx as usize].get())
       } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
         Ok(vm.heap.alloc_bound_method(receiver, method))
@@ -2075,27 +2070,22 @@ pub unsafe extern "C" fn zuri_jit_set_field(
 
     // Same inline-cache shape as `zuri_jit_get_field` -- see
     // `Chunk::field_cache`'s docs.
-    let cached_slot = func
-      .chunk
-      .field_cache
-      .borrow()
-      .get(&instr_ip)
-      .filter(|&&(cached_class, _)| cached_class == class_bits)
-      .map(|&(_, slot)| slot);
+    let cell = func.chunk.field_cache_cell(instr_ip);
+    let hit = cell.is_some_and(|c| c.class_bits.get() == class_bits);
 
-    if let Some(idx) = cached_slot {
-      inst.fields[idx as usize].set(value);
+    if hit {
+      let idx = (cell.unwrap().byte_offset.get() as usize) / size_of::<Value>();
+      inst.fields[idx].set(value);
       write_barrier(receiver.as_obj());
       Ok(())
     } else {
       let class = inst.class.as_class();
       match class.field_slots.get(name_val.as_str()).copied() {
         Some(idx) => {
-          func
-            .chunk
-            .field_cache
-            .borrow_mut()
-            .insert(instr_ip, (class_bits, idx));
+          if let Some(c) = cell {
+            c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
+            c.class_bits.set(class_bits);
+          }
           inst.fields[idx as usize].set(value);
           write_barrier(receiver.as_obj());
           Ok(())
@@ -2261,6 +2251,93 @@ pub unsafe extern "C" fn zuri_jit_make_promoted(
       bind_name: name_val.as_str().to_string(),
     });
   vm.set_reg(base, dst as u8, binding);
+  OK
+}
+
+// ---------------------------------------------------------------------
+// Number-method intrinsics
+//
+// One helper per pure `builtins::number` method whose result is a
+// number and whose implementation is a single `f64` operation, reached
+// by `jit::codegen::FuncCompiler::emit_number_intrinsic` as a DIRECT
+// call on a receiver already guarded numeric -- skipping
+// `zuri_jit_invoke_prepare`'s resolution, `builtins::lookup`'s string
+// hash and `memcmp`, `invoke_native_args`'s per-call `Vec`, and
+// `VM::call_native` entirely.
+//
+// These are not reimplementations. Each one calls the exact same
+// `f64` method its `builtins::number` counterpart does, so a compiled
+// `x.sin()` is bit-identical to the interpreted one by construction --
+// there is deliberately no hand-rolled polynomial approximation
+// anywhere here, which would be faster but would make the two tiers
+// disagree.
+//
+// Takes and returns raw bits rather than `Value`s so generated code
+// can hand over a register it already holds. Touches no VM state,
+// cannot allocate, collect, or raise -- which is what lets `codegen`
+// reach them through `call_helper_raw`, with no register-cache
+// invalidation around the call.
+// ---------------------------------------------------------------------
+
+macro_rules! num_intrinsic {
+  ($name:ident, $f:ident) => {
+    pub unsafe extern "C" fn $name(_vm_ptr: *mut VM, bits: u64) -> u64 {
+      Value::number(f64::from_bits(bits).$f()).to_bits()
+    }
+  };
+}
+
+macro_rules! num_intrinsic2 {
+  ($name:ident, $f:ident) => {
+    pub unsafe extern "C" fn $name(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+      Value::number(f64::from_bits(a).$f(f64::from_bits(b))).to_bits()
+    }
+  };
+}
+
+num_intrinsic!(zuri_jit_num_sin, sin);
+num_intrinsic!(zuri_jit_num_cos, cos);
+num_intrinsic!(zuri_jit_num_tan, tan);
+num_intrinsic!(zuri_jit_num_sinh, sinh);
+num_intrinsic!(zuri_jit_num_cosh, cosh);
+num_intrinsic!(zuri_jit_num_tanh, tanh);
+num_intrinsic!(zuri_jit_num_asin, asin);
+num_intrinsic!(zuri_jit_num_acos, acos);
+num_intrinsic!(zuri_jit_num_atan, atan);
+num_intrinsic!(zuri_jit_num_asinh, asinh);
+num_intrinsic!(zuri_jit_num_acosh, acosh);
+num_intrinsic!(zuri_jit_num_atanh, atanh);
+num_intrinsic!(zuri_jit_num_exp, exp);
+num_intrinsic!(zuri_jit_num_expm1, exp_m1);
+num_intrinsic!(zuri_jit_num_log, ln);
+num_intrinsic!(zuri_jit_num_log2, log2);
+num_intrinsic!(zuri_jit_num_log10, log10);
+num_intrinsic!(zuri_jit_num_log1p, ln_1p);
+num_intrinsic!(zuri_jit_num_cbrt, cbrt);
+// `f64::round` breaks ties AWAY FROM ZERO; Cranelift's `nearest`
+// instruction is IEEE round-half-to-even. They are different
+// functions, so `round` is a direct call to the real one rather than
+// an inlined instruction -- see `NumberIntrinsic`'s own docs.
+num_intrinsic!(zuri_jit_num_round, round);
+
+num_intrinsic2!(zuri_jit_num_max, max);
+num_intrinsic2!(zuri_jit_num_min, min);
+num_intrinsic2!(zuri_jit_num_atan2, atan2);
+
+/// `object::write_barrier` behind the C ABI, for the RARE arm of
+/// `jit::codegen`'s inlined barrier check -- generated code has already
+/// established (with two byte loads and a branch, no call) that this
+/// object really is old and not yet remembered, so reaching here means
+/// the remembered-set push is genuinely owed. Takes the raw `*const
+/// Obj` directly rather than a register index: the caller already has
+/// the untagged pointer in hand from its own field write.
+///
+/// Touches no VM register and cannot allocate, collect, or raise, which
+/// is what lets `codegen` reach it through `call_helper_raw` (no
+/// flush/stale bracketing) instead of the register-cache-invalidating
+/// `call_helper`. Always returns `OK`; it has no failure mode.
+pub unsafe extern "C" fn zuri_jit_write_barrier(_vm_ptr: *mut VM, obj_ptr: u64) -> u64 {
+  crate::vm::object::write_barrier(obj_ptr as *const crate::vm::object::Obj);
   OK
 }
 
@@ -2446,6 +2523,30 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_declare_static),
     spec7!(zuri_jit_get_field),
     spec7!(zuri_jit_set_field),
+    spec2!(zuri_jit_write_barrier),
+    spec2!(zuri_jit_num_sin),
+    spec2!(zuri_jit_num_cos),
+    spec2!(zuri_jit_num_tan),
+    spec2!(zuri_jit_num_sinh),
+    spec2!(zuri_jit_num_cosh),
+    spec2!(zuri_jit_num_tanh),
+    spec2!(zuri_jit_num_asin),
+    spec2!(zuri_jit_num_acos),
+    spec2!(zuri_jit_num_atan),
+    spec2!(zuri_jit_num_asinh),
+    spec2!(zuri_jit_num_acosh),
+    spec2!(zuri_jit_num_atanh),
+    spec2!(zuri_jit_num_exp),
+    spec2!(zuri_jit_num_expm1),
+    spec2!(zuri_jit_num_log),
+    spec2!(zuri_jit_num_log2),
+    spec2!(zuri_jit_num_log10),
+    spec2!(zuri_jit_num_log1p),
+    spec2!(zuri_jit_num_cbrt),
+    spec2!(zuri_jit_num_round),
+    spec3!(zuri_jit_num_max),
+    spec3!(zuri_jit_num_min),
+    spec3!(zuri_jit_num_atan2),
     spec5!(zuri_jit_using_jump),
     spec5!(zuri_jit_import),
     spec5!(zuri_jit_make_promoted),

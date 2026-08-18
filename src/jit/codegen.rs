@@ -19,7 +19,7 @@
 //!   (`Obj`'s layout is not, and must never be treated as, stable
 //!   across compiler versions) always calls back into `jit::runtime`.
 
-use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
   AbiParam, Block, InstBuilder, SigRef, StackSlot, StackSlotData, StackSlotKind, Value as IrValue,
   types,
@@ -152,6 +152,151 @@ enum RegCache {
   Clean,
   Dirty,
   Stale,
+}
+
+/// A `Number` builtin the JIT emits directly instead of dispatching
+/// to -- see `FuncCompiler::emit_number_intrinsic` for why every one of
+/// these is an IDENTITY with what `builtins::number` computes, never an
+/// approximation of it.
+///
+/// Three shapes, by what the method actually is:
+///
+/// - `Inline`: the whole method is one Cranelift instruction with
+///   exactly matching IEEE-754 semantics. Compiles to one machine
+///   instruction and nothing else.
+/// - `InlinePredicate`/`Sign`/`Int`: still no call, but a short fixed
+///   instruction sequence rather than a single opcode -- a comparison
+///   producing a `Value::bool`, or a `select` chain.
+/// - `Call`: no machine instruction computes it (every transcendental),
+///   so this calls the SAME `f64` method `builtins::number` calls, via
+///   a dedicated `jit::runtime` helper. The win here is not a faster
+///   `sin` -- it is the same `sin` -- it is skipping method resolution,
+///   `builtins::lookup`'s string hash and `memcmp`, the per-call
+///   argument `Vec`, and `VM::call_native` around it.
+///
+/// Deliberately NOT here: anything that allocates (`to_string`, `chr`,
+/// `bin`/`hex`/`oct`, `fraction`) or can raise (`factorial`), which
+/// would need the full frame/GC-root machinery an intrinsic exists to
+/// avoid; and any hand-rolled fast approximation of a transcendental,
+/// which would be faster still but would make compiled and interpreted
+/// code disagree on results.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NumberIntrinsic {
+  /// One Cranelift float instruction, semantics identical to the `f64`
+  /// method of the same name.
+  Inline(InlineOp),
+  /// A comparison whose result becomes a `Value::bool`.
+  InlinePredicate(PredicateOp),
+  /// `n.sign()` -- `-1`/`0`/`1` with a zero's own sign preserved, and
+  /// `-1` for NaN (both comparisons below are false for NaN), matching
+  /// `builtins::number::sign` exactly, which is deliberately NOT
+  /// `f64::signum`.
+  Sign,
+  /// `n.int()` -- Rust's `as i64` cast is saturating with NaN mapping
+  /// to zero, which is precisely `fcvt_to_sint_sat`'s own definition.
+  Int,
+  /// A direct call to the named `jit::runtime` helper: `(vm, bits)` for
+  /// `arity` 0, `(vm, recv_bits, arg_bits)` for `arity` 1.
+  Call {
+    helper: &'static str,
+    arity: u8,
+  },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum InlineOp {
+  Sqrt,
+  Abs,
+  Floor,
+  Ceil,
+  Trunc,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PredicateOp {
+  /// `x != x` -- true for exactly the NaNs.
+  IsNan,
+  /// `|x| == inf`.
+  IsInf,
+  /// `|x| < inf` -- false for both infinities AND for NaN, matching
+  /// `f64::is_finite`.
+  IsFinite,
+  /// `builtins::number::to_bool`'s own rule: `n >= 0.0` (so NaN is
+  /// false, exactly as Rust's `>=` gives).
+  NonNegative,
+}
+
+impl NumberIntrinsic {
+  /// How many arguments the call site must supply for `name` to be this
+  /// intrinsic -- checked by the caller before anything else, so e.g. a
+  /// stray `x.sqrt(1)` falls through to the ordinary dispatch and gets
+  /// the real arity error.
+  fn arity(self) -> u8 {
+    match self {
+      NumberIntrinsic::Call { arity, .. } => arity,
+      _ => 0,
+    }
+  }
+
+  fn of(name: &str) -> Option<NumberIntrinsic> {
+    use InlineOp::*;
+    use NumberIntrinsic::*;
+    use PredicateOp::*;
+    Some(match name {
+      "sqrt" => Inline(Sqrt),
+      "abs" => Inline(Abs),
+      "floor" => Inline(Floor),
+      "ceil" => Inline(Ceil),
+      "trunc" => Inline(Trunc),
+
+      "is_nan" => InlinePredicate(IsNan),
+      "is_inf" => InlinePredicate(IsInf),
+      "is_finite" => InlinePredicate(IsFinite),
+      "to_bool" => InlinePredicate(NonNegative),
+
+      "sign" => Sign,
+      "int" => Int,
+
+      "sin" => Call { helper: "zuri_jit_num_sin", arity: 0 },
+      "cos" => Call { helper: "zuri_jit_num_cos", arity: 0 },
+      "tan" => Call { helper: "zuri_jit_num_tan", arity: 0 },
+      "sinh" => Call { helper: "zuri_jit_num_sinh", arity: 0 },
+      "cosh" => Call { helper: "zuri_jit_num_cosh", arity: 0 },
+      "tanh" => Call { helper: "zuri_jit_num_tanh", arity: 0 },
+      "asin" => Call { helper: "zuri_jit_num_asin", arity: 0 },
+      "acos" => Call { helper: "zuri_jit_num_acos", arity: 0 },
+      "atan" => Call { helper: "zuri_jit_num_atan", arity: 0 },
+      "asinh" => Call { helper: "zuri_jit_num_asinh", arity: 0 },
+      "acosh" => Call { helper: "zuri_jit_num_acosh", arity: 0 },
+      "atanh" => Call { helper: "zuri_jit_num_atanh", arity: 0 },
+      "exp" => Call { helper: "zuri_jit_num_exp", arity: 0 },
+      "expm1" => Call { helper: "zuri_jit_num_expm1", arity: 0 },
+      "log" => Call { helper: "zuri_jit_num_log", arity: 0 },
+      "log2" => Call { helper: "zuri_jit_num_log2", arity: 0 },
+      "log10" => Call { helper: "zuri_jit_num_log10", arity: 0 },
+      "log1p" => Call { helper: "zuri_jit_num_log1p", arity: 0 },
+      "cbrt" => Call { helper: "zuri_jit_num_cbrt", arity: 0 },
+      "round" => Call { helper: "zuri_jit_num_round", arity: 0 },
+
+      "max" => Call { helper: "zuri_jit_num_max", arity: 1 },
+      "min" => Call { helper: "zuri_jit_num_min", arity: 1 },
+      "atan2" => Call { helper: "zuri_jit_num_atan2", arity: 1 },
+
+      _ => return None,
+    })
+  }
+}
+
+impl InlineOp {
+  fn emit(self, fb: &mut FunctionBuilder, v: IrValue) -> IrValue {
+    match self {
+      InlineOp::Sqrt => fb.ins().sqrt(v),
+      InlineOp::Abs => fb.ins().fabs(v),
+      InlineOp::Floor => fb.ins().floor(v),
+      InlineOp::Ceil => fb.ins().ceil(v),
+      InlineOp::Trunc => fb.ins().trunc(v),
+    }
+  }
 }
 
 struct FuncCompiler<'a, 'b> {
@@ -786,13 +931,40 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// which is the WRONG bytecode position for a deopt (the guard site,
   /// not the resume site); flushing here is explicit, against the
   /// correct `ip`, instead.
+  ///
+  /// Leaves `reg_cache` EXACTLY as it found it. This block always ends
+  /// in a `return_`, so nothing downstream is a successor of it -- yet
+  /// `flush_live` above is a real mutation of this compiler's own
+  /// compile-time bookkeeping, marking every register it wrote `Clean`
+  /// ("memory already agrees"). Translation continues afterwards on the
+  /// SIBLING edge -- the guard's fall-through, which never executed any
+  /// of those stores -- so letting that `Clean` escape tells the rest of
+  /// the function memory holds values it does not. The register then
+  /// gets skipped by a later `flush_live` (its write is silently
+  /// dropped) or, worse, downgraded to `Stale` by a later
+  /// `mark_stale_live` and RE-READ from memory that was never written,
+  /// resurrecting a value several instructions stale.
+  ///
+  /// This is the same bug class `restore_dirty_from_snapshot` closes
+  /// for the guarded-arithmetic fast/slow split -- a branch that may
+  /// never run at runtime mutating state shared with one that does --
+  /// and it reproduced concretely: with a `GetField` inline cache
+  /// removing the redundant helper-call flush that used to mask it,
+  /// `bodies[j].x` inside a speculatively-compiled loop re-read its
+  /// receiver register from memory and got the value from BEFORE the
+  /// enclosing `GetIndex`, raising a `TypeError` naming the list itself
+  /// as the receiver. Handled here rather than at the call site so it
+  /// stays closed for any future guard that deopts from inside one arm
+  /// of a branch.
   fn emit_deopt(&mut self, ip: usize) {
+    let snapshot = self.snapshot_reg_cache();
     self.flush_live(ip);
     let vm = self.vm_param;
     let ip_c = self.u64c(ip as u64);
     self.call_helper_raw("zuri_jit_deopt", &[vm, ip_c]);
     let junk = self.i64c(0);
     self.fb.ins().return_(&[junk]);
+    self.reg_cache = snapshot;
   }
 
   // ---------------------------------------------------------------
@@ -990,8 +1162,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// either arm, so `use_var` still returns the correct value either
   /// way, just possibly triggering one harmless redundant future flush.
   fn restore_dirty_from_snapshot(&mut self, before: &[RegCache], dst: u8) {
+    self.restore_dirty_from_snapshot_except(before, Some(dst));
+  }
+
+  /// `restore_dirty_from_snapshot` for a guarded instruction that
+  /// defines NO register at all (`emit_ic_set_field`), so there is
+  /// nothing to hold back from the restore.
+  fn restore_dirty_from_snapshot_all(&mut self, before: &[RegCache]) {
+    self.restore_dirty_from_snapshot_except(before, None);
+  }
+
+  fn restore_dirty_from_snapshot_except(&mut self, before: &[RegCache], skip: Option<u8>) {
     for (r, &prev) in before.iter().enumerate() {
-      if r as u8 == dst {
+      if skip == Some(r as u8) {
         continue;
       }
       if prev == RegCache::Dirty && self.reg_cache[r] != RegCache::Dirty {
@@ -2121,15 +2304,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `self.field = ...` write fast path -- the write-side counterpart
-  /// of `emit_self_get_field`. Writes no VM register at all (only
-  /// reads `src`), so `obj` (`self`) is passed to
-  /// `restore_dirty_from_snapshot` as the register to leave alone --
-  /// its own reg_cache state after a call correctly reflects "may have
-  /// moved, re-read from memory next time" (`Stale`), which forcing
-  /// back to `Dirty` would wrongly override into "trust this cached
-  /// value," risking a stale/relocated pointer being flushed back over
-  /// a GC-updated one. Only one `call_helper` site exists in this
-  /// function (the slow path), so the OTHER real bug class this file's
+  /// of `emit_self_get_field`. Defines no VM register at all (only
+  /// reads `src`), so nothing is held back from the merged restore; the
+  /// receiver is reconciled across the two arms by
+  /// `resync_receiver_from_memory` instead, exactly as in
+  /// `emit_ic_set_field` -- see its docs for the disagreement that
+  /// closes. Only one `call_helper` site exists in this function (the
+  /// slow path), so the OTHER real bug class this file's
   /// snapshot/restore machinery guards against -- two INDEPENDENT
   /// `call_helper` sites in different branches, see
   /// `emit_list_set_index`'s own docs -- doesn't apply here.
@@ -2166,6 +2347,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       fields_ptr,
       (slot as i32) * 8,
     );
+    self.emit_write_barrier(ptr);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -2179,10 +2361,458 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       "zuri_jit_set_field",
       &[self.vm_param, base, obj_i, name, src_i, func_ptr, ip_c],
     );
+    self.resync_receiver_from_memory(obj);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
-    self.restore_dirty_from_snapshot(&snapshot, obj);
+    self.restore_dirty_from_snapshot_all(&snapshot);
+  }
+
+  /// The address of this instruction's own `chunk::FieldCacheCell`,
+  /// baked as an immediate -- `None` when the chunk has no cell for
+  /// this position (see `Chunk::field_cache_cell`), in which case the
+  /// caller emits the plain helper call instead.
+  ///
+  /// Sound for the same reason `func_ptr_const` is: the cell lives in a
+  /// `Box<[FieldCacheCell]>` the chunk allocates exactly once and never
+  /// resizes, owned by the `ObjFunction` this IS the compilation of --
+  /// so the address is fixed for at least as long as the code being
+  /// generated here can run.
+  fn field_cache_addr(&mut self, ip: usize) -> Option<IrValue> {
+    let addr = self.proto.chunk.field_cache_cell(ip)? as *const _ as u64;
+    Some(self.u64c(addr))
+  }
+
+  /// Emits the shared front half of both inline-cache field fast paths:
+  /// branch to `slow_block` unless `recv` is an `Obj::Instance` whose
+  /// class bit-matches this site's cached class. Returns the raw
+  /// `*const Obj` and the cached byte offset, valid only in the block
+  /// that is current on return (the cache-hit block).
+  ///
+  /// The three checks are three SEPARATE branches, not one fused
+  /// boolean: each stage may only be evaluated once the previous one
+  /// has proven it safe to. Masking a nil/number/bool `Value`'s bits
+  /// into a "pointer" and loading its tag would fault, and loading a
+  /// non-instance `Obj`'s bytes as an `ObjInstance` would read the
+  /// wrong union arm -- see `emit_self_get_field`'s identical two-stage
+  /// discipline, which this extends by one stage.
+  fn emit_ic_guard(
+    &mut self,
+    recv: IrValue,
+    cache_addr: IrValue,
+    slow_block: Block,
+  ) -> (IrValue, IrValue) {
+    let is_obj = self.is_obj(recv);
+    let obj_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(recv);
+    let tag = self.obj_tag(ptr);
+    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+    let class_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_instance, class_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(class_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
+    let cached_class = self.fb.ins().load(types::I64, flags, cache_addr, 0);
+    let same_class = self.fb.ins().icmp(IntCC::Equal, class_bits, cached_class);
+    let hit_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(same_class, hit_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(hit_block);
+    let byte_offset = self.fb.ins().load(types::I64, flags, cache_addr, 8);
+    (ptr, byte_offset)
+  }
+
+  /// `obj.field` read fast path for an ARBITRARY receiver register,
+  /// backed by this site's own monomorphic inline cache (see
+  /// `Chunk::field_cache`). The generalization of `emit_self_get_field`,
+  /// which handles the one case -- `self.field` inside a method of the
+  /// owning class -- where the slot is provable at compile time and
+  /// needs no cache or class guard at all; that path stays separate and
+  /// is always preferred, since it is strictly cheaper.
+  ///
+  /// This is what takes field-heavy numeric code off the
+  /// `zuri_jit_get_field` helper entirely: on a hit it is three
+  /// dependent loads and three not-taken branches, with no call, no
+  /// `RefCell` borrow, no hash probe, and -- crucially -- no
+  /// `flush_live`/`mark_stale_live` round trip forcing every live
+  /// register back through memory.
+  ///
+  /// Every non-instance receiver (a class's statics, a module member, a
+  /// dict key, a method being read as a bound method) and every cache
+  /// miss falls through to the unchanged helper, which is still the
+  /// only implementation of those cases and is also what FILLS the
+  /// cache for the next time round.
+  fn emit_ic_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, cache: IrValue) {
+    let recv = self.load_reg(obj);
+    let snapshot = self.snapshot_reg_cache();
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    let (ptr, byte_offset) = self.emit_ic_guard(recv, cache, slow_block);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+    let v = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      addr,
+      0,
+    );
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let obj_i = self.idx(obj);
+    let name = self.bake_const(name_const);
+    let func_ptr = self.func_ptr_const();
+    let ip_c = self.u64c(ip as u64);
+    self.call_checked(
+      "zuri_jit_get_field",
+      &[self.vm_param, base, dst_i, obj_i, name, func_ptr, ip_c],
+    );
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// Re-reads a fast-path field access's RECEIVER register from memory
+  /// into its `Variable`, on the slow arm only, and marks it `Dirty` --
+  /// what lets both arms of these instructions agree on one honest
+  /// compile-time cache state for `obj`.
+  ///
+  /// Without it the two arms disagree irreconcilably. The slow arm's
+  /// helper call marks every live register `Stale` ("memory is
+  /// authoritative, re-read it"), which is true THERE because the call
+  /// flushed first; the fast arm never flushes anything, so for it
+  /// `Stale` is a lie and the next `load_reg(obj)` reads whatever
+  /// happened to be in that register slot several instructions ago.
+  /// That is not hypothetical: `bodies[i].y` in `benchmarks/nbody.zu`
+  /// read back the `bodies` LIST -- the value the `GetGlobal` feeding
+  /// the `GetIndex` had left in memory -- and raised a `TypeError`
+  /// naming it.
+  ///
+  /// Resyncing here makes the `Variable` authoritative on BOTH arms
+  /// (fast: never invalidated; slow: freshly re-read, so it also picks
+  /// up any relocation a collection inside the helper performed), so
+  /// `Dirty` is the correct merged state and `restore_dirty_from_snapshot`
+  /// can treat the receiver like any other register. Costs one load,
+  /// on the slow path only.
+  fn resync_receiver_from_memory(&mut self, obj: u8) {
+    let v = self.load_reg_mem(obj);
+    self.store_reg(obj, v);
+  }
+
+  /// `obj.field = ...` write fast path -- `emit_ic_get_field`'s
+  /// counterpart, with the same guard chain plus the write barrier
+  /// every field mutation owes (see `emit_write_barrier`).
+  ///
+  /// Defines no register, so nothing is held back from the merged
+  /// restore -- the receiver included, since `resync_receiver_from_memory`
+  /// has already made its `Variable` authoritative on both arms.
+  fn emit_ic_set_field(&mut self, ip: usize, obj: u8, name_const: u16, src: u8, cache: IrValue) {
+    let recv = self.load_reg(obj);
+    let src_val = self.load_reg(src);
+    let snapshot = self.snapshot_reg_cache();
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    let (ptr, byte_offset) = self.emit_ic_guard(recv, cache, slow_block);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+    self.fb.ins().store(
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      src_val,
+      addr,
+      0,
+    );
+    self.emit_write_barrier(ptr);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let obj_i = self.idx(obj);
+    let name = self.bake_const(name_const);
+    let src_i = self.idx(src);
+    let func_ptr = self.func_ptr_const();
+    let ip_c = self.u64c(ip as u64);
+    self.call_checked(
+      "zuri_jit_set_field",
+      &[self.vm_param, base, obj_i, name, src_i, func_ptr, ip_c],
+    );
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot_all(&snapshot);
+  }
+
+  /// `Instr::Invoke`'s ordinary codegen: the compiled-method fast call
+  /// when `self_invoke_target` proves the receiver's class resolves
+  /// this name to the method being compiled, otherwise the general
+  /// inline-cache-style `zuri_jit_invoke_prepare` path. Extracted so
+  /// `emit_number_intrinsic` can reuse it verbatim as its own guard's
+  /// slow arm.
+  ///
+  /// Does NOT emit the safepoint the `Instr::Invoke` arm owes -- callers
+  /// place that themselves, since the intrinsic path deliberately skips
+  /// it (see `emit_number_intrinsic`).
+  fn emit_generic_invoke(&mut self, ip: usize, dst: u8, obj: u8, method_const: u16, num_args: u8) {
+    if let Some((class_bits, generation)) = self.self_invoke_target(method_const) {
+      self.emit_self_invoke(ip, dst, obj, method_const, num_args, class_bits, generation);
+      return;
+    }
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let obj_i = self.idx(obj);
+    let num_args_i = self.idx(num_args);
+    let dst_i = self.idx(dst);
+    let name = self.bake_const(method_const);
+    let func_ptr = self.func_ptr_const();
+    let ip_c = self.u64c(ip as u64);
+    let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
+    self.emit_fast_call(
+      "zuri_jit_invoke_prepare",
+      &[vm_p, base, obj_i, num_args_i, dst_i, name, func_ptr, ip_c],
+      new_base,
+      dst,
+      "zuri_jit_invoke",
+      &[vm_p, base, obj_i, num_args_i, dst_i, name],
+    );
+  }
+
+  /// The method name an `Instr::Invoke` names, read straight out of the
+  /// constant table at compile time -- a compile-time lookup only, like
+  /// `self_field_slot`'s, never handed to generated code.
+  fn method_name(&self, method_const: u16) -> &str {
+    self.proto.chunk.constants[method_const as usize].as_str()
+  }
+
+  /// `n.sqrt()` and friends, compiled to the single machine instruction
+  /// they are, instead of a method dispatch.
+  ///
+  /// Nothing about this is speculative. A `Value` that `is_number()`
+  /// has no class, no fields and no user-reachable method table: its
+  /// `Instr::Invoke` resolution always ends at
+  /// `builtins::lookup` -> `NUMBER_METHODS`, a `LazyLock` static with
+  /// no mutation API anywhere in the language, so on a receiver proven
+  /// (or guarded) numeric, `sqrt` IS `f64::sqrt` and cannot be anything
+  /// else. Each intrinsic below is the IEEE-754 operation its
+  /// `builtins::number` counterpart calls, so results are bit-identical
+  /// to the interpreter's, not merely close.
+  ///
+  /// `round` is deliberately absent: Rust's `f64::round` breaks ties
+  /// away from zero, while Cranelift's `nearest` is IEEE
+  /// round-half-to-even. They disagree on exact halves, so it is not
+  /// the same function and does not belong here.
+  fn emit_number_intrinsic(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+    op: NumberIntrinsic,
+  ) {
+    // No `emit_safepoint` on this path, unlike every other `Invoke`:
+    // nothing an intrinsic emits can allocate, so there is nothing for
+    // a collection to be owed here. Every loop's own back edge still
+    // carries a safepoint (see `Instr::Jmp`/`JmpIfFalse`/`JmpIfTrue`),
+    // so GC progress in a loop whose only call is an intrinsified one
+    // is still guaranteed.
+    let recv = self.load_reg(obj);
+    // A one-argument intrinsic's argument sits at `obj + 2` -- `obj + 1`
+    // holds the duplicated receiver the closure-call convention needs,
+    // which an intrinsic bypasses. Matches `runtime::invoke_native_args`
+    // exactly.
+    let arg_reg = obj + 2;
+    let arg = (num_args == 1).then(|| self.load_reg(arg_reg));
+
+    // Both the receiver AND (for the binary forms) the argument must be
+    // numbers before any of this is the right answer: `builtins::number`
+    // enforces the argument's type and RAISES on a mismatch, so a
+    // non-numeric argument has to reach the real dispatch to get the
+    // real error.
+    let mut guard_needed = !self.proven_numeric(ip, obj);
+    if num_args == 1 && !self.proven_numeric(ip, arg_reg) {
+      guard_needed = true;
+    }
+
+    if !guard_needed {
+      let v = self.emit_intrinsic_value(op, recv, arg);
+      self.store_reg(dst, v);
+      return;
+    }
+
+    let mut guard = self.is_number(recv);
+    if let Some(a) = arg {
+      let arg_is_num = self.is_number(a);
+      guard = self.fb.ins().band(guard, arg_is_num);
+    }
+
+    let snapshot = self.snapshot_reg_cache();
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let v = self.emit_intrinsic_value(op, recv, arg);
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    // The full ordinary dispatch, safepoint included, for a receiver
+    // that turned out not to be a number after all -- a string, a list,
+    // an instance whose class happens to declare a method by this name.
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
+    // Both arms must leave the same story behind: the fast arm defines
+    // `dst` in its `Variable` and writes no memory, while everything on
+    // the slow arm flushed and stale-marked both `dst` and the
+    // receiver. Re-reading them here makes the `Variable` authoritative
+    // either way, so the merged `Dirty` state below is honest -- see
+    // `resync_receiver_from_memory`'s own docs for the bug the
+    // alternative produces.
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// The intrinsic itself, on operands already known to be numbers --
+  /// no branching, no register bookkeeping, just the value.
+  fn emit_intrinsic_value(
+    &mut self,
+    op: NumberIntrinsic,
+    recv: IrValue,
+    arg: Option<IrValue>,
+  ) -> IrValue {
+    match op {
+      NumberIntrinsic::Inline(inline) => {
+        let f = self.to_f64(recv);
+        let r = inline.emit(&mut self.fb, f);
+        self.from_f64(r)
+      },
+      NumberIntrinsic::InlinePredicate(pred) => {
+        let f = self.to_f64(recv);
+        let cond = match pred {
+          PredicateOp::IsNan => self.fb.ins().fcmp(FloatCC::NotEqual, f, f),
+          PredicateOp::IsInf => {
+            let mag = self.fb.ins().fabs(f);
+            let inf = self.fb.ins().f64const(f64::INFINITY);
+            self.fb.ins().fcmp(FloatCC::Equal, mag, inf)
+          },
+          PredicateOp::IsFinite => {
+            let mag = self.fb.ins().fabs(f);
+            let inf = self.fb.ins().f64const(f64::INFINITY);
+            self.fb.ins().fcmp(FloatCC::LessThan, mag, inf)
+          },
+          PredicateOp::NonNegative => {
+            let zero = self.fb.ins().f64const(0.0);
+            self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero)
+          },
+        };
+        self.bool_value(cond)
+      },
+      NumberIntrinsic::Sign => {
+        let f = self.to_f64(recv);
+        let zero = self.fb.ins().f64const(0.0);
+        let one = self.fb.ins().f64const(1.0);
+        let minus_one = self.fb.ins().f64const(-1.0);
+        let is_zero = self.fb.ins().fcmp(FloatCC::Equal, f, zero);
+        let is_pos = self.fb.ins().fcmp(FloatCC::GreaterThan, f, zero);
+        // `f` itself, not a fresh `0.0`, for the zero case: that is
+        // what preserves `-0.0`'s sign, which is the whole reason
+        // `builtins::number::sign` is not `f64::signum`.
+        let nonzero = self.fb.ins().select(is_pos, one, minus_one);
+        let r = self.fb.ins().select(is_zero, f, nonzero);
+        self.from_f64(r)
+      },
+      NumberIntrinsic::Int => {
+        let f = self.to_f64(recv);
+        let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        let r = self.fb.ins().fcvt_from_sint(types::F64, i);
+        self.from_f64(r)
+      },
+      NumberIntrinsic::Call { helper, .. } => {
+        let vm = self.vm_param;
+        match arg {
+          Some(a) => self.call_helper_raw(helper, &[vm, recv, a]),
+          None => self.call_helper_raw(helper, &[vm, recv]),
+        }
+      },
+    }
+  }
+
+  /// `object::write_barrier`'s own guard, inlined -- owed after EVERY
+  /// write into an already-live instance's field storage, since a
+  /// generational minor collection finds old->young pointers only
+  /// through the remembered set this maintains (see `write_barrier`'s
+  /// own docs). `obj_ptr` is the raw `*const Obj` the write went
+  /// through, already proven to be an `Obj::Instance` by the caller's
+  /// own tag check.
+  ///
+  /// The guard is two byte loads and a branch rather than an
+  /// unconditional call because the answer at a hot mutation site is
+  /// almost always "nothing owed": either the object is still young
+  /// (young objects are rescanned wholesale every minor collection, so
+  /// no remembered-set entry is needed at all), or it is old and some
+  /// earlier write this cycle already queued it. Only the genuinely
+  /// rare first-write-to-an-old-object case calls out.
+  ///
+  /// Reached through `call_helper_raw`, NOT `call_helper`: this helper
+  /// touches no VM register, cannot allocate, collect, or raise, so
+  /// bracketing it with `flush_live`/`mark_stale_live` would invalidate
+  /// this compiler's whole register cache on every field write for no
+  /// reason -- exactly the cost the inline fast path exists to avoid.
+  fn emit_write_barrier(&mut self, obj_ptr: IrValue) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let gen_off = object::obj_to_gcbox_generation_offset();
+    let rem_off = object::obj_to_gcbox_remembered_offset();
+    let generation = self.fb.ins().load(types::I8, flags, obj_ptr, gen_off);
+    let remembered = self.fb.ins().load(types::I8, flags, obj_ptr, rem_off);
+    let old = self
+      .fb
+      .ins()
+      .iconst(types::I8, object::GENERATION_OLD_BYTE as i64);
+    let is_old = self.fb.ins().icmp(IntCC::Equal, generation, old);
+    let zero = self.fb.ins().iconst(types::I8, 0);
+    let fresh = self.fb.ins().icmp(IntCC::Equal, remembered, zero);
+    let owed = self.fb.ins().band(is_old, fresh);
+
+    let barrier_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(owed, barrier_block, &[], done_block, &[]);
+
+    self.fb.switch_to_block(barrier_block);
+    let vm = self.vm_param;
+    self.call_helper_raw("zuri_jit_write_barrier", &[vm, obj_ptr]);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
   }
 
   /// Loads an `Obj::Instance`'s `fields` slice base pointer, given a
@@ -2816,21 +3446,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.mark_stale_live(ip);
   }
 
-  // NOTE: `GetField`/`SetField` inline fast paths were built, verified
-  // memory-safe (every field read individually correct, valgrind-clean),
-  // then reverted -- a real, reproducible run-to-run FLOATING-POINT
-  // result divergence showed up on `benchmarks/nbody.zu`, isolated via
-  // bisection to this fast path's mere PRESENCE (not to any specific
-  // value it read -- a debug validator confirmed every read was
-  // correct). Leading theory: the added IR complexity changes how
-  // Cranelift schedules/reassociates the SURROUNDING floating-point
-  // arithmetic, which is legitimately non-deterministic to reorder
-  // under IEEE-754. Not confirmed further; reverted rather than shipped
-  // unresolved. `Obj`'s `#[repr(C, u8)]` tag stabilization,
-  // `FieldStorage`, `ObjInstance`'s `#[repr(C)]`, and
-  // `object::obj_payload_offset()` are UNAFFECTED by this and remain in
-  // use (see `emit_is_falsey`'s tag-check fast path) -- only the
-  // field-access fast path itself was reverted.
+  // HISTORICAL NOTE, kept so the dead end is not re-explored: a
+  // `GetField`/`SetField` inline fast path was built and reverted twice
+  // before, both times blamed on a run-to-run FLOATING-POINT result
+  // divergence on `benchmarks/nbody.zu` attributed to Cranelift
+  // reordering/reassociating the surrounding float arithmetic.
+  //
+  // That attribution was WRONG -- Cranelift never reassociates floating
+  // point, and has no fast-math mode to do it under. The divergence was
+  // a stale-register READ, from two independent causes, both fixed and
+  // documented at their own sites: `emit_deopt` leaking its `flush_live`
+  // bookkeeping out of a branch arm that never runs, and a guarded field
+  // access's two arms disagreeing about the receiver register (see
+  // `resync_receiver_from_memory`). Both were masked by the old
+  // helper-call path's redundant flush on every single field access,
+  // which is why removing that flush is what exposed them.
+  //
+  // The fast path now ships -- see `emit_ic_get_field`/`emit_ic_set_field`
+  // for the general receiver and `emit_self_get_field`/`emit_self_set_field`
+  // for the compile-time-resolvable `self.field` case.
 
   // ---------------------------------------------------------------
   // Guards
@@ -3662,6 +4296,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_self_get_field(ip, dst, obj, name_const, slot);
           return false;
         }
+        if let Some(cache) = self.field_cache_addr(ip) {
+          self.emit_ic_get_field(ip, dst, obj, name_const, cache);
+          return false;
+        }
         let base = self.base_param;
         let dst_i = self.idx(dst);
         let obj_i = self.idx(obj);
@@ -3693,6 +4331,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_self_set_field(ip, obj, name_const, src, slot);
           return false;
         }
+        if let Some(cache) = self.field_cache_addr(ip) {
+          self.emit_ic_set_field(ip, obj, name_const, src, cache);
+          return false;
+        }
         let base = self.base_param;
         let obj_i = self.idx(obj);
         let name = self.bake_const(name_const);
@@ -3712,28 +4354,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         method_const,
         num_args,
       } => {
-        self.emit_safepoint();
-        if let Some((class_bits, generation)) = self.self_invoke_target(method_const) {
-          self.emit_self_invoke(ip, dst, obj, method_const, num_args, class_bits, generation);
+        if let Some(op) = NumberIntrinsic::of(self.method_name(method_const))
+          && op.arity() == num_args
+        {
+          self.emit_number_intrinsic(ip, dst, obj, method_const, num_args, op);
           return false;
         }
-        let base = self.base_param;
-        let vm_p = self.vm_param;
-        let obj_i = self.idx(obj);
-        let num_args_i = self.idx(num_args);
-        let dst_i = self.idx(dst);
-        let name = self.bake_const(method_const);
-        let func_ptr = self.func_ptr_const();
-        let ip_c = self.u64c(ip as u64);
-        let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
-        self.emit_fast_call(
-          "zuri_jit_invoke_prepare",
-          &[vm_p, base, obj_i, num_args_i, dst_i, name, func_ptr, ip_c],
-          new_base,
-          dst,
-          "zuri_jit_invoke",
-          &[vm_p, base, obj_i, num_args_i, dst_i, name],
-        );
+        self.emit_safepoint();
+        self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
         false
       },
       Instr::InvokeSuper {
