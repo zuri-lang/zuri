@@ -204,8 +204,41 @@ pub struct CompiledFunction {
 pub enum CallTarget {
   SelfRecursive,
   Known {
+    /// The callee's compiled entry point, or `0` when it has not been
+    /// compiled yet. A `0` here still carries useful information --
+    /// `codegen` can INLINE such a callee (see
+    /// `FuncCompiler::try_emit_inlined_call`), which needs only its
+    /// bytecode, not its machine code -- so the resolution is recorded
+    /// either way and `emit_known_call`'s direct-dispatch path is the
+    /// thing gated on a non-zero entry.
     entry: usize,
+    /// The callee's PROTOTYPE, as its `Value` bits -- what generated
+    /// code guards on.
+    ///
+    /// Deliberately the prototype and not the closure: `alloc_closure`
+    /// leaves an ordinary top-level function's closure in the nursery,
+    /// so its address changes the first time it survives a minor
+    /// collection, and a guard baked against it would stop matching
+    /// forever after. A prototype is always `alloc_old` and never
+    /// moves. See `object::obj_closure_function_offset`.
+    ///
+    /// Guarding on the prototype rather than the exact closure is also
+    /// sound for the fast paths this protects: two closures sharing a
+    /// prototype differ only in captured upvalues, and both consumers
+    /// either call through the closure actually in the register
+    /// (`emit_known_call`) or require an upvalue-free callee
+    /// (`try_emit_inlined_call`).
     guard_bits: u64,
+    /// The callee's own `ObjFunction`, as a raw pointer, so `codegen`
+    /// can read its bytecode when deciding whether to inline it.
+    ///
+    /// Only ever dereferenced at COMPILE time, never by generated code,
+    /// and sound then for the same reason `ConstructKnown::proto_ptr`
+    /// is: `Heap::alloc_function` allocates every `ObjFunction`
+    /// directly into the non-moving old generation, and the closure
+    /// `guard_bits` names is live throughout the resolution that
+    /// produced this.
+    proto_ptr: usize,
   },
   Construct,
   ConstructKnown {

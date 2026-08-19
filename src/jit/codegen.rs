@@ -40,6 +40,9 @@ use crate::vm::vm;
 /// (entry-block init and `refresh_regs`) instead of calling into Rust,
 /// since this is re-fetched at essentially every helper-call site.
 const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
+/// Where `publish_ip` writes this compiled frame's current bytecode
+/// position -- see `VM::jit_ip`.
+const JIT_IP_OFFSET: i32 = vm::VM_JIT_IP_OFFSET as i32;
 /// Byte offset of `VM::global_slots_ptr_cache` -- see that field's own
 /// docs and `emit_get_global`'s use of it.
 const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
@@ -147,6 +150,17 @@ pub fn compile(
 /// `Clean` and `Dirty` are collapsed into ONE "trust the `Variable`"
 /// branch in `load_reg` -- they only differ in whether `flush_live`
 /// still owes a write, never in whether a READ can trust the cache.
+/// Which floating-point operation an inlined body's arithmetic
+/// instruction maps to -- see `FuncCompiler::inline_arith`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum InlineArith {
+  FAdd,
+  FSub,
+  FMul,
+  FDiv,
+}
+use InlineArith::{FAdd, FDiv, FMul, FSub};
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum RegCache {
   Clean,
@@ -1278,6 +1292,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// keyed off whichever bytecode instruction is currently being
   /// translated -- see `current_ip`'s own docs.
   fn call_helper(&mut self, name: &str, args: &[IrValue]) -> IrValue {
+    self.publish_ip();
     self.flush_live(self.current_ip);
     let result = self.call_helper_raw(name, args);
     self.mark_stale_live(self.current_ip);
@@ -1309,6 +1324,36 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.scalar_instances.remove(&dst);
     }
     result
+  }
+
+  /// Publishes this frame's current bytecode position to `VM::jit_ip`,
+  /// so a stack trace built from here names the right source line.
+  ///
+  /// The interpreter keeps `CallFrame::ip` current by storing it on
+  /// EVERY instruction, precisely because any instruction can raise.
+  /// Compiled code cannot afford that, and does not need it: the only
+  /// ways a compiled frame's position ever becomes observable are
+  /// raising an exception and becoming the caller of a new frame, and
+  /// BOTH happen inside a `jit::runtime` helper. So publishing once per
+  /// helper call -- a single store of an immediate to a fixed `VM`
+  /// offset, on a path that is already paying for an FFI call -- covers
+  /// every observable case at a small fraction of the interpreter's
+  /// cost. `emit_safepoint`'s own `call_helper_raw` is deliberately not
+  /// included: a collection raises nothing and pushes no frame.
+  ///
+  /// Stores `current_ip + 1`, matching `CallFrame::ip`'s "one past the
+  /// instruction being executed" convention exactly, so
+  /// `build_stacktrace` can subtract one from either source
+  /// indifferently.
+  fn publish_ip(&mut self) {
+    let ip = self.u64c(self.current_ip as u64 + 1);
+    let vm = self.vm_param;
+    self.fb.ins().store(
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      ip,
+      vm,
+      JIT_IP_OFFSET,
+    );
   }
 
   /// Calls a `jit::runtime` helper that follows the OK(0)/ERR(1) status
@@ -1899,28 +1944,383 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// before generating the slow path, or its `flush_live` would
   /// silently skip a store the OTHER (never-taken-at-runtime-for-this-
   /// compile) branch's bookkeeping already "used up."
+  /// Upper bound on an inline candidate's bytecode length. Small on
+  /// purpose: the whole value of inlining here is erasing a call
+  /// protocol that costs far more than the callee's own arithmetic, and
+  /// that ratio only holds for genuinely tiny helpers. A larger budget
+  /// would trade a shrinking win for real code growth at every site.
+  const MAX_INLINE_OPS: usize = 24;
+
+  /// Inlines a call outright when the callee is a small, straight-line,
+  /// arithmetic-only leaf -- no call protocol, no frame, no register
+  /// flush, no reload. This is what removes the ~17ns per call that
+  /// dominates helper-heavy numeric code like
+  /// `benchmarks/spectral-norm.zu`, where the callee's own work is a
+  /// handful of flops.
+  ///
+  /// Returns whether it inlined; `false` leaves the caller to emit an
+  /// ordinary call, unchanged.
+  ///
+  /// # Why this needs no GC roots, no frame, and no safepoint
+  ///
+  /// This is the entire reason the eligibility rules are as narrow as
+  /// they are, so it is worth stating precisely.
+  ///
+  /// Every value an inlined body produces lives in a Cranelift SSA
+  /// value, NOT in `VM::registers` -- so nothing a garbage collection
+  /// would need to see or relocate is reachable from it. That is only
+  /// sound if a collection cannot happen while those values are live,
+  /// which `inline_plan` guarantees structurally rather than hopefully:
+  /// the body is proven to contain no call, no allocation, and no
+  /// helper that could do either. Note this is NOT implied by the
+  /// opcode whitelist alone -- `a + b` on non-numeric operands calls
+  /// `zuri_jit_add_slow`, which can allocate a string or a bigint --
+  /// which is why every operand must ALSO be proven numeric, making
+  /// those slow paths unreachable rather than merely unlikely.
+  ///
+  /// For the same reason there is no safepoint: an inlined body cannot
+  /// allocate, so it cannot advance the heap toward a collection, and
+  /// the enclosing loop's own back edge still carries one.
+  ///
+  /// # Why the callee cannot have changed underneath this
+  ///
+  /// `guard_bits` is the exact closure `VM::resolve_call_targets` saw.
+  /// A global binding can be reassigned at runtime, so the inlined body
+  /// runs only when the callee register still holds that identical
+  /// closure; anything else falls through to the ordinary call, which
+  /// resolves whatever is actually there. `proto_ptr` itself is only
+  /// ever read HERE, at compile time -- generated code never touches
+  /// it -- so a later reassignment cannot leave it dangling behind.
+  fn try_emit_inlined_call(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    func: u8,
+    num_args: u8,
+    guard_bits: u64,
+    proto_ptr: usize,
+  ) -> bool {
+    // SAFETY: see this function's own docs -- `proto_ptr` names a live,
+    // old-generation `ObjFunction`, read only during compilation.
+    let callee = unsafe { &*(proto_ptr as *const ObjFunction) };
+    let Some(plan) = self.inline_plan(ip, callee, func, num_args) else {
+      return false;
+    };
+
+    if crate::jit::log_enabled() {
+      eprintln!(
+        "[jit] inlined '{}' ({} ops) into '{}' at ip {}",
+        callee.name,
+        plan.len(),
+        self.proto.name,
+        ip
+      );
+    }
+
+    let callee_val = self.load_reg(func);
+    let snapshot = self.snapshot_reg_cache();
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.emit_callee_proto_guard(callee_val, guard_bits, slow_block);
+
+    let result = self.emit_inlined_body(callee, &plan, func);
+    self.store_reg(dst, result);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_call(dst, func, num_args);
+    // The two arms disagree about `dst` the same way every other
+    // guarded instruction's do -- the inlined arm defines it in its
+    // `Variable` and writes no memory, the call arm writes memory and
+    // stale-marks it. See `resync_receiver_from_memory` for the bug
+    // that leaving that disagreement in place produces.
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+    true
+  }
+
+  /// Decides whether `callee` can be inlined at this site, returning the
+  /// prefix of its bytecode to emit (everything up to and including its
+  /// first `Return`) when it can.
+  ///
+  /// Every rule here exists to hold up one of the two guarantees
+  /// `try_emit_inlined_call` depends on -- "cannot allocate or call"
+  /// and "is straight-line" -- so none of them is merely conservative
+  /// tidiness:
+  ///
+  /// - **Straight-line.** No jump of any kind may appear before the
+  ///   `Return`. That makes the body a pure expression tree, so callee
+  ///   registers can be plain SSA values with no `Variable`, no merge
+  ///   blocks, and no liveness analysis of their own. It also rules out
+  ///   loops, which would otherwise need a safepoint this deliberately
+  ///   does not emit.
+  /// - **Arithmetic only.** The opcode must be one whose proven-numeric
+  ///   form emits pure floating-point arithmetic and nothing else.
+  /// - **Everything proven numeric.** Tracked forward from the
+  ///   arguments: a parameter counts as numeric only if the CALLER
+  ///   already proved that argument register numeric, and every other
+  ///   register only once something numeric has been written to it.
+  ///   This is what makes the arithmetic slow paths (which can
+  ///   allocate) unreachable.
+  /// - **No upvalues, exact arity, non-variadic.** Anything else means
+  ///   the callee's parameters are not simply the argument registers.
+  fn inline_plan(
+    &self,
+    ip: usize,
+    callee: &ObjFunction,
+    func: u8,
+    num_args: u8,
+  ) -> Option<Vec<Instr>> {
+    if callee.variadic || callee.arity != num_args || !callee.upvalues.is_empty() {
+      return None;
+    }
+    // The callee's registers are addressed as caller registers
+    // `func + 1 + r` by the ordinary calling convention; an inlined body
+    // never materializes them, but the argument mapping below still has
+    // to stay inside a `u8`.
+    if (func as usize) + 1 + (callee.num_registers as usize) > u8::MAX as usize {
+      return None;
+    }
+    let code = &callee.chunk.code;
+    if code.len() > Self::MAX_INLINE_OPS {
+      return None;
+    }
+
+    let mut numeric = vec![false; callee.num_registers as usize];
+    for i in 0..num_args {
+      // A parameter is numeric exactly when the caller already proved
+      // the argument it is passed is.
+      if !self.proven_numeric(ip, func + 1 + i) {
+        return None;
+      }
+      *numeric.get_mut(i as usize)? = true;
+    }
+
+    let numeric_const = |idx: u16| -> bool {
+      callee
+        .chunk
+        .constants
+        .get(idx as usize)
+        .is_some_and(|c| c.is_number())
+    };
+    let is_num = |numeric: &Vec<bool>, r: u8| numeric.get(r as usize).copied().unwrap_or(false);
+
+    for (i, instr) in code.iter().enumerate() {
+      match *instr {
+        Instr::Return { src } => {
+          if !is_num(&numeric, src) {
+            return None;
+          }
+          return Some(code[..=i].to_vec());
+        },
+        Instr::LoadConst { dst, const_idx } => {
+          if !numeric_const(const_idx) {
+            return None;
+          }
+          *numeric.get_mut(dst as usize)? = true;
+        },
+        Instr::Move { dst, src } => {
+          let v = is_num(&numeric, src);
+          *numeric.get_mut(dst as usize)? = v;
+          if !v {
+            return None;
+          }
+        },
+        Instr::Add { dst, a, b }
+        | Instr::Sub { dst, a, b }
+        | Instr::Mul { dst, a, b }
+        | Instr::Div { dst, a, b } => {
+          if !is_num(&numeric, a) || !is_num(&numeric, b) {
+            return None;
+          }
+          *numeric.get_mut(dst as usize)? = true;
+        },
+        Instr::AddImm { dst, a, imm_const }
+        | Instr::SubImm { dst, a, imm_const }
+        | Instr::MulImm { dst, a, imm_const } => {
+          if !is_num(&numeric, a) || !numeric_const(imm_const) {
+            return None;
+          }
+          *numeric.get_mut(dst as usize)? = true;
+        },
+        Instr::Neg { dst, src } => {
+          if !is_num(&numeric, src) {
+            return None;
+          }
+          *numeric.get_mut(dst as usize)? = true;
+        },
+        // Everything else -- jumps, calls, field/index access, anything
+        // that can allocate or raise -- disqualifies the whole callee.
+        _ => return None,
+      }
+    }
+    None
+  }
+
+  /// Emits an `inline_plan`-approved body, returning the `Value` bits
+  /// its `Return` produced.
+  ///
+  /// Callee registers are tracked as plain SSA values rather than
+  /// `Variable`s: the plan guarantees the body is straight-line, so
+  /// every register has exactly one definition reaching every use and
+  /// there is nothing for Cranelift's SSA construction to merge.
+  fn emit_inlined_body(&mut self, callee: &ObjFunction, plan: &[Instr], func: u8) -> IrValue {
+    let mut regs: Vec<IrValue> = Vec::with_capacity(callee.num_registers as usize);
+    let zero = self.i64c(0);
+    regs.resize(callee.num_registers as usize, zero);
+
+    for i in 0..callee.arity {
+      regs[i as usize] = self.load_reg(func + 1 + i);
+    }
+
+    let bake = |fc: &mut Self, idx: u16| -> IrValue {
+      let v = callee.chunk.constants[idx as usize];
+      fc.u64c(v.to_bits())
+    };
+
+    for instr in plan {
+      match *instr {
+        Instr::Return { src } => return regs[src as usize],
+        Instr::LoadConst { dst, const_idx } => regs[dst as usize] = bake(self, const_idx),
+        Instr::Move { dst, src } => regs[dst as usize] = regs[src as usize],
+        Instr::Add { dst, a, b } => {
+          regs[dst as usize] = self.inline_arith(regs[a as usize], regs[b as usize], FAdd)
+        },
+        Instr::Sub { dst, a, b } => {
+          regs[dst as usize] = self.inline_arith(regs[a as usize], regs[b as usize], FSub)
+        },
+        Instr::Mul { dst, a, b } => {
+          regs[dst as usize] = self.inline_arith(regs[a as usize], regs[b as usize], FMul)
+        },
+        Instr::Div { dst, a, b } => {
+          regs[dst as usize] = self.inline_arith(regs[a as usize], regs[b as usize], FDiv)
+        },
+        Instr::AddImm { dst, a, imm_const } => {
+          let b = bake(self, imm_const);
+          regs[dst as usize] = self.inline_arith(regs[a as usize], b, FAdd)
+        },
+        Instr::SubImm { dst, a, imm_const } => {
+          let b = bake(self, imm_const);
+          regs[dst as usize] = self.inline_arith(regs[a as usize], b, FSub)
+        },
+        Instr::MulImm { dst, a, imm_const } => {
+          let b = bake(self, imm_const);
+          regs[dst as usize] = self.inline_arith(regs[a as usize], b, FMul)
+        },
+        Instr::Neg { dst, src } => {
+          let f = self.to_f64(regs[src as usize]);
+          let n = self.fb.ins().fneg(f);
+          regs[dst as usize] = self.from_f64(n);
+        },
+        // Unreachable: `inline_plan` returns `None` for anything else,
+        // and is the only producer of `plan`.
+        _ => unreachable!("inline_plan admitted a non-inlinable instruction"),
+      }
+    }
+    unreachable!("inline_plan always ends its plan with a Return")
+  }
+
+  /// One unguarded floating-point operation on two operands already
+  /// proven numeric -- the inlined-body counterpart of
+  /// `emit_binary_numeric_proven`, differing only in that it threads
+  /// SSA values instead of bytecode registers.
+  fn inline_arith(&mut self, a: IrValue, b: IrValue, op: InlineArith) -> IrValue {
+    let fa = self.to_f64(a);
+    let fb_ = self.to_f64(b);
+    let r = match op {
+      FAdd => self.fb.ins().fadd(fa, fb_),
+      FSub => self.fb.ins().fsub(fa, fb_),
+      FMul => self.fb.ins().fmul(fa, fb_),
+      FDiv => self.fb.ins().fdiv(fa, fb_),
+    };
+    self.from_f64(r)
+  }
+
+  /// Branches to `fail_block` unless the callee register holds a
+  /// closure over the prototype `guard_bits` names, leaving the
+  /// success path as the current block.
+  ///
+  /// Three separate branches rather than one fused boolean, for the
+  /// same reason `emit_ic_guard` needs them: masking a non-object
+  /// `Value`'s bits into a "pointer" and loading through it would
+  /// fault, and reading a non-closure `Obj`'s bytes at
+  /// `ObjClosure::function`'s offset would read a different union arm.
+  ///
+  /// See `CallTarget::Known::guard_bits` for why this guards the
+  /// PROTOTYPE and not the closure -- guarding the closure's own
+  /// address silently stops matching the first time a minor collection
+  /// relocates it.
+  fn emit_callee_proto_guard(&mut self, callee_val: IrValue, guard_bits: u64, fail_block: Block) {
+    let is_obj = self.is_obj(callee_val);
+    let obj_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], fail_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(callee_val);
+    let tag = self.obj_tag(ptr);
+    let tag_closure = self.i64c(object::OBJ_TAG_CLOSURE as i64);
+    let is_closure = self.fb.ins().icmp(IntCC::Equal, tag, tag_closure);
+    let proto_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_closure, proto_block, &[], fail_block, &[]);
+
+    self.fb.switch_to_block(proto_block);
+    let func_off = object::obj_closure_function_offset() as i32;
+    let proto = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      ptr,
+      func_off,
+    );
+    let want = self.u64c(guard_bits);
+    let is_hit = self.fb.ins().icmp(IntCC::Equal, proto, want);
+    let hit_block = self.fb.create_block();
+    self.fb.ins().brif(is_hit, hit_block, &[], fail_block, &[]);
+    self.fb.switch_to_block(hit_block);
+  }
+
+  /// `Instr::Call`'s fully general codegen -- the resolver-driven
+  /// `zuri_jit_call_prepare` fast call, used whenever nothing stronger
+  /// was proven about the callee.
+  fn emit_generic_call(&mut self, dst: u8, func: u8, num_args: u8) {
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let func_i = self.idx(func);
+    let num_args_i = self.idx(num_args);
+    let dst_i = self.idx(dst);
+    let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+    self.emit_fast_call(
+      "zuri_jit_call_prepare",
+      &[vm_p, base, func_i, num_args_i, dst_i],
+      new_base,
+      dst,
+      "zuri_jit_call",
+      &[vm_p, base, func_i, num_args_i, dst_i],
+    );
+  }
+
   fn emit_known_call(&mut self, dst: u8, func: u8, num_args: u8, entry: usize, guard_bits: u64) {
     let base = self.base_param;
     let vm_p = self.vm_param;
     let callee_val = self.load_reg(func);
-    let target = self.u64c(guard_bits);
-    let is_hit = self.fb.ins().icmp(IntCC::Equal, callee_val, target);
     let snapshot = self.snapshot_reg_cache();
 
     let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
     let num_args_i = self.idx(num_args);
     let dst_i = self.idx(dst);
 
-    let try_direct_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let fast_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_hit, try_direct_block, &[], slow_block, &[]);
+    self.emit_callee_proto_guard(callee_val, guard_bits, slow_block);
 
-    self.fb.switch_to_block(try_direct_block);
     let ok = self.call_helper(
       "zuri_jit_direct_call_prepare",
       &[vm_p, callee_val, new_base, num_args_i, dst_i],
@@ -4056,12 +4456,30 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         func,
         num_args,
       } => {
+        // Inlining is checked BEFORE the safepoint, because an inlined
+        // body emits no call, no allocation and no frame push -- there
+        // is nothing for a collection to be owed at such a site, and
+        // the enclosing loop's own back edge still carries one.
+        if let Some(CallTarget::Known {
+          guard_bits,
+          proto_ptr,
+          ..
+        }) = self.call_targets.get(&ip).copied()
+          && self.try_emit_inlined_call(ip, dst, func, num_args, guard_bits, proto_ptr)
+        {
+          return false;
+        }
         self.emit_safepoint();
         match self.call_targets.get(&ip).copied() {
           Some(CallTarget::SelfRecursive) => self.emit_self_call(dst, func, num_args),
-          Some(CallTarget::Known { entry, guard_bits }) => {
-            self.emit_known_call(dst, func, num_args, entry, guard_bits)
-          },
+          // `entry == 0` means "resolved, but not compiled yet" (see
+          // `CallTarget::Known::entry`) -- there is no address to jump
+          // to, so this falls through to the ordinary resolver exactly
+          // as an unresolved site would.
+          Some(CallTarget::Known {
+            entry, guard_bits, ..
+          }) if entry != 0 => self.emit_known_call(dst, func, num_args, entry, guard_bits),
+          Some(CallTarget::Known { .. }) => self.emit_generic_call(dst, func, num_args),
           Some(CallTarget::Construct) => self.emit_construct_call(dst, func, num_args),
           Some(CallTarget::ConstructKnown {
             guard_bits,
@@ -4085,22 +4503,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               proto_ptr,
             )
           },
-          None => {
-            let base = self.base_param;
-            let vm_p = self.vm_param;
-            let func_i = self.idx(func);
-            let num_args_i = self.idx(num_args);
-            let dst_i = self.idx(dst);
-            let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
-            self.emit_fast_call(
-              "zuri_jit_call_prepare",
-              &[vm_p, base, func_i, num_args_i, dst_i],
-              new_base,
-              dst,
-              "zuri_jit_call",
-              &[vm_p, base, func_i, num_args_i, dst_i],
-            );
-          },
+          None => self.emit_generic_call(dst, func, num_args),
         }
         false
       },

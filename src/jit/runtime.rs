@@ -684,6 +684,7 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
   };
   let new_base = base + func_reg as usize + 1;
   vm.setup_closure_call(callee, closure, proto, new_base, num_args as u8, dst as u8);
+  vm.mark_top_frame_compiled();
   vm.jit_depth_enter();
   unsafe { *(closure_out as *mut u64) = callee.to_bits() };
   entry as usize as u64
@@ -781,6 +782,7 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
     1 + num_args as u8,
     dst as u8,
   );
+  vm.mark_top_frame_compiled();
   vm.jit_depth_enter();
   unsafe { *(closure_out as *mut u64) = method.to_bits() };
   entry as usize as u64
@@ -814,6 +816,7 @@ pub unsafe extern "C" fn zuri_jit_new_prepare(
   else {
     return 0;
   };
+  vm.mark_top_frame_compiled();
   unsafe { *(closure_out as *mut u64) = ctor.to_bits() };
   entry as usize as u64
 }
@@ -876,6 +879,7 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
     proto,
     field_count as usize,
   );
+  vm.mark_top_frame_compiled();
   unsafe { *(closure_out as *mut u64) = ctor_bits };
   entry as usize as u64
 }
@@ -964,6 +968,7 @@ pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
     num_args as u8,
     dst as u8,
   );
+  vm.mark_top_frame_compiled();
   vm.jit_depth_enter();
   1
 }

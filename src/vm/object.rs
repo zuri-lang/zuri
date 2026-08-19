@@ -540,6 +540,11 @@ pub struct ObjBoundMethod {
   pub method: Value,
 }
 
+/// `#[repr(C)]` for the same reason `ObjInstance` is: `jit::codegen`
+/// reads `function` by fixed offset (see
+/// `obj_closure_function_offset`), so field order here is part of the
+/// generated code's contract rather than an implementation detail.
+#[repr(C)]
 pub struct ObjClosure {
   /// The prototype this closure was created from, as the tagged `Value`
   /// that points at its `Obj::Func` -- not a raw pointer -- so the GC's
@@ -1130,6 +1135,25 @@ pub fn obj_to_gcbox_generation_offset() -> i32 {
   std::mem::offset_of!(GcBox, generation) as i32 - std::mem::offset_of!(GcBox, obj) as i32
 }
 
+/// Byte offset from a `*const Obj` known (via `obj_tag`) to be
+/// `Obj::Closure` to that closure's `function` field -- the tagged
+/// `Value` naming its prototype.
+///
+/// Exists so a compiled call site can guard on WHICH FUNCTION a callee
+/// register holds rather than on the closure's own address. That
+/// distinction is load-bearing: `alloc_closure` only forces class
+/// methods into the non-moving old generation, so an ordinary
+/// top-level function's closure is born in the nursery and RELOCATES
+/// the first time it survives a minor collection. Any guard that baked
+/// such a closure's address would silently stop matching from that
+/// point on, disabling whatever fast path it protects for the rest of
+/// the run. A prototype never moves (`alloc_function` is always
+/// `alloc_old`), so guarding on it stays true for the life of the
+/// program.
+pub fn obj_closure_function_offset() -> usize {
+  obj_payload_offset() + std::mem::offset_of!(ObjClosure, function)
+}
+
 /// `obj_to_gcbox_generation_offset`'s sibling for the `remembered`
 /// flag -- see its docs.
 pub fn obj_to_gcbox_remembered_offset() -> i32 {
@@ -1167,6 +1191,36 @@ mod gcbox_layout_tests {
     assert_eq!(unsafe { *gen_addr }, GENERATION_OLD_BYTE);
     write_barrier(obj);
     assert_eq!(unsafe { *rem_addr }, 1);
+  }
+
+  /// `obj_closure_function_offset` must land on a real closure's own
+  /// `function` field, checked against an actual allocation rather than
+  /// against `offset_of!` a second time.
+  #[test]
+  fn closure_function_offset_lands_on_prototype() {
+    let mut heap = Heap::default();
+    let proto = heap.alloc_function(ObjFunction {
+      name: String::from("probe"),
+      variadic: false,
+      chunk: Chunk::new(),
+      arity: 0,
+      num_registers: 1,
+      upvalues: Vec::new(),
+      is_method: false,
+      owning_class_name: None,
+      source_path: std::rc::Rc::from("<probe>"),
+      globals_module: None,
+      jit: JitInfo::new(0),
+    });
+    let closure = heap.alloc_closure(ObjClosure {
+      function: proto,
+      upvalues: Vec::new(),
+    });
+    let obj = closure.as_obj();
+    assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_CLOSURE);
+    let slot =
+      unsafe { (obj as *const u8).add(obj_closure_function_offset()) as *const Value };
+    assert_eq!(unsafe { *slot }.to_bits(), proto.to_bits());
   }
 }
 

@@ -156,6 +156,20 @@ struct CallFrame {
   /// unwinding -- with no bracketing needed at the codegen call sites
   /// that create one.
   scalar_roots_mark: usize,
+  /// True while this frame's body is running as COMPILED code rather
+  /// than in `run_until`'s interpreter loop.
+  ///
+  /// The interpreter advances `ip` on every instruction, so an
+  /// interpreted frame's `ip` is always current and a stack trace can
+  /// just read it. Compiled code does not -- keeping `ip` live on every
+  /// instruction would mean a store per instruction for something only
+  /// an eventual error ever reads. Instead compiled code publishes its
+  /// position to `VM::jit_ip` at the far coarser granularity of "before
+  /// any helper call that could raise or push a frame" (see
+  /// `jit::codegen::FuncCompiler::call_helper`), and this flag is what
+  /// tells `build_stacktrace`/`setup_closure_call` which of the two
+  /// sources is the truthful one for a given frame.
+  compiled: bool,
 }
 
 /// One active `catch` statement's unwind target -- see the module-level
@@ -379,6 +393,17 @@ pub struct VM {
   /// coarser invalidation this trades for is free in practice and
   /// costs nothing to get right.
   method_table_generation: Cell<u64>,
+  /// Where compiled code currently is, as a bytecode index ONE PAST the
+  /// instruction being executed -- the same convention `CallFrame::ip`
+  /// uses, so `build_stacktrace`'s `saturating_sub(1)` applies
+  /// unchanged to either.
+  ///
+  /// Written by generated code (at `VM_JIT_IP_OFFSET`) before every
+  /// helper call, which is exactly the set of points a compiled frame
+  /// can raise or become a CALLER of a new frame -- the only two ways
+  /// its position ever becomes observable. Only meaningful for a frame
+  /// whose `CallFrame::compiled` is set; see that field's own docs.
+  jit_ip: usize,
 }
 
 /// Byte offset of `VM::heap` within `VM` -- combined in `crate::jit` with
@@ -390,6 +415,8 @@ pub struct VM {
 pub(crate) const VM_HEAP_OFFSET: usize = std::mem::offset_of!(VM, heap);
 /// Byte offset of `VM::regs_ptr_cache` -- see that field's own docs.
 pub(crate) const VM_REGS_PTR_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs_ptr_cache);
+/// Byte offset of `VM::jit_ip` -- see that field's own docs.
+pub(crate) const VM_JIT_IP_OFFSET: usize = std::mem::offset_of!(VM, jit_ip);
 /// Byte offset of `VM::global_slots_ptr_cache` -- see that field's own docs.
 pub(crate) const VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET: usize =
   std::mem::offset_of!(VM, global_slots_ptr_cache);
@@ -408,6 +435,7 @@ impl VM {
       regs_ptr_cache: Cell::new(std::ptr::null_mut()),
       global_slots_ptr_cache: Cell::new(std::ptr::null()),
       frames: Vec::new(),
+      jit_ip: 0,
       open_upvalues: Vec::new(),
       gc_pins: Vec::new(),
       jit_scalar_roots: Vec::new(),
@@ -646,14 +674,18 @@ impl VM {
   fn build_stacktrace(&mut self) -> Value {
     let mut lines = Vec::with_capacity(self.frames.len());
 
-    for frame in self.frames.iter().rev() {
+    let innermost = self.frames.len().saturating_sub(1);
+    for (idx, frame) in self.frames.iter().enumerate().rev() {
       let func = unsafe { &*frame.function };
-      let line = func
-        .chunk
-        .lines
-        .get(frame.ip.saturating_sub(1))
-        .copied()
-        .unwrap_or(0);
+      // Only the innermost frame needs `jit_ip`: every compiled frame
+      // further out already had its position committed to its own `ip`
+      // by `setup_closure_call`, at the moment it became a caller.
+      let ip = if frame.compiled && idx == innermost {
+        self.jit_ip
+      } else {
+        frame.ip
+      };
+      let line = func.chunk.lines.get(ip.saturating_sub(1)).copied().unwrap_or(0);
       let entry = format!("{}:{} -> {}()", func.source_path, line, func.name);
       lines.push(self.heap.alloc_string(entry));
     }
@@ -734,6 +766,7 @@ impl VM {
       base: 0,
       dst_in_caller: 0,
       scalar_roots_mark: self.jit_scalar_roots.len(),
+      compiled: false,
     });
     self.run_until(0)?;
     Ok(())
@@ -801,6 +834,7 @@ impl VM {
       base: new_base,
       dst_in_caller: 0,
       scalar_roots_mark: self.jit_scalar_roots.len(),
+      compiled: false,
     });
     self.run_frame(stop_depth, proto, callee)
   }
@@ -1268,16 +1302,19 @@ impl VM {
           targets.insert(ip, CallTarget::SelfRecursive);
           break;
         }
-        if let Some(entry) = callee_proto.jit.entry.get() {
-          targets.insert(
-            ip,
-            CallTarget::Known {
-              entry: entry as usize,
-              guard_bits: resolved.to_bits(),
-            },
-          );
-          break;
-        }
+        // Recorded even when the callee has NOT been compiled yet:
+        // `codegen` can still inline it from its bytecode alone, and
+        // `CallTarget::Known::entry`'s own docs explain why a `0` there
+        // is meaningful rather than a missing resolution.
+        targets.insert(
+          ip,
+          CallTarget::Known {
+            entry: callee_proto.jit.entry.get().map_or(0, |e| e as usize),
+            guard_bits: resolved.as_closure().function.to_bits(),
+            proto_ptr: callee_proto as *const ObjFunction as usize,
+          },
+        );
+        break;
       }
     }
     (targets, field_safety)
@@ -1725,12 +1762,21 @@ impl VM {
     let closure_val = self.ensure_stable_for_compiled_entry(closure_val);
 
     self.jit_call_depth.set(self.jit_call_depth.get() + 1);
+    // Whoever is actually EXECUTING a frame owns its `compiled` flag --
+    // see `CallFrame::compiled`. Restored (rather than left set) on the
+    // way out because this same frame can keep running interpreted
+    // afterwards, most obviously after a deopt.
+    let entered_idx = self.frames.len() - 1;
+    let was_compiled = std::mem::replace(&mut self.frames[entered_idx].compiled, true);
     // SAFETY: `entry` was produced by `jit::engine::JitEngine::compile_function`
     // for THIS exact prototype; `base` is this (already-pushed) frame's
     // own register-window start, matching every other caller of this
     // machine code's calling convention (see `jit::EntryFn`'s docs).
     let result_bits = unsafe { entry(self as *mut VM, base as u64, closure_val.to_bits(), osr_id) };
     self.jit_call_depth.set(self.jit_call_depth.get() - 1);
+    if let Some(frame) = self.frames.get_mut(entered_idx) {
+      frame.compiled = was_compiled;
+    }
 
     // A real deopt takes priority over everything else -- see
     // `resolve_possible_deopt`'s own docs. This exact check (and the
@@ -1821,6 +1867,10 @@ impl VM {
       }
     }
     self.frames[frame_idx].ip = deopt_ip;
+    // The interpreter is taking this frame over and syncs its `ip` on
+    // every instruction from here on, so `VM::jit_ip` stops being the
+    // truthful source for it -- see `CallFrame::compiled`.
+    self.frames[frame_idx].compiled = false;
     let stop_depth = frame_idx;
     let result = self.run_until(stop_depth);
     self
@@ -1945,6 +1995,20 @@ impl VM {
     self.jit_call_depth.set(self.jit_call_depth.get() + 1);
   }
 
+  /// Marks the frame just pushed by a `jit::runtime` prepare helper as
+  /// running compiled code.
+  ///
+  /// The prepare/`call_indirect`/finish protocol
+  /// (`codegen::FuncCompiler::emit_fast_call`) never goes through
+  /// `invoke_compiled`, so it is the one way into compiled execution
+  /// that has to say so explicitly -- see `CallFrame::compiled`.
+  #[inline]
+  pub(crate) fn mark_top_frame_compiled(&mut self) {
+    if let Some(frame) = self.frames.last_mut() {
+      frame.compiled = true;
+    }
+  }
+
   #[inline]
   pub(crate) fn jit_depth_exit(&self) {
     self.jit_call_depth.set(self.jit_call_depth.get() - 1);
@@ -1969,6 +2033,18 @@ impl VM {
     num_args: u8,
     dst_in_caller: u8,
   ) {
+    // The frame about to become a CALLER stops being the innermost one,
+    // so if it is running compiled code this is the moment its position
+    // has to be committed somewhere a later stack trace can find it --
+    // `VM::jit_ip` only ever describes the innermost compiled frame.
+    // An interpreted caller needs nothing here: `run_until` already
+    // syncs its `ip` on every instruction.
+    if let Some(caller) = self.frames.last_mut()
+      && caller.compiled
+    {
+      caller.ip = self.jit_ip;
+    }
+
     // Split so the overwhelmingly common shape -- a non-variadic
     // callee, called with exactly its declared arity, into a register
     // window that already has room -- is a straight frame push with
@@ -2019,6 +2095,7 @@ impl VM {
       base: new_base,
       dst_in_caller,
       scalar_roots_mark: self.jit_scalar_roots.len(),
+      compiled: false,
     });
   }
 

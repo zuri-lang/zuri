@@ -339,7 +339,16 @@ impl Lexer {
       self.advance();
     }
 
-    if self.peek() == 'e' || self.peek() == 'E' {
+    // An `e`/`E` only opens an exponent when real digits actually
+    // follow it (after an optional sign). Consuming it unconditionally
+    // would swallow the leading letter of an adjacent identifier --
+    // `1elephant` would lex as the malformed literal `1e` plus
+    // `lephant` -- and `1e` then parses as nothing at all.
+    let has_exponent = (self.peek() == 'e' || self.peek() == 'E')
+      && (is_digit(self.next())
+        || ((self.next() == '+' || self.next() == '-') && is_digit(self.peek_n(3))));
+
+    if has_exponent {
       self.advance();
 
       if self.peek() == '+' || self.peek() == '-' {
@@ -353,7 +362,14 @@ impl Lexer {
 
     let number = &self.get_string(self.start, self.current).replace("_", "");
 
-    if number.contains(".") {
+    // An exponent makes this a float REGARDLESS of whether a decimal
+    // point is present. Keying only off `.` sent `2e3`/`1e308` to
+    // `i64::from_str`, which cannot parse an exponent at all, and the
+    // `unwrap_or(0)` then turned every such literal into a silent `0`.
+    // Both arms build the same `Value::number(f64)` downstream (see
+    // `Compiler`'s `Expr::Integer`/`Expr::Float`), so widening this
+    // condition changes nothing for literals that already worked.
+    if number.contains('.') || has_exponent {
       self.make_token(TokenKind::Double(f64::from_str(number).unwrap_or(0.0)))
     } else {
       self.make_token(TokenKind::Integer(i64::from_str(number).unwrap_or(0)))

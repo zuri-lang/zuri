@@ -1,22 +1,35 @@
-# Write-barrier coverage for a receiver reached INDIRECTLY, which
-# `gc-write-barrier-stress.zu` deliberately does not cover.
+# Write-barrier coverage for the two JIT field-store fast paths, on
+# receivers that are genuinely OLD -- the case `gc-write-barrier-stress.zu`
+# does not reach.
 #
-# That test mutates containers held directly in globals. A global is a
-# GC root, so a minor collection reaches its young children by ordinary
-# tracing whether or not the remembered set knows about the store --
-# which means a missing write barrier on those sites stays invisible.
+# `Heap::forward_or_promote` returns immediately for any non-Young
+# object and never enqueues it, so a minor collection reaches an old
+# object's children ONLY through `Heap::drain_remembered`. A young value
+# stored into an old object without a barrier is therefore invisible to
+# the collector and gets freed while still referenced.
 #
-# Here the mutated objects are only reachable THROUGH a list, and the
-# store goes through an arbitrary receiver register (`roots[i].kid = ...`)
-# rather than through `self`. That is the shape where the remembered set
-# is genuinely load-bearing: drop the barrier on either the `self.field`
-# or the general `obj.field` JIT fast path and this test reports a wrong
-# total, varying from run to run as collection timing shifts.
+# Two independent stores are exercised, because the JIT compiles them
+# through separate code paths and each needs its own barrier:
+#   * `roots[i].kid = ...`   -> `emit_ic_set_field`   (arbitrary receiver)
+#   * `self.kid = ...`       -> `emit_self_set_field` (receiver is `self`)
+#
+# Sensitivity is not incidental. Two things are needed for a missing
+# barrier to actually show up, and both are deliberate here:
+#   * The churn objects must ESCAPE, or `jit::escape` scalar-replaces
+#     them and the loop allocates nothing at all.
+#   * Total allocation must clear `Heap::YOUNG_NEXT_GC` (32MB) enough
+#     times to run many minor collections, not one.
+# Verified by removing each barrier separately: either removal makes
+# this report a non-zero, run-to-run-varying error count.
 
 class Node {
   @new(tag) {
     self.tag = tag
     self.kid = nil
+  }
+
+  set_kid(k) {
+    self.kid = k
   }
 
   sum() {
@@ -37,28 +50,45 @@ iter var i = 0; i < 64; i++ {
 # into the old generation. Mutates `self.kid` on its own short-lived
 # nodes too, so the `self.field` fast path is exercised alongside the
 # general one below.
+var sink = []
+
 def churn(n) {
   var junk = 0
   iter var i = 0; i < n; i++ {
     var t = Node(i)
-    t.kid = Node(i + 1)
+    # `set_kid` stores through `self`, so this drives the self-receiver
+    # fast path; `t` escaping into `sink` is what stops escape analysis
+    # from scalar-replacing it and turning this loop into no allocation
+    # whatsoever.
+    t.set_kid(Node(i + 1))
+    sink.append(t)
+    if sink.length() > 64 {
+      sink = []
+    }
     junk += t.sum()
   }
   return junk
 }
 
-churn(20000)
+churn(150000)
 
 var errors = 0
-iter var round = 0; round < 60; round++ {
-  # The old -> young store this test exists for.
-  iter var i = 0; i < 64; i++ {
+iter var round = 0; round < 12; round++ {
+  # The old -> young stores this test exists for, split so BOTH JIT
+  # field-store fast paths get one on a genuinely promoted receiver.
+  # Half go through an arbitrary receiver register, half through `self`
+  # inside a method; each half alone is enough to fail the check below
+  # if its own barrier is missing.
+  iter var i = 0; i < 64; i += 2 {
     roots[i].kid = Node(round * 1000 + i)
+  }
+  iter var i = 1; i < 64; i += 2 {
+    roots[i].set_kid(Node(round * 1000 + i))
   }
 
   # More collections, now that the young nodes are referenced ONLY from
   # already-promoted parents.
-  churn(4000)
+  churn(90000)
 
   iter var i = 0; i < 64; i++ {
     if roots[i].sum() != 2 * i + round * 1000 {
