@@ -232,3 +232,4 @@ import @.gzip
 import @.checksum
 import @.zstd
 import @.lz4
+import @.zip
