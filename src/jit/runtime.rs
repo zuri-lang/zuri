@@ -223,7 +223,7 @@ binary_slow!(
   binary_numeric,
   "%",
   "@mod",
-  |x: f64, y: f64| x % y,
+  |x: f64, y: f64| crate::vm::value::num_rem(x, y),
   |x, y| &x % &y
 );
 binary_slow!(
@@ -2325,6 +2325,28 @@ num_intrinsic!(zuri_jit_num_cbrt, cbrt);
 // an inlined instruction -- see `NumberIntrinsic`'s own docs.
 num_intrinsic!(zuri_jit_num_round, round);
 
+/// `x % y` and `x ** y` behind the same direct-call contract as the
+/// unary intrinsics above -- neither has a Cranelift instruction (a
+/// float remainder is a libcall, and there is no pow opcode at all), so
+/// the win here is not the arithmetic but everything the ordinary
+/// `Instr::Mod`/`Instr::Pow` helper does around it: two register reads,
+/// a register write, the numeric/bigint/operator-override dispatch, and
+/// `call_checked`'s full register flush and stale-mark.
+///
+/// Same `f64` operations `VM::binary_numeric` is handed for these, so
+/// compiled and interpreted results are bit-identical by construction.
+pub unsafe extern "C" fn zuri_jit_num_fmod(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+  Value::number(crate::vm::value::num_rem(
+    f64::from_bits(a),
+    f64::from_bits(b),
+  ))
+  .to_bits()
+}
+
+pub unsafe extern "C" fn zuri_jit_num_powf(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+  Value::number(f64::from_bits(a).powf(f64::from_bits(b))).to_bits()
+}
+
 num_intrinsic2!(zuri_jit_num_max, max);
 num_intrinsic2!(zuri_jit_num_min, min);
 num_intrinsic2!(zuri_jit_num_atan2, atan2);
@@ -2550,6 +2572,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec2!(zuri_jit_num_cbrt),
     spec2!(zuri_jit_num_round),
     spec3!(zuri_jit_num_max),
+    spec3!(zuri_jit_num_fmod),
+    spec3!(zuri_jit_num_powf),
     spec3!(zuri_jit_num_min),
     spec3!(zuri_jit_num_atan2),
     spec5!(zuri_jit_using_jump),

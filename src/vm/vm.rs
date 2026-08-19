@@ -346,6 +346,22 @@ pub struct VM {
   /// `VM::raise` rather than a `self.globals` hashmap hit on every
   /// internal error.
   pub(crate) builtin_exceptions: FxHashMap<&'static str, Value>,
+  /// One shared, immortal `Value` per ASCII character, built on first
+  /// use -- what `s[i]` returns instead of allocating a fresh
+  /// one-character string on every single index.
+  ///
+  /// Sharing is invisible to the language: Zuri strings are immutable
+  /// (`index_set` has no string case at all) and string equality is by
+  /// CONTENT (see `Value`'s own `Obj::Str` arm), with no identity
+  /// operator that could tell two equal strings apart. So handing the
+  /// same object back every time cannot be observed, it just removes an
+  /// allocation -- and with it the GC pressure that allocation created,
+  /// which on `benchmarks/fasta.zu` was a measurable share of runtime
+  /// all by itself.
+  ///
+  /// Empty until the first ASCII character is indexed, so a program
+  /// that never does pays nothing.
+  interned_ascii: Vec<Value>,
   /// Every module loaded so far this run, keyed by its canonical
   /// filesystem path (or `"builtin:NAME"` for a synthetic builtin
   /// module) -- what makes re-importing the same module a no-op instead
@@ -452,6 +468,7 @@ impl VM {
       jit_call_depth: Cell::new(0),
       deopt_reentrancy_depth: Cell::new(0),
       builtin_exceptions: FxHashMap::default(),
+      interned_ascii: Vec::new(),
       global_slots: Vec::new(),
       global_names: FxHashMap::default(),
       modules: FxHashMap::default(),
@@ -2773,10 +2790,8 @@ impl VM {
       let i = self.coerce_index(index, receiver.bytes_len())?;
       Ok(Value::number(receiver.bytes_get(i).unwrap() as f64))
     } else if receiver.is_string() {
-      let chars_len = receiver.as_str().chars().count();
-      let i = self.coerce_index(index, chars_len)?;
-      let c = receiver.as_str().chars().nth(i).unwrap();
-      Ok(self.heap.alloc_string(c.to_string()))
+      let c = self.string_char_at(receiver, index)?;
+      Ok(self.interned_char(c))
     } else if receiver.is_dict() {
       match receiver.dict_get(&index) {
         Some(v) => Ok(v),
@@ -2791,6 +2806,66 @@ impl VM {
         format!("cannot index into a {}", receiver.type_name()),
       ))
     }
+  }
+
+  /// The shared `Value` for a single ASCII character, building the
+  /// whole table on first use. Non-ASCII characters get an ordinary
+  /// fresh allocation -- there are too many to intern and they are not
+  /// the hot case.
+  ///
+  /// Allocated `alloc_old` so these never move and never need
+  /// relocating; they are still marked as roots by the major collector
+  /// (see `collect_garbage`), which is what keeps them from being
+  /// swept.
+  fn interned_char(&mut self, c: char) -> Value {
+    if !c.is_ascii() {
+      return self.heap.alloc_string(c.to_string());
+    }
+    if self.interned_ascii.is_empty() {
+      self.interned_ascii = (0u8..128)
+        .map(|b| {
+          self
+            .heap
+            .alloc_old(Obj::Str(String::from(b as char)))
+        })
+        .collect();
+    }
+    self.interned_ascii[c as usize]
+  }
+
+  /// `s[i]` for a string receiver, resolving `i` (which may be
+  /// negative, counting from the end) to the character it names.
+  ///
+  /// Split out from `index_get` for its ASCII fast path, which matters
+  /// more than it looks. The straightforward implementation walks the
+  /// string TWICE per index -- once for `chars().count()` to bounds-
+  /// check, once for `chars().nth(i)` -- so indexing a string in a loop
+  /// is quadratic in its length. `benchmarks/fasta.zu` does exactly
+  /// that (`seq[i % len]` over a 287-character constant, millions of
+  /// times), which is what makes this worth a special case at all.
+  ///
+  /// The fast path rests on one fact: if every byte up to and including
+  /// byte `i` is ASCII, then character `i` IS byte `i`, and no counting
+  /// is needed. Checking that prefix is a word-at-a-time scan
+  /// (`<[u8]>::is_ascii`) rather than a UTF-8 decode per character, so
+  /// even when it does walk, it walks roughly an order of magnitude
+  /// faster -- and it replaces both walks, not just one.
+  ///
+  /// Anything the fast path cannot answer -- a non-ASCII byte in range,
+  /// a negative index, an out-of-range index -- falls through to the
+  /// exact original behaviour, error messages included.
+  fn string_char_at(&mut self, receiver: Value, index: Value) -> RunResult<char> {
+    let raw = self.value_as_index(index)?;
+    if raw >= 0 {
+      let i = raw as usize;
+      let bytes = receiver.as_str().as_bytes();
+      if i < bytes.len() && bytes[..=i].is_ascii() {
+        return Ok(bytes[i] as char);
+      }
+    }
+    let chars_len = receiver.as_str().chars().count();
+    let i = self.coerce_index(index, chars_len)?;
+    Ok(receiver.as_str().chars().nth(i).unwrap())
   }
 
   pub(crate) fn index_set(&mut self, receiver: Value, index: Value, value: Value) -> RunResult<()> {
@@ -2993,7 +3068,7 @@ impl VM {
           },
           Instr::Mod { dst, a, b } => {
             tri!(
-              self.binary_numeric(base, dst, a, b, "%", "@mod", |x, y| x % y, |x, y| &x % &y),
+              self.binary_numeric(base, dst, a, b, "%", "@mod", crate::vm::value::num_rem, |x, y| &x % &y),
               'step
             );
           },
@@ -4305,7 +4380,25 @@ impl VM {
     // RHS holding the same value instead of silently diverging based
     // on whether fusion happened to apply. Worth fixing separately,
     // not folded into this change.
-    if va.is_string() || vb.is_string() {
+    if va.is_string() && vb.is_string() {
+      // Both sides already strings -- by far the common shape, and the
+      // one `format!` serves worst. `Display` for a string `Value` is
+      // its raw contents (see `value.rs`), so this produces a
+      // byte-identical result while skipping `core::fmt`'s dynamic
+      // dispatch, its per-argument `Display::fmt` calls, and the
+      // repeated reallocation a `String`'s default growth does. Exact
+      // capacity up front means one allocation and two `memcpy`s.
+      //
+      // Worth special-casing rather than trusting `format!`: building a
+      // line one character at a time (`b += seq[j]`, which
+      // `benchmarks/fasta.zu` does millions of times) spends more time
+      // inside the formatting machinery than in the copy itself.
+      let (a, b) = (va.as_str(), vb.as_str());
+      let mut s = String::with_capacity(a.len() + b.len());
+      s.push_str(a);
+      s.push_str(b);
+      return Ok(self.heap.alloc_string(s));
+    } else if va.is_string() || vb.is_string() {
       let s = format!("{}{}", va, vb);
       return Ok(self.heap.alloc_string(s));
     } else if va.is_list() || vb.is_list() {
@@ -4571,6 +4664,9 @@ impl VM {
       Self::mark_root(*v, &mut worklist);
     }
     for v in self.builtin_exceptions.values() {
+      Self::mark_root(*v, &mut worklist);
+    }
+    for v in &self.interned_ascii {
       Self::mark_root(*v, &mut worklist);
     }
     Self::mark_root(self.jit_pending_exception.get(), &mut worklist);
@@ -5079,7 +5175,7 @@ impl VM {
       return Ok(None);
     }
 
-    if let Some(native) = builtins::lookup(receiver, deco) {
+    if let Some(native) = builtins::lookup_operator(receiver, deco) {
       let mut args = CallArgs::new();
       args.push(receiver);
       args.extend_from_slice(extra_args);

@@ -40,6 +40,20 @@ pub struct Lexer {
   start_line: usize,
   total_count: usize,
   interpolating: Vec<char>,
+  /// `interpolating`'s exact contents at the START of the token
+  /// currently being scanned, so `rewind` can undo a lookahead's effect
+  /// on it as well as on the cursor.
+  ///
+  /// Without this, `Parser::peek_next` (one `advance` immediately
+  /// followed by a `rewind`) corrupts the stack permanently: scanning a
+  /// string that opens an interpolation PUSHES, `rewind` puts the
+  /// cursor back but leaves the push in place, and the real scan of
+  /// that same string pushes a SECOND time. Only one `}` ever arrives
+  /// to pop, so the leftover entry makes the next `}` in the program --
+  /// typically a block's closing brace -- get swallowed as "end of
+  /// interpolation" instead of an `Rbrace`, and the block fails to
+  /// parse well after the string that caused it.
+  interpolating_before: Vec<char>,
   lines: FxHashMap<usize, usize>,
 }
 
@@ -57,6 +71,7 @@ impl Lexer {
       lexing_type: 0,
       lines: FxHashMap::default(),
       interpolating: Vec::new(),
+      interpolating_before: Vec::new(),
     }
   }
 
@@ -97,6 +112,11 @@ impl Lexer {
     }
 
     self.current = self.start;
+    // Undo whatever the token just scanned did to the interpolation
+    // stack, not just where the cursor sat -- see
+    // `interpolating_before`.
+    self.interpolating.clear();
+    self.interpolating.extend_from_slice(&self.interpolating_before);
   }
 
   pub fn match_char(&mut self, c: char) -> bool {
@@ -508,6 +528,12 @@ impl Lexer {
 
     self.start = self.current;
     self.start_line = self.line;
+    // Paired with `rewind` -- see `interpolating_before`'s own docs.
+    // Cheap: this stack is only ever as deep as the interpolations
+    // nested at this exact point, which is zero for almost every token
+    // and one for almost all of the rest.
+    self.interpolating_before.clear();
+    self.interpolating_before.extend_from_slice(&self.interpolating);
 
     if self.is_at_end() {
       return self.make_token(TokenKind::Eof);

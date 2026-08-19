@@ -750,6 +750,49 @@ impl Value {
   }
 }
 
+/// Zuri's `%` on two numbers -- `f64::rem` semantics exactly, but
+/// computed with an integer remainder whenever both operands are
+/// integers, which is the overwhelmingly common case.
+///
+/// Rust's `f64 % f64` lowers to a `fmod` call, and in this build that
+/// resolves to `compiler_builtins`' portable SOFTWARE implementation
+/// rather than anything the hardware does -- it showed up as ~13% of
+/// `benchmarks/fasta.zu`, whose random generator is
+/// `(seed * IA + IC) % IM` over small integers. A single `idiv` is
+/// dramatically cheaper for exactly that shape.
+///
+/// The result is bit-identical to `a % b`, not merely close, under
+/// these guards (verified by exhaustive random and edge-case
+/// differential testing before this was written):
+/// - **Both magnitudes strictly below 2^63.** `as i64` SATURATES, so
+///   without this the boundary value `9223372036854775808.0` converts
+///   to `i64::MAX` and silently round-trips back to itself, giving a
+///   wrong answer. This also makes the `i64::MIN / -1` overflow case
+///   unreachable, and rejects both infinities and NaN for free (every
+///   comparison against them is false).
+/// - **Both integral**, checked by round-tripping through `i64`.
+/// - **Divisor non-zero**, since integer division by zero traps where
+///   `fmod` would return NaN.
+///
+/// `copysign` is not cosmetic: `fmod` gives a zero result the sign of
+/// the DIVIDEND (`-4.0 % 2.0` is `-0.0`), while an integer remainder
+/// gives `+0`. That was the only discrepancy the differential test
+/// found, and this is what closes it.
+#[inline]
+pub fn num_rem(a: f64, b: f64) -> f64 {
+  /// `2^63`, exactly representable, so the comparison is exact.
+  const I64_LIMIT: f64 = 9223372036854775808.0;
+
+  if a.abs() < I64_LIMIT && b.abs() < I64_LIMIT {
+    let ia = a as i64;
+    let ib = b as i64;
+    if ib != 0 && ia as f64 == a && ib as f64 == b {
+      return ((ia % ib) as f64).copysign(a);
+    }
+  }
+  a % b
+}
+
 impl std::fmt::Display for Value {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     /* if self.is_int() {
@@ -851,5 +894,78 @@ impl std::fmt::Display for Value {
     } else {
       write!(f, "<invalid value>")
     }
+  }
+}
+
+#[cfg(test)]
+mod num_rem_tests {
+  use super::num_rem;
+
+  /// `num_rem` must be BIT-identical to `f64 % f64`, not merely close --
+  /// the interpreter and the JIT both use it, and a difference would
+  /// make results depend on which tier ran.
+  #[test]
+  fn matches_f64_rem_bit_for_bit() {
+    let mut state = 0x243F6A8885A308D3u64;
+    let mut next = || {
+      state ^= state << 13;
+      state ^= state >> 7;
+      state ^= state << 17;
+      state
+    };
+
+    let mut checked = 0u64;
+    for _ in 0..200_000 {
+      let a = ((next() as i64) >> (next() % 63)) as f64;
+      let b = ((next() as i64) >> (next() % 63)) as f64;
+      assert_eq!(
+        num_rem(a, b).to_bits(),
+        (a % b).to_bits(),
+        "{a} % {b}"
+      );
+      checked += 1;
+    }
+    assert!(checked > 0);
+
+    // The cases the guards exist for, called out explicitly.
+    let edges = [
+      0.0f64,
+      -0.0,
+      1.0,
+      -1.0,
+      2.0,
+      -2.0,
+      -4.0,
+      0.5,
+      -0.5,
+      1.5,
+      -1.5,
+      139968.0,
+      3877.0,
+      9007199254740992.0,
+      -9007199254740992.0,
+      // +/- 2^63 exactly: `as i64` saturates here, which is what the
+      // magnitude guard exists to reject.
+      9223372036854775808.0,
+      -9223372036854775808.0,
+      1e300,
+      -1e300,
+      f64::NAN,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    ];
+    for &a in &edges {
+      for &b in &edges {
+        assert_eq!(num_rem(a, b).to_bits(), (a % b).to_bits(), "{a} % {b}");
+      }
+    }
+  }
+
+  /// The specific case an integer remainder gets wrong without the
+  /// `copysign` fix-up: a zero result keeps the DIVIDEND's sign.
+  #[test]
+  fn negative_zero_result_keeps_its_sign() {
+    assert!(num_rem(-4.0, 2.0).is_sign_negative());
+    assert!(num_rem(4.0, 2.0).is_sign_positive());
   }
 }

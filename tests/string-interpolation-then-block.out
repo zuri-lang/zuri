@@ -1,0 +1,14 @@
+1
+plain block ok
+1
+after double-quoted ok
+x1y 1 q
+0
+1
+q
+f=3
+after function ok
+q
+1
+1
+nested ok

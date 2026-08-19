@@ -1,0 +1,41 @@
+# Regression test: a string interpolation must not corrupt the lexer's
+# interpolation stack for the code that FOLLOWS it.
+#
+# `Parser::peek_next` scans one token ahead and then rewinds. Scanning a
+# string that opens an interpolation pushes onto `Lexer::interpolating`;
+# for a long time `rewind` restored the cursor but not that stack, so the
+# real scan of the same string pushed a second time. Only one `}` ever
+# arrived to pop it, and the leftover entry made the NEXT `}` in the
+# program get swallowed as "end of interpolation" instead of closing a
+# block -- so an unrelated block several lines later failed to parse.
+#
+# Every line below therefore pairs an interpolation with a following
+# braced block. They must all run, not just parse.
+
+var a = 1
+var q = 'q'
+
+echo '${a}'
+if true { echo 'plain block ok' }
+
+echo "${a}"
+if true { echo 'after double-quoted ok' }
+
+echo 'x${a}y ${a} ${q}'
+iter var i = 0; i < 2; i++ { echo i }
+
+var s = '${q}'
+if true { echo s }
+
+def f(v) { return 'f=${v}' }
+echo f(3)
+if true { echo 'after function ok' }
+
+echo '${ "${q}" }'
+class C {
+  @new() { self.x = '${a}' }
+}
+echo C().x
+
+if true { echo '${a}' }
+if true { echo 'nested ok' }

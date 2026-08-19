@@ -4165,15 +4165,37 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::Pow { dst, a, b } => {
-        self.emit_always_helper("zuri_jit_pow", dst, a, b);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.call_f64_intrinsic("zuri_jit_num_powf", fa, fb));
+        } else {
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_pow", |fc, fa, fb| {
+            fc.call_f64_intrinsic("zuri_jit_num_powf", fa, fb)
+          });
+        }
         false
       },
       Instr::Floor { dst, a, b } => {
-        self.emit_always_helper("zuri_jit_floordiv", dst, a, b);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| {
+            let q = fc.fb.ins().fdiv(fa, fb);
+            fc.fb.ins().floor(q)
+          });
+        } else {
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_floordiv", |fc, fa, fb| {
+            let q = fc.fb.ins().fdiv(fa, fb);
+            fc.fb.ins().floor(q)
+          });
+        }
         false
       },
       Instr::Mod { dst, a, b } => {
-        self.emit_always_helper("zuri_jit_mod", dst, a, b);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb));
+        } else {
+          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mod", |fc, fa, fb| {
+            fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb)
+          });
+        }
         false
       },
 
@@ -4208,15 +4230,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::BitShl { dst, a, b } => {
-        self.emit_always_helper("zuri_jit_bitshl", dst, a, b);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_bitwise_proven(dst, a, b, Self::shift_left);
+        } else {
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitshl", Self::shift_left);
+        }
         false
       },
       Instr::BitShr { dst, a, b } => {
-        self.emit_always_helper("zuri_jit_bitshr", dst, a, b);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_bitwise_proven(dst, a, b, Self::shift_right);
+        } else {
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitshr", Self::shift_right);
+        }
         false
       },
       Instr::BitUshr { dst, a, b } => {
-        self.emit_always_helper("zuri_jit_bitushr", dst, a, b);
+        if self.both_proven_numeric(ip, a, b) {
+          self.emit_bitwise_proven(dst, a, b, Self::shift_right_unsigned);
+        } else {
+          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitushr", Self::shift_right_unsigned);
+        }
         false
       },
       Instr::BitNot { dst, src } => {
@@ -5331,6 +5365,85 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(done_block);
     self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// A binary `f64` operation that has no Cranelift instruction,
+  /// reached as a DIRECT call to its `jit::runtime` helper -- the
+  /// `Instr::Mod`/`Instr::Pow` counterpart of `NumberIntrinsic::Call`.
+  ///
+  /// Goes through `call_helper_raw`, not `call_helper`: these helpers
+  /// touch no VM register and cannot allocate, collect, or raise, so
+  /// the register-cache flush and stale-mark `call_helper` would bracket
+  /// them with is exactly the cost worth removing here. The helpers
+  /// speak raw bits, which for a number are its `f64` bits, so the
+  /// conversions either side are bitcasts.
+  fn call_f64_intrinsic(&mut self, helper: &'static str, fa: IrValue, fb_: IrValue) -> IrValue {
+    let a_bits = self.from_f64(fa);
+    let b_bits = self.from_f64(fb_);
+    let vm = self.vm_param;
+    let r = self.call_helper_raw(helper, &[vm, a_bits, b_bits]);
+    self.to_f64(r)
+  }
+
+  /// `<<`'s exact semantics on two already-`f64 as i64` operands:
+  /// `x.checked_shl(y as u32).unwrap_or(0)`.
+  ///
+  /// Both quirks of that expression are reproduced deliberately rather
+  /// than normalized away, because the interpreter has them and the two
+  /// tiers must agree:
+  /// - `y as u32` is Rust's TRUNCATING integer cast, not a saturating
+  ///   one, so a negative shift count wraps to a huge `u32` (and then
+  ///   falls into the out-of-range case below) rather than clamping
+  ///   to zero.
+  /// - `checked_shl` yields `None` for any count >= 64, and the
+  ///   `unwrap_or(0)` turns that into a plain zero. An unguarded
+  ///   `ishl` would instead mask the count to 6 bits and shift by
+  ///   `count % 64`, which is a different answer.
+  fn shift_left(fb: &mut FunctionBuilder, x: IrValue, y: IrValue) -> IrValue {
+    let count = fb.ins().ireduce(types::I32, y);
+    let width = fb.ins().iconst(types::I32, 64);
+    let out_of_range = fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThanOrEqual, count, width);
+    let shifted = fb.ins().ishl(x, count);
+    let zero = fb.ins().iconst(types::I64, 0);
+    fb.ins().select(out_of_range, zero, shifted)
+  }
+
+  /// `>>`'s exact semantics: `x.checked_shr(y as u32).unwrap_or(0)`.
+  /// An ARITHMETIC shift (Rust's `>>` on `i64` sign-extends), but still
+  /// zero -- not `-1` -- for a negative `x` shifted by 64 or more, since
+  /// that is the `unwrap_or(0)` case rather than a saturating shift.
+  /// See `shift_left` for the shared count-cast reasoning.
+  fn shift_right(fb: &mut FunctionBuilder, x: IrValue, y: IrValue) -> IrValue {
+    let count = fb.ins().ireduce(types::I32, y);
+    let width = fb.ins().iconst(types::I32, 64);
+    let out_of_range = fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThanOrEqual, count, width);
+    let shifted = fb.ins().sshr(x, count);
+    let zero = fb.ins().iconst(types::I64, 0);
+    fb.ins().select(out_of_range, zero, shifted)
+  }
+
+  /// `>>>`'s exact semantics:
+  /// `(x as u32).checked_shr(y as u32).unwrap_or(0) as i64`.
+  ///
+  /// Note this one is 32-bit throughout, unlike the other two: the
+  /// operand is truncated to `u32` first, the out-of-range threshold is
+  /// therefore 32 rather than 64, the shift is LOGICAL, and the final
+  /// `u32 as i64` zero-extends.
+  fn shift_right_unsigned(fb: &mut FunctionBuilder, x: IrValue, y: IrValue) -> IrValue {
+    let count = fb.ins().ireduce(types::I32, y);
+    let x32 = fb.ins().ireduce(types::I32, x);
+    let width = fb.ins().iconst(types::I32, 32);
+    let out_of_range = fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThanOrEqual, count, width);
+    let shifted = fb.ins().ushr(x32, count);
+    let zero = fb.ins().iconst(types::I32, 0);
+    let result = fb.ins().select(out_of_range, zero, shifted);
+    fb.ins().uextend(types::I64, result)
   }
 
   fn emit_always_helper(&mut self, helper: &'static str, dst: u8, a: u8, b: u8) {

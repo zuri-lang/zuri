@@ -53,7 +53,7 @@ mod string;
 /// class methods take priority (checked by the caller before ever
 /// reaching `lookup`), and a class itself never gets a builtin method
 /// at all (see `lookup`'s early return).
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Kind {
   Number,
   Bool,
@@ -197,6 +197,85 @@ fn table_for(kind: Kind) -> &'static MethodTable {
 ///
 /// Classes are excluded outright: a class is a template, not a value
 /// with contents to stringify or measure.
+/// Every `Kind`, in declaration order -- the index space
+/// `OPERATOR_NAMES` is built over.
+const ALL_KINDS: [Kind; 12] = [
+  Kind::Number,
+  Kind::Bool,
+  Kind::BigInt,
+  Kind::String,
+  Kind::List,
+  Kind::Dict,
+  Kind::Bytes,
+  Kind::Range,
+  Kind::Function,
+  Kind::File,
+  Kind::Ptr,
+  Kind::Nil,
+];
+
+/// Per-kind bitmask summarising which `@`-prefixed (operator/protocol)
+/// methods that kind's table defines, keyed by the single byte that
+/// FOLLOWS the `@`. Derived from the tables themselves, so adding a new
+/// one anywhere is picked up automatically and this cannot drift out of
+/// sync with them.
+///
+/// A byte rather than the whole name deliberately: the point is to
+/// answer "no" in a load, a shift and an AND, with no string
+/// comparison at all. A first-byte collision (two decorators sharing
+/// the letter after `@`) only costs a fall-through to the real table
+/// lookup, never a wrong answer -- so correctness never depends on the
+/// summary being precise, only on it never CLEARING a bit for something
+/// the table has.
+///
+/// This matters because `VM::try_operator_override` asks millions of
+/// times and almost always gets `None`: every arithmetic operation
+/// whose operands are not both numeric consults it, which includes
+/// every single string concatenation. An earlier version of this
+/// scanned a two-element name list instead and measured no better than
+/// the hash map it replaced -- two `memcmp` calls cost about what one
+/// hash plus one `memcmp` does.
+static OPERATOR_MASKS: LazyLock<[u64; 12]> = LazyLock::new(|| {
+  ALL_KINDS.map(|kind| {
+    table_for(kind)
+      .keys()
+      .filter(|name| name.starts_with('@'))
+      .fold(0u64, |mask, name| mask | deco_bit(name).unwrap_or(u64::MAX))
+  })
+});
+
+/// The `OPERATOR_MASKS` bit for a decorator, from the byte after its
+/// `@`. `None` for a name too short to have one, which no real
+/// decorator is.
+#[inline]
+fn deco_bit(deco: &str) -> Option<u64> {
+  let b = *deco.as_bytes().get(1)?;
+  Some(1u64 << (b % 64))
+}
+
+/// Resolve an OPERATOR decorator (`@add`, `@lshift`, ...) on a builtin
+/// receiver -- `lookup` specialized for the one caller that asks
+/// millions of times and almost always gets `None`. Same answer as
+/// `lookup` for any `@`-prefixed name, reached without hashing.
+pub fn lookup_operator(receiver: Value, deco: &str) -> Option<&'static NativeFunction> {
+  // `OPERATOR_MASKS` only summarises `@`-prefixed entries, so a plain
+  // method name would get a wrong `None` here rather than a slower
+  // answer. Every caller passes a decorator literal; this catches a
+  // future one that does not.
+  debug_assert!(
+    deco.starts_with('@'),
+    "lookup_operator is only valid for '@'-prefixed decorators, got '{deco}'"
+  );
+  if receiver.is_class() {
+    return None;
+  }
+  let kind = Kind::of(receiver)?;
+  if OPERATOR_MASKS[kind as usize] & deco_bit(deco)? == 0 {
+    return None;
+  }
+  table_for(kind).get(deco)
+}
+
 pub fn lookup(receiver: Value, name: &str) -> Option<&'static NativeFunction> {
   if receiver.is_class() {
     return None;
@@ -221,4 +300,64 @@ fn to_string(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   let s = format!("{}", ctx.args[0]);
   Ok(ctx.heap().alloc_string(s))
+}
+
+#[cfg(test)]
+mod operator_lookup_tests {
+  use super::*;
+
+  /// `lookup_operator` indexes `OPERATOR_NAMES` by `kind as usize`, so
+  /// `ALL_KINDS` must stay in `Kind`'s own declaration order. Reordering
+  /// either one alone would silently hand every kind another kind's
+  /// operator list.
+  #[test]
+  fn all_kinds_matches_discriminant_order() {
+    for (i, kind) in ALL_KINDS.iter().enumerate() {
+      assert_eq!(*kind as usize, i, "ALL_KINDS[{i}] is out of order");
+    }
+  }
+
+  /// The fast negative path must never hide a method the real table
+  /// has: for every kind, every `@` name it defines must have its bit
+  /// set. (The converse is deliberately NOT required -- a spare set bit
+  /// only costs a fall-through, never a wrong answer.)
+  #[test]
+  fn operator_masks_never_hide_a_real_method() {
+    for kind in ALL_KINDS {
+      for (name, _) in table_for(kind).iter() {
+        if name.starts_with('@') {
+          let bit = deco_bit(name).expect("a decorator always has a byte after '@'");
+          assert!(
+            OPERATOR_MASKS[kind as usize] & bit != 0,
+            "{name} would be missed for {kind:?}"
+          );
+        }
+      }
+    }
+  }
+
+  /// And the summary must agree with `lookup` itself, answer for
+  /// answer, on every `@` name any table defines.
+  #[test]
+  fn lookup_operator_agrees_with_lookup() {
+    let decos = [
+      "@add", "@sub", "@mul", "@div", "@mod", "@pow", "@floordiv", "@and", "@or", "@xor",
+      "@lshift", "@rshift", "@urshift", "@lt", "@lte", "@gt", "@gte", "@neg", "@not", "@key",
+      "@value",
+    ];
+    let probes = [
+      Value::number(1.0),
+      Value::bool(true),
+      Value::nil(),
+    ];
+    for v in probes {
+      for deco in decos {
+        assert_eq!(
+          lookup_operator(v, deco).is_some(),
+          lookup(v, deco).is_some(),
+          "disagreement on {deco}"
+        );
+      }
+    }
+  }
 }
