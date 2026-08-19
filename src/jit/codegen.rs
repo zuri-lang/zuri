@@ -150,6 +150,18 @@ pub fn compile(
 /// `Clean` and `Dirty` are collapsed into ONE "trust the `Variable`"
 /// branch in `load_reg` -- they only differ in whether `flush_live`
 /// still owes a write, never in whether a READ can trust the cache.
+/// A builtin native emitted inline -- see
+/// `FuncCompiler::native_intrinsic`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NativeIntrinsic {
+  IsNumber,
+  IsBool,
+  IsObject,
+  IsInt,
+  /// `is_obj()` AND the object's tag is one of these.
+  Tag(&'static [u8]),
+}
+
 /// Which floating-point operation an inlined body's arithmetic
 /// instruction maps to -- see `FuncCompiler::inline_arith`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2241,6 +2253,46 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.from_f64(r)
   }
 
+  /// Branches to `fail_block` unless the callee register holds the
+  /// builtin native whose `NativeFn` is `guard_fn`, leaving the success
+  /// path as the current block.
+  ///
+  /// Guards the FUNCTION POINTER, not the object's address -- see
+  /// `CallTarget::KnownNative::guard_fn` for why an address guard would
+  /// silently rot. Three separate branches for the same reason
+  /// `emit_ic_guard` needs them: each stage may only be evaluated once
+  /// the previous proved it safe to dereference.
+  fn emit_callee_native_guard(&mut self, callee_val: IrValue, guard_fn: u64, fail_block: Block) {
+    let is_obj = self.is_obj(callee_val);
+    let obj_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], fail_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(callee_val);
+    let tag = self.obj_tag(ptr);
+    let tag_native = self.i64c(object::OBJ_TAG_NATIVE as i64);
+    let is_native = self.fb.ins().icmp(IntCC::Equal, tag, tag_native);
+    let fn_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_native, fn_block, &[], fail_block, &[]);
+
+    self.fb.switch_to_block(fn_block);
+    let off = object::obj_native_func_offset() as i32;
+    let actual = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      ptr,
+      off,
+    );
+    let want = self.u64c(guard_fn);
+    let is_hit = self.fb.ins().icmp(IntCC::Equal, actual, want);
+    let hit_block = self.fb.create_block();
+    self.fb.ins().brif(is_hit, hit_block, &[], fail_block, &[]);
+    self.fb.switch_to_block(hit_block);
+  }
+
   /// Branches to `fail_block` unless the callee register holds a
   /// closure over the prototype `guard_bits` names, leaving the
   /// success path as the current block.
@@ -2284,6 +2336,207 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let hit_block = self.fb.create_block();
     self.fb.ins().brif(is_hit, hit_block, &[], fail_block, &[]);
     self.fb.switch_to_block(hit_block);
+  }
+
+  /// A builtin native (`vm::natives`) whose whole body is a `Value` tag
+  /// test, emitted inline instead of called.
+  ///
+  /// These are the cheapest functions in the language and, until now,
+  /// among the most expensive to call: a measured ~44ns of resolution,
+  /// dispatch and argument marshalling around what is one or two
+  /// machine instructions of actual work.
+  ///
+  /// Every variant reproduces its `vm::natives` counterpart exactly --
+  /// the same `Value` predicate, not an equivalent-looking one -- so a
+  /// compiled answer is always the interpreted answer. Natives whose
+  /// body is more than a tag test (`typeof`, `id`, `is_iterable`,
+  /// `print`, ...) are deliberately absent; they still get
+  /// `KnownNative`'s resolution-free call, just not an inline body.
+  fn native_intrinsic(name: &str) -> Option<NativeIntrinsic> {
+    use NativeIntrinsic::*;
+    Some(match name {
+      "is_number" => IsNumber,
+      "is_bool" => IsBool,
+      "is_object" => IsObject,
+      "is_int" => IsInt,
+      "is_string" => Tag(&[object::OBJ_TAG_STR]),
+      "is_list" => Tag(&[object::OBJ_TAG_LIST]),
+      "is_dict" => Tag(&[object::OBJ_TAG_DICT]),
+      "is_bytes" => Tag(&[object::OBJ_TAG_BYTES]),
+      "is_class" => Tag(&[object::OBJ_TAG_CLASS]),
+      "is_instance" => Tag(&[object::OBJ_TAG_INSTANCE]),
+      "is_file" => Tag(&[object::OBJ_TAG_FILE]),
+      // `natives::is_function` is closure/native/bound-method but NOT
+      // class; `is_callable` is those three PLUS class. Keeping them
+      // as distinct tag sets is what preserves that difference.
+      "is_function" => Tag(&[
+        object::OBJ_TAG_CLOSURE,
+        object::OBJ_TAG_NATIVE,
+        object::OBJ_TAG_BOUND_METHOD,
+      ]),
+      "is_callable" => Tag(&[
+        object::OBJ_TAG_CLOSURE,
+        object::OBJ_TAG_NATIVE,
+        object::OBJ_TAG_BOUND_METHOD,
+        object::OBJ_TAG_CLASS,
+      ]),
+      _ => return None,
+    })
+  }
+
+  /// `Instr::Call` on a call site proven to target a specific builtin
+  /// native -- see `CallTarget::KnownNative`.
+  ///
+  /// Guards that the callee register still holds that exact native (a
+  /// global binding is reassignable, so this is a real check, not a
+  /// formality) and then either emits the native's body inline or calls
+  /// it directly, skipping resolution and dispatch entirely. A failed
+  /// guard falls back to the ordinary resolver, which handles whatever
+  /// is actually there.
+  ///
+  /// No safepoint on the intrinsic path: a tag test cannot allocate, and
+  /// the enclosing loop's back edge still carries one.
+  fn emit_known_native_call(
+    &mut self,
+    dst: u8,
+    func: u8,
+    num_args: u8,
+    guard_fn: u64,
+    native_ptr: usize,
+  ) {
+    // SAFETY: `native_ptr` is only ever dereferenced HERE, during this
+    // compilation, to read the native's name. `VM::resolve_call_targets`
+    // produced it moments ago on this same thread and the native is
+    // permanently reachable from a global, so it is live for this read.
+    // It is deliberately NOT baked into generated code: natives are
+    // young allocations (see `Heap::alloc_native`) and relocate on
+    // promotion, so a baked address would dangle at runtime.
+    let native = unsafe { &*(native_ptr as *const object::NativeFunction) };
+    let intrinsic = (num_args == 1)
+      .then(|| Self::native_intrinsic(native.name))
+      .flatten();
+
+    let callee_val = self.load_reg(func);
+    let snapshot = self.snapshot_reg_cache();
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.emit_callee_native_guard(callee_val, guard_fn, slow_block);
+
+    match intrinsic {
+      Some(op) => {
+        let arg = self.load_reg(func + 1);
+        let v = self.emit_native_intrinsic(op, arg);
+        self.store_reg(dst, v);
+      },
+      None => {
+        self.emit_safepoint();
+        let base = self.base_param;
+        let vm_p = self.vm_param;
+        let func_i = self.idx(func);
+        let num_args_i = self.idx(num_args);
+        let dst_i = self.idx(dst);
+        self.call_checked(
+          "zuri_jit_call_native",
+          &[vm_p, base, func_i, num_args_i, dst_i],
+        );
+        self.resync_dst_from_memory(dst);
+      },
+    }
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_call(dst, func, num_args);
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// The intrinsic body itself, as a `Value`-bits result.
+  fn emit_native_intrinsic(&mut self, op: NativeIntrinsic, v: IrValue) -> IrValue {
+    match op {
+      NativeIntrinsic::IsNumber => {
+        let c = self.is_number(v);
+        self.bool_value(c)
+      },
+      NativeIntrinsic::IsObject => {
+        let c = self.is_obj(v);
+        self.bool_value(c)
+      },
+      NativeIntrinsic::IsBool => {
+        // `Value::is_bool` is an exact match against the two singleton
+        // bit patterns, not a masked test.
+        let t = self.u64c(value::TRUE_VAL);
+        let f = self.u64c(value::FALSE_VAL);
+        let is_t = self.fb.ins().icmp(IntCC::Equal, v, t);
+        let is_f = self.fb.ins().icmp(IntCC::Equal, v, f);
+        let c = self.fb.ins().bor(is_t, is_f);
+        self.bool_value(c)
+      },
+      NativeIntrinsic::IsInt => {
+        // `natives::is_int` is `is_number() && fract() == 0.0`, and
+        // Rust's `f64::fract` is `self - self.trunc()` -- so an
+        // infinity yields NaN here and correctly compares unequal,
+        // exactly as the interpreted version does.
+        let is_num = self.is_number(v);
+        let num_block = self.fb.create_block();
+        let done_block = self.fb.create_block();
+        self.fb.append_block_param(done_block, types::I8);
+        let false_v = self.fb.ins().iconst(types::I8, 0);
+        self
+          .fb
+          .ins()
+          .brif(is_num, num_block, &[], done_block, &[false_v.into()]);
+
+        self.fb.switch_to_block(num_block);
+        let f = self.to_f64(v);
+        let t = self.fb.ins().trunc(f);
+        let frac = self.fb.ins().fsub(f, t);
+        let zero = self.fb.ins().f64const(0.0);
+        let is_whole = self.fb.ins().fcmp(FloatCC::Equal, frac, zero);
+        self.fb.ins().jump(done_block, &[is_whole.into()]);
+
+        self.fb.switch_to_block(done_block);
+        let c = self.fb.block_params(done_block)[0];
+        self.bool_value(c)
+      },
+      NativeIntrinsic::Tag(tags) => {
+        // Two stages, never fused: the tag lives behind a pointer, so
+        // it may only be read once `is_obj` has proven there is one --
+        // see `emit_ic_guard` for the same discipline.
+        let is_obj = self.is_obj(v);
+        let obj_block = self.fb.create_block();
+        let done_block = self.fb.create_block();
+        self.fb.append_block_param(done_block, types::I8);
+        let false_v = self.fb.ins().iconst(types::I8, 0);
+        self
+          .fb
+          .ins()
+          .brif(is_obj, obj_block, &[], done_block, &[false_v.into()]);
+
+        self.fb.switch_to_block(obj_block);
+        let ptr = self.obj_ptr(v);
+        let tag = self.obj_tag(ptr);
+        let mut matched = None;
+        for &want in tags {
+          let w = self.i64c(want as i64);
+          let eq = self.fb.ins().icmp(IntCC::Equal, tag, w);
+          matched = Some(match matched {
+            None => eq,
+            Some(prev) => self.fb.ins().bor(prev, eq),
+          });
+        }
+        let matched = matched.expect("a Tag intrinsic always names at least one tag");
+        self.fb.ins().jump(done_block, &[matched.into()]);
+
+        self.fb.switch_to_block(done_block);
+        let c = self.fb.block_params(done_block)[0];
+        self.bool_value(c)
+      },
+    }
   }
 
   /// `Instr::Call`'s fully general codegen -- the resolver-driven
@@ -4514,6 +4767,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             entry, guard_bits, ..
           }) if entry != 0 => self.emit_known_call(dst, func, num_args, entry, guard_bits),
           Some(CallTarget::Known { .. }) => self.emit_generic_call(dst, func, num_args),
+          Some(CallTarget::KnownNative {
+            guard_fn,
+            native_ptr,
+          }) => self.emit_known_native_call(dst, func, num_args, guard_fn, native_ptr),
           Some(CallTarget::Construct) => self.emit_construct_call(dst, func, num_args),
           Some(CallTarget::ConstructKnown {
             guard_bits,

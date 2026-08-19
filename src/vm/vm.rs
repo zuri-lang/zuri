@@ -14,8 +14,8 @@ use crate::jit::{
 use crate::vm::chunk::{Instr, JumpKey};
 use crate::vm::natives;
 use crate::vm::object::{
-  Heap, ListStorage, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding, UpvalueDescriptor,
-  UpvalueState, ZuriContext, write_barrier,
+  Heap, ListStorage, NativeFunction, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding,
+  UpvalueDescriptor, UpvalueState, ZuriContext, write_barrier,
 };
 use crate::vm::value::Value;
 
@@ -82,19 +82,19 @@ const MAX_DEOPT_REENTRANCY: u32 = 64;
 /// always-`Vec` version would pay on every call.
 const INLINE_ARGS: usize = 8;
 
-enum CallArgs {
+pub(crate) enum CallArgs {
   Inline([Value; INLINE_ARGS], usize),
   Spilled(Vec<Value>),
 }
 
 impl CallArgs {
   #[inline]
-  fn new() -> Self {
+  pub(crate) fn new() -> Self {
     CallArgs::Inline([Value::nil(); INLINE_ARGS], 0)
   }
 
   #[inline]
-  fn push(&mut self, v: Value) {
+  pub(crate) fn push(&mut self, v: Value) {
     match self {
       CallArgs::Inline(buf, len) if *len < INLINE_ARGS => {
         buf[*len] = v;
@@ -117,7 +117,7 @@ impl CallArgs {
   }
 
   #[inline]
-  fn as_slice(&self) -> &[Value] {
+  pub(crate) fn as_slice(&self) -> &[Value] {
     match self {
       CallArgs::Inline(buf, len) => &buf[..*len],
       CallArgs::Spilled(vec) => vec.as_slice(),
@@ -1308,6 +1308,16 @@ impl VM {
             self
               .resolve_construct_target(resolved, ip, Some(&mut field_safety))
               .unwrap_or(CallTarget::Construct),
+          );
+          break;
+        }
+        if resolved.is_native() {
+          targets.insert(
+            ip,
+            CallTarget::KnownNative {
+              guard_fn: resolved.as_native().func as usize as u64,
+              native_ptr: resolved.as_native() as *const NativeFunction as usize,
+            },
           );
           break;
         }
@@ -4668,6 +4678,14 @@ impl VM {
     }
     for v in &self.interned_ascii {
       Self::mark_root(*v, &mut worklist);
+    }
+    // The compile-time string constant pool -- see
+    // `Heap::alloc_string_old`. Collected here rather than borrowed
+    // through the iterator, since marking needs `&mut worklist` while
+    // the heap is also borrowed.
+    let interned: Vec<Value> = self.heap.interned_strings().collect();
+    for v in interned {
+      Self::mark_root(v, &mut worklist);
     }
     Self::mark_root(self.jit_pending_exception.get(), &mut worklist);
 

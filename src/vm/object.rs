@@ -643,6 +643,10 @@ pub struct ObjModuleBinding {
   pub bind_name: String,
 }
 
+/// `#[repr(C)]` so `jit::codegen` can read `func` by fixed offset (see
+/// `obj_native_func_offset`) -- field order here is part of the
+/// generated code's contract, not an implementation detail.
+#[repr(C)]
 pub struct NativeFunction {
   pub name: &'static str,
   /// Minimum number of arguments required.
@@ -1136,6 +1140,21 @@ pub fn obj_to_gcbox_generation_offset() -> i32 {
 }
 
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be
+/// `Obj::Native` to that native's `func` pointer.
+///
+/// Exists so a compiled call site can guard on WHICH NATIVE a callee
+/// register holds without baking the object's address, which a minor
+/// collection would invalidate the first time it promoted it -- the
+/// same hazard `obj_closure_function_offset` exists for, and the reason
+/// `alloc_native` deliberately stays a young allocation.
+///
+/// A `NativeFn` is a `'static` function pointer, so it is stable for
+/// the life of the program and unique per registered builtin.
+pub fn obj_native_func_offset() -> usize {
+  obj_payload_offset() + std::mem::offset_of!(NativeFunction, func)
+}
+
+/// Byte offset from a `*const Obj` known (via `obj_tag`) to be
 /// `Obj::Closure` to that closure's `function` field -- the tagged
 /// `Value` naming its prototype.
 ///
@@ -1191,6 +1210,27 @@ mod gcbox_layout_tests {
     assert_eq!(unsafe { *gen_addr }, GENERATION_OLD_BYTE);
     write_barrier(obj);
     assert_eq!(unsafe { *rem_addr }, 1);
+  }
+
+  /// `obj_native_func_offset` must land on a real native's own `func`
+  /// pointer, checked against an actual allocation.
+  #[test]
+  fn native_func_offset_lands_on_fn_pointer() {
+    fn probe_fn(_ctx: &mut ZuriContext) -> Result<Value, String> {
+      Ok(Value::nil())
+    }
+    let mut heap = Heap::default();
+    let v = heap.alloc_native(NativeFunction {
+      name: "probe",
+      min_arity: 0,
+      variadic: false,
+      is_method: false,
+      func: probe_fn,
+    });
+    let obj = v.as_obj();
+    assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_NATIVE);
+    let slot = unsafe { (obj as *const u8).add(obj_native_func_offset()) as *const usize };
+    assert_eq!(unsafe { *slot }, probe_fn as usize);
   }
 
   /// `obj_closure_function_offset` must land on a real closure's own
@@ -1381,6 +1421,11 @@ pub struct Heap {
   /// One past the last usable slot of the active chunk -- see
   /// `nursery_cur`.
   nursery_end: *mut GcBox,
+  /// Compile-time string constants, deduplicated by content -- see
+  /// `alloc_string_old`. Entries live for the whole program (they are a
+  /// constant pool, bounded by the program's own text), and are marked
+  /// as roots by `VM::collect_garbage`.
+  interned_strings: FxHashMap<Box<str>, Value>,
   /// Recycled `FieldStorage` buffers, keyed by their exact field count
   /// (a class's `field_count` is fixed for its whole lifetime, so a
   /// buffer freed for one instance of a class is immediately valid for
@@ -1638,6 +1683,7 @@ impl Heap {
       nursery_cur: std::ptr::null_mut(),
       nursery_end: std::ptr::null_mut(),
       field_storage_pool: FieldStoragePool::new(),
+      interned_strings: FxHashMap::default(),
     }
   }
 
@@ -2233,8 +2279,44 @@ impl Heap {
   /// same "never moves" guarantee `ObjFunction` needs, for the exact
   /// same reason -- and gains nothing from the nursery either way,
   /// since a constant pool entry lives exactly as long as its chunk.
+  /// Allocates a COMPILE-TIME string constant, interned: two identical
+  /// literals anywhere in the program (or across separately compiled
+  /// modules) become one shared heap object.
+  ///
+  /// This is the funnel every constant-pool string goes through --
+  /// literals, method names, field names, class names -- so a name like
+  /// `x` used at fifty sites costs one allocation instead of fifty, and
+  /// the constant pool's total footprint becomes the program's set of
+  /// DISTINCT strings rather than its count of string occurrences.
+  ///
+  /// Deliberately NOT extended to runtime-created strings. Interning
+  /// pays only when strings repeat; for the string-BUILDING pattern
+  /// (`b += c` in a loop) every intermediate is unique and short-lived,
+  /// so hashing each one to find no match would be pure cost, and the
+  /// table would grow without bound.
+  ///
+  /// Sharing is unobservable through the language's own semantics --
+  /// strings are immutable and equality is by content, with no identity
+  /// operator. The one place it shows is `natives::id`, which exposes
+  /// raw addresses: `id` of two equal literals now matches. That was
+  /// never a guarantee to break, since a string's address already
+  /// changes when a minor collection promotes it.
   pub fn alloc_string_old(&mut self, s: impl Into<String>) -> Value {
-    self.alloc_old(Obj::Str(s.into()))
+    let s = s.into();
+    if let Some(&existing) = self.interned_strings.get(s.as_str()) {
+      return existing;
+    }
+    let key: Box<str> = s.as_str().into();
+    let value = self.alloc_old(Obj::Str(s));
+    self.interned_strings.insert(key, value);
+    value
+  }
+
+  /// Every interned compile-time string, for the major collector's root
+  /// scan -- see `alloc_string_old`. Without this the sweep would free
+  /// strings the table still points at.
+  pub(crate) fn interned_strings(&self) -> impl Iterator<Item = Value> + '_ {
+    self.interned_strings.values().copied()
   }
 
   pub fn alloc_bytes(&mut self, b: impl Into<Vec<u8>>) -> Value {
@@ -2321,6 +2403,23 @@ impl Heap {
     })
   }
 
+  /// Ordinary young allocation, deliberately NOT `alloc_old`.
+  ///
+  /// Moving natives to the old generation looks harmless -- they are
+  /// registered once at startup and live for the whole program -- but
+  /// it was tried and reverted: `alloc_old` runs a `write_barrier`, so
+  /// every native joins the remembered set immediately, and that shift
+  /// in the remembered set's composition was enough to expose a latent
+  /// use-after-free in it (`sweep` frees old boxes, and drops whole
+  /// chunks, without unlinking them from the intrusive remembered list
+  /// threaded through `GcBox::list_next`; `promote_into_old` then
+  /// recycles such a slot and truncates the chain). It reproduced as
+  /// `benchmarks/binary-tree-2.zu` reading a live list back as empty.
+  ///
+  /// `jit::codegen` therefore may NOT bake a native's address as a
+  /// call-site guard, since a young native relocates on its first minor
+  /// collection -- it guards on the `NativeFn` pointer instead, which
+  /// relocation cannot change. See `obj_native_func_offset`.
   pub fn alloc_native(&mut self, native: NativeFunction) -> Value {
     self.alloc(Obj::Native(native))
   }

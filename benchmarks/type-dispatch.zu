@@ -1,0 +1,71 @@
+/**
+ * Runtime type-dispatch kernel -- the shape none of the other
+ * benchmarks here exercise.
+ *
+ * Zuri's builtin type predicates (`is_number`, `is_string`, `is_list`,
+ * ...) are how dynamically-typed code inspects a value it did not
+ * produce: validation layers, serializers, generic containers, and any
+ * function that accepts more than one shape of argument. Every other
+ * benchmark in this directory works on statically-known types, so none
+ * of them says anything about how that dispatch performs.
+ *
+ * The kernel walks a heterogeneous list and reduces it, choosing what
+ * to do per element by asking what it is -- a real polymorphic fold,
+ * not a synthetic sequence of unrelated predicate calls.
+ *
+ * contributed by Richard Ore
+ */
+
+const ROUNDS = 400_000
+
+class Boxed {
+  @new(v) {
+    self.v = v
+  }
+}
+
+def weigh(v) {
+  if is_number(v) {
+    return v
+  }
+
+  if is_string(v) {
+    return v.length()
+  }
+
+  if is_list(v) {
+    var total = 0
+    iter var i = 0; i < v.length(); i++ {
+      total += weigh(v[i])
+    }
+    return total
+  }
+
+  if is_instance(v) {
+    return weigh(v.v)
+  }
+
+  if is_bool(v) {
+    return v ? 1 : 0
+  }
+
+  return 0
+}
+
+var items = [
+  1, 'abc', [1, 2, 3], Boxed(7), true, nil,
+  2.5, '', [], Boxed('xyz'), false, [4, [5, 6]],
+]
+
+var start = time()
+
+var total = 0
+iter var r = 0; r < ROUNDS; r++ {
+  iter var i = 0; i < items.length(); i++ {
+    total += weigh(items[i])
+  }
+}
+
+echo total
+
+echo '\nTotal time taken = ${time() - start}s'

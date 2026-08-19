@@ -240,6 +240,38 @@ pub enum CallTarget {
     /// produced this.
     proto_ptr: usize,
   },
+  /// A call whose callee register is proven to hold a specific BUILTIN
+  /// NATIVE (`vm::natives`), resolved at compile time.
+  ///
+  /// Guarded on the native's own `Value` bits, which is sound only
+  /// because `Heap::alloc_native` puts every native in the non-moving
+  /// old generation -- see its docs. A reassigned global fails the
+  /// guard and falls back to the ordinary resolver, so this stays
+  /// correct even though the binding is mutable.
+  KnownNative {
+    /// The native's own `NativeFn` pointer -- what generated code
+    /// guards on.
+    ///
+    /// Deliberately NOT the `Obj::Native`'s address: `Heap::alloc_native`
+    /// leaves natives in the nursery (see its docs for the GC hazard
+    /// that forced that), so their address changes the first time a
+    /// minor collection promotes them, and an address guard would stop
+    /// matching forever after. A `NativeFn` is a `'static` function
+    /// pointer, unaffected by relocation. See
+    /// `object::obj_native_func_offset`.
+    guard_fn: u64,
+    /// The `NativeFunction` itself, as a raw pointer, used ONLY during
+    /// compilation to read the native's name when choosing an
+    /// intrinsic.
+    ///
+    /// Never baked into generated code and never dereferenced at
+    /// runtime: the object is a young allocation that relocates on
+    /// promotion (see `Heap::alloc_native`), so an address that
+    /// outlived this compilation would dangle. The runtime helper
+    /// re-reads the callee from its register instead, which the guard
+    /// has already proven is this native.
+    native_ptr: usize,
+  },
   Construct,
   ConstructKnown {
     guard_bits: u64,

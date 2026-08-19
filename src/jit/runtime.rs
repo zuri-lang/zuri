@@ -75,7 +75,7 @@ use crate::vm::object::{
   ListStorage, Obj, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, write_barrier,
 };
 use crate::vm::value::Value;
-use crate::vm::vm::VM;
+use crate::vm::vm::{CallArgs, VM};
 
 const OK: u64 = 0;
 const ERR: u64 = 1;
@@ -2351,6 +2351,50 @@ num_intrinsic2!(zuri_jit_num_max, max);
 num_intrinsic2!(zuri_jit_num_min, min);
 num_intrinsic2!(zuri_jit_num_atan2, atan2);
 
+/// Calls a builtin native whose identity generated code has ALREADY
+/// established (see `CallTarget::KnownNative`), skipping every step of
+/// the ordinary path that only exists to work out what the callee is:
+/// `zuri_jit_call_prepare`'s closure check (which can only ever fail
+/// for a native), `zuri_jit_call`'s re-read of the callee register, and
+/// `dispatch_call_sync`'s type dispatch.
+///
+/// What remains is genuinely per-call: gathering the arguments out of
+/// the register window and `VM::call_native`'s own arity check and
+/// invocation.
+pub unsafe extern "C" fn zuri_jit_call_native(
+  vm_ptr: *mut VM,
+  base: u64,
+  func_reg: u64,
+  num_args: u64,
+  dst: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let func_reg = func_reg as u8;
+  // Read out of the register rather than from a baked pointer.
+  // `Heap::alloc_native` leaves natives in the nursery, so the object
+  // MOVES when a minor collection promotes it -- an address baked at
+  // compile time would dangle. Generated code has already guarded that
+  // this register holds the very native this call site resolved (on its
+  // `NativeFn` pointer, which relocation cannot change), so this read is
+  // the identity check's conclusion, not a re-resolution.
+  let callee = vm.get_reg(base, func_reg);
+  let native = callee.as_native();
+
+  let mut args = CallArgs::new();
+  for i in 0..num_args as u8 {
+    args.push(vm.get_reg(base, func_reg + 1 + i));
+  }
+
+  match vm.call_native(native, args.as_slice()) {
+    Ok(v) => {
+      vm.set_reg(base, dst as u8, v);
+      OK
+    },
+    Err(e) => fail(vm, e),
+  }
+}
+
 /// `object::write_barrier` behind the C ABI, for the RARE arm of
 /// `jit::codegen`'s inlined barrier check -- generated code has already
 /// established (with two byte loads and a branch, no call) that this
@@ -2551,6 +2595,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec7!(zuri_jit_get_field),
     spec7!(zuri_jit_set_field),
     spec2!(zuri_jit_write_barrier),
+    spec5!(zuri_jit_call_native),
     spec2!(zuri_jit_num_sin),
     spec2!(zuri_jit_num_cos),
     spec2!(zuri_jit_num_tan),
