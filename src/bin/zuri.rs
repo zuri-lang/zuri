@@ -61,7 +61,6 @@ fn run_repl(vm: &mut VM) {
         return Ok(());
       }
 
-      // Evaluate the line using the persistent VM and heap references
       if let Err(e) = evaluate_line(&buffer, vm) {
         eprintln!("{}", e);
       }

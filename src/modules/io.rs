@@ -63,22 +63,18 @@ fn getch(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut stdin = io::stdin().lock();
   let mut first_byte = [0u8; 1];
 
-  // Read the very first byte
   let b = loop {
-    // Read the next byte
     if stdin.read_exact(&mut first_byte).is_err() {
-      return Ok(Value::nil()); // EOF reached
+      return Ok(Value::nil()); // EOF
     }
 
     let current_byte = first_byte[0];
-
-    // Skip carriage return (\r) and newline (\n)
     if current_byte != b'\n' && current_byte != b'\r' {
       break current_byte;
     }
   };
 
-  // Determine UTF-8 character length from the first byte
+  // UTF-8 leading-byte pattern determines how many continuation bytes follow.
   let len = if b & 0x80 == 0 {
     1
   } else if b & 0xE0 == 0xC0 {
@@ -91,7 +87,6 @@ fn getch(ctx: &mut ZuriContext) -> Result<Value, String> {
     return Err("Invalid UTF-8 start byte".into());
   };
 
-  // Construct the full buffer for this character
   let mut buf = vec![b; 1];
   if len > 1 {
     let mut remaining = vec![0u8; len - 1];
@@ -106,11 +101,11 @@ fn getch(ctx: &mut ZuriContext) -> Result<Value, String> {
     buf.extend(remaining);
   }
 
-  // Clear any trailing newlines or remaining line data until \n
+  // Discard whatever else is buffered on the line so the next getch()
+  // starts clean rather than replaying leftover input.
   let mut garbage = Vec::new();
   let _ = stdin.read_until(b'\n', &mut garbage);
 
-  // Convert bytes to string slice, then grab the char
   let s = std::str::from_utf8(&buf).map_err(|e| e.to_string())?;
 
   Ok(ctx.heap().alloc_string(String::from(s)))

@@ -8,12 +8,10 @@ use std::path::Path;
 fn main() {
   let now = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
 
-  // 1. Locate and read the Cargo.toml file
   let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
   let toml_path = format!("{}/Cargo.toml", manifest_dir);
   let toml_content = fs::read_to_string(&toml_path).expect("Failed to read Cargo.toml");
 
-  // 2. Parse the TOML content
   let parsed_toml: toml::Value = toml::from_str(&toml_content).expect("Failed to parse Cargo.toml");
 
   let zuri_version = parsed_toml
@@ -40,7 +38,6 @@ fn main() {
     .and_then(|v| v.as_integer())
     .unwrap_or(1000);
 
-  // 4. Pass it to the main application via cargo environment variables
   println!("cargo:rustc-env=ZURI_VERSION={}", zuri_version);
   println!("cargo:rustc-env=ZVM_VERSION={}", vm_version);
   println!("cargo:rustc-env=ZURI_BUILD_TIME={}", now);

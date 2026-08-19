@@ -38,7 +38,6 @@ pub enum Expr {
    Identifier need no such field -- they already carry a `Token`
    with its own `.line`.
   */
-  //
   Unary(TokenKind, Box<Expr>, u32),
   Binary(Box<Expr>, TokenKind, Box<Expr>, u32),
   Logical(Box<Expr>, TokenKind, Box<Expr>, u32),

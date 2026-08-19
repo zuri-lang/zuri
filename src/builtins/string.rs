@@ -55,9 +55,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   ])
 });
 
-//-----------------------------------------------------------------------------------
-// Regex support
-//-----------------------------------------------------------------------------------
+// Regex support.
 
 /// Recognizes a Zuri regex literal -- a pattern surrounded by two
 /// identical non-word delimiter characters, with any modifier letters
@@ -95,10 +93,6 @@ fn compile_regex(pattern: &str, modifiers: &str) -> Result<Regex, String> {
   };
   Regex::new(&full).map_err(|e| format!("invalid regular expression '{}': {}", pattern, e))
 }
-
-//-----------------------------------------------------------------------------------
-// Small shared arg helpers
-//-----------------------------------------------------------------------------------
 
 /// Reads `ctx.args[idx]` as an optional single-character string
 /// parameter, defaulting to `default` when the arg wasn't supplied at
@@ -143,10 +137,6 @@ fn char_offset_to_byte(s: &str, char_offset: usize) -> usize {
     .map(|(b, _)| b)
     .unwrap_or(s.len())
 }
-
-//-----------------------------------------------------------------------------------
-// Implementations
-//-----------------------------------------------------------------------------------
 
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -650,9 +640,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(str_val)
 }
 
-//-----------------------------------------------------------------------------------
-// Iterable Decorators (@key / @value)
-//-----------------------------------------------------------------------------------
+// @key / @value: iterable protocol decorators.
 
 fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];

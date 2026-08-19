@@ -148,9 +148,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-//-----------------------------------------------------------------------------------
 // Shared helpers
-//-----------------------------------------------------------------------------------
 
 fn crypto_err(context: &str, e: impl std::fmt::Display) -> String {
   format!("crypto: {}: {}", context, e)
@@ -166,9 +164,7 @@ fn make_keypair_dict(ctx: &mut ZuriContext, private_pem: String, public_pem: Str
     .alloc_dict(vec![(priv_key, priv_val), (pub_key, pub_val)])
 }
 
-//-----------------------------------------------------------------------------------
 // random_bytes
-//-----------------------------------------------------------------------------------
 
 fn random_bytes_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -184,9 +180,7 @@ fn random_bytes_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(buf))
 }
 
-//-----------------------------------------------------------------------------------
 // AES-GCM
-//-----------------------------------------------------------------------------------
 
 fn aes_gcm_seal(key: &[u8], iv: &[u8], pt: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
   use aes_gcm::aead::generic_array::typenum::U12;
@@ -291,9 +285,7 @@ fn aes_gcm_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(pt))
 }
 
-//-----------------------------------------------------------------------------------
 // AES-CBC (PKCS#7)
-//-----------------------------------------------------------------------------------
 
 /// `cipher` 0.4's `BlockEncryptMut`/`BlockDecryptMut` only give a
 /// BUFFER-based padded API (`encrypt_padded_mut`/`decrypt_padded_mut`,
@@ -408,9 +400,7 @@ fn aes_cbc_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(pt))
 }
 
-//-----------------------------------------------------------------------------------
 // ChaCha20-Poly1305
-//-----------------------------------------------------------------------------------
 
 fn chacha20_encrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use chacha20poly1305::{ChaCha20Poly1305, KeyInit as ChaKeyInit, Nonce};
@@ -494,9 +484,7 @@ fn chacha20_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(pt))
 }
 
-//-----------------------------------------------------------------------------------
 // RSA (OAEP encryption, PSS signatures)
-//-----------------------------------------------------------------------------------
 
 fn rsa_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
@@ -602,9 +590,7 @@ fn rsa_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(ok))
 }
 
-//-----------------------------------------------------------------------------------
 // ECDSA (P-256 / P-384)
-//-----------------------------------------------------------------------------------
 
 fn ecdsa_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -718,9 +704,7 @@ fn ecdsa_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Err("ecdsa_verify(): invalid public key (expected a P-256 or P-384 SPKI PEM)".to_string())
 }
 
-//-----------------------------------------------------------------------------------
 // Ed25519
-//-----------------------------------------------------------------------------------
 
 fn ed25519_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use ed25519_dalek::SigningKey;
@@ -774,10 +758,8 @@ fn ed25519_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(ok))
 }
 
-//-----------------------------------------------------------------------------------
 // X25519 -- hand-rolled RFC 8410 PKCS#8/SPKI DER (x25519-dalek has no
 // pkcs8/spki support of its own).
-//-----------------------------------------------------------------------------------
 
 mod x25519_der {
   //! Fixed-size (X25519 keys are always exactly 32 bytes) DER templates
@@ -896,9 +878,7 @@ fn x25519_exchange_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(shared.to_bytes().to_vec()))
 }
 
-//-----------------------------------------------------------------------------------
 // Argon2id
-//-----------------------------------------------------------------------------------
 
 fn argon2_hash_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 2, 4);
@@ -976,9 +956,7 @@ fn argon2_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(ok))
 }
 
-//-----------------------------------------------------------------------------------
 // HKDF-SHA256
-//-----------------------------------------------------------------------------------
 
 fn hkdf_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 4);

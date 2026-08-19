@@ -19,67 +19,26 @@ use crate::vm::object::{
 };
 use crate::vm::value::Value;
 
-/// Ceiling on how many compiled-function calls may be nested on the
-/// REAL Rust/OS call stack at once. Pure interpreted recursion never
-/// touches the native stack (see `run_until`'s frame-stack design), so
-/// it's bounded only by heap memory; a call INTO compiled machine code
-/// is an ordinary native call, so it IS bounded by the thread's stack.
-/// Once nesting hits this depth, `VM::tiered_entry`/`maybe_osr` simply
-/// stop offering compiled entry points and let the (stack-safe)
-/// interpreter take over for the rest of the recursion, exactly the
-/// same fallback already used for a function that isn't warm/compiled
-/// yet -- so a pathologically deep recursion degrades to "slower" NOT
-/// to "the process crashes with a native stack overflow".
+/// Interpreted recursion never touches the native stack, only heap-bounded
+/// register windows, but a call into compiled code is a real native call.
+/// Past this depth we stop handing out compiled entry points and let the
+/// interpreter take over, so deep recursion just gets slower instead of
+/// blowing the OS stack.
 const MAX_JIT_CALL_DEPTH: u32 = 1024;
 
-/// How many `VM::resolve_possible_deopt` calls may be nested on the
-/// REAL native call stack at once (see `VM::deopt_reentrancy_depth`)
-/// before the currently-deopting function gets permanently disabled.
-///
-/// This is deliberately a REENTRANCY-DEPTH bound, not a lifetime
-/// total: a guard that fails once, in isolation, is normal and cheap
-/// (see `VM::invoke_compiled`) no matter how many times that happens
-/// over a function's lifetime, AS LONG AS each occurrence resolves
-/// and returns before the next one starts -- e.g. a hot loop that
-/// calls the same function 500,000 times and mispredicts a handful of
-/// times, scattered and non-overlapping, never grows the native stack
-/// at all, since each deopt's nested interpreter call fully unwinds
-/// before the next TOP-LEVEL call even begins. A per-function
-/// lifetime counter would (and, in an earlier version of this
-/// mechanism, DID) misfire on exactly that harmless case, permanently
-/// falling back to pure interpretation for a function that was
-/// otherwise an excellent compile target.
-///
-/// The real danger is NESTED deopts: a compiled call that's still
-/// on-stack (hasn't returned) when a callee it invoked -- directly or
-/// via further recursion -- ALSO deopts, resuming via a NEW nested
-/// interpreter call from inside `resolve_possible_deopt` rather than
-/// a true non-recursive return. A call site that's genuinely
-/// polymorphic (e.g. alternating types every invocation, never
-/// settling on the speculative guess) can keep this nesting growing
-/// with no bound, and each level costs much more native stack than an
-/// ordinary compiled call frame (a whole `invoke_compiled` +
-/// `resolve_possible_deopt` + interpreter-dispatch frame, not just
-/// one), so this is bounded far more tightly than the general
-/// `MAX_JIT_CALL_DEPTH`. Past this bound, `resolve_possible_deopt`
-/// gives up on compiled code for the function AT THE DEEPEST NESTED
-/// LEVEL permanently (mirrors the existing sticky `ineligible`
-/// pattern), which is what actually breaks the recursion: once
-/// `entry` is cleared, `tiered_entry`/`maybe_osr` never offer compiled
-/// code for that function again, so nothing re-enters
-/// `resolve_possible_deopt` from inside the interpreter run this
-/// deopt just started.
+/// Bounds nested `resolve_possible_deopt` calls, not lifetime deopt count --
+/// a function that deopts constantly but never while a previous deopt is
+/// still unwinding is fine and stays compiled. What's dangerous is a
+/// polymorphic call site nesting deopt-inside-deopt with no bound, each
+/// level far more expensive than a normal compiled frame. Past this bound we
+/// permanently drop compiled code for the innermost function, which breaks
+/// the nesting since it can't be re-entered from there.
 const MAX_DEOPT_REENTRANCY: u32 = 64;
 
-/// Inline capacity for a native/operator-override/constructor call's
-/// argument list. `Value` is a plain Copy u64, so this is meant to be a
-/// handful of stack bytes -- covers the overwhelming majority of real
-/// calls (few natives or constructors take more than a handful of
-/// arguments) with zero heap allocation. Every slot is zero-initialized
-/// on construction regardless of how many arguments a given call
-/// actually has, so this needs to stay small: a call that genuinely
-/// needs more spills into a `Vec` exactly once, the same cost an
-/// always-`Vec` version would pay on every call.
+/// Inline slots for a call's argument list before spilling to a `Vec`.
+/// Covers the overwhelming majority of native/constructor calls with zero
+/// heap allocation; kept small because every slot is zero-initialized
+/// regardless of actual arg count.
 const INLINE_ARGS: usize = 8;
 
 pub(crate) enum CallArgs {
@@ -127,70 +86,47 @@ impl CallArgs {
 
 struct CallFrame {
   function: *const ObjFunction,
-  /// The specific closure instance this frame is executing -- needed
-  /// whenever GetUpval/SetUpval/Closure look at "my own captured
-  /// upvalues". Distinct from `function` (the shared, static prototype)
-  /// the same way `ObjClosure` is distinct from `ObjFunction`.
+  /// The closure instance this frame is executing, for GetUpval/SetUpval/
+  /// Closure. Distinct from `function` (the shared prototype) the same way
+  /// `ObjClosure` differs from `ObjFunction`.
   closure: *const ObjClosure,
-  /// The same closure as `closure`, but as the tagged `Value` it was
-  /// called through rather than a raw pointer. `function`/`closure`
-  /// stay raw pointers purely so the hot instruction-dispatch loop
-  /// doesn't pay for a tag check on every fetch; this field is what the
-  /// GC's root scan actually walks to keep those raw pointers valid --
-  /// see `VM::collect_garbage`.
+  /// Same closure as `closure` but as the tagged `Value` the GC root scan
+  /// walks. `function`/`closure` stay raw pointers so hot dispatch skips
+  /// the tag check on every fetch.
   closure_val: Value,
   ip: usize,
   /// Index into `VM::registers` where this frame's register window starts.
   base: usize,
-  /// Register (in the *caller's* window) that the return value should be
+  /// Register in the *caller's* window that the return value should be
   /// written to. Unused for the outermost frame.
   dst_in_caller: u8,
-  /// `VM::jit_scalar_roots.len()` at the moment this frame was pushed
-  /// -- see that field's own docs. Every one of the small, fixed set
-  /// of places a frame gets removed (`VM::pop_frame_inner`, the catch-
-  /// unwind truncate, `clear_frames`) truncates `jit_scalar_roots` back
-  /// to this value, so a scalar-replaced allocation a compiled function
-  /// registered stops being a GC root at EXACTLY the moment its own
-  /// native stack frame goes away by ANY exit path -- normal return,
-  /// the JIT's direct compiled-to-compiled fast path, or exception
-  /// unwinding -- with no bracketing needed at the codegen call sites
-  /// that create one.
+  /// `VM::jit_scalar_roots.len()` at the moment this frame was pushed.
+  /// Every frame-removal path truncates `jit_scalar_roots` back to this,
+  /// so a scalar-replaced allocation stops being a GC root exactly when its
+  /// native frame goes away, on any exit path.
   scalar_roots_mark: usize,
-  /// True while this frame's body is running as COMPILED code rather
-  /// than in `run_until`'s interpreter loop.
-  ///
-  /// The interpreter advances `ip` on every instruction, so an
-  /// interpreted frame's `ip` is always current and a stack trace can
-  /// just read it. Compiled code does not -- keeping `ip` live on every
-  /// instruction would mean a store per instruction for something only
-  /// an eventual error ever reads. Instead compiled code publishes its
-  /// position to `VM::jit_ip` at the far coarser granularity of "before
-  /// any helper call that could raise or push a frame" (see
-  /// `jit::codegen::FuncCompiler::call_helper`), and this flag is what
-  /// tells `build_stacktrace`/`setup_closure_call` which of the two
-  /// sources is the truthful one for a given frame.
+  /// True while this frame is running compiled code rather than
+  /// `run_until`'s interpreter loop. An interpreted frame's `ip` is always
+  /// current; compiled code only publishes its position to `VM::jit_ip`
+  /// before a helper call that could raise or push a frame (see
+  /// `jit::codegen::FuncCompiler::call_helper`), so this flag tells
+  /// `build_stacktrace`/`setup_closure_call` which source to trust.
   compiled: bool,
 }
 
-/// One active `catch` statement's unwind target -- see the module-level
-/// design note in this diff's accompanying explanation for the full
-/// reasoning behind `frame_depth`'s role in distinguishing "this
-/// exception is mine to catch" from "belongs to an ancestor
-/// `run_until` invocation, possibly across a `call_value` boundary".
+/// One active `catch` statement's unwind target.
 struct CatchHandler {
-  /// `self.frames.len()` at the moment `PushCatch` executed -- the
-  /// frame containing the `catch` statement itself is `frames[frame_depth-1]`.
+  /// `self.frames.len()` when `PushCatch` executed; the frame containing
+  /// the `catch` itself is `frames[frame_depth-1]`.
   frame_depth: usize,
-  /// Absolute instruction index (within that same frame) to resume at,
-  /// whichever path is taken -- normal completion or an unwind.
+  /// Absolute instruction index (within that frame) to resume at.
   resume_ip: usize,
   var_reg: Option<u8>,
 }
 
-/// Outcome of handling a propagated exception -- what the `#[cold]`
-/// exception path hands back to `run_until` so it can refresh its
-/// cached frame-state locals (or propagate) without that refresh
-/// logic itself needing to live in the cold path.
+/// What the `#[cold]` exception path hands back to `run_until` so it can
+/// refresh its cached frame-state locals, or propagate, without that logic
+/// living in the cold path itself.
 enum ExceptionOutcome {
   Handled {
     frame_idx: usize,
@@ -204,210 +140,139 @@ enum ExceptionOutcome {
 
 pub struct VM {
   pub(crate) is_repl: bool,
-  /// One flat register stack shared by every call frame; each frame just
-  /// claims a slice of it (its "window"), exactly like Lua's VM.
+  /// One flat register stack shared by every call frame; each frame claims
+  /// a slice of it (its "window"), like Lua's VM.
   registers: Vec<Value>,
-  /// Mirrors `registers.as_mut_ptr()`, updated at the 3 sites that can
-  /// reallocate `registers` (see `sync_regs_ptr_cache`). Exists so
-  /// compiled code (see `jit::codegen`) can re-fetch the current
-  /// registers pointer with a single direct memory load at a
-  /// compile-time-baked offset (`VM_REGS_PTR_CACHE_OFFSET`) instead of
-  /// an FFI call into `registers_ptr()` -- this is refetched at every
-  /// helper-call site, so replacing a real function call with a load
-  /// there matters a lot for call-heavy compiled code.
+  /// Mirrors `registers.as_mut_ptr()`, updated wherever `registers` can
+  /// reallocate (see `sync_regs_ptr_cache`). Lets compiled code re-fetch
+  /// the registers pointer with a direct load at a baked offset
+  /// (`VM_REGS_PTR_CACHE_OFFSET`) instead of an FFI call, which matters
+  /// since it's refetched at every helper-call site.
   regs_ptr_cache: Cell<*mut Value>,
-  /// Upvalues that are still Open, as (absolute register index, the
-  /// Obj::Upvalue Value at that index). Consulted whenever a new closure
-  /// captures a local -- if one's already open for that exact register,
-  /// it's reused rather than duplicated, which is what makes two
-  /// closures over the same variable see each other's writes.
+  /// Upvalues still Open, as (absolute register index, the Obj::Upvalue
+  /// Value there). A new closure capturing a local reuses an already-open
+  /// entry for that register instead of duplicating it, which is what lets
+  /// two closures over the same variable see each other's writes.
   open_upvalues: Vec<(usize, Value)>,
   frames: Vec<CallFrame>,
-  /// Backing storage for every global variable, indexed by slot.
-  /// Slots are assigned lazily the first time a name is resolved (see
-  /// `get_or_create_global_slot`) and never reused or removed -- what
-  /// lets `Chunk::global_cache` cache a slot index permanently with no
-  /// invalidation logic needed.
+  /// Backing storage for every global, indexed by slot. Slots are assigned
+  /// lazily on first resolution (`get_or_create_global_slot`) and never
+  /// reused, so `Chunk::global_cache` can cache a slot index permanently.
   global_slots: Vec<Cell<Value>>,
-  /// Mirrors `global_slots.as_ptr()`, updated at the one site that can
-  /// reallocate `global_slots` (see `get_or_create_global_slot`) --
-  /// same purpose and pattern as `regs_ptr_cache`, letting compiled
-  /// code's `GetGlobal` fast path (see `jit::codegen`'s own docs on
-  /// `JitInfo::global_slot_cache`) index straight into current storage
-  /// with a direct load at a compile-time-baked offset
-  /// (`VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET`) instead of a helper call.
+  /// Mirrors `global_slots.as_ptr()`, same pattern as `regs_ptr_cache`: lets
+  /// compiled `GetGlobal` fast paths index current storage with a direct
+  /// load instead of a helper call.
   global_slots_ptr_cache: Cell<*const Cell<Value>>,
-  /// name -> slot, consulted only on a `global_cache` MISS -- i.e. the
-  /// very first time a particular Get/Set/AssignGlobal instruction
-  /// executes, ever. Every later execution of that instruction goes
-  /// straight through the cache and never touches this map again.
+  /// name -> slot, consulted only on a `global_cache` miss, i.e. the first
+  /// time a given Get/Set/AssignGlobal instruction ever executes. Later
+  /// executions go straight through the cache.
   global_names: FxHashMap<String, u32>,
-  /// Explicit extra GC roots for values internal (non-bytecode) VM code
-  /// needs to keep alive across a call that might itself trigger a
-  /// collection -- e.g. `instantiate` invoking several field
-  /// initializers in sequence. A Value sitting only in a local Rust
-  /// variable, with nothing in any register/global/frame pointing at
-  /// it, is invisible to the normal root scan; push it here for exactly
-  /// as long as it needs to survive, then truncate back off.
+  /// Extra GC roots for values internal VM code needs alive across a call
+  /// that might itself collect (e.g. `instantiate` running several field
+  /// initializers). A Value sitting only in a local Rust variable is
+  /// invisible to the normal root scan; push it here for as long as it
+  /// needs to survive, then truncate back off.
   gc_pins: Vec<Value>,
-  /// `(base pointer, element count)` for every scalar-replaced
-  /// allocation a JIT-compiled function currently has live in its OWN
-  /// native (Cranelift) stack frame -- see `jit::codegen::FuncCompiler
-  /// ::emit_scalar_make_list`'s own docs for how/when one of these gets
-  /// created, and `CallFrame::scalar_roots_mark` for how entries here
-  /// get retired in lockstep with the frame that owns them.
+  /// `(base pointer, element count)` for every scalar-replaced allocation a
+  /// JIT-compiled function currently has live in its own Cranelift stack
+  /// frame. Retired in lockstep with the owning frame via
+  /// `CallFrame::scalar_roots_mark`.
   ///
-  /// Each entry is `count` CONSECUTIVE, ORDINARY `Value` slots (NOT a
-  /// heap `Obj` -- there is no tagged pointer, no `GcBox`, nothing
-  /// `Heap::forward_or_promote`'s `gcbox_of` could recover a real
-  /// object header from). This is the load-bearing reason scalar
-  /// replacement represents an allocation as a raw run of `Value`s
-  /// living in a Cranelift stack slot, rather than as a fake `Obj`
-  /// header pointing at one: a `*const Obj` handed to the ordinary
-  /// root-scanning machinery (`mark_root`/`forward_slot`, both of which
-  /// assume every object pointer they see is embedded in a real
-  /// `GcBox`) would read garbage stack bytes as GC bookkeeping the
-  /// moment it got promoted or marked -- see this project's own git
-  /// history for the exact reasoning that ruled that design out.
-  /// `collect_minor`/`collect_garbage` instead treat each entry exactly
-  /// like an extra `gc_pins` run: `forward_slot`/`mark_root` applied
-  /// DIRECTLY to each of the `count` `Value` slots in place, no `Obj`
-  /// layer involved at all.
+  /// Each entry is `count` plain `Value` slots, not a heap `Obj` — there's
+  /// no `GcBox` header to recover, so a fake-`Obj` representation would
+  /// hand the ordinary root-scanning machinery a pointer into garbage stack
+  /// bytes. `collect_minor`/`collect_garbage` instead treat each entry like
+  /// an extra `gc_pins` run: `forward_slot`/`mark_root` applied directly to
+  /// each slot.
   jit_scalar_roots: Vec<(*mut Value, usize)>,
-  /// Active `catch` handlers, innermost (most recently pushed) last --
-  /// see `CatchHandler`'s own doc comment.
+  /// Active `catch` handlers, innermost last.
   catch_stack: Vec<CatchHandler>,
-  /// Owns the Cranelift `JITModule` and drives whole-function
-  /// compilation -- see `crate::jit`. Lazily constructed (see
-  /// `VM::jit_engine`) on the FIRST actual compilation attempt, not at
-  /// `VM::new()` time -- setting up an ISA, a `JITModule`, and every
-  /// `jit::runtime` helper's signature is real, measurable work
-  /// (target/CPU-feature probing plus dozens of signature
-  /// declarations) that a short-lived script -- or any run with
-  /// `ZURI_JIT=0`, or one where nothing ever gets hot enough to
-  /// compile -- has no reason to pay at startup. Once built, it lives
-  /// for the rest of the process; compiled machine code is never
-  /// unloaded or recompiled.
+  /// Owns the Cranelift `JITModule` and drives whole-function compilation.
+  /// Lazily built on the first real compile, not at `VM::new()` — ISA/CPU
+  /// probing and helper signature setup is real work a short script (or
+  /// `ZURI_JIT=0`) shouldn't pay for. Lives for the rest of the process
+  /// once built; compiled code is never unloaded or recompiled.
   jit_engine: Option<JitEngine>,
-  /// Handle to the single background compiler thread (see
-  /// `jit::background`) -- lazily spawned alongside `jit_engine`, on
-  /// the same "don't pay for it until actually needed" principle.
-  /// `None` until the first function crosses its warmup threshold.
+  /// Handle to the single background compiler thread, lazily spawned
+  /// alongside `jit_engine`. `None` until the first function crosses its
+  /// warmup threshold.
   jit_compiler: Option<background::JitCompilerHandle>,
-  /// GC roots for every function with a background compile currently
-  /// enqueued or in flight -- pinned here from the moment a job is
-  /// sent to `jit_compiler` until its result is drained
-  /// (`drain_jit_results`), since the compiled-code round trip crosses
-  /// a thread boundary the GC can't otherwise see into. Scanned by
-  /// `collect_garbage` exactly like `gc_pins`. See `jit::background`'s
-  /// module docs for the full safety argument.
+  /// GC roots for every function with a background compile enqueued or in
+  /// flight, pinned from job submission until `drain_jit_results` — the
+  /// compiled-code round trip crosses a thread boundary the GC can't
+  /// otherwise see into.
   pending_jit_compiles: Vec<Value>,
-  /// Side channel a `crate::jit::runtime` helper sets to a non-nil
-  /// exception `Value` exactly when it needs to propagate a failure
-  /// out of currently-executing compiled code. Compiled code has no
-  /// unwinder of its own (see the `jit` module's top-level docs on why
-  /// exceptions always cause a bailout rather than being handled
-  /// in-place) -- this is what `VM::invoke_compiled` checks immediately
-  /// after a compiled call returns to decide `Ok(value)` vs
-  /// `Err(exception)`. Always nil outside the brief window between a
-  /// helper setting it and `invoke_compiled` observing + clearing it.
+  /// Side channel a `jit::runtime` helper sets to a non-nil exception when
+  /// it needs to propagate a failure out of executing compiled code, which
+  /// has no unwinder of its own. `VM::invoke_compiled` checks this right
+  /// after a compiled call returns to decide `Ok`/`Err`. Always nil outside
+  /// that brief window.
   pub(crate) jit_pending_exception: Cell<Value>,
-  /// Side channel a `crate::jit::runtime` deopt helper sets to the
-  /// bytecode `ip` compiled code should resume interpreting at, right
-  /// before returning early out of the currently-executing compiled
-  /// function. Unlike `jit_pending_exception`, this is a genuine
-  /// "give up on compiled code for this invocation, but nothing went
-  /// wrong" signal -- it's what backs real deoptimization: a
-  /// speculative guard that turns out wrong bails all the way out to
-  /// the interpreter with `VM::registers` already holding the correct
-  /// state (every VM register lives there for the whole time compiled
-  /// code runs, never only in a native machine register -- see
-  /// `jit::codegen`'s module docs), so "resuming" is just "let the
-  /// interpreter's own dispatch loop take over at this `ip`", no
-  /// state reconstruction needed. `VM::invoke_compiled` checks this
-  /// FIRST (before the exception channel above), since a deopt is
-  /// orthogonal to a real error. Always `None` outside the brief
-  /// window between a deopt helper setting it and `invoke_compiled`
-  /// observing + clearing it.
+  /// Side channel a `jit::runtime` deopt helper sets to the bytecode `ip`
+  /// compiled code should resume interpreting at. Unlike
+  /// `jit_pending_exception` this means "nothing went wrong, just stop
+  /// speculating" — VM registers already hold the correct state since
+  /// compiled code keeps them live throughout, so resuming is just handing
+  /// control to the interpreter at this `ip`. Checked before the exception
+  /// channel since a deopt isn't an error. Always `None` outside the brief
+  /// window between a helper setting it and `invoke_compiled` clearing it.
   pub(crate) pending_deopt_ip: Cell<Option<usize>>,
-  /// Master on/off switch for tiering up at all, read once from
-  /// `ZURI_JIT` at startup (`"0"`/`"off"`/`"false"` disables it) --
-  /// purely a benchmarking/debugging escape hatch. Every program
-  /// behaves identically either way, just slower with it off (always
-  /// interpreted, exactly like this VM before this tier existed).
+  /// Master JIT on/off switch, read once from `ZURI_JIT` at startup — a
+  /// benchmarking/debugging escape hatch. Programs behave identically
+  /// either way, just slower with it off.
   jit_enabled: bool,
-  /// How many compiled-function calls are currently nested on the REAL
-  /// native call stack -- see `MAX_JIT_CALL_DEPTH`.
+  /// How many compiled-function calls are nested on the native call stack
+  /// right now -- see `MAX_JIT_CALL_DEPTH`.
   jit_call_depth: Cell<u32>,
-  /// How many `resolve_possible_deopt` calls are currently nested on
-  /// the REAL native call stack -- see `MAX_DEOPT_REENTRANCY`.
+  /// How many `resolve_possible_deopt` calls are nested on the native call
+  /// stack right now -- see `MAX_DEOPT_REENTRANCY`.
   deopt_reentrancy_depth: Cell<u32>,
-  /// Cached by name after `prelude::install` runs, for O(1) lookup from
-  /// `VM::raise` rather than a `self.globals` hashmap hit on every
-  /// internal error.
+  /// Cached by name after `prelude::install` runs, so `VM::raise` gets O(1)
+  /// lookup instead of a globals hashmap hit on every internal error.
   pub(crate) builtin_exceptions: FxHashMap<&'static str, Value>,
-  /// One shared, immortal `Value` per ASCII character, built on first
-  /// use -- what `s[i]` returns instead of allocating a fresh
-  /// one-character string on every single index.
+  /// One shared, immortal `Value` per ASCII character, built on first use —
+  /// what `s[i]` returns instead of allocating a fresh one-character string
+  /// every time.
   ///
-  /// Sharing is invisible to the language: Zuri strings are immutable
-  /// (`index_set` has no string case at all) and string equality is by
-  /// CONTENT (see `Value`'s own `Obj::Str` arm), with no identity
-  /// operator that could tell two equal strings apart. So handing the
-  /// same object back every time cannot be observed, it just removes an
-  /// allocation -- and with it the GC pressure that allocation created,
-  /// which on `benchmarks/fasta.zu` was a measurable share of runtime
-  /// all by itself.
+  /// Zuri strings are immutable and compare by content with no identity
+  /// operator, so sharing is unobservable; it just removes an allocation
+  /// (and the GC pressure it caused — a measurable chunk of
+  /// `benchmarks/fasta.zu`'s runtime).
   ///
-  /// Empty until the first ASCII character is indexed, so a program
-  /// that never does pays nothing.
+  /// Empty until the first ASCII character is indexed.
   interned_ascii: Vec<Value>,
-  /// Every module loaded so far this run, keyed by its canonical
-  /// filesystem path (or `"builtin:NAME"` for a synthetic builtin
-  /// module) -- what makes re-importing the same module a no-op instead
-  /// of re-executing it, and what breaks circular imports (see
-  /// `vm::modules::load_from_candidate`). Also a GC root: a cached
-  /// module must stay alive for the rest of the run even if nothing
-  /// else currently references it, since a LATER `import` of the same
-  /// path must find it again.
+  /// Every module loaded so far, keyed by canonical path (or
+  /// `"builtin:NAME"`). Makes re-importing a no-op and is what breaks
+  /// circular imports (see `vm::modules::load_from_candidate`). Also a GC
+  /// root: a cached module must stay alive for a later `import` to find it.
   pub(crate) modules: FxHashMap<String, Value>,
-  /// The application's entry-file path, as set by `set_root_path` --
-  /// becomes every module's `__root__`. `None` in REPL mode, per spec.
+  /// The application's entry-file path, set by `set_root_path` — becomes
+  /// every module's `__root__`. `None` in REPL mode, per spec.
   pub(crate) root_path: Option<String>,
   pub heap: Heap,
   log_gc: bool,
-  /// Per-opcode execution counts, gathered only under
-  /// ZURI_OPCODE_PROFILE -- checked once per instruction (a single
-  /// bool read via LazyLock, same cost every other debug flag here
-  /// already pays), and otherwise entirely inert.
+  /// Per-opcode execution counts, gathered only under ZURI_OPCODE_PROFILE.
   #[cfg(feature = "opcode-profile")]
   opcode_counts: FxHashMap<&'static str, u64>,
-  /// Counts of CONSECUTIVE opcode pairs -- what actually identifies a
-  /// good instruction-fusion candidate, since fusing two opcodes only
-  /// helps if they're frequently adjacent in real bytecode, not just
-  /// individually common.
+  /// Counts of consecutive opcode pairs, for spotting instruction-fusion
+  /// candidates that are actually adjacent in real bytecode.
   #[cfg(feature = "opcode-profile")]
   opcode_bigrams: FxHashMap<(&'static str, &'static str), u64>,
   #[cfg(feature = "opcode-profile")]
   last_opcode: Option<&'static str>,
-  /// Bumped by every `Instr::SetMethod` execution (interpreted -- see
-  /// its own handler below -- or compiled, via `jit::runtime::
-  /// zuri_jit_set_method`), NEVER decremented. Exists purely to
-  /// invalidate `codegen::FuncCompiler::emit_self_invoke`'s baked
-  /// "receiver's class == this compiled method's owning class" guard:
-  /// that proof is only sound as long as the class's method table
-  /// hasn't been monkey-patched (`class Name > Target { ... }` --
-  /// `compiler::compile_extension_decl` -- CAN legally call `SetMethod`
-  /// on an already-declared, already-live class at any point in a
-  /// running program) since the compile that baked it. `VM::
-  /// resolve_self_class` snapshots this counter at compile time
-  /// alongside the class identity; `emit_self_invoke`'s guard also
-  /// compares the CURRENT counter (one more inline load) against that
-  /// snapshot, falling back to the general resolver on any mismatch.
-  /// A single global counter, not per-class, since `SetMethod` is rare
-  /// (class-declaration-time only, in ordinary programs) -- the
-  /// coarser invalidation this trades for is free in practice and
-  /// costs nothing to get right.
+  /// Bumped by every `SetMethod` execution, never decremented. Invalidates
+  /// `emit_self_invoke`'s baked "receiver's class == this compiled method's
+  /// owning class" guard, which only holds as long as the class's method
+  /// table hasn't been monkey-patched since the compile that baked it
+  /// (extension classes can legally call `SetMethod` on an already-live
+  /// class at any point). `resolve_self_class` snapshots this counter at
+  /// compile time; `emit_self_invoke`'s guard compares the current counter
+  /// against that snapshot and falls back to the general resolver on a
+  /// mismatch.
+  ///
+  /// A single global counter, not per-class, since `SetMethod` is rare in
+  /// ordinary programs -- the coarser invalidation costs nothing in
+  /// practice.
   method_table_generation: Cell<u64>,
   /// Where compiled code currently is, as a bytecode index ONE PAST the
   /// instruction being executed -- the same convention `CallFrame::ip`
@@ -525,12 +390,10 @@ impl VM {
     Some(self.global_slots[slot as usize].get())
   }
 
-  /// Resolve `name` to a slot in whichever globals table `module`
-  /// names (`None` = the VM's own root table), growing that SPECIFIC
-  /// table with a fresh nil slot if `name` hasn't been seen there
-  /// before. Never touches any OTHER table -- this is what keeps two
-  /// modules (or a module and the root script) that happen to declare
-  /// the same name from colliding with each other.
+  /// Resolve `name` to a slot in whichever globals table `module` names
+  /// (`None` = the VM's root table), growing only that table if `name`
+  /// hasn't been seen there. Keeps modules with colliding names from
+  /// stepping on each other.
   pub(crate) fn get_or_create_slot_in(&mut self, module: Option<Value>, name: String) -> u32 {
     match module {
       None => self.get_or_create_global_slot(name),
@@ -565,14 +428,9 @@ impl VM {
     }
   }
 
-  /// Resolve `name` against `module`'s own namespace first, then --
-  /// if it isn't declared there -- fall back to the VM's shared root
-  /// table. This is what lets module code see built-in natives
-  /// (`bytes()`, `print()`, `is_string()`, ...) and the prelude's
-  /// Error hierarchy, both of which live only in the root table,
-  /// while still letting a module shadow any of those names with its
-  /// own declaration. `None` (main script/REPL) has nothing to fall
-  /// back FROM -- it just resolves against root directly.
+  /// Resolve `name` against `module`'s own namespace first, falling back to
+  /// the shared root table. Lets module code see builtins and the prelude's
+  /// Error hierarchy while still letting a module shadow those names.
   pub(crate) fn resolve_global(&self, module: Option<Value>, name: &str) -> Option<(bool, u32)> {
     match module {
       None => self.global_names.get(name).copied().map(|s| (true, s)),
@@ -605,21 +463,17 @@ impl VM {
     }
   }
 
-  /// Records the application's entry-file path -- every module loaded
-  /// afterward gets this as its own `__root__`. Call before `run`; not
-  /// meaningful (and not called) in REPL mode.
+  /// Records the entry-file path; every module loaded afterward gets this
+  /// as its own `__root__`. Call before `run`; not used in REPL mode.
   pub fn set_root_path(&mut self, path: impl Into<String>) {
     self.root_path = Some(path.into());
   }
 
-  /// Seeds `__file__` (and, if `set_root_path` was called, `__root__`)
-  /// into the VM's own ROOT global table -- what makes them visible to
-  /// the MAIN script itself, exactly as if it were a module. Every
-  /// module loaded via `import` gets the same two variables seeded into
-  /// its own separate namespace instead -- see
-  /// `vm::modules::seed_module_vars`. Not called for the REPL, matching
-  /// the documented "not defined in REPL mode" behavior for `__root__`
-  /// (and there's no meaningful `__file__` for a REPL line either).
+  /// Seeds `__file__`/`__root__` into the VM's root global table, making
+  /// them visible to the main script as if it were a module. `import`ed
+  /// modules get their own copies via `vm::modules::seed_module_vars`
+  /// instead. Not called in REPL mode, per the "not defined in REPL"
+  /// spec for `__root__`.
   pub fn init_entry_globals(&mut self, file_path: &str) {
     let file_val = self.heap.alloc_string(file_path.to_string());
     self.define_global("__file__", file_val);
@@ -629,13 +483,10 @@ impl VM {
     }
   }
 
-  /// Construct a fresh instance of the builtin exception class named
-  /// `class_name` (from `prelude::EXCEPTION_CLASS_NAMES`), with
-  /// `message`/`type` set directly by field-slot name (bypassing the
-  /// normal constructor-call path entirely, since these are ALWAYS the
-  /// prelude's own known classes -- no user override to worry about),
-  /// and its `stacktrace` attached. This is what every internal VM
-  /// error site calls instead of returning a bare Rust string.
+  /// Constructs a builtin exception instance directly by field slot,
+  /// bypassing the normal constructor path since these are always known
+  /// prelude classes. Every internal VM error site calls this instead of
+  /// returning a bare Rust string.
   pub(crate) fn raise(&mut self, class_name: &'static str, message: impl Into<String>) -> Value {
     let message_str = message.into();
     let class_val = *self.builtin_exceptions.get(class_name).unwrap_or_else(|| {
@@ -664,9 +515,8 @@ impl VM {
     self.attach_stacktrace(instance)
   }
 
-  /// Is `v` an instance of `Error` or one of its subclasses? What
-  /// `Instr::Raise` checks before allowing a value to propagate as an
-  /// error, and what `raise`'s own output always satisfies trivially.
+  /// Is `v` an instance of `Error` or a subclass? What `Instr::Raise`
+  /// checks before letting a value propagate as an error.
   fn is_exception_value(&self, v: Value) -> bool {
     if !v.is_instance() {
       return false;
@@ -684,10 +534,8 @@ impl VM {
     false
   }
 
-  /// Frame names, innermost first, as a Zuri list of strings -- what
-  /// gets attached to every exception's `stacktrace` field. No line
-  /// numbers yet (bytecode doesn't carry source positions), just the
-  /// call chain by function name.
+  /// Frame names, innermost first, as a Zuri list of strings, attached to
+  /// every exception's `stacktrace` field.
   fn build_stacktrace(&mut self) -> Value {
     let mut lines = Vec::with_capacity(self.frames.len());
 
@@ -722,9 +570,8 @@ impl VM {
     instance
   }
 
-  /// Formats an uncaught exception for top-level reporting (see
-  /// zuri.rs) -- "TYPE: message", falling back gracefully if `exc`
-  /// somehow isn't an instance at all.
+  /// "TYPE: message" for top-level reporting, falling back gracefully if
+  /// `exc` isn't an instance.
   pub fn describe_exception(&self, exc: Value) -> String {
     if !exc.is_instance() {
       return format!("{}", exc);
@@ -744,10 +591,9 @@ impl VM {
     format!("{}: {}", type_name, message)
   }
 
-  /// Full multi-line "Unhandled ..." block for an uncaught exception --
-  /// what the CLI/REPL print at the top level (see zuri.rs).
-  /// `describe_exception` stays the short "TYPE: message" summary,
-  /// still used e.g. by the prelude's own internal panic path.
+  /// Full multi-line "Unhandled ..." block the CLI/REPL print at the top
+  /// level. `describe_exception` stays the short summary, still used by
+  /// the prelude's internal panic path.
   pub fn format_uncaught(&self, exc: Value) -> String {
     let summary = self.describe_exception(exc);
     if !exc.is_instance() {
@@ -789,11 +635,9 @@ impl VM {
     Ok(())
   }
 
-  /// Invoke any callable Value -- a closure OR a native -- with the
-  /// given (already-evaluated, owned) arguments, run it to completion,
-  /// and return its result. This is what lets a native function call
-  /// BACK into Zuri code: a future `map(list, fn)` plugin would call
-  /// this once per element with `fn` as the callee.
+  /// Invoke any callable Value (closure or native) with already-evaluated
+  /// arguments and run it to completion. Lets a native call back into Zuri
+  /// code, e.g. a `map(list, fn)` calling `fn` once per element.
   pub fn call_value(&mut self, callee: Value, args: &[Value]) -> RunResult<Value> {
     if callee.is_native() {
       let native = callee.as_native();
@@ -812,16 +656,11 @@ impl VM {
       proto.arity
     };
 
-    // Same convention dispatch_call already uses for Instr::Call: place
-    // the new frame right after whatever frame is CURRENTLY executing,
-    // instead of always appending at self.registers.len(). This bounds
-    // growth by max simultaneous call depth -- exactly like ordinary
-    // bytecode recursion already is -- rather than growing once per
-    // call_value invocation forever. No truncate-on-return needed: like
-    // dispatch_call's own recursion, later calls at the same depth just
-    // reuse the already-grown capacity (resize only fires when
-    // `needed > self.registers.len()`), so this is self-bounding on its
-    // own without shrinking anything mid-flight.
+    // Same convention as dispatch_call's Instr::Call: place the new frame
+    // right after whatever's currently executing, not at registers.len().
+    // Bounds growth by max call depth instead of growing once per
+    // call_value invocation; no truncate-on-return needed since later
+    // calls at the same depth just reuse the already-grown capacity.
     let new_base = self
       .frames
       .last()
@@ -856,20 +695,14 @@ impl VM {
     self.run_frame(stop_depth, proto, callee)
   }
 
-  //-----------------------------------------------------------------------------------
-  // JIT tiering -- see `crate::jit` for the compiled-code side of all of
-  // this. Every entry point below assumes its caller has ALREADY pushed
-  // the `CallFrame` this call/loop is executing (matching `run_until`'s
-  // own precondition) -- these methods only ever decide "run the
-  // already-active top frame interpreted, or hand it to compiled code",
-  // never frame setup itself.
-  //-----------------------------------------------------------------------------------
+  // JIT tiering -- see `crate::jit` for the compiled-code side. Every
+  // entry point below assumes the caller already pushed the CallFrame
+  // being executed; these methods only decide interpret-vs-compiled, never
+  // frame setup.
 
-  /// Refreshes `regs_ptr_cache` to match `registers`' current backing
-  /// buffer -- MUST be called immediately after every `self.registers
-  /// .resize(..)`, with no exceptions, since compiled code trusts this
-  /// cache implicitly (a single direct memory load, no bounds/staleness
-  /// check of its own -- see `VM_REGS_PTR_CACHE_OFFSET`).
+  /// Must be called immediately after every `registers.resize(..)` with no
+  /// exceptions -- compiled code trusts this cache with a raw load and no
+  /// staleness check of its own.
   #[inline]
   fn sync_regs_ptr_cache(&mut self) {
     self.regs_ptr_cache.set(self.registers.as_mut_ptr());
@@ -879,8 +712,7 @@ impl VM {
     self.global_slots_ptr_cache.set(self.global_slots.as_ptr());
   }
 
-  /// See `method_table_generation`'s own docs -- called by every
-  /// `Instr::SetMethod` execution, interpreted (above) or compiled
+  /// Called by every `SetMethod` execution, interpreted or compiled
   /// (`jit::runtime::zuri_jit_set_method`).
   pub(crate) fn bump_method_table_generation(&self) {
     self
@@ -888,28 +720,17 @@ impl VM {
       .set(self.method_table_generation.get() + 1);
   }
 
-  /// Does `proto` have a compiled entry point ready to use RIGHT NOW?
-  /// Never blocks: because the JIT is disabled, this exact prototype
-  /// was found ineligible (contains `Raise`/`PushCatch`/`PopCatch` --
-  /// see the `jit` module's docs), the real call stack is already deep
-  /// enough that handing it another native call risks overflowing it
-  /// (see `MAX_JIT_CALL_DEPTH`), or it isn't warm enough yet, this
-  /// returns `None` immediately. Once `proto` IS warm, this either
-  /// finds a background compile already in flight (does nothing
-  /// further) or enqueues one (see `jit::background`) -- EITHER WAY it
-  /// still returns `None` for this exact call, so the interpreter
-  /// keeps running `proto` interpreted for as many further calls as it
-  /// takes the background thread to finish, then transparently
-  /// switches over once `drain_jit_results` installs the result.
+  /// Does `proto` have a compiled entry point ready right now? Never
+  /// blocks: disabled JIT, an ineligible prototype, call-depth already at
+  /// `MAX_JIT_CALL_DEPTH`, or not warm yet all just return `None`. Once
+  /// warm, this enqueues a background compile (or finds one already in
+  /// flight) but still returns `None` for the current call -- the
+  /// interpreter keeps running until `drain_jit_results` installs the
+  /// finished entry point and later calls pick it up transparently.
   ///
-  /// This is THE hot-path check -- reached on every single
-  /// `Instr::Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`, so the
-  /// common case (already compiled) is nothing more than an enabled-
-  /// flag read, a depth-counter read, and one `Cell::get()` on
-  /// `proto.jit.entry` -- the result-channel drain is reached only
-  /// when there is no entry point yet. See
-  /// `object::JitInfo::entry`'s own docs for why this is deliberately
-  /// NOT behind a `RefCell<Option<Rc<...>>>`.
+  /// Hit on every `Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`, so the
+  /// common already-compiled case is just an enabled-flag read, a
+  /// depth-counter read, and one `Cell::get()`.
   ///
   /// `proto_value` must be the exact `Value` (`Obj::Func`-tagged) that
   /// owns `proto` -- used to pin it as a GC root if this call ends up
@@ -946,15 +767,10 @@ impl VM {
     None
   }
 
-  /// The Cranelift engine, built on first use -- see `jit_engine`
-  /// field's own docs for why this is lazy rather than built in
-  /// `VM::new()`.
   fn jit_engine(&mut self) -> &mut JitEngine {
     self.jit_engine.get_or_insert_with(JitEngine::new)
   }
 
-  /// The background compiler thread's channel handle, lazily spawned
-  /// on first use -- see `jit_compiler` field's own docs.
   fn jit_compiler(&mut self) -> &mut background::JitCompilerHandle {
     if self.jit_compiler.is_none() {
       let isa = self.jit_engine().isa_handle();
@@ -963,34 +779,21 @@ impl VM {
     self.jit_compiler.as_mut().unwrap()
   }
 
-  /// Resolves the live `ObjClass` a method's `self` (register 0) is
-  /// guaranteed to be an instance of, then maps every field name that's
-  /// safe to read/write on it directly (no `BoundMethod`-wrapping risk
-  /// -- see `jit::escape::ClassFieldSafety`'s own docs) to its slot
-  /// index. `None` for a plain (non-method) function, or if resolution
-  /// can't prove soundness.
+  /// Resolves the class a method's `self` is guaranteed to be an instance
+  /// of, then maps every field name safe to read/write on it directly (no
+  /// `BoundMethod`-wrapping risk) to its slot index. `None` for a
+  /// non-method function or unprovable resolution.
   ///
-  /// Field slot indices are stable across inheritance: `Instr::Class`
-  /// clones the superclass's `field_slots`/`field_count` wholesale, and
-  /// `Instr::DeclareField` only ever APPENDS a genuinely new name at
-  /// the next free index, never renumbering an inherited one (see
-  /// their own bodies). So a slot resolved from the method's
-  /// DECLARING class is correct no matter which subclass `self`
-  /// actually is at runtime -- the compiled method body is shared,
-  /// unmodified, across every subclass that inherits it, and this is
-  /// exactly the same field layout the interpreter itself already
-  /// relies on for that sharing to be sound at all.
+  /// Field slots are stable across inheritance -- `Instr::Class` clones the
+  /// superclass's `field_slots` wholesale and `DeclareField` only appends,
+  /// never renumbers -- so a slot resolved from the method's declaring
+  /// class stays correct for any subclass `self` actually is at runtime.
   ///
-  /// Resolving the class by NAME (`owning_class_name`) instead of by
-  /// direct back-pointer needs one extra safety check: a global/module
-  /// binding can be REASSIGNED after the class was declared (unlike the
-  /// class OBJECT itself, which is immutable -- see
-  /// `ClassFieldSafety`'s own docs -- the NAME pointing at it isn't).
-  /// If the name no longer resolves to a class that actually owns
-  /// `proto` as one of its own methods, this returns `None` rather than
-  /// trusting a possibly-stale name -- the fast path just doesn't
-  /// apply; every `GetField`/`SetField` still works correctly through
-  /// the general helper.
+  /// Resolving by name (`owning_class_name`) rather than back-pointer needs
+  /// one extra check: the global binding, unlike the class object itself,
+  /// can be reassigned after declaration. If the name no longer resolves to
+  /// a class that actually owns `proto`, we return `None` and fall back to
+  /// the general path.
   fn resolve_self_field_slots(&self, proto: &ObjFunction) -> Option<FxHashMap<String, u16>> {
     let class_name = proto.owning_class_name.as_ref()?;
     let (is_root, slot) = self.resolve_global(proto.globals_module, class_name)?;
@@ -1017,19 +820,11 @@ impl VM {
     )
   }
 
-  /// `self.field`'s sibling for method calls: `self`'s own class, as
-  /// `Value` bits, exactly when `proto` is a method whose owning
-  /// class's method table maps `proto`'s own name back to `proto`
-  /// itself -- the SAME "owns_proto" proof `resolve_self_field_slots`
-  /// needs, just returning the class identity itself rather than a
-  /// field map. See `jit::CompileFacts::self_class_bits`'s own docs for
-  /// how codegen uses this: ANY `Instr::Invoke` naming this exact
-  /// method, on a receiver whose class bit-matches this value at
-  /// runtime, is guaranteed to resolve to this exact compiled function
-  /// -- regardless of which register/expression the receiver came from
-  /// (`self`, `self.left`, a local, ...), since the guard is checked
-  /// against the receiver's ACTUAL class at the call site, not against
-  /// any static provenance of the receiver register itself.
+  /// `resolve_self_field_slots`'s sibling: returns `self`'s own class as
+  /// `Value` bits when `proto`'s owning class's method table maps back to
+  /// `proto` itself. Codegen uses this so any `Invoke` of this method,
+  /// wherever the receiver register came from, can guard on the receiver's
+  /// actual class matching this bit pattern at the call site.
   fn resolve_self_class(&self, proto: &ObjFunction) -> Option<(u64, u64)> {
     let class_name = proto.owning_class_name.as_ref()?;
     let (is_root, slot) = self.resolve_global(proto.globals_module, class_name)?;
@@ -1049,81 +844,46 @@ impl VM {
     Some((class_val.to_bits(), self.method_table_generation.get()))
   }
 
-  /// Resolves every `Instr::Call` site in `proto` whose callee register
-  /// is PROVEN (see `escape::self_reference_facts`/
-  /// `escape::global_ref_facts`) to hold an unmodified global read, into
-  /// a `CallTarget` `codegen::FuncCompiler` can use to skip
-  /// `jit::runtime::zuri_jit_call_prepare`'s resolver entirely -- see
-  /// `CallTarget`'s own docs for the two cases (`SelfRecursive` needs no
-  /// runtime guard at all; `Known` still needs a value-identity guard,
-  /// since an arbitrary global binding, unlike a function's own name,
-  /// can be reassigned) and their respective soundness arguments.
+  /// Resolves every `Call` site whose callee register is proven to hold an
+  /// unmodified global read into a `CallTarget`, so codegen can skip
+  /// `zuri_jit_call_prepare`'s resolver entirely. `SelfRecursive` needs no
+  /// runtime guard; `Known` still needs a value-identity guard since an
+  /// arbitrary global binding (unlike a function's own name) can be
+  /// reassigned.
   ///
-  /// Candidate names are collected first (every string a `GetGlobal` in
-  /// `proto` ever names) so the dataflow only runs once per DISTINCT
-  /// name actually referenced -- bounded by how many different globals
-  /// this function's own source text mentions, not by code size.
-  /// Proves, at compile time, everything `zuri_jit_new_prepare` would
-  /// otherwise re-derive on EVERY construction, so a proven site can
-  /// use the lean `zuri_jit_construct_prepare` behind a single class-
-  /// identity guard instead. The constructor equivalent of what
-  /// `CallTarget::Known` already does for ordinary calls.
+  /// Candidate names are collected first so the dataflow runs once per
+  /// distinct name referenced, not once per instruction. Worth doing
+  /// because unproven construction is a five-deep chase of dependent loads
+  /// (register -> class -> constructor -> closure -> function -> variadic)
+  /// per instance built, and every link is a static fact about the class.
   ///
-  /// Worth doing because the difference is not marginal: unproven, the
-  /// helper walks callee register -> `Obj` tag -> `ObjClass` (a real
-  /// `RefCell` borrow) -> `constructor` -> `Obj` tag -> `ObjClosure`
-  /// -> `function` -> `ObjFunction` -> `variadic`, a five-deep chase
-  /// of dependent loads across cold cache lines, per instance built.
-  /// Every link in it is a static fact about a class.
+  /// Falls back to `None` unless no class in the ancestor chain has its own
+  /// field initializer, and the constructor exists as a non-variadic
+  /// closure.
   ///
-  /// `None` (fall back to the general path) unless BOTH of:
+  /// The constructor closure's own bits are deliberately not baked in --
+  /// closures are young allocations that relocate, so we read `constructor`
+  /// back off the guarded class at call time instead. `proto_ptr` is baked
+  /// since `ObjFunction` never moves.
   ///
-  /// - no class in the ancestor chain declares its own field
-  ///   initializer, so there is no root-to-leaf initializer sequence
-  ///   to run before the constructor,
-  /// - a constructor exists and is a non-variadic `Closure`.
+  /// The paired `method_table_generation` snapshot covers a dead class's
+  /// address getting recycled by a new one, same as `resolve_self_class`.
   ///
-  /// Note what is deliberately NOT baked: the constructor closure's
-  /// own `Value` bits. Closures are ordinary young allocations and
-  /// relocate, so a baked copy would go stale exactly the way class
-  /// bits used to before `Heap::alloc_class` started allocating old.
-  /// Reading `constructor` back off the guarded class at run time
-  /// costs one load and observes any relocation instead of being
-  /// broken by it. `proto_ptr` IS baked, because `ObjFunction` never
-  /// moves -- and it carries the two facts worth the most, the
-  /// non-variadic proof and a direct `jit.entry` read with no
-  /// closure -> function hop.
-  ///
-  /// The paired `method_table_generation` snapshot is what the guard
-  /// checks alongside class identity, exactly as `self_class_bits`
-  /// does -- see `VM::method_table_generation`'s own docs. It also
-  /// covers a dead class's address being recycled by a new one, since
-  /// declaring any method on a class bumps the generation.
-  /// Recognizes a constructor that does nothing but copy each of its
-  /// parameters into a field, and reports which field slot each
-  /// parameter lands in -- see `jit::ConstructInfo::simple_ctor_param_slots`.
-  ///
-  /// The accepted shape is exactly what `@new(x, y, z) { self.x = x;
-  /// self.y = y; self.z = z }` compiles to: a run of
-  /// `SetField { obj: 0, src: <a parameter register> }`, then
-  /// `LoadNil` + `Return` of that same register. Anything else at all
-  /// -- a computed value, a branch, a call, a field written twice, a
-  /// parameter used for something other than one direct store --
-  /// returns `None`, because then the constructor has behavior that
-  /// storing arguments into slots would not reproduce.
-  ///
-  /// Deliberately a syntactic match on the emitted bytecode rather
-  /// than anything cleverer: the whole point is to be certain, and the
-  /// common case is this literal shape.
+  /// `simple_ctor_param_slots` below recognizes a constructor that does
+  /// nothing but copy each parameter into a field. Accepts only the exact
+  /// shape `@new(x, y, z) { self.x = x; self.y = y; self.z = z }` compiles
+  /// to -- a run of `SetField` from parameter registers, then `LoadNil` +
+  /// `Return`. Anything else (computed value, branch, call, double write)
+  /// returns `None`, since a syntactic match is the only way to be certain.
   fn simple_ctor_param_slots(ctor: &ObjFunction, class: &ObjClass) -> Option<Vec<u16>> {
     let code = &ctor.chunk.code;
     if ctor.variadic || code.len() < 2 {
       return None;
     }
-    // `arity` COUNTS the implicit `self`, so a `@new(x, y, z)` reports
-    // 4. The real parameters are registers `1..=params`.
+    // arity counts the implicit `self`, so `@new(x, y, z)` reports 4;
+    // real parameters are registers 1..=params.
     let params = (ctor.arity as usize).checked_sub(1)?;
-    // `slots[i]` is where parameter `i` is stored.
+    // slots[i] is where parameter i is stored.
     let mut slots: Vec<Option<u16>> = vec![None; params];
 
     let mut ip = 0;
@@ -1143,8 +903,8 @@ impl VM {
           }
           let slot = *class.field_slots.get(name.as_str())?;
           let param = src as usize - 1;
-          // One store per parameter, and no field written twice --
-          // either would make the slot assignment ambiguous.
+          // One store per parameter, no field written twice -- either
+          // would make the slot assignment ambiguous.
           if slots[param].is_some() || slots.iter().any(|s| *s == Some(slot)) {
             return None;
           }
@@ -1182,8 +942,8 @@ impl VM {
       (class.field_count, class.constructor?, class.superclass)
     };
 
-    // An inherited field initializer disqualifies just as much as an
-    // own one -- `instantiate` runs every ancestor's, root to leaf.
+    // An inherited field initializer disqualifies just as much as an own
+    // one -- `instantiate` runs every ancestor's, root to leaf.
     let mut cur = superclass;
     while let Some(c) = cur {
       let next = {
@@ -1199,14 +959,11 @@ impl VM {
     if !ctor.is_closure() {
       return None;
     }
-    // Immovable-by-construction (`Heap::alloc_closure` puts every class
-    // method straight into the old generation, which is mark-sweep and
-    // never relocates), so baking the closure's own bits is sound and
-    // this check should never actually fail. Kept as a real check
-    // rather than an assumption: it is the one thing that makes the
-    // bake safe, and if that allocation policy ever changes this
-    // quietly falls back to the dynamic path instead of handing
-    // generated code a stale pointer.
+    // Class methods are allocated straight into the old (mark-sweep,
+    // non-relocating) generation, so this should never actually fail --
+    // kept as a real check so a future allocation-policy change falls back
+    // to the dynamic path instead of handing generated code a stale
+    // pointer.
     if Heap::is_young(ctor.as_obj()) {
       return None;
     }
@@ -1232,9 +989,8 @@ impl VM {
       generation: self.method_table_generation.get(),
       field_count,
       ctor_bits: ctor.to_bits(),
-      // `ObjFunction` is allocated straight into old-generation
-      // storage and never moves (see `Heap::alloc_function`), the same
-      // guarantee `run_until`'s own cached `func_ptr` relies on.
+      // ObjFunction is allocated old-generation and never moves, same
+      // guarantee run_until's cached func_ptr relies on.
       proto_ptr: ctor_proto as *const ObjFunction as usize,
     })
   }
@@ -1250,11 +1006,9 @@ impl VM {
     let mut field_safety = FxHashMap::default();
     let proto_ptr = proto as *const ObjFunction;
 
-    // Owned `String`s throughout, not borrowed `&str`s: this runs once
-    // per JIT compile (not per call), so the allocation cost is
-    // irrelevant, and it sidesteps tying this whole function's return
-    // value's lifetime to `proto.chunk.constants`' borrow for no
-    // benefit.
+    // Owned Strings, not borrowed &strs: runs once per JIT compile, not
+    // per call, so the allocation is irrelevant and it avoids tying the
+    // return value's lifetime to proto.chunk.constants' borrow.
     let mut candidate_names: Vec<String> = Vec::new();
     for instr in &proto.chunk.code {
       if let Instr::GetGlobal { name_const, .. } = instr
@@ -1274,11 +1028,9 @@ impl VM {
     let self_facts = escape::self_reference_facts(proto);
     let named_facts: Vec<(String, Vec<escape::MustSet>)> = candidate_names
       .into_iter()
-      // `proto.name` itself is already covered by `self_facts`, with no
-      // runtime guard needed at all -- running a second, redundant
-      // analysis for it would only ever produce a strictly weaker
-      // (guard-requiring) `Known` classification for sites `self_facts`
-      // already proves need no guard.
+      // proto.name is already covered by self_facts with no runtime guard
+      // needed; re-analyzing it here would only produce a weaker
+      // guard-requiring classification for sites that don't need one.
       .filter(|name| name != &proto.name)
       .map(|name| {
         let facts = escape::global_ref_facts(proto, &name);
@@ -1329,10 +1081,9 @@ impl VM {
           targets.insert(ip, CallTarget::SelfRecursive);
           break;
         }
-        // Recorded even when the callee has NOT been compiled yet:
-        // `codegen` can still inline it from its bytecode alone, and
-        // `CallTarget::Known::entry`'s own docs explain why a `0` there
-        // is meaningful rather than a missing resolution.
+        // Recorded even when the callee isn't compiled yet: codegen can
+        // still inline it from bytecode alone, and a 0 entry here means
+        // "not compiled yet", not "unresolved".
         targets.insert(
           ip,
           CallTarget::Known {
@@ -1347,29 +1098,19 @@ impl VM {
     (targets, field_safety)
   }
 
-  /// Builds `proto`'s IR right now (synchronously -- the only stage
-  /// that touches `proto`, see `jit::background`'s module docs) and
-  /// hands the result to the background compiler thread for the
-  /// expensive part, pinning `proto_value` as a GC root for the round
-  /// trip. If IR-building itself fails, `proto` is marked permanently
-  /// ineligible immediately (no point enqueueing anything) -- exactly
-  /// mirroring the old synchronous `try_compile`'s failure handling,
-  /// just without the (now background-only) backend-compile step ever
-  /// getting a chance to also fail here.
+  /// Builds `proto`'s IR synchronously, the only stage that touches
+  /// `proto`, then hands the result to the background compiler thread for
+  /// the expensive part, pinning `proto_value` as a GC root for the round
+  /// trip. If IR-building itself fails, `proto` is marked ineligible
+  /// immediately since there's nothing to enqueue.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
-    // Bisection/debugging knob for a confirmed, not-yet-root-caused
-    // data-corruption bug in the specialized-body machinery (see
-    // `jit::codegen::FuncCompiler::scalar_replace_eligible`'s own docs
-    // for the full reproduction): a value read via a variable-index
-    // `Instr::GetIndex`, once returned from a function that later gets
-    // a specialized body, can silently freeze at a stale value on
-    // every subsequent call. Setting this forces EVERY function to
-    // compile general-body-only, isolating whether a given symptom
-    // depends on specialized-body compilation at all -- exactly how
-    // that bug was originally bisected. Not a general performance
-    // knob (unlike `ZURI_JIT=0`, which disables the JIT tier
-    // entirely): every function still tiers up, just without ever
-    // gaining a specialized body.
+    // Debugging knob for the specialized-body machinery: a value read via
+    // a variable-index GetIndex, once returned from a function that gets a
+    // specialized body, can freeze at a stale value on later calls.
+    // Setting this forces every function to compile general-body-only, to
+    // isolate whether a symptom depends on specialization at all. Unlike
+    // ZURI_JIT=0, every function still tiers up, just without ever gaining
+    // a specialized body.
     let (speculative_params, speculative_regs) =
       if std::env::var_os("ZURI_JIT_NO_SPECIALIZATION").is_some() {
         (None, None)
@@ -1414,41 +1155,38 @@ impl VM {
     if self.jit_compiler().job_tx.send(job).is_err() {
       // The background thread is gone -- shouldn't happen (it lives
       // for the whole process), but if it did, undo the pin/flag so
-      // `proto` just stays interpreted forever rather than wedged in
-      // a permanent "compiling" state no result will ever clear.
+      // proto just stays interpreted forever rather than wedged in a
+      // permanent "compiling" state no result will ever clear.
       proto.jit.compiling.set(false);
       self.pending_jit_compiles.pop();
     }
   }
 
-  /// Installs every background compile result that's ready RIGHT NOW
-  /// (non-blocking) into its prototype's `JitInfo`, and un-pins it.
-  /// Called at the top of both `tiered_entry` and `maybe_osr` -- the
-  /// only two places that ever check "is this ready yet" -- so results
-  /// get installed lazily, exactly when something asks, with no
-  /// separate polling thread/timer needed.
+  /// Installs every background compile result that's ready right now
+  /// (non-blocking). Called at the top of `tiered_entry`/`maybe_osr` so
+  /// results get installed lazily, whenever something asks, with no
+  /// separate polling thread needed.
   fn drain_jit_results(&mut self) {
     let Some(handle) = self.jit_compiler.as_ref() else {
       return;
     };
-    // See `JitCompilerHandle::results_pending`: the clear MUST precede
-    // the drain loop below, never follow it.
+    // The clear must precede the drain loop below, never follow it --
+    // see JitCompilerHandle::results_pending.
     if !handle.results_pending.load(Ordering::Acquire) {
       return;
     }
     handle.results_pending.store(false, Ordering::Relaxed);
-    // Collect into an owned `Vec` first rather than looping directly
-    // on `try_recv` while also calling `self.jit_engine()` for each --
-    // avoids overlapping the channel's borrow of `self.jit_compiler`
-    // with the `&mut self` each result's installation needs.
+    // Collect into an owned Vec first: looping try_recv directly while
+    // also calling self.jit_engine() per result would overlap the
+    // channel's borrow of self.jit_compiler with the &mut self each
+    // installation needs.
     let mut results = Vec::new();
     while let Ok(result) = self.jit_compiler.as_ref().unwrap().result_rx.try_recv() {
       results.push(result);
     }
     for result in results {
-      // SAFETY: `result.proto` was pinned in `pending_jit_compiles`
-      // from the moment its job was enqueued until right here -- see
-      // `jit::background`'s module docs.
+      // SAFETY: result.proto was pinned in pending_jit_compiles from the
+      // moment its job was enqueued until right here.
       let proto = unsafe { &*result.proto.0 };
       let install_outcome = result.outcome.and_then(|(bytes, alignment, relocs)| {
         self
@@ -1488,22 +1226,11 @@ impl VM {
     }
   }
 
-  /// A single-call type sample of `proto`'s FIXED-arity parameters,
-  /// read from THE CURRENT TOP FRAME (by the time this is ever called,
-  /// `self.frames.last()` is ALWAYS a frame for `proto` -- either just
-  /// pushed with real argument values already placed at its own `base`
-  /// by `setup_closure_call`/`call_value`, for an ordinary call, or the
-  /// currently-executing frame itself, for an OSR trigger, whose
-  /// parameter registers still hold whatever this same invocation's
-  /// arguments evolved into by now). Two callers: `record_call_feedback`
-  /// (one sample per call, folded into a running multi-call AND) and
-  /// `combined_param_feedback`'s fallback (no accumulated evidence
-  /// exists yet, so bet on this one call same as before that existed).
-  /// Either way, betting on real observed values here is sound because
-  /// whatever mask a caller ends up passing to `codegen::compile` only
-  /// ever seeds a GUARD that re-validates the same registers for real
-  /// before ever trusting them on any later call -- see
-  /// `jit::codegen::compile`'s own docs.
+  /// A single-call type sample of `proto`'s fixed-arity parameters, read
+  /// from the current top frame (always a frame for `proto` by the time
+  /// this is called). Betting on real observed values here is sound
+  /// because the resulting mask only ever seeds a guard that re-validates
+  /// the registers for real before any later call trusts them.
   fn sample_param_types(&self, proto: &ObjFunction) -> Option<u64> {
     let frame = self.frames.last()?;
     if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
@@ -1527,29 +1254,17 @@ impl VM {
     Some(mask)
   }
 
-  /// A ONE-SHOT type sample of EVERY register in `proto`'s currently
-  /// executing frame (not just its fixed-arity parameters -- compare
-  /// `sample_param_types`), taken at the same moment and under the
-  /// same precondition (`self.frames.last()` is `proto`'s own frame).
-  /// Feeds `jit::typeflow::SpeculativeRegs`: a register whose value
-  /// came from a `GetField`/`Call`/`GetIndex`/... result that happens
-  /// to be a number RIGHT NOW gets a real runtime guard planted at that
-  /// instruction's own definition site in the specialized body (see
-  /// `codegen::FuncCompiler::emit_speculative_guard`), which is what
-  /// makes betting on it here sound: nothing downstream ever trusts
-  /// this sample directly, only whatever guard it results in re-
-  /// validating the ACTUAL value on every future execution.
+  /// A one-shot type sample of every register in `proto`'s frame (not just
+  /// parameters -- compare `sample_param_types`). Feeds
+  /// `typeflow::SpeculativeRegs`: a register that happens to be numeric
+  /// right now gets a real runtime guard planted at its definition site in
+  /// the specialized body, so nothing downstream trusts this sample
+  /// directly.
   ///
-  /// Deliberately a single one-shot sample, not accumulated across
-  /// calls the way `record_call_feedback` accumulates parameter
-  /// feedback -- a register beyond the parameter range doesn't have a
-  /// stable, call-independent "value at this call" the way a parameter
-  /// does (it might be a totally different bytecode-level variable at
-  /// different points across different calls), so continuous
-  /// accumulation isn't the natural fit here the way it was for
-  /// parameters. A future increment could add per-definition-site
-  /// accumulation if the one-shot version proves too noisy in
-  /// practice.
+  /// Not accumulated across calls like parameter feedback is -- a register
+  /// beyond the parameter range doesn't have a stable call-independent
+  /// identity, it can be a different bytecode-level variable on different
+  /// calls, so continuous accumulation isn't a natural fit here.
   fn sample_all_reg_types(&self, proto: &ObjFunction) -> Option<typeflow::SpeculativeRegs> {
     let frame = self.frames.last()?;
     if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
@@ -1568,19 +1283,12 @@ impl VM {
     Some(mask)
   }
 
-  /// Folds ONE call's argument types into `proto`'s running
-  /// `numeric_feedback` accumulator (bitwise AND) -- called at every
-  /// site that increments `call_count`, right after `proto`'s own
-  /// frame has been pushed, so `sample_param_types` always samples
-  /// THIS call. Unlike a one-shot bet on whichever single call happens
-  /// to tip the warm-up threshold, this observes EVERY call along the
-  /// way: a parameter's bit only survives to compile time if it was
-  /// numeric on every call seen so far, exactly the "keep believing
-  /// the guess until a real call contradicts it" pattern of a
-  /// polymorphic inline cache. Skipped once `proto` is compiled,
-  /// already enqueued, or ineligible -- feedback stops mattering (and
-  /// costing anything) the moment it can no longer inform a
-  /// not-yet-made decision.
+  /// Folds one call's argument types into `proto`'s running
+  /// `numeric_feedback` accumulator via bitwise AND, so a parameter's bit
+  /// only survives to compile time if it was numeric on every call seen so
+  /// far -- the same "keep believing until contradicted" pattern as a
+  /// polymorphic inline cache. Skipped once `proto` is compiled, enqueued,
+  /// or ineligible, since feedback can no longer inform a decision by then.
   #[inline]
   fn record_call_feedback(&self, proto: &ObjFunction) {
     if proto.jit.entry.get().is_some() || proto.jit.compiling.get() || proto.jit.ineligible.get() {
@@ -1599,19 +1307,11 @@ impl VM {
       .set(proto.jit.feedback_samples.get().saturating_add(1));
   }
 
-  /// The type-feedback mask actually consulted at the moment `proto`
-  /// is enqueued for compilation: the AND-accumulated result of every
-  /// call `record_call_feedback` has recorded since `proto` started
-  /// warming up (which, by construction, already includes this exact
-  /// triggering call -- it's recorded at the very same call sites that
-  /// increment `call_count`, before `tiered_entry`/`maybe_osr` can ever
-  /// decide to compile). Falls back to a fresh one-shot
-  /// `sample_param_types` only if NO call was ever recorded through
-  /// that path -- e.g. a top-level script's own OSR-triggered compile,
-  /// whose outermost frame is never pushed via a "call" at all -- so
-  /// this is never any worse than the single-sample behavior it
-  /// replaces, only better-informed when real accumulated evidence
-  /// exists.
+  /// The type-feedback mask consulted when `proto` is enqueued for
+  /// compilation: the accumulated result from `record_call_feedback`, or a
+  /// fresh one-shot sample if no call was ever recorded that way (e.g. a
+  /// top-level script's OSR-triggered compile, whose outermost frame is
+  /// never pushed via a "call").
   fn combined_param_feedback(&self, proto: &ObjFunction) -> Option<u64> {
     if proto.jit.feedback_samples.get() > 0 {
       Some(proto.jit.numeric_feedback.get())
@@ -1620,13 +1320,9 @@ impl VM {
     }
   }
 
-  /// Given a frame that was JUST pushed for `proto`/`closure_val` (so
-  /// `stop_depth` is exactly what `run_until` needs to know when to
-  /// stop), either interpret it (today's unbounded-depth behavior,
-  /// unchanged) or -- once it's warm enough, compiling it right now if
-  /// needed -- run it as compiled machine code instead. Used by
-  /// `call_value` (natives/builtins calling back into Zuri code) so
-  /// that path benefits from tiering exactly like ordinary bytecode
+  /// Runs a just-pushed frame for `proto`/`closure_val` either interpreted
+  /// or, once warm, as compiled code. Used by `call_value` so natives
+  /// calling back into Zuri code benefit from tiering like ordinary
   /// `Instr::Call` does.
   fn run_frame(
     &mut self,
@@ -1646,74 +1342,51 @@ impl VM {
     self.run_until(stop_depth)
   }
 
-  /// Pins every value in `values` into `gc_pins` for the duration the
-  /// caller needs them to survive a re-entrant `call_value` (which
-  /// runs arbitrary Zuri code and can trigger a collection), and
-  /// returns the index the FIRST one landed at -- every value is at
-  /// `mark + i` for its position `i` in the iterator, and also
-  /// exactly the mark `unpin` needs to release them all again.
+  /// Pins every value in `values` into `gc_pins` for as long as the caller
+  /// needs them to survive a re-entrant `call_value` (which runs arbitrary
+  /// Zuri code and can trigger a collection). Returns the index the first
+  /// value landed at; value `i` is at `mark + i`, and `mark` is what `unpin`
+  /// needs to release them.
   ///
-  /// This exists because a `Value` sitting only in a plain Rust local
-  /// (or a `Vec` cloned out of a list/dict's own storage, or a
-  /// borrowed argument slice like `ZuriContext::args`) has NO way to
-  /// be found and rewritten if the object it names gets relocated by
-  /// a collection that runs mid-loop, inside some earlier iteration's
-  /// own `call_value`. `gc_pins` is a real GC root (scanned by both
-  /// `collect_garbage` and `collect_minor`), so a value pinned here
-  /// stays correctly address-updated across any number of further
-  /// re-entrant calls -- AS LONG AS every subsequent read goes back
-  /// to `self.gc_pins[idx]` fresh each time, rather than trusting a
-  /// copy taken before an intervening call. See `VM::instantiate` for
-  /// the pattern this generalizes (and the bug -- a `Box(...)`
-  /// constructor call intermittently reading a relocated-and-
-  /// neutralized slot back as `Obj::Range` -- that motivated it).
+  /// A `Value` sitting only in a plain Rust local has no way to get
+  /// rewritten if the object it names is relocated by a collection running
+  /// mid-loop inside an earlier iteration's `call_value`. `gc_pins` is a
+  /// real GC root, so a pinned value stays correctly updated across further
+  /// re-entrant calls -- as long as every read goes back through
+  /// `self.gc_pins[idx]` fresh, never a copy taken before an intervening
+  /// call.
   pub(crate) fn pin_values(&mut self, values: impl IntoIterator<Item = Value>) -> usize {
     let mark = self.gc_pins.len();
     self.gc_pins.extend(values);
     mark
   }
 
-  /// Releases every pin taken since `mark` (a value previously
-  /// returned by `pin_values`) -- see its own docs.
   pub(crate) fn unpin(&mut self, mark: usize) {
     self.gc_pins.truncate(mark);
   }
 
-  /// Reads back a value pinned by `pin_values`, fresh -- the whole
-  /// point being that this reflects any relocation a collection made
-  /// since the pin, unlike whatever local variable/slice the caller
-  /// originally had it in.
+  /// Reads back a value pinned by `pin_values`, fresh -- reflects any
+  /// relocation a collection made since the pin.
   #[inline]
   pub(crate) fn pinned(&self, idx: usize) -> Value {
     self.gc_pins[idx]
   }
 
-  /// Guarantees `closure_val` (the closure a compiled function is
-  /// about to be ENTERED through) is not currently `Young` before
-  /// handing it to compiled code, relocating it right now if it is.
-  /// `jit::codegen`'s `closure_param` is a plain Cranelift SSA value,
-  /// loaded once at function entry and reused for the WHOLE compiled
-  /// invocation -- every `Instr::Closure`/`GetUpval`/`SetUpval` in
-  /// the function body reuses that exact same value, never reloading
-  /// it from `VM::registers` or anywhere else GC-scannable. Unlike an
-  /// ordinary register, there is NO memory location `VM::collect_minor`
-  /// could write a relocated address back into if this object moved
-  /// partway through the invocation (say, at a loop back-edge
-  /// safepoint) -- so instead, it must simply never be free to move
-  /// at all for as long as compiled code might still be holding it.
+  /// Guarantees `closure_val` isn't `Young` before handing it to compiled
+  /// code, relocating it now if it is. Codegen's `closure_param` is a
+  /// Cranelift SSA value loaded once at entry and reused for the whole
+  /// invocation, with no GC-scannable memory location to write a relocated
+  /// address back into if the object moved mid-invocation -- so instead it
+  /// must never be free to move while compiled code holds it.
   ///
-  /// Cheap in the overwhelmingly common case: a closure invoked
-  /// repeatedly through a warm call site has almost always long since
-  /// survived a minor collection already, costing one `generation`
-  /// read and nothing else. Only a genuinely still-young closure pays
-  /// for a real, full minor collection here.
+  /// Cheap in the common case: a closure invoked through a warm call site
+  /// has almost always already survived a minor collection, costing one
+  /// generation read. Only a still-young closure pays for a real collection.
   #[inline]
   pub(crate) fn ensure_stable_for_compiled_entry(&mut self, closure_val: Value) -> Value {
-    // Split so the common answer -- "already old, nothing to do" --
-    // inlines into the per-call helpers that ask it
-    // (`zuri_jit_call_prepare`, `zuri_jit_invoke_prepare`,
-    // `prepare_compiled_construction`) as a single generation read,
-    // instead of a real call that almost always returns immediately.
+    // Split so the common "already old" answer inlines into the per-call
+    // helpers as a single generation read, instead of a real call that
+    // almost always returns immediately.
     if !Heap::is_young(closure_val.as_obj()) {
       return closure_val;
     }
@@ -1723,58 +1396,34 @@ impl VM {
   #[cold]
   #[inline(never)]
   fn relocate_for_compiled_entry(&mut self, closure_val: Value) -> Value {
-    // Pinned BEFORE the collection, not read back afterward via its
-    // original (pre-collection) pointer -- an earlier version of this
-    // function did the latter, re-resolving through
-    // `Heap::forward_or_promote`'s "already forwarded" branch, which
-    // needs the OLD nursery slot's own memory to still be valid to
-    // read from. That's true right up until `collect_minor` finishes
-    // -- but `reset_nursery` (its very last step) doesn't just wipe
-    // the young generation's CONTENTS, it deallocates every nursery
-    // chunk beyond the first ENTIRELY (see `Heap::reset_nursery`'s
-    // own docs), so if this closure happened to live in a chunk
-    // beyond the first -- plausible under real allocation pressure,
-    // not an exotic corner case -- the "old slot" the stale pointer
-    // named was already freed by the time this looked it up: a
-    // genuine use-after-free, caught by this project's own testing as
-    // an intermittent segfault inside `Cell::get` reading a class's
-    // `generation` field, deep in `string.each`'s own callback
-    // invocation. Pinning first sidesteps the whole problem: a real
-    // `gc_pins` root gets correctly updated by the SAME collection's
-    // own root scan, the ordinary way, before `reset_nursery` ever
-    // runs.
+    // Must pin before collecting, not resolve through the stale pointer
+    // afterward: reset_nursery (collect_minor's last step) deallocates
+    // every nursery chunk beyond the first entirely, so a stale pointer
+    // into one of those is a use-after-free by the time you'd look it up.
+    // Pinning first lets the same collection's own root scan update it the
+    // ordinary way.
     let mark = self.pin_values([closure_val]);
-    // A REAL, full minor collection -- not a one-off relocation of
-    // just this object -- and deliberately so: this closure is
-    // necessarily ALSO reachable from wherever `closure_val` itself
-    // came from (a register, a class's `methods` table, an instance
-    // field, ...), and relocating it in isolation would fix up only
-    // the pinned copy, leaving every OTHER reference to the same
-    // object pointing at a slot the collection has since reused or
-    // neutralized -- exactly the bug an even earlier version of this
-    // function had (caught by `tests/inheritance.zu` reading a
-    // leftover placeholder as "cannot call a range"). A full cycle's
-    // comprehensive root/child scan is what finds and rewrites every
-    // one of those together, the same way it always does.
+    // A real, full minor collection, not an isolated relocation of just
+    // this object -- the closure is also reachable from wherever
+    // closure_val came from (a register, a method table, a field), and
+    // relocating it alone would leave those other references pointing at a
+    // slot the collection has since reused.
     self.collect_minor();
     let new_val = self.pinned(mark);
     self.unpin(mark);
     new_val
   }
 
-  /// Runs the CURRENT top frame (already pushed, `self.frames.last()`)
-  /// as compiled machine code from `osr_id` (`-1` for an ordinary
-  /// entry starting at bytecode ip 0; a non-negative id from
-  /// `JitInfo::osr_ids` to jump straight into a specific loop header
-  /// instead -- see `maybe_osr`).
+  /// Runs the current top frame as compiled machine code from `osr_id`
+  /// (`-1` for an ordinary entry at ip 0; a non-negative id from
+  /// `JitInfo::osr_ids` jumps straight into a loop header -- see
+  /// `maybe_osr`).
   ///
-  /// On success, pops the frame and returns `Ok(value)` -- exactly
-  /// `Instr::Return`'s own effect. On failure, the frame is left in
-  /// place, matching `run_until`'s existing "an uncaught exception
-  /// leaves every frame between here and whichever ancestor `catch`
-  /// eventually claims it, to be truncated in one shot by
-  /// `handle_exception`" behavior -- compiled code never pops on error,
-  /// only on success, for exactly that reason.
+  /// On success, pops the frame and returns `Ok(value)`, same as
+  /// `Instr::Return`. On failure, the frame is left in place, matching
+  /// `run_until`'s "an uncaught exception leaves every frame up to the
+  /// catching ancestor, truncated in one shot by `handle_exception`"
+  /// behavior.
   fn invoke_compiled(
     &mut self,
     entry: EntryFn,
@@ -1789,34 +1438,26 @@ impl VM {
     let closure_val = self.ensure_stable_for_compiled_entry(closure_val);
 
     self.jit_call_depth.set(self.jit_call_depth.get() + 1);
-    // Whoever is actually EXECUTING a frame owns its `compiled` flag --
-    // see `CallFrame::compiled`. Restored (rather than left set) on the
-    // way out because this same frame can keep running interpreted
-    // afterwards, most obviously after a deopt.
+    // Restored rather than left set on the way out, since this same frame
+    // can keep running interpreted afterwards, most obviously after a
+    // deopt.
     let entered_idx = self.frames.len() - 1;
     let was_compiled = std::mem::replace(&mut self.frames[entered_idx].compiled, true);
-    // SAFETY: `entry` was produced by `jit::engine::JitEngine::compile_function`
-    // for THIS exact prototype; `base` is this (already-pushed) frame's
-    // own register-window start, matching every other caller of this
-    // machine code's calling convention (see `jit::EntryFn`'s docs).
+    // SAFETY: entry was produced by JitEngine::compile_function for this
+    // exact prototype; base is this frame's own register-window start,
+    // matching the compiled calling convention.
     let result_bits = unsafe { entry(self as *mut VM, base as u64, closure_val.to_bits(), osr_id) };
     self.jit_call_depth.set(self.jit_call_depth.get() - 1);
     if let Some(frame) = self.frames.get_mut(entered_idx) {
       frame.compiled = was_compiled;
     }
 
-    // A real deopt takes priority over everything else -- see
-    // `resolve_possible_deopt`'s own docs. This exact check (and the
-    // recursive-interpreter resolution behind it) is ALSO needed by
-    // `jit::runtime::zuri_jit_call_finish`, the OTHER place compiled
-    // code's return value gets processed: the direct compiled-to-
-    // compiled fast path (`emit_fast_call`'s own `call_indirect`,
-    // used for e.g. self-recursive calls) never goes through THIS
-    // function at all, so a deopt happening there would otherwise go
-    // completely unnoticed -- exactly the bug that shipped first and
-    // got caught by `tests/inheritance.zu`/`osr_speculation_stress.zu`
-    // regressing. Both call sites MUST resolve a pending deopt before
-    // doing anything else with compiled code's return value.
+    // A real deopt takes priority over everything else. This check is also
+    // needed by zuri_jit_call_finish, the other place compiled code's
+    // return value gets processed -- the compiled-to-compiled fast path
+    // never goes through this function, so a deopt there would otherwise go
+    // unnoticed. Both call sites must resolve a pending deopt before doing
+    // anything else with compiled code's return value.
     if let Some(result) = self.resolve_possible_deopt() {
       return result;
     }
@@ -1832,58 +1473,40 @@ impl VM {
     Ok(Value::from_bits(result_bits))
   }
 
-  /// Checks (and clears) `pending_deopt_ip`. If compiled code just
-  /// bailed out, the CURRENT top frame -- whichever one that is; this
-  /// is called from both `invoke_compiled` (a freshly-pushed frame on
-  /// a regular call, or an already-active frame OSR'd into mid-loop)
-  /// and `jit::runtime::zuri_jit_call_finish` (the direct compiled-
-  /// to-compiled fast path's own callee frame) -- is still exactly as
-  /// valid as it always was; the only thing wrong is compiled code
-  /// gave up on it partway through. Point its own `ip` at the deopt
-  /// target and hand it to a fresh, depth-bounded interpreter run --
-  /// `run_until` seeds its `ip`/`base`/etc. straight from
-  /// `self.frames[frame_idx]` (see its own top), so this is the
-  /// entire fix-up needed, and this exact "recurse into the
-  /// interpreter for one bounded frame" shape is already proven sound
-  /// by `run_frame`'s native-callback path. Both callers see an
-  /// ordinary `RunResult<Value>` either way -- deopt is fully
-  /// invisible above this function.
-  /// Tiny, always-inlined fast-path check -- the overwhelming common
-  /// case (no deopt pending) is just one `Cell<Option<usize>>` read,
-  /// kept as small as possible so it disappears into its callers'
-  /// own hot paths (`invoke_compiled`, `zuri_jit_call_finish`) rather
-  /// than costing a real out-of-line call on every single compiled
-  /// call, deopt or not. The actual (rare) resolution logic is kept
-  /// OUT of line in `resolve_deopt_slow`, both so it doesn't bloat
-  /// the hot path's icache footprint and so its own locals/borrows
-  /// don't fight this function's inlining eligibility.
+  /// Checks (and clears) `pending_deopt_ip`. If compiled code just bailed
+  /// out, the current top frame is still exactly as valid as it always
+  /// was -- the only thing wrong is compiled code gave up on it partway
+  /// through. Point its `ip` at the deopt target and hand it to a fresh,
+  /// depth-bounded interpreter run; both callers see an ordinary
+  /// `RunResult<Value>` either way, deopt is fully invisible above this
+  /// function.
+  ///
+  /// Tiny and always-inlined: the common case (no deopt pending) is one
+  /// `Cell` read, kept small so it disappears into callers' hot paths
+  /// instead of costing a real call every time. The rare resolution logic
+  /// is kept out of line in `resolve_deopt_slow`.
   #[inline(always)]
   pub(crate) fn resolve_possible_deopt(&mut self) -> Option<RunResult<Value>> {
     let deopt_ip = self.pending_deopt_ip.take()?;
     Some(self.resolve_deopt_slow(deopt_ip))
   }
 
-  /// The actual (rare) deopt-resolution logic -- see
-  /// `resolve_possible_deopt`'s own docs for why this is split out.
   #[cold]
   #[inline(never)]
   fn resolve_deopt_slow(&mut self, deopt_ip: usize) -> RunResult<Value> {
     let frame_idx = self.frames.len() - 1;
-    // SAFETY: this frame's `function` has been a valid, live
-    // `ObjFunction` for as long as the frame itself has existed --
-    // same pointer every other `unsafe { &*frame.function }` site in
-    // this file already trusts.
+    // SAFETY: this frame's function has been a valid, live ObjFunction for
+    // as long as the frame has existed, same pointer every other unsafe
+    // deref of frame.function in this file already trusts.
     let deopting_fn = unsafe { &*self.frames[frame_idx].function };
     let depth = self.deopt_reentrancy_depth.get() + 1;
     self.deopt_reentrancy_depth.set(depth);
     if depth > MAX_DEOPT_REENTRANCY {
-      // See `MAX_DEOPT_REENTRANCY`'s own docs: this nested deopt chain
-      // has grown deep enough that continuing to let it grow risks a
-      // real native stack overflow -- give up on compiled code for
-      // the function at THIS deepest level FOR GOOD, which is what
-      // actually stops the chain from growing on the very next nested
-      // call. Clearing `entry` (not just `ineligible`) matters:
-      // `tiered_entry` checks `entry` first.
+      // This nested deopt chain is deep enough that letting it grow
+      // further risks a real native stack overflow -- give up on compiled
+      // code for the function at this deepest level for good. Clearing
+      // entry (not just ineligible) matters: tiered_entry checks entry
+      // first.
       deopting_fn.jit.entry.set(None);
       deopting_fn.jit.ineligible.set(true);
       if crate::jit::log_enabled() {
@@ -1894,9 +1517,8 @@ impl VM {
       }
     }
     self.frames[frame_idx].ip = deopt_ip;
-    // The interpreter is taking this frame over and syncs its `ip` on
-    // every instruction from here on, so `VM::jit_ip` stops being the
-    // truthful source for it -- see `CallFrame::compiled`.
+    // The interpreter takes this frame over and syncs ip on every
+    // instruction from here, so jit_ip stops being the truthful source.
     self.frames[frame_idx].compiled = false;
     let stop_depth = frame_idx;
     let result = self.run_until(stop_depth);
@@ -1906,15 +1528,12 @@ impl VM {
     result
   }
 
-  /// Checked by `run_until`'s own `Instr::Jmp` handler on every
-  /// BACKWARD jump (a loop back-edge) -- `target_ip` is where that
-  /// back-edge lands (the loop header). Returns `None` to mean "keep
-  /// interpreting this loop normally" (not hot yet, ineligible, or the
-  /// native call stack is already too deep); `Some(outcome)` means
-  /// on-stack replacement into compiled code just ran the CURRENT
-  /// frame to completion, and the caller must treat that exactly like
-  /// `Instr::Return` (`Ok`) or an unhandled exception (`Err`) firing
-  /// for this same frame -- NOT resume interpreting it.
+  /// Checked by `run_until`'s `Instr::Jmp` handler on every backward jump
+  /// (loop back-edge); `target_ip` is the loop header it lands on. `None`
+  /// means keep interpreting normally; `Some(outcome)` means OSR just ran
+  /// the current frame to completion and the caller must treat it like
+  /// `Instr::Return`/an unhandled exception firing, not resume
+  /// interpreting.
   pub(crate) fn maybe_osr(
     &mut self,
     func: &ObjFunction,
@@ -1947,70 +1566,47 @@ impl VM {
       return None;
     }
 
-    // `self.frames.last()` is `func`'s own currently-executing frame
-    // (this is only ever reached from a backward jump INSIDE `func`'s
-    // own interpreted execution) -- its closure's `function` field is
-    // exactly the `Value` `enqueue_compile` needs to pin.
+    // self.frames.last() is func's own currently-executing frame, since
+    // this is only ever reached from a backward jump inside it.
     let closure_val = self.frames.last().unwrap().closure_val;
     let proto_value = closure_val.as_closure().function;
     self.enqueue_compile(func, proto_value);
     None
   }
 
-  /// The ONE choke point every single-frame removal in this file
-  /// funnels through (`VM::pop_frame`, `invoke_compiled`'s own success
-  /// path, `Instr::Return`'s interpreter handling) -- truncates
-  /// `jit_scalar_roots` back to whatever it held right before THIS
-  /// frame was pushed (`CallFrame::scalar_roots_mark`), so a scalar-
-  /// replaced allocation a compiled function registered stops being a
-  /// GC root at exactly the moment its own native stack frame goes
-  /// away, regardless of which of those three paths got here. The
-  /// MULTI-frame removal sites (the catch-unwind truncate,
-  /// `clear_frames`) do the same truncation inline instead of calling
-  /// this, since they're removing more than one frame's worth in one
-  /// step -- see their own call sites for the identical reasoning
-  /// applied there.
+  /// The one choke point every single-frame removal funnels through.
+  /// Truncates `jit_scalar_roots` back to what it held before this frame
+  /// was pushed, so a scalar-replaced allocation stops being a GC root the
+  /// moment its native frame goes away. Multi-frame removal sites (catch
+  /// unwind, `clear_frames`) do the same truncation inline instead, since
+  /// they remove more than one frame at once.
   fn pop_frame_inner(&mut self) -> CallFrame {
     let frame = self.frames.pop().expect("pop_frame_inner: no frame to pop");
     self.jit_scalar_roots.truncate(frame.scalar_roots_mark);
     frame
   }
 
-  /// Pops the current top frame with no upvalue-closing/return-value
-  /// bookkeeping -- used only by `jit::runtime::zuri_jit_call_finish`
-  /// (and its `Invoke` counterpart), which need `VM::frames` itself
-  /// (private to this module) popped from OUTSIDE `vm.rs` after a
-  /// direct, inline-cached compiled-to-compiled call completes. Every
-  /// other frame-pop site in this file already has direct field access
-  /// and doesn't need this wrapper.
+  /// Pops the top frame with no upvalue-closing/return-value bookkeeping --
+  /// used only by `zuri_jit_call_finish` and its `Invoke` counterpart,
+  /// which need `frames` (private to this module) popped from outside
+  /// `vm.rs`.
   pub(crate) fn pop_frame(&mut self) {
     self.pop_frame_inner();
   }
 
-  /// Registers a scalar-replaced allocation's backing memory
-  /// (`count` consecutive `Value` slots at `ptr`, living in the
-  /// CURRENTLY-EXECUTING compiled function's own Cranelift stack frame)
-  /// as a GC root -- called by `jit::runtime::zuri_jit_push_scalar_root`
-  /// the moment `jit::codegen::FuncCompiler::emit_scalar_make_list`
-  /// finishes populating every slot (never before -- see that
-  /// function's own docs on why populating first matters: an
-  /// uninitialized slot isn't a valid `Value` a GC walk could safely
-  /// inspect). Retired automatically, in lockstep with the frame that
-  /// registered it, via `CallFrame::scalar_roots_mark` -- see
-  /// `jit_scalar_roots`'s own docs for the full mechanism and the
-  /// soundness argument for why this is safe where a fake `Obj` header
-  /// pointing at the same memory would NOT have been.
+  /// Registers a scalar-replaced allocation's backing memory as a GC root.
+  /// Called by `zuri_jit_push_scalar_root` only after every slot is
+  /// populated -- an uninitialized slot isn't a valid `Value` a GC walk
+  /// could safely inspect. Retired automatically via
+  /// `CallFrame::scalar_roots_mark`.
   pub(crate) fn push_scalar_root(&mut self, ptr: *mut Value, count: usize) {
     self.jit_scalar_roots.push((ptr, count));
   }
 
-  /// Is the real native call stack shallow enough to safely add one
-  /// more nested compiled call? See `MAX_JIT_CALL_DEPTH`'s own docs.
-  /// Exposed as its own cheap, side-effect-free check (rather than
-  /// folded into `tiered_entry`) specifically for
-  /// `jit::runtime::zuri_jit_call_prepare`/`zuri_jit_invoke_prepare`'s
-  /// PURE peek at whether the fast, inline-cache-style direct-call path
-  /// applies -- see those functions' own docs on why they never
+  /// Is the native call stack shallow enough for one more nested compiled
+  /// call? Exposed as its own side-effect-free check, separate from
+  /// `tiered_entry`, for `zuri_jit_call_prepare`/`zuri_jit_invoke_prepare`'s
+  /// pure peek at whether the fast direct-call path applies -- they never
   /// trigger compilation or touch `call_count` themselves.
   #[inline]
   pub(crate) fn jit_depth_ok(&self) -> bool {
@@ -2023,12 +1619,9 @@ impl VM {
   }
 
   /// Marks the frame just pushed by a `jit::runtime` prepare helper as
-  /// running compiled code.
-  ///
-  /// The prepare/`call_indirect`/finish protocol
-  /// (`codegen::FuncCompiler::emit_fast_call`) never goes through
-  /// `invoke_compiled`, so it is the one way into compiled execution
-  /// that has to say so explicitly -- see `CallFrame::compiled`.
+  /// running compiled code. The prepare/call_indirect/finish protocol never
+  /// goes through `invoke_compiled`, so it's the one path into compiled
+  /// execution that has to say so explicitly.
   #[inline]
   pub(crate) fn mark_top_frame_compiled(&mut self) {
     if let Some(frame) = self.frames.last_mut() {
@@ -2041,16 +1634,12 @@ impl VM {
     self.jit_call_depth.set(self.jit_call_depth.get() - 1);
   }
 
-  /// Sets up a new register window and pushes a `CallFrame` for
-  /// calling `closure` (whose prototype is `proto`) with `num_args`
-  /// argument slots ALREADY sitting at `new_base .. new_base+num_args`
-  /// -- the exact frame-setup both `dispatch_call`'s Closure arm,
-  /// `invoke_prebound`, and the JIT's own fast, inline-cache-style
-  /// direct-call path (`jit::runtime::zuri_jit_call_prepare`/
-  /// `zuri_jit_invoke_prepare`) all need, kept in exactly one place so
-  /// they can never drift apart. Fills any missing fixed parameters
-  /// with nil and collects any extra variadic arguments into a list,
-  /// matching this VM's established calling convention.
+  /// Sets up a new register window and pushes a `CallFrame` for calling
+  /// `closure` with `num_args` argument slots already sitting at
+  /// `new_base..new_base+num_args`. Shared by the interpreter's Closure
+  /// call, `invoke_prebound`, and the JIT's fast direct-call path so they
+  /// can't drift apart. Fills missing fixed parameters with nil and
+  /// collects extra variadic arguments into a list.
   pub(crate) fn setup_closure_call(
     &mut self,
     closure_val: Value,
@@ -2060,31 +1649,24 @@ impl VM {
     num_args: u8,
     dst_in_caller: u8,
   ) {
-    // The frame about to become a CALLER stops being the innermost one,
-    // so if it is running compiled code this is the moment its position
-    // has to be committed somewhere a later stack trace can find it --
-    // `VM::jit_ip` only ever describes the innermost compiled frame.
-    // An interpreted caller needs nothing here: `run_until` already
-    // syncs its `ip` on every instruction.
+    // The frame about to become a caller stops being the innermost one, so
+    // if it's compiled this is the moment its position must be committed
+    // somewhere a later stack trace can find it -- jit_ip only describes
+    // the innermost compiled frame. An interpreted caller needs nothing
+    // here since run_until syncs its ip on every instruction.
     if let Some(caller) = self.frames.last_mut()
       && caller.compiled
     {
       caller.ip = self.jit_ip;
     }
 
-    // Split so the overwhelmingly common shape -- a non-variadic
-    // callee, called with exactly its declared arity, into a register
-    // window that already has room -- is a straight frame push with
-    // nothing else in it.
-    //
-    // Worth splitting rather than trusting the optimizer: the variadic
-    // branch below builds a `Vec` and allocates a list, and its mere
-    // presence gave this function a 168-byte stack frame plus a
-    // four-register prologue that every ordinary call paid for and
-    // none of them used. Since it is reached from every call helper
-    // (`zuri_jit_construct_prepare`, `zuri_jit_direct_call_prepare`,
-    // `dispatch_call_inner`, ...) that prologue alone measured as
-    // ~13% of the function's own time on constructor-heavy code.
+    // Split so the common shape -- non-variadic callee, called at its
+    // declared arity, into a register window with room to spare -- is a
+    // straight frame push with nothing else. The variadic branch below
+    // builds a Vec and allocates a list; its mere presence gave this
+    // function a 168-byte stack frame and a four-register prologue every
+    // ordinary call paid for. That prologue alone measured ~13% of this
+    // function's time on constructor-heavy code before the split.
     if !proto.variadic
       && num_args == proto.arity
       && self.registers.len() >= new_base + proto.num_registers as usize
@@ -2102,9 +1684,8 @@ impl VM {
     );
   }
 
-  /// `setup_closure_call`'s fast path: arguments are already exactly
-  /// in place and the window is already big enough, so the entire call
-  /// setup is one `CallFrame` push.
+  /// `setup_closure_call`'s fast path: arguments are already in place and
+  /// the window is already big enough, so setup is one `CallFrame` push.
   #[inline]
   fn push_frame_fast(
     &mut self,
@@ -2179,16 +1760,10 @@ impl VM {
 
     if !ok_arity {
       let msg = if native.is_method {
-        // `min_arity`/`args.len()` both count the implicit receiver
-        // spliced into `args[0]` (see `builtins::method`/`method_n`/
-        // `method_opt`) -- a user calling `x.abs(1)` wrote ONE
-        // argument, not two, so both numbers need the receiver
-        // subtracted back out before they're shown. This is the SAME
-        // check `enforce_method_arg_count!` does inside a native's own
-        // body, just running earlier -- for an exact-arity (non-
-        // variadic) method, a count mismatch is caught HERE, before
-        // the native body (and any `enforce_method_arg_*!` calls in
-        // it) ever runs at all.
+        // min_arity/args.len() both count the implicit receiver spliced
+        // into args[0], so a user calling x.abs(1) wrote one argument, not
+        // two -- subtract the receiver back out before showing either
+        // number.
         let expected = native.min_arity.saturating_sub(1);
         let got = (args.len() as u8).saturating_sub(1);
         format!(
@@ -2212,19 +1787,13 @@ impl VM {
       return Err(self.raise("ArgumentError", msg));
     }
 
-    // Safety net for `gc_pins`: a native that pins values (see
-    // `pin_values`) to survive its own re-entrant `call_value`s is
-    // expected to `unpin` them again before returning, but an early
-    // return via `?` on an error path is easy to miss doing that for
-    // (a caught exception from a user callback is an entirely normal
-    // outcome here, not a rare edge case). Truncating back to
-    // whatever `gc_pins` looked like right before this call, no
-    // matter how the native returns, means a missed `unpin` costs
-    // nothing worse than holding its pins a little longer than
-    // strictly necessary -- never a permanent leak (which would ALSO
-    // be a correctness bug, not just wasted memory: `gc_pins` is a
-    // real GC root, so anything stuck in it stays uncollectable
-    // forever).
+    // Safety net for gc_pins: a native that pins values to survive its own
+    // re-entrant call_values is expected to unpin before returning, but an
+    // early return via `?` is easy to miss that for. Truncating back to the
+    // pre-call length regardless of how the native returns means a missed
+    // unpin costs nothing worse than holding pins a bit longer -- gc_pins
+    // is a real GC root, so a genuine leak there would be a correctness bug,
+    // not just wasted memory.
     let pin_mark = self.gc_pins.len();
     let mut ctx = ZuriContext {
       vm: self,
@@ -2236,32 +1805,23 @@ impl VM {
     result.map_err(|msg| self.raise("Error", msg))
   }
 
-  /// Construct a new instance of `class_val`: allocate storage sized to
-  /// its (already-merged) field layout, run every ancestor's OWN field
-  /// initializer root-to-leaf, then call the resolved constructor (if
-  /// any) with `args`.
+  /// Constructs a new instance of `class_val`: allocates storage sized to
+  /// its field layout, runs every ancestor's own field initializer
+  /// root-to-leaf, then calls the resolved constructor with `args`.
   ///
-  /// This is the one place internal VM code makes several SEQUENTIAL
-  /// re-entrant calls (`call_value`, which can itself trigger a
-  /// collection) while depending on Values that live only in local Rust
-  /// variables in between -- the class itself, its ancestors' field
-  /// initializers, the constructor, and the caller's own `args`. None of
-  /// those are reachable through any register/global/frame during that
-  /// window, so each is explicitly pinned for the duration (see
-  /// `gc_pins`) rather than trusting the normal root scan to find them.
+  /// This makes several sequential re-entrant `call_value`s (each of which
+  /// can trigger a collection) while depending on Values that live only in
+  /// local Rust variables -- none of those are reachable through any
+  /// register/global/frame, so each is explicitly pinned via `gc_pins`
+  /// rather than trusting the normal root scan.
   fn instantiate(&mut self, class_val: Value, args: &[Value]) -> RunResult<Value> {
     let constructor = class_val.as_class().constructor;
     let field_count = class_val.as_class().field_count;
 
-    // Fast path: does ANY ancestor declare an own field initializer at
-    // all? A class whose instance fields are all assigned directly in
-    // its own constructor body (no top-level `var name = default`
-    // declarations) -- an extremely common shape, e.g. any simple data
-    // class -- never needs the `field_inits` list below at all. Worth
-    // checking explicitly: building that list, even when every entry in
-    // it turns out to be `None`, means a REAL heap allocation (the
-    // `Vec` itself) on every single instantiation otherwise -- pure
-    // overhead for the common case.
+    // Fast path: does any ancestor declare a field initializer at all? A
+    // class whose fields are all assigned directly in its constructor body
+    // never needs the field_inits list, and building that list even when
+    // every entry is None is a real Vec allocation per instantiation.
     let mut has_field_init = false;
     let mut cur = Some(class_val);
     while let Some(c) = cur {
@@ -2284,21 +1844,13 @@ impl VM {
       field_inits.reverse(); // root to leaf
     }
 
-    // Every one of these gets pinned, and -- crucially -- EVERY use of
-    // one from here on re-reads it from its pinned slot instead of
-    // whatever local variable it started in. `call_value` below can
-    // trigger a collection (a field initializer or constructor body
-    // is arbitrary Zuri code, free to allocate), and unlike a register
-    // or global, a plain Rust local has no way to be found and
-    // rewritten if the object it names gets relocated -- `gc_pins`
-    // only gives it one AS LONG AS every subsequent read goes back to
-    // the pinned slot. A local variable captured before the pin (like
-    // this function's old `instance_val`/`constructor`/`args` reads
-    // used to be, straight through several back-to-back `call_value`s)
-    // stays frozen at whatever address it had at THAT moment even
-    // after the pinned copy gets moved -- exactly the bug caught by
-    // `tmp/gc_write_barrier_stress.zu` intermittently reading a
-    // relocated-and-neutralized slot back as `Obj::Range`.
+    // Every one of these gets pinned, and every use from here on re-reads
+    // it from its pinned slot rather than a local variable. call_value
+    // below can trigger a collection since a field initializer or
+    // constructor body is arbitrary Zuri code, and a plain Rust local has
+    // no way to be found and rewritten if the object it names relocates --
+    // gc_pins only protects a value as long as every read goes back
+    // through the pinned slot.
     let pin_mark = self.gc_pins.len();
     self.gc_pins.push(class_val);
     let class_idx = pin_mark;
@@ -2350,40 +1902,27 @@ impl VM {
   }
 
   /// `instantiate`'s fast, inline-cache-style twin for a `Class` callee
-  /// reached from ALREADY-COMPILED code, and the frame-setup half of
-  /// `jit::runtime::zuri_jit_new_prepare` -- see that function's docs
-  /// for the generated-code protocol it belongs to.
+  /// reached from already-compiled code, the frame-setup half of
+  /// `zuri_jit_new_prepare`.
   ///
-  /// Why this exists at all: `instantiate` is the fully general path,
-  /// and a constructor call is the ONE call shape the JIT's existing
-  /// fast paths never covered. `zuri_jit_call_prepare` bails the
-  /// instant it sees a non-`Closure` callee, so every `Point(x, y)` in
-  /// compiled code fell all the way through to `zuri_jit_call` ->
-  /// `dispatch_call_sync` -> `dispatch_call_inner` -> `instantiate` ->
-  /// `call_value` -> `run_frame` -> `tiered_entry` ->
-  /// `invoke_compiled`, re-deriving arity, dispatch kind, pins and
-  /// frame layout from scratch every time -- on allocation-heavy code
-  /// (a tree of a million nodes) that machinery, not the allocation or
-  /// the constructor body, dominates the profile.
+  /// `zuri_jit_call_prepare` bails the instant it sees a non-`Closure`
+  /// callee, so every `Point(x, y)` in compiled code used to fall all the
+  /// way through `dispatch_call_sync` -> `instantiate` -> `call_value` ->
+  /// `run_frame` -> `tiered_entry` -> `invoke_compiled`, re-deriving arity,
+  /// dispatch kind, pins and frame layout from scratch each time. On
+  /// allocation-heavy code that machinery, not the constructor body, ends
+  /// up dominating the profile.
   ///
-  /// Deliberately narrow. It handles only the shape where none of that
-  /// generality is needed and bails to the general path otherwise:
-  ///
-  /// - the callee is a real `Class` (not a module binding wrapping one),
-  /// - NO class in the ancestor chain declares its own field
-  ///   initializer, so there is no root-to-leaf initializer sequence to
-  ///   run before the constructor,
-  /// - the class HAS a constructor, it is a `Closure`, it is not
-  ///   variadic (so `setup_closure_call` cannot allocate), and it is
-  ///   already compiled.
+  /// Deliberately narrow, bails to the general path unless: the callee is
+  /// a real `Class` (not a module binding), no class in the ancestor chain
+  /// declares its own field initializer, and the class has a non-variadic
+  /// `Closure` constructor that's already compiled.
   ///
   /// Returns `(entry, constructor_closure)` for generated code to
-  /// `call_indirect`, exactly like `zuri_jit_call_prepare`, having
-  /// already placed the fresh instance and the arguments in the
-  /// constructor's own register window and pushed its frame. The
-  /// instance is left pinned (`gc_pins`) for the duration of the call;
-  /// `finish_compiled_construction` is what releases it and is the
-  /// reason the pair must always run together.
+  /// `call_indirect`, having already placed the instance and arguments in
+  /// the constructor's register window and pushed its frame. The instance
+  /// stays pinned until `finish_compiled_construction` releases it, so the
+  /// pair must always run together.
   pub(crate) fn prepare_compiled_construction(
     &mut self,
     base: usize,
@@ -2391,9 +1930,8 @@ impl VM {
     num_args: u8,
     dst: u8,
   ) -> Option<(EntryFn, Value)> {
-    // `num_args + 1` (the implicit `self`) has to stay a valid `u8`
-    // register count, and the whole point is to skip the general path
-    // only when it is safe to do so.
+    // num_args + 1 (the implicit self) has to stay a valid u8 register
+    // count.
     if !self.jit_depth_ok() || num_args == u8::MAX {
       return None;
     }
@@ -2402,10 +1940,10 @@ impl VM {
       return None;
     }
 
-    // Everything needed from the class itself comes out under ONE
-    // borrow. `as_class` is a real `RefCell` borrow/release pair, and
-    // on a constructor-heavy workload this runs millions of times --
-    // taking it twice here measured as a visible cost in its own right.
+    // Everything needed from the class comes out under one borrow.
+    // as_class is a real RefCell borrow/release pair, and on a
+    // constructor-heavy workload taking it twice measured as a visible
+    // cost.
     let (field_count, ctor, superclass) = {
       let class = class_val.as_class();
       if class.own_field_initializer.is_some() {
@@ -2434,14 +1972,12 @@ impl VM {
       cur = next;
     }
 
-    // Order below is load-bearing, for the same reason `instantiate`'s
-    // pinning is: this is the only collection point in the whole
-    // function, so everything that could be relocated by it is either
-    // re-read afterwards or (for `ctor`) made immovable by it.
+    // Order below is load-bearing: this is the only collection point in
+    // the function, so everything it could relocate is either re-read
+    // afterwards or (for ctor) made immovable by it.
     let ctor = self.ensure_stable_for_compiled_entry(ctor);
-    // Re-read through the register -- a real GC root the collection
-    // above would have updated -- rather than reusing the local, which
-    // it could not.
+    // Re-read through the register, a real GC root the collection above
+    // would have updated, rather than reusing the local.
     let class_val = self.get_reg(base, func_reg);
 
     let closure = ctor.as_closure();
@@ -2451,20 +1987,17 @@ impl VM {
     }
     let entry = proto.jit.entry.get()?;
 
-    // From here on nothing can collect: `Heap::alloc` only ever bump-
-    // allocates (collections are driven from `run_until`'s own
-    // safepoint checks, never from inside an allocation), and the
-    // non-variadic check above is exactly what rules out
-    // `setup_closure_call`'s one allocating branch.
+    // From here on nothing can collect: Heap::alloc only bump-allocates,
+    // collections are driven from run_until's safepoint checks, and the
+    // non-variadic check above rules out setup_closure_call's one
+    // allocating branch.
     let instance = self.heap.alloc_instance(class_val, field_count);
 
-    // The constructor's window is laid out `[self, arg0, ..]`, but an
-    // `Instr::Call` on a class left `[class, arg0, ..]` -- so the
-    // arguments shift up one slot to make room for the receiver, high
-    // to low so a slot is never read after being overwritten. The
-    // window has to be grown BEFORE the shift, since the topmost
-    // argument's new home is one past where the call site itself ever
-    // wrote.
+    // The constructor's window is [self, arg0, ..], but Instr::Call on a
+    // class left [class, arg0, ..] -- shift arguments up one slot, high to
+    // low so a slot is never read after being overwritten. Window must
+    // grow before the shift since the topmost argument's new home is past
+    // where the call site itself wrote.
     let new_base = base + func_reg as usize + 1;
     let needed = new_base + proto.num_registers as usize;
     if self.registers.len() < needed {
@@ -2478,27 +2011,21 @@ impl VM {
 
     self.setup_closure_call(ctor, closure, proto, new_base, num_args + 1, dst);
     self.jit_depth_enter();
-    // Pinned rather than remembered in a local (or read back out of the
-    // frame afterwards): the constructor body is arbitrary Zuri code
-    // that may collect any number of times, and this is the value the
-    // call site's own `dst` ultimately receives -- `gc_pins` is the one
-    // place a moving collector will keep it correct while nothing else
-    // references it.
+    // Pinned rather than kept in a local: the constructor body is
+    // arbitrary Zuri code that may collect, and this is the value the call
+    // site's dst ultimately receives -- gc_pins is what keeps it correct
+    // while nothing else references it.
     self.gc_pins.push(instance);
     Some((entry, ctor))
   }
 
-  /// `prepare_compiled_construction` with every resolution step
-  /// already discharged at compile time -- the frame-setup half of
-  /// `jit::runtime::zuri_jit_construct_prepare`.
+  /// `prepare_compiled_construction` with every resolution step already
+  /// discharged at compile time.
   ///
-  /// Callers must hold `VM::resolve_construct_target`'s proof AND have
-  /// had generated code check its guard (class identity +
-  /// `method_table_generation`) immediately beforehand; that is what
-  /// licenses trusting `ctor`/`proto`/`field_count` here rather than
-  /// re-deriving any of them from the class. What remains is genuinely
-  /// per-call: the instance allocation, the argument shift, the frame
-  /// push.
+  /// Callers must hold `resolve_construct_target`'s proof and have had
+  /// generated code check its guard immediately beforehand -- that's what
+  /// licenses trusting `ctor`/`proto`/`field_count` here instead of
+  /// re-deriving them from the class.
   pub(crate) fn prepare_known_construction(
     &mut self,
     base: usize,
@@ -2512,28 +2039,24 @@ impl VM {
     let class_val = self.get_reg(base, func_reg);
     let instance = self.heap.alloc_instance(class_val, field_count);
 
-    // The callee's window starts at the CALLEE REGISTER ITSELF, one
-    // lower than an ordinary call's `func_reg + 1`. That single offset
-    // is what makes the argument shift unnecessary.
+    // The callee's window starts at the callee register itself, one lower
+    // than an ordinary call's func_reg + 1 -- that single offset is what
+    // makes the argument shift unnecessary.
     //
-    // A constructor's window has to read `[self, arg0, arg1, ..]`,
-    // while `Instr::Call` on a class leaves `[class, arg0, arg1, ..]`.
-    // Starting the frame one register earlier lines those up exactly:
-    // the fresh instance overwrites the class in its own slot and
-    // becomes register 0 ("self"), and every argument is ALREADY where
-    // the callee expects it. The alternative -- keeping the standard
-    // base and sliding every argument up one slot -- costs a
-    // load/store per argument on every single instance built, and
-    // measured as ~9% of this helper's own time.
+    // A constructor's window needs [self, arg0, arg1, ..], while
+    // Instr::Call on a class leaves [class, arg0, arg1, ..]. Starting the
+    // frame one register earlier lines those up: the fresh instance
+    // overwrites the class and becomes register 0 ("self"), and every
+    // argument is already where the callee expects it. Sliding arguments
+    // up instead costs a load/store per argument per instance built --
+    // measured at ~9% of this helper's time.
     //
-    // Safe because `func_reg` is dead to the caller once the call is
-    // issued: it exists only to hold the callee. Even when the call
-    // site reuses it as `dst` (`Call { dst: r1, func: r1, .. }`, which
-    // the bytecode compiler emits routinely), nothing is lost --
-    // `zuri_jit_new_finish` writes `dst` only AFTER popping the
-    // callee's frame, so the write lands once the window is gone. And
-    // while the constructor runs, that slot holds the instance as the
-    // callee's own `self`, which is exactly the GC root it needs to be.
+    // Safe because func_reg is dead to the caller once the call is issued
+    // -- it exists only to hold the callee. Even when the call site reuses
+    // it as dst, nothing is lost: zuri_jit_new_finish writes dst only
+    // after popping the callee's frame. While the constructor runs, that
+    // slot holds the instance as the callee's own self, exactly the GC
+    // root it needs to be.
     let new_base = base + func_reg as usize;
     let needed = new_base + proto.num_registers as usize;
     if self.registers.len() < needed {
@@ -2549,15 +2072,12 @@ impl VM {
   }
 
   /// Completes `prepare_compiled_construction`'s bracket: releases the
-  /// instance pin it took and hands back the (possibly relocated)
-  /// instance, which is the constructor call's real result -- a
-  /// constructor's own return value is discarded, exactly as
-  /// `instantiate` discards it.
+  /// instance pin and hands back the (possibly relocated) instance, which
+  /// is the constructor call's real result -- its own return value is
+  /// discarded, same as `instantiate`.
   ///
-  /// Pairs strictly LIFO with `prepare_compiled_construction`, so the
-  /// pin to release is always the most recent one: a nested
-  /// construction inside a constructor body pushes and pops its own
-  /// entirely within this one's lifetime.
+  /// Pairs strictly LIFO: a nested construction inside a constructor body
+  /// pushes and pops its own pin entirely within this one's lifetime.
   pub(crate) fn take_constructed_instance(&mut self) -> Value {
     self
       .gc_pins
@@ -2565,14 +2085,13 @@ impl VM {
       .expect("a matching prepare_compiled_construction always pinned one")
   }
 
-  /// Shared "call whatever's in register `func_reg`" logic -- the exact
-  /// dispatch `Instr::Call` performs, factored out so Invoke/InvokeSuper's
-  /// field-fallback (a field that happens to hold a callable, e.g. `var
-  /// _print = @(g) { ... }`) can reach it too, rather than duplicating
-  /// native/class/bound-method/closure dispatch a second time. `func_reg`
-  /// and `dst` are relative to `base`; arguments must already sit at
-  /// `func_reg+1 ..= func_reg+num_args` -- ordinary data-call convention,
-  /// arity does NOT include any implicit receiver.
+  /// Shared "call whatever's in register `func_reg`" logic -- the dispatch
+  /// `Instr::Call` performs, factored out so Invoke/InvokeSuper's
+  /// field-fallback (a field holding a callable) can reach it too instead
+  /// of duplicating native/class/bound-method/closure dispatch. `func_reg`
+  /// and `dst` are relative to `base`; arguments sit at
+  /// `func_reg+1..=func_reg+num_args`, arity excludes any implicit
+  /// receiver.
   pub(crate) fn dispatch_call(
     &mut self,
     base: usize,
@@ -2583,15 +2102,12 @@ impl VM {
     self.dispatch_call_inner(base, func_reg, num_args, dst, false)
   }
 
-  /// Same dispatch as `dispatch_call`, but for a call site that has NO
-  /// flat interpreter loop waiting to pick up a merely-pushed frame --
-  /// i.e. a call issued from within already-COMPILED code (see
-  /// `jit::runtime::zuri_jit_call`). A `Closure` callee therefore
-  /// always runs to full completion synchronously here (through
-  /// `run_frame`, exactly like `call_value` already does for a native
-  /// calling back into Zuri) rather than being left on `self.frames`
-  /// for a caller's own dispatch loop to continue -- there is no such
-  /// loop to hand it to.
+  /// Same dispatch as `dispatch_call`, but for a call site with no flat
+  /// interpreter loop waiting to pick up a merely-pushed frame -- a call
+  /// issued from already-compiled code. A `Closure` callee runs to
+  /// completion synchronously here via `run_frame`, like `call_value` does
+  /// for a native calling back into Zuri, rather than being left on
+  /// `frames` for a loop that doesn't exist.
   pub(crate) fn dispatch_call_sync(
     &mut self,
     base: usize,
@@ -2653,22 +2169,18 @@ impl VM {
         let new_base = base + func_reg as usize + 1;
         self.setup_closure_call(callee, callee_closure, callee_fn, new_base, num_args, dst);
         if sync {
-          // No flat interpreter loop is waiting for this frame -- run
-          // it to completion right now, interpreted or compiled
-          // (`run_frame` decides), exactly like `call_value` already
-          // does for a native calling back into Zuri.
+          // No flat interpreter loop is waiting for this frame -- run it
+          // to completion right now, same as call_value does for a
+          // native calling back into Zuri.
           let stop_depth = self.frames.len() - 1;
           let ret = self.run_frame(stop_depth, callee_fn, callee)?;
           self.set_reg(base, dst, ret);
         } else {
-          // Mixed-mode dispatch: if `callee_fn` is already warm/
-          // compiled (or this exact call is the one that tips it over
-          // its own warm-up threshold), run it as compiled machine
-          // code RIGHT NOW instead of leaving the frame for the
-          // interpreter loop to pick up next iteration. If it's still
-          // cold, this falls straight through to `Ok(())` and the
-          // existing push-and-continue behavior is completely
-          // unchanged.
+          // Mixed-mode dispatch: if callee_fn is warm/compiled (or this
+          // call tips it over the warm-up threshold), run it as compiled
+          // code right now instead of leaving the frame for the
+          // interpreter loop's next iteration. Still cold falls straight
+          // through to Ok(()) and ordinary push-and-continue.
           callee_fn
             .jit
             .call_count
@@ -2684,11 +2196,9 @@ impl VM {
       Obj::ModuleBinding(b) => {
         match b.promoted {
           Some(f) => {
-            // Overwrite the callee's own register with the promoted
-            // function and recurse -- dispatch_call re-reads `func_reg`
-            // fresh at the top, so this reuses every existing dispatch
-            // path (closure/native/etc.) for free instead of duplicating
-            // it here.
+            // Overwrite the callee's register with the promoted function
+            // and recurse -- dispatch_call re-reads func_reg fresh at the
+            // top, reusing every existing dispatch path for free.
             self.set_reg(base, func_reg, f);
             self.dispatch_call_inner(base, func_reg, num_args, dst, sync)
           },
@@ -2705,14 +2215,12 @@ impl VM {
     }
   }
 
-  /// Call a CLOSURE whose implicit receiver has ALREADY been placed by
-  /// the compiler at `recv_reg + 1` -- the convention behind a genuine
-  /// method call (`is_method` reserved that slot at compile time; see
-  /// `ObjFunction::is_method`'s doc comment). Unlike `dispatch_call`,
-  /// `callee` itself is never written into any register here -- it's
-  /// consulted only for its function pointers, since the receiver
-  /// occupying what would otherwise be the callee's register is exactly
-  /// the point of the fused Invoke/InvokeSuper instructions.
+  /// Calls a closure whose implicit receiver was already placed by the
+  /// compiler at `recv_reg + 1`, the convention behind a genuine method
+  /// call. Unlike `dispatch_call`, `callee` itself is never written to a
+  /// register here -- it's consulted only for its function pointers, since
+  /// the receiver occupying what would otherwise be the callee's register
+  /// is the whole point of the fused Invoke/InvokeSuper instructions.
   pub(crate) fn invoke_prebound(
     &mut self,
     base: usize,
@@ -2725,9 +2233,8 @@ impl VM {
   }
 
   /// `invoke_prebound`'s counterpart for a call site with no flat
-  /// interpreter loop waiting -- see `dispatch_call_sync`'s doc
-  /// comment, the exact same reasoning applies here for
-  /// `Invoke`/`InvokeSuper`/`CallSuperCtor`'s own compiled call sites.
+  /// interpreter loop waiting -- same reasoning as `dispatch_call_sync`,
+  /// for Invoke/InvokeSuper/CallSuperCtor's compiled call sites.
   pub(crate) fn invoke_prebound_sync(
     &mut self,
     base: usize,
@@ -2756,10 +2263,9 @@ impl VM {
     let callee_closure = callee.as_closure();
     let callee_fn = callee_closure.function.as_func();
     let new_base = base + recv_reg as usize + 1;
-    // `1 + num_args`: the receiver the compiler already duplicated
-    // into `recv_reg + 1` occupies the callee's own register 0 ("self"),
-    // ahead of the `num_args` user arguments -- see `Instr::Invoke`'s
-    // own doc comment in chunk.rs.
+    // 1 + num_args: the receiver already duplicated into recv_reg + 1
+    // occupies the callee's register 0 ("self"), ahead of the user
+    // arguments.
     self.setup_closure_call(
       callee,
       callee_closure,
@@ -2818,15 +2324,12 @@ impl VM {
     }
   }
 
-  /// The shared `Value` for a single ASCII character, building the
-  /// whole table on first use. Non-ASCII characters get an ordinary
-  /// fresh allocation -- there are too many to intern and they are not
-  /// the hot case.
+  /// The shared `Value` for a single ASCII character, building the whole
+  /// table on first use. Non-ASCII characters get an ordinary fresh
+  /// allocation -- too many to intern, and not the hot case.
   ///
-  /// Allocated `alloc_old` so these never move and never need
-  /// relocating; they are still marked as roots by the major collector
-  /// (see `collect_garbage`), which is what keeps them from being
-  /// swept.
+  /// Allocated `alloc_old` so these never move; still marked as roots by
+  /// the major collector, which keeps them from being swept.
   fn interned_char(&mut self, c: char) -> Value {
     if !c.is_ascii() {
       return self.heap.alloc_string(c.to_string());
@@ -2843,27 +2346,18 @@ impl VM {
     self.interned_ascii[c as usize]
   }
 
-  /// `s[i]` for a string receiver, resolving `i` (which may be
-  /// negative, counting from the end) to the character it names.
+  /// `s[i]` for a string receiver, resolving `i` (possibly negative,
+  /// counting from the end) to the character it names.
   ///
-  /// Split out from `index_get` for its ASCII fast path, which matters
-  /// more than it looks. The straightforward implementation walks the
-  /// string TWICE per index -- once for `chars().count()` to bounds-
-  /// check, once for `chars().nth(i)` -- so indexing a string in a loop
-  /// is quadratic in its length. `benchmarks/fasta.zu` does exactly
-  /// that (`seq[i % len]` over a 287-character constant, millions of
-  /// times), which is what makes this worth a special case at all.
+  /// Has an ASCII fast path: the naive implementation walks the string
+  /// twice per index (once to bounds-check via `chars().count()`, once for
+  /// `chars().nth(i)`), making indexing in a loop quadratic. If every byte
+  /// up to and including byte `i` is ASCII, character `i` is byte `i` and
+  /// no counting is needed; checking that prefix is a word-at-a-time scan
+  /// instead of a per-character UTF-8 decode.
   ///
-  /// The fast path rests on one fact: if every byte up to and including
-  /// byte `i` is ASCII, then character `i` IS byte `i`, and no counting
-  /// is needed. Checking that prefix is a word-at-a-time scan
-  /// (`<[u8]>::is_ascii`) rather than a UTF-8 decode per character, so
-  /// even when it does walk, it walks roughly an order of magnitude
-  /// faster -- and it replaces both walks, not just one.
-  ///
-  /// Anything the fast path cannot answer -- a non-ASCII byte in range,
-  /// a negative index, an out-of-range index -- falls through to the
-  /// exact original behaviour, error messages included.
+  /// Anything the fast path can't answer -- non-ASCII in range, negative or
+  /// out-of-range index -- falls through to the original behavior.
   fn string_char_at(&mut self, receiver: Value, index: Value) -> RunResult<char> {
     let raw = self.value_as_index(index)?;
     if raw >= 0 {
@@ -2953,13 +2447,10 @@ impl VM {
   }
 
   fn run_until(&mut self, stop_depth: usize) -> RunResult<Value> {
-    // Early-exit out of the labeled 'step block below with an Err,
-    // exactly like `?` would from inside an ordinary function. A bare
-    // `?` here would target run_until's OWN return type directly and
-    // skip the catch_stack check entirely -- every fallible call in
-    // this loop goes through this instead. Label is passed explicitly
-    // (rather than hardcoded as 'step inside the macro body) to avoid
-    // any ambiguity from macro hygiene around labels.
+    // Early-exit out of the labeled 'step block with an Err, like `?`
+    // would from inside an ordinary function. A bare `?` here would target
+    // run_until's own return type directly and skip the catch_stack check
+    // entirely.
     macro_rules! tri {
       ($e:expr, $label:lifetime) => {
         match $e {
@@ -2969,14 +2460,10 @@ impl VM {
       };
     }
 
-    // Cached "which frame/function/closure am I currently executing"
-    // state. Previously this was re-derived from self.frames on EVERY
-    // instruction (two bounds-checked Vec accesses: one read to
-    // destructure it, one write to bump ip) even though the vast
-    // majority of instructions never change which frame is active.
-    // Now it's refreshed only at the specific points that actually
-    // change it: Call/Invoke/InvokeSuper/CallSuperCtor push a frame,
-    // Return pops one, a caught exception truncates several.
+    // Cached "which frame/function/closure am I executing" state, refreshed
+    // only where it actually changes (Call/Invoke/InvokeSuper/CallSuperCtor
+    // push a frame, Return pops one, a caught exception truncates several)
+    // rather than re-derived from self.frames on every instruction.
     let mut frame_idx = self.frames.len() - 1;
     let mut base = self.frames[frame_idx].base;
     let mut func_ptr = self.frames[frame_idx].function;
@@ -2989,23 +2476,14 @@ impl VM {
         closure_ptr = self.frames[frame_idx].closure;
       } else if self.heap.needs_minor_gc() {
         self.collect_minor();
-        // `func_ptr` never needs this: `ObjFunction` always allocates
-        // directly into old-generation storage (see
-        // `Heap::alloc_function`'s own docs) specifically so it, like
-        // this cached pointer to it, never moves. `closure_ptr` has no
-        // such guarantee -- an `ObjClosure` is an ordinary young
-        // allocation, and unlike `func_ptr`/`base` (a plain index,
-        // unaffected by anything a collection relocates),
-        // `run_until`'s own local cache of it is exactly the same
-        // hazard `VM::ensure_stable_for_compiled_entry` exists to
-        // prevent for JIT-compiled code's `closure_param`: a raw
-        // pointer held OUTSIDE any GC-scannable location for longer
-        // than one instruction. Unlike compiled code, though, the
-        // interpreter re-derives this on EVERY safepoint instead of
-        // needing the object pinned non-young for a whole invocation
-        // -- cheap, and `collect_minor` has already relocated it (via
-        // the per-frame loop that keeps `self.frames[..].closure` in
-        // sync) by the time this reads it back out.
+        // func_ptr never needs this: ObjFunction always allocates old-
+        // generation, so it never moves. closure_ptr has no such guarantee
+        // -- ObjClosure is an ordinary young allocation, the same hazard
+        // ensure_stable_for_compiled_entry exists to prevent for compiled
+        // code's closure_param. The interpreter just re-derives it on
+        // every safepoint instead of needing it pinned for a whole
+        // invocation -- cheap, and collect_minor already relocated it via
+        // the per-frame loop that keeps self.frames[..].closure in sync.
         closure_ptr = self.frames[frame_idx].closure;
       }
 
@@ -3022,19 +2500,16 @@ impl VM {
       self.record_opcode(crate::vm::chunk::instr_name(&instr));
 
       ip += 1;
-      // Synced back every instruction (not just at frame-change points)
-      // because ANY instruction can end up calling self.raise(), which
-      // reads every active frame's ip to build a stack trace.
+      // Synced every instruction, not just at frame-change points, because
+      // any instruction can call self.raise(), which reads every active
+      // frame's ip to build a stack trace.
       self.frames[frame_idx].ip = ip;
 
-      // No more IIFE closure wrapping the whole match -- that closure
-      // was too large for LLVM to ever inline across, so every
-      // instruction paid a real function-call boundary on top of the
-      // dispatch itself. This labeled block gives the same
-      // "capture-and-inspect the Result before deciding to propagate"
-      // behavior the closure gave, with none of the call overhead,
-      // and direct mutable access to the frame-state locals above (no
-      // capture needed since it's not a closure).
+      // A labeled block instead of an IIFE closure wrapping the match: the
+      // closure was too large for LLVM to inline across, so every
+      // instruction paid a real call boundary on top of dispatch. This
+      // gives the same "inspect the Result before propagating" behavior
+      // with direct access to the frame-state locals, no capture needed.
       let step: RunResult<()> = 'step: {
         match instr {
           Instr::LoadConst { dst, const_idx } => {
@@ -3182,10 +2657,9 @@ impl VM {
           Instr::MulImm { dst, a, imm_const } => {
             let va = self.get_reg(base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
-            // Mirrors binary_mult's string/lista-repeat cases -- only
-            // "string/list * number" needs the repeat behavior (not
-            // "number * string"), and a literal here can only ever
-            // supply the right-hand number, so this covers it fully.
+            // Mirrors binary_mult's string/list-repeat cases -- only
+            // "string/list * number" needs repeat behavior, and a literal
+            // here can only ever be the right-hand number.
             if va.is_string() {
               let count = imm as usize;
               let s = if count < usize::MAX {
@@ -3273,27 +2747,18 @@ impl VM {
 
           Instr::Jmp { offset } => {
             let target = (ip as isize + offset as isize) as usize;
-            // A backward jump is a loop back-edge -- exactly where a
-            // baseline JIT is expected to offer on-stack replacement
-            // (see `crate::jit`'s module docs). `maybe_osr` returns
-            // `None` the overwhelming majority of the time (loop not
-            // hot yet, function ineligible, or JIT disabled), in which
-            // case this behaves exactly like the plain jump it always
-            // was.
+            // A backward jump is a loop back-edge, where a baseline JIT
+            // offers on-stack replacement. maybe_osr returns None the vast
+            // majority of the time, in which case this is a plain jump.
             if offset < 0 {
-              // Captured BEFORE `maybe_osr` runs -- on an `Ok` outcome
-              // it has ALREADY closed this frame's upvalues and popped
-              // it (see `VM::invoke_compiled`), so `self.frames[frame_idx]`
-              // itself is no longer valid to read afterward.
+              // Captured before maybe_osr runs -- on Ok it has already
+              // closed this frame's upvalues and popped it, so
+              // self.frames[frame_idx] is no longer valid to read after.
               let dst_in_caller = self.frames[frame_idx].dst_in_caller;
               if let Some(outcome) = self.maybe_osr(func, target) {
                 match outcome {
-                  // Mirrors Instr::Return's own handler exactly --
-                  // on-stack replacement just ran the CURRENT frame to
-                  // completion, so from here on this is a return, not
-                  // a jump. `invoke_compiled` already closed upvalues
-                  // and popped the frame; this just refreshes the
-                  // dispatch loop's own cached state to the caller's.
+                  // Mirrors Instr::Return: OSR ran the current frame to
+                  // completion, so from here this is a return, not a jump.
                   Ok(ret) => {
                     if self.frames.len() == stop_depth {
                       return Ok(ret);
@@ -3307,12 +2772,10 @@ impl VM {
                     self.set_reg(base, dst_in_caller, ret);
                     continue 'dispatch;
                   },
-                  // Feed into the SAME exception machinery any other
-                  // failing instruction uses -- compiled code never
-                  // pops its own frame on error (see
-                  // `VM::invoke_compiled`), so `catch_stack`/
-                  // `handle_exception` see this exactly as if an
-                  // ordinary interpreted instruction had failed.
+                  // Same exception machinery any other failing instruction
+                  // uses -- compiled code never pops its own frame on
+                  // error, so catch_stack sees this like an ordinary
+                  // interpreted instruction failing.
                   Err(exc) => break 'step Err(exc),
                 }
               }
@@ -3336,10 +2799,9 @@ impl VM {
             num_args,
           } => {
             tri!(self.dispatch_call(base, func_reg, num_args, dst), 'step);
-            // dispatch_call may or may not have pushed a new frame
-            // (Closure does, Native/Class/BoundMethod resolve
-            // synchronously and don't) -- always refresh, cheap, and
-            // only paid on an actual call instruction.
+            // dispatch_call may or may not have pushed a new frame (Closure
+            // does, Native/Class/BoundMethod resolve synchronously and
+            // don't) -- always refresh, cheap and only paid on a call.
             frame_idx = self.frames.len() - 1;
             let f = &self.frames[frame_idx];
             base = f.base;
@@ -3514,12 +2976,9 @@ impl VM {
             self.close_upvalues_from(base + from as usize);
           },
           Instr::MakeList { dst, start, count } => {
-            // Collect straight into `ListStorage`, not a `Vec` -- for
-            // `count` within the inline capacity (the common case:
-            // small literal arrays), this is the whole point of
-            // switching `Obj::List`'s storage to `SmallVec` at all.
-            // Collecting into a `Vec` first and converting after would
-            // still pay for a heap allocation on every list literal.
+            // Collect straight into ListStorage, not a Vec -- for count
+            // within the inline capacity (small literal arrays, the common
+            // case) this avoids a heap allocation per list literal.
             let items: ListStorage = (0..count).map(|i| self.get_reg(base, start + i)).collect();
             let list_val = self.heap.alloc_list(items);
             self.set_reg(base, dst, list_val);
@@ -3717,10 +3176,8 @@ impl VM {
                 },
               }
             } else if receiver.is_dict() {
-              // `dict.key` is sugar for `dict['key']` -- same lookup,
-              // same "missing key" error as Instr::GetIndex's own dict
-              // arm (see `VM::index_get`), just reached through field
-              // syntax instead of a bracketed index.
+              // dict.key is sugar for dict['key'] -- same lookup and
+              // missing-key error as GetIndex's dict arm.
               match receiver.dict_get(&name_val) {
                 Some(v) => v,
                 None => {
@@ -3780,9 +3237,8 @@ impl VM {
               let msg = "cannot assign to a module member from outside the module".to_string();
               break 'step Err(self.raise("AccessError", msg));
             } else if receiver.is_dict() {
-              // `dict.key = value` is sugar for `dict['key'] = value` --
-              // insert-or-update, same as Instr::SetIndex's own dict arm
-              // (see `VM::index_set`), never an error for a missing key.
+              // dict.key = value is sugar for dict['key'] = value --
+              // insert-or-update, never an error for a missing key.
               receiver.dict_set(name_val, value);
             } else {
               let msg = format!(
@@ -3922,9 +3378,9 @@ impl VM {
             }
 
             // invoke_prebound/dispatch_call above may have pushed a new
-            // frame; the native/field-fallback paths never do. Always
-            // refresh -- only paid on Invoke itself, never on the
-            // arithmetic/move instructions that dominate a hot loop.
+            // frame; native/field-fallback paths never do. Always refresh
+            // -- only paid on Invoke itself, not the arithmetic/move
+            // instructions dominating a hot loop.
             frame_idx = self.frames.len() - 1;
             let f = &self.frames[frame_idx];
             base = f.base;
@@ -4189,10 +3645,9 @@ impl VM {
     }
   }
 
-  /// Find-or-create an OPEN upvalue for the given absolute register
-  /// index. Reusing an existing one (rather than always allocating a new
-  /// one) is what makes two closures created from the same enclosing
-  /// scope, over the same local, actually share state.
+  /// Find-or-create an open upvalue for the given absolute register index.
+  /// Reusing an existing one is what makes two closures over the same
+  /// local actually share state.
   #[inline]
   pub(crate) fn capture_upvalue(&mut self, abs_index: usize) -> Value {
     if let Some((_, v)) = self.open_upvalues.iter().find(|(idx, _)| *idx == abs_index) {
@@ -4208,12 +3663,9 @@ impl VM {
   /// storage. Called on block exit and on Return.
   #[inline]
   pub(crate) fn close_upvalues_from(&mut self, from_abs_index: usize) {
-    // Split so this check -- and nothing else -- inlines into the
-    // callers that run on every single return
-    // (`jit::runtime::zuri_jit_call_finish`, `Instr::Return`). A
-    // program that never captures a local in a closure keeps this list
-    // empty for its entire run, and even one that does keeps it empty
-    // outside the handful of frames actually involved.
+    // Split so just this check inlines into the callers that run on every
+    // return. A program that never captures a local in a closure keeps
+    // this list empty for its entire run.
     if self.open_upvalues.is_empty() {
       return;
     }
@@ -4258,12 +3710,9 @@ impl VM {
     }
   }
 
-  /// Like `get_reg`/`set_reg`, but for an ABSOLUTE register index
-  /// rather than one relative to some frame's `base` -- needed only for
-  /// open-upvalue access (`UpvalueState::Open` already stores an
-  /// absolute index; see `object::UpvalueState`), where the index can
-  /// belong to a DIFFERENT, outer frame than the one currently reading/
-  /// writing through the upvalue.
+  /// Like `get_reg`/`set_reg` but for an absolute register index rather
+  /// than one relative to a frame's `base` -- needed for open-upvalue
+  /// access, where the index can belong to a different, outer frame.
   #[inline(always)]
   pub(crate) fn get_reg_abs(&self, abs: usize) -> Value {
     debug_assert!(abs < self.registers.len());
@@ -4381,28 +3830,17 @@ impl VM {
       return Ok(result);
     }
 
-    // NOTE: `||` here (not `&&`) matches this project's existing Add
-    // behavior exactly, including its pre-existing edge case --
-    // `.as_list()`/`.as_bytes()` below will panic if only ONE side is
-    // actually a list/bytes (e.g. `[1,2] + 5`). That's a latent bug in
-    // the ORIGINAL Add path, not introduced here -- preserved as-is
-    // deliberately, so a literal RHS behaves identically to a variable
-    // RHS holding the same value instead of silently diverging based
-    // on whether fusion happened to apply. Worth fixing separately,
-    // not folded into this change.
+    // `||` here, not `&&`: matches Add's existing behavior including its
+    // edge case where `.as_list()`/`.as_bytes()` panics if only one side
+    // is actually a list/bytes (e.g. `[1,2] + 5`). Deliberately preserved
+    // so a literal RHS behaves identically to a variable RHS holding the
+    // same value.
     if va.is_string() && vb.is_string() {
-      // Both sides already strings -- by far the common shape, and the
-      // one `format!` serves worst. `Display` for a string `Value` is
-      // its raw contents (see `value.rs`), so this produces a
-      // byte-identical result while skipping `core::fmt`'s dynamic
-      // dispatch, its per-argument `Display::fmt` calls, and the
-      // repeated reallocation a `String`'s default growth does. Exact
-      // capacity up front means one allocation and two `memcpy`s.
-      //
-      // Worth special-casing rather than trusting `format!`: building a
-      // line one character at a time (`b += seq[j]`, which
-      // `benchmarks/fasta.zu` does millions of times) spends more time
-      // inside the formatting machinery than in the copy itself.
+      // Both sides already strings, the common shape format! serves worst.
+      // Display for a string Value is its raw contents, so this produces a
+      // byte-identical result while skipping core::fmt's dynamic dispatch
+      // and String's default growth reallocation -- one allocation, two
+      // memcpys.
       let (a, b) = (va.as_str(), vb.as_str());
       let mut s = String::with_capacity(a.len() + b.len());
       s.push_str(a);
@@ -4600,25 +4038,19 @@ impl VM {
   // Garbage collection
   //-----------------------------------------------------------------------------------
 
-  /// Full mark-and-sweep collection. Roots are: every register within
-  /// reach of a currently active frame, every global, the closure each
-  /// active call frame is executing, and any upvalue still open. From
-  /// there, every `Value` those objects transitively hold is walked
-  /// with an explicit work-list (not recursion, so a long chain can't
-  /// blow the stack) before anything unreached gets swept.
+  /// Full mark-and-sweep collection. Roots are every register within reach
+  /// of an active frame, every global, each frame's executing closure, and
+  /// any open upvalue. From there every transitively held `Value` is
+  /// walked with an explicit work-list, not recursion, so a long chain
+  /// can't blow the stack.
   ///
-  /// Called automatically from `run_until` once the heap has grown past
-  /// its threshold; also exposed to native code (see the `gc` native)
-  /// for forcing a collection on demand. See `collect_minor` for the
-  /// cheaper, far-more-frequent counterpart this collector normally
-  /// relies on instead.
+  /// Called automatically once the heap crosses its threshold; also
+  /// exposed to native code via the `gc` native. See `collect_minor` for
+  /// the cheaper, far more frequent counterpart this normally relies on.
   pub(crate) fn collect_garbage(&mut self) {
-    // A major collection's own mark-sweep below only ever visits
-    // `Heap::chunks` -- flushing the nursery FIRST (promoting
-    // everything in it that's still reachable, discarding the rest)
-    // means every live object is uniformly chunk-resident by the
-    // time that pass runs, so it needs no nursery-awareness of its
-    // own at all. See `VM::collect_minor`'s own docs.
+    // Flush the nursery first so every live object is uniformly
+    // chunk-resident by the time the mark-sweep pass below runs -- it
+    // needs no nursery-awareness of its own.
     self.collect_minor();
 
     let before_bytes = self.heap.bytes_allocated();
@@ -4626,11 +4058,10 @@ impl VM {
 
     let mut worklist: Vec<*const Obj> = Vec::new();
 
-    // Only the register range actually within reach of a currently
-    // active frame can hold live data -- registers past the innermost
-    // active frame's window are left over from calls that have already
-    // returned (the register stack is never shrunk, purely as a perf
-    // tradeoff), so scanning them would just pin down garbage forever.
+    // Only the register range within reach of the active frame can hold
+    // live data -- registers past its window are leftovers from returned
+    // calls (the register stack is never shrunk), so scanning them would
+    // just pin down garbage forever.
     let regs_top = self
       .frames
       .last()
@@ -4653,15 +4084,13 @@ impl VM {
     for v in &self.gc_pins {
       Self::mark_root(*v, &mut worklist);
     }
-    // Each `jit_scalar_roots` entry is `count` ordinary `Value` slots
-    // (no `Obj`/`GcBox` layer -- see that field's own docs), so this is
-    // exactly the SAME treatment as the `gc_pins` loop just above, just
-    // reading through a raw pointer/count pair instead of a `Vec`.
+    // Each jit_scalar_roots entry is count ordinary Value slots with no
+    // Obj/GcBox layer, so this is the same treatment as gc_pins just
+    // above, reading through a raw pointer/count pair instead of a Vec.
     for &(ptr, count) in &self.jit_scalar_roots {
-      // SAFETY: every entry is live for as long as its owning
-      // `CallFrame` is still on `self.frames` (see `CallFrame::
-      // scalar_roots_mark`'s own docs) -- every frame on `self.frames`
-      // right now is, by definition, still executing.
+      // SAFETY: every entry is live for as long as its owning CallFrame is
+      // still on self.frames, and every frame on self.frames right now is
+      // by definition still executing.
       let slice = unsafe { std::slice::from_raw_parts(ptr, count) };
       for &v in slice {
         Self::mark_root(v, &mut worklist);
@@ -4679,10 +4108,9 @@ impl VM {
     for v in &self.interned_ascii {
       Self::mark_root(*v, &mut worklist);
     }
-    // The compile-time string constant pool -- see
-    // `Heap::alloc_string_old`. Collected here rather than borrowed
-    // through the iterator, since marking needs `&mut worklist` while
-    // the heap is also borrowed.
+    // The compile-time string constant pool. Collected into a Vec rather
+    // than borrowed through the iterator, since marking needs &mut
+    // worklist while the heap is also borrowed.
     let interned: Vec<Value> = self.heap.interned_strings().collect();
     for v in interned {
       Self::mark_root(v, &mut worklist);
@@ -4690,18 +4118,15 @@ impl VM {
     Self::mark_root(self.jit_pending_exception.get(), &mut worklist);
 
     while let Some(ptr) = worklist.pop() {
-      // SAFETY: every pointer on the worklist was pulled out of a Value
-      // that was itself still live when we queued it, and nothing is
-      // freed until `sweep` runs below -- well after this loop -- so the
-      // object behind `ptr` is guaranteed to still be valid here.
+      // SAFETY: every pointer on the worklist came from a Value that was
+      // still live when queued, and nothing is freed until sweep runs
+      // below, well after this loop.
       Self::walk_children(ptr, |v| Self::mark_root(v, &mut worklist));
     }
 
-    // A full scan just proved everything currently reachable, old
-    // objects included -- every remembered-set entry is now
-    // redundant. Drop them (clearing their `remembered` flags) so a
-    // future write to any of them properly re-queues it; see
-    // `Heap::drain_remembered`'s own docs.
+    // A full scan just proved everything reachable, old objects included,
+    // so every remembered-set entry is now redundant. Drop them so a
+    // future write to any of them properly re-queues it.
     self.heap.drain_remembered();
 
     let freed = self.heap.sweep();
@@ -4717,37 +4142,25 @@ impl VM {
     }
   }
 
-  /// Minor collection -- the cheap, frequent counterpart to
-  /// `collect_garbage` that this collector normally relies on, and
-  /// the young generation's whole reason to exist: a REAL, moving,
-  /// copying collection rather than mark-sweep. Scans the SAME roots
-  /// `collect_garbage` does, but instead of just marking reachable
-  /// objects, actively RELOCATES every still-`Young` one it finds
-  /// (via `Heap::forward_or_promote`) into old-generation storage,
-  /// rewriting every reference to it -- root or child slot -- to
-  /// point at the new copy. An `Old` object reached from a root is
-  /// left completely alone (`forward_or_promote` returns it
-  /// unchanged), since a copying collection never needs to prove an
-  /// old object's liveness at all -- unlike mark-sweep, nothing about
-  /// this pass depends on visiting every live object, only on
-  /// visiting every POINTER TO A YOUNG one.
+  /// Minor collection: the cheap, frequent counterpart to `collect_garbage`
+  /// and the young generation's whole reason to exist -- a real, moving,
+  /// copying collection rather than mark-sweep. Scans the same roots as
+  /// `collect_garbage`, but instead of marking, actively relocates every
+  /// still-`Young` object into old-generation storage and rewrites every
+  /// reference to it. An `Old` object reached from a root is left alone --
+  /// a copying collection never needs to prove an old object's liveness,
+  /// only visit every pointer to a young one.
   ///
-  /// The one thing that reasoning alone can't see: an old object that
-  /// was MUTATED since its last full scan could now point at a young
-  /// object that's otherwise unreachable from any of today's roots.
-  /// That's exactly what `write_barrier` and the remembered set exist
-  /// to cover -- every remembered old object's direct children are
-  /// walked (and relocated in place) here too. See `object.rs`'s
-  /// module docs on `write_barrier` for why this is sound: the
-  /// barrier fires on EVERY mutation of an old container, so an
-  /// old->young edge can only exist via an object currently in the
-  /// remembered set.
+  /// What that reasoning alone can't see: an old object mutated since its
+  /// last full scan could now point at an otherwise-unreachable young
+  /// object. That's what `write_barrier` and the remembered set cover --
+  /// every remembered old object's children are walked and relocated here
+  /// too. Sound because the barrier fires on every mutation of an old
+  /// container, so an old->young edge can only exist via the remembered set.
   ///
-  /// Once every root and every live object's children have been
-  /// walked, EVERYTHING still in the nursery is, by construction,
-  /// unreachable -- `Heap::reset_nursery` reclaims it in one step,
-  /// with no per-object free-list bookkeeping needed at all (compare
-  /// `collect_garbage`'s `sweep`, which visits every chunk slot).
+  /// Once every root and live child has been walked, everything still in
+  /// the nursery is unreachable by construction -- `reset_nursery`
+  /// reclaims it in one step, no per-object free-list bookkeeping needed.
   pub(crate) fn collect_minor(&mut self) {
     let before_count = self.heap.object_count();
 
@@ -4768,13 +4181,10 @@ impl VM {
     }
     for frame in &mut self.frames {
       if Self::forward_slot(&mut self.heap, &mut frame.closure_val, &mut worklist) {
-        // `function`/`closure` are raw pointers CACHED from
-        // `closure_val` at frame-push time purely for hot-path speed
-        // (see `CallFrame`'s own docs) -- relocating the object
-        // `closure_val` points at invalidates them just as much as
-        // `closure_val` itself, so they need the exact same
-        // re-derivation a fresh frame push would do, every time this
-        // branch fires.
+        // function/closure are raw pointers cached from closure_val at
+        // frame-push time for hot-path speed -- relocating what
+        // closure_val points at invalidates them too, so they need the
+        // same re-derivation a fresh frame push would do.
         let closure = frame.closure_val.as_closure();
         frame.closure = closure as *const ObjClosure;
         frame.function = closure.function.as_func() as *const ObjFunction;
@@ -4786,15 +4196,12 @@ impl VM {
     for v in &mut self.gc_pins {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
-    // Same treatment as the `gc_pins` loop just above: each entry here
-    // is `count` live, ordinary `Value` slots (no `Obj`/`GcBox` layer
-    // -- see `jit_scalar_roots`'s own docs), forwarded in place exactly
-    // like any other root.
+    // Same treatment as the gc_pins loop above: each entry is count live
+    // ordinary Value slots, forwarded in place like any other root.
     for &(ptr, count) in &self.jit_scalar_roots {
-      // SAFETY: every entry is live for as long as its owning
-      // `CallFrame` is still on `self.frames` (see `CallFrame::
-      // scalar_roots_mark`'s own docs) -- every frame on `self.frames`
-      // right now is, by definition, still executing.
+      // SAFETY: every entry is live for as long as its owning CallFrame is
+      // still on self.frames, and every frame on self.frames right now is
+      // by definition still executing.
       let slice = unsafe { std::slice::from_raw_parts_mut(ptr, count) };
       for v in slice {
         Self::forward_slot(&mut self.heap, v, &mut worklist);
@@ -4818,9 +4225,8 @@ impl VM {
 
     for remembered_ptr in self.heap.drain_remembered() {
       Self::walk_children_mut(remembered_ptr, |slot| {
-        // SAFETY: `remembered_ptr` is a live old object (see
-        // `drain_remembered`'s own docs); `walk_children_mut` only
-        // ever yields pointers to genuine `Value` slots owned by it.
+        // SAFETY: remembered_ptr is a live old object; walk_children_mut
+        // only yields pointers to genuine Value slots it owns.
         Self::forward_slot(&mut self.heap, unsafe { &mut *slot }, &mut worklist)
       });
     }
@@ -4844,16 +4250,12 @@ impl VM {
     }
   }
 
-  /// Resolves ONE slot that might currently hold a pointer to a young
-  /// object, relocating it (see `Heap::forward_or_promote`) and
-  /// rewriting `*slot` in place if so. Returns whether `slot` was
-  /// actually rewritten -- `walk_children_mut`'s `Obj::Dict` case
-  /// needs to know this, to decide whether a key's hash may have
-  /// changed and its index needs rebuilding (see
-  /// `DictStorage::reindex`'s own docs). Free-standing (takes `heap`
-  /// explicitly rather than `&mut self`) so callers can borrow it
-  /// alongside other, disjoint fields of `self` -- see every root
-  /// loop in `collect_minor` for the pattern this enables.
+  /// Resolves one slot that might hold a pointer to a young object,
+  /// relocating it and rewriting `*slot` in place if so. Returns whether
+  /// it was rewritten -- `walk_children_mut`'s `Obj::Dict` case needs this
+  /// to decide whether a key's hash changed and its index needs
+  /// rebuilding. Takes `heap` explicitly rather than `&mut self` so
+  /// callers can borrow it alongside other disjoint fields of `self`.
   #[inline(always)]
   fn forward_slot(heap: &mut Heap, slot: &mut Value, worklist: &mut Vec<*const Obj>) -> bool {
     if !slot.is_obj() {
@@ -4868,16 +4270,13 @@ impl VM {
     true
   }
 
-  /// Enumerates every `Value` held directly by the object behind
-  /// `ptr` -- its immediate children in the object graph -- invoking
-  /// `mark` for each. Shared between `collect_garbage` (which marks
-  /// unconditionally) and `collect_minor` (which only marks, and
-  /// therefore only transitively walks into, objects that are still
-  /// `Young`), so this per-`Obj`-variant traversal exists in exactly
-  /// one place instead of two copies that could drift apart.
+  /// Enumerates every `Value` held directly by the object behind `ptr`,
+  /// invoking `mark` for each. Shared between `collect_garbage` and
+  /// `collect_minor` so this per-`Obj`-variant traversal exists in one
+  /// place instead of two copies that could drift apart.
   fn walk_children(ptr: *const Obj, mut mark: impl FnMut(Value)) {
-    // SAFETY: see the two call sites' own safety comments -- both only
-    // ever call this with a pointer that's still guaranteed live.
+    // SAFETY: both call sites only ever call this with a pointer still
+    // guaranteed live.
     match unsafe { &*ptr } {
       Obj::List(items) => {
         for v in items.borrow().iter() {
@@ -4959,35 +4358,25 @@ impl VM {
     }
   }
 
-  /// `walk_children`'s mutable counterpart, used only by
-  /// `collect_minor`'s copying pass: instead of handing each child
-  /// `Value` to `mark` BY COPY (read-only), hands `relocate` a raw
-  /// `*mut Value` pointing at the ACTUAL slot the child lives in --
-  /// letting the caller rewrite it in place if it turns out to point
-  /// at a young object that just got promoted. Sound via a single
-  /// `&mut Obj` cast at the top: collection is always fully
-  /// stop-the-world (no interpreter or JIT code runs concurrently
-  /// with it), so nothing else can be aliasing `ptr` while this runs,
-  /// regardless of whether the object's OWN fields are `Cell`-wrapped
-  /// or not.
+  /// `walk_children`'s mutable counterpart, used only by `collect_minor`'s
+  /// copying pass: hands `relocate` a raw `*mut Value` pointing at the
+  /// actual slot instead of a read-only copy, so the caller can rewrite it
+  /// in place if it points at a young object that just got promoted. Sound
+  /// via a single `&mut Obj` cast at the top since collection is always
+  /// stop-the-world.
   ///
-  /// Kept as a genuinely separate function from `walk_children`
-  /// (rather than one traversal parameterized over both callback
-  /// shapes) because about a third of its variants need real
-  /// mutable-borrow machinery (`RefCell::get_mut`, `Cell::get_mut`,
-  /// `Vec::iter_mut`) that a read-only `mark: impl FnMut(Value)`
-  /// has no reason to carry -- see each variant for specifics.
+  /// Kept separate from `walk_children` rather than one traversal
+  /// parameterized over both callback shapes, since about a third of the
+  /// variants need real mutable-borrow machinery a read-only `mark` has no
+  /// reason to carry.
   ///
-  /// `Obj::Dict` is the one case that needs MORE than just rewriting
-  /// each slot: `DictKey`'s hash is the raw pointer for every
-  /// reference-type key (see its own docs), so relocating a KEY
-  /// changes its hash out from under `DictStorage::index` -- tracked
-  /// here via `relocate`'s own return value and repaired with one
-  /// `reindex()` call, only when a key actually moved.
+  /// `Obj::Dict` needs more than rewriting each slot: a `DictKey`'s hash is
+  /// the raw pointer for reference-type keys, so relocating a key changes
+  /// its hash out from under `DictStorage::index` -- tracked via
+  /// `relocate`'s return value and repaired with one `reindex()` call.
   fn walk_children_mut(ptr: *const Obj, mut relocate: impl FnMut(*mut Value) -> bool) {
-    // SAFETY: see this function's own docs -- collection is always
-    // stop-the-world, so exclusive access to every reachable object
-    // is sound for its whole duration.
+    // SAFETY: collection is always stop-the-world, so exclusive access to
+    // every reachable object is sound for its whole duration.
     let obj = unsafe { &mut *(ptr as *mut Obj) };
     match obj {
       Obj::List(items) => {
@@ -5108,7 +4497,7 @@ impl VM {
   pub(crate) fn coerce_index(&mut self, index: Value, len: usize) -> RunResult<usize> {
     let mut i = self.value_as_index(index)?;
 
-    // First attempt to coerce it into the range [0, len) by wrapping negative indices around to the end of the array.
+    // Wrap negative indices around to the end of the array.
     if i < 0 {
       i += len as i64;
     }
@@ -5163,16 +4552,14 @@ impl VM {
     Ok(Some((lo, hi)))
   }
 
-  /// Attempt to service an operator via a class- or builtin-table-declared
-  /// override method named `deco` (e.g. "@add") on the LEFT operand only --
-  /// matching the same "receiver defines the behavior" model every other
-  /// method call in this VM already uses (no reflected/right-hand fallback).
-  /// `extra_args` is everything after the implicit receiver -- one Value
-  /// for a binary op, empty for a unary op.
+  /// Services an operator via a class- or builtin-declared override method
+  /// named `deco` (e.g. "@add") on the left operand only -- the same
+  /// "receiver defines the behavior" model every other method call here
+  /// uses, no reflected right-hand fallback. `extra_args` is everything
+  /// after the implicit receiver.
   ///
-  /// Returns `Ok(None)` if `receiver` has no such override at all (caller
-  /// falls through to its own type-mismatch error), or the override's
-  /// result / propagated exception once it's actually been invoked.
+  /// `Ok(None)` if `receiver` has no such override (caller falls through to
+  /// its own type-mismatch error), otherwise the override's result.
   pub(crate) fn try_operator_override(
     &mut self,
     receiver: Value,
@@ -5203,17 +4590,12 @@ impl VM {
     Ok(None)
   }
 
-  /// Everything that happens when an instruction propagates an
-  /// exception -- factored out of `run_until`'s dispatch loop and
-  /// marked `#[cold]`/`#[inline(never)]` purely for CODE LAYOUT: this
-  /// makes the exception path an out-of-line function call instead of
-  /// inline code sharing icache lines with the hot dispatch loop, and
-  /// lets LLVM lay out the loop's straight-line path biased toward
-  /// the (overwhelmingly common) success case. This is NOT fixing a
-  /// slow per-instruction check -- `if let Err(exc) = step` itself is
-  /// a single, essentially-always-not-taken branch a modern predictor
-  /// handles for free -- it's purely about keeping the rarely-taken
-  /// handling code out of the hot loop's instruction-cache footprint.
+  /// Everything that happens when an instruction propagates an exception,
+  /// factored out and marked `#[cold]`/`#[inline(never)]` purely for code
+  /// layout: keeps the rarely-taken handling code out of the hot dispatch
+  /// loop's icache footprint. `if let Err(exc) = step` itself is a
+  /// branch-predictor-friendly check either way -- this is about layout,
+  /// not a slow check.
   #[cold]
   #[inline(never)]
   fn handle_exception(&mut self, exc: Value, stop_depth: usize) -> ExceptionOutcome {
@@ -5226,14 +4608,12 @@ impl VM {
     if let Some(discard_base) = self.frames.get(handler.frame_depth).map(|f| f.base) {
       self.close_upvalues_from(discard_base);
     }
-    // Every frame from `handler.frame_depth` onward is being discarded
-    // in one step -- roll `jit_scalar_roots` back to whatever it held
-    // right before the FIRST of them (`frames[handler.frame_depth]`)
-    // was pushed, same reasoning as `pop_frame_inner`'s single-frame
-    // case. `unwrap_or(self.jit_scalar_roots.len())` covers the case
-    // where `handler.frame_depth == self.frames.len()` already (the
-    // exception happened in the very frame that pushed this catch, no
-    // deeper frame was ever pushed) -- a no-op truncate, correctly.
+    // Every frame from handler.frame_depth onward is being discarded in
+    // one step -- roll jit_scalar_roots back to what it held before the
+    // first of them was pushed, same reasoning as pop_frame_inner.
+    // unwrap_or covers handler.frame_depth == frames.len() already (the
+    // exception happened in the frame that pushed this catch), a no-op
+    // truncate.
     let scalar_roots_mark = self
       .frames
       .get(handler.frame_depth)
@@ -5288,20 +4668,17 @@ impl VM {
   #[inline]
   pub fn clear_frames(&mut self) {
     self.frames.clear();
-    // Every remaining frame is being wiped unconditionally (REPL error
-    // recovery) -- their own native stack frames are already gone by
-    // the time this runs, so any `jit_scalar_roots` entries they
-    // registered would otherwise dangle into freed/reused native stack
-    // memory for the NEXT GC to walk. See `CallFrame::scalar_roots_mark`'s
-    // own docs.
+    // Every remaining frame is wiped unconditionally (REPL error recovery)
+    // -- their native stack frames are already gone, so any
+    // jit_scalar_roots entries they registered would otherwise dangle
+    // into freed/reused native stack memory for the next GC to walk.
     self.jit_scalar_roots.clear();
   }
 }
 
-/// Walk `class_val`'s superclass chain looking for a static member
-/// named `name`, checking each class's own (never inherited-in)
-/// `static_slots` table -- see `ObjClass`'s doc comment for why statics
-/// aren't pre-merged the way methods/fields are.
+/// Walk `class_val`'s superclass chain looking for a static member named
+/// `name`, checking each class's own (never inherited-in) `static_slots`
+/// table.
 pub(crate) fn lookup_static(class_val: Value, name: &str) -> Option<Value> {
   let mut cur = Some(class_val);
   while let Some(c) = cur {
@@ -5333,11 +4710,10 @@ pub(crate) fn set_static(class_val: Value, name: &str, value: Value) -> Result<(
 }
 
 /// Converts a runtime `using`-subject Value into the same hashable key
-/// space `Instr::UsingJump`'s jump table was built in at compile time
-/// (see `expr_as_jump_key` in compiler.rs). `None` for anything that
-/// was never eligible to be a constant case label to begin with (list,
-/// dict, instance, range, etc.) -- always falls through to the
-/// sequential dynamic-label path rather than ever consulting the table.
+/// space `Instr::UsingJump`'s jump table was built in at compile time.
+/// `None` for anything that was never eligible to be a constant case label
+/// (list, dict, instance, range, etc.), falling through to the sequential
+/// dynamic-label path.
 fn value_to_jump_key(v: Value) -> Option<JumpKey> {
   if v.is_nil() {
     Some(JumpKey::Nil)

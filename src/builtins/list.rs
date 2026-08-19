@@ -59,10 +59,6 @@ pub static LIST_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   ])
 });
 
-//-----------------------------------------------------------------------------------
-// Helpers
-//-----------------------------------------------------------------------------------
-
 /// Run `f` with mutable access to the underlying `Vec<Value>` storage
 /// of a list Value. Every caller here is only ever dispatched for a
 /// list receiver (see `builtins::Kind::of`), so a non-list `v` would
@@ -82,10 +78,6 @@ where
   write_barrier(v.as_obj());
   result
 }
-
-//-----------------------------------------------------------------------------------
-// Implementations
-//-----------------------------------------------------------------------------------
 
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -675,9 +667,7 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(acc)
 }
 
-//-----------------------------------------------------------------------------------
-// Iterable Decorators (@key / @value)
-//-----------------------------------------------------------------------------------
+// @key / @value: iterable protocol decorators.
 
 fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];

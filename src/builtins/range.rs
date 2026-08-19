@@ -145,9 +145,7 @@ fn get_step(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(ctx.args[0].range_step()))
 }
 
-//-----------------------------------------------------------------------------------
-// Iterable Decorators (@key / @value)
-//-----------------------------------------------------------------------------------
+// @key / @value: iterable protocol decorators.
 
 /// `index` here is an internal 0-based ITERATION COUNT (not a raw
 /// value in the range) -- `_value` below turns it into the actual

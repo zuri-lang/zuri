@@ -100,8 +100,6 @@ impl Lexer {
   }
 
   pub fn rewind(&mut self) {
-    // println!("{}, {}, {}", self.current, self.start, self.line);
-
     let val = if self.is_at_end() {
       '\0'
     } else {
@@ -189,10 +187,6 @@ impl Lexer {
         .unwrap_or(&1);
     }
 
-    // println!(
-    //   "start = {}, line start = {}, start line = {}",
-    //   self.start, line_start, self.start_line
-    // );
     let column = self.start - line_start + 1;
 
     Token::new(kind, self.start_line, column)
@@ -266,8 +260,6 @@ impl Lexer {
   fn string(&mut self, c: char) -> Token {
     while self.peek() != c && !self.is_at_end() {
       if self.peek() == '$' && self.next() == '{' && self.previous() != '\\' {
-        // We're at the start of an interpolation
-
         self.interpolating.push(c);
         self.current += 1;
 
@@ -307,7 +299,6 @@ impl Lexer {
   fn number(&mut self) -> Token {
     if self.previous() == '0' {
       if self.match_char('b') {
-        // binary number
         while is_binary(self.peek()) {
           self.advance();
         }
@@ -316,7 +307,6 @@ impl Lexer {
           i64::from_str_radix(&self.get_string(self.start + 2, self.current), 2).unwrap(),
         ));
       } else if self.match_char('c') {
-        // octal number
         while is_octal(self.peek()) {
           self.advance();
         }
@@ -325,7 +315,6 @@ impl Lexer {
           i64::from_str_radix(&self.get_string(self.start + 2, self.current), 8).unwrap(),
         ));
       } else if self.match_char('x') {
-        // hex number
         while is_hex(self.peek()) {
           self.advance();
         }
@@ -341,7 +330,6 @@ impl Lexer {
     }
 
     if self.peek() == 'n' {
-      // we've encountered a big integer
       self.advance();
 
       return self.make_token(TokenKind::BigNumber(
@@ -350,7 +338,6 @@ impl Lexer {
     }
 
     if self.peek() == '.' && is_digit(self.next()) {
-      // we've encountered a float
       self.advance();
       self.advance();
     }
@@ -462,9 +449,6 @@ impl Lexer {
           final_str.push(char);
           i += 5;
         } else {
-          // // treat it as regular string
-          // final_str.push(c);
-          // Or throw an error
           return Err(self.make_error("invalid unicode escape sequence".to_string()));
         }
       } else if c == '\\' && i + 3 < end && self.source[i + 1] == 'x' {
@@ -473,9 +457,6 @@ impl Lexer {
           final_str.push(char);
           i += 3;
         } else {
-          // // treat it as regular string
-          // final_str.push(c);
-          // Or throw an error
           return Err(self.make_error("invalid hex escape sequence".to_string()));
         }
       } else if c == '\\' && i + 1 < end {
@@ -516,7 +497,6 @@ impl Lexer {
         final_str.push(c);
       }
 
-      // i++
       i += 1;
     }
 

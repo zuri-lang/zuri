@@ -1032,8 +1032,7 @@ pub struct ZuriContext<'a> {
 }
 
 impl<'a> ZuriContext<'a> {
-  /// Equivalent to `ctx.vm.heap`, spelled out because `heap` used to be
-  /// its own field before this took `&mut VM` instead.
+  /// Shorthand for `ctx.vm.heap`, for natives that only need the heap.
   pub fn heap(&mut self) -> &mut Heap {
     &mut self.vm.heap
   }
@@ -1289,12 +1288,11 @@ mod gcbox_layout_tests {
 /// reordering, so the four single-byte flags plus `chunk_idx` (a
 /// `u32`, not `usize` -- chunks never remotely approach 4 billion) are
 /// grouped first to pack into exactly 8 bytes with zero padding,
-/// before the two 8-byte-aligned fields. Declaring them in the
-/// "obvious" order the fields were added in (bools, then `size`, then
-/// the pointer fields) leaves multiple 6-byte alignment gaps instead
-/// -- 24 extra bytes per object instead of 8 -- measured to cost
-/// real allocation throughput on allocation-heavy workloads (see the
-/// `YOUNG_NEXT_GC`/generational-GC performance investigation).
+/// before the two 8-byte-aligned fields. The "obvious" declaration
+/// order (bools, then `size`, then the pointer fields) leaves multiple
+/// 6-byte alignment gaps instead -- 24 extra bytes per object instead
+/// of 8, which is real allocation throughput lost on every single
+/// object in an allocation-heavy workload.
 #[repr(C)]
 struct GcBox {
   live: Cell<bool>,
@@ -1496,8 +1494,9 @@ const FIELD_STORAGE_DIRECT_CLASSES: usize = 33;
 struct FieldStoragePool {
   heads: [*mut Cell<Value>; FIELD_STORAGE_DIRECT_CLASSES],
   counts: [u32; FIELD_STORAGE_DIRECT_CLASSES],
-  /// Field counts at or beyond `FIELD_STORAGE_DIRECT_CLASSES`, keyed
-  /// exactly as the whole pool used to be.
+  /// Field counts at or beyond `FIELD_STORAGE_DIRECT_CLASSES` fall back
+  /// to a hash map -- not worth a dedicated array slot for shapes this
+  /// large and rare.
   overflow: FxHashMap<usize, Vec<*mut Cell<Value>>>,
 }
 
@@ -1634,13 +1633,8 @@ impl Heap {
   /// frequency.
   ///
   /// 1.25 rather than a looser 1.5: once `needs_major_gc` stopped
-  /// firing on every cycle, the slack this grants became real
-  /// retained memory instead of a threshold nothing ever reached.
-  /// Measured on the N=21 binary-tree benchmarks, 1.5 bought a further
-  /// ~2-9% wall-clock over 1.25 while costing ~30-45% more peak RSS
-  /// (1.43GB vs 1.00GB on the class-based one, where 1.25 lands BELOW
-  /// the pre-generational-fix baseline's own 1.06GB while still
-  /// running ~1.48x faster than it).
+  /// firing on every cycle, that extra slack bought little wall-clock
+  /// for a real jump in peak RSS -- not worth it.
   const GC_HEAP_GROW_FACTOR: f32 = 1.25;
   /// Fixed (not growing) budget for the young generation -- kept
   /// small and constant, unlike `next_gc`, specifically so minor
@@ -1658,14 +1652,13 @@ impl Heap {
   /// `YOUNG_NEXT_GC` budget's worth of chunks with some headroom for a
   /// burst that slightly overruns before the next safepoint check
   /// catches it -- see `reset_nursery`'s own docs for why retaining
-  /// these (instead of freeing every cycle down to one) matters: with
-  /// the old "always truncate to 1" policy, a long-running,
-  /// allocation-heavy program was measured driving thousands of
-  /// ~1.2MB chunk alloc/free cycles through the allocator, which is
-  /// exactly the pattern that pushes glibc's malloc into retaining
-  /// fragmented, never-returned-to-the-OS memory -- observed directly
-  /// as the resident set staying stuck multiple times higher than the
-  /// GC's own live-byte accounting justified, on `binary-tree-2.zu`.
+  /// these (instead of freeing every cycle down to one) matters:
+  /// truncating to a single chunk every cycle drives thousands of
+  /// ~1.2MB alloc/free calls through the allocator on a long-running,
+  /// allocation-heavy program, which is exactly the pattern that
+  /// pushes glibc's malloc into retaining fragmented,
+  /// never-returned-to-the-OS memory -- inflating RSS well past what
+  /// the GC's own live-byte accounting would justify.
   const MAX_RETAINED_NURSERY_CHUNKS: usize =
     (Self::YOUNG_NEXT_GC / (CHUNK_SIZE * std::mem::size_of::<GcBox>())) + 4;
 
@@ -1720,11 +1713,12 @@ impl Heap {
   /// allocation walks the total up continuously, so a total-based
   /// threshold is really a threshold on ALLOCATION RATE -- and since
   /// `run_until`'s safepoint checks this before `needs_minor_gc`, the
-  /// major collection then wins every race, running a full mark and
+  /// major collection would win every race, running a full mark and
   /// sweep of the whole old generation on a schedule that has nothing
-  /// to do with whether the old generation grew at all. Measured on an
-  /// allocation-heavy tree benchmark, that meant EVERY collection was
-  /// a major one, each sweeping ~131k live old objects to free 2.
+  /// to do with whether the old generation actually grew. On an
+  /// allocation-heavy workload that means nearly every collection ends
+  /// up major, sweeping a huge live old generation to free almost
+  /// nothing.
   ///
   /// Against the old generation instead, the two thresholds finally
   /// describe two different things: `YOUNG_NEXT_GC` bounds how much
@@ -1968,10 +1962,8 @@ impl Heap {
   /// visit in the first place. A field set at construction time to a
   /// still-young value (`ObjFunction::globals_module`, pointing at a
   /// module that's often still Young at compile time, is the
-  /// confirmed real case -- caught by this project's own testing as
-  /// an `assertion failed: self.is_module()` panic reading a stale
-  /// reference days after the module itself had long since moved)
-  /// would otherwise never get discovered and relocated at all.
+  /// confirmed real case) would otherwise never get discovered and
+  /// relocated at all.
   /// Queuing it into the remembered set right away is what gives it
   /// the SAME guarantee a young-born object gets automatically: its
   /// children get walked (via the remembered-set scan this time,
@@ -2404,16 +2396,14 @@ impl Heap {
 
   /// Ordinary young allocation, deliberately NOT `alloc_old`.
   ///
-  /// Moving natives to the old generation looks harmless -- they are
+  /// Moving natives to the old generation looks harmless -- they're
   /// registered once at startup and live for the whole program -- but
-  /// it was tried and reverted: `alloc_old` runs a `write_barrier`, so
-  /// every native joins the remembered set immediately, and that shift
-  /// in the remembered set's composition was enough to expose a latent
-  /// use-after-free in it (`sweep` frees old boxes, and drops whole
-  /// chunks, without unlinking them from the intrusive remembered list
-  /// threaded through `GcBox::list_next`; `promote_into_old` then
-  /// recycles such a slot and truncates the chain). It reproduced as
-  /// `benchmarks/binary-tree-2.zu` reading a live list back as empty.
+  /// `alloc_old` runs a `write_barrier`, joining every native to the
+  /// remembered set immediately. `sweep` frees old boxes (and drops
+  /// whole chunks) without unlinking them from that intrusive list
+  /// threaded through `GcBox::list_next`, and `promote_into_old` can
+  /// then recycle such a slot and truncate the chain -- a real
+  /// use-after-free, not a theoretical one.
   ///
   /// `jit::codegen` therefore may NOT bake a native's address as a
   /// call-site guard, since a young native relocates on its first minor
@@ -2467,13 +2457,12 @@ impl Heap {
     // re-derived by matching the variant.
     //
     // The base term is not optional. Dropping it under-reports every
-    // instance by ~56 bytes, which does not merely skew a statistic:
-    // `young_bytes_allocated` drives `needs_minor_gc`, so the nursery
-    // then admits roughly four times as many objects before collecting
-    // (measured: 2.26M live young objects per cycle instead of 601k),
-    // and since a `GcBox` costs real memory the accounting never sees,
-    // peak RSS more than doubled on binary-tree while the byte counter
-    // still looked normal.
+    // instance's true cost, so `young_bytes_allocated` (which drives
+    // `needs_minor_gc`) lets the nursery grow far larger than intended
+    // before a collection fires -- and since a `GcBox` costs real
+    // memory the accounting never sees, peak RSS balloons on
+    // allocation-heavy workloads while the byte counter still looks
+    // normal.
     let size = std::mem::size_of::<Obj>() + field_count * size_of::<Cell<Value>>();
     self.alloc_sized(Obj::Instance(ObjInstance { class, fields }), size)
   }
@@ -2532,18 +2521,17 @@ impl Heap {
   /// objects (see `VM::collect_garbage`), or anything missing from it
   /// gets freed out from under whatever still references it.
   ///
-  /// Sweep every resident chunk. A slot that's live but wasn't marked
+  /// Visits every resident chunk. A slot that's live but wasn't marked
   /// this cycle is garbage: its contents are dropped in place and it
   /// goes on its chunk's local free list. A chunk whose live_count hits
   /// zero -- every slot in it dead -- is dropped ENTIRELY, returning its
   /// backing allocation (and, for a block this size, typically the
   /// underlying pages) to the allocator instead of holding it as
   /// permanent inventory.
-  /// Full (major) sweep -- visits every slot in every chunk, exactly
-  /// as before generational collection existed. `VM::collect_garbage`
-  /// always flushes the nursery (via `VM::collect_minor`) before this
-  /// runs, so by the time it does, nothing chunk-resident is ever
-  /// `Young` -- every live slot found here is definitionally `Old`.
+  ///
+  /// This is a full (major) sweep. `VM::collect_garbage` always flushes
+  /// the nursery first (via `VM::collect_minor`), so every live slot
+  /// found here is definitionally `Old`.
   pub fn sweep(&mut self) -> usize {
     let mut freed = 0;
 

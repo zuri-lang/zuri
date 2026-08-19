@@ -1138,17 +1138,14 @@ impl<'a> Compiler<'a> {
   const DICT_LITERAL_CHUNK_SIZE: usize = 48;
 
   /// `[a, b, c, ...]`. A short literal compiles straight to one
-  /// `MakeList` (the previous, single-instruction behavior, preserved
-  /// as the fast path). A literal longer than
+  /// `MakeList` (the fast path). A literal longer than
   /// `LIST_LITERAL_CHUNK_SIZE` is built INCREMENTALLY instead: an empty
   /// list, then repeated `list.extend(chunk)` calls, each `chunk` a
   /// small, ordinary `MakeList` of its own. This is what lets a
   /// several-hundred-element literal compile at all -- a single
   /// `MakeList` over the whole thing would need one register PER
   /// ELEMENT, all live at once, which this VM's `u8`-sized register
-  /// operands simply can't address past ~255 (this used to panic on
-  /// raw, unchecked `u8` arithmetic once a literal got large enough;
-  /// see `compile_dict_literal`'s own doc comment for the sibling bug).
+  /// operands can't address past ~255.
   fn compile_list_literal(&mut self, elements: &[Expr]) -> u8 {
     if elements.len() <= Self::LIST_LITERAL_CHUNK_SIZE {
       return self.compile_list_chunk(elements);
@@ -1202,12 +1199,9 @@ impl<'a> Compiler<'a> {
   }
 
   /// `{k: v, ...}`. Same chunk-and-extend strategy as
-  /// `compile_list_literal`, for the exact same reason -- this is
-  /// actually where the crash you hit came from: `keys.len() as u8`
-  /// silently wrapped for a several-hundred-entry dict, and the
-  /// following raw `start + i as u8` register arithmetic then panicked
-  /// on overflow once enough entries had accumulated. Chunking keeps
-  /// each individual `MakeDict` small enough that this can't happen.
+  /// `compile_list_literal`, for the same register-ceiling reason --
+  /// each entry needs two registers (key + value) instead of one, so
+  /// chunking matters here even sooner.
   fn compile_dict_literal(&mut self, keys: &[Expr], values: &[Expr]) -> u8 {
     debug_assert_eq!(
       keys.len(),
@@ -2761,9 +2755,7 @@ mod owning_class_name_tests {
   /// constant the compiler allocates via `heap.alloc_string_old`/
   /// `heap.alloc_function`), so dropping the heap first and reading
   /// the function's constants after is a genuine dangling-pointer
-  /// use-after-free -- caught by hand the first time this helper
-  /// returned just the `ObjFunction` alone and segfaulted immediately
-  /// on the very next line reading `constants`.
+  /// use-after-free.
   fn compile_source(src: &str) -> (Heap, ObjFunction) {
     let mut lex = Lexer::new(src);
     let mut parser = Parser::new(&mut lex);

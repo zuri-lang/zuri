@@ -5,7 +5,6 @@ pub static DEFAULT_BUFFER_MATCH_COLOR: Color = Color::Green;
 pub static DEFAULT_BUFFER_NEUTRAL_COLOR: Color = Color::White;
 pub static DEFAULT_BUFFER_NOT_MATCH_COLOR: Color = Color::Default;
 
-/// A simple, example highlighter that shows how to highlight keywords
 pub struct ZuriHighlighter {
   external_commands: Vec<String>,
   match_color: Color,
@@ -14,7 +13,7 @@ pub struct ZuriHighlighter {
 }
 
 impl Highlighter for ZuriHighlighter {
-  // A simple example of disabling abbreviation expansion within string literals
+  // Don't expand an abbreviation while the cursor is inside a string literal.
   fn should_expand_abbr(&self, line: &str, cursor: usize, _context: AbbrExpandContext) -> bool {
     if line.is_empty() || cursor == 0 {
       return true;
@@ -86,7 +85,6 @@ impl Highlighter for ZuriHighlighter {
   }
 }
 impl ZuriHighlighter {
-  /// Construct the default highlighter with a given set of extern commands/keywords to detect and highlight
   pub fn new(external_commands: Vec<String>) -> ZuriHighlighter {
     ZuriHighlighter {
       external_commands,

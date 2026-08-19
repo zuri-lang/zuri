@@ -347,10 +347,8 @@ impl DeflateDecoder {
       return Ok(0);
     }
 
-    // Never ask zlib-rs for more output than the caller requested.
-    //
-    // This is the critical distinction from the previous
-    // implementation.
+    // Cap the scratch slice at `len` so a large read() request can't
+    // pull more decompressed data than the caller asked for.
     let output_len = len.min(SCRATCH_SIZE);
 
     let before_in = self.inflate.total_in();

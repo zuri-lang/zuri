@@ -4,62 +4,60 @@
 //!
 //! The interpreter (`vm::vm::VM::run_until`) is a register machine over
 //! one flat `Vec<Value>` (`VM::registers`), sliced into per-frame
-//! windows. This JIT tier does NOT introduce a second, separate
-//! representation of a function's local state -- every VM register a
-//! compiled function touches is read and written through exactly the
-//! same memory `VM::registers` already uses, via a raw pointer to the
-//! frame's own window (see `CompiledFunction`'s calling convention,
-//! below). This one decision is what makes every one of the harder
-//! requirements for this tier tractable with a REASONABLE amount of
-//! code, instead of needing a second, parallel deoptimization/state-
-//! reconstruction machinery most JITs need because their compiled
-//! code keeps VM state in real machine registers/an SSA form that has
-//! to be painstakingly reconstructed at every boundary:
+//! windows. This JIT tier doesn't introduce a second representation of
+//! a function's local state -- every VM register a compiled function
+//! touches is read and written through the same `VM::registers` memory
+//! the interpreter uses, via a raw pointer to the frame's own window
+//! (see `CompiledFunction`'s calling convention, below). That one
+//! decision is what keeps the harder requirements for this tier
+//! tractable without a second, parallel deoptimization/state-
+//! reconstruction machinery -- the kind most JITs need because their
+//! compiled code keeps state in real machine registers or an SSA form
+//! that has to be reconstructed at every boundary:
 //!
 //! - **Mixed-mode execution** (compiled code calling an as-yet-uncompiled
-//!   function): the callee's frame is pushed with the SAME `base`
+//!   function): the callee's frame is pushed with the same `base`
 //!   convention the interpreter already uses, so `VM::call_value` can
-//!   run it through `run_until` exactly as if the caller were also
-//!   interpreted. See `vm::vm::VM::call_value`.
-//! - **GC safepoints**: since a register's value is never anywhere BUT
-//!   `VM::registers` (no separate SSA copy to flush first), the
+//!   run it through `run_until` as if the caller were also interpreted.
+//!   See `vm::vm::VM::call_value`.
+//! - **GC safepoints**: since a register's value never lives anywhere
+//!   but `VM::registers` (no separate SSA copy to flush first), the
 //!   existing non-moving, root-scanning collector
 //!   (`VM::collect_garbage`) already sees a JIT frame's registers
 //!   correctly as long as that frame's `CallFrame` (base + function
-//!   pointer) is on `VM::frames` while compiled code runs -- which it
+//!   pointer) is on `VM::frames` while compiled code runs, which it
 //!   always is (pushed before entry, popped after). Compiled code just
-//!   has to call back into `VM::collect_garbage` at the same two kinds
-//!   of point the interpreter is willing to pause at: loop back-edges
-//!   and call sites (see `codegen::FuncCompiler::emit_safepoint`).
-//! - **On-stack replacement**: jumping into the MIDDLE of a compiled
+//!   calls back into `VM::collect_garbage` at the same two kinds of
+//!   point the interpreter pauses at: loop back-edges and call sites
+//!   (see `codegen::FuncCompiler::emit_safepoint`).
+//! - **On-stack replacement**: jumping into the middle of a compiled
 //!   function needs no value reconstruction either -- the OSR entry
 //!   block is just another predecessor of the target loop header block
 //!   that hasn't initialized any local Cranelift SSA variables (there
-//!   are none; everything lives in `VM::registers` already) and simply
-//!   jumps straight there. See `codegen::FuncCompiler::compile` and
+//!   are none; everything lives in `VM::registers` already) and jumps
+//!   straight there. See `codegen::FuncCompiler::compile` and
 //!   `warmup::osr_threshold`.
 //! - **Exceptions bail to the interpreter**: rather than reimplementing
 //!   `catch`/`raise` unwinding as generated machine code, a function
-//!   that contains `Instr::PushCatch`/`Instr::Raise` is simply never
-//!   selected for compilation at all (see `codegen::is_eligible`) --
-//!   it always runs interpreted, where the existing, already-correct
-//!   `catch_stack` unwinder handles it. A compiled function CAN still
-//!   raise indirectly (an arithmetic type error, a callee that itself
-//!   raises, ...); when that happens control leaves compiled code
-//!   entirely and propagates the exception up to whatever Rust frame
-//!   invoked this compiled function to begin with (interpreter's
+//!   containing `Instr::PushCatch`/`Instr::Raise` is simply never
+//!   selected for compilation (see `codegen::is_eligible`) -- it always
+//!   runs interpreted, where the existing `catch_stack` unwinder
+//!   handles it. A compiled function can still raise indirectly (an
+//!   arithmetic type error, a callee that itself raises, ...); when
+//!   that happens control leaves compiled code entirely and propagates
+//!   the exception up to whatever Rust frame invoked it (interpreter's
 //!   `dispatch_call`, `call_value`, or an enclosing compiled caller's
-//!   own call-site helper) -- exactly mirroring how an interpreted
-//!   `Err(Value)` already propagates. See `runtime`'s module docs for
-//!   the exact error-channel protocol.
+//!   own call-site helper), mirroring how an interpreted `Err(Value)`
+//!   already propagates. See `runtime`'s module docs for the exact
+//!   error-channel protocol.
 //! - **Operator overloading**: a binary op's fast path (both operands
 //!   plain numbers) is inlined directly as machine code; anything else
 //!   -- strings, lists, bigints, a class's `@add` override, ... --
-//!   calls straight back into the EXACT SAME Rust methods the
-//!   interpreter itself uses (`VM::binary_add`, `VM::compare`, ...),
-//!   so there is exactly one place that implements what `+`/`*`/`<`/...
-//!   mean for a non-numeric operand, shared by both tiers. See
-//!   `runtime`'s arithmetic helpers.
+//!   calls straight back into the same Rust methods the interpreter
+//!   itself uses (`VM::binary_add`, `VM::compare`, ...), so there's
+//!   exactly one place that implements what `+`/`*`/`<`/... mean for a
+//!   non-numeric operand, shared by both tiers. See `runtime`'s
+//!   arithmetic helpers.
 //!
 //! # Module layout
 //!
@@ -110,9 +108,9 @@ pub fn log_ir_enabled() -> bool {
 /// Calling convention (see this module's own docs for why this is
 /// enough state to need no other bridging machinery):
 /// - `vm`: the owning `VM`, as a raw pointer -- compiled code and every
-///   `runtime` helper it calls treat this exactly like `&mut VM` would
-///   be used from Rust; it is never aliased (nothing else touches this
-///   `VM` while compiled code is running, single-threaded end to end).
+///   `runtime` helper it calls treat this like `&mut VM` would be used
+///   from Rust; it's never aliased (nothing else touches this `VM`
+///   while compiled code is running, single-threaded end to end).
 /// - `base`: absolute index into `VM::registers` where this call's
 ///   register window starts -- identical in meaning to `CallFrame::base`
 ///   in `vm::vm`.
@@ -130,8 +128,8 @@ pub type EntryFn =
 /// A successfully compiled function, cached on `ObjFunction::jit` for
 /// as long as the VM lives. Machine code is never unloaded or
 /// recompiled once produced -- Zuri programs are short-lived processes,
-/// not long-running servers that would need to reclaim/re-optimize
-/// tiered-up code, so there is no eviction policy to implement.
+/// not long-running servers that would need to reclaim or re-optimize
+/// tiered-up code, so there's no eviction policy to implement.
 pub struct CompiledFunction {
   pub entry: EntryFn,
   /// Bytecode ip (a loop header -- the target of some backward
@@ -150,69 +148,68 @@ pub struct CompiledFunction {
 /// `codegen::FuncCompiler` to skip `jit::runtime::zuri_jit_call_prepare`'s
 /// resolver entirely.
 ///
-/// - `SelfRecursive`: the callee register is PROVEN (see
+/// - `SelfRecursive`: the callee register is proven (see
 ///   `escape::self_reference_facts`) to always hold this exact
-///   function's own closure -- no runtime guard needed at all, since
-///   there is nothing to misidentify; codegen emits a genuine
-///   relocation-resolved direct `call` to its own `FuncId`.
-/// - `Known`: the callee register is PROVEN (see
-///   `escape::global_ref_facts`) to hold an UNMODIFIED read of some
-///   OTHER global name that, at THIS function's compile time, already
+///   function's own closure -- no runtime guard needed, since there's
+///   nothing to misidentify; codegen emits a relocation-resolved direct
+///   `call` to its own `FuncId`.
+/// - `Known`: the callee register is proven (see
+///   `escape::global_ref_facts`) to hold an unmodified read of some
+///   other global name that, at this function's compile time, already
 ///   resolves to a different, already-JIT-compiled closure. Unlike
 ///   `SelfRecursive`, the global binding itself could still be
 ///   reassigned before this call site actually runs, so codegen still
 ///   guards it with a cheap value-identity comparison (`guard_bits`)
-///   against the CURRENT contents of the callee register at runtime,
+///   against the callee register's current contents at runtime,
 ///   falling back to the ordinary resolver on a miss. `entry` is a raw
 ///   `EntryFn` address, sound to bake as a compile-time immediate
 ///   because `CompiledFunction`'s own docs guarantee compiled code is
 ///   never unloaded or recompiled once produced.
 /// - `Construct`: same proof as `Known`, except the global resolved to
-///   a CLASS -- so this site is a constructor call, and codegen emits
+///   a class -- so this site is a constructor call, and codegen emits
 ///   `jit::runtime::zuri_jit_new_prepare`'s construction shape (which
-///   yields the new instance) rather than
-///   `zuri_jit_call_prepare`'s ordinary-call shape (which yields the
-///   callee's return value). Carries nothing else because, unlike
-///   `Known`, there is nothing worth baking: the constructor's own
-///   compiled entry generally does not exist yet when the site's
-///   CALLER is compiled, so it still gets resolved per call. This is
-///   purely a "which of the two shapes belongs here" hint and needs no
-///   guard of its own -- `zuri_jit_new_prepare` re-checks the callee
-///   register itself and returns zero (falling through to exactly the
-///   same general path an unclassified site would have taken) if the
-///   global has since been reassigned to something that is not a
-///   class.
+///   yields the new instance) rather than `zuri_jit_call_prepare`'s
+///   ordinary-call shape (which yields the callee's return value).
+///   Carries nothing else because, unlike `Known`, there's nothing
+///   worth baking: the constructor's own compiled entry generally
+///   doesn't exist yet when the site's caller is compiled, so it still
+///   gets resolved per call. This is purely a "which of the two shapes
+///   belongs here" hint and needs no guard of its own --
+///   `zuri_jit_new_prepare` re-checks the callee register itself and
+///   returns zero (falling through to the same general path an
+///   unclassified site would take) if the global has since been
+///   reassigned to something that isn't a class.
 /// - `ConstructKnown`: a `Construct` site whose whole construction
-///   shape was additionally PROVEN ahead of time (see
+///   shape was additionally proven ahead of time (see
 ///   `vm::vm::VM::resolve_construct_target`) -- no class in the
 ///   ancestry declares a field initializer, and the constructor is a
 ///   known non-variadic closure whose `ObjFunction` address is baked
 ///   as `proto_ptr`. Codegen guards it the same way `emit_self_invoke`
 ///   does, on class identity plus a `method_table_generation` match,
-///   and then uses the lean `jit::runtime::zuri_jit_construct_prepare`
+///   then uses the lean `jit::runtime::zuri_jit_construct_prepare`
 ///   instead of re-walking the class -> constructor -> prototype chain
 ///   for every instance built.
 ///
-///   `guard_bits` being a stable thing to compare against is not
-///   automatic: it only holds because `Heap::alloc_class` allocates
-///   classes straight into the old generation. Baked against a
-///   still-young class, this guard (and `self_class_bits`, and
-///   `Known`'s) would stop matching the instant a minor collection
-///   relocated it, silently disabling the fast path for the rest of
-///   the process -- see `alloc_class`'s own docs.
+///   `guard_bits` being stable to compare against isn't automatic: it
+///   only holds because `Heap::alloc_class` allocates classes straight
+///   into the old generation. Baked against a still-young class, this
+///   guard (and `self_class_bits`, and `Known`'s) would stop matching
+///   the instant a minor collection relocated it, silently disabling
+///   the fast path for the rest of the process -- see `alloc_class`'s
+///   own docs.
 #[derive(Clone, Copy)]
 pub enum CallTarget {
   SelfRecursive,
   Known {
-    /// The callee's compiled entry point, or `0` when it has not been
+    /// The callee's compiled entry point, or `0` when it hasn't been
     /// compiled yet. A `0` here still carries useful information --
-    /// `codegen` can INLINE such a callee (see
+    /// `codegen` can inline such a callee (see
     /// `FuncCompiler::try_emit_inlined_call`), which needs only its
     /// bytecode, not its machine code -- so the resolution is recorded
-    /// either way and `emit_known_call`'s direct-dispatch path is the
-    /// thing gated on a non-zero entry.
+    /// either way and `emit_known_call`'s direct-dispatch path is
+    /// gated on a non-zero entry.
     entry: usize,
-    /// The callee's PROTOTYPE, as its `Value` bits -- what generated
+    /// The callee's prototype, as its `Value` bits -- what generated
     /// code guards on.
     ///
     /// Deliberately the prototype and not the closure: `alloc_closure`
@@ -232,7 +229,7 @@ pub enum CallTarget {
     /// The callee's own `ObjFunction`, as a raw pointer, so `codegen`
     /// can read its bytecode when deciding whether to inline it.
     ///
-    /// Only ever dereferenced at COMPILE time, never by generated code,
+    /// Only ever dereferenced at compile time, never by generated code,
     /// and sound then for the same reason `ConstructKnown::proto_ptr`
     /// is: `Heap::alloc_function` allocates every `ObjFunction`
     /// directly into the non-moving old generation, and the closure
@@ -240,8 +237,8 @@ pub enum CallTarget {
     /// produced this.
     proto_ptr: usize,
   },
-  /// A call whose callee register is proven to hold a specific BUILTIN
-  /// NATIVE (`vm::natives`), resolved at compile time.
+  /// A call whose callee register is proven to hold a specific builtin
+  /// native (`vm::natives`), resolved at compile time.
   ///
   /// Guarded on the native's own `Value` bits, which is sound only
   /// because `Heap::alloc_native` puts every native in the non-moving
@@ -252,7 +249,7 @@ pub enum CallTarget {
     /// The native's own `NativeFn` pointer -- what generated code
     /// guards on.
     ///
-    /// Deliberately NOT the `Obj::Native`'s address: `Heap::alloc_native`
+    /// Deliberately not the `Obj::Native`'s address: `Heap::alloc_native`
     /// leaves natives in the nursery (see its docs for the GC hazard
     /// that forced that), so their address changes the first time a
     /// minor collection promotes them, and an address guard would stop
@@ -260,7 +257,7 @@ pub enum CallTarget {
     /// pointer, unaffected by relocation. See
     /// `object::obj_native_func_offset`.
     guard_fn: u64,
-    /// The `NativeFunction` itself, as a raw pointer, used ONLY during
+    /// The `NativeFunction` itself, as a raw pointer, used only during
     /// compilation to read the native's name when choosing an
     /// intrinsic.
     ///
@@ -298,25 +295,25 @@ pub struct CompileFacts {
   pub self_field_slots: FxHashMap<String, u16>,
   /// `(self`'s own class as `Value` bits, `VM::method_table_generation`
   /// at the moment this was resolved`)` -- set exactly when `proto` is
-  /// a method AND its owning class's method table maps `proto`'s own
+  /// a method and its owning class's method table maps `proto`'s own
   /// name back to `proto` itself (the same "owns_proto" proof
   /// `self_field_slots` already needs -- see
   /// `vm::vm::VM::resolve_self_field_slots`). Lets `Instr::Invoke` sites
   /// whose method name matches `proto`'s own name (e.g. `self.left
   /// .count()` inside `count`'s own body) skip the resolver with just a
-  /// receiver-class guard: ANY receiver whose class is bit-identical to
+  /// receiver-class guard: any receiver whose class is bit-identical to
   /// this one is guaranteed, by that same proof, to resolve this exact
-  /// compiled method -- AS LONG AS the class's method table hasn't been
+  /// compiled method -- as long as the class's method table hasn't been
   /// monkey-patched (`compiler::compile_extension_decl` can legally do
   /// this to an already-live class at any point) since this proof was
   /// taken, which is what the paired generation snapshot guards
   /// against -- see `VM::method_table_generation`'s own docs.
   pub self_class_bits: Option<(u64, u64)>,
   pub call_targets: FxHashMap<usize, CallTarget>,
-  /// Everything a construction site needs in order to be a candidate
-  /// for SCALAR REPLACEMENT -- keyed by the site's bytecode ip, and
-  /// resolved in `vm::vm::VM::resolve_construct_target`, the one place
-  /// with the live `ObjClass` needed to answer any of it.
+  /// Everything a construction site needs to be a candidate for scalar
+  /// replacement -- keyed by the site's bytecode ip, and resolved in
+  /// `vm::vm::VM::resolve_construct_target`, the one place with the
+  /// live `ObjClass` needed to answer any of it.
   pub construct_info: FxHashMap<usize, ConstructInfo>,
 }
 
@@ -328,8 +325,8 @@ pub struct ConstructInfo {
   /// Lets `escape::analyze_one` treat `d.x` on a freshly constructed
   /// `d` as the plain field read it almost always is, instead of
   /// assuming it might materialize a `BoundMethod` that leaks `d`.
-  /// Without this, every object a function reads its own fields off
-  /// of is classified as escaping -- which is to say essentially every
+  /// Without this, every object a function reads its own fields off of
+  /// is classified as escaping -- which is to say essentially every
   /// object -- and nothing could ever be scalar-replaced.
   pub safety: escape::ClassFieldSafety,
   /// Field name -> slot index, for resolving `GetField`/`SetField` on
@@ -341,11 +338,11 @@ pub struct ConstructInfo {
   /// slot parameter `i` ends up in. `None` disqualifies the site from
   /// scalar replacement.
   ///
-  /// This is what makes replacing the allocation possible at all. The
-  /// object cannot simply not exist if something has to CALL a
-  /// constructor with it as `self` -- so the constructor's effect has
-  /// to be reproducible inline, and "store these arguments into these
-  /// slots" is exactly that, with no call left to make. It is also by
+  /// This is what makes replacing the allocation possible at all: the
+  /// object can't simply not exist if something has to call a
+  /// constructor with it as `self`, so the constructor's effect has to
+  /// be reproducible inline, and "store these arguments into these
+  /// slots" is exactly that, with no call left to make. It's also by
   /// far the most common constructor ever written.
   pub simple_ctor_param_slots: Option<Vec<u16>>,
 }

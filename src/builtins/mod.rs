@@ -84,10 +84,8 @@ impl Kind {
     if !v.is_obj() {
       return None;
     }
-    // One dereference, one match -- previously this fell through up to
-    // six separate is_x() checks (is_string, is_list, ..., is_callable
-    // which is itself four more), each re-dereferencing the same
-    // pointer and re-matching against the same Obj variants.
+    // One dereference, one match, rather than a chain of is_string()/
+    // is_list()/... checks each re-dereferencing the same pointer.
     match unsafe { &*v.as_obj() } {
       Obj::Str(_) => Some(Kind::String),
       Obj::List(_) => Some(Kind::List),
@@ -231,10 +229,7 @@ const ALL_KINDS: [Kind; 12] = [
 /// This matters because `VM::try_operator_override` asks millions of
 /// times and almost always gets `None`: every arithmetic operation
 /// whose operands are not both numeric consults it, which includes
-/// every single string concatenation. An earlier version of this
-/// scanned a two-element name list instead and measured no better than
-/// the hash map it replaced -- two `memcmp` calls cost about what one
-/// hash plus one `memcmp` does.
+/// every single string concatenation.
 static OPERATOR_MASKS: LazyLock<[u64; 12]> = LazyLock::new(|| {
   ALL_KINDS.map(|kind| {
     table_for(kind)

@@ -313,7 +313,6 @@ pub enum Instr {
     method_const: u16,
     num_args: u8,
   },
-  // chunk.rs
   /// `parent(args)` -- calls the SUPERCLASS's own resolved constructor
   /// (`ObjClass::constructor`) directly on the CURRENT `self`, the
   /// constructor equivalent of `InvokeSuper`'s method calls. Unlike an

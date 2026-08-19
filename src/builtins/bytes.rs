@@ -52,10 +52,6 @@ pub static BYTES_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   ])
 });
 
-//-----------------------------------------------------------------------------------
-// Helpers
-//-----------------------------------------------------------------------------------
-
 /// Run `f` with mutable access to the underlying `Vec<u8>` storage of
 /// a bytes Value -- the `Obj::Bytes` counterpart to `list.rs`'s
 /// `with_list_mut`, needed for anything push/insert/remove/drain-
@@ -92,10 +88,6 @@ fn expect_byte(ctx: &ZuriContext, idx: usize) -> Result<u8, String> {
   }
   Ok(n as u8)
 }
-
-//-----------------------------------------------------------------------------------
-// Implementations
-//-----------------------------------------------------------------------------------
 
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -364,9 +356,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(bytes_val)
 }
 
-//-----------------------------------------------------------------------------------
-// Iterable Decorators (@key / @value) -- unchanged from before this pass
-//-----------------------------------------------------------------------------------
+// @key / @value: iterable protocol decorators.
 
 fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];

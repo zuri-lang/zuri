@@ -145,9 +145,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-//-----------------------------------------------------------------------------------
 // Format parsing
-//-----------------------------------------------------------------------------------
 
 const VALID_CODES: &str = "aAhHcCsSnviIlLNVqQJPfgGdeExXZ@?wWuU";
 
@@ -258,9 +256,7 @@ fn repeat_count_of(r: Repeat) -> Result<usize, String> {
   }
 }
 
-//-----------------------------------------------------------------------------------
 // Element sizes / byte order
-//-----------------------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
 enum Endian {
@@ -319,9 +315,7 @@ fn code_size(code: char) -> Result<usize, String> {
   })
 }
 
-//-----------------------------------------------------------------------------------
 // Half-precision float conversion (IEEE-754 binary16 <-> f32)
-//-----------------------------------------------------------------------------------
 //
 // Hand-rolled rather than pulling in a dependency -- the standard bit-
 // twiddling algorithm used by most half-float fallback implementations.
@@ -394,9 +388,7 @@ fn half_to_f32(h: u16) -> f32 {
   f32::from_bits(bits)
 }
 
-//-----------------------------------------------------------------------------------
 // Raw integer read/write, generic over every fixed-size integer code
-//-----------------------------------------------------------------------------------
 
 fn read_uint(bytes: &[u8], endian: Endian) -> u128 {
   match (bytes.len(), endian) {
@@ -462,9 +454,7 @@ fn uint_to_value(v: u128, heap: &mut Heap) -> Value {
   }
 }
 
-//-----------------------------------------------------------------------------------
 // Value <-> Rust primitive coercion
-//-----------------------------------------------------------------------------------
 
 fn value_to_i128(v: Value) -> Result<i128, String> {
   if v.is_number() {
@@ -543,9 +533,7 @@ fn value_as_hex_str(v: Value, code: char) -> Result<String, String> {
   Ok(s.to_string())
 }
 
-//-----------------------------------------------------------------------------------
 // Float read/write
-//-----------------------------------------------------------------------------------
 
 fn write_float(out: &mut Vec<u8>, code: char, x: f64) {
   match code {
@@ -575,9 +563,7 @@ fn read_float(code: char, b: &[u8]) -> f64 {
   }
 }
 
-//-----------------------------------------------------------------------------------
 // Hex string <-> nibble-packed bytes ('h' / 'H')
-//-----------------------------------------------------------------------------------
 
 fn write_hex(
   out: &mut Vec<u8>,
@@ -632,9 +618,7 @@ fn read_hex(bytes: &[u8], want_digits: usize, code: char) -> String {
   s
 }
 
-//-----------------------------------------------------------------------------------
 // Padded-string pack ('a' / 'A' / 'Z')
-//-----------------------------------------------------------------------------------
 
 fn write_padded_string(out: &mut Vec<u8>, s: &[u8], want_len: usize, code: char) {
   match code {
@@ -658,9 +642,7 @@ fn write_padded_string(out: &mut Vec<u8>, s: &[u8], want_len: usize, code: char)
   }
 }
 
-//-----------------------------------------------------------------------------------
 // One numeric/bool value: pack + unpack
-//-----------------------------------------------------------------------------------
 
 fn write_group_value(out: &mut Vec<u8>, code: char, v: Value) -> Result<(), String> {
   if code == '?' {
@@ -705,9 +687,7 @@ fn read_group_value(code: char, bytes: &[u8], heap: &mut Heap) -> Value {
   }
 }
 
-//-----------------------------------------------------------------------------------
 // Argument bookkeeping
-//-----------------------------------------------------------------------------------
 
 fn next_arg(items: &[Value], idx: &mut usize, code: char) -> Result<Value, String> {
   match items.get(*idx) {
@@ -755,9 +735,7 @@ fn flatten_pack_args(args: &[Value]) -> Vec<Value> {
   items
 }
 
-//-----------------------------------------------------------------------------------
 // The pack/unpack/calcsize engines
-//-----------------------------------------------------------------------------------
 
 fn pack_values(groups: &[FormatGroup], items: &[Value]) -> Result<Vec<u8>, String> {
   let mut out: Vec<u8> = Vec::new();
@@ -993,9 +971,7 @@ fn format_size(groups: &[FormatGroup]) -> Result<usize, String> {
   Ok(size)
 }
 
-//-----------------------------------------------------------------------------------
 // bytes buffer mutation helper (for pack_into)
-//-----------------------------------------------------------------------------------
 
 fn with_bytes_mut<F, R>(v: Value, f: F) -> R
 where
@@ -1007,9 +983,7 @@ where
   }
 }
 
-//-----------------------------------------------------------------------------------
 // Native entry points
-//-----------------------------------------------------------------------------------
 
 /// `struct.pack(format, ...values)` -> `bytes`.
 fn pack_fn(ctx: &mut ZuriContext) -> Result<Value, String> {

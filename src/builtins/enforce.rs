@@ -335,9 +335,7 @@ macro_rules! enforce_arg_ptr {
   };
 }
 
-//-----------------------------------------------------------------------------------
-// Method-style variants
-//-----------------------------------------------------------------------------------
+// Method-style variants.
 //
 // Every native registered through `builtins::method`/`method_n`/
 // `method_opt` (see `builtins/mod.rs`) is invoked with the RECEIVER

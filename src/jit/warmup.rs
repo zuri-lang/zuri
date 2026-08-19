@@ -1,38 +1,38 @@
 //! Warm-up threshold formulas.
 //!
-//! There is deliberately no single fixed "compile after N calls"
+//! There's deliberately no single fixed "compile after N calls"
 //! constant anywhere in this module. A fixed threshold is wrong at both
 //! ends of the size spectrum: a tiny 3-instruction getter compiled
 //! after (say) 50 calls has paid a real, fixed compilation cost (build
 //! Cranelift IR, run its optimizer, emit machine code) for a function
 //! that will almost certainly never earn it back, while a huge,
-//! expensive-per-call function sitting behind the SAME threshold keeps
-//! the VM stuck in the slow interpreter tier for far longer than it
-//! needs to before the JIT ever gets a chance to help.
+//! expensive-per-call function sitting behind the same threshold keeps
+//! the VM stuck in the slow interpreter tier far longer than it needs
+//! to before the JIT gets a chance to help.
 //!
 //! Instead, the threshold scales with the function's own compiled
 //! bytecode instruction count (`chunk.code.len()`), computed once (see
 //! `JitInfo::new` in `vm::object`) when the function is first compiled
 //! to bytecode -- well before it's ever executed, let alone JIT'd.
-//! Bigger functions get a LOWER threshold (they're doing more work per
+//! Bigger functions get a lower threshold (they're doing more work per
 //! call, so compiling them pays for itself sooner, and the interpreter
 //! is paying dispatch overhead on more instructions per call in the
-//! meantime); tiny functions get a HIGHER one.
+//! meantime); tiny functions get a higher one.
 //!
 //! The chosen curve is `threshold = K / sqrt(instruction_count)`,
-//! clamped to a sane floor/ceiling. A few worked examples (matching the
-//! shape asked for -- NOT literal calibration targets, just the same
-//! spirit): 100 instructions -> ~56 calls; 1000 instructions -> ~18
-//! calls. A 3-instruction one-liner clamps at the ceiling (compiling it
-//! at all is speculative -- most never get called enough to matter, so
-//! the ceiling protects against wasting compilation effort on code that
-//! will run a handful of times and never again); a 20,000-instruction
+//! clamped to a sane floor/ceiling. A couple of worked examples (just
+//! illustrating the shape, not literal calibration targets): 100
+//! instructions -> ~56 calls; 1000 instructions -> ~18 calls. A
+//! 3-instruction one-liner clamps at the ceiling (compiling it at all
+//! is speculative -- most never get called enough to matter, so the
+//! ceiling protects against wasting compilation effort on code that
+//! runs a handful of times and never again); a 20,000-instruction
 //! monster clamps at the floor (compile it almost immediately -- even
-//! ONE call through the interpreter's dispatch loop at that size is
+//! one call through the interpreter's dispatch loop at that size is
 //! expensive enough that the fixed cost of compiling is trivial by
 //! comparison).
 //!
-//! `sqrt` (rather than a straight inverse-linear `K / n`) was chosen
+//! `sqrt`, rather than a straight inverse-linear `K / n`, was chosen
 //! deliberately: `K / n` punishes mid-sized functions (a few hundred
 //! instructions -- extremely common for real functions) far too
 //! aggressively relative to tiny ones, while `sqrt` gives a gentler,
@@ -41,9 +41,8 @@
 //! Both constants (`K` for whole-function call warm-up, and the
 //! smaller one for a single loop's own OSR back-edge warm-up) are
 //! overridable via environment variables purely for benchmarking/
-//! tuning during development -- `ZURI_JIT_CALL_K` /
-//! `ZURI_JIT_OSR_K` -- read once and cached, never touched by ordinary
-//! use.
+//! tuning during development -- `ZURI_JIT_CALL_K` / `ZURI_JIT_OSR_K` --
+//! read once and cached, never touched by ordinary use.
 
 use std::sync::OnceLock;
 
@@ -104,7 +103,7 @@ pub fn call_threshold(instruction_count: usize) -> u32 {
   )
 }
 
-/// How many times a SINGLE loop's own back-edge must run before it
+/// How many times a single loop's own back-edge must run before it
 /// triggers on-stack replacement into (freshly compiled, or already
 /// compiled) machine code.
 pub fn osr_threshold(instruction_count: usize) -> u32 {

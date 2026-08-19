@@ -1,6 +1,6 @@
 //! A purely static, compile-time-only dataflow pass proving which
-//! bytecode registers are DEFINITELY numeric at each instruction --
-//! not a guess, a proof: wherever it says a register is numeric, EVERY
+//! bytecode registers are definitely numeric at each instruction --
+//! not a guess, a proof: wherever it says a register is numeric, every
 //! possible runtime execution path reaching that point put a number
 //! there. `jit::codegen` uses this to skip the `is_number()` guard (and
 //! the slow-path helper fallback entirely) for arithmetic whose
@@ -9,32 +9,32 @@
 //!
 //! # Why this needs no runtime guard, no profiling, no deoptimization
 //!
-//! This is a "must" analysis (a fact holds only if it holds on EVERY
+//! This is a "must" analysis (a fact holds only if it holds on every
 //! incoming path, so a merge point intersects rather than unions its
 //! predecessors' facts), computed once per function at JIT-compile
 //! time, purely from the bytecode's own shape -- constants, and chains
 //! of arithmetic whose own operands are already proven. Nothing here
-//! is ever "probably true" or "true so far" -- if the proof holds, the
-//! guard is REDUNDANT by construction, so eliding it can't ever be
-//! wrong. Anything not staticly provable (function parameters, a
+//! is ever "probably true" or "true so far": if the proof holds, the
+//! guard is redundant by construction, so eliding it can't ever be
+//! wrong. Anything not statically provable (function parameters, a
 //! `GetField`/`Call`/`GetIndex` result, ...) is just conservatively
 //! left unproven, and `codegen` falls back to exactly today's guarded
-//! fast/slow codegen for it -- this pass only ever REMOVES already-
+//! fast/slow codegen for it -- this pass only ever removes already-
 //! redundant checks, never adds risk.
 //!
 //! # Why a `Call`/`Invoke` doesn't invalidate other registers' proofs
 //!
 //! This VM's calling convention gives a callee a fresh register window
-//! starting at `func + 1` (or `obj + 1` for `Invoke`) in the CALLER's
+//! starting at `func + 1` (or `obj + 1` for `Invoke`) in the caller's
 //! own register file -- the callee can only ever write within its own
 //! window, never back into the caller's lower-numbered registers
 //! (`setup_closure_call`'s whole contract). So a call only changes the
-//! TYPE of its own `dst` register; every other register's value (and
+//! type of its own `dst` register; every other register's value (and
 //! therefore its proven-numeric status) provably survives a call
 //! unchanged, the same way it survives a GC safepoint (non-moving GC,
 //! so a pointer's identity and target never change under it either).
 //! This is what makes chains like `for i in .. { sum = sum + f(i) }`
-//! still get SOME benefit even with a call in the loop: `i`'s own
+//! still get some benefit even with a call in the loop: `i`'s own
 //! proof survives the call intact, even though `sum`'s doesn't (it's
 //! reassigned from the call's own result, which isn't proven).
 
@@ -57,7 +57,7 @@ impl RegSet {
   }
 
   /// Nothing proven -- the correct starting fact for a function's own
-  /// entry (register 0's caller-supplied argument is never staticly
+  /// entry (register 0's caller-supplied argument is never statically
   /// known to be a number, nor is anything else, before any code has
   /// run).
   fn empty(num_registers: usize) -> Self {
@@ -67,7 +67,7 @@ impl RegSet {
   }
 
   /// Everything (optimistically) proven -- the correct starting point
-  /// for every OTHER block in a forward "must" analysis with an
+  /// for every other block in a forward "must" analysis with an
   /// intersecting merge: each real predecessor's facts can only ever
   /// narrow this down via `and_assign`, never widen it, so seeding
   /// with "everything" and letting real edges intersect it down is
@@ -149,7 +149,7 @@ impl RegSet {
 
   /// Sets every register in `start..start+count` (saturating at the
   /// representable range) -- used for instructions whose operands are a
-  /// whole contiguous register WINDOW rather than a fixed handful of
+  /// whole contiguous register window rather than a fixed handful of
   /// named fields (`Call`'s argument window, `MakeList`/`MakeDict`'s
   /// element run, `Invoke`'s receiver+self+argument window, ...).
   fn set_range(&mut self, start: u8, count: usize) {
@@ -181,7 +181,7 @@ impl RegSet {
 }
 
 /// The result of analyzing one function: `entry[ip]` is exactly the
-/// set of registers PROVEN numeric on every path reaching bytecode
+/// set of registers proven numeric on every path reaching bytecode
 /// position `ip`, i.e. before `ip`'s own instruction executes -- what
 /// `codegen::FuncCompiler` consults when deciding whether an
 /// arithmetic op's operands need a runtime guard at all.
@@ -197,22 +197,22 @@ impl TypeFacts {
 
   /// Every register (among the first 64 -- the same bound
   /// `speculative_params` itself is already subject to) proven numeric
-  /// AT bytecode position `ip`, as a bitmask. At `ip == 0` this is
-  /// exactly whatever seed `analyze` was given (if any) -- unchanged
-  /// from before this existed. At any OTHER `ip`, this is the SOUND
-  /// thing to re-validate a runtime guard against when jumping
-  /// directly into that bytecode position (e.g. on-stack replacement):
-  /// exactly the claim the code at `ip` is about to rely on, not a
-  /// proxy for it. Checking whether the ORIGINAL entry-time seed
-  /// registers are STILL numeric at `ip` is NOT equivalent to this and
-  /// is NOT sound in general -- a seed register can be reassigned
-  /// (even to another number) between entry and `ip` in a way that
-  /// invalidates an EARLIER computation's proof without that
-  /// reassignment itself being visible in a "is register R numeric
-  /// right now" check. Querying `entry[ip]` directly sidesteps that
-  /// entirely: it's already the fixed point of the SAME dataflow proof
-  /// used everywhere else in this file, which tracks every
-  /// reassignment precisely.
+  /// at bytecode position `ip`, as a bitmask. At `ip == 0` this is
+  /// exactly whatever seed `analyze` was given, if any. At any other
+  /// `ip`, this is the sound thing to re-validate a runtime guard
+  /// against when jumping directly into that bytecode position (e.g.
+  /// on-stack replacement): exactly the claim the code at `ip` is
+  /// about to rely on, not a proxy for it.
+  ///
+  /// Checking whether the original entry-time seed registers are
+  /// still numeric at `ip` is not equivalent and not sound in general:
+  /// a seed register can be reassigned (even to another number)
+  /// between entry and `ip` in a way that invalidates an earlier
+  /// proof without that reassignment being visible in a plain "is
+  /// register R numeric right now" check. Querying `entry[ip]`
+  /// directly sidesteps that -- it's already the fixed point of the
+  /// same dataflow proof used everywhere else in this file, which
+  /// tracks every reassignment precisely.
   pub fn numeric_mask_at(&self, ip: usize) -> u64 {
     let mut mask = 0u64;
     for bit in 0..64u8 {
@@ -224,61 +224,61 @@ impl TypeFacts {
   }
 }
 
-/// Every register (among the first 64) that a WHOLE-FRAME profile
+/// Every register (among the first 64) that a whole-frame profile
 /// sample observed holding a number at the moment compilation
 /// triggered -- consulted by `transfer` wherever an instruction's
 /// result would otherwise be unconditionally treated as unproven
 /// (`GetField`, `Call`, `Invoke`, `GetGlobal`, `GetUpval`, `GetIndex`,
 /// ...: anything whose value depends on something this pass can't see
 /// statically). Unlike `speculative_params` (which seeds function
-/// ENTRY, `ip == 0`, since a parameter genuinely holds its real value
+/// entry, `ip == 0`, since a parameter genuinely holds its real value
 /// before any code runs), this has no single seed point: it changes
-/// what `transfer` computes for the OUT set at whatever ip the
+/// what `transfer` computes for the out set at whatever ip the
 /// matching instruction actually executes at, and the existing
-/// fixed-point worklist propagates that forward exactly like any other
-/// fact -- no changes needed to the merge/iteration logic itself.
+/// fixed-point worklist propagates that forward like any other fact --
+/// no changes needed to the merge/iteration logic itself.
 ///
-/// Deliberately NOT restricted to a hardcoded instruction allowlist:
-/// any instruction whose result is semantically NEVER a number (a
+/// Deliberately not restricted to a hardcoded instruction allowlist:
+/// any instruction whose result is semantically never a number (a
 /// `Closure`, a `List`, ...) simply never samples as numeric in the
-/// first place, so the profiling itself is what keeps this
-/// self-limited to instructions where speculating is actually
-/// meaningful, rather than a second, separately-maintained list that
-/// could drift out of sync with `transfer`'s own instruction match.
+/// first place, so the profiling itself keeps this self-limited to
+/// instructions where speculating is actually meaningful, rather than
+/// a second, separately-maintained list that could drift out of sync
+/// with `transfer`'s own instruction match.
 ///
 /// Soundness comes from the same place it always does in this JIT:
 /// `codegen` never trusts this seed's claim without a real runtime
 /// guard planted exactly at the instruction's own definition site
-/// (checking the ACTUAL value just computed, not a proxy for it) --
+/// (checking the actual value just computed, not a proxy for it) --
 /// see `jit::codegen::FuncCompiler`'s own docs on the mid-function
 /// guard-and-fork this drives. A wrong guess here costs a fallback
 /// jump into the general body's continuation, never a wrong answer.
 pub type SpeculativeRegs = u64;
 
 /// Runs the analysis. `speculative_params`, if given, seeds
-/// register-0-based parameter slots as ALREADY proven numeric at
+/// register-0-based parameter slots as already proven numeric at
 /// function entry instead of starting from nothing -- this is the hook
-/// `jit::engine`'s profile-guided specialization (a SEPARATE, second
+/// `jit::engine`'s profile-guided specialization (a separate, second
 /// compiled copy of the function body, guarded by one runtime check at
-/// entry -- see `codegen`'s own docs) uses to get the exact same
+/// entry -- see `codegen`'s own docs) uses to get the same
 /// guard-elision benefit for a speculatively-numeric parameter as a
-/// staticly-provable constant gets for free. `None` (or an empty set)
-/// reproduces the fully conservative baseline (nothing assumed at
+/// statically-provable constant gets for free. `None` (or an empty
+/// set) reproduces the fully conservative baseline (nothing assumed at
 /// entry) -- always sound on its own, used for both ordinary
 /// compilation and every OSR entry point.
 ///
 /// `speculative_params` is a bitmask (bit `r` = register `r`) of
-/// FIXED-arity parameter registers to seed as already-proven at
+/// fixed-arity parameter registers to seed as already-proven at
 /// function entry, rather than a `RegSet` directly -- keeps `RegSet`
 /// itself a purely internal representation, with only a plain integer
 /// crossing this module's boundary. Bits at or past register 64 (or
-/// past `proto.num_registers`) are simply never representable/used --
-/// a real function needing more than 64 SPECULATED parameters doesn't
-/// lose correctness, just the ability to speculate on the overflow
-/// ones (`codegen`'s own entry guard is built from the same mask, so
-/// the two always agree on which registers are actually being bet on).
+/// past `proto.num_registers`) are simply never representable or used
+/// -- a real function needing more than 64 speculated parameters
+/// doesn't lose correctness, just the ability to speculate on the
+/// overflow ones (`codegen`'s own entry guard is built from the same
+/// mask, so the two always agree on which registers are being bet on).
 ///
-/// `speculative_regs` is the SAME kind of bitmask, but for values
+/// `speculative_regs` is the same kind of bitmask, but for values
 /// beyond function parameters -- see `SpeculativeRegs`'s own docs.
 pub fn analyze(
   proto: &ObjFunction,
@@ -316,34 +316,33 @@ pub fn analyze(
     entry[0] = seed.clone();
   }
 
-  // `speculative_regs` is a single REGISTER-indexed bitmask, sampled
+  // `speculative_regs` is a single register-indexed bitmask, sampled
   // as a one-shot runtime snapshot of "whatever's currently in this
-  // register" (see `VM::sample_all_reg_types`) -- it carries no
-  // memory of WHICH instruction produced that value. `transfer`
-  // applies a set bit to EVERY unprovable instruction (`Call`,
-  // `GetGlobal`, `GetField`, ...) that happens to write that same
-  // register number, anywhere in the function. That's unsound
-  // whenever the bytecode compiler's register allocator reuses one
-  // register slot for two DIFFERENT unprovable definitions -- the
-  // single most common case being a call's own callee slot getting
-  // reused, in place, for the call's result (`GetGlobal dst=r` to
-  // load the callee, immediately followed by `Call dst=r, func=r`):
-  // the snapshot naturally observes the RESULT (often numeric), but
-  // the same bit then also claims the callee load itself is numeric
-  // -- which a closure/function value never is, so that guard would
-  // fail on EVERY single invocation, not occasionally. Strip any
-  // register written by more than one distinct speculatable
-  // instruction before it ever reaches `transfer`, so a seed only
-  // ever attaches to the ONE definition site it was actually sampled
-  // from.
+  // register" (see `VM::sample_all_reg_types`) -- it carries no memory
+  // of which instruction produced that value. `transfer` applies a
+  // set bit to every unprovable instruction (`Call`, `GetGlobal`,
+  // `GetField`, ...) that happens to write that same register number,
+  // anywhere in the function. That's unsound whenever the bytecode
+  // compiler's register allocator reuses one register slot for two
+  // different unprovable definitions -- the single most common case
+  // being a call's own callee slot getting reused, in place, for the
+  // call's result (`GetGlobal dst=r` to load the callee, immediately
+  // followed by `Call dst=r, func=r`): the snapshot naturally observes
+  // the result (often numeric), but the same bit then also claims the
+  // callee load itself is numeric -- which a closure/function value
+  // never is, so that guard would fail on every single invocation,
+  // not occasionally. Strip any register written by more than one
+  // distinct speculatable instruction before it ever reaches
+  // `transfer`, so a seed only ever attaches to the one definition
+  // site it was actually sampled from.
   let spec_regs = speculative_regs
     .map(|mask| mask & !ambiguous_speculative_regs(code))
     .unwrap_or(0);
 
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
-  // Seed every OUT from its (possibly still-`full()`, not-yet-
-  // converged) IN, so the worklist loop below has a real starting
+  // Seed every out set from its (possibly still-`full()`, not-yet-
+  // converged) in set, so the worklist loop below has a real starting
   // point to compare against.
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| transfer(&entry[ip], &code[ip], proto, spec_regs))
@@ -393,23 +392,23 @@ pub fn analyze(
 //-----------------------------------------------------------------------------------
 
 /// The result of analyzing one function: `entry[ip]` is exactly the set
-/// of registers PROVEN to never hold a GC-managed reference (a String,
+/// of registers proven to never hold a GC-managed reference (a String,
 /// BigInt, List, Dict, Func, Closure, Class, Instance, Range, Module,
 /// ...) on every path reaching bytecode position `ip` -- i.e. always
 /// one of the three non-reference NaN-boxed types (number, bool, nil)
-/// there. This is a "must" analysis with the exact same shape as
-/// `TypeFacts` (optimistic `full()` seed at every non-entry block,
-/// narrowed by intersection at merges) for the same reason: a register
-/// only counts as proven non-reference if EVERY path agrees, and a
-/// register never proven here is conservatively treated as "might be a
-/// reference" -- the safe direction to be wrong in, since this feeds a
-/// GC safepoint's decision about which registers need to be spilled and
-/// scanned as roots (see the JIT SSA plan's Stage 4). Getting this
-/// backwards (falsely proving "never a reference") would be a genuine
+/// there. This is a "must" analysis with the same shape as `TypeFacts`
+/// (optimistic `full()` seed at every non-entry block, narrowed by
+/// intersection at merges) for the same reason: a register only counts
+/// as proven non-reference if every path agrees, and a register never
+/// proven here is conservatively treated as "might be a reference" --
+/// the safe direction to be wrong in, since this feeds a GC safepoint's
+/// decision about which registers need to be spilled and scanned as
+/// roots (see the JIT SSA plan's Stage 4). Getting this backwards
+/// (falsely proving "never a reference") would be a genuine
 /// memory-safety bug, not just a missed optimization, so unlike
-/// `TypeFacts`'s `speculative_regs` hook, THIS analysis has no
-/// profiling-based speculation escape hatch at all -- every fact here
-/// is a real proof or nothing.
+/// `TypeFacts`'s `speculative_regs` hook, this analysis has no
+/// profiling-based speculation escape hatch -- every fact here is a
+/// real proof or nothing.
 pub struct RefFacts {
   entry: Vec<RegSet>,
 }
@@ -422,28 +421,28 @@ impl RefFacts {
 }
 
 /// Runs the reference-classification analysis, given `type_facts` (the
-/// result of `analyze` on the SAME function) as an auxiliary input.
+/// result of `analyze` on the same function) as an auxiliary input.
 /// Several instructions here (`Add`, `Sub`, `Mul`, `Lt`, `BitAnd`, ...)
-/// can each produce EITHER a plain number OR a genuine reference at
-/// runtime depending on their OPERANDS' types -- e.g. `Add` allocates a
+/// can each produce either a plain number or a genuine reference at
+/// runtime depending on their operands' types -- e.g. `Add` allocates a
 /// new `BigInt`/`String`/`List` when its operands call for one (see
 /// `VM::binary_add_values`), and `Lt`/`Le`/`Gt`/`Ge` fall through to a
 /// user-defined `try_operator_override` (which can return literally
 /// anything) whenever their operands aren't both provably numeric --
-/// but the moment BOTH operands are proven numeric by `type_facts`, the
-/// interpreter's own plain-number fast path is the ONLY branch that can
+/// but the moment both operands are proven numeric by `type_facts`, the
+/// interpreter's own plain-number fast path is the only branch that can
 /// possibly fire (every other branch requires an operand that isn't a
 /// number), so the result is provably a plain number too. This is
 /// exactly why `type_facts` -- not a redundant, independently-computed
 /// copy of the same fact -- is threaded in as a parameter: reusing the
-/// SAME proof `codegen` already relies on for guard elision keeps the
+/// same proof `codegen` already relies on for guard elision keeps the
 /// two analyses from ever silently drifting apart.
 ///
 /// `Eq`/`Neq`/`EqImm`/`NeqImm` are the one case that's unconditionally
-/// non-reference regardless of operand types at all: they call
-/// `Value::equals` directly with no operator-override hook whatsoever
-/// (unlike every OTHER comparison), so their result is provably a bool
-/// no matter what `a`/`b` are.
+/// non-reference regardless of operand types: they call `Value::equals`
+/// directly with no operator-override hook whatsoever (unlike every
+/// other comparison), so their result is provably a bool no matter
+/// what `a`/`b` are.
 pub fn classify_refs(proto: &ObjFunction, type_facts: &TypeFacts) -> RefFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -502,13 +501,13 @@ pub fn classify_refs(proto: &ObjFunction, type_facts: &TypeFacts) -> RefFacts {
 
 /// What a single bytecode instruction proves/invalidates about
 /// register reference-freedom, given what was proven on entry to it
-/// (`in_set`) and the numeric proof already established for the SAME
+/// (`in_set`) and the numeric proof already established for the same
 /// `ip` by `analyze` (`type_facts`). See `classify_refs`'s own docs for
 /// why arithmetic/comparison instructions consult `type_facts` rather
 /// than re-deriving numeric-ness independently, and for the verified,
-/// source-checked justification behind every branch below -- this is
-/// NOT inferred from instruction names, it was confirmed against each
-/// instruction's actual `VM` handler in `vm.rs`.
+/// source-checked justification behind every branch below -- this
+/// isn't inferred from instruction names, it was confirmed against
+/// each instruction's actual `VM` handler in `vm.rs`.
 fn ref_transfer(
   in_set: &RegSet,
   ip: usize,
@@ -543,7 +542,7 @@ fn ref_transfer(
     },
     Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
 
-    // Provably non-reference ONLY when both operands are provably
+    // Provably non-reference only when both operands are provably
     // numeric -- that's exactly what forces the interpreter down its
     // plain-number fast path, bypassing every bigint/string/list/
     // operator-override branch that could otherwise produce a
@@ -593,7 +592,7 @@ fn ref_transfer(
     | Instr::MakePromoted { dst, .. }
     | Instr::GetSlice { dst, .. } => out.set(dst, false),
 
-    // Never staticly provable either way -- depends on arbitrary
+    // Never statically provable either way -- depends on arbitrary
     // runtime container contents, field values, or user/native code.
     Instr::Call { dst, .. }
     | Instr::GetGlobal { dst, .. }
@@ -751,15 +750,15 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
 
 /// The destination register of `instr`, if it's one of `transfer`'s
 /// "conservative, always unproven unless speculated" instructions --
-/// exactly the SAME instruction list as that match arm above (kept as
-/// a single source of truth would require restructuring `transfer`
-/// itself; until then, the two must be kept in sync by hand, the same
-/// way `zuri_jit_invoke_prepare`'s own doc comment already flags its
-/// parameter order needing to match `emit_fast_call`'s calling
-/// convention by hand). `codegen::FuncCompiler` calls this once per
-/// instruction, right after emitting it in the specialized body, to
-/// decide whether a mid-function guard-and-fork belongs there -- see
-/// its own docs.
+/// exactly the same instruction list as that match arm above (making
+/// this a single source of truth would require restructuring
+/// `transfer` itself; until then, the two must be kept in sync by
+/// hand, the same way `zuri_jit_invoke_prepare`'s own doc comment
+/// already flags its parameter order needing to match
+/// `emit_fast_call`'s calling convention by hand). `codegen::
+/// FuncCompiler` calls this once per instruction, right after emitting
+/// it in the specialized body, to decide whether a mid-function
+/// guard-and-fork belongs there -- see its own docs.
 pub fn conservative_dst(instr: &Instr) -> Option<u8> {
   match *instr {
     Instr::Call { dst, .. }
@@ -782,10 +781,10 @@ pub fn conservative_dst(instr: &Instr) -> Option<u8> {
   }
 }
 
-/// The destination register ANY instruction writes, if it writes one
+/// The destination register any instruction writes, if it writes one
 /// at all -- a strict superset of `conservative_dst` (which only
 /// covers the "unprovable, needs a runtime guard to speculate on"
-/// subset). Used by `ambiguous_speculative_regs` to see EVERY
+/// subset). Used by `ambiguous_speculative_regs` to see every
 /// definition of a register, not just the speculatable ones -- kept
 /// as its own function, deliberately not folded into `conservative_dst`
 /// itself, since callers that only care about "which registers might
@@ -854,7 +853,7 @@ pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
 }
 
 /// Registers written by more than one distinct static definition site
-/// in `code` (ANY instruction that writes a register at all, not just
+/// in `code` (any instruction that writes a register at all, not just
 /// speculatable ones) -- unsafe to seed a speculative guess onto,
 /// since a one-shot runtime snapshot of "what's in this register right
 /// now" (see `VM::sample_all_reg_types`) can't say which of the
@@ -862,14 +861,14 @@ pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
 /// observed. Two confirmed real patterns this catches: a call's own
 /// callee-load register reused, in place, for the call's result
 /// (`GetGlobal dst=r` immediately followed by `Call dst=r, func=r`) --
-/// the snapshot sees the numeric RESULT and wrongly also credits the
+/// the snapshot sees the numeric result and wrongly also credits the
 /// callee load, which is never a number; and a receiver register
-/// reused for a method call's (non-numeric) return value while ALSO
+/// reused for a method call's (non-numeric) return value while also
 /// being written elsewhere by something that genuinely is numeric
 /// (e.g. sharing a slot with a loop counter across non-overlapping
 /// live ranges) -- the snapshot can catch either moment and wrongly
 /// credit the other. Both make an `emit_speculative_guard` check that
-/// fails on EVERY invocation, not occasionally -- see `analyze`'s own
+/// fails on every invocation, not occasionally -- see `analyze`'s own
 /// docs at its `spec_regs` computation.
 fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
   let mut seen: u64 = 0;
@@ -893,7 +892,7 @@ fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
 /// Every bytecode position `ip`'s instruction can transfer control to,
 /// including the implicit fallthrough to `ip + 1` where applicable --
 /// the forward edges the fixed-point worklist propagates facts along.
-/// `pub(crate)` (not just used internally) so OTHER fixed-point passes
+/// `pub(crate)` (not just used internally) so other fixed-point passes
 /// over the same bytecode shape (e.g. `jit::escape`'s may-alias
 /// analysis) reuse this exact, already-correct control-flow edge logic
 /// instead of each re-deriving their own copy that could drift out of
@@ -936,13 +935,13 @@ pub(crate) fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
   preds
 }
 
-/// How many DISTINCT bytecode positions can transfer control directly
+/// How many distinct bytecode positions can transfer control directly
 /// to `ip`, for every `ip` in `proto`'s own bytecode -- exposed
-/// specifically so `jit::codegen` can identify genuine CFG JOIN points
+/// specifically so `jit::codegen` can identify genuine CFG join points
 /// (a loop header reached by both its forward entry and its own back-
 /// edge; an if/else merge point reached from both arms), which is
 /// exactly where a per-register "is my cached value still trustworthy"
-/// fact CANNOT be soundly tracked by a single linear compile-time walk
+/// fact can't be soundly tracked by a single linear compile-time walk
 /// -- see `jit::codegen::FuncCompiler::reg_cache`'s own docs for the
 /// full reasoning. A count of 0 or 1 means no real merge happens there
 /// (0 only for genuinely unreachable code, or `ip == 0` itself, whose
@@ -956,8 +955,8 @@ pub fn predecessor_counts(proto: &ObjFunction) -> Vec<usize> {
 //-----------------------------------------------------------------------------------
 
 /// The result of analyzing one function: `live_in[ip]` is exactly the
-/// set of registers that MIGHT still be needed on some path forward
-/// from bytecode position `ip`, INCLUDING whatever `ip`'s own
+/// set of registers that might still be needed on some path forward
+/// from bytecode position `ip`, including whatever `ip`'s own
 /// instruction itself reads -- i.e. precisely the registers that must
 /// hold a correct, up-to-date value in `VM::registers` at the moment
 /// `ip` is about to execute. This is what `jit::codegen` consults at
@@ -967,7 +966,7 @@ pub fn predecessor_counts(proto: &ObjFunction) -> Vec<usize> {
 /// "nothing," just what's actually live. See this module's own
 /// `liveness` doc comment for why "live_in" (not "live_out") is the
 /// right quantity for that: it already folds in both what `ip` itself
-/// is about to read AND whatever survives it for later, via the
+/// is about to read and whatever survives it for later, via the
 /// standard equation `live_in[ip] = uses(ip) ∪ (live_out[ip] -
 /// defs(ip))`.
 pub struct LivenessFacts {
@@ -989,12 +988,12 @@ impl LivenessFacts {
 }
 
 /// Runs a standard backward "may" liveness analysis: a register is live
-/// at a point if there EXISTS some path forward from there on which its
+/// at a point if there exists some path forward from there on which its
 /// current value is read before being overwritten. Unlike `analyze`'s
 /// numeric-facts pass (a "must" analysis, seeded optimistically full and
 /// narrowed by intersection at merges, since a fact only holds if every
-/// path agrees), this is seeded empty and grows by UNION at merges,
-/// since a register only needs to be considered dead if NO path forward
+/// path agrees), this is seeded empty and grows by union at merges,
+/// since a register only needs to be considered dead if no path forward
 /// needs it -- the textbook fixed point for liveness, guaranteed to
 /// converge because each `RegSet` only ever grows and is bounded above
 /// by "every register."
@@ -1045,8 +1044,8 @@ pub fn liveness(proto: &ObjFunction) -> LivenessFacts {
   LivenessFacts { live_in }
 }
 
-/// Marks every register `instr` READS (never what it writes -- see
-/// `any_dst` for that) into `set`. Kept as its own pass over the SAME
+/// Marks every register `instr` reads (never what it writes -- see
+/// `any_dst` for that) into `set`. Kept as its own pass over the same
 /// field layout `transfer`/`any_dst` already match on, rather than
 /// folding into either: `transfer` cares about numeric-ness of a
 /// destination, `any_dst` cares only about the (single, if any)
@@ -1055,7 +1054,7 @@ pub fn liveness(proto: &ObjFunction) -> LivenessFacts {
 /// match arm answers all three without being harder to read than three
 /// smaller ones.
 ///
-/// A few instructions read a whole contiguous register WINDOW rather
+/// A few instructions read a whole contiguous register window rather
 /// than a fixed handful of named operands (`Call`'s own callee register
 /// plus its `num_args` argument registers immediately after it;
 /// `Invoke`/`InvokeSuper`/`CallSuperCtor`'s receiver/superclass register
@@ -1065,9 +1064,9 @@ pub fn liveness(proto: &ObjFunction) -> LivenessFacts {
 /// own `start`/`count`-style fields, needing no extra bookkeeping beyond
 /// what's already encoded in the bytecode.
 ///
-/// `Closure` is the one case that reads registers NOT named anywhere in
+/// `Closure` is the one case that reads registers not named anywhere in
 /// the instruction itself: it captures its nested prototype's own
-/// `UpvalueDescriptor::Local(n)` entries out of the CURRENTLY EXECUTING
+/// `UpvalueDescriptor::Local(n)` entries out of the currently executing
 /// (enclosing) function's registers at the moment the closure is
 /// created (see `ObjFunction::upvalues`'s own doc comment) -- missing
 /// one of these would let a captured local's register be treated as
@@ -1324,7 +1323,7 @@ mod liveness_tests {
   #[test]
   fn closure_marks_captured_locals_live() {
     let mut nested = make_func(vec![Instr::Return { src: 0 }], vec![], 1);
-    // Captures the ENCLOSING function's local register 3.
+    // Captures the enclosing function's local register 3.
     nested.upvalues = vec![UpvalueDescriptor::Local(3)];
     let nested_ptr: &'static Obj = Box::leak(Box::new(Obj::Func(Box::new(nested))));
     let nested_val = Value::obj(nested_ptr as *const Obj);

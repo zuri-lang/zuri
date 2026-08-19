@@ -5,30 +5,30 @@
 //! threshold never stalls the interpreter waiting for Cranelift's
 //! optimizing backend to finish.
 //!
-//! # Why this is safe with NO locking between the two threads
+//! # Why this is safe with no locking between the two threads
 //!
 //! Compiling a function splits cleanly into two stages (see
 //! `jit::engine::JitEngine::build_ir`/`install_compiled`):
 //!
 //! 1. **Build IR** (`JitEngine::build_ir`, always on the VM's own
-//!    thread): walks `proto`'s bytecode and produces an OWNED
+//!    thread): walks `proto`'s bytecode and produces an owned
 //!    `cranelift_codegen::Context` holding pure IR -- every constant
 //!    `Value` the bytecode referenced is already baked into that IR as
 //!    a raw immediate (see `jit::codegen`'s own docs), so once this
-//!    step returns, the resulting `Context` has NO remaining
-//!    dependency on `proto`, the heap, or the GC at all. This is the
-//!    ONLY stage that touches `proto`, which is why it must stay
+//!    step returns, the resulting `Context` has no remaining
+//!    dependency on `proto`, the heap, or the GC. This is the only
+//!    stage that touches `proto`, which is why it must stay
 //!    synchronous -- see `VM::sample_param_types`/`enqueue_or_ready`'s
 //!    docs on how `proto`'s liveness is guaranteed for exactly this
 //!    stage's duration.
-//! 2. **Backend-compile** (`Context::compile`, done HERE): needs only
+//! 2. **Backend-compile** (`Context::compile`, done here): needs only
 //!    the `Context` from step 1 (moved in, exclusively owned by this
 //!    thread for the duration) and a `TargetIsa` handle. Cranelift's
 //!    own `TargetIsa` trait is `Send + Sync` and `JitEngine` hands out
 //!    an independent `Arc` clone of it (see `JitEngine::isa_handle`)
 //!    that never touches `JITModule` -- so this stage needs no lock,
-//!    no shared mutable state, nothing from the VM at all beyond the
-//!    `Context` it was given.
+//!    no shared mutable state, nothing from the VM beyond the `Context`
+//!    it was given.
 //!
 //! The VM's own thread later installs the finished machine code
 //! (`JitEngine::install_compiled`, plain memcpy + relocation fixups,
@@ -38,11 +38,11 @@
 //! # Why `*const ObjFunction` is safe to carry across this boundary
 //!
 //! `CompileJob`/`CompileResult` carry a raw `*const ObjFunction`
-//! purely as an OPAQUE identifier -- this thread never dereferences
+//! purely as an opaque identifier -- this thread never dereferences
 //! it, only Cranelift's `Context`/`TargetIsa` data. The VM's own
 //! thread is what eventually dereferences it back (in
 //! `VM::drain_jit_results`), and it keeps the function pinned as a GC
-//! root (`VM::pending_jit_compiles`) for the ENTIRE round trip, from
+//! root (`VM::pending_jit_compiles`) for the entire round trip, from
 //! the moment a job is sent here to the moment its result is drained
 //! -- so the pointer is always valid whenever anyone actually uses it.
 
@@ -59,8 +59,8 @@ use rustc_hash::FxHashMap;
 use crate::jit::typeflow;
 use crate::vm::object::ObjFunction;
 
-/// A raw pointer wrapper that's `Send` purely as an opaque token --
-/// see this module's docs on why it's never dereferenced here.
+/// A raw pointer wrapper that's `Send` purely as an opaque token.
+/// See this module's docs for why it's never dereferenced here.
 pub struct SendPtr(pub *const ObjFunction);
 unsafe impl Send for SendPtr {}
 
@@ -93,8 +93,8 @@ pub struct CompileResult {
 pub struct JitCompilerHandle {
   pub job_tx: Sender<CompileJob>,
   pub result_rx: Receiver<CompileResult>,
-  /// Set by the compiler thread AFTER a finished result is already in
-  /// `result_rx`; cleared by `VM::drain_jit_results` BEFORE it drains.
+  /// Set by the compiler thread after a finished result is already in
+  /// `result_rx`; cleared by `VM::drain_jit_results` before it drains.
   ///
   /// Exists purely so the VM can skip `result_rx` entirely on the
   /// overwhelmingly common path. `VM::tiered_entry` runs on every
@@ -106,19 +106,19 @@ pub struct JitCompilerHandle {
   /// relaxed load of an uncontended, read-mostly flag costs nothing by
   /// comparison.
   ///
-  /// The store/clear ORDER on both sides is what makes this safe, and
+  /// The store/clear order on both sides is what makes this safe, and
   /// neither may be swapped:
   ///
-  /// - Producer sends first, THEN sets. So observing `true` guarantees
+  /// - Producer sends first, then sets. So observing `true` guarantees
   ///   the corresponding `send` has already happened and a following
   ///   `try_recv` is certain to see it -- the reverse order could set
   ///   the flag for a result not yet in the channel, let the VM clear
   ///   it and find nothing, and strand that result forever (its
   ///   function would keep `compiling` set and never be installed).
-  /// - Consumer clears first, THEN drains. A result arriving during
-  ///   the drain therefore re-sets the flag rather than being lost;
-  ///   worst case it was already drained by the in-flight loop and the
-  ///   next call does one spurious (empty, harmless) drain.
+  /// - Consumer clears first, then drains. A result arriving during
+  ///   the drain re-sets the flag rather than being lost; worst case
+  ///   it was already drained by the in-flight loop and the next call
+  ///   does one spurious (empty, harmless) drain.
   pub results_pending: Arc<AtomicBool>,
 }
 

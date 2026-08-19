@@ -44,9 +44,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-//-----------------------------------------------------------------------------------
 // Helpers
-//-----------------------------------------------------------------------------------
 
 /// `hash.zu` accepts `{string|bytes}` for every data argument -- strings
 /// are hashed over their UTF-8 bytes, matching `string.to_bytes()`
@@ -136,9 +134,7 @@ fn digest_bytes(algorithm: &str, data: &[u8]) -> Result<Vec<u8>, String> {
   })
 }
 
-//-----------------------------------------------------------------------------------
 // FNV -- non-cryptographic, but part of the documented algorithm family
-//-----------------------------------------------------------------------------------
 
 fn fnv1_32(data: &[u8]) -> u32 {
   let mut h: u32 = 0x811c_9dc5;
@@ -176,9 +172,7 @@ fn fnv1a_64(data: &[u8]) -> u64 {
   h
 }
 
-//-----------------------------------------------------------------------------------
 // Natives
-//-----------------------------------------------------------------------------------
 
 /// `_hash.id(value)`. A class can override the result via a `to_hash`
 /// decorator method (per `hash.zu`'s own doc comment); everything else

@@ -973,15 +973,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///
   /// This is the same bug class `restore_dirty_from_snapshot` closes
   /// for the guarded-arithmetic fast/slow split -- a branch that may
-  /// never run at runtime mutating state shared with one that does --
-  /// and it reproduced concretely: with a `GetField` inline cache
-  /// removing the redundant helper-call flush that used to mask it,
-  /// `bodies[j].x` inside a speculatively-compiled loop re-read its
-  /// receiver register from memory and got the value from BEFORE the
-  /// enclosing `GetIndex`, raising a `TypeError` naming the list itself
-  /// as the receiver. Handled here rather than at the call site so it
-  /// stays closed for any future guard that deopts from inside one arm
-  /// of a branch.
+  /// never run at runtime mutating state shared with one that does.
+  /// Handled here rather than at the call site so it stays closed for
+  /// any future guard that deopts from inside one arm of a branch.
   fn emit_deopt(&mut self, ip: usize) {
     let snapshot = self.snapshot_reg_cache();
     self.flush_live(ip);
@@ -1007,11 +1001,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// The REAL memory read this used to be the whole implementation of
-  /// -- now used only by `load_reg`'s own `Stale` branch (a genuine
-  /// reload is owed) and nowhere else. See this module's docs / the JIT
-  /// SSA plan for why every OTHER register access goes through the
-  /// `Variable`-backed `load_reg`/`store_reg` instead.
+  /// A real memory read of register `r`, bypassing the `Variable`
+  /// cache -- used only by `load_reg`'s `Stale` branch, where a genuine
+  /// reload is owed. See this module's docs for why every other
+  /// register access goes through `load_reg`/`store_reg` instead.
   fn load_reg_mem(&mut self, r: u8) -> IrValue {
     let addr = self.reg_addr(r);
     self.fb.ins().load(
@@ -1022,8 +1015,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     )
   }
 
-  /// The REAL memory write this used to be the whole implementation of
-  /// -- now used only by `flush_live`, which owes memory a write for
+  /// A real memory write of register `r`, bypassing the `Variable`
+  /// cache -- used only by `flush_live`, which owes memory a write for
   /// every live `Dirty` register right before a genuine sync point (a
   /// call, a GC safepoint, a deopt, a return).
   fn store_reg_mem(&mut self, r: u8, v: IrValue) {
@@ -1087,14 +1080,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// BEFORE the actual call/branch, so whatever Rust/native code, the
   /// interpreter, or a GC root scan is about to run sees a fully
   /// correct, current view of every register it could touch.
-  ///
-  /// NOTE: an "always flush every register, ignore liveness entirely"
-  /// variant of this function was tried and measured against the real
-  /// bug this is chasing (see git history) -- it did NOT fix it, which
-  /// is itself real evidence: the bug is NOT about which registers get
-  /// selected for flushing, so this stays liveness-scoped rather than
-  /// paying an unnecessary, unjustified performance cost for a fix that
-  /// doesn't fix anything.
   fn flush_live(&mut self, ip: usize) {
     let live: Vec<u8> = self.liveness.live_regs_at(ip).collect();
     for r in live {
@@ -1965,10 +1950,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Inlines a call outright when the callee is a small, straight-line,
   /// arithmetic-only leaf -- no call protocol, no frame, no register
-  /// flush, no reload. This is what removes the ~17ns per call that
-  /// dominates helper-heavy numeric code like
-  /// `benchmarks/spectral-norm.zu`, where the callee's own work is a
-  /// handful of flops.
+  /// flush, no reload. Call overhead otherwise dominates numeric code
+  /// where the callee's own work is a handful of flops.
   ///
   /// Returns whether it inlined; `false` leaves the caller to emit an
   /// ordinary call, unchanged.
@@ -3156,10 +3139,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// flushed first; the fast arm never flushes anything, so for it
   /// `Stale` is a lie and the next `load_reg(obj)` reads whatever
   /// happened to be in that register slot several instructions ago.
-  /// That is not hypothetical: `bodies[i].y` in `benchmarks/nbody.zu`
-  /// read back the `bodies` LIST -- the value the `GetGlobal` feeding
-  /// the `GetIndex` had left in memory -- and raised a `TypeError`
-  /// naming it.
   ///
   /// Resyncing here makes the `Variable` authoritative on BOTH arms
   /// (fast: never invalidated; slow: freshly re-read, so it also picks
@@ -3751,9 +3730,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///   propagation -- deliberately: reimplementing the same
   ///   reachability/aliasing logic a second time, in a completely
   ///   separate piece of code, is exactly the kind of two-sources-of-
-  ///   truth setup that has ALREADY produced one real, silent-
-  ///   corruption bug this session (see `emit_list_get_index`'s own
-  ///   commit history). Ruling out `Move` entirely, unconditionally
+  ///   truth setup that has already produced one real, silent-
+  ///   corruption bug (see `emit_list_get_index`). Ruling out `Move`
+  ///   entirely, unconditionally
   ///   (not just on paths reachable from `alloc_ip`), is a safe, cheap
   ///   over-approximation instead: `scalar_lists` then only ever needs
   ///   to answer for the EXACT register `analyze_one` already reasoned
@@ -4099,25 +4078,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.mark_stale_live(ip);
   }
 
-  // HISTORICAL NOTE, kept so the dead end is not re-explored: a
-  // `GetField`/`SetField` inline fast path was built and reverted twice
-  // before, both times blamed on a run-to-run FLOATING-POINT result
-  // divergence on `benchmarks/nbody.zu` attributed to Cranelift
-  // reordering/reassociating the surrounding float arithmetic.
-  //
-  // That attribution was WRONG -- Cranelift never reassociates floating
-  // point, and has no fast-math mode to do it under. The divergence was
-  // a stale-register READ, from two independent causes, both fixed and
-  // documented at their own sites: `emit_deopt` leaking its `flush_live`
-  // bookkeeping out of a branch arm that never runs, and a guarded field
-  // access's two arms disagreeing about the receiver register (see
-  // `resync_receiver_from_memory`). Both were masked by the old
-  // helper-call path's redundant flush on every single field access,
-  // which is why removing that flush is what exposed them.
-  //
-  // The fast path now ships -- see `emit_ic_get_field`/`emit_ic_set_field`
-  // for the general receiver and `emit_self_get_field`/`emit_self_set_field`
-  // for the compile-time-resolvable `self.field` case.
+  // The `GetField`/`SetField` inline fast path -- see
+  // `emit_ic_get_field`/`emit_ic_set_field` for the general receiver
+  // and `emit_self_get_field`/`emit_self_set_field` for the
+  // compile-time-resolvable `self.field` case. Both rely on
+  // `resync_receiver_from_memory` to keep the receiver register
+  // consistent across the guard's fast/slow split; don't drop that
+  // call when touching this code.
 
   // ---------------------------------------------------------------
   // Guards

@@ -33,16 +33,16 @@ pub struct PendingCompile {
 pub struct JitEngine {
   module: JITModule,
   builder_ctx: FunctionBuilderContext,
-  /// A second handle onto the SAME target configuration `module` was
+  /// A second handle onto the same target configuration `module` was
   /// built with (not the module's own internal ISA -- a fully separate,
-  /// independently-constructed instance) -- `Arc<dyn TargetIsa>` is
+  /// independently-constructed instance). `Arc<dyn TargetIsa>` is
   /// `Send + Sync`, so cloning this out to `jit::background`'s compiler
   /// thread lets it run `Context::compile` (the expensive register-
-  /// allocation/encoding step) with ZERO access to `module` at all, no
+  /// allocation/encoding step) with no access to `module` at all, no
   /// locking needed. See `isa_handle`.
   isa: Arc<dyn TargetIsa>,
   /// Every `jit::runtime` helper's `FuncId`, keyed by its registered
-  /// name -- declared ONCE, up front, and reused (via
+  /// name -- declared once, up front, and reused (via
   /// `Module::declare_func_in_func`) by every subsequent function this
   /// engine compiles.
   helper_ids: FxHashMap<&'static str, FuncId>,
@@ -130,8 +130,8 @@ impl JitEngine {
 
   /// Stage 1 of compiling `proto`: translate its bytecode to Cranelift
   /// IR (`jit::codegen`'s job) and declare a slot for it in `module`.
-  /// This is the ONLY stage that touches `proto` at all, so it MUST
-  /// run synchronously on the VM's own thread -- see `jit::background`'s
+  /// This is the only stage that touches `proto`, so it must run
+  /// synchronously on the VM's own thread -- see `jit::background`'s
   /// module docs for why everything after this point (the actual
   /// register-allocation/encoding work, `Context::compile`) is safe to
   /// hand off to a background thread with no further `proto`/`module`
@@ -162,11 +162,11 @@ impl JitEngine {
       .declare_function(&name, Linkage::Local, &sig)
       .map_err(|e| format!("failed to declare function: {e}"))?;
 
-    // A FRESH `Context` per function, not a single reused field --
-    // once built, this `Context` (holding the finished IR) is MOVED to
-    // the background compiler thread, so nothing here can be shared
-    // across compilations the way the old single-body design reused
-    // one `Context`/cleared it after each `define_function`.
+    // A fresh `Context` per function, not a single reused field: once
+    // built, this `Context` (holding the finished IR) is moved to the
+    // background compiler thread, so nothing here can be shared across
+    // compilations the way a single reused-and-cleared `Context` would
+    // be.
     let mut ctx = self.module.make_context();
     ctx.func.signature = sig;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -200,7 +200,7 @@ impl JitEngine {
     })
   }
 
-  /// Stage 2 of compiling a function: install ALREADY BACKEND-COMPILED
+  /// Stage 2 of compiling a function: install already backend-compiled
   /// machine code (produced by `jit::background`'s compiler thread
   /// running `Context::compile` on a `PendingCompile.ctx`) into
   /// `module` and finalize it. Pure bookkeeping -- memcpy into the
@@ -226,7 +226,7 @@ impl JitEngine {
 
     let code_ptr = self.module.get_finalized_function(func_id);
     // SAFETY: `code_ptr` was just produced by compiling a function with
-    // EXACTLY the signature `EntryFn` describes (I64, I64, I64, I32 ->
+    // exactly the signature `EntryFn` describes (I64, I64, I64, I32 ->
     // I64, matching `build_ir`'s `sig`), for the host's native calling
     // convention (via `cranelift_native::builder()` in `JitEngine::new`) --
     // the same convention `extern "C"` uses on every platform this

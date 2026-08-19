@@ -174,18 +174,15 @@ fn typeof_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_string(v))
 }
 
-//-----------------------------------------------------------------------------------
-// Property reflection: delprop / getprop / hasprop / setprop
-//
-// Instances in this VM have a fixed, slot-indexed field layout resolved
-// once at class-declaration time (see `ObjClass::field_slots`), not an
-// open/dynamic property bag -- so none of these can introduce a field
-// that wasn't already declared (via `var`, `const`, or an implicit
-// `self.x = ...` in a constructor). `setprop`/`delprop` report that
-// via a `false` return, matching the documented "if the property
-// already exists" contract; `delprop` "deletes" by resetting the slot
-// to `nil` rather than shrinking the instance's layout.
-//-----------------------------------------------------------------------------------
+// delprop / getprop / hasprop / setprop: instances here have a fixed,
+// slot-indexed field layout resolved once at class-declaration time
+// (see `ObjClass::field_slots`), not an open/dynamic property bag --
+// so none of these can introduce a field that wasn't already declared
+// (via `var`, `const`, or an implicit `self.x = ...` in a constructor).
+// `setprop`/`delprop` report that via a `false` return, matching the
+// documented "if the property already exists" contract; `delprop`
+// "deletes" by resetting the slot to `nil` rather than shrinking the
+// instance's layout.
 
 fn field_slot(ctx: &ZuriContext, idx: usize, name_idx: usize) -> Option<u16> {
   let inst = ctx.args[idx].as_instance();
@@ -243,10 +240,6 @@ fn delprop(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 }
 
-//-----------------------------------------------------------------------------------
-// id
-//-----------------------------------------------------------------------------------
-
 /// For a heap object, the object's own CURRENT address. Stable for as
 /// long as it's alive AND has already been promoted to the old
 /// generation (old-gen objects never move again, see `object::Heap`'s
@@ -282,10 +275,6 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(n))
 }
 
-//-----------------------------------------------------------------------------------
-// print
-//-----------------------------------------------------------------------------------
-
 /// Unlike `echo` (which always appends a newline and only ever prints
 /// one value), `print()` writes every argument back-to-back with no
 /// separator and no trailing newline -- and, critically, writes a
@@ -318,10 +307,6 @@ fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   stdout.flush().map_err(|e| e.to_string())?;
   Ok(Value::nil())
 }
-
-//-----------------------------------------------------------------------------------
-// rand
-//-----------------------------------------------------------------------------------
 
 thread_local! {
   /// Self-seeded xorshift64 state -- no external RNG crate needed.
@@ -383,9 +368,7 @@ fn rand_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 }
 
-//-----------------------------------------------------------------------------------
 // is_* type predicates
-//-----------------------------------------------------------------------------------
 
 fn is_bool(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);

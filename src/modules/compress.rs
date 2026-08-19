@@ -24,9 +24,6 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
 
 use super::compress_util::{DeflateDecoder, DeflateEncoder};
 
-/// Re-exports the already globally-registered `sum` native under the
-/// `math` namespace -- preserves `import math; math.sum(...)` exactly
-/// as it worked before this registry existed.
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
     ("crc32_checksum", native(vm, "crc32", 1, true, crc32_fn)),
@@ -395,7 +392,7 @@ fn get_data(args: &[Value]) -> Vec<u8> {
   }
 }
 
-// ----------------------------------------- ZLib -----------------------------------------
+// ZLib
 
 fn compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 1, 5);
@@ -437,7 +434,7 @@ fn decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
 
-// --------------------------------------- Deflate ----------------------------------------
+// Deflate
 
 fn deflate_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -470,7 +467,7 @@ fn deflate_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(decompressed_data))
 }
 
-// ----------------------------------------- GZIP -----------------------------------------
+// GZIP
 
 const GZIP_ENCODER_NAME: &str = "zuri::compress::gzip::encoder";
 const GZIP_DECODER_NAME: &str = "zuri::compress::gzip::decoder";
@@ -745,7 +742,7 @@ fn gzip_decoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(encoder.total_out() as f64))
 }
 
-// --------------------------------------- Checksum ---------------------------------------
+// Checksum
 
 fn adler32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 1, 2);
@@ -767,7 +764,7 @@ fn crc32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(checksum as f64))
 }
 
-// ----------------------------------------- ZSTD -----------------------------------------
+// ZSTD
 
 const ZSTD_ENCODER_NAME: &str = "zuri::compress::zstd::encoder";
 const ZSTD_DECODER_NAME: &str = "zuri::compress::zstd::decoder";
@@ -987,7 +984,7 @@ fn zstd_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_string(buffer))
 }
 
-// ----------------------------------------- LZ4 ------------------------------------------
+// LZ4
 
 const LZ4_ENCODER_NAME: &str = "zuri::compress::lz4::encoder";
 const LZ4_DECODER_NAME: &str = "zuri::compress::lz4::decoder";

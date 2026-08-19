@@ -52,9 +52,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-//-----------------------------------------------------------------------------------
 // encode
-//-----------------------------------------------------------------------------------
 
 /// `json.encode(value, compact: ?bool, max_depth: ?number)`.
 ///
@@ -297,9 +295,7 @@ fn encode_json_string(s: &str, out: &mut String) {
   out.push('"');
 }
 
-//-----------------------------------------------------------------------------------
 // decode
-//-----------------------------------------------------------------------------------
 
 /// `json.decode(text, allow_comments: ?bool)`.
 ///
@@ -570,9 +566,7 @@ fn parse_array(ctx: &mut ZuriContext, input: &mut JsonInput) -> Result<Value, St
   Ok(ctx.heap().alloc_list(items))
 }
 
-//-----------------------------------------------------------------------------------
 // parse / dump -- file-backed decode/encode
-//-----------------------------------------------------------------------------------
 
 /// `json.parse(path, allow_comments: ?bool)` -- reads the file at
 /// `path` and decodes its content the same way `decode` would. A

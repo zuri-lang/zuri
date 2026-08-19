@@ -50,10 +50,6 @@ pub static FILE_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   ])
 });
 
-//-----------------------------------------------------------------------------------
-// Helpers
-//-----------------------------------------------------------------------------------
-
 fn with_file_mut<F, R>(v: Value, f: F) -> R
 where
   F: FnOnce(&mut FileHandle) -> R,
@@ -107,10 +103,6 @@ pub(crate) fn open_with_mode(path: &str, mode: &str) -> Result<std::fs::File, St
     .open(path)
     .map_err(|e| format!("could not open '{}' in mode '{}': {}", path, mode, e))
 }
-
-//-----------------------------------------------------------------------------------
-// Implementations
-//-----------------------------------------------------------------------------------
 
 fn exists(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);

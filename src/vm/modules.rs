@@ -296,9 +296,7 @@ fn run_module_source(
   Ok(())
 }
 
-//-----------------------------------------------------------------------------------
 // Builtin native modules
-//-----------------------------------------------------------------------------------
 
 /// Constructs (and caches, keyed as `"builtin:NAME"`) a synthetic
 /// module exposing a handful of already-registered natives under a

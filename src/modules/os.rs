@@ -98,9 +98,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   members
 }
 
-//-----------------------------------------------------------------------------------
 // exec / info / sleep
-//-----------------------------------------------------------------------------------
 
 /// `_os.exec(cmd)` -> `[exit_code, output]`. Runs `cmd` through the
 /// platform shell (`cmd /C` on Windows, `sh -c` elsewhere) -- matches
@@ -210,9 +208,7 @@ fn sleep_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::nil())
 }
 
-//-----------------------------------------------------------------------------------
 // Environment variables
-//-----------------------------------------------------------------------------------
 
 fn getenv(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -250,9 +246,7 @@ fn setenv(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(true))
 }
 
-//-----------------------------------------------------------------------------------
 // Directories
-//-----------------------------------------------------------------------------------
 
 fn createdir(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 3);
@@ -435,9 +429,7 @@ fn exists_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(Path::new(path).exists()))
 }
 
-//-----------------------------------------------------------------------------------
 // Process control
-//-----------------------------------------------------------------------------------
 
 fn exit_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -446,9 +438,7 @@ fn exit_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   std::process::exit(code);
 }
 
-//-----------------------------------------------------------------------------------
 // Path helpers
-//-----------------------------------------------------------------------------------
 
 fn realpath_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);

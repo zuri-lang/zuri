@@ -108,7 +108,7 @@ pub enum TokenKind {
   Decorator(String),
   Interpolation(String),
 
-  //  * end of file
+  // end of file
   Eof,
   Error(String, usize, usize),
 }
@@ -140,8 +140,8 @@ impl fmt::Display for TokenKind {
       TokenKind::Rparen => write!(f, ")"),
       TokenKind::Lbracket => write!(f, "["),
       TokenKind::Rbracket => write!(f, "]"),
-      TokenKind::Lbrace => write!(f, "{{"), // Escaped for write! macro
-      TokenKind::Rbrace => write!(f, "}}"), // Escaped for write! macro
+      TokenKind::Lbrace => write!(f, "{{"),
+      TokenKind::Rbrace => write!(f, "}}"),
       TokenKind::Semicolon => write!(f, ";"),
       TokenKind::Comma => write!(f, ","),
       TokenKind::Backslash => write!(f, "\\"),

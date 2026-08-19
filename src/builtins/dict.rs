@@ -45,10 +45,6 @@ pub static DICT_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   ])
 });
 
-//-----------------------------------------------------------------------------------
-// Helpers
-//-----------------------------------------------------------------------------------
-
 /// Run `f` with mutable access to the underlying `DictStorage` of a
 /// dict Value -- the `Obj::Dict` counterpart to `list.rs`'s
 /// `with_list_mut`.
@@ -94,10 +90,6 @@ fn deep_clone(ctx: &mut ZuriContext, v: Value) -> Value {
     v
   }
 }
-
-//-----------------------------------------------------------------------------------
-// Implementations
-//-----------------------------------------------------------------------------------
 
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -374,9 +366,7 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(acc)
 }
 
-//-----------------------------------------------------------------------------------
-// Iterable Decorators (@key / @value) -- unchanged from before this pass
-//-----------------------------------------------------------------------------------
+// @key / @value: iterable protocol decorators.
 
 fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx.args[1];

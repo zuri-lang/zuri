@@ -10,7 +10,6 @@
 //! space (there are 2^52 - 2 of them, minus the ones IEEE reserves for
 //! infinities) to encode every other kind of value: nil, true, false, and
 //! pointers to heap objects (strings, functions, ...).
-//!unsafe
 //! This is the same trick used by JavaScriptCore, SpiderMonkey, LuaJIT and
 //! the clox VM from "Crafting Interpreters" -- here it's adapted to a
 //! register machine and extended with a Str/Function object model.

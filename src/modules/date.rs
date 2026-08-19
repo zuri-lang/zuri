@@ -64,11 +64,9 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-//-----------------------------------------------------------------------------------
 // Portable proleptic-Gregorian civil calendar math -- the non-Unix
 // fallback. Correct across `date.zu`'s own documented year range
 // (1..9999) and well beyond it.
-//-----------------------------------------------------------------------------------
 
 /// Days since 1970-01-01 for the given proleptic-Gregorian civil date.
 #[allow(dead_code)]
@@ -103,9 +101,7 @@ fn weekday_from_days(z: i64) -> i64 {
   (z.rem_euclid(7) + 4) % 7
 }
 
-//-----------------------------------------------------------------------------------
 // Shared broken-down-time representation and dict construction
-//-----------------------------------------------------------------------------------
 
 struct BrokenDown {
   year: i64,
@@ -188,9 +184,7 @@ fn broken_down_to_dict(ctx: &mut ZuriContext, bd: BrokenDown, microseconds: i64)
   ])
 }
 
-//-----------------------------------------------------------------------------------
 // gmtime / localtime -- Unix
-//-----------------------------------------------------------------------------------
 
 #[cfg(unix)]
 fn tm_to_broken_down(tm: &libc::tm, is_utc: bool) -> BrokenDown {
@@ -248,9 +242,7 @@ fn localtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(broken_down_to_dict(ctx, bd, micros))
 }
 
-//-----------------------------------------------------------------------------------
 // gmtime / localtime -- non-Unix fallback
-//-----------------------------------------------------------------------------------
 
 #[cfg(not(unix))]
 fn gmtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -268,9 +260,7 @@ fn localtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   gmtime_fn(ctx)
 }
 
-//-----------------------------------------------------------------------------------
 // mktime
-//-----------------------------------------------------------------------------------
 
 fn mktime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 7);
