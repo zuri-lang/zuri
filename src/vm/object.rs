@@ -1230,7 +1230,7 @@ mod gcbox_layout_tests {
     let obj = v.as_obj();
     assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_NATIVE);
     let slot = unsafe { (obj as *const u8).add(obj_native_func_offset()) as *const usize };
-    assert_eq!(unsafe { *slot }, probe_fn as usize);
+    assert_eq!(unsafe { *slot }, probe_fn as *const () as usize);
   }
 
   /// `obj_closure_function_offset` must land on a real closure's own
