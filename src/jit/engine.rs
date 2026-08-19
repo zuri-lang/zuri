@@ -68,7 +68,8 @@ impl JitEngine {
     // every definition in a JIT's address space.
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
-    flag_builder.set("opt_level", "speed").unwrap();
+    flag_builder.set("enable_alias_analysis", "true").unwrap();
+    flag_builder.set("opt_level", "speed_and_size").unwrap();
     // The backtracking allocator produces measurably better code
     // (fewer spills/moves) than the single-pass one, at the cost of
     // more compile time -- a trade that only became strictly correct

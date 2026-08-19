@@ -1258,8 +1258,7 @@ mod gcbox_layout_tests {
     });
     let obj = closure.as_obj();
     assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_CLOSURE);
-    let slot =
-      unsafe { (obj as *const u8).add(obj_closure_function_offset()) as *const Value };
+    let slot = unsafe { (obj as *const u8).add(obj_closure_function_offset()) as *const Value };
     assert_eq!(unsafe { *slot }.to_bits(), proto.to_bits());
   }
 }
