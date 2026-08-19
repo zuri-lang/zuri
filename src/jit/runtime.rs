@@ -72,7 +72,7 @@ use std::cell::Cell;
 
 use crate::vm::chunk::JumpKey;
 use crate::vm::object::{
-  ListStorage, Obj, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, write_barrier,
+  ListStorage, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, write_barrier,
 };
 use crate::vm::value::Value;
 use crate::vm::vm::{CallArgs, VM};
@@ -1599,41 +1599,6 @@ pub unsafe extern "C" fn zuri_jit_make_range(
 // Indexing
 // ---------------------------------------------------------------------
 
-/// Resolves an already-proven `Obj::List`'s current backing-buffer
-/// pointer and length -- deliberately minimal, since it exists only
-/// for `jit::codegen`'s list-index fast path (`emit_get_index`/
-/// `emit_set_index`), which has already confirmed via an inline tag
-/// check that `list_obj_ptr` really is one before ever calling this.
-/// No type dispatch, no borrow check: `SmallVec`'s own internal
-/// tagged-union layout (inline array vs. heap spill) isn't a stable
-/// ABI this compiler can replicate as raw offsets the way it does for
-/// this project's own `#[repr(C)]` types (`ObjInstance`/
-/// `FieldStorage`), so resolving the current data pointer still goes
-/// through `SmallVec`'s real accessor here -- everything around that
-/// (the bounds check, the actual element load/store) is genuine
-/// inline Cranelift code, not part of this call.
-///
-/// Skips `RefCell`'s runtime borrow flag entirely, matching
-/// `Value::list_get`/`list_len`'s own release-build reasoning (see
-/// their docs): single-threaded execution with no live Ref/RefMut
-/// held across a re-entrant call that could touch this same list means
-/// bypassing the flag can't observe real aliasing.
-pub unsafe extern "C" fn zuri_jit_list_data(
-  _vm_ptr: *mut VM,
-  list_obj_ptr: u64,
-  len_out: u64,
-) -> u64 {
-  let obj = unsafe { &*(list_obj_ptr as *const Obj) };
-  let Obj::List(cell) = obj else {
-    unreachable!("caller already proved this is Obj::List via an inline tag check")
-  };
-  // SAFETY: matches Value::list_get/list_len's own release-build
-  // reasoning -- see this function's own docs.
-  let sv: &ListStorage = unsafe { &*cell.as_ptr() };
-  unsafe { *(len_out as *mut u64) = sv.len() as u64 };
-  sv.as_ptr() as u64
-}
-
 /// Registers a scalar-replaced `Instr::MakeList` allocation's backing
 /// stack memory as a GC root -- see `VM::push_scalar_root`'s own docs
 /// for the full mechanism, and `jit::codegen::FuncCompiler::
@@ -2584,7 +2549,6 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_make_range),
     spec5!(zuri_jit_get_index),
     spec5!(zuri_jit_set_index),
-    spec3!(zuri_jit_list_data),
     spec3!(zuri_jit_push_scalar_root),
     spec6!(zuri_jit_scalar_get_index),
     spec6!(zuri_jit_scalar_set_index),

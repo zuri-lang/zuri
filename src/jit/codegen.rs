@@ -370,7 +370,6 @@ struct FuncCompiler<'a, 'b> {
   /// Same lazy-per-function pattern as `closure_out_slot`, for the
   /// list-index fast path's `zuri_jit_list_data` out-parameter (the
   /// resolved list's current length -- see that function's own docs).
-  list_len_slot: Option<StackSlot>,
   /// Which registers are PROVEN numeric at each bytecode position, for
   /// WHICHEVER body (general or specialized) is currently being
   /// populated -- see `jit::typeflow`'s own docs and `run`'s two-pass
@@ -534,7 +533,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       osr_ids: FxHashMap::default(),
       entry_sig: None,
       closure_out_slot: None,
-      list_len_slot: None,
       type_facts,
       speculative_params,
       speculative_regs,
@@ -1411,19 +1409,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     slot
   }
 
-  /// The 8-byte scratch stack slot `zuri_jit_list_data` writes the
-  /// resolved list's current length into -- see `list_len_slot`'s own
-  /// docs. Allocated at most once per compiled function.
-  fn list_len_slot(&mut self) -> StackSlot {
-    if let Some(slot) = self.list_len_slot {
-      return slot;
-    }
-    let slot =
-      self
-        .fb
-        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
-    self.list_len_slot = Some(slot);
-    slot
+  /// Loads a proven-`Obj::List` receiver's element data pointer and
+  /// length, straight out of the object.
+  ///
+  /// This used to be a real ABI call into `zuri_jit_list_data`, which
+  /// sat in the innermost loop of every array-shaped program. The call
+  /// itself was the smaller half of the cost: `call_helper` has to
+  /// flush every live register to the VM's register file before it and
+  /// mark them stale after, and Cranelift cannot move a single load or
+  /// store across an opaque call, so the whole surrounding loop body
+  /// lost its register allocation once per subscript. `ListStorage` is
+  /// `#[repr(C)]` with `ptr` then `len` specifically so that this can
+  /// be two plain loads instead (see `vm::list`).
+  ///
+  /// `readonly` is deliberately NOT set on these: a list's buffer moves
+  /// on any growth, so a `ptr` loaded before an `append` must not be
+  /// reused after it.
+  fn load_list_ptr_len(&mut self, obj_ptr: IrValue) -> (IrValue, IrValue) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let data_ptr = self
+      .fb
+      .ins()
+      .load(types::I64, flags, obj_ptr, object::obj_list_ptr_offset());
+    let len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, obj_ptr, object::obj_list_len_offset());
+    (data_ptr, len)
   }
 
   /// The fast, inline-cache-style direct-call pattern shared by
@@ -3522,15 +3534,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(list_and_int, resolve_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(resolve_block);
-    let len_slot = self.list_len_slot();
-    let len_addr = self.fb.ins().stack_addr(types::I64, len_slot, 0);
-    let data_ptr = self.call_helper("zuri_jit_list_data", &[self.vm_param, ptr, len_addr]);
-    let len = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      len_addr,
-      0,
-    );
+    let (data_ptr, len) = self.load_list_ptr_len(ptr);
     // Negative-index wraparound (`list[-1]` == last element), matching
     // `VM::coerce_index`'s own semantics exactly.
     let zero = self.fb.ins().iconst(types::I64, 0);
@@ -3633,15 +3637,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(list_and_int, resolve_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(resolve_block);
-    let len_slot = self.list_len_slot();
-    let len_addr = self.fb.ins().stack_addr(types::I64, len_slot, 0);
-    let data_ptr = self.call_helper("zuri_jit_list_data", &[self.vm_param, ptr, len_addr]);
-    let len = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      len_addr,
-      0,
-    );
+    let (data_ptr, len) = self.load_list_ptr_len(ptr);
     let zero = self.fb.ins().iconst(types::I64, 0);
     let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
     let wrapped = self.fb.ins().iadd(as_int, len);

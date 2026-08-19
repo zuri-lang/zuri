@@ -1,6 +1,5 @@
 use num_bigint::BigInt;
 use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::fs::File;
@@ -17,16 +16,10 @@ use crate::vm::vm::VM;
 /// the free list has anything to give back.
 const CHUNK_SIZE: usize = 8192;
 
-/// Backing storage for `Obj::List`. Inline capacity for 4 elements --
-/// covers the common case (small literal arrays, e.g. a 2-element
-/// `[left, right]` tree node) with no separate heap allocation at all;
-/// a list beyond that spills to a heap-allocated buffer exactly like
-/// `Vec` always did. Halves the allocation count for allocation-heavy,
-/// small-list-shaped workloads without changing any list SEMANTICS --
-/// every method used on it (push/insert/remove/extend/drain/sort/...)
-/// is either implemented directly by `SmallVec` or inherited from
-/// `Vec`'s own API via `Deref<Target = [Value]>`.
-pub type ListStorage = SmallVec<[Value; 4]>;
+/// Backing storage for `Obj::List` -- re-exported from `vm::list`,
+/// which explains why it is a hand-rolled `#[repr(C)]` vector rather
+/// than `Vec` or a `SmallVec`.
+pub use crate::vm::list::ListStorage;
 
 /// Everything a Value's pointer tag can point at.
 ///
@@ -1170,6 +1163,40 @@ pub fn obj_native_func_offset() -> usize {
 /// program.
 pub fn obj_closure_function_offset() -> usize {
   obj_payload_offset() + std::mem::offset_of!(ObjClosure, function)
+}
+
+/// Byte offset from a `*const Obj` known (via `obj_tag`) to be
+/// `Obj::List` to the start of its `ListStorage`.
+///
+/// Measured from a real probe object rather than derived, for the same
+/// reason `obj_payload_offset` is: `RefCell`'s own field order is not
+/// guaranteed, so the only honest way to learn where its value sits is
+/// to ask a live one via `as_ptr()`. Everything past that point IS
+/// guaranteed -- `ListStorage` is `#[repr(C)]` precisely so compiled
+/// code can read its `ptr`/`len` directly (see `vm::list`).
+pub fn obj_list_storage_offset() -> usize {
+  static OFFSET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+  *OFFSET.get_or_init(|| {
+    let probe = Obj::List(RefCell::new(ListStorage::new()));
+    let obj_addr = &probe as *const Obj as usize;
+    let storage_addr = match &probe {
+      Obj::List(cell) => cell.as_ptr() as usize,
+      _ => unreachable!(),
+    };
+    storage_addr - obj_addr
+  })
+}
+
+/// Byte offset from a proven-`Obj::List` pointer to the element data
+/// pointer -- what `jit::codegen` loads instead of calling back into
+/// Rust for it.
+pub fn obj_list_ptr_offset() -> i32 {
+  (obj_list_storage_offset() + crate::vm::list::LIST_PTR_OFFSET as usize) as i32
+}
+
+/// `obj_list_ptr_offset`'s sibling for the element count.
+pub fn obj_list_len_offset() -> i32 {
+  (obj_list_storage_offset() + crate::vm::list::LIST_LEN_OFFSET as usize) as i32
 }
 
 /// `obj_to_gcbox_generation_offset`'s sibling for the `remembered`
