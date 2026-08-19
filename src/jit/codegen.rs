@@ -90,16 +90,26 @@ pub fn compile(
   speculative_regs: Option<typeflow::SpeculativeRegs>,
   facts: CompileFacts,
 ) -> Result<FxHashMap<usize, i32>, String> {
-  // Exception-handling bytecode is never compiled -- see this crate's
-  // `jit` module docs on why "bail to the interpreter" is implemented
-  // as "never enter compiled code for this function at all" rather
-  // than generated unwind logic.
+  // A function that establishes a CATCH handler is still never compiled:
+  // `PushCatch`/`PopCatch` maintain unwind state the interpreter owns,
+  // and this compiler generates no unwind logic (see the `jit` module
+  // docs).
+  //
+  // `Instr::Raise` on its own is different, and treating it the same way
+  // was costing real time. A raise is almost always an error path --
+  // `raise Error("bad task id")` guarding a lookup that never fails in
+  // practice -- but its mere presence disqualified the ENTIRE function,
+  // including the hot path around it. Richards spent ~30% of its runtime
+  // in the interpreter for exactly this reason: one unreachable `raise`
+  // inside `findtcb`, which its hottest method calls per packet.
+  //
+  // So a raise now compiles to a deopt (see `emit_deopt`): bail to the
+  // interpreter at that bytecode position and let it do the raising and
+  // unwinding it already knows how to do. The cost lands on the path
+  // that actually raises, where it belongs, instead of on every call.
   for instr in &proto.chunk.code {
-    if matches!(
-      instr,
-      Instr::Raise { .. } | Instr::PushCatch { .. } | Instr::PopCatch
-    ) {
-      return Err("contains exception-handling bytecode (raise/catch)".to_string());
+    if matches!(instr, Instr::PushCatch { .. } | Instr::PopCatch) {
+      return Err("contains a catch handler (PushCatch/PopCatch)".to_string());
     }
   }
 
@@ -5232,7 +5242,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
 
-      Instr::Raise { .. } | Instr::PushCatch { .. } | Instr::PopCatch => {
+      // See the eligibility scan in `compile`: reaching a raise means
+      // leaving compiled code entirely, and the interpreter re-executes
+      // this instruction with the register state flushed here.
+      Instr::Raise { .. } => {
+        self.emit_deopt(ip);
+        true
+      },
+
+      Instr::PushCatch { .. } | Instr::PopCatch => {
         unreachable!("excluded by the eligibility scan in `compile`")
       },
 

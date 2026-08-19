@@ -625,7 +625,14 @@ fn ref_transfer(
     | Instr::JmpIfFalse { .. }
     | Instr::JmpIfTrue { .. } => {},
 
-    Instr::Raise { .. } | Instr::PushCatch { .. } | Instr::PopCatch => {
+    // A raise writes no register, so it proves and invalidates nothing
+    // -- exactly like `Return` above. It compiles to a deopt rather than
+    // real unwind logic (see `codegen::compile`'s eligibility scan), and
+    // `successors` deliberately still gives it a fallthrough edge so no
+    // block becomes unreachable.
+    Instr::Raise { .. } => {},
+
+    Instr::PushCatch { .. } | Instr::PopCatch => {
       unreachable!("excluded from compilation before this analysis ever runs")
     },
   }
@@ -741,7 +748,14 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
     | Instr::JmpIfFalse { .. }
     | Instr::JmpIfTrue { .. } => {},
 
-    Instr::Raise { .. } | Instr::PushCatch { .. } | Instr::PopCatch => {
+    // A raise writes no register, so it proves and invalidates nothing
+    // -- exactly like `Return` above. It compiles to a deopt rather than
+    // real unwind logic (see `codegen::compile`'s eligibility scan), and
+    // `successors` deliberately still gives it a fallthrough edge so no
+    // block becomes unreachable.
+    Instr::Raise { .. } => {},
+
+    Instr::PushCatch { .. } | Instr::PopCatch => {
       unreachable!("excluded from compilation before this analysis ever runs")
     },
   }
