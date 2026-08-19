@@ -3525,15 +3525,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// resolving the list's data pointer still costs one small helper
   /// call while the bounds check and element load are real inline
   /// Cranelift code either way.
-  fn emit_list_get_index(&mut self, dst: u8, obj: u8, iidx: u8) {
+  fn emit_list_get_index(&mut self, dst: u8, obj: u8, iidx: u8, idx_proven_numeric: bool) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
     // Both safe to compute unconditionally regardless of the other's
     // truth value -- neither dereferences memory, see `is_obj`/
-    // `is_number`'s own docs.
+    // `is_number`'s own docs. `type_facts` already proves the index
+    // numeric for the overwhelmingly common case (a loop counter
+    // indexing a list), so there's no need to pay for a dynamic check
+    // of something the compiler already knows -- same discipline
+    // arithmetic/bitwise ops use via `proven_numeric`.
     let is_obj = self.is_obj(obj_val);
-    let is_num = self.is_number(idx_val);
-    let cheap_guard = self.fb.ins().band(is_obj, is_num);
+    let cheap_guard = if idx_proven_numeric {
+      is_obj
+    } else {
+      let is_num = self.is_number(idx_val);
+      self.fb.ins().band(is_obj, is_num)
+    };
     let snapshot = self.snapshot_reg_cache();
 
     let checked_block = self.fb.create_block();
@@ -3637,13 +3645,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// including why `reg_cache` needs a hard reset before `slow_block`
   /// (two independent `call_helper` sites: `zuri_jit_list_data` here,
   /// `zuri_jit_set_index` there).
-  fn emit_list_set_index(&mut self, obj: u8, iidx: u8, src: u8) {
+  fn emit_list_set_index(&mut self, obj: u8, iidx: u8, src: u8, idx_proven_numeric: bool) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
     let src_val = self.load_reg(src);
+    // See `emit_list_get_index`'s own docs on skipping the dynamic
+    // `is_number` check when `type_facts` already proves it.
     let is_obj = self.is_obj(obj_val);
-    let is_num = self.is_number(idx_val);
-    let cheap_guard = self.fb.ins().band(is_obj, is_num);
+    let cheap_guard = if idx_proven_numeric {
+      is_obj
+    } else {
+      let is_num = self.is_number(idx_val);
+      self.fb.ins().band(is_obj, is_num)
+    };
     let snapshot = self.snapshot_reg_cache();
 
     let checked_block = self.fb.create_block();
@@ -5146,7 +5160,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_scalar_list_get(dst, slot, count, iidx);
           return false;
         }
-        self.emit_list_get_index(dst, obj, iidx);
+        self.emit_list_get_index(dst, obj, iidx, self.proven_numeric(ip, iidx));
         false
       },
       Instr::SetIndex {
@@ -5158,7 +5172,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_scalar_list_set(slot, count, iidx, src);
           return false;
         }
-        self.emit_list_set_index(obj, iidx, src);
+        self.emit_list_set_index(obj, iidx, src, self.proven_numeric(ip, iidx));
         false
       },
       Instr::GetSlice { dst, obj, lo, hi } => {
