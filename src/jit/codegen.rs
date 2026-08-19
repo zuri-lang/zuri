@@ -1425,9 +1425,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `readonly` is deliberately NOT set on these: a list's buffer moves
   /// on any growth, so a `ptr` loaded before an `append` must not be
   /// reused after it.
+  ///
+  /// A null data pointer means the elements are held inline in the
+  /// object itself (see `vm::list::ListStorage`), which resolves to a
+  /// compare and a select rather than a branch. Computing the inline
+  /// address unconditionally is safe -- it is arithmetic on a pointer
+  /// this site has already proven points at a live `Obj::List`, and
+  /// nothing is dereferenced until after the bounds check.
   fn load_list_ptr_len(&mut self, obj_ptr: IrValue) -> (IrValue, IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    let data_ptr = self
+    let heap_ptr = self
       .fb
       .ins()
       .load(types::I64, flags, obj_ptr, object::obj_list_ptr_offset());
@@ -1435,6 +1442,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .load(types::I64, flags, obj_ptr, object::obj_list_len_offset());
+    let inline_ptr = self
+      .fb
+      .ins()
+      .iadd_imm_s(obj_ptr, object::obj_list_inline_offset() as i64);
+    let zero = self.i64c(0);
+    let is_inline = self.fb.ins().icmp(IntCC::Equal, heap_ptr, zero);
+    let data_ptr = self.fb.ins().select(is_inline, inline_ptr, heap_ptr);
     (data_ptr, len)
   }
 
@@ -2761,9 +2775,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(slow_block);
     let obj_i = self.idx(obj);
     let name = self.bake_const(method_const);
+    let cache = self.invoke_cache_addr(ip);
     self.call_checked(
       "zuri_jit_invoke",
-      &[vm_p, base, obj_i, num_args_i, dst_i, name],
+      &[vm_p, base, obj_i, num_args_i, dst_i, name, cache],
     );
     self.fb.ins().jump(done_block, &[]);
 
@@ -3016,6 +3031,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot_all(&snapshot);
   }
 
+  /// The baked address of this `Instr::Invoke` position's own cache
+  /// cell, or a null constant when the chunk has no cell for it (see
+  /// `Chunk::invoke_cache_cell`) -- the helper treats null as "no
+  /// cache" and simply resolves every time.
+  fn invoke_cache_addr(&mut self, ip: usize) -> IrValue {
+    let addr = self
+      .proto
+      .chunk
+      .invoke_cache_cell(ip)
+      .map_or(0, |cell| cell as *const _ as u64);
+    self.u64c(addr)
+  }
+
   /// The address of this instruction's own `chunk::FieldCacheCell`,
   /// baked as an immediate -- `None` when the chunk has no cell for
   /// this position (see `Chunk::field_cache_cell`), in which case the
@@ -3232,13 +3260,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let func_ptr = self.func_ptr_const();
     let ip_c = self.u64c(ip as u64);
     let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
+    let cache = self.invoke_cache_addr(ip);
     self.emit_fast_call(
       "zuri_jit_invoke_prepare",
       &[vm_p, base, obj_i, num_args_i, dst_i, name, func_ptr, ip_c],
       new_base,
       dst,
       "zuri_jit_invoke",
-      &[vm_p, base, obj_i, num_args_i, dst_i, name],
+      &[vm_p, base, obj_i, num_args_i, dst_i, name, cache],
     );
   }
 

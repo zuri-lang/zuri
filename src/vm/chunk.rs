@@ -535,6 +535,27 @@ pub struct FieldCacheCell {
   pub byte_offset: Cell<u64>,
 }
 
+/// One `Instr::Invoke` site's monomorphic cache, covering both shapes
+/// that site can take.
+///
+/// `#[repr(C)]` for the same reason `FieldCacheCell` is: the address of
+/// an individual cell is baked into generated code and its fields are
+/// read by fixed offset.
+///
+/// `key` is `0` when the cell has never been filled, and otherwise
+/// either a receiver class's `Value` bits (an instance receiver, with
+/// `payload` the resolved method's own bits) or
+/// `builtins::method_table_key`'s small non-zero kind id (a primitive
+/// receiver, with `payload` the address of a `&'static NativeFunction`).
+/// The two can't be confused: a class's bits are a NaN-boxed pointer,
+/// nowhere near the handful of small integers a kind id uses.
+#[derive(Clone, Debug, Default)]
+#[repr(C)]
+pub struct InvokeCacheCell {
+  pub key: Cell<u64>,
+  pub payload: Cell<u64>,
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Chunk {
   pub code: Vec<Instr>,
@@ -577,29 +598,29 @@ pub struct Chunk {
   /// `ObjClass` directly into the non-moving old generation, so a
   /// class's address is fixed for its whole life and can never be
   /// recycled underneath a cached entry the way a once-nursery address
-  /// can (contrast `method_cache`, whose own docs spell out the
+  /// can (contrast `invoke_cache`, whose own docs spell out the
   /// relocation hazard that applies to it).
   field_cache: OnceCell<Box<[FieldCacheCell]>>,
-  /// Same idea as `field_cache`, for `Instr::Invoke`'s class-method
-  /// lookup -- maps instruction position to (last-seen receiver class
-  /// bits, the resolved method `Value`'s own bits). See
-  /// `jit::runtime::zuri_jit_invoke_prepare`.
+  /// Same idea as `field_cache`, for `Instr::Invoke` -- see
+  /// `InvokeCacheCell`. Was a `RefCell<FxHashMap<usize, _>>`, which cost
+  /// a borrow-flag check and a hash probe on every dynamic method call
+  /// before it could answer a question a single load answers now.
   ///
-  /// Unlike `field_cache`, a false HIT here (see its docs on why one
-  /// is now possible post-moving-GC) hands back `method_bits` for the
-  /// WRONG class, dereferenced as a closure -- a genuine memory-safety
-  /// risk, not just a data bug. In practice this needs two coincidences
-  /// at once: a nursery address getting reused by a DIFFERENT class
-  /// object specifically (not just any object), AND the exact same
-  /// call site being hit again with THAT class as the new receiver
-  /// before its cache entry is ever overwritten by an intervening
-  /// real miss. Not yet observed in this project's own extensive
-  /// stress testing, and not fixed here -- the honest fix is
+  /// Unlike `field_cache`, a false HIT on the class-method half hands
+  /// back `payload` for the WRONG class, dereferenced as a closure -- a
+  /// genuine memory-safety risk, not just a data bug. In practice this
+  /// needs two coincidences at once: a nursery address getting reused by
+  /// a DIFFERENT class object specifically (not just any object), AND
+  /// the exact same call site being hit again with THAT class as the new
+  /// receiver before its cache entry is ever overwritten by an
+  /// intervening real miss. Not yet observed in this project's own
+  /// extensive stress testing, and not fixed here -- the honest fix is
   /// invalidating every live chunk's cache on each collection (no
-  /// registry of "every live chunk" exists to do that cheaply today)
-  /// or switching the cached class key to something collision-proof
-  /// against relocation; flagging clearly rather than leaving silent.
-  pub method_cache: RefCell<FxHashMap<usize, (u64, u64)>>,
+  /// registry of "every live chunk" exists to do that cheaply today) or
+  /// switching the cached class key to something collision-proof against
+  /// relocation; flagging clearly rather than leaving silent. The
+  /// primitive half has no such hazard: a `NativeFunction` is `'static`.
+  invoke_cache: OnceCell<Box<[InvokeCacheCell]>>,
 }
 
 impl Chunk {
@@ -616,6 +637,20 @@ impl Chunk {
       .get(ip)
   }
 
+  /// This instruction position's own `Instr::Invoke` cache cell -- the
+  /// `field_cache_cell` of `invoke_cache`, with the same lazy allocation
+  /// and the same `None` for an `ip` past the array.
+  pub fn invoke_cache_cell(&self, ip: usize) -> Option<&InvokeCacheCell> {
+    self
+      .invoke_cache
+      .get_or_init(|| {
+        (0..self.code.len())
+          .map(|_| InvokeCacheCell::default())
+          .collect()
+      })
+      .get(ip)
+  }
+
   pub fn new() -> Chunk {
     Chunk {
       code: Vec::new(),
@@ -624,7 +659,7 @@ impl Chunk {
       lines: Vec::new(),
       global_cache: RefCell::new(FxHashMap::default()),
       field_cache: OnceCell::new(),
-      method_cache: RefCell::new(FxHashMap::default()),
+      invoke_cache: OnceCell::new(),
     }
   }
 

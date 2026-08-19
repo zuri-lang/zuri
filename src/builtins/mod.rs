@@ -271,6 +271,29 @@ pub fn lookup_operator(receiver: Value, deco: &str) -> Option<&'static NativeFun
   table_for(kind).get(deco)
 }
 
+/// A small, non-zero id for whichever builtin-method table `receiver`
+/// would be looked up in, or `0` when it has none (a class, an
+/// instance, anything without a primitive `Kind`).
+///
+/// Exists so a call site can cache "which table did this resolve
+/// against last time" and compare that with one integer compare, rather
+/// than re-running `lookup`'s hash of the method name and the `memcmp`
+/// that confirms it -- which is what a `.length()` in a loop was paying
+/// on every single iteration. Cheap to compute: `Kind::of` is tag-bit
+/// tests plus at most one dereference of the object header.
+///
+/// The tables themselves are `'static` and never change after startup,
+/// so a resolution cached against one of these ids can never go stale.
+pub fn method_table_key(receiver: Value) -> u64 {
+  if receiver.is_class() {
+    return 0;
+  }
+  match Kind::of(receiver) {
+    Some(kind) => kind as u64 + 1,
+    None => 0,
+  }
+}
+
 pub fn lookup(receiver: Value, name: &str) -> Option<&'static NativeFunction> {
   if receiver.is_class() {
     return None;

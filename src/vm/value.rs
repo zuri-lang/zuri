@@ -76,6 +76,12 @@ impl Value {
     Value(NIL_VAL)
   }
 
+  /// `nil` in a const context -- `ListStorage`'s inline buffer needs to
+  /// be initialised in `const fn new`.
+  pub const fn nil_const() -> Value {
+    Value(NIL_VAL)
+  }
+
   /// Reconstruct a `Value` from its raw NaN-boxed bit pattern -- used
   /// only at the JIT/native-code boundary (see `jit::runtime`), where
   /// compiled code passes register contents across the ABI as plain

@@ -69,6 +69,14 @@ impl JitEngine {
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
     flag_builder.set("enable_alias_analysis", "true").unwrap();
+    // Cranelift re-verifies every function it compiles, which showed up
+    // as ~9% of a closure-heavy workload's total runtime -- all of it on
+    // the compiler thread, checking IR this compiler just built. That is
+    // a development check, so it stays on in debug builds (where a
+    // malformed-IR bug should surface as a clear verifier error rather
+    // than as a miscompile) and off in release.
+    #[cfg(not(debug_assertions))]
+    flag_builder.set("enable_verifier", "false").unwrap();
     flag_builder.set("opt_level", "speed_and_size").unwrap();
     // The backtracking allocator produces measurably better code
     // (fewer spills/moves) than the single-pass one, at the cost of

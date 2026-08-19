@@ -70,9 +70,9 @@
 
 use std::cell::Cell;
 
-use crate::vm::chunk::JumpKey;
+use crate::vm::chunk::{InvokeCacheCell, JumpKey};
 use crate::vm::object::{
-  ListStorage, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, write_barrier,
+  ListStorage, NativeFunction, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, write_barrier,
 };
 use crate::vm::value::Value;
 use crate::vm::vm::{CallArgs, VM};
@@ -729,14 +729,11 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   // Inline cache: same receiver class as the last time this exact
   // `Instr::Invoke` ran -> reuse the resolved method `Value` directly,
   // skipping `ObjClass::methods`'s hash-map probe entirely. See
-  // `Chunk::method_cache`'s own docs.
-  let cached = func
-    .chunk
-    .method_cache
-    .borrow()
-    .get(&instr_ip)
-    .filter(|&&(cached_class, _)| cached_class == class_bits)
-    .map(|&(_, method_bits)| Value::from_bits(method_bits));
+  // `Chunk::invoke_cache`'s own docs.
+  let cell = func.chunk.invoke_cache_cell(instr_ip);
+  let cached = cell
+    .filter(|c| c.key.get() == class_bits)
+    .map(|c| Value::from_bits(c.payload.get()));
 
   let method = if let Some(m) = cached {
     Some(m)
@@ -744,12 +741,9 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
     let method_name = Value::from_bits(method_name_bits);
     let class = inst.class.as_class();
     let resolved = class.methods.get(method_name.as_str()).copied();
-    if let Some(m) = resolved {
-      func
-        .chunk
-        .method_cache
-        .borrow_mut()
-        .insert(instr_ip, (class_bits, m.to_bits()));
+    if let (Some(m), Some(c)) = (resolved, cell) {
+      c.key.set(class_bits);
+      c.payload.set(m.to_bits());
     }
     resolved
   };
@@ -1038,6 +1032,42 @@ pub unsafe extern "C" fn zuri_jit_call(
   }
 }
 
+/// `builtins::lookup`, backed by this call site's own monomorphic cache.
+///
+/// The lookup itself is a hash of the method name plus the `memcmp`
+/// that confirms it, against a table chosen by the receiver's kind --
+/// and the tables are `'static` and immutable after startup, so a site
+/// that saw a string receiver last time will resolve the same name to
+/// the same function pointer every time it sees a string again. Caching
+/// on `method_table_key` reduces the steady state to one integer
+/// compare. A `0` key means the receiver has no builtin table at all
+/// (see `method_table_key`), and a `None` result is deliberately not
+/// cached -- there is nothing to store, and a miss falls straight
+/// through to the error path anyway.
+fn cached_builtin_lookup(
+  cache: Option<&InvokeCacheCell>,
+  receiver: Value,
+  name: &str,
+) -> Option<&'static NativeFunction> {
+  let key = crate::builtins::method_table_key(receiver);
+  if key == 0 {
+    return crate::builtins::lookup(receiver, name);
+  }
+  if let Some(cell) = cache
+    && cell.key.get() == key
+  {
+    // SAFETY: only ever written just below, from a `&'static
+    // NativeFunction` this same function resolved.
+    return Some(unsafe { &*(cell.payload.get() as *const NativeFunction) });
+  }
+  let found = crate::builtins::lookup(receiver, name);
+  if let (Some(native), Some(cell)) = (found, cache) {
+    cell.key.set(key);
+    cell.payload.set(native as *const NativeFunction as u64);
+  }
+  found
+}
+
 /// `Instr::Invoke` -- dynamic dispatch through the receiver's actual
 /// runtime class (or builtin-method table, or a field holding a
 /// callable), mirroring `vm.rs`'s handler exactly. `method_name_bits`
@@ -1049,6 +1079,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
   num_args: u64,
   dst: u64,
   method_name_bits: u64,
+  cache_addr: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
@@ -1057,6 +1088,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
   let dst = dst as u8;
   let method_name = Value::from_bits(method_name_bits);
   let receiver = vm.get_reg(base, obj);
+  let cache = unsafe { (cache_addr as *const InvokeCacheCell).as_ref() };
 
   let result = (|| -> Result<(), Value> {
     if receiver.is_instance() {
@@ -1079,7 +1111,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
           vm.set_reg(base, obj + 1, field_value);
           vm.dispatch_call_sync(base, obj + 1, num_args, dst)
         },
-        None => match crate::builtins::lookup(receiver, method_name.as_str()) {
+        None => match cached_builtin_lookup(cache, receiver, method_name.as_str()) {
           Some(native) => {
             let call_args = invoke_native_args(vm, base, obj, num_args, receiver);
             let result = vm.call_native(native, &call_args)?;
@@ -1126,7 +1158,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
           vm.set_reg(base, obj + 1, v);
           vm.dispatch_call_sync(base, obj + 1, num_args, dst)
         },
-        None => match crate::builtins::lookup(receiver, method_name.as_str()) {
+        None => match cached_builtin_lookup(cache, receiver, method_name.as_str()) {
           Some(native) => {
             let call_args = invoke_native_args(vm, base, obj, num_args, receiver);
             let result = vm.call_native(native, &call_args)?;
@@ -1140,7 +1172,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
         },
       }
     } else {
-      match crate::builtins::lookup(receiver, method_name.as_str()) {
+      match cached_builtin_lookup(cache, receiver, method_name.as_str()) {
         Some(native) => {
           let call_args = invoke_native_args(vm, base, obj, num_args, receiver);
           let result = vm.call_native(native, &call_args)?;
@@ -2586,7 +2618,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_using_jump),
     spec5!(zuri_jit_import),
     spec5!(zuri_jit_make_promoted),
-    spec6!(zuri_jit_invoke),
+    spec7!(zuri_jit_invoke),
     spec6!(zuri_jit_invoke_super),
     spec6!(zuri_jit_get_global),
     spec6!(zuri_jit_set_global),
