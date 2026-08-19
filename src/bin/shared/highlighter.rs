@@ -101,7 +101,11 @@ impl Highlighter for ZuriHighlighter {
       } else if word_start.is_some() && !(mode == Mode::Code && is_word_char(ch)) {
         let ws = word_start.take().unwrap();
         let word = &line[ws..byte_idx];
-        let style = if self.keywords.contains(word) { matched } else { neutral };
+        let style = if self.keywords.contains(word) {
+          matched
+        } else {
+          neutral
+        };
         styled_text.push((style, word.to_string()));
         run_start = byte_idx;
       }
@@ -109,10 +113,18 @@ impl Highlighter for ZuriHighlighter {
       match ch {
         '\\' => escaped = true,
         '\'' if mode != Mode::Double => {
-          mode = if mode == Mode::Single { Mode::Code } else { Mode::Single };
+          mode = if mode == Mode::Single {
+            Mode::Code
+          } else {
+            Mode::Single
+          };
         },
         '"' if mode != Mode::Single => {
-          mode = if mode == Mode::Double { Mode::Code } else { Mode::Double };
+          mode = if mode == Mode::Double {
+            Mode::Code
+          } else {
+            Mode::Double
+          };
         },
         _ => {},
       }
@@ -120,7 +132,11 @@ impl Highlighter for ZuriHighlighter {
 
     if let Some(ws) = word_start {
       let word = &line[ws..line.len()];
-      let style = if self.keywords.contains(word) { matched } else { neutral };
+      let style = if self.keywords.contains(word) {
+        matched
+      } else {
+        neutral
+      };
       styled_text.push((style, word.to_string()));
     } else if line.len() > run_start {
       styled_text.push((neutral, line[run_start..].to_string()));
