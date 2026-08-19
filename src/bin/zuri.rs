@@ -1,4 +1,6 @@
 use mimalloc::MiMalloc;
+use std::io::ErrorKind;
+use std::path::Path;
 use std::rc::Rc;
 use std::{env, fs, process};
 use zuri::compiler::parser::ParserError;
@@ -99,16 +101,57 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
   Ok(())
 }
 
+/// Matches the original C implementation's launch-failure format exactly:
+/// ```text
+/// (Zuri):
+///   Launch aborted for test.zu
+///   Reason: No such file or directory
+/// ```
+fn abort_launch(name: &str, reason: &str) -> ! {
+  eprintln!("(Zuri):\n  Launch aborted for {name}\n  Reason: {reason}");
+  process::exit(1);
+}
+
+/// `std::io::Error`'s own `Display` renders `NotFound` as "No such file
+/// or directory (os error 2)" on Linux -- strip the OS-specific suffix
+/// so it matches the C implementation's message exactly.
+fn io_error_reason(e: &std::io::Error) -> String {
+  match e.kind() {
+    ErrorKind::NotFound => "No such file or directory".to_string(),
+    ErrorKind::PermissionDenied => "Permission denied".to_string(),
+    _ => e.to_string(),
+  }
+}
+
+/// Resolves the launch target exactly like the original C implementation:
+/// a directory runs its own `index.zu` if present, otherwise aborts with
+/// "No entrypoint found in the directory"; anything else is read as-is,
+/// with a real file-system error also aborting via `abort_launch` rather
+/// than panicking.
 fn run_file(vm: &mut VM, file: &str) {
-  let content = fs::read_to_string(file).expect("Should have been able to read the file");
+  let path = Path::new(file);
+  let resolved = if path.is_dir() {
+    let entry = path.join("index.zu");
+    if !entry.is_file() {
+      abort_launch(file, "No entrypoint found in the directory");
+    }
+    entry
+  } else {
+    path.to_path_buf()
+  };
+
+  let content = match fs::read_to_string(&resolved) {
+    Ok(content) => content,
+    Err(e) => abort_launch(file, &io_error_reason(&e)),
+  };
 
   // Canonicalize so stack traces show a full, unambiguous path,
   // matching the target format -- falls back to the given (possibly
   // relative) path if that fails for any reason.
   let display_path: Rc<str> = Rc::from(
-    fs::canonicalize(file)
+    fs::canonicalize(&resolved)
       .map(|p| p.display().to_string())
-      .unwrap_or_else(|_| file.to_string()),
+      .unwrap_or_else(|_| resolved.display().to_string()),
   );
 
   vm.set_root_path(display_path.to_string());
