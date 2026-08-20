@@ -4015,7 +4015,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let base = self.base_param;
     let vm_p = self.vm_param;
     let receiver = self.load_reg(obj);
-    let is_obj = self.is_obj(receiver);
     let snapshot = self.snapshot_reg_cache();
     // Computed here, in the single entry block every later block is
     // dominated by -- NOT inside `try_direct_block` (which is already
@@ -4036,21 +4035,45 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let dst_i = self.idx(dst);
     let closure_bits = self.closure_param;
 
-    let obj_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
-
-    self.fb.switch_to_block(obj_block);
-    let ptr = self.obj_ptr(receiver);
-    let tag = self.obj_tag(ptr);
-    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
-    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
     let class_check_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_instance, class_check_block, &[], slow_block, &[]);
+
+    // `obj == 0` means the receiver IS `self` -- and `emit_self_invoke`
+    // is only ever reached via `self_invoke_target`, which requires
+    // `self_class_bits` to be `Some`, which `VM::resolve_self_class`
+    // only ever produces when `proto` genuinely IS an instance method
+    // that its own class's method table maps back to (see that
+    // function's own docs). So whenever THIS specific call is on `self`
+    // itself, it's unconditionally an `Obj::Instance` already -- the
+    // exact same trust `self_field_slot` relies on to skip its own
+    // `is_obj`+tag guard for `self.field` access. Only the CLASS check
+    // below still needs to run (an override in a subclass can still
+    // change which method `self`'s class resolves this name to). Same
+    // "exactly one arm ever actually emitted" shape `emit_list_get_
+    // index`'s own `proven_list` split uses -- `ptr` dominates
+    // `class_check_block` either way, just via a shorter chain when
+    // `obj == 0`.
+    let ptr = if obj == 0 {
+      let ptr = self.obj_ptr(receiver);
+      self.fb.ins().jump(class_check_block, &[]);
+      ptr
+    } else {
+      let is_obj = self.is_obj(receiver);
+      let obj_block = self.fb.create_block();
+      self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(obj_block);
+      let ptr = self.obj_ptr(receiver);
+      let tag = self.obj_tag(ptr);
+      let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+      let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+      self
+        .fb
+        .ins()
+        .brif(is_instance, class_check_block, &[], slow_block, &[]);
+      ptr
+    };
 
     self.fb.switch_to_block(class_check_block);
     let class_off = object::obj_instance_class_offset() as i32;
@@ -5964,29 +5987,38 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// sites reading the same `tmp` in one expression) silently returned
   /// a stale value from an EARLIER site's fast-path store once a
   /// LATER site's slow-block flush was skipped this way.
-  fn emit_scalar_list_get(&mut self, dst: u8, slot: StackSlot, count: u8, iidx: u8) {
+  fn emit_scalar_list_get(
+    &mut self,
+    dst: u8,
+    slot: StackSlot,
+    count: u8,
+    iidx: u8,
+    idx_proven_numeric: bool,
+    idx_proven_int: bool,
+  ) {
     let idx_val = self.load_reg(iidx);
-    let is_num = self.is_number(idx_val);
     let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
     let snapshot = self.snapshot_reg_cache();
 
     let checked_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_num, checked_block, &[], slow_block, &[]);
+    // Same discipline `emit_list_get_index`'s own `idx_proven_numeric`
+    // skips: nothing left for this half of the guard to prove, so no
+    // check, no branch -- straight through.
+    if idx_proven_numeric {
+      self.fb.ins().jump(checked_block, &[]);
+    } else {
+      let is_num = self.is_number(idx_val);
+      self
+        .fb
+        .ins()
+        .brif(is_num, checked_block, &[], slow_block, &[]);
+    }
 
     self.fb.switch_to_block(checked_block);
     let f = self.to_f64(idx_val);
     let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-    let is_int = self.fb.ins().fcmp(
-      cranelift_codegen::ir::condcodes::FloatCC::Equal,
-      f,
-      roundtrip,
-    );
 
     let len = self.i64c(count as i64);
     let zero = self.fb.ins().iconst(types::I64, 0);
@@ -5999,7 +6031,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
     let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
     let in_bounds = self.fb.ins().band(ge_zero, lt_len);
-    let ok = self.fb.ins().band(is_int, in_bounds);
+    // Same discipline `emit_list_get_index`'s own `idx_proven_int`
+    // skips: `iidx` is proven a genuine whole number (`typeflow::
+    // IntFacts`), so the float-roundtrip check has nothing left to
+    // prove -- only the bounds still matter.
+    let ok = if idx_proven_int {
+      in_bounds
+    } else {
+      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+      let is_int = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::Equal,
+        f,
+        roundtrip,
+      );
+      self.fb.ins().band(is_int, in_bounds)
+    };
 
     let fast_block = self.fb.create_block();
     self.fb.ins().brif(ok, fast_block, &[], slow_block, &[]);
@@ -6066,30 +6112,36 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// branch, so which way its `reg_cache` entry ends up doesn't affect
   /// correctness, only whether a later read of it costs one redundant
   /// reload.
-  fn emit_scalar_list_set(&mut self, slot: StackSlot, count: u8, iidx: u8, src: u8) {
+  fn emit_scalar_list_set(
+    &mut self,
+    slot: StackSlot,
+    count: u8,
+    iidx: u8,
+    src: u8,
+    idx_proven_numeric: bool,
+    idx_proven_int: bool,
+  ) {
     let idx_val = self.load_reg(iidx);
     let src_val = self.load_reg(src);
-    let is_num = self.is_number(idx_val);
     let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
     let snapshot = self.snapshot_reg_cache();
 
     let checked_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_num, checked_block, &[], slow_block, &[]);
+    if idx_proven_numeric {
+      self.fb.ins().jump(checked_block, &[]);
+    } else {
+      let is_num = self.is_number(idx_val);
+      self
+        .fb
+        .ins()
+        .brif(is_num, checked_block, &[], slow_block, &[]);
+    }
 
     self.fb.switch_to_block(checked_block);
     let f = self.to_f64(idx_val);
     let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-    let is_int = self.fb.ins().fcmp(
-      cranelift_codegen::ir::condcodes::FloatCC::Equal,
-      f,
-      roundtrip,
-    );
 
     let len = self.i64c(count as i64);
     let zero = self.fb.ins().iconst(types::I64, 0);
@@ -6102,7 +6154,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
     let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
     let in_bounds = self.fb.ins().band(ge_zero, lt_len);
-    let ok = self.fb.ins().band(is_int, in_bounds);
+    let ok = if idx_proven_int {
+      in_bounds
+    } else {
+      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+      let is_int = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::Equal,
+        f,
+        roundtrip,
+      );
+      self.fb.ins().band(is_int, in_bounds)
+    };
 
     let fast_block = self.fb.create_block();
     self.fb.ins().brif(ok, fast_block, &[], slow_block, &[]);
@@ -6232,6 +6294,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let na = self.is_number(va);
     let nb = self.is_number(vb);
     self.fb.ins().band(na, nb)
+  }
+
+  /// `both_numbers`, but skipping the dynamic `is_number` check on
+  /// whichever side `type_facts` already proves numeric -- the same
+  /// discipline `emit_list_get_index`'s own `idx_proven_numeric` flag
+  /// established for the index operand (see `jit::typeflow::TypeFacts`'s
+  /// own docs and the `GetIndex` fast path). Every guarded binary
+  /// numeric op (`Add`/`Sub`/`Mul`/`Div`/`Pow`/`Floor`/`Mod`, the
+  /// bitwise ops, `Eq`/`Neq`) only ever reaches its OWN `_guarded`
+  /// codegen when `both_proven_numeric` was already false at that call
+  /// site -- meaning AT MOST one operand can still be unprovable here,
+  /// never both by construction of how those call sites branch. Both
+  /// `true` is handled anyway (a static `true`, no check at all) purely
+  /// so this function is correct on its own terms regardless of what a
+  /// caller passes, not because any current caller reaches it.
+  fn combined_numeric_guard(&mut self, ip: usize, va: IrValue, vb: IrValue, a: u8, b: u8) -> IrValue {
+    match (self.proven_numeric(ip, a), self.proven_numeric(ip, b)) {
+      (true, true) => self.fb.ins().iconst(types::I8, 1),
+      (true, false) => self.is_number(vb),
+      (false, true) => self.is_number(va),
+      (false, false) => self.both_numbers(va, vb),
+    }
   }
 
   /// `(bits & (QNAN|SIGN_BIT)) == (QNAN|SIGN_BIT)` -- `Value::is_obj()`'s
@@ -6477,7 +6561,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| {
+          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| {
             fc.fb.ins().fadd(fa, fb)
           });
         }
@@ -6487,7 +6571,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_sub_slow", |fc, fa, fb| {
+          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_sub_slow", |fc, fa, fb| {
             fc.fb.ins().fsub(fa, fb)
           });
         }
@@ -6497,7 +6581,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mul_slow", |fc, fa, fb| {
+          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_mul_slow", |fc, fa, fb| {
             fc.fb.ins().fmul(fa, fb)
           });
         }
@@ -6514,7 +6598,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               fc.fb.ins().fmul(fa, r)
             });
           } else {
-            self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_div_slow", move |fc, fa, _fb| {
+            self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_div_slow", move |fc, fa, _fb| {
               let r = fc.fb.ins().f64const(recip);
               fc.fb.ins().fmul(fa, r)
             });
@@ -6522,7 +6606,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_div_slow", |fc, fa, fb| {
+          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_div_slow", |fc, fa, fb| {
             fc.fb.ins().fdiv(fa, fb)
           });
         }
@@ -6534,7 +6618,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             fc.call_f64_intrinsic("zuri_jit_num_powf", fa, fb)
           });
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_pow", |fc, fa, fb| {
+          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_pow", |fc, fa, fb| {
             fc.call_f64_intrinsic("zuri_jit_num_powf", fa, fb)
           });
         }
@@ -6547,7 +6631,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             fc.fb.ins().floor(q)
           });
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_floordiv", |fc, fa, fb| {
+          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_floordiv", |fc, fa, fb| {
             let q = fc.fb.ins().fdiv(fa, fb);
             fc.fb.ins().floor(q)
           });
@@ -6560,7 +6644,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb)
           });
         } else {
-          self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mod", |fc, fa, fb| {
+          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_mod", |fc, fa, fb| {
             fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb)
           });
         }
@@ -6571,7 +6655,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().band(ia, ib));
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitand_slow", |fb, ia, ib| {
+          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitand_slow", |fb, ia, ib| {
             fb.ins().band(ia, ib)
           });
         }
@@ -6581,7 +6665,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().bor(ia, ib));
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitor_slow", |fb, ia, ib| {
+          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitor_slow", |fb, ia, ib| {
             fb.ins().bor(ia, ib)
           });
         }
@@ -6591,7 +6675,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, |fb, ia, ib| fb.ins().bxor(ia, ib));
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitxor_slow", |fb, ia, ib| {
+          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitxor_slow", |fb, ia, ib| {
             fb.ins().bxor(ia, ib)
           });
         }
@@ -6601,7 +6685,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, Self::shift_left);
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitshl", Self::shift_left);
+          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitshl", Self::shift_left);
         }
         false
       },
@@ -6609,7 +6693,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, Self::shift_right);
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitshr", Self::shift_right);
+          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitshr", Self::shift_right);
         }
         false
       },
@@ -6617,7 +6701,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, Self::shift_right_unsigned);
         } else {
-          self.emit_bitwise_guarded(dst, a, b, "zuri_jit_bitushr", Self::shift_right_unsigned);
+          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitushr", Self::shift_right_unsigned);
         }
         false
       },
@@ -6718,7 +6802,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_compare_proven_numeric(dst, a, b, IntCC::Equal);
         } else {
-          self.emit_compare_guarded(dst, a, b, "zuri_jit_eq_slow", IntCC::Equal);
+          self.emit_compare_guarded(ip, dst, a, b, "zuri_jit_eq_slow", IntCC::Equal);
         }
         false
       },
@@ -6726,7 +6810,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_compare_proven_numeric(dst, a, b, IntCC::NotEqual);
         } else {
-          self.emit_compare_guarded(dst, a, b, "zuri_jit_neq_slow", IntCC::NotEqual);
+          self.emit_compare_guarded(ip, dst, a, b, "zuri_jit_neq_slow", IntCC::NotEqual);
         }
         false
       },
@@ -7296,7 +7380,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         idx: iidx,
       } => {
         if let Some(&(slot, count)) = self.scalar_lists.get(&obj) {
-          self.emit_scalar_list_get(dst, slot, count, iidx);
+          self.emit_scalar_list_get(
+            dst,
+            slot,
+            count,
+            iidx,
+            self.proven_numeric(ip, iidx),
+            self.proven_int(ip, iidx),
+          );
           return false;
         }
         self.emit_list_get_index(
@@ -7315,7 +7406,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         src,
       } => {
         if let Some(&(slot, count)) = self.scalar_lists.get(&obj) {
-          self.emit_scalar_list_set(slot, count, iidx, src);
+          self.emit_scalar_list_set(
+            slot,
+            count,
+            iidx,
+            src,
+            self.proven_numeric(ip, iidx),
+            self.proven_int(ip, iidx),
+          );
           return false;
         }
         self.emit_list_set_index(
@@ -7707,6 +7805,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   fn emit_binary_numeric_guarded(
     &mut self,
+    ip: usize,
     dst: u8,
     a: u8,
     b: u8,
@@ -7715,7 +7814,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
-    let guard = self.both_numbers(va, vb);
+    let guard = self.combined_numeric_guard(ip, va, vb, a, b);
     let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
@@ -7766,6 +7865,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   fn emit_bitwise_guarded(
     &mut self,
+    ip: usize,
     dst: u8,
     a: u8,
     b: u8,
@@ -7774,7 +7874,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
-    let guard = self.both_numbers(va, vb);
+    let guard = self.combined_numeric_guard(ip, va, vb, a, b);
     let snapshot = self.snapshot_reg_cache();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
@@ -7922,10 +8022,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.store_reg(dst, bits);
   }
 
-  fn emit_compare_guarded(&mut self, dst: u8, a: u8, b: u8, slow_helper: &'static str, cc: IntCC) {
+  fn emit_compare_guarded(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    a: u8,
+    b: u8,
+    slow_helper: &'static str,
+    cc: IntCC,
+  ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
-    let both_num = self.both_numbers(va, vb);
+    let both_num = self.combined_numeric_guard(ip, va, vb, a, b);
     let both_obj = self.both_obj(va, vb);
     let snapshot = self.snapshot_reg_cache();
 

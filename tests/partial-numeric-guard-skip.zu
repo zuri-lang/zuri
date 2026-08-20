@@ -1,0 +1,93 @@
+/* Exercises jit::codegen::combined_numeric_guard: when exactly ONE
+ * operand of a guarded binary numeric/bitwise/comparison op is already
+ * proven numeric (typed param, say) but the other isn't, the emitted
+ * guard should check only the unproven side -- not redundantly
+ * re-check the side type_facts already settled. Same discipline
+ * project_getindex_type_facts_skip already established for GetIndex's
+ * index operand, extended here to Add/Sub/Mul/Div/Pow/Floor/Mod, the
+ * bitwise ops, and Eq/Neq. This only checks OBSERVABLE correctness
+ * (guards still catch a genuinely non-numeric unproven operand, and
+ * still compute the right answer when it IS numeric) -- the actual
+ * instruction-count reduction was verified separately via
+ * ZURI_JIT_LOG_IR. Run past the JIT tiering threshold.
+ */
+
+def add_partial(a: number, b) {
+  return a + b
+}
+
+def sub_partial(a: number, b) {
+  return a - b
+}
+
+def mul_partial(a: number, b) {
+  return a * b
+}
+
+def eq_partial(a: number, b) {
+  return a == b
+}
+
+def neq_partial(a: number, b) {
+  return a != b
+}
+
+def bitand_partial(a: number, b) {
+  return a & b
+}
+
+def bitor_partial(a: number, b) {
+  return a | b
+}
+
+var i = 0
+while i < 300000 {
+  add_partial(1.0, 2.0)
+  sub_partial(5.0, 2.0)
+  mul_partial(3.0, 4.0)
+  eq_partial(1.0, 1.0)
+  neq_partial(1.0, 2.0)
+  bitand_partial(6.0, 3.0)
+  bitor_partial(6.0, 1.0)
+  i = i + 1
+}
+
+echo add_partial(3.0, 4.0)
+echo add_partial(3.0, 'x')
+echo sub_partial(10.0, 3.0)
+echo mul_partial(3.0, 4.0)
+echo eq_partial(5.0, 5.0)
+echo eq_partial(5.0, 6.0)
+echo eq_partial(5.0, 'x')
+echo neq_partial(5.0, 6.0)
+echo neq_partial(5.0, 'x')
+echo bitand_partial(6.0, 3.0)
+echo bitor_partial(6.0, 1.0)
+
+catch {
+  echo sub_partial(10.0, 'x')
+} as e1
+if e1 {
+  echo e1.message
+}
+
+catch {
+  echo mul_partial(3.0, 'x')
+} as e2
+if e2 {
+  echo e2.message
+}
+
+catch {
+  echo bitand_partial(6.0, 'x')
+} as e3
+if e3 {
+  echo e3.message
+}
+
+catch {
+  echo bitor_partial(6.0, 'x')
+} as e4
+if e4 {
+  echo e4.message
+}
