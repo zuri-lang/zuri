@@ -1329,6 +1329,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let Some(dst) = typeflow::conservative_dst(&instr) else {
       return false;
     };
+    // A scalar-replaced list's `dst` is deliberately never materialized
+    // as a real `Value` at all -- `emit_scalar_make_list` never calls
+    // `store_reg` for it, since the whole point is that no tagged
+    // `Value` for this register exists anywhere (see its own docs).
+    // `load_reg(dst)` below would therefore read whatever stale or
+    // uninitialized bits happen to sit in that Cranelift `Variable`,
+    // not a genuine value to validate -- and if `speculative_regs`
+    // happened to (wrongly, but plausibly, since it's a one-shot sample
+    // of a DIFFERENT execution of this same register number elsewhere
+    // in the function) bet this register numeric, `type_facts` would
+    // otherwise optimistically believe it from this exact definition
+    // site onward, triggering a guard against garbage. There is
+    // nothing to speculate about here regardless: a list literal's
+    // `dst` is never a number, scalar-replaced or not, so skipping
+    // this unconditionally is always the correct answer, not a
+    // special-cased escape hatch.
+    if let Instr::MakeList { dst: list_dst, .. } = instr
+      && self.scalar_lists.contains_key(&list_dst)
+    {
+      return false;
+    }
     if ip + 1 >= self.proto.chunk.code.len() || !self.type_facts.is_numeric(ip + 1, dst) {
       return false;
     }
@@ -5869,7 +5890,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// a real heap `Obj::List`, with `dst` never materialized as a
   /// tagged `Value` at all?
   ///
-  /// Three independent conditions, all required:
+  /// Two independent conditions, both required:
   /// - `jit::escape::analyze_one` proves `dst` never escapes this
   ///   function (see that module's docs for exactly what's whitelisted
   ///   -- `GetIndex`/`SetIndex`'s container position already is, with
@@ -5892,28 +5913,48 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///   essentially never copies a freshly-built temporary list into
   ///   another register before indexing it, so this costs nothing in
   ///   practice.
-  /// - `self.speculative_params`/`self.speculative_regs` are BOTH
-  ///   `None`, i.e. this compile has no specialized/speculative body at
-  ///   all. This is a confirmed-necessary, temporary safety gate, NOT
-  ///   a property scalar replacement itself needs: a real, reproduced
-  ///   data-corruption bug exists in `emit_speculative_guard`'s (or
-  ///   `emit_entry_dispatch`'s) interaction with a `GetIndex` whose
-  ///   index isn't a compile-time constant -- a value read via a
-  ///   variable list index, once returned from a function that later
-  ///   gets a specialized body, silently freezes at a stale value on
-  ///   every subsequent call. Reproduced identically with scalar
-  ///   replacement disabled entirely (a `Move`-forced real `Obj::List`
-  ///   hits the exact same corruption), so this is a PRE-EXISTING bug
-  ///   in the speculation machinery itself, not in this feature -- but
-  ///   until it's root-caused and fixed there, scalar-replacing a list
-  ///   whose reads could feed a speculatively-guarded register would
-  ///   inherit the same hazard. Revisit removing this condition once
-  ///   that bug is fixed.
+  ///
+  /// - `self.speculative_regs` is `None`, OR no `typeflow::
+  ///   conservative_dst`-covered instruction appears anywhere after
+  ///   `alloc_ip`. Root cause, found 2026-08-20: a scalar-replaced
+  ///   list's `dst` is NEVER materialized as a real `Value` in `VM::
+  ///   registers` (the entire point of the optimization) -- but
+  ///   `emit_speculative_guard` (the ONLY thing that can trigger a
+  ///   MID-FUNCTION deopt, and it only ever fires for a
+  ///   `conservative_dst`-covered instruction whose destination
+  ///   `speculative_regs` bet on) resumes execution in the
+  ///   INTERPRETER on a failed bet -- which has no idea the register
+  ///   ever held a list at all, since nothing was ever written there.
+  ///   Confirmed by direct repro: a scalar-replaced list created
+  ///   before an unrelated dict lookup whose result type varies at
+  ///   runtime (always a number during warmup, a string on the
+  ///   triggering call) corrupts the list's later reads with `cannot
+  ///   index into a number` the instant the dict lookup's own
+  ///   speculative guard deopts. `speculative_params` ALONE (no
+  ///   `speculative_regs`) cannot cause this: it only ever gates
+  ///   `emit_entry_dispatch`'s ordinary/specialized ENTRY choice, and
+  ///   `type_facts`'s optimistic seeding for `conservative_dst`
+  ///   instructions is gated on `speculative_regs` specifically (see
+  ///   `transfer`'s own `conservative, speculative-eligible` arm) --
+  ///   with it `None`, that seeding never fires, so `emit_speculative_
+  ///   guard`'s own `type_facts.is_numeric` check is always false and
+  ///   it never emits a guard at all, regardless of what instructions
+  ///   exist. The scan below is a real, if conservative,
+  ///   over-approximation of "no possible deopt while `dst` could
+  ///   still be needed" (the true condition would need `dst`'s exact
+  ///   last-use `ip`, not just "anywhere in the rest of the function")
+  ///   -- cheap to check, and safe to be wrong in the "still
+  ///   disallowed" direction. `tests/scalar-list-speculative-guard-scope.zu`
+  ///   locks in the repro that found this.
   fn scalar_replace_eligible(&self, alloc_ip: usize, dst: u8, count: u8) -> bool {
-    if self.speculative_params.is_some() || self.speculative_regs.is_some() {
+    if count == 0 || count > Self::MAX_SCALAR_LIST_LEN {
       return false;
     }
-    if count == 0 || count > Self::MAX_SCALAR_LIST_LEN {
+    if self.speculative_regs.is_some()
+      && self.proto.chunk.code[alloc_ip + 1..]
+        .iter()
+        .any(|instr| typeflow::conservative_dst(instr).is_some())
+    {
       return false;
     }
     for instr in &self.proto.chunk.code {
