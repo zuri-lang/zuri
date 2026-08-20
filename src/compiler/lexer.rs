@@ -271,25 +271,28 @@ impl Lexer {
           self.advance();
         }
 
-        return self.make_token(TokenKind::BinNumber(
-          i64::from_str_radix(&self.get_string(self.start + 2, self.current), 2).unwrap(),
-        ));
+        return match i64::from_str_radix(&self.get_string(self.start + 2, self.current), 2) {
+          Ok(n) => self.make_token(TokenKind::BinNumber(n)),
+          Err(_) => self.make_error("invalid binary literal".to_string()),
+        };
       } else if self.match_char('c') {
         while is_octal(self.peek()) {
           self.advance();
         }
 
-        return self.make_token(TokenKind::OctNumber(
-          i64::from_str_radix(&self.get_string(self.start + 2, self.current), 8).unwrap(),
-        ));
+        return match i64::from_str_radix(&self.get_string(self.start + 2, self.current), 8) {
+          Ok(n) => self.make_token(TokenKind::OctNumber(n)),
+          Err(_) => self.make_error("invalid octal literal".to_string()),
+        };
       } else if self.match_char('x') {
         while is_hex(self.peek()) {
           self.advance();
         }
 
-        return self.make_token(TokenKind::HexNumber(
-          i64::from_str_radix(&self.get_string(self.start + 2, self.current), 16).unwrap(),
-        ));
+        return match i64::from_str_radix(&self.get_string(self.start + 2, self.current), 16) {
+          Ok(n) => self.make_token(TokenKind::HexNumber(n)),
+          Err(_) => self.make_error("invalid hex literal".to_string()),
+        };
       }
     }
 
@@ -404,24 +407,33 @@ impl Lexer {
       let c = self.source[i];
 
       if c == '\\' && i + 9 < end && self.source[i + 1] == 'U' {
-        if let Ok(number) = u32::from_str_radix(&self.get_string(i + 2, i + 10), 16) {
-          let char = char::from_u32(number).unwrap();
+        // `char::from_u32` can still fail even on a validly-parsed hex
+        // number -- surrogate code points (D800-DFFF) and anything past
+        // 10FFFF are valid u32s but not valid Unicode scalar values.
+        if let Some(char) = u32::from_str_radix(&self.get_string(i + 2, i + 10), 16)
+          .ok()
+          .and_then(char::from_u32)
+        {
           final_str.push(char);
           i += 9;
         } else {
           return Err(self.make_error("invalid unicode escape sequence".to_string()));
         }
       } else if c == '\\' && i + 5 < end && self.source[i + 1] == 'u' {
-        if let Ok(number) = u32::from_str_radix(&self.get_string(i + 2, i + 6), 16) {
-          let char = char::from_u32(number).unwrap();
+        if let Some(char) = u32::from_str_radix(&self.get_string(i + 2, i + 6), 16)
+          .ok()
+          .and_then(char::from_u32)
+        {
           final_str.push(char);
           i += 5;
         } else {
           return Err(self.make_error("invalid unicode escape sequence".to_string()));
         }
       } else if c == '\\' && i + 3 < end && self.source[i + 1] == 'x' {
-        if let Ok(number) = u32::from_str_radix(&self.get_string(i + 2, i + 4), 16) {
-          let char = char::from_u32(number).unwrap();
+        if let Some(char) = u32::from_str_radix(&self.get_string(i + 2, i + 4), 16)
+          .ok()
+          .and_then(char::from_u32)
+        {
           final_str.push(char);
           i += 3;
         } else {

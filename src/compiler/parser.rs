@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use std::fmt::{self, Display};
 
 use crate::compiler::ast::{Decl, Expr, Node, NodeKind, Stmt, Type};
@@ -189,9 +187,18 @@ impl<'a> Parser<'a> {
 
   // Utility
 
+  // Anchors to `current` -- the right choice when the message is about
+  // whatever comes next (an unmet expectation, a token that shouldn't be
+  // here). When the message is instead about a token already consumed
+  // (a keyword that's invalid in this context, an operator whose target
+  // was bad), use `report_error_at` with `self.previous()` explicitly --
+  // `current` has already moved past it by the time the check runs.
   fn report_error(&mut self, message: String) {
-    let line = self.lexer.line.to_string();
     let token = self.peek().clone();
+    self.report_error_at(message, token);
+  }
+
+  fn report_error_at(&mut self, message: String, token: Token) {
     self.errors.push(ParserError::new(message, token));
   }
 
@@ -261,12 +268,16 @@ impl<'a> Parser<'a> {
     loop {
       let tok = self.lexer.scan();
 
-      if tok.kind == TokenKind::None || matches!(tok.kind, TokenKind::Comment(..) | TokenKind::DocBlock(..)) {
+      if tok.kind == TokenKind::None
+        || matches!(tok.kind, TokenKind::Comment(..) | TokenKind::DocBlock(..))
+      {
         continue;
       }
 
       if let TokenKind::Error(ref message, ..) = tok.kind {
-        self.errors.push(ParserError::new(message.clone(), tok.clone()));
+        self
+          .errors
+          .push(ParserError::new(message.clone(), tok.clone()));
         continue;
       }
 
@@ -298,15 +309,6 @@ impl<'a> Parser<'a> {
     self.lookahead.push_front(self.current.clone());
     self.current = self.previous.clone();
     self.previous = self.last_previous.clone();
-  }
-
-  fn match_token(&mut self, kind: TokenKind) -> bool {
-    if check_tok!(self, kind) {
-      self.advance();
-      return true;
-    }
-
-    false
   }
 
   fn end_statement(&mut self) {
@@ -396,7 +398,7 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn parse_type(&mut self, class_type: bool) -> Expr {
+  fn parse_type(&mut self) -> Expr {
     let is_nullable = match_tok!(self, TokenKind::Question);
 
     let mut types = Vec::new();
@@ -415,12 +417,10 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_args(&mut self) -> Expr {
-    let start = self.mark();
-
     let name = consume_tok!(self, TokenKind::Identifier(_), "Expected argument name");
 
     let type_hint = if match_tok!(self, TokenKind::Colon) {
-      self.parse_type(false)
+      self.parse_type()
     } else {
       Expr::TypeHint(vec![Type::Any], true)
     };
@@ -431,7 +431,6 @@ impl<'a> Parser<'a> {
   // Composers
 
   fn compose_one_binary(&mut self, expr: Expr, kind: TokenKind, line: u32) -> Expr {
-    let start = self.mark();
     let one = Expr::Integer(1);
 
     Expr::Binary(Box::new(expr), kind, Box::new(one), line)
@@ -539,10 +538,6 @@ impl<'a> Parser<'a> {
     let line = self.previous().line as u32;
     self.ignore_newlines();
 
-    // `prop` is a real, independently addressable piece of syntax (the
-    // property name after the dot), so — unlike most of the nodes below —
-    // it deliberately gets its own checkpoint instead of sharing `start`.
-    let prop_start = self.mark();
     let prop_token = consume_tok!(
       self,
       TokenKind::Identifier(_),
@@ -586,7 +581,6 @@ impl<'a> Parser<'a> {
 
     loop {
       let line = self.previous().line as u32;
-      let mark = self.mark();
       let right = self.expression();
       expr = Expr::Binary(Box::new(expr), TokenKind::Plus, Box::new(right), line);
 
@@ -608,8 +602,6 @@ impl<'a> Parser<'a> {
   }
 
   fn primary(&mut self) -> Expr {
-    let start = self.mark();
-
     let prev = self.advance().clone();
 
     match prev.kind {
@@ -632,7 +624,10 @@ impl<'a> Parser<'a> {
       TokenKind::Lbracket => self.list(),
       TokenKind::At => self.anonymous(),
       _ => {
-        self.report_error(format!("Unexpected token {:?}", prev.describe()));
+        self.report_error_at(
+          format!("Unexpected token {:?}", prev.describe()),
+          prev.clone(),
+        );
         self.literal()
       },
     }
@@ -690,7 +685,10 @@ impl<'a> Parser<'a> {
   }
 
   fn assign_expr(&mut self) -> Expr {
-    let start = self.mark();
+    // Captured before `call()` runs so an "invalid assignment target"
+    // error below can point at where the bad expression actually starts,
+    // not wherever `++`/`--` happened to land the cursor.
+    let start_token = self.peek().clone();
     let expr = self.call();
 
     if match_tok!(self, TokenKind::Increment) {
@@ -701,7 +699,7 @@ impl<'a> Parser<'a> {
         Expr::Get(expression, name) => Expr::Set(expression, name, plus_one),
         Expr::Identifier(_) | Expr::Index(..) => Expr::Assign(Box::new(expr), plus_one),
         other => {
-          self.report_error("invalid assignment target".to_string());
+          self.report_error_at("invalid assignment target".to_string(), start_token);
           other
         },
       };
@@ -715,7 +713,7 @@ impl<'a> Parser<'a> {
         Expr::Get(expression, name) => Expr::Set(expression, name, sub_one),
         Expr::Identifier(_) | Expr::Index(..) => Expr::Assign(Box::new(expr), sub_one),
         other => {
-          self.report_error("invalid assignment target".to_string());
+          self.report_error_at("invalid assignment target".to_string(), start_token);
           other
         },
       };
@@ -930,6 +928,10 @@ impl<'a> Parser<'a> {
   }
 
   fn assignment(&mut self) -> Expr {
+    // Same reasoning as `assign_expr`'s own `start_token`: captured
+    // before `conditional()` runs so a bad target's error points at
+    // where that expression starts, not at the `=`/`+=`/etc. after it.
+    let start_token = self.peek().clone();
     let mut expr = self.conditional();
 
     if match_tok!(self, assignment_operators!()) {
@@ -942,7 +944,7 @@ impl<'a> Parser<'a> {
         expr = if valid_target {
           Expr::Assign(Box::new(expr), Box::new(value))
         } else {
-          self.report_error("invalid assignment target".to_string());
+          self.report_error_at("invalid assignment target".to_string(), start_token.clone());
           value
         };
       } else {
@@ -956,7 +958,7 @@ impl<'a> Parser<'a> {
         expr = if valid_target {
           Expr::Assign(Box::new(expr), Box::new(binary))
         } else {
-          self.report_error("invalid assignment target".to_string());
+          self.report_error_at("invalid assignment target".to_string(), start_token.clone());
           binary
         };
       }
@@ -980,7 +982,6 @@ impl<'a> Parser<'a> {
         self.ignore_newlines();
 
         if !check_tok!(self, TokenKind::Rbrace) {
-          let key_mark = self.mark();
           let key = if match_tok!(self, TokenKind::Identifier(_)) {
             self.literal()
           } else {
@@ -1056,7 +1057,6 @@ impl<'a> Parser<'a> {
 
   fn anonymous(&mut self) -> Expr {
     self.functions_count += 1;
-    let start = self.mark();
 
     let name_token = self.previous().clone();
 
@@ -1447,8 +1447,9 @@ impl<'a> Parser<'a> {
         TokenKind::When | TokenKind::Default | TokenKind::Newline
       ) {
         if state == 1 {
-          self.report_error(
+          self.report_error_at(
             "'when' or 'default' state cannot exist after a default state".to_string(),
+            self.previous().clone(),
           );
         }
 
@@ -1545,9 +1546,10 @@ impl<'a> Parser<'a> {
 
         if matches!(element.kind.clone(), TokenKind::Multiply) {
           if !elements.is_empty() {
-            self.report_error(
+            self.report_error_at(
               "Cannot import selected items and everything from the same import statement."
                 .to_string(),
+              element.clone(),
             );
           }
 
@@ -1556,7 +1558,10 @@ impl<'a> Parser<'a> {
         } else if let TokenKind::Identifier(name) = element.kind.clone()
           && name.starts_with("_")
         {
-          self.report_error("Cannot import private items from module".to_string());
+          self.report_error_at(
+            "Cannot import private items from module".to_string(),
+            element.clone(),
+          );
           break;
         }
 
@@ -1587,17 +1592,23 @@ impl<'a> Parser<'a> {
     let final_path = paths.join(sep);
 
     if name_is_nil {
-      let synthesized = self
-        .previous()
-        .copy_to(TokenKind::Literal(paths.last().unwrap().clone()));
-      name = self.compose_id(synthesized);
+      match paths.last() {
+        Some(last) => {
+          let synthesized = self.previous().copy_to(TokenKind::Literal(last.clone()));
+          name = self.compose_id(synthesized);
+        },
+        // `import` with no path at all (e.g. `import { x }`) -- nothing
+        // to synthesize a default name from, so say so instead of
+        // panicking on the empty `paths`.
+        None => self.report_error("Expected a module path after 'import'".to_string()),
+      }
     }
 
     Stmt::Import(final_path, Box::new(name), elements, imports_all, exported)
   }
 
   fn catch_stmt(&mut self) -> Stmt {
-    let mut body = self.match_block("Expected '{' after 'catch' statement.".to_string());
+    let body = self.match_block("Expected '{' after 'catch' statement.".to_string());
     let mut name = None;
     let mut catch_body = None;
 
@@ -1628,7 +1639,7 @@ impl<'a> Parser<'a> {
 
     let mut final_stmts = Vec::new();
 
-    let mut top_stmt = if !match_tok!(self, TokenKind::Semicolon) {
+    let top_stmt = if !match_tok!(self, TokenKind::Semicolon) {
       // `var` is optional here too, same reason.
       if match_tok!(self, TokenKind::Var) {}
 
@@ -1646,7 +1657,7 @@ impl<'a> Parser<'a> {
       None
     };
 
-    let mut condition = if !match_tok!(self, TokenKind::Semicolon) {
+    let condition = if !match_tok!(self, TokenKind::Semicolon) {
       let res = self.expression();
 
       consume_tok!(
@@ -1701,20 +1712,16 @@ impl<'a> Parser<'a> {
   fn statement(&mut self) -> Stmt {
     self.ignore_newlines();
 
-    let start = self.mark();
-
     let result = match self.advance().kind {
       TokenKind::As => {
-        self.report_error("'as' is only a valid keyword in catch context".to_string());
+        self.report_error_at(
+          "'as' is only a valid keyword in catch context".to_string(),
+          self.previous().clone(),
+        );
         Stmt::None
       },
       TokenKind::Var => {
         let result = self.var_decl(false);
-        self.end_statement();
-        result
-      },
-      TokenKind::Const => {
-        let result = self.var_decl(true);
         self.end_statement();
         result
       },
@@ -1739,7 +1746,10 @@ impl<'a> Parser<'a> {
       TokenKind::Break => Stmt::Break,
       TokenKind::Return => {
         if self.functions_count == 0 {
-          self.report_error("'return' is only a valid keyword in function context".to_string());
+          self.report_error_at(
+            "'return' is only a valid keyword in function context".to_string(),
+            self.previous().clone(),
+          );
         }
 
         let mut result = self.compose_nil();
@@ -1769,7 +1779,6 @@ impl<'a> Parser<'a> {
 
         Stmt::Raise(Box::new(result))
       },
-      TokenKind::Lbrace => self.block(),
       _ => {
         self.rewind();
         self.expression_stmt(false)
@@ -1791,7 +1800,7 @@ impl<'a> Parser<'a> {
 
       let type_hint = if match_tok!(self, TokenKind::Colon) {
         // type hinting
-        Some(Box::new(self.parse_type(false)))
+        Some(Box::new(self.parse_type()))
       } else {
         None
       };
@@ -1841,8 +1850,6 @@ impl<'a> Parser<'a> {
     let mut variadic = false;
 
     while check_tok!(self, TokenKind::Identifier(_) | TokenKind::TriDot) {
-      let token = self.peek().clone();
-
       if match_tok!(self, TokenKind::TriDot) {
         variadic = true;
 
@@ -1903,7 +1910,7 @@ impl<'a> Parser<'a> {
     let name = consume_tok!(self, TokenKind::Identifier(_), "Class field name expected.");
 
     let type_hint = if match_tok!(self, TokenKind::Colon) {
-      Box::new(self.parse_type(false))
+      Box::new(self.parse_type())
     } else {
       Box::new(Expr::TypeHint(vec![Type::List], false))
     };
@@ -2020,7 +2027,6 @@ impl<'a> Parser<'a> {
       TokenKind::Class => self.class_decl(),
       TokenKind::Lbrace => {
         if !check_tok!(self, TokenKind::Newline) && self.block_count == 0 {
-          let start = self.mark();
           let mut dict = self.dict();
 
           Decl::Stmt(Box::new(Stmt::Expression(Box::new(

@@ -1,5 +1,5 @@
 SyntaxError: 'return' is only a valid keyword in function context
-  --> @@ROOT/tests/return-statement-not-allowed-at-top-level.zu:1:7
+  --> @@ROOT/tests/return-statement-not-allowed-at-top-level.zu:1:1
   |
 1 | return
-  |       ^
+  | ^
