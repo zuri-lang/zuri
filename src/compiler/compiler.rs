@@ -4,12 +4,12 @@ use std::{ops::Deref, rc::Rc};
 
 use crate::{
   compiler::{
-    ast::{Decl, Expr, Stmt},
+    ast::{Decl, Expr, Stmt, Type},
     parser::ParserError,
     token::{Token, TokenKind},
   },
   vm::{
-    chunk::{Chunk, Instr, JumpKey},
+    chunk::{Chunk, Instr, JumpKey, ParamType, ParamTypeCheck},
     object::{Heap, JitInfo, ObjFunction, UpvalueDescriptor},
     value::Value,
   },
@@ -173,6 +173,105 @@ impl<'a> Compiler<'a> {
 
   fn add_constant(&mut self, v: Value) -> u16 {
     self.cur_mut().chunk.add_constant(v)
+  }
+
+  fn add_param_check(&mut self, check: ParamTypeCheck) -> u16 {
+    self.cur_mut().chunk.add_param_check(check)
+  }
+
+  /// `ast::Type` (what the parser produced) -> `chunk::ParamType` (what
+  /// `Instr::CheckParamType` actually reads at runtime) -- a plain
+  /// rename for every built-in, except `Instance`, whose class name
+  /// needs interning as a string constant the check can look up by
+  /// index. Never called for `Type::Any` -- see
+  /// `emit_param_type_checks`'s own docs on why that one skips
+  /// emission entirely rather than becoming a `ParamType` variant.
+  fn ast_type_to_param_type(&mut self, t: &Type) -> ParamType {
+    match t {
+      Type::Any => unreachable!("Type::Any is filtered out before this is ever called"),
+      Type::Bool => ParamType::Bool,
+      Type::Int => ParamType::Int,
+      Type::Number => ParamType::Number,
+      Type::BigInt => ParamType::BigInt,
+      Type::String => ParamType::String,
+      Type::Bytes => ParamType::Bytes,
+      Type::List => ParamType::List,
+      Type::Dict => ParamType::Dict,
+      Type::Range => ParamType::Range,
+      Type::File => ParamType::File,
+      Type::Function => ParamType::Function,
+      Type::Type => ParamType::Class,
+      Type::Callable => ParamType::Callable,
+      Type::Iterable => ParamType::Iterable,
+      Type::Instance(token) => {
+        let name = Self::identifier_name(token);
+        let name_val = self.heap.alloc_string_old(name);
+        let name_const = self.add_constant(name_val);
+        ParamType::Instance(name_const)
+      },
+    }
+  }
+
+  /// Emits one `Instr::CheckParamType` per typed parameter, in
+  /// parameter order, right after their registers are allocated but
+  /// before the body compiles -- so a mismatched argument raises before
+  /// the function does anything with it, exactly like the reference C
+  /// runtime's own `compile_type_check` placement. `params`/`regs` are
+  /// parallel (every params[i] a plain `Expr::Argument`, its register
+  /// already bound to a `Local` by the caller); `variadic_tail_idx`
+  /// excludes the synthetic `TypeHint([List], false)` the parser always
+  /// attaches to a `...args` collector (see `Parser::function_args`) --
+  /// that's an implementation artifact, not something the source
+  /// actually declared, so it must never be enforced.
+  ///
+  /// A parameter left untyped, or explicitly typed `any` (with or
+  /// without `?`, which would be redundant anyway), gets no instruction
+  /// at all: `any` accepts everything including `nil`, so there is
+  /// nothing to check.
+  fn emit_param_type_checks(
+    &mut self,
+    params: &[Expr],
+    regs: &[u8],
+    variadic_tail_idx: Option<usize>,
+  ) {
+    for (i, (param, &reg)) in params.iter().zip(regs.iter()).enumerate() {
+      if Some(i) == variadic_tail_idx {
+        continue;
+      }
+      let Expr::Argument(name, type_hint) = param else {
+        panic!(
+          "compile: function parameter is not Expr::Argument: {:?}",
+          param
+        );
+      };
+      let Expr::TypeHint(types, nullable) = type_hint.deref() else {
+        panic!(
+          "compile: parameter type hint is not Expr::TypeHint: {:?}",
+          type_hint
+        );
+      };
+      if types.iter().any(|t| matches!(t, Type::Any)) {
+        continue;
+      }
+      let param_types: Vec<ParamType> = types
+        .iter()
+        .map(|t| self.ast_type_to_param_type(t))
+        .collect();
+      let check = ParamTypeCheck {
+        param_name: Self::identifier_name(name),
+        position: (i + 1) as u32,
+        nullable: *nullable,
+        types: param_types,
+      };
+      let check_idx = self.add_param_check(check);
+      // A fresh `FunctionScope` starts `current_line` at 0 (see its own
+      // field docs) -- nothing else sets it before the body's first
+      // statement does, and these checks run before that. Without this,
+      // an uncaught `TypeError` from a bad argument would blame line 0
+      // instead of the parameter's own line.
+      self.cur_mut().current_line = name.line as u32;
+      self.emit(Instr::CheckParamType { reg, check_idx });
+    }
   }
 
   /// Report a genuine, user-triggerable compile error anchored to a
@@ -418,8 +517,10 @@ impl<'a> Compiler<'a> {
 
     self.scopes.push(FunctionScope::new());
 
+    let mut param_regs = Vec::with_capacity(param_names.len());
     for pname in &param_names {
       let reg = self.alloc_reg();
+      param_regs.push(reg);
       self.cur_mut().locals.push(Local {
         name: pname.clone(),
         reg,
@@ -427,6 +528,8 @@ impl<'a> Compiler<'a> {
         depth: 0,
       });
     }
+    let variadic_tail_idx = is_variadic.then(|| params.len() - 1);
+    self.emit_param_type_checks(params, &param_regs, variadic_tail_idx);
 
     self.compile_statement(body);
 
@@ -531,8 +634,10 @@ impl<'a> Compiler<'a> {
       });
     }
 
+    let mut param_regs = Vec::with_capacity(param_names.len());
     for pname in &param_names {
       let reg = self.alloc_reg();
+      param_regs.push(reg);
       self.cur_mut().locals.push(Local {
         name: pname.clone(),
         reg,
@@ -540,6 +645,8 @@ impl<'a> Compiler<'a> {
         depth: 0,
       });
     }
+    let variadic_tail_idx = is_variadic.then(|| params.len() - 1);
+    self.emit_param_type_checks(params, &param_regs, variadic_tail_idx);
 
     self.compile_statement(body);
 

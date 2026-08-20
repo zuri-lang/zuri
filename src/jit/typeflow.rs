@@ -40,7 +40,7 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::vm::chunk::Instr;
+use crate::vm::chunk::{Instr, ParamType};
 use crate::vm::object::ObjFunction;
 
 /// A bitset over bytecode register indices (0..=255), one word per 64
@@ -623,7 +623,8 @@ fn ref_transfer(
     | Instr::Return { .. }
     | Instr::Jmp { .. }
     | Instr::JmpIfFalse { .. }
-    | Instr::JmpIfTrue { .. } => {},
+    | Instr::JmpIfTrue { .. }
+    | Instr::CheckParamType { .. } => {},
 
     // A raise writes no register, so it proves and invalidates nothing
     // -- exactly like `Return` above. It compiles to a deopt rather than
@@ -725,6 +726,24 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
     | Instr::MakeRange { dst, .. } => {
       let speculated = dst < 64 && (speculative_regs >> dst) & 1 != 0;
       out.set(dst, speculated);
+    },
+
+    // A parameter whose declared type is exactly (a union of only)
+    // `number`/`int`, with no `?nullable`, is PROVABLY numeric on every
+    // path past this instruction -- it just raised otherwise, and this
+    // is a "must" analysis over facts that hold given execution reached
+    // here at all. Anything else (a union that also allows a
+    // non-numeric type, or a nullable one nil could slip through) stays
+    // unproven, same as any other guard this pass doesn't specifically
+    // recognize.
+    Instr::CheckParamType { reg, check_idx } => {
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      let all_numeric = !check.nullable
+        && check
+          .types
+          .iter()
+          .all(|t| matches!(t, ParamType::Number | ParamType::Int));
+      out.set(reg, all_numeric);
     },
 
     // No destination register written at all -- facts pass through
@@ -1220,6 +1239,8 @@ fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
     },
 
     Instr::UsingJump { subject, .. } => set.set(subject, true),
+
+    Instr::CheckParamType { reg, .. } => set.set(reg, true),
 
     Instr::PushCatch { .. } | Instr::PopCatch => {
       unreachable!("excluded from compilation before this analysis ever runs")

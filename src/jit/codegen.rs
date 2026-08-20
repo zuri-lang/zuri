@@ -30,7 +30,7 @@ use cranelift_module::{FuncId, Module};
 use rustc_hash::FxHashMap;
 
 use crate::jit::{CallTarget, CompileFacts, escape, typeflow};
-use crate::vm::chunk::Instr;
+use crate::vm::chunk::{Instr, ParamType};
 use crate::vm::object::{self, ObjFunction};
 use crate::vm::value::{self};
 use crate::vm::vm;
@@ -190,6 +190,24 @@ enum RegCache {
   Stale,
 }
 
+/// A register's shape, proven for the WHOLE function body by a
+/// non-nullable, single-type `Instr::CheckParamType` on it plus a
+/// whole-bytecode scan proving nothing ever writes that register again
+/// -- see `FuncCompiler::compute_proven_param_shapes`'s own docs for
+/// exactly what's required. Consulted by `emit_list_get_index`/
+/// `emit_list_set_index` (`List`) and `emit_ic_guard` (`Instance`) to
+/// skip a guard the caller already paid for once, at the parameter
+/// check.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ParamShape {
+  List,
+  /// SOME instance -- not necessarily of the exact class a given
+  /// `GetField`/`SetField` site's own inline cache expects. Only
+  /// removes the `is_obj`+tag half of that site's guard; the per-site
+  /// class compare still runs exactly as before.
+  Instance,
+}
+
 /// A `Number` builtin the JIT emits directly instead of dispatching
 /// to -- see `FuncCompiler::emit_number_intrinsic` for why every one of
 /// these is an IDENTITY with what `builtins::number` computes, never an
@@ -233,10 +251,7 @@ enum NumberIntrinsic {
   Int,
   /// A direct call to the named `jit::runtime` helper: `(vm, bits)` for
   /// `arity` 0, `(vm, recv_bits, arg_bits)` for `arity` 1.
-  Call {
-    helper: &'static str,
-    arity: u8,
-  },
+  Call { helper: &'static str, arity: u8 },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -293,30 +308,99 @@ impl NumberIntrinsic {
       "sign" => Sign,
       "int" => Int,
 
-      "sin" => Call { helper: "zuri_jit_num_sin", arity: 0 },
-      "cos" => Call { helper: "zuri_jit_num_cos", arity: 0 },
-      "tan" => Call { helper: "zuri_jit_num_tan", arity: 0 },
-      "sinh" => Call { helper: "zuri_jit_num_sinh", arity: 0 },
-      "cosh" => Call { helper: "zuri_jit_num_cosh", arity: 0 },
-      "tanh" => Call { helper: "zuri_jit_num_tanh", arity: 0 },
-      "asin" => Call { helper: "zuri_jit_num_asin", arity: 0 },
-      "acos" => Call { helper: "zuri_jit_num_acos", arity: 0 },
-      "atan" => Call { helper: "zuri_jit_num_atan", arity: 0 },
-      "asinh" => Call { helper: "zuri_jit_num_asinh", arity: 0 },
-      "acosh" => Call { helper: "zuri_jit_num_acosh", arity: 0 },
-      "atanh" => Call { helper: "zuri_jit_num_atanh", arity: 0 },
-      "exp" => Call { helper: "zuri_jit_num_exp", arity: 0 },
-      "expm1" => Call { helper: "zuri_jit_num_expm1", arity: 0 },
-      "log" => Call { helper: "zuri_jit_num_log", arity: 0 },
-      "log2" => Call { helper: "zuri_jit_num_log2", arity: 0 },
-      "log10" => Call { helper: "zuri_jit_num_log10", arity: 0 },
-      "log1p" => Call { helper: "zuri_jit_num_log1p", arity: 0 },
-      "cbrt" => Call { helper: "zuri_jit_num_cbrt", arity: 0 },
-      "round" => Call { helper: "zuri_jit_num_round", arity: 0 },
+      "sin" => Call {
+        helper: "zuri_jit_num_sin",
+        arity: 0,
+      },
+      "cos" => Call {
+        helper: "zuri_jit_num_cos",
+        arity: 0,
+      },
+      "tan" => Call {
+        helper: "zuri_jit_num_tan",
+        arity: 0,
+      },
+      "sinh" => Call {
+        helper: "zuri_jit_num_sinh",
+        arity: 0,
+      },
+      "cosh" => Call {
+        helper: "zuri_jit_num_cosh",
+        arity: 0,
+      },
+      "tanh" => Call {
+        helper: "zuri_jit_num_tanh",
+        arity: 0,
+      },
+      "asin" => Call {
+        helper: "zuri_jit_num_asin",
+        arity: 0,
+      },
+      "acos" => Call {
+        helper: "zuri_jit_num_acos",
+        arity: 0,
+      },
+      "atan" => Call {
+        helper: "zuri_jit_num_atan",
+        arity: 0,
+      },
+      "asinh" => Call {
+        helper: "zuri_jit_num_asinh",
+        arity: 0,
+      },
+      "acosh" => Call {
+        helper: "zuri_jit_num_acosh",
+        arity: 0,
+      },
+      "atanh" => Call {
+        helper: "zuri_jit_num_atanh",
+        arity: 0,
+      },
+      "exp" => Call {
+        helper: "zuri_jit_num_exp",
+        arity: 0,
+      },
+      "expm1" => Call {
+        helper: "zuri_jit_num_expm1",
+        arity: 0,
+      },
+      "log" => Call {
+        helper: "zuri_jit_num_log",
+        arity: 0,
+      },
+      "log2" => Call {
+        helper: "zuri_jit_num_log2",
+        arity: 0,
+      },
+      "log10" => Call {
+        helper: "zuri_jit_num_log10",
+        arity: 0,
+      },
+      "log1p" => Call {
+        helper: "zuri_jit_num_log1p",
+        arity: 0,
+      },
+      "cbrt" => Call {
+        helper: "zuri_jit_num_cbrt",
+        arity: 0,
+      },
+      "round" => Call {
+        helper: "zuri_jit_num_round",
+        arity: 0,
+      },
 
-      "max" => Call { helper: "zuri_jit_num_max", arity: 1 },
-      "min" => Call { helper: "zuri_jit_num_min", arity: 1 },
-      "atan2" => Call { helper: "zuri_jit_num_atan2", arity: 1 },
+      "max" => Call {
+        helper: "zuri_jit_num_max",
+        arity: 1,
+      },
+      "min" => Call {
+        helper: "zuri_jit_num_min",
+        arity: 1,
+      },
+      "atan2" => Call {
+        helper: "zuri_jit_num_atan2",
+        arity: 1,
+      },
 
       _ => return None,
     })
@@ -453,6 +537,9 @@ struct FuncCompiler<'a, 'b> {
   /// general helper path in that case, identical to before this field
   /// existed.
   self_field_slots: FxHashMap<String, u16>,
+  /// `self_field_slots`' counterpart for a typed, non-`self` parameter
+  /// register -- see `jit::CompileFacts::param_field_slots`'s own docs.
+  param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
   /// This compiled function's OWN `FuncId` in `module` -- known before
   /// codegen starts (the caller, `JitEngine::build_ir`, always declares
   /// it first). Lets `emit_call_instr`'s self-recursive case emit a
@@ -512,9 +599,61 @@ struct FuncCompiler<'a, 'b> {
   /// overwhelming majority of functions -- every one that never builds
   /// a closure -- pay that on every single call for nothing.
   frame_can_open_upvalues: bool,
+  /// Registers whose shape is proven for the whole function -- see
+  /// `ParamShape`'s own docs and `compute_proven_param_shapes`.
+  /// Computed once, in `new`, from the bytecode's own shape alone (not
+  /// dependent on `type_facts`/`speculative_*`, unlike most of this
+  /// struct's other per-body state), so it's identical for both the
+  /// general and specialized body if this compile has one.
+  proven_param_shapes: FxHashMap<u8, ParamShape>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
+  /// A register is trustworthy for the WHOLE function as `shape` when:
+  /// it's the target of a non-nullable `Instr::CheckParamType` whose
+  /// declared type is EXACTLY one member (a union like `list|dict`
+  /// proves neither alone), AND nothing anywhere in the function ever
+  /// writes that register again (`typeflow::any_dst`) -- the same
+  /// cheap, deliberately whole-function over-approximation
+  /// `scalar_lists`' own eligibility gate uses (see its docs), chosen
+  /// over a real per-`ip` dataflow pass because a parameter register
+  /// being reused for something else entirely, mid-function, is rare
+  /// enough in practice that a full analysis would buy little beyond
+  /// what this costs to compute.
+  ///
+  /// Deliberately narrower than `type_facts`' own numeric analysis: a
+  /// `number`/`int`-only, non-nullable check ALSO feeds `typeflow::
+  /// transfer` directly (a real per-`ip` "must" fact, sound across
+  /// merges and loop back-edges) -- this function only needs to cover
+  /// the two shapes that dataflow doesn't, `List` and `Instance`, so it
+  /// stays intentionally simple rather than duplicating that machinery.
+  fn compute_proven_param_shapes(proto: &ObjFunction) -> FxHashMap<u8, ParamShape> {
+    let mut out = FxHashMap::default();
+    for instr in &proto.chunk.code {
+      let Instr::CheckParamType { reg, check_idx } = *instr else {
+        continue;
+      };
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      if check.nullable || check.types.len() != 1 {
+        continue;
+      }
+      let shape = match check.types[0] {
+        ParamType::List => ParamShape::List,
+        ParamType::Instance(_) => ParamShape::Instance,
+        _ => continue,
+      };
+      let rewritten = proto
+        .chunk
+        .code
+        .iter()
+        .any(|i| typeflow::any_dst(i) == Some(reg));
+      if !rewritten {
+        out.insert(reg, shape);
+      }
+    }
+    out
+  }
+
   fn new(
     fb: &'a mut FunctionBuilder<'b>,
     module: &'a mut JITModule,
@@ -555,6 +694,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       liveness,
       merge_points: Vec::new(),
       self_field_slots: facts.self_field_slots,
+      param_field_slots: facts.param_field_slots,
       own_func_id,
       self_class_bits: facts.self_class_bits,
       call_targets: facts.call_targets,
@@ -566,6 +706,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .code
         .iter()
         .any(|i| matches!(i, Instr::Closure { .. })),
+      proven_param_shapes: Self::compute_proven_param_shapes(proto),
     }
   }
 
@@ -2147,7 +2288,47 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           if !is_num(&numeric, src) {
             return None;
           }
-          return Some(code[..=i].to_vec());
+          // `CheckParamType` instructions are dropped from the plan
+          // rather than disqualifying it: `emit_inlined_body` has no
+          // arm for them (an inlined body is straight-line arithmetic
+          // only), but a parameter register already proven numeric by
+          // the CALL SITE's own `proven_numeric` check (required above,
+          // before this loop even starts) makes a `number`/`int`-only,
+          // non-nullable check on that same register a guaranteed
+          // no-op -- see the `CheckParamType` arm below for the actual
+          // proof. Silently keeping it in the plan instead would panic
+          // in `emit_inlined_body`; silently disqualifying the whole
+          // callee instead (the ORIGINAL behavior here, before typed
+          // parameters existed) would mean every typed small leaf
+          // function permanently loses inlining -- confirmed to cost
+          // 2x on `spectral-norm.zu`'s `eval_A`, called ~600M times.
+          return Some(
+            code[..=i]
+              .iter()
+              .copied()
+              .filter(|instr| !matches!(instr, Instr::CheckParamType { .. }))
+              .collect(),
+          );
+        },
+        // A parameter register the CALL SITE already proved numeric
+        // (required for every one of `num_args` above) trivially
+        // satisfies its own `number`/`int`-only, non-nullable check --
+        // that's exactly what `proven_numeric` means. Anything the
+        // check ALSO covers beyond that (a wider union, `?nullable`, a
+        // non-numeric type on a register the call site did NOT already
+        // prove numeric) can't be soundly assumed here, so it
+        // disqualifies inlining instead of risking silently skipping a
+        // check that could have raised.
+        Instr::CheckParamType { reg, check_idx } => {
+          let check = &callee.chunk.param_checks[check_idx as usize];
+          let numeric_only = !check.nullable
+            && check
+              .types
+              .iter()
+              .all(|t| matches!(t, ParamType::Number | ParamType::Int));
+          if !numeric_only || !is_num(&numeric, reg) {
+            return None;
+          }
         },
         Instr::LoadConst { dst, const_idx } => {
           if !numeric_const(const_idx) {
@@ -2486,76 +2667,259 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.bool_value(c)
       },
       NativeIntrinsic::IsBool => {
-        // `Value::is_bool` is an exact match against the two singleton
-        // bit patterns, not a masked test.
-        let t = self.u64c(value::TRUE_VAL);
-        let f = self.u64c(value::FALSE_VAL);
-        let is_t = self.fb.ins().icmp(IntCC::Equal, v, t);
-        let is_f = self.fb.ins().icmp(IntCC::Equal, v, f);
-        let c = self.fb.ins().bor(is_t, is_f);
+        let c = self.emit_is_bool_test(v);
         self.bool_value(c)
       },
       NativeIntrinsic::IsInt => {
-        // `natives::is_int` is `is_number() && fract() == 0.0`, and
-        // Rust's `f64::fract` is `self - self.trunc()` -- so an
-        // infinity yields NaN here and correctly compares unequal,
-        // exactly as the interpreted version does.
-        let is_num = self.is_number(v);
-        let num_block = self.fb.create_block();
-        let done_block = self.fb.create_block();
-        self.fb.append_block_param(done_block, types::I8);
-        let false_v = self.fb.ins().iconst(types::I8, 0);
-        self
-          .fb
-          .ins()
-          .brif(is_num, num_block, &[], done_block, &[false_v.into()]);
-
-        self.fb.switch_to_block(num_block);
-        let f = self.to_f64(v);
-        let t = self.fb.ins().trunc(f);
-        let frac = self.fb.ins().fsub(f, t);
-        let zero = self.fb.ins().f64const(0.0);
-        let is_whole = self.fb.ins().fcmp(FloatCC::Equal, frac, zero);
-        self.fb.ins().jump(done_block, &[is_whole.into()]);
-
-        self.fb.switch_to_block(done_block);
-        let c = self.fb.block_params(done_block)[0];
+        let c = self.emit_is_int_test(v);
         self.bool_value(c)
       },
       NativeIntrinsic::Tag(tags) => {
-        // Two stages, never fused: the tag lives behind a pointer, so
-        // it may only be read once `is_obj` has proven there is one --
-        // see `emit_ic_guard` for the same discipline.
-        let is_obj = self.is_obj(v);
-        let obj_block = self.fb.create_block();
-        let done_block = self.fb.create_block();
-        self.fb.append_block_param(done_block, types::I8);
-        let false_v = self.fb.ins().iconst(types::I8, 0);
-        self
-          .fb
-          .ins()
-          .brif(is_obj, obj_block, &[], done_block, &[false_v.into()]);
-
-        self.fb.switch_to_block(obj_block);
-        let ptr = self.obj_ptr(v);
-        let tag = self.obj_tag(ptr);
-        let mut matched = None;
-        for &want in tags {
-          let w = self.i64c(want as i64);
-          let eq = self.fb.ins().icmp(IntCC::Equal, tag, w);
-          matched = Some(match matched {
-            None => eq,
-            Some(prev) => self.fb.ins().bor(prev, eq),
-          });
-        }
-        let matched = matched.expect("a Tag intrinsic always names at least one tag");
-        self.fb.ins().jump(done_block, &[matched.into()]);
-
-        self.fb.switch_to_block(done_block);
-        let c = self.fb.block_params(done_block)[0];
+        let c = self.emit_obj_tag_test(v, tags);
         self.bool_value(c)
       },
     }
+  }
+
+  /// `Value::is_bool`'s exact match against the two singleton bit
+  /// patterns, not a masked test -- raw `i8` `0`/`1`, not a boxed
+  /// `Value`. Shared by `emit_native_intrinsic`'s `IsBool` and
+  /// `emit_check_param_type`'s inline `ParamType::Bool` case, so the
+  /// two can't silently disagree on what "a bool" means.
+  fn emit_is_bool_test(&mut self, v: IrValue) -> IrValue {
+    let t = self.u64c(value::TRUE_VAL);
+    let f = self.u64c(value::FALSE_VAL);
+    let is_t = self.fb.ins().icmp(IntCC::Equal, v, t);
+    let is_f = self.fb.ins().icmp(IntCC::Equal, v, f);
+    self.fb.ins().bor(is_t, is_f)
+  }
+
+  /// `natives::is_int` is `is_number() && fract() == 0.0`, and Rust's
+  /// `f64::fract` is `self - self.trunc()` -- so an infinity yields NaN
+  /// here and correctly compares unequal, exactly as the interpreted
+  /// version does. Raw `i8` `0`/`1`; see `emit_is_bool_test`'s own docs
+  /// on why this is split out from `emit_native_intrinsic`.
+  fn emit_is_int_test(&mut self, v: IrValue) -> IrValue {
+    let is_num = self.is_number(v);
+    let num_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.append_block_param(done_block, types::I8);
+    let false_v = self.fb.ins().iconst(types::I8, 0);
+    self
+      .fb
+      .ins()
+      .brif(is_num, num_block, &[], done_block, &[false_v.into()]);
+
+    self.fb.switch_to_block(num_block);
+    let f = self.to_f64(v);
+    let t = self.fb.ins().trunc(f);
+    let frac = self.fb.ins().fsub(f, t);
+    let zero = self.fb.ins().f64const(0.0);
+    let is_whole = self.fb.ins().fcmp(FloatCC::Equal, frac, zero);
+    self.fb.ins().jump(done_block, &[is_whole.into()]);
+
+    self.fb.switch_to_block(done_block);
+    self.fb.block_params(done_block)[0]
+  }
+
+  /// Two stages, never fused: the tag lives behind a pointer, so it may
+  /// only be read once `is_obj` has proven there is one -- see
+  /// `emit_ic_guard` for the same discipline. Raw `i8` `0`/`1`; see
+  /// `emit_is_bool_test`'s own docs on why this is split out from
+  /// `emit_native_intrinsic`.
+  fn emit_obj_tag_test(&mut self, v: IrValue, tags: &[u8]) -> IrValue {
+    let is_obj = self.is_obj(v);
+    let obj_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.append_block_param(done_block, types::I8);
+    let false_v = self.fb.ins().iconst(types::I8, 0);
+    self
+      .fb
+      .ins()
+      .brif(is_obj, obj_block, &[], done_block, &[false_v.into()]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(v);
+    let tag = self.obj_tag(ptr);
+    let mut matched = None;
+    for &want in tags {
+      let w = self.i64c(want as i64);
+      let eq = self.fb.ins().icmp(IntCC::Equal, tag, w);
+      matched = Some(match matched {
+        None => eq,
+        Some(prev) => self.fb.ins().bor(prev, eq),
+      });
+    }
+    let matched = matched.expect("emit_obj_tag_test always names at least one tag");
+    self.fb.ins().jump(done_block, &[matched.into()]);
+
+    self.fb.switch_to_block(done_block);
+    self.fb.block_params(done_block)[0]
+  }
+
+  /// Exact-class fast test for `Instr::CheckParamType`'s `Instance`
+  /// case, when `param_class_bits` resolved the declared class
+  /// statically: `is_obj` + tag==`INSTANCE` + `class_bits==target`, all
+  /// in one raw `i8` boolean. A genuine SUBCLASS of `target` fails this
+  /// (an exact-bits compare can't see inheritance) and correctly falls
+  /// through to the helper's own subclass-aware walk -- see
+  /// `param_field_slots`' own docs on why the common exact-match case
+  /// being this cheap is what makes an object-typed parameter's check
+  /// worth inlining at all, instead of paying a full opaque helper call
+  /// on every invocation regardless of how the value turns out.
+  fn emit_instance_class_test(&mut self, v: IrValue, target_bits: u64) -> IrValue {
+    let is_obj = self.is_obj(v);
+    let obj_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.append_block_param(done_block, types::I8);
+    let false_v = self.fb.ins().iconst(types::I8, 0);
+    self
+      .fb
+      .ins()
+      .brif(is_obj, obj_block, &[], done_block, &[false_v.into()]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(v);
+    let tag = self.obj_tag(ptr);
+    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+    let class_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_instance, class_block, &[], done_block, &[false_v.into()]);
+
+    self.fb.switch_to_block(class_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
+    let target = self.u64c(target_bits);
+    let same_class = self.fb.ins().icmp(IntCC::Equal, class_bits, target);
+    self.fb.ins().jump(done_block, &[same_class.into()]);
+
+    self.fb.switch_to_block(done_block);
+    self.fb.block_params(done_block)[0]
+  }
+
+  /// `Instr::CheckParamType` -- inlines every member of the declared
+  /// union that's a plain `Value`/`Obj` tag test (everything except
+  /// `Iterable`, a method-table probe, and `Instance`, a possibly-
+  /// failing global lookup plus a superclass walk), OR'd together with
+  /// the same `emit_is_bool_test`/`emit_is_int_test`/`emit_obj_tag_test`
+  /// `emit_native_intrinsic` itself uses for the `is_*` builtins -- so a
+  /// typed parameter and an explicit `is_list(x)` check compile to
+  /// identical machine code, not two independently-maintained ideas of
+  /// what "a list" means.
+  ///
+  /// A hit skips the helper entirely; a miss (or a union containing
+  /// ONLY `Iterable`/`Instance`, which never sets `cond` at all) falls
+  /// back to `zuri_jit_check_param_type`, which re-examines the value
+  /// against every member (including the ones already ruled out here --
+  /// redundant work only on the raise-or-nullable-nil path, never on
+  /// the common hit path this function exists to make cheap).
+  fn emit_check_param_type(&mut self, ip: usize, reg: u8, check_idx: u16) {
+    let check = &self.proto.chunk.param_checks[check_idx as usize];
+    let nullable = check.nullable;
+    let types: Vec<ParamType> = check.types.clone();
+
+    let v = self.load_reg(reg);
+    let snapshot = self.snapshot_reg_cache();
+
+    let done_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+
+    if nullable {
+      let nil_val = self.u64c(value::NIL_VAL);
+      let is_nil = self.fb.ins().icmp(IntCC::Equal, v, nil_val);
+      let after_nil = self.fb.create_block();
+      self.fb.ins().brif(is_nil, done_block, &[], after_nil, &[]);
+      self.fb.switch_to_block(after_nil);
+    }
+
+    let mut cond: Option<IrValue> = None;
+    let mut obj_tags: Vec<u8> = Vec::new();
+    let or_in = |fc: &mut Self, cond: &mut Option<IrValue>, c: IrValue| {
+      *cond = Some(match *cond {
+        None => c,
+        Some(prev) => fc.fb.ins().bor(prev, c),
+      });
+    };
+
+    for t in types {
+      match t {
+        ParamType::Bool => {
+          let c = self.emit_is_bool_test(v);
+          or_in(self, &mut cond, c);
+        },
+        ParamType::Number => {
+          let c = self.is_number(v);
+          or_in(self, &mut cond, c);
+        },
+        ParamType::Int => {
+          let c = self.emit_is_int_test(v);
+          or_in(self, &mut cond, c);
+        },
+        ParamType::BigInt => obj_tags.push(object::OBJ_TAG_BIGINT),
+        ParamType::String => obj_tags.push(object::OBJ_TAG_STR),
+        ParamType::Bytes => obj_tags.push(object::OBJ_TAG_BYTES),
+        ParamType::List => obj_tags.push(object::OBJ_TAG_LIST),
+        ParamType::Dict => obj_tags.push(object::OBJ_TAG_DICT),
+        ParamType::Range => obj_tags.push(object::OBJ_TAG_RANGE),
+        ParamType::File => obj_tags.push(object::OBJ_TAG_FILE),
+        ParamType::Function => obj_tags.extend_from_slice(&[
+          object::OBJ_TAG_CLOSURE,
+          object::OBJ_TAG_NATIVE,
+          object::OBJ_TAG_BOUND_METHOD,
+        ]),
+        ParamType::Class => obj_tags.push(object::OBJ_TAG_CLASS),
+        ParamType::Callable => obj_tags.extend_from_slice(&[
+          object::OBJ_TAG_CLOSURE,
+          object::OBJ_TAG_NATIVE,
+          object::OBJ_TAG_BOUND_METHOD,
+          object::OBJ_TAG_CLASS,
+        ]),
+        // Inlined only when `param_field_slots` resolved the declared
+        // class statically -- see `emit_instance_class_test`'s own
+        // docs. Otherwise falls to the helper, same as `Iterable`
+        // always does.
+        ParamType::Instance(_) => {
+          if let Some(target_bits) = self.param_class_bits(reg) {
+            let c = self.emit_instance_class_test(v, target_bits);
+            or_in(self, &mut cond, c);
+          }
+        },
+        ParamType::Iterable => {},
+      }
+    }
+
+    if !obj_tags.is_empty() {
+      let c = self.emit_obj_tag_test(v, &obj_tags);
+      or_in(self, &mut cond, c);
+    }
+
+    match cond {
+      Some(c) => {
+        self.fb.ins().brif(c, done_block, &[], slow_block, &[]);
+      },
+      None => {
+        self.fb.ins().jump(slow_block, &[]);
+      },
+    }
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let reg_i = self.idx(reg);
+    let func_ptr = self.func_ptr_const();
+    let check_idx_c = self.u64c(check_idx as u64);
+    let ip_c = self.u64c(ip as u64);
+    self.call_checked(
+      "zuri_jit_check_param_type",
+      &[self.vm_param, base, reg_i, func_ptr, check_idx_c, ip_c],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot_all(&snapshot);
   }
 
   /// `Instr::Call`'s fully general codegen -- the resolver-driven
@@ -2900,28 +3264,85 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.self_field_slots.get(name.as_str()).copied()
   }
 
+  /// `self_field_slot`'s counterpart for a typed, non-`self` parameter
+  /// -- `obj` need not be register 0 here, since a plain function's
+  /// typed parameters start at register 0 themselves and a method can
+  /// have several besides `self`. See `param_field_slots`' own docs.
+  fn param_field_slot(&self, obj: u8, name_const: u16) -> Option<u16> {
+    let name = self.proto.chunk.constants[name_const as usize];
+    self
+      .param_field_slots
+      .get(&obj)?
+      .1
+      .get(name.as_str())
+      .copied()
+  }
+
+  /// A register's resolved class `Value` bits, when it's a proven-
+  /// single-class parameter -- consulted by `emit_check_param_type` to
+  /// inline the CHECK ITSELF (not just downstream field access) down to
+  /// one class-bits compare. See `param_field_slots`' own docs on why
+  /// this matters: without it, an `Instance`-typed parameter's check
+  /// unconditionally calls the general helper, which for a hot function
+  /// can cost more than the field-access savings ever recover.
+  fn param_class_bits(&self, obj: u8) -> Option<u64> {
+    self.param_field_slots.get(&obj).map(|&(bits, _)| bits)
+  }
+
   /// `self.field` read fast path for a field PROVEN (see
-  /// `self_field_slot`) to live at a fixed slot on `self`'s own class,
-  /// with no `BoundMethod`-wrapping risk. No helper call, no `RefCell`
-  /// borrow, no hashmap probe on the common path: a direct load at
-  /// `object::obj_instance_fields_ptr_offset()` (fixed since
-  /// `ObjInstance`/`FieldStorage` are `#[repr(C)]`) plus `slot * 8`.
-  /// Falls back to the ordinary `zuri_jit_get_field` helper on the
-  /// defensive (should be unreachable in practice -- a method's `self`
-  /// is always the instance it was invoked on -- but checked rather
-  /// than assumed) case that register 0 doesn't actually hold an
-  /// `Obj::Instance` right now.
+  /// `self_field_slot`/`param_field_slot`) to live at a fixed slot on
+  /// the receiver's own class, with no `BoundMethod`-wrapping risk. No
+  /// helper call, no `RefCell` borrow, no hashmap probe on the common
+  /// path: a direct load at `object::obj_instance_fields_ptr_offset()`
+  /// (fixed since `ObjInstance`/`FieldStorage` are `#[repr(C)]`) plus
+  /// `slot * 8`.
   ///
-  /// Follows `emit_binary_numeric_guarded`'s exact snapshot/restore
-  /// discipline around the fast/slow split -- see
-  /// `restore_dirty_from_snapshot`'s own docs for the real bug class
-  /// that protects against (Cranelift compiles both arms unconditionally,
-  /// so the slow arm's `call_checked` would otherwise corrupt this
-  /// compiler's OWN compile-time liveness bookkeeping for registers this
-  /// instruction never touches, even when the slow arm never runs at
-  /// runtime).
-  fn emit_self_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, slot: u16) {
+  /// `proven` distinguishes the two callers: `self_field_slot`'s case
+  /// (`proven = false`) still checks `is_obj`+tag defensively (should
+  /// be unreachable -- a method's `self` is always the instance it was
+  /// invoked on -- but checked rather than assumed, since that's an
+  /// invariant of the CALLING CONVENTION, never independently
+  /// verified). `param_field_slot`'s case (`proven = true`) has a
+  /// STRONGER guarantee than that: an explicit, RAISING
+  /// `Instr::CheckParamType` already ran on this exact register, and
+  /// `resolve_param_field_slots` already proved nothing rewrites it
+  /// afterward -- so re-deriving the same fact here would be checking
+  /// something the bytecode itself already enforces, not defending
+  /// against a genuine unknown. `proven = true` skips straight to the
+  /// load, no branch, no slow path, no snapshot/restore at all.
+  ///
+  /// The `proven = false` arm follows `emit_binary_numeric_guarded`'s
+  /// exact snapshot/restore discipline around the fast/slow split --
+  /// see `restore_dirty_from_snapshot`'s own docs for the real bug
+  /// class that protects against (Cranelift compiles both arms
+  /// unconditionally, so the slow arm's `call_checked` would otherwise
+  /// corrupt this compiler's OWN compile-time liveness bookkeeping for
+  /// registers this instruction never touches, even when the slow arm
+  /// never runs at runtime).
+  fn emit_self_get_field(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    name_const: u16,
+    slot: u16,
+    proven: bool,
+  ) {
     let self_val = self.load_reg(obj);
+
+    if proven {
+      let ptr = self.obj_ptr(self_val);
+      let fields_ptr = self.load_instance_fields_ptr(ptr);
+      let v = self.fb.ins().load(
+        types::I64,
+        cranelift_codegen::ir::MemFlagsData::trusted(),
+        fields_ptr,
+        (slot as i32) * 8,
+      );
+      self.store_reg(dst, v);
+      return;
+    }
+
     let is_obj = self.is_obj(self_val);
     let snapshot = self.snapshot_reg_cache();
 
@@ -2977,19 +3398,44 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `self.field = ...` write fast path -- the write-side counterpart
-  /// of `emit_self_get_field`. Defines no VM register at all (only
-  /// reads `src`), so nothing is held back from the merged restore; the
-  /// receiver is reconciled across the two arms by
-  /// `resync_receiver_from_memory` instead, exactly as in
+  /// of `emit_self_get_field`; see its own docs on `proven` (`false`
+  /// for `self_field_slot`'s defensive-checked case, `true` for
+  /// `param_field_slot`'s already-raised-if-wrong case, which skips
+  /// straight to the store). Defines no VM register at all (only reads
+  /// `src`), so nothing is held back from the merged restore in the
+  /// `proven = false` arm; the receiver is reconciled across the two
+  /// arms by `resync_receiver_from_memory` instead, exactly as in
   /// `emit_ic_set_field` -- see its docs for the disagreement that
   /// closes. Only one `call_helper` site exists in this function (the
   /// slow path), so the OTHER real bug class this file's
   /// snapshot/restore machinery guards against -- two INDEPENDENT
   /// `call_helper` sites in different branches, see
   /// `emit_list_set_index`'s own docs -- doesn't apply here.
-  fn emit_self_set_field(&mut self, ip: usize, obj: u8, name_const: u16, src: u8, slot: u16) {
+  fn emit_self_set_field(
+    &mut self,
+    ip: usize,
+    obj: u8,
+    name_const: u16,
+    src: u8,
+    slot: u16,
+    proven: bool,
+  ) {
     let self_val = self.load_reg(obj);
     let src_val = self.load_reg(src);
+
+    if proven {
+      let ptr = self.obj_ptr(self_val);
+      let fields_ptr = self.load_instance_fields_ptr(ptr);
+      self.fb.ins().store(
+        cranelift_codegen::ir::MemFlagsData::trusted(),
+        src_val,
+        fields_ptr,
+        (slot as i32) * 8,
+      );
+      self.emit_write_barrier(ptr);
+      return;
+    }
+
     let is_obj = self.is_obj(self_val);
     let snapshot = self.snapshot_reg_cache();
 
@@ -3082,28 +3528,48 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// non-instance `Obj`'s bytes as an `ObjInstance` would read the
   /// wrong union arm -- see `emit_self_get_field`'s identical two-stage
   /// discipline, which this extends by one stage.
+  ///
+  /// `obj` (the receiver's OWN register, not its already-loaded value)
+  /// is consulted against `proven_param_shapes`: a parameter checked
+  /// `Instr::CheckParamType`-non-nullable against exactly ONE class has
+  /// already paid for "is this an `Obj::Instance`" once, at the check
+  /// -- skip re-deriving it here and go straight to the class load. The
+  /// per-site class MATCH still runs unconditionally regardless (a
+  /// proven parameter can still be any subclass, or in practice any
+  /// class at all if the check's declared class doesn't match this
+  /// site's own field), so a mismatch still correctly falls to
+  /// `slow_block`, same as an unproven receiver.
   fn emit_ic_guard(
     &mut self,
+    obj: u8,
     recv: IrValue,
     cache_addr: IrValue,
     slow_block: Block,
   ) -> (IrValue, IrValue) {
-    let is_obj = self.is_obj(recv);
-    let obj_block = self.fb.create_block();
-    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+    let proven_instance = self.proven_param_shapes.get(&obj) == Some(&ParamShape::Instance);
 
-    self.fb.switch_to_block(obj_block);
-    let ptr = self.obj_ptr(recv);
-    let tag = self.obj_tag(ptr);
-    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
-    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
-    let class_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_instance, class_block, &[], slow_block, &[]);
+    let ptr = if proven_instance {
+      self.obj_ptr(recv)
+    } else {
+      let is_obj = self.is_obj(recv);
+      let obj_block = self.fb.create_block();
+      self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
 
-    self.fb.switch_to_block(class_block);
+      self.fb.switch_to_block(obj_block);
+      let ptr = self.obj_ptr(recv);
+      let tag = self.obj_tag(ptr);
+      let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+      let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+      let class_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(is_instance, class_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(class_block);
+      ptr
+    };
+
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let class_off = object::obj_instance_class_offset() as i32;
     let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
@@ -3147,7 +3613,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
 
-    let (ptr, byte_offset) = self.emit_ic_guard(recv, cache, slow_block);
+    let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
     let fields_ptr = self.load_instance_fields_ptr(ptr);
     let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
     let v = self.fb.ins().load(
@@ -3216,7 +3682,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
 
-    let (ptr, byte_offset) = self.emit_ic_guard(recv, cache, slow_block);
+    let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
     let fields_ptr = self.load_instance_fields_ptr(ptr);
     let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
     self.fb.ins().store(
@@ -3528,57 +3994,92 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn emit_list_get_index(&mut self, dst: u8, obj: u8, iidx: u8, idx_proven_numeric: bool) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
-    // Both safe to compute unconditionally regardless of the other's
-    // truth value -- neither dereferences memory, see `is_obj`/
-    // `is_number`'s own docs. `type_facts` already proves the index
-    // numeric for the overwhelmingly common case (a loop counter
-    // indexing a list), so there's no need to pay for a dynamic check
-    // of something the compiler already knows -- same discipline
-    // arithmetic/bitwise ops use via `proven_numeric`.
-    let is_obj = self.is_obj(obj_val);
-    let cheap_guard = if idx_proven_numeric {
-      is_obj
-    } else {
-      let is_num = self.is_number(idx_val);
-      self.fb.ins().band(is_obj, is_num)
-    };
+    let proven_list = self.proven_param_shapes.get(&obj) == Some(&ParamShape::List);
     let snapshot = self.snapshot_reg_cache();
 
-    let checked_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(cheap_guard, checked_block, &[], slow_block, &[]);
-
-    // `ptr`/`tag` (dereferences memory) and the float round-trip check
-    // (pure arithmetic, but only MEANINGFUL once `is_num` is known
-    // true) are both only computed here, in a block reachable only
-    // when `cheap_guard` -- and therefore `is_obj` -- was already
-    // proven true. Same discipline `emit_self_get_field` uses for its
-    // own tag check.
-    self.fb.switch_to_block(checked_block);
-    let ptr = self.obj_ptr(obj_val);
-    let tag = self.obj_tag(ptr);
-    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
-    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
-
-    let f = self.to_f64(idx_val);
-    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-    let is_int = self.fb.ins().fcmp(
-      cranelift_codegen::ir::condcodes::FloatCC::Equal,
-      f,
-      roundtrip,
-    );
-    let list_and_int = self.fb.ins().band(is_list, is_int);
-
     let resolve_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+
+    // `proven_list` is a compile-time fact -- exactly one of these two
+    // arms is ever actually emitted for a given `Instr::GetIndex` site,
+    // never both, so `ptr`/`as_int` dominate `resolve_block` either way
+    // (a single predecessor chain, just a shorter one when proven).
+    let (ptr, as_int) = if proven_list {
+      // The object-shape half of the guard (`is_obj` + tag==LIST)
+      // already ran once, at `obj`'s own Instr::CheckParamType -- go
+      // straight to the pointer; only the index still needs checking
+      // here.
+      let ptr = self.obj_ptr(obj_val);
+      let f = self.to_f64(idx_val);
+      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+      let is_int = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::Equal,
+        f,
+        roundtrip,
+      );
+      let idx_ok = if idx_proven_numeric {
+        is_int
+      } else {
+        let is_num = self.is_number(idx_val);
+        self.fb.ins().band(is_num, is_int)
+      };
+      self
+        .fb
+        .ins()
+        .brif(idx_ok, resolve_block, &[], slow_block, &[]);
+      (ptr, as_int)
+    } else {
+      // Both safe to compute unconditionally regardless of the other's
+      // truth value -- neither dereferences memory, see `is_obj`/
+      // `is_number`'s own docs. `type_facts` already proves the index
+      // numeric for the overwhelmingly common case (a loop counter
+      // indexing a list), so there's no need to pay for a dynamic check
+      // of something the compiler already knows -- same discipline
+      // arithmetic/bitwise ops use via `proven_numeric`.
+      let is_obj = self.is_obj(obj_val);
+      let cheap_guard = if idx_proven_numeric {
+        is_obj
+      } else {
+        let is_num = self.is_number(idx_val);
+        self.fb.ins().band(is_obj, is_num)
+      };
+
+      let checked_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(cheap_guard, checked_block, &[], slow_block, &[]);
+
+      // `ptr`/`tag` (dereferences memory) and the float round-trip check
+      // (pure arithmetic, but only MEANINGFUL once `is_num` is known
+      // true) are both only computed here, in a block reachable only
+      // when `cheap_guard` -- and therefore `is_obj` -- was already
+      // proven true. Same discipline `emit_self_get_field` uses for its
+      // own tag check.
+      self.fb.switch_to_block(checked_block);
+      let ptr = self.obj_ptr(obj_val);
+      let tag = self.obj_tag(ptr);
+      let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+      let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+
+      let f = self.to_f64(idx_val);
+      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+      let is_int = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::Equal,
+        f,
+        roundtrip,
+      );
+      let list_and_int = self.fb.ins().band(is_list, is_int);
+
+      self
+        .fb
+        .ins()
+        .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+      (ptr, as_int)
+    };
 
     self.fb.switch_to_block(resolve_block);
     let (data_ptr, len) = self.load_list_ptr_len(ptr);
@@ -3650,44 +4151,73 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let idx_val = self.load_reg(iidx);
     let src_val = self.load_reg(src);
     // See `emit_list_get_index`'s own docs on skipping the dynamic
-    // `is_number` check when `type_facts` already proves it.
-    let is_obj = self.is_obj(obj_val);
-    let cheap_guard = if idx_proven_numeric {
-      is_obj
-    } else {
-      let is_num = self.is_number(idx_val);
-      self.fb.ins().band(is_obj, is_num)
-    };
+    // `is_number` check when `type_facts` already proves it, and on
+    // `proven_param_shapes`/`ParamShape::List` skipping the object-shape
+    // half entirely.
+    let proven_list = self.proven_param_shapes.get(&obj) == Some(&ParamShape::List);
     let snapshot = self.snapshot_reg_cache();
 
-    let checked_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(cheap_guard, checked_block, &[], slow_block, &[]);
-
-    self.fb.switch_to_block(checked_block);
-    let ptr = self.obj_ptr(obj_val);
-    let tag = self.obj_tag(ptr);
-    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
-    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
-
-    let f = self.to_f64(idx_val);
-    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-    let is_int = self.fb.ins().fcmp(
-      cranelift_codegen::ir::condcodes::FloatCC::Equal,
-      f,
-      roundtrip,
-    );
-    let list_and_int = self.fb.ins().band(is_list, is_int);
     let resolve_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+
+    let (ptr, as_int) = if proven_list {
+      let ptr = self.obj_ptr(obj_val);
+      let f = self.to_f64(idx_val);
+      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+      let is_int = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::Equal,
+        f,
+        roundtrip,
+      );
+      let idx_ok = if idx_proven_numeric {
+        is_int
+      } else {
+        let is_num = self.is_number(idx_val);
+        self.fb.ins().band(is_num, is_int)
+      };
+      self
+        .fb
+        .ins()
+        .brif(idx_ok, resolve_block, &[], slow_block, &[]);
+      (ptr, as_int)
+    } else {
+      let is_obj = self.is_obj(obj_val);
+      let cheap_guard = if idx_proven_numeric {
+        is_obj
+      } else {
+        let is_num = self.is_number(idx_val);
+        self.fb.ins().band(is_obj, is_num)
+      };
+
+      let checked_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(cheap_guard, checked_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(checked_block);
+      let ptr = self.obj_ptr(obj_val);
+      let tag = self.obj_tag(ptr);
+      let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+      let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+
+      let f = self.to_f64(idx_val);
+      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+      let is_int = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::Equal,
+        f,
+        roundtrip,
+      );
+      let list_and_int = self.fb.ins().band(is_list, is_int);
+      self
+        .fb
+        .ins()
+        .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+      (ptr, as_int)
+    };
 
     self.fb.switch_to_block(resolve_block);
     let (data_ptr, len) = self.load_list_ptr_len(ptr);
@@ -4435,7 +4965,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Pow { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.call_f64_intrinsic("zuri_jit_num_powf", fa, fb));
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| {
+            fc.call_f64_intrinsic("zuri_jit_num_powf", fa, fb)
+          });
         } else {
           self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_pow", |fc, fa, fb| {
             fc.call_f64_intrinsic("zuri_jit_num_powf", fa, fb)
@@ -4459,7 +4991,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Mod { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb));
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| {
+            fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb)
+          });
         } else {
           self.emit_binary_numeric_guarded(dst, a, b, "zuri_jit_mod", |fc, fa, fb| {
             fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb)
@@ -5003,7 +5537,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           return false;
         }
         if let Some(slot) = self.self_field_slot(obj, name_const) {
-          self.emit_self_get_field(ip, dst, obj, name_const, slot);
+          self.emit_self_get_field(ip, dst, obj, name_const, slot, false);
+          return false;
+        }
+        if let Some(slot) = self.param_field_slot(obj, name_const) {
+          self.emit_self_get_field(ip, dst, obj, name_const, slot, true);
           return false;
         }
         if let Some(cache) = self.field_cache_addr(ip) {
@@ -5038,7 +5576,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           return false;
         }
         if let Some(slot) = self.self_field_slot(obj, name_const) {
-          self.emit_self_set_field(ip, obj, name_const, src, slot);
+          self.emit_self_set_field(ip, obj, name_const, src, slot, false);
+          return false;
+        }
+        if let Some(slot) = self.param_field_slot(obj, name_const) {
+          self.emit_self_set_field(ip, obj, name_const, src, slot, true);
           return false;
         }
         if let Some(cache) = self.field_cache_addr(ip) {
@@ -5400,6 +5942,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         } else {
           self.emit_imm_eq(dst, a, imm_const, false);
         }
+        false
+      },
+      Instr::CheckParamType { reg, check_idx } => {
+        self.emit_check_param_type(ip, reg, check_idx);
         false
       },
     }

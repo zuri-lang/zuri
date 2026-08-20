@@ -1,0 +1,19 @@
+1
+hello
+nil
+1
+hello
+<instance of Error>
+[2]
+[]
+[]
+[1, 2, 3]
+<instance of TestClass>
+nil
+needs_number() expects parameter 'x' (argument 1) to be a number, got string
+needs_number() expects parameter 'x' (argument 1) to be a number, got nil
+needs_union() expects parameter 'x' (argument 1) to be a number or a string, got list
+needs_int() expects parameter 'x' (argument 1) to be an int, got number
+needs_bool() expects parameter 'x' (argument 1) to be a bool, got number
+caught a ValueError
+needs_test_class() expects parameter 'x' (argument 1) to be a TestClass, got instance

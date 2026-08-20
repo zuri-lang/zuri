@@ -1,0 +1,109 @@
+def a(arg: any, arg2: string, c: ?list) {
+  echo arg
+  echo arg2
+  echo c
+}
+
+a(1, 'hello')
+
+def test(x: string|number|Error) {
+  echo x
+}
+
+test(1)
+test('hello')
+test(Error('message'))
+
+class TestClass {
+  method(param: list, ...args) {
+    echo param
+    echo args
+  }
+}
+
+var x = TestClass()
+x.method([2])
+x.method([], 1, 2, 3)
+
+def method2(param: ?TestClass) {
+  echo param
+}
+
+method2(x)
+method2()
+
+def all_optional(x: ?number, y: ?number) {}
+
+all_optional()
+all_optional(1)
+all_optional(2)
+
+def optional_any(v: ?any) {}
+
+optional_any()
+optional_any(1)
+
+/* Failure paths -- each mismatch should raise a TypeError naming the
+ * parameter, its position, and what was actually received. */
+
+def needs_number(x: number) {}
+
+catch {
+  needs_number('str')
+} as e {
+  echo e.message
+}
+
+catch {
+  needs_number()
+} as e {
+  echo e.message
+}
+
+def needs_union(x: number|string) {}
+
+catch {
+  needs_union([1, 2])
+} as e {
+  echo e.message
+}
+
+def needs_int(x: int) {}
+
+needs_int(5)
+
+catch {
+  needs_int(5.5)
+} as e {
+  echo e.message
+}
+
+def needs_bool(x: bool) {}
+
+needs_bool(true)
+
+catch {
+  needs_bool(1)
+} as e {
+  echo e.message
+}
+
+/* Subclass matching: every builtin exception subclasses Error, so a
+ * parameter typed `Error` must accept a `TypeError` instance too. */
+def needs_error(x: Error) {
+  echo 'caught a ' + x.type
+}
+
+catch {
+  raise ValueError('bad value')
+} as e {
+  needs_error(e)
+}
+
+def needs_test_class(x: TestClass) {}
+
+catch {
+  needs_test_class(Error('nope'))
+} as e {
+  echo e.message
+}

@@ -7,6 +7,7 @@ pub enum Type {
   Bool,
   Int,
   Number,
+  BigInt,
   String,
   Bytes,
   List,

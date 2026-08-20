@@ -2126,6 +2126,51 @@ pub unsafe extern "C" fn zuri_jit_set_field(
   }
 }
 
+/// `Instr::CheckParamType`'s full-generality fallback -- every case
+/// `jit::codegen::emit_check_param_type` doesn't (or can't safely)
+/// inline: a union with more than one member, `Instance` (needs a
+/// possibly-failing global lookup), and `Iterable` (needs a method-
+/// table probe). Shares `VM::param_type_matches` with the interpreter,
+/// so the two can never disagree on what a given type name accepts.
+pub unsafe extern "C" fn zuri_jit_check_param_type(
+  vm_ptr: *mut VM,
+  base: u64,
+  reg: u64,
+  func_ptr_bits: u64,
+  check_idx: u64,
+  instr_ip: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let v = vm.get_reg(base, reg as u8);
+  let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
+  let check = &func.chunk.param_checks[check_idx as usize];
+
+  if check.nullable && v.is_nil() {
+    return OK;
+  }
+
+  for &t in &check.types {
+    match vm.param_type_matches(v, t, func, instr_ip as usize) {
+      Ok(true) => return OK,
+      Ok(false) => {},
+      Err(e) => return fail(vm, e),
+    }
+  }
+
+  let check = &func.chunk.param_checks[check_idx as usize];
+  let msg = format!(
+    "{}() expects parameter '{}' (argument {}) to be {}, got {}",
+    func.name,
+    check.param_name,
+    check.position,
+    crate::vm::chunk::describe_param_types(&check.types, &func.chunk),
+    v.type_name(),
+  );
+  let e = vm.raise("TypeError", msg);
+  fail(vm, e)
+}
+
 // ---------------------------------------------------------------------
 // `using` jump table
 // ---------------------------------------------------------------------
@@ -2588,6 +2633,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_declare_static),
     spec7!(zuri_jit_get_field),
     spec7!(zuri_jit_set_field),
+    spec6!(zuri_jit_check_param_type),
     spec2!(zuri_jit_write_barrier),
     spec5!(zuri_jit_call_native),
     spec2!(zuri_jit_num_sin),

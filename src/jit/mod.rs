@@ -293,6 +293,18 @@ pub enum CallTarget {
 #[derive(Default)]
 pub struct CompileFacts {
   pub self_field_slots: FxHashMap<String, u16>,
+  /// `self_field_slots`' counterpart for an ORDINARY (non-`self`)
+  /// parameter register whose declared type is a single, non-nullable,
+  /// resolvable class -- e.g. `def dot(v: Vec3, n: number)`. Keyed by
+  /// the parameter's own register (a function can have several typed
+  /// params, unlike `self` which is always register 0), each mapping to
+  /// `(that class's own Value bits, its field-name -> slot table)` --
+  /// the bits let `Instr::CheckParamType` itself inline down to a
+  /// class-bits compare, the slots let `GetField`/`SetField` skip
+  /// straight to a fixed offset -- same "no method of the same name
+  /// could shadow this field" filter `resolve_self_field_slots`
+  /// applies. Resolved in `vm::vm::VM::resolve_param_field_slots`.
+  pub param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
   /// `(self`'s own class as `Value` bits, `VM::method_table_generation`
   /// at the moment this was resolved`)` -- set exactly when `proto` is
   /// a method and its owning class's method table maps `proto`'s own

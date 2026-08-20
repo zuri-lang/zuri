@@ -20,13 +20,13 @@
 const SAMPLES = 2_000_000
 const MODES = 3
 
-def wave(t: Number, k: Number) {
+def wave(t: number, k: number) {
   const phase = t * (k + 1) + k.atan2(t + 1.0)
   const damping = (0.0 - t * 0.5).exp()
   return damping * (phase.sin() + phase.cos() * 0.5)
 }
 
-def integrate(samples: Number) {
+def integrate(samples: number) {
   var acc = 0.0
   const step = 8.0 / samples
 

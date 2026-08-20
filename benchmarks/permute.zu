@@ -37,7 +37,7 @@ class Permute {
     return self.count
   }
 
-  permute(n: Number) {
+  permute(n: number) {
     self.count++
     if n != 0 {
       var n1 = n - 1
@@ -51,7 +51,7 @@ class Permute {
     }
   }
 
-  swap(i: Number, j: Number) {
+  swap(i: number, j: number) {
     var tmp = self.v[i]
     self.v[i] = self.v[j]
     self.v[j] = tmp

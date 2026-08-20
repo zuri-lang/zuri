@@ -487,6 +487,23 @@ pub enum Instr {
     a: u8,
     imm_const: u16,
   },
+
+  /// Enforces a declared parameter type annotation -- `def f(x: number)`
+  /// compiles this as the very first thing the function body does for
+  /// `x`, one instruction per typed parameter, in parameter order.
+  /// `check_idx` indexes `Chunk::param_checks` for the actual type list/
+  /// nullability/name (a `u16` side-table index, same pattern as
+  /// `LoadConst`'s `const_idx`, rather than baking that data into the
+  /// instruction itself -- a union type plus a parameter name string
+  /// doesn't fit in fixed-width fields). Raises `TypeError` on mismatch
+  /// (see `VM`'s own handler); never a no-op unless the check passes,
+  /// but reading `reg` itself has no other effect on it. An UNTYPED
+  /// parameter (or one whose only declared type is `any`) gets no
+  /// instruction at all -- see `Compiler::emit_param_type_checks`.
+  CheckParamType {
+    reg: u8,
+    check_idx: u16,
+  },
 }
 
 /// A compile-time-constant `using` case label's value, in a form that's
@@ -556,6 +573,121 @@ pub struct InvokeCacheCell {
   pub payload: Cell<u64>,
 }
 
+/// One shape an `Instr::CheckParamType` may demand -- deliberately a
+/// closed, exhaustive match on `Value`/`Obj`'s own tag space (see
+/// `Value::is_number`/`is_obj`/`Obj`'s discriminant), never a call
+/// through the `is_*`/`instance_of` GLOBAL FUNCTIONS a Zuri program can
+/// see and call itself: those are ordinary closures/natives from the
+/// bytecode's point of view, and routing a parameter check through one
+/// would force both the interpreter and (worse) the JIT to treat every
+/// single typed parameter as a real dynamic call. Checking the `Value`
+/// representation directly, the same way `Instr::GetIndex`'s fast path
+/// or any other guard already does, is what lets `jit::codegen` compile
+/// this to a few inline tag tests instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParamType {
+  Bool,
+  Int,
+  Number,
+  BigInt,
+  String,
+  Bytes,
+  List,
+  Dict,
+  Range,
+  File,
+  /// A closure, bound method, or native -- NOT a class (that's
+  /// `Class`). Matches `Value::is_callable()` minus the class case.
+  Function,
+  /// `type` in source -- a class value itself, e.g. passing `Vec3` as
+  /// an argument rather than a `Vec3` instance.
+  Class,
+  /// Anything `Instr::Call`/`Instr::Invoke` can invoke, INCLUDING a
+  /// class (calling one constructs an instance) -- `Value::is_callable()`
+  /// exactly.
+  Callable,
+  /// A list, dict, string, bytes, or an instance whose class declares
+  /// both `@iter` and `@itern`.
+  Iterable,
+  /// A specific user class, by name. `u16` indexes `Chunk::constants`
+  /// for the class's name (a string) -- resolved through the SAME
+  /// `Chunk::global_cache` a plain `Instr::GetGlobal` uses (keyed by
+  /// the owning `Instr::CheckParamType`'s own bytecode position), so a
+  /// hot function's repeated calls pay the name lookup once, not once
+  /// per call. Matches the named class OR any of its subclasses (walks
+  /// `ObjClass::superclass`), same as the reference C runtime's
+  /// `instance_of`.
+  Instance(u16),
+}
+
+/// One `Instr::CheckParamType` site's full declared constraint --
+/// everything `parse_type`/`Expr::TypeHint` captured for this parameter,
+/// carried through to bytecode. `Chunk::param_checks[check_idx]`.
+#[derive(Clone, Debug)]
+pub struct ParamTypeCheck {
+  /// For the raised `TypeError`'s message only.
+  pub param_name: String,
+  /// 1-based position among ALL of the function's parameters (typed or
+  /// not) -- also message-only.
+  pub position: u32,
+  /// `?` before the type list -- a bare `nil` argument always passes,
+  /// regardless of `types`.
+  pub nullable: bool,
+  /// One or more (a `|`-separated union in source); the argument must
+  /// match AT LEAST ONE. Never empty, and never contains a param
+  /// annotated `any`/left untyped -- `Compiler::emit_param_type_checks`
+  /// skips emitting any instruction at all for those, since there is
+  /// nothing to check.
+  pub types: Vec<ParamType>,
+}
+
+impl ParamType {
+  /// Human-readable description for a `TypeError` message -- mirrors
+  /// `builtins::enforce::ArgType::label`'s phrasing (`"a number"`, `"a
+  /// list"`, ...) for consistency with every other argument-type error
+  /// this runtime raises. `Instance`'s label is the only one that isn't
+  /// `'static` (it names whatever class the source actually wrote), so
+  /// this returns an owned `String` throughout rather than mixing
+  /// return types.
+  pub fn label(self, chunk: &Chunk) -> String {
+    match self {
+      ParamType::Bool => "a bool".to_string(),
+      ParamType::Int => "an int".to_string(),
+      ParamType::Number => "a number".to_string(),
+      ParamType::BigInt => "a bigint".to_string(),
+      ParamType::String => "a string".to_string(),
+      ParamType::Bytes => "bytes".to_string(),
+      ParamType::List => "a list".to_string(),
+      ParamType::Dict => "a dict".to_string(),
+      ParamType::Range => "a range".to_string(),
+      ParamType::File => "a file".to_string(),
+      ParamType::Function => "a function".to_string(),
+      ParamType::Class => "a type".to_string(),
+      ParamType::Callable => "a callable".to_string(),
+      ParamType::Iterable => "an iterable".to_string(),
+      ParamType::Instance(name_const) => {
+        format!("a {}", chunk.constants[name_const as usize].as_str())
+      },
+    }
+  }
+}
+
+/// Joins a `ParamTypeCheck`'s `types` into one readable phrase, same
+/// shape as `builtins::enforce::describe_types` -- `"a number"`, `"a
+/// number or a string"`, `"a number, a string, or an Error"`.
+pub fn describe_param_types(types: &[ParamType], chunk: &Chunk) -> String {
+  let labels: Vec<String> = types.iter().map(|t| t.label(chunk)).collect();
+  match labels.as_slice() {
+    [] => "a value".to_string(),
+    [one] => one.clone(),
+    [a, b] => format!("{a} or {b}"),
+    _ => {
+      let (last, rest) = labels.split_last().unwrap();
+      format!("{}, or {}", rest.join(", "), last)
+    },
+  }
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Chunk {
   pub code: Vec<Instr>,
@@ -621,6 +753,11 @@ pub struct Chunk {
   /// relocation; flagging clearly rather than leaving silent. The
   /// primitive half has no such hazard: a `NativeFunction` is `'static`.
   invoke_cache: OnceCell<Box<[InvokeCacheCell]>>,
+  /// One entry per `Instr::CheckParamType` this chunk emits, in the
+  /// order they're emitted (parameter order) -- `check_idx` indexes
+  /// straight into this, same relationship `const_idx` has to
+  /// `constants`.
+  pub param_checks: Vec<ParamTypeCheck>,
 }
 
 impl Chunk {
@@ -633,7 +770,11 @@ impl Chunk {
   pub fn field_cache_cell(&self, ip: usize) -> Option<&FieldCacheCell> {
     self
       .field_cache
-      .get_or_init(|| (0..self.code.len()).map(|_| FieldCacheCell::default()).collect())
+      .get_or_init(|| {
+        (0..self.code.len())
+          .map(|_| FieldCacheCell::default())
+          .collect()
+      })
       .get(ip)
   }
 
@@ -660,12 +801,18 @@ impl Chunk {
       global_cache: RefCell::new(FxHashMap::default()),
       field_cache: OnceCell::new(),
       invoke_cache: OnceCell::new(),
+      param_checks: Vec::new(),
     }
   }
 
   pub fn add_constant(&mut self, v: Value) -> u16 {
     self.constants.push(v);
     (self.constants.len() - 1) as u16
+  }
+
+  pub fn add_param_check(&mut self, check: ParamTypeCheck) -> u16 {
+    self.param_checks.push(check);
+    (self.param_checks.len() - 1) as u16
   }
 
   pub fn add_jump_table(&mut self) -> u16 {
@@ -782,5 +929,6 @@ pub fn instr_name(instr: &Instr) -> &'static str {
     Instr::GeImm { .. } => "GeImm",
     Instr::EqImm { .. } => "EqImm",
     Instr::NeqImm { .. } => "NeqImm",
+    Instr::CheckParamType { .. } => "CheckParamType",
   }
 }

@@ -1,1 +1,4 @@
-hello
+Unhandled TypeError: test() expects parameter 'num' (argument 1) to be a Number, got string
+  StackTrace:
+    @@ROOT/tests/argument-types.zu:1 -> test()
+    @@ROOT/tests/argument-types.zu:5 -> @.script()

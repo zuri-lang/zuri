@@ -11,7 +11,7 @@ use crate::jit::{
   CallTarget, CompileFacts, ConstructInfo as CompileConstructInfo, EntryFn, JitEngine, background,
   escape, typeflow,
 };
-use crate::vm::chunk::{Instr, JumpKey};
+use crate::vm::chunk::{Instr, JumpKey, ParamType};
 use crate::vm::natives;
 use crate::vm::object::{
   Heap, ListStorage, NativeFunction, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding,
@@ -534,6 +534,90 @@ impl VM {
     false
   }
 
+  /// Does `v` satisfy one member of an `Instr::CheckParamType`'s type
+  /// list -- see `ParamType`'s own docs for what each variant means.
+  /// Every variant but `Instance` is a pure `Value`/`Obj` tag test that
+  /// can't fail; `Instance` needs a global lookup for the named class
+  /// (cached in `func.chunk.global_cache`, keyed by `instr_ip`, exactly
+  /// like an ordinary `Instr::GetGlobal` at that position would be), so
+  /// it can fail with an `UndefinedError` if the name was never bound.
+  pub(crate) fn param_type_matches(
+    &mut self,
+    v: Value,
+    t: ParamType,
+    func: &ObjFunction,
+    instr_ip: usize,
+  ) -> Result<bool, Value> {
+    Ok(match t {
+      ParamType::Bool => v.is_bool(),
+      ParamType::Int => v.is_number() && v.as_number().fract() == 0.0,
+      ParamType::Number => v.is_number(),
+      ParamType::BigInt => v.is_bigint(),
+      ParamType::String => v.is_string(),
+      ParamType::Bytes => v.is_bytes(),
+      ParamType::List => v.is_list(),
+      ParamType::Dict => v.is_dict(),
+      ParamType::Range => v.is_range(),
+      ParamType::File => v.is_file(),
+      // Narrower than `is_callable`: excludes a class (that's `Class`).
+      ParamType::Function => v.is_closure() || v.is_native() || v.is_bound_method(),
+      ParamType::Class => v.is_class(),
+      ParamType::Callable => v.is_callable(),
+      // Matches this VM's actual iteration protocol (`@key`/`@value`),
+      // same check `natives::is_iterable` makes.
+      ParamType::Iterable => {
+        v.is_list()
+          || v.is_dict()
+          || v.is_string()
+          || v.is_bytes()
+          || v.is_range()
+          || (v.is_instance() && {
+            let class = v.as_instance().class.as_class();
+            class.methods.contains_key("@key") && class.methods.contains_key("@value")
+          })
+      },
+      ParamType::Instance(name_const) => {
+        if !v.is_instance() {
+          false
+        } else {
+          let gmod = func.globals_module;
+          let (is_root, slot) =
+            if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
+              cached
+            } else {
+              let name_val = func.chunk.constants[name_const as usize];
+              let resolved = match self.resolve_global(gmod, name_val.as_str()) {
+                Some(r) => r,
+                None => {
+                  let msg = format!("undefined global '{}'", name_val.as_str());
+                  return Err(self.raise("UndefinedError", msg));
+                },
+              };
+              func
+                .chunk
+                .global_cache
+                .borrow_mut()
+                .insert(instr_ip, resolved);
+              resolved
+            };
+          let target_class = self.read_resolved(gmod, is_root, slot);
+          target_class.is_class() && {
+            let mut cur = Some(v.as_instance().class);
+            let mut matched = false;
+            while let Some(c) = cur {
+              if c.equals(&target_class) {
+                matched = true;
+                break;
+              }
+              cur = c.as_class().superclass;
+            }
+            matched
+          }
+        }
+      },
+    })
+  }
+
   /// Frame names, innermost first, as a Zuri list of strings, attached to
   /// every exception's `stacktrace` field.
   fn build_stacktrace(&mut self) -> Value {
@@ -550,7 +634,12 @@ impl VM {
       } else {
         frame.ip
       };
-      let line = func.chunk.lines.get(ip.saturating_sub(1)).copied().unwrap_or(0);
+      let line = func
+        .chunk
+        .lines
+        .get(ip.saturating_sub(1))
+        .copied()
+        .unwrap_or(0);
       let entry = format!("{}:{} -> {}()", func.source_path, line, func.name);
       lines.push(self.heap.alloc_string(entry));
     }
@@ -818,6 +907,86 @@ impl VM {
         .map(|(name, &slot)| (name.clone(), slot))
         .collect(),
     )
+  }
+
+  /// `resolve_self_field_slots`'s counterpart for an ORDINARY (non-
+  /// `self`) parameter: every `Instr::CheckParamType` whose declared
+  /// type is a single, non-nullable, resolvable class, with its
+  /// register never written again anywhere in the function (the same
+  /// whole-bytecode over-approximation `jit::codegen::FuncCompiler::
+  /// compute_proven_param_shapes` uses for the cheaper is_obj/tag-only
+  /// cascade -- this is its bigger sibling, resolving the FULL field
+  /// layout instead of just the shape), maps to that class's own
+  /// field-name -> slot table.
+  ///
+  /// Unlike `resolve_self_field_slots`, there's no "does this class's
+  /// method table map back to `proto`" check to make -- a parameter
+  /// isn't `proto`'s own receiver, just some value the caller is
+  /// contractually required (by `Instr::CheckParamType` already having
+  /// raised otherwise) to have handed in as an instance of exactly this
+  /// class. Field slots are stable across inheritance the same way
+  /// `resolve_self_field_slots` relies on, so this is sound for any
+  /// subclass too.
+  /// Returns, per proven register, `(that class's own Value bits, its
+  /// field-name -> slot table)`. The bits are what let `jit::codegen`
+  /// inline `Instr::CheckParamType` ITSELF down to a plain class-bits
+  /// compare (no helper call at all) for the overwhelmingly common
+  /// exact-class-match case -- a monomorphic hot function with an
+  /// object-typed parameter otherwise pays a full opaque helper call on
+  /// EVERY invocation just to verify the type, which can easily cost
+  /// more than the field-access savings downstream ever recover
+  /// (confirmed: `interact(bi: Body, bj: Body, dt: number)` called ~30M
+  /// times measured SLOWER overall without this, ~6.6s -> ~8.3s,
+  /// despite every field access on `bi`/`bj` getting cheaper). A
+  /// receiver whose class is a genuine SUBCLASS of the declared one
+  /// still falls to the helper (an exact-bits compare can't see
+  /// inheritance) -- correct, just not the fast path; see
+  /// `jit::codegen::emit_check_param_type`'s own docs for how the two
+  /// halves (this exact-match fast path, the helper's subclass-aware
+  /// slow path) fit together.
+  fn resolve_param_field_slots(
+    &self,
+    proto: &ObjFunction,
+  ) -> FxHashMap<u8, (u64, FxHashMap<String, u16>)> {
+    let mut out = FxHashMap::default();
+    for instr in &proto.chunk.code {
+      let Instr::CheckParamType { reg, check_idx } = *instr else {
+        continue;
+      };
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      if check.nullable || check.types.len() != 1 {
+        continue;
+      }
+      let ParamType::Instance(name_const) = check.types[0] else {
+        continue;
+      };
+      let rewritten = proto
+        .chunk
+        .code
+        .iter()
+        .any(|i| crate::jit::typeflow::any_dst(i) == Some(reg));
+      if rewritten {
+        continue;
+      }
+      let name_val = proto.chunk.constants[name_const as usize];
+      let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name_val.as_str())
+      else {
+        continue;
+      };
+      let class_val = self.read_resolved(proto.globals_module, is_root, slot);
+      if !class_val.is_class() {
+        continue;
+      }
+      let class = class_val.as_class();
+      let slots: FxHashMap<String, u16> = class
+        .field_slots
+        .iter()
+        .filter(|(name, _)| !class.methods.contains_key(*name))
+        .map(|(name, &slot)| (name.clone(), slot))
+        .collect();
+      out.insert(reg, (class_val.to_bits(), slots));
+    }
+    out
   }
 
   /// `resolve_self_field_slots`'s sibling: returns `self`'s own class as
@@ -1123,6 +1292,7 @@ impl VM {
     let (call_targets, construct_info) = self.resolve_call_targets(proto);
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
+      param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
       call_targets,
       construct_info,
@@ -2336,11 +2506,7 @@ impl VM {
     }
     if self.interned_ascii.is_empty() {
       self.interned_ascii = (0u8..128)
-        .map(|b| {
-          self
-            .heap
-            .alloc_old(Obj::Str(String::from(b as char)))
-        })
+        .map(|b| self.heap.alloc_old(Obj::Str(String::from(b as char))))
         .collect();
     }
     self.interned_ascii[c as usize]
@@ -2828,6 +2994,43 @@ impl VM {
           Instr::Print { src } => {
             let v = self.get_reg(base, src);
             println!("{}", v);
+          },
+
+          Instr::CheckParamType { reg, check_idx } => {
+            let instr_ip = ip - 1;
+            let v = self.get_reg(base, reg);
+            let check = &func.chunk.param_checks[check_idx as usize];
+            let passes = check.nullable && v.is_nil();
+            if !passes {
+              let mut matched = false;
+              // `check.types` is short (a source-level `|`-union), so a
+              // plain loop beats collecting into a Vec first -- and
+              // `param_type_matches` needs `&mut self` (an `Instance`
+              // miss can raise), which a `.any(...)` closure borrowing
+              // `check` from `func.chunk` can't coexist with anyway.
+              for &t in &check.types {
+                match self.param_type_matches(v, t, func, instr_ip) {
+                  Ok(true) => {
+                    matched = true;
+                    break;
+                  },
+                  Ok(false) => {},
+                  Err(e) => break 'step Err(e),
+                }
+              }
+              if !matched {
+                let check = &func.chunk.param_checks[check_idx as usize];
+                let msg = format!(
+                  "{}() expects parameter '{}' (argument {}) to be {}, got {}",
+                  func.name,
+                  check.param_name,
+                  check.position,
+                  crate::vm::chunk::describe_param_types(&check.types, &func.chunk),
+                  v.type_name(),
+                );
+                break 'step Err(self.raise("TypeError", msg));
+              }
+            }
           },
 
           Instr::GetGlobal { dst, name_const } => {

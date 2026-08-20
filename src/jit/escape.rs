@@ -614,6 +614,11 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
 
     Instr::UsingJump { .. } => vec![],
 
+    // Reads only the tagged `Value`'s own bits/class pointer to compare
+    // against a type descriptor, and either falls through or raises --
+    // never stores the value anywhere, never hands it to user code.
+    Instr::CheckParamType { .. } => vec![],
+
     Instr::PushCatch { .. } | Instr::PopCatch => {
       unreachable!("excluded from compilation before this analysis ever runs")
     },
