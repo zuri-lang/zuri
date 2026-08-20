@@ -22,11 +22,8 @@ fn print_repl_help() {
   println!("Press <tab> for autocomplete suggestions");
 }
 
-fn format_parse_errors(errors: &[ParserError], path: &str) -> String {
-  errors
-    .iter()
-    .map(|e| format!("{}\n  {}:{}", e, path, e.line_number))
-    .join("\n")
+fn format_parse_errors(errors: &[ParserError], path: &str, source: &str) -> String {
+  errors.iter().map(|e| e.render(path, source)).join("\n\n")
 }
 
 fn run_repl(vm: &mut VM) {
@@ -85,7 +82,7 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
           eprintln!("{}", vm.format_uncaught(e));
         }
       },
-      Err(errors) => eprintln!("{}", format_parse_errors(&errors, "<repl>")),
+      Err(errors) => eprintln!("{}", format_parse_errors(&errors, "<repl>", line)),
     };
 
     parser.errors.clear();
@@ -95,7 +92,7 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
   } else {
     let errors = parser.errors.clone();
     parser.errors.clear();
-    return Err(format_parse_errors(&errors, "<repl>"));
+    return Err(format_parse_errors(&errors, "<repl>", line));
   }
   Ok(())
 }
@@ -178,12 +175,15 @@ fn run_file(vm: &mut VM, file: &str) {
         }
       },
       Err(errors) => {
-        eprintln!("{}", format_parse_errors(&errors, &display_path));
+        eprintln!("{}", format_parse_errors(&errors, &display_path, &content));
         process::exit(1);
       },
     }
   } else {
-    eprintln!("{}", format_parse_errors(&parser.errors, &display_path));
+    eprintln!(
+      "{}",
+      format_parse_errors(&parser.errors, &display_path, &content)
+    );
     process::exit(1);
   }
 }

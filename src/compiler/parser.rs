@@ -48,29 +48,59 @@ pub struct ParserError {
   pub message: String,
   pub line_number: usize,
   pub offset: usize,
-  pub length: usize,
-  pub token_text: String,
 }
 
 impl ParserError {
   pub fn new(message: String, token: Token) -> Self {
     Self {
-      message: message,
+      message,
       line_number: token.line,
       offset: token.column,
-      length: format!("{}", token).len(),
-      token_text: token.describe(),
     }
   }
 }
 
+// Compact one-liner, no source snippet -- used when there's no source
+// text handy to render one (or nowhere better to put a `Display` impl).
+// The CLI's real rendering is `render`, below, which shows the offending
+// line with a caret under the token instead of spelling the position out
+// in prose.
 impl Display for ParserError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(
       f,
-      "SyntaxError at '{}': {} on line {} column {}",
-      self.token_text, self.message, self.line_number, self.offset
+      "SyntaxError: {} ({}:{})",
+      self.message, self.line_number, self.offset
     )
+  }
+}
+
+impl ParserError {
+  /// The full developer-facing diagnostic: a `rustc`-style header, an
+  /// `--> path:line:col` locator, and (when the source is available) the
+  /// offending line itself with a caret under where the token starts.
+  /// Just the start, not a full underline: a token's *describe()* text
+  /// doesn't always match its real source width (an `Eof` describes as
+  /// `<eof>`, a string literal's content excludes its quotes, ...), so a
+  /// single caret is the only thing guaranteed to land in the right
+  /// place for every token kind.
+  pub fn render(&self, path: &str, source: &str) -> String {
+    let mut lines = vec![
+      format!("SyntaxError: {}", self.message),
+      format!("  --> {}:{}:{}", path, self.line_number, self.offset),
+    ];
+
+    if let Some(line_text) = source.lines().nth(self.line_number.saturating_sub(1)) {
+      let gutter = self.line_number.to_string();
+      let pad = " ".repeat(gutter.len());
+      let caret_indent = " ".repeat(self.offset.saturating_sub(1));
+
+      lines.push(format!("{} |", pad));
+      lines.push(format!("{} | {}", gutter, line_text));
+      lines.push(format!("{} | {}^", pad, caret_indent));
+    }
+
+    lines.join("\n")
   }
 }
 
@@ -109,6 +139,12 @@ pub struct Parser<'a> {
   anonymous_count: usize,
   functions_count: usize,
   pub errors: Vec<ParserError>,
+  // Tokens already pulled out of the lexer by `peek_at` but not yet
+  // consumed by `advance` -- a real FIFO, unlike the old scan-then-
+  // rewind-the-lexer trick, so it can look arbitrarily far past a run of
+  // newlines (blank lines, comment-only lines, any mix of both) instead
+  // of exactly one token ahead.
+  lookahead: std::collections::VecDeque<Token>,
 }
 
 impl<'a> Display for Parser<'a> {
@@ -147,6 +183,7 @@ impl<'a> Parser<'a> {
       anonymous_count: 0,
       functions_count: 0,
       errors: Vec::new(),
+      lookahead: std::collections::VecDeque::new(),
     }
   }
 
@@ -159,9 +196,14 @@ impl<'a> Parser<'a> {
   }
 
   fn mark(&self) -> Checkpoint {
+    // Anchor to `current`'s own (already-correct) position rather than the
+    // lexer's raw cursor. `peek_at` scans ahead of `current` to fill
+    // `lookahead` and never rewinds that scan, so the lexer's cursor can
+    // sit well past `current` by the time this is called -- `current.line`/
+    // `.column` are what's actually being pointed at.
     Checkpoint {
-      line: self.lexer.line,
-      col: self.lexer.current,
+      line: self.current.line,
+      col: self.current.column,
     }
   }
 
@@ -182,11 +224,20 @@ impl<'a> Parser<'a> {
     &self.current
   }
 
-  fn peek_next(&mut self) -> Token {
-    self.advance();
-    let value = self.peek().clone();
-    self.rewind();
-    value
+  // 1-indexed lookahead: `peek_at(1)` is the token right after `current`,
+  // `peek_at(2)` the one after that, etc. Fills `lookahead` on demand by
+  // scanning ahead (skipping the same trivia `advance` would), so unlike
+  // the old single-hop peek this can see past any number of tokens without
+  // disturbing `current`/`previous`. Note it does *not* leave the lexer's
+  // own cursor where it found it -- the scan-ahead is one-way, which is
+  // exactly why `mark()` reads position off `current` and not the lexer.
+  fn peek_at(&mut self, n: usize) -> Token {
+    debug_assert!(n >= 1, "peek_at is 1-indexed; peek_at(0) is not current");
+    while self.lookahead.len() < n {
+      let tok = self.scan_real_token();
+      self.lookahead.push_back(tok);
+    }
+    self.lookahead[n - 1].clone()
   }
 
   #[inline]
@@ -199,36 +250,54 @@ impl<'a> Parser<'a> {
     matches!(self.current.kind, TokenKind::Eof)
   }
 
+  // Pulls one grammar-visible token straight from the lexer, silently
+  // skipping the priming sentinel (`None`) and comment trivia
+  // (`Comment`/`DocBlock` are real tokens now, for the `ast` module, but
+  // the grammar itself never sees them -- same as before they existed),
+  // and reporting+skipping lexer-level `Error` tokens as they're found.
+  // Shared by `advance` (when there's nothing already queued) and
+  // `peek_at` (to fill the queue), so both see identical trivia handling.
+  fn scan_real_token(&mut self) -> Token {
+    loop {
+      let tok = self.lexer.scan();
+
+      if tok.kind == TokenKind::None || matches!(tok.kind, TokenKind::Comment(..) | TokenKind::DocBlock(..)) {
+        continue;
+      }
+
+      if let TokenKind::Error(ref message, ..) = tok.kind {
+        self.errors.push(ParserError::new(message.clone(), tok.clone()));
+        continue;
+      }
+
+      return tok;
+    }
+  }
+
   fn advance(&mut self) -> &Token {
     self.last_previous = self.previous.clone();
     self.previous = self.current.clone();
-
-    loop {
-      self.current = self.lexer.scan();
-      if self.current.kind == TokenKind::None {
-        continue;
-      }
-
-      if matches!(self.current.kind.clone(), TokenKind::Error(..),) {
-        if let TokenKind::Error(message, line, col) = self.current.kind.clone() {
-          self
-            .errors
-            .push(ParserError::new(message, self.current.clone()));
-        }
-
-        continue;
-      }
-
-      break;
-    }
+    self.current = match self.lookahead.pop_front() {
+      Some(tok) => tok,
+      None => self.scan_real_token(),
+    };
 
     &self.previous
   }
 
+  // Puts `current` back and un-does the last `advance`, so a token
+  // consumed on spec (e.g. "is this keyword actually a keyword here?")
+  // can be handed back for `statement`/`declaration` to reparse as a
+  // plain expression. Pushes onto the front of `lookahead` rather than
+  // asking the lexer to rewind its own cursor -- the lexer only ever
+  // moves forward now, so this works regardless of whether `current` came
+  // from a fresh scan or was already sitting in the lookahead queue (the
+  // old cursor-based rewind assumed the former and could desync from a
+  // queued token).
   fn rewind(&mut self) {
+    self.lookahead.push_front(self.current.clone());
     self.current = self.previous.clone();
     self.previous = self.last_previous.clone();
-    self.lexer.rewind();
   }
 
   fn match_token(&mut self, kind: TokenKind) -> bool {
@@ -276,14 +345,27 @@ impl<'a> Parser<'a> {
   // it, so `x +\n  y` and `x and\n  y` work. This is the other half: if
   // the operator instead opens the *next* line (`x\n  + y`), the newline
   // sits before it, where the operator-loop's `match_tok!` can't see past
-  // it. Peek past a single newline and, if a continuation operator is
-  // waiting there, eat the newline so the caller's own `match_tok!` finds
-  // the operator right where it left off. Only a single newline is
-  // skipped, same as the existing dot-chaining lookahead in `do_call` --
-  // a blank line still ends the statement.
+  // it. Look past every `Newline` in a row -- a blank line is just two of
+  // them, and a comment-only line is a `Comment` sandwiched between two,
+  // which `peek_at` already skips over since comments are trivia to the
+  // grammar -- and, if a continuation token is waiting past all of them,
+  // eat the newlines so the caller's own `match_tok!` finds the operator
+  // right where it left off.
   fn skip_newline_before(&mut self, is_continuation: impl Fn(&TokenKind) -> bool) {
-    if matches!(self.current.kind, TokenKind::Newline) && is_continuation(&self.peek_next().kind)
-    {
+    if !matches!(self.current.kind, TokenKind::Newline) {
+      return;
+    }
+
+    let mut ahead = 1;
+    while matches!(self.peek_at(ahead).kind, TokenKind::Newline) {
+      ahead += 1;
+    }
+
+    if !is_continuation(&self.peek_at(ahead).kind) {
+      return;
+    }
+
+    for _ in 0..ahead {
       self.advance();
     }
   }
@@ -583,16 +665,17 @@ impl<'a> Parser<'a> {
     let mut callee = callee.clone();
 
     loop {
+      // A leading `.` on the next line continues the chain -- look past
+      // any run of newlines (blank lines, comment-only lines, or both)
+      // for it before giving up.
+      self.skip_newline_before(|k| matches!(k, TokenKind::Dot));
+
       if match_tok!(self, TokenKind::Dot) {
         callee = self.finish_dot(callee);
       } else if match_tok!(self, TokenKind::Lparen) {
         callee = self.finish_call(callee);
       } else if match_tok!(self, TokenKind::Lbracket) {
         callee = self.finish_index(callee);
-      } else if matches!(self.peek().clone().kind, TokenKind::Newline)
-        && matches!(self.peek_next().clone().kind, TokenKind::Dot)
-      {
-        self.advance();
       } else {
         break;
       }

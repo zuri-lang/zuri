@@ -302,8 +302,6 @@ impl<'a> Compiler<'a> {
       message,
       line_number: line,
       offset: 1,
-      length: 0,
-      token_text: "<here>".to_string(),
     });
   }
 

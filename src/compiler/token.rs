@@ -107,6 +107,8 @@ pub enum TokenKind {
   Identifier(String),
   Decorator(String),
   Interpolation(String),
+  Comment(String),
+  DocBlock(String),
 
   // end of file
   Eof,
@@ -127,6 +129,8 @@ impl fmt::Display for TokenKind {
       TokenKind::Decorator(s) => write!(f, "Decorator{{v={}}}", s),
       TokenKind::Interpolation(s) => write!(f, "Interpolation{{v={}}}", s),
       TokenKind::Literal(s) => write!(f, "Literal{{v={}}}", s),
+      TokenKind::Comment(s) => write!(f, "Comment{{v={}}}", s),
+      TokenKind::DocBlock(s) => write!(f, "DocBlock{{v={}}}", s),
       TokenKind::BigNumber(s) => write!(f, "BigNumber{{v={}}}", s),
       TokenKind::Integer(n) => write!(f, "Integer{{v={}}}", n),
       TokenKind::Double(n) => write!(f, "Double{{v={}}}", n),
@@ -253,7 +257,11 @@ impl Token {
   /// TokenKind reasonably.
   pub fn describe(&self) -> String {
     match &self.kind {
-      TokenKind::Literal(s) | TokenKind::Identifier(s) | TokenKind::Interpolation(s) => s.clone(),
+      TokenKind::Literal(s)
+      | TokenKind::Identifier(s)
+      | TokenKind::Interpolation(s)
+      | TokenKind::Comment(s)
+      | TokenKind::DocBlock(s) => s.clone(),
       TokenKind::Decorator(s) => format!("@{}", s),
       TokenKind::BigNumber(s) => format!("{}n", s.to_string()),
       TokenKind::Integer(n) => format!("{}", n),
@@ -271,7 +279,9 @@ impl Token {
 impl fmt::Display for Token {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self.kind.clone() {
-      TokenKind::Literal(s) | TokenKind::Interpolation(s) => write!(f, "{}", s),
+      TokenKind::Literal(s) | TokenKind::Interpolation(s) | TokenKind::Comment(s) | TokenKind::DocBlock(s) => {
+        write!(f, "{}", s)
+      },
       TokenKind::Decorator(s) => write!(f, "{}", s),
       _ => write!(
         f,

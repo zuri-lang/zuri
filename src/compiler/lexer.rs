@@ -40,20 +40,6 @@ pub struct Lexer {
   start_line: usize,
   total_count: usize,
   interpolating: Vec<char>,
-  /// `interpolating`'s exact contents at the START of the token
-  /// currently being scanned, so `rewind` can undo a lookahead's effect
-  /// on it as well as on the cursor.
-  ///
-  /// Without this, `Parser::peek_next` (one `advance` immediately
-  /// followed by a `rewind`) corrupts the stack permanently: scanning a
-  /// string that opens an interpolation PUSHES, `rewind` puts the
-  /// cursor back but leaves the push in place, and the real scan of
-  /// that same string pushes a SECOND time. Only one `}` ever arrives
-  /// to pop, so the leftover entry makes the next `}` in the program --
-  /// typically a block's closing brace -- get swallowed as "end of
-  /// interpolation" instead of an `Rbrace`, and the block fails to
-  /// parse well after the string that caused it.
-  interpolating_before: Vec<char>,
   lines: FxHashMap<usize, usize>,
 }
 
@@ -71,7 +57,6 @@ impl Lexer {
       lexing_type: 0,
       lines: FxHashMap::default(),
       interpolating: Vec::new(),
-      interpolating_before: Vec::new(),
     }
   }
 
@@ -97,24 +82,6 @@ impl Lexer {
     }
 
     val
-  }
-
-  pub fn rewind(&mut self) {
-    let val = if self.is_at_end() {
-      '\0'
-    } else {
-      self.source[self.current - 1]
-    };
-    if (val == '\n' || val == '\0') && self.line > 0 {
-      self.line -= 1;
-    }
-
-    self.current = self.start;
-    // Undo whatever the token just scanned did to the interpolation
-    // stack, not just where the cursor sat -- see
-    // `interpolating_before`.
-    self.interpolating.clear();
-    self.interpolating.extend_from_slice(&self.interpolating_before);
   }
 
   pub fn match_char(&mut self, c: char) -> bool {
@@ -192,13 +159,16 @@ impl Lexer {
     Token::new(kind, self.start_line, column)
   }
 
-  fn skip_block_comments(&mut self) {
+  // Called with the opening `/*` already consumed, `self.start` still
+  // pointing at the `/`. Nests, same as before comments were real
+  // tokens -- `/* outer /* inner */ still outer */` closes once, at the
+  // final `*/`.
+  fn doc_block(&mut self) -> Token {
     let mut nesting: i32 = 1;
 
     while nesting > 0 {
       if self.is_at_end() {
-        self.make_error("unbalanced block comment".to_string());
-        return;
+        return self.make_error("unbalanced block comment".to_string());
       }
 
       if self.peek() == '/' && self.next() == '*' {
@@ -213,6 +183,21 @@ impl Lexer {
         self.advance();
       }
     }
+
+    self.make_token(TokenKind::DocBlock(
+      self.get_string(self.start + 2, self.current - 2),
+    ))
+  }
+
+  // Called with the leading `#` already consumed.
+  fn comment(&mut self) -> Token {
+    while self.peek() != '\n' && !self.is_at_end() {
+      self.advance();
+    }
+
+    self.make_token(TokenKind::Comment(
+      self.get_string(self.start + 1, self.current),
+    ))
   }
 
   fn skip_whitespace(&mut self) {
@@ -221,24 +206,8 @@ impl Lexer {
         break;
       }
 
-      let c: char = self.peek();
-
-      match c {
+      match self.peek() {
         ' ' | '\t' | '\r' => self.advance(),
-        '#' => {
-          while self.peek() != '\n' && !self.is_at_end() {
-            self.advance();
-          }
-          break;
-        },
-        '/' => {
-          if self.next() == '*' {
-            self.advance();
-            self.advance();
-            self.skip_block_comments();
-          }
-          break;
-        },
         _ => break,
       };
     }
@@ -281,8 +250,7 @@ impl Lexer {
     }
 
     if self.is_at_end() {
-      let message = format!("Unterminated string on line {}", self.line);
-      self.make_error(message);
+      return self.make_error("unterminated string".to_string());
     }
 
     self.match_char(c.clone());
@@ -508,12 +476,6 @@ impl Lexer {
 
     self.start = self.current;
     self.start_line = self.line;
-    // Paired with `rewind` -- see `interpolating_before`'s own docs.
-    // Cheap: this stack is only ever as deep as the interpolations
-    // nested at this exact point, which is zero for almost every token
-    // and one for almost all of the rest.
-    self.interpolating_before.clear();
-    self.interpolating_before.extend_from_slice(&self.interpolating);
 
     if self.is_at_end() {
       return self.make_token(TokenKind::Eof);
@@ -590,7 +552,9 @@ impl Lexer {
         }
       },
       '/' => {
-        if self.match_char('/') {
+        if self.match_char('*') {
+          self.doc_block()
+        } else if self.match_char('/') {
           if self.match_char('=') {
             self.make_token(TokenKind::FloorEq)
           } else {
@@ -602,6 +566,7 @@ impl Lexer {
           self.make_token(TokenKind::Divide)
         }
       },
+      '#' => self.comment(),
       '\\' => self.make_token(TokenKind::Backslash),
       ':' => self.make_token(TokenKind::Colon),
       '<' => {
