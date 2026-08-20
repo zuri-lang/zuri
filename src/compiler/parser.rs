@@ -272,6 +272,22 @@ impl<'a> Parser<'a> {
     ) {}
   }
 
+  // A binary/logical operator already swallows the newline that follows
+  // it, so `x +\n  y` and `x and\n  y` work. This is the other half: if
+  // the operator instead opens the *next* line (`x\n  + y`), the newline
+  // sits before it, where the operator-loop's `match_tok!` can't see past
+  // it. Peek past a single newline and, if a continuation operator is
+  // waiting there, eat the newline so the caller's own `match_tok!` finds
+  // the operator right where it left off. Only a single newline is
+  // skipped, same as the existing dot-chaining lookahead in `do_call` --
+  // a blank line still ends the statement.
+  fn skip_newline_before(&mut self, is_continuation: impl Fn(&TokenKind) -> bool) {
+    if matches!(self.current.kind, TokenKind::Newline) && is_continuation(&self.peek_next().kind)
+    {
+      self.advance();
+    }
+  }
+
   // Parts
 
   fn get_type_from_token(&mut self, token: Token) -> Type {
@@ -600,7 +616,11 @@ impl<'a> Parser<'a> {
 
       return match expr {
         Expr::Get(expression, name) => Expr::Set(expression, name, plus_one),
-        _ => Expr::Assign(Box::new(expr), plus_one),
+        Expr::Identifier(_) | Expr::Index(..) => Expr::Assign(Box::new(expr), plus_one),
+        other => {
+          self.report_error("invalid assignment target".to_string());
+          other
+        },
       };
     }
 
@@ -610,7 +630,11 @@ impl<'a> Parser<'a> {
 
       return match expr {
         Expr::Get(expression, name) => Expr::Set(expression, name, sub_one),
-        _ => Expr::Assign(Box::new(expr), sub_one),
+        Expr::Identifier(_) | Expr::Index(..) => Expr::Assign(Box::new(expr), sub_one),
+        other => {
+          self.report_error("invalid assignment target".to_string());
+          other
+        },
       };
     }
 
@@ -632,7 +656,10 @@ impl<'a> Parser<'a> {
   fn factor(&mut self) -> Expr {
     let mut expr = self.unary();
 
-    while match_tok!(self, factor_operators!()) {
+    while {
+      self.skip_newline_before(|k| matches!(k, factor_operators!()));
+      match_tok!(self, factor_operators!())
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
 
@@ -647,7 +674,17 @@ impl<'a> Parser<'a> {
   fn term(&mut self) -> Expr {
     let mut expr = self.factor();
 
-    while match_tok!(self, term_operators!()) {
+    while {
+      // Unlike every other operator handled by `skip_newline_before`,
+      // `-` doubles as a unary prefix (`unary_operators!()`), so a `-` at
+      // the start of the next line is genuinely ambiguous with a brand
+      // new statement that happens to start with a negation (`x\n-y` as
+      // two statements vs. `x - y` as one). Only `+` has no such reading,
+      // so only `+` gets to auto-continue; a leading `-` still requires
+      // the trailing-operator style (`x -\n  y`) to be unambiguous.
+      self.skip_newline_before(|k| matches!(k, TokenKind::Plus));
+      match_tok!(self, term_operators!())
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
       self.ignore_newlines();
@@ -661,7 +698,10 @@ impl<'a> Parser<'a> {
   fn shift(&mut self) -> Expr {
     let mut expr = self.term();
 
-    while match_tok!(self, shift_operators!()) {
+    while {
+      self.skip_newline_before(|k| matches!(k, shift_operators!()));
+      match_tok!(self, shift_operators!())
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
       self.ignore_newlines();
@@ -675,7 +715,10 @@ impl<'a> Parser<'a> {
   fn bit_and(&mut self) -> Expr {
     let mut expr = self.shift();
 
-    while match_tok!(self, TokenKind::Amp) {
+    while {
+      self.skip_newline_before(|k| matches!(k, TokenKind::Amp));
+      match_tok!(self, TokenKind::Amp)
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
       self.ignore_newlines();
@@ -689,7 +732,10 @@ impl<'a> Parser<'a> {
   fn bit_xor(&mut self) -> Expr {
     let mut expr = self.bit_and();
 
-    while match_tok!(self, TokenKind::Xor) {
+    while {
+      self.skip_newline_before(|k| matches!(k, TokenKind::Xor));
+      match_tok!(self, TokenKind::Xor)
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
       self.ignore_newlines();
@@ -703,7 +749,10 @@ impl<'a> Parser<'a> {
   fn bit_or(&mut self) -> Expr {
     let mut expr = self.bit_xor();
 
-    while match_tok!(self, TokenKind::Bar) {
+    while {
+      self.skip_newline_before(|k| matches!(k, TokenKind::Bar));
+      match_tok!(self, TokenKind::Bar)
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
       self.ignore_newlines();
@@ -717,7 +766,10 @@ impl<'a> Parser<'a> {
   fn comparison(&mut self) -> Expr {
     let mut expr = self.bit_or();
 
-    while match_tok!(self, comparison_operators!()) {
+    while {
+      self.skip_newline_before(|k| matches!(k, comparison_operators!()));
+      match_tok!(self, comparison_operators!())
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
       self.ignore_newlines();
@@ -731,7 +783,10 @@ impl<'a> Parser<'a> {
   fn equality(&mut self) -> Expr {
     let mut expr = self.comparison();
 
-    while match_tok!(self, equality_operators!()) {
+    while {
+      self.skip_newline_before(|k| matches!(k, equality_operators!()));
+      match_tok!(self, equality_operators!())
+    } {
       let op = self.previous().clone().kind;
       let line = self.previous().line as u32;
       self.ignore_newlines();
@@ -745,7 +800,10 @@ impl<'a> Parser<'a> {
   fn and(&mut self) -> Expr {
     let mut expr = self.equality();
 
-    while match_tok!(self, TokenKind::And) {
+    while {
+      self.skip_newline_before(|k| matches!(k, TokenKind::And));
+      match_tok!(self, TokenKind::And)
+    } {
       let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.equality();
@@ -758,7 +816,10 @@ impl<'a> Parser<'a> {
   fn or(&mut self) -> Expr {
     let mut expr = self.and();
 
-    while match_tok!(self, TokenKind::Or) {
+    while {
+      self.skip_newline_before(|k| matches!(k, TokenKind::Or));
+      match_tok!(self, TokenKind::Or)
+    } {
       let op = self.previous().clone().kind;
       self.ignore_newlines();
       let right = self.and();
@@ -791,10 +852,16 @@ impl<'a> Parser<'a> {
     if match_tok!(self, assignment_operators!()) {
       let type_token = self.previous().clone();
       self.ignore_newlines();
+      let valid_target = matches!(expr, Expr::Identifier(_) | Expr::Index(..));
 
       if matches!(type_token.kind.clone(), TokenKind::Equal) {
         let value = self.assignment();
-        expr = Expr::Assign(Box::new(expr), Box::new(value));
+        expr = if valid_target {
+          Expr::Assign(Box::new(expr), Box::new(value))
+        } else {
+          self.report_error("invalid assignment target".to_string());
+          value
+        };
       } else {
         let right = self.assignment();
         let binary = Expr::Binary(
@@ -803,7 +870,12 @@ impl<'a> Parser<'a> {
           Box::new(right),
           type_token.line as u32,
         );
-        expr = Expr::Assign(Box::new(expr), Box::new(binary));
+        expr = if valid_target {
+          Expr::Assign(Box::new(expr), Box::new(binary))
+        } else {
+          self.report_error("invalid assignment target".to_string());
+          binary
+        };
       }
     }
 

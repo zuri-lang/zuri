@@ -1771,10 +1771,15 @@ impl<'a> Compiler<'a> {
             },
           }
         },
-        other => panic!(
-          "compile_expression: unsupported assignment target: {:?}",
-          other
-        ),
+        // The parser rejects malformed assignment targets (e.g. `5 = 1`,
+        // `5++`) before it ever builds this node, so this arm shouldn't be
+        // reachable in practice. Still, an unreachable-in-the-happy-path
+        // panic is a bad way to fail on user-triggerable input, so degrade
+        // the same way the constant-assignment case above does.
+        other => {
+          self.report_error_here(format!("unsupported assignment target: {:?}", other));
+          self.error_reg()
+        },
       },
       Expr::Call(callee, args, line) => {
         if let Expr::Get(obj, method) = callee.as_ref() {
