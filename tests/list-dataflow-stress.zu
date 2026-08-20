@@ -1,0 +1,144 @@
+/* Exercises typeflow::ListFacts (the flow-sensitive "is this register
+ * a List" dataflow proof) across cases the old whole-function/prologue-
+ * only heuristic couldn't reach: branch merges that agree, branch
+ * merges that disagree, loop-carried reassignment, list-repeat through
+ * a Move, typed parameters, and mixed-type locals that must NOT be
+ * proven. Every case is run enough times to cross the JIT tiering
+ * threshold, since a wrong proof would only show up in compiled code.
+ */
+
+def branch_merge_agrees(flag) {
+  var x
+  if flag {
+    x = [1, 2, 3]
+  } else {
+    x = [4, 5, 6]
+  }
+  /* both arms assign a list -- x should be proven list right here */
+  return x[0] + x[1] + x[2]
+}
+
+def branch_merge_disagrees(flag) {
+  var x
+  if flag {
+    x = [10, 20, 30]
+  } else {
+    x = 99
+  }
+  /* only one arm is a list -- x must NOT be proven list; indexing the
+   * non-list arm has to raise, not read garbage memory */
+  if flag {
+    return x[0] + x[1] + x[2]
+  }
+  return x
+}
+
+def loop_carried_list(n) {
+  var acc = [0]
+  iter var i = 0; i < n; i += 1 {
+    var next = [0] * (i + 1)
+    iter var j = 0; j < i + 1; j += 1 {
+      next[j] = acc[0] + j
+    }
+    acc = next
+  }
+  return acc[0]
+}
+
+def list_repeat_through_move(n) {
+  var a = [7] * n
+  var b = a
+  b[0] = 1000
+  /* a and b alias the same list -- proving b a list must not lose
+   * that a is one too */
+  return a[0] + a[n - 1] + b[n - 1]
+}
+
+def typed_param_sum(vals: list) {
+  var total = 0
+  iter var i = 0; i < vals.length(); i += 1 {
+    total += vals[i]
+  }
+  return total
+}
+
+def reassigned_to_non_list(flag) {
+  var x = [1, 2, 3]
+  if flag {
+    /* a plain number is never indexable, unlike a string -- this is
+     * what actually forces the slow path to raise if `x` were
+     * (wrongly) still trusted to be a list here */
+    x = 42
+  }
+  var caught = false
+  var v = 0
+  catch {
+    v = x[0]
+  } as e {
+    caught = true
+  }
+  return caught
+}
+
+def nested_lists() {
+  var grid = [[0] * 3] * 3
+  iter var i = 0; i < 3; i += 1 {
+    grid[i] = [0] * 3
+    iter var j = 0; j < 3; j += 1 {
+      grid[i][j] = i * 3 + j
+    }
+  }
+  var sum = 0
+  iter var i = 0; i < 3; i += 1 {
+    iter var j = 0; j < 3; j += 1 {
+      sum += grid[i][j]
+    }
+  }
+  return sum
+}
+
+var rounds = 5000
+
+var s1 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s1 += branch_merge_agrees(k % 2 == 0)
+}
+echo s1
+
+var s2 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s2 += branch_merge_disagrees(true)
+}
+echo s2
+echo branch_merge_disagrees(false)
+
+var s3 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s3 += loop_carried_list(10)
+}
+echo s3
+
+var s4 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s4 += list_repeat_through_move(8)
+}
+echo s4
+
+var s5 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s5 += typed_param_sum([1, 2, 3, 4, 5])
+}
+echo s5
+
+var s6 = true
+iter var k = 0; k < rounds; k += 1 {
+  s6 = s6 and reassigned_to_non_list(true)
+}
+echo s6
+echo reassigned_to_non_list(false)
+
+var s7 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s7 += nested_lists()
+}
+echo s7

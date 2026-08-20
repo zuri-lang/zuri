@@ -1,0 +1,22 @@
+def sum_via_length_calls(xs, rounds) {
+  var total = 0
+  iter var r = 0; r < rounds; r += 1 {
+    iter var i = 0; i < xs.length(); i += 1 {
+      total += xs[i]
+    }
+    total += xs.first() + xs.last()
+    if xs.is_empty() {
+      total -= 1
+    }
+  }
+  return total
+}
+
+var xs = [0] * 200
+iter var i = 0; i < 200; i += 1 {
+  xs[i] = i
+}
+
+var start = time()
+echo sum_via_length_calls(xs, 400000)
+echo '\nTotal time taken: ${time() - start}s'

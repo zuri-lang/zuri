@@ -232,14 +232,15 @@ enum RegCache {
 /// A register's shape, proven for the WHOLE function body by a
 /// non-nullable, single-type `Instr::CheckParamType` on it plus a
 /// whole-bytecode scan proving nothing ever writes that register again
-/// -- see `FuncCompiler::compute_proven_shapes`'s own docs for
-/// exactly what's required. Consulted by `emit_list_get_index`/
-/// `emit_list_set_index` (`List`) and `emit_ic_guard` (`Instance`) to
-/// skip a guard the caller already paid for once, at the parameter
-/// check.
+/// -- see `FuncCompiler::compute_proven_shapes`'s own docs for exactly
+/// what's required. Consulted by `emit_ic_guard` to skip a guard the
+/// caller already paid for once, at the parameter check. The `List`
+/// equivalent of this used to live here too, but is now
+/// `typeflow::ListFacts` -- a real per-`ip` dataflow proof, sound
+/// across arbitrary reassignment/branches/loops, not just this
+/// whole-function-scoped approximation -- see its own docs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ParamShape {
-  List,
   /// SOME instance -- not necessarily of the exact class a given
   /// `GetField`/`SetField` site's own inline cache expects. Only
   /// removes the `is_obj`+tag half of that site's guard; the per-site
@@ -458,6 +459,50 @@ impl InlineOp {
   }
 }
 
+/// A List builtin the JIT emits directly instead of dispatching to --
+/// `NumberIntrinsic`'s counterpart, same reasoning: skip real method-
+/// name lookup (`builtins::lookup`'s hash + `memcmp`, what
+/// `builtins::method_table_key`'s own docs call out `.length()` in a
+/// loop as paying on every single iteration) AND the generic invoke
+/// call machinery entirely, for a method simple enough to just be a
+/// couple of loads off the list header.
+///
+/// Every variant here reads `Obj::List`'s own header fields (data
+/// pointer, length) -- never allocates, never can raise for a genuine
+/// list receiver, so there's nothing here shaped like
+/// `NumberIntrinsic::Call`; if a List method ever needs a real helper
+/// call (`.append()`, say), it'd need its own variant the same way
+/// `NumberIntrinsic::Call` earns its keep for the transcendentals.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ListIntrinsic {
+  Length,
+  IsEmpty,
+  /// `nil` for an empty list -- matches `builtins::list::first`.
+  First,
+  /// `nil` for an empty list -- matches `builtins::list::last`.
+  Last,
+}
+
+impl ListIntrinsic {
+  /// Same role as `NumberIntrinsic::arity` -- every variant here is
+  /// zero-arg today, but kept as a real method (not a bare `0`) so a
+  /// future variant that needs an argument doesn't have to touch the
+  /// call site's own eligibility check.
+  fn arity(self) -> u8 {
+    0
+  }
+
+  fn of(name: &str) -> Option<ListIntrinsic> {
+    Some(match name {
+      "length" => ListIntrinsic::Length,
+      "is_empty" => ListIntrinsic::IsEmpty,
+      "first" => ListIntrinsic::First,
+      "last" => ListIntrinsic::Last,
+      _ => return None,
+    })
+  }
+}
+
 struct FuncCompiler<'a, 'b> {
   fb: &'a mut FunctionBuilder<'b>,
   module: &'a mut JITModule,
@@ -520,6 +565,21 @@ struct FuncCompiler<'a, 'b> {
   /// lifetime and the same reason it isn't shared between the general
   /// and specialized body.
   int_facts: typeflow::IntFacts,
+  /// Which registers are PROVEN to hold an `Obj::List` at each
+  /// bytecode position -- see `jit::typeflow::ListFacts`'s own docs.
+  /// Consulted by `emit_list_get_index`/`emit_list_set_index` (skips
+  /// the object-shape half of the guard) and `ListIntrinsic` call
+  /// sites (skips method-name lookup entirely). Same lifetime/scope
+  /// as `type_facts`/`int_facts`.
+  list_facts: typeflow::ListFacts,
+  /// `typeflow::build_predecessors(proto)`, computed once here and
+  /// shared by every dataflow pass that needs it (`type_facts`/
+  /// `int_facts`/`list_facts`/`liveness`, and `merge_points`' own
+  /// predecessor counts in `run`) -- it depends only on `proto`'s
+  /// control flow, never on what any one of those passes is proving,
+  /// so recomputing it per-pass was pure repeated work paid on every
+  /// single JIT compile.
+  preds: Vec<Vec<usize>>,
   /// A ONE-SHOT type sample of the call that triggered this
   /// compilation (bit `r` = fixed-arity parameter register `r` held a
   /// number) -- `None` after filtering out an all-zero sample. See
@@ -564,9 +624,9 @@ struct FuncCompiler<'a, 'b> {
   /// point: reachable from more than one distinct predecessor (a loop
   /// header via both its forward entry and its own back-edge; an
   /// if/else merge), OR an OSR target (an EXTRA, synthetic predecessor
-  /// `typeflow::predecessor_counts` can't see, since OSR dispatch lives
-  /// entirely in `emit_entry_dispatch`, outside the ordinary bytecode
-  /// CFG). `emit_instruction` forces every live register `Stale` right
+  /// `self.preds` can't see, since OSR dispatch lives entirely in
+  /// `emit_entry_dispatch`, outside the ordinary bytecode CFG).
+  /// `emit_instruction` forces every live register `Stale` right
   /// before translating such an instruction -- see `reg_cache`'s own
   /// docs for why a single linear compile-time walk cannot otherwise
   /// know which of several predecessors' cache states is actually true
@@ -701,7 +761,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         continue;
       }
       let shape = match check.types[0] {
-        ParamType::List => ParamShape::List,
         ParamType::Instance(_) => ParamShape::Instance,
         _ => continue,
       };
@@ -714,38 +773,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         out.insert(reg, shape);
       }
     }
-
-    let prologue_end = proto
-      .chunk
-      .code
-      .iter()
-      .position(|i| matches!(i, Instr::Jmp { .. } | Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. }))
-      .unwrap_or(proto.chunk.code.len());
-    let mut provisional_lists: rustc_hash::FxHashSet<u8> = rustc_hash::FxHashSet::default();
-    for instr in &proto.chunk.code[..prologue_end] {
-      match *instr {
-        Instr::MakeList { dst, .. } => {
-          provisional_lists.insert(dst);
-        },
-        Instr::Mul { dst, a, .. } if provisional_lists.contains(&a) => {
-          provisional_lists.insert(dst);
-        },
-        _ => {
-          if let Some(dst) = typeflow::any_dst(instr) {
-            provisional_lists.remove(&dst);
-          }
-        },
-      }
-    }
-    for reg in provisional_lists {
-      let rewritten_after_prologue = proto.chunk.code[prologue_end..]
-        .iter()
-        .any(|i| typeflow::any_dst(i) == Some(reg));
-      if !rewritten_after_prologue {
-        out.entry(reg).or_insert(ParamShape::List);
-      }
-    }
-
     out
   }
 
@@ -761,9 +788,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     facts: CompileFacts,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
-    let type_facts = typeflow::analyze(proto, None, None);
-    let int_facts = typeflow::analyze_int(proto);
-    let liveness = typeflow::liveness(proto);
+    let preds = typeflow::build_predecessors(proto);
+    let type_facts = typeflow::analyze(proto, &preds, None, None);
+    let int_facts = typeflow::analyze_int(proto, &preds);
+    let list_facts = typeflow::analyze_list(proto, &preds);
+    let liveness = typeflow::liveness(proto, &preds);
     FuncCompiler {
       fb,
       module,
@@ -780,6 +809,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       closure_out_slot: None,
       type_facts,
       int_facts,
+      list_facts,
+      preds,
       speculative_params,
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available -- empty
@@ -818,6 +849,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   #[inline]
+  fn proven_list(&self, ip: usize, r: u8) -> bool {
+    self.list_facts.is_list(ip, r)
+  }
+
+  #[inline]
   fn both_proven_numeric(&self, ip: usize, a: u8, b: u8) -> bool {
     self.proven_numeric(ip, a) && self.proven_numeric(ip, b)
   }
@@ -843,10 +879,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     // See `merge_points`'s own docs. Needs `osr_ids` (just computed
     // above) as well as the ordinary bytecode CFG's own predecessor
-    // counts.
-    let pred_counts = typeflow::predecessor_counts(self.proto);
-    self.merge_points = (0..pred_counts.len())
-      .map(|ip| pred_counts[ip] > 1 || self.osr_ids.contains_key(&ip))
+    // counts -- from `self.preds`, already computed once in `new`,
+    // rather than a fresh `predecessor_counts` call recomputing the
+    // identical predecessor graph again.
+    self.merge_points = (0..self.preds.len())
+      .map(|ip| self.preds[ip].len() > 1 || self.osr_ids.contains_key(&ip))
       .collect();
 
     let entry_block = self.fb.create_block();
@@ -907,7 +944,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let blocks = (0..self.blocks.len())
           .map(|_| self.fb.create_block())
           .collect();
-        let facts = typeflow::analyze(self.proto, self.speculative_params, self.speculative_regs);
+        let facts = typeflow::analyze(
+          self.proto,
+          &self.preds,
+          self.speculative_params,
+          self.speculative_regs,
+        );
         Some((blocks, facts))
       } else {
         None
@@ -4772,6 +4814,151 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
+  /// `NumberIntrinsic`'s counterpart for a List receiver -- see
+  /// `ListIntrinsic`'s own docs. `typeflow::ListFacts` plays exactly
+  /// the role `proven_numeric` plays there: when `obj` is already
+  /// proven a list at `ip`, there is nothing left to guard, so the
+  /// whole call collapses to the couple of loads `emit_list_intrinsic_
+  /// value` computes, no branch at all.
+  fn emit_list_intrinsic(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+    op: ListIntrinsic,
+  ) {
+    // No `emit_safepoint` here either, for the identical reason
+    // `emit_number_intrinsic` skips it: nothing below can allocate.
+    let recv = self.load_reg(obj);
+
+    if self.proven_list(ip, obj) {
+      let v = self.emit_list_intrinsic_value(op, recv);
+      self.store_reg(dst, v);
+      return;
+    }
+
+    let is_obj = self.is_obj(recv);
+    let snapshot = self.snapshot_reg_cache();
+    let checked_block = self.fb.create_block();
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_obj, checked_block, &[], slow_block, &[]);
+
+    // Tag load only happens once `is_obj` is known true -- same
+    // discipline `emit_list_get_index`'s own unproven arm uses.
+    self.fb.switch_to_block(checked_block);
+    let ptr = self.obj_ptr(recv);
+    let tag = self.obj_tag(ptr);
+    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+    self
+      .fb
+      .ins()
+      .brif(is_list, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let v = self.emit_list_intrinsic_value(op, recv);
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    // The full ordinary dispatch for a receiver that turned out not to
+    // be a list -- a string, a dict, an instance whose class happens
+    // to declare a method by this name.
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// The intrinsic itself, on a receiver already known to be a list --
+  /// no branching, no register bookkeeping, just the value. `recv`'s
+  /// own bit pattern (not a re-derived one) is what `obj_ptr` masks,
+  /// matching every other intrinsic/guard site in this file.
+  fn emit_list_intrinsic_value(&mut self, op: ListIntrinsic, recv: IrValue) -> IrValue {
+    let ptr = self.obj_ptr(recv);
+    let (data_ptr, len) = self.load_list_ptr_len(ptr);
+    match op {
+      ListIntrinsic::Length => {
+        let len_f = self.fb.ins().fcvt_from_sint(types::F64, len);
+        self.from_f64(len_f)
+      },
+      ListIntrinsic::IsEmpty => {
+        let zero = self.fb.ins().iconst(types::I64, 0);
+        let is_empty = self.fb.ins().icmp(IntCC::Equal, len, zero);
+        self.bool_value(is_empty)
+      },
+      // `select` won't do for either of these: its untaken operand is
+      // still COMPUTED, and for an empty list that means loading
+      // through an address before/at a buffer that may not have any
+      // allocated capacity behind it at all (`Vec::new()`'s dangling
+      // pointer) -- genuinely unsound, not just a wasted load. A real
+      // branch is required so the load only happens when `len > 0`
+      // actually holds.
+      ListIntrinsic::First => {
+        let zero = self.fb.ins().iconst(types::I64, 0);
+        let has_elem = self.fb.ins().icmp(IntCC::SignedGreaterThan, len, zero);
+        let elem_block = self.fb.create_block();
+        let done_block = self.fb.create_block();
+        self.fb.append_block_param(done_block, types::I64);
+        let nil = self.u64c(value::NIL_VAL);
+        self
+          .fb
+          .ins()
+          .brif(has_elem, elem_block, &[], done_block, &[nil.into()]);
+
+        self.fb.switch_to_block(elem_block);
+        let elem0 = self.fb.ins().load(
+          types::I64,
+          cranelift_codegen::ir::MemFlagsData::trusted(),
+          data_ptr,
+          0,
+        );
+        self.fb.ins().jump(done_block, &[elem0.into()]);
+
+        self.fb.switch_to_block(done_block);
+        self.fb.block_params(done_block)[0]
+      },
+      ListIntrinsic::Last => {
+        let zero = self.fb.ins().iconst(types::I64, 0);
+        let has_elem = self.fb.ins().icmp(IntCC::SignedGreaterThan, len, zero);
+        let elem_block = self.fb.create_block();
+        let done_block = self.fb.create_block();
+        self.fb.append_block_param(done_block, types::I64);
+        let nil = self.u64c(value::NIL_VAL);
+        self
+          .fb
+          .ins()
+          .brif(has_elem, elem_block, &[], done_block, &[nil.into()]);
+
+        self.fb.switch_to_block(elem_block);
+        let last_idx = self.fb.ins().iadd_imm_s(len, -1);
+        let byte_off = self.fb.ins().imul_imm_s(last_idx, 8);
+        let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
+        let elem_last = self.fb.ins().load(
+          types::I64,
+          cranelift_codegen::ir::MemFlagsData::trusted(),
+          elem_addr,
+          0,
+        );
+        self.fb.ins().jump(done_block, &[elem_last.into()]);
+
+        self.fb.switch_to_block(done_block);
+        self.fb.block_params(done_block)[0]
+      },
+    }
+  }
+
   /// `object::write_barrier`'s own guard, inlined -- owed after EVERY
   /// write into an already-live instance's field storage, since a
   /// generational minor collection finds old->young pointers only
@@ -5026,6 +5213,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Cranelift code either way.
   fn emit_list_get_index(
     &mut self,
+    ip: usize,
     dst: u8,
     obj: u8,
     iidx: u8,
@@ -5034,7 +5222,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
-    let proven_list = self.proven_param_shapes.get(&obj) == Some(&ParamShape::List);
+    let proven_list = self.proven_list(ip, obj);
     let snapshot = self.snapshot_reg_cache();
 
     let slow_block = self.fb.create_block();
@@ -5204,6 +5392,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `zuri_jit_set_index` there).
   fn emit_list_set_index(
     &mut self,
+    ip: usize,
     obj: u8,
     iidx: u8,
     src: u8,
@@ -5215,9 +5404,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let src_val = self.load_reg(src);
     // See `emit_list_get_index`'s own docs on skipping the dynamic
     // `is_number` check when `type_facts` already proves it, and on
-    // `proven_param_shapes`/`ParamShape::List` skipping the object-shape
-    // half entirely.
-    let proven_list = self.proven_param_shapes.get(&obj) == Some(&ParamShape::List);
+    // `typeflow::ListFacts` skipping the object-shape half entirely.
+    let proven_list = self.proven_list(ip, obj);
     let snapshot = self.snapshot_reg_cache();
 
     let slow_block = self.fb.create_block();
@@ -6686,6 +6874,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_number_intrinsic(ip, dst, obj, method_const, num_args, op);
           return false;
         }
+        if let Some(op) = ListIntrinsic::of(self.method_name(method_const))
+          && op.arity() == num_args
+        {
+          self.emit_list_intrinsic(ip, dst, obj, method_const, num_args, op);
+          return false;
+        }
         self.emit_safepoint();
         self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
         false
@@ -6777,6 +6971,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           return false;
         }
         self.emit_list_get_index(
+          ip,
           dst,
           obj,
           iidx,
@@ -6795,6 +6990,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           return false;
         }
         self.emit_list_set_index(
+          ip,
           obj,
           iidx,
           src,

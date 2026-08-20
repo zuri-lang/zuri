@@ -280,16 +280,22 @@ pub type SpeculativeRegs = u64;
 ///
 /// `speculative_regs` is the same kind of bitmask, but for values
 /// beyond function parameters -- see `SpeculativeRegs`'s own docs.
+///
+/// `preds` is `build_predecessors(proto)`, computed by the CALLER and
+/// passed in rather than recomputed here: it depends only on `proto`'s
+/// own control flow, never on anything a particular analysis is
+/// proving, so `analyze_int`/`analyze_list`/`liveness` (which take it
+/// the same way) all share one computation instead of each redoing
+/// the identical predecessor-graph walk for every function compiled.
 pub fn analyze(
   proto: &ObjFunction,
+  preds: &[Vec<usize>],
   speculative_params: Option<u64>,
   speculative_regs: Option<SpeculativeRegs>,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
-
-  let preds = build_predecessors(proto);
 
   let seed: Option<RegSet> = speculative_params.map(|mask| {
     let mut s = RegSet::empty(num_registers);
@@ -535,12 +541,52 @@ fn comparison_or_never_numeric_dst(instr: &Instr) -> Option<u8> {
 /// because `codegen` re-verifies the ACTUAL value at the definition
 /// site regardless -- a whole-number claim would need the identical
 /// re-verification this whole analysis exists to avoid paying for).
-pub fn analyze_int(proto: &ObjFunction) -> IntFacts {
+/// `preds` -- see `analyze`'s own docs on why this takes it as a
+/// parameter instead of computing it fresh.
+///
+/// Short-circuits before the worklist the same way `analyze_list`
+/// does, and for the identical reason: if the function has no
+/// whole-number `LoadConst`, no `CheckParamType(Int)`, and no bitwise
+/// op anywhere (the only instructions `transfer_int` ever seeds
+/// `true` from -- `Add`/`Sub`/`Mul`/`*Imm`/`Move` only ever PROPAGATE
+/// an existing proof, never originate one), no register can ever be
+/// proven whole on any path, so the real fixed point is trivially
+/// "nothing, anywhere". Less likely to fire than `analyze_list`'s own
+/// skip -- a bare integer literal is common -- but real for method
+/// bodies that are pure dispatch/field access with no arithmetic of
+/// their own at all.
+pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
-  let num_registers = proto.num_registers as usize;
 
-  let preds = build_predecessors(proto);
+  let has_int_source = code.iter().any(|i| match i {
+    Instr::LoadConst { const_idx, .. } => {
+      let c = &proto.chunk.constants[*const_idx as usize];
+      c.is_number() && c.as_number().fract() == 0.0
+    },
+    Instr::AddImm { imm_const, .. } | Instr::SubImm { imm_const, .. } | Instr::MulImm { imm_const, .. } => {
+      proto.chunk.constants[*imm_const as usize].as_number().fract() == 0.0
+    },
+    Instr::CheckParamType { check_idx, .. } => {
+      let check = &proto.chunk.param_checks[*check_idx as usize];
+      !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Int)
+    },
+    Instr::BitAnd { .. }
+    | Instr::BitOr { .. }
+    | Instr::BitXor { .. }
+    | Instr::BitShl { .. }
+    | Instr::BitShr { .. }
+    | Instr::BitUshr { .. }
+    | Instr::BitNot { .. } => true,
+    _ => false,
+  });
+  if !has_int_source {
+    return IntFacts {
+      entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
+    };
+  }
+
+  let num_registers = proto.num_registers as usize;
 
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
@@ -587,6 +633,165 @@ pub fn analyze_int(proto: &ObjFunction) -> IntFacts {
   }
 
   IntFacts { entry }
+}
+
+//-----------------------------------------------------------------------------------
+// List-shape analysis
+//-----------------------------------------------------------------------------------
+
+/// The result of analyzing one function: `entry[ip]` is exactly the
+/// set of registers proven to hold an `Obj::List` on every path
+/// reaching bytecode position `ip`. `jit::codegen` uses this to skip
+/// the `is_obj` + tag-load + tag-compare guard `emit_list_get_index`/
+/// `emit_list_set_index` would otherwise redo on every single indexed
+/// access, and to skip real method-name lookup for a handful of List
+/// methods simple enough to inline directly (see
+/// `codegen::ListIntrinsic`).
+///
+/// Same "must" analysis shape as `TypeFacts`/`IntFacts` -- optimistic
+/// `full()` seed at every non-entry block, narrowed by intersection at
+/// merges, so a register only counts as proven here when EVERY
+/// incoming path agrees, including both sides of a branch (`if flag {
+/// x = [1] } else { x = [2] }` proves `x` a list after the join,
+/// `if flag { x = [1] } else { x = "s" }` proves neither) and every
+/// loop back-edge (a loop that reassigns its own list variable to
+/// itself, or to a fresh list, keeps proving it a list on the very
+/// next iteration too -- the fixed-point worklist below converges on
+/// that the same way it already does for `TypeFacts`' numeric facts,
+/// no special-casing needed).
+pub struct ListFacts {
+  entry: Vec<RegSet>,
+}
+
+impl ListFacts {
+  #[inline]
+  pub fn is_list(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+}
+
+fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
+  let mut out = in_set.clone();
+  match *instr {
+    Instr::MakeList { dst, .. } => out.set(dst, true),
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+
+    // `[x] * n` (list-repeat) -- the ONLY other instruction that can
+    // produce a list, and only when its left operand already is one;
+    // `binary_mult`'s own list-repeat semantics never turn a NON-list
+    // `a` into a list result, so `false` is exactly right when `a`
+    // isn't already proven.
+    Instr::Mul { dst, a, .. } => out.set(dst, in_set.get(a)),
+
+    // A parameter checked as EXACTLY `list` (not a union) is provably
+    // a list on every path past this instruction -- it just raised
+    // otherwise, same "must" reasoning `IntFacts`'s own
+    // `CheckParamType` arm uses.
+    Instr::CheckParamType { reg, check_idx } => {
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      let all_list =
+        !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::List);
+      out.set(reg, all_list);
+    },
+
+    // Everything else that writes a register is either never a list
+    // (arithmetic, comparisons, `LoadNil`/`LoadBool`, `Concat`, ...)
+    // or not PROVABLY one even when it might be at runtime (a
+    // `Call`/`GetField`/`GetIndex`/`Invoke` result -- e.g. `list.map`
+    // returns a new list, but that's a fact about ONE specific method
+    // on a receiver already proven list, not something this
+    // instruction-shape-only pass can see).
+    _ => {
+      if let Some(dst) = conservative_dst(instr) {
+        out.set(dst, false);
+      } else if let Some(dst) = comparison_or_never_numeric_dst(instr) {
+        out.set(dst, false);
+      }
+    },
+  }
+  out
+}
+
+/// Runs the list-shape analysis -- see `ListFacts`'s own docs.
+///
+/// Short-circuits before touching the worklist at all when the
+/// function has no `MakeList` and no list-typed parameter check
+/// anywhere in it: those are the ONLY two instructions `transfer_list`
+/// ever seeds `true` from, so with neither present, no register can
+/// EVER be proven a list on any path, and the real fixed point is
+/// trivially "nothing, anywhere" -- computing that via one cheap
+/// linear scan instead of the full predecessor-graph/worklist
+/// machinery matters because this analysis now runs for EVERY
+/// compiled function, including the overwhelming majority (most
+/// polymorphic-dispatch/arithmetic-heavy code) that never touches a
+/// list at all. `preds` -- see `analyze`'s own docs on why this takes
+/// it as a parameter instead of computing it fresh (the short-circuit
+/// above means this particular analysis often doesn't even need it).
+pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+
+  let has_list_source = code.iter().any(|i| match i {
+    Instr::MakeList { .. } => true,
+    Instr::CheckParamType { check_idx, .. } => {
+      let check = &proto.chunk.param_checks[*check_idx as usize];
+      !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::List)
+    },
+    _ => false,
+  });
+  if !has_list_source {
+    return ListFacts {
+      entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
+    };
+  }
+
+  let num_registers = proto.num_registers as usize;
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer_list(&entry[ip], &code[ip], proto))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_list(&entry[ip], &code[ip], proto);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  ListFacts { entry }
 }
 
 //-----------------------------------------------------------------------------------
@@ -1170,20 +1375,6 @@ pub(crate) fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
   preds
 }
 
-/// How many distinct bytecode positions can transfer control directly
-/// to `ip`, for every `ip` in `proto`'s own bytecode -- exposed
-/// specifically so `jit::codegen` can identify genuine CFG join points
-/// (a loop header reached by both its forward entry and its own back-
-/// edge; an if/else merge point reached from both arms), which is
-/// exactly where a per-register "is my cached value still trustworthy"
-/// fact can't be soundly tracked by a single linear compile-time walk
-/// -- see `jit::codegen::FuncCompiler::reg_cache`'s own docs for the
-/// full reasoning. A count of 0 or 1 means no real merge happens there
-/// (0 only for genuinely unreachable code, or `ip == 0` itself, whose
-/// only "predecessor" is the function's own entry, handled separately).
-pub fn predecessor_counts(proto: &ObjFunction) -> Vec<usize> {
-  build_predecessors(proto).iter().map(Vec::len).collect()
-}
 
 //-----------------------------------------------------------------------------------
 // Liveness analysis
@@ -1232,12 +1423,12 @@ impl LivenessFacts {
 /// needs it -- the textbook fixed point for liveness, guaranteed to
 /// converge because each `RegSet` only ever grows and is bounded above
 /// by "every register."
-pub fn liveness(proto: &ObjFunction) -> LivenessFacts {
+/// `preds` -- see `analyze`'s own docs on why this takes it as a
+/// parameter instead of computing it fresh.
+pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
-
-  let preds = build_predecessors(proto);
 
   let mut live_in: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
   let mut live_out: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
@@ -1494,7 +1685,7 @@ mod liveness_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![Value::number(1.0), Value::number(2.0)], 3);
-    let facts = liveness(&f);
+    let facts = liveness(&f, &build_predecessors(&f));
     assert!(facts.is_live(3, 2), "Return reads r2");
     assert!(!facts.is_live(3, 0));
     assert!(!facts.is_live(3, 1));
@@ -1525,7 +1716,7 @@ mod liveness_tests {
       Instr::Return { src: 1 },          // ip4
     ];
     let f = make_func(code, vec![Value::number(5.0), Value::number(0.0)], 2);
-    let facts = liveness(&f);
+    let facts = liveness(&f, &build_predecessors(&f));
     assert!(facts.is_live(2, 0), "r0 needed inside loop body");
     assert!(facts.is_live(3, 0), "r0 still needed across the back-edge");
     assert!(facts.is_live(1, 0), "r0 needed before first loop entry");
@@ -1550,7 +1741,7 @@ mod liveness_tests {
       Instr::Return { src: 5 },
     ];
     let f = make_func(code, vec![Value::number(1.0)], 8);
-    let facts = liveness(&f);
+    let facts = liveness(&f, &build_predecessors(&f));
     assert!(facts.is_live(1, 5), "Call reads its own callee register");
     assert!(facts.is_live(1, 6), "Call reads argument 0");
     assert!(facts.is_live(1, 7), "Call reads argument 1");
@@ -1577,7 +1768,7 @@ mod liveness_tests {
       Instr::Return { src: 4 }, // ip2
     ];
     let f = make_func(code, vec![Value::number(9.0), nested_val], 5);
-    let facts = liveness(&f);
+    let facts = liveness(&f, &build_predecessors(&f));
     assert!(
       facts.is_live(1, 3),
       "Closure must keep its captured local live"
@@ -1626,7 +1817,7 @@ mod ref_classify_tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 2);
-    let types = analyze(&f, None, None);
+    let types = analyze(&f, &build_predecessors(&f), None, None);
     let refs = classify_refs(&f, &types);
     assert!(refs.is_never_ref(2, 0));
     assert!(refs.is_never_ref(2, 1));
@@ -1648,7 +1839,7 @@ mod ref_classify_tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![Value::number(3.0), string_val], 2);
-    let types = analyze(&f, None, None);
+    let types = analyze(&f, &build_predecessors(&f), None, None);
     let refs = classify_refs(&f, &types);
     assert!(refs.is_never_ref(2, 0), "numeric constant is never a ref");
     assert!(
@@ -1674,7 +1865,7 @@ mod ref_classify_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![Value::number(1.0), Value::number(2.0)], 3);
-    let types = analyze(&f, None, None);
+    let types = analyze(&f, &build_predecessors(&f), None, None);
     let refs = classify_refs(&f, &types);
     assert!(
       refs.is_never_ref(3, 2),
@@ -1700,7 +1891,7 @@ mod ref_classify_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![Value::number(0.0), Value::number(2.0)], 3);
-    let types = analyze(&f, None, None);
+    let types = analyze(&f, &build_predecessors(&f), None, None);
     let refs = classify_refs(&f, &types);
     assert!(
       !refs.is_never_ref(3, 2),
@@ -1725,7 +1916,7 @@ mod ref_classify_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![Value::number(0.0), Value::number(0.0)], 3);
-    let types = analyze(&f, None, None);
+    let types = analyze(&f, &build_predecessors(&f), None, None);
     let refs = classify_refs(&f, &types);
     assert!(
       refs.is_never_ref(3, 2),
@@ -1745,7 +1936,7 @@ mod ref_classify_tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 2);
-    let types = analyze(&f, None, None);
+    let types = analyze(&f, &build_predecessors(&f), None, None);
     let refs = classify_refs(&f, &types);
     assert!(!refs.is_never_ref(2, 0), "MakeList always allocates a ref");
     assert!(!refs.is_never_ref(2, 1), "Concat always allocates a String");
@@ -1762,7 +1953,7 @@ mod ref_classify_tests {
       Instr::Return { src: 1 },
     ];
     let f = make_func(code, vec![Value::number(4.0)], 2);
-    let types = analyze(&f, None, None);
+    let types = analyze(&f, &build_predecessors(&f), None, None);
     let refs = classify_refs(&f, &types);
     assert!(
       refs.is_never_ref(2, 1),

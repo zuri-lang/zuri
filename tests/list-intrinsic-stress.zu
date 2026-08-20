@@ -1,0 +1,76 @@
+/* Exercises jit::codegen::ListIntrinsic (length/is_empty/first/last
+ * inlined directly for a proven list, guarded-and-falling-back
+ * otherwise) -- both the proven and unproven receiver paths, empty-
+ * list edge cases, and that a same-named method on a DIFFERENT type
+ * (String/Dict/Bytes all also have "length") still dispatches
+ * correctly through the guard's slow path rather than being
+ * mistaken for a list. Run past the JIT tiering threshold since a
+ * wrong guard would only show up in compiled code.
+ */
+
+def proven_list_methods(n) {
+  var xs = [0] * n
+  iter var i = 0; i < n; i += 1 {
+    xs[i] = i * 2
+  }
+  /* xs is proven a list here (assigned once via list-repeat, never
+   * reassigned) -- length/first/last should all take the inline path */
+  return xs.length() + xs.first() + xs.last() + (xs.is_empty() ? 1 : 0)
+}
+
+def empty_list_methods() {
+  var xs = []
+  /* first()/last() on an empty list must return nil, not read
+   * out-of-bounds memory */
+  var f = xs.first()
+  var l = xs.last()
+  return xs.length() + (xs.is_empty() ? 100 : 0) + (f == nil ? 10 : 0) + (l == nil ? 1 : 0)
+}
+
+def unproven_receiver_methods(flag) {
+  var xs
+  if flag {
+    xs = [1, 2, 3, 4]
+  } else {
+    xs = [9, 9]
+  }
+  /* xs is NOT proven a list (two different list literals from two
+   * branches) -- this exercises the runtime is_obj+tag guard, not the
+   * proven fast path */
+  return xs.length() + xs.first() + xs.last()
+}
+
+def same_name_different_types() {
+  var s = "hello"
+  var d = {"a": 1, "b": 2}
+  var l = [1, 2, 3]
+  /* all three declare "length" -- the list intrinsic's guard must
+   * never mistake a string or dict for a list */
+  return s.length() + d.length() + l.length()
+}
+
+var rounds = 5000
+
+var s1 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s1 += proven_list_methods(10)
+}
+echo s1
+
+var s2 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s2 += empty_list_methods()
+}
+echo s2
+
+var s3 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s3 += unproven_receiver_methods(k % 2 == 0)
+}
+echo s3
+
+var s4 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s4 += same_name_different_types()
+}
+echo s4
