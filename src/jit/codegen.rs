@@ -49,6 +49,40 @@ const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET 
 /// Byte offset of `VM::method_table_generation` -- see that field's own
 /// docs and `emit_self_invoke`'s use of it.
 const METHOD_TABLE_GENERATION_OFFSET: i32 = vm::VM_METHOD_TABLE_GENERATION_OFFSET as i32;
+/// Byte offset (from a `*mut VM`) of the frame stack's own data
+/// pointer -- `VM_FRAMES_OFFSET + FRAMESTACK_PTR_OFFSET`, combined once
+/// here so every call site just uses the finished number. See
+/// `emit_inline_call`'s own docs for what this backs.
+const FRAMES_PTR_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_PTR_OFFSET) as i32;
+/// Byte offset (from a `*mut VM`) of the frame stack's current length.
+const FRAMES_LEN_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_LEN_OFFSET) as i32;
+/// Byte offset (from a `*mut VM`) of the frame stack's current
+/// capacity.
+const FRAMES_CAP_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_CAP_OFFSET) as i32;
+/// Byte offset (from a `*mut VM`) of `VM::regs_len_cache`.
+const REGS_LEN_CACHE_OFFSET: i32 = vm::VM_REGS_LEN_CACHE_OFFSET as i32;
+/// Byte offset (from a `*mut VM`) of `VM::jit_scalar_roots_len`.
+const JIT_SCALAR_ROOTS_LEN_OFFSET: i32 = vm::VM_JIT_SCALAR_ROOTS_LEN_OFFSET as i32;
+/// Byte offset (from a `*mut VM`) of `VM::has_open_upvalues`.
+const HAS_OPEN_UPVALUES_OFFSET: i32 = vm::VM_HAS_OPEN_UPVALUES_OFFSET as i32;
+/// Byte offset (from a `*mut VM`) of `VM::pending_deopt_ip`.
+const PENDING_DEOPT_IP_OFFSET: i32 = vm::VM_PENDING_DEOPT_IP_OFFSET as i32;
+/// Byte offset (from a `*mut VM`) of `VM::jit_pending_exception`.
+const JIT_PENDING_EXCEPTION_OFFSET: i32 = vm::VM_JIT_PENDING_EXCEPTION_OFFSET as i32;
+/// Byte offset (from a `*mut VM`) of `VM::jit_call_depth`.
+const JIT_CALL_DEPTH_OFFSET: i32 = vm::VM_JIT_CALL_DEPTH_OFFSET as i32;
+/// Byte offsets of each `CallFrame` field, relative to one frame slot's
+/// own address (`frames_ptr + index * CALL_FRAME_SIZE`) -- see
+/// `vm::CALL_FRAME_*_OFFSET`'s own docs.
+const CALL_FRAME_FUNCTION_OFFSET: i32 = vm::CALL_FRAME_FUNCTION_OFFSET as i32;
+const CALL_FRAME_CLOSURE_OFFSET: i32 = vm::CALL_FRAME_CLOSURE_OFFSET as i32;
+const CALL_FRAME_CLOSURE_VAL_OFFSET: i32 = vm::CALL_FRAME_CLOSURE_VAL_OFFSET as i32;
+const CALL_FRAME_IP_OFFSET: i32 = vm::CALL_FRAME_IP_OFFSET as i32;
+const CALL_FRAME_BASE_OFFSET: i32 = vm::CALL_FRAME_BASE_OFFSET as i32;
+const CALL_FRAME_DST_IN_CALLER_OFFSET: i32 = vm::CALL_FRAME_DST_IN_CALLER_OFFSET as i32;
+const CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET: i32 = vm::CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET as i32;
+const CALL_FRAME_COMPILED_OFFSET: i32 = vm::CALL_FRAME_COMPILED_OFFSET as i32;
+const CALL_FRAME_SIZE: i64 = vm::CALL_FRAME_SIZE as i64;
 /// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
 /// (major) and `young_bytes_allocated` (minor) -- lets `emit_safepoint`
 /// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
@@ -1560,6 +1594,284 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     slot
   }
 
+  /// Inlines `zuri_jit_direct_call_prepare`'s job for a callee whose
+  /// `arity`/`variadic`/`num_registers` are already compile-time
+  /// constants (self-recursion, or a `CallTarget::Known` callee once
+  /// its value-identity guard has passed) -- see this module's own docs
+  /// for the profiling that motivated this: `zuri_jit_direct_call_
+  /// prepare`/`zuri_jit_call_finish` alone were measured at ~19% of a
+  /// call-heavy benchmark's total runtime, almost entirely the fixed
+  /// cost of the Rust-call boundary itself, crossed billions of times
+  /// for work that's individually a handful of loads and stores.
+  ///
+  /// Callers must check eligibility THEMSELVES, at compile time, before
+  /// calling this: `!callee_variadic && num_args == callee_arity`,
+  /// exactly `VM::setup_closure_call`'s own fast-path gate (see
+  /// `push_frame_fast`), just decided once here instead of freshly on
+  /// every call. There is no runtime check for it -- an ineligible
+  /// callee must never reach this function at all, and instead keep
+  /// using the unaccelerated `zuri_jit_direct_call_prepare` helper,
+  /// unchanged.
+  ///
+  /// Three runtime conditions still gate the fast path, each rare once
+  /// a hot call site reaches its steady state and each falling to
+  /// `slow_block` (the caller's own, ordinary `zuri_jit_call` fallback
+  /// -- fully general and always correct, just unaccelerated for this
+  /// one call): JIT call depth exhausted, the callee's register window
+  /// doesn't already fit `VM::registers`, or the frame stack doesn't
+  /// already have spare capacity. None of these three needs a "grow and
+  /// continue inline" path -- deferring to the ordinary slow call for
+  /// the rare call that actually needs to grow something is simpler and
+  /// no less correct than reimplementing `Vec`-style growth here too.
+  ///
+  /// On success, this frame's `compiled` flag is set to `true` directly
+  /// as part of constructing it (no separate `mark_top_frame_compiled`
+  /// call), `VM::jit_call_depth` is incremented, and `publish_ip` is
+  /// called explicitly -- both of those happen for free inside
+  /// `call_helper`/`call_checked` normally, but this function doesn't
+  /// go through either, so the caller must not ALSO call them.
+  fn emit_inline_frame_push(
+    &mut self,
+    proto_bits: u64,
+    callee_num_registers: u8,
+    dst: u8,
+    new_base: IrValue,
+    closure_ptr: IrValue,
+    closure_val: IrValue,
+    slow_block: Block,
+  ) {
+    let vm = self.vm_param;
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+
+    let depth = self
+      .fb
+      .ins()
+      .load(types::I32, flags, vm, JIT_CALL_DEPTH_OFFSET);
+    let max_depth = self.fb.ins().iconst(types::I32, vm::JIT_MAX_CALL_DEPTH as i64);
+    let depth_ok = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedLessThan, depth, max_depth);
+    let depth_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(depth_ok, depth_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(depth_block);
+    let regs_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, REGS_LEN_CACHE_OFFSET);
+    let needed = self
+      .fb
+      .ins()
+      .iadd_imm_s(new_base, callee_num_registers as i64);
+    let regs_ok = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThanOrEqual, regs_len, needed);
+    let regs_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(regs_ok, regs_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(regs_block);
+    let frames_len = self.fb.ins().load(types::I64, flags, vm, FRAMES_LEN_OFFSET);
+    let frames_cap = self.fb.ins().load(types::I64, flags, vm, FRAMES_CAP_OFFSET);
+    let frames_ok = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedLessThan, frames_len, frames_cap);
+    let frames_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(frames_ok, frames_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(frames_block);
+    let frames_ptr = self.fb.ins().load(types::I64, flags, vm, FRAMES_PTR_OFFSET);
+    let frame_off = self.fb.ins().imul_imm_s(frames_len, CALL_FRAME_SIZE);
+    let frame_addr = self.fb.ins().iadd(frames_ptr, frame_off);
+
+    let proto_c = self.u64c(proto_bits);
+    self
+      .fb
+      .ins()
+      .store(flags, proto_c, frame_addr, CALL_FRAME_FUNCTION_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, closure_ptr, frame_addr, CALL_FRAME_CLOSURE_OFFSET);
+    self.fb.ins().store(
+      flags,
+      closure_val,
+      frame_addr,
+      CALL_FRAME_CLOSURE_VAL_OFFSET,
+    );
+    let zero = self.i64c(0);
+    self
+      .fb
+      .ins()
+      .store(flags, zero, frame_addr, CALL_FRAME_IP_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, new_base, frame_addr, CALL_FRAME_BASE_OFFSET);
+    let dst_c = self.fb.ins().iconst(types::I8, dst as i64);
+    self.fb.ins().store(
+      flags,
+      dst_c,
+      frame_addr,
+      CALL_FRAME_DST_IN_CALLER_OFFSET,
+    );
+    let scalar_mark = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
+    self.fb.ins().store(
+      flags,
+      scalar_mark,
+      frame_addr,
+      CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET,
+    );
+    let true_c = self.fb.ins().iconst(types::I8, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, true_c, frame_addr, CALL_FRAME_COMPILED_OFFSET);
+
+    let new_frames_len = self.fb.ins().iadd_imm_s(frames_len, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, new_frames_len, vm, FRAMES_LEN_OFFSET);
+
+    let new_depth = self.fb.ins().iadd_imm_s(depth, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, new_depth, vm, JIT_CALL_DEPTH_OFFSET);
+
+    self.publish_ip();
+  }
+
+  /// `emit_inline_frame_push`'s other half -- inlines
+  /// `zuri_jit_call_finish`'s job once the callee's own `call_indirect`
+  /// has returned. `new_base` must be the exact value passed to the
+  /// matching `emit_inline_frame_push` call (needed only for the rare
+  /// `close_upvalues_from` case); `ret_bits` is the callee's raw return
+  /// value.
+  ///
+  /// Every exit path here writes `dst` the same way
+  /// `zuri_jit_call_finish` itself always did -- straight into `VM::
+  /// registers` memory, with `reg_cache[dst]` marked `Stale` rather than
+  /// going through `store_reg`'s `Variable`. That's deliberate, not an
+  /// oversight: this function has multiple internal branches (deopt,
+  /// exception, ordinary success) that all reach the same `done_block`,
+  /// and `dst`'s `Variable` is never defined on the deopt/exception
+  /// paths at all (they write memory directly, exactly like the helper
+  /// calls they replace). A `Dirty` marking on the success path only
+  /// would leave a LATER `load_reg(dst)` trusting a `Variable` that was
+  /// only ever defined on ONE of several incoming edges -- unsound
+  /// regardless of which edge actually ran at runtime. Uniform `Stale`
+  /// is what `zuri_jit_call_finish`'s own call-based version already
+  /// guaranteed for free; this preserves that exactly.
+  fn emit_inline_frame_finish(&mut self, dst: u8, new_base: IrValue, ret_bits: IrValue) {
+    let vm = self.vm_param;
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+
+    let depth = self
+      .fb
+      .ins()
+      .load(types::I32, flags, vm, JIT_CALL_DEPTH_OFFSET);
+    let new_depth = self.fb.ins().iadd_imm_s(depth, -1);
+    self
+      .fb
+      .ins()
+      .store(flags, new_depth, vm, JIT_CALL_DEPTH_OFFSET);
+
+    let done_block = self.fb.create_block();
+
+    let deopt_ip = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, PENDING_DEOPT_IP_OFFSET);
+    let neg1 = self.i64c(-1);
+    let no_deopt = self.fb.ins().icmp(IntCC::Equal, deopt_ip, neg1);
+    let deopt_block = self.fb.create_block();
+    let past_deopt_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(no_deopt, past_deopt_block, &[], deopt_block, &[]);
+
+    self.fb.switch_to_block(deopt_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    self.call_checked("zuri_jit_finish_deopt", &[vm, base, dst_i]);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(past_deopt_block);
+    let exc = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, JIT_PENDING_EXCEPTION_OFFSET);
+    let nil = self.u64c(value::NIL_VAL);
+    let no_exc = self.fb.ins().icmp(IntCC::Equal, exc, nil);
+    let exc_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    self.fb.ins().brif(no_exc, ok_block, &[], exc_block, &[]);
+
+    self.fb.switch_to_block(exc_block);
+    let junk = self.i64c(0);
+    self.fb.ins().return_(&[junk]);
+
+    self.fb.switch_to_block(ok_block);
+    let has_open = self
+      .fb
+      .ins()
+      .load(types::I8, flags, vm, HAS_OPEN_UPVALUES_OFFSET);
+    let zero8 = self.fb.ins().iconst(types::I8, 0);
+    let none_open = self.fb.ins().icmp(IntCC::Equal, has_open, zero8);
+    let pop_block = self.fb.create_block();
+    let close_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(none_open, pop_block, &[], close_block, &[]);
+
+    self.fb.switch_to_block(close_block);
+    let zero = self.i64c(0);
+    self.call_checked("zuri_jit_close_upvalues", &[vm, new_base, zero]);
+    self.fb.ins().jump(pop_block, &[]);
+
+    self.fb.switch_to_block(pop_block);
+    let frames_len = self.fb.ins().load(types::I64, flags, vm, FRAMES_LEN_OFFSET);
+    let top_idx = self.fb.ins().iadd_imm_s(frames_len, -1);
+    let frames_ptr = self.fb.ins().load(types::I64, flags, vm, FRAMES_PTR_OFFSET);
+    let frame_off = self.fb.ins().imul_imm_s(top_idx, CALL_FRAME_SIZE);
+    let frame_addr = self.fb.ins().iadd(frames_ptr, frame_off);
+    let mark = self.fb.ins().load(
+      types::I64,
+      flags,
+      frame_addr,
+      CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET,
+    );
+    self
+      .fb
+      .ins()
+      .store(flags, mark, vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
+    self.fb.ins().store(flags, top_idx, vm, FRAMES_LEN_OFFSET);
+
+    self.store_reg_mem(dst, ret_bits);
+    self.reg_cache[dst as usize] = RegCache::Stale;
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
   /// Loads a proven-`Obj::List` receiver's element data pointer and
   /// length, straight out of the object.
   ///
@@ -2041,27 +2353,90 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let dst_i = self.idx(dst);
     let closure_bits = self.closure_param;
 
-    let ok = self.call_helper(
-      "zuri_jit_direct_call_prepare",
-      &[vm_p, closure_bits, new_base, num_args_i, dst_i],
-    );
-    self.refresh_regs();
-    let zero = self.i64c(0);
-    let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
+    // Eligibility for the fully-inline path is a compile-time fact for
+    // self-recursion (this function's own `arity`/`variadic` -- there is
+    // no other callee it could possibly be): decided once here, not as
+    // a runtime branch. An ineligible callee (variadic, or this call
+    // site's `num_args` happens not to match -- both fixed by the
+    // instruction, never varying call to call) keeps using the
+    // original, unaccelerated `zuri_jit_direct_call_prepare` sequence
+    // verbatim.
+    if self.proto.variadic || num_args != self.proto.arity {
+      let ok = self.call_helper(
+        "zuri_jit_direct_call_prepare",
+        &[vm_p, closure_bits, new_base, num_args_i, dst_i],
+      );
+      self.refresh_regs();
+      let zero = self.i64c(0);
+      let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
 
-    let fast_block = self.fb.create_block();
+      let fast_block = self.fb.create_block();
+      let slow_block = self.fb.create_block();
+      let done_block = self.fb.create_block();
+      self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
+
+      // No snapshot/restore needed around this split: the ONE helper
+      // call above runs UNCONDITIONALLY, before either branch, so it's
+      // already flushed whatever was live-and-dirty on BOTH paths --
+      // see `restore_dirty_from_snapshot`'s own docs for the bug class
+      // this reasoning has to hold up against.
+      self.fb.switch_to_block(fast_block);
+      let func_ref = self
+        .module
+        .declare_func_in_func(self.own_func_id, self.fb.func);
+      let neg1 = self.fb.ins().iconst(types::I32, -1);
+      self.flush_live(self.current_ip);
+      let call = self
+        .fb
+        .ins()
+        .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+      let ret_bits = self.fb.inst_results(call)[0];
+      self.mark_stale_live(self.current_ip);
+      self.refresh_regs();
+      self.call_checked(
+        "zuri_jit_call_finish",
+        &[vm_p, base, dst_i, new_base, ret_bits],
+      );
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(slow_block);
+      let func_i = self.idx(func);
+      self.call_checked("zuri_jit_call", &[vm_p, base, func_i, num_args_i, dst_i]);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(done_block);
+      return;
+    }
+
+    // Fully-inline path -- see `emit_inline_frame_push`'s own docs.
+    //
+    // Unlike the eligibility-false branch above, `emit_inline_frame_push`
+    // itself branches to `slow_block` BEFORE any unconditional helper
+    // call (its depth/registers/frame-capacity checks are all inline),
+    // so this needs the snapshot/restore discipline `emit_known_call`
+    // already uses, for exactly the reason its own docs give: two
+    // independent call sites (the inline fast path's own `call`, and
+    // `slow_block`'s `zuri_jit_call`) now sit in mutually exclusive
+    // branches with no unconditional call ahead of the split to have
+    // already flushed both.
+    let proto_bits = self.proto as *const ObjFunction as u64;
+    let closure_ptr = self.obj_ptr(closure_bits);
+    let snapshot = self.snapshot_reg_cache();
     let slow_block = self.fb.create_block();
+    let fast_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
 
-    // No snapshot/restore needed around this split (unlike
-    // `emit_known_call`/`emit_self_invoke`, both of which guard BEFORE
-    // their first helper call): the ONE helper call above runs
-    // UNCONDITIONALLY, before either branch, so it's already flushed
-    // whatever was live-and-dirty on BOTH paths -- exactly
-    // `emit_fast_call`'s own proven-safe shape, just with a leaner
-    // prepare helper. See `restore_dirty_from_snapshot`'s own docs for
-    // the bug class this reasoning has to hold up against.
+    self.emit_inline_frame_push(
+      proto_bits,
+      self.proto.num_registers,
+      dst,
+      new_base,
+      closure_ptr,
+      closure_bits,
+      slow_block,
+    );
+    self.fb.ins().jump(fast_block, &[]);
+
     self.fb.switch_to_block(fast_block);
     let func_ref = self
       .module
@@ -2075,18 +2450,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ret_bits = self.fb.inst_results(call)[0];
     self.mark_stale_live(self.current_ip);
     self.refresh_regs();
-    self.call_checked(
-      "zuri_jit_call_finish",
-      &[vm_p, base, dst_i, new_base, ret_bits],
-    );
+    self.emit_inline_frame_finish(dst, new_base, ret_bits);
     self.fb.ins().jump(done_block, &[]);
 
+    self.reg_cache = snapshot.clone();
     self.fb.switch_to_block(slow_block);
     let func_i = self.idx(func);
     self.call_checked("zuri_jit_call", &[vm_p, base, func_i, num_args_i, dst_i]);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
   /// `Instr::Call`'s PROVEN-but-reassignable fast path (`jit::CallTarget
@@ -2942,7 +3316,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
   }
 
-  fn emit_known_call(&mut self, dst: u8, func: u8, num_args: u8, entry: usize, guard_bits: u64) {
+  fn emit_known_call(
+    &mut self,
+    dst: u8,
+    func: u8,
+    num_args: u8,
+    entry: usize,
+    guard_bits: u64,
+    proto_ptr: usize,
+  ) {
     let base = self.base_param;
     let vm_p = self.vm_param;
     let callee_val = self.load_reg(func);
@@ -2957,14 +3339,66 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     self.emit_callee_proto_guard(callee_val, guard_bits, slow_block);
 
-    let ok = self.call_helper(
-      "zuri_jit_direct_call_prepare",
-      &[vm_p, callee_val, new_base, num_args_i, dst_i],
+    // Eligibility, exactly like `emit_self_call`'s: a compile-time fact
+    // about the PROVEN callee (`emit_callee_proto_guard` already
+    // guarantees, once past it, that the register holds a closure whose
+    // prototype is exactly `proto_ptr`), decided once here rather than
+    // as a runtime branch.
+    //
+    // SAFETY: `proto_ptr` names a live, old-generation `ObjFunction` --
+    // see `CallTarget::Known::proto_ptr`'s own docs.
+    let callee = unsafe { &*(proto_ptr as *const ObjFunction) };
+    if callee.variadic || num_args != callee.arity {
+      let ok = self.call_helper(
+        "zuri_jit_direct_call_prepare",
+        &[vm_p, callee_val, new_base, num_args_i, dst_i],
+      );
+      self.refresh_regs();
+      let zero = self.i64c(0);
+      let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
+      self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(fast_block);
+      let entry_addr = self.u64c(entry as u64);
+      let sig = self.entry_sig_ref();
+      let neg1 = self.fb.ins().iconst(types::I32, -1);
+      self.flush_live(self.current_ip);
+      let call = self
+        .fb
+        .ins()
+        .call_indirect(sig, entry_addr, &[vm_p, new_base, callee_val, neg1]);
+      let ret_bits = self.fb.inst_results(call)[0];
+      self.mark_stale_live(self.current_ip);
+      self.refresh_regs();
+      self.call_checked(
+        "zuri_jit_call_finish",
+        &[vm_p, base, dst_i, new_base, ret_bits],
+      );
+      self.fb.ins().jump(done_block, &[]);
+
+      self.reg_cache = snapshot.clone();
+      self.fb.switch_to_block(slow_block);
+      let func_i = self.idx(func);
+      self.call_checked("zuri_jit_call", &[vm_p, base, func_i, num_args_i, dst_i]);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(done_block);
+      self.restore_dirty_from_snapshot(&snapshot, dst);
+      return;
+    }
+
+    // Fully-inline path -- see `emit_inline_frame_push`'s own docs.
+    let closure_ptr = self.obj_ptr(callee_val);
+    self.emit_inline_frame_push(
+      proto_ptr as u64,
+      callee.num_registers,
+      dst,
+      new_base,
+      closure_ptr,
+      callee_val,
+      slow_block,
     );
-    self.refresh_regs();
-    let zero = self.i64c(0);
-    let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
-    self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
+    self.fb.ins().jump(fast_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let entry_addr = self.u64c(entry as u64);
@@ -2978,10 +3412,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ret_bits = self.fb.inst_results(call)[0];
     self.mark_stale_live(self.current_ip);
     self.refresh_regs();
-    self.call_checked(
-      "zuri_jit_call_finish",
-      &[vm_p, base, dst_i, new_base, ret_bits],
-    );
+    self.emit_inline_frame_finish(dst, new_base, ret_bits);
     self.fb.ins().jump(done_block, &[]);
 
     self.reg_cache = snapshot.clone();
@@ -3116,34 +3547,81 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(gen_hit, try_direct_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(try_direct_block);
-    let ok = self.call_helper(
-      "zuri_jit_direct_call_prepare",
-      &[vm_p, closure_bits, new_base, direct_num_args_i, dst_i],
-    );
-    self.refresh_regs();
-    let zero = self.i64c(0);
-    let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
-    let fast_block = self.fb.create_block();
-    self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
 
-    self.fb.switch_to_block(fast_block);
-    let func_ref = self
-      .module
-      .declare_func_in_func(self.own_func_id, self.fb.func);
-    let neg1 = self.fb.ins().iconst(types::I32, -1);
-    self.flush_live(ip);
-    let call = self
-      .fb
-      .ins()
-      .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
-    let ret_bits = self.fb.inst_results(call)[0];
-    self.mark_stale_live(ip);
-    self.refresh_regs();
-    self.call_checked(
-      "zuri_jit_call_finish",
-      &[vm_p, base, dst_i, new_base, ret_bits],
-    );
-    self.fb.ins().jump(done_block, &[]);
+    // Eligibility, exactly like `emit_self_call`'s: `self_invoke_target`
+    // already proved the invoked method IS `self.proto` (this exact
+    // compiling function), so its `arity`/`variadic`/`num_registers` are
+    // compile-time facts here too. The receiver occupies the callee's
+    // own register 0 ("self"), so the real argument count to compare
+    // against `arity` is `1 + num_args`, matching `direct_num_args_i`'s
+    // own `1 +` convention below.
+    if self.proto.variadic || (num_args as u16 + 1) != self.proto.arity as u16 {
+      let ok = self.call_helper(
+        "zuri_jit_direct_call_prepare",
+        &[vm_p, closure_bits, new_base, direct_num_args_i, dst_i],
+      );
+      self.refresh_regs();
+      let zero = self.i64c(0);
+      let is_ok = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
+      let fast_block = self.fb.create_block();
+      self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(fast_block);
+      let func_ref = self
+        .module
+        .declare_func_in_func(self.own_func_id, self.fb.func);
+      let neg1 = self.fb.ins().iconst(types::I32, -1);
+      self.flush_live(ip);
+      let call = self
+        .fb
+        .ins()
+        .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+      let ret_bits = self.fb.inst_results(call)[0];
+      self.mark_stale_live(ip);
+      self.refresh_regs();
+      self.call_checked(
+        "zuri_jit_call_finish",
+        &[vm_p, base, dst_i, new_base, ret_bits],
+      );
+      self.fb.ins().jump(done_block, &[]);
+    } else {
+      // Fully-inline path -- see `emit_inline_frame_push`'s own docs.
+      // `try_direct_block` is already reached only after the receiver-
+      // class/generation guard above passed, so no further guard is
+      // needed before this -- `emit_inline_frame_push`'s own runtime
+      // checks (depth/registers/frame capacity) are all that's left,
+      // and any of THEM failing falls to the exact same `slow_block`
+      // the class/generation guard itself already falls to.
+      let proto_bits = self.proto as *const ObjFunction as u64;
+      let closure_ptr = self.obj_ptr(closure_bits);
+      self.emit_inline_frame_push(
+        proto_bits,
+        self.proto.num_registers,
+        dst,
+        new_base,
+        closure_ptr,
+        closure_bits,
+        slow_block,
+      );
+      let fast_block = self.fb.create_block();
+      self.fb.ins().jump(fast_block, &[]);
+
+      self.fb.switch_to_block(fast_block);
+      let func_ref = self
+        .module
+        .declare_func_in_func(self.own_func_id, self.fb.func);
+      let neg1 = self.fb.ins().iconst(types::I32, -1);
+      self.flush_live(ip);
+      let call = self
+        .fb
+        .ins()
+        .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+      let ret_bits = self.fb.inst_results(call)[0];
+      self.mark_stale_live(ip);
+      self.refresh_regs();
+      self.emit_inline_frame_finish(dst, new_base, ret_bits);
+      self.fb.ins().jump(done_block, &[]);
+    }
 
     self.reg_cache = snapshot.clone();
     self.fb.switch_to_block(slow_block);
@@ -5493,8 +5971,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           // to, so this falls through to the ordinary resolver exactly
           // as an unresolved site would.
           Some(CallTarget::Known {
-            entry, guard_bits, ..
-          }) if entry != 0 => self.emit_known_call(dst, func, num_args, entry, guard_bits),
+            entry,
+            guard_bits,
+            proto_ptr,
+          }) if entry != 0 => {
+            self.emit_known_call(dst, func, num_args, entry, guard_bits, proto_ptr)
+          },
           Some(CallTarget::Known { .. }) => self.emit_generic_call(dst, func, num_args),
           Some(CallTarget::KnownNative {
             guard_fn,

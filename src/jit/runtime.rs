@@ -69,6 +69,16 @@
 //! `Chunk::jump_tables` access.
 
 use std::cell::Cell;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// TEMPORARY diagnostic counters -- kept until the inline-call-path
+// investigation is actually finished this time. Remove before this
+// lands anywhere.
+pub static DIAG_DIRECT_CALL_PREPARE: AtomicU64 = AtomicU64::new(0);
+pub static DIAG_CALL_FINISH: AtomicU64 = AtomicU64::new(0);
+pub static DIAG_ZURI_JIT_CALL: AtomicU64 = AtomicU64::new(0);
+pub static DIAG_ZURI_JIT_INVOKE: AtomicU64 = AtomicU64::new(0);
+pub static DIAG_CONSTRUCT_PREPARE: AtomicU64 = AtomicU64::new(0);
 
 use crate::vm::chunk::{InvokeCacheCell, JumpKey};
 use crate::vm::object::{
@@ -113,7 +123,7 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 /// reasoning and `VM::invoke_compiled` for where this is consumed.
 pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
-  vm.pending_deopt_ip.set(Some(ip as usize));
+  vm.pending_deopt_ip.set(ip as i64);
   OK
 }
 
@@ -831,6 +841,7 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
   field_count: u64,
   closure_out: u64,
 ) -> u64 {
+  DIAG_CONSTRUCT_PREPARE.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   let num_args = num_args as u8;
   if !vm.jit_depth_ok() || num_args == u8::MAX {
@@ -933,6 +944,7 @@ pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
   num_args: u64,
   dst: u64,
 ) -> u64 {
+  DIAG_DIRECT_CALL_PREPARE.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   if !vm.jit_depth_ok() {
     return 0;
@@ -970,6 +982,7 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
   new_base: u64,
   ret_bits: u64,
 ) -> u64 {
+  DIAG_CALL_FINISH.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   vm.jit_depth_exit();
 
@@ -999,6 +1012,34 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
   OK
 }
 
+/// The one part of `zuri_jit_call_finish`'s job that `jit::codegen`'s
+/// inline call/return fast path (`emit_inline_frame_finish`) can't
+/// safely reproduce inline: resuming a deopting callee through the
+/// interpreter. Called ONLY after generated code has already observed
+/// `VM::pending_deopt_ip != -1` and already done the depth decrement
+/// `zuri_jit_call_finish` itself does unconditionally -- everything
+/// else (popping the frame, closing upvalues) is deliberately skipped
+/// here because a deopt never reaches that far: `resolve_deopt_slow`
+/// resumes the SAME already-pushed frame through the interpreter's own
+/// `Instr::Return` handling, which pops it itself by the time this
+/// returns. See `VM::resolve_possible_deopt`'s own docs.
+pub unsafe extern "C" fn zuri_jit_finish_deopt(vm_ptr: *mut VM, base: u64, dst: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  match vm.resolve_possible_deopt() {
+    Some(Ok(v)) => {
+      vm.set_reg(base as usize, dst as u8, v);
+      OK
+    },
+    Some(Err(e)) => fail(vm, e),
+    // Unreachable by construction -- generated code only ever calls
+    // this after observing a deopt actually pending. Treated as a
+    // no-op success rather than a panic: unwinding a Rust panic across
+    // this `extern "C"` boundary would be unsound, and this is the
+    // strictly safer failure mode if the invariant were ever violated.
+    None => OK,
+  }
+}
+
 // ---------------------------------------------------------------------
 // Calls -- mixed-mode dispatch. `dispatch_call_sync`/`invoke_prebound_sync`
 // already fully implement "run interpreted, or run compiled if
@@ -1013,6 +1054,7 @@ pub unsafe extern "C" fn zuri_jit_call(
   num_args: u64,
   dst: u64,
 ) -> u64 {
+  DIAG_ZURI_JIT_CALL.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   match vm.dispatch_call_sync(base as usize, func_reg as u8, num_args as u8, dst as u8) {
     Ok(()) => OK,
@@ -1069,6 +1111,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
   method_name_bits: u64,
   cache_addr: u64,
 ) -> u64 {
+  DIAG_ZURI_JIT_INVOKE.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
   let obj = obj as u8;
@@ -2622,6 +2665,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec9!(zuri_jit_invoke_prepare),
     spec5!(zuri_jit_direct_call_prepare),
     spec5!(zuri_jit_call_finish),
+    spec3!(zuri_jit_finish_deopt),
     spec5!(zuri_jit_call_super_ctor),
     spec5!(zuri_jit_make_closure),
     spec2!(zuri_jit_closure_upvalues_ptr),

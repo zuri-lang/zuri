@@ -172,6 +172,31 @@ fn run_file(vm: &mut VM, file: &str) {
           vm.dump_opcode_profile();
         }
 
+        if std::env::var_os("ZURI_DIAG_CALL_COUNTS").is_some() {
+          use std::sync::atomic::Ordering;
+          eprintln!("=== diag call counts ===");
+          eprintln!(
+            "direct_call_prepare  {}",
+            zuri::jit::runtime::DIAG_DIRECT_CALL_PREPARE.load(Ordering::Relaxed)
+          );
+          eprintln!(
+            "call_finish          {}",
+            zuri::jit::runtime::DIAG_CALL_FINISH.load(Ordering::Relaxed)
+          );
+          eprintln!(
+            "zuri_jit_call        {}",
+            zuri::jit::runtime::DIAG_ZURI_JIT_CALL.load(Ordering::Relaxed)
+          );
+          eprintln!(
+            "zuri_jit_invoke      {}",
+            zuri::jit::runtime::DIAG_ZURI_JIT_INVOKE.load(Ordering::Relaxed)
+          );
+          eprintln!(
+            "construct_prepare    {}",
+            zuri::jit::runtime::DIAG_CONSTRUCT_PREPARE.load(Ordering::Relaxed)
+          );
+        }
+
         if let Err(e) = result {
           eprintln!("{}", vm.format_uncaught(e));
           process::exit(1);

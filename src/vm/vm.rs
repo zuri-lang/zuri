@@ -84,6 +84,207 @@ impl CallArgs {
   }
 }
 
+/// A growable `CallFrame` stack, hand-rolled instead of `Vec<CallFrame>`
+/// for the same reason `vm::list::ListStorage` exists instead of
+/// `Vec<Value>`: `jit::codegen`'s inline call/return fast path
+/// (`emit_self_call`/`emit_known_call`) needs to push and pop a frame
+/// with no `jit::runtime` call at all for the common case, and `Vec`'s
+/// own field layout isn't something generated code should assume.
+/// Unlike `ListStorage` this doesn't need `#[repr(C)]` or hand-picked
+/// offsets -- `CallFrame` and `FrameStack` are plain structs read only
+/// from within this same build, so `std::mem::offset_of!` (see
+/// `VM_FRAMES_*_OFFSET` below) already gives generated code the real,
+/// compiler-chosen layout directly, the same way `VM::regs_ptr_cache`/
+/// `VM::jit_ip` already are.
+///
+/// `CallFrame` is `Copy`-safe (every field is a raw pointer, a `Value`,
+/// or a plain integer -- nothing here owns a destructor), so growing is
+/// a realloc-and-memcpy and dropping is a single `dealloc`, exactly
+/// like `ListStorage`.
+struct FrameStack {
+  ptr: *mut CallFrame,
+  len: usize,
+  cap: usize,
+}
+
+impl FrameStack {
+  const fn new() -> FrameStack {
+    FrameStack {
+      ptr: std::ptr::null_mut(),
+      len: 0,
+      cap: 0,
+    }
+  }
+
+  #[inline]
+  fn len(&self) -> usize {
+    self.len
+  }
+
+  #[inline]
+  fn is_empty(&self) -> bool {
+    self.len == 0
+  }
+
+  fn layout_for(cap: usize) -> std::alloc::Layout {
+    std::alloc::Layout::array::<CallFrame>(cap)
+      .expect("zuri: call-frame stack capacity overflowed the address space")
+  }
+
+  /// Doubling growth with a floor of 64 -- deep recursion should reach
+  /// its steady-state depth within its first handful of reallocations,
+  /// not one frame at a time.
+  #[cold]
+  #[inline(never)]
+  fn grow(&mut self) {
+    let new_cap = if self.cap == 0 { 64 } else { self.cap * 2 };
+    let new_layout = FrameStack::layout_for(new_cap);
+    let new_ptr = if self.ptr.is_null() {
+      unsafe { std::alloc::alloc(new_layout) }
+    } else {
+      let old_layout = FrameStack::layout_for(self.cap);
+      unsafe { std::alloc::realloc(self.ptr as *mut u8, old_layout, new_layout.size()) }
+    };
+    if new_ptr.is_null() {
+      std::alloc::handle_alloc_error(new_layout);
+    }
+    self.ptr = new_ptr as *mut CallFrame;
+    self.cap = new_cap;
+  }
+
+  #[inline]
+  fn push(&mut self, frame: CallFrame) {
+    if self.len == self.cap {
+      self.grow();
+    }
+    unsafe { self.ptr.add(self.len).write(frame) };
+    self.len += 1;
+  }
+
+  #[inline]
+  fn pop(&mut self) -> Option<CallFrame> {
+    if self.len == 0 {
+      return None;
+    }
+    self.len -= 1;
+    Some(unsafe { self.ptr.add(self.len).read() })
+  }
+
+  #[inline]
+  fn last(&self) -> Option<&CallFrame> {
+    if self.len == 0 {
+      return None;
+    }
+    Some(unsafe { &*self.ptr.add(self.len - 1) })
+  }
+
+  #[inline]
+  fn last_mut(&mut self) -> Option<&mut CallFrame> {
+    if self.len == 0 {
+      return None;
+    }
+    Some(unsafe { &mut *self.ptr.add(self.len - 1) })
+  }
+
+  #[inline]
+  fn get(&self, idx: usize) -> Option<&CallFrame> {
+    if idx >= self.len {
+      return None;
+    }
+    Some(unsafe { &*self.ptr.add(idx) })
+  }
+
+  #[inline]
+  fn get_mut(&mut self, idx: usize) -> Option<&mut CallFrame> {
+    if idx >= self.len {
+      return None;
+    }
+    Some(unsafe { &mut *self.ptr.add(idx) })
+  }
+
+  #[inline]
+  fn truncate(&mut self, len: usize) {
+    if len < self.len {
+      self.len = len;
+    }
+  }
+
+  #[inline]
+  fn clear(&mut self) {
+    self.len = 0;
+  }
+
+  fn iter(&self) -> std::slice::Iter<'_, CallFrame> {
+    self.as_slice().iter()
+  }
+
+  fn iter_mut(&mut self) -> std::slice::IterMut<'_, CallFrame> {
+    self.as_slice_mut().iter_mut()
+  }
+
+  fn as_slice(&self) -> &[CallFrame] {
+    if self.ptr.is_null() {
+      &[]
+    } else {
+      unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+  }
+
+  fn as_slice_mut(&mut self) -> &mut [CallFrame] {
+    if self.ptr.is_null() {
+      &mut []
+    } else {
+      unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+  }
+}
+
+impl std::ops::Index<usize> for FrameStack {
+  type Output = CallFrame;
+  #[inline]
+  fn index(&self, idx: usize) -> &CallFrame {
+    self.get(idx).expect("zuri: call-frame index out of bounds")
+  }
+}
+
+impl std::ops::IndexMut<usize> for FrameStack {
+  #[inline]
+  fn index_mut(&mut self, idx: usize) -> &mut CallFrame {
+    self
+      .get_mut(idx)
+      .expect("zuri: call-frame index out of bounds")
+  }
+}
+
+impl<'a> IntoIterator for &'a FrameStack {
+  type Item = &'a CallFrame;
+  type IntoIter = std::slice::Iter<'a, CallFrame>;
+  fn into_iter(self) -> Self::IntoIter {
+    self.iter()
+  }
+}
+
+impl<'a> IntoIterator for &'a mut FrameStack {
+  type Item = &'a mut CallFrame;
+  type IntoIter = std::slice::IterMut<'a, CallFrame>;
+  fn into_iter(self) -> Self::IntoIter {
+    self.iter_mut()
+  }
+}
+
+impl Drop for FrameStack {
+  fn drop(&mut self) {
+    if !self.ptr.is_null() {
+      unsafe { std::alloc::dealloc(self.ptr as *mut u8, FrameStack::layout_for(self.cap)) };
+    }
+  }
+}
+
+/// `#[repr(C)]`-free by design -- see `FrameStack`'s own docs on why a
+/// plain struct read only from within this build doesn't need one.
+/// Field offsets `jit::codegen`'s inline call/return path reads or
+/// writes directly are exposed below as `CALL_FRAME_*_OFFSET` consts,
+/// verified against real values by `frame_stack_tests`.
 struct CallFrame {
   function: *const ObjFunction,
   /// The closure instance this frame is executing, for GetUpval/SetUpval/
@@ -112,6 +313,118 @@ struct CallFrame {
   /// `jit::codegen::FuncCompiler::call_helper`), so this flag tells
   /// `build_stacktrace`/`setup_closure_call` which source to trust.
   compiled: bool,
+}
+
+/// Byte offsets of every `CallFrame` field `jit::codegen`'s inline
+/// call/return fast path constructs or reads directly -- one
+/// `offset_of!` per field, real for this build regardless of `repr`
+/// (see `FrameStack`'s own docs). `size_of::<CallFrame>()` (exposed as
+/// `CALL_FRAME_SIZE`) is what the same code multiplies a frame-stack
+/// index by to get a byte address.
+pub(crate) const CALL_FRAME_FUNCTION_OFFSET: usize = std::mem::offset_of!(CallFrame, function);
+pub(crate) const CALL_FRAME_CLOSURE_OFFSET: usize = std::mem::offset_of!(CallFrame, closure);
+pub(crate) const CALL_FRAME_CLOSURE_VAL_OFFSET: usize =
+  std::mem::offset_of!(CallFrame, closure_val);
+pub(crate) const CALL_FRAME_IP_OFFSET: usize = std::mem::offset_of!(CallFrame, ip);
+pub(crate) const CALL_FRAME_BASE_OFFSET: usize = std::mem::offset_of!(CallFrame, base);
+pub(crate) const CALL_FRAME_DST_IN_CALLER_OFFSET: usize =
+  std::mem::offset_of!(CallFrame, dst_in_caller);
+pub(crate) const CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET: usize =
+  std::mem::offset_of!(CallFrame, scalar_roots_mark);
+pub(crate) const CALL_FRAME_COMPILED_OFFSET: usize = std::mem::offset_of!(CallFrame, compiled);
+pub(crate) const CALL_FRAME_SIZE: usize = std::mem::size_of::<CallFrame>();
+
+#[cfg(test)]
+mod frame_stack_tests {
+  use super::*;
+
+  /// Cross-checks every `CALL_FRAME_*_OFFSET`/`CALL_FRAME_SIZE` against
+  /// a real `CallFrame`, the same way `obj_repr_tests` verifies
+  /// `object.rs`'s own offset claims -- `jit::codegen`'s inline
+  /// call/return path reads and writes through these exact numbers with
+  /// no further check at runtime, so a silent drift here would be a
+  /// memory-safety bug, not a wrong answer.
+  #[test]
+  fn call_frame_offsets_match_real_frame() {
+    let frame = CallFrame {
+      function: 0x1000 as *const ObjFunction,
+      closure: 0x2000 as *const ObjClosure,
+      closure_val: Value::number(7.0),
+      ip: 11,
+      base: 22,
+      dst_in_caller: 33,
+      scalar_roots_mark: 44,
+      compiled: true,
+    };
+    let base_addr = &frame as *const CallFrame as usize;
+    unsafe {
+      assert_eq!(
+        *((base_addr + CALL_FRAME_FUNCTION_OFFSET) as *const *const ObjFunction),
+        frame.function
+      );
+      assert_eq!(
+        *((base_addr + CALL_FRAME_CLOSURE_OFFSET) as *const *const ObjClosure),
+        frame.closure
+      );
+      assert_eq!(
+        (*((base_addr + CALL_FRAME_CLOSURE_VAL_OFFSET) as *const Value)).as_number(),
+        7.0
+      );
+      assert_eq!(*((base_addr + CALL_FRAME_IP_OFFSET) as *const usize), 11);
+      assert_eq!(*((base_addr + CALL_FRAME_BASE_OFFSET) as *const usize), 22);
+      assert_eq!(
+        *((base_addr + CALL_FRAME_DST_IN_CALLER_OFFSET) as *const u8),
+        33
+      );
+      assert_eq!(
+        *((base_addr + CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET) as *const usize),
+        44
+      );
+      assert_eq!(
+        *((base_addr + CALL_FRAME_COMPILED_OFFSET) as *const bool),
+        true
+      );
+    }
+  }
+
+  /// Confirms `FrameStack::push` and a real `Vec<CallFrame>` agree on
+  /// ordering/content across a grow-triggering run, and that
+  /// `pop`/`truncate`/indexing behave the same as their `Vec`
+  /// counterparts -- `jit::codegen`'s inline fast path only ever pushes
+  /// one at a time and never triggers `grow` itself (it falls back to
+  /// the slow path instead), but every OTHER frame push in this VM
+  /// (interpreted calls, the JIT's own slow-path helpers) goes through
+  /// this same `push`, so it has to be correct at real scale, not just
+  /// for a handful of frames.
+  #[test]
+  fn frame_stack_matches_vec_semantics() {
+    let mut stack = FrameStack::new();
+    let mut model: Vec<usize> = Vec::new();
+    for i in 0..300usize {
+      let frame = CallFrame {
+        function: std::ptr::null(),
+        closure: std::ptr::null(),
+        closure_val: Value::number(i as f64),
+        ip: i,
+        base: i,
+        dst_in_caller: 0,
+        scalar_roots_mark: i,
+        compiled: false,
+      };
+      stack.push(frame);
+      model.push(i);
+      assert_eq!(stack.len(), model.len());
+      assert_eq!(stack[i].ip, i);
+      assert_eq!(stack.last().unwrap().ip, i);
+    }
+    for i in (0..300usize).rev() {
+      assert_eq!(stack.last().unwrap().ip, i);
+      let popped = stack.pop().unwrap();
+      assert_eq!(popped.ip, i);
+    }
+    assert!(stack.is_empty());
+    assert_eq!(stack.pop().map(|f| f.ip), None);
+  }
 }
 
 /// One active `catch` statement's unwind target.
@@ -149,12 +462,27 @@ pub struct VM {
   /// (`VM_REGS_PTR_CACHE_OFFSET`) instead of an FFI call, which matters
   /// since it's refetched at every helper-call site.
   regs_ptr_cache: Cell<*mut Value>,
+  /// Mirrors `registers.len()`, updated in lockstep with `regs_ptr_cache`
+  /// (see `sync_regs_ptr_cache`). Lets `jit::codegen`'s inline call fast
+  /// path check "does the callee's register window already fit" with a
+  /// direct load instead of a helper call -- the callee's own required
+  /// window size is a compile-time constant there (`ObjFunction::
+  /// num_registers`, known statically for a `CallTarget::Known`/self-
+  /// recursive callee), so this one runtime value is all that's missing.
+  regs_len_cache: Cell<usize>,
   /// Upvalues still Open, as (absolute register index, the Obj::Upvalue
   /// Value there). A new closure capturing a local reuses an already-open
   /// entry for that register instead of duplicating it, which is what lets
   /// two closures over the same variable see each other's writes.
   open_upvalues: Vec<(usize, Value)>,
-  frames: Vec<CallFrame>,
+  /// Mirrors `!open_upvalues.is_empty()`, updated at `open_upvalues`'s
+  /// only two mutation sites (`capture_upvalue`, `close_upvalues_from
+  /// _slow`). `jit::codegen`'s inline call/return fast path reads this
+  /// to skip `close_upvalues_from` entirely for the overwhelmingly
+  /// common case -- a function whose returning frame never had any of
+  /// its locals captured -- with no helper call.
+  has_open_upvalues: Cell<bool>,
+  frames: FrameStack,
   /// Backing storage for every global, indexed by slot. Slots are assigned
   /// lazily on first resolution (`get_or_create_global_slot`) and never
   /// reused, so `Chunk::global_cache` can cache a slot index permanently.
@@ -185,6 +513,12 @@ pub struct VM {
   /// an extra `gc_pins` run: `forward_slot`/`mark_root` applied directly to
   /// each slot.
   jit_scalar_roots: Vec<(*mut Value, usize)>,
+  /// Mirrors `jit_scalar_roots.len()`, updated at every one of its
+  /// mutation sites (`push_scalar_root`, `pop_frame_inner`'s truncate,
+  /// the catch-handler unwind truncate, `clear_frames`). `jit::codegen`'s
+  /// inline call fast path reads this directly to fill a freshly pushed
+  /// `CallFrame::scalar_roots_mark` with no helper call.
+  jit_scalar_roots_len: Cell<usize>,
   /// Active `catch` handlers, innermost last.
   catch_stack: Vec<CatchHandler>,
   /// Owns the Cranelift `JITModule` and drives whole-function compilation.
@@ -214,9 +548,14 @@ pub struct VM {
   /// speculating" — VM registers already hold the correct state since
   /// compiled code keeps them live throughout, so resuming is just handing
   /// control to the interpreter at this `ip`. Checked before the exception
-  /// channel since a deopt isn't an error. Always `None` outside the brief
-  /// window between a helper setting it and `invoke_compiled` clearing it.
-  pub(crate) pending_deopt_ip: Cell<Option<usize>>,
+  /// channel since a deopt isn't an error. Always `-1` outside the brief
+  /// window between a helper setting it and `invoke_compiled` clearing
+  /// it -- `i64`, not `Option<usize>`, specifically so `jit::codegen`'s
+  /// inline call/return fast path can check "no deopt pending" with one
+  /// direct load and a compare against `-1` instead of a helper call;
+  /// `Option<usize>` has no spare niche to read that way from generated
+  /// code (see `UpvalueState`'s own docs for the general reasoning).
+  pub(crate) pending_deopt_ip: Cell<i64>,
   /// Master JIT on/off switch, read once from `ZURI_JIT` at startup — a
   /// benchmarking/debugging escape hatch. Programs behave identically
   /// either way, just slower with it off.
@@ -306,6 +645,43 @@ pub(crate) const VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET: usize =
 pub(crate) const VM_METHOD_TABLE_GENERATION_OFFSET: usize =
   std::mem::offset_of!(VM, method_table_generation);
 
+/// Byte offset of `VM::frames` itself. Combined in `jit::codegen` with
+/// `CALL_FRAME_*_OFFSET`/`FRAMESTACK_*_OFFSET` (below) so the inline
+/// call/return fast path can read/write the frame stack's `ptr`/`len`
+/// and construct a whole `CallFrame` in place, with no `jit::runtime`
+/// call for the common case -- see `FrameStack`'s own docs.
+pub(crate) const VM_FRAMES_OFFSET: usize = std::mem::offset_of!(VM, frames);
+/// Byte offset of `FrameStack::ptr` within `FrameStack` itself -- added
+/// to `VM_FRAMES_OFFSET` by `jit::codegen`, not usable alone.
+pub(crate) const FRAMESTACK_PTR_OFFSET: usize = std::mem::offset_of!(FrameStack, ptr);
+/// Byte offset of `FrameStack::len` within `FrameStack` itself -- same
+/// deal as `FRAMESTACK_PTR_OFFSET`.
+pub(crate) const FRAMESTACK_LEN_OFFSET: usize = std::mem::offset_of!(FrameStack, len);
+/// Byte offset of `FrameStack::cap` within `FrameStack` itself -- same
+/// deal as `FRAMESTACK_PTR_OFFSET`.
+pub(crate) const FRAMESTACK_CAP_OFFSET: usize = std::mem::offset_of!(FrameStack, cap);
+/// Byte offset of `VM::regs_len_cache` -- see that field's own docs.
+pub(crate) const VM_REGS_LEN_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs_len_cache);
+/// Byte offset of `VM::jit_scalar_roots_len` -- see that field's own
+/// docs.
+pub(crate) const VM_JIT_SCALAR_ROOTS_LEN_OFFSET: usize =
+  std::mem::offset_of!(VM, jit_scalar_roots_len);
+/// Byte offset of `VM::has_open_upvalues` -- see that field's own docs.
+pub(crate) const VM_HAS_OPEN_UPVALUES_OFFSET: usize =
+  std::mem::offset_of!(VM, has_open_upvalues);
+/// Byte offset of `VM::pending_deopt_ip` -- see that field's own docs.
+pub(crate) const VM_PENDING_DEOPT_IP_OFFSET: usize = std::mem::offset_of!(VM, pending_deopt_ip);
+/// Byte offset of `VM::jit_pending_exception` -- see that field's own
+/// docs.
+pub(crate) const VM_JIT_PENDING_EXCEPTION_OFFSET: usize =
+  std::mem::offset_of!(VM, jit_pending_exception);
+/// Byte offset of `VM::jit_call_depth` -- see that field's own docs.
+pub(crate) const VM_JIT_CALL_DEPTH_OFFSET: usize = std::mem::offset_of!(VM, jit_call_depth);
+/// `MAX_JIT_CALL_DEPTH` itself, re-exported so `jit::codegen`'s inline
+/// depth check compares against the exact same bound `jit_depth_ok`
+/// does, with no risk of the two drifting apart.
+pub(crate) const JIT_MAX_CALL_DEPTH: u32 = MAX_JIT_CALL_DEPTH;
+
 type RunResult<T> = Result<T, Value>;
 
 impl VM {
@@ -314,18 +690,21 @@ impl VM {
       is_repl: false,
       registers: Vec::new(),
       regs_ptr_cache: Cell::new(std::ptr::null_mut()),
+      regs_len_cache: Cell::new(0),
       global_slots_ptr_cache: Cell::new(std::ptr::null()),
-      frames: Vec::new(),
+      frames: FrameStack::new(),
       jit_ip: 0,
       open_upvalues: Vec::new(),
+      has_open_upvalues: Cell::new(false),
       gc_pins: Vec::new(),
       jit_scalar_roots: Vec::new(),
+      jit_scalar_roots_len: Cell::new(0),
       catch_stack: Vec::new(),
       jit_engine: None,
       jit_compiler: None,
       pending_jit_compiles: Vec::new(),
       jit_pending_exception: Cell::new(Value::nil()),
-      pending_deopt_ip: Cell::new(None),
+      pending_deopt_ip: Cell::new(-1),
       jit_enabled: !matches!(
         std::env::var("ZURI_JIT").as_deref(),
         Ok("0") | Ok("off") | Ok("false")
@@ -791,10 +1170,12 @@ impl VM {
 
   /// Must be called immediately after every `registers.resize(..)` with no
   /// exceptions -- compiled code trusts this cache with a raw load and no
-  /// staleness check of its own.
+  /// staleness check of its own. Syncs `regs_len_cache` in the same
+  /// breath, for the same reason.
   #[inline]
   fn sync_regs_ptr_cache(&mut self) {
     self.regs_ptr_cache.set(self.registers.as_mut_ptr());
+    self.regs_len_cache.set(self.registers.len());
   }
 
   fn sync_global_slots_ptr_cache(&mut self) {
@@ -1657,8 +2038,11 @@ impl VM {
   /// is kept out of line in `resolve_deopt_slow`.
   #[inline(always)]
   pub(crate) fn resolve_possible_deopt(&mut self) -> Option<RunResult<Value>> {
-    let deopt_ip = self.pending_deopt_ip.take()?;
-    Some(self.resolve_deopt_slow(deopt_ip))
+    let deopt_ip = self.pending_deopt_ip.replace(-1);
+    if deopt_ip < 0 {
+      return None;
+    }
+    Some(self.resolve_deopt_slow(deopt_ip as usize))
   }
 
   #[cold]
@@ -1753,6 +2137,7 @@ impl VM {
   fn pop_frame_inner(&mut self) -> CallFrame {
     let frame = self.frames.pop().expect("pop_frame_inner: no frame to pop");
     self.jit_scalar_roots.truncate(frame.scalar_roots_mark);
+    self.jit_scalar_roots_len.set(self.jit_scalar_roots.len());
     frame
   }
 
@@ -1771,6 +2156,7 @@ impl VM {
   /// `CallFrame::scalar_roots_mark`.
   pub(crate) fn push_scalar_root(&mut self, ptr: *mut Value, count: usize) {
     self.jit_scalar_roots.push((ptr, count));
+    self.jit_scalar_roots_len.set(self.jit_scalar_roots.len());
   }
 
   /// Is the native call stack shallow enough for one more nested compiled
@@ -3858,6 +4244,7 @@ impl VM {
     }
     let v = self.heap.alloc_upvalue(UpvalueState::Open(abs_index));
     self.open_upvalues.push((abs_index, v));
+    self.has_open_upvalues.set(true);
     v
   }
 
@@ -3888,6 +4275,7 @@ impl VM {
         i += 1;
       }
     }
+    self.has_open_upvalues.set(!self.open_upvalues.is_empty());
   }
 
   #[inline]
@@ -4824,6 +5212,7 @@ impl VM {
       .unwrap_or(self.jit_scalar_roots.len());
     self.frames.truncate(handler.frame_depth);
     self.jit_scalar_roots.truncate(scalar_roots_mark);
+    self.jit_scalar_roots_len.set(self.jit_scalar_roots.len());
     let top = self.frames.last_mut().expect("catch handler left no frame");
     top.ip = handler.resume_ip;
     let top_base = top.base;
@@ -4876,6 +5265,7 @@ impl VM {
     // jit_scalar_roots entries they registered would otherwise dangle
     // into freed/reused native stack memory for the next GC to walk.
     self.jit_scalar_roots.clear();
+    self.jit_scalar_roots_len.set(0);
   }
 }
 
