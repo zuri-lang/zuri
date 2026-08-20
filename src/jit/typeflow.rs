@@ -935,6 +935,188 @@ pub fn analyze_string(proto: &ObjFunction, preds: &[Vec<usize>]) -> StringFacts 
   StringFacts { entry }
 }
 
+/// One register's constant-propagation state at one bytecode position
+/// -- a genuine 3-level lattice, not a boolean like `RegSet`'s: TWO
+/// DIFFERENT known constants meeting at a merge point must collapse
+/// straight to `Bottom` ("not provably any single value"), there's no
+/// partial answer between them the way "not proven a list" already
+/// covers every non-list case.
+///
+/// Compared by raw bit pattern, not `f64`'s own `PartialEq` (`NaN !=
+/// NaN` would make `Exact(NaN) == Exact(NaN)` false even for the
+/// identical constant loaded from the identical source, which is not
+/// the question this asks) -- see `ConstFacts`'s own docs for the one
+/// place this actually matters.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ConstFact {
+  /// The optimistic seed: no real predecessor has narrowed this yet.
+  /// Never observable outside this file -- `analyze_const`'s worklist
+  /// always resolves every reachable position to one of the other two
+  /// before returning.
+  Top,
+  /// Every path reaching this position defines this register as
+  /// EXACTLY this `f64` bit pattern.
+  Exact(u64),
+  /// Proven NOT any single constant -- either it genuinely varies
+  /// across paths, or it never was a compile-time-known value at all
+  /// (a parameter, a call result, arithmetic on a non-constant, ...).
+  Bottom,
+}
+
+impl ConstFact {
+  /// The lattice's meet (⊓) operation, same role `RegSet::and_assign`
+  /// plays for the boolean analyses: `Top` is the identity (a not-yet-
+  /// visited predecessor contributes nothing), two agreeing `Exact`
+  /// values stay agreed, anything else -- including two DIFFERENT
+  /// `Exact` values -- collapses to `Bottom`.
+  fn meet(self, other: ConstFact) -> ConstFact {
+    match (self, other) {
+      (ConstFact::Top, x) | (x, ConstFact::Top) => x,
+      (ConstFact::Exact(a), ConstFact::Exact(b)) if a == b => ConstFact::Exact(a),
+      _ => ConstFact::Bottom,
+    }
+  }
+}
+
+/// The result of analyzing one function: `entry[ip][r]` is `Some(c)`
+/// exactly when EVERY path reaching bytecode position `ip` defines
+/// register `r` as the identical literal `f64` value `c` -- a real
+/// constant-propagation "must" analysis, same fixed-point shape as
+/// `IntFacts`/`ListFacts`/`StringFacts` (optimistic seed, narrowed by
+/// intersection at merges, monotonically converges), just over a flat
+/// per-register lattice (`ConstFact`) instead of a boolean bitset.
+///
+/// Seeded from a numeric `LoadConst` and propagated through `Move` --
+/// deliberately NOT through arithmetic (`Add`/`Sub`/`Mul`/`Neg` on two
+/// already-known constants COULD be folded further, and would be sound
+/// to, but that is real constant-FOLDING, a distinct, larger feature
+/// this analysis doesn't attempt; this one only tracks values that are
+/// ALREADY sitting in a register as a literal, however far from their
+/// own `LoadConst` that register travels unmodified). Currently
+/// consulted only by `codegen::FuncCompiler::div_by_pow2_reciprocal`,
+/// which is what makes it able to see PAST a constant hoisted into a
+/// local variable and reused across many divisions (e.g. inside a
+/// loop) -- not just the single immediately-preceding-`LoadConst`
+/// shape a purely local, dataflow-free check could ever catch.
+pub struct ConstFacts {
+  entry: Vec<Vec<ConstFact>>,
+}
+
+impl ConstFacts {
+  #[inline]
+  pub fn const_value(&self, ip: usize, r: u8) -> Option<f64> {
+    match self.entry[ip][r as usize] {
+      ConstFact::Exact(bits) => Some(f64::from_bits(bits)),
+      ConstFact::Top | ConstFact::Bottom => None,
+    }
+  }
+}
+
+fn transfer_const(in_facts: &[ConstFact], instr: &Instr, proto: &ObjFunction) -> Vec<ConstFact> {
+  let mut out = in_facts.to_vec();
+  match *instr {
+    Instr::LoadConst { dst, const_idx } => {
+      let c = &proto.chunk.constants[const_idx as usize];
+      out[dst as usize] = if c.is_number() {
+        ConstFact::Exact(c.as_number().to_bits())
+      } else {
+        ConstFact::Bottom
+      };
+    },
+    Instr::Move { dst, src } => out[dst as usize] = in_facts[src as usize],
+
+    // Everything else that writes a register either isn't a number at
+    // all or isn't PROVABLY the same one every time (arithmetic on a
+    // non-constant, a `Call`/`GetField`/`GetIndex` result, ...) -- see
+    // `any_dst`'s own docs, and `transfer_list`'s identical reasoning
+    // for why this must be the genuinely complete instruction list,
+    // not a curated subset.
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        out[dst as usize] = ConstFact::Bottom;
+      }
+    },
+  }
+  out
+}
+
+/// Runs the constant-propagation analysis -- see `ConstFacts`'s own
+/// docs. Short-circuits the same way `analyze_list`/`analyze_string`
+/// do: with no numeric `LoadConst` anywhere in the function (the only
+/// instruction `transfer_const` ever seeds `Exact` from), no register
+/// can ever be proven a constant on any path.
+pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let has_numeric_const = code.iter().any(|i| match i {
+    Instr::LoadConst { const_idx, .. } => proto.chunk.constants[*const_idx as usize].is_number(),
+    _ => false,
+  });
+  if !has_numeric_const {
+    return ConstFacts {
+      entry: vec![vec![ConstFact::Bottom; num_registers]; code_len],
+    };
+  }
+
+  let mut entry: Vec<Vec<ConstFact>> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        vec![ConstFact::Bottom; num_registers]
+      } else {
+        vec![ConstFact::Top; num_registers]
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<Vec<ConstFact>> = (0..code_len)
+    .map(|ip| transfer_const(&entry[ip], &code[ip], proto))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = vec![ConstFact::Top; num_registers];
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      for r in 0..num_registers {
+        new_in[r] = new_in[r].meet(out[p][r]);
+      }
+      any_pred = true;
+    }
+    if !any_pred {
+      // Unreachable code -- vacuously "everything proven" (`Top`) is
+      // safe, same reasoning `RegSet::full()` gets for this case in
+      // every other analysis here: nothing ever actually executes this
+      // instruction, so whatever `codegen` does with an over-
+      // optimistic fact here can never run. `Top` is genuinely never
+      // returned by `const_value` (only `Exact`/`Bottom` are), so
+      // this can't leak an unsound answer to a caller even for
+      // unreachable code.
+      new_in = vec![ConstFact::Top; num_registers];
+    }
+    if ip == 0 {
+      new_in = vec![ConstFact::Bottom; num_registers];
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_const(&entry[ip], &code[ip], proto);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  ConstFacts { entry }
+}
+
 //-----------------------------------------------------------------------------------
 // Reference classification
 //-----------------------------------------------------------------------------------

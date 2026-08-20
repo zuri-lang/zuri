@@ -623,6 +623,13 @@ struct FuncCompiler<'a, 'b> {
   /// String receiver can never satisfy. Same lifetime/scope as
   /// `type_facts`/`int_facts`/`list_facts`.
   string_facts: typeflow::StringFacts,
+  /// Which registers are PROVEN to hold one exact, statically-known
+  /// `f64` constant at each bytecode position -- see `jit::typeflow::
+  /// ConstFacts`'s own docs. Consulted by `div_by_pow2_reciprocal` to
+  /// see PAST a constant hoisted into a local and reused (e.g. across a
+  /// loop's own divisions), not just an immediately-preceding
+  /// `LoadConst`. Same lifetime/scope as `type_facts`/`int_facts`.
+  const_facts: typeflow::ConstFacts,
   /// `typeflow::build_predecessors(proto)`, computed once here and
   /// shared by every dataflow pass that needs it (`type_facts`/
   /// `int_facts`/`list_facts`/`liveness`, and `merge_points`' own
@@ -844,6 +851,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let int_facts = typeflow::analyze_int(proto, &preds);
     let list_facts = typeflow::analyze_list(proto, &preds);
     let string_facts = typeflow::analyze_string(proto, &preds);
+    let const_facts = typeflow::analyze_const(proto, &preds);
     let liveness = typeflow::liveness(proto, &preds);
     FuncCompiler {
       fb,
@@ -863,6 +871,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       int_facts,
       list_facts,
       string_facts,
+      const_facts,
       preds,
       speculative_params,
       speculative_regs,
@@ -912,6 +921,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   #[inline]
+  fn proven_const(&self, ip: usize, r: u8) -> Option<f64> {
+    self.const_facts.const_value(ip, r)
+  }
+
+  #[inline]
   fn both_proven_numeric(&self, ip: usize, a: u8, b: u8) -> bool {
     self.proven_numeric(ip, a) && self.proven_numeric(ip, b)
   }
@@ -929,36 +943,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// heavy microbenchmark (`fdiv` has multi-cycle throughput/latency on
   /// every mainstream x86/ARM core; `fmul` is single-cycle-throughput).
   ///
-  /// Recognizes exactly one shape -- `code[ip - 1]` is `Instr::
-  /// LoadConst { dst: b, .. }` with NO other predecessor reaching `ip`
-  /// (`merge_points[ip]` false) -- i.e. `ip` is reached ONLY by
-  /// straight-line fallthrough from that exact `LoadConst`, so `b`'s
-  /// value at `ip` is provably that literal on every path, no runtime
-  /// check needed for it at all. `LoadConst` never branches, so its own
-  /// only successor is already `ip` by construction; combined with "no
-  /// OTHER predecessor also reaches `ip`", that `LoadConst` is
-  /// necessarily the sole definition in effect here. This is a local,
-  /// zero-cost check (no dataflow pass) -- it does NOT catch a constant
-  /// loaded further back and reused across multiple divisions, or one
-  /// where every arm of a branch happens to agree on the same literal;
-  /// either of those would need a real "must be this exact value"
-  /// analysis, which doesn't exist here (the `x / <literal>` shape this
-  /// targets is already the overwhelmingly common one in real source).
+  /// Backed by `typeflow::ConstFacts`, a real "must be this exact
+  /// value" dataflow proof -- so this catches a constant hoisted into
+  /// a local variable and reused across many divisions (e.g. every
+  /// iteration of a loop dividing by the same hoisted constant), or one
+  /// reached through a branch merge where every arm happens to load the
+  /// identical literal, not just an immediately-preceding `LoadConst`.
+  /// An earlier version of this check was exactly that narrower local
+  /// check (no dataflow pass, just "is `code[ip-1]` this exact
+  /// `LoadConst`") -- `ConstFacts` is a strict superset of what it
+  /// could prove, so there was nothing left for it to do once this
+  /// existed.
   fn div_by_pow2_reciprocal(&self, ip: usize, b: u8) -> Option<f64> {
-    if ip == 0 || self.merge_points[ip] {
-      return None;
-    }
-    let Instr::LoadConst { dst, const_idx } = self.proto.chunk.code[ip - 1] else {
-      return None;
-    };
-    if dst != b {
-      return None;
-    }
-    let c = self.proto.chunk.constants[const_idx as usize];
-    if !c.is_number() {
-      return None;
-    }
-    let value = c.as_number();
+    let value = self.proven_const(ip, b)?;
     if value == 0.0 || !value.is_finite() {
       return None;
     }

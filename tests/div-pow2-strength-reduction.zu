@@ -1,15 +1,21 @@
-/* Exercises jit::codegen::div_by_pow2_reciprocal: `x / <constant>`
- * compiles to `x * (1.0/constant)` instead of a real `fdiv` whenever
- * the constant is PROVABLY an exact power of two, reached only by
- * straight-line fallthrough from its own LoadConst (no merge point).
- * Covers: the proven-numeric fast path, the guarded (unproven
- * receiver) path, a non-power-of-two divisor (must stay real
- * division), a negative power-of-two divisor, and a divisor that
- * reaches the Div instruction through a MERGE POINT (two different
- * literals from two branches) -- that one must NOT take the
- * reciprocal shortcut, since the divisor genuinely isn't a single
- * known constant there. Run past the JIT tiering threshold since a
- * wrong shortcut would only show up in compiled code.
+/* Exercises jit::codegen::div_by_pow2_reciprocal, backed by
+ * typeflow::ConstFacts (a real "must be this exact value" dataflow
+ * proof): `x / <constant>` compiles to `x * (1.0/constant)` instead of
+ * a real `fdiv` whenever the constant is PROVABLY an exact power of
+ * two on every path reaching the Div, no matter how far its own
+ * LoadConst sits from the division itself. Covers: the proven-numeric
+ * fast path, the guarded (unproven receiver) path, a non-power-of-two
+ * divisor (must stay real division), a negative power-of-two divisor,
+ * a divisor reaching the Div through a MERGE POINT with two DIFFERENT
+ * literals (must NOT take the shortcut -- genuinely not a single known
+ * constant there), a constant HOISTED into a local and reused across
+ * every iteration of a loop (the case a purely local "check the
+ * immediately preceding instruction" heuristic could never catch --
+ * this is what makes `ConstFacts` a real dataflow pass and not just
+ * that heuristic with extra steps), and a register reassigned to a
+ * NON-constant partway through a function (must stop taking the
+ * shortcut from that point on). Run past the JIT tiering threshold
+ * since a wrong shortcut would only show up in compiled code.
  */
 
 def proven_div2(x: number) {
@@ -42,6 +48,30 @@ def merge_point_div(flag, x: number) {
   return x / d
 }
 
+def hoisted_const_div(n) {
+  /* `half`'s own LoadConst is nowhere near the Div inside the loop --
+   * only a real dataflow pass proves it's still exactly 2.0 on every
+   * iteration. */
+  var half = 2.0
+  var total = 0.0
+  var i = 0
+  while i < n {
+    total = total + (i / half)
+    i = i + 1
+  }
+  return total
+}
+
+def reassigned_to_nonconstant(n) {
+  var d = 2.0
+  var first = 10.0 / d
+  d = n
+  /* d is REASSIGNED to a genuinely runtime value -- must NOT still be
+   * treated as the constant 2.0 here. */
+  var second = 10.0 / d
+  return first + second
+}
+
 var i = 0
 while i < 300000 {
   proven_div2(7.0)
@@ -50,6 +80,7 @@ while i < 300000 {
   unproven_div2(7.0)
   merge_point_div(false, 7.0)
   merge_point_div(true, 7.0)
+  reassigned_to_nonconstant(5.0)
   i = i + 1
 }
 
@@ -67,3 +98,6 @@ catch {
 echo e.message
 echo merge_point_div(false, 8.0)
 echo merge_point_div(true, 8.0)
+echo hoisted_const_div(1000000)
+echo reassigned_to_nonconstant(5.0)
+echo reassigned_to_nonconstant(4.0)
