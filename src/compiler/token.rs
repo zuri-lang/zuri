@@ -263,7 +263,7 @@ impl Token {
       TokenKind::HexNumber(n) => format!("{:#x}", n),
       TokenKind::Eof => "<eof>".to_string(),
       TokenKind::Newline => "<newline>".to_string(),
-      other => format!("{:?}", other).to_lowercase(),
+      other => format!("{}", other).to_lowercase(),
     }
   }
 }

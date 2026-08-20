@@ -1356,6 +1356,74 @@ pub fn obj_to_gcbox_remembered_offset() -> i32 {
   std::mem::offset_of!(GcBox, remembered) as i32 - std::mem::offset_of!(GcBox, obj) as i32
 }
 
+/// Byte offsets from a proven-`Obj::Str` pointer to that `String`'s
+/// heap data pointer and UTF-8 BYTE length (not the codepoint count
+/// `StringIntrinsic::Length` computes -- that's a scan over these same
+/// bytes) -- what `jit::codegen` reads directly for `StringIntrinsic::
+/// IsEmpty`/`Length` instead of calling back into Rust for either.
+///
+/// Unlike `obj_list_storage_offset`, there's no `#[repr(C)]` type of
+/// ours to lean on here: `Obj::Str` wraps a plain `std::String`, whose
+/// internal field layout (order, or even which fields exist) is not
+/// part of any language guarantee. What IS guaranteed is that the
+/// standard library picks exactly ONE layout for `String` per compiled
+/// build, the same one for every `String` value that build ever
+/// creates -- so measuring it once against a live probe and caching
+/// the result is sound for the same reason `obj_list_storage_offset`'s
+/// own `RefCell` probe is: whatever offsets are found here are the
+/// offsets every OTHER `String` in this exact binary was laid out
+/// with too, not just this one probe.
+///
+/// The probe deliberately over-allocates capacity (`with_capacity(64)`
+/// then `push_str` a short probe text) so its length and capacity are
+/// GUARANTEED distinct values -- `String::from(short_literal)` alone
+/// would allocate exact-fit, making `len == capacity`, which would
+/// make the two indistinguishable by value when scanning raw bytes
+/// below.
+fn obj_str_data_offsets() -> (i32, i32) {
+  static OFFSETS: std::sync::OnceLock<(i32, i32)> = std::sync::OnceLock::new();
+  *OFFSETS.get_or_init(|| {
+    let mut probe_string = String::with_capacity(64);
+    probe_string.push_str("zuri-string-offset-probe");
+    let want_ptr = probe_string.as_ptr() as usize;
+    let want_len = probe_string.len();
+    debug_assert_ne!(want_len, probe_string.capacity());
+
+    let probe = Obj::Str(probe_string);
+    let obj_bytes = unsafe {
+      std::slice::from_raw_parts(&probe as *const Obj as *const u8, std::mem::size_of::<Obj>())
+    };
+
+    let word = std::mem::size_of::<usize>();
+    let mut ptr_off = None;
+    let mut len_off = None;
+    for i in (0..=obj_bytes.len() - word).step_by(word) {
+      let value = usize::from_ne_bytes(obj_bytes[i..i + word].try_into().unwrap());
+      if value == want_ptr {
+        ptr_off = Some(i as i32);
+      } else if value == want_len {
+        len_off = Some(i as i32);
+      }
+    }
+    (
+      ptr_off.expect("String's data pointer not found anywhere in Obj::Str's raw bytes"),
+      len_off.expect("String's byte length not found anywhere in Obj::Str's raw bytes"),
+    )
+  })
+}
+
+/// Byte offset from a proven-`Obj::Str` pointer to the string's raw
+/// UTF-8 byte data -- see `obj_str_data_offsets`'s own docs.
+pub fn obj_str_ptr_offset() -> i32 {
+  obj_str_data_offsets().0
+}
+
+/// `obj_str_ptr_offset`'s sibling for the BYTE length (not codepoint
+/// count) -- see `obj_str_data_offsets`'s own docs.
+pub fn obj_str_len_offset() -> i32 {
+  obj_str_data_offsets().1
+}
+
 #[cfg(test)]
 mod gcbox_layout_tests {
   use super::*;
@@ -1408,6 +1476,31 @@ mod gcbox_layout_tests {
     assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_NATIVE);
     let slot = unsafe { (obj as *const u8).add(obj_native_func_offset()) as *const usize };
     assert_eq!(unsafe { *slot }, probe_fn as *const () as usize);
+  }
+
+  /// `obj_str_ptr_offset`/`obj_str_len_offset` must land on a REAL
+  /// allocated string's actual data pointer and byte length -- checked
+  /// against a fresh allocation distinct from the probe
+  /// `obj_str_data_offsets` measures against internally, and with a
+  /// length that (unlike the internal probe) is NOT ASCII, to also
+  /// confirm the length these offsets expose is bytes, not codepoints.
+  #[test]
+  fn str_offsets_land_on_real_data_and_len() {
+    let mut heap = Heap::default();
+    let text = "héllo wörld"; // 11 codepoints, 13 UTF-8 bytes
+    let v = heap.alloc_string(text.to_string());
+    let obj = v.as_obj();
+    assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_STR);
+
+    let ptr_slot = unsafe { (obj as *const u8).offset(obj_str_ptr_offset() as isize) as *const usize };
+    let len_slot = unsafe { (obj as *const u8).offset(obj_str_len_offset() as isize) as *const usize };
+    let data_ptr = unsafe { *ptr_slot } as *const u8;
+    let byte_len = unsafe { *len_slot };
+
+    assert_eq!(byte_len, text.len());
+    assert_ne!(byte_len, text.chars().count());
+    let bytes = unsafe { std::slice::from_raw_parts(data_ptr, byte_len) };
+    assert_eq!(bytes, text.as_bytes());
   }
 
   /// `obj_closure_function_offset` must land on a real closure's own

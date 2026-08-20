@@ -1,0 +1,35 @@
+/* Regression test for a real memory-safety bug in
+ * jit::typeflow::transfer_list's (and transfer_int's/transfer_string's)
+ * old catch-all: it only cleared a register's "proven" fact for
+ * instructions listed in conservative_dst/comparison_or_never_numeric_
+ * dst, which did NOT cover every register-writing instruction (e.g.
+ * LoadConst, Add, Div, ...). A register proven a list, then reassigned
+ * to a plain number by one of the uncovered instructions, kept the
+ * STALE "is list" fact past the reassignment -- so emit_list_get_index's
+ * proven-list fast path (which skips the is_obj+tag guard entirely)
+ * masked the number's raw bits as if they were a list pointer and
+ * dereferenced whatever that landed on. Reproducibly segfaulted before
+ * the fix (see jit::typeflow's `any_dst`-based catch-all). Run past the
+ * JIT tiering threshold since this only ever showed up in compiled
+ * code -- the interpreter doesn't consult these facts at all.
+ */
+
+def reuse_after_list(bad) {
+  var x = [1, 2, 3]
+  var probed = x.length()
+  if bad {
+    x = 5
+  }
+  return x[0]
+}
+
+var i = 0
+while i < 300000 {
+  reuse_after_list(false)
+  i = i + 1
+}
+
+catch {
+  reuse_after_list(true)
+} as e
+echo e.message

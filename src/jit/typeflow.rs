@@ -486,50 +486,29 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
 
     // Everything else that writes a register either never produces a
     // number at all (comparisons, `Concat`, `LoadNil`/`LoadBool`, ...)
-    // or isn't provably whole even when it IS numeric (`Pow`/`Floor`/
-    // `Mod`, a `Call`/`GetField`/`GetIndex` result, ...) -- same
+    // or isn't provably whole even when it IS numeric (`Div`/`Pow`/
+    // `Floor`/`Mod`, a `Call`/`GetField`/`GetIndex` result, ...) -- same
     // conservative treatment `transfer`'s own numeric analysis gives
     // these, just narrower since "numeric" doesn't imply "whole".
+    //
+    // `any_dst`, not `conservative_dst`/`comparison_or_never_numeric_dst`
+    // -- those two are each a curated SUBSET (originally written to
+    // cover only the arms this match already handles explicitly above),
+    // so any instruction outside both lists AND outside this match's own
+    // explicit arms (e.g. `Div`, or a plain `LoadConst` of a fractional
+    // number) fell through doing nothing at all, leaving `out[dst]`
+    // holding whatever it was BEFORE this instruction overwrote the
+    // register -- a real "must" analysis unsoundness whenever the
+    // register allocator reuses a whole-number-proven register for one
+    // of these. `any_dst` is a genuine superset covering every `Instr`
+    // that writes a register at all, so nothing can slip through here.
     _ => {
-      if let Some(dst) = conservative_dst(instr) {
-        out.set(dst, false);
-      } else if let Some(dst) = comparison_or_never_numeric_dst(instr) {
+      if let Some(dst) = any_dst(instr) {
         out.set(dst, false);
       }
     },
   }
   out
-}
-
-/// The destination register of any instruction whose result is never
-/// numeric at all (a comparison producing a `bool`, `Concat`
-/// producing a `String`, ...) -- the same instruction list `transfer`
-/// itself unconditionally sets `false` for, factored out here so
-/// `transfer_int`'s fallback arm can reuse it instead of repeating
-/// every variant.
-fn comparison_or_never_numeric_dst(instr: &Instr) -> Option<u8> {
-  match *instr {
-    Instr::LoadNil { dst }
-    | Instr::LoadBool { dst, .. }
-    | Instr::Eq { dst, .. }
-    | Instr::Neq { dst, .. }
-    | Instr::Lt { dst, .. }
-    | Instr::Le { dst, .. }
-    | Instr::Gt { dst, .. }
-    | Instr::Ge { dst, .. }
-    | Instr::Not { dst, .. }
-    | Instr::LtImm { dst, .. }
-    | Instr::LeImm { dst, .. }
-    | Instr::GtImm { dst, .. }
-    | Instr::GeImm { dst, .. }
-    | Instr::EqImm { dst, .. }
-    | Instr::NeqImm { dst, .. }
-    | Instr::Concat { dst, .. }
-    | Instr::Pow { dst, .. }
-    | Instr::Floor { dst, .. }
-    | Instr::Mod { dst, .. } => Some(dst),
-    _ => None,
-  }
 }
 
 /// Runs the whole-number analysis -- see `IntFacts`'s own docs. No
@@ -701,10 +680,18 @@ fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet 
     // returns a new list, but that's a fact about ONE specific method
     // on a receiver already proven list, not something this
     // instruction-shape-only pass can see).
+    //
+    // `any_dst` -- see `transfer_int`'s identical catch-all for why the
+    // narrower `conservative_dst`/`comparison_or_never_numeric_dst`
+    // pair is NOT enough here: `x = [1]; x = 1 + 2` reuses `x`'s
+    // register for an `Add`, which is in neither list, so the stale
+    // "list" fact from the `MakeList` would otherwise survive the
+    // reassignment -- a real, reproduced memory-safety bug (`emit_list_
+    // get_index`'s proven-list fast path would then mask a plain
+    // number's bits as if they were a list pointer and dereference
+    // whatever that lands on).
     _ => {
-      if let Some(dst) = conservative_dst(instr) {
-        out.set(dst, false);
-      } else if let Some(dst) = comparison_or_never_numeric_dst(instr) {
+      if let Some(dst) = any_dst(instr) {
         out.set(dst, false);
       }
     },
@@ -792,6 +779,160 @@ pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
   }
 
   ListFacts { entry }
+}
+
+/// `ListFacts`' counterpart for `Value::String` -- same "must" shape,
+/// same worklist, same short-circuit -- but seeded from a different set
+/// of instructions: a `LoadConst` whose constant is itself a string
+/// (string LITERALS are baked straight into the constant table, no
+/// `MakeList`-style builder opcode involved), `Instr::Add` when BOTH
+/// operands are already proven strings (`..` is Zuri's RANGE operator,
+/// not concatenation -- `s1 + s2` is how source actually concatenates
+/// two strings, compiling to a plain `Instr::Add`; `VM::binary_add_
+/// values`' `is_string() && is_string()` arm always allocates a fresh
+/// string for that case, no operator-override detour possible since
+/// `try_operator_override` only ever fires for an Instance receiver,
+/// which a register this analysis already proved a String can never
+/// be), and `Instr::Concat`, which -- though no current source syntax
+/// actually emits it -- `VM::run`'s own handler always resolves to a
+/// string too, so it's included for the same reason `Mul`'s list-repeat
+/// arm is in `transfer_list`: correct and free to keep, even if this
+/// particular producer turns out unreachable from today's grammar.
+/// Consulted by `codegen::FuncCompiler::emit_string_invoke` to skip
+/// straight to `zuri_jit_invoke_string`, bypassing the wasted
+/// `zuri_jit_invoke_prepare` attempt (that helper's very first check is
+/// `receiver.is_instance()`, which a String can never be).
+pub struct StringFacts {
+  entry: Vec<RegSet>,
+}
+
+impl StringFacts {
+  #[inline]
+  pub fn is_string(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+}
+
+fn transfer_string(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
+  let mut out = in_set.clone();
+  match *instr {
+    Instr::LoadConst { dst, const_idx } => {
+      let c = &proto.chunk.constants[const_idx as usize];
+      out.set(dst, c.is_string());
+    },
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+    Instr::Concat { dst, .. } => out.set(dst, true),
+
+    // `a + b` where BOTH sides are already proven strings -- see this
+    // struct's own docs for why that's unconditionally a fresh string,
+    // no operator-override or numeric-add branch reachable. Only when
+    // BOTH operands are proven, mirroring `transfer_list`'s `Mul` arm:
+    // `"x" + 1` is a real `TypeError`-or-`format!`-fallback case this
+    // pass has no business claiming as a string.
+    Instr::Add { dst, a, b } => out.set(dst, in_set.get(a) && in_set.get(b)),
+
+    // A parameter checked as EXACTLY `string` (not a union) is provably
+    // a string on every path past this instruction -- same reasoning
+    // `transfer_list`'s own `CheckParamType` arm uses.
+    Instr::CheckParamType { reg, check_idx } => {
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      let all_string =
+        !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::String);
+      out.set(reg, all_string);
+    },
+
+    // Everything else that writes a register is either never a string
+    // (arithmetic, comparisons, `MakeList`, ...) or not PROVABLY one
+    // even when it might be at runtime (a `Call`/`GetField`/`GetIndex`/
+    // `Invoke` result -- e.g. `s.upper()` returns a new string, but
+    // that's a fact about ONE specific method on an already-proven-
+    // string receiver, not something this instruction-shape-only pass
+    // can see).
+    //
+    // `any_dst`, not the narrower `conservative_dst`/`comparison_or_
+    // never_numeric_dst` pair -- see `transfer_list`'s identical
+    // catch-all for why: those two lists don't cover every register-
+    // writing instruction (`LoadConst` of a non-string constant,
+    // arithmetic, ...), so a register reused for one of them after
+    // being proven a string would otherwise keep that stale proof.
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        out.set(dst, false);
+      }
+    },
+  }
+  out
+}
+
+/// Runs the string-shape analysis -- see `StringFacts`'s own docs.
+///
+/// Short-circuits the same way `analyze_list` does: with no string-
+/// valued `LoadConst` and no `Concat` anywhere in the function (the
+/// only two instructions `transfer_string` ever seeds `true` from), no
+/// register can ever be proven a string on any path, so the fixed
+/// point is trivially empty and the worklist is skipped entirely.
+pub fn analyze_string(proto: &ObjFunction, preds: &[Vec<usize>]) -> StringFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+
+  let has_string_source = code.iter().any(|i| match i {
+    Instr::LoadConst { const_idx, .. } => proto.chunk.constants[*const_idx as usize].is_string(),
+    Instr::Concat { .. } => true,
+    _ => false,
+  });
+  if !has_string_source {
+    return StringFacts {
+      entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
+    };
+  }
+
+  let num_registers = proto.num_registers as usize;
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer_string(&entry[ip], &code[ip], proto))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_string(&entry[ip], &code[ip], proto);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  StringFacts { entry }
 }
 
 //-----------------------------------------------------------------------------------

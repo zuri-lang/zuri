@@ -1,0 +1,86 @@
+/* Exercises jit::codegen::emit_string_invoke (the fast Instr::Invoke
+ * path for a receiver typeflow::StringFacts proves is ALWAYS a
+ * Value::String at that call site, skipping straight to
+ * zuri_jit_invoke_string instead of paying for a doomed
+ * zuri_jit_invoke_prepare attempt first) -- both of StringFacts' seed
+ * instructions (a `string`-typed parameter's own CheckParamType, and
+ * `Concat`), the ordinary unproven fallback, and the register-reuse
+ * case that used to be unsound (a string-proven register reassigned
+ * to a non-string down one branch -- see the `any_dst` fix in
+ * jit::typeflow's transfer_list/transfer_int/transfer_string). Every
+ * function below calls `.length()` on a proven string at least once --
+ * that name collides with `ListIntrinsic`, which used to be checked
+ * BEFORE `proven_string`, so a proven string calling `.length()` took
+ * the slow `ListIntrinsic`-guard-miss path instead of `emit_string_
+ * invoke` (always correct, just never actually fast for the single
+ * most common string method). Run past the JIT tiering threshold since
+ * a wrong guard, or the stale-proof bug, would only show up in
+ * compiled code.
+ */
+
+def proven_param_string_methods(s: string) {
+  var up = s.upper()
+  var lo = s.lower()
+  var trimmed = s.trim()
+  return s.length() + (s.is_empty() ? 1 : 0) + up.length() + lo.length() + trimmed.length() + (s.starts_with("Hello") ? 10 : 0) + (s.ends_with("World") ? 100 : 0) + (s.contains("lo Wo") ? 1000 : 0) + s.count("l") + s.index_of("World") + s.replace("l", "L").length()
+}
+
+def concat_proven_methods(a: string, b: string) {
+  var s = a + b
+  /* s is proven a string here via the Add-both-operands-proven-string
+   * arm, NOT via a param type check -- exercises StringFacts' other
+   * seed. */
+  return s.length() + (s.contains(b) ? 1 : 0) + s.upper().length()
+}
+
+def unproven_but_always_string_methods(s: string|number) {
+  /* the union type check means StringFacts can't prove s a string here
+   * (a `number` arm is legal too), even though every call in this test
+   * passes a real string -- must still dispatch upper()/length()
+   * correctly through the ordinary, unproven path. */
+  return s.upper().length()
+}
+
+def reused_register_length(flag) {
+  var s = "hello world"
+  var probe = s.length()
+  if flag {
+    s = 1 + 2
+  }
+  /* register reuse: s is proven a string going INTO the if, then
+   * reassigned to a number (an Add, not a string source) in one
+   * branch -- must NOT still be treated as a proven string past the
+   * merge. */
+  return s.length()
+}
+
+var rounds = 5000
+
+var s1 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s1 += proven_param_string_methods("Hello World")
+}
+echo s1
+
+var s2 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s2 += concat_proven_methods("foo", "bar")
+}
+echo s2
+
+var s3 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s3 += unproven_but_always_string_methods("mixed")
+}
+echo s3
+
+var s4 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s4 += reused_register_length(false)
+}
+echo s4
+
+catch {
+  reused_register_length(true)
+} as e
+echo e.message

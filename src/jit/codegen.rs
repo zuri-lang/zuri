@@ -503,6 +503,50 @@ impl ListIntrinsic {
   }
 }
 
+/// `ListIntrinsic`'s counterpart for a String receiver -- same
+/// reasoning (skip `builtins::lookup` and the generic invoke machinery
+/// for a method simple enough to read straight off the string's own
+/// header, via `object::obj_str_ptr_offset`/`obj_str_len_offset`).
+///
+/// Only these two: every OTHER `STRING_METHODS` entry either allocates
+/// a new string (`upper`/`lower`/`trim`/`replace`/`split`/`join`/...)
+/// or needs real per-byte work beyond a length check (`is_alpha`,
+/// regex methods, ...) -- neither shape belongs here for the same
+/// reason `NumberIntrinsic` excludes anything that allocates or can
+/// raise. `Length` still isn't a bare header load the way `ListIntrinsic
+/// ::Length` is, though: Zuri's `.length()` counts CODEPOINTS, not
+/// bytes, so it's the one variant here that compiles to a real loop
+/// (see `emit_string_intrinsic_value`) rather than a fixed instruction
+/// sequence -- still no allocation and no way to raise for a genuine
+/// string receiver, so it keeps the same "no safepoint owed" property
+/// every other intrinsic here has.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StringIntrinsic {
+  /// Codepoint count, matching `builtins::string::length` exactly
+  /// (`s.chars().count()`) -- NOT the byte length `obj_str_len_offset`
+  /// reads directly.
+  Length,
+  /// Byte-length-zero, which is equivalent to codepoint-count-zero for
+  /// any valid UTF-8 string (an empty byte sequence has no codepoints
+  /// and vice versa) -- so unlike `Length`, this needs no loop at all.
+  IsEmpty,
+}
+
+impl StringIntrinsic {
+  /// Same role as `ListIntrinsic::arity`.
+  fn arity(self) -> u8 {
+    0
+  }
+
+  fn of(name: &str) -> Option<StringIntrinsic> {
+    Some(match name {
+      "length" => StringIntrinsic::Length,
+      "is_empty" => StringIntrinsic::IsEmpty,
+      _ => return None,
+    })
+  }
+}
+
 struct FuncCompiler<'a, 'b> {
   fb: &'a mut FunctionBuilder<'b>,
   module: &'a mut JITModule,
@@ -572,6 +616,13 @@ struct FuncCompiler<'a, 'b> {
   /// sites (skips method-name lookup entirely). Same lifetime/scope
   /// as `type_facts`/`int_facts`.
   list_facts: typeflow::ListFacts,
+  /// Which registers are PROVEN to hold a `Value::String` at each
+  /// bytecode position -- see `jit::typeflow::StringFacts`'s own docs.
+  /// Consulted by `Instr::Invoke` to route straight to `emit_string_
+  /// invoke`, skipping the wasted `zuri_jit_invoke_prepare` attempt a
+  /// String receiver can never satisfy. Same lifetime/scope as
+  /// `type_facts`/`int_facts`/`list_facts`.
+  string_facts: typeflow::StringFacts,
   /// `typeflow::build_predecessors(proto)`, computed once here and
   /// shared by every dataflow pass that needs it (`type_facts`/
   /// `int_facts`/`list_facts`/`liveness`, and `merge_points`' own
@@ -792,6 +843,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let type_facts = typeflow::analyze(proto, &preds, None, None);
     let int_facts = typeflow::analyze_int(proto, &preds);
     let list_facts = typeflow::analyze_list(proto, &preds);
+    let string_facts = typeflow::analyze_string(proto, &preds);
     let liveness = typeflow::liveness(proto, &preds);
     FuncCompiler {
       fb,
@@ -810,6 +862,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       type_facts,
       int_facts,
       list_facts,
+      string_facts,
       preds,
       speculative_params,
       speculative_regs,
@@ -851,6 +904,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   #[inline]
   fn proven_list(&self, ip: usize, r: u8) -> bool {
     self.list_facts.is_list(ip, r)
+  }
+
+  #[inline]
+  fn proven_string(&self, ip: usize, r: u8) -> bool {
+    self.string_facts.is_string(ip, r)
   }
 
   #[inline]
@@ -4648,6 +4706,37 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
   }
 
+  /// `Instr::Invoke` when `typeflow::StringFacts` proves `obj` is
+  /// ALWAYS a `Value::String` at this call site.
+  ///
+  /// `emit_generic_invoke`'s own `zuri_jit_invoke_prepare` attempt
+  /// exists to catch a compiled user-class method (`receiver.
+  /// is_instance()`, checked as that helper's very first line) --
+  /// something a String can structurally never be. Trying it anyway on
+  /// a proven-string receiver is a real, always-wasted call: a second
+  /// full C call into `jit::runtime`, argument marshaling included, for
+  /// an answer already known at compile time. This skips straight to
+  /// `zuri_jit_invoke_string`, the lean runtime entry point that starts
+  /// exactly where `zuri_jit_invoke` ends up after its own
+  /// is_instance/is_class/is_module chain concludes "none of those, try
+  /// a builtin method" -- same per-call-site `InvokeCacheCell` (keyed
+  /// by `builtins::method_table_key`, so every call past the first
+  /// skips `builtins::lookup`'s hash+memcmp too), just reached without
+  /// the two dead branches and the wasted prepare call in front of it.
+  fn emit_string_invoke(&mut self, ip: usize, dst: u8, obj: u8, method_const: u16, num_args: u8) {
+    let base = self.base_param;
+    let vm_p = self.vm_param;
+    let obj_i = self.idx(obj);
+    let num_args_i = self.idx(num_args);
+    let dst_i = self.idx(dst);
+    let name = self.bake_const(method_const);
+    let cache = self.invoke_cache_addr(ip);
+    self.call_checked(
+      "zuri_jit_invoke_string",
+      &[vm_p, base, obj_i, num_args_i, dst_i, name, cache],
+    );
+  }
+
   /// The method name an `Instr::Invoke` names, read straight out of the
   /// constant table at compile time -- a compile-time lookup only, like
   /// `self_field_slot`'s, never handed to generated code.
@@ -4955,6 +5044,149 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
         self.fb.switch_to_block(done_block);
         self.fb.block_params(done_block)[0]
+      },
+    }
+  }
+
+  /// `Instr::Invoke`'s fast path for a `StringIntrinsic` method
+  /// (`length`/`is_empty`) -- `ListIntrinsic`'s counterpart, identical
+  /// proven/unproven shape: skip straight to the value when
+  /// `typeflow::StringFacts` already proves `obj` a string, otherwise
+  /// guard on `is_obj`+tag before computing it, falling back to the
+  /// full `emit_generic_invoke` dispatch for anything that turns out
+  /// not to be a string after all.
+  fn emit_string_intrinsic(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+    op: StringIntrinsic,
+  ) {
+    // No `emit_safepoint` on the fast arm -- see `StringIntrinsic`'s
+    // own docs: neither variant allocates or can raise for a genuine
+    // string receiver.
+    let recv = self.load_reg(obj);
+
+    if self.proven_string(ip, obj) {
+      let v = self.emit_string_intrinsic_value(op, recv);
+      self.store_reg(dst, v);
+      return;
+    }
+
+    let is_obj = self.is_obj(recv);
+    let snapshot = self.snapshot_reg_cache();
+    let checked_block = self.fb.create_block();
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_obj, checked_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(checked_block);
+    let ptr = self.obj_ptr(recv);
+    let tag = self.obj_tag(ptr);
+    let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+    let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
+    self
+      .fb
+      .ins()
+      .brif(is_str, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let v = self.emit_string_intrinsic_value(op, recv);
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// The intrinsic itself, on a receiver already known to be a string
+  /// -- no branching, no register bookkeeping, just the value.
+  /// `is_empty` is one comparison off the string's raw byte length
+  /// (`object::obj_str_len_offset`); `length` is a real loop over the
+  /// string's raw bytes counting UTF-8 LEAD bytes (every byte that
+  /// isn't a continuation byte, `0b10xxxxxx`), matching `builtins::
+  /// string::length`'s `s.chars().count()` exactly -- a valid UTF-8
+  /// string has exactly one lead byte per codepoint by construction, so
+  /// counting them is the same number `chars().count()` computes,
+  /// without materializing a `Chars` iterator or decoding each
+  /// codepoint's actual value.
+  fn emit_string_intrinsic_value(&mut self, op: StringIntrinsic, recv: IrValue) -> IrValue {
+    let ptr = self.obj_ptr(recv);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let data_ptr = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_str_ptr_offset());
+    let byte_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_str_len_offset());
+
+    match op {
+      StringIntrinsic::IsEmpty => {
+        let zero = self.fb.ins().iconst(types::I64, 0);
+        let is_empty = self.fb.ins().icmp(IntCC::Equal, byte_len, zero);
+        self.bool_value(is_empty)
+      },
+      StringIntrinsic::Length => {
+        // `i`/`count` are the loop's own carried state, threaded
+        // through `header_block`'s params -- Cranelift has no implicit
+        // loop-variable storage, every iteration's values are real SSA
+        // values passed forward explicitly, same discipline
+        // `ListIntrinsic::First`/`Last` above use for their own single-
+        // branch merges, just looped instead of taken once.
+        let header_block = self.fb.create_block();
+        self.fb.append_block_param(header_block, types::I64); // i
+        self.fb.append_block_param(header_block, types::I64); // count
+        let body_block = self.fb.create_block();
+        let done_block = self.fb.create_block();
+        self.fb.append_block_param(done_block, types::I64);
+
+        let zero = self.fb.ins().iconst(types::I64, 0);
+        self.fb.ins().jump(header_block, &[zero.into(), zero.into()]);
+
+        self.fb.switch_to_block(header_block);
+        let i = self.fb.block_params(header_block)[0];
+        let count = self.fb.block_params(header_block)[1];
+        let more = self.fb.ins().icmp(IntCC::SignedLessThan, i, byte_len);
+        self
+          .fb
+          .ins()
+          .brif(more, body_block, &[], done_block, &[count.into()]);
+
+        self.fb.switch_to_block(body_block);
+        let byte_addr = self.fb.ins().iadd(data_ptr, i);
+        let byte = self.fb.ins().load(types::I8, flags, byte_addr, 0);
+        let masked = self.fb.ins().band_imm_u(byte, 0xC0);
+        let cont_pattern = self.fb.ins().iconst(types::I8, 0x80);
+        let is_continuation = self.fb.ins().icmp(IntCC::Equal, masked, cont_pattern);
+        let zero64 = self.fb.ins().iconst(types::I64, 0);
+        let one64 = self.fb.ins().iconst(types::I64, 1);
+        let inc = self.fb.ins().select(is_continuation, zero64, one64);
+        let count_next = self.fb.ins().iadd(count, inc);
+        let i_next = self.fb.ins().iadd_imm_s(i, 1);
+        self
+          .fb
+          .ins()
+          .jump(header_block, &[i_next.into(), count_next.into()]);
+
+        self.fb.switch_to_block(done_block);
+        let count_final = self.fb.block_params(done_block)[0];
+        let count_f = self.fb.ins().fcvt_from_sint(types::F64, count_final);
+        self.from_f64(count_f)
       },
     }
   }
@@ -6868,6 +7100,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         method_const,
         num_args,
       } => {
+        // Checked before `NumberIntrinsic`/`ListIntrinsic`: those two
+        // match purely on METHOD NAME, not receiver type, so a proven
+        // string calling e.g. `.length()` (a `ListIntrinsic` name too)
+        // would otherwise still walk into `emit_list_intrinsic`, pay
+        // for its own `proven_list`-false runtime guard, and land in
+        // that guard's slow arm anyway -- strictly more work than
+        // going straight to a proven string's own fast paths
+        // (`Value::String` is never a number or a list, so neither
+        // intrinsic could ever legally apply here regardless of name).
+        if self.proven_string(ip, obj) {
+          if let Some(op) = StringIntrinsic::of(self.method_name(method_const))
+            && op.arity() == num_args
+          {
+            self.emit_string_intrinsic(ip, dst, obj, method_const, num_args, op);
+          } else {
+            self.emit_safepoint();
+            self.emit_string_invoke(ip, dst, obj, method_const, num_args);
+          }
+          return false;
+        }
         if let Some(op) = NumberIntrinsic::of(self.method_name(method_const))
           && op.arity() == num_args
         {
@@ -6878,6 +7130,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           && op.arity() == num_args
         {
           self.emit_list_intrinsic(ip, dst, obj, method_const, num_args, op);
+          return false;
+        }
+        if let Some(op) = StringIntrinsic::of(self.method_name(method_const))
+          && op.arity() == num_args
+        {
+          self.emit_string_intrinsic(ip, dst, obj, method_const, num_args, op);
           return false;
         }
         self.emit_safepoint();

@@ -512,7 +512,11 @@ impl<'a> Compiler<'a> {
   /// checks, since a mid-block jump doesn't truncate `locals` -- every
   /// local from an enclosing scope is still sitting in the same Vec.
   fn locals_captured_from(&self, from: u8) -> bool {
-    self.cur().locals.iter().any(|l| l.reg >= from && l.captured)
+    self
+      .cur()
+      .locals
+      .iter()
+      .any(|l| l.reg >= from && l.captured)
   }
 
   fn add_upvalue(&mut self, scope_idx: usize, desc: UpvalueDescriptor) -> u8 {
@@ -975,9 +979,7 @@ impl<'a> Compiler<'a> {
       src: dst,
     });
 
-    let any_captured = self.cur().locals[locals_mark..]
-      .iter()
-      .any(|l| l.captured);
+    let any_captured = self.cur().locals[locals_mark..].iter().any(|l| l.captured);
     self.cur_mut().locals.truncate(locals_mark);
     if any_captured {
       self.emit(Instr::CloseUpvalues { from: mark });
@@ -2435,9 +2437,7 @@ impl<'a> Compiler<'a> {
         }
 
         self.cur_mut().scope_depth -= 1;
-        let any_captured = self.cur().locals[locals_mark..]
-          .iter()
-          .any(|l| l.captured);
+        let any_captured = self.cur().locals[locals_mark..].iter().any(|l| l.captured);
         self.cur_mut().locals.truncate(locals_mark);
         if any_captured {
           self.emit(Instr::CloseUpvalues { from: mark });

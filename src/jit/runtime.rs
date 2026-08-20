@@ -1163,7 +1163,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
         None => match cached_builtin_lookup(cache, receiver, method_name.as_str()) {
           Some(native) => {
             let call_args = invoke_native_args(vm, base, obj, num_args, receiver);
-            let result = vm.call_native(native, &call_args)?;
+            let result = vm.call_native(native, call_args.as_slice())?;
             vm.set_reg(base, dst, result);
             Ok(())
           },
@@ -1210,7 +1210,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
         None => match cached_builtin_lookup(cache, receiver, method_name.as_str()) {
           Some(native) => {
             let call_args = invoke_native_args(vm, base, obj, num_args, receiver);
-            let result = vm.call_native(native, &call_args)?;
+            let result = vm.call_native(native, call_args.as_slice())?;
             vm.set_reg(base, dst, result);
             Ok(())
           },
@@ -1221,22 +1221,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
         },
       }
     } else {
-      match cached_builtin_lookup(cache, receiver, method_name.as_str()) {
-        Some(native) => {
-          let call_args = invoke_native_args(vm, base, obj, num_args, receiver);
-          let result = vm.call_native(native, &call_args)?;
-          vm.set_reg(base, dst, result);
-          Ok(())
-        },
-        None => {
-          let msg = format!(
-            "object of type {} does not define method '{}'",
-            receiver.type_name(),
-            method_name.as_str()
-          );
-          Err(vm.raise("TypeError", msg))
-        },
-      }
+      invoke_builtin_method(vm, base, obj, num_args, dst, method_name, cache, receiver)
     }
   })();
 
@@ -1246,13 +1231,83 @@ pub unsafe extern "C" fn zuri_jit_invoke(
   }
 }
 
-/// Builds the owned args slice `Instr::Invoke`'s native/builtin-method
-/// fallback needs (receiver spliced in as `args[0]`, matching
-/// `VM::call_native`'s `is_method` convention) -- mirrors the `CallArgs`
-/// construction `vm.rs`'s own handler does at each of these three call
-/// sites.
-fn invoke_native_args(vm: &VM, base: usize, obj: u8, num_args: u8, receiver: Value) -> Vec<Value> {
-  let mut args = Vec::with_capacity(num_args as usize + 1);
+/// The tail both `zuri_jit_invoke`'s own catch-all branch and
+/// `zuri_jit_invoke_string` end at: `receiver` isn't an Instance, Class,
+/// or Module, so the only thing left to try is a builtin method off
+/// `builtins::lookup` -- resolved once per call site and cached in
+/// `cache` by `cached_builtin_lookup`, keyed on `builtins::
+/// method_table_key(receiver)`.
+fn invoke_builtin_method(
+  vm: &mut VM,
+  base: usize,
+  obj: u8,
+  num_args: u8,
+  dst: u8,
+  method_name: Value,
+  cache: Option<&InvokeCacheCell>,
+  receiver: Value,
+) -> Result<(), Value> {
+  match cached_builtin_lookup(cache, receiver, method_name.as_str()) {
+    Some(native) => {
+      let call_args = invoke_native_args(vm, base, obj, num_args, receiver);
+      let result = vm.call_native(native, call_args.as_slice())?;
+      vm.set_reg(base, dst, result);
+      Ok(())
+    },
+    None => {
+      let msg = format!(
+        "object of type {} does not define method '{}'",
+        receiver.type_name(),
+        method_name.as_str()
+      );
+      Err(vm.raise("TypeError", msg))
+    },
+  }
+}
+
+/// `Instr::Invoke` when `jit::typeflow::StringFacts` proves the
+/// receiver is ALWAYS a `Value::String` at this call site -- a leaner
+/// entry point than `zuri_jit_invoke` that skips straight to
+/// `invoke_builtin_method`, the only branch of `zuri_jit_invoke`'s own
+/// `is_instance`/`is_class`/`is_module` chain a String can ever reach.
+/// See `codegen::FuncCompiler::emit_string_invoke`'s own docs for why
+/// paying for `zuri_jit_invoke_prepare` first (as every OTHER `Instr::
+/// Invoke` site does) is pure waste on a proven-string receiver.
+pub unsafe extern "C" fn zuri_jit_invoke_string(
+  vm_ptr: *mut VM,
+  base: u64,
+  obj: u64,
+  num_args: u64,
+  dst: u64,
+  method_name_bits: u64,
+  cache_addr: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let obj = obj as u8;
+  let num_args = num_args as u8;
+  let dst = dst as u8;
+  let method_name = Value::from_bits(method_name_bits);
+  let receiver = vm.get_reg(base, obj);
+  let cache = unsafe { (cache_addr as *const InvokeCacheCell).as_ref() };
+
+  let result = invoke_builtin_method(vm, base, obj, num_args, dst, method_name, cache, receiver);
+  match result {
+    Ok(()) => OK,
+    Err(e) => fail(vm, e),
+  }
+}
+
+/// Builds the args `Instr::Invoke`'s native/builtin-method fallback
+/// needs (receiver spliced in as `args[0]`, matching `VM::call_native`'s
+/// `is_method` convention) -- `CallArgs`, not a bare `Vec`, so the
+/// overwhelming majority of calls (`INLINE_ARGS` == 8 args or fewer,
+/// which is every string/list/dict method that exists today) pay no
+/// heap allocation at all. This is the same `CallArgs` construction
+/// `vm.rs`'s own handler does at each of these three call sites, and
+/// `zuri_jit_call_native`'s identical fix just above.
+fn invoke_native_args(vm: &VM, base: usize, obj: u8, num_args: u8, receiver: Value) -> CallArgs {
+  let mut args = CallArgs::new();
   args.push(receiver);
   for i in 0..num_args {
     args.push(vm.get_reg(base, obj + 2 + i));
@@ -2735,6 +2790,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_import),
     spec5!(zuri_jit_make_promoted),
     spec7!(zuri_jit_invoke),
+    spec7!(zuri_jit_invoke_string),
     spec6!(zuri_jit_invoke_super),
     spec6!(zuri_jit_get_global),
     spec6!(zuri_jit_set_global),

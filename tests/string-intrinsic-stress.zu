@@ -1,0 +1,83 @@
+/* Exercises jit::codegen::StringIntrinsic (length/is_empty inlined
+ * directly for a proven string via jit::typeflow::StringFacts -- length
+ * as a real UTF-8 lead-byte-counting loop, is_empty as a bare byte-
+ * length compare) -- both the proven and unproven receiver paths, the
+ * empty-string edge case (the length loop must not read any bytes at
+ * all when byte_len is 0), multi-byte UTF-8 (to catch a codepoint-vs-
+ * byte-count bug the ASCII-only cases in string-invoke-stress.zu can't
+ * catch), and that a same-named method on a DIFFERENT type (List also
+ * has "length"/"is_empty") still dispatches correctly. Run past the
+ * JIT tiering threshold since a wrong guard, or a loop-codegen bug,
+ * would only show up in compiled code.
+ */
+
+def proven_string_methods(s: string) {
+  /* s is proven a string here via its own CheckParamType. */
+  return s.length() + (s.is_empty() ? 1 : 0)
+}
+
+def empty_string_methods() {
+  var s = ''
+  return s.length() + (s.is_empty() ? 100 : 0)
+}
+
+def multibyte_string_methods() {
+  /* "héllo wörld 🎉" -- 13 codepoints, but MORE than 13 UTF-8 bytes
+   * (each of é/ö is 2 bytes, the emoji is 4) -- a byte-counting bug
+   * would report a bigger number than 13 here. */
+  var s = 'héllo wörld 🎉'
+  return s.length()
+}
+
+def unproven_receiver_methods(flag) {
+  var x
+  if flag {
+    x = 'hello'
+  } else {
+    x = [1, 2, 3, 4, 5]
+  }
+  /* x is NOT proven a string (one branch is a list) -- exercises the
+   * runtime is_obj+tag guard, not the proven fast path, for BOTH
+   * possible receiver shapes. */
+  return x.length()
+}
+
+def same_name_different_types() {
+  var s = 'hello'
+  var l = [1, 2, 3]
+  /* both declare "length"/"is_empty" -- the string intrinsic's guard
+   * must never mistake a list for a string, and vice versa. */
+  return s.length() + l.length() + (s.is_empty() ? 10 : 0) + (l.is_empty() ? 100 : 0)
+}
+
+var rounds = 200000
+
+var s1 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s1 += proven_string_methods("Hello World")
+}
+echo s1
+
+var s2 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s2 += empty_string_methods()
+}
+echo s2
+
+var s3 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s3 += multibyte_string_methods()
+}
+echo s3
+
+var s4 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s4 += unproven_receiver_methods(k % 2 == 0)
+}
+echo s4
+
+var s5 = 0
+iter var k = 0; k < rounds; k += 1 {
+  s5 += same_name_different_types()
+}
+echo s5
