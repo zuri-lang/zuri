@@ -121,6 +121,7 @@ impl FrameStack {
     self.len
   }
 
+  #[allow(unused)]
   #[inline]
   fn is_empty(&self) -> bool {
     self.len == 0
@@ -667,8 +668,7 @@ pub(crate) const VM_REGS_LEN_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs
 pub(crate) const VM_JIT_SCALAR_ROOTS_LEN_OFFSET: usize =
   std::mem::offset_of!(VM, jit_scalar_roots_len);
 /// Byte offset of `VM::has_open_upvalues` -- see that field's own docs.
-pub(crate) const VM_HAS_OPEN_UPVALUES_OFFSET: usize =
-  std::mem::offset_of!(VM, has_open_upvalues);
+pub(crate) const VM_HAS_OPEN_UPVALUES_OFFSET: usize = std::mem::offset_of!(VM, has_open_upvalues);
 /// Byte offset of `VM::pending_deopt_ip` -- see that field's own docs.
 pub(crate) const VM_PENDING_DEOPT_IP_OFFSET: usize = std::mem::offset_of!(VM, pending_deopt_ip);
 /// Byte offset of `VM::jit_pending_exception` -- see that field's own

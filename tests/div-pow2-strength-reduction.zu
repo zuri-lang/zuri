@@ -1,0 +1,69 @@
+/* Exercises jit::codegen::div_by_pow2_reciprocal: `x / <constant>`
+ * compiles to `x * (1.0/constant)` instead of a real `fdiv` whenever
+ * the constant is PROVABLY an exact power of two, reached only by
+ * straight-line fallthrough from its own LoadConst (no merge point).
+ * Covers: the proven-numeric fast path, the guarded (unproven
+ * receiver) path, a non-power-of-two divisor (must stay real
+ * division), a negative power-of-two divisor, and a divisor that
+ * reaches the Div instruction through a MERGE POINT (two different
+ * literals from two branches) -- that one must NOT take the
+ * reciprocal shortcut, since the divisor genuinely isn't a single
+ * known constant there. Run past the JIT tiering threshold since a
+ * wrong shortcut would only show up in compiled code.
+ */
+
+def proven_div2(x: number) {
+  return x / 2.0
+}
+
+def proven_div_neg4(x: number) {
+  return x / -4.0
+}
+
+def proven_div3(x: number) {
+  /* NOT a power of two -- must still be real division */
+  return x / 3.0
+}
+
+def unproven_div2(x) {
+  /* x's type isn't proven -- exercises the guarded path with the
+   * reciprocal rewrite still applied. */
+  return x / 2.0
+}
+
+def merge_point_div(flag, x: number) {
+  var d = 2.0
+  if flag {
+    d = 4.0
+  }
+  /* d is NOT provably 2.0 or 4.0 here (a genuine CFG merge point) --
+   * must divide by whatever d actually is at runtime, not shortcut to
+   * either branch's literal. */
+  return x / d
+}
+
+var i = 0
+while i < 300000 {
+  proven_div2(7.0)
+  proven_div_neg4(7.0)
+  proven_div3(7.0)
+  unproven_div2(7.0)
+  merge_point_div(false, 7.0)
+  merge_point_div(true, 7.0)
+  i = i + 1
+}
+
+echo proven_div2(7.0)
+echo proven_div2(-7.0)
+echo proven_div2(0.0)
+echo proven_div_neg4(7.0)
+echo proven_div_neg4(-8.0)
+echo proven_div3(7.0)
+echo proven_div3(10.0)
+echo unproven_div2(9.0)
+catch {
+  echo unproven_div2('nope')
+} as e
+echo e.message
+echo merge_point_div(false, 8.0)
+echo merge_point_div(true, 8.0)
