@@ -232,7 +232,7 @@ enum RegCache {
 /// A register's shape, proven for the WHOLE function body by a
 /// non-nullable, single-type `Instr::CheckParamType` on it plus a
 /// whole-bytecode scan proving nothing ever writes that register again
-/// -- see `FuncCompiler::compute_proven_param_shapes`'s own docs for
+/// -- see `FuncCompiler::compute_proven_shapes`'s own docs for
 /// exactly what's required. Consulted by `emit_list_get_index`/
 /// `emit_list_set_index` (`List`) and `emit_ic_guard` (`Instance`) to
 /// skip a guard the caller already paid for once, at the parameter
@@ -511,6 +511,15 @@ struct FuncCompiler<'a, 'b> {
   /// fallback are skipped entirely (they'd never be taken), leaving
   /// unconditional straight-line float math.
   type_facts: typeflow::TypeFacts,
+  /// Which registers are PROVEN to hold a whole-number-valued `f64`
+  /// (not just numeric) at each bytecode position -- see `jit::
+  /// typeflow::IntFacts`'s own docs. Consulted by `emit_list_get_index`/
+  /// `emit_list_set_index` to skip the float-roundtrip "is this
+  /// actually a whole number" check entirely for a plain loop-counter
+  /// index. Computed once per body alongside `type_facts`, same
+  /// lifetime and the same reason it isn't shared between the general
+  /// and specialized body.
+  int_facts: typeflow::IntFacts,
   /// A ONE-SHOT type sample of the call that triggered this
   /// compilation (bit `r` = fixed-arity parameter register `r` held a
   /// number) -- `None` after filtering out an all-zero sample. See
@@ -639,8 +648,8 @@ struct FuncCompiler<'a, 'b> {
   /// a closure -- pay that on every single call for nothing.
   frame_can_open_upvalues: bool,
   /// Registers whose shape is proven for the whole function -- see
-  /// `ParamShape`'s own docs and `compute_proven_param_shapes`.
-  /// Computed once, in `new`, from the bytecode's own shape alone (not
+  /// `ParamShape`'s own docs and `compute_proven_shapes`. Computed
+  /// once, in `new`, from the bytecode's own shape alone (not
   /// dependent on `type_facts`/`speculative_*`, unlike most of this
   /// struct's other per-body state), so it's identical for both the
   /// general and specialized body if this compile has one.
@@ -648,17 +657,32 @@ struct FuncCompiler<'a, 'b> {
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
-  /// A register is trustworthy for the WHOLE function as `shape` when:
-  /// it's the target of a non-nullable `Instr::CheckParamType` whose
-  /// declared type is EXACTLY one member (a union like `list|dict`
-  /// proves neither alone), AND nothing anywhere in the function ever
-  /// writes that register again (`typeflow::any_dst`) -- the same
-  /// cheap, deliberately whole-function over-approximation
-  /// `scalar_lists`' own eligibility gate uses (see its docs), chosen
-  /// over a real per-`ip` dataflow pass because a parameter register
-  /// being reused for something else entirely, mid-function, is rare
-  /// enough in practice that a full analysis would buy little beyond
-  /// what this costs to compute.
+  /// A register is trustworthy for the WHOLE function as `shape` in
+  /// two cases, both deliberately simple whole-function checks rather
+  /// than a real per-`ip` dataflow pass (see below for why that's
+  /// still sound):
+  ///
+  /// - It's the target of a non-nullable `Instr::CheckParamType` whose
+  ///   declared type is EXACTLY one member (a union like `list|dict`
+  ///   proves neither alone), and nothing anywhere in the function
+  ///   ever writes that register again (`typeflow::any_dst`).
+  /// - It's a LOCAL built from a list literal (`Instr::MakeList`) or a
+  ///   list-repeat (`Instr::Mul` with an already-List left operand,
+  ///   `[0] * n`'s own compiled shape) in the function's straight-line
+  ///   PROLOGUE -- every instruction from `ip` 0 up to the first
+  ///   branch, which by construction is the only entry to any of them,
+  ///   so nothing here needs a real dominance check to know they all
+  ///   run unconditionally, in order, before anything else -- and
+  ///   nothing after the prologue ever writes that register again.
+  ///   Multiple writes WITHIN the prologue are fine (only the last one
+  ///   before it ends matters); this only cares whether anything past
+  ///   it reassigns the register.
+  ///
+  /// Both are the same "cheap, deliberately whole-function over-
+  /// approximation" trade `scalar_lists`' own eligibility gate makes
+  /// (see its docs): a register being reused for something else
+  /// entirely, mid-function, is rare enough in practice that a full
+  /// analysis would buy little beyond what this costs to compute.
   ///
   /// Deliberately narrower than `type_facts`' own numeric analysis: a
   /// `number`/`int`-only, non-nullable check ALSO feeds `typeflow::
@@ -666,7 +690,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// merges and loop back-edges) -- this function only needs to cover
   /// the two shapes that dataflow doesn't, `List` and `Instance`, so it
   /// stays intentionally simple rather than duplicating that machinery.
-  fn compute_proven_param_shapes(proto: &ObjFunction) -> FxHashMap<u8, ParamShape> {
+  fn compute_proven_shapes(proto: &ObjFunction) -> FxHashMap<u8, ParamShape> {
     let mut out = FxHashMap::default();
     for instr in &proto.chunk.code {
       let Instr::CheckParamType { reg, check_idx } = *instr else {
@@ -690,6 +714,38 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         out.insert(reg, shape);
       }
     }
+
+    let prologue_end = proto
+      .chunk
+      .code
+      .iter()
+      .position(|i| matches!(i, Instr::Jmp { .. } | Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. }))
+      .unwrap_or(proto.chunk.code.len());
+    let mut provisional_lists: rustc_hash::FxHashSet<u8> = rustc_hash::FxHashSet::default();
+    for instr in &proto.chunk.code[..prologue_end] {
+      match *instr {
+        Instr::MakeList { dst, .. } => {
+          provisional_lists.insert(dst);
+        },
+        Instr::Mul { dst, a, .. } if provisional_lists.contains(&a) => {
+          provisional_lists.insert(dst);
+        },
+        _ => {
+          if let Some(dst) = typeflow::any_dst(instr) {
+            provisional_lists.remove(&dst);
+          }
+        },
+      }
+    }
+    for reg in provisional_lists {
+      let rewritten_after_prologue = proto.chunk.code[prologue_end..]
+        .iter()
+        .any(|i| typeflow::any_dst(i) == Some(reg));
+      if !rewritten_after_prologue {
+        out.entry(reg).or_insert(ParamShape::List);
+      }
+    }
+
     out
   }
 
@@ -706,6 +762,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let type_facts = typeflow::analyze(proto, None, None);
+    let int_facts = typeflow::analyze_int(proto);
     let liveness = typeflow::liveness(proto);
     FuncCompiler {
       fb,
@@ -722,6 +779,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       entry_sig: None,
       closure_out_slot: None,
       type_facts,
+      int_facts,
       speculative_params,
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available -- empty
@@ -745,13 +803,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .code
         .iter()
         .any(|i| matches!(i, Instr::Closure { .. })),
-      proven_param_shapes: Self::compute_proven_param_shapes(proto),
+      proven_param_shapes: Self::compute_proven_shapes(proto),
     }
   }
 
   #[inline]
   fn proven_numeric(&self, ip: usize, r: u8) -> bool {
     self.type_facts.is_numeric(ip, r)
+  }
+
+  #[inline]
+  fn proven_int(&self, ip: usize, r: u8) -> bool {
+    self.int_facts.is_int(ip, r)
   }
 
   #[inline]
@@ -4961,7 +5024,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// resolving the list's data pointer still costs one small helper
   /// call while the bounds check and element load are real inline
   /// Cranelift code either way.
-  fn emit_list_get_index(&mut self, dst: u8, obj: u8, iidx: u8, idx_proven_numeric: bool) {
+  fn emit_list_get_index(
+    &mut self,
+    dst: u8,
+    obj: u8,
+    iidx: u8,
+    idx_proven_numeric: bool,
+    idx_proven_int: bool,
+  ) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
     let proven_list = self.proven_param_shapes.get(&obj) == Some(&ParamShape::List);
@@ -4983,22 +5053,30 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let ptr = self.obj_ptr(obj_val);
       let f = self.to_f64(idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-      let is_int = self.fb.ins().fcmp(
-        cranelift_codegen::ir::condcodes::FloatCC::Equal,
-        f,
-        roundtrip,
-      );
-      let idx_ok = if idx_proven_numeric {
-        is_int
+      if idx_proven_int {
+        // `iidx` is proven to be a genuine whole number (see
+        // `typeflow::IntFacts`'s own docs) -- there's nothing left for
+        // this guard to prove, so there's no guard: straight through
+        // to `resolve_block`, not even a branch.
+        self.fb.ins().jump(resolve_block, &[]);
       } else {
-        let is_num = self.is_number(idx_val);
-        self.fb.ins().band(is_num, is_int)
-      };
-      self
-        .fb
-        .ins()
-        .brif(idx_ok, resolve_block, &[], slow_block, &[]);
+        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+        let is_int = self.fb.ins().fcmp(
+          cranelift_codegen::ir::condcodes::FloatCC::Equal,
+          f,
+          roundtrip,
+        );
+        let idx_ok = if idx_proven_numeric {
+          is_int
+        } else {
+          let is_num = self.is_number(idx_val);
+          self.fb.ins().band(is_num, is_int)
+        };
+        self
+          .fb
+          .ins()
+          .brif(idx_ok, resolve_block, &[], slow_block, &[]);
+      }
       (ptr, as_int)
     } else {
       // Both safe to compute unconditionally regardless of the other's
@@ -5036,18 +5114,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       let f = self.to_f64(idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-      let is_int = self.fb.ins().fcmp(
-        cranelift_codegen::ir::condcodes::FloatCC::Equal,
-        f,
-        roundtrip,
-      );
-      let list_and_int = self.fb.ins().band(is_list, is_int);
-
-      self
-        .fb
-        .ins()
-        .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+      if idx_proven_int {
+        // See the `proven_list` arm above -- the index half of the
+        // guard is a settled fact, only `is_list` still needs checking.
+        self
+          .fb
+          .ins()
+          .brif(is_list, resolve_block, &[], slow_block, &[]);
+      } else {
+        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+        let is_int = self.fb.ins().fcmp(
+          cranelift_codegen::ir::condcodes::FloatCC::Equal,
+          f,
+          roundtrip,
+        );
+        let list_and_int = self.fb.ins().band(is_list, is_int);
+        self
+          .fb
+          .ins()
+          .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+      }
       (ptr, as_int)
     };
 
@@ -5116,7 +5202,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// including why `reg_cache` needs a hard reset before `slow_block`
   /// (two independent `call_helper` sites: `zuri_jit_list_data` here,
   /// `zuri_jit_set_index` there).
-  fn emit_list_set_index(&mut self, obj: u8, iidx: u8, src: u8, idx_proven_numeric: bool) {
+  fn emit_list_set_index(
+    &mut self,
+    obj: u8,
+    iidx: u8,
+    src: u8,
+    idx_proven_numeric: bool,
+    idx_proven_int: bool,
+  ) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
     let src_val = self.load_reg(src);
@@ -5135,22 +5228,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let ptr = self.obj_ptr(obj_val);
       let f = self.to_f64(idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-      let is_int = self.fb.ins().fcmp(
-        cranelift_codegen::ir::condcodes::FloatCC::Equal,
-        f,
-        roundtrip,
-      );
-      let idx_ok = if idx_proven_numeric {
-        is_int
+      if idx_proven_int {
+        self.fb.ins().jump(resolve_block, &[]);
       } else {
-        let is_num = self.is_number(idx_val);
-        self.fb.ins().band(is_num, is_int)
-      };
-      self
-        .fb
-        .ins()
-        .brif(idx_ok, resolve_block, &[], slow_block, &[]);
+        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+        let is_int = self.fb.ins().fcmp(
+          cranelift_codegen::ir::condcodes::FloatCC::Equal,
+          f,
+          roundtrip,
+        );
+        let idx_ok = if idx_proven_numeric {
+          is_int
+        } else {
+          let is_num = self.is_number(idx_val);
+          self.fb.ins().band(is_num, is_int)
+        };
+        self
+          .fb
+          .ins()
+          .brif(idx_ok, resolve_block, &[], slow_block, &[]);
+      }
       (ptr, as_int)
     } else {
       let is_obj = self.is_obj(obj_val);
@@ -5175,17 +5272,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       let f = self.to_f64(idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-      let is_int = self.fb.ins().fcmp(
-        cranelift_codegen::ir::condcodes::FloatCC::Equal,
-        f,
-        roundtrip,
-      );
-      let list_and_int = self.fb.ins().band(is_list, is_int);
-      self
-        .fb
-        .ins()
-        .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+      if idx_proven_int {
+        self
+          .fb
+          .ins()
+          .brif(is_list, resolve_block, &[], slow_block, &[]);
+      } else {
+        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+        let is_int = self.fb.ins().fcmp(
+          cranelift_codegen::ir::condcodes::FloatCC::Equal,
+          f,
+          roundtrip,
+        );
+        let list_and_int = self.fb.ins().band(is_list, is_int);
+        self
+          .fb
+          .ins()
+          .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+      }
       (ptr, as_int)
     };
 
@@ -6672,7 +6776,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_scalar_list_get(dst, slot, count, iidx);
           return false;
         }
-        self.emit_list_get_index(dst, obj, iidx, self.proven_numeric(ip, iidx));
+        self.emit_list_get_index(
+          dst,
+          obj,
+          iidx,
+          self.proven_numeric(ip, iidx),
+          self.proven_int(ip, iidx),
+        );
         false
       },
       Instr::SetIndex {
@@ -6684,7 +6794,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_scalar_list_set(slot, count, iidx, src);
           return false;
         }
-        self.emit_list_set_index(obj, iidx, src, self.proven_numeric(ip, iidx));
+        self.emit_list_set_index(
+          obj,
+          iidx,
+          src,
+          self.proven_numeric(ip, iidx),
+          self.proven_int(ip, iidx),
+        );
         false
       },
       Instr::GetSlice { dst, obj, lo, hi } => {

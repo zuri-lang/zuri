@@ -388,6 +388,208 @@ pub fn analyze(
 }
 
 //-----------------------------------------------------------------------------------
+// Integer-valued analysis
+//-----------------------------------------------------------------------------------
+
+/// The result of analyzing one function: `entry[ip]` is exactly the set
+/// of registers proven to hold a WHOLE-NUMBER-valued `f64` (`fract() ==
+/// 0.0`, not just numeric) on every path reaching bytecode position
+/// `ip`. `jit::codegen` uses this to skip the float-roundtrip "is this
+/// actually an integer, not e.g. `3.5`" check `emit_list_get_index`/
+/// `emit_list_set_index` would otherwise redo on every single indexed
+/// access, even for a plain loop counter.
+///
+/// Same "must" analysis shape as `TypeFacts`, and safe to build on the
+/// same closure argument: IEEE-754 round-to-nearest-even addition,
+/// subtraction, and multiplication of two whole-number-valued doubles
+/// ALWAYS produces another whole-number-valued double, at every
+/// magnitude, with no exceptions -- not an approximation someone could
+/// find a counterexample to. The reasoning: the true mathematical
+/// result of integer-plus-integer (or times/minus) is itself a whole
+/// number, and every double whose representable granularity is >= 1
+/// (any magnitude at or past roughly 2^52) is ALREADY constrained to
+/// only ever represent whole numbers at all -- so rounding a whole-
+/// number result to the nearest representable double, at ANY
+/// magnitude, can only ever land on another whole number, never on a
+/// fractional one. (What genuinely isn't preserved past that
+/// magnitude is which EXACT whole number -- true precision, a
+/// different property this analysis was never asked to prove.) This
+/// is why, unlike a naive first read of "arithmetic can lose
+/// precision" might suggest, no overflow-checked arithmetic or
+/// runtime fallback is needed anywhere here for soundness.
+pub struct IntFacts {
+  entry: Vec<RegSet>,
+}
+
+impl IntFacts {
+  #[inline]
+  pub fn is_int(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+}
+
+fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
+  let mut out = in_set.clone();
+  match *instr {
+    Instr::LoadConst { dst, const_idx } => {
+      let c = &proto.chunk.constants[const_idx as usize];
+      out.set(dst, c.is_number() && c.as_number().fract() == 0.0);
+    },
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+    Instr::Neg { dst, src } => out.set(dst, in_set.get(src)),
+
+    // See `IntFacts`'s own docs: sound at every magnitude, no overflow
+    // check needed.
+    Instr::Add { dst, a, b } | Instr::Sub { dst, a, b } | Instr::Mul { dst, a, b } => {
+      out.set(dst, in_set.get(a) && in_set.get(b));
+    },
+    Instr::AddImm { dst, a, imm_const }
+    | Instr::SubImm { dst, a, imm_const }
+    | Instr::MulImm { dst, a, imm_const } => {
+      let imm_is_int = proto.chunk.constants[imm_const as usize]
+        .as_number()
+        .fract()
+        == 0.0;
+      out.set(dst, imm_is_int && in_set.get(a));
+    },
+
+    // A bitwise op's result is a whole number BY DEFINITION of what
+    // the operation means, regardless of whether its operands were
+    // already proven int -- exactly the same "it just raised
+    // otherwise, so this holds given execution reached here at all"
+    // reasoning `CheckParamType` relies on below, just for a
+    // different kind of guard.
+    Instr::BitAnd { dst, .. }
+    | Instr::BitOr { dst, .. }
+    | Instr::BitXor { dst, .. }
+    | Instr::BitShl { dst, .. }
+    | Instr::BitShr { dst, .. }
+    | Instr::BitUshr { dst, .. }
+    | Instr::BitNot { dst, .. } => out.set(dst, true),
+
+    // A parameter checked as EXACTLY `int` (not the wider `number`,
+    // which also admits fractional values) is provably whole on every
+    // path past this instruction.
+    Instr::CheckParamType { reg, check_idx } => {
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      let all_int = !check.nullable
+        && check.types.len() == 1
+        && matches!(check.types[0], ParamType::Int);
+      out.set(reg, all_int);
+    },
+
+    // Everything else that writes a register either never produces a
+    // number at all (comparisons, `Concat`, `LoadNil`/`LoadBool`, ...)
+    // or isn't provably whole even when it IS numeric (`Pow`/`Floor`/
+    // `Mod`, a `Call`/`GetField`/`GetIndex` result, ...) -- same
+    // conservative treatment `transfer`'s own numeric analysis gives
+    // these, just narrower since "numeric" doesn't imply "whole".
+    _ => {
+      if let Some(dst) = conservative_dst(instr) {
+        out.set(dst, false);
+      } else if let Some(dst) = comparison_or_never_numeric_dst(instr) {
+        out.set(dst, false);
+      }
+    },
+  }
+  out
+}
+
+/// The destination register of any instruction whose result is never
+/// numeric at all (a comparison producing a `bool`, `Concat`
+/// producing a `String`, ...) -- the same instruction list `transfer`
+/// itself unconditionally sets `false` for, factored out here so
+/// `transfer_int`'s fallback arm can reuse it instead of repeating
+/// every variant.
+fn comparison_or_never_numeric_dst(instr: &Instr) -> Option<u8> {
+  match *instr {
+    Instr::LoadNil { dst }
+    | Instr::LoadBool { dst, .. }
+    | Instr::Eq { dst, .. }
+    | Instr::Neq { dst, .. }
+    | Instr::Lt { dst, .. }
+    | Instr::Le { dst, .. }
+    | Instr::Gt { dst, .. }
+    | Instr::Ge { dst, .. }
+    | Instr::Not { dst, .. }
+    | Instr::LtImm { dst, .. }
+    | Instr::LeImm { dst, .. }
+    | Instr::GtImm { dst, .. }
+    | Instr::GeImm { dst, .. }
+    | Instr::EqImm { dst, .. }
+    | Instr::NeqImm { dst, .. }
+    | Instr::Concat { dst, .. }
+    | Instr::Pow { dst, .. }
+    | Instr::Floor { dst, .. }
+    | Instr::Mod { dst, .. } => Some(dst),
+    _ => None,
+  }
+}
+
+/// Runs the whole-number analysis -- see `IntFacts`'s own docs. No
+/// speculative-profiling hook, unlike `analyze`: proving "whole
+/// number" needs an actual definition site to reason about (a
+/// `LoadConst`, a chain of proven-int arithmetic, ...), so there's no
+/// sound way to seed it from a bare runtime snapshot the way
+/// `speculative_regs` seeds `TypeFacts` (that hook works there only
+/// because `codegen` re-verifies the ACTUAL value at the definition
+/// site regardless -- a whole-number claim would need the identical
+/// re-verification this whole analysis exists to avoid paying for).
+pub fn analyze_int(proto: &ObjFunction) -> IntFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let preds = build_predecessors(proto);
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer_int(&entry[ip], &code[ip], proto))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_int(&entry[ip], &code[ip], proto);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  IntFacts { entry }
+}
+
+//-----------------------------------------------------------------------------------
 // Reference classification
 //-----------------------------------------------------------------------------------
 
