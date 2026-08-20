@@ -299,6 +299,45 @@ mod obj_repr_tests {
       assert_eq!((&*fields_ptr).len(), 2);
     }
   }
+
+  /// Cross-checks `UPVALUE_STATE_TAG_*` against `UpvalueState`'s own
+  /// explicit discriminants -- same failure mode `tags_match_discriminants`
+  /// guards against, one type over.
+  #[test]
+  fn upvalue_state_tags_match_discriminants() {
+    assert_eq!(UpvalueState::Open(0).tag(), UPVALUE_STATE_TAG_OPEN);
+    assert_eq!(
+      UpvalueState::Closed(Value::nil()).tag(),
+      UPVALUE_STATE_TAG_CLOSED
+    );
+  }
+
+  /// Confirms `obj_upvalue_state_tag_offset()`/
+  /// `obj_upvalue_state_payload_offset()` land where a real
+  /// `Obj::Upvalue(Cell<UpvalueState>)` actually puts its tag and
+  /// payload for BOTH variants -- `jit::codegen`'s inline `GetUpval`/
+  /// `SetUpval` fast path reads either through these same two offsets,
+  /// branching only on the tag byte.
+  #[test]
+  fn upvalue_state_offsets_match_real_obj() {
+    let closed = Obj::Upvalue(Cell::new(UpvalueState::Closed(Value::number(42.0))));
+    let closed_addr = &closed as *const Obj as usize;
+    let tag_ptr = (closed_addr + obj_upvalue_state_tag_offset()) as *const u8;
+    let payload_ptr = (closed_addr + obj_upvalue_state_payload_offset()) as *const Value;
+    unsafe {
+      assert_eq!(*tag_ptr, UPVALUE_STATE_TAG_CLOSED);
+      assert_eq!((*payload_ptr).as_number(), 42.0);
+    }
+
+    let open = Obj::Upvalue(Cell::new(UpvalueState::Open(7)));
+    let open_addr = &open as *const Obj as usize;
+    let tag_ptr = (open_addr + obj_upvalue_state_tag_offset()) as *const u8;
+    let payload_ptr = (open_addr + obj_upvalue_state_payload_offset()) as *const usize;
+    unsafe {
+      assert_eq!(*tag_ptr, UPVALUE_STATE_TAG_OPEN);
+      assert_eq!(*payload_ptr, 7);
+    }
+  }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -312,12 +351,76 @@ pub enum UpvalueDescriptor {
   Upvalue(u8),
 }
 
+/// `#[repr(C, u8)]` for the same reason `Obj` itself is: a C-style
+/// tagged union puts BOTH variants' payload at one shared, fixed byte
+/// offset from this type's own address (each is one 8-byte word --
+/// `usize` and `Value` are the same size), which is what lets
+/// `jit::codegen`'s inline `GetUpval`/`SetUpval` fast path
+/// (`emit_upvalue_obj_ptr` and friends) read or write EITHER an open
+/// register index or a closed-over `Value` directly through a raw
+/// `Cell<UpvalueState>` pointer, no helper call for either case.
 #[derive(Clone, Copy)]
+#[repr(C, u8)]
 pub enum UpvalueState {
   /// Points at an absolute index into `VM::registers` (i.e. already
   /// includes some frame's `base`).
-  Open(usize),
-  Closed(Value),
+  Open(usize) = 0,
+  Closed(Value) = 1,
+}
+
+pub const UPVALUE_STATE_TAG_OPEN: u8 = 0;
+pub const UPVALUE_STATE_TAG_CLOSED: u8 = 1;
+
+impl UpvalueState {
+  /// Reads the tag byte directly -- see `Obj::tag()`'s identical
+  /// reasoning; exists for verification, not for `jit::codegen` to call.
+  #[inline]
+  pub fn tag(&self) -> u8 {
+    // SAFETY: `#[repr(C, u8)]` guarantees the discriminant is stored
+    // as a `u8` at the very start of the type.
+    unsafe { *(self as *const UpvalueState as *const u8) }
+  }
+}
+
+/// Byte offset from a `Cell<UpvalueState>`'s (or a bare `UpvalueState`'s
+/// -- `Cell<T>` shares `T`'s layout) own address to where its payload
+/// word lives -- the SAME offset for `Open`'s `usize` and `Closed`'s
+/// `Value`, since a C-style tagged union gives every variant one shared
+/// payload region (see `UpvalueState`'s own docs). Measured the same
+/// runtime-probe way `obj_payload_offset()` is, for the same reason:
+/// `offset_of!` can't name a field inside an enum variant. Probed via
+/// `Closed` specifically, but `upvalue_state_offsets_match_real_obj`
+/// (below) confirms `Open` lands at the identical offset.
+pub fn upvalue_state_payload_offset() -> usize {
+  static OFFSET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+  *OFFSET.get_or_init(|| {
+    let probe = UpvalueState::Closed(Value::nil());
+    let base = &probe as *const UpvalueState as usize;
+    let payload = match &probe {
+      UpvalueState::Closed(v) => v as *const Value as usize,
+      UpvalueState::Open(_) => unreachable!(),
+    };
+    payload - base
+  })
+}
+
+/// Byte offset from a `*const Obj` known (via `obj_tag`) to be
+/// `Obj::Upvalue` to its `UpvalueState` tag byte -- always
+/// `obj_payload_offset()` itself, since the `Cell<UpvalueState>` payload
+/// starts there and a `UpvalueState`'s own tag sits at ITS offset 0.
+/// Named separately from `obj_payload_offset()` purely so call sites
+/// read as what they mean.
+pub fn obj_upvalue_state_tag_offset() -> usize {
+  obj_payload_offset()
+}
+
+/// Byte offset from a `*const Obj` known to be `Obj::Upvalue` to its
+/// payload word -- an open register index OR a closed-over `Value`,
+/// whichever the tag byte at `obj_upvalue_state_tag_offset()` says this
+/// particular instance holds. Consulted by `jit::codegen`'s inline
+/// `GetUpval`/`SetUpval` fast path only after that tag check.
+pub fn obj_upvalue_state_payload_offset() -> usize {
+  obj_payload_offset() + upvalue_state_payload_offset()
 }
 
 pub struct ObjFunction {

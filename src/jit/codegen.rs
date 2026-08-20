@@ -3964,6 +3964,180 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `GetUpval`/`SetUpval`'s shared front half: resolves `closure_param
+  /// .upvalues[uidx]` and confirms it's really an `Obj::Upvalue`,
+  /// leaving its raw `*const Obj` current on return. Branches to
+  /// `slow_block` (the ordinary helper) on anything unexpected.
+  ///
+  /// One helper call either way (`zuri_jit_closure_upvalues_ptr`), for
+  /// the same reason `emit_list_get_index` still pays one for the list
+  /// data pointer: `ObjClosure::upvalues` is a real `Vec<Value>`, not a
+  /// hand-rolled `#[repr(C)]` vector, so its own internal field layout
+  /// isn't something generated code should assume. That call is cheap
+  /// (`call_helper_raw`, no live-register flush -- it touches no VM
+  /// register, can't allocate or fail) and everything after it is real
+  /// inline Cranelift code: no bounds check on `uidx` is needed since
+  /// it's always a valid index into a closure built from the exact same
+  /// prototype's `upvalues` descriptor list this instruction's own
+  /// index was compiled against.
+  ///
+  /// The `is_obj`/tag checks below should be unreachable by that same
+  /// construction argument, but stay in anyway -- same discipline
+  /// `emit_self_get_field`'s unproven path uses for `self`: a calling-
+  /// convention invariant, not something to assume in code about to
+  /// dereference raw memory.
+  fn emit_upvalue_obj_ptr(&mut self, uidx: u8, slow_block: Block) -> IrValue {
+    let closure_bits = self.closure_param;
+    let base_ptr = self.call_helper_raw(
+      "zuri_jit_closure_upvalues_ptr",
+      &[self.vm_param, closure_bits],
+    );
+    let upval_val = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      base_ptr,
+      (uidx as i32) * 8,
+    );
+
+    let is_obj = self.is_obj(upval_val);
+    let obj_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(upval_val);
+    let tag = self.obj_tag(ptr);
+    let tag_upvalue = self.i64c(object::OBJ_TAG_UPVALUE as i64);
+    let is_upvalue = self.fb.ins().icmp(IntCC::Equal, tag, tag_upvalue);
+    let checked_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_upvalue, checked_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(checked_block);
+    ptr
+  }
+
+  /// `Instr::GetUpval`'s inline fast path: no helper call for either
+  /// `UpvalueState` variant. `Open` reads straight out of `regs_var`
+  /// (the same absolute registers-array pointer every ordinary register
+  /// access already uses -- an `Open` upvalue's index is, by
+  /// definition, already an absolute index into that exact array, see
+  /// `UpvalueState::Open`'s own docs), `Closed` reads the cell's own
+  /// payload word directly. Only a genuinely unexpected receiver falls
+  /// to `zuri_jit_get_upval`.
+  fn emit_get_upval_fast(&mut self, dst: u8, uidx: u8) {
+    let snapshot = self.snapshot_reg_cache();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    let ptr = self.emit_upvalue_obj_ptr(uidx, slow_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let tag8 = self
+      .fb
+      .ins()
+      .load(types::I8, flags, ptr, object::obj_upvalue_state_tag_offset() as i32);
+    let state_tag = self.fb.ins().uextend(types::I64, tag8);
+    let closed_tag = self.i64c(object::UPVALUE_STATE_TAG_CLOSED as i64);
+    let is_closed = self.fb.ins().icmp(IntCC::Equal, state_tag, closed_tag);
+
+    let closed_block = self.fb.create_block();
+    let open_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_closed, closed_block, &[], open_block, &[]);
+
+    let payload_off = object::obj_upvalue_state_payload_offset() as i32;
+
+    self.fb.switch_to_block(closed_block);
+    let v = self.fb.ins().load(types::I64, flags, ptr, payload_off);
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(open_block);
+    let abs_idx = self.fb.ins().load(types::I64, flags, ptr, payload_off);
+    let regs = self.fb.use_var(self.regs_var);
+    let byte_off = self.fb.ins().imul_imm_s(abs_idx, 8);
+    let addr = self.fb.ins().iadd(regs, byte_off);
+    let v = self.fb.ins().load(types::I64, flags, addr, 0);
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let uidx_i = self.idx(uidx);
+    self.call_checked(
+      "zuri_jit_get_upval",
+      &[self.vm_param, base, dst_i, uidx_i, self.closure_param],
+    );
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot(&snapshot, dst);
+  }
+
+  /// `Instr::SetUpval`'s inline fast path -- `emit_get_upval_fast`'s
+  /// write-side counterpart. `Closed` needs the same write barrier any
+  /// other heap-object field mutation owes (see `emit_write_barrier`);
+  /// `Open` writes straight into `regs_var`, no barrier, exactly like
+  /// `zuri_jit_set_upval`'s own `Open` arm (a register is never a GC
+  /// root-set boundary the way a heap object's own memory is).
+  fn emit_set_upval_fast(&mut self, uidx: u8, src: u8) {
+    let src_val = self.load_reg(src);
+    let snapshot = self.snapshot_reg_cache();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    let ptr = self.emit_upvalue_obj_ptr(uidx, slow_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let tag8 = self
+      .fb
+      .ins()
+      .load(types::I8, flags, ptr, object::obj_upvalue_state_tag_offset() as i32);
+    let state_tag = self.fb.ins().uextend(types::I64, tag8);
+    let closed_tag = self.i64c(object::UPVALUE_STATE_TAG_CLOSED as i64);
+    let is_closed = self.fb.ins().icmp(IntCC::Equal, state_tag, closed_tag);
+
+    let closed_block = self.fb.create_block();
+    let open_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_closed, closed_block, &[], open_block, &[]);
+
+    let payload_off = object::obj_upvalue_state_payload_offset() as i32;
+
+    self.fb.switch_to_block(closed_block);
+    self.fb.ins().store(flags, src_val, ptr, payload_off);
+    self.emit_write_barrier(ptr);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(open_block);
+    let abs_idx = self.fb.ins().load(types::I64, flags, ptr, payload_off);
+    let regs = self.fb.use_var(self.regs_var);
+    let byte_off = self.fb.ins().imul_imm_s(abs_idx, 8);
+    let addr = self.fb.ins().iadd(regs, byte_off);
+    self.fb.ins().store(flags, src_val, addr, 0);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let src_i = self.idx(src);
+    let uidx_i = self.idx(uidx);
+    self.call_checked(
+      "zuri_jit_set_upval",
+      &[self.vm_param, base, src_i, uidx_i, self.closure_param],
+    );
+    self.resync_receiver_from_memory(src);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    self.restore_dirty_from_snapshot_all(&snapshot);
+  }
+
   /// Loads an `Obj::Instance`'s `fields` slice base pointer, given a
   /// raw `*const Obj` already proven (by a runtime tag check against
   /// `OBJ_TAG_INSTANCE`, in a block only reachable when `is_obj` was
@@ -5133,10 +5307,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::Not { dst, src } => {
-        let base = self.base_param;
-        let dst_i = self.idx(dst);
-        let src_i = self.idx(src);
-        self.call_checked("zuri_jit_logical_not", &[self.vm_param, base, dst_i, src_i]);
+        // `emit_is_falsey` already IS the inline fast path (a helper
+        // call only for the rare String/Bytes/BigInt-emptiness case) --
+        // `!x` is just that result, wrapped as a bool `Value` instead of
+        // branched on directly.
+        let falsey = self.emit_is_falsey(src);
+        let zero = self.i64c(0);
+        let is_falsey = self.fb.ins().icmp(IntCC::NotEqual, falsey, zero);
+        let v = self.bool_value(is_falsey);
+        self.store_reg(dst, v);
         false
       },
       Instr::Concat { dst, a, b } => {
@@ -5390,23 +5569,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::GetUpval { dst, idx: uidx } => {
-        let base = self.base_param;
-        let dst_i = self.idx(dst);
-        let uidx_i = self.idx(uidx);
-        self.call_checked(
-          "zuri_jit_get_upval",
-          &[self.vm_param, base, dst_i, uidx_i, self.closure_param],
-        );
+        self.emit_get_upval_fast(dst, uidx);
         false
       },
       Instr::SetUpval { idx: uidx, src } => {
-        let base = self.base_param;
-        let src_i = self.idx(src);
-        let uidx_i = self.idx(uidx);
-        self.call_checked(
-          "zuri_jit_set_upval",
-          &[self.vm_param, base, src_i, uidx_i, self.closure_param],
-        );
+        self.emit_set_upval_fast(uidx, src);
         false
       },
       Instr::CloseUpvalues { from } => {

@@ -441,18 +441,6 @@ pub unsafe extern "C" fn zuri_jit_neg_slow(vm_ptr: *mut VM, base: u64, dst: u64,
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_logical_not(
-  vm_ptr: *mut VM,
-  base: u64,
-  dst: u64,
-  src: u64,
-) -> u64 {
-  let vm = unsafe { vm(vm_ptr) };
-  let v = vm.get_reg(base as usize, src as u8);
-  vm.set_reg(base as usize, dst as u8, Value::bool(v.is_falsey()));
-  OK
-}
-
 /// `Instr::Eq`/`Instr::Neq` -- pure structural `Value::equals`, no
 /// operator-override lookup at all (matches the interpreter exactly;
 /// see `vm.rs`'s own handler, which never calls `try_operator_override`
@@ -1497,6 +1485,24 @@ pub unsafe extern "C" fn zuri_jit_make_closure(
   });
   vm.set_reg(base, dst as u8, closure_val);
   OK
+}
+
+/// `Instr::GetUpval`/`SetUpval`'s inline fast path only needs a raw base
+/// pointer into `ObjClosure::upvalues` -- a real `Vec<Value>`, not a
+/// hand-rolled `#[repr(C)]` one like `ListStorage`, so its own internal
+/// field layout isn't something generated code should ever assume.
+/// Mirrors `zuri_jit_list_data`'s exact reasoning: one small, call-
+/// cheap, allocation-free helper resolves the pointer; the index bounds
+/// (always in range by construction -- a closure's `upvalues` has
+/// exactly one entry per its prototype's own `upvalues` descriptor list,
+/// and `GetUpval`/`SetUpval`'s `idx` is compiled straight from that same
+/// list) and the actual element load happen as real inline Cranelift
+/// code either side of this call. Never fails, touches no VM register,
+/// so `emit_upvalue_fast_path` calls this via `call_helper_raw`, not
+/// `call_checked`.
+pub unsafe extern "C" fn zuri_jit_closure_upvalues_ptr(_vm_ptr: *mut VM, closure_bits: u64) -> u64 {
+  let closure_val = Value::from_bits(closure_bits);
+  closure_val.as_closure().upvalues.as_ptr() as u64
 }
 
 pub unsafe extern "C" fn zuri_jit_get_upval(
@@ -2577,7 +2583,6 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec3!(zuri_jit_close_upvalues),
     spec4!(zuri_jit_bitnot_slow),
     spec4!(zuri_jit_neg_slow),
-    spec4!(zuri_jit_logical_not),
     spec4!(zuri_jit_declare_field),
     spec4!(zuri_jit_set_field_init),
     spec4!(zuri_jit_finalize_class),
@@ -2619,6 +2624,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_call_finish),
     spec5!(zuri_jit_call_super_ctor),
     spec5!(zuri_jit_make_closure),
+    spec2!(zuri_jit_closure_upvalues_ptr),
     spec5!(zuri_jit_get_upval),
     spec5!(zuri_jit_set_upval),
     spec5!(zuri_jit_make_list),
