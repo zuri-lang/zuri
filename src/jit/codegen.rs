@@ -83,6 +83,11 @@ const CALL_FRAME_DST_IN_CALLER_OFFSET: i32 = vm::CALL_FRAME_DST_IN_CALLER_OFFSET
 const CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET: i32 = vm::CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET as i32;
 const CALL_FRAME_COMPILED_OFFSET: i32 = vm::CALL_FRAME_COMPILED_OFFSET as i32;
 const CALL_FRAME_SIZE: i64 = vm::CALL_FRAME_SIZE as i64;
+/// Byte offset (from a `*const ObjFunction`) of its own compiled-entry
+/// cell -- see `object::obj_function_jit_entry_offset`'s own docs for
+/// why `emit_inline_construct` reads this fresh on every call instead
+/// of baking it, unlike `emit_known_call`'s `entry`.
+const PROTO_JIT_ENTRY_OFFSET: i32 = object::obj_function_jit_entry_offset() as i32;
 /// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
 /// (major) and `young_bytes_allocated` (minor) -- lets `emit_safepoint`
 /// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
@@ -1630,16 +1635,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// called explicitly -- both of those happen for free inside
   /// `call_helper`/`call_checked` normally, but this function doesn't
   /// go through either, so the caller must not ALSO call them.
-  fn emit_inline_frame_push(
+  /// The three runtime preconditions `emit_inline_frame_push` (and the
+  /// construct path's own inline fast path) both need verified BEFORE
+  /// doing anything irreversible -- JIT call depth, the callee's
+  /// register window already fitting, and the frame stack already
+  /// having spare capacity. Split out specifically so a caller that
+  /// ALSO needs to do its own side effect between "these hold" and
+  /// "push the frame" (construction's instance allocation + `gc_pins`
+  /// push, which must never happen if the push that's supposed to
+  /// follow it is about to fail and fall back to a path that allocates
+  /// its OWN instance) can check first and only commit once every
+  /// precondition is confirmed. See `emit_inline_construct`'s own docs
+  /// for exactly why this ordering matters there.
+  ///
+  /// Returns `(depth, frames_len)` -- both already loaded as part of
+  /// the checks, and both needed again by the frame construction that
+  /// follows, so callers reuse them instead of reloading.
+  fn emit_call_checks(
     &mut self,
-    proto_bits: u64,
-    callee_num_registers: u8,
-    dst: u8,
     new_base: IrValue,
-    closure_ptr: IrValue,
-    closure_val: IrValue,
+    callee_num_registers: u8,
     slow_block: Block,
-  ) {
+  ) -> (IrValue, IrValue) {
     let vm = self.vm_param;
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
 
@@ -1691,6 +1708,51 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(frames_ok, frames_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(frames_block);
+    (depth, frames_len)
+  }
+
+  fn emit_inline_frame_push(
+    &mut self,
+    proto_bits: u64,
+    callee_num_registers: u8,
+    dst: u8,
+    new_base: IrValue,
+    closure_ptr: IrValue,
+    closure_val: IrValue,
+    slow_block: Block,
+  ) {
+    let (depth, frames_len) = self.emit_call_checks(new_base, callee_num_registers, slow_block);
+    self.emit_frame_construction(
+      proto_bits,
+      dst,
+      new_base,
+      closure_ptr,
+      closure_val,
+      depth,
+      frames_len,
+    );
+  }
+
+  /// The actual `CallFrame` construction + `frames`/`jit_call_depth`
+  /// bump, factored out of `emit_inline_frame_push` so
+  /// `emit_inline_construct` can reuse it AFTER its own allocation step,
+  /// using the `(depth, frames_len)` `emit_call_checks` already
+  /// verified and returned -- every precondition for this to be safe
+  /// was already confirmed by whichever `emit_call_checks` call led
+  /// here.
+  fn emit_frame_construction(
+    &mut self,
+    proto_bits: u64,
+    dst: u8,
+    new_base: IrValue,
+    closure_ptr: IrValue,
+    closure_val: IrValue,
+    depth: IrValue,
+    frames_len: IrValue,
+  ) {
+    let vm = self.vm_param;
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+
     let frames_ptr = self.fb.ins().load(types::I64, flags, vm, FRAMES_PTR_OFFSET);
     let frame_off = self.fb.ins().imul_imm_s(frames_len, CALL_FRAME_SIZE);
     let frame_addr = self.fb.ins().iadd(frames_ptr, frame_off);
@@ -1848,6 +1910,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(pop_block, &[]);
 
     self.fb.switch_to_block(pop_block);
+    self.emit_pop_top_frame();
+    self.store_reg_mem(dst, ret_bits);
+    self.reg_cache[dst as usize] = RegCache::Stale;
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
+  /// Pops `VM::frames`' own top entry and restores `VM::
+  /// jit_scalar_roots_len` to what it held before that frame was
+  /// pushed -- the exact two-step `VM::pop_frame_inner` does, inlined.
+  /// Shared by `emit_inline_frame_finish` and
+  /// `emit_inline_construct_finish`, which differ only in what they do
+  /// with the frame's own former caller-return-value slot afterward.
+  fn emit_pop_top_frame(&mut self) {
+    let vm = self.vm_param;
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let frames_len = self.fb.ins().load(types::I64, flags, vm, FRAMES_LEN_OFFSET);
     let top_idx = self.fb.ins().iadd_imm_s(frames_len, -1);
     let frames_ptr = self.fb.ins().load(types::I64, flags, vm, FRAMES_PTR_OFFSET);
@@ -1864,12 +1943,191 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .store(flags, mark, vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
     self.fb.ins().store(flags, top_idx, vm, FRAMES_LEN_OFFSET);
+  }
 
-    self.store_reg_mem(dst, ret_bits);
+  /// `emit_inline_frame_finish`'s construct-call counterpart -- the
+  /// same deopt/exception/upvalue/pop shape, but discarding the
+  /// constructor's own return value in favour of the instance
+  /// `emit_inline_construct` pinned, and needing the `gc_pins` release
+  /// `zuri_jit_take_constructed_instance` does. See `zuri_jit_new_finish`
+  /// 's own docs for why that release happens exactly here (after the
+  /// deopt/exception checks -- unlike the ordinary-call finish, this
+  /// one has a real resource to release regardless of which of those
+  /// two fire) and `emit_inline_frame_finish`'s own docs for why every
+  /// exit path writes `dst` the same uniform way.
+  fn emit_inline_construct_finish(&mut self, dst: u8, new_base: IrValue) {
+    let vm = self.vm_param;
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+
+    let depth = self
+      .fb
+      .ins()
+      .load(types::I32, flags, vm, JIT_CALL_DEPTH_OFFSET);
+    let new_depth = self.fb.ins().iadd_imm_s(depth, -1);
+    self
+      .fb
+      .ins()
+      .store(flags, new_depth, vm, JIT_CALL_DEPTH_OFFSET);
+
+    let done_block = self.fb.create_block();
+
+    // Deopt is checked BEFORE the `gc_pins` release below, and NOT
+    // released on this branch until after `zuri_jit_finish_deopt`
+    // returns -- matching `zuri_jit_new_finish`'s own strict ordering.
+    // Resolving a deopt resumes the constructor through the
+    // interpreter, which can run arbitrary Zuri code (a collection
+    // included); the instance must stay pinned for every moment that's
+    // happening, or a relocation would leave `gc_pins`' own copy
+    // correctly updated while a bare local `Value` read out beforehand
+    // silently didn't.
+    let deopt_ip = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, PENDING_DEOPT_IP_OFFSET);
+    let neg1 = self.i64c(-1);
+    let no_deopt = self.fb.ins().icmp(IntCC::Equal, deopt_ip, neg1);
+    let deopt_block = self.fb.create_block();
+    let past_deopt_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(no_deopt, past_deopt_block, &[], deopt_block, &[]);
+
+    self.fb.switch_to_block(deopt_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    // `zuri_jit_finish_deopt` writes ITS OWN resolved value into `dst`
+    // on success -- fine for the ordinary-call finish (that value IS
+    // the answer), wrong here (the answer is always the instance, never
+    // whatever the constructor body itself returned). Overwritten
+    // unconditionally right after: cheap, and simpler than a construct-
+    // specific deopt-finish helper for a path this rare.
+    self.call_checked("zuri_jit_finish_deopt", &[vm, base, dst_i]);
+    let instance_after_deopt = self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
+    self.store_reg_mem(dst, instance_after_deopt);
+    self.reg_cache[dst as usize] = RegCache::Stale;
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(past_deopt_block);
+    // No deopt was pending, so nothing has run any Zuri code since the
+    // check above -- safe to release the pin here, still strictly
+    // before the exception check, matching the original's own order.
+    let instance = self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
+    let exc = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, JIT_PENDING_EXCEPTION_OFFSET);
+    let nil = self.u64c(value::NIL_VAL);
+    let no_exc = self.fb.ins().icmp(IntCC::Equal, exc, nil);
+    let exc_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    self.fb.ins().brif(no_exc, ok_block, &[], exc_block, &[]);
+
+    self.fb.switch_to_block(exc_block);
+    let junk = self.i64c(0);
+    self.fb.ins().return_(&[junk]);
+
+    self.fb.switch_to_block(ok_block);
+    let has_open = self
+      .fb
+      .ins()
+      .load(types::I8, flags, vm, HAS_OPEN_UPVALUES_OFFSET);
+    let zero8 = self.fb.ins().iconst(types::I8, 0);
+    let none_open = self.fb.ins().icmp(IntCC::Equal, has_open, zero8);
+    let pop_block = self.fb.create_block();
+    let close_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(none_open, pop_block, &[], close_block, &[]);
+
+    self.fb.switch_to_block(close_block);
+    let zero = self.i64c(0);
+    self.call_checked("zuri_jit_close_upvalues", &[vm, new_base, zero]);
+    self.fb.ins().jump(pop_block, &[]);
+
+    self.fb.switch_to_block(pop_block);
+    self.emit_pop_top_frame();
+    self.store_reg_mem(dst, instance);
     self.reg_cache[dst as usize] = RegCache::Stale;
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+  }
+
+  /// Inlines `zuri_jit_construct_prepare`'s job for a `CallTarget::
+  /// ConstructKnown` callee once its class-identity/generation guard
+  /// has already passed -- see `emit_inline_frame_push`'s own docs for
+  /// the general reasoning (same profiling motivation, same three
+  /// runtime preconditions via `emit_call_checks`). What's different
+  /// about construction: allocating the instance is a real,
+  /// irreversible side effect (a heap allocation plus a `gc_pins`
+  /// push), so `emit_call_checks` runs FIRST and only once it confirms
+  /// the frame push that has to follow will actually succeed does this
+  /// allocate anything -- doing it the other way round risks an
+  /// orphaned, permanently-pinned instance if the checks then fail and
+  /// `slow_block` allocates its own.
+  ///
+  /// Unlike `emit_known_call`'s `entry`, the callee's compiled entry is
+  /// NOT baked as an immediate here -- read fresh via
+  /// `PROTO_JIT_ENTRY_OFFSET` instead, matching `zuri_jit_construct_
+  /// prepare`'s own behavior exactly (see `object::
+  /// obj_function_jit_entry_offset`'s own docs for why: a small, simple
+  /// constructor routinely finishes its own compile AFTER the function
+  /// that constructs it already has, and re-reading live is what lets
+  /// that caller start benefiting the moment it does, rather than
+  /// being stuck on a stale miss for the rest of the run).
+  ///
+  /// Returns the resolved entry address for the caller's own
+  /// `call_indirect`.
+  fn emit_inline_construct(
+    &mut self,
+    ctor_bits: u64,
+    proto_bits: u64,
+    callee_num_registers: u8,
+    dst: u8,
+    func_reg: u8,
+    new_base: IrValue,
+    field_count: u16,
+    slow_block: Block,
+  ) -> IrValue {
+    let (depth, frames_len) = self.emit_call_checks(new_base, callee_num_registers, slow_block);
+
+    let vm = self.vm_param;
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let proto_c = self.u64c(proto_bits);
+    let entry = self
+      .fb
+      .ins()
+      .load(types::I64, flags, proto_c, PROTO_JIT_ENTRY_OFFSET);
+    let zero = self.i64c(0);
+    let entry_ok = self.fb.ins().icmp(IntCC::NotEqual, entry, zero);
+    let alloc_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(entry_ok, alloc_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(alloc_block);
+    let base = self.base_param;
+    let func_i = self.idx(func_reg);
+    let field_count_c = self.i64c(field_count as i64);
+    self.call_helper(
+      "zuri_jit_alloc_and_pin_instance",
+      &[vm, base, func_i, field_count_c],
+    );
+    let closure_c = self.u64c(ctor_bits);
+    let closure_ptr = self.obj_ptr(closure_c);
+    self.emit_frame_construction(
+      proto_bits,
+      dst,
+      new_base,
+      closure_ptr,
+      closure_c,
+      depth,
+      frames_len,
+    );
+    entry
   }
 
   /// Loads a proven-`Obj::List` receiver's element data pointer and
@@ -2191,47 +2449,87 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(gen_hit, lean_block, &[], dynamic_block, &[]);
 
     self.fb.switch_to_block(lean_block);
-    let prepare = self.call_helper(
-      "zuri_jit_construct_prepare",
-      &[
-        vm_p,
-        base,
-        func_i,
-        num_args_i,
-        dst_i,
-        ctor_v,
-        proto_v,
-        field_count_v,
-        closure_out_addr,
-      ],
-    );
-    self.refresh_regs();
-    let zero = self.i64c(0);
-    let is_fast = self.fb.ins().icmp(IntCC::NotEqual, prepare, zero);
-    let fast_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_fast, fast_block, &[], dynamic_block, &[]);
 
-    self.fb.switch_to_block(fast_block);
-    let closure_bits = {
-      let slot = self.closure_out_slot();
-      self.fb.ins().stack_load(types::I64, types::I64, slot, 0)
-    };
-    let neg1 = self.fb.ins().iconst(types::I32, -1);
-    let sig = self.entry_sig_ref();
-    // Identical bracketing requirement to `emit_fast_call`'s own
-    // `call_indirect` -- see the note there.
-    self.flush_live(self.current_ip);
-    self
-      .fb
-      .ins()
-      .call_indirect(sig, prepare, &[vm_p, new_base, closure_bits, neg1]);
-    self.mark_stale_live(self.current_ip);
-    self.refresh_regs();
-    self.call_checked("zuri_jit_new_finish", &[vm_p, base, dst_i, new_base]);
-    self.fb.ins().jump(done_block, &[]);
+    // Eligibility, exactly like `emit_self_call`'s/`emit_known_call`'s:
+    // the receiver ("self") occupies the constructor's own register 0,
+    // so the real argument count to compare against `arity` is
+    // `1 + num_args`, matching `prepare_known_construction`'s own
+    // `num_args + 1` convention.
+    //
+    // SAFETY: `proto_ptr` names a live, old-generation `ObjFunction` --
+    // see `CallTarget::ConstructKnown::proto_ptr`'s own docs.
+    let ctor_proto = unsafe { &*(proto_ptr as *const ObjFunction) };
+    if ctor_proto.variadic || (num_args as u16 + 1) != ctor_proto.arity as u16 {
+      let prepare = self.call_helper(
+        "zuri_jit_construct_prepare",
+        &[
+          vm_p,
+          base,
+          func_i,
+          num_args_i,
+          dst_i,
+          ctor_v,
+          proto_v,
+          field_count_v,
+          closure_out_addr,
+        ],
+      );
+      self.refresh_regs();
+      let zero = self.i64c(0);
+      let is_fast = self.fb.ins().icmp(IntCC::NotEqual, prepare, zero);
+      let fast_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(is_fast, fast_block, &[], dynamic_block, &[]);
+
+      self.fb.switch_to_block(fast_block);
+      let closure_bits = {
+        let slot = self.closure_out_slot();
+        self.fb.ins().stack_load(types::I64, types::I64, slot, 0)
+      };
+      let neg1 = self.fb.ins().iconst(types::I32, -1);
+      let sig = self.entry_sig_ref();
+      // Identical bracketing requirement to `emit_fast_call`'s own
+      // `call_indirect` -- see the note there.
+      self.flush_live(self.current_ip);
+      self
+        .fb
+        .ins()
+        .call_indirect(sig, prepare, &[vm_p, new_base, closure_bits, neg1]);
+      self.mark_stale_live(self.current_ip);
+      self.refresh_regs();
+      self.call_checked("zuri_jit_new_finish", &[vm_p, base, dst_i, new_base]);
+      self.fb.ins().jump(done_block, &[]);
+    } else {
+      // Fully-inline path -- see `emit_inline_construct`'s own docs.
+      let entry = self.emit_inline_construct(
+        ctor_bits,
+        proto_ptr as u64,
+        ctor_proto.num_registers,
+        dst,
+        func,
+        new_base,
+        field_count,
+        dynamic_block,
+      );
+      let fast_block = self.fb.create_block();
+      self.fb.ins().jump(fast_block, &[]);
+
+      self.fb.switch_to_block(fast_block);
+      let neg1 = self.fb.ins().iconst(types::I32, -1);
+      let sig = self.entry_sig_ref();
+      let closure_bits = self.u64c(ctor_bits);
+      self.flush_live(self.current_ip);
+      self
+        .fb
+        .ins()
+        .call_indirect(sig, entry, &[vm_p, new_base, closure_bits, neg1]);
+      self.mark_stale_live(self.current_ip);
+      self.refresh_regs();
+      self.emit_inline_construct_finish(dst, new_base);
+      self.fb.ins().jump(done_block, &[]);
+    }
 
     self.reg_cache = snapshot.clone();
     self.fb.switch_to_block(dynamic_block);

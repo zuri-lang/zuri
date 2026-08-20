@@ -2627,6 +2627,34 @@ impl VM {
     self.gc_pins.push(instance);
   }
 
+  /// `prepare_known_construction`'s allocation half ONLY -- no register-
+  /// window growth check, no frame push. Used by `jit::codegen`'s
+  /// inline construct fast path (`emit_inline_construct`), which
+  /// verifies the window already fits (via `emit_call_checks`, using
+  /// the SAME bound `prepare_known_construction`'s own growth check
+  /// uses: `new_base + proto.num_registers`) before ever calling this,
+  /// specifically so this never needs to grow anything itself -- see
+  /// `emit_inline_construct`'s own docs for why doing this BEFORE that
+  /// check passed would be unsound (an orphaned, permanently-pinned
+  /// instance if the frame push it's paired with then fails and falls
+  /// back to a path that allocates its own).
+  ///
+  /// Returns the new instance -- generated code still needs its `Value`
+  /// bits to build the constructor's own `CallFrame`.
+  pub(crate) fn alloc_and_pin_instance(
+    &mut self,
+    base: usize,
+    func_reg: u8,
+    field_count: usize,
+  ) -> Value {
+    let class_val = self.get_reg(base, func_reg);
+    let instance = self.heap.alloc_instance(class_val, field_count);
+    let new_base = base + func_reg as usize;
+    self.registers[new_base] = instance;
+    self.gc_pins.push(instance);
+    instance
+  }
+
   /// Completes `prepare_compiled_construction`'s bracket: releases the
   /// instance pin and hands back the (possibly relocated) instance, which
   /// is the constructor call's real result -- its own return value is

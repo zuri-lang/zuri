@@ -237,6 +237,26 @@ pub fn obj_instance_class_offset() -> usize {
 mod obj_repr_tests {
   use super::*;
 
+  /// Confirms `Cell<Option<EntryFn>>` (a function pointer, which can
+  /// never validly be null) actually gets Rust's documented null-
+  /// pointer niche optimization -- i.e. is exactly pointer-sized, no
+  /// separate discriminant byte -- which is the entire soundness
+  /// argument behind `obj_function_jit_entry_offset()` reading it as a
+  /// plain `u64` from generated code. A future Rust version changing
+  /// this (extremely unlikely, since it's a documented guarantee, not
+  /// an incidental optimization) would fail this loudly instead of
+  /// silently misreading the tag as part of the pointer.
+  #[test]
+  fn entry_fn_option_is_pointer_sized() {
+    assert_eq!(
+      std::mem::size_of::<Cell<Option<crate::jit::EntryFn>>>(),
+      std::mem::size_of::<usize>()
+    );
+    let empty: Cell<Option<crate::jit::EntryFn>> = Cell::new(None);
+    let empty_bits = unsafe { *(&empty as *const _ as *const u64) };
+    assert_eq!(empty_bits, 0);
+  }
+
   /// Cross-checks every `OBJ_TAG_*` constant against the enum's own
   /// explicit discriminants, via `Obj::tag()` on one real instance of
   /// each variant -- catches the failure mode this whole scheme exists
@@ -1266,6 +1286,27 @@ pub fn obj_native_func_offset() -> usize {
 /// program.
 pub fn obj_closure_function_offset() -> usize {
   obj_payload_offset() + std::mem::offset_of!(ObjClosure, function)
+}
+
+/// Byte offset from a `*const ObjFunction` to its own compiled-entry
+/// cell (`JitInfo::entry`). Read directly by `jit::codegen`'s inline
+/// construct fast path (`emit_inline_construct`) instead of a helper
+/// call, for the same reason `emit_construct_known`'s existing
+/// `zuri_jit_construct_prepare` re-reads this fresh on every call
+/// rather than trusting a value baked at the CALLER's own compile
+/// time: a constructor's own compile can (and often does, since
+/// constructors tend to be small and simple) finish AFTER the caller
+/// that constructs it already has, and re-reading live is what lets
+/// the caller start using it the moment that happens, instead of
+/// being stuck on a stale `entry == 0` for the rest of the run.
+///
+/// Sound to read as a plain `u64` with no further interpretation:
+/// `Cell<Option<EntryFn>>` has a null-pointer niche (a function pointer
+/// is never validly null), so `0` and "the entry address" are the
+/// type's own only two representations -- no separate `is_some` tag
+/// byte to also read.
+pub const fn obj_function_jit_entry_offset() -> usize {
+  std::mem::offset_of!(ObjFunction, jit) + std::mem::offset_of!(JitInfo, entry)
 }
 
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be

@@ -69,16 +69,6 @@
 //! `Chunk::jump_tables` access.
 
 use std::cell::Cell;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-// TEMPORARY diagnostic counters -- kept until the inline-call-path
-// investigation is actually finished this time. Remove before this
-// lands anywhere.
-pub static DIAG_DIRECT_CALL_PREPARE: AtomicU64 = AtomicU64::new(0);
-pub static DIAG_CALL_FINISH: AtomicU64 = AtomicU64::new(0);
-pub static DIAG_ZURI_JIT_CALL: AtomicU64 = AtomicU64::new(0);
-pub static DIAG_ZURI_JIT_INVOKE: AtomicU64 = AtomicU64::new(0);
-pub static DIAG_CONSTRUCT_PREPARE: AtomicU64 = AtomicU64::new(0);
 
 use crate::vm::chunk::{InvokeCacheCell, JumpKey};
 use crate::vm::object::{
@@ -841,7 +831,6 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
   field_count: u64,
   closure_out: u64,
 ) -> u64 {
-  DIAG_CONSTRUCT_PREPARE.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   let num_args = num_args as u8;
   if !vm.jit_depth_ok() || num_args == u8::MAX {
@@ -873,6 +862,39 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
   vm.mark_top_frame_compiled();
   unsafe { *(closure_out as *mut u64) = ctor_bits };
   entry as usize as u64
+}
+
+/// `jit::codegen`'s inline construct fast path's ONE remaining real
+/// call: allocating the instance and pinning it, exactly `VM::
+/// alloc_and_pin_instance`'s job (see its own docs for why this is
+/// deliberately NOT paired with a register-window growth check --
+/// generated code has already verified the window fits, via the same
+/// `emit_call_checks` its matching `emit_frame_construction` call
+/// uses). Returns the new instance's `Value` bits.
+pub unsafe extern "C" fn zuri_jit_alloc_and_pin_instance(
+  vm_ptr: *mut VM,
+  base: u64,
+  func_reg: u64,
+  field_count: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.alloc_and_pin_instance(base as usize, func_reg as u8, field_count as usize)
+    .to_bits()
+}
+
+/// `jit::codegen`'s inline construct fast path's other mandatory real
+/// call, alongside `zuri_jit_alloc_and_pin_instance`: releasing the
+/// `gc_pins` entry that call pushed. Unlike `Instr::CloseUpvalues`
+/// (usually a no-op, so worth an inline emptiness check first), a
+/// construct call's pin is ALWAYS there to release exactly once, so
+/// there's no hot-path variant of this worth skipping -- see
+/// `VM::take_constructed_instance`'s own docs for why this specific
+/// step has to happen exactly here (after any collection the callee's
+/// own execution could have triggered, before the instance is ever
+/// treated as a plain untracked Rust value again).
+pub unsafe extern "C" fn zuri_jit_take_constructed_instance(vm_ptr: *mut VM) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.take_constructed_instance().to_bits()
 }
 
 /// `zuri_jit_new_prepare`'s other half -- `zuri_jit_call_finish` with
@@ -944,7 +966,6 @@ pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
   num_args: u64,
   dst: u64,
 ) -> u64 {
-  DIAG_DIRECT_CALL_PREPARE.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   if !vm.jit_depth_ok() {
     return 0;
@@ -982,7 +1003,6 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
   new_base: u64,
   ret_bits: u64,
 ) -> u64 {
-  DIAG_CALL_FINISH.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   vm.jit_depth_exit();
 
@@ -1054,7 +1074,6 @@ pub unsafe extern "C" fn zuri_jit_call(
   num_args: u64,
   dst: u64,
 ) -> u64 {
-  DIAG_ZURI_JIT_CALL.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   match vm.dispatch_call_sync(base as usize, func_reg as u8, num_args as u8, dst as u8) {
     Ok(()) => OK,
@@ -1111,7 +1130,6 @@ pub unsafe extern "C" fn zuri_jit_invoke(
   method_name_bits: u64,
   cache_addr: u64,
 ) -> u64 {
-  DIAG_ZURI_JIT_INVOKE.fetch_add(1, Ordering::Relaxed);
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
   let obj = obj as u8;
@@ -2661,6 +2679,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec6!(zuri_jit_call_prepare),
     spec6!(zuri_jit_new_prepare),
     spec9!(zuri_jit_construct_prepare),
+    spec4!(zuri_jit_alloc_and_pin_instance),
+    spec1!(zuri_jit_take_constructed_instance),
     spec4!(zuri_jit_new_finish),
     spec9!(zuri_jit_invoke_prepare),
     spec5!(zuri_jit_direct_call_prepare),
