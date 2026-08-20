@@ -1316,9 +1316,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// memory is already correct and this function has nothing to do for
   /// it (`flush_live` only touches registers still `Dirty`).
   fn flush_before_jump(&mut self, target_ip: usize) {
-    if self.merge_points[target_ip] {
+    // `target_ip` can legitimately land one past the last real
+    // instruction: a branch that's dead code because it immediately
+    // follows an unconditional `Return` (e.g. the "skip past `else`"
+    // jump after a `then` arm that already returned) still gets
+    // compiled -- nothing proves it unreachable before codegen runs --
+    // but there's no guarantee anything was emitted after it for its
+    // target to land on. Nothing needs flushing for a target that
+    // doesn't exist.
+    if target_ip < self.merge_points.len() && self.merge_points[target_ip] {
       self.flush_live(target_ip);
     }
+  }
+
+  /// The block a jump to `target_ip` should branch into. See
+  /// `flush_before_jump`'s docs for why `target_ip` can land one past
+  /// the last real instruction -- that's genuinely dead code (nothing
+  /// can fall through into a branch sitting right after an
+  /// unconditional `Return`), so which block it names doesn't matter
+  /// at runtime; it only has to be a valid one for Cranelift's sake.
+  /// Its own block, an unconditional jump to itself, is that: sound
+  /// specifically because it can never actually be entered.
+  fn jump_target_block(&self, ip: usize, target_ip: usize) -> Block {
+    self.blocks.get(target_ip).copied().unwrap_or(self.blocks[ip])
   }
 
   /// Snapshots `reg_cache` before a guarded instruction's own internal
@@ -6199,7 +6219,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         } else {
           self.flush_before_jump(target_ip);
         }
-        self.fb.ins().jump(self.blocks[target_ip], &[]);
+        let target_block = self.jump_target_block(ip, target_ip);
+        self.fb.ins().jump(target_block, &[]);
         true
       },
       Instr::JmpIfFalse { cond, offset } => {
@@ -6213,9 +6234,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.flush_before_jump(target_ip);
         }
         self.flush_before_jump(ip + 1);
+        let target_block = self.jump_target_block(ip, target_ip);
         self.fb.ins().brif(
           is_falsey,
-          self.blocks[target_ip],
+          target_block,
           &[],
           self.blocks[ip + 1],
           &[],
@@ -6233,9 +6255,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.flush_before_jump(target_ip);
         }
         self.flush_before_jump(ip + 1);
+        let target_block = self.jump_target_block(ip, target_ip);
         self.fb.ins().brif(
           is_truthy,
-          self.blocks[target_ip],
+          target_block,
           &[],
           self.blocks[ip + 1],
           &[],

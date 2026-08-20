@@ -20,6 +20,14 @@ struct Local {
   reg: u8,
   is_const: bool,
   depth: usize,
+  /// Set by `resolve_upvalue` the moment some nested closure is found to
+  /// capture this local. Since compilation is single-pass and a closure
+  /// literal can only appear (and so only be compiled, and so only ever
+  /// call `resolve_upvalue`) lexically inside the block that declares
+  /// this local, every capture of it is guaranteed to have already been
+  /// recorded here by the time that block finishes compiling and has to
+  /// decide whether it needs to emit `Instr::CloseUpvalues` at all.
+  captured: bool,
 }
 
 /// Everything about compiling a function -- its own chunk, register
@@ -422,6 +430,32 @@ impl<'a> Compiler<'a> {
     self.emit(Instr::Jmp { offset })
   }
 
+  /// Can execution of `stmt` NEVER fall through past its own end --
+  /// every path through it exits some other way (`return`, `raise`,
+  /// `break`, `continue`) rather than reaching whatever comes next?
+  ///
+  /// Deliberately conservative: false is always a safe answer (it just
+  /// means a caller keeps the ordinary control-flow jump it would have
+  /// emitted anyway), so every arm here only returns true when EVERY
+  /// path through `stmt` is provably covered. A `Block`'s own answer
+  /// defers entirely to its last statement -- sound regardless of what
+  /// any EARLIER statement does, since if the last one never falls
+  /// through, nothing after it is reachable either way. `While` is
+  /// always false here even though `while true { ... }` genuinely can
+  /// never fall through either -- proving that soundly means proving
+  /// every exit from the loop body is covered too, which is more
+  /// analysis than this optimization is worth.
+  fn stmt_never_falls_through(stmt: &Stmt) -> bool {
+    match stmt {
+      Stmt::Return(_) | Stmt::Raise(_) | Stmt::Break | Stmt::Continue => true,
+      Stmt::Block(stmts) => stmts.last().is_some_and(Self::stmt_never_falls_through),
+      Stmt::If(_, then_b, Some(else_b)) => {
+        Self::stmt_never_falls_through(then_b) && Self::stmt_never_falls_through(else_b)
+      },
+      _ => false,
+    }
+  }
+
   fn identifier_name(token: &Token) -> String {
     match &token.kind {
       TokenKind::Identifier(s) => s.clone(),
@@ -457,19 +491,28 @@ impl<'a> Compiler<'a> {
     }
     let enclosing_idx = scope_idx - 1;
 
-    if let Some(reg) = self.scopes[enclosing_idx]
+    if let Some(pos) = self.scopes[enclosing_idx]
       .locals
       .iter()
-      .rev()
-      .find(|l| l.name == name)
-      .map(|l| l.reg)
+      .rposition(|l| l.name == name)
     {
+      self.scopes[enclosing_idx].locals[pos].captured = true;
+      let reg = self.scopes[enclosing_idx].locals[pos].reg;
       return Some(self.add_upvalue(scope_idx, UpvalueDescriptor::Local(reg)));
     }
     if let Some(up_idx) = self.resolve_upvalue(enclosing_idx, name) {
       return Some(self.add_upvalue(scope_idx, UpvalueDescriptor::Upvalue(up_idx)));
     }
     None
+  }
+
+  /// Does any local currently in scope, at register `from` or above,
+  /// need closing before a `break`/`continue` jumps out from under it?
+  /// Used instead of the `locals[locals_mark..]` slice `Stmt::Block`
+  /// checks, since a mid-block jump doesn't truncate `locals` -- every
+  /// local from an enclosing scope is still sitting in the same Vec.
+  fn locals_captured_from(&self, from: u8) -> bool {
+    self.cur().locals.iter().any(|l| l.reg >= from && l.captured)
   }
 
   fn add_upvalue(&mut self, scope_idx: usize, desc: UpvalueDescriptor) -> u8 {
@@ -526,6 +569,7 @@ impl<'a> Compiler<'a> {
         reg,
         is_const: false,
         depth: 0,
+        captured: false,
       });
     }
     let variadic_tail_idx = is_variadic.then(|| params.len() - 1);
@@ -631,6 +675,7 @@ impl<'a> Compiler<'a> {
         reg: self_reg,
         is_const: true,
         depth: 0,
+        captured: false,
       });
     }
 
@@ -643,6 +688,7 @@ impl<'a> Compiler<'a> {
         reg,
         is_const: false,
         depth: 0,
+        captured: false,
       });
     }
     let variadic_tail_idx = is_variadic.then(|| params.len() - 1);
@@ -692,6 +738,7 @@ impl<'a> Compiler<'a> {
       reg: self_reg,
       is_const: true,
       depth: 0,
+      captured: false,
     });
 
     for prop in own_fields {
@@ -785,6 +832,7 @@ impl<'a> Compiler<'a> {
         reg: sreg,
         is_const: true,
         depth,
+        captured: false,
       });
     }
 
@@ -927,8 +975,13 @@ impl<'a> Compiler<'a> {
       src: dst,
     });
 
+    let any_captured = self.cur().locals[locals_mark..]
+      .iter()
+      .any(|l| l.captured);
     self.cur_mut().locals.truncate(locals_mark);
-    self.emit(Instr::CloseUpvalues { from: mark });
+    if any_captured {
+      self.emit(Instr::CloseUpvalues { from: mark });
+    }
     self.free_regs_to(mark);
   }
 
@@ -2146,6 +2199,7 @@ impl<'a> Compiler<'a> {
         reg,
         is_const: false,
         depth,
+        captured: false,
       });
       (reg, name)
     });
@@ -2244,6 +2298,7 @@ impl<'a> Compiler<'a> {
       reg: value_reg,
       is_const: true,
       depth,
+      captured: false,
     });
 
     // token isn't needed anymore now that redeclaration is never an
@@ -2380,9 +2435,11 @@ impl<'a> Compiler<'a> {
         }
 
         self.cur_mut().scope_depth -= 1;
-        let declared_locals = self.cur().locals.len() > locals_mark;
+        let any_captured = self.cur().locals[locals_mark..]
+          .iter()
+          .any(|l| l.captured);
         self.cur_mut().locals.truncate(locals_mark);
-        if declared_locals {
+        if any_captured {
           self.emit(Instr::CloseUpvalues { from: mark });
         }
         self.free_regs_to(mark);
@@ -2397,10 +2454,25 @@ impl<'a> Compiler<'a> {
 
         match else_branch {
           Some(else_stmt) => {
-            let else_jump = self.emit_jump();
+            // Skip the usual "hop over `else`" jump when `then_branch`
+            // can never fall through to it in the first place (see
+            // `Self::stmt_never_falls_through`'s own docs) -- not just
+            // an optimization: with nothing forcing the compiler to pad
+            // the chunk with an implicit trailing instruction once its
+            // real last one already exits some other way, patching a
+            // dead jump to "wherever the if/else ends" can land one
+            // past the very last instruction in the whole chunk, which
+            // the JIT has nothing valid to compile a jump target into.
+            let else_jump = if Self::stmt_never_falls_through(then_branch) {
+              None
+            } else {
+              Some(self.emit_jump())
+            };
             self.patch_jump(then_jump);
             self.compile_statement(else_stmt);
-            self.patch_jump(else_jump);
+            if let Some(else_jump) = else_jump {
+              self.patch_jump(else_jump);
+            }
           },
           None => {
             self.patch_jump(then_jump);
@@ -2443,7 +2515,9 @@ impl<'a> Compiler<'a> {
           self.report_error_here("'break' used outside of a loop".to_string());
         } else {
           let body_mark = self.cur().loops.last().unwrap().body_mark;
-          self.emit(Instr::CloseUpvalues { from: body_mark });
+          if self.locals_captured_from(body_mark) {
+            self.emit(Instr::CloseUpvalues { from: body_mark });
+          }
           let jump_at = self.emit_jump();
           self
             .cur_mut()
@@ -2462,7 +2536,9 @@ impl<'a> Compiler<'a> {
             let loop_ctx = self.cur().loops.last().unwrap();
             (loop_ctx.body_mark, loop_ctx.continue_target)
           };
-          self.emit(Instr::CloseUpvalues { from: body_mark });
+          if self.locals_captured_from(body_mark) {
+            self.emit(Instr::CloseUpvalues { from: body_mark });
+          }
           let continue_location = self.emit_loop(continue_target);
           self
             .cur_mut()
@@ -2539,6 +2615,7 @@ impl<'a> Compiler<'a> {
             reg,
             is_const: *is_const,
             depth,
+            captured: false,
           });
         }
       },
