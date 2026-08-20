@@ -1822,7 +1822,20 @@ impl Heap {
   /// bake it into compiled code as a compile-time immediate instead
   /// of a runtime load -- sound specifically because it's the one
   /// threshold in this collector that's truly constant.
-  pub(crate) const YOUNG_NEXT_GC: usize = 32 * 1024 * 1024;
+  /// 128MB, not the 32MB this originally shipped with: measured
+  /// directly on `benchmarks/binary-tree.zu` (`ZURI_GC_LOG=1`), 32MB
+  /// meant EVERY single minor collection promoted 100% of what it
+  /// scanned -- `[gc-minor] promoted/freed across N -> N objects` with
+  /// N unchanged on both sides, every single time, because one
+  /// mid-sized recursive tree construction alone (a depth-20 binary
+  /// tree is ~144MB of `TreeNode`s) already outlives a 32MB nursery
+  /// cycle while still fully reachable from the in-progress recursion.
+  /// Old-generation then only reclaims that same garbage later, via
+  /// the strictly more expensive mark-sweep major collection -- exactly
+  /// the cost a young generation exists to avoid paying. 128MB gives
+  /// real headroom for that same recursive pattern's smaller, genuinely
+  /// short-lived calls to die for free.
+  pub(crate) const YOUNG_NEXT_GC: usize = 128 * 1024 * 1024;
 
   /// Upper bound on how many nursery chunk buffers `reset_nursery`
   /// keeps allocated (emptied, not dropped) between cycles for

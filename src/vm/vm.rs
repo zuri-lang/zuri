@@ -1948,10 +1948,10 @@ impl VM {
   #[inline(never)]
   fn relocate_for_compiled_entry(&mut self, closure_val: Value) -> Value {
     // Must pin before collecting, not resolve through the stale pointer
-    // afterward: reset_nursery (collect_minor's last step) deallocates
-    // every nursery chunk beyond the first entirely, so a stale pointer
-    // into one of those is a use-after-free by the time you'd look it up.
-    // Pinning first lets the same collection's own root scan update it the
+    // afterward: a minor collection relocates every reachable young
+    // object for real (see `Heap::forward_or_promote`), so a pointer
+    // captured before one runs is stale the moment it returns. Pinning
+    // first lets the same collection's own root scan update it the
     // ordinary way.
     let mark = self.pin_values([closure_val]);
     // A real, full minor collection, not an isolated relocation of just
