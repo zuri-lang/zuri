@@ -133,6 +133,18 @@ class LocalBox {
   @new(value) { self.value = value }
 }
 
+def test_main_script_class_constructed_inside_coroutine() {
+  # a structurally-transferred class's constructor must actually run
+  # on the worker side too, not just when an already-built instance
+  # crosses as data -- this is what test_main_script_class exercises.
+  var t = coroutine.spawn(@() {
+    var box = LocalBox(9)
+    return box.value
+  })
+  assert t.join() == 9, "a class's own @new() must run correctly when constructed inside a coroutine"
+  echo 'test_main_script_class_constructed_inside_coroutine passed'
+}
+
 def test_module_scoped_class_instance() {
   var c = coroutine_worker.make_counter(10)
   var t = coroutine.spawn(@(counter) { return counter.increment() }, c)
@@ -1113,6 +1125,7 @@ test_anonymous_lambda()
 test_main_script_function()
 test_main_script_function_raises_builtin_error()
 test_main_script_class()
+test_main_script_class_constructed_inside_coroutine()
 test_module_scoped_class_instance()
 test_bound_method_as_spawn_target()
 test_bound_method_as_argument()

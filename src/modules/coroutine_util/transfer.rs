@@ -1112,8 +1112,11 @@ fn materialize_class(
     )?));
   }
   // Same derivation `Instr::FinalizeClass` uses: the constructor, if
-  // any, is always the method sharing the class's own name.
-  let constructor = methods.get(&cc.name).copied();
+  // any, is the method literally named "@new" -- NOT one sharing the
+  // class's own name (that was the bug here: every structurally
+  // transferred class silently lost its constructor, since no class
+  // is ever actually named "@new").
+  let constructor = methods.get("@new").copied();
 
   let class_val = vm.pinned(p);
   {
