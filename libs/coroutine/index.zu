@@ -271,6 +271,61 @@ def wait_any(coroutines: list, timeout: ?number) {
 }
 
 /**
+ * Blocks until every one of `coroutines` has finished, then returns
+ * their results in the same order as `coroutines`.
+ *
+ * @param [Coroutine] coroutines: may be empty (returns `[]`).
+ * @param number timeout: seconds to wait for all of them combined, not
+ *   per coroutine. Waits indefinitely if omitted.
+ * @returns list
+ * @raises CoroutineError from the first one (in `coroutines` order)
+ *   whose function raised, once every one of them has finished
+ * @raises CoroutineTimeoutError if `timeout` elapses before all of
+ *   them finish
+ */
+def wait_all(coroutines: list, timeout: ?number) {
+  if coroutines.length() == 0 {
+    return []
+  }
+  var ptrs = []
+  for c in coroutines {
+    ptrs.append(c.handle())
+  }
+  if !_coroutine.wait_all(ptrs, timeout) {
+    raise CoroutineTimeoutError('wait_all() timed out after ${timeout} seconds')
+  }
+  var results = []
+  for c in coroutines {
+    results.append(c.join())
+  }
+  return results
+}
+
+/**
+ * Runs `fn` once per item in `items`, in parallel across the
+ * coroutine pool, and returns the results in the same order as
+ * `items`. Equivalent to spawning a coroutine per item and passing the
+ * handles to `wait_all()`.
+ *
+ * @param function fn: a closure, bound method, or class method.
+ * @param list items
+ * @param number timeout: seconds to wait for the whole batch combined.
+ *   Waits indefinitely if omitted.
+ * @returns list
+ * @raises CoroutineError from the first item (in `items` order) whose
+ *   call raised, once every call has finished
+ * @raises CoroutineTimeoutError if `timeout` elapses before every
+ *   call finishes
+ */
+def map(fn: function, items: list, timeout: ?number) {
+  var tasks = []
+  for item in items {
+    tasks.append(spawn(fn, item))
+  }
+  return wait_all(tasks, timeout)
+}
+
+/**
  * Checks whether the currently running coroutine has been asked to
  * stop via its handle's `cancel()`. Meant to be polled periodically
  * by long-running or looping coroutine code so it can return early.

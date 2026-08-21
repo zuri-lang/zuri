@@ -313,6 +313,33 @@ pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Durat
   }
 }
 
+/// Blocks until EVERY one of `states` has finished, returning `true`.
+/// Gives up early and returns `false` if `timeout` elapses first with
+/// at least one still pending. Unlike `wait_any_coroutines` there's no
+/// "which one" to report -- the caller already has the whole list and
+/// can `join()` each once this returns `true`.
+pub fn wait_all_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> bool {
+  let deadline = timeout.map(|d| Instant::now() + d);
+  let (m, cv) = wake_gate();
+  let mut guard = lock(m);
+  loop {
+    if states.iter().all(|s| s.is_done()) {
+      return true;
+    }
+    guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
+      Some(d) if d.is_zero() => return states.iter().all(|s| s.is_done()),
+      Some(d) => {
+        let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        if result.timed_out() {
+          return states.iter().all(|s| s.is_done());
+        }
+        g
+      },
+      None => cv.wait(guard).unwrap_or_else(PoisonError::into_inner),
+    };
+  }
+}
+
 /// Blocks until at least one of `states` (channels) has a value ready
 /// to receive or is closed, returning its index and the outcome --
 /// already taken off the winning channel's own queue, same as

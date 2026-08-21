@@ -43,6 +43,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       native(vm, "current_is_cancelled", 0, false, current_is_cancelled),
     ),
     ("wait_any", native(vm, "wait_any", 2, false, wait_any)),
+    ("wait_all", native(vm, "wait_all", 2, false, wait_all)),
     ("select", native(vm, "select", 2, false, select)),
     (
       "channel_new",
@@ -310,6 +311,25 @@ fn wait_any(ctx: &mut ZuriContext) -> Result<Value, String> {
     Some(i) => Ok(status_pair(ctx.vm, "ok", Value::number(i as f64))),
     None => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
   }
+}
+
+fn wait_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 0, ArgType::List);
+  let timeout = optional_timeout(ctx, 1)?;
+  let items = ctx.args[0].as_list();
+  let mut states = Vec::with_capacity(items.len());
+  for v in &items {
+    if !v.is_ptr_type(pool::COROUTINE_PTR_TYPE) {
+      return Err(format!(
+        "{}() expects a list of coroutines, got a value of type {}",
+        ctx.name,
+        v.type_name()
+      ));
+    }
+    states.push(coroutine_state_of_value(*v)?);
+  }
+  Ok(Value::bool(pool::wait_all_coroutines(&states, timeout)))
 }
 
 // ---------------------------------------------------------------------

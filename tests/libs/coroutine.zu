@@ -576,6 +576,69 @@ def test_select_timeout() {
   echo 'test_select_timeout passed'
 }
 
+def test_wait_all_collects_results_in_order() {
+  var a = coroutine.spawn(coroutine_worker.square, 2)
+  var b = coroutine.spawn(coroutine_worker.square, 3)
+  var c = coroutine.spawn(coroutine_worker.square, 4)
+  var results = coroutine.wait_all([a, b, c])
+  assert results == [4, 9, 16], 'wait_all() must return results in the same order as its input'
+  echo 'test_wait_all_collects_results_in_order passed'
+}
+
+def test_wait_all_empty_list() {
+  assert coroutine.wait_all([]) == [], 'wait_all() on an empty list must return an empty list'
+  echo 'test_wait_all_empty_list passed'
+}
+
+def test_wait_all_raises_first_failure() {
+  var ok = coroutine.spawn(coroutine_worker.square, 5)
+  var failing = coroutine.spawn(coroutine_worker.boom)
+  var e = nil
+  catch {
+    coroutine.wait_all([ok, failing])
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'wait_all() must surface a failing coroutine as CoroutineError'
+  echo 'test_wait_all_raises_first_failure passed'
+}
+
+def test_wait_all_timeout() {
+  var gate = coroutine.channel(0)
+  var t = coroutine.spawn(@(ch) { return ch.recv() }, gate)
+
+  var timed_out = false
+  catch {
+    coroutine.wait_all([t], 0.05)
+  } as e {
+    timed_out = instance_of(e, coroutine.CoroutineTimeoutError)
+  }
+  assert timed_out, 'wait_all() must raise CoroutineTimeoutError once the timeout elapses'
+
+  gate.send(3)
+  assert t.join() == 3, 'the coroutine must still be joinable normally afterward'
+  echo 'test_wait_all_timeout passed'
+}
+
+def test_map_runs_in_parallel_and_preserves_order() {
+  var results = coroutine.map(coroutine_worker.square, [1, 2, 3, 4, 5])
+  assert results == [1, 4, 9, 16, 25], 'map() must apply fn to every item and preserve input order'
+  echo 'test_map_runs_in_parallel_and_preserves_order passed'
+}
+
+def test_map_propagates_failure() {
+  var e = nil
+  catch {
+    coroutine.map(@(n) { raise TypeError('boom ${n}') }, [1, 2])
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'map() must surface a failing call as CoroutineError'
+  echo 'test_map_propagates_failure passed'
+}
+
 def test_configure_rejects_invalid() {
   catch {
     coroutine.configure(0)
@@ -647,6 +710,12 @@ test_select_returns_ready_channel()
 test_select_on_closed_channel()
 test_select_rejects_empty_list()
 test_select_timeout()
+test_wait_all_collects_results_in_order()
+test_wait_all_empty_list()
+test_wait_all_raises_first_failure()
+test_wait_all_timeout()
+test_map_runs_in_parallel_and_preserves_order()
+test_map_propagates_failure()
 test_configure_rejects_invalid()
 test_configure_after_pool_started()
 test_pool_size_and_cpu_count()
