@@ -1893,6 +1893,11 @@ pub unsafe extern "C" fn zuri_jit_get_slice(
 // once), so these prioritize exactness over speed.
 // ---------------------------------------------------------------------
 
+/// `func_ptr_bits` is the currently-compiling function itself -- needed
+/// for `globals_module`, exactly like `zuri_jit_finalize_class` right
+/// below (see its own doc comment); stamped onto the new `ObjClass` so
+/// a class declared via the JIT fast path gets the same home a class
+/// declared through the interpreter would.
 pub unsafe extern "C" fn zuri_jit_make_class(
   vm_ptr: *mut VM,
   base: u64,
@@ -1900,9 +1905,11 @@ pub unsafe extern "C" fn zuri_jit_make_class(
   name_bits: u64,
   has_super: u64,
   super_reg: u64,
+  func_ptr_bits: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
+  let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
   let name = Value::from_bits(name_bits).as_str().to_string();
 
   let superclass_val = if has_super != 0 {
@@ -1944,6 +1951,7 @@ pub unsafe extern "C" fn zuri_jit_make_class(
     constructor,
     static_slots: Default::default(),
     statics: Vec::new(),
+    globals_module: func.globals_module,
   });
   vm.set_reg(base, dst as u8, class_val);
   OK
@@ -2796,6 +2804,6 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec6!(zuri_jit_set_global),
     spec6!(zuri_jit_assign_global),
     spec6!(zuri_jit_get_slice),
-    spec6!(zuri_jit_make_class),
+    spec7!(zuri_jit_make_class),
   ]
 }

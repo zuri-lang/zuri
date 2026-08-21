@@ -1,0 +1,42 @@
+def square(n) {
+  return n * n
+}
+
+def make_adder(x) {
+  return @(n) {
+    return n + x
+  }
+}
+
+def make_fact() {
+  var fact
+  fact = @(n) {
+    if n <= 1 {
+      return 1
+    }
+    return n * fact(n - 1)
+  }
+  return fact
+}
+
+class Point {
+  var x
+  var y
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  sum() {
+    return self.x + self.y
+  }
+}
+
+def make_point(x, y) {
+  return Point(x, y)
+}
+
+def boom() {
+  raise Error('boom from worker')
+}

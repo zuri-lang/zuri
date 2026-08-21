@@ -46,7 +46,12 @@ fn main() {
   // Tell Cargo to re-run this script only if Cargo.toml changes
   println!("cargo:rerun-if-changed=Cargo.toml");
 
-  println!("cargo:rerun-if-changed=libs/*");
+  // A directory path, not a glob: `cargo:rerun-if-changed` doesn't
+  // expand `libs/*` (that's not a real path, so Cargo just watches
+  // nothing), but it does watch a directory's whole contents when
+  // given the directory itself -- same pattern already used for
+  // `tests/` below.
+  println!("cargo:rerun-if-changed=libs");
   copy_to_output("libs", &env::var("PROFILE").unwrap()).expect("Could not copy");
 
   generate_zu_conformance_tests(&manifest_dir);

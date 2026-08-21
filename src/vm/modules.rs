@@ -157,7 +157,14 @@ fn module_display_name(file_path: &Path) -> String {
 /// Resolves `base` to an actual `.zu` file, loads it (reusing the
 /// cache if this exact canonical path has already been loaded), and
 /// hands back its Module Value.
-fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> ImportResult {
+///
+/// `pub(crate)`, not just `fn`: `modules::coroutine_util` reuses this
+/// directly to load a module's source into a worker isolate's own,
+/// independent `VM`/`Heap` -- the exact same load-and-cache pipeline
+/// `import` uses, just invoked with an already-canonical path instead
+/// of a raw import string. No new module-loading logic exists for
+/// coroutines; this is the only one there ever was.
+pub(crate) fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> ImportResult {
   let Some(file_path) = resolve_candidate(base) else {
     return Err(vm.raise(
       "ModuleNotFoundError",

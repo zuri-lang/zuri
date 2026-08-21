@@ -3840,6 +3840,7 @@ impl VM {
               constructor,
               static_slots: FxHashMap::default(),
               statics: Vec::new(),
+              globals_module: func.globals_module,
             });
             self.set_reg(base, dst, class_val);
           },
@@ -4508,6 +4509,20 @@ impl VM {
     debug_assert!((base + r as usize) < self.registers.len());
     unsafe {
       *self.registers.get_unchecked_mut(base + r as usize) = v;
+    }
+  }
+
+  /// Reads an `Obj::Upvalue`'s current value, whether it's still Open
+  /// (pointing at a live register in some still-executing frame) or
+  /// already Closed -- the same two-way read `Instr::GetUpval` does
+  /// inline. `pub(crate)` so code outside the interpreter loop (e.g.
+  /// `modules::coroutine_util`, which needs to snapshot a closure's
+  /// captured values before they can cross a thread boundary) can read
+  /// one without duplicating that match.
+  pub(crate) fn read_upvalue(&self, upvalue: Value) -> Value {
+    match upvalue.as_upvalue().get() {
+      UpvalueState::Open(abs_idx) => self.registers[abs_idx],
+      UpvalueState::Closed(v) => v,
     }
   }
 

@@ -822,6 +822,17 @@ pub struct ObjClass {
   /// declaration time; see the struct-level doc comment above.
   pub static_slots: FxHashMap<String, u16>,
   pub statics: Vec<Cell<Value>>,
+  /// Which globals table the class declaration itself lives in -- `None`
+  /// for the main script, `Some(module)` otherwise. Exactly
+  /// `ObjFunction::globals_module` for whichever function was executing
+  /// the `class` declaration; stamped once at `Instr::MakeClass` and
+  /// never changed afterward. Every class reaches `Instr::FinalizeClass`
+  /// (which already rejects a duplicate name in this same scope), so
+  /// this is always resolvable back to a real `(home, name)` pair --
+  /// see `modules::coroutine_util` for the one consumer that actually
+  /// needs it: re-finding a class by name in a freshly-loaded copy of
+  /// its own home module when a coroutine crosses isolate boundaries.
+  pub globals_module: Option<Value>,
 }
 
 /// A `#[repr(C)]`-guaranteed-layout owning slice of `Cell<Value>` --
@@ -1114,7 +1125,17 @@ pub struct ObjPtr {
   /// need to know the size of every possible wrapped type up front,
   /// and so it participates in this arena's normal alloc/sweep/drop
   /// lifecycle like everything else.
-  pub value: Box<dyn Any>,
+  ///
+  /// `+ Send`, not just `Any`: what makes it sound for
+  /// `modules::coroutine_util::transfer` to MOVE a wrapped resource
+  /// (a socket, a future db connection, ...) to a coroutine's own
+  /// worker thread -- see `ObjPtr::take`. Costs nothing to every
+  /// existing user of this type: every native module that currently
+  /// wraps something in a `Ptr` already wraps a plain, self-contained
+  /// resource with no thread-affinity of its own (no `Rc`/`RefCell`
+  /// inside it), so this was already true, just not yet required by
+  /// the type system.
+  pub value: Box<dyn Any + Send>,
 }
 
 impl ObjPtr {
@@ -1126,6 +1147,24 @@ impl ObjPtr {
   #[inline]
   pub fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
     self.value.downcast_mut::<T>()
+  }
+
+  /// Takes the wrapped value out, leaving this `Ptr` in the same
+  /// "consumed" state a `.finish()`-style operation already leaves
+  /// one in elsewhere in this codebase (see e.g. `modules::compress`'s
+  /// own use of this exact `mem::replace`-to-`Box::new(())` idiom) --
+  /// `type_name`/`downcast_*` reflect nothing useful on this `ObjPtr`
+  /// afterward. Used when a resource genuinely MOVES to another
+  /// isolate rather than being copied -- the one case in the whole
+  /// coroutine-transfer system where the source side can't stay valid
+  /// afterward (see `modules::coroutine_util::transfer`'s own docs on
+  /// why a `Ptr` is the sole exception to "always copy, never share,
+  /// source stays valid"). Callers are responsible for also updating
+  /// `type_name` if they want `ptr_type_name()` to say something more
+  /// specific than "still tagged, but empty" -- this only swaps the
+  /// payload.
+  pub fn take(&mut self) -> Box<dyn Any + Send> {
+    std::mem::replace(&mut self.value, Box::new(()))
   }
 }
 
@@ -2789,11 +2828,21 @@ impl Heap {
     self.alloc(Obj::ModuleBinding(Box::new(b)))
   }
 
-  pub fn alloc_ptr<T: 'static>(&mut self, type_name: &'static str, value: T) -> Value {
+  pub fn alloc_ptr<T: 'static + Send>(&mut self, type_name: &'static str, value: T) -> Value {
     self.alloc(Obj::Ptr(RefCell::new(ObjPtr {
       type_name,
       value: Box::new(value),
     })))
+  }
+
+  /// Like `alloc_ptr`, for a payload that's already been through
+  /// `ObjPtr::take` on some OTHER heap (possibly on another thread --
+  /// that's the entire point) and is now just a type-erased box with
+  /// no concrete `T` left to name. Used only by
+  /// `modules::coroutine_util::transfer`, rebuilding a moved `Ptr` on
+  /// a destination isolate.
+  pub fn alloc_ptr_boxed(&mut self, type_name: &'static str, value: Box<dyn Any + Send>) -> Value {
+    self.alloc(Obj::Ptr(RefCell::new(ObjPtr { type_name, value })))
   }
 
   /// Drop every object whose address isn't in `reachable`, then

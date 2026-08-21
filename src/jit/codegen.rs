@@ -7145,9 +7145,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           Some(r) => (self.i64c(1), self.idx(r)),
           None => (self.i64c(0), self.i64c(0)),
         };
+        let func_ptr = self.func_ptr_const();
         self.call_checked(
           "zuri_jit_make_class",
-          &[self.vm_param, base, dst_i, name, has_super, super_reg],
+          &[
+            self.vm_param,
+            base,
+            dst_i,
+            name,
+            has_super,
+            super_reg,
+            func_ptr,
+          ],
         );
         false
       },
