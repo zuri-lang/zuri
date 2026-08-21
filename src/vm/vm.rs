@@ -4516,7 +4516,7 @@ impl VM {
   /// (pointing at a live register in some still-executing frame) or
   /// already Closed -- the same two-way read `Instr::GetUpval` does
   /// inline. `pub(crate)` so code outside the interpreter loop (e.g.
-  /// `modules::coroutine_util`, which needs to snapshot a closure's
+  /// `modules::worker_util`, which needs to snapshot a closure's
   /// captured values before they can cross a thread boundary) can read
   /// one without duplicating that match.
   pub(crate) fn read_upvalue(&self, upvalue: Value) -> Value {

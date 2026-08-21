@@ -1,6 +1,6 @@
-//! The coroutine pool: a small, configurable number of persistent
+//! The worker pool: a small, configurable number of persistent
 //! worker OS threads, each owning its own totally independent `VM`/
-//! `Heap` ("isolate"). A coroutine is a task queued onto this pool; a
+//! `Heap` ("isolate"). A worker is a task queued onto this pool; a
 //! channel is a plain thread-safe queue of already-`capture`d
 //! messages. Nothing here ever shares a `Value`, a heap pointer, or
 //! compiled bytecode between threads -- see `transfer` for what
@@ -24,8 +24,8 @@ use super::transfer::{self, TransferGraph};
 /// `mutex.lock().unwrap()`, but tolerant of poisoning: a panic while
 /// SOME OTHER thread held this exact lock (never expected in ordinary
 /// operation, but possible if a bug elsewhere manages to panic while
-/// touching shared pool/channel/coroutine state directly, as opposed
-/// to inside a coroutine's own isolated VM -- see `worker_loop`'s own
+/// touching shared pool/channel/worker state directly, as opposed
+/// to inside a worker's own isolated VM -- see `worker_loop`'s own
 /// docs on why THAT kind of panic is handled separately) doesn't
 /// cascade into every future access panicking too. The guarded data
 /// here is always a plain queue/slot/flag with no invariant that a
@@ -37,31 +37,31 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 const MAX_POOL_SIZE: usize = 4096;
 
-/// `Ptr::type_name` a `Coroutine`/`Channel` handle is tagged with --
-/// shared between `coroutine.rs` (which allocates these) and
+/// `Ptr::type_name` a `Worker`/`Channel` handle is tagged with --
+/// shared between `worker.rs` (which allocates these) and
 /// `transfer.rs` (which needs to recognize them as thread-safe,
 /// freely-shareable handles rather than exclusive resources to move --
 /// see `transfer::capture_value`'s own docs on the distinction).
-pub const COROUTINE_PTR_TYPE: &str = "zuri_coroutine";
+pub const WORKER_PTR_TYPE: &str = "zuri_worker";
 pub const CHANNEL_PTR_TYPE: &str = "zuri_channel";
 
 // ---------------------------------------------------------------------
 // Pool sizing/lifecycle
 // ---------------------------------------------------------------------
 
-static POOL: OnceLock<CoroutinePool> = OnceLock::new();
+static POOL: OnceLock<WorkerPool> = OnceLock::new();
 static CONFIGURED_SIZE: Mutex<Option<usize>> = Mutex::new(None);
 
 /// Sets how many worker threads the pool starts with. Only takes
 /// effect if the pool hasn't started yet (its size is fixed for the
-/// rest of the process once the first coroutine actually runs) --
+/// rest of the process once the first worker actually runs) --
 /// returns `false` rather than an error in that case, since "someone
 /// already spawned something" isn't really exceptional, just too
 /// late.
 pub fn configure(n: usize) -> Result<bool, String> {
   if n == 0 || n > MAX_POOL_SIZE {
     return Err(format!(
-      "coroutine pool size must be between 1 and {}, got {}",
+      "worker pool size must be between 1 and {}, got {}",
       MAX_POOL_SIZE, n
     ));
   }
@@ -77,7 +77,9 @@ pub fn configure(n: usize) -> Result<bool, String> {
 }
 
 fn default_size() -> usize {
-  thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+  thread::available_parallelism()
+    .map(|n| n.get())
+    .unwrap_or(4)
 }
 
 /// The number of logical CPUs this machine reports -- informational
@@ -92,7 +94,7 @@ pub fn pool_size() -> usize {
   pool().size
 }
 
-/// Coroutines actively being run by a worker RIGHT NOW -- doesn't
+/// Workers actively being run by a worker RIGHT NOW -- doesn't
 /// include ones still waiting in the queue. Starts the pool if it
 /// hasn't already (there's nothing running on a pool that was never
 /// started).
@@ -100,7 +102,7 @@ pub fn active_count() -> usize {
   pool().running.load(Ordering::Acquire)
 }
 
-/// Coroutines queued but not yet picked up by a worker. Starts the
+/// Workers queued but not yet picked up by a worker. Starts the
 /// pool if it hasn't already.
 pub fn queued_count() -> usize {
   lock(&pool().queue).len()
@@ -113,14 +115,14 @@ pub fn is_shutdown() -> bool {
   pool().shutting_down.load(Ordering::Acquire)
 }
 
-fn pool() -> &'static CoroutinePool {
+fn pool() -> &'static WorkerPool {
   POOL.get_or_init(|| {
     let size = lock(&CONFIGURED_SIZE).unwrap_or_else(default_size);
-    CoroutinePool::start(size)
+    WorkerPool::start(size)
   })
 }
 
-struct CoroutinePool {
+struct WorkerPool {
   queue: Mutex<VecDeque<Task>>,
   not_empty: Condvar,
   size: usize,
@@ -129,7 +131,7 @@ struct CoroutinePool {
   /// decremented once a task's `finish()` has actually run (success,
   /// ordinary failure, or a caught panic all count).
   in_flight: AtomicUsize,
-  /// Coroutines a worker has actually picked up and is currently
+  /// Workers a worker has actually picked up and is currently
   /// running -- the subset of `in_flight` that isn't still sitting in
   /// `queue`. Purely for introspection (`active_count()`).
   running: AtomicUsize,
@@ -148,9 +150,9 @@ struct CoroutinePool {
 /// Worker thread names share this prefix -- checked by the panic hook
 /// below to tell a fully-handled worker panic apart from a real,
 /// nowhere-else-caught one on any other thread.
-const WORKER_THREAD_PREFIX: &str = "zuri-coroutine-";
+const WORKER_THREAD_PREFIX: &str = "zuri-worker-";
 
-impl CoroutinePool {
+impl WorkerPool {
   fn start(size: usize) -> Self {
     install_worker_panic_hook();
     for i in 0..size {
@@ -162,14 +164,14 @@ impl CoroutinePool {
         // fine un-spawned can blow a worker's stack. That's not a
         // catchable panic either: a real stack overflow bypasses
         // `catch_unwind` entirely and aborts the WHOLE PROCESS, not
-        // just the one coroutine, which is exactly the guarantee
+        // just the one worker, which is exactly the guarantee
         // `worker_loop`'s panic isolation exists to give. 16MB, double
         // a typical main thread's own, gives real headroom instead.
         .stack_size(16 * 1024 * 1024)
         .spawn(worker_loop)
-        .expect("failed to spawn coroutine worker thread");
+        .expect("failed to spawn worker worker thread");
     }
-    CoroutinePool {
+    WorkerPool {
       queue: Mutex::new(VecDeque::new()),
       not_empty: Condvar::new(),
       size,
@@ -195,7 +197,7 @@ impl CoroutinePool {
 }
 
 /// A worker panic is always caught by `catch_unwind` in `worker_loop`
-/// and surfaced to Zuri as an ordinary `CoroutineError` -- it was
+/// and surfaced to Zuri as an ordinary `WorkerError` -- it was
 /// never actually a crash. Printing Rust's own default "thread ...
 /// panicked at ..." notice for one anyway would look exactly like an
 /// unhandled crash to anyone watching stderr, which is actively
@@ -226,7 +228,7 @@ fn install_worker_panic_hook() {
 struct Task {
   callee: TransferGraph,
   args: TransferGraph,
-  state: Arc<CoroutineState>,
+  state: Arc<WorkerState>,
 }
 
 /// A worker thread's own isolate: one `VM`/`Heap`, built once and
@@ -253,7 +255,10 @@ fn worker_loop() {
     let task = {
       let mut queue = lock(&pool.queue);
       while queue.is_empty() {
-        queue = pool.not_empty.wait(queue).unwrap_or_else(PoisonError::into_inner);
+        queue = pool
+          .not_empty
+          .wait(queue)
+          .unwrap_or_else(PoisonError::into_inner);
       }
       queue.pop_front().unwrap()
     };
@@ -261,21 +266,21 @@ fn worker_loop() {
 
     // Cloned out BEFORE `run_task` runs, not read off `task` afterward:
     // a caught panic (see below) means `task` may never come back from
-    // that call in any usable form, but the coroutine's own result
+    // that call in any usable form, but the worker's own result
     // slot still needs to be resolved either way.
     let state = task.state.clone();
 
     // Ambient for the DURATION of this one task -- `is_current_cancelled`
     // reads it back with no explicit handle needed, the same way a
-    // spawned function never has to be handed its own `Coroutine` back
+    // spawned function never has to be handed its own `Worker` back
     // just to ask "was I cancelled?". Cleared unconditionally
     // afterward (both the Ok and panic arms below), never left
     // pointing at a finished task's state while this thread picks up
     // its next one.
-    CURRENT_COROUTINE.with(|c| *c.borrow_mut() = Some(state.clone()));
+    CURRENT_WORKER.with(|c| *c.borrow_mut() = Some(state.clone()));
 
-    // `catch_unwind` isolates a panic to just the ONE coroutine that
-    // caused it, rather than taking down every other coroutine and the
+    // `catch_unwind` isolates a panic to just the ONE worker that
+    // caused it, rather than taking down every other worker and the
     // main thread with it -- see `Cargo.toml`'s own note on why
     // `panic = "abort"` had to go for this to even be possible.
     // `AssertUnwindSafe` because `&mut isolate.vm` isn't provably
@@ -295,54 +300,54 @@ fn worker_loop() {
         // "what's inside it". The explicit deref forces the reference
         // at the actual panic value instead.
         state.finish(Err(format!(
-          "coroutine panicked: {}",
+          "worker panicked: {}",
           panic_message(&*payload)
         )));
         isolate = WorkerIsolate::new();
       },
     }
-    CURRENT_COROUTINE.with(|c| *c.borrow_mut() = None);
+    CURRENT_WORKER.with(|c| *c.borrow_mut() = None);
     pool.task_completed();
   }
 }
 
 thread_local! {
-  /// The coroutine THIS worker thread is currently running, if any --
+  /// The worker THIS worker thread is currently running, if any --
   /// what lets `is_current_cancelled` answer "was I cancelled?" with
   /// no explicit handle passed in, the same way each worker's own
   /// isolate needs no explicit parameter either. Set/cleared around
   /// each task in `worker_loop`; `None` between tasks and on any
-  /// thread that isn't a coroutine worker at all.
-  static CURRENT_COROUTINE: RefCell<Option<Arc<CoroutineState>>> = const { RefCell::new(None) };
+  /// thread that isn't a worker worker at all.
+  static CURRENT_WORKER: RefCell<Option<Arc<WorkerState>>> = const { RefCell::new(None) };
 }
 
-/// Whether the coroutine currently running ON THIS THREAD has been
+/// Whether the worker currently running ON THIS THREAD has been
 /// `cancel()`ed. `false` (never `true`) on a thread that isn't a
-/// coroutine worker, or between tasks on one that is -- there's
+/// worker worker, or between tasks on one that is -- there's
 /// nothing to have been cancelled either way.
 pub fn is_current_cancelled() -> bool {
-  CURRENT_COROUTINE.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
+  CURRENT_WORKER.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
 }
 
-/// Whether this thread is currently running a coroutine at all --
+/// Whether this thread is currently running a worker at all --
 /// distinct from `is_current_cancelled`, which is `false` both when
-/// there's no current coroutine AND when there is one but it hasn't
+/// there's no current worker AND when there is one but it hasn't
 /// been cancelled. The blocking primitives below need to tell those
 /// two apart: a plain blocking wait from the main thread (or any other
-/// non-coroutine caller) has nothing to poll for and should just block
+/// non-worker caller) has nothing to poll for and should just block
 /// the old way, at zero extra cost.
-fn in_coroutine_context() -> bool {
-  CURRENT_COROUTINE.with(|c| c.borrow().is_some())
+fn in_worker_context() -> bool {
+  CURRENT_WORKER.with(|c| c.borrow().is_some())
 }
 
-/// How often a blocking wait inside a coroutine re-checks whether ITS
-/// OWN coroutine (the caller, not whatever it's waiting on) has been
+/// How often a blocking wait inside a worker re-checks whether ITS
+/// OWN worker (the caller, not whatever it's waiting on) has been
 /// cancelled. `cancel()` itself wakes `wait_any`/`wait_all`/`select`
 /// immediately (they already sit on `wake_gate`), but `join`/`send`/
 /// `recv` wait on their own per-object `Condvar` instead -- putting
 /// THOSE on `wake_gate` too would mean every blocked join/send/recv in
 /// the whole process wakes up on every unrelated channel send or
-/// coroutine finishing, which turns the common case from "wakes the
+/// worker finishing, which turns the common case from "wakes the
 /// one relevant waiter" into an O(waiters) storm per event. Polling a
 /// private condvar at a short, fixed interval instead keeps the common
 /// case cheap and exactly as it was; the cost is that a cancellation
@@ -355,10 +360,10 @@ const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 // wait_any / select
 // ---------------------------------------------------------------------
 
-/// Shared wakeup signal for `wait_any_coroutines`/`select_channels`. A
-/// coroutine finishing or a channel changing has no way to know in
+/// Shared wakeup signal for `wait_any_workers`/`select_channels`. A
+/// worker finishing or a channel changing has no way to know in
 /// advance whether one of THESE calls happens to be waiting on it, so
-/// rather than each `CoroutineState`/`ChannelState` tracking its own
+/// rather than each `WorkerState`/`ChannelState` tracking its own
 /// list of interested waiters, every such event just notifies this one
 /// condvar and a waiter re-scans its own (always small) candidate list
 /// each time it wakes. Simpler and just as correct as per-object
@@ -370,7 +375,7 @@ fn wake_gate() -> &'static (Mutex<()>, Condvar) {
 }
 
 /// Called after any state change a `wait_any`/`select` predicate might
-/// depend on (a coroutine finishing, a channel gaining a value or
+/// depend on (a worker finishing, a channel gaining a value or
 /// closing). Momentarily taking the gate's mutex before notifying --
 /// rather than just calling `notify_all` -- is what avoids a lost
 /// wakeup: it guarantees this can't land in the gap between a waiter's
@@ -383,19 +388,19 @@ fn wake_all_waiters() {
   cv.notify_all();
 }
 
-/// Outcome of `wait_any_coroutines`.
+/// Outcome of `wait_any_workers`.
 pub enum WaitAnyOutcome {
   Ready(usize),
   TimedOut,
-  /// The CALLING coroutine was cancelled while blocked here.
+  /// The CALLING worker was cancelled while blocked here.
   Cancelled,
 }
 
-/// Outcome of `wait_all_coroutines`.
+/// Outcome of `wait_all_workers`.
 pub enum WaitAllOutcome {
   Ready,
   TimedOut,
-  /// The CALLING coroutine was cancelled while blocked here.
+  /// The CALLING worker was cancelled while blocked here.
   Cancelled,
 }
 
@@ -403,14 +408,14 @@ pub enum WaitAllOutcome {
 pub enum SelectOutcome {
   Ready(usize, RecvOutcome),
   TimedOut,
-  /// The CALLING coroutine was cancelled while blocked here.
+  /// The CALLING worker was cancelled while blocked here.
   Cancelled,
 }
 
 /// Blocks until at least one of `states` has finished, returning its
 /// index into the slice -- ties (more than one already done) resolve
 /// to whichever comes first in the caller's own list.
-pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> WaitAnyOutcome {
+pub fn wait_any_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAnyOutcome {
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
@@ -424,7 +429,9 @@ pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Durat
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
       Some(d) if d.is_zero() => return WaitAnyOutcome::TimedOut,
       Some(d) => {
-        let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        let (g, result) = cv
+          .wait_timeout(guard, d)
+          .unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
           return match states.iter().position(|s| s.is_done()) {
             Some(i) => WaitAnyOutcome::Ready(i),
@@ -439,10 +446,10 @@ pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Durat
 }
 
 /// Blocks until EVERY one of `states` has finished. Unlike
-/// `wait_any_coroutines` there's no "which one" to report -- the
+/// `wait_any_workers` there's no "which one" to report -- the
 /// caller already has the whole list and can `join()` each once this
 /// returns `Ready`.
-pub fn wait_all_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> WaitAllOutcome {
+pub fn wait_all_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAllOutcome {
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
@@ -456,7 +463,9 @@ pub fn wait_all_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Durat
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
       Some(d) if d.is_zero() => return WaitAllOutcome::TimedOut,
       Some(d) => {
-        let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        let (g, result) = cv
+          .wait_timeout(guard, d)
+          .unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
           return if states.iter().all(|s| s.is_done()) {
             WaitAllOutcome::Ready
@@ -475,7 +484,7 @@ pub fn wait_all_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Durat
 /// to receive or is closed, returning its index and the outcome --
 /// already taken off the winning channel's own queue, same as
 /// `try_recv`. Same ordering/timeout behavior as
-/// `wait_any_coroutines`.
+/// `wait_any_workers`.
 pub fn select_channels(states: &[Arc<ChannelState>], timeout: Option<Duration>) -> SelectOutcome {
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
@@ -492,7 +501,9 @@ pub fn select_channels(states: &[Arc<ChannelState>], timeout: Option<Duration>) 
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
       Some(d) if d.is_zero() => return SelectOutcome::TimedOut,
       Some(d) => {
-        let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        let (g, result) = cv
+          .wait_timeout(guard, d)
+          .unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
           for (i, s) in states.iter().enumerate() {
             if let Some(outcome) = s.try_recv() {
@@ -579,7 +590,7 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
   let (target, full_args) = if callee.is_bound_method() {
     let bm = callee.as_bound_method();
     if !bm.method.is_closure() {
-      return Err("coroutine spawn target is not a callable function".to_string());
+      return Err("worker spawn target is not a callable function".to_string());
     }
     let mut full = Vec::with_capacity(args.len() + 1);
     full.push(bm.receiver);
@@ -588,7 +599,7 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
   } else if callee.is_closure() {
     (callee, args)
   } else {
-    return Err("coroutine spawn target is not a callable function".to_string());
+    return Err("worker spawn target is not a callable function".to_string());
   };
 
   match isolate.vm.call_value(target, &full_args) {
@@ -598,7 +609,7 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
 }
 
 // ---------------------------------------------------------------------
-// Coroutine handles
+// Worker handles
 // ---------------------------------------------------------------------
 
 enum Slot {
@@ -611,8 +622,8 @@ enum Slot {
   /// original exception `Value` itself: that `Value` lives on the
   /// WORKER's own heap and can't be handed back across the thread
   /// boundary any more than any other `Value` can -- see `transfer`'s
-  /// own docs. `libs/coroutine.zu` wraps this text in its own
-  /// `CoroutineError` on `.join()`.
+  /// own docs. `libs/worker.zu` wraps this text in its own
+  /// `WorkerError` on `.join()`.
   Err(String),
 }
 
@@ -620,34 +631,34 @@ pub enum JoinOutcome {
   Pending,
   Ok(TransferGraph),
   Err(String),
-  /// The CALLING coroutine (not the one being joined) was cancelled
+  /// The CALLING worker (not the one being joined) was cancelled
   /// while blocked here.
   Cancelled,
 }
 
-pub struct CoroutineState {
+pub struct WorkerState {
   slot: Mutex<Slot>,
   cv: Condvar,
   /// Set once `join()`/`try_join()` has actually reported a finished
   /// outcome (`Ok` or `Err`) to someone -- see `Drop`'s own docs.
   observed: AtomicBool,
   /// Set by `cancel()`, read by `is_current_cancelled()` from inside
-  /// the coroutine's own execution -- purely COOPERATIVE, same as
+  /// the worker's own execution -- purely COOPERATIVE, same as
   /// every other language's cancellation token: nothing here stops
-  /// already-running code on its own. A coroutine that never checks
+  /// already-running code on its own. A worker that never checks
   /// simply runs to completion regardless of this flag.
   cancelled: AtomicBool,
   /// Set once, at `spawn()` time, by whoever used `spawn_named()`
   /// instead of plain `spawn()`. Purely a debugging/introspection
   /// label -- never read for anything that affects behavior -- so it
   /// gets folded into the unobserved-failure warning (see `Drop`) and
-  /// exposed read-only via `Coroutine.name()`.
+  /// exposed read-only via `Worker.name()`.
   name: Option<String>,
 }
 
-impl CoroutineState {
+impl WorkerState {
   fn new(name: Option<String>) -> Self {
-    CoroutineState {
+    WorkerState {
       slot: Mutex::new(Slot::Pending),
       cv: Condvar::new(),
       observed: AtomicBool::new(false),
@@ -663,7 +674,7 @@ impl CoroutineState {
   pub fn cancel(&self) {
     self.cancelled.store(true, Ordering::Relaxed);
     // Wakes any `wait_any`/`wait_all`/`select` blocked on `wake_gate`
-    // right away, in case the coroutine THEY belong to was just
+    // right away, in case the worker THEY belong to was just
     // cancelled. `join`/`send`/`recv` don't listen to this gate (see
     // `CANCEL_POLL_INTERVAL`'s own docs) -- they notice on their next
     // poll tick instead.
@@ -685,13 +696,13 @@ impl CoroutineState {
     wake_all_waiters();
   }
 
-  /// Blocks the calling thread until the coroutine finishes. Callable
+  /// Blocks the calling thread until the worker finishes. Callable
   /// more than once (and from more than one joiner) -- always returns
   /// the same, already-computed outcome once it's in.
   ///
-  /// If the CALLING coroutine (not this one) is cancelled while
+  /// If the CALLING worker (not this one) is cancelled while
   /// blocked here, gives up early with `JoinOutcome::Cancelled` --
-  /// join() is itself a blocking wait a cancelled coroutine can be
+  /// join() is itself a blocking wait a cancelled worker can be
   /// stuck in, same as `Channel.send`/`recv`.
   pub fn join(&self) -> JoinOutcome {
     self.join_inner(None)
@@ -708,13 +719,13 @@ impl CoroutineState {
   /// Shared implementation for `join`/`join_timeout`. `deadline` of
   /// `None` means "wait forever" -- but that only ever compiles down
   /// to a single indefinite `Condvar::wait` when the CALLER isn't
-  /// itself running inside a coroutine, since there's nothing to poll
-  /// for cancellation of in that case. Inside a coroutine, every wait
+  /// itself running inside a worker, since there's nothing to poll
+  /// for cancellation of in that case. Inside a worker, every wait
   /// -- bounded or not -- is chopped into `CANCEL_POLL_INTERVAL`-sized
-  /// ticks so the calling coroutine's own cancellation is noticed
+  /// ticks so the calling worker's own cancellation is noticed
   /// promptly rather than only once the wait would otherwise finish.
   fn join_inner(&self, deadline: Option<Duration>) -> JoinOutcome {
-    if deadline.is_none() && !in_coroutine_context() {
+    if deadline.is_none() && !in_worker_context() {
       let mut slot = lock(&self.slot);
       loop {
         match &*slot {
@@ -789,7 +800,7 @@ impl CoroutineState {
   }
 
   /// Like `try_join`, but never marks the outcome "observed" -- pure
-  /// introspection for `Coroutine.status()`. `try_join`/`join`
+  /// introspection for `Worker.status()`. `try_join`/`join`
   /// themselves double as "I've seen this failure, don't warn about
   /// it going unhandled" (see `Drop`'s own docs); a caller just
   /// checking progress shouldn't accidentally suppress that warning
@@ -803,13 +814,13 @@ impl CoroutineState {
   }
 }
 
-impl Drop for CoroutineState {
-  /// A coroutine's failure doesn't otherwise go anywhere unless
+impl Drop for WorkerState {
+  /// A worker's failure doesn't otherwise go anywhere unless
   /// something calls `join()`/`try_join()` on it -- exactly like a
   /// plain `std::thread` whose `JoinHandle` is dropped without ever
   /// being joined, an uncaught exception or a caught panic inside a
   /// fire-and-forget `spawn()` would silently vanish once the last
-  /// `Coroutine` handle (and the pool's own internal one) goes out of
+  /// `Worker` handle (and the pool's own internal one) goes out of
   /// scope. A dropped `String` costs nothing to check for and losing
   /// a real failure silently is worse than one unwanted log line, so
   /// this reports it -- the same trade-off Rust's own default panic
@@ -821,12 +832,12 @@ impl Drop for CoroutineState {
     if let Slot::Err(message) = &*self.slot.get_mut().unwrap_or_else(PoisonError::into_inner) {
       match &self.name {
         Some(name) => eprintln!(
-          "warning: coroutine '{}' failed but its result was never checked \
+          "warning: worker '{}' failed but its result was never checked \
            (no join()/try_join() was called before its handle was dropped): {}",
           name, message
         ),
         None => eprintln!(
-          "warning: a coroutine failed but its result was never checked \
+          "warning: a worker failed but its result was never checked \
            (no join()/try_join() was called before its handle was dropped): {}",
           message
         ),
@@ -842,10 +853,15 @@ impl Drop for CoroutineState {
 /// list, say) survive the trip along with aliasing within each one.
 /// `name` is a purely cosmetic label from `spawn_named()` -- `None`
 /// for a plain `spawn()`.
-pub fn spawn(vm: &VM, callee: Value, args: Value, name: Option<String>) -> Result<Arc<CoroutineState>, String> {
+pub fn spawn(
+  vm: &VM,
+  callee: Value,
+  args: Value,
+  name: Option<String>,
+) -> Result<Arc<WorkerState>, String> {
   let callee = transfer::capture(vm, callee)?;
   let args = transfer::capture(vm, args)?;
-  let state = Arc::new(CoroutineState::new(name));
+  let state = Arc::new(WorkerState::new(name));
   let task = Task {
     callee,
     args,
@@ -860,7 +876,7 @@ pub fn spawn(vm: &VM, callee: Value, args: Value, name: Option<String>) -> Resul
     // in `in_flight` before shutdown can start waiting for zero.
     let mut queue = lock(&p.queue);
     if p.shutting_down.load(Ordering::Acquire) {
-      return Err("cannot spawn: the coroutine pool is shutting down".to_string());
+      return Err("cannot spawn: the worker pool is shutting down".to_string());
     }
     p.in_flight.fetch_add(1, Ordering::AcqRel);
     queue.push_back(task);
@@ -892,7 +908,10 @@ pub fn shutdown(timeout: Option<Duration>) -> bool {
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
       Some(d) if d.is_zero() => return p.in_flight.load(Ordering::Acquire) == 0,
       Some(d) => {
-        let (g, result) = p.idle.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        let (g, result) = p
+          .idle
+          .wait_timeout(guard, d)
+          .unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
           return p.in_flight.load(Ordering::Acquire) == 0;
         }
@@ -913,7 +932,7 @@ pub enum RecvOutcome {
   /// `recv`/`recv_timeout` only -- never produced by `try_recv`, which
   /// doesn't block in the first place.
   TimedOut,
-  /// The CALLING coroutine was cancelled while blocked here.
+  /// The CALLING worker was cancelled while blocked here.
   Cancelled,
 }
 
@@ -921,7 +940,7 @@ pub enum SendOutcome {
   Sent,
   Closed,
   TimedOut,
-  /// The CALLING coroutine was cancelled while blocked here.
+  /// The CALLING worker was cancelled while blocked here.
   Cancelled,
 }
 
@@ -952,7 +971,7 @@ impl ChannelState {
   }
 
   /// Blocks while the channel is at capacity. If the CALLING
-  /// coroutine is cancelled while blocked here, gives up early with
+  /// worker is cancelled while blocked here, gives up early with
   /// `SendOutcome::Cancelled`.
   pub fn send(&self, value: TransferGraph) -> SendOutcome {
     self.send_inner(value, None)
@@ -966,9 +985,9 @@ impl ChannelState {
 
   /// Shared implementation for `send`/`send_timeout` -- same
   /// no-poll-unless-needed and `CANCEL_POLL_INTERVAL`-ticked shape as
-  /// `CoroutineState::join_inner`; see its own docs for why.
+  /// `WorkerState::join_inner`; see its own docs for why.
   fn send_inner(&self, value: TransferGraph, deadline: Option<Duration>) -> SendOutcome {
-    if deadline.is_none() && !in_coroutine_context() {
+    if deadline.is_none() && !in_worker_context() {
       let mut inner = lock(&self.inner);
       loop {
         if inner.closed {
@@ -978,7 +997,10 @@ impl ChannelState {
         if !full {
           break;
         }
-        inner = self.not_full.wait(inner).unwrap_or_else(PoisonError::into_inner);
+        inner = self
+          .not_full
+          .wait(inner)
+          .unwrap_or_else(PoisonError::into_inner);
       }
       inner.queue.push_back(value);
       drop(inner);
@@ -1024,7 +1046,7 @@ impl ChannelState {
   }
 
   /// Blocks until a message arrives or the channel is closed AND
-  /// drained. If the CALLING coroutine is cancelled while blocked
+  /// drained. If the CALLING worker is cancelled while blocked
   /// here, gives up early with `RecvOutcome::Cancelled`.
   pub fn recv(&self) -> RecvOutcome {
     self.recv_inner(None)
@@ -1040,7 +1062,7 @@ impl ChannelState {
   /// Shared implementation for `recv`/`recv_timeout` -- same shape as
   /// `send_inner`/`join_inner`; see `CANCEL_POLL_INTERVAL`'s docs.
   fn recv_inner(&self, deadline: Option<Duration>) -> RecvOutcome {
-    if deadline.is_none() && !in_coroutine_context() {
+    if deadline.is_none() && !in_worker_context() {
       let mut inner = lock(&self.inner);
       loop {
         if let Some(v) = inner.queue.pop_front() {
@@ -1051,7 +1073,10 @@ impl ChannelState {
         if inner.closed {
           return RecvOutcome::Closed;
         }
-        inner = self.not_empty.wait(inner).unwrap_or_else(PoisonError::into_inner);
+        inner = self
+          .not_empty
+          .wait(inner)
+          .unwrap_or_else(PoisonError::into_inner);
       }
     }
 

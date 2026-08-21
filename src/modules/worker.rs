@@ -33,9 +33,18 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("pool_size", native(vm, "pool_size", 0, false, pool_size)),
     ("cpu_count", native(vm, "cpu_count", 0, false, cpu_count)),
     ("shutdown", native(vm, "shutdown", 1, false, shutdown)),
-    ("active_count", native(vm, "active_count", 0, false, active_count)),
-    ("queued_count", native(vm, "queued_count", 0, false, queued_count)),
-    ("is_shutdown", native(vm, "is_shutdown", 0, false, is_shutdown)),
+    (
+      "active_count",
+      native(vm, "active_count", 0, false, active_count),
+    ),
+    (
+      "queued_count",
+      native(vm, "queued_count", 0, false, queued_count),
+    ),
+    (
+      "is_shutdown",
+      native(vm, "is_shutdown", 0, false, is_shutdown),
+    ),
     ("spawn", native(vm, "spawn", 3, false, spawn)),
     ("join", native(vm, "join", 2, false, join)),
     ("try_join", native(vm, "try_join", 1, false, try_join)),
@@ -43,7 +52,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("status", native(vm, "status", 1, false, status)),
     ("name", native(vm, "name", 1, false, name)),
     ("cancel", native(vm, "cancel", 1, false, cancel)),
-    ("is_cancelled", native(vm, "is_cancelled", 1, false, is_cancelled)),
+    (
+      "is_cancelled",
+      native(vm, "is_cancelled", 1, false, is_cancelled),
+    ),
     (
       "current_is_cancelled",
       native(vm, "current_is_cancelled", 0, false, current_is_cancelled),
@@ -465,8 +477,15 @@ fn select(ctx: &mut ZuriContext) -> Result<Value, String> {
     states.push(channel_state_of_value(*v)?);
   }
   match pool::select_channels(&states, timeout) {
-    pool::SelectOutcome::TimedOut => Ok(select_result(ctx.vm, Value::nil(), "timeout", Value::nil())),
-    pool::SelectOutcome::Cancelled => Ok(select_result(ctx.vm, Value::nil(), "cancelled", Value::nil())),
+    pool::SelectOutcome::TimedOut => {
+      Ok(select_result(ctx.vm, Value::nil(), "timeout", Value::nil()))
+    },
+    pool::SelectOutcome::Cancelled => Ok(select_result(
+      ctx.vm,
+      Value::nil(),
+      "cancelled",
+      Value::nil(),
+    )),
     pool::SelectOutcome::Ready(i, pool::RecvOutcome::Value(graph)) => {
       let value = transfer::materialize(ctx.vm, &graph)?;
       let index = Value::number(i as f64);
@@ -477,7 +496,9 @@ fn select(ctx: &mut ZuriContext) -> Result<Value, String> {
       Ok(select_result(ctx.vm, index, "closed", Value::nil()))
     },
     pool::SelectOutcome::Ready(_, pool::RecvOutcome::TimedOut | pool::RecvOutcome::Cancelled) => {
-      unreachable!("try_recv never produces TimedOut/Cancelled -- select_channels only calls try_recv")
+      unreachable!(
+        "try_recv never produces TimedOut/Cancelled -- select_channels only calls try_recv"
+      )
     },
   }
 }

@@ -1,34 +1,34 @@
-import coroutine
-import .coroutine_worker
+import worker
+import .worker_worker
 
 # module-scoped free function
-var t1 = coroutine.spawn(coroutine_worker.square, 9)
+var t1 = worker.spawn(worker_worker.square, 9)
 echo t1.join()
 
 # closure returned by a module function, capturing a parameter
-var add5 = coroutine_worker.make_adder(5)
-var t2 = coroutine.spawn(add5, 10)
+var add5 = worker_worker.make_adder(5)
+var t2 = worker.spawn(add5, 10)
 echo t2.join()
 
 # recursive closure that captures itself
-var fact = coroutine_worker.make_fact()
-var t3 = coroutine.spawn(fact, 6)
+var fact = worker_worker.make_fact()
+var t3 = worker.spawn(fact, 6)
 echo t3.join()
 
 # a plain function declared directly in THIS script
 def double(n) {
   return n * 2
 }
-var t4 = coroutine.spawn(double, 21)
+var t4 = worker.spawn(double, 21)
 echo t4.join()
 
 # an anonymous inline lambda, never bound to a name
-var t5 = coroutine.spawn(@(n) { return n + 100 }, 1)
+var t5 = worker.spawn(@(n) { return n + 100 }, 1)
 echo t5.join()
 
 # a class instance (module-scoped class) passed as an argument
-var p = coroutine_worker.make_point(3, 4)
-var t6 = coroutine.spawn(p.sum)
+var p = worker_worker.make_point(3, 4)
+var t6 = worker.spawn(p.sum)
 echo t6.join()
 
 # a class declared directly in this script
@@ -37,11 +37,11 @@ class LocalBox {
   @new(v) { self.v = v }
 }
 var box = LocalBox(41)
-var t7 = coroutine.spawn(@() { return box.v + 1 })
+var t7 = worker.spawn(@() { return box.v + 1 })
 echo t7.join()
 
 # is_done()/try_join() before and after completion
-var t8 = coroutine.spawn(coroutine_worker.square, 5)
+var t8 = worker.spawn(worker_worker.square, 5)
 echo t8.join()
 echo t8.is_done()
 echo t8.try_join()
@@ -49,9 +49,9 @@ echo t8.try_join()
 # join() is repeatable
 echo t1.join()
 
-# an uncaught exception inside the coroutine surfaces as CoroutineError
+# an uncaught exception inside the worker surfaces as WorkerError
 catch {
-  var failing = coroutine.spawn(coroutine_worker.boom)
+  var failing = worker.spawn(worker_worker.boom)
   failing.join()
 } as e
 if e {
@@ -59,7 +59,7 @@ if e {
 }
 
 # channels
-var ch = coroutine.channel(2)
+var ch = worker.channel(2)
 ch.send('hello')
 ch.send([1, 2, 3])
 echo ch.len()
@@ -77,5 +77,5 @@ if e2 {
 }
 
 # pool sizing is at least 1 (machine-dependent, only sanity-checked)
-echo coroutine.pool_size() > 0
-echo coroutine.cpu_count() > 0
+echo worker.pool_size() > 0
+echo worker.cpu_count() > 0

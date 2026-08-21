@@ -1,16 +1,16 @@
 /**
  * @module channel
  *
- * Thread-safe queues for passing values between coroutines. Re-exported
- * by `coroutine`, so `import coroutine` alone is enough to use
- * `coroutine.Channel`/`coroutine.channel()`.
+ * Thread-safe queues for passing values between workers. Re-exported
+ * by `worker`, so `import worker` alone is enough to use
+ * `worker.Channel`/`worker.channel()`.
  */
 
-import _coroutine
-import .error { CoroutineError, CoroutineTimeoutError, CoroutineCancelledError }
+import _worker
+import .error { WorkerError, WorkerTimeoutError, WorkerCancelledError }
 
 /**
- * A thread-safe queue for passing values between coroutines.
+ * A thread-safe queue for passing values between workers.
  */
 class Channel {
   var _ptr
@@ -26,7 +26,7 @@ class Channel {
     if capacity < 0 {
       raise ValueError('Channel() expects capacity to be non-negative, got ${capacity}')
     }
-    self._ptr = _coroutine.channel_new(capacity)
+    self._ptr = _worker.channel_new(capacity)
   }
 
   /**
@@ -35,21 +35,21 @@ class Channel {
    * @param any value
    * @param number timeout: seconds to wait before giving up. Waits
    *   indefinitely if omitted.
-   * @raises CoroutineError if the channel is closed
-   * @raises CoroutineTimeoutError if `timeout` elapses first
-   * @raises CoroutineCancelledError if the CALLING coroutine is
+   * @raises WorkerError if the channel is closed
+   * @raises WorkerTimeoutError if `timeout` elapses first
+   * @raises WorkerCancelledError if the CALLING worker is
    *   cancelled while blocked here
    */
   send(value, timeout: ?number) {
-    var status = _coroutine.channel_send(self._ptr, value, timeout)
+    var status = _worker.channel_send(self._ptr, value, timeout)
     if status == 'closed' {
-      raise CoroutineError('cannot send on a closed channel')
+      raise WorkerError('cannot send on a closed channel')
     }
     if status == 'timeout' {
-      raise CoroutineTimeoutError('send() timed out after ${timeout} seconds')
+      raise WorkerTimeoutError('send() timed out after ${timeout} seconds')
     }
     if status == 'cancelled' {
-      raise CoroutineCancelledError('send() was interrupted: the calling coroutine was cancelled')
+      raise WorkerCancelledError('send() was interrupted: the calling worker was cancelled')
     }
   }
 
@@ -60,20 +60,20 @@ class Channel {
    * @param number timeout: seconds to wait before giving up. Waits
    *   indefinitely if omitted.
    * @returns any
-   * @raises CoroutineTimeoutError if `timeout` elapses first
-   * @raises CoroutineCancelledError if the CALLING coroutine is
+   * @raises WorkerTimeoutError if `timeout` elapses first
+   * @raises WorkerCancelledError if the CALLING worker is
    *   cancelled while blocked here
    */
   recv(timeout: ?number) {
-    var r = _coroutine.channel_recv(self._ptr, timeout)
+    var r = _worker.channel_recv(self._ptr, timeout)
     if r[0] == 'closed' {
       return nil
     }
     if r[0] == 'timeout' {
-      raise CoroutineTimeoutError('recv() timed out after ${timeout} seconds')
+      raise WorkerTimeoutError('recv() timed out after ${timeout} seconds')
     }
     if r[0] == 'cancelled' {
-      raise CoroutineCancelledError('recv() was interrupted: the calling coroutine was cancelled')
+      raise WorkerCancelledError('recv() was interrupted: the calling worker was cancelled')
     }
     return r[1]
   }
@@ -85,7 +85,7 @@ class Channel {
    * @returns any
    */
   try_recv() {
-    var r = _coroutine.channel_try_recv(self._ptr)
+    var r = _worker.channel_try_recv(self._ptr)
     if r[0] == 'ok' {
       return r[1]
     }
@@ -94,24 +94,24 @@ class Channel {
 
   /**
    * Closes the channel. Queued values may still be received;
-   * `send()` afterward raises `CoroutineError`.
+   * `send()` afterward raises `WorkerError`.
    */
   close() {
-    _coroutine.channel_close(self._ptr)
+    _worker.channel_close(self._ptr)
   }
 
   /**
    * @returns bool: `true` if the channel is closed.
    */
   is_closed() {
-    return _coroutine.channel_is_closed(self._ptr)
+    return _worker.channel_is_closed(self._ptr)
   }
 
   /**
    * @returns int: the number of values currently queued.
    */
   len() {
-    return _coroutine.channel_len(self._ptr)
+    return _worker.channel_len(self._ptr)
   }
 
   /**
@@ -147,9 +147,9 @@ def channel(capacity: ?int) {
  * @returns [Channel, any]: the channel that was ready, and the value
  *   received from it (`nil` if that channel was closed and empty).
  * @raises ValueError if `channels` is empty
- * @raises CoroutineTimeoutError if `timeout` elapses before any
+ * @raises WorkerTimeoutError if `timeout` elapses before any
  *   channel is ready
- * @raises CoroutineCancelledError if the CALLING coroutine is
+ * @raises WorkerCancelledError if the CALLING worker is
  *   cancelled while blocked here
  */
 def select(channels: list, timeout: ?number) {
@@ -160,12 +160,12 @@ def select(channels: list, timeout: ?number) {
   for c in channels {
     ptrs.append(c.handle())
   }
-  var r = _coroutine.select(ptrs, timeout)
+  var r = _worker.select(ptrs, timeout)
   if r[1] == 'timeout' {
-    raise CoroutineTimeoutError('select() timed out after ${timeout} seconds')
+    raise WorkerTimeoutError('select() timed out after ${timeout} seconds')
   }
   if r[1] == 'cancelled' {
-    raise CoroutineCancelledError('select() was interrupted: the calling coroutine was cancelled')
+    raise WorkerCancelledError('select() was interrupted: the calling worker was cancelled')
   }
   return [channels[r[0]], r[2]]
 }

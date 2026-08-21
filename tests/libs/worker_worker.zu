@@ -1,11 +1,11 @@
 /**
- * Helper module for `tests/libs/coroutine.zu` -- plain, module-scoped
+ * Helper module for `tests/libs/worker.zu` -- plain, module-scoped
  * declarations used to exercise the "Named" (by-binding) resolution
  * path, as opposed to the structural transplant path a main-script
  * declaration goes through.
  */
 
-import coroutine
+import worker
 
 var counter_seed = 100
 
@@ -84,13 +84,13 @@ def make_dog(name) {
 }
 
 # Signals on `started` the moment it's actually running, then spins
-# until `coroutine.is_cancelled()` sees the caller's `cancel()`. The
+# until `worker.is_cancelled()` sees the caller's `cancel()`. The
 # rendezvous means a test can call `cancel()` knowing the loop has
-# already started, instead of racing coroutine startup.
+# already started, instead of racing worker startup.
 def cancellable_loop(started) {
   started.send(true)
   var iterations = 0
-  while !coroutine.is_cancelled() {
+  while !worker.is_cancelled() {
     iterations += 1
     if iterations > 5000000 {
       break
@@ -99,24 +99,24 @@ def cancellable_loop(started) {
   return iterations
 }
 
-# The next three exist so a cancellation test can put a coroutine
+# The next three exist so a cancellation test can put a worker
 # blocked inside wait_any()/wait_all()/select() -- those all need
-# `coroutine` in scope, so (like `cancellable_loop` above) they have to
+# `worker` in scope, so (like `cancellable_loop` above) they have to
 # live in a real module rather than a main-script closure; a
-# main-script closure captures its own `import coroutine` as a
-# root-global snapshot, and a Module value can't cross a coroutine
+# main-script closure captures its own `import worker` as a
+# root-global snapshot, and a Module value can't cross a worker
 # boundary at all.
 def wait_any_one(started, target) {
   started.send(true)
-  return coroutine.wait_any([target])
+  return worker.wait_any([target])
 }
 
 def wait_all_one(started, target) {
   started.send(true)
-  return coroutine.wait_all([target])
+  return worker.wait_all([target])
 }
 
 def select_one(started, ch) {
   started.send(true)
-  return coroutine.select([ch])
+  return worker.select([ch])
 }

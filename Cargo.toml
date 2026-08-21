@@ -81,11 +81,11 @@ debug = true
 lto = "thin"
 codegen-units = 1
 # Was "abort" purely to shave a little startup/runtime overhead off
-# the single-threaded interpreter. Now that coroutine worker threads
+# the single-threaded interpreter. Now that worker worker threads
 # exist, unwinding is required: it's the only way a bug in one
-# coroutine's own execution path can be caught and turned into a
-# CoroutineError instead of aborting the entire process out from
-# under every other coroutine and the main thread. Default (unwind).
+# worker's own execution path can be caught and turned into a
+# WorkerError instead of aborting the entire process out from
+# under every other worker and the main thread. Default (unwind).
 # panic = "abort"
 
 [features]

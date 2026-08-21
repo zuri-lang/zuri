@@ -1,14 +1,14 @@
 /**
- * @module coroutine
+ * @module worker
  *
- * Parallel coroutines backed by a pool of operating-system threads
- * (see `configure()`). Coroutines run concurrently and may execute on
+ * Parallel workers backed by a pool of operating-system threads
+ * (see `configure()`). Workers run concurrently and may execute on
  * different CPU cores at the same time.
  *
  * Each worker thread has its own independent copy of the program's
- * global state. No memory is shared between coroutines, or between a
- * coroutine and the code that spawned it. Arguments passed to
- * `spawn()`, a coroutine's return value, and `Channel` messages are
+ * global state. No memory is shared between workers, or between a
+ * worker and the code that spawned it. Arguments passed to
+ * `spawn()`, a worker's return value, and `Channel` messages are
  * deep-copied; mutating a value on one side never affects the other
  * side's copy. Shared structure within one copied value (two
  * arguments pointing at the same list, a self-referential list, ...)
@@ -16,7 +16,7 @@
  *
  * ## Values that can cross
  *
- * `spawn()`'s target and arguments, a coroutine's return value, and
+ * `spawn()`'s target and arguments, a worker's return value, and
  * `Channel` messages may be any of: `nil`, `bool`, `number`,
  * `bigint`, `string`, `bytes`, `range`, `list`, `dict`, a class
  * instance, a class (including its static fields, superclass, and
@@ -28,11 +28,11 @@
  *
  * A captured local variable, a class's static fields, and any other
  * global a function depends on are copied at the point they cross.
- * Two coroutines spawned from the same closure each get an
+ * Two workers spawned from the same closure each get an
  * independent copy of what it captured.
  *
- * The following raise `CoroutineError` if found anywhere in a value
- * crossing a coroutine boundary, including nested inside a list,
+ * The following raise `WorkerError` if found anywhere in a value
+ * crossing a worker boundary, including nested inside a list,
  * dict, instance field, captured variable, or static field:
  *
  * - a file handle (`file(...)`)
@@ -49,42 +49,42 @@
  * consumed by whichever `join()`, `try_join()`, or `recv()` call
  * reads it first. The rest of that value remains readable on
  * subsequent calls, but reading the same resource a second time
- * raises `CoroutineError`.
+ * raises `WorkerError`.
  *
- * A `Channel` or `Coroutine` handle itself is the one exception: it is
+ * A `Channel` or `Worker` handle itself is the one exception: it is
  * shared, not moved, since both are already safe to use concurrently
- * from multiple coroutines by design.
+ * from multiple workers by design.
  *
  * ## Failure isolation
  *
- * A bug inside one coroutine cannot bring down another coroutine, the
+ * A bug inside one worker cannot bring down another worker, the
  * pool, or the process: even an internal, unexpected failure (not an
  * ordinary raised exception, which `join()` already reports as
- * `CoroutineError`) is caught and reported the same way. The worker
+ * `WorkerError`) is caught and reported the same way. The worker
  * thread involved is discarded and replaced automatically; the pool
  * keeps running at full size.
  *
- * A coroutine that's never `join()`ed or `try_join()`ed still has its
- * failure reported: if it fails and its `Coroutine` handle is dropped
+ * A worker that's never `join()`ed or `try_join()`ed still has its
+ * failure reported: if it fails and its `Worker` handle is dropped
  * without either ever being called, a warning is printed rather than
  * losing the failure silently. If it was started with `spawn_named()`,
  * the warning includes its name.
  *
  * ## Cancellation
  *
- * `Coroutine.cancel()` interrupts a coroutine that's currently blocked
- * in `Channel.send()`/`recv()`, `Coroutine.join()`, `wait_any()`,
+ * `Worker.cancel()` interrupts a worker that's currently blocked
+ * in `Channel.send()`/`recv()`, `Worker.join()`, `wait_any()`,
  * `wait_all()`, or `select()` -- that call raises
- * `CoroutineCancelledError` within roughly 50ms. Outside one of those
+ * `WorkerCancelledError` within roughly 50ms. Outside one of those
  * calls, cancellation is cooperative: plain running code isn't
- * interrupted, and must check `coroutine.is_cancelled()` itself.
+ * interrupted, and must check `worker.is_cancelled()` itself.
  *
  * ## Example
  *
  * ```zuri-repl
- * %> import coroutine
+ * %> import worker
  * %> def add(a, b) { return a + b }
- * %> var task = coroutine.spawn(add, 2, 3)
+ * %> var task = worker.spawn(add, 2, 3)
  * %> task.join()
  * 5
  * ```
@@ -92,15 +92,15 @@
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
-import _coroutine
-import @.error { CoroutineError, CoroutineTimeoutError, CoroutineCancelledError }
+import _worker
+import @.error { WorkerError, WorkerTimeoutError, WorkerCancelledError }
 import @.channel { Channel, channel, select }
 import @.broadcast { Broadcast, broadcast }
 
 /**
- * A handle to a coroutine, returned by `spawn()`.
+ * A handle to a worker, returned by `spawn()`.
  */
-class Coroutine {
+class Worker {
   var _ptr
 
   @new(ptr) {
@@ -108,93 +108,93 @@ class Coroutine {
   }
 
   /**
-   * Blocks until the coroutine finishes and returns its result. May
+   * Blocks until the worker finishes and returns its result. May
    * be called more than once; later calls return immediately with
    * the same result.
    *
    * @param number timeout: seconds to wait before giving up. Waits
    *   indefinitely if omitted.
    * @returns any
-   * @raises CoroutineError if the coroutine's function raised an
+   * @raises WorkerError if the worker's function raised an
    *   uncaught exception
-   * @raises CoroutineTimeoutError if `timeout` elapses first
-   * @raises CoroutineCancelledError if the CALLING coroutine (not this
+   * @raises WorkerTimeoutError if `timeout` elapses first
+   * @raises WorkerCancelledError if the CALLING worker (not this
    *   one) is cancelled while blocked here
    */
   join(timeout: ?number) {
-    var r = _coroutine.join(self._ptr, timeout)
+    var r = _worker.join(self._ptr, timeout)
     if r[0] == 'pending' {
-      raise CoroutineTimeoutError('join() timed out after ${timeout} seconds')
+      raise WorkerTimeoutError('join() timed out after ${timeout} seconds')
     }
     if r[0] == 'cancelled' {
-      raise CoroutineCancelledError('join() was interrupted: the calling coroutine was cancelled')
+      raise WorkerCancelledError('join() was interrupted: the calling worker was cancelled')
     }
     if r[0] == 'error' {
-      raise CoroutineError(r[1])
+      raise WorkerError(r[1])
     }
     return r[1]
   }
 
   /**
-   * Requests that the coroutine stop. Has no effect on a coroutine
+   * Requests that the worker stop. Has no effect on a worker
    * that has already finished.
    *
-   * If the coroutine is currently blocked in `Channel.send()`/
-   * `recv()`, `Coroutine.join()`, `wait_any()`, `wait_all()`, or
+   * If the worker is currently blocked in `Channel.send()`/
+   * `recv()`, `Worker.join()`, `wait_any()`, `wait_all()`, or
    * `select()`, that call is interrupted within roughly 50ms and
-   * raises `CoroutineCancelledError`.
+   * raises `WorkerCancelledError`.
    *
    * Otherwise -- plain, non-blocking code -- cancellation is
    * cooperative: it does not interrupt code that's already running.
-   * The coroutine's own function must check `coroutine.is_cancelled()`
+   * The worker's own function must check `worker.is_cancelled()`
    * and return on its own.
    */
   cancel() {
-    _coroutine.cancel(self._ptr)
+    _worker.cancel(self._ptr)
   }
 
   /**
    * @returns bool: `true` if `cancel()` has been called on this
-   *   coroutine.
+   *   worker.
    */
   is_cancelled() {
-    return _coroutine.is_cancelled(self._ptr)
+    return _worker.is_cancelled(self._ptr)
   }
 
   /**
    * @returns ?string: the name given via `spawn_named()`, or `nil` if
-   *   this coroutine was started with plain `spawn()`.
+   *   this worker was started with plain `spawn()`.
    */
   name() {
-    return _coroutine.name(self._ptr)
+    return _worker.name(self._ptr)
   }
 
   /**
-   * Returns the coroutine's result, or `nil` if it has not finished
+   * Returns the worker's result, or `nil` if it has not finished
    * yet. Does not block.
    *
-   * @note a coroutine that returns `nil` is indistinguishable from
+   * @note a worker that returns `nil` is indistinguishable from
    *   one still running. Use `is_done()` to tell them apart.
    * @returns any
-   * @raises CoroutineError if the coroutine's function raised an
+   * @raises WorkerError if the worker's function raised an
    *   uncaught exception
    */
   try_join() {
-    var r = _coroutine.try_join(self._ptr)
+    var r = _worker.try_join(self._ptr)
     if r[0] == 'pending' {
       return nil
     }
     if r[0] == 'error' {
-      raise CoroutineError(r[1])
+      raise WorkerError(r[1])
     }
     return r[1]
   }
 
   /**
-   * @returns bool: `true` if the coroutine has finished.
+   * @returns bool: `true` if the worker has finished.
    */
   is_done() {
-    return _coroutine.is_done(self._ptr)
+    return _worker.is_done(self._ptr)
   }
 
   /**
@@ -208,12 +208,12 @@ class Coroutine {
    *   uncaught exception.
    */
   status() {
-    return _coroutine.status(self._ptr)
+    return _worker.status(self._ptr)
   }
 
   /**
-   * This coroutine's underlying native handle, needed by `wait_any()`
-   * to operate on a plain list of `Coroutine`s from outside the
+   * This worker's underlying native handle, needed by `wait_any()`
+   * to operate on a plain list of `Worker`s from outside the
    * class. Not meant for direct use.
    */
   handle() {
@@ -222,7 +222,7 @@ class Coroutine {
 }
 
 /**
- * Starts `fn` running on the coroutine pool and returns a handle to
+ * Starts `fn` running on the worker pool and returns a handle to
  * it. See the module documentation for which values may cross into
  * `fn` and `args`.
  *
@@ -230,25 +230,25 @@ class Coroutine {
  *
  * ```zuri-repl
  * %> def square(n) { return n * n }
- * %> var t = coroutine.spawn(square, 9)
+ * %> var t = worker.spawn(square, 9)
  * %> t.join()
  * 81
  * ```
  *
  * @param function fn: a closure, bound method, or class method.
  * @param ...any args
- * @returns Coroutine
+ * @returns Worker
  * @raises TypeError if `fn` is not callable
- * @raises CoroutineError if `fn` is a native function or class,
- *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+ * @raises WorkerError if `fn` is a native function or class,
+ *   `fn`/`args` cannot cross a worker boundary, or the pool has
  *   been `shutdown()`
  */
 def _do_spawn(fn, args, name) {
-  var r = _coroutine.spawn(fn, args, name)
+  var r = _worker.spawn(fn, args, name)
   if r[0] == 'error' {
-    raise CoroutineError(r[1])
+    raise WorkerError(r[1])
   }
-  return Coroutine(r[1])
+  return Worker(r[1])
 }
 
 def spawn(fn: function, ...args) {
@@ -256,8 +256,8 @@ def spawn(fn: function, ...args) {
 }
 
 /**
- * Same as `spawn()`, but gives the coroutine a `name` -- purely a
- * debugging label, read back via `Coroutine.name()` and included in
+ * Same as `spawn()`, but gives the worker a `name` -- purely a
+ * debugging label, read back via `Worker.name()` and included in
  * the "unobserved failure" warning (see the module docs' "Failure
  * isolation" section) if this one fails and is never `join()`ed or
  * `try_join()`ed.
@@ -265,10 +265,10 @@ def spawn(fn: function, ...args) {
  * @param string name
  * @param function fn: a closure, bound method, or class method.
  * @param ...any args
- * @returns Coroutine
+ * @returns Worker
  * @raises TypeError if `fn` is not callable
- * @raises CoroutineError if `fn` is a native function or class,
- *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+ * @raises WorkerError if `fn` is a native function or class,
+ *   `fn`/`args` cannot cross a worker boundary, or the pool has
  *   been `shutdown()`
  */
 def spawn_named(name: string, fn: function, ...args) {
@@ -277,7 +277,7 @@ def spawn_named(name: string, fn: function, ...args) {
 
 /**
  * A structured-concurrency handle passed to a `scope()` body. Spawns
- * coroutines the same way the module-level `spawn()` does, except
+ * workers the same way the module-level `spawn()` does, except
  * every one of them is tracked by the scope that created it: `scope()`
  * does not return until all of them have finished.
  */
@@ -290,14 +290,14 @@ class Scope {
 
   /**
    * Same as the module-level `spawn()`, except the returned
-   * `Coroutine` is tracked by this scope.
+   * `Worker` is tracked by this scope.
    *
    * @param function fn: a closure, bound method, or class method.
    * @param ...any args
-   * @returns Coroutine
+   * @returns Worker
    * @raises TypeError if `fn` is not callable
-   * @raises CoroutineError if `fn` is a native function or class,
-   *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+   * @raises WorkerError if `fn` is a native function or class,
+   *   `fn`/`args` cannot cross a worker boundary, or the pool has
    *   been `shutdown()`
    */
   spawn(fn: function, ...args) {
@@ -307,16 +307,16 @@ class Scope {
   }
 
   /**
-   * Same as `spawn()`, but gives the coroutine a `name` -- see the
+   * Same as `spawn()`, but gives the worker a `name` -- see the
    * module-level `spawn_named()`.
    *
    * @param string name
    * @param function fn: a closure, bound method, or class method.
    * @param ...any args
-   * @returns Coroutine
+   * @returns Worker
    * @raises TypeError if `fn` is not callable
-   * @raises CoroutineError if `fn` is a native function or class,
-   *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+   * @raises WorkerError if `fn` is a native function or class,
+   *   `fn`/`args` cannot cross a worker boundary, or the pool has
    *   been `shutdown()`
    */
   spawn_named(name: string, fn: function, ...args) {
@@ -326,7 +326,7 @@ class Scope {
   }
 
   /**
-   * @returns [Coroutine]: every coroutine spawned through this scope
+   * @returns [Worker]: every worker spawned through this scope
    *   so far, in spawn order.
    */
   children() {
@@ -336,21 +336,21 @@ class Scope {
 
 /**
  * Runs `body(s)`, where `s` is a fresh `Scope`, and does not return
- * until every coroutine spawned directly through `s.spawn()` has
- * finished. A coroutine started this way can never outlive its scope,
+ * until every worker spawned directly through `s.spawn()` has
+ * finished. A worker started this way can never outlive its scope,
  * and its failure can never be silently dropped the way an
  * unmonitored `spawn()` result could be.
  *
- * If `body` raises, or any coroutine spawned through `s` fails, every
+ * If `body` raises, or any worker spawned through `s` fails, every
  * other still-running one in the scope is `cancel()`ed (cooperative --
- * see `Coroutine.cancel()`), and `scope()` still waits for all of them
+ * see `Worker.cancel()`), and `scope()` still waits for all of them
  * to actually finish before re-raising. `body`'s own exception takes
  * priority if both it and a child failed; otherwise the first child
  * failure, in the order it was spawned, is raised.
  *
  * @param function body: called with one argument, the `Scope`.
  * @returns any: whatever `body` returned, if nothing failed.
- * @raises CoroutineError if `body` raised nothing but a child did
+ * @raises WorkerError if `body` raised nothing but a child did
  */
 def scope(body: function) {
   var s = Scope()
@@ -372,7 +372,7 @@ def scope(body: function) {
   # A child that was blocked in a cancellation-aware call (`recv()`,
   # `join()`, ...) when the sweep above cancelled it fails with a
   # message that starts with the *original* raised class's name --
-  # `join()` here only ever wraps it fresh as `CoroutineError`, so
+  # `join()` here only ever wraps it fresh as `WorkerError`, so
   # that's the one place the distinction survives the trip back from
   # the child's own isolate. Skipping it keeps `first_failure` pointed
   # at whatever ACTUALLY caused the cancellation sweep, rather than a
@@ -382,7 +382,7 @@ def scope(body: function) {
     catch {
       c.join()
     } as e {
-      if first_failure == nil and !e.message.starts_with('CoroutineCancelledError:') {
+      if first_failure == nil and !e.message.starts_with('WorkerCancelledError:') {
         first_failure = e
       }
     }
@@ -398,9 +398,9 @@ def scope(body: function) {
 }
 
 /**
- * Sets the coroutine pool's worker-thread count. Has no effect if the
+ * Sets the worker pool's worker-thread count. Has no effect if the
  * pool has already started; its size is fixed once the first
- * coroutine runs.
+ * worker runs.
  *
  * @param int threads
  * @returns bool: `true` if applied, `false` if the pool had already
@@ -411,134 +411,134 @@ def configure(threads: int) {
   if threads < 1 {
     raise ValueError('configure() expects threads to be at least 1, got ${threads}')
   }
-  return _coroutine.configure(threads)
+  return _worker.configure(threads)
 }
 
 /**
- * The coroutine pool's worker-thread count. Starts the pool, with
+ * The worker pool's worker-thread count. Starts the pool, with
  * whatever size `configure()` set or the machine's CPU count
  * otherwise, if it has not started yet.
  *
  * @returns int
  */
 def pool_size() {
-  return _coroutine.pool_size()
+  return _worker.pool_size()
 }
 
 /**
  * @returns int: the number of logical CPUs this machine reports.
  */
 def cpu_count() {
-  return _coroutine.cpu_count()
+  return _worker.cpu_count()
 }
 
 /**
  * Stops the pool from accepting any further `spawn()` calls, then
- * blocks until every coroutine already spawned -- queued or already
+ * blocks until every worker already spawned -- queued or already
  * running -- has finished. Nothing in flight is abandoned.
  *
  * Permanent: once called, every `spawn()` for the rest of the process
- * raises `CoroutineError`, even if this call itself later times out.
+ * raises `WorkerError`, even if this call itself later times out.
  *
  * @param number timeout: seconds to wait before giving up. Waits
  *   indefinitely if omitted.
- * @raises CoroutineTimeoutError if `timeout` elapses with coroutines
+ * @raises WorkerTimeoutError if `timeout` elapses with workers
  *   still in flight
  */
 def shutdown(timeout: ?number) {
-  if !_coroutine.shutdown(timeout) {
-    raise CoroutineTimeoutError('shutdown() timed out after ${timeout} seconds')
+  if !_worker.shutdown(timeout) {
+    raise WorkerTimeoutError('shutdown() timed out after ${timeout} seconds')
   }
 }
 
 /**
- * @returns int: coroutines a worker is actively running right now.
+ * @returns int: workers a worker is actively running right now.
  *   Does not include ones still `queued_count()`.
  */
 def active_count() {
-  return _coroutine.active_count()
+  return _worker.active_count()
 }
 
 /**
- * @returns int: coroutines spawned but not yet picked up by a worker.
+ * @returns int: workers spawned but not yet picked up by a worker.
  */
 def queued_count() {
-  return _coroutine.queued_count()
+  return _worker.queued_count()
 }
 
 /**
  * @returns bool: `true` if `shutdown()` has been called.
  */
 def is_shutdown() {
-  return _coroutine.is_shutdown()
+  return _worker.is_shutdown()
 }
 
 /**
- * Blocks until at least one of `coroutines` finishes, and returns
+ * Blocks until at least one of `workers` finishes, and returns
  * that one. Useful for reacting to whichever of several tasks
  * completes first, rather than joining them one at a time in a fixed
  * order.
  *
- * @param [Coroutine] coroutines: must not be empty.
+ * @param [Worker] workers: must not be empty.
  * @param number timeout: seconds to wait before giving up. Waits
  *   indefinitely if omitted.
- * @returns Coroutine: whichever one finished first.
- * @raises ValueError if `coroutines` is empty
- * @raises CoroutineTimeoutError if `timeout` elapses before any of
+ * @returns Worker: whichever one finished first.
+ * @raises ValueError if `workers` is empty
+ * @raises WorkerTimeoutError if `timeout` elapses before any of
  *   them finish
- * @raises CoroutineCancelledError if the CALLING coroutine is
+ * @raises WorkerCancelledError if the CALLING worker is
  *   cancelled while blocked here
  */
-def wait_any(coroutines: list, timeout: ?number) {
-  if coroutines.length() == 0 {
-    raise ValueError('wait_any() expects at least one coroutine')
+def wait_any(workers: list, timeout: ?number) {
+  if workers.length() == 0 {
+    raise ValueError('wait_any() expects at least one worker')
   }
   var ptrs = []
-  for c in coroutines {
+  for c in workers {
     ptrs.append(c.handle())
   }
-  var r = _coroutine.wait_any(ptrs, timeout)
+  var r = _worker.wait_any(ptrs, timeout)
   if r[0] == 'timeout' {
-    raise CoroutineTimeoutError('wait_any() timed out after ${timeout} seconds')
+    raise WorkerTimeoutError('wait_any() timed out after ${timeout} seconds')
   }
   if r[0] == 'cancelled' {
-    raise CoroutineCancelledError('wait_any() was interrupted: the calling coroutine was cancelled')
+    raise WorkerCancelledError('wait_any() was interrupted: the calling worker was cancelled')
   }
-  return coroutines[r[1]]
+  return workers[r[1]]
 }
 
 /**
- * Blocks until every one of `coroutines` has finished, then returns
- * their results in the same order as `coroutines`.
+ * Blocks until every one of `workers` has finished, then returns
+ * their results in the same order as `workers`.
  *
- * @param [Coroutine] coroutines: may be empty (returns `[]`).
+ * @param [Worker] workers: may be empty (returns `[]`).
  * @param number timeout: seconds to wait for all of them combined, not
- *   per coroutine. Waits indefinitely if omitted.
+ *   per worker. Waits indefinitely if omitted.
  * @returns list
- * @raises CoroutineError from the first one (in `coroutines` order)
+ * @raises WorkerError from the first one (in `workers` order)
  *   whose function raised, once every one of them has finished
- * @raises CoroutineTimeoutError if `timeout` elapses before all of
+ * @raises WorkerTimeoutError if `timeout` elapses before all of
  *   them finish
- * @raises CoroutineCancelledError if the CALLING coroutine is
+ * @raises WorkerCancelledError if the CALLING worker is
  *   cancelled while blocked here
  */
-def wait_all(coroutines: list, timeout: ?number) {
-  if coroutines.length() == 0 {
+def wait_all(workers: list, timeout: ?number) {
+  if workers.length() == 0 {
     return []
   }
   var ptrs = []
-  for c in coroutines {
+  for c in workers {
     ptrs.append(c.handle())
   }
-  var status = _coroutine.wait_all(ptrs, timeout)
+  var status = _worker.wait_all(ptrs, timeout)
   if status == 'timeout' {
-    raise CoroutineTimeoutError('wait_all() timed out after ${timeout} seconds')
+    raise WorkerTimeoutError('wait_all() timed out after ${timeout} seconds')
   }
   if status == 'cancelled' {
-    raise CoroutineCancelledError('wait_all() was interrupted: the calling coroutine was cancelled')
+    raise WorkerCancelledError('wait_all() was interrupted: the calling worker was cancelled')
   }
   var results = []
-  for c in coroutines {
+  for c in workers {
     results.append(c.join())
   }
   return results
@@ -546,8 +546,8 @@ def wait_all(coroutines: list, timeout: ?number) {
 
 /**
  * Runs `fn` once per item in `items`, in parallel across the
- * coroutine pool, and returns the results in the same order as
- * `items`. Equivalent to spawning a coroutine per item and passing the
+ * worker pool, and returns the results in the same order as
+ * `items`. Equivalent to spawning a worker per item and passing the
  * handles to `wait_all()`.
  *
  * @param function fn: a closure, bound method, or class method.
@@ -555,11 +555,11 @@ def wait_all(coroutines: list, timeout: ?number) {
  * @param number timeout: seconds to wait for the whole batch combined.
  *   Waits indefinitely if omitted.
  * @returns list
- * @raises CoroutineError from the first item (in `items` order) whose
+ * @raises WorkerError from the first item (in `items` order) whose
  *   call raised, once every call has finished
- * @raises CoroutineTimeoutError if `timeout` elapses before every
+ * @raises WorkerTimeoutError if `timeout` elapses before every
  *   call finishes
- * @raises CoroutineCancelledError if the CALLING coroutine is
+ * @raises WorkerCancelledError if the CALLING worker is
  *   cancelled while blocked here
  */
 def map(fn: function, items: list, timeout: ?number) {
@@ -571,15 +571,15 @@ def map(fn: function, items: list, timeout: ?number) {
 }
 
 /**
- * Checks whether the currently running coroutine has been asked to
+ * Checks whether the currently running worker has been asked to
  * stop via its handle's `cancel()`. Meant to be polled periodically
- * by long-running or looping coroutine code so it can return early.
+ * by long-running or looping worker code so it can return early.
  *
- * Calling this outside a coroutine (from the main script, or from
+ * Calling this outside a worker (from the main script, or from
  * another thread) always returns `false`.
  *
  * @returns bool
  */
 def is_cancelled() {
-  return _coroutine.current_is_cancelled()
+  return _worker.current_is_cancelled()
 }

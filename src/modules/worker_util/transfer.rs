@@ -1,5 +1,5 @@
 //! Heap-independent snapshot of a Zuri value -- the only thing that
-//! ever crosses a coroutine spawn/join or channel send/recv.
+//! ever crosses a worker spawn/join or channel send/recv.
 //!
 //! Every isolate (worker thread) owns its own private `VM`/`Heap`,
 //! and this VM's object model was never built to be touched from more
@@ -33,7 +33,7 @@
 //! `"<moved>"`, unusable on the source side from then on) and wraps it
 //! in a `PtrSlot` -- an `Arc<Mutex<Option<...>>>` -- rather than moving
 //! it in directly, specifically so `TransferValue`/`TransferGraph` can
-//! stay plain `Clone` (needed so a coroutine's `.join()` result stays
+//! stay plain `Clone` (needed so a worker's `.join()` result stays
 //! freely re-readable, same as any other value). Cloning a `PtrSlot`
 //! only clones the `Arc`; the payload underneath is still consumed at
 //! most once, by whichever `materialize` call reaches it first --
@@ -66,14 +66,14 @@ type PtrSlot = Arc<Mutex<Option<(&'static str, Box<dyn Any + Send>)>>>;
 ///
 /// Deliberately only ever a `.zu` MODULE, never the program's own
 /// entry script -- this restriction applies to the `Named` (by-
-/// binding) resolution strategy specifically, NOT to coroutines in
+/// binding) resolution strategy specifically, NOT to workers in
 /// general (see `CapturedFunction` for the other strategy, which has
 /// no such restriction). A module's top level is expected to be
 /// side-effect-light (declarations, mostly) and is only ever run once
 /// and cached -- exactly what re-resolving it on a worker isolate
 /// needs. The entry script has no such expectation: it's the
 /// program's own real, imperative top-level logic, which commonly
-/// includes the very `coroutine.spawn`/`.join()` calls that would
+/// includes the very `worker.spawn`/`.join()` calls that would
 /// trigger this resolution in the first place. Bootstrapping a worker
 /// by re-running it would re-run those calls too -- recursively
 /// spawning more work and, for a script that blocks on `.join()` at
@@ -222,8 +222,8 @@ pub enum TransferValue {
   /// both sides. See `capture_value`'s own docs on why this is NOT
   /// treated like an ordinary `Ptr`.
   ChannelHandle(Arc<pool::ChannelState>),
-  /// A `Coroutine` handle -- same reasoning as `ChannelHandle`.
-  CoroutineHandle(Arc<pool::CoroutineState>),
+  /// A `Worker` handle -- same reasoning as `ChannelHandle`.
+  WorkerHandle(Arc<pool::WorkerState>),
   Ref(u32),
 }
 
@@ -375,7 +375,7 @@ fn capture_value(
     // synchronized (`Mutex`+`Condvar`) specifically so it CAN be used
     // concurrently from both sides at once -- that's the entire point
     // of a channel. Cloning the `Arc` (never moving/taking it) is what
-    // lets the very channel a coroutine was just handed still be sent
+    // lets the very channel a worker was just handed still be sent
     // on/received from by the code that spawned it.
     let handle = v
       .as_ptr_cell()
@@ -385,18 +385,18 @@ fn capture_value(
       .ok_or_else(|| "internal error: malformed channel handle".to_string())?;
     return Ok(TransferValue::ChannelHandle(handle));
   }
-  if v.is_ptr_type(pool::COROUTINE_PTR_TYPE) {
-    // Same reasoning as `Channel` above: a `Coroutine` handle is a
+  if v.is_ptr_type(pool::WORKER_PTR_TYPE) {
+    // Same reasoning as `Channel` above: a `Worker` handle is a
     // synchronized, freely-shareable reference to a result slot, not
-    // an exclusive resource -- cloning it is what lets a `Coroutine`
-    // handle be passed into (or returned from) another coroutine.
+    // an exclusive resource -- cloning it is what lets a `Worker`
+    // handle be passed into (or returned from) another worker.
     let handle = v
       .as_ptr_cell()
       .borrow()
-      .downcast_ref::<Arc<pool::CoroutineState>>()
+      .downcast_ref::<Arc<pool::WorkerState>>()
       .cloned()
-      .ok_or_else(|| "internal error: malformed coroutine handle".to_string())?;
-    return Ok(TransferValue::CoroutineHandle(handle));
+      .ok_or_else(|| "internal error: malformed worker handle".to_string())?;
+    return Ok(TransferValue::WorkerHandle(handle));
   }
   if v.is_ptr() {
     // A genuine MOVE, not a copy -- see this module's own top-level
@@ -465,7 +465,7 @@ fn capture_value(
   }
 
   Err(format!(
-    "cannot send a {} across coroutines -- only nil, bool, number, string, \
+    "cannot send a {} across workers -- only nil, bool, number, string, \
      bytes, bigint, range, list, dict, instance, class, bound method, \
      function, and native-pointer values can cross",
     v.type_name()
@@ -495,10 +495,10 @@ fn capture_closure(
   // whatever closure THAT run independently creates for the same
   // name, with its own independently-recreated upvalues. A module-
   // level `def`/`var` commonly closes over another plain (non-`@`-
-  // exported) import in the same file -- e.g. `import _coroutine` is
+  // exported) import in the same file -- e.g. `import _worker` is
   // just a local of the file's own top-level scope, so any nested
   // function referencing it captures it as an upvalue -- and a
-  // `Module`/`ModuleBinding` value can never itself cross a coroutine
+  // `Module`/`ModuleBinding` value can never itself cross a worker
   // boundary. Gating this on an empty upvalue list would reject
   // exactly that ordinary case, forcing it down the STRUCTURAL path
   // below where it genuinely does need to move that upvalue and
@@ -678,7 +678,7 @@ fn capture_root_globals(
     };
     let captured = capture_value(vm, current, arena, memo).map_err(|e| {
       format!(
-        "cannot send this function across coroutines: global '{}' it \
+        "cannot send this function across workers: global '{}' it \
          depends on can't cross: {}",
         name, e
       )
@@ -708,7 +708,12 @@ fn capture_class(
   // it (a plain `Error('msg')`, most commonly). Resolving it by name
   // against the destination's own prelude instead is both correct and
   // free -- no module load, no clone.
-  if gmod.is_none() && vm.builtin_exceptions.get(name.as_str()).is_some_and(|c| c.equals(&v)) {
+  if gmod.is_none()
+    && vm
+      .builtin_exceptions
+      .get(name.as_str())
+      .is_some_and(|c| c.equals(&v))
+  {
     return Ok(TransferValue::Prelude(name));
   }
 
@@ -746,7 +751,7 @@ fn capture_class(
 ///
 /// Statics are mutable, shared, per-class state on the source side --
 /// captured as a one-time SNAPSHOT here, same as an upvalue or a
-/// root global. Once a class crosses into a coroutine, its statics
+/// root global. Once a class crosses into a worker, its statics
 /// there are independent: neither side's later mutations are visible
 /// to the other. There's no other sound option in a shared-nothing
 /// model -- see this module's own top-level docs.
@@ -915,12 +920,14 @@ fn materialize_value(
         name
       )
     }),
-    TransferValue::ChannelHandle(state) => {
-      Ok(vm.heap_mut().alloc_ptr(pool::CHANNEL_PTR_TYPE, state.clone()))
-    },
-    TransferValue::CoroutineHandle(state) => {
-      Ok(vm.heap_mut().alloc_ptr(pool::COROUTINE_PTR_TYPE, state.clone()))
-    },
+    TransferValue::ChannelHandle(state) => Ok(
+      vm.heap_mut()
+        .alloc_ptr(pool::CHANNEL_PTR_TYPE, state.clone()),
+    ),
+    TransferValue::WorkerHandle(state) => Ok(
+      vm.heap_mut()
+        .alloc_ptr(pool::WORKER_PTR_TYPE, state.clone()),
+    ),
     TransferValue::Ref(idx) => materialize_ref(vm, *idx, arena, node_pin),
   }
 }
@@ -995,7 +1002,7 @@ fn materialize_ref(
       let Some((type_name, payload)) = taken else {
         return Err(
           "this native resource was already consumed by an earlier read \
-           -- a coroutine result or channel message containing a native \
+           -- a worker result or channel message containing a native \
            pointer can only be materialized once, by whichever join()/\
            recv() reaches it first"
             .to_string(),
@@ -1217,7 +1224,7 @@ fn materialize_prototype(
       .home
       .as_ref()
       .map(|h| h.path.as_str())
-      .unwrap_or("<coroutine>"),
+      .unwrap_or("<worker>"),
   );
 
   let fn_obj = ObjFunction {

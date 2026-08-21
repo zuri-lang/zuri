@@ -1,5 +1,5 @@
 /**
- * Coroutine-driven counterpart to mandlebrot.zu -- each row's pixels
+ * Worker-driven counterpart to mandlebrot.zu -- each row's pixels
  * depend only on that row's own y, never on any other row, so the
  * image is split into one contiguous row range per pool worker and
  * computed concurrently. Each worker returns its own rows as plain
@@ -16,13 +16,13 @@
  * parallelized by Richard Ore
  */
 
-import coroutine
+import worker
 
 # `Mandelbrot` only holds the pure per-row math, with no reference to
-# `coroutine` anywhere in it -- spawning `computeRows` as a bound
+# `worker` anywhere in it -- spawning `computeRows` as a bound
 # method transfers the WHOLE class, methods included, and a class
 # that references an imported module ANYWHERE in it can't cross a
-# coroutine boundary at all. Orchestration (`compute()` below) stays
+# worker boundary at all. Orchestration (`compute()` below) stays
 # entirely outside the class for exactly that reason.
 class Mandelbrot {
   var size
@@ -85,7 +85,7 @@ def compute(size)
   echo "P4\n${size} ${size}\n"
 
   var m = Mandelbrot(size)
-  var workers = coroutine.pool_size()
+  var workers = worker.pool_size()
   var rowsPerJob = (size + workers - 1) // workers
   var jobs = []
 
@@ -93,7 +93,7 @@ def compute(size)
     jobs.append([y0, (y0 + rowsPerJob).min(size)])
   }
 
-  var chunks = coroutine.map(m.computeRows, jobs)
+  var chunks = worker.map(m.computeRows, jobs)
   for rows in chunks {
     for row in rows {
       print(row)

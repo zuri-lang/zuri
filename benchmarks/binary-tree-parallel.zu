@@ -1,13 +1,13 @@
 /* The Computer Language Benchmarks Game
  * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
  *
- * binary-trees Zuri #1 program, coroutine-driven counterpart
+ * binary-trees Zuri #1 program, worker-driven counterpart
  *
  * Each depth bucket in the main loop below builds and counts its own
  * `iterations` trees completely independently of every other bucket
  * -- nothing is shared between them -- so each bucket is handed to
- * its own coroutine instead of running through them one at a time.
- * Trees themselves never cross a coroutine boundary: each worker
+ * its own worker instead of running through them one at a time.
+ * Trees themselves never cross a worker boundary: each worker
  * builds, counts, and discards its own trees entirely inside its own
  * isolate, only the small integer sum comes back.
  *
@@ -15,13 +15,13 @@
  * *reset*
 */
 
-import coroutine
+import worker
 
 # `TreeNode`/`tree_with`/`churn_depth` reference nothing from
-# `coroutine` -- spawning `churn_depth` transfers it (and everything
+# `worker` -- spawning `churn_depth` transfers it (and everything
 # it transitively touches) fresh, and a value that references an
-# imported module anywhere in it can't cross a coroutine boundary at
-# all. `main()`, which DOES use `coroutine`, is never itself spawned.
+# imported module anywhere in it can't cross a worker boundary at
+# all. `main()`, which DOES use `worker`, is never itself spawned.
 class TreeNode {
   @new(left, right) {
     self.left = left
@@ -68,7 +68,7 @@ def main(n) {
     jobs.append([depth, iterations])
   }
 
-  var sums = coroutine.map(churn_depth, jobs)
+  var sums = worker.map(churn_depth, jobs)
 
   iter var idx = 0; idx < jobs.length(); idx++ {
     echo '${jobs[idx][1]}\t trees of depth ${jobs[idx][0]}\t check: ${sums[idx]}'

@@ -10,7 +10,7 @@
  */
 
 import .channel { Channel }
-import .error { CoroutineError }
+import .error { WorkerError }
 
 /**
  * A one-to-many channel. Call `subscribe()` to get a `Channel` that
@@ -41,11 +41,11 @@ class Broadcast {
    * Registers a new subscriber and returns its `Channel`.
    *
    * @returns Channel
-   * @raises CoroutineError if the broadcast is already closed
+   * @raises WorkerError if the broadcast is already closed
    */
   subscribe() {
     if self._closed {
-      raise CoroutineError('cannot subscribe: the broadcast is closed')
+      raise WorkerError('cannot subscribe: the broadcast is closed')
     }
     var ch = Channel(self._capacity)
     self._subscribers.append(ch)
@@ -77,11 +77,11 @@ class Broadcast {
    * value rather than blocking the send.
    *
    * @param any value
-   * @raises CoroutineError if the broadcast is closed
+   * @raises WorkerError if the broadcast is closed
    */
   send(value) {
     if self._closed {
-      raise CoroutineError('cannot send on a closed broadcast')
+      raise WorkerError('cannot send on a closed broadcast')
     }
     var alive = []
     for ch in self._subscribers {
@@ -99,7 +99,7 @@ class Broadcast {
 
   /**
    * Closes the broadcast and every current subscriber's channel.
-   * `subscribe()` afterward raises `CoroutineError`; values already
+   * `subscribe()` afterward raises `WorkerError`; values already
    * queued on subscriber channels remain readable.
    */
   close() {

@@ -1,13 +1,13 @@
-import coroutine
+import worker
 import compress.gzip
 
 def compress_it(enc) {
-  enc.write('hello from a coroutine, compressed on another thread')
+  enc.write('hello from a worker, compressed on another thread')
   return enc.finish()
 }
 
 var enc = gzip.GzipEncoder(6)
-var t = coroutine.spawn(compress_it, enc)
+var t = worker.spawn(compress_it, enc)
 var result = t.join()
 echo result.length() > 0
 

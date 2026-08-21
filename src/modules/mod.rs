@@ -12,8 +12,8 @@
 mod base64;
 mod compress;
 mod compress_util;
-mod coroutine;
-mod coroutine_util;
+mod worker;
+mod worker_util;
 mod crypto;
 mod date;
 mod hash;
@@ -44,7 +44,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   date::MODULE,
   r#struct::MODULE,
   compress::MODULE,
-  coroutine::MODULE,
+  worker::MODULE,
 ];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {
