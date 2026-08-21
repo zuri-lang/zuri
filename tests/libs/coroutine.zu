@@ -145,6 +145,27 @@ def test_main_script_class_constructed_inside_coroutine() {
   echo 'test_main_script_class_constructed_inside_coroutine passed'
 }
 
+def test_main_script_class_survives_gc_and_jit_warmup_inside_coroutine() {
+  # a materialized prototype's string constants (field/method names)
+  # must be allocated the same "never moves" way the compiler's own
+  # constants are: enough iterations here both warms this method up
+  # to JIT-compiled code (which bakes a field name's raw bits in as a
+  # machine-code immediate) AND pushes the worker's nursery through a
+  # real minor collection -- if a constant were movable, that
+  # collection would relocate it out from under the already-baked
+  # pointer and crash the whole process, not just this coroutine.
+  var t = coroutine.spawn(@() {
+    var sum = 0
+    iter var i = 0; i < 20000; i++ {
+      var box = LocalBox(i)
+      sum += box.value
+    }
+    return sum
+  })
+  assert t.join() == 199990000, 'field access on a fresh instance must stay correct across a GC inside the coroutine'
+  echo 'test_main_script_class_survives_gc_and_jit_warmup_inside_coroutine passed'
+}
+
 def test_module_scoped_class_instance() {
   var c = coroutine_worker.make_counter(10)
   var t = coroutine.spawn(@(counter) { return counter.increment() }, c)
@@ -1126,6 +1147,7 @@ test_main_script_function()
 test_main_script_function_raises_builtin_error()
 test_main_script_class()
 test_main_script_class_constructed_inside_coroutine()
+test_main_script_class_survives_gc_and_jit_warmup_inside_coroutine()
 test_module_scoped_class_instance()
 test_bound_method_as_spawn_target()
 test_bound_method_as_argument()

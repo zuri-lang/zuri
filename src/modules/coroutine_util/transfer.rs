@@ -1146,6 +1146,43 @@ fn materialize_class(
 /// recursive top-level function calling itself by name -- which is
 /// why `node_pin[idx]` is set only after the function itself exists,
 /// but before `root_globals` are resolved.
+/// Like `materialize_value`, but for an entry that's about to land in
+/// a `Chunk::constants` slot specifically. A regular runtime `String`/
+/// `BigInt` is fine to materialize into the movable nursery -- nothing
+/// but ordinary `Value` reads ever touch it, and the GC keeps those
+/// current across a relocation same as any other reference. A
+/// CONSTANT-POOL string/bigint is different: `jit::codegen::bake_const`
+/// embeds a constant's raw bits directly as a machine-code immediate
+/// the moment the surrounding method gets compiled, so once that's
+/// baked in, nothing ever revisits it to follow a relocation -- the
+/// object has to simply never move, which is exactly what
+/// `alloc_string_old`/`alloc_bigint_old` (what the compiler itself
+/// uses for every constant-pool entry it ever creates) guarantee and
+/// the ordinary `alloc_string`/`alloc_bigint` `materialize_value`
+/// calls do not.
+///
+/// This is what a real, hard-to-reproduce crash traced back to: a
+/// materialized prototype's string constants went through
+/// `materialize_value`'s ordinary (movable) path, so the very next
+/// minor collection to promote one of them left every already-JIT-
+/// compiled `GetField`/method-name lookup holding a dangling pointer.
+/// Every other constant kind `materialize_value` can produce (a
+/// number, a nested prototype/closure, a class) already goes through
+/// its own `alloc_old`-based allocator, so only `Str`/`BigInt` need
+/// special-casing here.
+fn materialize_constant(
+  vm: &mut VM,
+  tv: &TransferValue,
+  arena: &[TransferNode],
+  node_pin: &mut Vec<Option<usize>>,
+) -> Result<Value, String> {
+  match tv {
+    TransferValue::Str(s) => Ok(vm.heap_mut().alloc_string_old(s.clone())),
+    TransferValue::BigInt(b) => Ok(vm.heap_mut().alloc_bigint_old(b.clone())),
+    _ => materialize_value(vm, tv, arena, node_pin),
+  }
+}
+
 fn materialize_prototype(
   vm: &mut VM,
   proto: &CapturedFunction,
@@ -1160,7 +1197,7 @@ fn materialize_prototype(
 
   let mark = vm.pin_values(std::iter::empty());
   for c in &proto.constants {
-    let v = materialize_value(vm, c, arena, node_pin)?;
+    let v = materialize_constant(vm, c, arena, node_pin)?;
     vm.pin_values([v]);
   }
   let constants: Vec<Value> = (0..proto.constants.len())
