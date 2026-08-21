@@ -27,7 +27,7 @@ class Mandelbrot {
     iter var y = 0; y<self.size; y++ {
       self.computeRow(y)
     }
-    print(self.buf)
+    if (self.bufLen != 0) print(self.buf.take(self.bufLen))
   }
 
   computeRow(y)
@@ -64,7 +64,7 @@ class Mandelbrot {
     }
     if (self.shift!=0) {
       bits = bits << self.shift
-      bufLocal[bufLen++ - 1] = bits
+      bufLocal[self.bufLen++ - 1] = bits
       if (self.bufLen == BUFFER_SIZE) {
         print(bufLocal)
         self.bufLen = 0
