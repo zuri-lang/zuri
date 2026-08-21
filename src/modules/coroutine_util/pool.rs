@@ -156,6 +156,16 @@ impl CoroutinePool {
     for i in 0..size {
       thread::Builder::new()
         .name(format!("{}{}", WORKER_THREAD_PREFIX, i))
+        // Rust's own default for a spawned thread is 2MB, well under
+        // what the MAIN thread gets from the OS (8MB via `ulimit -s`
+        // on a typical Linux setup) -- recursive Zuri code that runs
+        // fine un-spawned can blow a worker's stack. That's not a
+        // catchable panic either: a real stack overflow bypasses
+        // `catch_unwind` entirely and aborts the WHOLE PROCESS, not
+        // just the one coroutine, which is exactly the guarantee
+        // `worker_loop`'s panic isolation exists to give. 16MB, double
+        // a typical main thread's own, gives real headroom instead.
+        .stack_size(16 * 1024 * 1024)
         .spawn(worker_loop)
         .expect("failed to spawn coroutine worker thread");
     }
