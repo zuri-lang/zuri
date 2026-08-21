@@ -7,7 +7,7 @@
  */
 
 import _coroutine
-import .error { CoroutineError }
+import .error { CoroutineError, CoroutineTimeoutError }
 
 /**
  * A thread-safe queue for passing values between coroutines.
@@ -33,11 +33,18 @@ class Channel {
    * Sends `value` on the channel, blocking while it is at capacity.
    *
    * @param any value
+   * @param number timeout: seconds to wait before giving up. Waits
+   *   indefinitely if omitted.
    * @raises CoroutineError if the channel is closed
+   * @raises CoroutineTimeoutError if `timeout` elapses first
    */
-  send(value) {
-    if !_coroutine.channel_send(self._ptr, value) {
+  send(value, timeout: ?number) {
+    var status = _coroutine.channel_send(self._ptr, value, timeout)
+    if status == 'closed' {
       raise CoroutineError('cannot send on a closed channel')
+    }
+    if status == 'timeout' {
+      raise CoroutineTimeoutError('send() timed out after ${timeout} seconds')
     }
   }
 
@@ -45,12 +52,18 @@ class Channel {
    * Blocks until a value is available and returns it. Returns `nil`
    * once the channel is closed and empty.
    *
+   * @param number timeout: seconds to wait before giving up. Waits
+   *   indefinitely if omitted.
    * @returns any
+   * @raises CoroutineTimeoutError if `timeout` elapses first
    */
-  recv() {
-    var r = _coroutine.channel_recv(self._ptr)
+  recv(timeout: ?number) {
+    var r = _coroutine.channel_recv(self._ptr, timeout)
     if r[0] == 'closed' {
       return nil
+    }
+    if r[0] == 'timeout' {
+      raise CoroutineTimeoutError('recv() timed out after ${timeout} seconds')
     }
     return r[1]
   }

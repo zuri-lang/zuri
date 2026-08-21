@@ -5,6 +5,8 @@
  * declaration goes through.
  */
 
+import coroutine
+
 var counter_seed = 100
 
 def square(n) {
@@ -79,4 +81,20 @@ class Dog < Animal {
 
 def make_dog(name) {
   return Dog(name)
+}
+
+# Signals on `started` the moment it's actually running, then spins
+# until `coroutine.is_cancelled()` sees the caller's `cancel()`. The
+# rendezvous means a test can call `cancel()` knowing the loop has
+# already started, instead of racing coroutine startup.
+def cancellable_loop(started) {
+  started.send(true)
+  var iterations = 0
+  while !coroutine.is_cancelled() {
+    iterations += 1
+    if iterations > 5000000 {
+      break
+    }
+  }
+  return iterations
 }

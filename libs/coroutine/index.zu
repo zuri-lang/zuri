@@ -83,7 +83,7 @@
  */
 
 import _coroutine
-import @.error { CoroutineError }
+import @.error { CoroutineError, CoroutineTimeoutError }
 import @.channel { Channel, channel }
 
 /**
@@ -101,16 +101,42 @@ class Coroutine {
    * be called more than once; later calls return immediately with
    * the same result.
    *
+   * @param number timeout: seconds to wait before giving up. Waits
+   *   indefinitely if omitted.
    * @returns any
    * @raises CoroutineError if the coroutine's function raised an
    *   uncaught exception
+   * @raises CoroutineTimeoutError if `timeout` elapses first
    */
-  join() {
-    var r = _coroutine.join(self._ptr)
+  join(timeout: ?number) {
+    var r = _coroutine.join(self._ptr, timeout)
+    if r[0] == 'pending' {
+      raise CoroutineTimeoutError('join() timed out after ${timeout} seconds')
+    }
     if r[0] == 'error' {
       raise CoroutineError(r[1])
     }
     return r[1]
+  }
+
+  /**
+   * Requests that the coroutine stop. Has no effect on a coroutine
+   * that has already finished.
+   *
+   * Cancellation is cooperative: it does not interrupt code that is
+   * already running. The coroutine's own function must check
+   * `coroutine.is_cancelled()` and return on its own.
+   */
+  cancel() {
+    _coroutine.cancel(self._ptr)
+  }
+
+  /**
+   * @returns bool: `true` if `cancel()` has been called on this
+   *   coroutine.
+   */
+  is_cancelled() {
+    return _coroutine.is_cancelled(self._ptr)
   }
 
   /**
@@ -204,4 +230,18 @@ def pool_size() {
  */
 def cpu_count() {
   return _coroutine.cpu_count()
+}
+
+/**
+ * Checks whether the currently running coroutine has been asked to
+ * stop via its handle's `cancel()`. Meant to be polled periodically
+ * by long-running or looping coroutine code so it can return early.
+ *
+ * Calling this outside a coroutine (from the main script, or from
+ * another thread) always returns `false`.
+ *
+ * @returns bool
+ */
+def is_cancelled() {
+  return _coroutine.current_is_cancelled()
 }

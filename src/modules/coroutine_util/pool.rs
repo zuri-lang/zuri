@@ -7,11 +7,13 @@
 //! actually crosses, and why that's the only thing that safely can.
 
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
+use std::time::Duration;
 
 use crate::vm::object::Heap;
 use crate::vm::value::Value;
@@ -195,6 +197,15 @@ fn worker_loop() {
     // slot still needs to be resolved either way.
     let state = task.state.clone();
 
+    // Ambient for the DURATION of this one task -- `is_current_cancelled`
+    // reads it back with no explicit handle needed, the same way a
+    // spawned function never has to be handed its own `Coroutine` back
+    // just to ask "was I cancelled?". Cleared unconditionally
+    // afterward (both the Ok and panic arms below), never left
+    // pointing at a finished task's state while this thread picks up
+    // its next one.
+    CURRENT_COROUTINE.with(|c| *c.borrow_mut() = Some(state.clone()));
+
     // `catch_unwind` isolates a panic to just the ONE coroutine that
     // caused it, rather than taking down every other coroutine and the
     // main thread with it -- see `Cargo.toml`'s own note on why
@@ -222,7 +233,26 @@ fn worker_loop() {
         isolate = WorkerIsolate::new();
       },
     }
+    CURRENT_COROUTINE.with(|c| *c.borrow_mut() = None);
   }
+}
+
+thread_local! {
+  /// The coroutine THIS worker thread is currently running, if any --
+  /// what lets `is_current_cancelled` answer "was I cancelled?" with
+  /// no explicit handle passed in, the same way each worker's own
+  /// isolate needs no explicit parameter either. Set/cleared around
+  /// each task in `worker_loop`; `None` between tasks and on any
+  /// thread that isn't a coroutine worker at all.
+  static CURRENT_COROUTINE: RefCell<Option<Arc<CoroutineState>>> = const { RefCell::new(None) };
+}
+
+/// Whether the coroutine currently running ON THIS THREAD has been
+/// `cancel()`ed. `false` (never `true`) on a thread that isn't a
+/// coroutine worker, or between tasks on one that is -- there's
+/// nothing to have been cancelled either way.
+pub fn is_current_cancelled() -> bool {
+  CURRENT_COROUTINE.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
 }
 
 fn panic_message(payload: &(dyn Any + Send)) -> String {
@@ -345,6 +375,12 @@ pub struct CoroutineState {
   /// Set once `join()`/`try_join()` has actually reported a finished
   /// outcome (`Ok` or `Err`) to someone -- see `Drop`'s own docs.
   observed: AtomicBool,
+  /// Set by `cancel()`, read by `is_current_cancelled()` from inside
+  /// the coroutine's own execution -- purely COOPERATIVE, same as
+  /// every other language's cancellation token: nothing here stops
+  /// already-running code on its own. A coroutine that never checks
+  /// simply runs to completion regardless of this flag.
+  cancelled: AtomicBool,
 }
 
 impl CoroutineState {
@@ -353,7 +389,16 @@ impl CoroutineState {
       slot: Mutex::new(Slot::Pending),
       cv: Condvar::new(),
       observed: AtomicBool::new(false),
+      cancelled: AtomicBool::new(false),
     }
+  }
+
+  pub fn cancel(&self) {
+    self.cancelled.store(true, Ordering::Relaxed);
+  }
+
+  pub fn is_cancelled(&self) -> bool {
+    self.cancelled.load(Ordering::Relaxed)
   }
 
   fn finish(&self, result: Result<TransferGraph, String>) {
@@ -383,6 +428,33 @@ impl CoroutineState {
           return JoinOutcome::Err(m.clone());
         },
       }
+    }
+  }
+
+  /// Like `join()`, but gives up and returns `JoinOutcome::Pending`
+  /// (indistinguishable from "still running" -- from the caller's own
+  /// point of view, that's exactly what a timeout means) if `timeout`
+  /// elapses first. Never dropped early by a spurious wakeup:
+  /// `wait_timeout_while` re-checks the predicate itself in a loop.
+  pub fn join_timeout(&self, timeout: Duration) -> JoinOutcome {
+    let slot = lock(&self.slot);
+    let (slot, result) = self
+      .cv
+      .wait_timeout_while(slot, timeout, |s| matches!(s, Slot::Pending))
+      .unwrap_or_else(PoisonError::into_inner);
+    if result.timed_out() {
+      return JoinOutcome::Pending;
+    }
+    match &*slot {
+      Slot::Pending => JoinOutcome::Pending,
+      Slot::Ok(g) => {
+        self.observed.store(true, Ordering::Relaxed);
+        JoinOutcome::Ok(g.clone())
+      },
+      Slot::Err(m) => {
+        self.observed.store(true, Ordering::Relaxed);
+        JoinOutcome::Err(m.clone())
+      },
     }
   }
 
@@ -459,6 +531,12 @@ pub enum RecvOutcome {
   Closed,
 }
 
+pub enum SendOutcome {
+  Sent,
+  Closed,
+  TimedOut,
+}
+
 struct ChannelInner {
   queue: VecDeque<TransferGraph>,
   /// `None` = unbounded.
@@ -506,6 +584,28 @@ impl ChannelState {
     Ok(())
   }
 
+  /// Like `send`, but gives up (returning `TimedOut`) if `timeout`
+  /// elapses before the channel has room.
+  pub fn send_timeout(&self, value: TransferGraph, timeout: Duration) -> SendOutcome {
+    let inner = lock(&self.inner);
+    let (mut inner, result) = self
+      .not_full
+      .wait_timeout_while(inner, timeout, |inner| {
+        !inner.closed && inner.capacity.is_some_and(|cap| inner.queue.len() >= cap)
+      })
+      .unwrap_or_else(PoisonError::into_inner);
+    if inner.closed {
+      return SendOutcome::Closed;
+    }
+    if result.timed_out() {
+      return SendOutcome::TimedOut;
+    }
+    inner.queue.push_back(value);
+    drop(inner);
+    self.not_empty.notify_one();
+    SendOutcome::Sent
+  }
+
   /// Blocks until a message arrives or the channel is closed AND
   /// drained.
   pub fn recv(&self) -> RecvOutcome {
@@ -521,6 +621,25 @@ impl ChannelState {
       }
       inner = self.not_empty.wait(inner).unwrap_or_else(PoisonError::into_inner);
     }
+  }
+
+  /// Like `recv`, but gives up (returning `None`) if `timeout` elapses
+  /// first with nothing to receive and the channel still open.
+  pub fn recv_timeout(&self, timeout: Duration) -> Option<RecvOutcome> {
+    let inner = lock(&self.inner);
+    let (mut inner, _result) = self
+      .not_empty
+      .wait_timeout_while(inner, timeout, |inner| inner.queue.is_empty() && !inner.closed)
+      .unwrap_or_else(PoisonError::into_inner);
+    if let Some(v) = inner.queue.pop_front() {
+      drop(inner);
+      self.not_full.notify_one();
+      return Some(RecvOutcome::Value(v));
+    }
+    if inner.closed {
+      return Some(RecvOutcome::Closed);
+    }
+    None
   }
 
   /// `None` means "empty, but still open" -- the one outcome `recv`

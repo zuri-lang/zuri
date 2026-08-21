@@ -12,6 +12,7 @@
 //! script on whichever worker picks it up.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::builtins::enforce::ArgType;
 use crate::modules::coroutine_util::{pool, transfer};
@@ -19,7 +20,7 @@ use crate::modules::{BuiltinModuleDef, native};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
-use crate::{enforce_arg_count, enforce_arg_ptr, enforce_arg_type};
+use crate::{enforce_arg_count, enforce_arg_ptr, enforce_arg_type, enforce_arg_type_any_of};
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   name: "_coroutine",
@@ -32,20 +33,26 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("pool_size", native(vm, "pool_size", 0, false, pool_size)),
     ("cpu_count", native(vm, "cpu_count", 0, false, cpu_count)),
     ("spawn", native(vm, "spawn", 2, false, spawn)),
-    ("join", native(vm, "join", 1, false, join)),
+    ("join", native(vm, "join", 2, false, join)),
     ("try_join", native(vm, "try_join", 1, false, try_join)),
     ("is_done", native(vm, "is_done", 1, false, is_done)),
+    ("cancel", native(vm, "cancel", 1, false, cancel)),
+    ("is_cancelled", native(vm, "is_cancelled", 1, false, is_cancelled)),
+    (
+      "current_is_cancelled",
+      native(vm, "current_is_cancelled", 0, false, current_is_cancelled),
+    ),
     (
       "channel_new",
       native(vm, "channel_new", 1, false, channel_new),
     ),
     (
       "channel_send",
-      native(vm, "channel_send", 2, false, channel_send),
+      native(vm, "channel_send", 3, false, channel_send),
     ),
     (
       "channel_recv",
-      native(vm, "channel_recv", 1, false, channel_recv),
+      native(vm, "channel_recv", 2, false, channel_recv),
     ),
     (
       "channel_try_recv",
@@ -110,6 +117,25 @@ fn channel_state_of(ctx: &ZuriContext, idx: usize) -> Result<Arc<pool::ChannelSt
     .ok_or_else(|| "invalid channel handle".to_string())
 }
 
+/// Reads an optional `timeout` argument -- `nil` (the `.zu` side's
+/// default for an omitted parameter) means "no timeout", anything else
+/// must be a non-negative number of seconds.
+fn optional_timeout(ctx: &ZuriContext, idx: usize) -> Result<Option<Duration>, String> {
+  enforce_arg_type_any_of!(ctx, idx, [ArgType::Number, ArgType::Nil]);
+  let v = ctx.args[idx];
+  if v.is_nil() {
+    return Ok(None);
+  }
+  let secs = v.as_number();
+  if !secs.is_finite() || secs < 0.0 {
+    return Err(format!(
+      "{}() expects a non-negative timeout, got {}",
+      ctx.name, secs
+    ));
+  }
+  Ok(Some(Duration::from_secs_f64(secs)))
+}
+
 // ---------------------------------------------------------------------
 // Pool sizing
 // ---------------------------------------------------------------------
@@ -172,11 +198,16 @@ fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn join(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_count!(ctx, 1);
+  enforce_arg_count!(ctx, 2);
   enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
+  let timeout = optional_timeout(ctx, 1)?;
   let state = coroutine_state_of(ctx, 0)?;
-  match state.join() {
-    pool::JoinOutcome::Pending => unreachable!("join() always blocks until finished"),
+  let outcome = match timeout {
+    Some(d) => state.join_timeout(d),
+    None => state.join(),
+  };
+  match outcome {
+    pool::JoinOutcome::Pending => Ok(status_pair(ctx.vm, "pending", Value::nil())),
     pool::JoinOutcome::Ok(graph) => {
       let value = transfer::materialize(ctx.vm, &graph)?;
       Ok(status_pair(ctx.vm, "ok", value))
@@ -212,6 +243,30 @@ fn is_done(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(state.is_done()))
 }
 
+fn cancel(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
+  let state = coroutine_state_of(ctx, 0)?;
+  state.cancel();
+  Ok(Value::nil())
+}
+
+fn is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
+  let state = coroutine_state_of(ctx, 0)?;
+  Ok(Value::bool(state.is_cancelled()))
+}
+
+/// Backs the ambient `coroutine.is_cancelled()` -- checks the coroutine
+/// the CALLING worker thread is currently running, found via
+/// `pool::is_current_cancelled()`'s thread-local rather than a handle
+/// argument. Outside a worker thread it's always `false`.
+fn current_is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  Ok(Value::bool(pool::is_current_cancelled()))
+}
+
 // ---------------------------------------------------------------------
 // Channels
 // ---------------------------------------------------------------------
@@ -226,23 +281,42 @@ fn channel_new(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn channel_send(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_count!(ctx, 2);
+  enforce_arg_count!(ctx, 3);
   enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
+  let timeout = optional_timeout(ctx, 2)?;
   let state = channel_state_of(ctx, 0)?;
   let graph = transfer::capture(ctx.vm, ctx.args[1])?;
-  Ok(Value::bool(state.send(graph).is_ok()))
+  let outcome = match timeout {
+    Some(d) => state.send_timeout(graph, d),
+    None => match state.send(graph) {
+      Ok(()) => pool::SendOutcome::Sent,
+      Err(()) => pool::SendOutcome::Closed,
+    },
+  };
+  let status = match outcome {
+    pool::SendOutcome::Sent => "ok",
+    pool::SendOutcome::Closed => "closed",
+    pool::SendOutcome::TimedOut => "timeout",
+  };
+  Ok(ctx.vm.heap_mut().alloc_string(status))
 }
 
 fn channel_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_count!(ctx, 1);
+  enforce_arg_count!(ctx, 2);
   enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
+  let timeout = optional_timeout(ctx, 1)?;
   let state = channel_state_of(ctx, 0)?;
-  match state.recv() {
-    pool::RecvOutcome::Value(graph) => {
+  let outcome = match timeout {
+    Some(d) => state.recv_timeout(d),
+    None => Some(state.recv()),
+  };
+  match outcome {
+    None => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
+    Some(pool::RecvOutcome::Value(graph)) => {
       let value = transfer::materialize(ctx.vm, &graph)?;
       Ok(status_pair(ctx.vm, "ok", value))
     },
-    pool::RecvOutcome::Closed => Ok(status_pair(ctx.vm, "closed", Value::nil())),
+    Some(pool::RecvOutcome::Closed) => Ok(status_pair(ctx.vm, "closed", Value::nil())),
   }
 }
 

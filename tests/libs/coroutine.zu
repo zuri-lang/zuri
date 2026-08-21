@@ -401,6 +401,88 @@ def test_ptr_transfer_move_semantics() {
   echo 'test_ptr_transfer_move_semantics passed'
 }
 
+def test_cancellation_cooperative() {
+  var started = coroutine.channel(0)
+  var t = coroutine.spawn(coroutine_worker.cancellable_loop, started)
+  started.recv()
+
+  assert !t.is_cancelled(), 'must not be cancelled before cancel() is called'
+  t.cancel()
+  assert t.is_cancelled(), 'is_cancelled() must reflect cancel() right away'
+
+  var iterations = t.join()
+  assert iterations < 5000000, 'the loop must stop once it observes cancellation, not hit its safety cap'
+  echo 'test_cancellation_cooperative passed'
+}
+
+def test_cancel_on_finished_coroutine() {
+  var t = coroutine.spawn(coroutine_worker.square, 5)
+  assert t.join() == 25, 'expected 25'
+  assert !t.is_cancelled(), 'a coroutine must not be cancelled unless cancel() was actually called'
+  t.cancel()
+  assert t.is_cancelled(), 'cancel() on an already-finished coroutine is a harmless no-op, not an error'
+  echo 'test_cancel_on_finished_coroutine passed'
+}
+
+def test_is_cancelled_outside_a_coroutine() {
+  assert !coroutine.is_cancelled(), 'is_cancelled() outside any coroutine must always be false'
+  echo 'test_is_cancelled_outside_a_coroutine passed'
+}
+
+def test_join_timeout_elapses() {
+  var gate = coroutine.channel(0)
+  var t = coroutine.spawn(@(ch) { return ch.recv() }, gate)
+
+  var timed_out = false
+  catch {
+    t.join(0.05)
+  } as e {
+    timed_out = instance_of(e, coroutine.CoroutineTimeoutError)
+  }
+  assert timed_out, 'join(timeout) must raise CoroutineTimeoutError once the timeout elapses'
+
+  gate.send(99)
+  assert t.join() == 99, 'the coroutine must still be joinable normally afterward'
+  echo 'test_join_timeout_elapses passed'
+}
+
+def test_join_timeout_succeeds_in_time() {
+  var t = coroutine.spawn(coroutine_worker.square, 6)
+  assert t.join(5) == 36, 'join(timeout) must return the result normally when it finishes in time'
+  echo 'test_join_timeout_succeeds_in_time passed'
+}
+
+def test_channel_send_timeout() {
+  var ch = coroutine.channel(1)
+  ch.send(1)
+
+  var timed_out = false
+  catch {
+    ch.send(2, 0.05)
+  } as e {
+    timed_out = instance_of(e, coroutine.CoroutineTimeoutError)
+  }
+  assert timed_out, 'send(timeout) on a full channel must raise CoroutineTimeoutError'
+  assert ch.recv() == 1, 'the value already queued must still be there'
+  echo 'test_channel_send_timeout passed'
+}
+
+def test_channel_recv_timeout() {
+  var ch = coroutine.channel(0)
+
+  var timed_out = false
+  catch {
+    ch.recv(0.05)
+  } as e {
+    timed_out = instance_of(e, coroutine.CoroutineTimeoutError)
+  }
+  assert timed_out, 'recv(timeout) on an empty channel must raise CoroutineTimeoutError'
+
+  ch.send(7)
+  assert ch.recv() == 7, 'the channel must still work normally afterward'
+  echo 'test_channel_recv_timeout passed'
+}
+
 def test_configure_rejects_invalid() {
   catch {
     coroutine.configure(0)
@@ -458,6 +540,13 @@ test_channel_len()
 test_channel_producer_consumer()
 test_channel_constructor_validation()
 test_ptr_transfer_move_semantics()
+test_cancellation_cooperative()
+test_cancel_on_finished_coroutine()
+test_is_cancelled_outside_a_coroutine()
+test_join_timeout_elapses()
+test_join_timeout_succeeds_in_time()
+test_channel_send_timeout()
+test_channel_recv_timeout()
 test_configure_rejects_invalid()
 test_configure_after_pool_started()
 test_pool_size_and_cpu_count()

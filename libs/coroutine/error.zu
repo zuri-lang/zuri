@@ -17,3 +17,14 @@ class CoroutineError < Error {
     self.type = 'CoroutineError'
   }
 }
+
+/**
+ * Raised when `Coroutine.join()`, `Channel.send()`, or `Channel.recv()`
+ * is given a `timeout` and it elapses before the operation completes.
+ */
+class CoroutineTimeoutError < CoroutineError {
+  @new(message) {
+    self.message = message or self.message
+    self.type = 'CoroutineTimeoutError'
+  }
+}
