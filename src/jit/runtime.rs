@@ -72,7 +72,8 @@ use std::cell::Cell;
 
 use crate::vm::chunk::{InvokeCacheCell, JumpKey};
 use crate::vm::object::{
-  ListStorage, NativeFunction, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState, write_barrier,
+  ListStorage, NativeFunction, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState,
+  write_barrier,
 };
 use crate::vm::value::Value;
 use crate::vm::vm::{CallArgs, VM};
@@ -1215,7 +1216,11 @@ pub unsafe extern "C" fn zuri_jit_invoke(
             Ok(())
           },
           None => {
-            let msg = format!("undefined member '{}' on module", method_name.as_str());
+            let msg = format!(
+              "undefined member '{}' on module {}",
+              method_name.as_str(),
+              module_val.as_module().name
+            );
             Err(vm.raise("PropertyError", msg))
           },
         },

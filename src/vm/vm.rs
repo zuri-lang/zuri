@@ -4159,7 +4159,11 @@ impl VM {
                     self.set_reg(base, dst, result);
                   },
                   None => {
-                    let msg = format!("undefined member '{}' on module", method_name_val.as_str());
+                    let msg = format!(
+                      "undefined member '{}' on module {}",
+                      method_name_val.as_str(),
+                      module_val.as_module().name
+                    );
                     break 'step Err(self.raise("PropertyError", msg));
                   },
                 },
