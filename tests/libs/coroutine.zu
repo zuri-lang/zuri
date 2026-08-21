@@ -639,6 +639,201 @@ def test_map_propagates_failure() {
   echo 'test_map_propagates_failure passed'
 }
 
+def test_cancel_interrupts_blocked_recv() {
+  var started = coroutine.channel(0)
+  var gate = coroutine.channel(0)
+  var t = coroutine.spawn(@(st, ch) {
+    st.send(true)
+    return ch.recv()
+  }, started, gate)
+  started.recv()
+  t.cancel()
+
+  var e = nil
+  catch {
+    t.join()
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'a coroutine cancelled while blocked in recv() must fail'
+  assert e.message.starts_with('CoroutineCancelledError:'),
+    'the failure must specifically be a CoroutineCancelledError, not a generic one'
+  echo 'test_cancel_interrupts_blocked_recv passed'
+}
+
+def test_cancel_interrupts_blocked_send() {
+  var started = coroutine.channel(0)
+  var ch = coroutine.channel(1)
+  ch.send(1)
+  var t = coroutine.spawn(@(st, c) {
+    st.send(true)
+    c.send(2)
+    return nil
+  }, started, ch)
+  started.recv()
+  t.cancel()
+
+  var e = nil
+  catch {
+    t.join()
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'a coroutine cancelled while blocked in send() must fail'
+  assert e.message.starts_with('CoroutineCancelledError:'),
+    'the failure must specifically be a CoroutineCancelledError, not a generic one'
+  echo 'test_cancel_interrupts_blocked_send passed'
+}
+
+def test_cancel_interrupts_blocked_join() {
+  var inner_gate = coroutine.channel(0)
+  var inner = coroutine.spawn(@(ch) { return ch.recv() }, inner_gate)
+
+  var started = coroutine.channel(0)
+  var outer = coroutine.spawn(@(st, target) {
+    st.send(true)
+    return target.join()
+  }, started, inner)
+  started.recv()
+  outer.cancel()
+
+  var e = nil
+  catch {
+    outer.join()
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'a coroutine cancelled while blocked joining another must fail'
+  assert e.message.starts_with('CoroutineCancelledError:'),
+    'the failure must specifically be a CoroutineCancelledError, not a generic one'
+
+  inner_gate.send(1)
+  assert inner.join() == 1, 'the coroutine being joined is unaffected and still completes normally'
+  echo 'test_cancel_interrupts_blocked_join passed'
+}
+
+def test_cancel_interrupts_wait_any() {
+  var target_gate = coroutine.channel(0)
+  var target = coroutine.spawn(@(ch) { return ch.recv() }, target_gate)
+
+  var started = coroutine.channel(0)
+  var t = coroutine.spawn(coroutine_worker.wait_any_one, started, target)
+  started.recv()
+  t.cancel()
+
+  var e = nil
+  catch {
+    t.join()
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'a coroutine cancelled while blocked in wait_any() must fail'
+  assert e.message.starts_with('CoroutineCancelledError:'),
+    'the failure must specifically be a CoroutineCancelledError, not a generic one'
+
+  target_gate.send(1)
+  target.join()
+  echo 'test_cancel_interrupts_wait_any passed'
+}
+
+def test_cancel_interrupts_wait_all() {
+  var target_gate = coroutine.channel(0)
+  var target = coroutine.spawn(@(ch) { return ch.recv() }, target_gate)
+
+  var started = coroutine.channel(0)
+  var t = coroutine.spawn(coroutine_worker.wait_all_one, started, target)
+  started.recv()
+  t.cancel()
+
+  var e = nil
+  catch {
+    t.join()
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'a coroutine cancelled while blocked in wait_all() must fail'
+  assert e.message.starts_with('CoroutineCancelledError:'),
+    'the failure must specifically be a CoroutineCancelledError, not a generic one'
+
+  target_gate.send(1)
+  target.join()
+  echo 'test_cancel_interrupts_wait_all passed'
+}
+
+def test_cancel_interrupts_select() {
+  var empty_ch = coroutine.channel(0)
+
+  var started = coroutine.channel(0)
+  var t = coroutine.spawn(coroutine_worker.select_one, started, empty_ch)
+  started.recv()
+  t.cancel()
+
+  var e = nil
+  catch {
+    t.join()
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'a coroutine cancelled while blocked in select() must fail'
+  assert e.message.starts_with('CoroutineCancelledError:'),
+    'the failure must specifically be a CoroutineCancelledError, not a generic one'
+  echo 'test_cancel_interrupts_select passed'
+}
+
+def test_scope_reports_real_child_failure_not_cancellation_artifact() {
+  var started = coroutine.channel(0)
+  var gate = coroutine.channel(0)
+  var e = nil
+  catch {
+    coroutine.scope(@(s) {
+      # spawned FIRST -- if the cancellation-artifact filtering in
+      # scope() were broken, this one's own CoroutineCancelledError
+      # would incorrectly win as "first" in spawn order once cancelled
+      s.spawn(@(st, ch) {
+        st.send(true)
+        return ch.recv()
+      }, started, gate)
+      started.recv()
+      s.spawn(@() { raise TypeError('the real bug') })
+    })
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'scope() must raise CoroutineError from the genuinely failing child'
+  assert e.message.contains('the real bug'), 'scope() must report the ACTUAL bug'
+  assert !e.message.contains('CoroutineCancelledError'),
+    'scope() must not report a cancelled sibling as the root cause'
+  echo 'test_scope_reports_real_child_failure_not_cancellation_artifact passed'
+}
+
+def test_spawn_named_and_name() {
+  var t = coroutine.spawn(coroutine_worker.square, 3)
+  assert t.name() == nil, 'a plain spawn() must leave the coroutine unnamed'
+  assert t.join() == 9, 'expected 9'
+
+  var named = coroutine.spawn_named('squarer', coroutine_worker.square, 4)
+  assert named.name() == 'squarer', 'spawn_named() must set the name spawn() leaves unset'
+  assert named.join() == 16, 'expected 16'
+  echo 'test_spawn_named_and_name passed'
+}
+
+def test_scope_spawn_named() {
+  var result = coroutine.scope(@(s) {
+    var t = s.spawn_named('scoped-worker', coroutine_worker.square, 5)
+    assert t.name() == 'scoped-worker', 'Scope.spawn_named() must set the name'
+    return t.join()
+  })
+  assert result == 25, 'expected 25'
+  echo 'test_scope_spawn_named passed'
+}
+
 def test_scope_happy_path() {
   var result = coroutine.scope(@(s) {
     var a = s.spawn(coroutine_worker.square, 3)
@@ -965,6 +1160,15 @@ test_map_propagates_failure()
 test_configure_rejects_invalid()
 test_configure_after_pool_started()
 test_pool_size_and_cpu_count()
+test_cancel_interrupts_blocked_recv()
+test_cancel_interrupts_blocked_send()
+test_cancel_interrupts_blocked_join()
+test_cancel_interrupts_wait_any()
+test_cancel_interrupts_wait_all()
+test_cancel_interrupts_select()
+test_scope_reports_real_child_failure_not_cancellation_artifact()
+test_spawn_named_and_name()
+test_scope_spawn_named()
 test_scope_happy_path()
 test_scope_waits_for_children_even_without_joining_them()
 test_scope_child_failure_cancels_siblings_and_raises()

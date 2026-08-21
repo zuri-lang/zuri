@@ -28,3 +28,16 @@ class CoroutineTimeoutError < CoroutineError {
     self.type = 'CoroutineTimeoutError'
   }
 }
+
+/**
+ * Raised from `Coroutine.join()`, `Channel.send()`, `Channel.recv()`,
+ * `coroutine.wait_any()`, `coroutine.wait_all()`, or `coroutine.select()`
+ * when the CALLING coroutine -- the one blocked in that call, not
+ * whatever it was waiting on -- is `cancel()`ed while still waiting.
+ */
+class CoroutineCancelledError < CoroutineError {
+  @new(message) {
+    self.message = message or self.message
+    self.type = 'CoroutineCancelledError'
+  }
+}

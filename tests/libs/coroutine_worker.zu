@@ -98,3 +98,25 @@ def cancellable_loop(started) {
   }
   return iterations
 }
+
+# The next three exist so a cancellation test can put a coroutine
+# blocked inside wait_any()/wait_all()/select() -- those all need
+# `coroutine` in scope, so (like `cancellable_loop` above) they have to
+# live in a real module rather than a main-script closure; a
+# main-script closure captures its own `import coroutine` as a
+# root-global snapshot, and a Module value can't cross a coroutine
+# boundary at all.
+def wait_any_one(started, target) {
+  started.send(true)
+  return coroutine.wait_any([target])
+}
+
+def wait_all_one(started, target) {
+  started.send(true)
+  return coroutine.wait_all([target])
+}
+
+def select_one(started, ch) {
+  started.send(true)
+  return coroutine.select([ch])
+}

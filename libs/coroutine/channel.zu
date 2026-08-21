@@ -7,7 +7,7 @@
  */
 
 import _coroutine
-import .error { CoroutineError, CoroutineTimeoutError }
+import .error { CoroutineError, CoroutineTimeoutError, CoroutineCancelledError }
 
 /**
  * A thread-safe queue for passing values between coroutines.
@@ -37,6 +37,8 @@ class Channel {
    *   indefinitely if omitted.
    * @raises CoroutineError if the channel is closed
    * @raises CoroutineTimeoutError if `timeout` elapses first
+   * @raises CoroutineCancelledError if the CALLING coroutine is
+   *   cancelled while blocked here
    */
   send(value, timeout: ?number) {
     var status = _coroutine.channel_send(self._ptr, value, timeout)
@@ -45,6 +47,9 @@ class Channel {
     }
     if status == 'timeout' {
       raise CoroutineTimeoutError('send() timed out after ${timeout} seconds')
+    }
+    if status == 'cancelled' {
+      raise CoroutineCancelledError('send() was interrupted: the calling coroutine was cancelled')
     }
   }
 
@@ -56,6 +61,8 @@ class Channel {
    *   indefinitely if omitted.
    * @returns any
    * @raises CoroutineTimeoutError if `timeout` elapses first
+   * @raises CoroutineCancelledError if the CALLING coroutine is
+   *   cancelled while blocked here
    */
   recv(timeout: ?number) {
     var r = _coroutine.channel_recv(self._ptr, timeout)
@@ -64,6 +71,9 @@ class Channel {
     }
     if r[0] == 'timeout' {
       raise CoroutineTimeoutError('recv() timed out after ${timeout} seconds')
+    }
+    if r[0] == 'cancelled' {
+      raise CoroutineCancelledError('recv() was interrupted: the calling coroutine was cancelled')
     }
     return r[1]
   }
@@ -139,6 +149,8 @@ def channel(capacity: ?int) {
  * @raises ValueError if `channels` is empty
  * @raises CoroutineTimeoutError if `timeout` elapses before any
  *   channel is ready
+ * @raises CoroutineCancelledError if the CALLING coroutine is
+ *   cancelled while blocked here
  */
 def select(channels: list, timeout: ?number) {
   if channels.length() == 0 {
@@ -151,6 +163,9 @@ def select(channels: list, timeout: ?number) {
   var r = _coroutine.select(ptrs, timeout)
   if r[1] == 'timeout' {
     raise CoroutineTimeoutError('select() timed out after ${timeout} seconds')
+  }
+  if r[1] == 'cancelled' {
+    raise CoroutineCancelledError('select() was interrupted: the calling coroutine was cancelled')
   }
   return [channels[r[0]], r[2]]
 }

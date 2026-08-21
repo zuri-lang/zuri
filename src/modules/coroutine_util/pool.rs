@@ -314,6 +314,33 @@ pub fn is_current_cancelled() -> bool {
   CURRENT_COROUTINE.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
 }
 
+/// Whether this thread is currently running a coroutine at all --
+/// distinct from `is_current_cancelled`, which is `false` both when
+/// there's no current coroutine AND when there is one but it hasn't
+/// been cancelled. The blocking primitives below need to tell those
+/// two apart: a plain blocking wait from the main thread (or any other
+/// non-coroutine caller) has nothing to poll for and should just block
+/// the old way, at zero extra cost.
+fn in_coroutine_context() -> bool {
+  CURRENT_COROUTINE.with(|c| c.borrow().is_some())
+}
+
+/// How often a blocking wait inside a coroutine re-checks whether ITS
+/// OWN coroutine (the caller, not whatever it's waiting on) has been
+/// cancelled. `cancel()` itself wakes `wait_any`/`wait_all`/`select`
+/// immediately (they already sit on `wake_gate`), but `join`/`send`/
+/// `recv` wait on their own per-object `Condvar` instead -- putting
+/// THOSE on `wake_gate` too would mean every blocked join/send/recv in
+/// the whole process wakes up on every unrelated channel send or
+/// coroutine finishing, which turns the common case from "wakes the
+/// one relevant waiter" into an O(waiters) storm per event. Polling a
+/// private condvar at a short, fixed interval instead keeps the common
+/// case cheap and exactly as it was; the cost is that a cancellation
+/// can take up to this long to be noticed, which is a fair trade for a
+/// cooperative cancellation model that already doesn't promise instant
+/// interruption of running code either.
+const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
 // ---------------------------------------------------------------------
 // wait_any / select
 // ---------------------------------------------------------------------
@@ -346,24 +373,53 @@ fn wake_all_waiters() {
   cv.notify_all();
 }
 
+/// Outcome of `wait_any_coroutines`.
+pub enum WaitAnyOutcome {
+  Ready(usize),
+  TimedOut,
+  /// The CALLING coroutine was cancelled while blocked here.
+  Cancelled,
+}
+
+/// Outcome of `wait_all_coroutines`.
+pub enum WaitAllOutcome {
+  Ready,
+  TimedOut,
+  /// The CALLING coroutine was cancelled while blocked here.
+  Cancelled,
+}
+
+/// Outcome of `select_channels`.
+pub enum SelectOutcome {
+  Ready(usize, RecvOutcome),
+  TimedOut,
+  /// The CALLING coroutine was cancelled while blocked here.
+  Cancelled,
+}
+
 /// Blocks until at least one of `states` has finished, returning its
 /// index into the slice -- ties (more than one already done) resolve
-/// to whichever comes first in the caller's own list. Gives up and
-/// returns `None` once `timeout` elapses with none ready.
-pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> Option<usize> {
+/// to whichever comes first in the caller's own list.
+pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> WaitAnyOutcome {
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
   loop {
     if let Some(i) = states.iter().position(|s| s.is_done()) {
-      return Some(i);
+      return WaitAnyOutcome::Ready(i);
+    }
+    if is_current_cancelled() {
+      return WaitAnyOutcome::Cancelled;
     }
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
-      Some(d) if d.is_zero() => return None,
+      Some(d) if d.is_zero() => return WaitAnyOutcome::TimedOut,
       Some(d) => {
         let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
-          return states.iter().position(|s| s.is_done());
+          return match states.iter().position(|s| s.is_done()) {
+            Some(i) => WaitAnyOutcome::Ready(i),
+            None => WaitAnyOutcome::TimedOut,
+          };
         }
         g
       },
@@ -372,25 +428,31 @@ pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Durat
   }
 }
 
-/// Blocks until EVERY one of `states` has finished, returning `true`.
-/// Gives up early and returns `false` if `timeout` elapses first with
-/// at least one still pending. Unlike `wait_any_coroutines` there's no
-/// "which one" to report -- the caller already has the whole list and
-/// can `join()` each once this returns `true`.
-pub fn wait_all_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> bool {
+/// Blocks until EVERY one of `states` has finished. Unlike
+/// `wait_any_coroutines` there's no "which one" to report -- the
+/// caller already has the whole list and can `join()` each once this
+/// returns `Ready`.
+pub fn wait_all_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> WaitAllOutcome {
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
   loop {
     if states.iter().all(|s| s.is_done()) {
-      return true;
+      return WaitAllOutcome::Ready;
+    }
+    if is_current_cancelled() {
+      return WaitAllOutcome::Cancelled;
     }
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
-      Some(d) if d.is_zero() => return states.iter().all(|s| s.is_done()),
+      Some(d) if d.is_zero() => return WaitAllOutcome::TimedOut,
       Some(d) => {
         let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
-          return states.iter().all(|s| s.is_done());
+          return if states.iter().all(|s| s.is_done()) {
+            WaitAllOutcome::Ready
+          } else {
+            WaitAllOutcome::TimedOut
+          };
         }
         g
       },
@@ -404,30 +466,30 @@ pub fn wait_all_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Durat
 /// already taken off the winning channel's own queue, same as
 /// `try_recv`. Same ordering/timeout behavior as
 /// `wait_any_coroutines`.
-pub fn select_channels(
-  states: &[Arc<ChannelState>],
-  timeout: Option<Duration>,
-) -> Option<(usize, RecvOutcome)> {
+pub fn select_channels(states: &[Arc<ChannelState>], timeout: Option<Duration>) -> SelectOutcome {
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
   loop {
     for (i, s) in states.iter().enumerate() {
       if let Some(outcome) = s.try_recv() {
-        return Some((i, outcome));
+        return SelectOutcome::Ready(i, outcome);
       }
     }
+    if is_current_cancelled() {
+      return SelectOutcome::Cancelled;
+    }
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
-      Some(d) if d.is_zero() => return None,
+      Some(d) if d.is_zero() => return SelectOutcome::TimedOut,
       Some(d) => {
         let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
           for (i, s) in states.iter().enumerate() {
             if let Some(outcome) = s.try_recv() {
-              return Some((i, outcome));
+              return SelectOutcome::Ready(i, outcome);
             }
           }
-          return None;
+          return SelectOutcome::TimedOut;
         }
         g
       },
@@ -548,6 +610,9 @@ pub enum JoinOutcome {
   Pending,
   Ok(TransferGraph),
   Err(String),
+  /// The CALLING coroutine (not the one being joined) was cancelled
+  /// while blocked here.
+  Cancelled,
 }
 
 pub struct CoroutineState {
@@ -562,20 +627,37 @@ pub struct CoroutineState {
   /// already-running code on its own. A coroutine that never checks
   /// simply runs to completion regardless of this flag.
   cancelled: AtomicBool,
+  /// Set once, at `spawn()` time, by whoever used `spawn_named()`
+  /// instead of plain `spawn()`. Purely a debugging/introspection
+  /// label -- never read for anything that affects behavior -- so it
+  /// gets folded into the unobserved-failure warning (see `Drop`) and
+  /// exposed read-only via `Coroutine.name()`.
+  name: Option<String>,
 }
 
 impl CoroutineState {
-  fn new() -> Self {
+  fn new(name: Option<String>) -> Self {
     CoroutineState {
       slot: Mutex::new(Slot::Pending),
       cv: Condvar::new(),
       observed: AtomicBool::new(false),
       cancelled: AtomicBool::new(false),
+      name,
     }
+  }
+
+  pub fn name(&self) -> Option<&str> {
+    self.name.as_deref()
   }
 
   pub fn cancel(&self) {
     self.cancelled.store(true, Ordering::Relaxed);
+    // Wakes any `wait_any`/`wait_all`/`select` blocked on `wake_gate`
+    // right away, in case the coroutine THEY belong to was just
+    // cancelled. `join`/`send`/`recv` don't listen to this gate (see
+    // `CANCEL_POLL_INTERVAL`'s own docs) -- they notice on their next
+    // poll tick instead.
+    wake_all_waiters();
   }
 
   pub fn is_cancelled(&self) -> bool {
@@ -596,11 +678,68 @@ impl CoroutineState {
   /// Blocks the calling thread until the coroutine finishes. Callable
   /// more than once (and from more than one joiner) -- always returns
   /// the same, already-computed outcome once it's in.
+  ///
+  /// If the CALLING coroutine (not this one) is cancelled while
+  /// blocked here, gives up early with `JoinOutcome::Cancelled` --
+  /// join() is itself a blocking wait a cancelled coroutine can be
+  /// stuck in, same as `Channel.send`/`recv`.
   pub fn join(&self) -> JoinOutcome {
-    let mut slot = lock(&self.slot);
+    self.join_inner(None)
+  }
+
+  /// Like `join()`, but gives up and returns `JoinOutcome::Pending`
+  /// (indistinguishable from "still running" -- from the caller's own
+  /// point of view, that's exactly what a timeout means) if `timeout`
+  /// elapses first.
+  pub fn join_timeout(&self, timeout: Duration) -> JoinOutcome {
+    self.join_inner(Some(timeout))
+  }
+
+  /// Shared implementation for `join`/`join_timeout`. `deadline` of
+  /// `None` means "wait forever" -- but that only ever compiles down
+  /// to a single indefinite `Condvar::wait` when the CALLER isn't
+  /// itself running inside a coroutine, since there's nothing to poll
+  /// for cancellation of in that case. Inside a coroutine, every wait
+  /// -- bounded or not -- is chopped into `CANCEL_POLL_INTERVAL`-sized
+  /// ticks so the calling coroutine's own cancellation is noticed
+  /// promptly rather than only once the wait would otherwise finish.
+  fn join_inner(&self, deadline: Option<Duration>) -> JoinOutcome {
+    if deadline.is_none() && !in_coroutine_context() {
+      let mut slot = lock(&self.slot);
+      loop {
+        match &*slot {
+          Slot::Pending => slot = self.cv.wait(slot).unwrap_or_else(PoisonError::into_inner),
+          Slot::Ok(g) => {
+            self.observed.store(true, Ordering::Relaxed);
+            return JoinOutcome::Ok(g.clone());
+          },
+          Slot::Err(m) => {
+            self.observed.store(true, Ordering::Relaxed);
+            return JoinOutcome::Err(m.clone());
+          },
+        }
+      }
+    }
+
+    let started = Instant::now();
     loop {
+      // `tick` is the wait budget for THIS iteration only -- computed
+      // from what's left of `deadline`, but never checked against zero
+      // before the real wait_timeout_while call below. A `deadline` of
+      // exactly zero (an explicit `timeout: 0`) still has to attempt
+      // the real check at least once: `wait_timeout_while` evaluates
+      // its predicate before ever looking at the duration, so a zero
+      // tick still catches an outcome that was ALREADY there, and only
+      // reports `Pending`/timeout afterward if it genuinely wasn't.
+      let remaining = deadline.map(|d| d.saturating_sub(started.elapsed()));
+      let tick = remaining.map_or(CANCEL_POLL_INTERVAL, |r| r.min(CANCEL_POLL_INTERVAL));
+
+      let slot = lock(&self.slot);
+      let (slot, _result) = self
+        .cv
+        .wait_timeout_while(slot, tick, |s| matches!(s, Slot::Pending))
+        .unwrap_or_else(PoisonError::into_inner);
       match &*slot {
-        Slot::Pending => slot = self.cv.wait(slot).unwrap_or_else(PoisonError::into_inner),
         Slot::Ok(g) => {
           self.observed.store(true, Ordering::Relaxed);
           return JoinOutcome::Ok(g.clone());
@@ -609,34 +748,15 @@ impl CoroutineState {
           self.observed.store(true, Ordering::Relaxed);
           return JoinOutcome::Err(m.clone());
         },
+        Slot::Pending => {},
       }
-    }
-  }
-
-  /// Like `join()`, but gives up and returns `JoinOutcome::Pending`
-  /// (indistinguishable from "still running" -- from the caller's own
-  /// point of view, that's exactly what a timeout means) if `timeout`
-  /// elapses first. Never dropped early by a spurious wakeup:
-  /// `wait_timeout_while` re-checks the predicate itself in a loop.
-  pub fn join_timeout(&self, timeout: Duration) -> JoinOutcome {
-    let slot = lock(&self.slot);
-    let (slot, result) = self
-      .cv
-      .wait_timeout_while(slot, timeout, |s| matches!(s, Slot::Pending))
-      .unwrap_or_else(PoisonError::into_inner);
-    if result.timed_out() {
-      return JoinOutcome::Pending;
-    }
-    match &*slot {
-      Slot::Pending => JoinOutcome::Pending,
-      Slot::Ok(g) => {
-        self.observed.store(true, Ordering::Relaxed);
-        JoinOutcome::Ok(g.clone())
-      },
-      Slot::Err(m) => {
-        self.observed.store(true, Ordering::Relaxed);
-        JoinOutcome::Err(m.clone())
-      },
+      drop(slot);
+      if remaining.is_some_and(|r| r.is_zero()) {
+        return JoinOutcome::Pending;
+      }
+      if is_current_cancelled() {
+        return JoinOutcome::Cancelled;
+      }
     }
   }
 
@@ -689,11 +809,18 @@ impl Drop for CoroutineState {
       return;
     }
     if let Slot::Err(message) = &*self.slot.get_mut().unwrap_or_else(PoisonError::into_inner) {
-      eprintln!(
-        "warning: a coroutine failed but its result was never checked \
-         (no join()/try_join() was called before its handle was dropped): {}",
-        message
-      );
+      match &self.name {
+        Some(name) => eprintln!(
+          "warning: coroutine '{}' failed but its result was never checked \
+           (no join()/try_join() was called before its handle was dropped): {}",
+          name, message
+        ),
+        None => eprintln!(
+          "warning: a coroutine failed but its result was never checked \
+           (no join()/try_join() was called before its handle was dropped): {}",
+          message
+        ),
+      }
     }
   }
 }
@@ -703,10 +830,12 @@ impl Drop for CoroutineState {
 /// to be a Zuri list Value; capturing it as one graph is what makes
 /// aliasing BETWEEN arguments (two args pointing at the same nested
 /// list, say) survive the trip along with aliasing within each one.
-pub fn spawn(vm: &VM, callee: Value, args: Value) -> Result<Arc<CoroutineState>, String> {
+/// `name` is a purely cosmetic label from `spawn_named()` -- `None`
+/// for a plain `spawn()`.
+pub fn spawn(vm: &VM, callee: Value, args: Value, name: Option<String>) -> Result<Arc<CoroutineState>, String> {
   let callee = transfer::capture(vm, callee)?;
   let args = transfer::capture(vm, args)?;
-  let state = Arc::new(CoroutineState::new());
+  let state = Arc::new(CoroutineState::new(name));
   let task = Task {
     callee,
     args,
@@ -771,12 +900,19 @@ pub fn shutdown(timeout: Option<Duration>) -> bool {
 pub enum RecvOutcome {
   Value(TransferGraph),
   Closed,
+  /// `recv`/`recv_timeout` only -- never produced by `try_recv`, which
+  /// doesn't block in the first place.
+  TimedOut,
+  /// The CALLING coroutine was cancelled while blocked here.
+  Cancelled,
 }
 
 pub enum SendOutcome {
   Sent,
   Closed,
   TimedOut,
+  /// The CALLING coroutine was cancelled while blocked here.
+  Cancelled,
 }
 
 struct ChannelInner {
@@ -805,56 +941,123 @@ impl ChannelState {
     }
   }
 
-  /// Blocks while the channel is at capacity. `Err` only for "the
-  /// channel is closed" -- the caller's own native wrapper turns that
-  /// into whatever's idiomatic on the Zuri side.
-  pub fn send(&self, value: TransferGraph) -> Result<(), ()> {
-    let mut inner = lock(&self.inner);
-    loop {
-      if inner.closed {
-        return Err(());
-      }
-      let full = inner.capacity.is_some_and(|cap| inner.queue.len() >= cap);
-      if !full {
-        break;
-      }
-      inner = self.not_full.wait(inner).unwrap_or_else(PoisonError::into_inner);
-    }
-    inner.queue.push_back(value);
-    drop(inner);
-    self.not_empty.notify_one();
-    wake_all_waiters();
-    Ok(())
+  /// Blocks while the channel is at capacity. If the CALLING
+  /// coroutine is cancelled while blocked here, gives up early with
+  /// `SendOutcome::Cancelled`.
+  pub fn send(&self, value: TransferGraph) -> SendOutcome {
+    self.send_inner(value, None)
   }
 
   /// Like `send`, but gives up (returning `TimedOut`) if `timeout`
   /// elapses before the channel has room.
   pub fn send_timeout(&self, value: TransferGraph, timeout: Duration) -> SendOutcome {
-    let inner = lock(&self.inner);
-    let (mut inner, result) = self
-      .not_full
-      .wait_timeout_while(inner, timeout, |inner| {
-        !inner.closed && inner.capacity.is_some_and(|cap| inner.queue.len() >= cap)
-      })
-      .unwrap_or_else(PoisonError::into_inner);
-    if inner.closed {
-      return SendOutcome::Closed;
+    self.send_inner(value, Some(timeout))
+  }
+
+  /// Shared implementation for `send`/`send_timeout` -- same
+  /// no-poll-unless-needed and `CANCEL_POLL_INTERVAL`-ticked shape as
+  /// `CoroutineState::join_inner`; see its own docs for why.
+  fn send_inner(&self, value: TransferGraph, deadline: Option<Duration>) -> SendOutcome {
+    if deadline.is_none() && !in_coroutine_context() {
+      let mut inner = lock(&self.inner);
+      loop {
+        if inner.closed {
+          return SendOutcome::Closed;
+        }
+        let full = inner.capacity.is_some_and(|cap| inner.queue.len() >= cap);
+        if !full {
+          break;
+        }
+        inner = self.not_full.wait(inner).unwrap_or_else(PoisonError::into_inner);
+      }
+      inner.queue.push_back(value);
+      drop(inner);
+      self.not_empty.notify_one();
+      wake_all_waiters();
+      return SendOutcome::Sent;
     }
-    if result.timed_out() {
-      return SendOutcome::TimedOut;
+
+    let started = Instant::now();
+    loop {
+      // See `join_inner`'s own comment on why the timeout check comes
+      // AFTER the real attempt, not before -- a zero tick still gets
+      // one genuine chance to see the channel already has room.
+      let remaining = deadline.map(|d| d.saturating_sub(started.elapsed()));
+      let tick = remaining.map_or(CANCEL_POLL_INTERVAL, |r| r.min(CANCEL_POLL_INTERVAL));
+
+      let inner = lock(&self.inner);
+      let (mut inner, _result) = self
+        .not_full
+        .wait_timeout_while(inner, tick, |inner| {
+          !inner.closed && inner.capacity.is_some_and(|cap| inner.queue.len() >= cap)
+        })
+        .unwrap_or_else(PoisonError::into_inner);
+      if inner.closed {
+        return SendOutcome::Closed;
+      }
+      let full = inner.capacity.is_some_and(|cap| inner.queue.len() >= cap);
+      if !full {
+        inner.queue.push_back(value);
+        drop(inner);
+        self.not_empty.notify_one();
+        wake_all_waiters();
+        return SendOutcome::Sent;
+      }
+      drop(inner);
+      if remaining.is_some_and(|r| r.is_zero()) {
+        return SendOutcome::TimedOut;
+      }
+      if is_current_cancelled() {
+        return SendOutcome::Cancelled;
+      }
     }
-    inner.queue.push_back(value);
-    drop(inner);
-    self.not_empty.notify_one();
-    wake_all_waiters();
-    SendOutcome::Sent
   }
 
   /// Blocks until a message arrives or the channel is closed AND
-  /// drained.
+  /// drained. If the CALLING coroutine is cancelled while blocked
+  /// here, gives up early with `RecvOutcome::Cancelled`.
   pub fn recv(&self) -> RecvOutcome {
-    let mut inner = lock(&self.inner);
+    self.recv_inner(None)
+  }
+
+  /// Like `recv`, but gives up with `RecvOutcome::TimedOut` if
+  /// `timeout` elapses first with nothing to receive and the channel
+  /// still open.
+  pub fn recv_timeout(&self, timeout: Duration) -> RecvOutcome {
+    self.recv_inner(Some(timeout))
+  }
+
+  /// Shared implementation for `recv`/`recv_timeout` -- same shape as
+  /// `send_inner`/`join_inner`; see `CANCEL_POLL_INTERVAL`'s docs.
+  fn recv_inner(&self, deadline: Option<Duration>) -> RecvOutcome {
+    if deadline.is_none() && !in_coroutine_context() {
+      let mut inner = lock(&self.inner);
+      loop {
+        if let Some(v) = inner.queue.pop_front() {
+          drop(inner);
+          self.not_full.notify_one();
+          return RecvOutcome::Value(v);
+        }
+        if inner.closed {
+          return RecvOutcome::Closed;
+        }
+        inner = self.not_empty.wait(inner).unwrap_or_else(PoisonError::into_inner);
+      }
+    }
+
+    let started = Instant::now();
     loop {
+      // See `join_inner`'s own comment on why the timeout check comes
+      // AFTER the real attempt, not before -- a zero tick still gets
+      // one genuine chance to see a value that's already queued.
+      let remaining = deadline.map(|d| d.saturating_sub(started.elapsed()));
+      let tick = remaining.map_or(CANCEL_POLL_INTERVAL, |r| r.min(CANCEL_POLL_INTERVAL));
+
+      let inner = lock(&self.inner);
+      let (mut inner, _result) = self
+        .not_empty
+        .wait_timeout_while(inner, tick, |inner| inner.queue.is_empty() && !inner.closed)
+        .unwrap_or_else(PoisonError::into_inner);
       if let Some(v) = inner.queue.pop_front() {
         drop(inner);
         self.not_full.notify_one();
@@ -863,27 +1066,14 @@ impl ChannelState {
       if inner.closed {
         return RecvOutcome::Closed;
       }
-      inner = self.not_empty.wait(inner).unwrap_or_else(PoisonError::into_inner);
-    }
-  }
-
-  /// Like `recv`, but gives up (returning `None`) if `timeout` elapses
-  /// first with nothing to receive and the channel still open.
-  pub fn recv_timeout(&self, timeout: Duration) -> Option<RecvOutcome> {
-    let inner = lock(&self.inner);
-    let (mut inner, _result) = self
-      .not_empty
-      .wait_timeout_while(inner, timeout, |inner| inner.queue.is_empty() && !inner.closed)
-      .unwrap_or_else(PoisonError::into_inner);
-    if let Some(v) = inner.queue.pop_front() {
       drop(inner);
-      self.not_full.notify_one();
-      return Some(RecvOutcome::Value(v));
+      if remaining.is_some_and(|r| r.is_zero()) {
+        return RecvOutcome::TimedOut;
+      }
+      if is_current_cancelled() {
+        return RecvOutcome::Cancelled;
+      }
     }
-    if inner.closed {
-      return Some(RecvOutcome::Closed);
-    }
-    None
   }
 
   /// `None` means "empty, but still open" -- the one outcome `recv`

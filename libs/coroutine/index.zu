@@ -67,7 +67,17 @@
  * A coroutine that's never `join()`ed or `try_join()`ed still has its
  * failure reported: if it fails and its `Coroutine` handle is dropped
  * without either ever being called, a warning is printed rather than
- * losing the failure silently.
+ * losing the failure silently. If it was started with `spawn_named()`,
+ * the warning includes its name.
+ *
+ * ## Cancellation
+ *
+ * `Coroutine.cancel()` interrupts a coroutine that's currently blocked
+ * in `Channel.send()`/`recv()`, `Coroutine.join()`, `wait_any()`,
+ * `wait_all()`, or `select()` -- that call raises
+ * `CoroutineCancelledError` within roughly 50ms. Outside one of those
+ * calls, cancellation is cooperative: plain running code isn't
+ * interrupted, and must check `coroutine.is_cancelled()` itself.
  *
  * ## Example
  *
@@ -83,7 +93,7 @@
  */
 
 import _coroutine
-import @.error { CoroutineError, CoroutineTimeoutError }
+import @.error { CoroutineError, CoroutineTimeoutError, CoroutineCancelledError }
 import @.channel { Channel, channel, select }
 import @.broadcast { Broadcast, broadcast }
 
@@ -108,11 +118,16 @@ class Coroutine {
    * @raises CoroutineError if the coroutine's function raised an
    *   uncaught exception
    * @raises CoroutineTimeoutError if `timeout` elapses first
+   * @raises CoroutineCancelledError if the CALLING coroutine (not this
+   *   one) is cancelled while blocked here
    */
   join(timeout: ?number) {
     var r = _coroutine.join(self._ptr, timeout)
     if r[0] == 'pending' {
       raise CoroutineTimeoutError('join() timed out after ${timeout} seconds')
+    }
+    if r[0] == 'cancelled' {
+      raise CoroutineCancelledError('join() was interrupted: the calling coroutine was cancelled')
     }
     if r[0] == 'error' {
       raise CoroutineError(r[1])
@@ -124,9 +139,15 @@ class Coroutine {
    * Requests that the coroutine stop. Has no effect on a coroutine
    * that has already finished.
    *
-   * Cancellation is cooperative: it does not interrupt code that is
-   * already running. The coroutine's own function must check
-   * `coroutine.is_cancelled()` and return on its own.
+   * If the coroutine is currently blocked in `Channel.send()`/
+   * `recv()`, `Coroutine.join()`, `wait_any()`, `wait_all()`, or
+   * `select()`, that call is interrupted within roughly 50ms and
+   * raises `CoroutineCancelledError`.
+   *
+   * Otherwise -- plain, non-blocking code -- cancellation is
+   * cooperative: it does not interrupt code that's already running.
+   * The coroutine's own function must check `coroutine.is_cancelled()`
+   * and return on its own.
    */
   cancel() {
     _coroutine.cancel(self._ptr)
@@ -138,6 +159,14 @@ class Coroutine {
    */
   is_cancelled() {
     return _coroutine.is_cancelled(self._ptr)
+  }
+
+  /**
+   * @returns ?string: the name given via `spawn_named()`, or `nil` if
+   *   this coroutine was started with plain `spawn()`.
+   */
+  name() {
+    return _coroutine.name(self._ptr)
   }
 
   /**
@@ -214,8 +243,8 @@ class Coroutine {
  *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
  *   been `shutdown()`
  */
-def _do_spawn(fn, args) {
-  var r = _coroutine.spawn(fn, args)
+def _do_spawn(fn, args, name) {
+  var r = _coroutine.spawn(fn, args, name)
   if r[0] == 'error' {
     raise CoroutineError(r[1])
   }
@@ -223,7 +252,27 @@ def _do_spawn(fn, args) {
 }
 
 def spawn(fn: function, ...args) {
-  return _do_spawn(fn, args)
+  return _do_spawn(fn, args, nil)
+}
+
+/**
+ * Same as `spawn()`, but gives the coroutine a `name` -- purely a
+ * debugging label, read back via `Coroutine.name()` and included in
+ * the "unobserved failure" warning (see the module docs' "Failure
+ * isolation" section) if this one fails and is never `join()`ed or
+ * `try_join()`ed.
+ *
+ * @param string name
+ * @param function fn: a closure, bound method, or class method.
+ * @param ...any args
+ * @returns Coroutine
+ * @raises TypeError if `fn` is not callable
+ * @raises CoroutineError if `fn` is a native function or class,
+ *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+ *   been `shutdown()`
+ */
+def spawn_named(name: string, fn: function, ...args) {
+  return _do_spawn(fn, args, name)
 }
 
 /**
@@ -252,7 +301,26 @@ class Scope {
    *   been `shutdown()`
    */
   spawn(fn: function, ...args) {
-    var t = _do_spawn(fn, args)
+    var t = _do_spawn(fn, args, nil)
+    self._children.append(t)
+    return t
+  }
+
+  /**
+   * Same as `spawn()`, but gives the coroutine a `name` -- see the
+   * module-level `spawn_named()`.
+   *
+   * @param string name
+   * @param function fn: a closure, bound method, or class method.
+   * @param ...any args
+   * @returns Coroutine
+   * @raises TypeError if `fn` is not callable
+   * @raises CoroutineError if `fn` is a native function or class,
+   *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+   *   been `shutdown()`
+   */
+  spawn_named(name: string, fn: function, ...args) {
+    var t = _do_spawn(fn, args, name)
     self._children.append(t)
     return t
   }
@@ -301,12 +369,20 @@ def scope(body: function) {
     c.cancel()
   }
 
+  # A child that was blocked in a cancellation-aware call (`recv()`,
+  # `join()`, ...) when the sweep above cancelled it fails with a
+  # message that starts with the *original* raised class's name --
+  # `join()` here only ever wraps it fresh as `CoroutineError`, so
+  # that's the one place the distinction survives the trip back from
+  # the child's own isolate. Skipping it keeps `first_failure` pointed
+  # at whatever ACTUALLY caused the cancellation sweep, rather than a
+  # downstream side effect of it.
   var first_failure = nil
   for c in s.children() {
     catch {
       c.join()
     } as e {
-      if first_failure == nil {
+      if first_failure == nil and !e.message.starts_with('CoroutineCancelledError:') {
         first_failure = e
       }
     }
@@ -410,6 +486,8 @@ def is_shutdown() {
  * @raises ValueError if `coroutines` is empty
  * @raises CoroutineTimeoutError if `timeout` elapses before any of
  *   them finish
+ * @raises CoroutineCancelledError if the CALLING coroutine is
+ *   cancelled while blocked here
  */
 def wait_any(coroutines: list, timeout: ?number) {
   if coroutines.length() == 0 {
@@ -422,6 +500,9 @@ def wait_any(coroutines: list, timeout: ?number) {
   var r = _coroutine.wait_any(ptrs, timeout)
   if r[0] == 'timeout' {
     raise CoroutineTimeoutError('wait_any() timed out after ${timeout} seconds')
+  }
+  if r[0] == 'cancelled' {
+    raise CoroutineCancelledError('wait_any() was interrupted: the calling coroutine was cancelled')
   }
   return coroutines[r[1]]
 }
@@ -438,6 +519,8 @@ def wait_any(coroutines: list, timeout: ?number) {
  *   whose function raised, once every one of them has finished
  * @raises CoroutineTimeoutError if `timeout` elapses before all of
  *   them finish
+ * @raises CoroutineCancelledError if the CALLING coroutine is
+ *   cancelled while blocked here
  */
 def wait_all(coroutines: list, timeout: ?number) {
   if coroutines.length() == 0 {
@@ -447,8 +530,12 @@ def wait_all(coroutines: list, timeout: ?number) {
   for c in coroutines {
     ptrs.append(c.handle())
   }
-  if !_coroutine.wait_all(ptrs, timeout) {
+  var status = _coroutine.wait_all(ptrs, timeout)
+  if status == 'timeout' {
     raise CoroutineTimeoutError('wait_all() timed out after ${timeout} seconds')
+  }
+  if status == 'cancelled' {
+    raise CoroutineCancelledError('wait_all() was interrupted: the calling coroutine was cancelled')
   }
   var results = []
   for c in coroutines {
@@ -472,6 +559,8 @@ def wait_all(coroutines: list, timeout: ?number) {
  *   call raised, once every call has finished
  * @raises CoroutineTimeoutError if `timeout` elapses before every
  *   call finishes
+ * @raises CoroutineCancelledError if the CALLING coroutine is
+ *   cancelled while blocked here
  */
 def map(fn: function, items: list, timeout: ?number) {
   var tasks = []

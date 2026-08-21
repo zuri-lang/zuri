@@ -36,11 +36,12 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("active_count", native(vm, "active_count", 0, false, active_count)),
     ("queued_count", native(vm, "queued_count", 0, false, queued_count)),
     ("is_shutdown", native(vm, "is_shutdown", 0, false, is_shutdown)),
-    ("spawn", native(vm, "spawn", 2, false, spawn)),
+    ("spawn", native(vm, "spawn", 3, false, spawn)),
     ("join", native(vm, "join", 2, false, join)),
     ("try_join", native(vm, "try_join", 1, false, try_join)),
     ("is_done", native(vm, "is_done", 1, false, is_done)),
     ("status", native(vm, "status", 1, false, status)),
+    ("name", native(vm, "name", 1, false, name)),
     ("cancel", native(vm, "cancel", 1, false, cancel)),
     ("is_cancelled", native(vm, "is_cancelled", 1, false, is_cancelled)),
     (
@@ -225,9 +226,10 @@ fn is_shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// on why `CoroutineError` lives in Zuri source, not the prelude).
 /// Matches `join`/`channel_recv`/etc.'s own `[status, value]` shape.
 fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_count!(ctx, 2);
+  enforce_arg_count!(ctx, 3);
   enforce_arg_type!(ctx, 0, ArgType::Function);
   enforce_arg_type!(ctx, 1, ArgType::List);
+  enforce_arg_type_any_of!(ctx, 2, [ArgType::String, ArgType::Nil]);
   let fn_val = ctx.args[0];
   if !fn_val.is_closure() && !fn_val.is_bound_method() {
     let msg = ctx.vm.heap_mut().alloc_string(
@@ -235,7 +237,8 @@ fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
     );
     return Ok(status_pair(ctx.vm, "error", msg));
   }
-  match pool::spawn(ctx.vm, fn_val, ctx.args[1]) {
+  let name = (!ctx.args[2].is_nil()).then(|| ctx.args[2].as_str().to_string());
+  match pool::spawn(ctx.vm, fn_val, ctx.args[1], name) {
     Ok(state) => {
       let ptr = ctx.vm.heap_mut().alloc_ptr(pool::COROUTINE_PTR_TYPE, state);
       Ok(status_pair(ctx.vm, "ok", ptr))
@@ -258,6 +261,7 @@ fn join(ctx: &mut ZuriContext) -> Result<Value, String> {
   };
   match outcome {
     pool::JoinOutcome::Pending => Ok(status_pair(ctx.vm, "pending", Value::nil())),
+    pool::JoinOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
     pool::JoinOutcome::Ok(graph) => {
       let value = transfer::materialize(ctx.vm, &graph)?;
       Ok(status_pair(ctx.vm, "ok", value))
@@ -283,6 +287,9 @@ fn try_join(ctx: &mut ZuriContext) -> Result<Value, String> {
       let value = ctx.vm.heap_mut().alloc_string(msg);
       Ok(status_pair(ctx.vm, "error", value))
     },
+    pool::JoinOutcome::Cancelled => {
+      unreachable!("try_join never blocks, so it can never observe the CALLER being cancelled")
+    },
   }
 }
 
@@ -301,8 +308,21 @@ fn status(ctx: &mut ZuriContext) -> Result<Value, String> {
     pool::JoinOutcome::Pending => "pending",
     pool::JoinOutcome::Ok(_) => "done",
     pool::JoinOutcome::Err(_) => "error",
+    pool::JoinOutcome::Cancelled => {
+      unreachable!("peek never blocks, so it can never observe the CALLER being cancelled")
+    },
   };
   Ok(ctx.vm.heap_mut().alloc_string(s))
+}
+
+fn name(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
+  let state = coroutine_state_of(ctx, 0)?;
+  match state.name() {
+    Some(n) => Ok(ctx.vm.heap_mut().alloc_string(n)),
+    None => Ok(Value::nil()),
+  }
 }
 
 fn cancel(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -346,8 +366,9 @@ fn wait_any(ctx: &mut ZuriContext) -> Result<Value, String> {
     states.push(coroutine_state_of_value(*v)?);
   }
   match pool::wait_any_coroutines(&states, timeout) {
-    Some(i) => Ok(status_pair(ctx.vm, "ok", Value::number(i as f64))),
-    None => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
+    pool::WaitAnyOutcome::Ready(i) => Ok(status_pair(ctx.vm, "ok", Value::number(i as f64))),
+    pool::WaitAnyOutcome::TimedOut => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
+    pool::WaitAnyOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
   }
 }
 
@@ -367,7 +388,12 @@ fn wait_all(ctx: &mut ZuriContext) -> Result<Value, String> {
     }
     states.push(coroutine_state_of_value(*v)?);
   }
-  Ok(Value::bool(pool::wait_all_coroutines(&states, timeout)))
+  let status = match pool::wait_all_coroutines(&states, timeout) {
+    pool::WaitAllOutcome::Ready => "ok",
+    pool::WaitAllOutcome::TimedOut => "timeout",
+    pool::WaitAllOutcome::Cancelled => "cancelled",
+  };
+  Ok(ctx.vm.heap_mut().alloc_string(status))
 }
 
 // ---------------------------------------------------------------------
@@ -391,15 +417,13 @@ fn channel_send(ctx: &mut ZuriContext) -> Result<Value, String> {
   let graph = transfer::capture(ctx.vm, ctx.args[1])?;
   let outcome = match timeout {
     Some(d) => state.send_timeout(graph, d),
-    None => match state.send(graph) {
-      Ok(()) => pool::SendOutcome::Sent,
-      Err(()) => pool::SendOutcome::Closed,
-    },
+    None => state.send(graph),
   };
   let status = match outcome {
     pool::SendOutcome::Sent => "ok",
     pool::SendOutcome::Closed => "closed",
     pool::SendOutcome::TimedOut => "timeout",
+    pool::SendOutcome::Cancelled => "cancelled",
   };
   Ok(ctx.vm.heap_mut().alloc_string(status))
 }
@@ -411,15 +435,16 @@ fn channel_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
   let state = channel_state_of(ctx, 0)?;
   let outcome = match timeout {
     Some(d) => state.recv_timeout(d),
-    None => Some(state.recv()),
+    None => state.recv(),
   };
   match outcome {
-    None => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
-    Some(pool::RecvOutcome::Value(graph)) => {
+    pool::RecvOutcome::TimedOut => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
+    pool::RecvOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
+    pool::RecvOutcome::Value(graph) => {
       let value = transfer::materialize(ctx.vm, &graph)?;
       Ok(status_pair(ctx.vm, "ok", value))
     },
-    Some(pool::RecvOutcome::Closed) => Ok(status_pair(ctx.vm, "closed", Value::nil())),
+    pool::RecvOutcome::Closed => Ok(status_pair(ctx.vm, "closed", Value::nil())),
   }
 }
 
@@ -440,15 +465,19 @@ fn select(ctx: &mut ZuriContext) -> Result<Value, String> {
     states.push(channel_state_of_value(*v)?);
   }
   match pool::select_channels(&states, timeout) {
-    None => Ok(select_result(ctx.vm, Value::nil(), "timeout", Value::nil())),
-    Some((i, pool::RecvOutcome::Value(graph))) => {
+    pool::SelectOutcome::TimedOut => Ok(select_result(ctx.vm, Value::nil(), "timeout", Value::nil())),
+    pool::SelectOutcome::Cancelled => Ok(select_result(ctx.vm, Value::nil(), "cancelled", Value::nil())),
+    pool::SelectOutcome::Ready(i, pool::RecvOutcome::Value(graph)) => {
       let value = transfer::materialize(ctx.vm, &graph)?;
       let index = Value::number(i as f64);
       Ok(select_result(ctx.vm, index, "ok", value))
     },
-    Some((i, pool::RecvOutcome::Closed)) => {
+    pool::SelectOutcome::Ready(i, pool::RecvOutcome::Closed) => {
       let index = Value::number(i as f64);
       Ok(select_result(ctx.vm, index, "closed", Value::nil()))
+    },
+    pool::SelectOutcome::Ready(_, pool::RecvOutcome::TimedOut | pool::RecvOutcome::Cancelled) => {
+      unreachable!("try_recv never produces TimedOut/Cancelled -- select_channels only calls try_recv")
     },
   }
 }
@@ -464,6 +493,9 @@ fn channel_try_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
       Ok(status_pair(ctx.vm, "ok", value))
     },
     Some(pool::RecvOutcome::Closed) => Ok(status_pair(ctx.vm, "closed", Value::nil())),
+    Some(pool::RecvOutcome::TimedOut | pool::RecvOutcome::Cancelled) => {
+      unreachable!("try_recv never blocks, so it never produces TimedOut/Cancelled")
+    },
   }
 }
 
