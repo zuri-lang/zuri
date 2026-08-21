@@ -167,7 +167,7 @@ impl WorkerPool {
         // just the one worker, which is exactly the guarantee
         // `worker_loop`'s panic isolation exists to give. 16MB, double
         // a typical main thread's own, gives real headroom instead.
-        .stack_size(16 * 1024 * 1024)
+        .stack_size(8 * 1024 * 1024)
         .spawn(worker_loop)
         .expect("failed to spawn worker worker thread");
     }

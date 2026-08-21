@@ -188,8 +188,8 @@ fn configure(ctx: &mut ZuriContext) -> Result<Value, String> {
   let n = ctx.args[0].as_number();
   if n.fract() != 0.0 || n < 1.0 {
     return Err(format!(
-      "configure() expects a positive whole number, got {}",
-      n
+      "{}() expects a positive whole number, got {}",
+      ctx.name, n
     ));
   }
   Ok(Value::bool(pool::configure(n as usize)?))
@@ -244,9 +244,10 @@ fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type_any_of!(ctx, 2, [ArgType::String, ArgType::Nil]);
   let fn_val = ctx.args[0];
   if !fn_val.is_closure() && !fn_val.is_bound_method() {
-    let msg = ctx.vm.heap_mut().alloc_string(
-      "spawn() expects a plain function, method, or bound method -- not a native or a class",
-    );
+    let msg = ctx.vm.heap_mut().alloc_string(format!(
+      "{}() expects a plain function, method, or bound method but not a native or a class",
+      ctx.name
+    ));
     return Ok(status_pair(ctx.vm, "error", msg));
   }
   let name = (!ctx.args[2].is_nil()).then(|| ctx.args[2].as_str().to_string());

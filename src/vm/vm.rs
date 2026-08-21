@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::io::IsTerminal;
 use std::ops::{Neg, Shl, Shr};
 use std::rc::Rc;
+use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
 
 use nu_ansi_term::{Color, Style};
@@ -38,6 +39,16 @@ const MAX_JIT_CALL_DEPTH: u32 = 1024;
 /// permanently drop compiled code for the innermost function, which breaks
 /// the nesting since it can't be re-entered from there.
 const MAX_DEOPT_REENTRANCY: u32 = 64;
+
+static ZURI_LOG_GC: LazyLock<bool> = LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
+static ZURI_JIT_ENABLED: LazyLock<bool> = LazyLock::new(|| {
+  !matches!(
+    std::env::var("ZURI_JIT").as_deref(),
+    Ok("0") | Ok("off") | Ok("false")
+  )
+});
+static ZURI_JIT_NO_SPECIALIZATION: LazyLock<bool> =
+  LazyLock::new(|| std::env::var_os("ZURI_JIT_NO_SPECIALIZATION").is_some());
 
 /// The `--> path:line` locator plus (if `source` is available) a
 /// snippet: up to 2 lines of context on either side of `error_line`,
@@ -730,6 +741,7 @@ pub struct VM {
   pub(crate) root_path: Option<String>,
   pub heap: Heap,
   log_gc: bool,
+  no_jit_specialization: bool,
   /// Per-opcode execution counts, gathered only under ZURI_OPCODE_PROFILE.
   #[cfg(feature = "opcode-profile")]
   opcode_counts: FxHashMap<&'static str, u64>,
@@ -844,10 +856,8 @@ impl VM {
       pending_jit_compiles: Vec::new(),
       jit_pending_exception: Cell::new(Value::nil()),
       pending_deopt_ip: Cell::new(-1),
-      jit_enabled: !matches!(
-        std::env::var("ZURI_JIT").as_deref(),
-        Ok("0") | Ok("off") | Ok("false")
-      ),
+      jit_enabled: *ZURI_JIT_ENABLED,
+      no_jit_specialization: *ZURI_JIT_NO_SPECIALIZATION,
       jit_call_depth: Cell::new(0),
       deopt_reentrancy_depth: Cell::new(0),
       builtin_exceptions: FxHashMap::default(),
@@ -862,7 +872,7 @@ impl VM {
       opcode_bigrams: FxHashMap::default(),
       #[cfg(feature = "opcode-profile")]
       last_opcode: None,
-      log_gc: std::env::var_os("ZURI_GC_LOG").is_some(),
+      log_gc: *ZURI_LOG_GC,
       heap,
       method_table_generation: Cell::new(0),
     }
@@ -1843,15 +1853,14 @@ impl VM {
     // isolate whether a symptom depends on specialization at all. Unlike
     // ZURI_JIT=0, every function still tiers up, just without ever gaining
     // a specialized body.
-    let (speculative_params, speculative_regs) =
-      if std::env::var_os("ZURI_JIT_NO_SPECIALIZATION").is_some() {
-        (None, None)
-      } else {
-        (
-          self.combined_param_feedback(proto),
-          self.sample_all_reg_types(proto),
-        )
-      };
+    let (speculative_params, speculative_regs) = if self.no_jit_specialization {
+      (None, None)
+    } else {
+      (
+        self.combined_param_feedback(proto),
+        self.sample_all_reg_types(proto),
+      )
+    };
     let (call_targets, construct_info) = self.resolve_call_targets(proto);
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
