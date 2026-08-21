@@ -156,7 +156,7 @@ fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
   match pool::spawn(ctx.vm, fn_val, ctx.args[1]) {
     Ok(state) => {
-      let ptr = ctx.vm.heap_mut().alloc_ptr("zuri_coroutine", state);
+      let ptr = ctx.vm.heap_mut().alloc_ptr(pool::COROUTINE_PTR_TYPE, state);
       Ok(status_pair(ctx.vm, "ok", ptr))
     },
     Err(msg) => {
@@ -168,7 +168,7 @@ fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn join(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_coroutine");
+  enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
   let state = coroutine_state_of(ctx, 0)?;
   match state.join() {
     pool::JoinOutcome::Pending => unreachable!("join() always blocks until finished"),
@@ -185,7 +185,7 @@ fn join(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn try_join(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_coroutine");
+  enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
   let state = coroutine_state_of(ctx, 0)?;
   match state.try_join() {
     pool::JoinOutcome::Pending => Ok(status_pair(ctx.vm, "pending", Value::nil())),
@@ -202,7 +202,7 @@ fn try_join(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn is_done(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_coroutine");
+  enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
   let state = coroutine_state_of(ctx, 0)?;
   Ok(Value::bool(state.is_done()))
 }
@@ -217,12 +217,12 @@ fn channel_new(ctx: &mut ZuriContext) -> Result<Value, String> {
   let raw = ctx.args[0].as_number();
   let capacity = if raw <= 0.0 { None } else { Some(raw as usize) };
   let state = Arc::new(pool::ChannelState::new(capacity));
-  Ok(ctx.vm.heap_mut().alloc_ptr("zuri_channel", state))
+  Ok(ctx.vm.heap_mut().alloc_ptr(pool::CHANNEL_PTR_TYPE, state))
 }
 
 fn channel_send(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 2);
-  enforce_arg_ptr!(ctx, 0, "zuri_channel");
+  enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
   let graph = transfer::capture(ctx.vm, ctx.args[1])?;
   Ok(Value::bool(state.send(graph).is_ok()))
@@ -230,7 +230,7 @@ fn channel_send(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn channel_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_channel");
+  enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
   match state.recv() {
     pool::RecvOutcome::Value(graph) => {
@@ -243,7 +243,7 @@ fn channel_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn channel_try_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_channel");
+  enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
   match state.try_recv() {
     None => Ok(status_pair(ctx.vm, "empty", Value::nil())),
@@ -257,7 +257,7 @@ fn channel_try_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn channel_close(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_channel");
+  enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
   state.close();
   Ok(Value::nil())
@@ -265,14 +265,14 @@ fn channel_close(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn channel_is_closed(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_channel");
+  enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
   Ok(Value::bool(state.is_closed()))
 }
 
 fn channel_len(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, "zuri_channel");
+  enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
   Ok(Value::number(state.len() as f64))
 }

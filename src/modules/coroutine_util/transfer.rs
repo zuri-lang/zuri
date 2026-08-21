@@ -56,6 +56,8 @@ use crate::vm::object::{
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
+use super::pool;
+
 /// A moved `Ptr` payload -- see this module's own top-level docs.
 type PtrSlot = Arc<Mutex<Option<(&'static str, Box<dyn Any + Send>)>>>;
 
@@ -207,6 +209,13 @@ pub enum TransferValue {
     name: String,
     kind: NamedKind,
   },
+  /// A `Channel` handle -- cloned, not moved, since `pool::ChannelState`
+  /// is already internally synchronized for concurrent access from
+  /// both sides. See `capture_value`'s own docs on why this is NOT
+  /// treated like an ordinary `Ptr`.
+  ChannelHandle(Arc<pool::ChannelState>),
+  /// A `Coroutine` handle -- same reasoning as `ChannelHandle`.
+  CoroutineHandle(Arc<pool::CoroutineState>),
   Ref(u32),
 }
 
@@ -351,6 +360,35 @@ fn capture_value(
     let method = capture_value(vm, bm.method, arena, memo)?;
     arena[idx as usize] = TransferNode::BoundMethod { receiver, method };
     return Ok(TransferValue::Ref(idx));
+  }
+  if v.is_ptr_type(pool::CHANNEL_PTR_TYPE) {
+    // A `Channel`'s own `_ptr` field, NOT a resource like a socket or
+    // an encoder: `pool::ChannelState` is already internally
+    // synchronized (`Mutex`+`Condvar`) specifically so it CAN be used
+    // concurrently from both sides at once -- that's the entire point
+    // of a channel. Cloning the `Arc` (never moving/taking it) is what
+    // lets the very channel a coroutine was just handed still be sent
+    // on/received from by the code that spawned it.
+    let handle = v
+      .as_ptr_cell()
+      .borrow()
+      .downcast_ref::<Arc<pool::ChannelState>>()
+      .cloned()
+      .ok_or_else(|| "internal error: malformed channel handle".to_string())?;
+    return Ok(TransferValue::ChannelHandle(handle));
+  }
+  if v.is_ptr_type(pool::COROUTINE_PTR_TYPE) {
+    // Same reasoning as `Channel` above: a `Coroutine` handle is a
+    // synchronized, freely-shareable reference to a result slot, not
+    // an exclusive resource -- cloning it is what lets a `Coroutine`
+    // handle be passed into (or returned from) another coroutine.
+    let handle = v
+      .as_ptr_cell()
+      .borrow()
+      .downcast_ref::<Arc<pool::CoroutineState>>()
+      .cloned()
+      .ok_or_else(|| "internal error: malformed coroutine handle".to_string())?;
+    return Ok(TransferValue::CoroutineHandle(handle));
   }
   if v.is_ptr() {
     // A genuine MOVE, not a copy -- see this module's own top-level
@@ -831,6 +869,12 @@ fn materialize_value(
       func: *func,
     })),
     TransferValue::Named { home, name, kind } => resolve_named(vm, home, name, kind),
+    TransferValue::ChannelHandle(state) => {
+      Ok(vm.heap_mut().alloc_ptr(pool::CHANNEL_PTR_TYPE, state.clone()))
+    },
+    TransferValue::CoroutineHandle(state) => {
+      Ok(vm.heap_mut().alloc_ptr(pool::COROUTINE_PTR_TYPE, state.clone()))
+    },
     TransferValue::Ref(idx) => materialize_ref(vm, *idx, arena, node_pin),
   }
 }

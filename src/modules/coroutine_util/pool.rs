@@ -18,6 +18,14 @@ use super::transfer::{self, TransferGraph};
 
 const MAX_POOL_SIZE: usize = 4096;
 
+/// `Ptr::type_name` a `Coroutine`/`Channel` handle is tagged with --
+/// shared between `coroutine.rs` (which allocates these) and
+/// `transfer.rs` (which needs to recognize them as thread-safe,
+/// freely-shareable handles rather than exclusive resources to move --
+/// see `transfer::capture_value`'s own docs on the distinction).
+pub const COROUTINE_PTR_TYPE: &str = "zuri_coroutine";
+pub const CHANNEL_PTR_TYPE: &str = "zuri_channel";
+
 // ---------------------------------------------------------------------
 // Pool sizing/lifecycle
 // ---------------------------------------------------------------------

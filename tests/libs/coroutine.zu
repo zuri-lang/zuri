@@ -234,8 +234,8 @@ def test_spawn_rejects_class() {
   catch {
     coroutine.spawn(coroutine_worker.Counter)
   } as e
-  assert e != nil and instance_of(e, coroutine.CoroutineError),
-    'spawning a class itself (as opposed to an instance method) must be rejected'
+  assert e != nil and instance_of(e, TypeError),
+    'spawning a class itself (as opposed to an instance method) must be rejected as not callable'
   echo 'test_spawn_rejects_class passed'
 }
 
