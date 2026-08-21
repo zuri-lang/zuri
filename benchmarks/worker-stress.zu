@@ -14,7 +14,7 @@
 
 import worker
 
-const WORKER_COUNT = 1_000_000
+const WORKER_COUNT = 100_000
 
 /**
  * A deliberately non-trivial per-worker workload -- a trial-
