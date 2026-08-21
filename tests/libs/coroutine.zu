@@ -1,6 +1,7 @@
 import coroutine
 import compress.gzip
 import .coroutine_worker
+import .coroutine_panic_worker
 
 def test_basic_spawn_join() {
   var t = coroutine.spawn(coroutine_worker.square, 9)
@@ -89,6 +90,31 @@ def test_main_script_function() {
   var t = coroutine.spawn(local_double, 21)
   assert t.join() == 42, 'a function declared directly in this script must be spawnable'
   echo 'test_main_script_function passed'
+}
+
+def local_boom() {
+  raise TypeError('a builtin exception class raised from a main-script function')
+}
+
+def test_main_script_function_raises_builtin_error() {
+  # `local_boom` never binds `TypeError` to a module-level name --
+  # referencing it is a `GetGlobal` against the VM's own root table,
+  # picked up transitively as a root global this main-script function
+  # depends on. `TypeError` (like every builtin exception class) is
+  # installed fresh by every worker's own `VM::init`, not declared in
+  # any module -- a naive structural clone of it would produce a class
+  # the worker's own `raise`/`catch` doesn't recognize, turning this
+  # into a confusing "can only raise an Error or subclass" failure
+  # instead of the real one.
+  var t = coroutine.spawn(local_boom)
+  catch {
+    t.join()
+  } as e
+  assert e != nil, 'raising a builtin exception class inside a coroutine must surface on join()'
+  assert instance_of(e, coroutine.CoroutineError), 'it must surface as an ordinary CoroutineError'
+  assert e.message.contains('a builtin exception class raised from a main-script function'),
+    'the original message must be preserved, not replaced by an internal raise-machinery error'
+  echo 'test_main_script_function_raises_builtin_error passed'
 }
 
 def local_double(n) {
@@ -201,6 +227,21 @@ def test_uncaught_exception_propagates() {
   assert e != nil, 'an uncaught exception inside a coroutine must surface on join()'
   assert instance_of(e, coroutine.CoroutineError), 'it must surface specifically as a CoroutineError'
   echo 'test_uncaught_exception_propagates passed'
+}
+
+def test_worker_panic_is_isolated() {
+  var t = coroutine.spawn(coroutine_panic_worker.trigger_panic)
+  catch {
+    t.join()
+  } as e
+  assert e != nil, 'a Rust-level panic inside a coroutine must surface on join(), not crash the process'
+  assert instance_of(e, coroutine.CoroutineError), 'a panic must surface as an ordinary CoroutineError'
+
+  # the pool's worker threads must survive a panic and keep serving
+  # later coroutines -- a panicked isolate is rebuilt, never reused.
+  var t2 = coroutine.spawn(coroutine_worker.square, 9)
+  assert t2.join() == 81, 'the pool must still work correctly after a panic on one of its workers'
+  echo 'test_worker_panic_is_isolated passed'
 }
 
 def test_uncaught_exception_message_preserved() {
@@ -391,6 +432,7 @@ test_recursive_closure()
 test_closure_references_module_global()
 test_anonymous_lambda()
 test_main_script_function()
+test_main_script_function_raises_builtin_error()
 test_main_script_class()
 test_module_scoped_class_instance()
 test_bound_method_as_spawn_target()
@@ -402,6 +444,7 @@ test_self_referential_list_does_not_hang()
 test_dict_argument()
 test_multiple_concurrent_coroutines()
 test_uncaught_exception_propagates()
+test_worker_panic_is_isolated()
 test_uncaught_exception_message_preserved()
 test_spawn_rejects_non_function()
 test_spawn_rejects_native_function()

@@ -80,7 +80,13 @@ debug = true
 # lto = true
 lto = "thin"
 codegen-units = 1
-panic = "abort"
+# Was "abort" purely to shave a little startup/runtime overhead off
+# the single-threaded interpreter. Now that coroutine worker threads
+# exist, unwinding is required: it's the only way a bug in one
+# coroutine's own execution path can be caught and turned into a
+# CoroutineError instead of aborting the entire process out from
+# under every other coroutine and the main thread. Default (unwind).
+# panic = "abort"
 
 [features]
 opcode-profile = []

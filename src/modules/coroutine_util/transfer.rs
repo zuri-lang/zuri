@@ -209,6 +209,14 @@ pub enum TransferValue {
     name: String,
     kind: NamedKind,
   },
+  /// A builtin exception class (`Error`, `TypeError`, ...) -- resolved
+  /// by name against the destination's own prelude, already installed
+  /// fresh by `VM::init` on every isolate. See `capture_class`'s own
+  /// docs on why this can't go through the ordinary `Named`/`Home`
+  /// path (there's no module a prelude class is declared in) or the
+  /// structural one (a clone wouldn't be recognized by the
+  /// destination's own `raise`/`catch`).
+  Prelude(String),
   /// A `Channel` handle -- cloned, not moved, since `pool::ChannelState`
   /// is already internally synchronized for concurrent access from
   /// both sides. See `capture_value`'s own docs on why this is NOT
@@ -473,41 +481,59 @@ fn capture_closure(
   let closure = v.as_closure();
   let proto = closure.function.as_func();
 
-  // Cheap path first: a plain function/lambda -- or a method -- that
-  // captures nothing and is currently bound to a module-level name
-  // (directly, or via its class's own `methods` map) resolves as a
-  // `Named` reference: no bytecode needs to travel at all, and the
-  // SAME destination Value gets reused across repeated messages.
-  if closure.upvalues.is_empty() {
-    if let Some(m) = proto.globals_module {
-      let home = Home {
-        path: m.as_module().path.clone(),
-      };
-      if proto.is_method {
-        if let Some(class_name) = proto.owning_class_name.clone() {
-          let matches = lookup_named_source(vm, &home, &class_name)
-            .filter(|c| c.is_class())
-            .is_some_and(|c| {
-              c.as_class()
-                .methods
-                .get(&proto.name)
-                .is_some_and(|m| m.equals(&v))
-            });
-          if matches {
-            return Ok(TransferValue::Named {
-              home,
-              name: proto.name.clone(),
-              kind: NamedKind::Method { class_name },
-            });
-          }
+  // Cheap path first: a plain function/lambda -- or a method -- that's
+  // currently bound to a module-level name (directly, or via its
+  // class's own `methods` map) resolves as a `Named` reference: no
+  // bytecode needs to travel at all, and the SAME destination Value
+  // gets reused across repeated messages.
+  //
+  // Deliberately NOT gated on `closure.upvalues.is_empty()`: whether
+  // this specific closure happens to have captured something is
+  // irrelevant to whether the Named path is safe, because the Named
+  // path never transplants THIS closure's own upvalues at all -- the
+  // destination re-loads the home module fresh and gets back
+  // whatever closure THAT run independently creates for the same
+  // name, with its own independently-recreated upvalues. A module-
+  // level `def`/`var` commonly closes over another plain (non-`@`-
+  // exported) import in the same file -- e.g. `import _coroutine` is
+  // just a local of the file's own top-level scope, so any nested
+  // function referencing it captures it as an upvalue -- and a
+  // `Module`/`ModuleBinding` value can never itself cross a coroutine
+  // boundary. Gating this on an empty upvalue list would reject
+  // exactly that ordinary case, forcing it down the STRUCTURAL path
+  // below where it genuinely does need to move that upvalue and
+  // genuinely can't. Only a closure `find_binding_name`/the method
+  // lookup can't find by name (a true local -- returned from an
+  // enclosing function, or never assigned a name at all) needs
+  // structural transplant, upvalues and all.
+  if let Some(m) = proto.globals_module {
+    let home = Home {
+      path: m.as_module().path.clone(),
+    };
+    if proto.is_method {
+      if let Some(class_name) = proto.owning_class_name.clone() {
+        let matches = lookup_named_source(vm, &home, &class_name)
+          .filter(|c| c.is_class())
+          .is_some_and(|c| {
+            c.as_class()
+              .methods
+              .get(&proto.name)
+              .is_some_and(|m| m.equals(&v))
+          });
+        if matches {
+          return Ok(TransferValue::Named {
+            home,
+            name: proto.name.clone(),
+            kind: NamedKind::Method { class_name },
+          });
         }
-      } else if let Some(name) = find_binding_name(vm, &home, v) {
-        return Ok(TransferValue::Named {
-          home,
-          name,
-          kind: NamedKind::Function,
-        });
       }
+    } else if let Some(name) = find_binding_name(vm, &home, v) {
+      return Ok(TransferValue::Named {
+        home,
+        name,
+        kind: NamedKind::Function,
+      });
     }
   }
 
@@ -672,6 +698,19 @@ fn capture_class(
     let c = v.as_class();
     (c.name.clone(), c.globals_module)
   };
+
+  // A builtin exception class (`Error`, `TypeError`, ...) is installed
+  // fresh by `VM::init` on every worker isolate already -- it isn't
+  // declared in any module a `Home` could point at, and structurally
+  // cloning it would produce a class that LOOKS the same but isn't the
+  // exact object the destination's own `VM::raise`/`Instr::Raise`
+  // checks against, breaking `raise`/`catch` for anything built from
+  // it (a plain `Error('msg')`, most commonly). Resolving it by name
+  // against the destination's own prelude instead is both correct and
+  // free -- no module load, no clone.
+  if gmod.is_none() && vm.builtin_exceptions.get(name.as_str()).is_some_and(|c| c.equals(&v)) {
+    return Ok(TransferValue::Prelude(name));
+  }
 
   // Cheap path first, same shape as `capture_closure`'s: a
   // module-scoped class is always bound under its own name (every
@@ -869,6 +908,13 @@ fn materialize_value(
       func: *func,
     })),
     TransferValue::Named { home, name, kind } => resolve_named(vm, home, name, kind),
+    TransferValue::Prelude(name) => vm.lookup_global(name).ok_or_else(|| {
+      format!(
+        "internal error: builtin exception class '{}' missing from the \
+         destination isolate's own prelude",
+        name
+      )
+    }),
     TransferValue::ChannelHandle(state) => {
       Ok(vm.heap_mut().alloc_ptr(pool::CHANNEL_PTR_TYPE, state.clone()))
     },

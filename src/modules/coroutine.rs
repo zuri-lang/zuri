@@ -63,6 +63,11 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "channel_len",
       native(vm, "channel_len", 1, false, channel_len),
     ),
+    #[cfg(debug_assertions)]
+    (
+      "debug_panic",
+      native(vm, "debug_panic", 0, false, debug_panic),
+    ),
   ]
 }
 
@@ -275,4 +280,19 @@ fn channel_len(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
   Ok(Value::number(state.len() as f64))
+}
+
+// ---------------------------------------------------------------------
+// Debug-only
+// ---------------------------------------------------------------------
+
+/// Deliberately panics -- exists ONLY so the library test suite has a
+/// way to verify, end to end, that a Rust-level panic inside a
+/// coroutine's own execution is isolated to that one coroutine rather
+/// than taking down the whole process (see `pool::worker_loop`).
+/// `#[cfg(debug_assertions)]`, so this never exists in a release
+/// build; there is no way to reach it from a shipped binary.
+#[cfg(debug_assertions)]
+fn debug_panic(_ctx: &mut ZuriContext) -> Result<Value, String> {
+  panic!("_coroutine.debug_panic() was called")
 }

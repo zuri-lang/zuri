@@ -6,8 +6,11 @@
 //! compiled bytecode between threads -- see `transfer` for what
 //! actually crosses, and why that's the only thing that safely can.
 
+use std::any::Any;
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::panic::{self, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 
 use crate::vm::object::Heap;
@@ -15,6 +18,20 @@ use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
 use super::transfer::{self, TransferGraph};
+
+/// `mutex.lock().unwrap()`, but tolerant of poisoning: a panic while
+/// SOME OTHER thread held this exact lock (never expected in ordinary
+/// operation, but possible if a bug elsewhere manages to panic while
+/// touching shared pool/channel/coroutine state directly, as opposed
+/// to inside a coroutine's own isolated VM -- see `worker_loop`'s own
+/// docs on why THAT kind of panic is handled separately) doesn't
+/// cascade into every future access panicking too. The guarded data
+/// here is always a plain queue/slot/flag with no invariant that a
+/// half-finished mutation could violate in a way that matters, so
+/// recovering it is safe.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+  m.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 const MAX_POOL_SIZE: usize = 4096;
 
@@ -49,7 +66,7 @@ pub fn configure(n: usize) -> Result<bool, String> {
   if POOL.get().is_some() {
     return Ok(false);
   }
-  let mut configured = CONFIGURED_SIZE.lock().unwrap();
+  let mut configured = lock(&CONFIGURED_SIZE);
   if POOL.get().is_some() {
     return Ok(false);
   }
@@ -75,7 +92,7 @@ pub fn pool_size() -> usize {
 
 fn pool() -> &'static CoroutinePool {
   POOL.get_or_init(|| {
-    let size = CONFIGURED_SIZE.lock().unwrap().unwrap_or_else(default_size);
+    let size = lock(&CONFIGURED_SIZE).unwrap_or_else(default_size);
     CoroutinePool::start(size)
   })
 }
@@ -86,11 +103,17 @@ struct CoroutinePool {
   size: usize,
 }
 
+/// Worker thread names share this prefix -- checked by the panic hook
+/// below to tell a fully-handled worker panic apart from a real,
+/// nowhere-else-caught one on any other thread.
+const WORKER_THREAD_PREFIX: &str = "zuri-coroutine-";
+
 impl CoroutinePool {
   fn start(size: usize) -> Self {
+    install_worker_panic_hook();
     for i in 0..size {
       thread::Builder::new()
-        .name(format!("zuri-coroutine-{}", i))
+        .name(format!("{}{}", WORKER_THREAD_PREFIX, i))
         .spawn(worker_loop)
         .expect("failed to spawn coroutine worker thread");
     }
@@ -100,6 +123,32 @@ impl CoroutinePool {
       size,
     }
   }
+}
+
+/// A worker panic is always caught by `catch_unwind` in `worker_loop`
+/// and surfaced to Zuri as an ordinary `CoroutineError` -- it was
+/// never actually a crash. Printing Rust's own default "thread ...
+/// panicked at ..." notice for one anyway would look exactly like an
+/// unhandled crash to anyone watching stderr, which is actively
+/// misleading for something the pool fully recovered from. This
+/// installs a hook that skips the default report for worker threads
+/// specifically and defers to whatever hook was already installed
+/// (Rust's own default, unless something else replaced it first) for
+/// every other thread, main included -- a REAL uncaught panic
+/// anywhere else still gets reported exactly as before.
+fn install_worker_panic_hook() {
+  static INSTALLED: std::sync::Once = std::sync::Once::new();
+  INSTALLED.call_once(|| {
+    let previous = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+      let is_worker = thread::current()
+        .name()
+        .is_some_and(|n| n.starts_with(WORKER_THREAD_PREFIX));
+      if !is_worker {
+        previous(info);
+      }
+    }));
+  });
 }
 
 /// One pending call: "run this named, non-capturing function/method
@@ -133,56 +182,136 @@ fn worker_loop() {
   let pool = pool();
   loop {
     let task = {
-      let mut queue = pool.queue.lock().unwrap();
+      let mut queue = lock(&pool.queue);
       while queue.is_empty() {
-        queue = pool.not_empty.wait(queue).unwrap();
+        queue = pool.not_empty.wait(queue).unwrap_or_else(PoisonError::into_inner);
       }
       queue.pop_front().unwrap()
     };
-    run_task(&mut isolate, task);
+
+    // Cloned out BEFORE `run_task` runs, not read off `task` afterward:
+    // a caught panic (see below) means `task` may never come back from
+    // that call in any usable form, but the coroutine's own result
+    // slot still needs to be resolved either way.
+    let state = task.state.clone();
+
+    // `catch_unwind` isolates a panic to just the ONE coroutine that
+    // caused it, rather than taking down every other coroutine and the
+    // main thread with it -- see `Cargo.toml`'s own note on why
+    // `panic = "abort"` had to go for this to even be possible.
+    // `AssertUnwindSafe` because `&mut isolate.vm` isn't provably
+    // unwind-safe on its own (a panic mid-mutation could leave its
+    // internal state -- registers, GC bookkeeping -- torn); the promise
+    // that makes this sound is the one kept right below: a torn
+    // isolate is never reused, only rebuilt from scratch.
+    match panic::catch_unwind(AssertUnwindSafe(|| run_task(&mut isolate, &task))) {
+      Ok(result) => state.finish(result),
+      Err(payload) => {
+        // `&*payload`, not `&payload`: `payload` is `Box<dyn Any +
+        // Send>`, and `Box<dyn Any + Send>` itself implements `Any`
+        // (it's `'static` too) -- a bare `&payload` coerces to `&dyn
+        // Any` by treating the BOX ITSELF as the trait object, not by
+        // dereferencing into what it holds, so `downcast_ref` would
+        // always be asking "is the payload literally a `Box`", never
+        // "what's inside it". The explicit deref forces the reference
+        // at the actual panic value instead.
+        state.finish(Err(format!(
+          "coroutine panicked: {}",
+          panic_message(&*payload)
+        )));
+        isolate = WorkerIsolate::new();
+      },
+    }
   }
 }
 
-fn run_task(isolate: &mut WorkerIsolate, task: Task) {
-  let result = (|| -> Result<TransferGraph, String> {
-    let callee = transfer::materialize(&mut isolate.vm, &task.callee)?;
-    // `callee` sits only in this local until `call_value` copies it
-    // into a register -- pin it across `args`' own materialize call,
-    // which can itself allocate (and therefore collect).
-    let pin = isolate.vm.pin_values([callee]);
-    let args_val = transfer::materialize(&mut isolate.vm, &task.args)?;
-    let callee = isolate.vm.pinned(pin);
-    isolate.vm.unpin(pin);
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+  if let Some(s) = payload.downcast_ref::<&str>() {
+    (*s).to_string()
+  } else if let Some(s) = payload.downcast_ref::<String>() {
+    s.clone()
+  } else {
+    "unknown panic payload".to_string()
+  }
+}
 
-    let args = args_val.as_list();
+#[cfg(test)]
+mod tests {
+  use super::*;
 
-    // `VM::call_value` only ever accepts a closure or a native, never
-    // a bare `ObjBoundMethod` -- so `instance.method` used directly as
-    // a spawn target needs its receiver spliced back in as arg 0
-    // (exactly what `Instr::Invoke` already does for an ordinary
-    // `instance.method(...)` call site; this is that same convention,
-    // just applied by hand since there's no such instruction here).
-    let (target, full_args) = if callee.is_bound_method() {
-      let bm = callee.as_bound_method();
-      if !bm.method.is_closure() {
-        return Err("coroutine spawn target is not a callable function".to_string());
-      }
-      let mut full = Vec::with_capacity(args.len() + 1);
-      full.push(bm.receiver);
-      full.extend(args);
-      (bm.method, full)
-    } else if callee.is_closure() {
-      (callee, args)
-    } else {
+  /// A panic isn't caught anywhere in this module without going
+  /// through `worker_loop`'s full task-queue/isolate machinery, so
+  /// this exercises the actual mechanism (`catch_unwind` plus the
+  /// `&*payload` deref -- see that call site's own docs on why a bare
+  /// `&payload` silently reads the wrong thing) directly, without
+  /// needing a real `VM`/`Task`/pool.
+  #[test]
+  fn panic_message_reads_a_plain_string_literal_panic() {
+    let result = panic::catch_unwind(|| panic!("boom"));
+    let payload = result.expect_err("closure was supposed to panic");
+    assert_eq!(panic_message(&*payload), "boom");
+  }
+
+  #[test]
+  fn panic_message_reads_a_formatted_panic() {
+    let n = 42;
+    let result = panic::catch_unwind(|| panic!("boom: {n}"));
+    let payload = result.expect_err("closure was supposed to panic");
+    assert_eq!(panic_message(&*payload), "boom: 42");
+  }
+
+  /// The specific bug this whole helper exists to avoid: a bare
+  /// `&payload` (no explicit deref) coerces `Box<dyn Any + Send>`
+  /// itself into the trait object, since the box is `Any` too --
+  /// every downcast then silently fails no matter what's inside it,
+  /// falling through to "unknown panic payload" instead of the real
+  /// message. This pins that failure mode down so it can't regress
+  /// unnoticed.
+  #[test]
+  fn panic_message_via_bare_reference_loses_the_message() {
+    let result = panic::catch_unwind(|| panic!("boom"));
+    let payload = result.expect_err("closure was supposed to panic");
+    assert_eq!(panic_message(&payload), "unknown panic payload");
+  }
+}
+
+fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, String> {
+  let callee = transfer::materialize(&mut isolate.vm, &task.callee)?;
+  // `callee` sits only in this local until `call_value` copies it
+  // into a register -- pin it across `args`' own materialize call,
+  // which can itself allocate (and therefore collect).
+  let pin = isolate.vm.pin_values([callee]);
+  let args_val = transfer::materialize(&mut isolate.vm, &task.args)?;
+  let callee = isolate.vm.pinned(pin);
+  isolate.vm.unpin(pin);
+
+  let args = args_val.as_list();
+
+  // `VM::call_value` only ever accepts a closure or a native, never
+  // a bare `ObjBoundMethod` -- so `instance.method` used directly as
+  // a spawn target needs its receiver spliced back in as arg 0
+  // (exactly what `Instr::Invoke` already does for an ordinary
+  // `instance.method(...)` call site; this is that same convention,
+  // just applied by hand since there's no such instruction here).
+  let (target, full_args) = if callee.is_bound_method() {
+    let bm = callee.as_bound_method();
+    if !bm.method.is_closure() {
       return Err("coroutine spawn target is not a callable function".to_string());
-    };
-
-    match isolate.vm.call_value(target, &full_args) {
-      Ok(ret) => transfer::capture(&isolate.vm, ret),
-      Err(exc) => Err(isolate.vm.describe_exception(exc)),
     }
-  })();
-  task.state.finish(result);
+    let mut full = Vec::with_capacity(args.len() + 1);
+    full.push(bm.receiver);
+    full.extend(args);
+    (bm.method, full)
+  } else if callee.is_closure() {
+    (callee, args)
+  } else {
+    return Err("coroutine spawn target is not a callable function".to_string());
+  };
+
+  match isolate.vm.call_value(target, &full_args) {
+    Ok(ret) => transfer::capture(&isolate.vm, ret),
+    Err(exc) => Err(isolate.vm.describe_exception(exc)),
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -213,6 +342,9 @@ pub enum JoinOutcome {
 pub struct CoroutineState {
   slot: Mutex<Slot>,
   cv: Condvar,
+  /// Set once `join()`/`try_join()` has actually reported a finished
+  /// outcome (`Ok` or `Err`) to someone -- see `Drop`'s own docs.
+  observed: AtomicBool,
 }
 
 impl CoroutineState {
@@ -220,11 +352,12 @@ impl CoroutineState {
     CoroutineState {
       slot: Mutex::new(Slot::Pending),
       cv: Condvar::new(),
+      observed: AtomicBool::new(false),
     }
   }
 
   fn finish(&self, result: Result<TransferGraph, String>) {
-    let mut slot = self.slot.lock().unwrap();
+    let mut slot = lock(&self.slot);
     *slot = match result {
       Ok(g) => Slot::Ok(g),
       Err(m) => Slot::Err(m),
@@ -237,26 +370,63 @@ impl CoroutineState {
   /// more than once (and from more than one joiner) -- always returns
   /// the same, already-computed outcome once it's in.
   pub fn join(&self) -> JoinOutcome {
-    let mut slot = self.slot.lock().unwrap();
+    let mut slot = lock(&self.slot);
     loop {
       match &*slot {
-        Slot::Pending => slot = self.cv.wait(slot).unwrap(),
-        Slot::Ok(g) => return JoinOutcome::Ok(g.clone()),
-        Slot::Err(m) => return JoinOutcome::Err(m.clone()),
+        Slot::Pending => slot = self.cv.wait(slot).unwrap_or_else(PoisonError::into_inner),
+        Slot::Ok(g) => {
+          self.observed.store(true, Ordering::Relaxed);
+          return JoinOutcome::Ok(g.clone());
+        },
+        Slot::Err(m) => {
+          self.observed.store(true, Ordering::Relaxed);
+          return JoinOutcome::Err(m.clone());
+        },
       }
     }
   }
 
   pub fn try_join(&self) -> JoinOutcome {
-    match &*self.slot.lock().unwrap() {
+    match &*lock(&self.slot) {
       Slot::Pending => JoinOutcome::Pending,
-      Slot::Ok(g) => JoinOutcome::Ok(g.clone()),
-      Slot::Err(m) => JoinOutcome::Err(m.clone()),
+      Slot::Ok(g) => {
+        self.observed.store(true, Ordering::Relaxed);
+        JoinOutcome::Ok(g.clone())
+      },
+      Slot::Err(m) => {
+        self.observed.store(true, Ordering::Relaxed);
+        JoinOutcome::Err(m.clone())
+      },
     }
   }
 
   pub fn is_done(&self) -> bool {
-    !matches!(&*self.slot.lock().unwrap(), Slot::Pending)
+    !matches!(&*lock(&self.slot), Slot::Pending)
+  }
+}
+
+impl Drop for CoroutineState {
+  /// A coroutine's failure doesn't otherwise go anywhere unless
+  /// something calls `join()`/`try_join()` on it -- exactly like a
+  /// plain `std::thread` whose `JoinHandle` is dropped without ever
+  /// being joined, an uncaught exception or a caught panic inside a
+  /// fire-and-forget `spawn()` would silently vanish once the last
+  /// `Coroutine` handle (and the pool's own internal one) goes out of
+  /// scope. A dropped `String` costs nothing to check for and losing
+  /// a real failure silently is worse than one unwanted log line, so
+  /// this reports it -- the same trade-off Rust's own default panic
+  /// hook already makes for an unjoined thread.
+  fn drop(&mut self) {
+    if self.observed.load(Ordering::Relaxed) {
+      return;
+    }
+    if let Slot::Err(message) = &*self.slot.get_mut().unwrap_or_else(PoisonError::into_inner) {
+      eprintln!(
+        "warning: a coroutine failed but its result was never checked \
+         (no join()/try_join() was called before its handle was dropped): {}",
+        message
+      );
+    }
   }
 }
 
@@ -275,7 +445,7 @@ pub fn spawn(vm: &VM, callee: Value, args: Value) -> Result<Arc<CoroutineState>,
     state: state.clone(),
   };
   let p = pool();
-  p.queue.lock().unwrap().push_back(task);
+  lock(&p.queue).push_back(task);
   p.not_empty.notify_one();
   Ok(state)
 }
@@ -319,7 +489,7 @@ impl ChannelState {
   /// channel is closed" -- the caller's own native wrapper turns that
   /// into whatever's idiomatic on the Zuri side.
   pub fn send(&self, value: TransferGraph) -> Result<(), ()> {
-    let mut inner = self.inner.lock().unwrap();
+    let mut inner = lock(&self.inner);
     loop {
       if inner.closed {
         return Err(());
@@ -328,7 +498,7 @@ impl ChannelState {
       if !full {
         break;
       }
-      inner = self.not_full.wait(inner).unwrap();
+      inner = self.not_full.wait(inner).unwrap_or_else(PoisonError::into_inner);
     }
     inner.queue.push_back(value);
     drop(inner);
@@ -339,7 +509,7 @@ impl ChannelState {
   /// Blocks until a message arrives or the channel is closed AND
   /// drained.
   pub fn recv(&self) -> RecvOutcome {
-    let mut inner = self.inner.lock().unwrap();
+    let mut inner = lock(&self.inner);
     loop {
       if let Some(v) = inner.queue.pop_front() {
         drop(inner);
@@ -349,14 +519,14 @@ impl ChannelState {
       if inner.closed {
         return RecvOutcome::Closed;
       }
-      inner = self.not_empty.wait(inner).unwrap();
+      inner = self.not_empty.wait(inner).unwrap_or_else(PoisonError::into_inner);
     }
   }
 
   /// `None` means "empty, but still open" -- the one outcome `recv`
   /// never produces, since it would just keep waiting instead.
   pub fn try_recv(&self) -> Option<RecvOutcome> {
-    let mut inner = self.inner.lock().unwrap();
+    let mut inner = lock(&self.inner);
     if let Some(v) = inner.queue.pop_front() {
       drop(inner);
       self.not_full.notify_one();
@@ -369,7 +539,7 @@ impl ChannelState {
   }
 
   pub fn close(&self) {
-    let mut inner = self.inner.lock().unwrap();
+    let mut inner = lock(&self.inner);
     inner.closed = true;
     drop(inner);
     self.not_empty.notify_all();
@@ -377,10 +547,10 @@ impl ChannelState {
   }
 
   pub fn is_closed(&self) -> bool {
-    self.inner.lock().unwrap().closed
+    lock(&self.inner).closed
   }
 
   pub fn len(&self) -> usize {
-    self.inner.lock().unwrap().queue.len()
+    lock(&self.inner).queue.len()
   }
 }

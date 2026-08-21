@@ -55,6 +55,20 @@
  * shared, not moved, since both are already safe to use concurrently
  * from multiple coroutines by design.
  *
+ * ## Failure isolation
+ *
+ * A bug inside one coroutine cannot bring down another coroutine, the
+ * pool, or the process: even an internal, unexpected failure (not an
+ * ordinary raised exception, which `join()` already reports as
+ * `CoroutineError`) is caught and reported the same way. The worker
+ * thread involved is discarded and replaced automatically; the pool
+ * keeps running at full size.
+ *
+ * A coroutine that's never `join()`ed or `try_join()`ed still has its
+ * failure reported: if it fails and its `Coroutine` handle is dropped
+ * without either ever being called, a warning is printed rather than
+ * losing the failure silently.
+ *
  * ## Example
  *
  * ```zuri-repl
