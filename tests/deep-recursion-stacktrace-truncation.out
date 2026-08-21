@@ -9,14 +9,14 @@ Stack trace (most recent call first):
   at @.script() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:8
   at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
   at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
   ... 19 more frames ...
-  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
-  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
-  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
-  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
-  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
-  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
-  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
   at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
   at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
   at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:3

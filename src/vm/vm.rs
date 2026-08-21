@@ -121,8 +121,8 @@ fn render_stacktrace(locations: &[(Rc<str>, u32, String)], use_color: bool) -> S
   // (now at the END of `ordered`) than the ones nearest entry, since
   // those are the ones actually useful for a deep call chain -- the
   // reverse split from before the reorder.
-  const HEAD: usize = 3;
-  const TAIL: usize = 10;
+  const HEAD: usize = 10;
+  const TAIL: usize = 3;
 
   let header_style = if use_color {
     Style::new().bold()
