@@ -1,0 +1,420 @@
+import coroutine
+import compress.gzip
+import .coroutine_worker
+
+def test_basic_spawn_join() {
+  var t = coroutine.spawn(coroutine_worker.square, 9)
+  assert t.join() == 81, 'basic spawn/join should return the callee result'
+  echo 'test_basic_spawn_join passed'
+}
+
+def test_join_is_repeatable() {
+  var t = coroutine.spawn(coroutine_worker.square, 7)
+  var first = t.join()
+  var second = t.join()
+  var third = t.join()
+  assert first == 49 and second == 49 and third == 49,
+    'join() must return the same result on every call'
+  echo 'test_join_is_repeatable passed'
+}
+
+def test_is_done_and_try_join() {
+  # a coroutine blocked on a channel recv cannot possibly have
+  # finished yet, so this is a deterministic way to observe "pending"
+  # rather than racing a fast function against our own check.
+  var gate = coroutine.channel(0)
+  var t = coroutine.spawn(@(ch) {
+    var v = ch.recv()
+    return v * 2
+  }, gate)
+
+  assert !t.is_done(), 'coroutine blocked on an unfed channel must not be done yet'
+  assert t.try_join() == nil, 'try_join() must return nil while pending'
+
+  gate.send(21)
+  assert t.join() == 42, 'join() must block until the coroutine actually finishes'
+  assert t.is_done(), 'coroutine must be done after join() returns'
+  assert t.try_join() == 42, 'try_join() must return the result once finished'
+  echo 'test_is_done_and_try_join passed'
+}
+
+def test_closure_capturing_local() {
+  var add5 = coroutine_worker.make_adder(5)
+  var t = coroutine.spawn(add5, 10)
+  assert t.join() == 15, 'closure must carry its captured value across'
+  echo 'test_closure_capturing_local passed'
+}
+
+def test_closure_mutation_independence() {
+  var state = [0]
+  var bump = @() {
+    state[0] += 1
+    return state[0]
+  }
+
+  var t1 = coroutine.spawn(bump)
+  var t2 = coroutine.spawn(bump)
+  var r1 = t1.join()
+  var r2 = t2.join()
+
+  assert r1 == 1, 'each coroutine must see its own independent snapshot, starting fresh'
+  assert r2 == 1, 'a second coroutine spawned from the same closure gets its own copy too'
+  assert state[0] == 0, 'mutating the captured list inside a coroutine must not affect the caller'
+
+  state[0] += 1
+  assert state[0] == 1, 'mutating the caller copy afterward must not affect anything already sent'
+  echo 'test_closure_mutation_independence passed'
+}
+
+def test_recursive_closure() {
+  var fact = coroutine_worker.make_fact()
+  var t = coroutine.spawn(fact, 6)
+  assert t.join() == 720, 'a closure capturing itself must round-trip correctly'
+  echo 'test_recursive_closure passed'
+}
+
+def test_closure_references_module_global() {
+  var t = coroutine.spawn(coroutine_worker.uses_module_global, 5)
+  assert t.join() == 105, 'a function referencing its own module global must resolve it on the worker'
+  echo 'test_closure_references_module_global passed'
+}
+
+def test_anonymous_lambda() {
+  var t = coroutine.spawn(@(n) { return n + 100 }, 1)
+  assert t.join() == 101, 'an anonymous lambda never bound to a name must still be spawnable'
+  echo 'test_anonymous_lambda passed'
+}
+
+def test_main_script_function() {
+  var t = coroutine.spawn(local_double, 21)
+  assert t.join() == 42, 'a function declared directly in this script must be spawnable'
+  echo 'test_main_script_function passed'
+}
+
+def local_double(n) {
+  return n * 2
+}
+
+def test_main_script_class() {
+  var box = LocalBox(41)
+  var t = coroutine.spawn(@() { return box.value + 1 })
+  assert t.join() == 42, 'a class declared directly in this script must cross correctly'
+  echo 'test_main_script_class passed'
+}
+
+class LocalBox {
+  var value
+  @new(value) { self.value = value }
+}
+
+def test_module_scoped_class_instance() {
+  var c = coroutine_worker.make_counter(10)
+  var t = coroutine.spawn(@(counter) { return counter.increment() }, c)
+  assert t.join() == 11, 'an instance argument must round-trip with its own methods usable'
+  assert c.value == 10, 'mutating the copy inside a coroutine must not affect the caller instance'
+  echo 'test_module_scoped_class_instance passed'
+}
+
+def test_bound_method_as_spawn_target() {
+  var c = coroutine_worker.make_counter(5)
+  var t = coroutine.spawn(c.increment)
+  assert t.join() == 6, 'a bound method must be directly spawnable, receiver included'
+  echo 'test_bound_method_as_spawn_target passed'
+}
+
+def test_bound_method_as_argument() {
+  var a = coroutine_worker.make_counter(3)
+  var b = coroutine_worker.make_counter(4)
+  var t = coroutine.spawn(@(sum_fn, other) { return sum_fn(other) }, a.sum_with, b)
+  assert t.join() == 7, 'a bound method passed as ordinary data must still be callable on the worker'
+  echo 'test_bound_method_as_argument passed'
+}
+
+def test_class_inheritance_across_boundary() {
+  var d = coroutine_worker.make_dog('Rex')
+  var t = coroutine.spawn(@(animal) { return animal.speak() }, d)
+  assert t.join() == 'Rex barks', 'an overridden method must resolve to the subclass version'
+  echo 'test_class_inheritance_across_boundary passed'
+}
+
+def test_class_statics_snapshot_independence() {
+  var before = coroutine_worker.Counter.created
+  var t = coroutine.spawn(coroutine_worker.make_counter, 1)
+  t.join()
+  # the coroutine constructed its own Counter on its own isolated copy
+  # of the class, so the caller's own static field is untouched.
+  assert coroutine_worker.Counter.created == before,
+    'a static field mutated on the worker must not affect the caller-side class'
+  echo 'test_class_statics_snapshot_independence passed'
+}
+
+def test_nested_collection_aliasing() {
+  var shared = [1, 2, 3]
+  var outer = [shared, shared]
+  var t = coroutine.spawn(@(pair) {
+    pair[0].append(4)
+    return pair[1].length()
+  }, outer)
+  assert t.join() == 4, 'two arguments aliasing the same list must still alias each other after the copy'
+  assert shared.length() == 3, 'the caller-side list must be unaffected'
+  echo 'test_nested_collection_aliasing passed'
+}
+
+def test_self_referential_list_does_not_hang() {
+  var cyclic = [1, 2]
+  cyclic.append(cyclic)
+  var t = coroutine.spawn(@(x) {
+    return is_list(x[2]) and x.length()
+  }, cyclic)
+  assert t.join() == 3, 'a self-referential list must round-trip without hanging or corrupting its shape'
+  echo 'test_self_referential_list_does_not_hang passed'
+}
+
+def test_dict_argument() {
+  var d = { a: 1, b: 2 }
+  var t = coroutine.spawn(@(m) { return m['a'] + m['b'] }, d)
+  assert t.join() == 3, 'a dict argument must cross correctly'
+  echo 'test_dict_argument passed'
+}
+
+def test_multiple_concurrent_coroutines() {
+  var tasks = []
+  var i = 0
+  while i < 8 {
+    tasks.append(coroutine.spawn(coroutine_worker.square, i))
+    i += 1
+  }
+
+  var j = 0
+  while j < 8 {
+    assert tasks[j].join() == j * j, 'each concurrently-spawned coroutine must return its own correct result'
+    j += 1
+  }
+  echo 'test_multiple_concurrent_coroutines passed'
+}
+
+def test_uncaught_exception_propagates() {
+  var t = coroutine.spawn(coroutine_worker.boom)
+  catch {
+    t.join()
+  } as e
+  assert e != nil, 'an uncaught exception inside a coroutine must surface on join()'
+  assert instance_of(e, coroutine.CoroutineError), 'it must surface specifically as a CoroutineError'
+  echo 'test_uncaught_exception_propagates passed'
+}
+
+def test_uncaught_exception_message_preserved() {
+  var t = coroutine.spawn(coroutine_worker.boom_typed)
+  catch {
+    t.join()
+  } as e
+  assert e != nil, 'a typed exception must still be caught as a CoroutineError'
+  assert e.message.contains('bad type from worker'), 'the original exception text should be preserved in the message'
+  echo 'test_uncaught_exception_message_preserved passed'
+}
+
+def test_spawn_rejects_non_function() {
+  catch {
+    coroutine.spawn(42)
+  } as e
+  assert e != nil and instance_of(e, TypeError), 'spawning a non-function must raise TypeError'
+  echo 'test_spawn_rejects_non_function passed'
+}
+
+def test_spawn_rejects_native_function() {
+  catch {
+    coroutine.spawn(time)
+  } as e
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'spawning a native function must be rejected as a CoroutineError'
+  echo 'test_spawn_rejects_native_function passed'
+}
+
+def test_spawn_rejects_class() {
+  catch {
+    coroutine.spawn(coroutine_worker.Counter)
+  } as e
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'spawning a class itself (as opposed to an instance method) must be rejected'
+  echo 'test_spawn_rejects_class passed'
+}
+
+def test_file_handle_rejected() {
+  var f = file(__file__)
+  catch {
+    coroutine.spawn(coroutine_worker.square, f)
+  } as e
+  f.close()
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'a file handle must never be allowed to cross a coroutine boundary'
+  echo 'test_file_handle_rejected passed'
+}
+
+def test_channel_basic_send_recv() {
+  var ch = coroutine.channel()
+  ch.send('hello')
+  assert ch.recv() == 'hello', 'a sent value must be received unchanged'
+  echo 'test_channel_basic_send_recv passed'
+}
+
+def test_channel_fifo_order() {
+  var ch = coroutine.channel()
+  ch.send(1)
+  ch.send(2)
+  ch.send(3)
+  assert ch.recv() == 1 and ch.recv() == 2 and ch.recv() == 3,
+    'messages must be received in the order they were sent'
+  echo 'test_channel_fifo_order passed'
+}
+
+def test_channel_close_semantics() {
+  var ch = coroutine.channel()
+  ch.send('a')
+  ch.close()
+
+  assert ch.is_closed(), 'is_closed() must report true after close()'
+  assert ch.recv() == 'a', 'a value queued before close() must still be receivable'
+  assert ch.recv() == nil, 'recv() must return nil once a closed channel is fully drained'
+
+  catch {
+    ch.send('too late')
+  } as e
+  assert e != nil and instance_of(e, coroutine.CoroutineError), 'send() on a closed channel must raise'
+  echo 'test_channel_close_semantics passed'
+}
+
+def test_channel_try_recv() {
+  var ch = coroutine.channel()
+  assert ch.try_recv() == nil, 'try_recv() on an empty channel must return nil, not block'
+  ch.send('x')
+  assert ch.try_recv() == 'x', 'try_recv() must return an already-queued value immediately'
+  echo 'test_channel_try_recv passed'
+}
+
+def test_channel_len() {
+  var ch = coroutine.channel()
+  assert ch.len() == 0, 'a fresh channel must report zero queued values'
+  ch.send(1)
+  ch.send(2)
+  assert ch.len() == 2, 'len() must reflect the number of unread queued values'
+  ch.recv()
+  assert ch.len() == 1, 'len() must decrease as values are received'
+  echo 'test_channel_len passed'
+}
+
+def test_channel_producer_consumer() {
+  var ch = coroutine.channel(2)
+  var producer = coroutine.spawn(@(out) {
+    var i = 0
+    while i < 20 {
+      out.send(i)
+      i += 1
+    }
+    out.close()
+    return i
+  }, ch)
+
+  var total = 0
+  var count = 0
+  var v = ch.recv()
+  while v != nil {
+    total += v
+    count += 1
+    v = ch.recv()
+  }
+
+  assert count == 20, 'a consumer draining a bounded channel must receive every message the producer sent'
+  assert total == 190, 'every message must arrive with its correct value (sum 0..19 == 190)'
+  assert producer.join() == 20, 'the producer coroutine must still complete normally afterward'
+  echo 'test_channel_producer_consumer passed'
+}
+
+def test_channel_constructor_validation() {
+  catch {
+    coroutine.channel('bad')
+  } as e1
+  assert e1 != nil and instance_of(e1, TypeError), 'a non-integer capacity must raise TypeError'
+
+  catch {
+    coroutine.channel(-1)
+  } as e2
+  assert e2 != nil and instance_of(e2, ValueError), 'a negative capacity must raise ValueError'
+  echo 'test_channel_constructor_validation passed'
+}
+
+def test_ptr_transfer_move_semantics() {
+  var enc = gzip.GzipEncoder(6)
+  var t = coroutine.spawn(@(e) {
+    e.write('data compressed on a worker thread')
+    return e.finish()
+  }, enc)
+
+  var result = t.join()
+  assert is_bytes(result) and result.length() > 0,
+    'a native resource argument must be usable on the worker and produce a real result'
+
+  catch {
+    enc.write('should not work on the sender anymore')
+  } as e
+  assert e != nil, 'the source reference must be inert after the resource has moved'
+  echo 'test_ptr_transfer_move_semantics passed'
+}
+
+def test_configure_rejects_invalid() {
+  catch {
+    coroutine.configure(0)
+  } as e
+  assert e != nil and instance_of(e, ValueError), 'configure() must reject a non-positive thread count'
+  echo 'test_configure_rejects_invalid passed'
+}
+
+def test_configure_after_pool_started() {
+  # by this point in the suite the pool has already started many times
+  # over, so configure() must reliably report that it had no effect.
+  assert coroutine.configure(2) == false,
+    'configure() must return false once the pool has already started'
+  echo 'test_configure_after_pool_started passed'
+}
+
+def test_pool_size_and_cpu_count() {
+  assert coroutine.pool_size() > 0, 'pool_size() must report a real, positive worker count'
+  assert coroutine.cpu_count() > 0, 'cpu_count() must report a real, positive CPU count'
+  echo 'test_pool_size_and_cpu_count passed'
+}
+
+test_basic_spawn_join()
+test_join_is_repeatable()
+test_is_done_and_try_join()
+test_closure_capturing_local()
+test_closure_mutation_independence()
+test_recursive_closure()
+test_closure_references_module_global()
+test_anonymous_lambda()
+test_main_script_function()
+test_main_script_class()
+test_module_scoped_class_instance()
+test_bound_method_as_spawn_target()
+test_bound_method_as_argument()
+test_class_inheritance_across_boundary()
+test_class_statics_snapshot_independence()
+test_nested_collection_aliasing()
+test_self_referential_list_does_not_hang()
+test_dict_argument()
+test_multiple_concurrent_coroutines()
+test_uncaught_exception_propagates()
+test_uncaught_exception_message_preserved()
+test_spawn_rejects_non_function()
+test_spawn_rejects_native_function()
+test_spawn_rejects_class()
+test_file_handle_rejected()
+test_channel_basic_send_recv()
+test_channel_fifo_order()
+test_channel_close_semantics()
+test_channel_try_recv()
+test_channel_len()
+test_channel_producer_consumer()
+test_channel_constructor_validation()
+test_ptr_transfer_move_semantics()
+test_configure_rejects_invalid()
+test_configure_after_pool_started()
+test_pool_size_and_cpu_count()

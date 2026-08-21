@@ -1,0 +1,82 @@
+/**
+ * Helper module for `tests/libs/coroutine.zu` -- plain, module-scoped
+ * declarations used to exercise the "Named" (by-binding) resolution
+ * path, as opposed to the structural transplant path a main-script
+ * declaration goes through.
+ */
+
+var counter_seed = 100
+
+def square(n) {
+  return n * n
+}
+
+def add(a, b) {
+  return a + b
+}
+
+def make_adder(x) {
+  return @(n) {
+    return n + x
+  }
+}
+
+def make_fact() {
+  var fact
+  fact = @(n) {
+    if n <= 1 {
+      return 1
+    }
+    return n * fact(n - 1)
+  }
+  return fact
+}
+
+def uses_module_global(n) {
+  return n + counter_seed
+}
+
+def boom() {
+  raise Error('boom from worker')
+}
+
+def boom_typed() {
+  raise TypeError('bad type from worker')
+}
+
+class Counter {
+  static var created = 0
+  var value
+
+  @new(value) {
+    self.value = value
+    Counter.created += 1
+  }
+
+  increment() {
+    self.value += 1
+    return self.value
+  }
+
+  sum_with(other) {
+    return self.value + other.value
+  }
+}
+
+def make_counter(value) {
+  return Counter(value)
+}
+
+class Animal {
+  var name
+  @new(name) { self.name = name }
+  speak() { return '${self.name} makes a sound' }
+}
+
+class Dog < Animal {
+  speak() { return '${self.name} barks' }
+}
+
+def make_dog(name) {
+  return Dog(name)
+}
