@@ -33,10 +33,14 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("pool_size", native(vm, "pool_size", 0, false, pool_size)),
     ("cpu_count", native(vm, "cpu_count", 0, false, cpu_count)),
     ("shutdown", native(vm, "shutdown", 1, false, shutdown)),
+    ("active_count", native(vm, "active_count", 0, false, active_count)),
+    ("queued_count", native(vm, "queued_count", 0, false, queued_count)),
+    ("is_shutdown", native(vm, "is_shutdown", 0, false, is_shutdown)),
     ("spawn", native(vm, "spawn", 2, false, spawn)),
     ("join", native(vm, "join", 2, false, join)),
     ("try_join", native(vm, "try_join", 1, false, try_join)),
     ("is_done", native(vm, "is_done", 1, false, is_done)),
+    ("status", native(vm, "status", 1, false, status)),
     ("cancel", native(vm, "cancel", 1, false, cancel)),
     ("is_cancelled", native(vm, "is_cancelled", 1, false, is_cancelled)),
     (
@@ -194,6 +198,21 @@ fn shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(pool::shutdown(timeout)))
 }
 
+fn active_count(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  Ok(Value::number(pool::active_count() as f64))
+}
+
+fn queued_count(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  Ok(Value::number(pool::queued_count() as f64))
+}
+
+fn is_shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  Ok(Value::bool(pool::is_shutdown()))
+}
+
 // ---------------------------------------------------------------------
 // Coroutines
 // ---------------------------------------------------------------------
@@ -272,6 +291,18 @@ fn is_done(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
   let state = coroutine_state_of(ctx, 0)?;
   Ok(Value::bool(state.is_done()))
+}
+
+fn status(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_ptr!(ctx, 0, pool::COROUTINE_PTR_TYPE);
+  let state = coroutine_state_of(ctx, 0)?;
+  let s = match state.peek() {
+    pool::JoinOutcome::Pending => "pending",
+    pool::JoinOutcome::Ok(_) => "done",
+    pool::JoinOutcome::Err(_) => "error",
+  };
+  Ok(ctx.vm.heap_mut().alloc_string(s))
 }
 
 fn cancel(ctx: &mut ZuriContext) -> Result<Value, String> {

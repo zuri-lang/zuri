@@ -169,6 +169,20 @@ class Coroutine {
   }
 
   /**
+   * Unlike `try_join()`, never marks a failure as "observed" -- safe
+   * to poll purely to check progress without silencing the warning a
+   * failure that's never actually `join()`ed/`try_join()`ed would
+   * otherwise get (see the module docs' "Failure isolation" section).
+   *
+   * @returns string: `'pending'` while still running, `'done'` once
+   *   finished successfully, or `'error'` once finished with an
+   *   uncaught exception.
+   */
+  status() {
+    return _coroutine.status(self._ptr)
+  }
+
+  /**
    * This coroutine's underlying native handle, needed by `wait_any()`
    * to operate on a plain list of `Coroutine`s from outside the
    * class. Not meant for direct use.
@@ -260,6 +274,28 @@ def shutdown(timeout: ?number) {
   if !_coroutine.shutdown(timeout) {
     raise CoroutineTimeoutError('shutdown() timed out after ${timeout} seconds')
   }
+}
+
+/**
+ * @returns int: coroutines a worker is actively running right now.
+ *   Does not include ones still `queued_count()`.
+ */
+def active_count() {
+  return _coroutine.active_count()
+}
+
+/**
+ * @returns int: coroutines spawned but not yet picked up by a worker.
+ */
+def queued_count() {
+  return _coroutine.queued_count()
+}
+
+/**
+ * @returns bool: `true` if `shutdown()` has been called.
+ */
+def is_shutdown() {
+  return _coroutine.is_shutdown()
 }
 
 /**

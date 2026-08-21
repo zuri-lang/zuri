@@ -92,6 +92,27 @@ pub fn pool_size() -> usize {
   pool().size
 }
 
+/// Coroutines actively being run by a worker RIGHT NOW -- doesn't
+/// include ones still waiting in the queue. Starts the pool if it
+/// hasn't already (there's nothing running on a pool that was never
+/// started).
+pub fn active_count() -> usize {
+  pool().running.load(Ordering::Acquire)
+}
+
+/// Coroutines queued but not yet picked up by a worker. Starts the
+/// pool if it hasn't already.
+pub fn queued_count() -> usize {
+  lock(&pool().queue).len()
+}
+
+/// Whether `shutdown()` has been called. Starts the pool if it hasn't
+/// already -- consistent with every other pool-state query here, and
+/// harmless: a pool nobody has used yet obviously isn't shut down.
+pub fn is_shutdown() -> bool {
+  pool().shutting_down.load(Ordering::Acquire)
+}
+
 fn pool() -> &'static CoroutinePool {
   POOL.get_or_init(|| {
     let size = lock(&CONFIGURED_SIZE).unwrap_or_else(default_size);
@@ -108,6 +129,10 @@ struct CoroutinePool {
   /// decremented once a task's `finish()` has actually run (success,
   /// ordinary failure, or a caught panic all count).
   in_flight: AtomicUsize,
+  /// Coroutines a worker has actually picked up and is currently
+  /// running -- the subset of `in_flight` that isn't still sitting in
+  /// `queue`. Purely for introspection (`active_count()`).
+  running: AtomicUsize,
   /// Set by `shutdown()`, checked by `spawn()`. One-way: once a pool
   /// starts shutting down it never accepts work again for the rest of
   /// the process.
@@ -139,6 +164,7 @@ impl CoroutinePool {
       not_empty: Condvar::new(),
       size,
       in_flight: AtomicUsize::new(0),
+      running: AtomicUsize::new(0),
       shutting_down: AtomicBool::new(false),
       idle: Condvar::new(),
       idle_lock: Mutex::new(()),
@@ -152,6 +178,7 @@ impl CoroutinePool {
   /// own docs.
   fn task_completed(&self) {
     self.in_flight.fetch_sub(1, Ordering::AcqRel);
+    self.running.fetch_sub(1, Ordering::AcqRel);
     drop(lock(&self.idle_lock));
     self.idle.notify_all();
   }
@@ -220,6 +247,7 @@ fn worker_loop() {
       }
       queue.pop_front().unwrap()
     };
+    pool.running.fetch_add(1, Ordering::AcqRel);
 
     // Cloned out BEFORE `run_task` runs, not read off `task` afterward:
     // a caught panic (see below) means `task` may never come back from
@@ -628,6 +656,20 @@ impl CoroutineState {
 
   pub fn is_done(&self) -> bool {
     !matches!(&*lock(&self.slot), Slot::Pending)
+  }
+
+  /// Like `try_join`, but never marks the outcome "observed" -- pure
+  /// introspection for `Coroutine.status()`. `try_join`/`join`
+  /// themselves double as "I've seen this failure, don't warn about
+  /// it going unhandled" (see `Drop`'s own docs); a caller just
+  /// checking progress shouldn't accidentally suppress that warning
+  /// for a failure it never actually looked at.
+  pub fn peek(&self) -> JoinOutcome {
+    match &*lock(&self.slot) {
+      Slot::Pending => JoinOutcome::Pending,
+      Slot::Ok(g) => JoinOutcome::Ok(g.clone()),
+      Slot::Err(m) => JoinOutcome::Err(m.clone()),
+    }
   }
 }
 
