@@ -639,6 +639,67 @@ def test_map_propagates_failure() {
   echo 'test_map_propagates_failure passed'
 }
 
+def test_scope_happy_path() {
+  var result = coroutine.scope(@(s) {
+    var a = s.spawn(coroutine_worker.square, 3)
+    var b = s.spawn(coroutine_worker.square, 4)
+    return a.join() + b.join()
+  })
+  assert result == 25, 'scope() must return whatever body() returned when nothing failed'
+  echo 'test_scope_happy_path passed'
+}
+
+def test_scope_waits_for_children_even_without_joining_them() {
+  var done_marker = coroutine.channel(1)
+  coroutine.scope(@(s) {
+    s.spawn(@(marker) {
+      marker.send(true)
+    }, done_marker)
+  })
+  assert done_marker.len() == 1, 'scope() must not return until every spawned child has actually finished'
+  echo 'test_scope_waits_for_children_even_without_joining_them passed'
+}
+
+def test_scope_child_failure_cancels_siblings_and_raises() {
+  var started = coroutine.channel(0)
+  var slow_handle = nil
+  var e = nil
+  catch {
+    coroutine.scope(@(s) {
+      slow_handle = s.spawn(coroutine_worker.cancellable_loop, started)
+      started.recv()
+      s.spawn(@() { raise TypeError('kaboom') })
+    })
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError),
+    'scope() must raise CoroutineError once a child fails'
+  assert slow_handle.is_done(), 'scope() must not return until every child, cancelled or not, has finished'
+  assert slow_handle.join() < 5000000,
+    'the sibling must have noticed cancellation rather than hitting its safety cap'
+  echo 'test_scope_child_failure_cancels_siblings_and_raises passed'
+}
+
+def test_scope_body_failure_cancels_children_and_wins() {
+  var started = coroutine.channel(0)
+  var slow_handle = nil
+  var e = nil
+  catch {
+    coroutine.scope(@(s) {
+      slow_handle = s.spawn(coroutine_worker.cancellable_loop, started)
+      started.recv()
+      raise ValueError('body blew up')
+    })
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, ValueError), "body()'s own exception must win over a child's"
+  assert e.message == 'body blew up', "body()'s own exception must be re-raised unchanged"
+  assert slow_handle.is_done(), 'scope() must still wait for the cancelled child before re-raising'
+  echo 'test_scope_body_failure_cancels_children_and_wins passed'
+}
+
 def test_status_reflects_lifecycle() {
   var t = coroutine.spawn(coroutine_worker.square, 6)
   assert t.status() == 'pending' or t.status() == 'done', 'status() must report a real lifecycle state'
@@ -904,6 +965,10 @@ test_map_propagates_failure()
 test_configure_rejects_invalid()
 test_configure_after_pool_started()
 test_pool_size_and_cpu_count()
+test_scope_happy_path()
+test_scope_waits_for_children_even_without_joining_them()
+test_scope_child_failure_cancels_siblings_and_raises()
+test_scope_body_failure_cancels_children_and_wins()
 test_status_reflects_lifecycle()
 test_status_does_not_suppress_unobserved_warning()
 test_introspection_pool_counts()

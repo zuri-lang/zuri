@@ -214,12 +214,111 @@ class Coroutine {
  *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
  *   been `shutdown()`
  */
-def spawn(fn: function, ...args) {
+def _do_spawn(fn, args) {
   var r = _coroutine.spawn(fn, args)
   if r[0] == 'error' {
     raise CoroutineError(r[1])
   }
   return Coroutine(r[1])
+}
+
+def spawn(fn: function, ...args) {
+  return _do_spawn(fn, args)
+}
+
+/**
+ * A structured-concurrency handle passed to a `scope()` body. Spawns
+ * coroutines the same way the module-level `spawn()` does, except
+ * every one of them is tracked by the scope that created it: `scope()`
+ * does not return until all of them have finished.
+ */
+class Scope {
+  var _children
+
+  @new() {
+    self._children = []
+  }
+
+  /**
+   * Same as the module-level `spawn()`, except the returned
+   * `Coroutine` is tracked by this scope.
+   *
+   * @param function fn: a closure, bound method, or class method.
+   * @param ...any args
+   * @returns Coroutine
+   * @raises TypeError if `fn` is not callable
+   * @raises CoroutineError if `fn` is a native function or class,
+   *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+   *   been `shutdown()`
+   */
+  spawn(fn: function, ...args) {
+    var t = _do_spawn(fn, args)
+    self._children.append(t)
+    return t
+  }
+
+  /**
+   * @returns [Coroutine]: every coroutine spawned through this scope
+   *   so far, in spawn order.
+   */
+  children() {
+    return self._children
+  }
+}
+
+/**
+ * Runs `body(s)`, where `s` is a fresh `Scope`, and does not return
+ * until every coroutine spawned directly through `s.spawn()` has
+ * finished. A coroutine started this way can never outlive its scope,
+ * and its failure can never be silently dropped the way an
+ * unmonitored `spawn()` result could be.
+ *
+ * If `body` raises, or any coroutine spawned through `s` fails, every
+ * other still-running one in the scope is `cancel()`ed (cooperative --
+ * see `Coroutine.cancel()`), and `scope()` still waits for all of them
+ * to actually finish before re-raising. `body`'s own exception takes
+ * priority if both it and a child failed; otherwise the first child
+ * failure, in the order it was spawned, is raised.
+ *
+ * @param function body: called with one argument, the `Scope`.
+ * @returns any: whatever `body` returned, if nothing failed.
+ * @raises CoroutineError if `body` raised nothing but a child did
+ */
+def scope(body: function) {
+  var s = Scope()
+  var body_error = nil
+  var result = nil
+  catch {
+    result = body(s)
+  } as e {
+    body_error = e
+  }
+
+  # cancel every child regardless of outcome -- a no-op on ones that
+  # already finished, and lets still-running ones wind down sooner
+  # once `body` (or a sibling) has already failed.
+  for c in s.children() {
+    c.cancel()
+  }
+
+  var first_failure = nil
+  for c in s.children() {
+    catch {
+      c.join()
+    } as e {
+      if first_failure == nil {
+        first_failure = e
+      }
+    }
+  }
+
+  if body_error != nil {
+    raise body_error
+  }
+  if first_failure != nil {
+    raise first_failure
+  }
+  return result
 }
 
 /**
