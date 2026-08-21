@@ -103,6 +103,15 @@ class Channel {
   len() {
     return _coroutine.channel_len(self._ptr)
   }
+
+  /**
+   * This channel's underlying native handle, needed by `select()` to
+   * operate on a plain list of `Channel`s from outside the class. Not
+   * meant for direct use.
+   */
+  handle() {
+    return self._ptr
+  }
 }
 
 /**
@@ -111,4 +120,37 @@ class Channel {
  */
 def channel(capacity: ?int) {
   return Channel(capacity)
+}
+
+/**
+ * Blocks until at least one of `channels` has a value ready to
+ * receive or is closed, and returns which one and what it yielded --
+ * the returned value has already been removed from that channel's
+ * queue, exactly as if `recv()` had been called on it directly.
+ *
+ * Ties (more than one channel already ready) resolve to whichever
+ * comes first in `channels`.
+ *
+ * @param [Channel] channels: must not be empty.
+ * @param number timeout: seconds to wait before giving up. Waits
+ *   indefinitely if omitted.
+ * @returns [Channel, any]: the channel that was ready, and the value
+ *   received from it (`nil` if that channel was closed and empty).
+ * @raises ValueError if `channels` is empty
+ * @raises CoroutineTimeoutError if `timeout` elapses before any
+ *   channel is ready
+ */
+def select(channels: list, timeout: ?number) {
+  if channels.length() == 0 {
+    raise ValueError('select() expects at least one channel')
+  }
+  var ptrs = []
+  for c in channels {
+    ptrs.append(c.handle())
+  }
+  var r = _coroutine.select(ptrs, timeout)
+  if r[1] == 'timeout' {
+    raise CoroutineTimeoutError('select() timed out after ${timeout} seconds')
+  }
+  return [channels[r[0]], r[2]]
 }

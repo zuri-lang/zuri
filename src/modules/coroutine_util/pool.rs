@@ -13,7 +13,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::vm::object::Heap;
 use crate::vm::value::Value;
@@ -255,6 +255,101 @@ pub fn is_current_cancelled() -> bool {
   CURRENT_COROUTINE.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
 }
 
+// ---------------------------------------------------------------------
+// wait_any / select
+// ---------------------------------------------------------------------
+
+/// Shared wakeup signal for `wait_any_coroutines`/`select_channels`. A
+/// coroutine finishing or a channel changing has no way to know in
+/// advance whether one of THESE calls happens to be waiting on it, so
+/// rather than each `CoroutineState`/`ChannelState` tracking its own
+/// list of interested waiters, every such event just notifies this one
+/// condvar and a waiter re-scans its own (always small) candidate list
+/// each time it wakes. Simpler and just as correct as per-object
+/// waiter bookkeeping, at the cost of a wider wakeup fan-out that
+/// doesn't matter at this scale.
+fn wake_gate() -> &'static (Mutex<()>, Condvar) {
+  static GATE: OnceLock<(Mutex<()>, Condvar)> = OnceLock::new();
+  GATE.get_or_init(|| (Mutex::new(()), Condvar::new()))
+}
+
+/// Called after any state change a `wait_any`/`select` predicate might
+/// depend on (a coroutine finishing, a channel gaining a value or
+/// closing). Momentarily taking the gate's mutex before notifying --
+/// rather than just calling `notify_all` -- is what avoids a lost
+/// wakeup: it guarantees this can't land in the gap between a waiter's
+/// last check and the moment it actually starts waiting on the
+/// condvar, which is the usual race for a condvar guarding a predicate
+/// that lives in a mutex OTHER than the one it waits on.
+fn wake_all_waiters() {
+  let (m, cv) = wake_gate();
+  drop(lock(m));
+  cv.notify_all();
+}
+
+/// Blocks until at least one of `states` has finished, returning its
+/// index into the slice -- ties (more than one already done) resolve
+/// to whichever comes first in the caller's own list. Gives up and
+/// returns `None` once `timeout` elapses with none ready.
+pub fn wait_any_coroutines(states: &[Arc<CoroutineState>], timeout: Option<Duration>) -> Option<usize> {
+  let deadline = timeout.map(|d| Instant::now() + d);
+  let (m, cv) = wake_gate();
+  let mut guard = lock(m);
+  loop {
+    if let Some(i) = states.iter().position(|s| s.is_done()) {
+      return Some(i);
+    }
+    guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
+      Some(d) if d.is_zero() => return None,
+      Some(d) => {
+        let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        if result.timed_out() {
+          return states.iter().position(|s| s.is_done());
+        }
+        g
+      },
+      None => cv.wait(guard).unwrap_or_else(PoisonError::into_inner),
+    };
+  }
+}
+
+/// Blocks until at least one of `states` (channels) has a value ready
+/// to receive or is closed, returning its index and the outcome --
+/// already taken off the winning channel's own queue, same as
+/// `try_recv`. Same ordering/timeout behavior as
+/// `wait_any_coroutines`.
+pub fn select_channels(
+  states: &[Arc<ChannelState>],
+  timeout: Option<Duration>,
+) -> Option<(usize, RecvOutcome)> {
+  let deadline = timeout.map(|d| Instant::now() + d);
+  let (m, cv) = wake_gate();
+  let mut guard = lock(m);
+  loop {
+    for (i, s) in states.iter().enumerate() {
+      if let Some(outcome) = s.try_recv() {
+        return Some((i, outcome));
+      }
+    }
+    guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
+      Some(d) if d.is_zero() => return None,
+      Some(d) => {
+        let (g, result) = cv.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        if result.timed_out() {
+          for (i, s) in states.iter().enumerate() {
+            if let Some(outcome) = s.try_recv() {
+              return Some((i, outcome));
+            }
+          }
+          return None;
+        }
+        g
+      },
+      None => cv.wait(guard).unwrap_or_else(PoisonError::into_inner),
+    };
+  }
+}
+
 fn panic_message(payload: &(dyn Any + Send)) -> String {
   if let Some(s) = payload.downcast_ref::<&str>() {
     (*s).to_string()
@@ -409,6 +504,7 @@ impl CoroutineState {
     };
     drop(slot);
     self.cv.notify_all();
+    wake_all_waiters();
   }
 
   /// Blocks the calling thread until the coroutine finishes. Callable
@@ -581,6 +677,7 @@ impl ChannelState {
     inner.queue.push_back(value);
     drop(inner);
     self.not_empty.notify_one();
+    wake_all_waiters();
     Ok(())
   }
 
@@ -603,6 +700,7 @@ impl ChannelState {
     inner.queue.push_back(value);
     drop(inner);
     self.not_empty.notify_one();
+    wake_all_waiters();
     SendOutcome::Sent
   }
 
@@ -663,6 +761,7 @@ impl ChannelState {
     drop(inner);
     self.not_empty.notify_all();
     self.not_full.notify_all();
+    wake_all_waiters();
   }
 
   pub fn is_closed(&self) -> bool {

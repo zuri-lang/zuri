@@ -42,6 +42,8 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "current_is_cancelled",
       native(vm, "current_is_cancelled", 0, false, current_is_cancelled),
     ),
+    ("wait_any", native(vm, "wait_any", 2, false, wait_any)),
+    ("select", native(vm, "select", 2, false, select)),
     (
       "channel_new",
       native(vm, "channel_new", 1, false, channel_new),
@@ -99,8 +101,25 @@ fn status_pair(vm: &mut VM, status: &'static str, value: Value) -> Value {
   result
 }
 
+/// Like `status_pair`, but for `select`'s three-element result -- the
+/// winning channel's index alongside its status and value. `index` is
+/// always a plain number (or `nil` on timeout), never a heap value, so
+/// unlike `value` it needs no pinning of its own.
+fn select_result(vm: &mut VM, index: Value, status: &'static str, value: Value) -> Value {
+  let p = vm.pin_values([value]);
+  let status_val = vm.heap_mut().alloc_string(status);
+  let value = vm.pinned(p);
+  let result = vm.heap_mut().alloc_list(vec![index, status_val, value]);
+  vm.unpin(p);
+  result
+}
+
 fn coroutine_state_of(ctx: &ZuriContext, idx: usize) -> Result<Arc<pool::CoroutineState>, String> {
-  let cell = ctx.args[idx].as_ptr_cell();
+  coroutine_state_of_value(ctx.args[idx])
+}
+
+fn coroutine_state_of_value(v: Value) -> Result<Arc<pool::CoroutineState>, String> {
+  let cell = v.as_ptr_cell();
   let borrowed = cell.borrow();
   borrowed
     .downcast_ref::<Arc<pool::CoroutineState>>()
@@ -109,7 +128,11 @@ fn coroutine_state_of(ctx: &ZuriContext, idx: usize) -> Result<Arc<pool::Corouti
 }
 
 fn channel_state_of(ctx: &ZuriContext, idx: usize) -> Result<Arc<pool::ChannelState>, String> {
-  let cell = ctx.args[idx].as_ptr_cell();
+  channel_state_of_value(ctx.args[idx])
+}
+
+fn channel_state_of_value(v: Value) -> Result<Arc<pool::ChannelState>, String> {
+  let cell = v.as_ptr_cell();
   let borrowed = cell.borrow();
   borrowed
     .downcast_ref::<Arc<pool::ChannelState>>()
@@ -267,6 +290,28 @@ fn current_is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(pool::is_current_cancelled()))
 }
 
+fn wait_any(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 0, ArgType::List);
+  let timeout = optional_timeout(ctx, 1)?;
+  let items = ctx.args[0].as_list();
+  let mut states = Vec::with_capacity(items.len());
+  for v in &items {
+    if !v.is_ptr_type(pool::COROUTINE_PTR_TYPE) {
+      return Err(format!(
+        "{}() expects a list of coroutines, got a value of type {}",
+        ctx.name,
+        v.type_name()
+      ));
+    }
+    states.push(coroutine_state_of_value(*v)?);
+  }
+  match pool::wait_any_coroutines(&states, timeout) {
+    Some(i) => Ok(status_pair(ctx.vm, "ok", Value::number(i as f64))),
+    None => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
+  }
+}
+
 // ---------------------------------------------------------------------
 // Channels
 // ---------------------------------------------------------------------
@@ -317,6 +362,36 @@ fn channel_recv(ctx: &mut ZuriContext) -> Result<Value, String> {
       Ok(status_pair(ctx.vm, "ok", value))
     },
     Some(pool::RecvOutcome::Closed) => Ok(status_pair(ctx.vm, "closed", Value::nil())),
+  }
+}
+
+fn select(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 0, ArgType::List);
+  let timeout = optional_timeout(ctx, 1)?;
+  let items = ctx.args[0].as_list();
+  let mut states = Vec::with_capacity(items.len());
+  for v in &items {
+    if !v.is_ptr_type(pool::CHANNEL_PTR_TYPE) {
+      return Err(format!(
+        "{}() expects a list of channels, got a value of type {}",
+        ctx.name,
+        v.type_name()
+      ));
+    }
+    states.push(channel_state_of_value(*v)?);
+  }
+  match pool::select_channels(&states, timeout) {
+    None => Ok(select_result(ctx.vm, Value::nil(), "timeout", Value::nil())),
+    Some((i, pool::RecvOutcome::Value(graph))) => {
+      let value = transfer::materialize(ctx.vm, &graph)?;
+      let index = Value::number(i as f64);
+      Ok(select_result(ctx.vm, index, "ok", value))
+    },
+    Some((i, pool::RecvOutcome::Closed)) => {
+      let index = Value::number(i as f64);
+      Ok(select_result(ctx.vm, index, "closed", Value::nil()))
+    },
   }
 }
 

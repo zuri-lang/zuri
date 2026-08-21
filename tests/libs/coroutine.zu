@@ -483,6 +483,99 @@ def test_channel_recv_timeout() {
   echo 'test_channel_recv_timeout passed'
 }
 
+def test_wait_any_returns_first_finished() {
+  var gate_a = coroutine.channel(0)
+  var gate_b = coroutine.channel(0)
+  var gate_c = coroutine.channel(0)
+  var a = coroutine.spawn(@(ch) { return ch.recv() }, gate_a)
+  var b = coroutine.spawn(@(ch) { return ch.recv() }, gate_b)
+  var c = coroutine.spawn(@(ch) { return ch.recv() }, gate_c)
+
+  gate_b.send(2)
+  var winner = coroutine.wait_any([a, b, c])
+  assert winner == b, 'wait_any() must return the coroutine that actually finished'
+  assert winner.join() == 2, 'the winning handle must still be joinable normally'
+
+  gate_a.send(1)
+  gate_c.send(3)
+  a.join()
+  c.join()
+  echo 'test_wait_any_returns_first_finished passed'
+}
+
+def test_wait_any_rejects_empty_list() {
+  catch {
+    coroutine.wait_any([])
+  } as e
+  assert e != nil and instance_of(e, ValueError), 'wait_any() must reject an empty list'
+  echo 'test_wait_any_rejects_empty_list passed'
+}
+
+def test_wait_any_timeout() {
+  var gate = coroutine.channel(0)
+  var t = coroutine.spawn(@(ch) { return ch.recv() }, gate)
+
+  var timed_out = false
+  catch {
+    coroutine.wait_any([t], 0.05)
+  } as e {
+    timed_out = instance_of(e, coroutine.CoroutineTimeoutError)
+  }
+  assert timed_out, 'wait_any() must raise CoroutineTimeoutError once the timeout elapses'
+
+  gate.send(7)
+  assert t.join() == 7, 'the coroutine must still be joinable normally after a timed-out wait_any()'
+  echo 'test_wait_any_timeout passed'
+}
+
+def test_select_returns_ready_channel() {
+  var x = coroutine.channel(1)
+  var y = coroutine.channel(1)
+  var z = coroutine.channel(1)
+  z.send('picked me')
+
+  var result = coroutine.select([x, y, z])
+  assert result[0] == z, 'select() must report the channel that was actually ready'
+  assert result[1] == 'picked me', 'select() must return the value already received from it'
+  assert z.len() == 0, 'the value select() returned must have been removed from the channel'
+  echo 'test_select_returns_ready_channel passed'
+}
+
+def test_select_on_closed_channel() {
+  var open_ch = coroutine.channel(0)
+  var closed_ch = coroutine.channel(0)
+  closed_ch.close()
+
+  var result = coroutine.select([open_ch, closed_ch])
+  assert result[0] == closed_ch, 'a closed, empty channel counts as immediately ready'
+  assert result[1] == nil, 'a closed channel yields nil, same as recv() on one'
+  echo 'test_select_on_closed_channel passed'
+}
+
+def test_select_rejects_empty_list() {
+  catch {
+    coroutine.select([])
+  } as e
+  assert e != nil and instance_of(e, ValueError), 'select() must reject an empty list'
+  echo 'test_select_rejects_empty_list passed'
+}
+
+def test_select_timeout() {
+  var ch = coroutine.channel(0)
+
+  var timed_out = false
+  catch {
+    coroutine.select([ch], 0.05)
+  } as e {
+    timed_out = instance_of(e, coroutine.CoroutineTimeoutError)
+  }
+  assert timed_out, 'select() must raise CoroutineTimeoutError once the timeout elapses'
+
+  ch.send(9)
+  assert ch.recv() == 9, 'the channel must still work normally afterward'
+  echo 'test_select_timeout passed'
+}
+
 def test_configure_rejects_invalid() {
   catch {
     coroutine.configure(0)
@@ -547,6 +640,13 @@ test_join_timeout_elapses()
 test_join_timeout_succeeds_in_time()
 test_channel_send_timeout()
 test_channel_recv_timeout()
+test_wait_any_returns_first_finished()
+test_wait_any_rejects_empty_list()
+test_wait_any_timeout()
+test_select_returns_ready_channel()
+test_select_on_closed_channel()
+test_select_rejects_empty_list()
+test_select_timeout()
 test_configure_rejects_invalid()
 test_configure_after_pool_started()
 test_pool_size_and_cpu_count()
