@@ -106,6 +106,16 @@ class ZstdEncoder {
   }
 
   /**
+   * Same as `finish()` for file API compartibility.
+   * 
+   * @note Once finish is called, the encoder can no longer be reused.
+   * @returns bytes
+   */
+  close() {
+    return self.finish()
+  }
+
+  /**
    * Finishes the current frame and installs byte stream for the next one.
    * 
    * Returns the previous byte stream containing the completed frame. 
@@ -193,6 +203,13 @@ class ZstdDecoder {
    */
   reset(new_source) {
     _compress.zstd_decoder_reset(self._ptr, new_source)
+  }
+
+  /**
+   * Closes the decoder by resetting it into an empty stream.
+   */
+  close() {
+    self.reset(bytes(0))
   }
 
   /**

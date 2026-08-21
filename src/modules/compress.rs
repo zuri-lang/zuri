@@ -562,9 +562,9 @@ fn gzip_encoder_flush(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
 
-  encoder.flush().map_err(parse_zlib_deflate_error)?;
+  let data = encoder.flush().map_err(parse_zlib_deflate_error)?;
 
-  Ok(Value::nil())
+  Ok(ctx.heap().alloc_bytes(data))
 }
 
 fn gzip_encoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {

@@ -67,6 +67,16 @@ class GzipEncoder {
   }
 
   /**
+   * Same as `finish()` for file API compartibility.
+   * 
+   * @note Once finish is called, the encoder can no longer be reused.
+   * @returns bytes
+   */
+  close() {
+    return self.finish()
+  }
+
+  /**
    * Finishes the current frame and installs byte stream for the next one.
    * 
    * Returns the previous byte stream containing the completed frame. 
@@ -91,11 +101,14 @@ class GzipEncoder {
   }
 
   /**
-   * Flushes this output stream, ensuring that all intermediately buffered 
-   * contents reach their destination.
+   * Flushes this output stream and returns the remaining compressed data in 
+   * the stream, ensuring that all intermediately buffered contents reach 
+   * their destination.
+   * 
+   * @returns bytes
    */
   flush() {
-    _compress.gzip_encoder_flush(self._ptr)
+    return _compress.gzip_encoder_flush(self._ptr)
   }
 
   /**
@@ -178,6 +191,13 @@ class GzipDecoder {
    */
   reset(new_source) {
     _compress.gzip_decoder_reset(self._ptr, new_source)
+  }
+
+  /**
+   * Closes the decoder by resetting it into an empty stream.
+   */
+  close() {
+    self.reset(bytes(0))
   }
 
   /**

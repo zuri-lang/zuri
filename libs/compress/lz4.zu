@@ -86,6 +86,16 @@ class Lz4Encoder {
   }
 
   /**
+   * Same as `finish()` for file API compartibility.
+   * 
+   * @note Once finish is called, the encoder can no longer be reused.
+   * @returns bytes
+   */
+  close() {
+    return self.finish()
+  }
+
+  /**
    * Writes data into this encoder's byte stream, returning how many 
    * bytes were written.
    * 
@@ -144,6 +154,13 @@ class Lz4Decoder {
    */
   @new(source) {
     self._ptr = _compress.lz4_new_decoder(source)
+  }
+
+  /**
+   * No op. Just for file API compartibility.
+   */
+  close() {
+    # Do nothing
   }
 
   /**
