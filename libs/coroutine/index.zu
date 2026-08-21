@@ -85,6 +85,7 @@
 import _coroutine
 import @.error { CoroutineError, CoroutineTimeoutError }
 import @.channel { Channel, channel, select }
+import @.broadcast { Broadcast, broadcast }
 
 /**
  * A handle to a coroutine, returned by `spawn()`.

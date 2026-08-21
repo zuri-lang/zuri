@@ -1,0 +1,133 @@
+/**
+ * @module broadcast
+ *
+ * `Broadcast`, a one-to-many channel built on top of `Channel`. Every
+ * value sent is delivered to every current subscriber, unlike a plain
+ * `Channel`, where each value goes to exactly one receiver. Built
+ * entirely out of `Channel` -- a `Broadcast` is just a small registry
+ * of subscriber channels plus fan-out logic, no separate native
+ * plumbing of its own.
+ */
+
+import .channel { Channel }
+import .error { CoroutineError }
+
+/**
+ * A one-to-many channel. Call `subscribe()` to get a `Channel` that
+ * receives every value sent afterward.
+ *
+ * A subscriber only sees values sent AFTER it subscribes -- there is
+ * no history or replay of earlier ones.
+ */
+class Broadcast {
+  var _subscribers
+  var _capacity
+  var _closed
+
+  /**
+   * @param ?int capacity: each subscriber's own buffer size, same
+   *   meaning as `Channel`'s. `nil` or `0` (the default) means
+   *   unbounded. With a bounded capacity, a subscriber that falls
+   *   behind simply misses whatever `send()`s don't fit rather than
+   *   blocking the sender or the other subscribers.
+   */
+  @new(capacity: ?int) {
+    self._subscribers = []
+    self._capacity = capacity
+    self._closed = false
+  }
+
+  /**
+   * Registers a new subscriber and returns its `Channel`.
+   *
+   * @returns Channel
+   * @raises CoroutineError if the broadcast is already closed
+   */
+  subscribe() {
+    if self._closed {
+      raise CoroutineError('cannot subscribe: the broadcast is closed')
+    }
+    var ch = Channel(self._capacity)
+    self._subscribers.append(ch)
+    return ch
+  }
+
+  /**
+   * Removes `channel` from the subscriber list; it stops receiving
+   * further `send()`s. Values already queued on it remain readable.
+   * Harmless if `channel` was already removed, or was never a
+   * subscriber of this broadcast.
+   *
+   * @param Channel channel: a handle previously returned by
+   *   `subscribe()`.
+   */
+  unsubscribe(channel) {
+    var kept = []
+    for ch in self._subscribers {
+      if ch != channel {
+        kept.append(ch)
+      }
+    }
+    self._subscribers = kept
+  }
+
+  /**
+   * Delivers `value` to every current subscriber. A subscriber whose
+   * buffer is full (bounded `capacity` only) simply misses this
+   * value rather than blocking the send.
+   *
+   * @param any value
+   * @raises CoroutineError if the broadcast is closed
+   */
+  send(value) {
+    if self._closed {
+      raise CoroutineError('cannot send on a closed broadcast')
+    }
+    var alive = []
+    for ch in self._subscribers {
+      if ch.is_closed() {
+        continue
+      }
+      catch {
+        ch.send(value, 0)
+      } as e {
+      }
+      alive.append(ch)
+    }
+    self._subscribers = alive
+  }
+
+  /**
+   * Closes the broadcast and every current subscriber's channel.
+   * `subscribe()` afterward raises `CoroutineError`; values already
+   * queued on subscriber channels remain readable.
+   */
+  close() {
+    self._closed = true
+    for ch in self._subscribers {
+      ch.close()
+    }
+  }
+
+  /**
+   * @returns bool: `true` if the broadcast is closed.
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  /**
+   * @returns int: the number of current subscribers.
+   */
+  subscriber_count() {
+    return self._subscribers.length()
+  }
+}
+
+/**
+ * @param ?int capacity: `nil` or `0` (the default) means unbounded.
+ * @returns Broadcast
+ */
+def broadcast(capacity: ?int) {
+  return Broadcast(capacity)
+}

@@ -639,6 +639,90 @@ def test_map_propagates_failure() {
   echo 'test_map_propagates_failure passed'
 }
 
+def test_broadcast_fanout_to_all_subscribers() {
+  var b = coroutine.broadcast()
+  var s1 = b.subscribe()
+  var s2 = b.subscribe()
+
+  b.send('hello')
+  assert s1.recv() == 'hello', 'every subscriber must receive a broadcast value'
+  assert s2.recv() == 'hello', 'every subscriber must receive a broadcast value'
+  echo 'test_broadcast_fanout_to_all_subscribers passed'
+}
+
+def test_broadcast_late_subscriber_misses_earlier_sends() {
+  var b = coroutine.broadcast()
+  var early = b.subscribe()
+  b.send('before')
+  var late = b.subscribe()
+  b.send('after')
+
+  assert early.recv() == 'before', 'a subscriber sees everything sent after it subscribed'
+  assert early.recv() == 'after', 'a subscriber sees everything sent after it subscribed'
+  assert late.recv() == 'after', 'a subscriber must not see values sent before it subscribed'
+  assert late.len() == 0, 'a late subscriber has nothing queued beyond what was sent after it joined'
+  echo 'test_broadcast_late_subscriber_misses_earlier_sends passed'
+}
+
+def test_broadcast_unsubscribe() {
+  var b = coroutine.broadcast()
+  var s1 = b.subscribe()
+  var s2 = b.subscribe()
+  assert b.subscriber_count() == 2, 'expected two subscribers'
+
+  b.unsubscribe(s1)
+  assert b.subscriber_count() == 1, 'unsubscribe() must remove the subscriber from the count'
+
+  b.send('only s2')
+  assert s2.recv() == 'only s2', 's2 must still receive broadcasts'
+  assert s1.len() == 0, 'an unsubscribed channel must not receive further broadcasts'
+  echo 'test_broadcast_unsubscribe passed'
+}
+
+def test_broadcast_close_closes_subscribers() {
+  var b = coroutine.broadcast()
+  var s = b.subscribe()
+  b.close()
+
+  assert b.is_closed(), 'is_closed() must reflect close()'
+  assert s.is_closed(), 'close() must close every current subscriber channel too'
+  echo 'test_broadcast_close_closes_subscribers passed'
+}
+
+def test_broadcast_rejects_operations_after_close() {
+  var b = coroutine.broadcast()
+  b.close()
+
+  var e = nil
+  catch {
+    b.subscribe()
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError), 'subscribe() after close() must raise'
+
+  e = nil
+  catch {
+    b.send('nope')
+  } as caught {
+    e = caught
+  }
+  assert e != nil and instance_of(e, coroutine.CoroutineError), 'send() after close() must raise'
+  echo 'test_broadcast_rejects_operations_after_close passed'
+}
+
+def test_broadcast_bounded_capacity_drops_when_full() {
+  var b = coroutine.broadcast(1)
+  var slow = b.subscribe()
+
+  b.send('a')
+  b.send('b')
+
+  assert slow.recv() == 'a', 'a slow subscriber keeps whatever fit in its buffer'
+  assert slow.len() == 0, 'a value that arrived while the buffer was full must be dropped, not queued'
+  echo 'test_broadcast_bounded_capacity_drops_when_full passed'
+}
+
 def test_shutdown_drains_and_blocks_new_spawns() {
   # this must stay the LAST test in the file -- shutdown() is
   # permanent for the rest of the process, so nothing after it can
@@ -743,6 +827,12 @@ test_map_propagates_failure()
 test_configure_rejects_invalid()
 test_configure_after_pool_started()
 test_pool_size_and_cpu_count()
+test_broadcast_fanout_to_all_subscribers()
+test_broadcast_late_subscriber_misses_earlier_sends()
+test_broadcast_unsubscribe()
+test_broadcast_close_closes_subscribers()
+test_broadcast_rejects_operations_after_close()
+test_broadcast_bounded_capacity_drops_when_full()
 
 # must run LAST: permanently shuts the pool down for the rest of the process
 test_shutdown_drains_and_blocks_new_spawns()
