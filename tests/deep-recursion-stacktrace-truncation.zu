@@ -1,0 +1,8 @@
+def recurse(n) {
+  if n <= 0 {
+    raise ValueError("bottomed out")
+  }
+  recurse(n - 1)
+}
+
+recurse(30)

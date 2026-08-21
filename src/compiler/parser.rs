@@ -1,4 +1,7 @@
 use std::fmt::{self, Display};
+use std::io::IsTerminal;
+
+use nu_ansi_term::{Color, Style};
 
 use crate::compiler::ast::{Decl, Expr, Node, NodeKind, Stmt, Type};
 use crate::compiler::lexer::Lexer;
@@ -82,10 +85,42 @@ impl ParserError {
   /// `<eof>`, a string literal's content excludes its quotes, ...), so a
   /// single caret is the only thing guaranteed to land in the right
   /// place for every token kind.
+  // Same palette as `VM::format_uncaught`'s runtime-error rendering
+  // (bold red header, cyan locator, dimmed gutter, bold red pointer) so
+  // a syntax error and an uncaught exception read as the same family of
+  // diagnostic instead of two different tools' output pasted together.
   pub fn render(&self, path: &str, source: &str) -> String {
+    let use_color = std::io::stderr().is_terminal();
+    let err_style = if use_color {
+      Style::new().fg(Color::Red).bold()
+    } else {
+      Style::new()
+    };
+    let locator_style = if use_color {
+      Style::new().fg(Color::Cyan)
+    } else {
+      Style::new()
+    };
+    let dim_style = if use_color {
+      Style::new().dimmed()
+    } else {
+      Style::new()
+    };
+    let marker_style = if use_color {
+      Style::new().fg(Color::Red).bold()
+    } else {
+      Style::new()
+    };
+
     let mut lines = vec![
-      format!("SyntaxError: {}", self.message),
-      format!("  --> {}:{}:{}", path, self.line_number, self.offset),
+      format!("{}", err_style.paint(format!("SyntaxError: {}", self.message))),
+      format!(
+        "  {} {}:{}:{}",
+        locator_style.paint("-->"),
+        path,
+        self.line_number,
+        self.offset
+      ),
     ];
 
     if let Some(line_text) = source.lines().nth(self.line_number.saturating_sub(1)) {
@@ -93,9 +128,18 @@ impl ParserError {
       let pad = " ".repeat(gutter.len());
       let caret_indent = " ".repeat(self.offset.saturating_sub(1));
 
-      lines.push(format!("{} |", pad));
-      lines.push(format!("{} | {}", gutter, line_text));
-      lines.push(format!("{} | {}^", pad, caret_indent));
+      lines.push(format!("{}", dim_style.paint(format!("{} |", pad))));
+      lines.push(format!(
+        "{} {}",
+        dim_style.paint(format!("{} |", gutter)),
+        line_text
+      ));
+      lines.push(format!(
+        "{} {}{}",
+        dim_style.paint(format!("{} |", pad)),
+        caret_indent,
+        marker_style.paint("^")
+      ));
     }
 
     lines.join("\n")

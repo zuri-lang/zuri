@@ -1,0 +1,23 @@
+Unhandled ValueError: bottomed out
+  --> @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:8
+
+  6 | }
+  7 | 
+> 8 | recurse(30)
+
+Stack trace (most recent call first):
+  at @.script() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:8
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  ... 19 more frames ...
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:5
+  at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:3
+

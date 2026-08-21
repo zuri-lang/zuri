@@ -1,7 +1,11 @@
+use std::borrow::Cow;
 use std::cell::Cell;
+use std::io::IsTerminal;
 use std::ops::{Neg, Shl, Shr};
+use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
+use nu_ansi_term::{Color, Style};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
@@ -34,6 +38,141 @@ const MAX_JIT_CALL_DEPTH: u32 = 1024;
 /// permanently drop compiled code for the innermost function, which breaks
 /// the nesting since it can't be re-entered from there.
 const MAX_DEOPT_REENTRANCY: u32 = 64;
+
+/// The `--> path:line` locator plus (if `source` is available) a
+/// snippet: up to 2 lines of context on either side of `error_line`,
+/// with that line marked by a `>` in the gutter instead of the usual
+/// blank space. There's no column tracking at runtime -- only a
+/// per-instruction *line* table (`Chunk::lines`) -- so a gutter marker
+/// on the whole line is the most precise pointer available here, unlike
+/// the parser's own single-column caret.
+fn render_error_site(path: &str, error_line: u32, source: Option<&str>, use_color: bool) -> String {
+  let locator_style = if use_color {
+    Style::new().fg(Color::Cyan)
+  } else {
+    Style::new()
+  };
+  let mut out = format!("  {} {}:{}\n", locator_style.paint("-->"), path, error_line);
+
+  let Some(source) = source else {
+    return out;
+  };
+  let lines: Vec<&str> = source.lines().collect();
+  if error_line == 0 || error_line as usize > lines.len() {
+    return out;
+  }
+
+  let error_idx = (error_line - 1) as usize;
+  let start = error_idx.saturating_sub(2);
+  let end = (error_idx + 2).min(lines.len() - 1);
+  let gutter_width = (end + 1).to_string().len();
+
+  let marker_style = if use_color {
+    Style::new().fg(Color::Red).bold()
+  } else {
+    Style::new()
+  };
+  let dim_style = if use_color {
+    Style::new().dimmed()
+  } else {
+    Style::new()
+  };
+
+  out.push('\n');
+  for (i, line) in lines.iter().enumerate().take(end + 1).skip(start) {
+    let n = i + 1;
+    if i == error_idx {
+      out.push_str(&format!(
+        "{} {:>width$} | {}\n",
+        marker_style.paint(">"),
+        n,
+        line,
+        width = gutter_width
+      ));
+    } else {
+      out.push_str(&format!(
+        "{}\n",
+        dim_style.paint(format!("  {:>width$} | {}", n, line, width = gutter_width))
+      ));
+    }
+  }
+
+  out
+}
+
+/// "Stack trace (most recent call first):" plus one line per frame,
+/// each showing the function name and its `path:line`. Deep recursion
+/// can produce hundreds of frames that are all noise past the first
+/// handful, so anything beyond a small head+tail collapses into a
+/// single "N more frames" marker -- the same idea behind Node's
+/// `Error.stackTraceLimit` and Python's recursion-trimmed tracebacks.
+fn render_stacktrace(locations: &[(Rc<str>, u32, String)], use_color: bool) -> String {
+  // Program entry first, working down to the exact line that raised --
+  // `frame_locations` (and `e.stacktrace`, its Zuri-visible sibling)
+  // stay innermost-first internally, but displaying it that way reads
+  // backwards: it restates the error site as the very first line, right
+  // after the header/snippet above already pointed at it, then works
+  // outward to entry. This instead reads as a narrative -- "started
+  // here, called this, called this, and broke on the line highlighted
+  // above" -- ending exactly where the snippet already landed.
+  let ordered: Vec<(Rc<str>, u32, String)> = locations.iter().rev().cloned().collect();
+
+  // Give more of the truncation budget to the frames nearest the error
+  // (now at the END of `ordered`) than the ones nearest entry, since
+  // those are the ones actually useful for a deep call chain -- the
+  // reverse split from before the reorder.
+  const HEAD: usize = 3;
+  const TAIL: usize = 10;
+
+  let header_style = if use_color {
+    Style::new().bold()
+  } else {
+    Style::new()
+  };
+  let name_style = if use_color {
+    Style::new().fg(Color::Yellow)
+  } else {
+    Style::new()
+  };
+  let loc_style = if use_color {
+    Style::new().dimmed()
+  } else {
+    Style::new()
+  };
+
+  let render_frame = |(path, line, name): &(Rc<str>, u32, String)| -> String {
+    format!(
+      "  at {} {}\n",
+      name_style.paint(format!("{}()", name)),
+      loc_style.paint(format!("{}:{}", path, line))
+    )
+  };
+
+  let mut out = format!(
+    "{}\n",
+    header_style.paint("Stack trace (most recent call first):")
+  );
+
+  if ordered.len() <= HEAD + TAIL + 1 {
+    for loc in &ordered {
+      out.push_str(&render_frame(loc));
+    }
+  } else {
+    for loc in &ordered[..HEAD] {
+      out.push_str(&render_frame(loc));
+    }
+    let omitted = ordered.len() - HEAD - TAIL;
+    out.push_str(&format!(
+      "  {}\n",
+      loc_style.paint(format!("... {} more frames ...", omitted))
+    ));
+    for loc in &ordered[ordered.len() - TAIL..] {
+      out.push_str(&render_frame(loc));
+    }
+  }
+
+  out
+}
 
 /// Inline slots for a call's argument list before spilling to a `Vec`.
 /// Covers the overwhelming majority of native/constructor calls with zero
@@ -997,10 +1136,14 @@ impl VM {
     })
   }
 
-  /// Frame names, innermost first, as a Zuri list of strings, attached to
-  /// every exception's `stacktrace` field.
-  fn build_stacktrace(&mut self) -> Value {
-    let mut lines = Vec::with_capacity(self.frames.len());
+  /// Raw (path, line, function-name) per live frame, innermost first --
+  /// shared by `build_stacktrace` (which formats these into the
+  /// "path:line -> name()" strings Zuri-level `catch` handlers see on
+  /// `e.stacktrace`) and `format_uncaught`'s CLI rendering, which needs
+  /// the pieces unformatted so it can pull matching source lines for a
+  /// snippet.
+  fn frame_locations(&self) -> Vec<(Rc<str>, u32, String)> {
+    let mut out = Vec::with_capacity(self.frames.len());
 
     let innermost = self.frames.len().saturating_sub(1);
     for (idx, frame) in self.frames.iter().enumerate().rev() {
@@ -1019,7 +1162,20 @@ impl VM {
         .get(ip.saturating_sub(1))
         .copied()
         .unwrap_or(0);
-      let entry = format!("{}:{} -> {}()", func.source_path, line, func.name);
+      out.push((func.source_path.clone(), line, func.name.clone()));
+    }
+
+    out
+  }
+
+  /// Frame names, innermost first, as a Zuri list of strings, attached to
+  /// every exception's `stacktrace` field.
+  fn build_stacktrace(&mut self) -> Value {
+    let locations = self.frame_locations();
+    let mut lines = Vec::with_capacity(locations.len());
+
+    for (path, line, name) in locations {
+      let entry = format!("{}:{} -> {}()", path, line, name);
       lines.push(self.heap.alloc_string(entry));
     }
 
@@ -1060,24 +1216,50 @@ impl VM {
   }
 
   /// Full multi-line "Unhandled ..." block the CLI/REPL print at the top
-  /// level. `describe_exception` stays the short summary, still used by
-  /// the prelude's internal panic path.
-  pub fn format_uncaught(&self, exc: Value) -> String {
+  /// level: a header, a snippet of source around the exact line that
+  /// raised (2 lines of context on each side, that line marked), and a
+  /// stack trace. `describe_exception` stays the short summary, still
+  /// used by the prelude's internal panic path.
+  ///
+  /// `entry_path`/`entry_source` are the file the caller actually ran --
+  /// used to render the innermost frame's snippet without re-reading it
+  /// off disk. Any OTHER frame's file (reached via `import`, say) gets
+  /// read fresh from disk, since the VM doesn't keep source text around
+  /// once a file's compiled; a source that can't be found (a deleted
+  /// file, `<repl>` for an outer frame) just falls back to the bare
+  /// `path:line` locator with no snippet.
+  pub fn format_uncaught(&self, exc: Value, entry_path: &str, entry_source: &str) -> String {
     let summary = self.describe_exception(exc);
+    let use_color = std::io::stderr().is_terminal();
+    let err_style = if use_color {
+      Style::new().fg(Color::Red).bold()
+    } else {
+      Style::new()
+    };
+
     if !exc.is_instance() {
-      return format!("Unhandled {}", summary);
+      return format!("{}", err_style.paint(format!("Unhandled {}", summary)));
     }
-    let inst = exc.as_instance();
-    let trace_idx = inst.class.as_class().field_slots.get("stacktrace").copied();
-    let mut out = format!("Unhandled {}\n  StackTrace:", summary);
-    if let Some(idx) = trace_idx {
-      let trace_val = inst.fields[idx as usize].get();
-      if trace_val.is_list() {
-        for line in trace_val.as_list() {
-          out.push_str(&format!("\n    {}", line));
-        }
-      }
+
+    let locations = self.frame_locations();
+    let mut out = format!("{}\n", err_style.paint(format!("Unhandled {}", summary)));
+
+    if let Some((path, line, _)) = locations.last() {
+      let source = if path.as_ref() == entry_path {
+        Some(Cow::Borrowed(entry_source))
+      } else {
+        std::fs::read_to_string(path.as_ref()).ok().map(Cow::Owned)
+      };
+      out.push_str(&render_error_site(
+        path,
+        *line,
+        source.as_deref(),
+        use_color,
+      ));
     }
+
+    out.push('\n');
+    out.push_str(&render_stacktrace(&locations, use_color));
     out
   }
 

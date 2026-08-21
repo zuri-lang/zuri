@@ -1,3 +1,9 @@
 Unhandled Error: class 'A' already declared in this scope
-  StackTrace:
-    @@ROOT/tests/duplicate-class-declarations-are-errors.zu:2 -> @.script()
+  --> @@ROOT/tests/duplicate-class-declarations-are-errors.zu:2
+
+  1 | class A {}
+> 2 | class A {}
+
+Stack trace (most recent call first):
+  at @.script() @@ROOT/tests/duplicate-class-declarations-are-errors.zu:2
+

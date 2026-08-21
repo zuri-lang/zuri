@@ -1,3 +1,10 @@
 Unhandled TypeError: operator '+' not defined for call signature (A, A)
-  StackTrace:
-    @@ROOT/tests/undefined-method-override.zu:7 -> @.script()
+  --> @@ROOT/tests/undefined-method-override.zu:7
+
+  5 | }
+  6 | 
+> 7 | echo A() + A()
+
+Stack trace (most recent call first):
+  at @.script() @@ROOT/tests/undefined-method-override.zu:7
+

@@ -79,7 +79,7 @@ fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {
       Ok(fn_obj) => {
         let closure = vm.heap.alloc_plain_closure(fn_obj);
         if let Err(e) = vm.run(closure) {
-          eprintln!("{}", vm.format_uncaught(e));
+          eprintln!("{}", vm.format_uncaught(e, "<repl>", line));
         }
       },
       Err(errors) => eprintln!("{}", format_parse_errors(&errors, "<repl>", line)),
@@ -170,7 +170,7 @@ fn run_file(vm: &mut VM, file: &str) {
         }
 
         if let Err(e) = result {
-          eprintln!("{}", vm.format_uncaught(e));
+          eprintln!("{}", vm.format_uncaught(e, &display_path, &content));
           process::exit(1);
         }
       },
