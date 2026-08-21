@@ -1,0 +1,101 @@
+/**
+ * @module channel
+ *
+ * Thread-safe queues for passing values between coroutines. Re-exported
+ * by `coroutine`, so `import coroutine` alone is enough to use
+ * `coroutine.Channel`/`coroutine.channel()`.
+ */
+
+import _coroutine
+import .error { CoroutineError }
+
+/**
+ * A thread-safe queue for passing values between coroutines.
+ */
+class Channel {
+  var _ptr
+
+  /**
+   * @param ?int capacity: maximum number of unread messages before
+   *   `send()` blocks. `nil` or `0` (the default) means unbounded.
+   */
+  @new(capacity: ?int) {
+    if capacity == nil {
+      capacity = 0
+    }
+    if capacity < 0 {
+      raise ValueError('Channel() expects capacity to be non-negative, got ${capacity}')
+    }
+    self._ptr = _coroutine.channel_new(capacity)
+  }
+
+  /**
+   * Sends `value` on the channel, blocking while it is at capacity.
+   *
+   * @param any value
+   * @raises CoroutineError if the channel is closed
+   */
+  send(value) {
+    if !_coroutine.channel_send(self._ptr, value) {
+      raise CoroutineError('cannot send on a closed channel')
+    }
+  }
+
+  /**
+   * Blocks until a value is available and returns it. Returns `nil`
+   * once the channel is closed and empty.
+   *
+   * @returns any
+   */
+  recv() {
+    var r = _coroutine.channel_recv(self._ptr)
+    if r[0] == 'closed' {
+      return nil
+    }
+    return r[1]
+  }
+
+  /**
+   * Returns the next available value, or `nil` if none is available.
+   * Does not block.
+   *
+   * @returns any
+   */
+  try_recv() {
+    var r = _coroutine.channel_try_recv(self._ptr)
+    if r[0] == 'ok' {
+      return r[1]
+    }
+    return nil
+  }
+
+  /**
+   * Closes the channel. Queued values may still be received;
+   * `send()` afterward raises `CoroutineError`.
+   */
+  close() {
+    _coroutine.channel_close(self._ptr)
+  }
+
+  /**
+   * @returns bool: `true` if the channel is closed.
+   */
+  is_closed() {
+    return _coroutine.channel_is_closed(self._ptr)
+  }
+
+  /**
+   * @returns int: the number of values currently queued.
+   */
+  len() {
+    return _coroutine.channel_len(self._ptr)
+  }
+}
+
+/**
+ * @param ?int capacity: `nil` or `0` (the default) means unbounded.
+ * @returns Channel
+ */
+def channel(capacity: ?int) {
+  return Channel(capacity)
+}
