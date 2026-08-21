@@ -195,8 +195,9 @@ class Coroutine {
  * @param ...any args
  * @returns Coroutine
  * @raises TypeError if `fn` is not callable
- * @raises CoroutineError if `fn` is a native function or class, or
- *   `fn`/`args` cannot cross a coroutine boundary
+ * @raises CoroutineError if `fn` is a native function or class,
+ *   `fn`/`args` cannot cross a coroutine boundary, or the pool has
+ *   been `shutdown()`
  */
 def spawn(fn: function, ...args) {
   var r = _coroutine.spawn(fn, args)
@@ -239,6 +240,25 @@ def pool_size() {
  */
 def cpu_count() {
   return _coroutine.cpu_count()
+}
+
+/**
+ * Stops the pool from accepting any further `spawn()` calls, then
+ * blocks until every coroutine already spawned -- queued or already
+ * running -- has finished. Nothing in flight is abandoned.
+ *
+ * Permanent: once called, every `spawn()` for the rest of the process
+ * raises `CoroutineError`, even if this call itself later times out.
+ *
+ * @param number timeout: seconds to wait before giving up. Waits
+ *   indefinitely if omitted.
+ * @raises CoroutineTimeoutError if `timeout` elapses with coroutines
+ *   still in flight
+ */
+def shutdown(timeout: ?number) {
+  if !_coroutine.shutdown(timeout) {
+    raise CoroutineTimeoutError('shutdown() timed out after ${timeout} seconds')
+  }
 }
 
 /**

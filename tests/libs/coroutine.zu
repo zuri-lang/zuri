@@ -639,6 +639,30 @@ def test_map_propagates_failure() {
   echo 'test_map_propagates_failure passed'
 }
 
+def test_shutdown_drains_and_blocks_new_spawns() {
+  # this must stay the LAST test in the file -- shutdown() is
+  # permanent for the rest of the process, so nothing after it can
+  # spawn() again.
+  var gate = coroutine.channel(0)
+  var t1 = coroutine.spawn(@(ch) { return ch.recv() }, gate)
+  var t2 = coroutine.spawn(coroutine_worker.square, 6)
+
+  gate.send(11)
+  coroutine.shutdown()
+
+  assert t1.join() == 11, 'a task already in flight when shutdown() was called must still finish'
+  assert t2.join() == 36, 'a task already in flight when shutdown() was called must still finish'
+
+  var rejected = false
+  catch {
+    coroutine.spawn(coroutine_worker.square, 1)
+  } as e {
+    rejected = instance_of(e, coroutine.CoroutineError)
+  }
+  assert rejected, 'spawn() after shutdown() must be rejected as a CoroutineError'
+  echo 'test_shutdown_drains_and_blocks_new_spawns passed'
+}
+
 def test_configure_rejects_invalid() {
   catch {
     coroutine.configure(0)
@@ -719,3 +743,6 @@ test_map_propagates_failure()
 test_configure_rejects_invalid()
 test_configure_after_pool_started()
 test_pool_size_and_cpu_count()
+
+# must run LAST: permanently shuts the pool down for the rest of the process
+test_shutdown_drains_and_blocks_new_spawns()

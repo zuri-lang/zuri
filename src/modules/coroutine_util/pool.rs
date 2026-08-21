@@ -10,7 +10,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -103,6 +103,21 @@ struct CoroutinePool {
   queue: Mutex<VecDeque<Task>>,
   not_empty: Condvar,
   size: usize,
+  /// Queued-or-running task count, kept for `shutdown()` to know when
+  /// there's genuinely nothing left in flight. Incremented in `spawn`,
+  /// decremented once a task's `finish()` has actually run (success,
+  /// ordinary failure, or a caught panic all count).
+  in_flight: AtomicUsize,
+  /// Set by `shutdown()`, checked by `spawn()`. One-way: once a pool
+  /// starts shutting down it never accepts work again for the rest of
+  /// the process.
+  shutting_down: AtomicBool,
+  /// Notified whenever `in_flight` changes, so `shutdown()` can block
+  /// on it rather than polling. Paired with `idle_lock` purely for the
+  /// `Condvar` API -- there's no real data to protect, `in_flight`
+  /// already is atomic.
+  idle: Condvar,
+  idle_lock: Mutex<()>,
 }
 
 /// Worker thread names share this prefix -- checked by the panic hook
@@ -123,7 +138,22 @@ impl CoroutinePool {
       queue: Mutex::new(VecDeque::new()),
       not_empty: Condvar::new(),
       size,
+      in_flight: AtomicUsize::new(0),
+      shutting_down: AtomicBool::new(false),
+      idle: Condvar::new(),
+      idle_lock: Mutex::new(()),
     }
+  }
+
+  /// Notifies whoever's in `shutdown()` waiting on `in_flight` to
+  /// reach zero. Momentarily taking `idle_lock` before notifying,
+  /// rather than just calling `notify_all`, avoids the same
+  /// lost-wakeup window `wake_all_waiters` guards against -- see its
+  /// own docs.
+  fn task_completed(&self) {
+    self.in_flight.fetch_sub(1, Ordering::AcqRel);
+    drop(lock(&self.idle_lock));
+    self.idle.notify_all();
   }
 }
 
@@ -234,6 +264,7 @@ fn worker_loop() {
       },
     }
     CURRENT_COROUTINE.with(|c| *c.borrow_mut() = None);
+    pool.task_completed();
   }
 }
 
@@ -640,9 +671,55 @@ pub fn spawn(vm: &VM, callee: Value, args: Value) -> Result<Arc<CoroutineState>,
     state: state.clone(),
   };
   let p = pool();
-  lock(&p.queue).push_back(task);
+  {
+    // Checking `shutting_down` and enqueuing under the SAME lock is
+    // what makes this race-free against a concurrent `shutdown()`:
+    // either this sees the flag already set and bails out, or
+    // `shutdown()` hasn't set it yet and this task is safely counted
+    // in `in_flight` before shutdown can start waiting for zero.
+    let mut queue = lock(&p.queue);
+    if p.shutting_down.load(Ordering::Acquire) {
+      return Err("cannot spawn: the coroutine pool is shutting down".to_string());
+    }
+    p.in_flight.fetch_add(1, Ordering::AcqRel);
+    queue.push_back(task);
+  }
   p.not_empty.notify_one();
   Ok(state)
+}
+
+/// Stops the pool from accepting any further `spawn()` calls, then
+/// blocks until every task already queued or running has finished --
+/// nothing in flight is abandoned. One-way: once this returns (or even
+/// while it's still waiting), `spawn()` keeps failing for the rest of
+/// the process.
+///
+/// Returns `false` rather than blocking forever if `timeout` elapses
+/// with work still outstanding.
+pub fn shutdown(timeout: Option<Duration>) -> bool {
+  let p = pool();
+  {
+    let _queue = lock(&p.queue);
+    p.shutting_down.store(true, Ordering::Release);
+  }
+  let deadline = timeout.map(|d| Instant::now() + d);
+  let mut guard = lock(&p.idle_lock);
+  loop {
+    if p.in_flight.load(Ordering::Acquire) == 0 {
+      return true;
+    }
+    guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
+      Some(d) if d.is_zero() => return p.in_flight.load(Ordering::Acquire) == 0,
+      Some(d) => {
+        let (g, result) = p.idle.wait_timeout(guard, d).unwrap_or_else(PoisonError::into_inner);
+        if result.timed_out() {
+          return p.in_flight.load(Ordering::Acquire) == 0;
+        }
+        g
+      },
+      None => p.idle.wait(guard).unwrap_or_else(PoisonError::into_inner),
+    };
+  }
 }
 
 // ---------------------------------------------------------------------

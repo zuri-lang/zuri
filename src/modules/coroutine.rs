@@ -32,6 +32,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("configure", native(vm, "configure", 1, false, configure)),
     ("pool_size", native(vm, "pool_size", 0, false, pool_size)),
     ("cpu_count", native(vm, "cpu_count", 0, false, cpu_count)),
+    ("shutdown", native(vm, "shutdown", 1, false, shutdown)),
     ("spawn", native(vm, "spawn", 2, false, spawn)),
     ("join", native(vm, "join", 2, false, join)),
     ("try_join", native(vm, "try_join", 1, false, try_join)),
@@ -185,6 +186,12 @@ fn pool_size(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn cpu_count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
   Ok(Value::number(pool::cpu_count() as f64))
+}
+
+fn shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  let timeout = optional_timeout(ctx, 0)?;
+  Ok(Value::bool(pool::shutdown(timeout)))
 }
 
 // ---------------------------------------------------------------------
