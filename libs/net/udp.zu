@@ -91,7 +91,7 @@ class UdpSocket {
    * one that succeeds is used.
    *
    * @param string address: The host:port to treat as the default peer
-   * @throws Exception if resolution fails or every resolved address is
+   * @throws Error if resolution fails or every resolved address is
    *   rejected
    */
   connect(address) {
@@ -109,7 +109,7 @@ class UdpSocket {
    * binding is attempted against each in turn until one succeeds.
    *
    * @param string address: The host:port to bind and receive on
-   * @throws Exception if resolution fails or every resolved address
+   * @throws Error if resolution fails or every resolved address
    *   fails to bind (e.g. because it is already in use)
    */
   bind(address) {
@@ -121,7 +121,7 @@ class UdpSocket {
    * via `connect()`, formatted as `ip:port` (`[ip]:port` for IPv6).
    *
    * @returns string the peer's address
-   * @throws Exception if this socket has not been connected
+   * @throws Error if this socket has not been connected
    */
   peer_address() {
     return _net_udp.udp_peer_address(self._ptr)
@@ -134,7 +134,7 @@ class UdpSocket {
    * port `0`.
    *
    * @returns string the local address
-   * @throws Exception if this socket has not been bound
+   * @throws Error if this socket has not been bound
    */
   local_address() {
     return _net_udp.udp_local_address(self._ptr)
@@ -151,7 +151,7 @@ class UdpSocket {
    * @note Some platforms do not provide access to the current timeout.
    * @param number timeout: Milliseconds, or a negative number to
    *   disable the timeout
-   * @throws Exception if the platform rejects the value
+   * @throws Error if the platform rejects the value
    */
   set_read_timeout(timeout) {
     _net_udp.udp_set_read_timeout(self._ptr, timeout)
@@ -177,7 +177,7 @@ class UdpSocket {
    *    socket buffer is full, which is uncommon for datagram sockets.
    * @param number timeout: Milliseconds, or a negative number to
    *   disable the timeout
-   * @throws Exception if the platform rejects the value
+   * @throws Error if the platform rejects the value
    */
   set_write_timeout(timeout) {
     _net_udp.udp_set_write_timeout(self._ptr, timeout)
@@ -205,7 +205,7 @@ class UdpSocket {
    *
    * @param number length: The maximum number of bytes to peek
    * @returns bytes up to `length` bytes of the pending datagram
-   * @throws Exception on an underlying I/O error, or if this socket has
+   * @throws Error on an underlying I/O error, or if this socket has
    *   not been connected
    */
   peek(length) {
@@ -222,7 +222,7 @@ class UdpSocket {
    * @param number length: The maximum number of bytes to peek
    * @returns {data: bytes, address: string} the pending datagram's
    *   bytes and the address it was sent from
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   peek_from(length) {
     return _net_udp.udp_peek_from(self._ptr, length)
@@ -233,7 +233,7 @@ class UdpSocket {
    * regular, non-multicast datagrams sent on this socket.
    *
    * @param number ttl: The time-to-live value, `0`-`255`
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_ttl(ttl) {
     _net_udp.udp_set_ttl(self._ptr, ttl)
@@ -243,7 +243,7 @@ class UdpSocket {
    * Returns the currently configured `IP_TTL` value for this socket.
    *
    * @returns number
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   get_ttl() {
     return _net_udp.udp_get_ttl(self._ptr)
@@ -256,7 +256,7 @@ class UdpSocket {
    *
    * @returns ?string a description of the pending error, or `nil` if
    *   there is none
-   * @throws Exception on an underlying I/O error while querying the
+   * @throws Error on an underlying I/O error while querying the
    *   socket
    */
   get_error() {
@@ -270,7 +270,7 @@ class UdpSocket {
    * would otherwise wait on I/O.
    *
    * @param bool nonblocking: `true` to enable non-blocking mode
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_non_blocking(nonblocking) {
     _net_udp.udp_set_non_blocking(self._ptr, nonblocking)
@@ -282,7 +282,7 @@ class UdpSocket {
    * `255.255.255.255`.
    *
    * @param bool broadcast: `true` to allow sending to broadcast addresses
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_broadcast(broadcast) {
     _net_udp.udp_set_broadcast(self._ptr, broadcast)
@@ -304,7 +304,7 @@ class UdpSocket {
    * joined the destination group.
    *
    * @param bool loop: `true` to loop sent multicast datagrams back
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_multicast_loop_v4(loop) {
     _net_udp.udp_set_multicast_loop_v4(self._ptr, loop)
@@ -327,7 +327,7 @@ class UdpSocket {
    * restricting multicast datagrams to the local network.
    *
    * @param number ttl: The multicast time-to-live value, `0`-`255`
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_multicast_ttl_v4(ttl) {
     _net_udp.udp_set_multicast_ttl_v4(self._ptr, ttl)
@@ -338,7 +338,7 @@ class UdpSocket {
    * multicast on this socket.
    *
    * @returns number
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   get_multicast_ttl_v4() {
     return _net_udp.udp_get_multicast_ttl_v4(self._ptr)
@@ -351,7 +351,7 @@ class UdpSocket {
    * joined the destination group.
    *
    * @param bool loop: `true` to loop sent multicast datagrams back
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_multicast_loop_v6(loop) {
     _net_udp.udp_set_multicast_loop_v6(self._ptr, loop)
@@ -384,7 +384,7 @@ class UdpSocket {
    *
    * @param number length: The maximum number of bytes to read
    * @returns bytes up to `length` bytes of the received datagram
-   * @throws Exception on an underlying I/O error, or if the configured
+   * @throws Error on an underlying I/O error, or if the configured
    *   read timeout elapses first
    */
   receive(length) {
@@ -401,7 +401,7 @@ class UdpSocket {
    * @param number length: The size of the buffer to read into
    * @returns bytes a `length`-byte buffer containing the received
    *   datagram
-   * @throws Exception on an underlying I/O error, or if the configured
+   * @throws Error on an underlying I/O error, or if the configured
    *   read timeout elapses first
    */
   receive_from(length) {
@@ -418,7 +418,7 @@ class UdpSocket {
    * @param {bytes|string} data: The bytes (or UTF-8 text) to send
    * @returns number the number of bytes sent (equal to the size of
    *   `data` on success)
-   * @throws Exception on an underlying I/O error, or if the configured
+   * @throws Error on an underlying I/O error, or if the configured
    *   write timeout elapses first
    */
   send(data) {
@@ -434,7 +434,7 @@ class UdpSocket {
    * @param string address: The host:port to send the datagram to
    * @returns number the number of bytes sent (equal to the size of
    *   `data` on success)
-   * @throws Exception on an underlying I/O error, or if the configured
+   * @throws Error on an underlying I/O error, or if the configured
    *   write timeout elapses first
    */
   send_to(data, address) {
@@ -449,7 +449,7 @@ class UdpSocket {
    *   e.g. `'239.0.0.1'`
    * @param string interface: The local IPv4 address of the interface to
    *   join on, e.g. `'0.0.0.0'` for the default interface
-   * @throws Exception if `multiaddr`/`interface` cannot be parsed as
+   * @throws Error if `multiaddr`/`interface` cannot be parsed as
    *   IPv4 addresses, or on an underlying I/O error
    */
   join_multicast_v4(multiaddr, interface) {
@@ -464,7 +464,7 @@ class UdpSocket {
    * @param string multiaddr: The multicast address to leave
    * @param string interface: The local IPv4 address of the interface to
    *   leave on
-   * @throws Exception if `multiaddr`/`interface` cannot be parsed as
+   * @throws Error if `multiaddr`/`interface` cannot be parsed as
    *   IPv4 addresses, or on an underlying I/O error
    */
   leave_multicast_v4(multiaddr, interface) {
@@ -479,7 +479,7 @@ class UdpSocket {
    *   e.g. `'ff02::1'`
    * @param number interface: The index of the local interface to join
    *   on, or `0` to let the OS choose the default interface
-   * @throws Exception if `multiaddr` cannot be parsed as an IPv6
+   * @throws Error if `multiaddr` cannot be parsed as an IPv6
    *   address, or on an underlying I/O error
    */
   join_multicast_v6(multiaddr, interface) {
@@ -494,7 +494,7 @@ class UdpSocket {
    * @param string multiaddr: The multicast address to leave
    * @param number interface: The index of the local interface to leave
    *   on
-   * @throws Exception if `multiaddr` cannot be parsed as an IPv6
+   * @throws Error if `multiaddr` cannot be parsed as an IPv6
    *   address, or on an underlying I/O error
    */
   leave_multicast_v6(multiaddr, interface) {
@@ -521,15 +521,15 @@ class UdpSocket {
   to_string() {
     var local
 
-    try {
+    catch {
       local = self.local_address()
-    } catch Exception e {
+    } as e {
       return '<UdpSocket unbound>'
     }
 
-    try {
+    catch {
       return '<UdpSocket ${local} -> ${self.peer_address()}>'
-    } catch Exception e {
+    } as e {
       return '<UdpSocket bound on ${local}>'
     }
   }

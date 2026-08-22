@@ -1,0 +1,887 @@
+/**
+ * @module ip
+ *
+ * This module provides types for parsing, formatting, comparing and
+ * classifying IP addresses in both their IPv4 and IPv6 forms.
+ *
+ * `Ipv4` and `Ipv6` each represent an address of their
+ * respective family, while `Ip` is a small wrapper around either one
+ * for code that needs to accept and work with both interchangeably.
+ *
+ * The example below parses an address of unknown family and reports a
+ * few things about it.
+ *
+ * ```zuri
+ * import net
+ *
+ * var addr = net.Ip.parse('192.168.1.10')
+ *
+ * if addr.is_private() {
+ *   echo '${addr} is a private address'
+ * }
+ * ```
+ *
+ * `Ipv4` and `Ipv6` can also be worked with directly when the
+ * family is already known, as shown below.
+ *
+ * ```zuri
+ * import net
+ *
+ * var a = net.Ipv4.parse('10.0.0.1')
+ * var b = net.Ipv4(10, 0, 0, 2)
+ *
+ * echo a.is_private()
+ * echo a.equals(b)
+ * echo a.octets()
+ * ```
+ */
+
+
+def _validate_ipv4_octet(value) {
+  if value == nil or !is_number(value) {
+    raise Error('IPv4 address octets must be numbers between 0 and 255')
+  }
+
+  var octet = value.int()
+  if octet < 0 or octet > 255 {
+    raise Error('IPv4 address octets must be numbers between 0 and 255')
+  }
+
+  return octet
+}
+
+def _parse_ipv4_octet(part, original) {
+  if part.length() == 0 or part.length() > 3 {
+    raise Error('invalid IPv4 address: ${original}')
+  }
+
+  if part.length() > 1 and part[0] == '0' {
+    raise Error('invalid IPv4 address: ${original}')
+  }
+
+  var value = 0
+  var i = 0
+  while i < part.length() {
+    var code = part[i].ord()
+    if code < 48 or code > 57 {
+      raise Error('invalid IPv4 address: ${original}')
+    }
+    value = value * 10 + (code - 48)
+    i = i + 1
+  }
+
+  if value > 255 {
+    raise Error('invalid IPv4 address: ${original}')
+  }
+
+  return value
+}
+
+def _validate_ipv6_segment(value) {
+  if value == nil or !is_number(value) {
+    raise Error('IPv6 address segments must be numbers between 0 and 65535')
+  }
+
+  var segment = value.int()
+  if segment < 0 or segment > 65535 {
+    raise Error('IPv6 address segments must be numbers between 0 and 65535')
+  }
+
+  return segment
+}
+
+def _parse_group(group, original) {
+  if group.length() == 0 or group.length() > 4 {
+    raise Error('invalid IPv6 address: ${original}')
+  }
+
+  var value = 0
+  var i = 0
+  while i < group.length() {
+    value = value * 16 + _hex_digit(group[i], original)
+    i = i + 1
+  }
+  return value
+}
+
+def _hex_digit(c, original) {
+  # var code = c.to_number()
+  # if code >= 48 and code <= 57 {
+  #   return code - 48
+  # }
+  # if code >= 97 and code <= 102 {
+  #   return code - 97 + 10
+  # }
+  # if code >= 64 and code <= 70 {
+  #   return code - 65 + 10
+  # }
+  # raise Error('invalid IPv6 address: ${original}')
+
+  return c.to_number().hex()
+}
+
+/**
+ * An IPv4 address, stored internally as four octets in network (i.e.
+ * big-endian, most significant octet first) order.
+ *
+ * @printable
+ */
+class Ipv4 {
+
+  /**
+   * Returns a new instance of an {Ipv4} from its four octets, given
+   * in the same left-to-right order they'd be written in dotted-decimal
+   * notation, e.g. `Ipv4(192, 168, 1, 10)` for `192.168.1.10`.
+   *
+   * @param number a: The 1st octet, `0`-`255`
+   * @param number b: The 2nd octet, `0`-`255`
+   * @param number c: The 3rd octet, `0`-`255`
+   * @param number d: The 4th octet, `0`-`255`
+   * @throws Error if any octet is missing or outside `0`-`255`
+   */
+  @new(a, b, c, d) {
+    self._octets = [
+      _validate_ipv4_octet(a),
+      _validate_ipv4_octet(b),
+      _validate_ipv4_octet(c),
+      _validate_ipv4_octet(d),
+    ]
+  }
+
+  /**
+   * The `0.0.0.0` address, used to mean "any local address" when
+   * binding a socket.
+   *
+   * @returns Ipv4
+   */
+  static unspecified() {
+    return Ipv4(0, 0, 0, 0)
+  }
+
+  /**
+   * The `127.0.0.1` loopback address.
+   *
+   * @returns Ipv4
+   */
+  static localhost() {
+    return Ipv4(127, 0, 0, 1)
+  }
+
+  /**
+   * The `255.255.255.255` limited broadcast address.
+   *
+   * @returns Ipv4
+   */
+  static broadcast() {
+    return Ipv4(255, 255, 255, 255)
+  }
+
+  /**
+   * Parses an address given in standard dotted-decimal notation, e.g.
+   * `'192.168.1.10'`.
+   *
+   * @note Each octet must be written without a leading zero (other than
+   *    the literal digit `0` itself) - `'192.168.001.10'` is rejected
+   *    rather than guessed at, since a leading zero is read as an octal
+   *    prefix by some other tools and silently accepting it here could
+   *    make an address mean two different things depending on what
+   *    reads it.
+   *
+   * @param string address: The address to parse
+   * @returns Ipv4
+   * @throws Error if `address` is not four dot-separated octets,
+   *   each a decimal number from `0` to `255`
+   */
+  static parse(address) {
+    if address == nil {
+      raise Error('invalid IPv4 address: nil')
+    }
+
+    var parts = address.split('.')
+    if parts.length() != 4 {
+      raise Error('invalid IPv4 address: ${address}')
+    }
+
+    return Ipv4(
+      _parse_ipv4_octet(parts[0], address),
+      _parse_ipv4_octet(parts[1], address),
+      _parse_ipv4_octet(parts[2], address),
+      _parse_ipv4_octet(parts[3], address),
+    )
+  }
+
+  /**
+   * Returns the four octets making up this address as a list, in the
+   * same left-to-right order they'd be written in dotted-decimal
+   * notation. Each call returns a fresh list, so mutating it does not
+   * affect this instance.
+   *
+   * @returns number[] `[a, b, c, d]`
+   */
+  octets() {
+    return [self._octets[0], self._octets[1], self._octets[2], self._octets[3]]
+  }
+
+  /**
+   * Whether this is the `0.0.0.0` unspecified address.
+   * @returns bool
+   */
+  is_unspecified() {
+    return self._octets[0] == 0 and self._octets[1] == 0 and
+      self._octets[2] == 0 and self._octets[3] == 0
+  }
+
+  /**
+   * Whether this address is in the `127.0.0.0/8` loopback range.
+   * @returns bool
+   */
+  is_loopback() {
+    return self._octets[0] == 127
+  }
+
+  /**
+   * Whether this address is in one of the private-use ranges reserved
+   * by RFC 1918: `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`.
+   * @returns bool
+   */
+  is_private() {
+    var a = self._octets[0]
+    var b = self._octets[1]
+
+    if a == 10 {
+      return true
+    }
+    if a == 172 and b >= 16 and b <= 31 {
+      return true
+    }
+    if a == 192 and b == 168 {
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Whether this address is in the `169.254.0.0/16` link-local range,
+   * used for address autoconfiguration when no other address is
+   * available.
+   * @returns bool
+   */
+  is_link_local() {
+    return self._octets[0] == 169 and self._octets[1] == 254
+  }
+
+  /**
+   * Whether this address is in the `224.0.0.0/4` multicast range.
+   * @returns bool
+   */
+  is_multicast() {
+    return self._octets[0] >= 224 and self._octets[0] <= 239
+  }
+
+  /**
+   * Whether this is the `255.255.255.255` limited broadcast address.
+   * @returns bool
+   */
+  is_broadcast() {
+    return self.equals(Ipv4.broadcast())
+  }
+
+  /**
+   * Whether this address falls in one of the ranges reserved by
+   * RFC 5737 for use in documentation and examples:
+   * `192.0.2.0/24`, `198.51.100.0/24`, or `203.0.113.0/24`.
+   * @returns bool
+   */
+  is_documentation() {
+    var a = self._octets[0]
+    var b = self._octets[1]
+    var c = self._octets[2]
+
+    if a == 192 and b == 0 and c == 2 {
+      return true
+    }
+    if a == 198 and b == 51 and c == 100 {
+      return true
+    }
+    if a == 203 and b == 0 and c == 113 {
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Returns this address re-expressed as an IPv4-mapped IPv6 address,
+   * e.g. `192.168.1.10` becomes `::ffff:192.168.1.10`.
+   *
+   * @returns Ipv6
+   */
+  to_ipv6_mapped() {
+    var hi = self._octets[0] * 256 + self._octets[1]
+    var lo = self._octets[2] * 256 + self._octets[3]
+    return Ipv6(0, 0, 0, 0, 0, 65535, hi, lo)
+  }
+
+  /**
+   * Whether `other` refers to the same address as this one.
+   *
+   * @param Ipv4 other: The address to compare against
+   * @returns bool
+   */
+  equals(other) {
+    if other == nil or !instance_of(other, Ipv4) {
+      return false
+    }
+
+    var check = other.to_list()
+
+    return self._octets[0] == check[0] and
+      self._octets[1] == check[1] and
+      self._octets[2] == check[2] and
+      self._octets[3] == check[3]
+  }
+
+  /**
+   * This address in standard dotted-decimal notation, e.g.
+   * `'192.168.1.10'`.
+   * 
+   * @returns string
+   */
+  to_string() {
+    return '${self._octets[0]}.${self._octets[1]}.${self._octets[2]}.${self._octets[3]}'
+  }
+
+  /**
+   * Returns the octets of the Ipv4 address as a list
+   * 
+   * @returns list
+   */
+  to_list() {
+    return self._octets
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * An IPv6 address, stored internally as eight 16-bit segments in
+ * network (i.e. big-endian, most significant segment first) order.
+ *
+ * @printable
+ */
+class Ipv6 {
+
+  /**
+   * Returns a new instance of an {Ipv6} from its eight segments,
+   * given in the same left-to-right order they'd be written in
+   * colon-hex notation, e.g. `Ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)`
+   * for `2001:db8::1`.
+   *
+   * @param number a: The 1st segment, `0`-`65535`
+   * @param number b: The 2nd segment, `0`-`65535`
+   * @param number c: The 3rd segment, `0`-`65535`
+   * @param number d: The 4th segment, `0`-`65535`
+   * @param number e: The 5th segment, `0`-`65535`
+   * @param number f: The 6th segment, `0`-`65535`
+   * @param number g: The 7th segment, `0`-`65535`
+   * @param number h: The 8th segment, `0`-`65535`
+   * @throws Error if any segment is missing or outside `0`-`65535`
+   */
+  @new(a, b, c, d, e, f, g, h) {
+    self._segments = [
+      _validate_ipv6_segment(a),
+      _validate_ipv6_segment(b),
+      _validate_ipv6_segment(c),
+      _validate_ipv6_segment(d),
+      _validate_ipv6_segment(e),
+      _validate_ipv6_segment(f),
+      _validate_ipv6_segment(g),
+      _validate_ipv6_segment(h),
+    ]
+  }
+
+  /**
+   * The `::` unspecified address, used to mean "any local address" when
+   * binding a socket.
+   *
+   * @returns Ipv6
+   */
+  static unspecified() {
+    return Ipv6(0, 0, 0, 0, 0, 0, 0, 0)
+  }
+
+  /**
+   * The `::1` loopback address.
+   *
+   * @returns Ipv6
+   */
+  static localhost() {
+    return Ipv6(0, 0, 0, 0, 0, 0, 0, 1)
+  }
+
+  /**
+   * Parses an address given in standard colon-hex notation, including
+   * the `::` shorthand for a run of zero segments (at most one `::` is
+   * allowed per address) and the embedded dotted-decimal form used for
+   * IPv4-mapped/-compatible addresses, e.g. `'::ffff:192.168.1.10'`.
+   *
+   * @note Zone identifiers (e.g. the `%eth0` suffix used to disambiguate
+   *    link-local addresses on a particular interface) are not
+   *    supported and will cause parsing to fail.
+   *
+   * @param string address: The address to parse
+   * @returns Ipv6
+   * @throws Error if `address` is not a well-formed IPv6 address
+   */
+  static parse(address) {
+    if address == nil or address.length() == 0 {
+      raise Error('invalid IPv6 address: ${address}')
+    }
+
+    var working = address
+    var trailing_v4 = nil
+
+    if working.index_of('.') > -1 {
+      var last_colon = -1
+      var i = working.length() - 1
+      while i >= 0 {
+        if working[i] == ':' {
+          last_colon = i
+          break
+        }
+        i = i - 1
+      }
+
+      if last_colon < 0 {
+        raise Error('invalid IPv6 address: ${address}')
+      }
+
+      var tail = working[last_colon + 1, working.length()]
+      trailing_v4 = Ipv4.parse(tail)
+
+      if last_colon > 0 and working[last_colon - 1] == ':' {
+        working = working[0, last_colon + 1]
+      } else {
+        working = working[0, last_colon]
+      }
+    }
+
+    var needed = trailing_v4 == nil ? 8 : 6
+    var groups = []
+
+    var halves = working.split('::')
+    if halves.length() > 2 {
+      raise Error('invalid IPv6 address: ${address}')
+    }
+
+    if halves.length() == 2 {
+      var left = halves[0].length() == 0 ? [] : halves[0].split(':')
+      var right = halves[1].length() == 0 ? [] : halves[1].split(':')
+
+      if left.length() + right.length() > needed {
+        raise Error('invalid IPv6 address: ${address}')
+      }
+
+      var i = 0
+      while i < left.length() {
+        groups.append(_parse_group(left[i], address))
+        i = i + 1
+      }
+
+      i = 0
+      while i < needed - (left.length() + right.length()) {
+        groups.append(0)
+        i = i + 1
+      }
+
+      i = 0
+      while i < right.length() {
+        groups.append(_parse_group(right[i], address))
+        i = i + 1
+      }
+    } else {
+      var all = working.split(':')
+      if all.length() != needed {
+        raise Error('invalid IPv6 address: ${address}')
+      }
+
+      var i = 0
+      while i < all.length() {
+        groups.append(_parse_group(all[i], address))
+        i = i + 1
+      }
+    }
+
+    if trailing_v4 != nil {
+      var octets = trailing_v4.octets()
+      groups.append(octets[0] * 256 + octets[1])
+      groups.append(octets[2] * 256 + octets[3])
+    }
+
+    return Ipv6(
+      groups[0], groups[1], groups[2], groups[3],
+      groups[4], groups[5], groups[6], groups[7],
+    )
+  }
+
+  /**
+   * Returns the eight segments making up this address as a list, in
+   * the same left-to-right order they'd be written in colon-hex
+   * notation. Each call returns a fresh list, so mutating it does not
+   * affect this instance.
+   *
+   * @returns number[] `[a, b, c, d, e, f, g, h]`
+   */
+  segments() {
+    return [
+      self._segments[0], self._segments[1], self._segments[2], self._segments[3],
+      self._segments[4], self._segments[5], self._segments[6], self._segments[7],
+    ]
+  }
+
+  /**
+   * Whether this is the `::` unspecified address.
+   * @returns bool
+   */
+  is_unspecified() {
+    var i = 0
+    while i < 8 {
+      if self._segments[i] != 0 {
+        return false
+      }
+      i = i + 1
+    }
+    return true
+  }
+
+  /**
+   * Whether this is the `::1` loopback address.
+   * @returns bool
+   */
+  is_loopback() {
+    var i = 0
+    while i < 7 {
+      if self._segments[i] != 0 {
+        return false
+      }
+      i = i + 1
+    }
+    return self._segments[7] == 1
+  }
+
+  /**
+   * Whether this address is in the `ff00::/8` multicast range.
+   * @returns bool
+   */
+  is_multicast() {
+    return (self._segments[0] / 256).int() == 255
+  }
+
+  /**
+   * Whether this address is in the `fe80::/10` unicast link-local
+   * range.
+   * @returns bool
+   */
+  is_unicast_link_local() {
+    return self._segments[0] >= 65152 and self._segments[0] <= 65215
+  }
+
+  /**
+   * If this address is an IPv4-mapped address (`::ffff:0:0/96`),
+   * returns the IPv4 address it maps to; otherwise returns `nil`.
+   *
+   * @returns ?Ipv4
+   */
+  to_ipv4_mapped() {
+    var i = 0
+    while i < 5 {
+      if self._segments[i] != 0 {
+        return nil
+      }
+      i = i + 1
+    }
+    if self._segments[5] != 65535 {
+      return nil
+    }
+
+    var hi = self._segments[6]
+    var lo = self._segments[7]
+    return Ipv4((hi / 256).int(), hi % 256, (lo / 256).int(), lo % 256)
+  }
+
+  /**
+   * Whether `other` refers to the same address as this one.
+   *
+   * @param Ipv6 other: The address to compare against
+   * @returns bool
+   */
+  equals(other) {
+    if other == nil or !instance_of(other, Ipv6) {
+      return false
+    }
+
+    var check = other.to_list()
+
+    var i = 0
+    while i < 8 {
+      if self._segments[i] != check[i] {
+        return false
+      }
+      i = i + 1
+    }
+    return true
+  }
+
+  /**
+   * This address in its canonical, most-compressed colon-hex notation -
+   * the longest run of consecutive zero segments (if any run is at
+   * least two segments long) is collapsed to `::`; if more than one
+   * such run exists, the leftmost is preferred.
+   *
+   * @returns string
+   */
+  to_string() {
+    var best_start = -1
+    var best_len = 0
+    var run_start = -1
+    var run_len = 0
+
+    var i = 0
+    while i <= 8 {
+      var is_zero = i < 8 and self._segments[i] == 0
+      if is_zero {
+        if run_start == -1 {
+          run_start = i
+        }
+        run_len = run_len + 1
+      } else {
+        if run_len > best_len {
+          best_start = run_start
+          best_len = run_len
+        }
+        run_start = -1
+        run_len = 0
+      }
+      i = i + 1
+    }
+
+    if best_len < 2 {
+      best_start = -1
+      best_len = 0
+    }
+
+    var parts = []
+    i = 0
+    while i < 8 {
+      if i == best_start {
+        parts.append('')
+        i = i + best_len
+      } else {
+        parts.append(self._segments[i].hex())
+        i = i + 1
+      }
+    }
+
+    var result = ''
+    i = 0
+    while i < parts.length() {
+      result = result + parts[i]
+      if i < parts.length() - 1 {
+        result = result + ':'
+      }
+      i = i + 1
+    }
+
+    if best_start == 0 {
+      result = ':' + result
+    }
+    if best_start != -1 and best_start + best_len == 8 {
+      result = result + ':'
+    }
+
+    return result
+  }
+
+  /**
+   * Returns the segments of the Ipv6 address as a list
+   * 
+   * @returns list
+   */
+  to_list() {
+    return self._segment
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Either an {Ipv4} or an {Ipv6}, for code that needs to accept
+ * and work with addresses of either family without committing to one
+ * upfront.
+ *
+ * @printable
+ */
+class Ip {
+
+  /**
+   * Wraps an already-constructed {Ipv4} or {Ipv6}. Application
+   * code should generally prefer `Ip.parse()`, `Ip.v4()`, or
+   * `Ip.v6()` over calling this directly.
+   *
+   * @param {Ipv4|Ipv6} inner: The address to wrap
+   */
+  @new(inner) {
+    self._inner = inner
+  }
+
+  /**
+   * Wraps an {Ipv4} as an {Ip}.
+   *
+   * @param Ipv4 address: The address to wrap
+   * @returns Ip
+   */
+  static v4(address) {
+    return Ip(address)
+  }
+
+  /**
+   * Wraps an {Ipv6} as an {Ip}.
+   *
+   * @param Ipv6 address: The address to wrap
+   * @returns Ip
+   */
+  static v6(address) {
+    return Ip(address)
+  }
+
+  /**
+   * Parses `address` as either an IPv4 or IPv6 address, choosing the
+   * family based on whether `address` contains a `:` character.
+   *
+   * @param string address: The address to parse
+   * @returns Ip
+   * @throws Error if `address` is not a well-formed IPv4 or IPv6
+   *   address
+   */
+  static parse(address) {
+    if address == nil {
+      raise Error('invalid IP address: nil')
+    }
+
+    if address.index_of(':') > -1 {
+      return Ip.v6(Ipv6.parse(address))
+    }
+    return Ip.v4(Ipv4.parse(address))
+  }
+
+  /**
+   * Whether this address is an {Ipv4}.
+   * @returns bool
+   */
+  is_ipv4() {
+    return instance_of(self._inner, Ipv4)
+  }
+
+  /**
+   * Whether this address is an {Ipv6}.
+   * @returns bool
+   */
+  is_ipv6() {
+    return instance_of(self._inner, Ipv6)
+  }
+
+  /**
+   * Returns the wrapped {Ipv4}, or `nil` if this is an IPv6
+   * address.
+   * @returns ?Ipv4
+   */
+  as_ipv4() {
+    if !self.is_ipv4() {
+      return nil
+    }
+    return self._inner
+  }
+
+  /**
+   * Returns the wrapped {Ipv6}, or `nil` if this is an IPv4
+   * address.
+   * @returns ?Ipv6
+   */
+  as_ipv6() {
+    if !self.is_ipv6() {
+      return nil
+    }
+    return self._inner
+  }
+
+  /**
+   * Whether this is the unspecified address for its family (`0.0.0.0`
+   * or `::`).
+   * @returns bool
+   */
+  is_unspecified() {
+    return self._inner.is_unspecified()
+  }
+
+  /**
+   * Whether this is the loopback address for its family (`127.0.0.0/8`
+   * or `::1`).
+   * @returns bool
+   */
+  is_loopback() {
+    return self._inner.is_loopback()
+  }
+
+  /**
+   * Whether this is a multicast address for its family.
+   * @returns bool
+   */
+  is_multicast() {
+    return self._inner.is_multicast()
+  }
+
+  /**
+   * Whether `other` refers to the same address as this one. Two
+   * addresses of different families are never equal, even if one is
+   * the IPv4-mapped form of the other - compare their canonical forms
+   * explicitly if that's the comparison you want.
+   *
+   * @param Ip other: The address to compare against
+   * @returns bool
+   */
+  equals(other) {
+    if other == nil or !instance_of(other, Ip) {
+      return false
+    }
+    if self.is_ipv4() != other.is_ipv4() {
+      return false
+    }
+    return self.to_list().equals(other.to_list())
+  }
+
+  /**
+   * This address in its family's standard notation.
+   * @returns string
+   */
+  to_string() {
+    return self._inner.to_string()
+  }
+
+  /**
+   * Returns the address in this IP as a list. If the address is an Ipv4 
+   * address, the list will contain four (4) elements. Otherwise, it will 
+   * contain eight (8) elements.
+   * 
+   * @returns list
+   */
+  to_list() {
+    return self._inner.to_list()
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
