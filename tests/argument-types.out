@@ -5,7 +5,7 @@ Unhandled TypeError: test() expects parameter 'num' (argument 1) to be a Number,
   4 | 
 > 5 | test('hello')
 
-Stack trace (most recent call first):
-  at @.script() @@ROOT/tests/argument-types.zu:5
+Stack trace (most recent call last):
   at test() @@ROOT/tests/argument-types.zu:1
+  at @.script() @@ROOT/tests/argument-types.zu:5
 

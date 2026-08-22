@@ -3,6 +3,6 @@ Unhandled TypeError: cannot call a number
 
 > 1 | 3()
 
-Stack trace (most recent call first):
+Stack trace (most recent call last):
   at @.script() @@ROOT/tests/new-with-non-class-is-an-error.zu:1
 

@@ -5,6 +5,6 @@ Unhandled TypeError: operator '+' not defined for call signature (A, A)
   6 | 
 > 7 | echo A() + A()
 
-Stack trace (most recent call first):
+Stack trace (most recent call last):
   at @.script() @@ROOT/tests/undefined-method-override.zu:7
 

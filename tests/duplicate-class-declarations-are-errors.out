@@ -4,6 +4,6 @@ Unhandled Error: class 'A' already declared in this scope
   1 | class A {}
 > 2 | class A {}
 
-Stack trace (most recent call first):
+Stack trace (most recent call last):
   at @.script() @@ROOT/tests/duplicate-class-declarations-are-errors.zu:2
 

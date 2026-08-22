@@ -111,7 +111,7 @@ fn render_error_site(path: &str, error_line: u32, source: Option<&str>, use_colo
   out
 }
 
-/// "Stack trace (most recent call first):" plus one line per frame,
+/// "Stack trace (most recent call last):" plus one line per frame,
 /// each showing the function name and its `path:line`. Deep recursion
 /// can produce hundreds of frames that are all noise past the first
 /// handful, so anything beyond a small head+tail collapses into a
@@ -126,14 +126,14 @@ fn render_stacktrace(locations: &[(Rc<str>, u32, String)], use_color: bool) -> S
   // outward to entry. This instead reads as a narrative -- "started
   // here, called this, called this, and broke on the line highlighted
   // above" -- ending exactly where the snippet already landed.
-  let ordered: Vec<(Rc<str>, u32, String)> = locations.iter().rev().cloned().collect();
+  let ordered: Vec<(Rc<str>, u32, String)> = locations.iter().cloned().collect();
 
   // Give more of the truncation budget to the frames nearest the error
   // (now at the END of `ordered`) than the ones nearest entry, since
   // those are the ones actually useful for a deep call chain -- the
   // reverse split from before the reorder.
-  const HEAD: usize = 10;
-  const TAIL: usize = 3;
+  const HEAD: usize = 3;
+  const TAIL: usize = 10;
 
   let header_style = if use_color {
     Style::new().bold()
@@ -161,7 +161,7 @@ fn render_stacktrace(locations: &[(Rc<str>, u32, String)], use_color: bool) -> S
 
   let mut out = format!(
     "{}\n",
-    header_style.paint("Stack trace (most recent call first):")
+    header_style.paint("Stack trace (most recent call last):")
   );
 
   if ordered.len() <= HEAD + TAIL + 1 {
