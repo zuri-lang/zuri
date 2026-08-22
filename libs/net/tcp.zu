@@ -43,6 +43,8 @@
  *   client.close()
  * }
  * ```
+ * 
+ * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import _net_tcp
@@ -283,9 +285,6 @@ class TcpStream {
    * @throws Exception on an underlying I/O error
    */
   peek(length) {
-    if length == nil {
-      length = 1
-    }
     return _net_tcp.tcp_peek(self._ptr, length)
   }
 

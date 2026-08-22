@@ -1,5 +1,16 @@
 /**
  * @module net
+ * 
+ * The `net` module provides networking primitives for Transmission Control 
+ * Protocol and User Datagram Protocol communication as well as IP address 
+ * manipulation interfaces.
+ * 
+ * - `TcpStream` provides functionality for communication over TCP,
+ * - `UdpSocket` provides functionality for communication over UDP,
+ * - `Ip` provides functionality for manuipulating IP addresses.
+ * 
+ * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import @.tcp { * }
+import @.udp { * }
