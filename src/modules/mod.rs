@@ -12,16 +12,18 @@
 mod base64;
 mod compress;
 mod compress_util;
-mod worker;
-mod worker_util;
 mod crypto;
 mod date;
 mod hash;
 mod io;
 mod json;
 mod math;
+mod net_tcp;
+mod net_udp;
 mod os;
 mod r#struct;
+mod worker;
+mod worker_util;
 
 use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
@@ -45,6 +47,8 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   r#struct::MODULE,
   compress::MODULE,
   worker::MODULE,
+  net_tcp::MODULE,
+  net_udp::MODULE,
 ];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {
