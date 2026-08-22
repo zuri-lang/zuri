@@ -20,7 +20,7 @@ var DEFAULT_LOG2_ROUNDS = 10
  * 
  * @type number
  */
-var MAX_EXECUTION_TIME = 100
+var MAX_EXECUTION_TIME = 0.000100
 
 var _NUM_ROUNDS = 16
 var _SALT_LEN = 16
@@ -544,12 +544,12 @@ def _crypt(b, salt, rounds) {
   # calculates the next round
   def next() {
     if i < rounds {
-      var start = microtime()
+      var start = time()
       iter ; i < rounds; {
         i++
         _key(b, P, S)
         _key(salt, P, S)
-        if microtime() - start > MAX_EXECUTION_TIME
+        if time() - start > MAX_EXECUTION_TIME
           break
       }
     } else {
@@ -636,14 +636,12 @@ def _hash(s, salt) {
 def _random(len) {
   var res = bytes(0)
   iter var i = 0; i < len; i++ {
-    res.append(rand(0, 255))
+    res.append(rand(0, 255).int())
   }
   return res
 }
 
 def _generate_salt(rounds) {
-  if rounds != nil and !is_number(rounds)
-    raise TypeError('number expected in argument 1 (rounds): ${typeof(round)} given')
   if !rounds rounds = DEFAULT_LOG2_ROUNDS
 
   if rounds < 4 rounds = 4
@@ -669,7 +667,10 @@ def _generate_salt(rounds) {
  * @returns string
  */
 def hash(str: string, salt_length: ?number) {
-  if salt_length == nil salt_length = DEFAULT_LOG2_ROUNDS
+  if salt_length == nil {
+    salt_length = DEFAULT_LOG2_ROUNDS
+  }
+  
   var salt = _generate_salt(salt_length)
 
   return _hash(str, salt)
