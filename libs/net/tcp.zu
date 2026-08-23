@@ -127,7 +127,7 @@ class TcpStream {
    * @param string address: The host:port to connect to
    * @param ?int timeout: Optional milliseconds to wait before giving up; 
    *    omit for an untimed connection attempt
-   * @throws Exception if resolution fails, if every resolved address
+   * @throws Error if resolution fails, if every resolved address
    *    refuses the connection, or (when `timeout` is given) if `address` 
    *    cannot be parsed as an `ip:port` literal or the timeout elapses 
    *    first.
@@ -147,7 +147,7 @@ class TcpStream {
    * binding is attempted against each in turn until one succeeds.
    *
    * @param string address: The host:port to bind and listen on
-   * @throws Exception if resolution fails or every resolved address
+   * @throws Error if resolution fails or every resolved address
    *   fails to bind (e.g. because it is already in use)
    */
   bind(address) {
@@ -165,7 +165,7 @@ class TcpStream {
    * stream.
    *
    * @returns TcpStream a stream connected to the newly accepted client
-   * @throws Exception on an underlying I/O error, or if this instance
+   * @throws Error on an underlying I/O error, or if this instance
    *   has not been bound
    */
   accept() {
@@ -177,7 +177,7 @@ class TcpStream {
    * connected to, formatted as `ip:port` (`[ip]:port` for IPv6).
    *
    * @returns string the peer's address
-   * @throws Exception if this instance is not a connected stream
+   * @throws Error if this instance is not a connected stream
    */
   peer_address() {
     return _net_tcp.tcp_peer_address(self._ptr)
@@ -192,7 +192,7 @@ class TcpStream {
    * by the OS after binding to port `0`.
    *
    * @returns string the local address
-   * @throws Exception if this instance is neither connected nor bound
+   * @throws Error if this instance is neither connected nor bound
    */
   local_address() {
     return _net_tcp.tcp_local_address(self._ptr)
@@ -206,7 +206,7 @@ class TcpStream {
    * platforms.
    *
    * @param ?int how: One of the `Shutdown` constants
-   * @throws Exception if the underlying `shutdown(2)` call fails, or if
+   * @throws Error if the underlying `shutdown(2)` call fails, or if
    *   this instance is not a connected stream
    */
   shutdown(how) {
@@ -228,7 +228,7 @@ class TcpStream {
    *
    * @param number timeout: Milliseconds, or a negative number to
    *   disable the timeout
-   * @throws Exception if the platform rejects the value
+   * @throws Error if the platform rejects the value
    */
   set_read_timeout(timeout) {
     _net_tcp.tcp_set_read_timeout(self._ptr, timeout)
@@ -253,7 +253,7 @@ class TcpStream {
    *
    * @param number timeout: Milliseconds, or a negative number to
    *   disable the timeout
-   * @throws Exception if the platform rejects the value
+   * @throws Error if the platform rejects the value
    */
   set_write_timeout(timeout) {
     _net_tcp.tcp_set_write_timeout(self._ptr, timeout)
@@ -282,7 +282,7 @@ class TcpStream {
    * @param number length: The maximum number of bytes to peek
    * @returns bytes up to `length` bytes currently in the receive buffer
    *   (`nil` if none are available yet)
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   peek(length) {
     return _net_tcp.tcp_peek(self._ptr, length)
@@ -295,7 +295,7 @@ class TcpStream {
    * them with subsequent writes, trading throughput for lower latency.
    *
    * @param bool nodelay: `true` to disable Nagle's algorithm
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_nodelay(nodelay) {
     _net_tcp.tcp_set_nodelay(self._ptr, nodelay)
@@ -316,7 +316,7 @@ class TcpStream {
    * used by sockets it accepts.
    *
    * @param number ttl: The time-to-live value, `0`-`255`
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_ttl(ttl) {
     _net_tcp.tcp_set_ttl(self._ptr, ttl)
@@ -326,7 +326,7 @@ class TcpStream {
    * Returns the currently configured `IP_TTL` value for this socket.
    *
    * @returns number
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   get_ttl() {
     return _net_tcp.tcp_get_ttl(self._ptr)
@@ -339,7 +339,7 @@ class TcpStream {
    *
    * @returns ?string a description of the pending error, or `nil` if
    *   there is none
-   * @throws Exception on an underlying I/O error while querying the
+   * @throws Error on an underlying I/O error while querying the
    *   socket
    */
   get_error() {
@@ -353,7 +353,7 @@ class TcpStream {
    * otherwise wait on I/O.
    *
    * @param bool nonblocking: `true` to enable non-blocking mode
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   set_non_blocking(nonblocking) {
     _net_tcp.tcp_set_non_blocking(self._ptr, nonblocking)
@@ -372,7 +372,7 @@ class TcpStream {
    * @param number length: The maximum number of bytes to read
    * @returns bytes up to `length` bytes read from the stream (may be
    *   empty on EOF)
-   * @throws Exception on an underlying I/O error, or if the configured
+   * @throws Error on an underlying I/O error, or if the configured
    *   read timeout elapses first
    */
   read(length) {
@@ -384,12 +384,12 @@ class TcpStream {
    * the read timeout) until that many bytes have arrived.
    *
    * If the stream reaches EOF before `length` bytes have been read, this
-   * raises an exception; the contents of any bytes already read are
+   * raises an error; the contents of any bytes already read are
    * lost.
    *
    * @param number length: The exact number of bytes to read
    * @returns bytes exactly `length` bytes
-   * @throws Exception if EOF is reached early, or on any other
+   * @throws Error if EOF is reached early, or on any other
    *   underlying I/O error
    */
   read_exact(length) {
@@ -404,7 +404,7 @@ class TcpStream {
    * open, or set a read timeout first.
    *
    * @returns bytes every byte read up to EOF
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   read_all() {
     return _net_tcp.tcp_read_all(self._ptr)
@@ -417,7 +417,7 @@ class TcpStream {
    * which case the data already read is discarded.
    *
    * @returns string every byte read up to EOF, decoded as UTF-8
-   * @throws Exception on an underlying I/O error, or if the data is not
+   * @throws Error on an underlying I/O error, or if the data is not
    *   valid UTF-8
    */
   read_as_string() {
@@ -431,7 +431,7 @@ class TcpStream {
    *
    * @param {bytes|string} data: The bytes (or UTF-8 text) to write
    * @returns number the number of bytes actually written
-   * @throws Exception on an underlying I/O error, or if the configured
+   * @throws Error on an underlying I/O error, or if the configured
    *   write timeout elapses first
    */
   write(data) {
@@ -444,7 +444,7 @@ class TcpStream {
    * been written.
    *
    * @param {bytes|string} data: The bytes (or UTF-8 text) to write
-   * @throws Exception on an underlying I/O error, or if the configured
+   * @throws Error on an underlying I/O error, or if the configured
    *   write timeout elapses first
    */
   write_all(data) {
@@ -458,7 +458,7 @@ class TcpStream {
    * satisfies the same interface as other writable streams in the
    * standard library.
    *
-   * @throws Exception on an underlying I/O error
+   * @throws Error on an underlying I/O error
    */
   flush() {
     _net_tcp.tcp_flush(self._ptr)

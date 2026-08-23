@@ -88,7 +88,7 @@ catch {
   echo e.message
 }
 
-/* Subclass matching: every builtin exception subclasses Error, so a
+/* Subclass matching: every builtin error subclasses Error, so a
  * parameter typed `Error` must accept a `TypeError` instance too. */
 def needs_error(x: Error) {
   echo 'caught a ' + x.type

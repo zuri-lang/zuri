@@ -37,7 +37,7 @@
 //!   are none; everything lives in `VM::registers` already) and jumps
 //!   straight there. See `codegen::FuncCompiler::compile` and
 //!   `warmup::osr_threshold`.
-//! - **Exceptions bail to the interpreter**: rather than reimplementing
+//! - **Errors bail to the interpreter**: rather than reimplementing
 //!   `catch`/`raise` unwinding as generated machine code, a function
 //!   containing `Instr::PushCatch`/`Instr::Raise` is simply never
 //!   selected for compilation (see `codegen::is_eligible`) -- it always
@@ -45,7 +45,7 @@
 //!   handles it. A compiled function can still raise indirectly (an
 //!   arithmetic type error, a callee that itself raises, ...); when
 //!   that happens control leaves compiled code entirely and propagates
-//!   the exception up to whatever Rust frame invoked it (interpreter's
+//!   the error up to whatever Rust frame invoked it (interpreter's
 //!   `dispatch_call`, `call_value`, or an enclosing compiled caller's
 //!   own call-site helper), mirroring how an interpreted `Err(Value)`
 //!   already propagates. See `runtime`'s module docs for the exact
@@ -118,10 +118,10 @@ pub fn log_ir_enabled() -> bool {
 ///   invocation is running as (needed for `GetUpval`/`SetUpval`/
 ///   `Instr::Closure`'s own upvalue capture).
 /// - returns: the function's return value's raw bit pattern (see
-///   `Value::to_bits`), valid ONLY if `VM::jit_pending_exception` is
-///   nil when this call returns -- a non-nil pending exception means
+///   `Value::to_bits`), valid ONLY if `VM::jit_pending_error` is
+///   nil when this call returns -- a non-nil pending error means
 ///   the return value is meaningless and the caller must propagate the
-///   exception instead. See `runtime`'s module docs.
+///   error instead. See `runtime`'s module docs.
 pub type EntryFn =
   unsafe extern "C" fn(vm: *mut crate::vm::vm::VM, base: u64, closure: u64, osr_id: i32) -> u64;
 

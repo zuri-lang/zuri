@@ -25,7 +25,7 @@
 //! recursive way as everything else), and its captured variables cross
 //! as an independent snapshot, not shared state.
 //!
-//! A `Ptr`-wrapped native resource (see `ObjPtr`) is the one exception
+//! A `Ptr`-wrapped native resource (see `ObjPtr`) is the one error
 //! to "always copy, never share, source stays valid": most such
 //! resources (a socket, a database connection) are only sound to use
 //! from one thread at a time, so crossing has to be a MOVE. `capture`
@@ -209,7 +209,7 @@ pub enum TransferValue {
     name: String,
     kind: NamedKind,
   },
-  /// A builtin exception class (`Error`, `TypeError`, ...) -- resolved
+  /// A builtin error class (`Error`, `TypeError`, ...) -- resolved
   /// by name against the destination's own prelude, already installed
   /// fresh by `VM::init` on every isolate. See `capture_class`'s own
   /// docs on why this can't go through the ordinary `Named`/`Home`
@@ -699,7 +699,7 @@ fn capture_class(
     (c.name.clone(), c.globals_module)
   };
 
-  // A builtin exception class (`Error`, `TypeError`, ...) is installed
+  // A builtin error class (`Error`, `TypeError`, ...) is installed
   // fresh by `VM::init` on every worker isolate already -- it isn't
   // declared in any module a `Home` could point at, and structurally
   // cloning it would produce a class that LOOKS the same but isn't the
@@ -710,7 +710,7 @@ fn capture_class(
   // free -- no module load, no clone.
   if gmod.is_none()
     && vm
-      .builtin_exceptions
+      .builtin_errors
       .get(name.as_str())
       .is_some_and(|c| c.equals(&v))
   {
@@ -915,7 +915,7 @@ fn materialize_value(
     TransferValue::Named { home, name, kind } => resolve_named(vm, home, name, kind),
     TransferValue::Prelude(name) => vm.lookup_global(name).ok_or_else(|| {
       format!(
-        "internal error: builtin exception class '{}' missing from the \
+        "internal error: builtin error class '{}' missing from the \
          destination isolate's own prelude",
         name
       )
@@ -1317,5 +1317,5 @@ fn load_module_cached(vm: &mut VM, path: &str) -> Result<Value, String> {
     return Ok(m);
   }
   crate::vm::modules::load_from_candidate(vm, Path::new(path), path)
-    .map_err(|e| vm.describe_exception(e))
+    .map_err(|e| vm.describe_error(e))
 }

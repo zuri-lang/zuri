@@ -21,15 +21,15 @@
 //! `Result<Value, Value>` isn't a `repr(C)` type worth wrestling into
 //! one for every call site). Instead, every helper that can fail
 //! returns a `u64` status: `0` for success, `1` for failure. On
-//! failure, the helper has already stored the propagating exception
-//! `Value` into `VM::jit_pending_exception` before returning. Compiled
+//! failure, the helper has already stored the propagating error
+//! `Value` into `VM::jit_pending_error` before returning. Compiled
 //! code checks this status immediately after the call (see
 //! `codegen::FuncCompiler::emit_call`); on failure it abandons the rest
 //! of the function entirely and returns up to its own Rust caller
-//! (`VM::invoke_compiled`), which reads `jit_pending_exception` and
+//! (`VM::invoke_compiled`), which reads `jit_pending_error` and
 //! turns it into a real `Err(Value)` -- exactly mirroring how an
 //! interpreted `Err(Value)` already propagates via `?`/`tri!`. This is
-//! the concrete mechanism behind "exceptions cause a bailout" for
+//! the concrete mechanism behind "errors cause a bailout" for
 //! compiled code: there's no unwinder in the generated machine code at
 //! all, just this one flag checked after every fallible call.
 //!
@@ -88,7 +88,7 @@ unsafe fn vm<'a>(ptr: *mut VM) -> &'a mut VM {
 
 #[inline(always)]
 fn fail(vm: &mut VM, exc: Value) -> u64 {
-  vm.jit_pending_exception.set(exc);
+  vm.jit_pending_error.set(exc);
   ERR
 }
 
@@ -935,7 +935,7 @@ pub unsafe extern "C" fn zuri_jit_new_finish(
     };
   }
 
-  if !vm.jit_pending_exception.get().is_nil() {
+  if !vm.jit_pending_error.get().is_nil() {
     return ERR;
   }
   vm.close_upvalues_from(new_base as usize);
@@ -993,7 +993,7 @@ pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
 /// frame base (needed to close its upvalues); `base`/`dst` are the
 /// caller's, to write the return value into the right place. Follows
 /// the ordinary OK(0)/ERR(1) helper convention -- on error, the pending
-/// exception is left exactly as the failing compiled call already set
+/// error is left exactly as the failing compiled call already set
 /// it (see this module's top-level docs), and the frame is left in
 /// place, matching `VM::invoke_compiled`'s own error-path semantics
 /// precisely (compiled code never pops its own frame on error).
@@ -1024,7 +1024,7 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
     };
   }
 
-  if !vm.jit_pending_exception.get().is_nil() {
+  if !vm.jit_pending_error.get().is_nil() {
     return ERR;
   }
   vm.close_upvalues_from(new_base as usize);

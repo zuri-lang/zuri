@@ -51,7 +51,7 @@
  * subsequent calls, but reading the same resource a second time
  * raises `WorkerError`.
  *
- * A `Channel` or `Worker` handle itself is the one exception: it is
+ * A `Channel` or `Worker` handle itself is the one error: it is
  * shared, not moved, since both are already safe to use concurrently
  * from multiple workers by design.
  *
@@ -59,7 +59,7 @@
  *
  * A bug inside one worker cannot bring down another worker, the
  * pool, or the process: even an internal, unexpected failure (not an
- * ordinary raised exception, which `join()` already reports as
+ * ordinary raised error, which `join()` already reports as
  * `WorkerError`) is caught and reported the same way. The worker
  * thread involved is discarded and replaced automatically; the pool
  * keeps running at full size.
@@ -116,7 +116,7 @@ class Worker {
    *   indefinitely if omitted.
    * @returns any
    * @raises WorkerError if the worker's function raised an
-   *   uncaught exception
+   *   uncaught error
    * @raises WorkerTimeoutError if `timeout` elapses first
    * @raises WorkerCancelledError if the CALLING worker (not this
    *   one) is cancelled while blocked here
@@ -177,7 +177,7 @@ class Worker {
    *   one still running. Use `is_done()` to tell them apart.
    * @returns any
    * @raises WorkerError if the worker's function raised an
-   *   uncaught exception
+   *   uncaught error
    */
   try_join() {
     var r = _worker.try_join(self._ptr)
@@ -205,7 +205,7 @@ class Worker {
    *
    * @returns string: `'pending'` while still running, `'done'` once
    *   finished successfully, or `'error'` once finished with an
-   *   uncaught exception.
+   *   uncaught error.
    */
   status() {
     return _worker.status(self._ptr)
@@ -344,7 +344,7 @@ class Scope {
  * If `body` raises, or any worker spawned through `s` fails, every
  * other still-running one in the scope is `cancel()`ed (cooperative, 
  * see `Worker.cancel()`), and `scope()` still waits for all of them
- * to actually finish before re-raising. `body`'s own exception takes
+ * to actually finish before re-raising. `body`'s own error takes
  * priority if both it and a child failed; otherwise the first child
  * failure, in the order it was spawned, is raised.
  *

@@ -27,7 +27,7 @@ fn call(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx
     .vm
     .call_value(ctx.args[0], &ctx.args[1..])
-    .map_err(|e| ctx.vm.describe_exception(e))?;
+    .map_err(|e| ctx.vm.describe_error(e))?;
 
   Ok(val)
 }

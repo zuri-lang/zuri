@@ -2180,7 +2180,7 @@ impl<'a> Compiler<'a> {
   /// spec ("used whenever or wherever in the code"). Deliberately does
   /// NOT run the redeclaration check `var` itself uses: writing several
   /// sequential `catch {...} as e` blocks reusing the same name is the
-  /// expected idiom (each rebinds `e` to its own exception), not an
+  /// expected idiom (each rebinds `e` to its own error), not an
   /// error.
   fn compile_catch(
     &mut self,
@@ -2218,14 +2218,14 @@ impl<'a> Compiler<'a> {
     self.emit(Instr::PopCatch);
 
     // Both the normal-completion fallthrough (right here) and an
-    // exception's direct jump (via PushCatch's own offset) converge at
+    // error's direct jump (via PushCatch's own offset) converge at
     // this exact point -- see Instr::PushCatch's doc comment.
     self.patch_jump(push_at);
 
     // REPL top-level persistence: mirrors Stmt::Var's own is_repl
     // special-case -- a REPL line's register file is gone by the time
     // the NEXT line compiles (each is a fresh Chunk), so without this,
-    // the caught exception would be unreachable outside the exact
+    // the caught error would be unreachable outside the exact
     // catch statement that declared it.
     if let Some((reg, name)) = &var_reg {
       if self.is_repl && self.cur().scope_depth == 0 {

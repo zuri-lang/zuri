@@ -49,7 +49,7 @@ echo t8.try_join()
 # join() is repeatable
 echo t1.join()
 
-# an uncaught exception inside the worker surfaces as WorkerError
+# an uncaught error inside the worker surfaces as WorkerError
 catch {
   var failing = worker.spawn(worker_worker.boom)
   failing.join()

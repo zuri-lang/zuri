@@ -87,7 +87,7 @@ impl ParserError {
   /// place for every token kind.
   // Same palette as `VM::format_uncaught`'s runtime-error rendering
   // (bold red header, cyan locator, dimmed gutter, bold red pointer) so
-  // a syntax error and an uncaught exception read as the same family of
+  // a syntax error and an uncaught error read as the same family of
   // diagnostic instead of two different tools' output pasted together.
   pub fn render(&self, path: &str, source: &str) -> String {
     let use_color = std::io::stderr().is_terminal();
@@ -1667,7 +1667,7 @@ impl<'a> Parser<'a> {
 
       if check_tok!(self, TokenKind::Lbrace) {
         catch_body = Some(Box::new(
-          self.match_block("Expected '{' after exception variable.".to_string()),
+          self.match_block("Expected '{' after error variable.".to_string()),
         ));
       }
     }

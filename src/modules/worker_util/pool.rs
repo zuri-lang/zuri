@@ -56,7 +56,7 @@ static CONFIGURED_SIZE: Mutex<Option<usize>> = Mutex::new(None);
 /// effect if the pool hasn't started yet (its size is fixed for the
 /// rest of the process once the first worker actually runs) --
 /// returns `false` rather than an error in that case, since "someone
-/// already spawned something" isn't really exceptional, just too
+/// already spawned something" isn't really erroral, just too
 /// late.
 pub fn configure(n: usize) -> Result<bool, String> {
   if n == 0 || n > MAX_POOL_SIZE {
@@ -613,7 +613,7 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
 
   match isolate.vm.call_value(target, &full_args) {
     Ok(ret) => transfer::capture(&isolate.vm, ret),
-    Err(exc) => Err(isolate.vm.describe_exception(exc)),
+    Err(exc) => Err(isolate.vm.describe_error(exc)),
   }
 }
 
@@ -625,10 +625,10 @@ enum Slot {
   Pending,
   Ok(TransferGraph),
   /// A rendered, human-readable failure -- either the spawned
-  /// function's own uncaught exception (see `VM::describe_exception`)
+  /// function's own uncaught error (see `VM::describe_error`)
   /// or an infrastructure failure (bad spawn target, a value that
   /// couldn't cross the isolate boundary, ...). Deliberately not the
-  /// original exception `Value` itself: that `Value` lives on the
+  /// original error `Value` itself: that `Value` lives on the
   /// WORKER's own heap and can't be handed back across the thread
   /// boundary any more than any other `Value` can -- see `transfer`'s
   /// own docs. `libs/worker.zu` wraps this text in its own
@@ -827,7 +827,7 @@ impl Drop for WorkerState {
   /// A worker's failure doesn't otherwise go anywhere unless
   /// something calls `join()`/`try_join()` on it -- exactly like a
   /// plain `std::thread` whose `JoinHandle` is dropped without ever
-  /// being joined, an uncaught exception or a caught panic inside a
+  /// being joined, an uncaught error or a caught panic inside a
   /// fire-and-forget `spawn()` would silently vanish once the last
   /// `Worker` handle (and the pool's own internal one) goes out of
   /// scope. A dropped `String` costs nothing to check for and losing

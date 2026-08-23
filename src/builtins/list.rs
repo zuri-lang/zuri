@@ -534,7 +534,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
     ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_exception(e))?;
+      .map_err(|e| ctx.vm.describe_error(e))?;
   }
 
   let list_val = ctx.vm.pinned(mark);
@@ -555,7 +555,7 @@ fn map_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     let mapped = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_exception(e))?;
+      .map_err(|e| ctx.vm.describe_error(e))?;
     result.push(mapped);
   }
   ctx.vm.unpin(mark);
@@ -575,7 +575,7 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
     let keep = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_exception(e))?;
+      .map_err(|e| ctx.vm.describe_error(e))?;
     if !keep.is_falsey() {
       // Re-read again: `call_value` above may have relocated it since
       // the `item` copy taken just before the call.
@@ -598,7 +598,7 @@ fn some_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     let result = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_exception(e))?;
+      .map_err(|e| ctx.vm.describe_error(e))?;
     if !result.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::bool(true));
@@ -620,7 +620,7 @@ fn every(ctx: &mut ZuriContext) -> Result<Value, String> {
     let result = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_exception(e))?;
+      .map_err(|e| ctx.vm.describe_error(e))?;
     if result.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::bool(false));
@@ -660,7 +660,7 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
     acc = ctx
       .vm
       .call_value(callback, &[acc, item, Value::number(i as f64), list_val])
-      .map_err(|e| ctx.vm.describe_exception(e))?;
+      .map_err(|e| ctx.vm.describe_error(e))?;
   }
 
   ctx.vm.unpin(mark);

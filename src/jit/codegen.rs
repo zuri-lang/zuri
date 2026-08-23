@@ -67,7 +67,7 @@ const JIT_SCALAR_ROOTS_LEN_OFFSET: i32 = vm::VM_JIT_SCALAR_ROOTS_LEN_OFFSET as i
 const HAS_OPEN_UPVALUES_OFFSET: i32 = vm::VM_HAS_OPEN_UPVALUES_OFFSET as i32;
 /// Byte offset (from a `*mut VM`) of `VM::pending_deopt_ip`.
 const PENDING_DEOPT_IP_OFFSET: i32 = vm::VM_PENDING_DEOPT_IP_OFFSET as i32;
-/// Byte offset (from a `*mut VM`) of `VM::jit_pending_exception`.
+/// Byte offset (from a `*mut VM`) of `VM::jit_pending_error`.
 const JIT_PENDING_EXCEPTION_OFFSET: i32 = vm::VM_JIT_PENDING_EXCEPTION_OFFSET as i32;
 /// Byte offset (from a `*mut VM`) of `VM::jit_call_depth`.
 const JIT_CALL_DEPTH_OFFSET: i32 = vm::VM_JIT_CALL_DEPTH_OFFSET as i32;
@@ -1778,7 +1778,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// EVERY instruction, precisely because any instruction can raise.
   /// Compiled code cannot afford that, and does not need it: the only
   /// ways a compiled frame's position ever becomes observable are
-  /// raising an exception and becoming the caller of a new frame, and
+  /// raising an error and becoming the caller of a new frame, and
   /// BOTH happen inside a `jit::runtime` helper. So publishing once per
   /// helper call -- a single store of an immediate to a fixed `VM`
   /// offset, on a path that is already paying for an FFI call -- covers
@@ -1803,8 +1803,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Calls a `jit::runtime` helper that follows the OK(0)/ERR(1) status
   /// convention (see that module's docs): on `ERR`, immediately returns
-  /// from the WHOLE compiled function (the exception is already sitting
-  /// in `VM::jit_pending_exception`, ready for `VM::invoke_compiled` to
+  /// from the WHOLE compiled function (the error is already sitting
+  /// in `VM::jit_pending_error`, ready for `VM::invoke_compiled` to
   /// pick up) rather than continuing this instruction's own codegen.
   /// Always refreshes the registers pointer afterward -- see this
   /// module's docs on why every helper call is conservatively treated
@@ -2091,8 +2091,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// registers` memory, with `reg_cache[dst]` marked `Stale` rather than
   /// going through `store_reg`'s `Variable`. That's deliberate, not an
   /// oversight: this function has multiple internal branches (deopt,
-  /// exception, ordinary success) that all reach the same `done_block`,
-  /// and `dst`'s `Variable` is never defined on the deopt/exception
+  /// error, ordinary success) that all reach the same `done_block`,
+  /// and `dst`'s `Variable` is never defined on the deopt/error
   /// paths at all (they write memory directly, exactly like the helper
   /// calls they replace). A `Dirty` marking on the success path only
   /// would leave a LATER `load_reg(dst)` trusting a `Variable` that was
@@ -2206,12 +2206,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `emit_inline_frame_finish`'s construct-call counterpart -- the
-  /// same deopt/exception/upvalue/pop shape, but discarding the
+  /// same deopt/error/upvalue/pop shape, but discarding the
   /// constructor's own return value in favour of the instance
   /// `emit_inline_construct` pinned, and needing the `gc_pins` release
   /// `zuri_jit_take_constructed_instance` does. See `zuri_jit_new_finish`
   /// 's own docs for why that release happens exactly here (after the
-  /// deopt/exception checks -- unlike the ordinary-call finish, this
+  /// deopt/error checks -- unlike the ordinary-call finish, this
   /// one has a real resource to release regardless of which of those
   /// two fire) and `emit_inline_frame_finish`'s own docs for why every
   /// exit path writes `dst` the same uniform way.
@@ -2271,7 +2271,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(past_deopt_block);
     // No deopt was pending, so nothing has run any Zuri code since the
     // check above -- safe to release the pin here, still strictly
-    // before the exception check, matching the original's own order.
+    // before the error check, matching the original's own order.
     let instance = self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
     let exc = self
       .fb

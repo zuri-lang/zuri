@@ -101,7 +101,7 @@ class ModuleNotFoundError < Error {
 }
 "#;
 
-/// Names of every builtin exception class, in declaration order (each
+/// Names of every builtin error class, in declaration order (each
 /// subclasses `Error`, so it has to already be bound as a global by
 /// the time its subclasses compile -- matching `PRELUDE_SOURCE`'s own
 /// ordering).
@@ -121,7 +121,7 @@ pub const EXCEPTION_CLASS_NAMES: &[&str] = &[
 ];
 
 /// Compile and run `PRELUDE_SOURCE` against `vm`, then cache each
-/// resulting class Value by name in `vm.builtin_exceptions` for
+/// resulting class Value by name in `vm.builtin_errors` for
 /// `VM::raise`'s fast lookup. Panics on any failure -- a broken prelude
 /// is an internal bug, not a user-facing error, so there is no
 /// meaningful way to recover from it (and no user code has run yet to
@@ -151,8 +151,8 @@ pub fn install(vm: &mut VM) {
 
   if let Err(e) = vm.run(closure) {
     panic!(
-      "internal error: prelude raised an exception: {}",
-      vm.describe_exception(e)
+      "internal error: prelude raised an error: {}",
+      vm.describe_error(e)
     );
   }
 
@@ -160,6 +160,6 @@ pub fn install(vm: &mut VM) {
     let class_val: Value = vm
       .lookup_global(name)
       .unwrap_or_else(|| panic!("internal error: prelude did not define '{}'", name));
-    vm.builtin_exceptions.insert(name, class_val);
+    vm.builtin_errors.insert(name, class_val);
   }
 }

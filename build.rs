@@ -43,15 +43,11 @@ fn main() {
   println!("cargo:rustc-env=ZURI_BUILD_TIME={}", now);
   println!("cargo:rustc-env=ZURI_HISTORY_SIZE={}", history_size);
 
-  // Tell Cargo to re-run this script only if Cargo.toml changes
+  // Tell Cargo to re-run this script if Cargo.toml changes
   println!("cargo:rerun-if-changed=Cargo.toml");
 
-  // A directory path, not a glob: `cargo:rerun-if-changed` doesn't
-  // expand `libs/*` (that's not a real path, so Cargo just watches
-  // nothing), but it does watch a directory's whole contents when
-  // given the directory itself -- same pattern already used for
-  // `tests/` below.
-  println!("cargo:rerun-if-changed=libs");
+  let libs_dir = Path::new(&manifest_dir).join("libs");
+  println!("cargo:rerun-if-changed={}", libs_dir.display());
   copy_to_output("libs", &env::var("PROFILE").unwrap()).expect("Could not copy");
 
   generate_zu_conformance_tests(&manifest_dir);
@@ -98,7 +94,7 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
       .unwrap_or_else(|| panic!("non-UTF8 fixture name: {}", zu_path.display()));
     let mut test_name = escape_ident(stem);
     // Two fixture stems could collide after sanitization (e.g. names
-    // differing only by a character `sanitize_ident` folds away) --
+    // differing only by a character `sanitize_ident` folds away). So we
     // disambiguate rather than silently generating two functions with
     // the same name (a hard compile error) or silently dropping one.
     while !seen_names.insert(test_name.clone()) {
@@ -136,8 +132,7 @@ fn sanitize_ident(s: &str) -> String {
 /// Sanitizes, then unconditionally wraps in `r#` -- a raw identifier is
 /// a pure lexer-level escape with no semantic difference from the
 /// plain identifier (`r#foo` and `foo` name the same thing) whether or
-/// not the text happens to be a keyword, so this needs no keyword list
-/// to stay correct as the fixture suite grows. The one exception the
+/// not the text happens to be a keyword. We handle the one error the
 /// language itself carves out -- `self`/`Self`/`super`/`crate` can
 /// never be raw identifiers, `r#` or not -- is narrow enough to just
 /// check for directly.

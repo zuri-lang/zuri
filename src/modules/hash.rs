@@ -194,7 +194,7 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       return ctx
         .vm
         .call_value(m, &[v])
-        .map_err(|e| ctx.vm.describe_exception(e));
+        .map_err(|e| ctx.vm.describe_error(e));
     }
   }
 

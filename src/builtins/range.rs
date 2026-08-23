@@ -106,7 +106,7 @@ fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       ctx
         .vm
         .call_value(callback, &[Value::number(i)])
-        .map_err(|e| ctx.vm.describe_exception(e))?;
+        .map_err(|e| ctx.vm.describe_error(e))?;
       i += 1.0;
     }
   } else {
@@ -116,7 +116,7 @@ fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       ctx
         .vm
         .call_value(callback, &[Value::number(i)])
-        .map_err(|e| ctx.vm.describe_exception(e))?;
+        .map_err(|e| ctx.vm.describe_error(e))?;
       i -= 1.0;
     }
   }

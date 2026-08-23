@@ -427,18 +427,18 @@ pub enum Instr {
   /// compiles, popped by `Instr::PopCatch` on normal completion.
   /// `var_reg` (if the `as` clause was present) is a register in the
   /// SAME frame this instruction executes in -- pre-loaded with Nil --
-  /// that either stays Nil (no exception) or gets overwritten with the
-  /// caught exception by the VM's unwind logic. `offset` is a relative
+  /// that either stays Nil (no error) or gets overwritten with the
+  /// caught error by the VM's unwind logic. `offset` is a relative
   /// jump-style offset (same encoding/patching as Jmp) to where
   /// execution resumes on EITHER path -- normal fallthrough past
-  /// PopCatch, or an exception jumping there directly.
+  /// PopCatch, or an error jumping there directly.
   PushCatch {
     var_reg: Option<u8>,
     offset: i16,
   },
   /// Marks normal (non-exceptional) completion of a catch body --
   /// pops the handler `PushCatch` registered. Never reached if an
-  /// exception unwound past this point instead.
+  /// error unwound past this point instead.
   PopCatch,
 
   /* Folded Instructions */
@@ -698,7 +698,7 @@ pub struct Chunk {
   /// Parallel to `code` -- `lines[i]` is the source line `code[i]` was
   /// compiled from (statement granularity; see
   /// `Compiler::emit`/`FunctionScope::current_line`). Used only to
-  /// build a stack trace on a raised or uncaught exception -- see
+  /// build a stack trace on a raised or uncaught error -- see
   /// `VM::build_stacktrace`.
   pub lines: Vec<u32>,
   /// Inline cache for global variable access: maps a GetGlobal/

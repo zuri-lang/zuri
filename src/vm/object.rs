@@ -569,7 +569,7 @@ pub struct JitInfo {
   /// Set once a compilation attempt has run and FAILED, or the
   /// function was found ineligible up front (contains `Raise`/
   /// `PushCatch`/`PopCatch` -- see the `crate::jit` module docs for why
-  /// exception-handling bytecode is never compiled). Sticky: later warm
+  /// error-handling bytecode is never compiled). Sticky: later warm
   /// call sites see this and stop trying, rather than re-attempting a
   /// doomed compilation on every single call.
   pub ineligible: Cell<bool>,
@@ -786,7 +786,7 @@ pub struct NativeFunction {
 /// the superclass chain once, at declaration time (see `Instr::MakeClass`)
 /// -- so a call site never needs to walk ancestors to find an instance
 /// method or a field's slot index, just one hashmap lookup. Statics are
-/// the deliberate exception: `static_slots`/`statics` hold ONLY this
+/// the deliberate error: `static_slots`/`statics` hold ONLY this
 /// class's own declarations, and a lookup that misses walks `superclass`
 /// live (see `lookup_static` in vm.rs) -- so an inherited static genuinely
 /// shares storage with wherever it's actually declared, rather than being
@@ -1158,7 +1158,7 @@ impl ObjPtr {
   /// isolate rather than being copied -- the one case in the whole
   /// worker-transfer system where the source side can't stay valid
   /// afterward (see `modules::worker_util::transfer`'s own docs on
-  /// why a `Ptr` is the sole exception to "always copy, never share,
+  /// why a `Ptr` is the sole error to "always copy, never share,
   /// source stays valid"). Callers are responsible for also updating
   /// `type_name` if they want `ptr_type_name()` to say something more
   /// specific than "still tagged, but empty" -- this only swaps the
@@ -1430,7 +1430,10 @@ fn obj_str_data_offsets() -> (i32, i32) {
 
     let probe = Obj::Str(probe_string);
     let obj_bytes = unsafe {
-      std::slice::from_raw_parts(&probe as *const Obj as *const u8, std::mem::size_of::<Obj>())
+      std::slice::from_raw_parts(
+        &probe as *const Obj as *const u8,
+        std::mem::size_of::<Obj>(),
+      )
     };
 
     let word = std::mem::size_of::<usize>();
@@ -1531,8 +1534,10 @@ mod gcbox_layout_tests {
     let obj = v.as_obj();
     assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_STR);
 
-    let ptr_slot = unsafe { (obj as *const u8).offset(obj_str_ptr_offset() as isize) as *const usize };
-    let len_slot = unsafe { (obj as *const u8).offset(obj_str_len_offset() as isize) as *const usize };
+    let ptr_slot =
+      unsafe { (obj as *const u8).offset(obj_str_ptr_offset() as isize) as *const usize };
+    let len_slot =
+      unsafe { (obj as *const u8).offset(obj_str_len_offset() as isize) as *const usize };
     let data_ptr = unsafe { *ptr_slot } as *const u8;
     let byte_len = unsafe { *len_slot };
 

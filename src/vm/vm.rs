@@ -588,10 +588,10 @@ struct CatchHandler {
   var_reg: Option<u8>,
 }
 
-/// What the `#[cold]` exception path hands back to `run_until` so it can
+/// What the `#[cold]` error path hands back to `run_until` so it can
 /// refresh its cached frame-state locals, or propagate, without that logic
 /// living in the cold path itself.
-enum ExceptionOutcome {
+enum ErrorOutcome {
   Handled {
     frame_idx: usize,
     base: usize,
@@ -687,18 +687,18 @@ pub struct VM {
   /// compiled-code round trip crosses a thread boundary the GC can't
   /// otherwise see into.
   pending_jit_compiles: Vec<Value>,
-  /// Side channel a `jit::runtime` helper sets to a non-nil exception when
+  /// Side channel a `jit::runtime` helper sets to a non-nil error when
   /// it needs to propagate a failure out of executing compiled code, which
   /// has no unwinder of its own. `VM::invoke_compiled` checks this right
   /// after a compiled call returns to decide `Ok`/`Err`. Always nil outside
   /// that brief window.
-  pub(crate) jit_pending_exception: Cell<Value>,
+  pub(crate) jit_pending_error: Cell<Value>,
   /// Side channel a `jit::runtime` deopt helper sets to the bytecode `ip`
   /// compiled code should resume interpreting at. Unlike
-  /// `jit_pending_exception` this means "nothing went wrong, just stop
+  /// `jit_pending_error` this means "nothing went wrong, just stop
   /// speculating" — VM registers already hold the correct state since
   /// compiled code keeps them live throughout, so resuming is just handing
-  /// control to the interpreter at this `ip`. Checked before the exception
+  /// control to the interpreter at this `ip`. Checked before the error
   /// channel since a deopt isn't an error. Always `-1` outside the brief
   /// window between a helper setting it and `invoke_compiled` clearing
   /// it -- `i64`, not `Option<usize>`, specifically so `jit::codegen`'s
@@ -719,7 +719,7 @@ pub struct VM {
   deopt_reentrancy_depth: Cell<u32>,
   /// Cached by name after `prelude::install` runs, so `VM::raise` gets O(1)
   /// lookup instead of a globals hashmap hit on every internal error.
-  pub(crate) builtin_exceptions: FxHashMap<&'static str, Value>,
+  pub(crate) builtin_errors: FxHashMap<&'static str, Value>,
   /// One shared, immortal `Value` per ASCII character, built on first use —
   /// what `s[i]` returns instead of allocating a fresh one-character string
   /// every time.
@@ -822,10 +822,10 @@ pub(crate) const VM_JIT_SCALAR_ROOTS_LEN_OFFSET: usize =
 pub(crate) const VM_HAS_OPEN_UPVALUES_OFFSET: usize = std::mem::offset_of!(VM, has_open_upvalues);
 /// Byte offset of `VM::pending_deopt_ip` -- see that field's own docs.
 pub(crate) const VM_PENDING_DEOPT_IP_OFFSET: usize = std::mem::offset_of!(VM, pending_deopt_ip);
-/// Byte offset of `VM::jit_pending_exception` -- see that field's own
+/// Byte offset of `VM::jit_pending_error` -- see that field's own
 /// docs.
 pub(crate) const VM_JIT_PENDING_EXCEPTION_OFFSET: usize =
-  std::mem::offset_of!(VM, jit_pending_exception);
+  std::mem::offset_of!(VM, jit_pending_error);
 /// Byte offset of `VM::jit_call_depth` -- see that field's own docs.
 pub(crate) const VM_JIT_CALL_DEPTH_OFFSET: usize = std::mem::offset_of!(VM, jit_call_depth);
 /// `MAX_JIT_CALL_DEPTH` itself, re-exported so `jit::codegen`'s inline
@@ -854,13 +854,13 @@ impl VM {
       jit_engine: None,
       jit_compiler: None,
       pending_jit_compiles: Vec::new(),
-      jit_pending_exception: Cell::new(Value::nil()),
+      jit_pending_error: Cell::new(Value::nil()),
       pending_deopt_ip: Cell::new(-1),
       jit_enabled: *ZURI_JIT_ENABLED,
       no_jit_specialization: *ZURI_JIT_NO_SPECIALIZATION,
       jit_call_depth: Cell::new(0),
       deopt_reentrancy_depth: Cell::new(0),
-      builtin_exceptions: FxHashMap::default(),
+      builtin_errors: FxHashMap::default(),
       interned_ascii: Vec::new(),
       global_slots: Vec::new(),
       global_names: FxHashMap::default(),
@@ -1011,15 +1011,15 @@ impl VM {
     }
   }
 
-  /// Constructs a builtin exception instance directly by field slot,
+  /// Constructs a builtin error instance directly by field slot,
   /// bypassing the normal constructor path since these are always known
   /// prelude classes. Every internal VM error site calls this instead of
   /// returning a bare Rust string.
   pub(crate) fn raise(&mut self, class_name: &'static str, message: impl Into<String>) -> Value {
     let message_str = message.into();
-    let class_val = *self.builtin_exceptions.get(class_name).unwrap_or_else(|| {
+    let class_val = *self.builtin_errors.get(class_name).unwrap_or_else(|| {
       panic!(
-        "internal error: unknown builtin exception class '{}' (prelude not installed?)",
+        "internal error: unknown builtin error class '{}' (prelude not installed?)",
         class_name
       )
     });
@@ -1045,16 +1045,16 @@ impl VM {
 
   /// Is `v` an instance of `Error` or a subclass? What `Instr::Raise`
   /// checks before letting a value propagate as an error.
-  fn is_exception_value(&self, v: Value) -> bool {
+  fn is_error_value(&self, v: Value) -> bool {
     if !v.is_instance() {
       return false;
     }
-    let Some(&exception_class) = self.builtin_exceptions.get("Error") else {
+    let Some(&error_class) = self.builtin_errors.get("Error") else {
       return false;
     };
     let mut cur = Some(v.as_instance().class);
     while let Some(c) = cur {
-      if c.equals(&exception_class) {
+      if c.equals(&error_class) {
         return true;
       }
       cur = c.as_class().superclass;
@@ -1179,7 +1179,7 @@ impl VM {
   }
 
   /// Frame names, innermost first, as a Zuri list of strings, attached to
-  /// every exception's `stacktrace` field.
+  /// every error's `stacktrace` field.
   fn build_stacktrace(&mut self) -> Value {
     let locations = self.frame_locations();
     let mut lines = Vec::with_capacity(locations.len());
@@ -1206,7 +1206,7 @@ impl VM {
 
   /// "TYPE: message" for top-level reporting, falling back gracefully if
   /// `exc` isn't an instance.
-  pub fn describe_exception(&self, exc: Value) -> String {
+  pub fn describe_error(&self, exc: Value) -> String {
     if !exc.is_instance() {
       return format!("{}", exc);
     }
@@ -1228,7 +1228,7 @@ impl VM {
   /// Full multi-line "Unhandled ..." block the CLI/REPL print at the top
   /// level: a header, a snippet of source around the exact line that
   /// raised (2 lines of context on each side, that line marked), and a
-  /// stack trace. `describe_exception` stays the short summary, still
+  /// stack trace. `describe_error` stays the short summary, still
   /// used by the prelude's internal panic path.
   ///
   /// `entry_path`/`entry_source` are the file the caller actually ran --
@@ -1239,7 +1239,7 @@ impl VM {
   /// file, `<repl>` for an outer frame) just falls back to the bare
   /// `path:line` locator with no snippet.
   pub fn format_uncaught(&self, exc: Value, entry_path: &str, entry_source: &str) -> String {
-    let summary = self.describe_exception(exc);
+    let summary = self.describe_error(exc);
     let use_color = std::io::stderr().is_terminal();
     let err_style = if use_color {
       Style::new().fg(Color::Red).bold()
@@ -1361,7 +1361,7 @@ impl VM {
   // frame setup.
 
   /// Must be called immediately after every `registers.resize(..)` with no
-  /// exceptions -- compiled code trusts this cache with a raw load and no
+  /// errors -- compiled code trusts this cache with a raw load and no
   /// staleness check of its own. Syncs `regs_len_cache` in the same
   /// breath, for the same reason.
   #[inline]
@@ -2163,8 +2163,8 @@ impl VM {
   ///
   /// On success, pops the frame and returns `Ok(value)`, same as
   /// `Instr::Return`. On failure, the frame is left in place, matching
-  /// `run_until`'s "an uncaught exception leaves every frame up to the
-  /// catching ancestor, truncated in one shot by `handle_exception`"
+  /// `run_until`'s "an uncaught error leaves every frame up to the
+  /// catching ancestor, truncated in one shot by `handle_error`"
   /// behavior.
   fn invoke_compiled(
     &mut self,
@@ -2204,9 +2204,9 @@ impl VM {
       return result;
     }
 
-    let pending = self.jit_pending_exception.get();
+    let pending = self.jit_pending_error.get();
     if !pending.is_nil() {
-      self.jit_pending_exception.set(Value::nil());
+      self.jit_pending_error.set(Value::nil());
       return Err(pending);
     }
 
@@ -2277,7 +2277,7 @@ impl VM {
   /// (loop back-edge); `target_ip` is the loop header it lands on. `None`
   /// means keep interpreting normally; `Some(outcome)` means OSR just ran
   /// the current frame to completion and the caller must treat it like
-  /// `Instr::Return`/an unhandled exception firing, not resume
+  /// `Instr::Return`/an unhandled error firing, not resume
   /// interpreting.
   pub(crate) fn maybe_osr(
     &mut self,
@@ -3233,7 +3233,7 @@ impl VM {
 
     // Cached "which frame/function/closure am I executing" state, refreshed
     // only where it actually changes (Call/Invoke/InvokeSuper/CallSuperCtor
-    // push a frame, Return pops one, a caught exception truncates several)
+    // push a frame, Return pops one, a caught error truncates several)
     // rather than re-derived from self.frames on every instruction.
     let mut frame_idx = self.frames.len() - 1;
     let mut base = self.frames[frame_idx].base;
@@ -3543,7 +3543,7 @@ impl VM {
                     self.set_reg(base, dst_in_caller, ret);
                     continue 'dispatch;
                   },
-                  // Same exception machinery any other failing instruction
+                  // Same error machinery any other failing instruction
                   // uses -- compiled code never pops its own frame on
                   // error, so catch_stack sees this like an ordinary
                   // interpreted instruction failing.
@@ -4349,7 +4349,7 @@ impl VM {
 
           Instr::Raise { src } => {
             let value = self.get_reg(base, src);
-            if !self.is_exception_value(value) {
+            if !self.is_error_value(value) {
               let msg = format!(
                 "can only raise an Error or subclass, got a {}",
                 value.type_name()
@@ -4437,8 +4437,8 @@ impl VM {
       };
 
       if let Err(exc) = step {
-        match self.handle_exception(exc, stop_depth) {
-          ExceptionOutcome::Handled {
+        match self.handle_error(exc, stop_depth) {
+          ErrorOutcome::Handled {
             frame_idx: fi,
             base: b,
             func_ptr: fp,
@@ -4452,7 +4452,7 @@ impl VM {
             ip = nip;
             continue;
           },
-          ExceptionOutcome::Propagate(e) => return Err(e),
+          ErrorOutcome::Propagate(e) => return Err(e),
         }
       }
     }
@@ -4931,7 +4931,7 @@ impl VM {
     for v in self.modules.values() {
       Self::mark_root(*v, &mut worklist);
     }
-    for v in self.builtin_exceptions.values() {
+    for v in self.builtin_errors.values() {
       Self::mark_root(*v, &mut worklist);
     }
     for v in &self.interned_ascii {
@@ -4944,7 +4944,7 @@ impl VM {
     for v in interned {
       Self::mark_root(v, &mut worklist);
     }
-    Self::mark_root(self.jit_pending_exception.get(), &mut worklist);
+    Self::mark_root(self.jit_pending_error.get(), &mut worklist);
 
     while let Some(ptr) = worklist.pop() {
       // SAFETY: every pointer on the worklist came from a Value that was
@@ -5036,13 +5036,13 @@ impl VM {
         Self::forward_slot(&mut self.heap, v, &mut worklist);
       }
     }
-    for v in self.builtin_exceptions.values_mut() {
+    for v in self.builtin_errors.values_mut() {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
     {
-      let mut pending = self.jit_pending_exception.get();
+      let mut pending = self.jit_pending_error.get();
       if Self::forward_slot(&mut self.heap, &mut pending, &mut worklist) {
-        self.jit_pending_exception.set(pending);
+        self.jit_pending_error.set(pending);
       }
     }
     for v in &mut self.pending_jit_compiles {
@@ -5419,7 +5419,7 @@ impl VM {
     Ok(None)
   }
 
-  /// Everything that happens when an instruction propagates an exception,
+  /// Everything that happens when an instruction propagates an error,
   /// factored out and marked `#[cold]`/`#[inline(never)]` purely for code
   /// layout: keeps the rarely-taken handling code out of the hot dispatch
   /// loop's icache footprint. `if let Err(exc) = step` itself is a
@@ -5427,10 +5427,10 @@ impl VM {
   /// not a slow check.
   #[cold]
   #[inline(never)]
-  fn handle_exception(&mut self, exc: Value, stop_depth: usize) -> ExceptionOutcome {
+  fn handle_error(&mut self, exc: Value, stop_depth: usize) -> ErrorOutcome {
     let claims_it = matches!(self.catch_stack.last(), Some(h) if h.frame_depth > stop_depth);
     if !claims_it {
-      return ExceptionOutcome::Propagate(exc);
+      return ErrorOutcome::Propagate(exc);
     }
 
     let handler = self.catch_stack.pop().unwrap();
@@ -5441,7 +5441,7 @@ impl VM {
     // one step -- roll jit_scalar_roots back to what it held before the
     // first of them was pushed, same reasoning as pop_frame_inner.
     // unwrap_or covers handler.frame_depth == frames.len() already (the
-    // exception happened in the frame that pushed this catch), a no-op
+    // error happened in the frame that pushed this catch), a no-op
     // truncate.
     let scalar_roots_mark = self
       .frames
@@ -5460,7 +5460,7 @@ impl VM {
 
     let frame_idx = self.frames.len() - 1;
     let f = &self.frames[frame_idx];
-    ExceptionOutcome::Handled {
+    ErrorOutcome::Handled {
       frame_idx,
       base: f.base,
       func_ptr: f.function,

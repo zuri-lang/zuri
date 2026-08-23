@@ -409,7 +409,7 @@ pub fn analyze(
 /// same closure argument: IEEE-754 round-to-nearest-even addition,
 /// subtraction, and multiplication of two whole-number-valued doubles
 /// ALWAYS produces another whole-number-valued double, at every
-/// magnitude, with no exceptions -- not an approximation someone could
+/// magnitude, with no errors -- not an approximation someone could
 /// find a counterexample to. The reasoning: the true mathematical
 /// result of integer-plus-integer (or times/minus) is itself a whole
 /// number, and every double whose representable granularity is >= 1

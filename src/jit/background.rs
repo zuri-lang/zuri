@@ -43,8 +43,8 @@
 //! thread is what eventually dereferences it back (in
 //! `VM::drain_jit_results`), and it keeps the function pinned as a GC
 //! root (`VM::pending_jit_compiles`) for the entire round trip, from
-//! the moment a job is sent here to the moment its result is drained
-//! -- so the pointer is always valid whenever anyone actually uses it.
+//! the moment a job is sent here to the moment its result is drained,
+//! so the pointer is always valid whenever anyone actually uses it.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -60,7 +60,7 @@ use crate::jit::typeflow;
 use crate::vm::object::ObjFunction;
 
 /// A raw pointer wrapper that's `Send` purely as an opaque token.
-/// See this module's docs for why it's never dereferenced here.
+/// See above for why it's never dereferenced here.
 pub struct SendPtr(pub *const ObjFunction);
 unsafe impl Send for SendPtr {}
 
@@ -69,11 +69,11 @@ pub struct CompileJob {
   pub func_id: FuncId,
   pub osr_ids: FxHashMap<usize, i32>,
   pub proto: SendPtr,
-  /// Carried through purely for `VM::drain_jit_results`'s log line --
-  /// see `codegen::compile`'s own docs on what this means.
+  /// Carried through purely for `VM::drain_jit_results`'s log line
+  /// (see `codegen::compile`'s own docs on what this means).
   pub speculative_params: Option<u64>,
   /// Same purpose as `speculative_params`, carried through purely for
-  /// the log line -- see `jit::typeflow::SpeculativeRegs`'s own docs.
+  /// the log line (see `jit::typeflow::SpeculativeRegs`'s own docs).
   pub speculative_regs: Option<typeflow::SpeculativeRegs>,
 }
 
@@ -83,8 +83,8 @@ pub struct CompileResult {
   pub osr_ids: FxHashMap<usize, i32>,
   pub speculative_params: Option<u64>,
   pub speculative_regs: Option<typeflow::SpeculativeRegs>,
-  /// `Ok((code_bytes, alignment, relocations))` on success -- exactly
-  /// what `JitEngine::install_compiled` needs -- or a human-readable
+  /// `Ok((code_bytes, alignment, relocations))` on success (exactly
+  /// what `JitEngine::install_compiled` needs) or a human-readable
   /// failure reason (mirrors `codegen::compile`'s own `Err(String)`
   /// convention).
   pub outcome: Result<(Vec<u8>, u64, Vec<ModuleReloc>), String>,

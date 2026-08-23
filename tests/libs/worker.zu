@@ -93,14 +93,14 @@ def test_main_script_function() {
 }
 
 def local_boom() {
-  raise TypeError('a builtin exception class raised from a main-script function')
+  raise TypeError('a builtin error class raised from a main-script function')
 }
 
 def test_main_script_function_raises_builtin_error() {
   # `local_boom` never binds `TypeError` to a module-level name --
   # referencing it is a `GetGlobal` against the VM's own root table,
   # picked up transitively as a root global this main-script function
-  # depends on. `TypeError` (like every builtin exception class) is
+  # depends on. `TypeError` (like every builtin error class) is
   # installed fresh by every worker's own `VM::init`, not declared in
   # any module -- a naive structural clone of it would produce a class
   # the worker's own `raise`/`catch` doesn't recognize, turning this
@@ -110,9 +110,9 @@ def test_main_script_function_raises_builtin_error() {
   catch {
     t.join()
   } as e
-  assert e != nil, 'raising a builtin exception class inside a worker must surface on join()'
+  assert e != nil, 'raising a builtin error class inside a worker must surface on join()'
   assert instance_of(e, worker.WorkerError), 'it must surface as an ordinary WorkerError'
-  assert e.message.contains('a builtin exception class raised from a main-script function'),
+  assert e.message.contains('a builtin error class raised from a main-script function'),
     'the original message must be preserved, not replaced by an internal raise-machinery error'
   echo 'test_main_script_function_raises_builtin_error passed'
 }
@@ -252,14 +252,14 @@ def test_multiple_concurrent_workers() {
   echo 'test_multiple_concurrent_workers passed'
 }
 
-def test_uncaught_exception_propagates() {
+def test_uncaught_error_propagates() {
   var t = worker.spawn(worker_worker.boom)
   catch {
     t.join()
   } as e
-  assert e != nil, 'an uncaught exception inside a worker must surface on join()'
+  assert e != nil, 'an uncaught error inside a worker must surface on join()'
   assert instance_of(e, worker.WorkerError), 'it must surface specifically as a WorkerError'
-  echo 'test_uncaught_exception_propagates passed'
+  echo 'test_uncaught_error_propagates passed'
 }
 
 def test_worker_panic_is_isolated() {
@@ -277,14 +277,14 @@ def test_worker_panic_is_isolated() {
   echo 'test_worker_panic_is_isolated passed'
 }
 
-def test_uncaught_exception_message_preserved() {
+def test_uncaught_error_message_preserved() {
   var t = worker.spawn(worker_worker.boom_typed)
   catch {
     t.join()
   } as e
-  assert e != nil, 'a typed exception must still be caught as a WorkerError'
-  assert e.message.contains('bad type from worker'), 'the original exception text should be preserved in the message'
-  echo 'test_uncaught_exception_message_preserved passed'
+  assert e != nil, 'a typed error must still be caught as a WorkerError'
+  assert e.message.contains('bad type from worker'), 'the original error text should be preserved in the message'
+  echo 'test_uncaught_error_message_preserved passed'
 }
 
 def test_spawn_rejects_non_function() {
@@ -922,8 +922,8 @@ def test_scope_body_failure_cancels_children_and_wins() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, ValueError), "body()'s own exception must win over a child's"
-  assert e.message == 'body blew up', "body()'s own exception must be re-raised unchanged"
+  assert e != nil and instance_of(e, ValueError), "body()'s own error must win over a child's"
+  assert e.message == 'body blew up', "body()'s own error must be re-raised unchanged"
   assert slow_handle.is_done(), 'scope() must still wait for the cancelled child before re-raising'
   echo 'test_scope_body_failure_cancels_children_and_wins passed'
 }
@@ -936,7 +936,7 @@ def test_status_reflects_lifecycle() {
 
   var f = worker.spawn(worker_worker.boom)
   catch { f.join() } as e
-  assert f.status() == 'error', 'status() must report error once finished with an uncaught exception'
+  assert f.status() == 'error', 'status() must report error once finished with an uncaught error'
   echo 'test_status_reflects_lifecycle passed'
 }
 
@@ -1157,9 +1157,9 @@ test_nested_collection_aliasing()
 test_self_referential_list_does_not_hang()
 test_dict_argument()
 test_multiple_concurrent_workers()
-test_uncaught_exception_propagates()
+test_uncaught_error_propagates()
 test_worker_panic_is_isolated()
-test_uncaught_exception_message_preserved()
+test_uncaught_error_message_preserved()
 test_spawn_rejects_non_function()
 test_spawn_rejects_native_function()
 test_spawn_rejects_class()

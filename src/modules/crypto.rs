@@ -1,7 +1,7 @@
 //! `_crypto` builtin module -- native primitives backing `libs/crypto.zu`.
 //!
 //! `libs/crypto.zu` is the user-facing `crypto` module: it defines
-//! `CryptoException`, the `aes_gcm`/`aes_cbc`/`chacha20`/`rsa`/`ecdsa`/
+//! `CryptoError`, the `aes_gcm`/`aes_cbc`/`chacha20`/`rsa`/`ecdsa`/
 //! `ed25519`/`x25519`/`argon2` namespace objects, and `hkdf`/`random_bytes`,
 //! all as thin Zuri wrappers that immediately delegate to `_crypto.*`
 //! natives (see that file's own doc comments for the exact call shape

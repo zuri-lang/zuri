@@ -348,7 +348,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
         callback,
         &[Value::number(b as f64), Value::number(i as f64)],
       )
-      .map_err(|e| ctx.vm.describe_exception(e))?;
+      .map_err(|e| ctx.vm.describe_error(e))?;
   }
 
   let bytes_val = ctx.vm.pinned(mark);

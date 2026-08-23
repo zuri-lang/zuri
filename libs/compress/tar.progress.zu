@@ -90,23 +90,23 @@ var COMPRESS_BZIP = 2
 
 
 #--------------------------------------------------------------------------------
-# Exceptions
+# Errors
 #--------------------------------------------------------------------------------
 
 /**
- * Exception thrown when a TAR archive is corrupted.
+ * Error thrown when a TAR archive is corrupted.
  */
-class TarCorruptedException < Exception {}
+class TarCorruptedError < Error {}
 
 /**
- * Exception thrown when an I/O error occurs.
+ * Error thrown when an I/O error occurs.
  */
-class TarIOException < Exception {}
+class TarIOError < Error {}
 
 /**
- * Exception thrown when an illegal compression type is used.
+ * Error thrown when an illegal compression type is used.
  */
-class TarIllegalCompressionException < Exception {}
+class TarIllegalCompressionError < Error {}
 
 var _header_unpack = 'a100:filename/a8:perm/a8:uid/a8:gid/a12:size/a12:mtime/a8:checksum/a1:typeflag' +
     '/a100:link/a6:magic/a2:version/a32:uname/a32:gname/a8:devmajor/a8:devminor/a155:prefix'
@@ -152,7 +152,7 @@ class Tar {
    * @param {int} level Compression level (0 to 9) - Default = 9
    * @param {int} type  Type of compression to use (use COMPRESS_* constants) - Default = 
    *    COMPRESS_AUTO
-   * @throws {TarIllegalCompressionException}
+   * @throws {TarIllegalCompressionError}
    */
   set_compression(level: ?int, type: ?int) {
     if !level level = 9
@@ -160,7 +160,7 @@ class Tar {
 
     self._compression_check(type)
     if level < -1 or level >  9
-      raise TarIllegalCompressionException('compression level should be between -1 and 9')
+      raise TarIllegalCompressionError('compression level should be between -1 and 9')
     self._comp_level = level
     self._comp_type = type
 
@@ -172,8 +172,8 @@ class Tar {
    * Open an existing Tar file for reading.
    *
    * @param {string} file
-   * @throws {TarIOException}
-   * @throws {TarIllegalCompressionException}
+   * @throws {TarIOError}
+   * @throws {TarIllegalCompressionError}
    */
   open(file: string) {
     self._file = file
@@ -184,11 +184,11 @@ class Tar {
     if self._comp_type == COMPRESS_GZIP
       self._handle = zlib.gzopen(self._file, 'rb')
     else if self._comp_type == COMPRESS_BZIP
-      raise TarIllegalCompressionException('bzip2 is not supported')
+      raise TarIllegalCompressionError('bzip2 is not supported')
     else self._handle = file(self._file, 'rb')
 
     if !self._handle
-      raise TarIOException('could not open file "${self._file}" for reading')
+      raise TarIOError('could not open file "${self._file}" for reading')
 
     self._closed = false
   }
@@ -205,7 +205,7 @@ class Tar {
    */
   contents() {
     if self._closed or !self._file
-      raise TarIOException('cannot read from a closed archive')
+      raise TarIOError('cannot read from a closed archive')
 
     var result = [], read
 
@@ -244,17 +244,17 @@ class Tar {
    * @param {?int|string} strip   either the number of path components or a fixed prefix to strip
    * @param {?string} exclude a regular expression of files to exclude
    * @param {?string} include a regular expression of files to include
-   * @throws {TarIOException}
+   * @throws {TarIOError}
    * @return {list[string]}
    */
   extract(outdir: string, strip: ?int|string, exclude: ?string, include: ?string) {
     if !is_string(outdir)
-      raise Exception('output directory required as first argument')
+      raise Error('output directory required as first argument')
 
     outdir = outdir.rtrim('/')
     if !os.dir_exists(outdir) {
       if !os.create_dir(outdir)
-        raise TarIOException('could not create directory "${outdir}"')
+        raise TarIOError('could not create directory "${outdir}"')
     }
 
     var extracted = [], data
@@ -335,11 +335,11 @@ class Tar {
       if self._comp_type == COMPRESS_GZIP
         self._handle = zlib.gzopen(self._file, 'wb')
       else if self._comp_type == COMPRESS_BZIP
-        raise TarIllegalCompressionException('bzip2 is not supported')
+        raise TarIllegalCompressionError('bzip2 is not supported')
       else self._handle = file(self._file, 'wb')
 
       if !self._handle
-        raise TarIOException('could not open file "${self._file}" for writing')
+        raise TarIOError('could not open file "${self._file}" for writing')
     }
 
     self._can_write = true
@@ -352,11 +352,11 @@ class Tar {
    * @param {string} path         path to the original file
    * @param {string|dict} header  either the name to use in Tar (string) or a dictionary oject 
    *     with all meta data, empty to take from original.
-   * @throws {TarIOException}
+   * @throws {TarIOError}
    */
   add_file(path: string, header: string|dict) {
     if self._closed
-      raise TarIOException('archive has been closed and files can no longer be added')
+      raise TarIOError('archive has been closed and files can no longer be added')
 
     if header == nil or is_string(header) {
       header = self._header_from_path(path, header)
@@ -380,7 +380,7 @@ class Tar {
 
       if read != total {
         self.close()
-        raise TarCorruptedException('The size of ${file} changed while reading, archive corrupted. read ${read} expected ${total}')
+        raise TarCorruptedError('The size of ${file} changed while reading, archive corrupted. read ${read} expected ${total}')
       }
     }
 
@@ -401,11 +401,11 @@ class Tar {
    * @param {bytes} data     binary content of the file to add
    * @param {string|dict} header  either the name to use in Tar (string) or a dictionary oject 
    *     with all meta data
-   * @throws {TarIOException}
+   * @throws {TarIOError}
    */
   add_data(data: bytes, header: string|dict) {
     if self._closed
-      raise TarIOException('archive has been closed and files can no longer be added')
+      raise TarIOError('archive has been closed and files can no longer be added')
 
     if header == nil or is_string(header) {
       header = {
@@ -446,7 +446,7 @@ class Tar {
    * end-of-archive entry, which consists of two 512 blocks of zero bytes"
    *
    * @link http://www.gnu.org/software/tar/manual/html_chapter/tar_8.html#SEC134
-   * @throws {TarIOException}
+   * @throws {TarIOError}
    */
   close() {
     if self._closed return
@@ -460,7 +460,7 @@ class Tar {
       if self._comp_type == COMPRESS_GZIP
         self._handle.close()
       else if self._comp_type == COMPRESS_BZIP
-        raise TarIllegalCompressionException('bzip2 is not supported')
+        raise TarIllegalCompressionError('bzip2 is not supported')
       else self._handle.close()
 
       self._file = nil
@@ -476,8 +476,8 @@ class Tar {
    *
    * This implicitly calls close() on the Tar.
    * 
-   * @throws {TarIOException}
-   * @throws {TarIllegalCompressionException}
+   * @throws {TarIOError}
+   * @throws {TarIllegalCompressionError}
    * @returns {bytes}
    */
   get_archive() {
@@ -489,7 +489,7 @@ class Tar {
     if self._comp_type == COMPRESS_GZIP
       return zlib.compress(self._memory, self._comp_level, zlib.DEFAULT_STRATEGY, zlib.MAX_WBITS | 16)
     else if self._comp_type == COMPRESS_BZIP
-      raise TarIllegalCompressionException('bzip2 is not supported')
+      raise TarIllegalCompressionError('bzip2 is not supported')
     return self._memory
   }
 
@@ -517,13 +517,13 @@ class Tar {
    *    matching path.
    * @param {list} ext_blacklist if not empty, this function will ignore every file with a 
    *    matching extension.
-   * @throws {TarIOException|Exception}
+   * @throws {TarIOError|Error}
    */
   add_directory(directory: string, file_blacklist: ?list, ext_blacklist: ?list) {
     directory = directory.replace('/\\\\/', '/')
 
     if !os.dir_exists(directory)
-      raise TarIOException('directory ${directory} not found')
+      raise TarIOError('directory ${directory} not found')
 
     if !file_blacklist file_blacklist = []
     if !ext_blacklist ext_blacklist = []
@@ -572,7 +572,7 @@ class Tar {
 
   _compression_check(type) {
     if type == COMPRESS_BZIP
-      raise TarIllegalCompressionException('bzip2 is not supported')
+      raise TarIllegalCompressionError('bzip2 is not supported')
   }
 
   /**
@@ -611,7 +611,7 @@ class Tar {
     if self._comp_type == COMPRESS_GZIP
       return self._handle.read(length)
     else if self._comp_type == COMPRESS_BZIP
-      raise TarIllegalCompressionException('bzip2 is not supported')
+      raise TarIllegalCompressionError('bzip2 is not supported')
     else return self._handle.gets(length)
   }
 
@@ -623,10 +623,10 @@ class Tar {
     } else if self._comp_type == COMPRESS_GZIP
       written = self._handle.read(length)
     else if self._comp_type == COMPRESS_BZIP
-      raise TarIllegalCompressionException('bzip2 is not supported')
+      raise TarIllegalCompressionError('bzip2 is not supported')
     else written = self._handle.gets(length)
 
-    if !written raise TarIOException('failed to write to archive stream')
+    if !written raise TarIOError('failed to write to archive stream')
     return written
   }
 
@@ -634,13 +634,13 @@ class Tar {
     if self._comp_type == COMPRESS_GZIP
       self._handle.seek(bytes, io.SEEK_CUR)
     else if self._comp_type == COMPRESS_BZIP
-      raise TarIllegalCompressionException('bzip2 is not supported')
+      raise TarIllegalCompressionError('bzip2 is not supported')
     else self._handle.seek(bytes, io.SEEK_CUR)
   }
 
   _parse_header(block) {
     if !block or block.length() != 512
-      raise TarCorruptedException('unexpected length of header')
+      raise TarCorruptedError('unexpected length of header')
 
     block = block.to_string().ascii()
     if !block.trim() return false
@@ -655,14 +655,14 @@ class Tar {
     }
     
     var header = struct.unpack(_header_unpack, block)
-    if !header raise TarCorruptedException('failed to parse header')
+    if !header raise TarCorruptedError('failed to parse header')
     
     var result = {
       checksum: _octdec(header.checksum.trim())
     }
 
     # if result.checksum != chks
-    #   raise TarCorruptedException('header does not match its checksum')
+    #   raise TarCorruptedError('header does not match its checksum')
 
     # if result.checksum == chks {
     if header.checksum.match('/^\d+/') {
@@ -717,7 +717,7 @@ class Tar {
   _header_from_path(path, _as) {
     var fp = file(path)
     if !fp.exists()
-      raise Exception('file "${path}" does not exist')
+      raise Error('file "${path}" does not exist')
 
     var stat = fp.stats()
     return {
@@ -814,7 +814,7 @@ def compress(path: string, destination: string) {
   var is_file = file(path).exists()
 
   if !is_dir and !is_file
-    raise TarIOException('cannot find path "${path}"')
+    raise TarIOError('cannot find path "${path}"')
 
   tar.create()
   if is_dir tar.add_directory(path)

@@ -7,7 +7,7 @@
  */
 
 /**
- * Raised when a worker's function raises an uncaught exception, a
+ * Raised when a worker's function raises an uncaught error, a
  * `Channel` operation fails, or a value cannot cross a worker
  * boundary.
  */
