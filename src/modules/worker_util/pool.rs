@@ -42,8 +42,8 @@ const MAX_POOL_SIZE: usize = 4096;
 /// `transfer.rs` (which needs to recognize them as thread-safe,
 /// freely-shareable handles rather than exclusive resources to move --
 /// see `transfer::capture_value`'s own docs on the distinction).
-pub const WORKER_PTR_TYPE: &str = "zuri_worker";
-pub const CHANNEL_PTR_TYPE: &str = "zuri_channel";
+pub const WORKER_PTR_TYPE: &str = "zuri::worker";
+pub const CHANNEL_PTR_TYPE: &str = "zuri::channel";
 
 // ---------------------------------------------------------------------
 // Pool sizing/lifecycle
@@ -260,7 +260,16 @@ fn worker_loop() {
           .wait(queue)
           .unwrap_or_else(PoisonError::into_inner);
       }
-      queue.pop_front().unwrap()
+      let task = queue.pop_front().unwrap();
+      // // The call to shrink_to_fit here keeps memory utilization down
+      // // a lot when thousands of concurrent workers are fired. Hoewver,
+      // // it also brings down performance marginally (about 1.25x).
+      // //
+      // // Also, for smaller concurrent workers which will account for
+      // // the majority of the use-case, it is an expensive overhead.
+      // // For now, we're leaving it out.
+      // queue.shrink_to_fit();
+      task
     };
     pool.running.fetch_add(1, Ordering::AcqRel);
 

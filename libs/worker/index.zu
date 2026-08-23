@@ -307,8 +307,8 @@ class Scope {
   }
 
   /**
-   * Same as `spawn()`, but gives the worker a `name` -- see the
-   * module-level `spawn_named()`.
+   * Same as `spawn()`, but gives the worker a `name` (see the
+   * module-level `spawn_named()`).
    *
    * @param string name
    * @param function fn: a closure, bound method, or class method.
@@ -342,7 +342,7 @@ class Scope {
  * unmonitored `spawn()` result could be.
  *
  * If `body` raises, or any worker spawned through `s` fails, every
- * other still-running one in the scope is `cancel()`ed (cooperative --
+ * other still-running one in the scope is `cancel()`ed (cooperative, 
  * see `Worker.cancel()`), and `scope()` still waits for all of them
  * to actually finish before re-raising. `body`'s own exception takes
  * priority if both it and a child failed; otherwise the first child
