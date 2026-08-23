@@ -1,7 +1,7 @@
 //! Owns the Cranelift `JITModule` and turns one `&ObjFunction` into a
 //! `CompiledFunction`. See `crate::jit`'s module docs for the overall
 //! architecture; this file is pure Cranelift/`cranelift_module`
-//! plumbing -- the actual bytecode -> IR translation lives in
+//! plumbing; the actual bytecode -> IR translation lives in
 //! `jit::codegen`.
 
 use std::sync::Arc;
@@ -34,7 +34,7 @@ pub struct JitEngine {
   module: JITModule,
   builder_ctx: FunctionBuilderContext,
   /// A second handle onto the same target configuration `module` was
-  /// built with (not the module's own internal ISA -- a fully separate,
+  /// built with (not the module's own internal ISA; a fully separate,
   /// independently-constructed instance). `Arc<dyn TargetIsa>` is
   /// `Send + Sync`, so cloning this out to `jit::background`'s compiler
   /// thread lets it run `Context::compile` (the expensive register-
@@ -42,13 +42,13 @@ pub struct JitEngine {
   /// locking needed. See `isa_handle`.
   isa: Arc<dyn TargetIsa>,
   /// Every `jit::runtime` helper's `FuncId`, keyed by its registered
-  /// name -- declared once, up front, and reused (via
+  /// name; declared once, up front, and reused (via
   /// `Module::declare_func_in_func`) by every subsequent function this
   /// engine compiles.
   helper_ids: FxHashMap<&'static str, FuncId>,
   /// Monotonic counter giving every compiled function a distinct
   /// module-local symbol name (`cranelift_module::Module` requires
-  /// unique names for `declare_function`) -- purely an internal detail,
+  /// unique names for `declare_function`); purely an internal detail,
   /// never exposed anywhere else.
   next_id: u64,
 }
@@ -63,14 +63,14 @@ impl JitEngine {
   pub fn new() -> JitEngine {
     let mut flag_builder = settings::builder();
     // Mirrors cranelift-jit's own recommended JIT flags (see its
-    // `JITBuilder::with_flags`) -- required on at least AArch64, where
+    // `JITBuilder::with_flags`); required on at least AArch64, where
     // "colocated" calls use shorter-range relocations that can't reach
     // every definition in a JIT's address space.
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
     flag_builder.set("enable_alias_analysis", "true").unwrap();
     // Cranelift re-verifies every function it compiles, which showed up
-    // as ~9% of a closure-heavy workload's total runtime -- all of it on
+    // as ~9% of a closure-heavy workload's total runtime; all of it on
     // the compiler thread, checking IR this compiler just built. That is
     // a development check, so it stays on in debug builds (where a
     // malformed-IR bug should surface as a clear verifier error rather
@@ -80,7 +80,7 @@ impl JitEngine {
     flag_builder.set("opt_level", "speed_and_size").unwrap();
     // The backtracking allocator produces measurably better code
     // (fewer spills/moves) than the single-pass one, at the cost of
-    // more compile time -- a trade that only became strictly correct
+    // more compile time; a trade that only became strictly correct
     // to make once compilation moved off the interpreter's own thread
     // (see `jit::background`): there is no longer a reason to economize
     // on compile time by settling for the cheaper allocator.
@@ -94,7 +94,7 @@ impl JitEngine {
     let isa = isa_builder
       .finish(settings::Flags::new(flag_builder))
       .expect("zuri: failed to build a target ISA for the JIT");
-    // Kept alongside (not just inside) `module` -- see `isa`'s own
+    // Kept alongside (not just inside) `module`: see `isa`'s own
     // field docs on why `jit::background` needs an independent handle
     // to the same target config.
     let isa_for_module = isa.clone();
@@ -131,7 +131,7 @@ impl JitEngine {
   }
 
   /// A clone of this engine's target ISA handle, independent of
-  /// `module` -- see `isa`'s own field docs. Cheap (an `Arc` bump).
+  /// `module`: see `isa`'s own field docs. Cheap (an `Arc` bump).
   pub fn isa_handle(&self) -> Arc<dyn TargetIsa> {
     self.isa.clone()
   }
@@ -139,14 +139,14 @@ impl JitEngine {
   /// Stage 1 of compiling `proto`: translate its bytecode to Cranelift
   /// IR (`jit::codegen`'s job) and declare a slot for it in `module`.
   /// This is the only stage that touches `proto`, so it must run
-  /// synchronously on the VM's own thread -- see `jit::background`'s
+  /// synchronously on the VM's own thread: see `jit::background`'s
   /// module docs for why everything after this point (the actual
   /// register-allocation/encoding work, `Context::compile`) is safe to
   /// hand off to a background thread with no further `proto`/`module`
   /// access needed. `Err(reason)` means `proto` is permanently
-  /// ineligible (see `codegen::compile`'s own eligibility scan) -- the
+  /// ineligible (see `codegen::compile`'s own eligibility scan); the
   /// caller marks it as such and never asks again. `speculative_params`
-  /// is passed straight through to `codegen::compile` -- see its own
+  /// is passed straight through to `codegen::compile`: see its own
   /// docs.
   pub fn build_ir(
     &mut self,
@@ -211,9 +211,9 @@ impl JitEngine {
   /// Stage 2 of compiling a function: install already backend-compiled
   /// machine code (produced by `jit::background`'s compiler thread
   /// running `Context::compile` on a `PendingCompile.ctx`) into
-  /// `module` and finalize it. Pure bookkeeping -- memcpy into the
+  /// `module` and finalize it. Pure bookkeeping; memcpy into the
   /// module's executable memory plus relocation fixups, no register
-  /// allocation -- so this is cheap enough to run synchronously on the
+  /// allocation; so this is cheap enough to run synchronously on the
   /// VM's own thread every time a background result is drained (see
   /// `VM::drain_jit_results`).
   pub fn install_compiled(

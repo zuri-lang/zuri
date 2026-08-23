@@ -1,6 +1,6 @@
 //! Built-in Error class hierarchy, defined as ordinary Zuri source
 //! and compiled + run once at VM startup (see `install`) rather than
-//! hand-built in Rust -- reuses the exact same class/inheritance
+//! hand-built in Rust; reuses the exact same class/inheritance
 //! machinery every user-defined class goes through, so Error and
 //! its subclasses behave identically to anything a Zuri program could
 //! write itself, including being subclassable.
@@ -103,7 +103,7 @@ class ModuleNotFoundError < Error {
 
 /// Names of every builtin error class, in declaration order (each
 /// subclasses `Error`, so it has to already be bound as a global by
-/// the time its subclasses compile -- matching `PRELUDE_SOURCE`'s own
+/// the time its subclasses compile; matching `PRELUDE_SOURCE`'s own
 /// ordering).
 pub const EXCEPTION_CLASS_NAMES: &[&str] = &[
   "Error",
@@ -122,7 +122,7 @@ pub const EXCEPTION_CLASS_NAMES: &[&str] = &[
 
 /// Compile and run `PRELUDE_SOURCE` against `vm`, then cache each
 /// resulting class Value by name in `vm.builtin_errors` for
-/// `VM::raise`'s fast lookup. Panics on any failure -- a broken prelude
+/// `VM::raise`'s fast lookup. Panics on any failure; a broken prelude
 /// is an internal bug, not a user-facing error, so there is no
 /// meaningful way to recover from it (and no user code has run yet to
 /// have anything at stake).

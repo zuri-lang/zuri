@@ -46,7 +46,7 @@ pub static DICT_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
 });
 
 /// Run `f` with mutable access to the underlying `DictStorage` of a
-/// dict Value -- the `Obj::Dict` counterpart to `list.rs`'s
+/// dict Value; the `Obj::Dict` counterpart to `list.rs`'s
 /// `with_list_mut`.
 fn with_dict_mut<F, R>(v: Value, f: F) -> R
 where
@@ -56,7 +56,7 @@ where
     Obj::Dict(storage) => f(&mut storage.borrow_mut()),
     _ => unreachable!("with_dict_mut called on a non-dict Value"),
   };
-  // Coarse and unconditional -- see `write_barrier`'s own docs, and
+  // Coarse and unconditional: see `write_barrier`'s own docs, and
   // `list.rs`'s `with_list_mut` (its exact counterpart).
   write_barrier(v.as_obj());
   result
@@ -222,7 +222,7 @@ fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// `list.rs`'s `pin_each_call` counterpart for a dict's (key, value)
-/// pairs -- see its own docs for why every read from `gc_pins` here
+/// pairs: see its own docs for why every read from `gc_pins` here
 /// must be fresh, never cached across a `call_value`. Layout: `mark`
 /// = `dict_val`, `mark + 1` = `callback`, `mark + 2 + 2*i` = key `i`,
 /// `mark + 3 + 2*i` = value `i`.

@@ -24,7 +24,7 @@ pub static BYTES_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("@value", 1, _value),
     // NOTE: bytes.to_string() decodes as text, unlike every other
     // kind's to_string() (which reuses Value's own Display, and for
-    // bytes that's the "(41 42 ...)" hex form used by echo) -- so this
+    // bytes that's the "(41 42 ...)" hex form used by echo); so this
     // deliberately does NOT reuse the shared `to_string` from
     // `builtins::mod`.
     method("to_string", bytes_to_string),
@@ -53,7 +53,7 @@ pub static BYTES_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
 });
 
 /// Run `f` with mutable access to the underlying `Vec<u8>` storage of
-/// a bytes Value -- the `Obj::Bytes` counterpart to `list.rs`'s
+/// a bytes Value; the `Obj::Bytes` counterpart to `list.rs`'s
 /// `with_list_mut`, needed for anything push/insert/remove/drain-
 /// shaped that `Value`'s own `bytes_get`/`bytes_set` API (fixed-size
 /// element access only) doesn't cover.
@@ -67,7 +67,7 @@ where
   }
 }
 
-/// A byte-stream element must be a whole number in 0..=255 -- same
+/// A byte-stream element must be a whole number in 0..=255; same
 /// constraint `Instr::SetIndex`'s bytes arm already enforces for
 /// `bytes[i] = x`.
 fn expect_byte(ctx: &ZuriContext, idx: usize) -> Result<u8, String> {
@@ -166,7 +166,7 @@ fn remove(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(removed as f64))
 }
 
-/// Reverses the byte stream IN PLACE -- mirrors the phrasing/behavior
+/// Reverses the byte stream IN PLACE; mirrors the phrasing/behavior
 /// of `list.sort()` ("...in-place and returns the sorted list"), not
 /// `list.reverse()` (which explicitly returns a NEW list).
 fn reverse(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -302,7 +302,7 @@ fn is_space(ctx: &mut ZuriContext) -> Result<Value, String> {
   ))
 }
 
-/// Resets and empties the byte stream -- manual memory management, per
+/// Resets and empties the byte stream; manual memory management, per
 /// the doc's own framing. Functionally identical to truncating to
 /// zero length; kept as its own native (rather than aliased to a
 /// `clear`, which isn't itself a documented bytes method) to match the
@@ -335,7 +335,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
   let bytes = ctx.args[0].as_bytes();
-  // See `string.rs::each`'s identical pin -- `ctx.args` itself isn't
+  // See `string.rs::each`'s identical pin; `ctx.args` itself isn't
   // a GC root, so both the returned bytes object and the reused
   // `callback` need to survive here via `gc_pins` instead.
   let mark = ctx.vm.pin_values([ctx.args[0], ctx.args[1]]);

@@ -61,7 +61,7 @@ impl ParserError {
   }
 }
 
-// Compact one-liner, no source snippet -- used when there's no source
+// Compact one-liner, no source snippet; used when there's no source
 // text handy to render one (or nowhere better to put a `Display` impl).
 // The CLI's real rendering is `render`, below, which shows the offending
 // line with a caret under the token instead of spelling the position out
@@ -182,7 +182,7 @@ pub struct Parser<'a> {
   functions_count: usize,
   pub errors: Vec<ParserError>,
   // Tokens already pulled out of the lexer by `peek_at` but not yet
-  // consumed by `advance` -- a real FIFO, unlike the old scan-then-
+  // consumed by `advance`; a real FIFO, unlike the old scan-then-
   // rewind-the-lexer trick, so it can look arbitrarily far past a run of
   // newlines (blank lines, comment-only lines, any mix of both) instead
   // of exactly one token ahead.
@@ -231,7 +231,7 @@ impl<'a> Parser<'a> {
 
   // Utility
 
-  // Anchors to `current` -- the right choice when the message is about
+  // Anchors to `current`; the right choice when the message is about
   // whatever comes next (an unmet expectation, a token that shouldn't be
   // here). When the message is instead about a token already consumed
   // (a keyword that's invalid in this context, an operator whose target
@@ -250,7 +250,7 @@ impl<'a> Parser<'a> {
     // Anchor to `current`'s own (already-correct) position rather than the
     // lexer's raw cursor. `peek_at` scans ahead of `current` to fill
     // `lookahead` and never rewinds that scan, so the lexer's cursor can
-    // sit well past `current` by the time this is called -- `current.line`/
+    // sit well past `current` by the time this is called; `current.line`/
     // `.column` are what's actually being pointed at.
     Checkpoint {
       line: self.current.line,
@@ -280,7 +280,7 @@ impl<'a> Parser<'a> {
   // scanning ahead (skipping the same trivia `advance` would), so unlike
   // the old single-hop peek this can see past any number of tokens without
   // disturbing `current`/`previous`. Note it does *not* leave the lexer's
-  // own cursor where it found it -- the scan-ahead is one-way, which is
+  // own cursor where it found it; the scan-ahead is one-way, which is
   // exactly why `mark()` reads position off `current` and not the lexer.
   fn peek_at(&mut self, n: usize) -> Token {
     debug_assert!(n >= 1, "peek_at is 1-indexed; peek_at(0) is not current");
@@ -304,7 +304,7 @@ impl<'a> Parser<'a> {
   // Pulls one grammar-visible token straight from the lexer, silently
   // skipping the priming sentinel (`None`) and comment trivia
   // (`Comment`/`DocBlock` are real tokens now, for the `ast` module, but
-  // the grammar itself never sees them -- same as before they existed),
+  // the grammar itself never sees them; same as before they existed),
   // and reporting+skipping lexer-level `Error` tokens as they're found.
   // Shared by `advance` (when there's nothing already queued) and
   // `peek_at` (to fill the queue), so both see identical trivia handling.
@@ -344,7 +344,7 @@ impl<'a> Parser<'a> {
   // consumed on spec (e.g. "is this keyword actually a keyword here?")
   // can be handed back for `statement`/`declaration` to reparse as a
   // plain expression. Pushes onto the front of `lookahead` rather than
-  // asking the lexer to rewind its own cursor -- the lexer only ever
+  // asking the lexer to rewind its own cursor; the lexer only ever
   // moves forward now, so this works regardless of whether `current` came
   // from a fresh scan or was already sitting in the lookahead queue (the
   // old cursor-based rewind assumed the former and could desync from a
@@ -391,10 +391,10 @@ impl<'a> Parser<'a> {
   // it, so `x +\n  y` and `x and\n  y` work. This is the other half: if
   // the operator instead opens the *next* line (`x\n  + y`), the newline
   // sits before it, where the operator-loop's `match_tok!` can't see past
-  // it. Look past every `Newline` in a row -- a blank line is just two of
+  // it. Look past every `Newline` in a row; a blank line is just two of
   // them, and a comment-only line is a `Comment` sandwiched between two,
   // which `peek_at` already skips over since comments are trivia to the
-  // grammar -- and, if a continuation token is waiting past all of them,
+  // grammar; and, if a continuation token is waiting past all of them,
   // eat the newlines so the caller's own `match_tok!` finds the operator
   // right where it left off.
   fn skip_newline_before(&mut self, is_continuation: impl Fn(&TokenKind) -> bool) {
@@ -704,7 +704,7 @@ impl<'a> Parser<'a> {
     let mut callee = callee.clone();
 
     loop {
-      // A leading `.` on the next line continues the chain -- look past
+      // A leading `.` on the next line continues the chain; look past
       // any run of newlines (blank lines, comment-only lines, or both)
       // for it before giving up.
       self.skip_newline_before(|k| matches!(k, TokenKind::Dot));
@@ -1266,7 +1266,7 @@ impl<'a> Parser<'a> {
     let iterable = self.expression();
 
     // Fast path for `for x in LOWER..UPPER { body }` (single-variable
-    // form) -- see for_range_fast_path's own doc comment for why.
+    // form): see for_range_fast_path's own doc comment for why.
     if !is_two_var {
       if let Expr::Range(lower, upper, line) = iterable.clone() {
         return self.for_range_fast_path(key_id, *lower, *upper, line);
@@ -1276,8 +1276,8 @@ impl<'a> Parser<'a> {
     // Evaluate the iterable expression exactly ONCE, into a synthetic
     // local ($iter) declared OUTSIDE the loop. Cloning `iterable` directly
     // into the @key/@value getters below (both inside the generated
-    // while-loop's body) would re-evaluate -- and for a list/range
-    // literal, re-allocate -- it on every single iteration. Evaluating
+    // while-loop's body) would re-evaluate; and for a list/range
+    // literal, re-allocate; it on every single iteration. Evaluating
     // once is also the only semantically correct behavior for an iterable
     // with side effects or internal generator state.
     let iter_name = key_id.copy_to(TokenKind::Identifier("$iter".to_string()));
@@ -1334,7 +1334,7 @@ impl<'a> Parser<'a> {
   }
 
   /// Fast path for `for x in LOWER..UPPER { body }` (single-variable
-  /// form only -- range key/value order intentionally differs once an
+  /// form only; range key/value order intentionally differs once an
   /// index variable is also requested, so `for k, v in a..b` always
   /// falls through to the general @key/@value path in `for_stmt`).
   /// Compiles directly to a counting loop instead of allocating an
@@ -1344,13 +1344,13 @@ impl<'a> Parser<'a> {
   ///
   /// Every synthesized name here is prefixed with `$`, which the
   /// lexer never produces from user source, so these can never
-  /// collide with a real user identifier -- same trick `for_stmt`'s
+  /// collide with a real user identifier; same trick `for_stmt`'s
   /// own `$key` already relies on.
   ///
   /// NOTE: for LOWER == UPPER, `Range::_key`'s own native
   /// implementation currently returns `Value::bool(false)` as its
   /// very first key (not `nil`), which the general for-loop path's
-  /// `if key == nil break` check does NOT catch -- so today, `for x
+  /// `if key == nil break` check does NOT catch; so today, `for x
   /// in a..a { ... }` raises a TypeError from `_value` on its first
   /// iteration rather than doing nothing. This fast path instead
   /// treats LOWER == UPPER as a correctly empty loop (zero
@@ -1370,7 +1370,7 @@ impl<'a> Parser<'a> {
     let lower_decl = Stmt::Var(lower_name.clone(), Box::new(lower), None, false);
     let upper_decl = Stmt::Var(upper_name.clone(), Box::new(upper), None, false);
 
-    // $upper >= $lower  -- decides both direction and, reused below,
+    // $upper >= $lower ; decides both direction and, reused below,
     // which of the two diffs becomes $count.
     let ge = Expr::Logical(
       Box::new(self.compose_id(upper_name.clone())),
@@ -1555,10 +1555,10 @@ impl<'a> Parser<'a> {
     let exported = match_tok!(self, TokenKind::At);
 
     // `.` (same directory), `..` (parent directory, lexed as a `Range`
-    // token -- there's no dedicated ".." token kind), and identifiers can
+    // token; there's no dedicated ".." token kind), and identifiers can
     // all repeat and interleave freely in a relative import path (e.g.
     // `..package..root_package..module`), so this is one unified loop
-    // rather than "one leading `..`, then only dots/identifiers" -- the
+    // rather than "one leading `..`, then only dots/identifiers"; the
     // latter silently stopped consuming after the FIRST embedded `..`.
     while match_tok!(
       self,
@@ -1641,7 +1641,7 @@ impl<'a> Parser<'a> {
           let synthesized = self.previous().copy_to(TokenKind::Literal(last.clone()));
           name = self.compose_id(synthesized);
         },
-        // `import` with no path at all (e.g. `import { x }`) -- nothing
+        // `import` with no path at all (e.g. `import { x }`); nothing
         // to synthesize a default name from, so say so instead of
         // panicking on the empty `paths`.
         None => self.report_error("Expected a module path after 'import'".to_string()),

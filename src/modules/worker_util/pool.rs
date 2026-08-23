@@ -3,7 +3,7 @@
 //! `Heap` ("isolate"). A worker is a task queued onto this pool; a
 //! channel is a plain thread-safe queue of already-`capture`d
 //! messages. Nothing here ever shares a `Value`, a heap pointer, or
-//! compiled bytecode between threads -- see `transfer` for what
+//! compiled bytecode between threads: see `transfer` for what
 //! actually crosses, and why that's the only thing that safely can.
 
 use std::any::Any;
@@ -25,7 +25,7 @@ use super::transfer::{self, TransferGraph};
 /// SOME OTHER thread held this exact lock (never expected in ordinary
 /// operation, but possible if a bug elsewhere manages to panic while
 /// touching shared pool/channel/worker state directly, as opposed
-/// to inside a worker's own isolated VM -- see `worker_loop`'s own
+/// to inside a worker's own isolated VM: see `worker_loop`'s own
 /// docs on why THAT kind of panic is handled separately) doesn't
 /// cascade into every future access panicking too. The guarded data
 /// here is always a plain queue/slot/flag with no invariant that a
@@ -56,7 +56,7 @@ static CONFIGURED_SIZE: Mutex<Option<usize>> = Mutex::new(None);
 /// effect if the pool hasn't started yet (its size is fixed for the
 /// rest of the process once the first worker actually runs) --
 /// returns `false` rather than an error in that case, since "someone
-/// already spawned something" isn't really erroral, just too
+/// already spawned something" isn't really exceptional, just too
 /// late.
 pub fn configure(n: usize) -> Result<bool, String> {
   if n == 0 || n > MAX_POOL_SIZE {
@@ -82,7 +82,7 @@ fn default_size() -> usize {
     .unwrap_or(4)
 }
 
-/// The number of logical CPUs this machine reports -- informational
+/// The number of logical CPUs this machine reports; informational
 /// only, doesn't start the pool.
 pub fn cpu_count() -> usize {
   default_size()
@@ -94,7 +94,7 @@ pub fn pool_size() -> usize {
   pool().size
 }
 
-/// Workers actively being run by a worker RIGHT NOW -- doesn't
+/// Workers actively being run by a worker RIGHT NOW; doesn't
 /// include ones still waiting in the queue. Starts the pool if it
 /// hasn't already (there's nothing running on a pool that was never
 /// started).
@@ -109,7 +109,7 @@ pub fn queued_count() -> usize {
 }
 
 /// Whether `shutdown()` has been called. Starts the pool if it hasn't
-/// already -- consistent with every other pool-state query here, and
+/// already; consistent with every other pool-state query here, and
 /// harmless: a pool nobody has used yet obviously isn't shut down.
 pub fn is_shutdown() -> bool {
   pool().shutting_down.load(Ordering::Acquire)
@@ -132,7 +132,7 @@ struct WorkerPool {
   /// ordinary failure, or a caught panic all count).
   in_flight: AtomicUsize,
   /// Workers a worker has actually picked up and is currently
-  /// running -- the subset of `in_flight` that isn't still sitting in
+  /// running; the subset of `in_flight` that isn't still sitting in
   /// `queue`. Purely for introspection (`active_count()`).
   running: AtomicUsize,
   /// Set by `shutdown()`, checked by `spawn()`. One-way: once a pool
@@ -141,13 +141,13 @@ struct WorkerPool {
   shutting_down: AtomicBool,
   /// Notified whenever `in_flight` changes, so `shutdown()` can block
   /// on it rather than polling. Paired with `idle_lock` purely for the
-  /// `Condvar` API -- there's no real data to protect, `in_flight`
+  /// `Condvar` API; there's no real data to protect, `in_flight`
   /// already is atomic.
   idle: Condvar,
   idle_lock: Mutex<()>,
 }
 
-/// Worker thread names share this prefix -- checked by the panic hook
+/// Worker thread names share this prefix; checked by the panic hook
 /// below to tell a fully-handled worker panic apart from a real,
 /// nowhere-else-caught one on any other thread.
 const WORKER_THREAD_PREFIX: &str = "zuri-worker-";
@@ -160,7 +160,7 @@ impl WorkerPool {
         .name(format!("{}{}", WORKER_THREAD_PREFIX, i))
         // Rust's own default for a spawned thread is 2MB, well under
         // what the MAIN thread gets from the OS (8MB via `ulimit -s`
-        // on a typical Linux setup) -- recursive Zuri code that runs
+        // on a typical Linux setup); recursive Zuri code that runs
         // fine un-spawned can blow a worker's stack. That's not a
         // catchable panic either: a real stack overflow bypasses
         // `catch_unwind` entirely and aborts the WHOLE PROCESS, not
@@ -186,7 +186,7 @@ impl WorkerPool {
   /// Notifies whoever's in `shutdown()` waiting on `in_flight` to
   /// reach zero. Momentarily taking `idle_lock` before notifying,
   /// rather than just calling `notify_all`, avoids the same
-  /// lost-wakeup window `wake_all_waiters` guards against -- see its
+  /// lost-wakeup window `wake_all_waiters` guards against: see its
   /// own docs.
   fn task_completed(&self) {
     self.in_flight.fetch_sub(1, Ordering::AcqRel);
@@ -197,7 +197,7 @@ impl WorkerPool {
 }
 
 /// A worker panic is always caught by `catch_unwind` in `worker_loop`
-/// and surfaced to Zuri as an ordinary `WorkerError` -- it was
+/// and surfaced to Zuri as an ordinary `WorkerError`; it was
 /// never actually a crash. Printing Rust's own default "thread ...
 /// panicked at ..." notice for one anyway would look exactly like an
 /// unhandled crash to anyone watching stderr, which is actively
@@ -205,7 +205,7 @@ impl WorkerPool {
 /// installs a hook that skips the default report for worker threads
 /// specifically and defers to whatever hook was already installed
 /// (Rust's own default, unless something else replaced it first) for
-/// every other thread, main included -- a REAL uncaught panic
+/// every other thread, main included; a REAL uncaught panic
 /// anywhere else still gets reported exactly as before.
 fn install_worker_panic_hook() {
   static INSTALLED: std::sync::Once = std::sync::Once::new();
@@ -223,7 +223,7 @@ fn install_worker_panic_hook() {
 }
 
 /// One pending call: "run this named, non-capturing function/method
-/// with these arguments" -- see `transfer::Home`/`NamedKind` for how
+/// with these arguments": see `transfer::Home`/`NamedKind` for how
 /// the callee is identified without ever moving bytecode.
 struct Task {
   callee: TransferGraph,
@@ -232,7 +232,7 @@ struct Task {
 }
 
 /// A worker thread's own isolate: one `VM`/`Heap`, built once and
-/// reused for every task this thread ever picks up -- loading a
+/// reused for every task this thread ever picks up; loading a
 /// task's home (see `transfer::Home`) is cached per-isolate, so only
 /// the very first task from a given module/entry script pays to
 /// compile and run it.
@@ -279,7 +279,7 @@ fn worker_loop() {
     // slot still needs to be resolved either way.
     let state = task.state.clone();
 
-    // Ambient for the DURATION of this one task -- `is_current_cancelled`
+    // Ambient for the DURATION of this one task; `is_current_cancelled`
     // reads it back with no explicit handle needed, the same way a
     // spawned function never has to be handed its own `Worker` back
     // just to ask "was I cancelled?". Cleared unconditionally
@@ -290,11 +290,11 @@ fn worker_loop() {
 
     // `catch_unwind` isolates a panic to just the ONE worker that
     // caused it, rather than taking down every other worker and the
-    // main thread with it -- see `Cargo.toml`'s own note on why
+    // main thread with it: see `Cargo.toml`'s own note on why
     // `panic = "abort"` had to go for this to even be possible.
     // `AssertUnwindSafe` because `&mut isolate.vm` isn't provably
     // unwind-safe on its own (a panic mid-mutation could leave its
-    // internal state -- registers, GC bookkeeping -- torn); the promise
+    // internal state; registers, GC bookkeeping; torn); the promise
     // that makes this sound is the one kept right below: a torn
     // isolate is never reused, only rebuilt from scratch.
     match panic::catch_unwind(AssertUnwindSafe(|| run_task(&mut isolate, &task))) {
@@ -302,7 +302,7 @@ fn worker_loop() {
       Err(payload) => {
         // `&*payload`, not `&payload`: `payload` is `Box<dyn Any +
         // Send>`, and `Box<dyn Any + Send>` itself implements `Any`
-        // (it's `'static` too) -- a bare `&payload` coerces to `&dyn
+        // (it's `'static` too); a bare `&payload` coerces to `&dyn
         // Any` by treating the BOX ITSELF as the trait object, not by
         // dereferencing into what it holds, so `downcast_ref` would
         // always be asking "is the payload literally a `Box`", never
@@ -332,7 +332,7 @@ thread_local! {
 
 /// Whether the worker currently running ON THIS THREAD has been
 /// `cancel()`ed. `false` (never `true`) on a thread that isn't a
-/// worker worker, or between tasks on one that is -- there's
+/// worker worker, or between tasks on one that is; there's
 /// nothing to have been cancelled either way.
 pub fn is_current_cancelled() -> bool {
   CURRENT_WORKER.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
@@ -353,7 +353,7 @@ fn in_worker_context() -> bool {
 /// OWN worker (the caller, not whatever it's waiting on) has been
 /// cancelled. `cancel()` itself wakes `wait_any`/`wait_all`/`select`
 /// immediately (they already sit on `wake_gate`), but `join`/`send`/
-/// `recv` wait on their own per-object `Condvar` instead -- putting
+/// `recv` wait on their own per-object `Condvar` instead; putting
 /// THOSE on `wake_gate` too would mean every blocked join/send/recv in
 /// the whole process wakes up on every unrelated channel send or
 /// worker finishing, which turns the common case from "wakes the
@@ -386,7 +386,7 @@ fn wake_gate() -> &'static (Mutex<()>, Condvar) {
 /// Called after any state change a `wait_any`/`select` predicate might
 /// depend on (a worker finishing, a channel gaining a value or
 /// closing). Momentarily taking the gate's mutex before notifying --
-/// rather than just calling `notify_all` -- is what avoids a lost
+/// rather than just calling `notify_all`; is what avoids a lost
 /// wakeup: it guarantees this can't land in the gap between a waiter's
 /// last check and the moment it actually starts waiting on the
 /// condvar, which is the usual race for a condvar guarding a predicate
@@ -422,7 +422,7 @@ pub enum SelectOutcome {
 }
 
 /// Blocks until at least one of `states` has finished, returning its
-/// index into the slice -- ties (more than one already done) resolve
+/// index into the slice; ties (more than one already done) resolve
 /// to whichever comes first in the caller's own list.
 pub fn wait_any_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAnyOutcome {
   let deadline = timeout.map(|d| Instant::now() + d);
@@ -455,7 +455,7 @@ pub fn wait_any_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) 
 }
 
 /// Blocks until EVERY one of `states` has finished. Unlike
-/// `wait_any_workers` there's no "which one" to report -- the
+/// `wait_any_workers` there's no "which one" to report; the
 /// caller already has the whole list and can `join()` each once this
 /// returns `Ready`.
 pub fn wait_all_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAllOutcome {
@@ -545,7 +545,7 @@ mod tests {
   /// A panic isn't caught anywhere in this module without going
   /// through `worker_loop`'s full task-queue/isolate machinery, so
   /// this exercises the actual mechanism (`catch_unwind` plus the
-  /// `&*payload` deref -- see that call site's own docs on why a bare
+  /// `&*payload` deref: see that call site's own docs on why a bare
   /// `&payload` silently reads the wrong thing) directly, without
   /// needing a real `VM`/`Task`/pool.
   #[test]
@@ -581,7 +581,7 @@ mod tests {
 fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, String> {
   let callee = transfer::materialize(&mut isolate.vm, &task.callee)?;
   // `callee` sits only in this local until `call_value` copies it
-  // into a register -- pin it across `args`' own materialize call,
+  // into a register; pin it across `args`' own materialize call,
   // which can itself allocate (and therefore collect).
   let pin = isolate.vm.pin_values([callee]);
   let args_val = transfer::materialize(&mut isolate.vm, &task.args)?;
@@ -591,7 +591,7 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
   let args = args_val.as_list();
 
   // `VM::call_value` only ever accepts a closure or a native, never
-  // a bare `ObjBoundMethod` -- so `instance.method` used directly as
+  // a bare `ObjBoundMethod`; so `instance.method` used directly as
   // a spawn target needs its receiver spliced back in as arg 0
   // (exactly what `Instr::Invoke` already does for an ordinary
   // `instance.method(...)` call site; this is that same convention,
@@ -624,13 +624,13 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
 enum Slot {
   Pending,
   Ok(TransferGraph),
-  /// A rendered, human-readable failure -- either the spawned
+  /// A rendered, human-readable failure; either the spawned
   /// function's own uncaught error (see `VM::describe_error`)
   /// or an infrastructure failure (bad spawn target, a value that
   /// couldn't cross the isolate boundary, ...). Deliberately not the
   /// original error `Value` itself: that `Value` lives on the
   /// WORKER's own heap and can't be handed back across the thread
-  /// boundary any more than any other `Value` can -- see `transfer`'s
+  /// boundary any more than any other `Value` can: see `transfer`'s
   /// own docs. `libs/worker.zu` wraps this text in its own
   /// `WorkerError` on `.join()`.
   Err(String),
@@ -649,17 +649,17 @@ pub struct WorkerState {
   slot: Mutex<Slot>,
   cv: Condvar,
   /// Set once `join()`/`try_join()` has actually reported a finished
-  /// outcome (`Ok` or `Err`) to someone -- see `Drop`'s own docs.
+  /// outcome (`Ok` or `Err`) to someone: see `Drop`'s own docs.
   observed: AtomicBool,
   /// Set by `cancel()`, read by `is_current_cancelled()` from inside
-  /// the worker's own execution -- purely COOPERATIVE, same as
+  /// the worker's own execution; purely COOPERATIVE, same as
   /// every other language's cancellation token: nothing here stops
   /// already-running code on its own. A worker that never checks
   /// simply runs to completion regardless of this flag.
   cancelled: AtomicBool,
   /// Set once, at `spawn()` time, by whoever used `spawn_named()`
   /// instead of plain `spawn()`. Purely a debugging/introspection
-  /// label -- never read for anything that affects behavior -- so it
+  /// label; never read for anything that affects behavior; so it
   /// gets folded into the unobserved-failure warning (see `Drop`) and
   /// exposed read-only via `Worker.name()`.
   name: Option<String>,
@@ -685,7 +685,7 @@ impl WorkerState {
     // Wakes any `wait_any`/`wait_all`/`select` blocked on `wake_gate`
     // right away, in case the worker THEY belong to was just
     // cancelled. `join`/`send`/`recv` don't listen to this gate (see
-    // `CANCEL_POLL_INTERVAL`'s own docs) -- they notice on their next
+    // `CANCEL_POLL_INTERVAL`'s own docs); they notice on their next
     // poll tick instead.
     wake_all_waiters();
   }
@@ -706,7 +706,7 @@ impl WorkerState {
   }
 
   /// Blocks the calling thread until the worker finishes. Callable
-  /// more than once (and from more than one joiner) -- always returns
+  /// more than once (and from more than one joiner); always returns
   /// the same, already-computed outcome once it's in.
   ///
   /// If the CALLING worker (not this one) is cancelled while
@@ -718,7 +718,7 @@ impl WorkerState {
   }
 
   /// Like `join()`, but gives up and returns `JoinOutcome::Pending`
-  /// (indistinguishable from "still running" -- from the caller's own
+  /// (indistinguishable from "still running"; from the caller's own
   /// point of view, that's exactly what a timeout means) if `timeout`
   /// elapses first.
   pub fn join_timeout(&self, timeout: Duration) -> JoinOutcome {
@@ -726,11 +726,11 @@ impl WorkerState {
   }
 
   /// Shared implementation for `join`/`join_timeout`. `deadline` of
-  /// `None` means "wait forever" -- but that only ever compiles down
+  /// `None` means "wait forever"; but that only ever compiles down
   /// to a single indefinite `Condvar::wait` when the CALLER isn't
   /// itself running inside a worker, since there's nothing to poll
   /// for cancellation of in that case. Inside a worker, every wait
-  /// -- bounded or not -- is chopped into `CANCEL_POLL_INTERVAL`-sized
+  ///; bounded or not; is chopped into `CANCEL_POLL_INTERVAL`-sized
   /// ticks so the calling worker's own cancellation is noticed
   /// promptly rather than only once the wait would otherwise finish.
   fn join_inner(&self, deadline: Option<Duration>) -> JoinOutcome {
@@ -753,7 +753,7 @@ impl WorkerState {
 
     let started = Instant::now();
     loop {
-      // `tick` is the wait budget for THIS iteration only -- computed
+      // `tick` is the wait budget for THIS iteration only; computed
       // from what's left of `deadline`, but never checked against zero
       // before the real wait_timeout_while call below. A `deadline` of
       // exactly zero (an explicit `timeout: 0`) still has to attempt
@@ -808,7 +808,7 @@ impl WorkerState {
     !matches!(&*lock(&self.slot), Slot::Pending)
   }
 
-  /// Like `try_join`, but never marks the outcome "observed" -- pure
+  /// Like `try_join`, but never marks the outcome "observed"; pure
   /// introspection for `Worker.status()`. `try_join`/`join`
   /// themselves double as "I've seen this failure, don't warn about
   /// it going unhandled" (see `Drop`'s own docs); a caller just
@@ -825,14 +825,14 @@ impl WorkerState {
 
 impl Drop for WorkerState {
   /// A worker's failure doesn't otherwise go anywhere unless
-  /// something calls `join()`/`try_join()` on it -- exactly like a
+  /// something calls `join()`/`try_join()` on it; exactly like a
   /// plain `std::thread` whose `JoinHandle` is dropped without ever
   /// being joined, an uncaught error or a caught panic inside a
   /// fire-and-forget `spawn()` would silently vanish once the last
   /// `Worker` handle (and the pool's own internal one) goes out of
   /// scope. A dropped `String` costs nothing to check for and losing
   /// a real failure silently is worse than one unwanted log line, so
-  /// this reports it -- the same trade-off Rust's own default panic
+  /// this reports it; the same trade-off Rust's own default panic
   /// hook already makes for an unjoined thread.
   fn drop(&mut self) {
     if self.observed.load(Ordering::Relaxed) {
@@ -860,7 +860,7 @@ impl Drop for WorkerState {
 /// to be a Zuri list Value; capturing it as one graph is what makes
 /// aliasing BETWEEN arguments (two args pointing at the same nested
 /// list, say) survive the trip along with aliasing within each one.
-/// `name` is a purely cosmetic label from `spawn_named()` -- `None`
+/// `name` is a purely cosmetic label from `spawn_named()`; `None`
 /// for a plain `spawn()`.
 pub fn spawn(
   vm: &VM,
@@ -938,7 +938,7 @@ pub fn shutdown(timeout: Option<Duration>) -> bool {
 pub enum RecvOutcome {
   Value(TransferGraph),
   Closed,
-  /// `recv`/`recv_timeout` only -- never produced by `try_recv`, which
+  /// `recv`/`recv_timeout` only; never produced by `try_recv`, which
   /// doesn't block in the first place.
   TimedOut,
   /// The CALLING worker was cancelled while blocked here.
@@ -992,9 +992,9 @@ impl ChannelState {
     self.send_inner(value, Some(timeout))
   }
 
-  /// Shared implementation for `send`/`send_timeout` -- same
+  /// Shared implementation for `send`/`send_timeout`; same
   /// no-poll-unless-needed and `CANCEL_POLL_INTERVAL`-ticked shape as
-  /// `WorkerState::join_inner`; see its own docs for why.
+  /// `WorkerState::join_inner`: see its own docs for why.
   fn send_inner(&self, value: TransferGraph, deadline: Option<Duration>) -> SendOutcome {
     if deadline.is_none() && !in_worker_context() {
       let mut inner = lock(&self.inner);
@@ -1021,7 +1021,7 @@ impl ChannelState {
     let started = Instant::now();
     loop {
       // See `join_inner`'s own comment on why the timeout check comes
-      // AFTER the real attempt, not before -- a zero tick still gets
+      // AFTER the real attempt, not before; a zero tick still gets
       // one genuine chance to see the channel already has room.
       let remaining = deadline.map(|d| d.saturating_sub(started.elapsed()));
       let tick = remaining.map_or(CANCEL_POLL_INTERVAL, |r| r.min(CANCEL_POLL_INTERVAL));
@@ -1068,8 +1068,8 @@ impl ChannelState {
     self.recv_inner(Some(timeout))
   }
 
-  /// Shared implementation for `recv`/`recv_timeout` -- same shape as
-  /// `send_inner`/`join_inner`; see `CANCEL_POLL_INTERVAL`'s docs.
+  /// Shared implementation for `recv`/`recv_timeout`; same shape as
+  /// `send_inner`/`join_inner`: see `CANCEL_POLL_INTERVAL`'s docs.
   fn recv_inner(&self, deadline: Option<Duration>) -> RecvOutcome {
     if deadline.is_none() && !in_worker_context() {
       let mut inner = lock(&self.inner);
@@ -1092,7 +1092,7 @@ impl ChannelState {
     let started = Instant::now();
     loop {
       // See `join_inner`'s own comment on why the timeout check comes
-      // AFTER the real attempt, not before -- a zero tick still gets
+      // AFTER the real attempt, not before; a zero tick still gets
       // one genuine chance to see a value that's already queued.
       let remaining = deadline.map(|d| d.saturating_sub(started.elapsed()));
       let tick = remaining.map_or(CANCEL_POLL_INTERVAL, |r| r.min(CANCEL_POLL_INTERVAL));
@@ -1120,7 +1120,7 @@ impl ChannelState {
     }
   }
 
-  /// `None` means "empty, but still open" -- the one outcome `recv`
+  /// `None` means "empty, but still open"; the one outcome `recv`
   /// never produces, since it would just keep waiting instead.
   pub fn try_recv(&self) -> Option<RecvOutcome> {
     let mut inner = lock(&self.inner);

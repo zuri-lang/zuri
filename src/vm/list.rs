@@ -5,7 +5,7 @@
 //! with `ptr` first and `len` second is a layout the generated code is
 //! allowed to read directly. Every `list[i]` in compiled code used to
 //! cost a real ABI call into `jit::runtime::zuri_jit_list_data` just to
-//! learn the data pointer and the length -- in the innermost loop of
+//! learn the data pointer and the length; in the innermost loop of
 //! every array-shaped benchmark, and worse than the call itself, an
 //! opaque barrier that forced Cranelift to spill every live register
 //! around it. `Vec`'s own field order is explicitly not guaranteed and
@@ -41,7 +41,7 @@ pub const LIST_INLINE_OFFSET: i32 = 24;
 /// inline buffer with the heap pointer/length pair; this layout cannot,
 /// because generated code reads `ptr` and `len` at fixed offsets whether
 /// or not the list has spilled. Four elements here would take `Obj` to
-/// 72 bytes -- a 28% memory regression on every object in the heap,
+/// 72 bytes; a 28% memory regression on every object in the heap,
 /// which costs far more than the extra two slots buy.
 ///
 /// Two still covers the case `Obj`'s own doc comment cites: a
@@ -50,7 +50,7 @@ pub const INLINE_CAP: usize = 2;
 
 /// `ptr` is null exactly when the elements live in `inline`, and points
 /// at an owned heap buffer otherwise. Generated code resolves that with
-/// a compare and a select against the object's own address -- see
+/// a compare and a select against the object's own address: see
 /// `jit::codegen::FuncCompiler::load_list_ptr_len`.
 ///
 /// A self-pointer would have made the inline case branchless, but the
@@ -100,7 +100,11 @@ impl ListStorage {
   /// Elements this list can hold before it needs to grow.
   #[inline]
   fn effective_cap(&self) -> usize {
-    if self.ptr.is_null() { INLINE_CAP } else { self.cap }
+    if self.ptr.is_null() {
+      INLINE_CAP
+    } else {
+      self.cap
+    }
   }
 
   pub fn with_capacity(cap: usize) -> ListStorage {
@@ -164,7 +168,10 @@ impl ListStorage {
     let new_cap = if self.ptr.is_null() {
       INLINE_CAP * 2
     } else {
-      self.cap.checked_mul(2).expect("zuri: list capacity overflow")
+      self
+        .cap
+        .checked_mul(2)
+        .expect("zuri: list capacity overflow")
     };
     self.grow_to(new_cap);
   }
@@ -238,7 +245,11 @@ impl ListStorage {
   pub fn extend_from_slice(&mut self, other: &[Value]) {
     self.reserve(other.len());
     unsafe {
-      std::ptr::copy_nonoverlapping(other.as_ptr(), self.data_ptr_mut().add(self.len), other.len());
+      std::ptr::copy_nonoverlapping(
+        other.as_ptr(),
+        self.data_ptr_mut().add(self.len),
+        other.len(),
+      );
     }
     self.len += other.len();
   }
@@ -259,7 +270,10 @@ impl ListStorage {
       Bound::Excluded(&n) => n,
       Bound::Unbounded => self.len,
     };
-    assert!(start <= end && end <= self.len, "zuri: list drain range out of bounds");
+    assert!(
+      start <= end && end <= self.len,
+      "zuri: list drain range out of bounds"
+    );
     let removed: Vec<Value> = self[start..end].to_vec();
     unsafe {
       let base = self.data_ptr_mut();

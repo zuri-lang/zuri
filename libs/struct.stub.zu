@@ -26,7 +26,7 @@
  *   unpacking. A count > 1 numbers the keys `NAME1`, `NAME2`, ... A
  *   segment carrying a `:NAME` may only contain a single group.
  * - A group with no `:NAME` gets a purely numeric key that runs once, 
- *   globally, for the whole format string -- it never resets and so never 
+ *   globally, for the whole format string; it never resets and so never 
  *   silently overwrites an earlier unnamed field.
  *
  * ## Format codes
@@ -65,10 +65,10 @@
  * `E`  | 8 | double, big-endian
  * `w`  | 2 | IEEE-754 half-precision float, little-endian
  * `W`  | 2 | IEEE-754 half-precision float, big-endian
- * `x`  | count | NUL byte(s) -- consumes no argument
+ * `x`  | count | NUL byte(s); consumes no argument
  * `X`  | count | back up `count` byte(s)
- * `Z`  | -- | (see above)
- * `@`  | -- | seek/pad to absolute position `count`
+ * `Z`  |; | (see above)
+ * `@`  |; | seek/pad to absolute position `count`
  *
  * ## Integer precision
  *

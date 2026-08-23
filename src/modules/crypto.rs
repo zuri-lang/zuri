@@ -1,4 +1,4 @@
-//! `_crypto` builtin module -- native primitives backing `libs/crypto.zu`.
+//! `_crypto` builtin module; native primitives backing `libs/crypto.zu`.
 //!
 //! `libs/crypto.zu` is the user-facing `crypto` module: it defines
 //! `CryptoError`, the `aes_gcm`/`aes_cbc`/`chacha20`/`rsa`/`ecdsa`/
@@ -11,11 +11,11 @@
 //!
 //! Every asymmetric key is exchanged with Zuri code as a PEM string:
 //! PKCS#8 (`-----BEGIN PRIVATE KEY-----`) for private keys, SubjectPublicKeyInfo
-//! (`-----BEGIN PUBLIC KEY-----`) for public keys -- the same formats
+//! (`-----BEGIN PUBLIC KEY-----`) for public keys; the same formats
 //! OpenSSL produces and reads by default, so keys generated here are
 //! usable with any other standard tool. X25519 has no crate-level PKCS8/
 //! SPKI support in `x25519-dalek`, so this module hand-encodes the (fixed-
-//! size, RFC 8410) DER for that one case -- see `x25519_der`.
+//! size, RFC 8410) DER for that one case: see `x25519_der`.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -290,7 +290,7 @@ fn aes_gcm_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// `cipher` 0.4's `BlockEncryptMut`/`BlockDecryptMut` only give a
 /// BUFFER-based padded API (`encrypt_padded_mut`/`decrypt_padded_mut`,
 /// operating in place on a caller-supplied `&mut [u8]` and handing back a
-/// sub-slice of it) -- there is no `_vec_mut` convenience method on
+/// sub-slice of it); there is no `_vec_mut` convenience method on
 /// `cbc::Encryptor`/`Decryptor` themselves. This builds that buffer by
 /// hand: encryption needs room for up to one extra PKCS#7 block
 /// (`pt.len()` is never itself a valid final length once padded, so at
@@ -638,7 +638,7 @@ fn ecdsa_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(make_keypair_dict(ctx, priv_pem, pub_pem))
 }
 
-/// Tries P-256 first, then P-384 -- the PEM's own embedded curve OID
+/// Tries P-256 first, then P-384; the PEM's own embedded curve OID
 /// makes the "wrong" curve's parse simply fail, so this is an unambiguous
 /// way to recover which curve a given private key PEM belongs to without
 /// requiring the caller to say so separately.
@@ -758,23 +758,23 @@ fn ed25519_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(ok))
 }
 
-// X25519 -- hand-rolled RFC 8410 PKCS#8/SPKI DER (x25519-dalek has no
+// X25519; hand-rolled RFC 8410 PKCS#8/SPKI DER (x25519-dalek has no
 // pkcs8/spki support of its own).
 
 mod x25519_der {
   //! Fixed-size (X25519 keys are always exactly 32 bytes) DER templates
-  //! per RFC 8410 -- the OID for X25519 is `1.3.101.110`, which DER-encodes
+  //! per RFC 8410; the OID for X25519 is `1.3.101.110`, which DER-encodes
   //! (as an AlgorithmIdentifier with no parameters) to the constant 7-byte
   //! `30 05 06 03 2B 65 6E` sequence embedded in both templates below.
 
   /// `PrivateKeyInfo { version=0, algorithm=id-X25519, privateKey=OCTET
-  /// STRING(OCTET STRING(raw)) }` -- 48 bytes total for a 32-byte key.
+  /// STRING(OCTET STRING(raw)) }`; 48 bytes total for a 32-byte key.
   const PKCS8_PREFIX: [u8; 16] = [
     0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20,
   ];
 
   /// `SubjectPublicKeyInfo { algorithm=id-X25519, subjectPublicKey=BIT
-  /// STRING(raw) }` -- 44 bytes total for a 32-byte key.
+  /// STRING(raw) }`; 44 bytes total for a 32-byte key.
   const SPKI_PREFIX: [u8; 12] = [
     0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00,
   ];

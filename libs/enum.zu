@@ -7,7 +7,7 @@
  *
  * ### Creating an enumeration
  *
- * Initialize from a list of symbolic names -- each is automatically
+ * Initialize from a list of symbolic names; each is automatically
  * assigned an ordinal value starting from zero:
  *
  * ```zuri
@@ -55,7 +55,7 @@
  * must be numbers or strings. Duplicate values are rejected unless
  * `allow_duplicates` is `true`.
  *
- * Enumeration keys are always unique -- since the source is itself a
+ * Enumeration keys are always unique; since the source is itself a
  * dictionary or list, a duplicated symbolic name is never possible to
  * express in the first place.
  *
@@ -168,7 +168,7 @@ def to_dict(e) {
  *
  * Since dictionaries cannot contain duplicate keys, if multiple
  * enumeration keys share the same value, only the LAST declared key for
- * that value is represented in the result -- matching the documented
+ * that value is represented in the result; matching the documented
  * behavior.
  *
  * @param dict e

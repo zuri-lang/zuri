@@ -6,7 +6,7 @@
 # collections (and eventually promote the long-lived containers to
 # the old generation), then repeatedly overwrite each container with
 # a freshly-allocated young object and verify the read-back value is
-# correct immediately after -- and again after further GC pressure.
+# correct immediately after; and again after further GC pressure.
 #
 # If any write-barrier call site were missing, a young object stored
 # into an already-promoted (old) container would eventually get
@@ -77,7 +77,7 @@ var errors = 0
 var n = 15000
 
 while i < n {
-  # Churn throwaway garbage between mutations -- forces many minor
+  # Churn throwaway garbage between mutations; forces many minor
   # (and, periodically, major) collections over the course of the
   # loop, and is what eventually promotes `holder`/`lst`/`d`/the
   # closure's captured `Box`/`Holder`'s class object into the old

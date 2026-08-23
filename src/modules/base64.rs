@@ -1,4 +1,4 @@
-//! `base64` builtin module -- converts between `bytes` values and
+//! `base64` builtin module; converts between `bytes` values and
 //! standard (RFC 4648, padded) base64-encoded strings.
 //!
 //! Reuses the same `base64` crate already vendored for
@@ -27,7 +27,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-/// `base64.encode(data: bytes) -> string` -- standard, padded base64
+/// `base64.encode(data: bytes) -> string`; standard, padded base64
 /// alphabet (`A-Za-z0-9+/=`).
 fn encode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -40,7 +40,7 @@ fn encode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// `base64.decode(str: string) -> bytes`. Errors (via the ordinary
 /// native-function error path, becoming a catchable `Error`) on
-/// malformed base64 -- wrong padding, invalid alphabet characters, or
+/// malformed base64; wrong padding, invalid alphabet characters, or
 /// an incomplete final group.
 fn decode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);

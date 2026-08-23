@@ -1,5 +1,5 @@
 /**
- * Runtime type-dispatch kernel -- the shape none of the other
+ * Runtime type-dispatch kernel; the shape none of the other
  * benchmarks here exercise.
  *
  * Zuri's builtin type predicates (`is_number`, `is_string`, `is_list`,
@@ -10,7 +10,7 @@
  * of them says anything about how that dispatch performs.
  *
  * The kernel walks a heterogeneous list and reduces it, choosing what
- * to do per element by asking what it is -- a real polymorphic fold,
+ * to do per element by asking what it is; a real polymorphic fold,
  * not a synthetic sequence of unrelated predicate calls.
  *
  * contributed by Richard Ore

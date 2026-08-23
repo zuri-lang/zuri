@@ -1,4 +1,4 @@
-//! Registry of builtin (native) modules -- e.g. `import io`, `import
+//! Registry of builtin (native) modules; e.g. `import io`, `import
 //! math`. A builtin module can only ever export plain functions and
 //! constants, never a class, so each one is just a flat list of
 //! (name, Value) members built once per VM run (see
@@ -7,7 +7,7 @@
 //!
 //! Adding a new builtin module means adding one file here exposing a
 //! `pub static MODULE: BuiltinModuleDef`, then listing it in
-//! `REGISTRY` below -- nothing else needs to change.
+//! `REGISTRY` below; nothing else needs to change.
 
 mod base64;
 mod compress;
@@ -55,7 +55,7 @@ pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {
   REGISTRY.iter().find(|m| m.name == name)
 }
 
-/// Allocate a free (non-method) native function Value -- the
+/// Allocate a free (non-method) native function Value; the
 /// module-scoped equivalent of `natives.rs`'s `register`, just
 /// handing back the Value instead of also binding it as a VM global.
 pub fn native(

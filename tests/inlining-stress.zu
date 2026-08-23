@@ -24,7 +24,7 @@ while i < 300000 {
 }
 
 echo caller(helper_a, 10)
-# The guard must catch this -- a different closure at the SAME call
+# The guard must catch this; a different closure at the SAME call
 # site the cache learned helper_a from. If the guard were missing or
 # broken, this would wrongly run helper_a's inlined body (x*2 = 20)
 # instead of falling back to a real call to helper_b (x+100 = 110).
@@ -34,7 +34,7 @@ echo caller(helper_b, 10)
 # inlining candidate for `build`'s own hot loop. Each iteration
 # allocates a real heap object THROUGH the (potentially inlined) call,
 # forcing real GC passes to run while the inlined body's own widened
-# register range is live -- exactly the scenario `num_registers`
+# register range is live; exactly the scenario `num_registers`
 # widening exists to keep sound (see `Chunk::num_registers`'s own
 # docs): if GC's root-scan didn't cover the inlined callee's own
 # registers, a live `Node` held only in an inlined-body-local register

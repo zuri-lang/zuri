@@ -1,5 +1,5 @@
 /**
- * Helper module for `tests/libs/worker.zu` -- plain, module-scoped
+ * Helper module for `tests/libs/worker.zu`; plain, module-scoped
  * declarations used to exercise the "Named" (by-binding) resolution
  * path, as opposed to the structural transplant path a main-script
  * declaration goes through.
@@ -100,7 +100,7 @@ def cancellable_loop(started) {
 }
 
 # The next three exist so a cancellation test can put a worker
-# blocked inside wait_any()/wait_all()/select() -- those all need
+# blocked inside wait_any()/wait_all()/select(); those all need
 # `worker` in scope, so (like `cancellable_loop` above) they have to
 # live in a real module rather than a main-script closure; a
 # main-script closure captures its own `import worker` as a

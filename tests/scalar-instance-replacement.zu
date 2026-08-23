@@ -1,5 +1,5 @@
 /* Covers instance scalar replacement (codegen::emit_scalar_construct):
- * the cases it must fire on, and -- more importantly -- the cases it
+ * the cases it must fire on, and; more importantly; the cases it
  * must NOT, where the object genuinely has to exist on the heap.
  */
 
@@ -61,7 +61,7 @@ def mutated(n) {
   return acc
 }
 
-/* ESCAPES by being returned -- must stay a real object. */
+/* ESCAPES by being returned; must stay a real object. */
 def make(n) {
   return Vec3(n, n + 1, n + 2)
 }

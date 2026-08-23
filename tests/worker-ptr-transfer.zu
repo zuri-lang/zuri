@@ -11,7 +11,7 @@ var t = worker.spawn(compress_it, enc)
 var result = t.join()
 echo result.length() > 0
 
-# the source encoder was MOVED, not copied -- using it again fails
+# the source encoder was MOVED, not copied; using it again fails
 # cleanly instead of corrupting anything or crashing
 catch {
   enc.write('should not work anymore')

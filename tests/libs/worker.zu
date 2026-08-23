@@ -102,7 +102,7 @@ def test_main_script_function_raises_builtin_error() {
   # picked up transitively as a root global this main-script function
   # depends on. `TypeError` (like every builtin error class) is
   # installed fresh by every worker's own `VM::init`, not declared in
-  # any module -- a naive structural clone of it would produce a class
+  # any module; a naive structural clone of it would produce a class
   # the worker's own `raise`/`catch` doesn't recognize, turning this
   # into a confusing "can only raise an Error or subclass" failure
   # instead of the real one.
@@ -136,7 +136,7 @@ class LocalBox {
 def test_main_script_class_constructed_inside_worker() {
   # a structurally-transferred class's constructor must actually run
   # on the worker side too, not just when an already-built instance
-  # crosses as data -- this is what test_main_script_class exercises.
+  # crosses as data; this is what test_main_script_class exercises.
   var t = worker.spawn(@() {
     var box = LocalBox(9)
     return box.value
@@ -151,7 +151,7 @@ def test_main_script_class_survives_gc_and_jit_warmup_inside_worker() {
   # constants are: enough iterations here both warms this method up
   # to JIT-compiled code (which bakes a field name's raw bits in as a
   # machine-code immediate) AND pushes the worker's nursery through a
-  # real minor collection -- if a constant were movable, that
+  # real minor collection; if a constant were movable, that
   # collection would relocate it out from under the already-baked
   # pointer and crash the whole process, not just this worker.
   var t = worker.spawn(@() {
@@ -271,7 +271,7 @@ def test_worker_panic_is_isolated() {
   assert instance_of(e, worker.WorkerError), 'a panic must surface as an ordinary WorkerError'
 
   # the pool's worker threads must survive a panic and keep serving
-  # later workers -- a panicked isolate is rebuilt, never reused.
+  # later workers; a panicked isolate is rebuilt, never reused.
   var t2 = worker.spawn(worker_worker.square, 9)
   assert t2.join() == 81, 'the pool must still work correctly after a panic on one of its workers'
   echo 'test_worker_panic_is_isolated passed'
@@ -825,7 +825,7 @@ def test_scope_reports_real_child_failure_not_cancellation_artifact() {
   var e = nil
   catch {
     worker.scope(@(s) {
-      # spawned FIRST -- if the cancellation-artifact filtering in
+      # spawned FIRST; if the cancellation-artifact filtering in
       # scope() were broken, this one's own WorkerCancelledError
       # would incorrectly win as "first" in spawn order once cancelled
       s.spawn(@(st, ch) {
@@ -981,7 +981,7 @@ def test_introspection_pool_counts() {
     i += 1
   }
 
-  # one more than the pool can possibly run at once -- guaranteed to
+  # one more than the pool can possibly run at once; guaranteed to
   # sit in the queue, since every worker is confirmed busy above
   var extra_gate = worker.channel(0)
   var extra = worker.spawn(@(ch) { return ch.recv() }, extra_gate)
@@ -1090,7 +1090,7 @@ def test_broadcast_bounded_capacity_drops_when_full() {
 }
 
 def test_shutdown_drains_and_blocks_new_spawns() {
-  # this must stay the LAST test in the file -- shutdown() is
+  # this must stay the LAST test in the file; shutdown() is
   # permanent for the rest of the process, so nothing after it can
   # spawn() again.
   var gate = worker.channel(0)

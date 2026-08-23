@@ -74,7 +74,7 @@
  *
  * `Worker.cancel()` interrupts a worker that's currently blocked
  * in `Channel.send()`/`recv()`, `Worker.join()`, `wait_any()`,
- * `wait_all()`, or `select()` -- that call raises
+ * `wait_all()`, or `select()`; that call raises
  * `WorkerCancelledError` within roughly 50ms. Outside one of those
  * calls, cancellation is cooperative: plain running code isn't
  * interrupted, and must check `worker.is_cancelled()` itself.
@@ -144,7 +144,7 @@ class Worker {
    * `select()`, that call is interrupted within roughly 50ms and
    * raises `WorkerCancelledError`.
    *
-   * Otherwise -- plain, non-blocking code -- cancellation is
+   * Otherwise; plain, non-blocking code; cancellation is
    * cooperative: it does not interrupt code that's already running.
    * The worker's own function must check `worker.is_cancelled()`
    * and return on its own.
@@ -198,7 +198,7 @@ class Worker {
   }
 
   /**
-   * Unlike `try_join()`, never marks a failure as "observed" -- safe
+   * Unlike `try_join()`, never marks a failure as "observed"; safe
    * to poll purely to check progress without silencing the warning a
    * failure that's never actually `join()`ed/`try_join()`ed would
    * otherwise get (see the module docs' "Failure isolation" section).
@@ -256,7 +256,7 @@ def spawn(fn: function, ...args) {
 }
 
 /**
- * Same as `spawn()`, but gives the worker a `name` -- purely a
+ * Same as `spawn()`, but gives the worker a `name`; purely a
  * debugging label, read back via `Worker.name()` and included in
  * the "unobserved failure" warning (see the module docs' "Failure
  * isolation" section) if this one fails and is never `join()`ed or
@@ -362,7 +362,7 @@ def scope(body: function) {
     body_error = e
   }
 
-  # cancel every child regardless of outcome -- a no-op on ones that
+  # cancel every child regardless of outcome; a no-op on ones that
   # already finished, and lets still-running ones wind down sooner
   # once `body` (or a sibling) has already failed.
   for c in s.children() {
@@ -434,8 +434,8 @@ def cpu_count() {
 
 /**
  * Stops the pool from accepting any further `spawn()` calls, then
- * blocks until every worker already spawned -- queued or already
- * running -- has finished. Nothing in flight is abandoned.
+ * blocks until every worker already spawned; queued or already
+ * running; has finished. Nothing in flight is abandoned.
  *
  * Permanent: once called, every `spawn()` for the rest of the process
  * raises `WorkerError`, even if this call itself later times out.

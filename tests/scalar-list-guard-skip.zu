@@ -2,7 +2,7 @@
  * emit_list_get_index/emit_list_set_index already had, extended to
  * emit_scalar_list_get/emit_scalar_list_set (the stack-allocated,
  * escape-analyzed list fast path, see tests/scalar-list-replacement.zu)
- * -- these previously always did the full is_number + float-roundtrip
+ *; these previously always did the full is_number + float-roundtrip
  * check on the index regardless of whether type_facts/int_facts
  * already proved it. Covers: a proven (loop-counter) index reading AND
  * writing, an in-range/out-of-range unproven index (the bounds check
@@ -39,7 +39,7 @@ def scalar_list_sum(a, b, c) {
 
 def scalar_list_index(a, b, c, idx) {
   var tmp = [a, b, c]
-  /* idx is NOT proven numeric/int -- exercises the unproven guard,
+  /* idx is NOT proven numeric/int; exercises the unproven guard,
    * both when it turns out fine and when it's out of range. */
   return tmp[idx]
 }

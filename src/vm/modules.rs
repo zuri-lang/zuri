@@ -3,7 +3,7 @@
 //! A "module" is any `.zu` file (or a directory package with its own
 //! `index.zu`) executed AT MOST ONCE per VM run and cached by its
 //! canonical filesystem path, giving it a completely separate global
-//! namespace from the importing script or any other module -- see
+//! namespace from the importing script or any other module: see
 //! `ObjFunction::globals_module` for how a compiled function knows
 //! which namespace its own top-level `def`/`var`/`class` bindings
 //! belong to.
@@ -46,7 +46,7 @@ fn is_relative(path: &str) -> bool {
 
 /// Resolves and loads a `.`/`..`-prefixed import against the
 /// directory containing `importer_path`. Never falls back to any
-/// search path -- a relative import that doesn't exist is simply not
+/// search path; a relative import that doesn't exist is simply not
 /// found, matching every other language's module system.
 fn import_relative(vm: &mut VM, importer_path: &str, raw_path: &str) -> ImportResult {
   let importer_dir = Path::new(importer_path)
@@ -89,7 +89,7 @@ fn import_search(vm: &mut VM, raw_path: &str) -> ImportResult {
 }
 
 /// `$ZURI_ROOT/libs`, falling back to a `libs` directory next to the
-/// running executable -- this implementation's equivalent of the
+/// running executable; this implementation's equivalent of the
 /// documented `%BLADE_INSTALL_ROOT%/libs`.
 fn install_root_libs() -> Option<PathBuf> {
   if let Ok(root) = std::env::var("ZURI_ROOT") {
@@ -101,7 +101,7 @@ fn install_root_libs() -> Option<PathBuf> {
 }
 
 /// A single, non-dotted, non-separator path segment (e.g. `"math"`),
-/// or `None` for anything with more than one component -- only a bare
+/// or `None` for anything with more than one component; only a bare
 /// top-level name can ever match a builtin module.
 fn single_segment(raw_path: &str) -> Option<&str> {
   let mut parts = Path::new(raw_path).components();
@@ -113,7 +113,7 @@ fn single_segment(raw_path: &str) -> Option<&str> {
 }
 
 /// `base.zu` if it exists, else `base/index.zu` if THAT exists, else
-/// `None` -- the two file shapes a module/package can take, per the
+/// `None`; the two file shapes a module/package can take, per the
 /// package-authoring rules in the docs.
 fn resolve_candidate(base: &Path) -> Option<PathBuf> {
   let as_file = with_zu_extension(base);
@@ -135,7 +135,7 @@ fn with_zu_extension(base: &Path) -> PathBuf {
 }
 
 /// `<file stem>`, or for a package's `index.zu`, the ENCLOSING
-/// directory's own name -- so a package displays as `"http"`, not
+/// directory's own name; so a package displays as `"http"`, not
 /// `"index"`.
 fn module_display_name(file_path: &Path) -> String {
   let stem = file_path
@@ -160,7 +160,7 @@ fn module_display_name(file_path: &Path) -> String {
 ///
 /// `pub(crate)`, not just `fn`: `modules::worker_util` reuses this
 /// directly to load a module's source into a worker isolate's own,
-/// independent `VM`/`Heap` -- the exact same load-and-cache pipeline
+/// independent `VM`/`Heap`; the exact same load-and-cache pipeline
 /// `import` uses, just invoked with an already-canonical path instead
 /// of a raw import string. No new module-loading logic exists for
 /// workers; this is the only one there ever was.
@@ -195,7 +195,7 @@ pub(crate) fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> I
     loaded: false,
   });
 
-  // Cache BEFORE running the body -- what lets a circular import (A
+  // Cache BEFORE running the body; what lets a circular import (A
   // imports B, B imports A) observe this same in-progress module
   // instead of recursing forever, exactly like Python/Node handle it.
   vm.modules.insert(canonical.clone(), module_val);
@@ -204,7 +204,7 @@ pub(crate) fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> I
 
   if let Err(e) = run_module_source(vm, module_val, &source, &canonical) {
     // A module that blew up mid-load shouldn't stay permanently
-    // "cached" as broken -- drop it so a later import attempt (e.g.
+    // "cached" as broken; drop it so a later import attempt (e.g.
     // from a REPL session after the user fixes the file) gets a
     // genuine retry instead of silently reusing the half-built value.
     vm.modules.remove(&canonical);
@@ -214,7 +214,7 @@ pub(crate) fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> I
   // Re-read from `vm.modules` rather than trusting the `module_val`
   // local from before the call above: `run_module_source` executes
   // the module's entire top-level body, arbitrary Zuri code free to
-  // allocate and trigger a collection -- if `module_val`'s own object
+  // allocate and trigger a collection; if `module_val`'s own object
   // was still Young at the `insert` above (common: this module is the
   // very first thing loaded, nothing has promoted it yet) and gets
   // relocated during its own body's execution, the pre-call local
@@ -228,7 +228,7 @@ pub(crate) fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> I
 
 /// `__file__` is this module's own canonical path; `__root__` is
 /// whatever the VM was told the application's entry file is (see
-/// `VM::set_root_path`) -- identical across every module loaded
+/// `VM::set_root_path`); identical across every module loaded
 /// during this run. Neither is defined in REPL mode.
 fn seed_module_vars(vm: &mut VM, module_val: Value, canonical_path: &str) {
   let file_val = vm.heap.alloc_string(canonical_path.to_string());
@@ -249,7 +249,7 @@ fn seed_module_vars(vm: &mut VM, module_val: Value, canonical_path: &str) {
 }
 
 /// Lex, parse, compile, and run `source` as `module_val`'s own
-/// top-level code -- every `def`/`var`/`class` it declares lands in
+/// top-level code; every `def`/`var`/`class` it declares lands in
 /// `module_val`'s namespace (via `Compiler::set_current_module`),
 /// never the VM's root table.
 fn run_module_source(
@@ -295,7 +295,7 @@ fn run_module_source(
   };
 
   let closure = vm.heap.alloc_plain_closure(fn_obj);
-  // `call_value`, NOT `vm.run` -- this executes RE-ENTRANTLY, from
+  // `call_value`, NOT `vm.run`; this executes RE-ENTRANTLY, from
   // inside an already-running `Instr::Import`, so it must extend the
   // current call stack (like any other Zuri->Zuri call) rather than
   // assuming an empty one.
@@ -322,7 +322,7 @@ fn builtin_module(vm: &mut VM, name: &str) -> Option<Value> {
     namespace: ModuleNamespace::new(),
     loaded: true,
   });
-  // Cache BEFORE `(def.build)(vm)` runs -- that call can allocate
+  // Cache BEFORE `(def.build)(vm)` runs; that call can allocate
   // (and therefore trigger a collection) arbitrarily, and until this
   // insert, `module_val` was a bare local nothing in `VM` roots on
   // its own, unlike `load_from_candidate`'s own module (see ITS
@@ -331,7 +331,7 @@ fn builtin_module(vm: &mut VM, name: &str) -> Option<Value> {
   vm.modules.insert(cache_key.clone(), module_val);
 
   let members = (def.build)(vm);
-  // Re-read rather than trust the pre-call `module_val` local -- see
+  // Re-read rather than trust the pre-call `module_val` local: see
   // `load_from_candidate`'s identical re-read for why: `def.build`
   // is native Rust code, not Zuri, but nothing here guarantees it
   // never allocates enough to cross a collection threshold, and

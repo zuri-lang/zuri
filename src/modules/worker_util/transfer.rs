@@ -1,4 +1,4 @@
-//! Heap-independent snapshot of a Zuri value -- the only thing that
+//! Heap-independent snapshot of a Zuri value; the only thing that
 //! ever crosses a worker spawn/join or channel send/recv.
 //!
 //! Every isolate (worker thread) owns its own private `VM`/`Heap`,
@@ -6,7 +6,7 @@
 //! than one thread: `Value`s are raw `*const Obj` pointers, `Chunk`s
 //! carry non-atomic inline caches, and the GC's remembered set is a
 //! `thread_local!`. So no `Value` and no compiled `Chunk` ever crosses
-//! a thread boundary directly -- `capture` walks a source heap once,
+//! a thread boundary directly; `capture` walks a source heap once,
 //! producing a plain, `Send`, heap-independent tree; `materialize`
 //! walks that tree once more, allocating a fresh, equivalent value
 //! into a (possibly different) destination heap.
@@ -15,12 +15,12 @@
 //! a module-level name is captured cheaply, as a `Named` reference
 //! (its defining home plus its own name) and RE-RESOLVED against a
 //! freshly-loaded copy of that home on the destination side, exactly
-//! the way `import` already loads a module once and caches it -- see
-//! `Home`. Everything else callable -- a closure that captures a local
-//! variable, or a lambda that was never bound to a name at all -- gets
+//! the way `import` already loads a module once and caches it: see
+//! `Home`. Everything else callable; a closure that captures a local
+//! variable, or a lambda that was never bound to a name at all; gets
 //! a full STRUCTURAL transplant instead (see `CapturedFunction`): its
 //! compiled bytecode and constant pool travel across directly (bare
-//! data -- a `Chunk`'s instructions/constants carry no heap pointers of
+//! data; a `Chunk`'s instructions/constants carry no heap pointers of
 //! their own once its `Value` constants are captured the same
 //! recursive way as everything else), and its captured variables cross
 //! as an independent snapshot, not shared state.
@@ -31,7 +31,7 @@
 //! from one thread at a time, so crossing has to be a MOVE. `capture`
 //! takes the payload out of the source `ObjPtr` (leaving it tagged
 //! `"<moved>"`, unusable on the source side from then on) and wraps it
-//! in a `PtrSlot` -- an `Arc<Mutex<Option<...>>>` -- rather than moving
+//! in a `PtrSlot`; an `Arc<Mutex<Option<...>>>`; rather than moving
 //! it in directly, specifically so `TransferValue`/`TransferGraph` can
 //! stay plain `Clone` (needed so a worker's `.join()` result stays
 //! freely re-readable, same as any other value). Cloning a `PtrSlot`
@@ -58,24 +58,24 @@ use crate::vm::vm::VM;
 
 use super::pool;
 
-/// A moved `Ptr` payload -- see this module's own top-level docs.
+/// A moved `Ptr` payload: see this module's own top-level docs.
 type PtrSlot = Arc<Mutex<Option<(&'static str, Box<dyn Any + Send>)>>>;
 
 /// Where a `Named` function/class/method lives, so a destination
 /// isolate can load the exact same source before looking it up.
 ///
 /// Deliberately only ever a `.zu` MODULE, never the program's own
-/// entry script -- this restriction applies to the `Named` (by-
+/// entry script; this restriction applies to the `Named` (by-
 /// binding) resolution strategy specifically, NOT to workers in
 /// general (see `CapturedFunction` for the other strategy, which has
 /// no such restriction). A module's top level is expected to be
 /// side-effect-light (declarations, mostly) and is only ever run once
-/// and cached -- exactly what re-resolving it on a worker isolate
+/// and cached; exactly what re-resolving it on a worker isolate
 /// needs. The entry script has no such expectation: it's the
 /// program's own real, imperative top-level logic, which commonly
 /// includes the very `worker.spawn`/`.join()` calls that would
 /// trigger this resolution in the first place. Bootstrapping a worker
-/// by re-running it would re-run those calls too -- recursively
+/// by re-running it would re-run those calls too; recursively
 /// spawning more work and, for a script that blocks on `.join()` at
 /// its own top level (extremely common), deadlocking the worker
 /// against itself. Python's `multiprocessing` hits the identical
@@ -84,7 +84,7 @@ type PtrSlot = Arc<Mutex<Option<(&'static str, Box<dyn Any + Send>)>>>;
 /// `__main__`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Home {
-  /// Canonical, on-disk path -- the same string `vm::modules` caches
+  /// Canonical, on-disk path; the same string `vm::modules` caches
   /// loaded modules under.
   path: String,
 }
@@ -118,7 +118,7 @@ pub enum NamedKind {
 /// Used for whatever the cheap `Named`/`Home` path can't handle: a
 /// closure that captures a local variable, or a lambda that was never
 /// assigned to a module-level name at all. Unlike `Named`, this never
-/// needs the destination to already know the closure by name -- only,
+/// needs the destination to already know the closure by name; only,
 /// if `home` is `Some`, its DEFINING MODULE, so the closure's own
 /// `GetGlobal`/`SetGlobal` instructions (calling a sibling top-level
 /// function, reading a module `var`, ...) resolve exactly as they
@@ -149,19 +149,19 @@ pub struct CapturedFunction {
   /// root global this function's OWN bytecode references by name
   /// (`GetGlobal`/`SetGlobal`/`AssignGlobal`), captured at the moment
   /// it crossed the boundary. A `home: Some(module)` function doesn't
-  /// need this -- loading its module (see `materialize_prototype`)
+  /// need this; loading its module (see `materialize_prototype`)
   /// already defines every one of ITS globals as a side effect, the
   /// same way `import`ing it would. The main script has no such
   /// "load" step (see `Home`'s own docs on why), so a function
   /// declared there instead carries pre-resolved snapshots of exactly
-  /// the globals it actually touches -- including, transitively,
+  /// the globals it actually touches; including, transitively,
   /// whatever THOSE values' own dependencies are, since capturing a
   /// global whose value is itself a main-script function recurses
   /// into this same field for that function, and so on.
   root_globals: Vec<(String, TransferValue)>,
 }
 
-/// A structurally-captured class -- see `capture_class_structural`.
+/// A structurally-captured class: see `capture_class_structural`.
 #[derive(Clone)]
 pub struct CapturedClass {
   name: String,
@@ -181,8 +181,8 @@ pub struct CapturedClass {
 /// structurally-captured closures) is a `Ref` into the owning
 /// `TransferGraph`'s arena instead, so two slots that pointed at the
 /// SAME source object still point at the same rebuilt object after
-/// `materialize`, and a self-referential structure -- including a
-/// recursive lambda that captures itself -- doesn't recurse forever
+/// `materialize`, and a self-referential structure; including a
+/// recursive lambda that captures itself; doesn't recurse forever
 /// in either direction.
 #[derive(Clone)]
 pub enum TransferValue {
@@ -209,7 +209,7 @@ pub enum TransferValue {
     name: String,
     kind: NamedKind,
   },
-  /// A builtin error class (`Error`, `TypeError`, ...) -- resolved
+  /// A builtin error class (`Error`, `TypeError`, ...); resolved
   /// by name against the destination's own prelude, already installed
   /// fresh by `VM::init` on every isolate. See `capture_class`'s own
   /// docs on why this can't go through the ordinary `Named`/`Home`
@@ -217,12 +217,12 @@ pub enum TransferValue {
   /// structural one (a clone wouldn't be recognized by the
   /// destination's own `raise`/`catch`).
   Prelude(String),
-  /// A `Channel` handle -- cloned, not moved, since `pool::ChannelState`
+  /// A `Channel` handle; cloned, not moved, since `pool::ChannelState`
   /// is already internally synchronized for concurrent access from
   /// both sides. See `capture_value`'s own docs on why this is NOT
   /// treated like an ordinary `Ptr`.
   ChannelHandle(Arc<pool::ChannelState>),
-  /// A `Worker` handle -- same reasoning as `ChannelHandle`.
+  /// A `Worker` handle; same reasoning as `ChannelHandle`.
   WorkerHandle(Arc<pool::WorkerState>),
   Ref(u32),
 }
@@ -240,17 +240,17 @@ pub enum TransferNode {
     method: TransferValue,
   },
   Class(CapturedClass),
-  /// A moved native-resource payload -- see this module's own
+  /// A moved native-resource payload: see this module's own
   /// top-level docs.
   Ptr(PtrSlot),
-  /// A bare, not-yet-closed-over function prototype -- either a
+  /// A bare, not-yet-closed-over function prototype; either a
   /// nested one (only ever appears inside another `CapturedFunction`'s
   /// own `constants`, mirroring how `Obj::Func` only ever appears
   /// inside a `Chunk`'s constant pool on the source side too), or the
   /// prototype half of a `Closure` entry below. Arena-backed (not a
   /// plain leaf) specifically so a recursive TOP-LEVEL function --
   /// `def fact(n) { ... fact(n - 1) ... }`, calling itself by name via
-  /// `GetGlobal` -- can be memoized before its own `root_globals` scan
+  /// `GetGlobal`; can be memoized before its own `root_globals` scan
   /// recurses back into capturing itself, the same self-reference
   /// protection `Closure`'s own upvalues get below.
   Proto(CapturedFunction),
@@ -259,10 +259,10 @@ pub enum TransferNode {
     /// entry.
     proto: TransferValue,
     /// One snapshotted value per prototype's own
-    /// `upvalue_descriptors` entry -- captured BY VALUE at the moment
+    /// `upvalue_descriptors` entry; captured BY VALUE at the moment
     /// this closure crossed the boundary, not shared live state
     /// (there's no such thing as shared mutable state between
-    /// isolates -- see this module's own top-level docs).
+    /// isolates: see this module's own top-level docs).
     upvalues: Vec<TransferValue>,
   },
 }
@@ -281,7 +281,7 @@ pub struct TransferGraph {
 // ---------------------------------------------------------------------
 
 /// Walks `root`'s object graph on `vm`'s own heap and snapshots it
-/// into a `TransferGraph`. Read-only -- never allocates on `vm`'s
+/// into a `TransferGraph`. Read-only; never allocates on `vm`'s
 /// heap, so it can't itself trigger a collection.
 pub fn capture(vm: &VM, root: Value) -> Result<TransferGraph, String> {
   let mut arena = Vec::new();
@@ -308,7 +308,7 @@ fn capture_value(
 
   // Only List/Dict/Instance/BoundMethod/Closure ever get inserted
   // below, so this only ever hits for a repeat/aliased reference to
-  // one of those -- a miss here just means "not one of those", not
+  // one of those; a miss here just means "not one of those", not
   // "not captured yet".
   let ptr = v.as_obj() as usize;
   if let Some(&idx) = memo.get(&ptr) {
@@ -343,10 +343,10 @@ fn capture_value(
     });
   }
   if v.is_func() {
-    // A bare nested prototype -- only ever reached from
+    // A bare nested prototype; only ever reached from
     // `capture_prototype`'s own constant-pool walk, never as an
     // ordinary Zuri-visible runtime value (every callable Value a
-    // script can hold is a Closure, even a capture-nothing one -- see
+    // script can hold is a Closure, even a capture-nothing one: see
     // `Obj::Closure`'s own docs).
     return capture_prototype(vm, v, arena, memo);
   }
@@ -373,7 +373,7 @@ fn capture_value(
     // A `Channel`'s own `_ptr` field, NOT a resource like a socket or
     // an encoder: `pool::ChannelState` is already internally
     // synchronized (`Mutex`+`Condvar`) specifically so it CAN be used
-    // concurrently from both sides at once -- that's the entire point
+    // concurrently from both sides at once; that's the entire point
     // of a channel. Cloning the `Arc` (never moving/taking it) is what
     // lets the very channel a worker was just handed still be sent
     // on/received from by the code that spawned it.
@@ -388,7 +388,7 @@ fn capture_value(
   if v.is_ptr_type(pool::WORKER_PTR_TYPE) {
     // Same reasoning as `Channel` above: a `Worker` handle is a
     // synchronized, freely-shareable reference to a result slot, not
-    // an exclusive resource -- cloning it is what lets a `Worker`
+    // an exclusive resource; cloning it is what lets a `Worker`
     // handle be passed into (or returned from) another worker.
     let handle = v
       .as_ptr_cell()
@@ -399,15 +399,15 @@ fn capture_value(
     return Ok(TransferValue::WorkerHandle(handle));
   }
   if v.is_ptr() {
-    // A genuine MOVE, not a copy -- see this module's own top-level
+    // A genuine MOVE, not a copy: see this module's own top-level
     // docs. Tombstones the SOURCE `ObjPtr` (its own value is left
     // empty, its type_name overwritten) so a native accidentally
     // touching it again after the move gets a clean type mismatch
     // through the ordinary `ptr_type_name()`/`is_ptr_type()` checks
     // every native already does, rather than silently reading stale
     // state. Arena-backed and memoized like everything else with
-    // identity, so `[conn, conn]` -- the same `Ptr` referenced twice
-    // in one message -- takes the payload only once and both slots
+    // identity, so `[conn, conn]`; the same `Ptr` referenced twice
+    // in one message; takes the payload only once and both slots
     // resolve to the one shared `PtrSlot`, not a double-take.
     let idx = arena.len() as u32;
     let mut borrowed = v.as_ptr_cell().borrow_mut();
@@ -465,7 +465,7 @@ fn capture_value(
   }
 
   Err(format!(
-    "cannot send a {} across workers -- only nil, bool, number, string, \
+    "cannot send a {} across workers; only nil, bool, number, string, \
      bytes, bigint, range, list, dict, instance, class, bound method, \
      function, and native-pointer values can cross",
     v.type_name()
@@ -481,7 +481,7 @@ fn capture_closure(
   let closure = v.as_closure();
   let proto = closure.function.as_func();
 
-  // Cheap path first: a plain function/lambda -- or a method -- that's
+  // Cheap path first: a plain function/lambda; or a method; that's
   // currently bound to a module-level name (directly, or via its
   // class's own `methods` map) resolves as a `Named` reference: no
   // bytecode needs to travel at all, and the SAME destination Value
@@ -490,20 +490,20 @@ fn capture_closure(
   // Deliberately NOT gated on `closure.upvalues.is_empty()`: whether
   // this specific closure happens to have captured something is
   // irrelevant to whether the Named path is safe, because the Named
-  // path never transplants THIS closure's own upvalues at all -- the
+  // path never transplants THIS closure's own upvalues at all; the
   // destination re-loads the home module fresh and gets back
   // whatever closure THAT run independently creates for the same
   // name, with its own independently-recreated upvalues. A module-
   // level `def`/`var` commonly closes over another plain (non-`@`-
-  // exported) import in the same file -- e.g. `import _worker` is
+  // exported) import in the same file; e.g. `import _worker` is
   // just a local of the file's own top-level scope, so any nested
-  // function referencing it captures it as an upvalue -- and a
+  // function referencing it captures it as an upvalue; and a
   // `Module`/`ModuleBinding` value can never itself cross a worker
   // boundary. Gating this on an empty upvalue list would reject
   // exactly that ordinary case, forcing it down the STRUCTURAL path
   // below where it genuinely does need to move that upvalue and
   // genuinely can't. Only a closure `find_binding_name`/the method
-  // lookup can't find by name (a true local -- returned from an
+  // lookup can't find by name (a true local; returned from an
   // enclosing function, or never assigned a name at all) needs
   // structural transplant, upvalues and all.
   if let Some(m) = proto.globals_module {
@@ -537,9 +537,9 @@ fn capture_closure(
     }
   }
 
-  // Everything else -- a closure that captures a local variable, a
+  // Everything else; a closure that captures a local variable, a
   // lambda that was never bound to a name, or a method whose class
-  // lives directly in the main script -- gets a full structural
+  // lives directly in the main script; gets a full structural
   // transplant. `capture_prototype` carries `is_method`/
   // `owning_class_name` through as plain data either way, so a
   // structurally-captured method still round-trips correctly through
@@ -553,8 +553,8 @@ fn capture_closure(
   // `closure_idx` MUST be computed AFTER `capture_prototype` returns,
   // not before: that call pushes its own entries (the prototype
   // itself, plus whatever its constants/root-globals recursion adds)
-  // onto this SAME arena first, so `arena.len()` at that point -- not
-  // before -- is where THIS closure's own entry will actually land.
+  // onto this SAME arena first, so `arena.len()` at that point; not
+  // before; is where THIS closure's own entry will actually land.
   let proto_ref = capture_prototype(vm, closure.function, arena, memo)?;
   let closure_idx = arena.len() as u32;
   arena.push(TransferNode::Closure {
@@ -582,7 +582,7 @@ fn capture_closure(
 /// own root-globals scan would otherwise recurse into capturing
 /// itself forever. `func_val` may be a bare `Obj::Func` (a nested
 /// prototype constant) or `ObjClosure::function` (the prototype half
-/// of a real closure) -- both are the same `Obj::Func` shape.
+/// of a real closure); both are the same `Obj::Func` shape.
 fn capture_prototype(
   vm: &VM,
   func_val: Value,
@@ -640,12 +640,12 @@ fn capture_prototype(
   Ok(TransferValue::Ref(idx))
 }
 
-/// Scans `chunk`'s own bytecode (NOT any nested prototype's -- each
+/// Scans `chunk`'s own bytecode (NOT any nested prototype's; each
 /// gets its own independent call via `capture_prototype`) for every
 /// distinct name a `GetGlobal`/`SetGlobal`/`AssignGlobal` references,
 /// and snapshots whichever of those currently resolve against the
 /// SOURCE vm's root table. A name that isn't currently defined is
-/// simply skipped -- exactly like today, it'll fail with an ordinary
+/// simply skipped; exactly like today, it'll fail with an ordinary
 /// `UndefinedError` on the destination only if the function actually
 /// reaches that instruction, never up front.
 fn capture_root_globals(
@@ -700,14 +700,14 @@ fn capture_class(
   };
 
   // A builtin error class (`Error`, `TypeError`, ...) is installed
-  // fresh by `VM::init` on every worker isolate already -- it isn't
+  // fresh by `VM::init` on every worker isolate already; it isn't
   // declared in any module a `Home` could point at, and structurally
   // cloning it would produce a class that LOOKS the same but isn't the
   // exact object the destination's own `VM::raise`/`Instr::Raise`
   // checks against, breaking `raise`/`catch` for anything built from
   // it (a plain `Error('msg')`, most commonly). Resolving it by name
   // against the destination's own prelude instead is both correct and
-  // free -- no module load, no clone.
+  // free; no module load, no clone.
   if gmod.is_none()
     && vm
       .builtin_errors
@@ -734,9 +734,9 @@ fn capture_class(
     }
   }
 
-  // Structural fallback -- the only option for a class declared
+  // Structural fallback; the only option for a class declared
   // directly in the main script (`gmod: None`, never a valid `Home`
-  // for the Named path -- see `Home`'s own docs).
+  // for the Named path: see `Home`'s own docs).
   capture_class_structural(vm, v, arena, memo)
 }
 
@@ -744,7 +744,7 @@ fn capture_class(
 /// methods, field/static layout, and current static values, all
 /// captured the same recursive way as everything else (a method is
 /// just another closure; a superclass is just another class). The
-/// constructor is deliberately NOT captured as its own field -- it's
+/// constructor is deliberately NOT captured as its own field; it's
 /// always either `None` or `methods[name]` (see `Instr::
 /// FinalizeClass`), so `materialize` just re-derives it from the
 /// rebuilt `methods` map instead of risking the two drifting apart.
@@ -754,7 +754,7 @@ fn capture_class(
 /// root global. Once a class crosses into a worker, its statics
 /// there are independent: neither side's later mutations are visible
 /// to the other. There's no other sound option in a shared-nothing
-/// model -- see this module's own top-level docs.
+/// model: see this module's own top-level docs.
 fn capture_class_structural(
   vm: &VM,
   v: Value,
@@ -826,12 +826,12 @@ fn capture_class_structural(
 }
 
 /// `None` means the class/method was declared straight in the running
-/// script rather than through `import` -- rejected, since class/
+/// script rather than through `import`; rejected, since class/
 /// method resolution always goes through the `Named`/`Home` path
-/// (never the structural one plain functions/lambdas get) -- see
+/// (never the structural one plain functions/lambdas get): see
 /// `Home`'s own docs for why that path can't target the main script.
-/// Read-only lookup against the SOURCE vm, which -- unlike a
-/// destination isolate -- already has `home` fully loaded (that's
+/// Read-only lookup against the SOURCE vm, which; unlike a
+/// destination isolate; already has `home` fully loaded (that's
 /// where `v` itself came from). Used only to verify a captured
 /// class/method round-trips to the exact value it claims to name,
 /// before it's ever allowed to cross a thread boundary.
@@ -872,7 +872,7 @@ fn find_binding_name(vm: &VM, home: &Home, v: Value) -> Option<String> {
 /// closure's home needs (once per destination isolate; cheap and a
 /// no-op on every later call once loaded). May allocate heavily and
 /// may itself run arbitrary Zuri top-level code (loading a module),
-/// so -- unlike `capture` -- this needs `&mut VM`.
+/// so; unlike `capture`; this needs `&mut VM`.
 pub fn materialize(vm: &mut VM, graph: &TransferGraph) -> Result<Value, String> {
   let outer_mark = vm.pin_values(std::iter::empty());
   let mut node_pin: Vec<Option<usize>> = vec![None; graph.arena.len()];
@@ -943,7 +943,7 @@ fn materialize_ref(
   }
   match &arena[idx as usize] {
     TransferNode::List(items) => {
-      // Sized (and nil-filled) up front, then filled in place -- lets a
+      // Sized (and nil-filled) up front, then filled in place; lets a
       // self-referential/cyclic list resolve to this SAME placeholder
       // instead of recursing forever.
       let placeholder = vm.heap_mut().alloc_list(vec![Value::nil(); items.len()]);
@@ -1002,7 +1002,7 @@ fn materialize_ref(
       let Some((type_name, payload)) = taken else {
         return Err(
           "this native resource was already consumed by an earlier read \
-           -- a worker result or channel message containing a native \
+          ; a worker result or channel message containing a native \
            pointer can only be materialized once, by whichever join()/\
            recv() reaches it first"
             .to_string(),
@@ -1020,7 +1020,7 @@ fn materialize_ref(
 
       // Phase 1: a placeholder (Closed(nil)) Upvalue object per
       // captured slot, and the closure itself built around them,
-      // BEFORE materializing what they actually hold -- lets a
+      // BEFORE materializing what they actually hold; lets a
       // closure that captures ITSELF (a recursive lambda assigned to
       // the very local it closes over) resolve back to this exact
       // closure instead of recursing forever, the same placeholder-
@@ -1043,7 +1043,7 @@ fn materialize_ref(
 
       // Phase 2: materialize what each upvalue actually holds (which
       // may now safely reference the closure above via `node_pin`),
-      // and patch the corresponding shell in place -- sound because
+      // and patch the corresponding shell in place; sound because
       // `Obj::Upvalue` is a `Cell`, mutable after creation, and every
       // `ObjClosure.upvalues` entry is a `Value` (a pointer/handle),
       // so patching what it points AT is visible through every copy
@@ -1066,7 +1066,7 @@ fn materialize_ref(
 /// Allocates an EMPTY class shell first and memoizes it immediately,
 /// then fills it in place via the same mutable `RefCell<ObjClass>`
 /// API `Instr::MakeClass`/`SetMethod`/`DeclareStatic`/... already use
-/// to build a class up progressively at runtime -- unlike a function
+/// to build a class up progressively at runtime; unlike a function
 /// prototype, `ObjClass` was always designed to be mutated after its
 /// own allocation (see that type's own docs), so there's no need for
 /// `Closure`'s own two-phase shell trick here. The empty shell being
@@ -1093,7 +1093,7 @@ fn materialize_class(
     statics: Vec::new(),
     // Structurally-captured classes are always main-script-scoped --
     // a module-scoped one always takes the cheap `Named` path instead
-    // (see `capture_class`) -- so there's no home module to point at.
+    // (see `capture_class`); so there's no home module to point at.
     globals_module: None,
   });
   let p = vm.pin_values([placeholder]);
@@ -1119,7 +1119,7 @@ fn materialize_class(
     )?));
   }
   // Same derivation `Instr::FinalizeClass` uses: the constructor, if
-  // any, is the method literally named "@new" -- NOT one sharing the
+  // any, is the method literally named "@new"; NOT one sharing the
   // class's own name (that was the bug here: every structurally
   // transferred class silently lost its constructor, since no class
   // is ever actually named "@new").
@@ -1145,23 +1145,23 @@ fn materialize_class(
 /// a real `Obj::Func` `Value` on `vm`'s own heap.
 ///
 /// Constants form a pure, acyclic compile-time DAG (a nested
-/// prototype can never reference an ancestor -- it doesn't exist yet
+/// prototype can never reference an ancestor; it doesn't exist yet
 /// at the point the nested one is compiled), so they're safe to
 /// materialize before this entry is memoized, mirroring
 /// `capture_prototype`'s own reasoning. Only `root_globals`, resolved
-/// dynamically BY NAME, can cycle back to this very prototype -- a
-/// recursive top-level function calling itself by name -- which is
+/// dynamically BY NAME, can cycle back to this very prototype; a
+/// recursive top-level function calling itself by name; which is
 /// why `node_pin[idx]` is set only after the function itself exists,
 /// but before `root_globals` are resolved.
 /// Like `materialize_value`, but for an entry that's about to land in
 /// a `Chunk::constants` slot specifically. A regular runtime `String`/
-/// `BigInt` is fine to materialize into the movable nursery -- nothing
+/// `BigInt` is fine to materialize into the movable nursery; nothing
 /// but ordinary `Value` reads ever touch it, and the GC keeps those
 /// current across a relocation same as any other reference. A
 /// CONSTANT-POOL string/bigint is different: `jit::codegen::bake_const`
 /// embeds a constant's raw bits directly as a machine-code immediate
 /// the moment the surrounding method gets compiled, so once that's
-/// baked in, nothing ever revisits it to follow a relocation -- the
+/// baked in, nothing ever revisits it to follow a relocation; the
 /// object has to simply never move, which is exactly what
 /// `alloc_string_old`/`alloc_bigint_old` (what the compiler itself
 /// uses for every constant-pool entry it ever creates) guarantee and

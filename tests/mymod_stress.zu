@@ -6,7 +6,7 @@ class Box {
 
 # Allocate enough garbage during this module's OWN top-level execution
 # to force a minor collection while this module's own object is still
-# very likely to be Young -- exactly the window
+# very likely to be Young; exactly the window
 # VM::modules.rs::load_from_candidate's fix targets.
 var junk = []
 iter var i = 0; i < 20000; i++ {

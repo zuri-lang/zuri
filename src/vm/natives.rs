@@ -243,18 +243,18 @@ fn delprop(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// For a heap object, the object's own CURRENT address. Stable for as
 /// long as it's alive AND has already been promoted to the old
 /// generation (old-gen objects never move again, see `object::Heap`'s
-/// own docs) -- but NOT guaranteed stable across a garbage collection
+/// own docs); but NOT guaranteed stable across a garbage collection
 /// for an object that's still young: a minor collection can relocate
 /// it, changing what this returns for the exact same logical object.
 /// `id(x) == id(x)` still always holds for two calls with no
 /// collection in between, and in practice most objects an id is ever
 /// taken of are either short-lived (the comparison never outlives the
 /// collection anyway) or already old by the time anyone calls this on
-/// them -- but it's no longer the unconditional, permanent guarantee
+/// them; but it's no longer the unconditional, permanent guarantee
 /// this once was, and callers relying on an id surviving indefinitely
 /// (e.g. as a long-lived cache key) should be aware. Primitives
 /// (number/bool/nil) have no heap identity, so a deterministic numeric
-/// encoding of their own value stands in instead -- good enough for
+/// encoding of their own value stands in instead; good enough for
 /// "is this the same value", just not a real memory address, and
 /// entirely unaffected by any of the above.
 fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -277,7 +277,7 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// Unlike `echo` (which always appends a newline and only ever prints
 /// one value), `print()` writes every argument back-to-back with no
-/// separator and no trailing newline -- and, critically, writes a
+/// separator and no trailing newline; and, critically, writes a
 /// `bytes` object or an all-numeric `list` as RAW bytes rather than
 /// their `Display` text. That raw-byte path is what lets a script
 /// stream binary output (e.g. a PBM/PNG image body one scanline at a
@@ -309,7 +309,7 @@ fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 thread_local! {
-  /// Self-seeded xorshift64 state -- no external RNG crate needed.
+  /// Self-seeded xorshift64 state; no external RNG crate needed.
   /// Seeded once per thread from the system clock; reseeding on every
   /// call would make consecutive `rand()`s within the same nanosecond
   /// (entirely possible on a fast loop) return identical values.
@@ -321,7 +321,7 @@ fn seed_rng() -> u64 {
     .duration_since(UNIX_EPOCH)
     .map(|d| d.as_nanos() as u64)
     .unwrap_or(0x853c49e6748fea9b);
-  // xorshift64 can't start at 0 -- fold in a fixed odd constant so a
+  // xorshift64 can't start at 0; fold in a fixed odd constant so a
   // clock read of exactly 0 (or any degenerate value) still seeds a
   // usable, non-zero state.
   (nanos ^ 0x2545_f491_4f6c_dd1d) | 1
@@ -339,7 +339,7 @@ fn next_u64() -> u64 {
 }
 
 /// Uniform double in `[0, 1)`, built from the top 53 bits of a
-/// xorshift64 draw -- the standard "enough bits for an f64 mantissa"
+/// xorshift64 draw; the standard "enough bits for an f64 mantissa"
 /// trick.
 fn next_unit_f64() -> f64 {
   (next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
@@ -381,7 +381,7 @@ fn is_bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Classes, closures, natives, and bound methods are all callable via
-/// `Instr::Call` -- matches `Value::is_callable()` exactly.
+/// `Instr::Call`; matches `Value::is_callable()` exactly.
 fn is_callable(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   Ok(Value::bool(ctx.args[0].is_callable()))
@@ -403,7 +403,7 @@ fn is_file(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Narrower than `is_callable`: a function/closure/native/bound
-/// method, but NOT a class -- matches every one of `Value::type_name`'s
+/// method, but NOT a class; matches every one of `Value::type_name`'s
 /// "function" cases.
 fn is_function(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
@@ -424,7 +424,7 @@ fn is_int(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(v.is_number() && v.as_number().fract() == 0.0))
 }
 
-/// Matches this VM's actual iteration protocol -- `@key`/`@value` --
+/// Matches this VM's actual iteration protocol; `@key`/`@value` --
 /// rather than an `@iter`/`@itern` pair that was never implemented
 /// here (see `for`-loop desugaring in the parser, and
 /// `range.rs`/`list.rs`/etc.'s own `@key`/`@value` natives).
@@ -453,7 +453,7 @@ fn is_number(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(ctx.args[0].is_number()))
 }
 
-/// Any heap-allocated value -- strings, lists, dicts, bytes, ranges,
+/// Any heap-allocated value; strings, lists, dicts, bytes, ranges,
 /// instances, classes, functions, files, bigints. Excludes only the
 /// three NaN-boxed non-pointer singletons: number, bool, nil.
 fn is_object(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -468,7 +468,7 @@ fn is_string(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// Force an immediate mark-and-sweep collection, bypassing the usual
 /// allocation-threshold heuristic. Mainly useful for exercising or
-/// benchmarking the collector directly from a script -- set the
+/// benchmarking the collector directly from a script; set the
 /// ZURI_GC_LOG environment variable before running to see what each
 /// collection actually freed.
 #[allow(unused)]

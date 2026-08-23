@@ -5,10 +5,10 @@
 //! `jit::codegen` inlines a handful of extremely hot, extremely simple
 //! operations directly as machine code (register loads/stores, a
 //! number/number arithmetic fast path, comparisons, branches). Every
-//! other bytecode instruction -- field access, calls, string/list/dict
+//! other bytecode instruction; field access, calls, string/list/dict
 //! operations, class declarations, module imports, anything that can
 //! touch the heap in a non-trivial way or fall back to an operator
-//! override -- compiles to a call into one of the functions below,
+//! override; compiles to a call into one of the functions below,
 //! which just does exactly what the interpreter's own `vm.rs` match arm
 //! for that instruction does, by calling the same underlying `VM`
 //! methods (`binary_add`, `dispatch_call`, `index_get`, ...). There's
@@ -27,7 +27,7 @@
 //! `codegen::FuncCompiler::emit_call`); on failure it abandons the rest
 //! of the function entirely and returns up to its own Rust caller
 //! (`VM::invoke_compiled`), which reads `jit_pending_error` and
-//! turns it into a real `Err(Value)` -- exactly mirroring how an
+//! turns it into a real `Err(Value)`; exactly mirroring how an
 //! interpreted `Err(Value)` already propagates via `?`/`tri!`. This is
 //! the concrete mechanism behind "errors cause a bailout" for
 //! compiled code: there's no unwinder in the generated machine code at
@@ -41,13 +41,13 @@
 //! frame (an ordinary call, an operator-override dispatch, a
 //! constructor, a whole module's top-level code running on `import`)
 //! can invalidate a previously-fetched register base pointer. Compiled
-//! code therefore never caches that pointer across such a call -- it
+//! code therefore never caches that pointer across such a call; it
 //! re-reads `VM::regs_ptr_cache` (a plain field VM itself keeps in sync
 //! at every point `VM::registers` can reallocate) via a direct memory
 //! load at a compile-time-baked offset immediately afterward (see
 //! `codegen::FuncCompiler::refresh_regs`), no FFI call needed at all.
 //! Helpers that provably never push a frame are exempt purely as a
-//! performance optimization, not a correctness shortcut -- when in
+//! performance optimization, not a correctness shortcut; when in
 //! doubt, a helper is conservatively treated as frame-pushing by
 //! `codegen`.
 //!
@@ -55,12 +55,12 @@
 //!
 //! `Chunk::constants` never changes after a function finishes compiling
 //! to bytecode, and heap objects never move (see `object::Heap`'s own
-//! docs) -- so wherever a bytecode instruction references
+//! docs); so wherever a bytecode instruction references
 //! `chunk.constants[i]` (a global/field/method name, a class name, a
 //! function prototype, an immediate number), `jit::codegen` reads that
 //! constant's `Value` directly out of the already-compiled `ObjFunction`
 //! at JIT-compile time and bakes its raw bit pattern into the generated
-//! code as an immediate -- there's no `chunk.constants[i]` load at
+//! code as an immediate; there's no `chunk.constants[i]` load at
 //! runtime anywhere in compiled code. Helpers below that take a
 //! `*_bits: u64` parameter are receiving one of these baked constants,
 //! not a live register read. The same trick applies to a stable pointer
@@ -96,19 +96,19 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 // Register-array / GC-safepoint primitives
 // ---------------------------------------------------------------------
 
-/// Real deoptimization -- records `ip` as where compiled code is
+/// Real deoptimization; records `ip` as where compiled code is
 /// giving up, so `VM::invoke_compiled` picks it up right after this
 /// call's caller returns. Codegen always follows a call to this with
 /// an immediate `return_` out of the whole compiled function (never
 /// falls through to more translated instructions), so the actual
-/// return value here is never observed -- unlike every other helper,
+/// return value here is never observed; unlike every other helper,
 /// its result is dead by construction.
 ///
 /// Sound for the same reason the GC safepoint below is: every VM
 /// register a compiled function operates on lives in `VM::registers`
 /// at every instruction boundary, never only in a native machine
 /// register that would need to be found and translated back. So
-/// "deoptimizing" needs no state reconstruction at all -- the
+/// "deoptimizing" needs no state reconstruction at all; the
 /// interpreter reads the exact same array it always does, starting
 /// fresh at `ip`. See `VM::pending_deopt_ip`'s own docs for the full
 /// reasoning and `VM::invoke_compiled` for where this is consumed.
@@ -118,7 +118,7 @@ pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   OK
 }
 
-/// GC safepoint -- called at every loop back-edge and call site in
+/// GC safepoint; called at every loop back-edge and call site in
 /// compiled code (see `codegen::FuncCompiler::emit_safepoint`), mirrors
 /// the interpreter's own per-instruction `if needs_major_gc() { ... }
 /// else if needs_minor_gc() { ... }` check. Sound for exactly the same
@@ -127,7 +127,7 @@ pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
 /// duration compiled code runs (pushed by `VM::invoke_compiled`'s
 /// caller before entry, popped after), and every register's actual
 /// content lives in `VM::registers` at all times (never a separate
-/// cached copy) -- so the collector's normal root scan already sees
+/// cached copy); so the collector's normal root scan already sees
 /// this frame correctly with no JIT-specific support needed, for
 /// either a major or a minor collection.
 pub unsafe extern "C" fn zuri_jit_gc_safepoint(vm_ptr: *mut VM) -> u64 {
@@ -147,7 +147,7 @@ pub unsafe extern "C" fn zuri_jit_gc_safepoint(vm_ptr: *mut VM) -> u64 {
 /// `Value::is_falsey` needs to dereference a heap object for the
 /// string/bytes/bigint cases, which is unsafe to replicate as hand-
 /// written IR (see `value.rs`'s stable-bit-pattern-only inlining
-/// policy in `jit::codegen`) -- so the full check always goes through
+/// policy in `jit::codegen`); so the full check always goes through
 /// here rather than being partially inlined.
 pub unsafe extern "C" fn zuri_jit_is_falsey(vm_ptr: *mut VM, base: u64, src: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
@@ -163,13 +163,13 @@ pub unsafe extern "C" fn zuri_jit_print(vm_ptr: *mut VM, base: u64, src: u64) ->
 }
 
 // ---------------------------------------------------------------------
-// Arithmetic / comparison slow paths -- mirrors vm.rs's Instr::{Add,
+// Arithmetic / comparison slow paths; mirrors vm.rs's Instr::{Add,
 // Sub, Mul, Div, Pow, Floor, Mod, BitAnd, BitOr, BitXor, BitShl,
 // BitShr, BitUshr, BitNot, Neg, Not, Concat, Eq, Neq, Lt, Le, Gt, Ge,
 // *Imm} handlers exactly, by calling the identical underlying `VM`
 // methods those handlers call. Only reached once the inline fast path
 // (both operands plain numbers) in `codegen` has already failed its
-// guard -- e.g. a string/list/bigint operand, or a class instance
+// guard; e.g. a string/list/bigint operand, or a class instance
 // implementing an `@`-operator override.
 // ---------------------------------------------------------------------
 
@@ -349,7 +349,7 @@ compare_slow!(
 );
 
 /// `Instr::Add`'s full fallback (string concat, list/bytes concat,
-/// bigint, `@add` override) -- reuses `binary_add` verbatim, unlike the
+/// bigint, `@add` override); reuses `binary_add` verbatim, unlike the
 /// other arithmetic ops this can't be expressed through the generic
 /// `binary_numeric` helper since string/list handling isn't numeric.
 pub unsafe extern "C" fn zuri_jit_add_slow(
@@ -442,11 +442,11 @@ pub unsafe extern "C" fn zuri_jit_neg_slow(vm_ptr: *mut VM, base: u64, dst: u64,
   }
 }
 
-/// `Instr::Eq`/`Instr::Neq` -- pure structural `Value::equals`, no
+/// `Instr::Eq`/`Instr::Neq`; pure structural `Value::equals`, no
 /// operator-override lookup at all (matches the interpreter exactly;
 /// see `vm.rs`'s own handler, which never calls `try_operator_override`
 /// here either). Only reached when the inline number/number fast path
-/// in `codegen` doesn't apply -- i.e. at least one operand is a heap
+/// in `codegen` doesn't apply; i.e. at least one operand is a heap
 /// object, which needs a real dereference `codegen` can't inline (see
 /// this module's docs on stable bit patterns vs. `Obj`'s layout).
 pub unsafe extern "C" fn zuri_jit_eq_slow(
@@ -499,7 +499,7 @@ macro_rules! imm_arith_slow {
 
 imm_arith_slow!(zuri_jit_subimm_slow, "-", "@sub", |x: f64, y: f64| x - y);
 
-/// `Instr::AddImm`'s fallback -- the literal is always numeric (see
+/// `Instr::AddImm`'s fallback; the literal is always numeric (see
 /// `compiler::imm_arith_ctor`), but the register operand might not be
 /// (`"score: " + 5`-style string concatenation), so this goes through
 /// `binary_add_values` (the same general add `binary_add` itself calls)
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn zuri_jit_addimm_slow(
   }
 }
 
-/// `Instr::MulImm`'s fallback -- string/list repeat (the literal is
+/// `Instr::MulImm`'s fallback; string/list repeat (the literal is
 /// always numeric) in addition to `@mul` override, mirroring
 /// `binary_mult`'s own string/list arms exactly since
 /// `binary_numeric_imm` alone doesn't cover them.
@@ -599,7 +599,7 @@ imm_compare_slow!(zuri_jit_gtimm_slow, ">", "@gt", |x: f64, y: f64| x > y);
 imm_compare_slow!(zuri_jit_geimm_slow, ">=", "@gte", |x: f64, y: f64| x >= y);
 
 // ---------------------------------------------------------------------
-// Fast, inline-cache-style direct calls -- `Instr::Call`/`Instr::Invoke`'s
+// Fast, inline-cache-style direct calls; `Instr::Call`/`Instr::Invoke`'s
 // primary path once their target has warmed up, bypassing
 // `dispatch_call_sync`'s fully general dispatch (which re-derives arity/
 // variadic/frame-setup logic and pays real `Option`/`RunResult`
@@ -622,14 +622,14 @@ imm_compare_slow!(zuri_jit_geimm_slow, ">=", "@gte", |x: f64, y: f64| x >= y);
 // scratch stack slot as its last argument; if it returns a non-zero
 // entry pointer, read the closure bits `prepare` wrote into that slot
 // (needed for `GetUpval`/`SetUpval`/`Instr::Closure` inside the callee
-// -- for `Invoke` specifically, the resolved method closure is never
+//; for `Invoke` specifically, the resolved method closure is never
 // sitting in any register the caller's own code has access to, only
 // inside `prepare`'s own class-method-table lookup, hence the out-
 // param rather than reading a register) and `call_indirect` straight
 // to the entry point (a real, direct machine call, no further helper
 // indirection at all) with `(vm, new_base, closure_bits, -1)`, then
 // call `zuri_jit_call_finish` to close upvalues, pop the frame, and
-// write the return value -- exactly what `VM::invoke_compiled` does,
+// write the return value; exactly what `VM::invoke_compiled` does,
 // just split across the call boundary so the actual call is a plain
 // `call_indirect` instead of a nested Rust function call.
 // ---------------------------------------------------------------------
@@ -659,9 +659,9 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
     return 0;
   }
   // Must happen before `closure`/`proto` are derived: `closure_out`'s
-  // write below becomes the callee's own `closure_param` -- a plain
+  // write below becomes the callee's own `closure_param`; a plain
   // Cranelift SSA value the compiled callee reuses for its whole
-  // invocation, never reloaded from anywhere GC-scannable -- so this
+  // invocation, never reloaded from anywhere GC-scannable; so this
   // closure must never be free to move for as long as that compiled
   // call might still be running. See
   // `VM::ensure_stable_for_compiled_entry`'s own docs.
@@ -682,14 +682,14 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
 /// `Instr::Invoke`'s fast-path peek: `obj` must hold an instance whose
 /// class resolves `method_name_bits` to an already-compiled `Closure`
 /// method (not a field holding a callable, and not a builtin/native
-/// fallback -- both of those still go through the fully general
+/// fallback; both of those still go through the fully general
 /// `zuri_jit_invoke`). Mirrors `zuri_jit_call_prepare` otherwise (see
 /// its docs for the full protocol), except the value written to
 /// `*closure_out` is the resolved method, not the receiver in `obj`.
 // `closure_out` is declared last here, not next to `method_name_bits`,
 // because `codegen::FuncCompiler::emit_fast_call` always appends the
 // closure-out-slot address as the final argument to whatever
-// `prepare_args` it's given -- the parameter order here must match
+// `prepare_args` it's given; the parameter order here must match
 // that calling convention exactly, or the wrong register-sized slot
 // ends up interpreted as a pointer.
 pub unsafe extern "C" fn zuri_jit_invoke_prepare(
@@ -751,7 +751,7 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
     return 0;
   };
   // `1 + num_args`: the receiver the compiler already duplicated into
-  // `obj + 1` occupies the callee's own register 0 ("self") -- see
+  // `obj + 1` occupies the callee's own register 0 ("self"): see
   // `Instr::Invoke`'s own doc comment in chunk.rs, and
   // `VM::invoke_prebound_inner`'s identical convention.
   let new_base = base + obj as usize + 1;
@@ -769,7 +769,7 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   entry as usize as u64
 }
 
-/// `Instr::Call`'s fast-path peek for a class callee -- the
+/// `Instr::Call`'s fast-path peek for a class callee; the
 /// constructor equivalent of `zuri_jit_call_prepare`, following the
 /// exact same generated-code protocol (see that function's docs, and
 /// `codegen::FuncCompiler::emit_fast_call`): non-zero return means
@@ -804,10 +804,10 @@ pub unsafe extern "C" fn zuri_jit_new_prepare(
 
 /// `zuri_jit_new_prepare`'s proven twin (`jit::CallTarget
 /// ::ConstructKnown`): every resolution step the dynamic version pays
-/// per call -- the callee tag check, the `ObjClass` borrow for
+/// per call; the callee tag check, the `ObjClass` borrow for
 /// `field_count`, the ancestor field-initializer walk, the
 /// constructor tag check, the closure -> function hop, the variadic
-/// check -- was discharged at compile time by
+/// check; was discharged at compile time by
 /// `VM::resolve_construct_target`, and is licensed here by the class-
 /// identity + `method_table_generation` guard generated code ran
 /// immediately before calling this.
@@ -816,10 +816,10 @@ pub unsafe extern "C" fn zuri_jit_new_prepare(
 /// read straight off the baked `proto_ptr` (a zero just means "not
 /// compiled yet", and generated code falls through to the general path
 /// exactly like any other prepare miss), and one read of the guarded
-/// class's `constructor`, deliberately not baked -- see
+/// class's `constructor`, deliberately not baked: see
 /// `VM::resolve_construct_target` for why.
 ///
-/// Pairs with `zuri_jit_new_finish`, not `zuri_jit_call_finish` -- the
+/// Pairs with `zuri_jit_new_finish`, not `zuri_jit_call_finish`; the
 /// call still evaluates to the instance.
 pub unsafe extern "C" fn zuri_jit_construct_prepare(
   vm_ptr: *mut VM,
@@ -888,7 +888,7 @@ pub unsafe extern "C" fn zuri_jit_alloc_and_pin_instance(
 /// `gc_pins` entry that call pushed. Unlike `Instr::CloseUpvalues`
 /// (usually a no-op, so worth an inline emptiness check first), a
 /// construct call's pin is ALWAYS there to release exactly once, so
-/// there's no hot-path variant of this worth skipping -- see
+/// there's no hot-path variant of this worth skipping: see
 /// `VM::take_constructed_instance`'s own docs for why this specific
 /// step has to happen exactly here (after any collection the callee's
 /// own execution could have triggered, before the instance is ever
@@ -898,7 +898,7 @@ pub unsafe extern "C" fn zuri_jit_take_constructed_instance(vm_ptr: *mut VM) -> 
   vm.take_constructed_instance().to_bits()
 }
 
-/// `zuri_jit_new_prepare`'s other half -- `zuri_jit_call_finish` with
+/// `zuri_jit_new_prepare`'s other half; `zuri_jit_call_finish` with
 /// the constructor's own return value discarded in favour of the
 /// instance, which is why it takes no `ret_bits` at all.
 pub unsafe extern "C" fn zuri_jit_new_finish(
@@ -911,16 +911,16 @@ pub unsafe extern "C" fn zuri_jit_new_finish(
   vm.jit_depth_exit();
 
   // Same reasoning (and same ordering requirement) as
-  // `zuri_jit_call_finish`'s -- see its docs.
+  // `zuri_jit_call_finish`'s: see its docs.
   let deopt = vm.resolve_possible_deopt();
 
-  // Released on every path out of here, error ones included -- the pin
+  // Released on every path out of here, error ones included; the pin
   // is `prepare`'s, and nothing further down would ever drop it.
   //
   // Strictly after `resolve_possible_deopt`, never before: that call
   // resumes the constructor in the interpreter and runs arbitrary Zuri
   // code, collections included. Reading the instance out first would
-  // leave it in nothing but a local for that whole window -- the exact
+  // leave it in nothing but a local for that whole window; the exact
   // stale-after-relocation hazard `gc_pins` exists to close. By here
   // no further Zuri code can run, so the pin has done its job.
   let instance = vm.take_constructed_instance();
@@ -946,7 +946,7 @@ pub unsafe extern "C" fn zuri_jit_new_finish(
 
 /// The lean frame-setup half of `codegen::FuncCompiler`'s statically-
 /// resolved direct-call paths (`emit_self_call`/`emit_known_call`/
-/// `emit_self_invoke` -- see `jit::CallTarget`'s own docs for how those
+/// `emit_self_invoke`: see `jit::CallTarget`'s own docs for how those
 /// callees get proven ahead of time). Unlike `zuri_jit_call_prepare`/
 /// `zuri_jit_invoke_prepare`, this does no resolution work at all --
 /// `callee_bits` is already known to be exactly the right closure
@@ -957,7 +957,7 @@ pub unsafe extern "C" fn zuri_jit_new_finish(
 /// `is_closure`/`ensure_stable_for_compiled_entry`/`proto.jit.entry
 /// .get()`'s per-call overhead. Returns `1` (proceed with the direct
 /// call generated code already has the target address for) or `0`
-/// (native call-stack depth exhausted -- generated code falls back to
+/// (native call-stack depth exhausted; generated code falls back to
 /// the fully general slow helper on this result, exactly like
 /// `emit_fast_call`'s own miss path).
 pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
@@ -988,11 +988,11 @@ pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
 }
 
 /// Completes a fast-path direct call after generated code's own
-/// `call_indirect` returns -- the other half of `zuri_jit_call_prepare`/
+/// `call_indirect` returns; the other half of `zuri_jit_call_prepare`/
 /// `zuri_jit_invoke_prepare`'s bracket. `new_base` is the callee's own
 /// frame base (needed to close its upvalues); `base`/`dst` are the
 /// caller's, to write the return value into the right place. Follows
-/// the ordinary OK(0)/ERR(1) helper convention -- on error, the pending
+/// the ordinary OK(0)/ERR(1) helper convention; on error, the pending
 /// error is left exactly as the failing compiled call already set
 /// it (see this module's top-level docs), and the frame is left in
 /// place, matching `VM::invoke_compiled`'s own error-path semantics
@@ -1012,7 +1012,7 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
   // (`codegen::FuncCompiler::emit_fast_call`'s own `call_indirect`,
   // never going through `VM::invoke_compiled` at all), so it's the
   // only place that would ever see a deopt from a callee reached this
-  // way -- e.g. a self-recursive call. See
+  // way; e.g. a self-recursive call. See
   // `VM::resolve_possible_deopt`'s own docs.
   if let Some(result) = vm.resolve_possible_deopt() {
     return match result {
@@ -1038,7 +1038,7 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
 /// safely reproduce inline: resuming a deopting callee through the
 /// interpreter. Called ONLY after generated code has already observed
 /// `VM::pending_deopt_ip != -1` and already done the depth decrement
-/// `zuri_jit_call_finish` itself does unconditionally -- everything
+/// `zuri_jit_call_finish` itself does unconditionally; everything
 /// else (popping the frame, closing upvalues) is deliberately skipped
 /// here because a deopt never reaches that far: `resolve_deopt_slow`
 /// resumes the SAME already-pushed frame through the interpreter's own
@@ -1052,7 +1052,7 @@ pub unsafe extern "C" fn zuri_jit_finish_deopt(vm_ptr: *mut VM, base: u64, dst: 
       OK
     },
     Some(Err(e)) => fail(vm, e),
-    // Unreachable by construction -- generated code only ever calls
+    // Unreachable by construction; generated code only ever calls
     // this after observing a deopt actually pending. Treated as a
     // no-op success rather than a panic: unwinding a Rust panic across
     // this `extern "C"` boundary would be unsound, and this is the
@@ -1062,7 +1062,7 @@ pub unsafe extern "C" fn zuri_jit_finish_deopt(vm_ptr: *mut VM, base: u64, dst: 
 }
 
 // ---------------------------------------------------------------------
-// Calls -- mixed-mode dispatch. `dispatch_call_sync`/`invoke_prebound_sync`
+// Calls; mixed-mode dispatch. `dispatch_call_sync`/`invoke_prebound_sync`
 // already fully implement "run interpreted, or run compiled if
 // warm/available, and return synchronously either way" (see vm.rs) --
 // these wrappers just unpack the instruction's register operands.
@@ -1092,7 +1092,7 @@ pub unsafe extern "C" fn zuri_jit_call(
 /// on `method_table_key` reduces the steady state to one integer
 /// compare. A `0` key means the receiver has no builtin table at all
 /// (see `method_table_key`), and a `None` result is deliberately not
-/// cached -- there is nothing to store, and a miss falls straight
+/// cached; there is nothing to store, and a miss falls straight
 /// through to the error path anyway.
 fn cached_builtin_lookup(
   cache: Option<&InvokeCacheCell>,
@@ -1118,7 +1118,7 @@ fn cached_builtin_lookup(
   found
 }
 
-/// `Instr::Invoke` -- dynamic dispatch through the receiver's actual
+/// `Instr::Invoke`; dynamic dispatch through the receiver's actual
 /// runtime class (or builtin-method table, or a field holding a
 /// callable), mirroring `vm.rs`'s handler exactly. `method_name_bits`
 /// is the method name's baked `Value` (always a string constant).
@@ -1239,7 +1239,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
 /// The tail both `zuri_jit_invoke`'s own catch-all branch and
 /// `zuri_jit_invoke_string` end at: `receiver` isn't an Instance, Class,
 /// or Module, so the only thing left to try is a builtin method off
-/// `builtins::lookup` -- resolved once per call site and cached in
+/// `builtins::lookup`; resolved once per call site and cached in
 /// `cache` by `cached_builtin_lookup`, keyed on `builtins::
 /// method_table_key(receiver)`.
 fn invoke_builtin_method(
@@ -1271,7 +1271,7 @@ fn invoke_builtin_method(
 }
 
 /// `Instr::Invoke` when `jit::typeflow::StringFacts` proves the
-/// receiver is ALWAYS a `Value::String` at this call site -- a leaner
+/// receiver is ALWAYS a `Value::String` at this call site; a leaner
 /// entry point than `zuri_jit_invoke` that skips straight to
 /// `invoke_builtin_method`, the only branch of `zuri_jit_invoke`'s own
 /// `is_instance`/`is_class`/`is_module` chain a String can ever reach.
@@ -1305,7 +1305,7 @@ pub unsafe extern "C" fn zuri_jit_invoke_string(
 
 /// Builds the args `Instr::Invoke`'s native/builtin-method fallback
 /// needs (receiver spliced in as `args[0]`, matching `VM::call_native`'s
-/// `is_method` convention) -- `CallArgs`, not a bare `Vec`, so the
+/// `is_method` convention); `CallArgs`, not a bare `Vec`, so the
 /// overwhelming majority of calls (`INLINE_ARGS` == 8 args or fewer,
 /// which is every string/list/dict method that exists today) pay no
 /// heap allocation at all. This is the same `CallArgs` construction
@@ -1428,10 +1428,10 @@ pub unsafe extern "C" fn zuri_jit_call_super_ctor(
 }
 
 // ---------------------------------------------------------------------
-// Globals -- mirrors GetGlobal/SetGlobal/AssignGlobal's inline-cache
+// Globals; mirrors GetGlobal/SetGlobal/AssignGlobal's inline-cache
 // logic in vm.rs exactly, including the cache keyed by this exact
 // instruction's own bytecode `ip` (baked as `instr_ip`, a compile-time
-// constant -- this instruction's position in `chunk.code` never
+// constant; this instruction's position in `chunk.code` never
 // changes once compiled).
 // ---------------------------------------------------------------------
 
@@ -1463,13 +1463,13 @@ pub unsafe extern "C" fn zuri_jit_get_global(
         .borrow_mut()
         .insert(instr_ip, (is_root, slot));
       // Also populate the JIT-only array cache (`codegen::FuncCompiler`'s
-      // inline fast path -- see `JitInfo::global_slot_cache`'s own docs)
+      // inline fast path: see `JitInfo::global_slot_cache`'s own docs)
       // so every later execution of this instruction, from compiled
       // code, skips this whole helper call. Root-globals only: a
       // qualified-module resolution (`is_root == false`) would need the
       // module's own namespace-slots pointer cached the same careful
       // way `VM::global_slots_ptr_cache` is, which nothing here does
-      // yet -- left as a real helper-call miss every time rather than
+      // yet; left as a real helper-call miss every time rather than
       // baking in an unsound fast path.
       if is_root {
         func.jit.global_slot_cache[instr_ip].set(slot as i64);
@@ -1511,7 +1511,7 @@ pub unsafe extern "C" fn zuri_jit_set_global(
       .global_cache
       .borrow_mut()
       .insert(instr_ip, (is_root, s));
-    // See `zuri_jit_get_global`'s identical comment -- only a root
+    // See `zuri_jit_get_global`'s identical comment; only a root
     // resolution is safe to fast-path from generated code today.
     if is_root {
       func.jit.global_slot_cache[instr_ip].set(s as i64);
@@ -1570,7 +1570,7 @@ pub unsafe extern "C" fn zuri_jit_assign_global(
 // Closures / upvalues
 // ---------------------------------------------------------------------
 
-/// `Instr::Closure` -- `proto_bits` is the baked function-prototype
+/// `Instr::Closure`; `proto_bits` is the baked function-prototype
 /// constant; `closure_bits` is the currently executing closure (this
 /// compiled function's own `closure` parameter), needed to resolve an
 /// `UpvalueDescriptor::Upvalue` (capture-through) entry.
@@ -1609,12 +1609,12 @@ pub unsafe extern "C" fn zuri_jit_make_closure(
 }
 
 /// `Instr::GetUpval`/`SetUpval`'s inline fast path only needs a raw base
-/// pointer into `ObjClosure::upvalues` -- a real `Vec<Value>`, not a
+/// pointer into `ObjClosure::upvalues`; a real `Vec<Value>`, not a
 /// hand-rolled `#[repr(C)]` one like `ListStorage`, so its own internal
 /// field layout isn't something generated code should ever assume.
 /// Mirrors `zuri_jit_list_data`'s exact reasoning: one small, call-
 /// cheap, allocation-free helper resolves the pointer; the index bounds
-/// (always in range by construction -- a closure's `upvalues` has
+/// (always in range by construction; a closure's `upvalues` has
 /// exactly one entry per its prototype's own `upvalues` descriptor list,
 /// and `GetUpval`/`SetUpval`'s `idx` is compiled straight from that same
 /// list) and the actual element load happen as real inline Cranelift
@@ -1759,7 +1759,7 @@ pub unsafe extern "C" fn zuri_jit_make_range(
 // ---------------------------------------------------------------------
 
 /// Registers a scalar-replaced `Instr::MakeList` allocation's backing
-/// stack memory as a GC root -- see `VM::push_scalar_root`'s own docs
+/// stack memory as a GC root: see `VM::push_scalar_root`'s own docs
 /// for the full mechanism, and `jit::codegen::FuncCompiler::
 /// emit_scalar_make_list` for the one call site (always the very last
 /// step there, after every element slot has already been populated).
@@ -1796,7 +1796,7 @@ pub unsafe extern "C" fn zuri_jit_scalar_get_index(
     Ok(i) => {
       // SAFETY: `data_ptr`/`count` describe the same live, currently-
       // registered `jit_scalar_roots` entry the fast path itself would
-      // have read from -- see `emit_scalar_make_list`'s own docs.
+      // have read from: see `emit_scalar_make_list`'s own docs.
       let slice = unsafe { std::slice::from_raw_parts(data_ptr as *const Value, count as usize) };
       vm.set_reg(base, dst as u8, slice[i]);
       OK
@@ -1892,13 +1892,13 @@ pub unsafe extern "C" fn zuri_jit_get_slice(
 }
 
 // ---------------------------------------------------------------------
-// Classes -- mirrors vm.rs's MakeClass/DeclareField/SetFieldInit/
+// Classes; mirrors vm.rs's MakeClass/DeclareField/SetFieldInit/
 // SetMethod/DeclareStatic/FinalizeClass/GetField/SetField handlers.
 // Class *declaration* opcodes are cold by nature (a class body runs
 // once), so these prioritize exactness over speed.
 // ---------------------------------------------------------------------
 
-/// `func_ptr_bits` is the currently-compiling function itself -- needed
+/// `func_ptr_bits` is the currently-compiling function itself; needed
 /// for `globals_module`, exactly like `zuri_jit_finalize_class` right
 /// below (see its own doc comment); stamped onto the new `ObjClass` so
 /// a class declared via the JIT fast path gets the same home a class
@@ -2036,7 +2036,7 @@ pub unsafe extern "C" fn zuri_jit_declare_static(
 
 /// `func_ptr_bits` is the currently-compiling function itself (needed
 /// for `globals_module`, to check "class already declared in this
-/// scope" exactly like the interpreter does) -- see this module's docs
+/// scope" exactly like the interpreter does): see this module's docs
 /// on baked function pointers.
 pub unsafe extern "C" fn zuri_jit_finalize_class(
   vm_ptr: *mut VM,
@@ -2203,7 +2203,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
     let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
     let instr_ip = instr_ip as usize;
 
-    // Same inline-cache shape as `zuri_jit_get_field` -- see
+    // Same inline-cache shape as `zuri_jit_get_field`: see
     // `Chunk::field_cache`'s docs.
     let cell = func.chunk.field_cache_cell(instr_ip);
     let hit = cell.is_some_and(|c| c.class_bits.get() == class_bits);
@@ -2261,7 +2261,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
   }
 }
 
-/// `Instr::CheckParamType`'s full-generality fallback -- every case
+/// `Instr::CheckParamType`'s full-generality fallback; every case
 /// `jit::codegen::emit_check_param_type` doesn't (or can't safely)
 /// inline: a union with more than one member, `Instance` (needs a
 /// possibly-failing global lookup), and `Iterable` (needs a method-
@@ -2311,7 +2311,7 @@ pub unsafe extern "C" fn zuri_jit_check_param_type(
 // ---------------------------------------------------------------------
 
 /// Sentinel meaning "no constant-table hit; fall through to the
-/// sequential dynamic-label path" -- `ip`s are always small, so
+/// sequential dynamic-label path"; `ip`s are always small, so
 /// `u64::MAX` is unambiguous.
 pub const USING_NO_MATCH: u64 = u64::MAX;
 
@@ -2440,7 +2440,7 @@ pub unsafe extern "C" fn zuri_jit_make_promoted(
 // One helper per pure `builtins::number` method whose result is a
 // number and whose implementation is a single `f64` operation, reached
 // by `jit::codegen::FuncCompiler::emit_number_intrinsic` as a direct
-// call on a receiver already guarded numeric -- skipping
+// call on a receiver already guarded numeric; skipping
 // `zuri_jit_invoke_prepare`'s resolution, `builtins::lookup`'s string
 // hash and `memcmp`, `invoke_native_args`'s per-call `Vec`, and
 // `VM::call_native` entirely.
@@ -2454,7 +2454,7 @@ pub unsafe extern "C" fn zuri_jit_make_promoted(
 //
 // Takes and returns raw bits rather than `Value`s so generated code
 // can hand over a register it already holds. Touches no VM state,
-// cannot allocate, collect, or raise -- which is what lets `codegen`
+// cannot allocate, collect, or raise; which is what lets `codegen`
 // reach them through `call_helper_raw`, with no register-cache
 // invalidation around the call.
 // ---------------------------------------------------------------------
@@ -2497,11 +2497,11 @@ num_intrinsic!(zuri_jit_num_cbrt, cbrt);
 // `f64::round` breaks ties away from zero; Cranelift's `nearest`
 // instruction is IEEE round-half-to-even. They're different
 // functions, so `round` is a direct call to the real one rather than
-// an inlined instruction -- see `NumberIntrinsic`'s own docs.
+// an inlined instruction: see `NumberIntrinsic`'s own docs.
 num_intrinsic!(zuri_jit_num_round, round);
 
 /// `x % y` and `x ** y` behind the same direct-call contract as the
-/// unary intrinsics above -- neither has a Cranelift instruction (a
+/// unary intrinsics above; neither has a Cranelift instruction (a
 /// float remainder is a libcall, and there is no pow opcode at all), so
 /// the win here is not the arithmetic but everything the ordinary
 /// `Instr::Mod`/`Instr::Pow` helper does around it: two register reads,
@@ -2548,7 +2548,7 @@ pub unsafe extern "C" fn zuri_jit_call_native(
   let func_reg = func_reg as u8;
   // Read out of the register rather than from a baked pointer.
   // `Heap::alloc_native` leaves natives in the nursery, so the object
-  // moves when a minor collection promotes it -- an address baked at
+  // moves when a minor collection promotes it; an address baked at
   // compile time would dangle. Generated code has already guarded that
   // this register holds the very native this call site resolved (on its
   // `NativeFn` pointer, which relocation cannot change), so this read is
@@ -2571,7 +2571,7 @@ pub unsafe extern "C" fn zuri_jit_call_native(
 }
 
 /// `object::write_barrier` behind the C ABI, for the rare arm of
-/// `jit::codegen`'s inlined barrier check -- generated code has already
+/// `jit::codegen`'s inlined barrier check; generated code has already
 /// established (with two byte loads and a branch, no call) that this
 /// object really is old and not yet remembered, so reaching here means
 /// the remembered-set push is genuinely owed. Takes the raw `*const
@@ -2588,11 +2588,11 @@ pub unsafe extern "C" fn zuri_jit_write_barrier(_vm_ptr: *mut VM, obj_ptr: u64) 
 }
 
 // ---------------------------------------------------------------------
-// Symbol table -- the single source of truth `jit::engine::JitEngine`
+// Symbol table; the single source of truth `jit::engine::JitEngine`
 // walks to both link every helper above into the JIT (`JITBuilder::
 // symbol`) and declare each one's Cranelift signature (a flat N x I64
 // -> I64 C ABI throughout, regardless of what each individual
-// parameter actually semantically holds -- a register index, a baked
+// parameter actually semantically holds; a register index, a baked
 // constant's bit pattern, a stable heap pointer, ...). Adding a new
 // helper means adding exactly one line here; nothing else needs to
 // know its address.
@@ -2601,7 +2601,7 @@ pub unsafe extern "C" fn zuri_jit_write_barrier(_vm_ptr: *mut VM, obj_ptr: u64) 
 pub struct HelperSpec {
   pub name: &'static str,
   pub ptr: *const u8,
-  /// Parameter count including the leading `vm` pointer -- matches
+  /// Parameter count including the leading `vm` pointer; matches
   /// `jit::engine`'s declared signature (N x I64 params, 1 I64 return)
   /// exactly.
   pub arity: usize,
@@ -2617,10 +2617,10 @@ type Fn7 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64) -> u64;
 type Fn9 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 /// Reinterprets an already-coerced, concrete function-pointer value
-/// (one of the `FnN` aliases above -- not a bare function item, which
+/// (one of the `FnN` aliases above; not a bare function item, which
 /// is a distinct zero-sized type until coerced) as a raw code address.
 /// Safe because every `FnN` alias is, by construction, an ordinary
-/// pointer-sized function pointer -- the `debug_assert!` documents that
+/// pointer-sized function pointer; the `debug_assert!` documents that
 /// invariant rather than substituting for it.
 fn as_ptr<F: Copy>(f: F) -> *const u8 {
   debug_assert_eq!(std::mem::size_of::<F>(), std::mem::size_of::<*const u8>());

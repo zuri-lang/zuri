@@ -63,7 +63,7 @@ where
 /// (`natives.rs`) and this file's own `.open()` method, so a file
 /// re-opened after being closed gets identical semantics to its first
 /// open. `w+` deliberately does NOT truncate an existing file, per
-/// spec -- only bare `w` does.
+/// spec; only bare `w` does.
 pub(crate) fn open_with_mode(path: &str, mode: &str) -> Result<std::fs::File, String> {
   let base = mode.replace('b', "");
   let has_plus = base.contains('+');
@@ -87,7 +87,7 @@ pub(crate) fn open_with_mode(path: &str, mode: &str) -> Result<std::fs::File, St
       opts.write(true);
     }
   } else {
-    // A mixed form like "r+w" -- union whatever letters are present.
+    // A mixed form like "r+w"; union whatever letters are present.
     if base.contains('r') {
       opts.read(true);
     }
@@ -124,7 +124,7 @@ fn open(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.args[0])
 }
 
-/// Shared body for `read`/`gets` -- `close_after_full` is the only
+/// Shared body for `read`/`gets`; `close_after_full` is the only
 /// difference: `read()` auto-closes after reading to EOF with no
 /// length given; `gets()` never opens or closes automatically.
 fn do_read(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
@@ -378,7 +378,7 @@ fn copy(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Filesystem-level, so this uses a fresh handle rather than the
-/// object's own `fh.handle` -- it should work even while the file
+/// object's own `fh.handle`; it should work even while the file
 /// object's own stream is currently closed.
 fn truncate(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 0, 1);
@@ -444,7 +444,7 @@ fn set_times(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// `seek_type` is the raw `0`/`1`/`2` (Start/Current/End) convention
-/// -- see this file's module-level note about the not-yet-visible
+///: see this file's module-level note about the not-yet-visible
 /// `io` module for `io.SEEK_*`.
 fn seek(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);

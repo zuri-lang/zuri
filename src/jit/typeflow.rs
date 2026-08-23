@@ -12,21 +12,21 @@
 //! This is a "must" analysis (a fact holds only if it holds on every
 //! incoming path, so a merge point intersects rather than unions its
 //! predecessors' facts), computed once per function at JIT-compile
-//! time, purely from the bytecode's own shape -- constants, and chains
+//! time, purely from the bytecode's own shape; constants, and chains
 //! of arithmetic whose own operands are already proven. Nothing here
 //! is ever "probably true" or "true so far": if the proof holds, the
 //! guard is redundant by construction, so eliding it can't ever be
 //! wrong. Anything not statically provable (function parameters, a
 //! `GetField`/`Call`/`GetIndex` result, ...) is just conservatively
 //! left unproven, and `codegen` falls back to exactly today's guarded
-//! fast/slow codegen for it -- this pass only ever removes already-
+//! fast/slow codegen for it; this pass only ever removes already-
 //! redundant checks, never adds risk.
 //!
 //! # Why a `Call`/`Invoke` doesn't invalidate other registers' proofs
 //!
 //! This VM's calling convention gives a callee a fresh register window
 //! starting at `func + 1` (or `obj + 1` for `Invoke`) in the caller's
-//! own register file -- the callee can only ever write within its own
+//! own register file; the callee can only ever write within its own
 //! window, never back into the caller's lower-numbered registers
 //! (`setup_closure_call`'s whole contract). So a call only changes the
 //! type of its own `dst` register; every other register's value (and
@@ -44,7 +44,7 @@ use crate::vm::chunk::{Instr, ParamType};
 use crate::vm::object::ObjFunction;
 
 /// A bitset over bytecode register indices (0..=255), one word per 64
-/// registers. Cheap to clone/AND/compare -- functions rarely use more
+/// registers. Cheap to clone/AND/compare; functions rarely use more
 /// than a handful of words' worth of registers.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RegSet {
@@ -56,7 +56,7 @@ impl RegSet {
     num_registers.div_ceil(64).max(1)
   }
 
-  /// Nothing proven -- the correct starting fact for a function's own
+  /// Nothing proven; the correct starting fact for a function's own
   /// entry (register 0's caller-supplied argument is never statically
   /// known to be a number, nor is anything else, before any code has
   /// run).
@@ -66,7 +66,7 @@ impl RegSet {
     }
   }
 
-  /// Everything (optimistically) proven -- the correct starting point
+  /// Everything (optimistically) proven; the correct starting point
   /// for every other block in a forward "must" analysis with an
   /// intersecting merge: each real predecessor's facts can only ever
   /// narrow this down via `and_assign`, never widen it, so seeding
@@ -116,7 +116,7 @@ impl RegSet {
   }
 
   /// Intersects `self` with `other` (a predecessor's outgoing facts),
-  /// returning whether anything actually changed -- what drives the
+  /// returning whether anything actually changed; what drives the
   /// worklist's fixed-point termination.
   fn and_assign(&mut self, other: &RegSet) -> bool {
     let mut changed = false;
@@ -131,7 +131,7 @@ impl RegSet {
   }
 
   /// Unions `self` with `other`, returning whether anything actually
-  /// changed -- the merge operator `liveness`'s "may" fixed point uses
+  /// changed; the merge operator `liveness`'s "may" fixed point uses
   /// (a register is live if it's needed on ANY path forward, unlike
   /// `and_assign`'s "must hold on every path" used by the numeric-facts
   /// analysis above).
@@ -148,7 +148,7 @@ impl RegSet {
   }
 
   /// Sets every register in `start..start+count` (saturating at the
-  /// representable range) -- used for instructions whose operands are a
+  /// representable range); used for instructions whose operands are a
   /// whole contiguous register window rather than a fixed handful of
   /// named fields (`Call`'s argument window, `MakeList`/`MakeDict`'s
   /// element run, `Invoke`'s receiver+self+argument window, ...).
@@ -163,7 +163,7 @@ impl RegSet {
     }
   }
 
-  /// Every register index currently set, low to high -- what a caller
+  /// Every register index currently set, low to high; what a caller
   /// that needs to actually enumerate (not just test) the live set at a
   /// program point iterates over (e.g. `jit::codegen`'s spill-site
   /// emission, driven by exactly this at every sync point).
@@ -182,7 +182,7 @@ impl RegSet {
 
 /// The result of analyzing one function: `entry[ip]` is exactly the
 /// set of registers proven numeric on every path reaching bytecode
-/// position `ip`, i.e. before `ip`'s own instruction executes -- what
+/// position `ip`, i.e. before `ip`'s own instruction executes; what
 /// `codegen::FuncCompiler` consults when deciding whether an
 /// arithmetic op's operands need a runtime guard at all.
 pub struct TypeFacts {
@@ -195,7 +195,7 @@ impl TypeFacts {
     self.entry[ip].get(r)
   }
 
-  /// Every register (among the first 64 -- the same bound
+  /// Every register (among the first 64; the same bound
   /// `speculative_params` itself is already subject to) proven numeric
   /// at bytecode position `ip`, as a bitmask. At `ip == 0` this is
   /// exactly whatever seed `analyze` was given, if any. At any other
@@ -210,7 +210,7 @@ impl TypeFacts {
   /// between entry and `ip` in a way that invalidates an earlier
   /// proof without that reassignment being visible in a plain "is
   /// register R numeric right now" check. Querying `entry[ip]`
-  /// directly sidesteps that -- it's already the fixed point of the
+  /// directly sidesteps that; it's already the fixed point of the
   /// same dataflow proof used everywhere else in this file, which
   /// tracks every reassignment precisely.
   pub fn numeric_mask_at(&self, ip: usize) -> u64 {
@@ -226,7 +226,7 @@ impl TypeFacts {
 
 /// Every register (among the first 64) that a whole-frame profile
 /// sample observed holding a number at the moment compilation
-/// triggered -- consulted by `transfer` wherever an instruction's
+/// triggered; consulted by `transfer` wherever an instruction's
 /// result would otherwise be unconditionally treated as unproven
 /// (`GetField`, `Call`, `Invoke`, `GetGlobal`, `GetUpval`, `GetIndex`,
 /// ...: anything whose value depends on something this pass can't see
@@ -257,29 +257,29 @@ pub type SpeculativeRegs = u64;
 
 /// Runs the analysis. `speculative_params`, if given, seeds
 /// register-0-based parameter slots as already proven numeric at
-/// function entry instead of starting from nothing -- this is the hook
+/// function entry instead of starting from nothing; this is the hook
 /// `jit::engine`'s profile-guided specialization (a separate, second
 /// compiled copy of the function body, guarded by one runtime check at
-/// entry -- see `codegen`'s own docs) uses to get the same
+/// entry: see `codegen`'s own docs) uses to get the same
 /// guard-elision benefit for a speculatively-numeric parameter as a
 /// statically-provable constant gets for free. `None` (or an empty
 /// set) reproduces the fully conservative baseline (nothing assumed at
-/// entry) -- always sound on its own, used for both ordinary
+/// entry); always sound on its own, used for both ordinary
 /// compilation and every OSR entry point.
 ///
 /// `speculative_params` is a bitmask (bit `r` = register `r`) of
 /// fixed-arity parameter registers to seed as already-proven at
-/// function entry, rather than a `RegSet` directly -- keeps `RegSet`
+/// function entry, rather than a `RegSet` directly; keeps `RegSet`
 /// itself a purely internal representation, with only a plain integer
 /// crossing this module's boundary. Bits at or past register 64 (or
 /// past `proto.num_registers`) are simply never representable or used
-/// -- a real function needing more than 64 speculated parameters
+///; a real function needing more than 64 speculated parameters
 /// doesn't lose correctness, just the ability to speculate on the
 /// overflow ones (`codegen`'s own entry guard is built from the same
 /// mask, so the two always agree on which registers are being bet on).
 ///
 /// `speculative_regs` is the same kind of bitmask, but for values
-/// beyond function parameters -- see `SpeculativeRegs`'s own docs.
+/// beyond function parameters: see `SpeculativeRegs`'s own docs.
 ///
 /// `preds` is `build_predecessors(proto)`, computed by the CALLER and
 /// passed in rather than recomputed here: it depends only on `proto`'s
@@ -324,18 +324,18 @@ pub fn analyze(
 
   // `speculative_regs` is a single register-indexed bitmask, sampled
   // as a one-shot runtime snapshot of "whatever's currently in this
-  // register" (see `VM::sample_all_reg_types`) -- it carries no memory
+  // register" (see `VM::sample_all_reg_types`); it carries no memory
   // of which instruction produced that value. `transfer` applies a
   // set bit to every unprovable instruction (`Call`, `GetGlobal`,
   // `GetField`, ...) that happens to write that same register number,
   // anywhere in the function. That's unsound whenever the bytecode
   // compiler's register allocator reuses one register slot for two
-  // different unprovable definitions -- the single most common case
+  // different unprovable definitions; the single most common case
   // being a call's own callee slot getting reused, in place, for the
   // call's result (`GetGlobal dst=r` to load the callee, immediately
   // followed by `Call dst=r, func=r`): the snapshot naturally observes
   // the result (often numeric), but the same bit then also claims the
-  // callee load itself is numeric -- which a closure/function value
+  // callee load itself is numeric; which a closure/function value
   // never is, so that guard would fail on every single invocation,
   // not occasionally. Strip any register written by more than one
   // distinct speculatable instruction before it ever reaches
@@ -365,7 +365,7 @@ pub fn analyze(
     }
     if !any_pred {
       // Unreachable code (no predecessor at all, and not the entry
-      // block) -- vacuously "everything proven" is safe: nothing ever
+      // block); vacuously "everything proven" is safe: nothing ever
       // actually executes this instruction, so whatever `codegen`
       // does with an over-optimistic fact here can never run.
       new_in = RegSet::full(num_registers);
@@ -409,16 +409,16 @@ pub fn analyze(
 /// same closure argument: IEEE-754 round-to-nearest-even addition,
 /// subtraction, and multiplication of two whole-number-valued doubles
 /// ALWAYS produces another whole-number-valued double, at every
-/// magnitude, with no errors -- not an approximation someone could
+/// magnitude, with no errors; not an approximation someone could
 /// find a counterexample to. The reasoning: the true mathematical
 /// result of integer-plus-integer (or times/minus) is itself a whole
 /// number, and every double whose representable granularity is >= 1
 /// (any magnitude at or past roughly 2^52) is ALREADY constrained to
-/// only ever represent whole numbers at all -- so rounding a whole-
+/// only ever represent whole numbers at all; so rounding a whole-
 /// number result to the nearest representable double, at ANY
 /// magnitude, can only ever land on another whole number, never on a
 /// fractional one. (What genuinely isn't preserved past that
-/// magnitude is which EXACT whole number -- true precision, a
+/// magnitude is which EXACT whole number; true precision, a
 /// different property this analysis was never asked to prove.) This
 /// is why, unlike a naive first read of "arithmetic can lose
 /// precision" might suggest, no overflow-checked arithmetic or
@@ -461,7 +461,7 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
 
     // A bitwise op's result is a whole number BY DEFINITION of what
     // the operation means, regardless of whether its operands were
-    // already proven int -- exactly the same "it just raised
+    // already proven int; exactly the same "it just raised
     // otherwise, so this holds given execution reached here at all"
     // reasoning `CheckParamType` relies on below, just for a
     // different kind of guard.
@@ -478,27 +478,26 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
     // path past this instruction.
     Instr::CheckParamType { reg, check_idx } => {
       let check = &proto.chunk.param_checks[check_idx as usize];
-      let all_int = !check.nullable
-        && check.types.len() == 1
-        && matches!(check.types[0], ParamType::Int);
+      let all_int =
+        !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Int);
       out.set(reg, all_int);
     },
 
     // Everything else that writes a register either never produces a
     // number at all (comparisons, `Concat`, `LoadNil`/`LoadBool`, ...)
     // or isn't provably whole even when it IS numeric (`Div`/`Pow`/
-    // `Floor`/`Mod`, a `Call`/`GetField`/`GetIndex` result, ...) -- same
+    // `Floor`/`Mod`, a `Call`/`GetField`/`GetIndex` result, ...); same
     // conservative treatment `transfer`'s own numeric analysis gives
     // these, just narrower since "numeric" doesn't imply "whole".
     //
     // `any_dst`, not `conservative_dst`/`comparison_or_never_numeric_dst`
-    // -- those two are each a curated SUBSET (originally written to
+    //; those two are each a curated SUBSET (originally written to
     // cover only the arms this match already handles explicitly above),
     // so any instruction outside both lists AND outside this match's own
     // explicit arms (e.g. `Div`, or a plain `LoadConst` of a fractional
     // number) fell through doing nothing at all, leaving `out[dst]`
     // holding whatever it was BEFORE this instruction overwrote the
-    // register -- a real "must" analysis unsoundness whenever the
+    // register; a real "must" analysis unsoundness whenever the
     // register allocator reuses a whole-number-proven register for one
     // of these. `any_dst` is a genuine superset covering every `Instr`
     // that writes a register at all, so nothing can slip through here.
@@ -511,27 +510,27 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
   out
 }
 
-/// Runs the whole-number analysis -- see `IntFacts`'s own docs. No
+/// Runs the whole-number analysis: see `IntFacts`'s own docs. No
 /// speculative-profiling hook, unlike `analyze`: proving "whole
 /// number" needs an actual definition site to reason about (a
 /// `LoadConst`, a chain of proven-int arithmetic, ...), so there's no
 /// sound way to seed it from a bare runtime snapshot the way
 /// `speculative_regs` seeds `TypeFacts` (that hook works there only
 /// because `codegen` re-verifies the ACTUAL value at the definition
-/// site regardless -- a whole-number claim would need the identical
+/// site regardless; a whole-number claim would need the identical
 /// re-verification this whole analysis exists to avoid paying for).
-/// `preds` -- see `analyze`'s own docs on why this takes it as a
+/// `preds`: see `analyze`'s own docs on why this takes it as a
 /// parameter instead of computing it fresh.
 ///
 /// Short-circuits before the worklist the same way `analyze_list`
 /// does, and for the identical reason: if the function has no
 /// whole-number `LoadConst`, no `CheckParamType(Int)`, and no bitwise
 /// op anywhere (the only instructions `transfer_int` ever seeds
-/// `true` from -- `Add`/`Sub`/`Mul`/`*Imm`/`Move` only ever PROPAGATE
+/// `true` from; `Add`/`Sub`/`Mul`/`*Imm`/`Move` only ever PROPAGATE
 /// an existing proof, never originate one), no register can ever be
 /// proven whole on any path, so the real fixed point is trivially
 /// "nothing, anywhere". Less likely to fire than `analyze_list`'s own
-/// skip -- a bare integer literal is common -- but real for method
+/// skip; a bare integer literal is common; but real for method
 /// bodies that are pure dispatch/field access with no arithmetic of
 /// their own at all.
 pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
@@ -543,8 +542,13 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
       let c = &proto.chunk.constants[*const_idx as usize];
       c.is_number() && c.as_number().fract() == 0.0
     },
-    Instr::AddImm { imm_const, .. } | Instr::SubImm { imm_const, .. } | Instr::MulImm { imm_const, .. } => {
-      proto.chunk.constants[*imm_const as usize].as_number().fract() == 0.0
+    Instr::AddImm { imm_const, .. }
+    | Instr::SubImm { imm_const, .. }
+    | Instr::MulImm { imm_const, .. } => {
+      proto.chunk.constants[*imm_const as usize]
+        .as_number()
+        .fract()
+        == 0.0
     },
     Instr::CheckParamType { check_idx, .. } => {
       let check = &proto.chunk.param_checks[*check_idx as usize];
@@ -627,7 +631,7 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
 /// methods simple enough to inline directly (see
 /// `codegen::ListIntrinsic`).
 ///
-/// Same "must" analysis shape as `TypeFacts`/`IntFacts` -- optimistic
+/// Same "must" analysis shape as `TypeFacts`/`IntFacts`; optimistic
 /// `full()` seed at every non-entry block, narrowed by intersection at
 /// merges, so a register only counts as proven here when EVERY
 /// incoming path agrees, including both sides of a branch (`if flag {
@@ -635,7 +639,7 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
 /// `if flag { x = [1] } else { x = "s" }` proves neither) and every
 /// loop back-edge (a loop that reassigns its own list variable to
 /// itself, or to a fresh list, keeps proving it a list on the very
-/// next iteration too -- the fixed-point worklist below converges on
+/// next iteration too; the fixed-point worklist below converges on
 /// that the same way it already does for `TypeFacts`' numeric facts,
 /// no special-casing needed).
 pub struct ListFacts {
@@ -655,7 +659,7 @@ fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet 
     Instr::MakeList { dst, .. } => out.set(dst, true),
     Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
 
-    // `[x] * n` (list-repeat) -- the ONLY other instruction that can
+    // `[x] * n` (list-repeat); the ONLY other instruction that can
     // produce a list, and only when its left operand already is one;
     // `binary_mult`'s own list-repeat semantics never turn a NON-list
     // `a` into a list result, so `false` is exactly right when `a`
@@ -663,7 +667,7 @@ fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet 
     Instr::Mul { dst, a, .. } => out.set(dst, in_set.get(a)),
 
     // A parameter checked as EXACTLY `list` (not a union) is provably
-    // a list on every path past this instruction -- it just raised
+    // a list on every path past this instruction; it just raised
     // otherwise, same "must" reasoning `IntFacts`'s own
     // `CheckParamType` arm uses.
     Instr::CheckParamType { reg, check_idx } => {
@@ -676,17 +680,17 @@ fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet 
     // Everything else that writes a register is either never a list
     // (arithmetic, comparisons, `LoadNil`/`LoadBool`, `Concat`, ...)
     // or not PROVABLY one even when it might be at runtime (a
-    // `Call`/`GetField`/`GetIndex`/`Invoke` result -- e.g. `list.map`
+    // `Call`/`GetField`/`GetIndex`/`Invoke` result; e.g. `list.map`
     // returns a new list, but that's a fact about ONE specific method
     // on a receiver already proven list, not something this
     // instruction-shape-only pass can see).
     //
-    // `any_dst` -- see `transfer_int`'s identical catch-all for why the
+    // `any_dst`: see `transfer_int`'s identical catch-all for why the
     // narrower `conservative_dst`/`comparison_or_never_numeric_dst`
     // pair is NOT enough here: `x = [1]; x = 1 + 2` reuses `x`'s
     // register for an `Add`, which is in neither list, so the stale
     // "list" fact from the `MakeList` would otherwise survive the
-    // reassignment -- a real, reproduced memory-safety bug (`emit_list_
+    // reassignment; a real, reproduced memory-safety bug (`emit_list_
     // get_index`'s proven-list fast path would then mask a plain
     // number's bits as if they were a list pointer and dereference
     // whatever that lands on).
@@ -699,19 +703,19 @@ fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet 
   out
 }
 
-/// Runs the list-shape analysis -- see `ListFacts`'s own docs.
+/// Runs the list-shape analysis: see `ListFacts`'s own docs.
 ///
 /// Short-circuits before touching the worklist at all when the
 /// function has no `MakeList` and no list-typed parameter check
 /// anywhere in it: those are the ONLY two instructions `transfer_list`
 /// ever seeds `true` from, so with neither present, no register can
 /// EVER be proven a list on any path, and the real fixed point is
-/// trivially "nothing, anywhere" -- computing that via one cheap
+/// trivially "nothing, anywhere"; computing that via one cheap
 /// linear scan instead of the full predecessor-graph/worklist
 /// machinery matters because this analysis now runs for EVERY
 /// compiled function, including the overwhelming majority (most
 /// polymorphic-dispatch/arithmetic-heavy code) that never touches a
-/// list at all. `preds` -- see `analyze`'s own docs on why this takes
+/// list at all. `preds`: see `analyze`'s own docs on why this takes
 /// it as a parameter instead of computing it fresh (the short-circuit
 /// above means this particular analysis often doesn't even need it).
 pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
@@ -781,20 +785,20 @@ pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
   ListFacts { entry }
 }
 
-/// `ListFacts`' counterpart for `Value::String` -- same "must" shape,
-/// same worklist, same short-circuit -- but seeded from a different set
+/// `ListFacts`' counterpart for `Value::String`; same "must" shape,
+/// same worklist, same short-circuit; but seeded from a different set
 /// of instructions: a `LoadConst` whose constant is itself a string
 /// (string LITERALS are baked straight into the constant table, no
 /// `MakeList`-style builder opcode involved), `Instr::Add` when BOTH
 /// operands are already proven strings (`..` is Zuri's RANGE operator,
-/// not concatenation -- `s1 + s2` is how source actually concatenates
+/// not concatenation; `s1 + s2` is how source actually concatenates
 /// two strings, compiling to a plain `Instr::Add`; `VM::binary_add_
 /// values`' `is_string() && is_string()` arm always allocates a fresh
 /// string for that case, no operator-override detour possible since
 /// `try_operator_override` only ever fires for an Instance receiver,
 /// which a register this analysis already proved a String can never
-/// be), and `Instr::Concat`, which -- though no current source syntax
-/// actually emits it -- `VM::run`'s own handler always resolves to a
+/// be), and `Instr::Concat`, which; though no current source syntax
+/// actually emits it; `VM::run`'s own handler always resolves to a
 /// string too, so it's included for the same reason `Mul`'s list-repeat
 /// arm is in `transfer_list`: correct and free to keep, even if this
 /// particular producer turns out unreachable from today's grammar.
@@ -823,7 +827,7 @@ fn transfer_string(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSe
     Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
     Instr::Concat { dst, .. } => out.set(dst, true),
 
-    // `a + b` where BOTH sides are already proven strings -- see this
+    // `a + b` where BOTH sides are already proven strings: see this
     // struct's own docs for why that's unconditionally a fresh string,
     // no operator-override or numeric-add branch reachable. Only when
     // BOTH operands are proven, mirroring `transfer_list`'s `Mul` arm:
@@ -832,7 +836,7 @@ fn transfer_string(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSe
     Instr::Add { dst, a, b } => out.set(dst, in_set.get(a) && in_set.get(b)),
 
     // A parameter checked as EXACTLY `string` (not a union) is provably
-    // a string on every path past this instruction -- same reasoning
+    // a string on every path past this instruction; same reasoning
     // `transfer_list`'s own `CheckParamType` arm uses.
     Instr::CheckParamType { reg, check_idx } => {
       let check = &proto.chunk.param_checks[check_idx as usize];
@@ -844,13 +848,13 @@ fn transfer_string(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSe
     // Everything else that writes a register is either never a string
     // (arithmetic, comparisons, `MakeList`, ...) or not PROVABLY one
     // even when it might be at runtime (a `Call`/`GetField`/`GetIndex`/
-    // `Invoke` result -- e.g. `s.upper()` returns a new string, but
+    // `Invoke` result; e.g. `s.upper()` returns a new string, but
     // that's a fact about ONE specific method on an already-proven-
     // string receiver, not something this instruction-shape-only pass
     // can see).
     //
     // `any_dst`, not the narrower `conservative_dst`/`comparison_or_
-    // never_numeric_dst` pair -- see `transfer_list`'s identical
+    // never_numeric_dst` pair: see `transfer_list`'s identical
     // catch-all for why: those two lists don't cover every register-
     // writing instruction (`LoadConst` of a non-string constant,
     // arithmetic, ...), so a register reused for one of them after
@@ -864,7 +868,7 @@ fn transfer_string(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSe
   out
 }
 
-/// Runs the string-shape analysis -- see `StringFacts`'s own docs.
+/// Runs the string-shape analysis: see `StringFacts`'s own docs.
 ///
 /// Short-circuits the same way `analyze_list` does: with no string-
 /// valued `LoadConst` and no `Concat` anywhere in the function (the
@@ -936,7 +940,7 @@ pub fn analyze_string(proto: &ObjFunction, preds: &[Vec<usize>]) -> StringFacts 
 }
 
 /// One register's constant-propagation state at one bytecode position
-/// -- a genuine 3-level lattice, not a boolean like `RegSet`'s: TWO
+///; a genuine 3-level lattice, not a boolean like `RegSet`'s: TWO
 /// DIFFERENT known constants meeting at a merge point must collapse
 /// straight to `Bottom` ("not provably any single value"), there's no
 /// partial answer between them the way "not proven a list" already
@@ -945,19 +949,19 @@ pub fn analyze_string(proto: &ObjFunction, preds: &[Vec<usize>]) -> StringFacts 
 /// Compared by raw bit pattern, not `f64`'s own `PartialEq` (`NaN !=
 /// NaN` would make `Exact(NaN) == Exact(NaN)` false even for the
 /// identical constant loaded from the identical source, which is not
-/// the question this asks) -- see `ConstFacts`'s own docs for the one
+/// the question this asks): see `ConstFacts`'s own docs for the one
 /// place this actually matters.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ConstFact {
   /// The optimistic seed: no real predecessor has narrowed this yet.
-  /// Never observable outside this file -- `analyze_const`'s worklist
+  /// Never observable outside this file; `analyze_const`'s worklist
   /// always resolves every reachable position to one of the other two
   /// before returning.
   Top,
   /// Every path reaching this position defines this register as
   /// EXACTLY this `f64` bit pattern.
   Exact(u64),
-  /// Proven NOT any single constant -- either it genuinely varies
+  /// Proven NOT any single constant; either it genuinely varies
   /// across paths, or it never was a compile-time-known value at all
   /// (a parameter, a call result, arithmetic on a non-constant, ...).
   Bottom,
@@ -967,8 +971,8 @@ impl ConstFact {
   /// The lattice's meet (⊓) operation, same role `RegSet::and_assign`
   /// plays for the boolean analyses: `Top` is the identity (a not-yet-
   /// visited predecessor contributes nothing), two agreeing `Exact`
-  /// values stay agreed, anything else -- including two DIFFERENT
-  /// `Exact` values -- collapses to `Bottom`.
+  /// values stay agreed, anything else; including two DIFFERENT
+  /// `Exact` values; collapses to `Bottom`.
   fn meet(self, other: ConstFact) -> ConstFact {
     match (self, other) {
       (ConstFact::Top, x) | (x, ConstFact::Top) => x,
@@ -980,7 +984,7 @@ impl ConstFact {
 
 /// The result of analyzing one function: `entry[ip][r]` is `Some(c)`
 /// exactly when EVERY path reaching bytecode position `ip` defines
-/// register `r` as the identical literal `f64` value `c` -- a real
+/// register `r` as the identical literal `f64` value `c`; a real
 /// constant-propagation "must" analysis, same fixed-point shape as
 /// `IntFacts`/`ListFacts`/`StringFacts` (optimistic seed, narrowed by
 /// intersection at merges, monotonically converges), just over a flat
@@ -996,7 +1000,7 @@ impl ConstFact {
 /// consulted only by `codegen::FuncCompiler::div_by_pow2_reciprocal`,
 /// which is what makes it able to see PAST a constant hoisted into a
 /// local variable and reused across many divisions (e.g. inside a
-/// loop) -- not just the single immediately-preceding-`LoadConst`
+/// loop); not just the single immediately-preceding-`LoadConst`
 /// shape a purely local, dataflow-free check could ever catch.
 pub struct ConstFacts {
   entry: Vec<Vec<ConstFact>>,
@@ -1027,7 +1031,7 @@ fn transfer_const(in_facts: &[ConstFact], instr: &Instr, proto: &ObjFunction) ->
 
     // Everything else that writes a register either isn't a number at
     // all or isn't PROVABLY the same one every time (arithmetic on a
-    // non-constant, a `Call`/`GetField`/`GetIndex` result, ...) -- see
+    // non-constant, a `Call`/`GetField`/`GetIndex` result, ...): see
     // `any_dst`'s own docs, and `transfer_list`'s identical reasoning
     // for why this must be the genuinely complete instruction list,
     // not a curated subset.
@@ -1040,7 +1044,7 @@ fn transfer_const(in_facts: &[ConstFact], instr: &Instr, proto: &ObjFunction) ->
   out
 }
 
-/// Runs the constant-propagation analysis -- see `ConstFacts`'s own
+/// Runs the constant-propagation analysis: see `ConstFacts`'s own
 /// docs. Short-circuits the same way `analyze_list`/`analyze_string`
 /// do: with no numeric `LoadConst` anywhere in the function (the only
 /// instruction `transfer_const` ever seeds `Exact` from), no register
@@ -1088,7 +1092,7 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
       any_pred = true;
     }
     if !any_pred {
-      // Unreachable code -- vacuously "everything proven" (`Top`) is
+      // Unreachable code; vacuously "everything proven" (`Top`) is
       // safe, same reasoning `RegSet::full()` gets for this case in
       // every other analysis here: nothing ever actually executes this
       // instruction, so whatever `codegen` does with an over-
@@ -1124,7 +1128,7 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
 /// The result of analyzing one function: `entry[ip]` is exactly the set
 /// of registers proven to never hold a GC-managed reference (a String,
 /// BigInt, List, Dict, Func, Closure, Class, Instance, Range, Module,
-/// ...) on every path reaching bytecode position `ip` -- i.e. always
+/// ...) on every path reaching bytecode position `ip`; i.e. always
 /// one of the three non-reference NaN-boxed types (number, bool, nil)
 /// there. This is a "must" analysis with the same shape as `TypeFacts`
 /// (optimistic `full()` seed at every non-entry block, narrowed by
@@ -1137,7 +1141,7 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
 /// (falsely proving "never a reference") would be a genuine
 /// memory-safety bug, not just a missed optimization, so unlike
 /// `TypeFacts`'s `speculative_regs` hook, this analysis has no
-/// profiling-based speculation escape hatch -- every fact here is a
+/// profiling-based speculation escape hatch; every fact here is a
 /// real proof or nothing.
 pub struct RefFacts {
   entry: Vec<RegSet>,
@@ -1154,7 +1158,7 @@ impl RefFacts {
 /// result of `analyze` on the same function) as an auxiliary input.
 /// Several instructions here (`Add`, `Sub`, `Mul`, `Lt`, `BitAnd`, ...)
 /// can each produce either a plain number or a genuine reference at
-/// runtime depending on their operands' types -- e.g. `Add` allocates a
+/// runtime depending on their operands' types; e.g. `Add` allocates a
 /// new `BigInt`/`String`/`List` when its operands call for one (see
 /// `VM::binary_add_values`), and `Lt`/`Le`/`Gt`/`Ge` fall through to a
 /// user-defined `try_operator_override` (which can return literally
@@ -1163,8 +1167,8 @@ impl RefFacts {
 /// interpreter's own plain-number fast path is the only branch that can
 /// possibly fire (every other branch requires an operand that isn't a
 /// number), so the result is provably a plain number too. This is
-/// exactly why `type_facts` -- not a redundant, independently-computed
-/// copy of the same fact -- is threaded in as a parameter: reusing the
+/// exactly why `type_facts`; not a redundant, independently-computed
+/// copy of the same fact; is threaded in as a parameter: reusing the
 /// same proof `codegen` already relies on for guard elision keeps the
 /// two analyses from ever silently drifting apart.
 ///
@@ -1206,7 +1210,7 @@ pub fn classify_refs(proto: &ObjFunction, type_facts: &TypeFacts) -> RefFacts {
       any_pred = true;
     }
     if !any_pred {
-      // Unreachable code -- vacuously "everything proven" is safe, same
+      // Unreachable code; vacuously "everything proven" is safe, same
       // reasoning as `analyze`'s identical case.
       new_in = RegSet::full(num_registers);
     }
@@ -1235,7 +1239,7 @@ pub fn classify_refs(proto: &ObjFunction, type_facts: &TypeFacts) -> RefFacts {
 /// `ip` by `analyze` (`type_facts`). See `classify_refs`'s own docs for
 /// why arithmetic/comparison instructions consult `type_facts` rather
 /// than re-deriving numeric-ness independently, and for the verified,
-/// source-checked justification behind every branch below -- this
+/// source-checked justification behind every branch below; this
 /// isn't inferred from instruction names, it was confirmed against
 /// each instruction's actual `VM` handler in `vm.rs`.
 fn ref_transfer(
@@ -1253,8 +1257,8 @@ fn ref_transfer(
     Instr::LoadNil { dst } | Instr::LoadBool { dst, .. } | Instr::Not { dst, .. } => {
       out.set(dst, true)
     },
-    // `Eq`/`Neq` call `Value::equals` directly -- no operator-override
-    // hook at all, unlike every other comparison -- so the result is
+    // `Eq`/`Neq` call `Value::equals` directly; no operator-override
+    // hook at all, unlike every other comparison; so the result is
     // provably a bool regardless of operand types.
     Instr::Eq { dst, .. }
     | Instr::Neq { dst, .. }
@@ -1262,7 +1266,7 @@ fn ref_transfer(
     | Instr::NeqImm { dst, .. } => out.set(dst, true),
 
     // A compile-time constant's own reference-ness is a fixed, static
-    // fact -- `!is_obj()` covers all three non-reference NaN-boxed
+    // fact; `!is_obj()` covers all three non-reference NaN-boxed
     // types at once (number, bool, nil), unlike `transfer`'s own
     // `is_number()`-only check for its narrower numeric-provenance
     // purpose.
@@ -1273,7 +1277,7 @@ fn ref_transfer(
     Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
 
     // Provably non-reference only when both operands are provably
-    // numeric -- that's exactly what forces the interpreter down its
+    // numeric; that's exactly what forces the interpreter down its
     // plain-number fast path, bypassing every bigint/string/list/
     // operator-override branch that could otherwise produce a
     // reference. See `VM::binary_numeric`/`binary_add_values`/
@@ -1300,7 +1304,7 @@ fn ref_transfer(
     },
     // The immediate operand is always a numeric constant by
     // construction (same fact `analyze`'s own `AddImm`/`SubImm`/
-    // `MulImm` case relies on) -- only `a` needs checking.
+    // `MulImm` case relies on); only `a` needs checking.
     Instr::AddImm { dst, a, .. }
     | Instr::SubImm { dst, a, .. }
     | Instr::MulImm { dst, a, .. }
@@ -1322,7 +1326,7 @@ fn ref_transfer(
     | Instr::MakePromoted { dst, .. }
     | Instr::GetSlice { dst, .. } => out.set(dst, false),
 
-    // Never statically provable either way -- depends on arbitrary
+    // Never statically provable either way; depends on arbitrary
     // runtime container contents, field values, or user/native code.
     Instr::Call { dst, .. }
     | Instr::GetGlobal { dst, .. }
@@ -1333,7 +1337,7 @@ fn ref_transfer(
     | Instr::CallSuperCtor { dst, .. }
     | Instr::GetIndex { dst, .. } => out.set(dst, false),
 
-    // No destination register written at all -- facts pass through
+    // No destination register written at all; facts pass through
     // unchanged, same instruction list `transfer` uses for the same
     // reason.
     Instr::SetGlobal { .. }
@@ -1357,7 +1361,7 @@ fn ref_transfer(
     | Instr::CheckParamType { .. } => {},
 
     // A raise writes no register, so it proves and invalidates nothing
-    // -- exactly like `Return` above. It compiles to a deopt rather than
+    //; exactly like `Return` above. It compiles to a deopt rather than
     // real unwind logic (see `codegen::compile`'s eligibility scan), and
     // `successors` deliberately still gives it a fallthrough edge so no
     // block becomes unreachable.
@@ -1374,13 +1378,13 @@ fn ref_transfer(
 /// register numeric-ness, given what was proven on entry to it.
 /// `speculative_regs` overrides the "conservative, always unproven"
 /// destinations below to numeric where the caller's profiling sample
-/// says so -- see `SpeculativeRegs`'s own docs.
+/// says so: see `SpeculativeRegs`'s own docs.
 fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_regs: u64) -> RegSet {
   let mut out = in_set.clone();
   match *instr {
     Instr::LoadConst { dst, const_idx } => {
       // Constants never change after compilation, so whether the
-      // loaded value is numeric is itself a static fact -- common for
+      // loaded value is numeric is itself a static fact; common for
       // loop-carried accumulators/counters seeded with e.g. `0`.
       let is_numeric_const = proto.chunk.constants[const_idx as usize].is_number();
       out.set(dst, is_numeric_const);
@@ -1431,10 +1435,10 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
 
     // Any instruction whose result depends on something this pass
     // can't see statically (heap contents, globals, call results, ...)
-    // -- conservatively not proven, UNLESS the caller's profiling
+    //; conservatively not proven, UNLESS the caller's profiling
     // sample observed this exact destination register holding a
     // number at the moment compilation triggered (`speculative_regs`)
-    // -- see `SpeculativeRegs`'s own docs. `codegen` is what actually
+    //: see `SpeculativeRegs`'s own docs. `codegen` is what actually
     // makes this safe: it never emits code that trusts this without a
     // real runtime guard planted right here, at this instruction's own
     // definition site.
@@ -1460,7 +1464,7 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
 
     // A parameter whose declared type is exactly (a union of only)
     // `number`/`int`, with no `?nullable`, is PROVABLY numeric on every
-    // path past this instruction -- it just raised otherwise, and this
+    // path past this instruction; it just raised otherwise, and this
     // is a "must" analysis over facts that hold given execution reached
     // here at all. Anything else (a union that also allows a
     // non-numeric type, or a nullable one nil could slip through) stays
@@ -1476,7 +1480,7 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
       out.set(reg, all_numeric);
     },
 
-    // No destination register written at all -- facts pass through
+    // No destination register written at all; facts pass through
     // unchanged.
     Instr::SetGlobal { .. }
     | Instr::AssignGlobal { .. }
@@ -1498,7 +1502,7 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
     | Instr::JmpIfTrue { .. } => {},
 
     // A raise writes no register, so it proves and invalidates nothing
-    // -- exactly like `Return` above. It compiles to a deopt rather than
+    //; exactly like `Return` above. It compiles to a deopt rather than
     // real unwind logic (see `codegen::compile`'s eligibility scan), and
     // `successors` deliberately still gives it a fallthrough edge so no
     // block becomes unreachable.
@@ -1521,7 +1525,7 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
 /// `emit_fast_call`'s calling convention by hand). `codegen::
 /// FuncCompiler` calls this once per instruction, right after emitting
 /// it in the specialized body, to decide whether a mid-function
-/// guard-and-fork belongs there -- see its own docs.
+/// guard-and-fork belongs there: see its own docs.
 pub fn conservative_dst(instr: &Instr) -> Option<u8> {
   match *instr {
     Instr::Call { dst, .. }
@@ -1545,16 +1549,16 @@ pub fn conservative_dst(instr: &Instr) -> Option<u8> {
 }
 
 /// The destination register any instruction writes, if it writes one
-/// at all -- a strict superset of `conservative_dst` (which only
+/// at all; a strict superset of `conservative_dst` (which only
 /// covers the "unprovable, needs a runtime guard to speculate on"
 /// subset). Used by `ambiguous_speculative_regs` to see every
-/// definition of a register, not just the speculatable ones -- kept
+/// definition of a register, not just the speculatable ones; kept
 /// as its own function, deliberately not folded into `conservative_dst`
 /// itself, since callers that only care about "which registers might
 /// need a runtime guard" (`codegen::FuncCompiler::emit_speculative_guard`)
 /// would otherwise have to filter this broader set back down by hand.
 /// `pub(crate)` (not just used internally) so `codegen::FuncCompiler::
-/// call_helper` can also use it -- see its own docs on why a helper-
+/// call_helper` can also use it: see its own docs on why a helper-
 /// backed instruction's `dst` needs staling even when it's not part of
 /// `live_in` at that `ip`.
 pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
@@ -1617,7 +1621,7 @@ pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
 
 /// Registers written by more than one distinct static definition site
 /// in `code` (any instruction that writes a register at all, not just
-/// speculatable ones) -- unsafe to seed a speculative guess onto,
+/// speculatable ones); unsafe to seed a speculative guess onto,
 /// since a one-shot runtime snapshot of "what's in this register right
 /// now" (see `VM::sample_all_reg_types`) can't say which of the
 /// register's multiple, possibly-unrelated definitions it actually
@@ -1629,9 +1633,9 @@ pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
 /// reused for a method call's (non-numeric) return value while also
 /// being written elsewhere by something that genuinely is numeric
 /// (e.g. sharing a slot with a loop counter across non-overlapping
-/// live ranges) -- the snapshot can catch either moment and wrongly
+/// live ranges); the snapshot can catch either moment and wrongly
 /// credit the other. Both make an `emit_speculative_guard` check that
-/// fails on every invocation, not occasionally -- see `analyze`'s own
+/// fails on every invocation, not occasionally: see `analyze`'s own
 /// docs at its `spec_regs` computation.
 fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
   let mut seen: u64 = 0;
@@ -1698,7 +1702,6 @@ pub(crate) fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
   preds
 }
 
-
 //-----------------------------------------------------------------------------------
 // Liveness analysis
 //-----------------------------------------------------------------------------------
@@ -1706,12 +1709,12 @@ pub(crate) fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
 /// The result of analyzing one function: `live_in[ip]` is exactly the
 /// set of registers that might still be needed on some path forward
 /// from bytecode position `ip`, including whatever `ip`'s own
-/// instruction itself reads -- i.e. precisely the registers that must
+/// instruction itself reads; i.e. precisely the registers that must
 /// hold a correct, up-to-date value in `VM::registers` at the moment
 /// `ip` is about to execute. This is what `jit::codegen` consults at
 /// every sync point (a call, a GC safepoint, a deopt/guard branch, a
 /// stack-map spill site) to decide exactly which cached register
-/// values need a real `store_reg` there -- never "everything," never
+/// values need a real `store_reg` there; never "everything," never
 /// "nothing," just what's actually live. See this module's own
 /// `liveness` doc comment for why "live_in" (not "live_out") is the
 /// right quantity for that: it already folds in both what `ip` itself
@@ -1729,7 +1732,7 @@ impl LivenessFacts {
   }
 
   /// Every register live immediately before `ip`'s own instruction
-  /// executes, low to high -- what a spill-site emitter actually
+  /// executes, low to high; what a spill-site emitter actually
   /// iterates over to know which cached values need flushing.
   pub fn live_regs_at(&self, ip: usize) -> impl Iterator<Item = u8> + '_ {
     self.live_in[ip].iter_set()
@@ -1743,10 +1746,10 @@ impl LivenessFacts {
 /// narrowed by intersection at merges, since a fact only holds if every
 /// path agrees), this is seeded empty and grows by union at merges,
 /// since a register only needs to be considered dead if no path forward
-/// needs it -- the textbook fixed point for liveness, guaranteed to
+/// needs it; the textbook fixed point for liveness, guaranteed to
 /// converge because each `RegSet` only ever grows and is bounded above
 /// by "every register."
-/// `preds` -- see `analyze`'s own docs on why this takes it as a
+/// `preds`: see `analyze`'s own docs on why this takes it as a
 /// parameter instead of computing it fresh.
 pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
   let code = &proto.chunk.code;
@@ -1793,12 +1796,12 @@ pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
   LivenessFacts { live_in }
 }
 
-/// Marks every register `instr` reads (never what it writes -- see
+/// Marks every register `instr` reads (never what it writes: see
 /// `any_dst` for that) into `set`. Kept as its own pass over the same
 /// field layout `transfer`/`any_dst` already match on, rather than
 /// folding into either: `transfer` cares about numeric-ness of a
 /// destination, `any_dst` cares only about the (single, if any)
-/// destination, and this cares only about sources -- three genuinely
+/// destination, and this cares only about sources; three genuinely
 /// different questions asked of the same instruction shape, no single
 /// match arm answers all three without being harder to read than three
 /// smaller ones.
@@ -1809,7 +1812,7 @@ pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
 /// `Invoke`/`InvokeSuper`/`CallSuperCtor`'s receiver/superclass register
 /// plus the duplicated-`self` and argument registers per their own doc
 /// comments in `vm::chunk::Instr`; `MakeList`/`MakeDict`'s element run)
-/// -- `RegSet::set_range` covers those directly from the instruction's
+///; `RegSet::set_range` covers those directly from the instruction's
 /// own `start`/`count`-style fields, needing no extra bookkeeping beyond
 /// what's already encoded in the bytecode.
 ///
@@ -1817,7 +1820,7 @@ pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
 /// the instruction itself: it captures its nested prototype's own
 /// `UpvalueDescriptor::Local(n)` entries out of the currently executing
 /// (enclosing) function's registers at the moment the closure is
-/// created (see `ObjFunction::upvalues`'s own doc comment) -- missing
+/// created (see `ObjFunction::upvalues`'s own doc comment); missing
 /// one of these would let a captured local's register be treated as
 /// dead and reused/discarded before the closure actually reads it,
 /// silently capturing the wrong value.
@@ -1886,7 +1889,7 @@ fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
     Instr::SetUpval { src, .. } => set.set(src, true),
     Instr::CloseUpvalues { from } => {
       // Conservatively "reads" every register from `from` up to the
-      // function's own top -- we don't statically know which of them
+      // function's own top; we don't statically know which of them
       // currently has an open upvalue, and this only runs once per
       // block exit, so there's no meaningful cost to being precise-but-
       // safe here rather than plumbing open-upvalue tracking into a
@@ -1917,7 +1920,7 @@ fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
     },
 
     // `obj` itself, plus the compiler-duplicated `self` at `obj + 1`,
-    // plus `num_args` more argument registers after that -- see these
+    // plus `num_args` more argument registers after that: see these
     // variants' own doc comments in `vm::chunk::Instr`.
     Instr::Invoke { obj, num_args, .. } => set.set_range(obj, num_args as usize + 2),
     Instr::InvokeSuper {
@@ -2167,7 +2170,7 @@ mod ref_classify_tests {
     assert!(refs.is_never_ref(2, 0), "numeric constant is never a ref");
     assert!(
       !refs.is_never_ref(2, 1),
-      "string constant IS a ref -- must not be misclassified"
+      "string constant IS a ref; must not be misclassified"
     );
   }
 
@@ -2198,7 +2201,7 @@ mod ref_classify_tests {
 
   #[test]
   fn add_is_conservative_when_operand_not_proven_numeric() {
-    // r0 comes from an unprovable GetGlobal -- Add could hit the
+    // r0 comes from an unprovable GetGlobal; Add could hit the
     // bigint/string/list/operator-override path, so its result must
     // NOT be proven non-ref.
     let code = vec![

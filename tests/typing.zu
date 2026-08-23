@@ -43,7 +43,7 @@ def optional_any(v: ?any) {}
 optional_any()
 optional_any(1)
 
-/* Failure paths -- each mismatch should raise a TypeError naming the
+/* Failure paths; each mismatch should raise a TypeError naming the
  * parameter, its position, and what was actually received. */
 
 def needs_number(x: number) {}

@@ -1,7 +1,7 @@
 /**
  * Worker scalability stress test. Every other worker benchmark
  * in this directory asks "does spreading real work across workers
- * make it faster" -- this one asks a different question: how does the
+ * make it faster"; this one asks a different question: how does the
  * worker machinery itself (spawn, queue, transfer, join) hold up
  * under a genuinely massive number of workers, not just a handful
  * of big chunks. `WORKER_COUNT` workers are spawned, each
@@ -17,7 +17,7 @@ import worker
 const WORKER_COUNT = 100_000
 
 /**
- * A deliberately non-trivial per-worker workload -- a trial-
+ * A deliberately non-trivial per-worker workload; a trial-
  * division primality check followed by a small run of floating point
  * work, so each worker does real, measurable computation rather
  * than being a bare no-op that would only measure spawn overhead.

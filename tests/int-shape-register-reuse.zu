@@ -1,8 +1,8 @@
-/* IntFacts' counterpart to list-shape-register-reuse.zu -- same bug
+/* IntFacts' counterpart to list-shape-register-reuse.zu; same bug
  * class, same fix (jit::typeflow's any_dst-based catch-all). A register
  * proven a whole number, then reassigned via Div (not covered by the
  * old conservative_dst/comparison_or_never_numeric_dst pair) to a
- * genuinely fractional value, kept the stale "is int" fact -- so
+ * genuinely fractional value, kept the stale "is int" fact; so
  * emit_list_get_index's idx_proven_int flag skipped the float-roundtrip
  * check and silently truncated a fractional index instead of raising.
  * Not a crash like the list-shape case (the fast path still bounds-

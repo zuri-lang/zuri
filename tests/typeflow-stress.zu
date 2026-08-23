@@ -8,7 +8,7 @@ class Vec2 {
   }
 }
 
-# Pure-numeric loop -- every register here should get its guard elided.
+# Pure-numeric loop; every register here should get its guard elided.
 var sum = 0
 var i = 0
 while i < 200000 {
@@ -17,7 +17,7 @@ while i < 200000 {
 }
 echo sum
 
-# String concatenation via + -- must still hit the slow path correctly.
+# String concatenation via +; must still hit the slow path correctly.
 var s = "a"
 var j = 0
 while j < 5 {
@@ -26,7 +26,7 @@ while j < 5 {
 }
 echo s
 
-# Operator-overloaded objects via + -- must still hit the slow path.
+# Operator-overloaded objects via +; must still hit the slow path.
 var v = Vec2(0, 0)
 var k = 0
 while k < 5 {

@@ -12,13 +12,13 @@
 //!
 //! 1. **Build IR** (`JitEngine::build_ir`, always on the VM's own
 //!    thread): walks `proto`'s bytecode and produces an owned
-//!    `cranelift_codegen::Context` holding pure IR -- every constant
+//!    `cranelift_codegen::Context` holding pure IR; every constant
 //!    `Value` the bytecode referenced is already baked into that IR as
 //!    a raw immediate (see `jit::codegen`'s own docs), so once this
 //!    step returns, the resulting `Context` has no remaining
 //!    dependency on `proto`, the heap, or the GC. This is the only
 //!    stage that touches `proto`, which is why it must stay
-//!    synchronous -- see `VM::sample_param_types`/`enqueue_or_ready`'s
+//!    synchronous: see `VM::sample_param_types`/`enqueue_or_ready`'s
 //!    docs on how `proto`'s liveness is guaranteed for exactly this
 //!    stage's duration.
 //! 2. **Backend-compile** (`Context::compile`, done here): needs only
@@ -26,19 +26,19 @@
 //!    thread for the duration) and a `TargetIsa` handle. Cranelift's
 //!    own `TargetIsa` trait is `Send + Sync` and `JitEngine` hands out
 //!    an independent `Arc` clone of it (see `JitEngine::isa_handle`)
-//!    that never touches `JITModule` -- so this stage needs no lock,
+//!    that never touches `JITModule`; so this stage needs no lock,
 //!    no shared mutable state, nothing from the VM beyond the `Context`
 //!    it was given.
 //!
 //! The VM's own thread later installs the finished machine code
 //! (`JitEngine::install_compiled`, plain memcpy + relocation fixups,
 //! no register allocation) once it drains this thread's result channel
-//! -- see `VM::drain_jit_results`.
+//!: see `VM::drain_jit_results`.
 //!
 //! # Why `*const ObjFunction` is safe to carry across this boundary
 //!
 //! `CompileJob`/`CompileResult` carry a raw `*const ObjFunction`
-//! purely as an opaque identifier -- this thread never dereferences
+//! purely as an opaque identifier; this thread never dereferences
 //! it, only Cranelift's `Context`/`TargetIsa` data. The VM's own
 //! thread is what eventually dereferences it back (in
 //! `VM::drain_jit_results`), and it keeps the function pinned as a GC
@@ -99,7 +99,7 @@ pub struct JitCompilerHandle {
   /// Exists purely so the VM can skip `result_rx` entirely on the
   /// overwhelmingly common path. `VM::tiered_entry` runs on every
   /// single `Instr::Call`/`Invoke`, but a real compile result lands
-  /// only a handful of times in an entire process lifetime -- and
+  /// only a handful of times in an entire process lifetime; and
   /// `Receiver::try_recv` is not free (it walks the channel's own
   /// atomic state machine), so unconditionally polling it per call
   /// costs several percent of total runtime on call-heavy code. A
@@ -111,7 +111,7 @@ pub struct JitCompilerHandle {
   ///
   /// - Producer sends first, then sets. So observing `true` guarantees
   ///   the corresponding `send` has already happened and a following
-  ///   `try_recv` is certain to see it -- the reverse order could set
+  ///   `try_recv` is certain to see it; the reverse order could set
   ///   the flag for a result not yet in the channel, let the VM clear
   ///   it and find nothing, and strand that result forever (its
   ///   function would keep `compiling` set and never be installed).
@@ -124,7 +124,7 @@ pub struct JitCompilerHandle {
 
 /// Spawns the single background compiler thread and returns the
 /// job/result channel handles the VM uses to talk to it. The thread
-/// runs for the rest of the process -- like the compiled code it
+/// runs for the rest of the process; like the compiled code it
 /// produces (see `CompiledFunction`'s own docs), it is never torn
 /// down; when the job sender is dropped (VM shutdown), its loop below
 /// exits and the thread ends naturally, which this deliberately does
@@ -160,7 +160,7 @@ fn compiler_loop(
     // borrows `job.ctx` for its own duration, so it's dropped
     // immediately (not held past this statement) to leave `job.ctx`
     // free for the separate `compiled_code()`/`&job.ctx.func` (shared,
-    // immutable) borrows used just below -- the same pattern
+    // immutable) borrows used just below; the same pattern
     // `cranelift_module`'s own `define_function` uses internally.
     let compile_result = job.ctx.compile(&*isa, &mut ctrl_plane);
     let outcome = match compile_result {
@@ -190,12 +190,12 @@ fn compiler_loop(
       speculative_regs: job.speculative_regs,
       outcome,
     };
-    // A closed result channel means the VM has shut down -- nothing
+    // A closed result channel means the VM has shut down; nothing
     // left to report to, so just stop.
     if result_tx.send(result).is_err() {
       return;
     }
-    // Strictly after the `send` above -- see `results_pending`'s docs.
+    // Strictly after the `send` above: see `results_pending`'s docs.
     results_pending.store(true, Ordering::Release);
   }
 }

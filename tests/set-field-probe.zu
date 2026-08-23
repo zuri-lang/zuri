@@ -28,7 +28,7 @@ iter var warm = 0; warm < 50000; warm++ {
 }
 
 # Hot loop: repeatedly write a FRESH (young) object into b2's own field
-# -- this is exactly the pattern write_barrier exists for (an old
+#; this is exactly the pattern write_barrier exists for (an old
 # container's field pointing at a young object must be found by the
 # next minor collection via the remembered set, not missed).
 var last_len = 0

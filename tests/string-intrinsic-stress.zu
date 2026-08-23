@@ -1,7 +1,7 @@
 /* Exercises jit::codegen::StringIntrinsic (length/is_empty inlined
- * directly for a proven string via jit::typeflow::StringFacts -- length
+ * directly for a proven string via jit::typeflow::StringFacts; length
  * as a real UTF-8 lead-byte-counting loop, is_empty as a bare byte-
- * length compare) -- both the proven and unproven receiver paths, the
+ * length compare); both the proven and unproven receiver paths, the
  * empty-string edge case (the length loop must not read any bytes at
  * all when byte_len is 0), multi-byte UTF-8 (to catch a codepoint-vs-
  * byte-count bug the ASCII-only cases in string-invoke-stress.zu can't
@@ -22,8 +22,8 @@ def empty_string_methods() {
 }
 
 def multibyte_string_methods() {
-  /* "héllo wörld 🎉" -- 13 codepoints, but MORE than 13 UTF-8 bytes
-   * (each of é/ö is 2 bytes, the emoji is 4) -- a byte-counting bug
+  /* "héllo wörld 🎉"; 13 codepoints, but MORE than 13 UTF-8 bytes
+   * (each of é/ö is 2 bytes, the emoji is 4); a byte-counting bug
    * would report a bigger number than 13 here. */
   var s = 'héllo wörld 🎉'
   return s.length()
@@ -36,7 +36,7 @@ def unproven_receiver_methods(flag) {
   } else {
     x = [1, 2, 3, 4, 5]
   }
-  /* x is NOT proven a string (one branch is a list) -- exercises the
+  /* x is NOT proven a string (one branch is a list); exercises the
    * runtime is_obj+tag guard, not the proven fast path, for BOTH
    * possible receiver shapes. */
   return x.length()
@@ -45,7 +45,7 @@ def unproven_receiver_methods(flag) {
 def same_name_different_types() {
   var s = 'hello'
   var l = [1, 2, 3]
-  /* both declare "length"/"is_empty" -- the string intrinsic's guard
+  /* both declare "length"/"is_empty"; the string intrinsic's guard
    * must never mistake a list for a string, and vice versa. */
   return s.length() + l.length() + (s.is_empty() ? 10 : 0) + (l.is_empty() ? 100 : 0)
 }

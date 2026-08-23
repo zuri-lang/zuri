@@ -7,7 +7,7 @@
  *
  * This is the shape escape analysis exists for: one Vec3 is built per
  * body pair per step, only ever read through its own fields, and dies
- * immediately -- it is never stored, returned, captured, or passed
+ * immediately; it is never stored, returned, captured, or passed
  * anywhere. A JIT that can prove that should not be heap-allocating
  * it at all. The plain-scalar `nbody.zu` in this directory is the
  * control: same physics, no temporary objects.
@@ -97,7 +97,7 @@ def offset_momentum(bodies) {
   sun.vz = -pz / SOLAR_MASS
 }
 
-/* The hot loop. `d` is allocated here and consumed here -- nothing it
+/* The hot loop. `d` is allocated here and consumed here; nothing it
  * touches outlives the iteration that built it.
  */
 def advance(bodies, dt) {

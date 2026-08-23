@@ -3,8 +3,8 @@
 //! A class's method table, field-slot table and static-slot table are all
 //! keyed by name, and looking one up used to mean hashing a `String` and
 //! then `memcmp`-ing it to confirm the match. On a method-dispatch-heavy
-//! workload that was around a fifth of total runtime -- `HashMap<String,
-//! _>::get` plus `__memcmp_avx2_movbe` -- for a question that is really
+//! workload that was around a fifth of total runtime; `HashMap<String,
+//! _>::get` plus `__memcmp_avx2_movbe`; for a question that is really
 //! just "which of this class's members is this".
 //!
 //! Interning turns the key into a `u32`, so the hash is a multiply and
@@ -33,7 +33,7 @@ pub struct NameId(pub u32);
 impl NameId {
   /// Stands for "this constant is not a string", so `Chunk`'s parallel
   /// name-id array can be dense without an `Option` per entry. No real
-  /// name ever gets this id -- the table would have to hold 4 billion
+  /// name ever gets this id; the table would have to hold 4 billion
   /// distinct names first.
   pub const NONE: NameId = NameId(u32::MAX);
 
@@ -67,8 +67,8 @@ fn interner() -> &'static Mutex<Interner> {
 /// seen.
 ///
 /// Leaks the string on first sight. That is bounded by the number of
-/// distinct identifiers in the program -- a few thousand at most, and
-/// fixed once everything is loaded -- and it is what lets `resolve`
+/// distinct identifiers in the program; a few thousand at most, and
+/// fixed once everything is loaded; and it is what lets `resolve`
 /// return a `&'static str` with no lifetime plumbing through `ObjClass`.
 pub fn intern(name: &str) -> NameId {
   let mut interner = interner().lock().expect("zuri: name interner poisoned");
@@ -85,7 +85,7 @@ pub fn intern(name: &str) -> NameId {
 }
 
 /// The string `id` was interned from. Only for error messages and
-/// debugging -- nothing on a dispatch path needs it.
+/// debugging; nothing on a dispatch path needs it.
 pub fn resolve(id: NameId) -> &'static str {
   if id.is_none() {
     return "<not a name>";

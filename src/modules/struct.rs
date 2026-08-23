@@ -1,4 +1,4 @@
-//! `struct` builtin module -- packs/unpacks binary data to and from Zuri
+//! `struct` builtin module; packs/unpacks binary data to and from Zuri
 //! values, in one native module (no `_struct` + `libs/struct.zu` split:
 //! the format parser, the pack/unpack engine, and every public function
 //! all live here).
@@ -19,12 +19,12 @@
 //!   argument/byte for a numeric code). Omitted means `1`.
 //! - `:NAME` names the field(s) produced by that ONE group when
 //!   unpacking. A count > 1 numbers the keys `NAME1`, `NAME2`, ... A
-//!   segment carrying a `:NAME` may only contain a single group -- this
+//!   segment carrying a `:NAME` may only contain a single group; this
 //!   is a deliberate, unambiguous departure from the PHP convention this
 //!   module used to imitate (see "Deviations from PHP" below).
 //! - A group with no `:NAME` gets a purely numeric key. Unlike the old
 //!   PHP-style implementation, that numbering runs once, globally, for
-//!   the whole format string -- it never resets and so never silently
+//!   the whole format string; it never resets and so never silently
 //!   overwrites an earlier unnamed field.
 //!
 //! ## Format codes
@@ -63,13 +63,13 @@
 //! `E`  | 8 | double, big-endian
 //! `w`  | 2 | IEEE-754 half-precision float, little-endian
 //! `W`  | 2 | IEEE-754 half-precision float, big-endian
-//! `x`  | count | NUL byte(s) -- consumes no argument
+//! `x`  | count | NUL byte(s); consumes no argument
 //! `X`  | count | back up `count` byte(s)
-//! `Z`  | -- | (see above)
-//! `@`  | -- | seek/pad to absolute position `count`
+//! `Z`  |; | (see above)
+//! `@`  |; | seek/pad to absolute position `count`
 //!
 //! `?`, `w`/`W`, and `u`/`U` are new additions over the module's previous
-//! PHP-derived code set -- see "New datatypes" below.
+//! PHP-derived code set: see "New datatypes" below.
 //!
 //! ## Integer precision
 //!
@@ -86,13 +86,13 @@
 //! datatypes were entirely missing from the original PHP-mirroring code
 //! set and are added here:
 //!
-//! - `?` -- a real boolean type. Every other code forces the caller to
+//! - `?`; a real boolean type. Every other code forces the caller to
 //!   spell a boolean out as a 0/1 byte by hand.
-//! - `w`/`W` -- IEEE-754 half-precision (binary16) floats, ubiquitous in
+//! - `w`/`W`; IEEE-754 half-precision (binary16) floats, ubiquitous in
 //!   graphics, ML model weights/interchange formats, and compact network
-//!   protocols. Conversion is hand-rolled (no extra dependency); see
+//!   protocols. Conversion is hand-rolled (no extra dependency): see
 //!   `f32_to_half`/`half_to_f32` below.
-//! - `u`/`U` -- signed/unsigned 128-bit integers, matching this VM's
+//! - `u`/`U`; signed/unsigned 128-bit integers, matching this VM's
 //!   existing `bigint` type (used for e.g. UUIDs, large hashes, or
 //!   anything that overflows 64 bits) and finally letting `struct` round
 //!   -trip a `bigint` without lossy detours through `number`.
@@ -157,7 +157,7 @@ fn is_valid_code(c: char) -> bool {
 enum Repeat {
   One,
   Count(usize),
-  /// `*` -- meaning depends on the code; see each code's own handling.
+  /// `*`; meaning depends on the code: see each code's own handling.
   Star,
 }
 
@@ -296,7 +296,7 @@ fn is_float_code(c: char) -> bool {
   matches!(c, 'f' | 'g' | 'G' | 'd' | 'e' | 'E' | 'w' | 'W')
 }
 
-/// Fixed element size for any non-string, non-pad, non-`@` code -- used
+/// Fixed element size for any non-string, non-pad, non-`@` code; used
 /// both to size an individual read/write and by `calcsize`/`iter_unpack`.
 fn code_size(code: char) -> Result<usize, String> {
   if let Some((size, _, _)) = code_int_spec(code) {
@@ -317,7 +317,7 @@ fn code_size(code: char) -> Result<usize, String> {
 
 // Half-precision float conversion (IEEE-754 binary16 <-> f32)
 //
-// Hand-rolled rather than pulling in a dependency -- the standard bit-
+// Hand-rolled rather than pulling in a dependency; the standard bit-
 // twiddling algorithm used by most half-float fallback implementations.
 // Rounds toward zero rather than to-nearest-even on the narrowing
 // conversion (f32_to_half); this only matters for values whose exact
@@ -332,7 +332,7 @@ fn f32_to_half(value: f32) -> u16 {
   let mantissa = bits & 0x007f_ffff;
 
   if exp == 0xff {
-    // Infinity or NaN -- preserve which one, and NaN-ness of the payload.
+    // Infinity or NaN; preserve which one, and NaN-ness of the payload.
     let nan_bit: u16 = if mantissa != 0 { 0x0200 } else { 0 };
     return sign | 0x7c00 | nan_bit;
   }
@@ -435,7 +435,7 @@ fn write_int(out: &mut Vec<u8>, code: char, v: i128) {
   }
 }
 
-/// 2^53 -- the largest integer magnitude an f64 can hold exactly.
+/// 2^53; the largest integer magnitude an f64 can hold exactly.
 const F64_SAFE_INT: i128 = 9_007_199_254_740_992;
 
 fn int_to_value(v: i128, heap: &mut Heap) -> Value {
@@ -719,7 +719,7 @@ fn check_bounds(data: &[u8], pos: usize, need: usize) -> Result<(), String> {
 /// Flattens `pack()`'s variadic argument tail the same way the old Zuri
 /// wrapper did: a list is spread element-by-element, a bytes object is
 /// spread as individual byte numbers, anything else is taken as a
-/// single item -- so `pack('CCC', 1, 2, 3)` and `pack('CCC', [1, 2, 3])`
+/// single item; so `pack('CCC', 1, 2, 3)` and `pack('CCC', [1, 2, 3])`
 /// both work.
 fn flatten_pack_args(args: &[Value]) -> Vec<Value> {
   let mut items = Vec::with_capacity(args.len());
@@ -835,7 +835,7 @@ fn push_named(
 
 /// Unpacks starting at byte offset `start`, returning the resulting
 /// (key, value) pairs plus the byte offset just past the last field
-/// consumed -- the latter is what `iter_unpack` chains calls with.
+/// consumed; the latter is what `iter_unpack` chains calls with.
 fn unpack_values(
   groups: &[FormatGroup],
   data: &[u8],
@@ -931,7 +931,7 @@ fn unpack_values(
   Ok((result, pos))
 }
 
-/// The fixed byte size of a format string -- errors if it contains a
+/// The fixed byte size of a format string; errors if it contains a
 /// `*` repeat anywhere, since that has no size independent of actual
 /// data.
 fn format_size(groups: &[FormatGroup]) -> Result<usize, String> {
@@ -1012,7 +1012,7 @@ fn pack_from_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// `struct.pack_into(format, buffer: bytes, offset, ...values)` ->
 /// `number` (bytes written). Packs directly into an existing bytes
 /// object at `offset`, growing it (zero-padded) if it isn't long enough
-/// -- avoids an allocate-then-copy round trip when assembling a larger
+///; avoids an allocate-then-copy round trip when assembling a larger
 /// buffer field by field.
 fn pack_into_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 0, ArgType::String);
@@ -1043,7 +1043,7 @@ fn pack_into_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// `struct.unpack(format, data: bytes|string, offset: ?number)` ->
-/// `dict`. Also registered as `unpack_from` -- identical behavior, kept
+/// `dict`. Also registered as `unpack_from`; identical behavior, kept
 /// as a separate name since `unpack()` already accepts an offset and
 /// never requires the buffer to be fully consumed.
 fn unpack_fn(ctx: &mut ZuriContext) -> Result<Value, String> {

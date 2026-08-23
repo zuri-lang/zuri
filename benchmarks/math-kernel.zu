@@ -1,5 +1,5 @@
 /**
- * A transcendental-math kernel -- the one shape none of the other
+ * A transcendental-math kernel; the one shape none of the other
  * benchmarks here exercise.
  *
  * Every other numeric benchmark in this directory stays inside +-*\/ and
@@ -9,7 +9,7 @@
  * `log`/`atan2`/`sqrt` rather than by the arithmetic around them.
  *
  * The kernel itself is a damped wave superposition integrated by the
- * midpoint rule -- chosen because it is a real numerical computation
+ * midpoint rule; chosen because it is a real numerical computation
  * whose answer is checkable, not a synthetic sequence of unrelated
  * calls, and because it mixes unary and binary math methods the way
  * real signal/graphics code does.

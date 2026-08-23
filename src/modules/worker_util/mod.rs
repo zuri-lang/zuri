@@ -1,5 +1,5 @@
 //! Shared machinery behind the `_worker` builtin module (see
-//! `../worker.rs`) -- the worker pool and the heap-independent
+//! `../worker.rs`); the worker pool and the heap-independent
 //! value format that's the only thing ever allowed to cross a
 //! worker spawn/join or channel send/recv. Split out of
 //! `worker.rs` itself since neither piece touches `ZuriContext`/

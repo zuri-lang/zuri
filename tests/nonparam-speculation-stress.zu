@@ -1,5 +1,5 @@
 # Non-parameter ("beyond function parameters") speculation stress test.
-# `box.v`'s GetField result feeds directly into arithmetic -- if the
+# `box.v`'s GetField result feeds directly into arithmetic; if the
 # mid-function guard-and-fork (planted right after the GetField in the
 # specialized body, see FuncCompiler::emit_speculative_guard) is
 # missing or wrong, a non-numeric `box.v` would either crash (raw
@@ -14,7 +14,7 @@ class Box {
 }
 
 # Direct, single-use case: warm up numeric, then hit with a string,
-# with NO interpreted-visible is_number() gate at all -- the risky
+# with NO interpreted-visible is_number() gate at all; the risky
 # fast-path Add genuinely executes on a non-numeric operand if the
 # guard-and-fork doesn't correctly intercept it first.
 def double_field(box) {
@@ -32,7 +32,7 @@ echo double_field(Box("ab"))
 
 # Loop-carried case: the field's proven-numeric status (from the new
 # mid-function speculation) is what lets the LOOP's own arithmetic take
-# the fast path at all -- `sum` starts at a provable constant (0), so
+# the fast path at all; `sum` starts at a provable constant (0), so
 # the "taken" branch's `sum = sum + y` is the ONLY place `y`'s own
 # proof matters; without it, the whole if-merge (and therefore the
 # loop after it) stays on the general/guarded path.

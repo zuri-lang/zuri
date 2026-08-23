@@ -1,6 +1,6 @@
 /* Exercises jit::codegen::ListIntrinsic (length/is_empty/first/last
  * inlined directly for a proven list, guarded-and-falling-back
- * otherwise) -- both the proven and unproven receiver paths, empty-
+ * otherwise); both the proven and unproven receiver paths, empty-
  * list edge cases, and that a same-named method on a DIFFERENT type
  * (String/Dict/Bytes all also have "length") still dispatches
  * correctly through the guard's slow path rather than being
@@ -14,7 +14,7 @@ def proven_list_methods(n) {
     xs[i] = i * 2
   }
   /* xs is proven a list here (assigned once via list-repeat, never
-   * reassigned) -- length/first/last should all take the inline path */
+   * reassigned); length/first/last should all take the inline path */
   return xs.length() + xs.first() + xs.last() + (xs.is_empty() ? 1 : 0)
 }
 
@@ -35,7 +35,7 @@ def unproven_receiver_methods(flag) {
     xs = [9, 9]
   }
   /* xs is NOT proven a list (two different list literals from two
-   * branches) -- this exercises the runtime is_obj+tag guard, not the
+   * branches); this exercises the runtime is_obj+tag guard, not the
    * proven fast path */
   return xs.length() + xs.first() + xs.last()
 }
@@ -44,7 +44,7 @@ def same_name_different_types() {
   var s = "hello"
   var d = {"a": 1, "b": 2}
   var l = [1, 2, 3]
-  /* all three declare "length" -- the list intrinsic's guard must
+  /* all three declare "length"; the list intrinsic's guard must
    * never mistake a string or dict for a list */
   return s.length() + d.length() + l.length()
 }

@@ -1,5 +1,5 @@
 # Write-barrier coverage for the two JIT field-store fast paths, on
-# receivers that are genuinely OLD -- the case `gc-write-barrier-stress.zu`
+# receivers that are genuinely OLD; the case `gc-write-barrier-stress.zu`
 # does not reach.
 #
 # `Heap::forward_or_promote` returns immediately for any non-Young

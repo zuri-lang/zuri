@@ -613,7 +613,7 @@ class Parser < _Optionable {
     while i < cli_args.length() {
       var arg = cli_args[i]
 
-      # -- sentinel: everything from here on is positional
+      #; sentinel: everything from here on is positional
       if arg == '--' and !end_of_opts {
         end_of_opts = true
         i++

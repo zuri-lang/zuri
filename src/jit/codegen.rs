@@ -4,14 +4,14 @@
 //!
 //! - Every VM register is memory (`VM::registers`), addressed through a
 //!   pointer this function refreshes after any call that could resize
-//!   it -- never a Cranelift SSA value/`Variable` of its own. This is
+//!   it; never a Cranelift SSA value/`Variable` of its own. This is
 //!   what makes on-stack replacement, GC safepoints, and mixed-mode
 //!   calls all trivial instead of needing real deoptimization
 //!   machinery (see `jit::runtime`'s module docs for the full
 //!   reasoning).
 //! - One Cranelift `Block` per bytecode instruction index, so a
 //!   backward/forward `Instr::Jmp`-family target is always just "the
-//!   block at that index" -- no separate control-flow-graph
+//!   block at that index"; no separate control-flow-graph
 //!   reconstruction needed.
 //! - Only the NaN-boxing tag bits documented as stable in `value.rs`
 //!   (`QNAN`, `SIGN_BIT`, the nil/true/false tags) are ever hand-
@@ -41,16 +41,16 @@ use crate::vm::vm;
 /// since this is re-fetched at essentially every helper-call site.
 const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
 /// Where `publish_ip` writes this compiled frame's current bytecode
-/// position -- see `VM::jit_ip`.
+/// position: see `VM::jit_ip`.
 const JIT_IP_OFFSET: i32 = vm::VM_JIT_IP_OFFSET as i32;
-/// Byte offset of `VM::global_slots_ptr_cache` -- see that field's own
+/// Byte offset of `VM::global_slots_ptr_cache`: see that field's own
 /// docs and `emit_get_global`'s use of it.
 const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
-/// Byte offset of `VM::method_table_generation` -- see that field's own
+/// Byte offset of `VM::method_table_generation`: see that field's own
 /// docs and `emit_self_invoke`'s use of it.
 const METHOD_TABLE_GENERATION_OFFSET: i32 = vm::VM_METHOD_TABLE_GENERATION_OFFSET as i32;
 /// Byte offset (from a `*mut VM`) of the frame stack's own data
-/// pointer -- `VM_FRAMES_OFFSET + FRAMESTACK_PTR_OFFSET`, combined once
+/// pointer; `VM_FRAMES_OFFSET + FRAMESTACK_PTR_OFFSET`, combined once
 /// here so every call site just uses the finished number. See
 /// `emit_inline_call`'s own docs for what this backs.
 const FRAMES_PTR_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_PTR_OFFSET) as i32;
@@ -72,7 +72,7 @@ const JIT_PENDING_EXCEPTION_OFFSET: i32 = vm::VM_JIT_PENDING_EXCEPTION_OFFSET as
 /// Byte offset (from a `*mut VM`) of `VM::jit_call_depth`.
 const JIT_CALL_DEPTH_OFFSET: i32 = vm::VM_JIT_CALL_DEPTH_OFFSET as i32;
 /// Byte offsets of each `CallFrame` field, relative to one frame slot's
-/// own address (`frames_ptr + index * CALL_FRAME_SIZE`) -- see
+/// own address (`frames_ptr + index * CALL_FRAME_SIZE`): see
 /// `vm::CALL_FRAME_*_OFFSET`'s own docs.
 const CALL_FRAME_FUNCTION_OFFSET: i32 = vm::CALL_FRAME_FUNCTION_OFFSET as i32;
 const CALL_FRAME_CLOSURE_OFFSET: i32 = vm::CALL_FRAME_CLOSURE_OFFSET as i32;
@@ -84,14 +84,14 @@ const CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET: i32 = vm::CALL_FRAME_SCALAR_ROOTS_MAR
 const CALL_FRAME_COMPILED_OFFSET: i32 = vm::CALL_FRAME_COMPILED_OFFSET as i32;
 const CALL_FRAME_SIZE: i64 = vm::CALL_FRAME_SIZE as i64;
 /// Byte offset (from a `*const ObjFunction`) of its own compiled-entry
-/// cell -- see `object::obj_function_jit_entry_offset`'s own docs for
+/// cell: see `object::obj_function_jit_entry_offset`'s own docs for
 /// why `emit_inline_construct` reads this fresh on every call instead
 /// of baking it, unlike `emit_known_call`'s `entry`.
 const PROTO_JIT_ENTRY_OFFSET: i32 = object::obj_function_jit_entry_offset() as i32;
 /// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
-/// (major) and `young_bytes_allocated` (minor) -- lets `emit_safepoint`
+/// (major) and `young_bytes_allocated` (minor); lets `emit_safepoint`
 /// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
-/// (three loads + two compares -- the young threshold itself is a
+/// (three loads + two compares; the young threshold itself is a
 /// compile-time immediate, see `Heap::YOUNG_NEXT_GC`) instead of an
 /// unconditional FFI call on every loop back-edge and call site, only
 /// actually calling into Rust on the rare branch where a collection
@@ -104,13 +104,13 @@ const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
 
 /// Compiles `proto`'s bytecode into `fb`'s function body. Returns the
 /// bytecode-ip -> osr-id map (`CompiledFunction::osr_ids`) on success,
-/// or a human-readable ineligibility reason on failure -- the latter is
+/// or a human-readable ineligibility reason on failure; the latter is
 /// ALWAYS a permanent, sticky "never try this prototype again" signal
 /// (see `VM::try_compile`), never a transient error.
 ///
 /// `speculative_params` (bit `r` = fixed-arity parameter register `r`)
 /// is a ONE-SHOT type sample of the actual call that triggered this
-/// compilation (see `VM::try_compile`'s own docs) -- when non-empty, a
+/// compilation (see `VM::try_compile`'s own docs); when non-empty, a
 /// SECOND, specialized copy of the whole function body is compiled
 /// alongside the always-present general one, with those specific
 /// parameters treated as proven-numeric from entry (see
@@ -137,7 +137,7 @@ pub fn compile(
   // `Instr::Raise` on its own is different, and treating it the same way
   // was costing real time. A raise is almost always an error path --
   // `raise Error("bad task id")` guarding a lookup that never fails in
-  // practice -- but its mere presence disqualified the ENTIRE function,
+  // practice; but its mere presence disqualified the ENTIRE function,
   // including the hot path around it. Richards spent ~30% of its runtime
   // in the interpreter for exactly this reason: one unreachable `raise`
   // inside `findtcb`, which its hottest method calls per packet.
@@ -158,7 +158,7 @@ pub fn compile(
   }
   // A function's own register window is addressed with a `u8` offset
   // throughout the bytecode (`Instr`'s fields), and this compiler bakes
-  // register indices as plain `iconst` immediates -- nothing here
+  // register indices as plain `iconst` immediates; nothing here
   // relies on `num_registers` fitting some OTHER bound, this check just
   // documents the actual limit already implied by the bytecode format.
   if code_len > u32::MAX as usize {
@@ -188,18 +188,18 @@ pub fn compile(
 /// - `Clean`: the `Variable`'s current value is known to match
 ///   `VM::registers` exactly (nothing has diverged either direction).
 /// - `Dirty`: the `Variable` has been written (via `store_reg`) since
-///   the last time it matched memory -- a genuine `store_reg`-to-memory
+///   the last time it matched memory; a genuine `store_reg`-to-memory
 ///   is owed before any point that needs memory to be authoritative
 ///   (a call, a GC safepoint, a deopt, a return).
 /// - `Stale`: memory may have changed since the `Variable` was last
 ///   established (a call/safepoint just ran, and this register was
-///   live through it) -- the `Variable`'s value must NOT be trusted;
+///   live through it); the `Variable`'s value must NOT be trusted;
 ///   the next `load_reg` for it must issue a real memory load.
 ///
 /// `Clean` and `Dirty` are collapsed into ONE "trust the `Variable`"
-/// branch in `load_reg` -- they only differ in whether `flush_live`
+/// branch in `load_reg`; they only differ in whether `flush_live`
 /// still owes a write, never in whether a READ can trust the cache.
-/// A builtin native emitted inline -- see
+/// A builtin native emitted inline: see
 /// `FuncCompiler::native_intrinsic`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum NativeIntrinsic {
@@ -212,7 +212,7 @@ enum NativeIntrinsic {
 }
 
 /// Which floating-point operation an inlined body's arithmetic
-/// instruction maps to -- see `FuncCompiler::inline_arith`.
+/// instruction maps to: see `FuncCompiler::inline_arith`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum InlineArith {
   FAdd,
@@ -232,16 +232,16 @@ enum RegCache {
 /// A register's shape, proven for the WHOLE function body by a
 /// non-nullable, single-type `Instr::CheckParamType` on it plus a
 /// whole-bytecode scan proving nothing ever writes that register again
-/// -- see `FuncCompiler::compute_proven_shapes`'s own docs for exactly
+///: see `FuncCompiler::compute_proven_shapes`'s own docs for exactly
 /// what's required. Consulted by `emit_ic_guard` to skip a guard the
 /// caller already paid for once, at the parameter check. The `List`
 /// equivalent of this used to live here too, but is now
-/// `typeflow::ListFacts` -- a real per-`ip` dataflow proof, sound
+/// `typeflow::ListFacts`; a real per-`ip` dataflow proof, sound
 /// across arbitrary reassignment/branches/loops, not just this
-/// whole-function-scoped approximation -- see its own docs.
+/// whole-function-scoped approximation: see its own docs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ParamShape {
-  /// SOME instance -- not necessarily of the exact class a given
+  /// SOME instance; not necessarily of the exact class a given
   /// `GetField`/`SetField` site's own inline cache expects. Only
   /// removes the `is_obj`+tag half of that site's guard; the per-site
   /// class compare still runs exactly as before.
@@ -249,7 +249,7 @@ enum ParamShape {
 }
 
 /// A `Number` builtin the JIT emits directly instead of dispatching
-/// to -- see `FuncCompiler::emit_number_intrinsic` for why every one of
+/// to: see `FuncCompiler::emit_number_intrinsic` for why every one of
 /// these is an IDENTITY with what `builtins::number` computes, never an
 /// approximation of it.
 ///
@@ -259,12 +259,12 @@ enum ParamShape {
 ///   exactly matching IEEE-754 semantics. Compiles to one machine
 ///   instruction and nothing else.
 /// - `InlinePredicate`/`Sign`/`Int`: still no call, but a short fixed
-///   instruction sequence rather than a single opcode -- a comparison
+///   instruction sequence rather than a single opcode; a comparison
 ///   producing a `Value::bool`, or a `select` chain.
 /// - `Call`: no machine instruction computes it (every transcendental),
 ///   so this calls the SAME `f64` method `builtins::number` calls, via
 ///   a dedicated `jit::runtime` helper. The win here is not a faster
-///   `sin` -- it is the same `sin` -- it is skipping method resolution,
+///   `sin`; it is the same `sin`; it is skipping method resolution,
 ///   `builtins::lookup`'s string hash and `memcmp`, the per-call
 ///   argument `Vec`, and `VM::call_native` around it.
 ///
@@ -281,12 +281,12 @@ enum NumberIntrinsic {
   Inline(InlineOp),
   /// A comparison whose result becomes a `Value::bool`.
   InlinePredicate(PredicateOp),
-  /// `n.sign()` -- `-1`/`0`/`1` with a zero's own sign preserved, and
+  /// `n.sign()`; `-1`/`0`/`1` with a zero's own sign preserved, and
   /// `-1` for NaN (both comparisons below are false for NaN), matching
   /// `builtins::number::sign` exactly, which is deliberately NOT
   /// `f64::signum`.
   Sign,
-  /// `n.int()` -- Rust's `as i64` cast is saturating with NaN mapping
+  /// `n.int()`; Rust's `as i64` cast is saturating with NaN mapping
   /// to zero, which is precisely `fcvt_to_sint_sat`'s own definition.
   Int,
   /// A direct call to the named `jit::runtime` helper: `(vm, bits)` for
@@ -305,11 +305,11 @@ enum InlineOp {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum PredicateOp {
-  /// `x != x` -- true for exactly the NaNs.
+  /// `x != x`; true for exactly the NaNs.
   IsNan,
   /// `|x| == inf`.
   IsInf,
-  /// `|x| < inf` -- false for both infinities AND for NaN, matching
+  /// `|x| < inf`; false for both infinities AND for NaN, matching
   /// `f64::is_finite`.
   IsFinite,
   /// `builtins::number::to_bool`'s own rule: `n >= 0.0` (so NaN is
@@ -319,7 +319,7 @@ enum PredicateOp {
 
 impl NumberIntrinsic {
   /// How many arguments the call site must supply for `name` to be this
-  /// intrinsic -- checked by the caller before anything else, so e.g. a
+  /// intrinsic; checked by the caller before anything else, so e.g. a
   /// stray `x.sqrt(1)` falls through to the ordinary dispatch and gets
   /// the real arity error.
   fn arity(self) -> u8 {
@@ -468,7 +468,7 @@ impl InlineOp {
 /// couple of loads off the list header.
 ///
 /// Every variant here reads `Obj::List`'s own header fields (data
-/// pointer, length) -- never allocates, never can raise for a genuine
+/// pointer, length); never allocates, never can raise for a genuine
 /// list receiver, so there's nothing here shaped like
 /// `NumberIntrinsic::Call`; if a List method ever needs a real helper
 /// call (`.append()`, say), it'd need its own variant the same way
@@ -477,14 +477,14 @@ impl InlineOp {
 enum ListIntrinsic {
   Length,
   IsEmpty,
-  /// `nil` for an empty list -- matches `builtins::list::first`.
+  /// `nil` for an empty list; matches `builtins::list::first`.
   First,
-  /// `nil` for an empty list -- matches `builtins::list::last`.
+  /// `nil` for an empty list; matches `builtins::list::last`.
   Last,
 }
 
 impl ListIntrinsic {
-  /// Same role as `NumberIntrinsic::arity` -- every variant here is
+  /// Same role as `NumberIntrinsic::arity`; every variant here is
   /// zero-arg today, but kept as a real method (not a bare `0`) so a
   /// future variant that needs an argument doesn't have to touch the
   /// call site's own eligibility check.
@@ -503,7 +503,7 @@ impl ListIntrinsic {
   }
 }
 
-/// `ListIntrinsic`'s counterpart for a String receiver -- same
+/// `ListIntrinsic`'s counterpart for a String receiver; same
 /// reasoning (skip `builtins::lookup` and the generic invoke machinery
 /// for a method simple enough to read straight off the string's own
 /// header, via `object::obj_str_ptr_offset`/`obj_str_len_offset`).
@@ -511,24 +511,24 @@ impl ListIntrinsic {
 /// Only these two: every OTHER `STRING_METHODS` entry either allocates
 /// a new string (`upper`/`lower`/`trim`/`replace`/`split`/`join`/...)
 /// or needs real per-byte work beyond a length check (`is_alpha`,
-/// regex methods, ...) -- neither shape belongs here for the same
+/// regex methods, ...); neither shape belongs here for the same
 /// reason `NumberIntrinsic` excludes anything that allocates or can
 /// raise. `Length` still isn't a bare header load the way `ListIntrinsic
 /// ::Length` is, though: Zuri's `.length()` counts CODEPOINTS, not
 /// bytes, so it's the one variant here that compiles to a real loop
 /// (see `emit_string_intrinsic_value`) rather than a fixed instruction
-/// sequence -- still no allocation and no way to raise for a genuine
+/// sequence; still no allocation and no way to raise for a genuine
 /// string receiver, so it keeps the same "no safepoint owed" property
 /// every other intrinsic here has.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum StringIntrinsic {
   /// Codepoint count, matching `builtins::string::length` exactly
-  /// (`s.chars().count()`) -- NOT the byte length `obj_str_len_offset`
+  /// (`s.chars().count()`); NOT the byte length `obj_str_len_offset`
   /// reads directly.
   Length,
   /// Byte-length-zero, which is equivalent to codepoint-count-zero for
   /// any valid UTF-8 string (an empty byte sequence has no codepoints
-  /// and vice versa) -- so unlike `Length`, this needs no loop at all.
+  /// and vice versa); so unlike `Length`, this needs no loop at all.
   IsEmpty,
 }
 
@@ -552,36 +552,36 @@ struct FuncCompiler<'a, 'b> {
   module: &'a mut JITModule,
   helpers: &'a FxHashMap<&'static str, FuncId>,
   proto: &'a ObjFunction,
-  /// One block per bytecode instruction index -- `blocks[ip]` is where
+  /// One block per bytecode instruction index; `blocks[ip]` is where
   /// that instruction's own codegen begins, and the only valid jump
   /// target for anything (a `Jmp`-family instruction, or the OSR
   /// dispatch below) that wants to reach bytecode position `ip`.
   blocks: Vec<Block>,
-  /// Holds the CURRENT `VM::registers` base pointer -- see this file's
+  /// Holds the CURRENT `VM::registers` base pointer: see this file's
   /// module docs. Refreshed (via `refresh_regs`) after every call to a
   /// `jit::runtime` helper, since any of them can transitively push a
   /// deeper call frame and reallocate `VM::registers`.
   regs_var: Variable,
   vm_param: IrValue,
   /// This frame's absolute register-window start, as the RAW INDEX
-  /// (not multiplied by 8) -- what every helper call passes as `base`.
+  /// (not multiplied by 8); what every helper call passes as `base`.
   base_param: IrValue,
   /// `base_param * 8`, computed once in the entry block (which
   /// dominates every other block, so this `Value` stays valid
-  /// everywhere) -- the byte offset added to the current `regs_var`
+  /// everywhere); the byte offset added to the current `regs_var`
   /// pointer to address this frame's own registers directly.
   base_bytes: IrValue,
   closure_param: IrValue,
   osr_ids: FxHashMap<usize, i32>,
   /// Cached `SigRef` for `jit::EntryFn`'s own shape
-  /// (`(i64,i64,i64,i32)->i64`) -- imported at most once per compiled
+  /// (`(i64,i64,i64,i32)->i64`); imported at most once per compiled
   /// function (see `entry_sig_ref`), then reused by every
   /// `call_indirect` this function's own fast, inline-cache-style call
   /// sites need (`emit_fast_call`).
   entry_sig: Option<SigRef>,
   /// An 8-byte scratch stack slot, allocated at most once per compiled
   /// function and reused by every fast-call site
-  /// (`closure_out_addr`/`emit_fast_call`) -- the out-parameter
+  /// (`closure_out_addr`/`emit_fast_call`); the out-parameter
   /// `zuri_jit_call_prepare`/`zuri_jit_invoke_prepare` write the
   /// resolved callee closure's `Value` bits into, since (unlike
   /// `Instr::Call`, where the callee already sits in an ordinary
@@ -591,17 +591,17 @@ struct FuncCompiler<'a, 'b> {
   closure_out_slot: Option<StackSlot>,
   /// Same lazy-per-function pattern as `closure_out_slot`, for the
   /// list-index fast path's `zuri_jit_list_data` out-parameter (the
-  /// resolved list's current length -- see that function's own docs).
+  /// resolved list's current length: see that function's own docs).
   /// Which registers are PROVEN numeric at each bytecode position, for
   /// WHICHEVER body (general or specialized) is currently being
-  /// populated -- see `jit::typeflow`'s own docs and `run`'s two-pass
+  /// populated: see `jit::typeflow`'s own docs and `run`'s two-pass
   /// structure. Consulted before emitting any guarded arithmetic op:
   /// when every operand is proven, the guard and its slow-path
   /// fallback are skipped entirely (they'd never be taken), leaving
   /// unconditional straight-line float math.
   type_facts: typeflow::TypeFacts,
   /// Which registers are PROVEN to hold a whole-number-valued `f64`
-  /// (not just numeric) at each bytecode position -- see `jit::
+  /// (not just numeric) at each bytecode position: see `jit::
   /// typeflow::IntFacts`'s own docs. Consulted by `emit_list_get_index`/
   /// `emit_list_set_index` to skip the float-roundtrip "is this
   /// actually a whole number" check entirely for a plain loop-counter
@@ -610,21 +610,21 @@ struct FuncCompiler<'a, 'b> {
   /// and specialized body.
   int_facts: typeflow::IntFacts,
   /// Which registers are PROVEN to hold an `Obj::List` at each
-  /// bytecode position -- see `jit::typeflow::ListFacts`'s own docs.
+  /// bytecode position: see `jit::typeflow::ListFacts`'s own docs.
   /// Consulted by `emit_list_get_index`/`emit_list_set_index` (skips
   /// the object-shape half of the guard) and `ListIntrinsic` call
   /// sites (skips method-name lookup entirely). Same lifetime/scope
   /// as `type_facts`/`int_facts`.
   list_facts: typeflow::ListFacts,
   /// Which registers are PROVEN to hold a `Value::String` at each
-  /// bytecode position -- see `jit::typeflow::StringFacts`'s own docs.
+  /// bytecode position: see `jit::typeflow::StringFacts`'s own docs.
   /// Consulted by `Instr::Invoke` to route straight to `emit_string_
   /// invoke`, skipping the wasted `zuri_jit_invoke_prepare` attempt a
   /// String receiver can never satisfy. Same lifetime/scope as
   /// `type_facts`/`int_facts`/`list_facts`.
   string_facts: typeflow::StringFacts,
   /// Which registers are PROVEN to hold one exact, statically-known
-  /// `f64` constant at each bytecode position -- see `jit::typeflow::
+  /// `f64` constant at each bytecode position: see `jit::typeflow::
   /// ConstFacts`'s own docs. Consulted by `div_by_pow2_reciprocal` to
   /// see PAST a constant hoisted into a local and reused (e.g. across a
   /// loop's own divisions), not just an immediately-preceding
@@ -633,14 +633,14 @@ struct FuncCompiler<'a, 'b> {
   /// `typeflow::build_predecessors(proto)`, computed once here and
   /// shared by every dataflow pass that needs it (`type_facts`/
   /// `int_facts`/`list_facts`/`liveness`, and `merge_points`' own
-  /// predecessor counts in `run`) -- it depends only on `proto`'s
+  /// predecessor counts in `run`); it depends only on `proto`'s
   /// control flow, never on what any one of those passes is proving,
   /// so recomputing it per-pass was pure repeated work paid on every
   /// single JIT compile.
   preds: Vec<Vec<usize>>,
   /// A ONE-SHOT type sample of the call that triggered this
   /// compilation (bit `r` = fixed-arity parameter register `r` held a
-  /// number) -- `None` after filtering out an all-zero sample. See
+  /// number); `None` after filtering out an all-zero sample. See
   /// `compile`'s own docs and `emit_entry_dispatch`.
   speculative_params: Option<u64>,
   /// A ONE-SHOT, WHOLE-FRAME type sample taken at the same moment as
@@ -651,18 +651,18 @@ struct FuncCompiler<'a, 'b> {
   speculative_regs: Option<typeflow::SpeculativeRegs>,
   /// One persistent Cranelift `Variable` per bytecode register, live
   /// for the WHOLE compiled function (both the general and, if present,
-  /// specialized body -- see `run`'s own docs on why sharing them
+  /// specialized body: see `run`'s own docs on why sharing them
   /// across both is sound). Declared and eagerly initialized once, in
-  /// `run`, right after `base_bytes` is available -- see `load_reg`/
+  /// `run`, right after `base_bytes` is available: see `load_reg`/
   /// `store_reg` for how these replace the old "every register access
   /// is a real memory op" design, and `flush_live`/`mark_stale_live`
   /// for how a call/GC-safepoint/deopt/return still gets a fully
   /// memory-authoritative view exactly where one is actually needed.
   reg_vars: Vec<Variable>,
-  /// Parallel to `reg_vars` -- see `RegCache`'s own docs.
+  /// Parallel to `reg_vars`: see `RegCache`'s own docs.
   reg_cache: Vec<RegCache>,
   /// The bytecode position `emit_instruction` is CURRENTLY translating
-  /// -- set once at the top of every `emit_instruction` call, read by
+  ///; set once at the top of every `emit_instruction` call, read by
   /// `flush_live`/`mark_stale_live` (via `call_helper`'s own automatic
   /// wrapping) so every nested helper/`call_indirect` this one bytecode
   /// instruction's codegen might issue consults the SAME liveness
@@ -671,11 +671,11 @@ struct FuncCompiler<'a, 'b> {
   /// two).
   current_ip: usize,
   /// Which registers are live (per the standard `uses(ip) ∪
-  /// (live_out(ip) - defs(ip))` equation -- see `typeflow::liveness`'s
+  /// (live_out(ip) - defs(ip))` equation: see `typeflow::liveness`'s
   /// own docs) at every bytecode position, for THIS prototype's
   /// bytecode. Unlike `type_facts`, this doesn't depend on which body
-  /// (general/specialized) is currently being populated -- it's a pure
-  /// property of the bytecode's own shape -- so it's computed once and
+  /// (general/specialized) is currently being populated; it's a pure
+  /// property of the bytecode's own shape; so it's computed once and
   /// never swapped.
   liveness: typeflow::LivenessFacts,
   /// `true` for every bytecode position that's a genuine CFG join
@@ -685,7 +685,7 @@ struct FuncCompiler<'a, 'b> {
   /// `self.preds` can't see, since OSR dispatch lives entirely in
   /// `emit_entry_dispatch`, outside the ordinary bytecode CFG).
   /// `emit_instruction` forces every live register `Stale` right
-  /// before translating such an instruction -- see `reg_cache`'s own
+  /// before translating such an instruction: see `reg_cache`'s own
   /// docs for why a single linear compile-time walk cannot otherwise
   /// know which of several predecessors' cache states is actually true
   /// at a join point, and why treating it as untrustworthy there is the
@@ -695,7 +695,7 @@ struct FuncCompiler<'a, 'b> {
   merge_points: Vec<bool>,
   /// Field name -> slot index, for every field on `self`'s (register
   /// 0's) class that's safe to read/write directly, with no
-  /// `BoundMethod`-wrapping risk -- resolved once, before compilation
+  /// `BoundMethod`-wrapping risk; resolved once, before compilation
   /// starts, by `VM::resolve_self_field_slots` (which has the VM access
   /// this module deliberately never touches). Empty (not `None`) for a
   /// plain function or when resolution couldn't prove anything safe --
@@ -704,9 +704,9 @@ struct FuncCompiler<'a, 'b> {
   /// existed.
   self_field_slots: FxHashMap<String, u16>,
   /// `self_field_slots`' counterpart for a typed, non-`self` parameter
-  /// register -- see `jit::CompileFacts::param_field_slots`'s own docs.
+  /// register: see `jit::CompileFacts::param_field_slots`'s own docs.
   param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
-  /// This compiled function's OWN `FuncId` in `module` -- known before
+  /// This compiled function's OWN `FuncId` in `module`; known before
   /// codegen starts (the caller, `JitEngine::build_ir`, always declares
   /// it first). Lets `emit_call_instr`'s self-recursive case emit a
   /// genuine relocation-resolved direct `call` (via
@@ -714,7 +714,7 @@ struct FuncCompiler<'a, 'b> {
   /// indirect call through a runtime-loaded pointer.
   own_func_id: FuncId,
   /// `(self`'s own class as `Value` bits, the `VM::
-  /// method_table_generation` snapshot taken alongside it)` -- see
+  /// method_table_generation` snapshot taken alongside it)`: see
   /// `jit::CompileFacts::self_class_bits`'s own docs. `None` for a
   /// plain function or when `VM::resolve_self_class` couldn't prove
   /// anything.
@@ -726,7 +726,7 @@ struct FuncCompiler<'a, 'b> {
   /// Bytecode register -> (its backing stack slot, element count) for
   /// every `Instr::MakeList` this compile has scalar-replaced (proven
   /// non-escaping via `jit::escape::analyze_one`, with no `Move` ever
-  /// reading it -- see `scalar_replace_eligible`'s own docs for exactly
+  /// reading it: see `scalar_replace_eligible`'s own docs for exactly
   /// what that buys). Consulted by `Instr::GetIndex`/`SetIndex` to
   /// route to `emit_scalar_list_get`/`emit_scalar_list_set` instead of
   /// the general, real-`Obj::List`-assuming fast path. A register is
@@ -735,7 +735,7 @@ struct FuncCompiler<'a, 'b> {
   /// could ever need to reuse this register for something unrelated
   /// that would make a STALE entry here observably wrong).
   scalar_lists: FxHashMap<u8, (StackSlot, u8)>,
-  /// Per-construction-site class facts -- see
+  /// Per-construction-site class facts: see
   /// `jit::CompileFacts::construct_info`.
   construct_info: FxHashMap<usize, crate::jit::ConstructInfo>,
   /// Registers holding a SCALAR-REPLACED instance: the object was
@@ -755,17 +755,17 @@ struct FuncCompiler<'a, 'b> {
   /// is always inside the frame that executes it. So a function whose
   /// bytecode contains no `Instr::Closure` at all cannot have a single
   /// open upvalue pointing into its window, and its `Instr::Return`
-  /// has nothing to close -- a callee's own upvalues live at strictly
+  /// has nothing to close; a callee's own upvalues live at strictly
   /// higher indices and are already closed by that callee's return.
   ///
   /// Worth proving statically rather than letting the helper discover
   /// it at runtime: the close is emitted on EVERY return, and going
   /// through `call_checked` costs an ABI call, an error-status branch,
   /// and a full `refresh_regs` reload, all to walk an empty list. The
-  /// overwhelming majority of functions -- every one that never builds
-  /// a closure -- pay that on every single call for nothing.
+  /// overwhelming majority of functions; every one that never builds
+  /// a closure; pay that on every single call for nothing.
   frame_can_open_upvalues: bool,
-  /// Registers whose shape is proven for the whole function -- see
+  /// Registers whose shape is proven for the whole function: see
   /// `ParamShape`'s own docs and `compute_proven_shapes`. Computed
   /// once, in `new`, from the bytecode's own shape alone (not
   /// dependent on `type_facts`/`speculative_*`, unlike most of this
@@ -787,10 +787,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// - It's a LOCAL built from a list literal (`Instr::MakeList`) or a
   ///   list-repeat (`Instr::Mul` with an already-List left operand,
   ///   `[0] * n`'s own compiled shape) in the function's straight-line
-  ///   PROLOGUE -- every instruction from `ip` 0 up to the first
+  ///   PROLOGUE; every instruction from `ip` 0 up to the first
   ///   branch, which by construction is the only entry to any of them,
   ///   so nothing here needs a real dominance check to know they all
-  ///   run unconditionally, in order, before anything else -- and
+  ///   run unconditionally, in order, before anything else; and
   ///   nothing after the prologue ever writes that register again.
   ///   Multiple writes WITHIN the prologue are fine (only the last one
   ///   before it ends matters); this only cares whether anything past
@@ -805,7 +805,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Deliberately narrower than `type_facts`' own numeric analysis: a
   /// `number`/`int`-only, non-nullable check ALSO feeds `typeflow::
   /// transfer` directly (a real per-`ip` "must" fact, sound across
-  /// merges and loop back-edges) -- this function only needs to cover
+  /// merges and loop back-edges); this function only needs to cover
   /// the two shapes that dataflow doesn't, `List` and `Instance`, so it
   /// stays intentionally simple rather than duplicating that machinery.
   fn compute_proven_shapes(proto: &ObjFunction) -> FxHashMap<u8, ParamShape> {
@@ -875,7 +875,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       preds,
       speculative_params,
       speculative_regs,
-      // Populated in `run`, once `base_bytes` is available -- empty
+      // Populated in `run`, once `base_bytes` is available; empty
       // placeholders here are never actually read before that, since
       // `run` always executes before any `emit_instruction` call.
       reg_vars: Vec::new(),
@@ -934,8 +934,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// value PROVABLY a compile-time constant that's an exact power of
   /// two, so `x / b` can compile to `x * (1.0/b)` instead of a real
   /// `fdiv`? Sound because multiplying or dividing an IEEE-754 double
-  /// by a power of two only ever shifts its exponent -- the mantissa
-  /// is untouched either way -- so this is an EXACT rewrite, bit-for-
+  /// by a power of two only ever shifts its exponent; the mantissa
+  /// is untouched either way; so this is an EXACT rewrite, bit-for-
   /// bit identical to the division for every possible `x`, unlike the
   /// general "replace division by a multiplication by its reciprocal"
   /// trick (an approximation for an arbitrary constant, which this
@@ -944,14 +944,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// every mainstream x86/ARM core; `fmul` is single-cycle-throughput).
   ///
   /// Backed by `typeflow::ConstFacts`, a real "must be this exact
-  /// value" dataflow proof -- so this catches a constant hoisted into
+  /// value" dataflow proof; so this catches a constant hoisted into
   /// a local variable and reused across many divisions (e.g. every
   /// iteration of a loop dividing by the same hoisted constant), or one
   /// reached through a branch merge where every arm happens to load the
   /// identical literal, not just an immediately-preceding `LoadConst`.
   /// An earlier version of this check was exactly that narrower local
   /// check (no dataflow pass, just "is `code[ip-1]` this exact
-  /// `LoadConst`") -- `ConstFacts` is a strict superset of what it
+  /// `LoadConst`"); `ConstFacts` is a strict superset of what it
   /// could prove, so there was nothing left for it to do once this
   /// existed.
   fn div_by_pow2_reciprocal(&self, ip: usize, b: u8) -> Option<f64> {
@@ -961,7 +961,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
     // An exact power of two has a fully zero mantissa and a "normal"
     // (neither all-zero, which means a subnormal/zero, nor all-one,
-    // which means inf/NaN) exponent -- a real bit-level test, not a
+    // which means inf/NaN) exponent; a real bit-level test, not a
     // fuzzy `log2` comparison that could be fooled by rounding.
     let bits = value.to_bits();
     let mantissa = bits & 0x000F_FFFF_FFFF_FFFF;
@@ -974,7 +974,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   fn run(&mut self) -> Result<FxHashMap<usize, i32>, String> {
     // Discover every loop header (the target of a BACKWARD Instr::Jmp)
-    // and assign it a small dense integer id -- what `EntryFn`'s
+    // and assign it a small dense integer id; what `EntryFn`'s
     // `osr_id` parameter selects among.
     for (ip, instr) in self.proto.chunk.code.iter().enumerate() {
       if let Instr::Jmp { offset } = instr
@@ -993,7 +993,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     // See `merge_points`'s own docs. Needs `osr_ids` (just computed
     // above) as well as the ordinary bytecode CFG's own predecessor
-    // counts -- from `self.preds`, already computed once in `new`,
+    // counts; from `self.preds`, already computed once in `new`,
     // rather than a fresh `predecessor_counts` call recomputing the
     // identical predecessor graph again.
     self.merge_points = (0..self.preds.len())
@@ -1020,18 +1020,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // dominates every other block in the function, general body AND
     // specialized body alike, so a `Variable` declared/initialized here
     // is valid to `use_var` anywhere downstream) and eagerly loaded
-    // from whatever's ALREADY in `VM::registers` right now -- correct
+    // from whatever's ALREADY in `VM::registers` right now; correct
     // regardless of whether a given register is a real parameter
     // (holds the caller's actual argument) or a not-yet-defined local
     // (holds leftover bits from a previous frame that occupied this
-    // slot -- never observed by well-formed bytecode, since the
+    // slot; never observed by well-formed bytecode, since the
     // compiler only ever emits a read of a register that's already
     // been written on every path reaching it), and regardless of
     // whether this is an ordinary call OR an OSR jump into the middle
     // of an already-executing loop (the interpreter has been running
     // up to this exact point, so `VM::registers` already holds the
     // real, current values `load_reg`'s `Stale` branch below picks up
-    // fresh -- see its own docs). `load_reg` initializes each one via
+    // fresh: see its own docs). `load_reg` initializes each one via
     // its own existing `Stale` handling, so there's no separate
     // "eager load" code path to keep in sync with it.
     let num_regs = self.proto.num_registers as usize;
@@ -1044,14 +1044,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     // If speculating on EITHER function parameters or a mid-function
-    // value (`speculative_regs` -- see `jit::typeflow::SpeculativeRegs`),
+    // value (`speculative_regs`: see `jit::typeflow::SpeculativeRegs`),
     // allocate a SECOND set of blocks now (before the entry dispatch,
-    // which needs `specialized_blocks[0]` as a jump target) -- populated
+    // which needs `specialized_blocks[0]` as a jump target); populated
     // in a second pass below, after the general body. Creating a block
     // doesn't require switching into it, so this doesn't disturb
     // `entry_block`'s own not-yet-terminated state. Its type-facts are
     // computed HERE too (not lazily during the second pass, as before)
-    // -- `emit_entry_dispatch` needs them NOW to build a SOUND per-OSR-
+    //; `emit_entry_dispatch` needs them NOW to build a SOUND per-OSR-
     // target guard (see its own docs).
     let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> =
       if self.speculative_params.is_some() || self.speculative_regs.is_some() {
@@ -1075,7 +1075,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
 
     // Pass 1: the general body, exactly as before this function ever
-    // had a `speculative_params` concept -- `type_facts` was already
+    // had a `speculative_params` concept; `type_facts` was already
     // computed conservatively (seeded with nothing) in `new`.
     for ip in 0..self.blocks.len() {
       self.fb.switch_to_block(self.blocks[ip]);
@@ -1091,25 +1091,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
     }
 
-    // Pass 2: the specialized body, if any -- same instruction-
+    // Pass 2: the specialized body, if any; same instruction-
     // emission logic, just re-run against a SEPARATE block array and
     // the type-facts computed above. `emit_instruction`/every
     // `emit_*` helper only ever reference `self.blocks`/
     // `self.type_facts` generically, so swapping both fields and re-
-    // running the identical loop is sufficient -- no separate codegen
+    // running the identical loop is sufficient; no separate codegen
     // path needed.
     if let Some((spec_blocks, spec_facts)) = specialized {
       self.type_facts = spec_facts;
       // `specialized_blocks[0]` (and every OSR route into the
       // specialized body) is reached directly from `entry_block`'s own
       // dispatch guards, NEVER from any block pass 1 just finished
-      // populating -- pass 1's blocks are a sibling subgraph, not an
+      // populating; pass 1's blocks are a sibling subgraph, not an
       // ancestor, so Cranelift's own SSA dominance already resolves a
       // `use_var` at the start of the specialized body straight back
       // to entry_block's eager initialization above, regardless of
       // whatever pass 1 did to `reg_cache`. Resetting to `Clean` here
       // makes this compiler's OWN bookkeeping match that same fact
-      // (matching memory, not stale) -- see `RegCache`'s own docs.
+      // (matching memory, not stale): see `RegCache`'s own docs.
       self.reg_cache = vec![RegCache::Clean; self.reg_vars.len()];
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       let code_len = self.blocks.len();
@@ -1125,12 +1125,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // is one `speculative_regs` bet on AND the dataflow proof
         // confirms that bet is still live heading into `ip + 1` (not
         // immediately merged away by some other, unrelated predecessor
-        // edge into `ip + 1` -- see `emit_speculative_guard`'s own
+        // edge into `ip + 1`: see `emit_speculative_guard`'s own
         // docs), plant a real runtime guard here instead of an
         // unconditional jump: re-validate the ACTUAL value this
         // instruction just computed, continue in the specialized body
         // on a match, or deoptimize to the interpreter at `ip + 1` on
-        // a mismatch (see `emit_deopt`) -- exactly the entry-guard
+        // a mismatch (see `emit_deopt`); exactly the entry-guard
         // pattern already used for parameters/OSR, just triggered at
         // an ordinary mid-function definition site instead of an
         // external entry point, and bailing out to the interpreter
@@ -1144,7 +1144,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
       // `osr_ids` (returned to the caller) indexes into the GENERAL
       // block set by construction (computed before either pass ran,
-      // from `self.blocks` as it was BEFORE this swap) -- restore it
+      // from `self.blocks` as it was BEFORE this swap); restore it
       // so nothing downstream of `run` needs to know a swap ever
       // happened.
       self.blocks = general_blocks;
@@ -1153,12 +1153,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Every block's predecessors are now fully known (every `jump`/
     // `brif`/`call_indirect`-adjacent branch this function will ever
     // emit, including every loop's own back-edge, has already been
-    // added above) -- only NOW is it sound to seal them all at once.
+    // added above); only NOW is it sound to seal them all at once.
     // This matters specifically because of `reg_vars`: unlike
     // `regs_var` (always freshly `def_var`'d within the SAME block as
     // any `use_var` of it, so it never actually depended on cross-
     // block SSA resolution), a bytecode register's `Variable` is
-    // genuinely defined in one block and read in another -- including
+    // genuinely defined in one block and read in another; including
     // across a loop back-edge, where the LATER-compiled block (the
     // back-edge's own source) adds a NEW predecessor edge to a block
     // (the loop header) that was already fully populated earlier in
@@ -1176,28 +1176,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `osr_param == -1` -> ordinary entry; `osr_param == id` -> jump
   /// straight into `blocks[ip]` for whichever `ip` that `id` was
   /// assigned to in `run`. A linear compare chain (not a `br_table`)
-  /// -- the number of loop headers in one function is always small,
+  ///; the number of loop headers in one function is always small,
   /// and this avoids depending on `JumpTableData`'s exact API for
   /// what's a cold, one-time-per-call dispatch anyway.
   ///
   /// If `specialized` is `Some((blocks, facts))`, EVERY entry point
   /// (ordinary AND each OSR target) gets its own guard picking between
   /// the specialized and general body, built from `facts.numeric_mask_at`
-  /// AT THAT SPECIFIC bytecode position -- not from a single fixed
+  /// AT THAT SPECIFIC bytecode position; not from a single fixed
   /// mask re-checked everywhere. This is the sound way to validate an
   /// OSR jump straight into the MIDDLE of the specialized body: at
   /// `ip == 0` `numeric_mask_at` is exactly the original speculated
   /// parameter mask (so ordinary entry is unaffected by this
   /// generalization), but at any OTHER `ip` it's whatever the SAME
   /// dataflow proof actually established is live and provably numeric
-  /// AT THAT POINT -- precisely the claim the code there is about to
+  /// AT THAT POINT; precisely the claim the code there is about to
   /// rely on, re-validated against real, current register values. See
   /// `typeflow::TypeFacts::numeric_mask_at`'s own docs for why
   /// re-checking the ORIGINAL entry mask at a later `ip` instead would
   /// NOT be sound (a speculated register can be reassigned between
   /// entry and that point in a way a same-register recheck can't see).
   /// An OSR target where NOTHING is provably numeric (the mask is
-  /// empty -- the loop never touches the speculated value at all)
+  /// empty; the loop never touches the speculated value at all)
   /// skips the guard and routes straight to the general body: the
   /// specialized block there would be behaviorally identical anyway.
   fn emit_entry_dispatch(
@@ -1221,7 +1221,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     targets.sort_by_key(|&(id, _)| id);
 
     // (route_block, target_ip) pairs to populate AFTER the compare
-    // chain is fully laid out -- keeps every `switch_to_block` call
+    // chain is fully laid out; keeps every `switch_to_block` call
     // for the chain itself contiguous, matching the original
     // structure, with route-block bodies filled in afterward.
     let mut routes: Vec<(Block, usize)> = Vec::new();
@@ -1248,7 +1248,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     // Defensive fallback for an `osr_id` that matches none of the
-    // known loop headers -- unreachable in practice (`VM::maybe_osr`
+    // known loop headers; unreachable in practice (`VM::maybe_osr`
     // only ever passes an id it read out of THIS SAME function's own
     // `osr_ids` map), but falling through to the ordinary entry (`ip
     // 0`, general OR specialized per that route's own guard) is a
@@ -1266,12 +1266,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             // Nothing is proven AT this exact entry point, but the
             // specialized body may still contain its own, INDEPENDENT
             // mid-function speculative guards further along (see
-            // `emit_speculative_guard`) -- route into it unconditionally
+            // `emit_speculative_guard`); route into it unconditionally
             // rather than skipping straight to general, so ordinary
             // (non-OSR) execution still reaches them. When only
             // parameter speculation is in play (`speculative_regs` is
             // `None`), `spec_blocks[ip]` onward is behaviorally
-            // identical to `self.blocks[ip]` in this case -- exactly
+            // identical to `self.blocks[ip]` in this case; exactly
             // the reasoning that already justified the unconditional
             // general jump below, still applies whenever there's no
             // OTHER kind of speculation that could benefit downstream.
@@ -1308,18 +1308,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// destination register is one the profiling sample bet on
   /// (`speculative_regs`) AND the dataflow proof confirms that bet is
   /// still live heading into `ip + 1` (`self.type_facts`, computed with
-  /// `speculative_regs` folded in -- see `jit::typeflow::SpeculativeRegs`),
+  /// `speculative_regs` folded in: see `jit::typeflow::SpeculativeRegs`),
   /// re-validates the ACTUAL value `instr` just computed and either
   /// continues into `spec_next` (the specialized body's own block for
   /// `ip + 1`) on a match, or deoptimizes to the interpreter at `ip + 1`
   /// (see `emit_deopt`) on a mismatch. Returns `true` iff it terminated
-  /// the current block this way -- the caller emits its own
+  /// the current block this way; the caller emits its own
   /// unconditional jump to `spec_next` when this returns `false`
   /// (nothing to guard here).
   ///
   /// Used to cross-jump into the general body's own block for this same
   /// `ip + 1` instead, back when this guard predates real
-  /// deoptimization -- that was ALSO sound (neither body ever carries
+  /// deoptimization; that was ALSO sound (neither body ever carries
   /// state across an instruction boundary as a Cranelift SSA value, so
   /// resuming general-body translation needed no reconciliation
   /// either), but strictly less general: it only ever worked because a
@@ -1330,12 +1330,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       return false;
     };
     // A scalar-replaced list's `dst` is deliberately never materialized
-    // as a real `Value` at all -- `emit_scalar_make_list` never calls
+    // as a real `Value` at all; `emit_scalar_make_list` never calls
     // `store_reg` for it, since the whole point is that no tagged
     // `Value` for this register exists anywhere (see its own docs).
     // `load_reg(dst)` below would therefore read whatever stale or
     // uninitialized bits happen to sit in that Cranelift `Variable`,
-    // not a genuine value to validate -- and if `speculative_regs`
+    // not a genuine value to validate; and if `speculative_regs`
     // happened to (wrongly, but plausibly, since it's a one-shot sample
     // of a DIFFERENT execution of this same register number elsewhere
     // in the function) bet this register numeric, `type_facts` would
@@ -1359,7 +1359,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // `emit_deopt` below flushes the deopt edge itself; the fast edge
     // to `spec_next` (a possible merge point, e.g. a loop header) needs
     // the same predecessor-side flush every other forward branch into
-    // a merge point gets -- see `flush_before_jump`'s own docs.
+    // a merge point gets: see `flush_before_jump`'s own docs.
     self.flush_before_jump(ip + 1);
     self.fb.ins().brif(is_num, spec_next, &[], deopt_block, &[]);
     self.fb.switch_to_block(deopt_block);
@@ -1368,12 +1368,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// Real deoptimization: flushes every register live at the RESUME
-  /// point (`ip` -- NOT `self.current_ip`, which is wherever the guard
+  /// point (`ip`; NOT `self.current_ip`, which is wherever the guard
   /// that triggered this deopt happens to sit; `ip` is where the
   /// interpreter picks up from, e.g. `emit_speculative_guard` deopts to
   /// `ip + 1`) to real `VM::registers` memory, calls `zuri_jit_deopt` to
   /// record `ip` itself, then immediately returns from the WHOLE
-  /// compiled function -- never falls through to more translated
+  /// compiled function; never falls through to more translated
   /// instructions afterward, so there's no need to mark anything
   /// `Stale` afterward the way `call_helper` does. The returned value is
   /// never observed (`VM::invoke_compiled` checks `pending_deopt_ip`
@@ -1381,18 +1381,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `0` here costs nothing.
   ///
   /// Goes through `call_helper_raw`, NOT the auto-flushing
-  /// `call_helper` -- that wrapper flushes against `self.current_ip`,
+  /// `call_helper`; that wrapper flushes against `self.current_ip`,
   /// which is the WRONG bytecode position for a deopt (the guard site,
   /// not the resume site); flushing here is explicit, against the
   /// correct `ip`, instead.
   ///
   /// Leaves `reg_cache` EXACTLY as it found it. This block always ends
-  /// in a `return_`, so nothing downstream is a successor of it -- yet
+  /// in a `return_`, so nothing downstream is a successor of it; yet
   /// `flush_live` above is a real mutation of this compiler's own
   /// compile-time bookkeeping, marking every register it wrote `Clean`
   /// ("memory already agrees"). Translation continues afterwards on the
-  /// SIBLING edge -- the guard's fall-through, which never executed any
-  /// of those stores -- so letting that `Clean` escape tells the rest of
+  /// SIBLING edge; the guard's fall-through, which never executed any
+  /// of those stores; so letting that `Clean` escape tells the rest of
   /// the function memory holds values it does not. The register then
   /// gets skipped by a later `flush_live` (its write is silently
   /// dropped) or, worse, downgraded to `Stale` by a later
@@ -1400,7 +1400,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// resurrecting a value several instructions stale.
   ///
   /// This is the same bug class `restore_dirty_from_snapshot` closes
-  /// for the guarded-arithmetic fast/slow split -- a branch that may
+  /// for the guarded-arithmetic fast/slow split; a branch that may
   /// never run at runtime mutating state shared with one that does.
   /// Handled here rather than at the call site so it stays closed for
   /// any future guard that deopts from inside one arm of a branch.
@@ -1430,7 +1430,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// A real memory read of register `r`, bypassing the `Variable`
-  /// cache -- used only by `load_reg`'s `Stale` branch, where a genuine
+  /// cache; used only by `load_reg`'s `Stale` branch, where a genuine
   /// reload is owed. See this module's docs for why every other
   /// register access goes through `load_reg`/`store_reg` instead.
   fn load_reg_mem(&mut self, r: u8) -> IrValue {
@@ -1444,7 +1444,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// A real memory write of register `r`, bypassing the `Variable`
-  /// cache -- used only by `flush_live`, which owes memory a write for
+  /// cache; used only by `flush_live`, which owes memory a write for
   /// every live `Dirty` register right before a genuine sync point (a
   /// call, a GC safepoint, a deopt, a return).
   fn store_reg_mem(&mut self, r: u8, v: IrValue) {
@@ -1455,12 +1455,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
   }
 
-  /// Reads bytecode register `r`'s CURRENT value -- a plain `use_var`
+  /// Reads bytecode register `r`'s CURRENT value; a plain `use_var`
   /// against its persistent `Variable` (see `reg_vars`) the overwhelming
   /// majority of the time, letting Cranelift's own optimizer/register
   /// allocator treat it as a real SSA value with no memory traffic at
   /// all. Only actually touches memory when `reg_cache[r]` says
-  /// `Stale` -- a call/GC-safepoint/deopt this register was live
+  /// `Stale`; a call/GC-safepoint/deopt this register was live
   /// through just ran, so the `Variable`'s last-known value can no
   /// longer be trusted (a moving collection could have relocated a
   /// pointer stored here, for instance) and a fresh read is owed before
@@ -1478,7 +1478,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// Writes bytecode register `r`'s CURRENT value -- a plain `def_var`
+  /// Writes bytecode register `r`'s CURRENT value; a plain `def_var`
   /// against its persistent `Variable`, no memory traffic. Marks the
   /// register `Dirty`: memory doesn't reflect this write yet, and won't
   /// until `flush_live` runs (right before the next genuine sync
@@ -1488,7 +1488,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.reg_cache[r as usize] = RegCache::Dirty;
     // A register the bytecode compiler reused for a DIFFERENT, later
     // local variable is no longer the scalar-replaced allocation
-    // `scalar_lists` might still be tracking it as -- see that field's
+    // `scalar_lists` might still be tracking it as: see that field's
     // own docs. `scalar_replace_eligible`'s "no `Move` ever reads it"
     // requirement means nothing SAFE could have relied on this entry
     // surviving past its own last real use anyway, so removing it
@@ -1503,7 +1503,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Writes real `VM::registers` memory for every register that's both
   /// (a) live at bytecode position `ip` and (b) currently `Dirty`.
   /// Called automatically by `call_helper` (and explicitly wherever a
-  /// sync point doesn't go through it -- see `emit_deopt`, and the
+  /// sync point doesn't go through it: see `emit_deopt`, and the
   /// `call_indirect` fast-call site in `emit_fast_call`) immediately
   /// BEFORE the actual call/branch, so whatever Rust/native code, the
   /// interpreter, or a GC root scan is about to run sees a fully
@@ -1534,19 +1534,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// Flushes, in the CURRENT block, every register that's both Dirty
-  /// and live-into `target_ip` -- called right before emitting a
+  /// and live-into `target_ip`; called right before emitting a
   /// FORWARD branch/fallthrough into a genuine merge point (`Instr::
   /// Jmp`'s forward case, `JmpIfFalse`/`JmpIfTrue`'s targets, and the
   /// automatic fallthrough `run`'s own driver loop appends for a non-
   /// terminated instruction). This is the ONLY place a merge point's
   /// "the fall-through/forward edge might carry an unflushed Dirty
-  /// value" case gets handled -- deliberately NOT inside the merge
+  /// value" case gets handled; deliberately NOT inside the merge
   /// block itself (see `emit_instruction`'s own docs on why that's
   /// actively unsound for any merge point that's also a loop header:
   /// `use_var` there would resolve, on the BACK edge specifically, to
   /// whatever Cranelift's own SSA construction is holding in a machine
-  /// register/spill slot for that `Variable` -- a location GC has zero
-  /// visibility into and cannot fix up -- and writing THAT back over
+  /// register/spill slot for that `Variable`; a location GC has zero
+  /// visibility into and cannot fix up; and writing THAT back over
   /// memory can clobber a relocation `emit_safepoint`'s own call just
   /// performed moments earlier, using the CORRECT, already-flushed
   /// value). The back edge needs no separate handling here: it always
@@ -1560,7 +1560,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // instruction: a branch that's dead code because it immediately
     // follows an unconditional `Return` (e.g. the "skip past `else`"
     // jump after a `then` arm that already returned) still gets
-    // compiled -- nothing proves it unreachable before codegen runs --
+    // compiled; nothing proves it unreachable before codegen runs --
     // but there's no guarantee anything was emitted after it for its
     // target to land on. Nothing needs flushing for a target that
     // doesn't exist.
@@ -1571,14 +1571,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// The block a jump to `target_ip` should branch into. See
   /// `flush_before_jump`'s docs for why `target_ip` can land one past
-  /// the last real instruction -- that's genuinely dead code (nothing
+  /// the last real instruction; that's genuinely dead code (nothing
   /// can fall through into a branch sitting right after an
   /// unconditional `Return`), so which block it names doesn't matter
   /// at runtime; it only has to be a valid one for Cranelift's sake.
   /// Its own block, an unconditional jump to itself, is that: sound
   /// specifically because it can never actually be entered.
   fn jump_target_block(&self, ip: usize, target_ip: usize) -> Block {
-    self.blocks.get(target_ip).copied().unwrap_or(self.blocks[ip])
+    self
+      .blocks
+      .get(target_ip)
+      .copied()
+      .unwrap_or(self.blocks[ip])
   }
 
   /// Snapshots `reg_cache` before a guarded instruction's own internal
@@ -1591,15 +1595,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Undoes a specific, confirmed-real bug class: the slow path of a
   /// guarded instruction (`emit_binary_numeric_guarded` and its
   /// siblings) calls its helper through `call_checked`/`call_helper`,
-  /// which -- entirely correctly FOR THAT CALL SITE -- flushes and
+  /// which; entirely correctly FOR THAT CALL SITE; flushes and
   /// stale-marks every register live at `self.current_ip` (this WHOLE
   /// instruction's own bytecode position), not just `a`/`b`/`dst`. That
   /// breadth is fine for a call that ALWAYS executes; it's wrong here,
   /// because the slow path is one arm of a runtime branch the fast path
   /// (which never flushes anything) might take instead. Cranelift
   /// compiles BOTH arms unconditionally, so this compiler's OWN
-  /// `reg_cache` bookkeeping -- despite being purely compile-time state
-  /// -- got mutated by code that may never execute at runtime, for
+  /// `reg_cache` bookkeeping; despite being purely compile-time state
+  ///; got mutated by code that may never execute at runtime, for
   /// registers this instruction has no business touching at all (e.g.
   /// a completely unrelated call argument two instructions away that
   /// merely happened to share a live range with this one). Confirmed by
@@ -1617,7 +1621,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// and is anything else now. This is always safe to do even when the
   /// slow path DID run at runtime: `Dirty` only means "the next
   /// sync point must flush this before trusting memory," never "this
-  /// value is wrong" -- `reg_vars[r]` itself was never touched by
+  /// value is wrong"; `reg_vars[r]` itself was never touched by
   /// either arm, so `use_var` still returns the correct value either
   /// way, just possibly triggering one harmless redundant future flush.
   fn restore_dirty_from_snapshot(&mut self, before: &[RegCache], dst: u8) {
@@ -1643,7 +1647,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// Direct load of `VM::regs_ptr_cache` at its compile-time-baked
-  /// offset -- no FFI call. Sound as long as every reallocation of
+  /// offset; no FFI call. Sound as long as every reallocation of
   /// `VM::registers` keeps that cache in sync, which is `VM`'s own
   /// invariant (see `VM::sync_regs_ptr_cache`), not something this
   /// compiler needs to re-establish.
@@ -1674,13 +1678,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// Bakes `proto.chunk.constants[idx]`'s raw `Value` bits as an
-  /// immediate -- see this module's docs on why this never needs a
+  /// immediate: see this module's docs on why this never needs a
   /// runtime `chunk.constants[idx]` load. Sound specifically because
   /// `Compiler` allocates every object-typed constant (strings,
   /// bigints, nested function prototypes) via `Heap::alloc_old`/
   /// `alloc_function`, NEVER the young-generation nursery a minor
   /// collection can relocate out from under an already-baked
-  /// immediate with no way to fix it back up -- see those functions'
+  /// immediate with no way to fix it back up: see those functions'
   /// own docs. A plain number/nil/bool constant has no address to go
   /// stale in the first place.
   fn bake_const(&mut self, idx: u16) -> IrValue {
@@ -1695,7 +1699,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// A stable pointer to the CURRENTLY COMPILING `ObjFunction` itself,
-  /// baked as an immediate -- sound because `Heap::alloc_function`
+  /// baked as an immediate; sound because `Heap::alloc_function`
   /// always allocates directly into old-generation storage (see its
   /// own docs on why a moving young generation makes that necessary),
   /// so `proto`'s address is fixed for its whole life, and `proto`
@@ -1709,7 +1713,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   // Helper calls
   // ---------------------------------------------------------------
 
-  /// The REAL call instruction -- no register-cache bookkeeping at all.
+  /// The REAL call instruction; no register-cache bookkeeping at all.
   /// Used directly ONLY by `call_helper` (below) and `emit_deopt`
   /// (which needs to flush against the DEOPT TARGET ip, not
   /// `self.current_ip`, so it can't go through the automatic wrapper --
@@ -1726,7 +1730,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `call_helper_raw`, automatically bracketed with `flush_live`/
-  /// `mark_stale_live` against `self.current_ip` -- the register-cache
+  /// `mark_stale_live` against `self.current_ip`; the register-cache
   /// half of "every helper call is conservatively treated as a genuine
   /// sync point" (the OTHER half, `refresh_regs`'s pointer refresh, is
   /// unchanged and still each call site's own responsibility, exactly
@@ -1735,7 +1739,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_safepoint`/`UsingJump`'s own codegen, means every one of
   /// this file's ~40 call sites gets correct treatment automatically,
   /// keyed off whichever bytecode instruction is currently being
-  /// translated -- see `current_ip`'s own docs.
+  /// translated: see `current_ip`'s own docs.
   fn call_helper(&mut self, name: &str, args: &[IrValue]) -> IrValue {
     self.publish_ip();
     self.flush_live(self.current_ip);
@@ -1749,7 +1753,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // the helpers this call reaches (`zuri_jit_get_global`,
     // `zuri_jit_call_finish`, `zuri_jit_get_field`, ...) write their
     // result DIRECTLY to `VM::registers[base+dst]` on the Rust side,
-    // completely bypassing `store_reg`/`reg_cache` -- meaning the
+    // completely bypassing `store_reg`/`reg_cache`; meaning the
     // JIT-generated Cranelift `Variable` for `dst` (whatever it held
     // BEFORE this call, possibly stale garbage from a previous
     // definition or even function entry) would otherwise never get
@@ -1763,7 +1767,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.reg_cache[dst as usize] = RegCache::Stale;
       // Same reasoning as `store_reg`'s identical line: this register
       // is being freshly (re)defined, by a DIFFERENT mechanism than
-      // `store_reg` but just as much a real write -- any stale
+      // `store_reg` but just as much a real write; any stale
       // `scalar_lists` entry for it needs to go.
       self.scalar_lists.remove(&dst);
       self.scalar_instances.remove(&dst);
@@ -1780,8 +1784,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// ways a compiled frame's position ever becomes observable are
   /// raising an error and becoming the caller of a new frame, and
   /// BOTH happen inside a `jit::runtime` helper. So publishing once per
-  /// helper call -- a single store of an immediate to a fixed `VM`
-  /// offset, on a path that is already paying for an FFI call -- covers
+  /// helper call; a single store of an immediate to a fixed `VM`
+  /// offset, on a path that is already paying for an FFI call; covers
   /// every observable case at a small fraction of the interpreter's
   /// cost. `emit_safepoint`'s own `call_helper_raw` is deliberately not
   /// included: a collection raises nothing and pushes no frame.
@@ -1806,7 +1810,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// from the WHOLE compiled function (the error is already sitting
   /// in `VM::jit_pending_error`, ready for `VM::invoke_compiled` to
   /// pick up) rather than continuing this instruction's own codegen.
-  /// Always refreshes the registers pointer afterward -- see this
+  /// Always refreshes the registers pointer afterward: see this
   /// module's docs on why every helper call is conservatively treated
   /// as potentially frame-pushing.
   fn call_checked(&mut self, name: &str, args: &[IrValue]) {
@@ -1825,7 +1829,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.refresh_regs();
   }
 
-  /// `SigRef` for `jit::EntryFn`'s own call shape -- what every fast-
+  /// `SigRef` for `jit::EntryFn`'s own call shape; what every fast-
   /// path `call_indirect` in `emit_fast_call` targets. Imported at most
   /// once per compiled function and cached, since it's the exact same
   /// shape at every call site.
@@ -1845,7 +1849,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// The 8-byte scratch stack slot `prepare` helpers write the resolved
-  /// callee closure's `Value` bits into -- see `closure_out_slot`'s own
+  /// callee closure's `Value` bits into: see `closure_out_slot`'s own
   /// docs. Allocated at most once per compiled function.
   fn closure_out_slot(&mut self) -> StackSlot {
     if let Some(slot) = self.closure_out_slot {
@@ -1862,7 +1866,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Inlines `zuri_jit_direct_call_prepare`'s job for a callee whose
   /// `arity`/`variadic`/`num_registers` are already compile-time
   /// constants (self-recursion, or a `CallTarget::Known` callee once
-  /// its value-identity guard has passed) -- see this module's own docs
+  /// its value-identity guard has passed): see this module's own docs
   /// for the profiling that motivated this: `zuri_jit_direct_call_
   /// prepare`/`zuri_jit_call_finish` alone were measured at ~19% of a
   /// call-heavy benchmark's total runtime, almost entirely the fixed
@@ -1873,7 +1877,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// calling this: `!callee_variadic && num_args == callee_arity`,
   /// exactly `VM::setup_closure_call`'s own fast-path gate (see
   /// `push_frame_fast`), just decided once here instead of freshly on
-  /// every call. There is no runtime check for it -- an ineligible
+  /// every call. There is no runtime check for it; an ineligible
   /// callee must never reach this function at all, and instead keep
   /// using the unaccelerated `zuri_jit_direct_call_prepare` helper,
   /// unchanged.
@@ -1881,23 +1885,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Three runtime conditions still gate the fast path, each rare once
   /// a hot call site reaches its steady state and each falling to
   /// `slow_block` (the caller's own, ordinary `zuri_jit_call` fallback
-  /// -- fully general and always correct, just unaccelerated for this
+  ///; fully general and always correct, just unaccelerated for this
   /// one call): JIT call depth exhausted, the callee's register window
   /// doesn't already fit `VM::registers`, or the frame stack doesn't
   /// already have spare capacity. None of these three needs a "grow and
-  /// continue inline" path -- deferring to the ordinary slow call for
+  /// continue inline" path; deferring to the ordinary slow call for
   /// the rare call that actually needs to grow something is simpler and
   /// no less correct than reimplementing `Vec`-style growth here too.
   ///
   /// On success, this frame's `compiled` flag is set to `true` directly
   /// as part of constructing it (no separate `mark_top_frame_compiled`
   /// call), `VM::jit_call_depth` is incremented, and `publish_ip` is
-  /// called explicitly -- both of those happen for free inside
+  /// called explicitly; both of those happen for free inside
   /// `call_helper`/`call_checked` normally, but this function doesn't
   /// go through either, so the caller must not ALSO call them.
   /// The three runtime preconditions `emit_inline_frame_push` (and the
   /// construct path's own inline fast path) both need verified BEFORE
-  /// doing anything irreversible -- JIT call depth, the callee's
+  /// doing anything irreversible; JIT call depth, the callee's
   /// register window already fitting, and the frame stack already
   /// having spare capacity. Split out specifically so a caller that
   /// ALSO needs to do its own side effect between "these hold" and
@@ -1908,7 +1912,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// precondition is confirmed. See `emit_inline_construct`'s own docs
   /// for exactly why this ordering matters there.
   ///
-  /// Returns `(depth, frames_len)` -- both already loaded as part of
+  /// Returns `(depth, frames_len)`; both already loaded as part of
   /// the checks, and both needed again by the frame construction that
   /// follows, so callers reuse them instead of reloading.
   fn emit_call_checks(
@@ -1924,7 +1928,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .load(types::I32, flags, vm, JIT_CALL_DEPTH_OFFSET);
-    let max_depth = self.fb.ins().iconst(types::I32, vm::JIT_MAX_CALL_DEPTH as i64);
+    let max_depth = self
+      .fb
+      .ins()
+      .iconst(types::I32, vm::JIT_MAX_CALL_DEPTH as i64);
     let depth_ok = self
       .fb
       .ins()
@@ -1997,7 +2004,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// bump, factored out of `emit_inline_frame_push` so
   /// `emit_inline_construct` can reuse it AFTER its own allocation step,
   /// using the `(depth, frames_len)` `emit_call_checks` already
-  /// verified and returned -- every precondition for this to be safe
+  /// verified and returned; every precondition for this to be safe
   /// was already confirmed by whichever `emit_call_checks` call led
   /// here.
   fn emit_frame_construction(
@@ -2042,12 +2049,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .store(flags, new_base, frame_addr, CALL_FRAME_BASE_OFFSET);
     let dst_c = self.fb.ins().iconst(types::I8, dst as i64);
-    self.fb.ins().store(
-      flags,
-      dst_c,
-      frame_addr,
-      CALL_FRAME_DST_IN_CALLER_OFFSET,
-    );
+    self
+      .fb
+      .ins()
+      .store(flags, dst_c, frame_addr, CALL_FRAME_DST_IN_CALLER_OFFSET);
     let scalar_mark = self
       .fb
       .ins()
@@ -2079,7 +2084,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.publish_ip();
   }
 
-  /// `emit_inline_frame_push`'s other half -- inlines
+  /// `emit_inline_frame_push`'s other half; inlines
   /// `zuri_jit_call_finish`'s job once the callee's own `call_indirect`
   /// has returned. `new_base` must be the exact value passed to the
   /// matching `emit_inline_frame_push` call (needed only for the rare
@@ -2087,7 +2092,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// value.
   ///
   /// Every exit path here writes `dst` the same way
-  /// `zuri_jit_call_finish` itself always did -- straight into `VM::
+  /// `zuri_jit_call_finish` itself always did; straight into `VM::
   /// registers` memory, with `reg_cache[dst]` marked `Stale` rather than
   /// going through `store_reg`'s `Variable`. That's deliberate, not an
   /// oversight: this function has multiple internal branches (deopt,
@@ -2096,7 +2101,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// paths at all (they write memory directly, exactly like the helper
   /// calls they replace). A `Dirty` marking on the success path only
   /// would leave a LATER `load_reg(dst)` trusting a `Variable` that was
-  /// only ever defined on ONE of several incoming edges -- unsound
+  /// only ever defined on ONE of several incoming edges; unsound
   /// regardless of which edge actually ran at runtime. Uniform `Stale`
   /// is what `zuri_jit_call_finish`'s own call-based version already
   /// guaranteed for free; this preserves that exactly.
@@ -2180,7 +2185,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Pops `VM::frames`' own top entry and restores `VM::
   /// jit_scalar_roots_len` to what it held before that frame was
-  /// pushed -- the exact two-step `VM::pop_frame_inner` does, inlined.
+  /// pushed; the exact two-step `VM::pop_frame_inner` does, inlined.
   /// Shared by `emit_inline_frame_finish` and
   /// `emit_inline_construct_finish`, which differ only in what they do
   /// with the frame's own former caller-return-value slot afterward.
@@ -2205,13 +2210,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().store(flags, top_idx, vm, FRAMES_LEN_OFFSET);
   }
 
-  /// `emit_inline_frame_finish`'s construct-call counterpart -- the
+  /// `emit_inline_frame_finish`'s construct-call counterpart; the
   /// same deopt/error/upvalue/pop shape, but discarding the
   /// constructor's own return value in favour of the instance
   /// `emit_inline_construct` pinned, and needing the `gc_pins` release
   /// `zuri_jit_take_constructed_instance` does. See `zuri_jit_new_finish`
   /// 's own docs for why that release happens exactly here (after the
-  /// deopt/error checks -- unlike the ordinary-call finish, this
+  /// deopt/error checks; unlike the ordinary-call finish, this
   /// one has a real resource to release regardless of which of those
   /// two fire) and `emit_inline_frame_finish`'s own docs for why every
   /// exit path writes `dst` the same uniform way.
@@ -2233,7 +2238,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     // Deopt is checked BEFORE the `gc_pins` release below, and NOT
     // released on this branch until after `zuri_jit_finish_deopt`
-    // returns -- matching `zuri_jit_new_finish`'s own strict ordering.
+    // returns; matching `zuri_jit_new_finish`'s own strict ordering.
     // Resolving a deopt resumes the constructor through the
     // interpreter, which can run arbitrary Zuri code (a collection
     // included); the instance must stay pinned for every moment that's
@@ -2257,7 +2262,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let base = self.base_param;
     let dst_i = self.idx(dst);
     // `zuri_jit_finish_deopt` writes ITS OWN resolved value into `dst`
-    // on success -- fine for the ordinary-call finish (that value IS
+    // on success; fine for the ordinary-call finish (that value IS
     // the answer), wrong here (the answer is always the instance, never
     // whatever the constructor body itself returned). Overwritten
     // unconditionally right after: cheap, and simpler than a construct-
@@ -2270,7 +2275,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(past_deopt_block);
     // No deopt was pending, so nothing has run any Zuri code since the
-    // check above -- safe to release the pin here, still strictly
+    // check above; safe to release the pin here, still strictly
     // before the error check, matching the original's own order.
     let instance = self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
     let exc = self
@@ -2317,19 +2322,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Inlines `zuri_jit_construct_prepare`'s job for a `CallTarget::
   /// ConstructKnown` callee once its class-identity/generation guard
-  /// has already passed -- see `emit_inline_frame_push`'s own docs for
+  /// has already passed: see `emit_inline_frame_push`'s own docs for
   /// the general reasoning (same profiling motivation, same three
   /// runtime preconditions via `emit_call_checks`). What's different
   /// about construction: allocating the instance is a real,
   /// irreversible side effect (a heap allocation plus a `gc_pins`
   /// push), so `emit_call_checks` runs FIRST and only once it confirms
   /// the frame push that has to follow will actually succeed does this
-  /// allocate anything -- doing it the other way round risks an
+  /// allocate anything; doing it the other way round risks an
   /// orphaned, permanently-pinned instance if the checks then fail and
   /// `slow_block` allocates its own.
   ///
   /// Unlike `emit_known_call`'s `entry`, the callee's compiled entry is
-  /// NOT baked as an immediate here -- read fresh via
+  /// NOT baked as an immediate here; read fresh via
   /// `PROTO_JIT_ENTRY_OFFSET` instead, matching `zuri_jit_construct_
   /// prepare`'s own behavior exactly (see `object::
   /// obj_function_jit_entry_offset`'s own docs for why: a small, simple
@@ -2410,7 +2415,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// A null data pointer means the elements are held inline in the
   /// object itself (see `vm::list::ListStorage`), which resolves to a
   /// compare and a select rather than a branch. Computing the inline
-  /// address unconditionally is safe -- it is arithmetic on a pointer
+  /// address unconditionally is safe; it is arithmetic on a pointer
   /// this site has already proven points at a live `Obj::List`, and
   /// nothing is dereferenced until after the bounds check.
   fn load_list_ptr_len(&mut self, obj_ptr: IrValue) -> (IrValue, IrValue) {
@@ -2434,7 +2439,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// The fast, inline-cache-style direct-call pattern shared by
-  /// `Instr::Call` and `Instr::Invoke` -- see `jit::runtime`'s "Fast,
+  /// `Instr::Call` and `Instr::Invoke`: see `jit::runtime`'s "Fast,
   /// inline-cache-style direct calls" docs for the full protocol this
   /// implements. `prepare_helper` is `zuri_jit_call_prepare` or
   /// `zuri_jit_invoke_prepare`, called with `prepare_args` PLUS the
@@ -2442,7 +2447,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// caller); `new_base` is the callee's frame base (already computable
   /// at compile time as `base + reg + 1`, so there's no need for
   /// `prepare` to report it back). `slow_helper` (an ordinary
-  /// `call_checked` target -- `zuri_jit_call`/`zuri_jit_invoke`) is the
+  /// `call_checked` target; `zuri_jit_call`/`zuri_jit_invoke`) is the
   /// fully general fallback for a `0` (not-yet-compiled, or not even a
   /// closure) result from `prepare`.
   fn emit_fast_call(
@@ -2481,12 +2486,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let sig = self.entry_sig_ref();
     // A genuine nested call into another compiled Zuri function's own
-    // entry point -- NOT routed through `call_helper` (this is a
+    // entry point; NOT routed through `call_helper` (this is a
     // `call_indirect` to JIT-compiled code, not a `jit::runtime`
     // helper), so the flush/stale-mark bracketing it gets automatically
     // there has to be done explicitly here instead. The callee is free
     // to allocate, trigger a GC safepoint, or recurse arbitrarily
-    // deep -- exactly the kind of call this cache exists to stay
+    // deep; exactly the kind of call this cache exists to stay
     // correct across.
     self.flush_live(self.current_ip);
     let call =
@@ -2516,14 +2521,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// instance's fields in a Cranelift stack slot instead?
   ///
   /// Mirrors `scalar_replace_eligible`'s conditions, for the same
-  /// reasons -- see its docs for why `Move` and the speculative-body
+  /// reasons: see its docs for why `Move` and the speculative-body
   /// gate are ruled out wholesale rather than reasoned about:
   /// - `escape::analyze_one` proves the constructed value never leaves
   ///   this function (consulting this site's own class field-shadowing
   ///   safety, without which reading `d.x` alone would count as an
   ///   escape).
   /// - The constructor is simple enough to reproduce inline, i.e. it
-  ///   only copies parameters into fields -- see
+  ///   only copies parameters into fields: see
   ///   `jit::ConstructInfo::simple_ctor_param_slots`.
   /// - No `Instr::Move` anywhere reads the destination register, so
   ///   `scalar_instances` only ever answers for the exact register
@@ -2532,7 +2537,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Deliberately does NOT inherit `scalar_replace_eligible`'s
   /// "no specialized/speculative body" gate. That gate exists for a
   /// specific, reproduced speculation bug involving a list read through
-  /// a VARIABLE index (see its docs) -- and a scalar-replaced instance
+  /// a VARIABLE index (see its docs); and a scalar-replaced instance
   /// has no variable index anywhere: every field resolves to a
   /// compile-time-constant slot, emitted as a fixed-offset
   /// `stack_load`/`stack_store`. Keeping the gate here would disable
@@ -2561,8 +2566,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// into a stack slot, and no object, no `@new` call, and no GC work
   /// happen at all.
   ///
-  /// Every slot is initialized -- the ones the constructor writes from
-  /// its arguments, and any remaining declared field to nil -- before
+  /// Every slot is initialized; the ones the constructor writes from
+  /// its arguments, and any remaining declared field to nil; before
   /// the slot is registered as a GC root, for the same reason
   /// `emit_scalar_make_list` populates first: an uninitialized slot is
   /// not a valid `Value` for a root scan to walk.
@@ -2630,13 +2635,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// ::ConstructKnown`): the class -> constructor -> prototype chain
   /// `emit_construct_call` re-walks per instance was settled at
   /// compile time, leaving one guard and a helper that does no
-  /// resolution -- see `VM::resolve_construct_target` for the proof
+  /// resolution: see `VM::resolve_construct_target` for the proof
   /// and `zuri_jit_construct_prepare` for what the guard licenses.
   ///
   /// The guard is class IDENTITY plus a `method_table_generation`
   /// match, the same pair (and the same reasoning) as
   /// `emit_self_invoke`'s. It only works because classes are
-  /// old-generation allocations and therefore never relocate -- see
+  /// old-generation allocations and therefore never relocate: see
   /// `Heap::alloc_class`. On a miss (a global rebound to a different
   /// class, or a class monkey-patched after this function compiled)
   /// control falls into the ordinary dynamic construction path, which
@@ -2662,14 +2667,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Every operand either arm needs is materialized HERE, in the
     // block that dominates all of them. A value defined inside one arm
     // and used from another is exactly the dominance error this file
-    // already tripped over once -- and it surfaces as a silent
+    // already tripped over once; and it surfaces as a silent
     // Cranelift verifier failure that makes the whole function
     // JIT-ineligible, which reads as a performance regression rather
     // than as the bug it is. Check `ZURI_JIT_LOG=1` for `ineligible:`
     // after touching this.
     // `func`, NOT `func + 1`: this path's callee window deliberately
     // starts at the callee register itself so the constructor's
-    // arguments need no shifting -- see
+    // arguments need no shifting: see
     // `VM::prepare_known_construction`, which must agree with this
     // exactly. The dynamic path below (`emit_construct_call`) still
     // uses the ordinary `func + 1` convention with a real shift.
@@ -2751,7 +2756,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let neg1 = self.fb.ins().iconst(types::I32, -1);
       let sig = self.entry_sig_ref();
       // Identical bracketing requirement to `emit_fast_call`'s own
-      // `call_indirect` -- see the note there.
+      // `call_indirect`: see the note there.
       self.flush_live(self.current_ip);
       self
         .fb
@@ -2762,7 +2767,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.call_checked("zuri_jit_new_finish", &[vm_p, base, dst_i, new_base]);
       self.fb.ins().jump(done_block, &[]);
     } else {
-      // Fully-inline path -- see `emit_inline_construct`'s own docs.
+      // Fully-inline path: see `emit_inline_construct`'s own docs.
       let entry = self.emit_inline_construct(
         ctor_bits,
         proto_ptr as u64,
@@ -2804,7 +2809,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// same `prepare` / `call_indirect` / `finish` protocol as
   /// `emit_fast_call`, differing only in that the value delivered to
   /// `dst` is the newly built instance rather than the callee's return
-  /// value -- hence `zuri_jit_new_finish`, which takes no return-value
+  /// value; hence `zuri_jit_new_finish`, which takes no return-value
   /// operand at all, in place of `zuri_jit_call_finish`.
   ///
   /// The miss path is deliberately the ORDINARY fast call rather than
@@ -2850,7 +2855,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let sig = self.entry_sig_ref();
     // Identical bracketing requirement to `emit_fast_call`'s own
-    // `call_indirect` -- see the note there.
+    // `call_indirect`: see the note there.
     self.flush_live(self.current_ip);
     self
       .fb
@@ -2882,15 +2887,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `Instr::Call`'s PROVEN self-recursive fast path (`jit::CallTarget
   /// ::SelfRecursive`, from `VM::resolve_call_targets`'s use of
   /// `escape::self_reference_facts`): no runtime guard at all, since
-  /// there is nothing left to misidentify -- the callee register's
+  /// there is nothing left to misidentify; the callee register's
   /// VALUE is never even read here, only its bytecode INDEX (needed for
   /// `new_base`'s frame-layout math). Reuses `self.closure_param` (this
   /// invocation's own closure, already held stable for as long as it's
-  /// running -- see `VM::ensure_stable_for_compiled_entry`'s own docs on
+  /// running: see `VM::ensure_stable_for_compiled_entry`'s own docs on
   /// why that stability guarantee needs no re-establishing for a value
   /// that's already the CURRENT frame's own closure) as the callee, and
   /// a genuine relocation-resolved direct `call` to `own_func_id` --
-  /// NOT `call_indirect` on a runtime-loaded pointer -- as the actual
+  /// NOT `call_indirect` on a runtime-loaded pointer; as the actual
   /// call instruction: `cranelift_module` resolves the target address
   /// at link time, so there's no pointer load, no indirect-branch
   /// misprediction risk, and no `zuri_jit_call_prepare` FFI round trip
@@ -2902,7 +2907,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// refresh bracketing as any other helper call) and the depth check
   /// (native call-stack depth is a real resource `Instr::Call`
   /// recursion has to respect even when the target is statically
-  /// known) -- this skips the RESOLVER, not frame setup.
+  /// known); this skips the RESOLVER, not frame setup.
   fn emit_self_call(&mut self, dst: u8, func: u8, num_args: u8) {
     let base = self.base_param;
     let vm_p = self.vm_param;
@@ -2912,10 +2917,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let closure_bits = self.closure_param;
 
     // Eligibility for the fully-inline path is a compile-time fact for
-    // self-recursion (this function's own `arity`/`variadic` -- there is
+    // self-recursion (this function's own `arity`/`variadic`; there is
     // no other callee it could possibly be): decided once here, not as
     // a runtime branch. An ineligible callee (variadic, or this call
-    // site's `num_args` happens not to match -- both fixed by the
+    // site's `num_args` happens not to match; both fixed by the
     // instruction, never varying call to call) keeps using the
     // original, unaccelerated `zuri_jit_direct_call_prepare` sequence
     // verbatim.
@@ -2966,7 +2971,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       return;
     }
 
-    // Fully-inline path -- see `emit_inline_frame_push`'s own docs.
+    // Fully-inline path: see `emit_inline_frame_push`'s own docs.
     //
     // Unlike the eligibility-false branch above, `emit_inline_frame_push`
     // itself branches to `slow_block` BEFORE any unconditional helper
@@ -3026,22 +3031,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// global_ref_facts`): the callee register is proven to hold an
   /// UNMODIFIED read of some OTHER global name that, at THIS function's
   /// OWN compile time, already resolved to a different, already-
-  /// compiled function -- but unlike self-recursion, that global
+  /// compiled function; but unlike self-recursion, that global
   /// binding could still be reassigned before this exact call site
   /// actually runs, so a cheap value-identity guard against the
   /// CURRENT register contents comes first. `entry` is baked as a raw
-  /// address constant -- sound because `CompiledFunction`'s own docs
+  /// address constant; sound because `CompiledFunction`'s own docs
   /// guarantee compiled code is never unloaded or recompiled once
   /// produced, so this address stays valid for the rest of the process.
   /// On a guard miss (or the same depth-exhausted case `emit_self_call`
   /// handles), falls all the way back to the fully general
-  /// `zuri_jit_call` slow helper -- exactly `emit_fast_call`'s own slow
+  /// `zuri_jit_call` slow helper; exactly `emit_fast_call`'s own slow
   /// path, since a miss here means "let the general path re-resolve
   /// whatever this actually is right now," not "try again with stale
   /// information."
   ///
   /// Guards BEFORE its first helper call (unlike `emit_self_call`), so
-  /// -- per `restore_dirty_from_snapshot`'s own docs -- this needs the
+  ///; per `restore_dirty_from_snapshot`'s own docs; this needs the
   /// snapshot/reset discipline `emit_self_get_field`/`emit_list_get_index`
   /// already established: two INDEPENDENT call sites
   /// (`zuri_jit_direct_call_prepare` on the guard-pass path,
@@ -3058,7 +3063,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   const MAX_INLINE_OPS: usize = 24;
 
   /// Inlines a call outright when the callee is a small, straight-line,
-  /// arithmetic-only leaf -- no call protocol, no frame, no register
+  /// arithmetic-only leaf; no call protocol, no frame, no register
   /// flush, no reload. Call overhead otherwise dominates numeric code
   /// where the callee's own work is a handful of flops.
   ///
@@ -3071,13 +3076,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// they are, so it is worth stating precisely.
   ///
   /// Every value an inlined body produces lives in a Cranelift SSA
-  /// value, NOT in `VM::registers` -- so nothing a garbage collection
+  /// value, NOT in `VM::registers`; so nothing a garbage collection
   /// would need to see or relocate is reachable from it. That is only
   /// sound if a collection cannot happen while those values are live,
   /// which `inline_plan` guarantees structurally rather than hopefully:
   /// the body is proven to contain no call, no allocation, and no
   /// helper that could do either. Note this is NOT implied by the
-  /// opcode whitelist alone -- `a + b` on non-numeric operands calls
+  /// opcode whitelist alone; `a + b` on non-numeric operands calls
   /// `zuri_jit_add_slow`, which can allocate a string or a bigint --
   /// which is why every operand must ALSO be proven numeric, making
   /// those slow paths unreachable rather than merely unlikely.
@@ -3093,8 +3098,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// runs only when the callee register still holds that identical
   /// closure; anything else falls through to the ordinary call, which
   /// resolves whatever is actually there. `proto_ptr` itself is only
-  /// ever read HERE, at compile time -- generated code never touches
-  /// it -- so a later reassignment cannot leave it dangling behind.
+  /// ever read HERE, at compile time; generated code never touches
+  /// it; so a later reassignment cannot leave it dangling behind.
   fn try_emit_inlined_call(
     &mut self,
     ip: usize,
@@ -3104,7 +3109,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     guard_bits: u64,
     proto_ptr: usize,
   ) -> bool {
-    // SAFETY: see this function's own docs -- `proto_ptr` names a live,
+    // SAFETY: see this function's own docs; `proto_ptr` names a live,
     // old-generation `ObjFunction`, read only during compilation.
     let callee = unsafe { &*(proto_ptr as *const ObjFunction) };
     let Some(plan) = self.inline_plan(ip, callee, func, num_args) else {
@@ -3136,7 +3141,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.emit_safepoint();
     self.emit_generic_call(dst, func, num_args);
     // The two arms disagree about `dst` the same way every other
-    // guarded instruction's do -- the inlined arm defines it in its
+    // guarded instruction's do; the inlined arm defines it in its
     // `Variable` and writes no memory, the call arm writes memory and
     // stale-marks it. See `resync_receiver_from_memory` for the bug
     // that leaving that disagreement in place produces.
@@ -3153,8 +3158,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// first `Return`) when it can.
   ///
   /// Every rule here exists to hold up one of the two guarantees
-  /// `try_emit_inlined_call` depends on -- "cannot allocate or call"
-  /// and "is straight-line" -- so none of them is merely conservative
+  /// `try_emit_inlined_call` depends on; "cannot allocate or call"
+  /// and "is straight-line"; so none of them is merely conservative
   /// tidiness:
   ///
   /// - **Straight-line.** No jump of any kind may appear before the
@@ -3227,12 +3232,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           // the CALL SITE's own `proven_numeric` check (required above,
           // before this loop even starts) makes a `number`/`int`-only,
           // non-nullable check on that same register a guaranteed
-          // no-op -- see the `CheckParamType` arm below for the actual
+          // no-op: see the `CheckParamType` arm below for the actual
           // proof. Silently keeping it in the plan instead would panic
           // in `emit_inlined_body`; silently disqualifying the whole
           // callee instead (the ORIGINAL behavior here, before typed
           // parameters existed) would mean every typed small leaf
-          // function permanently loses inlining -- confirmed to cost
+          // function permanently loses inlining; confirmed to cost
           // 2x on `spectral-norm.zu`'s `eval_A`, called ~600M times.
           return Some(
             code[..=i]
@@ -3298,8 +3303,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
           *numeric.get_mut(dst as usize)? = true;
         },
-        // Everything else -- jumps, calls, field/index access, anything
-        // that can allocate or raise -- disqualifies the whole callee.
+        // Everything else; jumps, calls, field/index access, anything
+        // that can allocate or raise; disqualifies the whole callee.
         _ => return None,
       }
     }
@@ -3370,7 +3375,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// One unguarded floating-point operation on two operands already
-  /// proven numeric -- the inlined-body counterpart of
+  /// proven numeric; the inlined-body counterpart of
   /// `emit_binary_numeric_proven`, differing only in that it threads
   /// SSA values instead of bytecode registers.
   fn inline_arith(&mut self, a: IrValue, b: IrValue, op: InlineArith) -> IrValue {
@@ -3389,7 +3394,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// builtin native whose `NativeFn` is `guard_fn`, leaving the success
   /// path as the current block.
   ///
-  /// Guards the FUNCTION POINTER, not the object's address -- see
+  /// Guards the FUNCTION POINTER, not the object's address: see
   /// `CallTarget::KnownNative::guard_fn` for why an address guard would
   /// silently rot. Three separate branches for the same reason
   /// `emit_ic_guard` needs them: each stage may only be evaluated once
@@ -3436,7 +3441,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `ObjClosure::function`'s offset would read a different union arm.
   ///
   /// See `CallTarget::Known::guard_bits` for why this guards the
-  /// PROTOTYPE and not the closure -- guarding the closure's own
+  /// PROTOTYPE and not the closure; guarding the closure's own
   /// address silently stops matching the first time a minor collection
   /// relocates it.
   fn emit_callee_proto_guard(&mut self, callee_val: IrValue, guard_bits: u64, fail_block: Block) {
@@ -3479,7 +3484,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// machine instructions of actual work.
   ///
   /// Every variant reproduces its `vm::natives` counterpart exactly --
-  /// the same `Value` predicate, not an equivalent-looking one -- so a
+  /// the same `Value` predicate, not an equivalent-looking one; so a
   /// compiled answer is always the interpreted answer. Natives whose
   /// body is more than a tag test (`typeof`, `id`, `is_iterable`,
   /// `print`, ...) are deliberately absent; they still get
@@ -3517,7 +3522,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `Instr::Call` on a call site proven to target a specific builtin
-  /// native -- see `CallTarget::KnownNative`.
+  /// native: see `CallTarget::KnownNative`.
   ///
   /// Guards that the callee register still holds that exact native (a
   /// global binding is reassignable, so this is a real check, not a
@@ -3614,7 +3619,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `Value::is_bool`'s exact match against the two singleton bit
-  /// patterns, not a masked test -- raw `i8` `0`/`1`, not a boxed
+  /// patterns, not a masked test; raw `i8` `0`/`1`, not a boxed
   /// `Value`. Shared by `emit_native_intrinsic`'s `IsBool` and
   /// `emit_check_param_type`'s inline `ParamType::Bool` case, so the
   /// two can't silently disagree on what "a bool" means.
@@ -3627,9 +3632,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `natives::is_int` is `is_number() && fract() == 0.0`, and Rust's
-  /// `f64::fract` is `self - self.trunc()` -- so an infinity yields NaN
+  /// `f64::fract` is `self - self.trunc()`; so an infinity yields NaN
   /// here and correctly compares unequal, exactly as the interpreted
-  /// version does. Raw `i8` `0`/`1`; see `emit_is_bool_test`'s own docs
+  /// version does. Raw `i8` `0`/`1`: see `emit_is_bool_test`'s own docs
   /// on why this is split out from `emit_native_intrinsic`.
   fn emit_is_int_test(&mut self, v: IrValue) -> IrValue {
     let is_num = self.is_number(v);
@@ -3655,8 +3660,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// Two stages, never fused: the tag lives behind a pointer, so it may
-  /// only be read once `is_obj` has proven there is one -- see
-  /// `emit_ic_guard` for the same discipline. Raw `i8` `0`/`1`; see
+  /// only be read once `is_obj` has proven there is one: see
+  /// `emit_ic_guard` for the same discipline. Raw `i8` `0`/`1`: see
   /// `emit_is_bool_test`'s own docs on why this is split out from
   /// `emit_native_intrinsic`.
   fn emit_obj_tag_test(&mut self, v: IrValue, tags: &[u8]) -> IrValue {
@@ -3694,7 +3699,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// statically: `is_obj` + tag==`INSTANCE` + `class_bits==target`, all
   /// in one raw `i8` boolean. A genuine SUBCLASS of `target` fails this
   /// (an exact-bits compare can't see inheritance) and correctly falls
-  /// through to the helper's own subclass-aware walk -- see
+  /// through to the helper's own subclass-aware walk: see
   /// `param_field_slots`' own docs on why the common exact-match case
   /// being this cheap is what makes an object-typed parameter's check
   /// worth inlining at all, instead of paying a full opaque helper call
@@ -3733,12 +3738,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.block_params(done_block)[0]
   }
 
-  /// `Instr::CheckParamType` -- inlines every member of the declared
+  /// `Instr::CheckParamType`; inlines every member of the declared
   /// union that's a plain `Value`/`Obj` tag test (everything except
   /// `Iterable`, a method-table probe, and `Instance`, a possibly-
   /// failing global lookup plus a superclass walk), OR'd together with
   /// the same `emit_is_bool_test`/`emit_is_int_test`/`emit_obj_tag_test`
-  /// `emit_native_intrinsic` itself uses for the `is_*` builtins -- so a
+  /// `emit_native_intrinsic` itself uses for the `is_*` builtins; so a
   /// typed parameter and an explicit `is_list(x)` check compile to
   /// identical machine code, not two independently-maintained ideas of
   /// what "a list" means.
@@ -3811,7 +3816,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           object::OBJ_TAG_CLASS,
         ]),
         // Inlined only when `param_field_slots` resolved the declared
-        // class statically -- see `emit_instance_class_test`'s own
+        // class statically: see `emit_instance_class_test`'s own
         // docs. Otherwise falls to the helper, same as `Iterable`
         // always does.
         ParamType::Instance(_) => {
@@ -3854,7 +3859,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot_all(&snapshot);
   }
 
-  /// `Instr::Call`'s fully general codegen -- the resolver-driven
+  /// `Instr::Call`'s fully general codegen; the resolver-driven
   /// `zuri_jit_call_prepare` fast call, used whenever nothing stronger
   /// was proven about the callee.
   fn emit_generic_call(&mut self, dst: u8, func: u8, num_args: u8) {
@@ -3945,7 +3950,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       return;
     }
 
-    // Fully-inline path -- see `emit_inline_frame_push`'s own docs.
+    // Fully-inline path: see `emit_inline_frame_push`'s own docs.
     let closure_ptr = self.obj_ptr(callee_val);
     self.emit_inline_frame_push(
       proto_ptr as u64,
@@ -3988,7 +3993,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `VM::resolve_self_class` must have proven `proto` owns that method
   /// on its own class (`self.self_class_bits`, resolved once ahead of
   /// compilation). Resolves the name via `proto.chunk.constants`
-  /// directly -- a compile-time lookup, like `self_field_slot`'s own --
+  /// directly; a compile-time lookup, like `self_field_slot`'s own --
   /// never hands the name to generated code.
   fn self_invoke_target(&self, method_const: u16) -> Option<(u64, u64)> {
     let (class_bits, generation) = self.self_class_bits?;
@@ -4008,7 +4013,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// the baked class, REGARDLESS of which register/expression it came
   /// from (`self`, `self.left`, a local, ...), is guaranteed by
   /// `resolve_self_class`'s proof to resolve `method_const` to this
-  /// exact compiled function -- PROVIDED the class's method table
+  /// exact compiled function; PROVIDED the class's method table
   /// hasn't been monkey-patched since that proof was taken (see
   /// `VM::method_table_generation`'s own docs for why that second check
   /// is load-bearing, not defensive-programming boilerplate). On a
@@ -4038,7 +4043,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let receiver = self.load_reg(obj);
     let snapshot = self.snapshot_reg_cache();
     // Computed here, in the single entry block every later block is
-    // dominated by -- NOT inside `try_direct_block` (which is already
+    // dominated by; NOT inside `try_direct_block` (which is already
     // unreachable-via-fallthrough by the time these would otherwise be
     // needed, since Cranelift requires switching blocks before emitting
     // further instructions once one is terminated).
@@ -4046,11 +4051,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let num_args_i = self.idx(num_args);
     // `1 + num_args`: the receiver the bytecode compiler already
     // duplicated into `obj + 1` occupies the callee's own register 0
-    // ("self") -- see `Instr::Invoke`'s own doc comment in chunk.rs and
+    // ("self"): see `Instr::Invoke`'s own doc comment in chunk.rs and
     // `zuri_jit_invoke_prepare`'s identical `1 + num_args` convention.
     // Passing bare `num_args` here would make `VM::setup_closure_call`
     // treat register 0 as a MISSING positional argument and overwrite
-    // it with `nil` whenever `num_args < arity` -- exactly the "self.left
+    // it with `nil` whenever `num_args < arity`; exactly the "self.left
     // on a nil" corruption this comment is here to prevent regressing.
     let direct_num_args_i = self.i64c(num_args as i64 + 1);
     let dst_i = self.idx(dst);
@@ -4060,19 +4065,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     let class_check_block = self.fb.create_block();
 
-    // `obj == 0` means the receiver IS `self` -- and `emit_self_invoke`
+    // `obj == 0` means the receiver IS `self`; and `emit_self_invoke`
     // is only ever reached via `self_invoke_target`, which requires
     // `self_class_bits` to be `Some`, which `VM::resolve_self_class`
     // only ever produces when `proto` genuinely IS an instance method
     // that its own class's method table maps back to (see that
     // function's own docs). So whenever THIS specific call is on `self`
-    // itself, it's unconditionally an `Obj::Instance` already -- the
+    // itself, it's unconditionally an `Obj::Instance` already; the
     // exact same trust `self_field_slot` relies on to skip its own
     // `is_obj`+tag guard for `self.field` access. Only the CLASS check
     // below still needs to run (an override in a subclass can still
     // change which method `self`'s class resolves this name to). Same
     // "exactly one arm ever actually emitted" shape `emit_list_get_
-    // index`'s own `proven_list` split uses -- `ptr` dominates
+    // index`'s own `proven_list` split uses; `ptr` dominates
     // `class_check_block` either way, just via a shorter chain when
     // `obj == 0`.
     let ptr = if obj == 0 {
@@ -4166,10 +4171,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       );
       self.fb.ins().jump(done_block, &[]);
     } else {
-      // Fully-inline path -- see `emit_inline_frame_push`'s own docs.
+      // Fully-inline path: see `emit_inline_frame_push`'s own docs.
       // `try_direct_block` is already reached only after the receiver-
       // class/generation guard above passed, so no further guard is
-      // needed before this -- `emit_inline_frame_push`'s own runtime
+      // needed before this; `emit_inline_frame_push`'s own runtime
       // checks (depth/registers/frame capacity) are all that's left,
       // and any of THEM failing falls to the exact same `slow_block`
       // the class/generation guard itself already falls to.
@@ -4221,11 +4226,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `Instr::GetGlobal`'s inline-cache-style fast path: once this exact
   /// instruction has resolved its name to a ROOT global slot once (see
-  /// `JitInfo::global_slot_cache`'s own docs -- a qualified-module
+  /// `JitInfo::global_slot_cache`'s own docs; a qualified-module
   /// resolution never populates this cache, so those always take the
   /// helper path below), every later execution reads the slot straight
   /// out of `VM::global_slots` with two loads and an add, no helper
-  /// call, no name lookup at all -- this is what makes a self-recursive
+  /// call, no name lookup at all; this is what makes a self-recursive
   /// top-level call (`fib` referencing itself, the single most common
   /// hot pattern in real recursive code) cost the same as reading an
   /// already-resolved local instead of paying a full FFI call on every
@@ -4239,7 +4244,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// conservative flush has to happen unconditionally before the branch,
   /// not bundled inside the block that happens to call the helper. Uses
   /// `call_helper_raw` (not `call_checked`) for exactly the same reason
-  /// `emit_safepoint`'s `gc_block` does -- avoiding a second, redundant
+  /// `emit_safepoint`'s `gc_block` does; avoiding a second, redundant
   /// flush/stale-mark from `call_helper`'s own automatic wrapping.
   fn emit_get_global(&mut self, ip: usize, dst: u8, name_const: u16) {
     let cache_ptr = self.proto.jit.global_slot_cache.as_ptr() as i64;
@@ -4324,7 +4329,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `self_field_slot`'s counterpart for a typed, non-`self` parameter
-  /// -- `obj` need not be register 0 here, since a plain function's
+  ///; `obj` need not be register 0 here, since a plain function's
   /// typed parameters start at register 0 themselves and a method can
   /// have several besides `self`. See `param_field_slots`' own docs.
   fn param_field_slot(&self, obj: u8, name_const: u16) -> Option<u16> {
@@ -4338,7 +4343,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// A register's resolved class `Value` bits, when it's a proven-
-  /// single-class parameter -- consulted by `emit_check_param_type` to
+  /// single-class parameter; consulted by `emit_check_param_type` to
   /// inline the CHECK ITSELF (not just downstream field access) down to
   /// one class-bits compare. See `param_field_slots`' own docs on why
   /// this matters: without it, an `Instance`-typed parameter's check
@@ -4358,14 +4363,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///
   /// `proven` distinguishes the two callers: `self_field_slot`'s case
   /// (`proven = false`) still checks `is_obj`+tag defensively (should
-  /// be unreachable -- a method's `self` is always the instance it was
-  /// invoked on -- but checked rather than assumed, since that's an
+  /// be unreachable; a method's `self` is always the instance it was
+  /// invoked on; but checked rather than assumed, since that's an
   /// invariant of the CALLING CONVENTION, never independently
   /// verified). `param_field_slot`'s case (`proven = true`) has a
   /// STRONGER guarantee than that: an explicit, RAISING
   /// `Instr::CheckParamType` already ran on this exact register, and
   /// `resolve_param_field_slots` already proved nothing rewrites it
-  /// afterward -- so re-deriving the same fact here would be checking
+  /// afterward; so re-deriving the same fact here would be checking
   /// something the bytecode itself already enforces, not defending
   /// against a genuine unknown. `proven = true` skips straight to the
   /// load, no branch, no slow path, no snapshot/restore at all.
@@ -4411,7 +4416,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
 
     // `ptr`/`tag` are only ever computed/dereferenced INSIDE this
-    // block, proven reachable only when `is_obj` was true -- see
+    // block, proven reachable only when `is_obj` was true: see
     // `is_obj`'s own docs. Computing either unconditionally (e.g. via
     // a plain boolean AND instead of a real branch) would mean
     // dereferencing a masked-bits "pointer" for a nil/bool/number
@@ -4456,20 +4461,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `self.field = ...` write fast path -- the write-side counterpart
-  /// of `emit_self_get_field`; see its own docs on `proven` (`false`
+  /// `self.field = ...` write fast path; the write-side counterpart
+  /// of `emit_self_get_field`: see its own docs on `proven` (`false`
   /// for `self_field_slot`'s defensive-checked case, `true` for
   /// `param_field_slot`'s already-raised-if-wrong case, which skips
   /// straight to the store). Defines no VM register at all (only reads
   /// `src`), so nothing is held back from the merged restore in the
   /// `proven = false` arm; the receiver is reconciled across the two
   /// arms by `resync_receiver_from_memory` instead, exactly as in
-  /// `emit_ic_set_field` -- see its docs for the disagreement that
+  /// `emit_ic_set_field`: see its docs for the disagreement that
   /// closes. Only one `call_helper` site exists in this function (the
   /// slow path), so the OTHER real bug class this file's
-  /// snapshot/restore machinery guards against -- two INDEPENDENT
+  /// snapshot/restore machinery guards against; two INDEPENDENT
   /// `call_helper` sites in different branches, see
-  /// `emit_list_set_index`'s own docs -- doesn't apply here.
+  /// `emit_list_set_index`'s own docs; doesn't apply here.
   fn emit_self_set_field(
     &mut self,
     ip: usize,
@@ -4548,7 +4553,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// The baked address of this `Instr::Invoke` position's own cache
   /// cell, or a null constant when the chunk has no cell for it (see
-  /// `Chunk::invoke_cache_cell`) -- the helper treats null as "no
+  /// `Chunk::invoke_cache_cell`); the helper treats null as "no
   /// cache" and simply resolves every time.
   fn invoke_cache_addr(&mut self, ip: usize) -> IrValue {
     let addr = self
@@ -4560,7 +4565,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// The address of this instruction's own `chunk::FieldCacheCell`,
-  /// baked as an immediate -- `None` when the chunk has no cell for
+  /// baked as an immediate; `None` when the chunk has no cell for
   /// this position (see `Chunk::field_cache_cell`), in which case the
   /// caller emits the plain helper call instead.
   ///
@@ -4585,14 +4590,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// has proven it safe to. Masking a nil/number/bool `Value`'s bits
   /// into a "pointer" and loading its tag would fault, and loading a
   /// non-instance `Obj`'s bytes as an `ObjInstance` would read the
-  /// wrong union arm -- see `emit_self_get_field`'s identical two-stage
+  /// wrong union arm: see `emit_self_get_field`'s identical two-stage
   /// discipline, which this extends by one stage.
   ///
   /// `obj` (the receiver's OWN register, not its already-loaded value)
   /// is consulted against `proven_param_shapes`: a parameter checked
   /// `Instr::CheckParamType`-non-nullable against exactly ONE class has
   /// already paid for "is this an `Obj::Instance`" once, at the check
-  /// -- skip re-deriving it here and go straight to the class load. The
+  ///; skip re-deriving it here and go straight to the class load. The
   /// per-site class MATCH still runs unconditionally regardless (a
   /// proven parameter can still be any subclass, or in practice any
   /// class at all if the check's declared class doesn't match this
@@ -4648,15 +4653,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `obj.field` read fast path for an ARBITRARY receiver register,
   /// backed by this site's own monomorphic inline cache (see
   /// `Chunk::field_cache`). The generalization of `emit_self_get_field`,
-  /// which handles the one case -- `self.field` inside a method of the
-  /// owning class -- where the slot is provable at compile time and
+  /// which handles the one case; `self.field` inside a method of the
+  /// owning class; where the slot is provable at compile time and
   /// needs no cache or class guard at all; that path stays separate and
   /// is always preferred, since it is strictly cheaper.
   ///
   /// This is what takes field-heavy numeric code off the
   /// `zuri_jit_get_field` helper entirely: on a hit it is three
   /// dependent loads and three not-taken branches, with no call, no
-  /// `RefCell` borrow, no hash probe, and -- crucially -- no
+  /// `RefCell` borrow, no hash probe, and; crucially; no
   /// `flush_live`/`mark_stale_live` round trip forcing every live
   /// register back through memory.
   ///
@@ -4726,12 +4731,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.store_reg(obj, v);
   }
 
-  /// `obj.field = ...` write fast path -- `emit_ic_get_field`'s
+  /// `obj.field = ...` write fast path; `emit_ic_get_field`'s
   /// counterpart, with the same guard chain plus the write barrier
   /// every field mutation owes (see `emit_write_barrier`).
   ///
   /// Defines no register, so nothing is held back from the merged
-  /// restore -- the receiver included, since `resync_receiver_from_memory`
+  /// restore; the receiver included, since `resync_receiver_from_memory`
   /// has already made its `Variable` authoritative on both arms.
   fn emit_ic_set_field(&mut self, ip: usize, obj: u8, name_const: u16, src: u8, cache: IrValue) {
     let recv = self.load_reg(obj);
@@ -4778,7 +4783,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_number_intrinsic` can reuse it verbatim as its own guard's
   /// slow arm.
   ///
-  /// Does NOT emit the safepoint the `Instr::Invoke` arm owes -- callers
+  /// Does NOT emit the safepoint the `Instr::Invoke` arm owes; callers
   /// place that themselves, since the intrinsic path deliberately skips
   /// it (see `emit_number_intrinsic`).
   fn emit_generic_invoke(&mut self, ip: usize, dst: u8, obj: u8, method_const: u16, num_args: u8) {
@@ -4819,7 +4824,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `zuri_jit_invoke_string`, the lean runtime entry point that starts
   /// exactly where `zuri_jit_invoke` ends up after its own
   /// is_instance/is_class/is_module chain concludes "none of those, try
-  /// a builtin method" -- same per-call-site `InvokeCacheCell` (keyed
+  /// a builtin method"; same per-call-site `InvokeCacheCell` (keyed
   /// by `builtins::method_table_key`, so every call past the first
   /// skips `builtins::lookup`'s hash+memcmp too), just reached without
   /// the two dead branches and the wasted prepare call in front of it.
@@ -4838,7 +4843,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// The method name an `Instr::Invoke` names, read straight out of the
-  /// constant table at compile time -- a compile-time lookup only, like
+  /// constant table at compile time; a compile-time lookup only, like
   /// `self_field_slot`'s, never handed to generated code.
   fn method_name(&self, method_const: u16) -> &str {
     self.proto.chunk.constants[method_const as usize].as_str()
@@ -4877,7 +4882,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // so GC progress in a loop whose only call is an intrinsified one
     // is still guaranteed.
     let recv = self.load_reg(obj);
-    // A one-argument intrinsic's argument sits at `obj + 2` -- `obj + 1`
+    // A one-argument intrinsic's argument sits at `obj + 2`; `obj + 1`
     // holds the duplicated receiver the closure-call convention needs,
     // which an intrinsic bypasses. Matches `runtime::invoke_native_args`
     // exactly.
@@ -4918,7 +4923,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     // The full ordinary dispatch, safepoint included, for a receiver
-    // that turned out not to be a number after all -- a string, a list,
+    // that turned out not to be a number after all; a string, a list,
     // an instance whose class happens to declare a method by this name.
     self.fb.switch_to_block(slow_block);
     self.emit_safepoint();
@@ -4927,7 +4932,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // `dst` in its `Variable` and writes no memory, while everything on
     // the slow arm flushed and stale-marked both `dst` and the
     // receiver. Re-reading them here makes the `Variable` authoritative
-    // either way, so the merged `Dirty` state below is honest -- see
+    // either way, so the merged `Dirty` state below is honest: see
     // `resync_receiver_from_memory`'s own docs for the bug the
     // alternative produces.
     self.resync_dst_from_memory(dst);
@@ -5003,7 +5008,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// `NumberIntrinsic`'s counterpart for a List receiver -- see
+  /// `NumberIntrinsic`'s counterpart for a List receiver: see
   /// `ListIntrinsic`'s own docs. `typeflow::ListFacts` plays exactly
   /// the role `proven_numeric` plays there: when `obj` is already
   /// proven a list at `ip`, there is nothing left to guard, so the
@@ -5039,7 +5044,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .brif(is_obj, checked_block, &[], slow_block, &[]);
 
-    // Tag load only happens once `is_obj` is known true -- same
+    // Tag load only happens once `is_obj` is known true; same
     // discipline `emit_list_get_index`'s own unproven arm uses.
     self.fb.switch_to_block(checked_block);
     let ptr = self.obj_ptr(recv);
@@ -5057,7 +5062,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     // The full ordinary dispatch for a receiver that turned out not to
-    // be a list -- a string, a dict, an instance whose class happens
+    // be a list; a string, a dict, an instance whose class happens
     // to declare a method by this name.
     self.fb.switch_to_block(slow_block);
     self.emit_safepoint();
@@ -5091,7 +5096,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // still COMPUTED, and for an empty list that means loading
       // through an address before/at a buffer that may not have any
       // allocated capacity behind it at all (`Vec::new()`'s dangling
-      // pointer) -- genuinely unsound, not just a wasted load. A real
+      // pointer); genuinely unsound, not just a wasted load. A real
       // branch is required so the load only happens when `len > 0`
       // actually holds.
       ListIntrinsic::First => {
@@ -5149,7 +5154,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `Instr::Invoke`'s fast path for a `StringIntrinsic` method
-  /// (`length`/`is_empty`) -- `ListIntrinsic`'s counterpart, identical
+  /// (`length`/`is_empty`); `ListIntrinsic`'s counterpart, identical
   /// proven/unproven shape: skip straight to the value when
   /// `typeflow::StringFacts` already proves `obj` a string, otherwise
   /// guard on `is_obj`+tag before computing it, falling back to the
@@ -5164,7 +5169,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     num_args: u8,
     op: StringIntrinsic,
   ) {
-    // No `emit_safepoint` on the fast arm -- see `StringIntrinsic`'s
+    // No `emit_safepoint` on the fast arm: see `StringIntrinsic`'s
     // own docs: neither variant allocates or can raise for a genuine
     // string receiver.
     let recv = self.load_reg(obj);
@@ -5191,10 +5196,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let tag = self.obj_tag(ptr);
     let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
     let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
-    self
-      .fb
-      .ins()
-      .brif(is_str, fast_block, &[], slow_block, &[]);
+    self.fb.ins().brif(is_str, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let v = self.emit_string_intrinsic_value(op, recv);
@@ -5213,12 +5215,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// The intrinsic itself, on a receiver already known to be a string
-  /// -- no branching, no register bookkeeping, just the value.
+  ///; no branching, no register bookkeeping, just the value.
   /// `is_empty` is one comparison off the string's raw byte length
   /// (`object::obj_str_len_offset`); `length` is a real loop over the
   /// string's raw bytes counting UTF-8 LEAD bytes (every byte that
   /// isn't a continuation byte, `0b10xxxxxx`), matching `builtins::
-  /// string::length`'s `s.chars().count()` exactly -- a valid UTF-8
+  /// string::length`'s `s.chars().count()` exactly; a valid UTF-8
   /// string has exactly one lead byte per codepoint by construction, so
   /// counting them is the same number `chars().count()` computes,
   /// without materializing a `Chars` iterator or decoding each
@@ -5243,7 +5245,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       StringIntrinsic::Length => {
         // `i`/`count` are the loop's own carried state, threaded
-        // through `header_block`'s params -- Cranelift has no implicit
+        // through `header_block`'s params; Cranelift has no implicit
         // loop-variable storage, every iteration's values are real SSA
         // values passed forward explicitly, same discipline
         // `ListIntrinsic::First`/`Last` above use for their own single-
@@ -5256,7 +5258,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.fb.append_block_param(done_block, types::I64);
 
         let zero = self.fb.ins().iconst(types::I64, 0);
-        self.fb.ins().jump(header_block, &[zero.into(), zero.into()]);
+        self
+          .fb
+          .ins()
+          .jump(header_block, &[zero.into(), zero.into()]);
 
         self.fb.switch_to_block(header_block);
         let i = self.fb.block_params(header_block)[0];
@@ -5291,7 +5296,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// `object::write_barrier`'s own guard, inlined -- owed after EVERY
+  /// `object::write_barrier`'s own guard, inlined; owed after EVERY
   /// write into an already-live instance's field storage, since a
   /// generational minor collection finds old->young pointers only
   /// through the remembered set this maintains (see `write_barrier`'s
@@ -5311,7 +5316,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// touches no VM register, cannot allocate, collect, or raise, so
   /// bracketing it with `flush_live`/`mark_stale_live` would invalidate
   /// this compiler's whole register cache on every field write for no
-  /// reason -- exactly the cost the inline fast path exists to avoid.
+  /// reason; exactly the cost the inline fast path exists to avoid.
   fn emit_write_barrier(&mut self, obj_ptr: IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let gen_off = object::obj_to_gcbox_generation_offset();
@@ -5352,7 +5357,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// data pointer: `ObjClosure::upvalues` is a real `Vec<Value>`, not a
   /// hand-rolled `#[repr(C)]` vector, so its own internal field layout
   /// isn't something generated code should assume. That call is cheap
-  /// (`call_helper_raw`, no live-register flush -- it touches no VM
+  /// (`call_helper_raw`, no live-register flush; it touches no VM
   /// register, can't allocate or fail) and everything after it is real
   /// inline Cranelift code: no bounds check on `uidx` is needed since
   /// it's always a valid index into a closure built from the exact same
@@ -5360,7 +5365,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// index was compiled against.
   ///
   /// The `is_obj`/tag checks below should be unreachable by that same
-  /// construction argument, but stay in anyway -- same discipline
+  /// construction argument, but stay in anyway; same discipline
   /// `emit_self_get_field`'s unproven path uses for `self`: a calling-
   /// convention invariant, not something to assume in code about to
   /// dereference raw memory.
@@ -5399,7 +5404,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `Instr::GetUpval`'s inline fast path: no helper call for either
   /// `UpvalueState` variant. `Open` reads straight out of `regs_var`
   /// (the same absolute registers-array pointer every ordinary register
-  /// access already uses -- an `Open` upvalue's index is, by
+  /// access already uses; an `Open` upvalue's index is, by
   /// definition, already an absolute index into that exact array, see
   /// `UpvalueState::Open`'s own docs), `Closed` reads the cell's own
   /// payload word directly. Only a genuinely unexpected receiver falls
@@ -5411,10 +5416,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let ptr = self.emit_upvalue_obj_ptr(uidx, slow_block);
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    let tag8 = self
-      .fb
-      .ins()
-      .load(types::I8, flags, ptr, object::obj_upvalue_state_tag_offset() as i32);
+    let tag8 = self.fb.ins().load(
+      types::I8,
+      flags,
+      ptr,
+      object::obj_upvalue_state_tag_offset() as i32,
+    );
     let state_tag = self.fb.ins().uextend(types::I64, tag8);
     let closed_tag = self.i64c(object::UPVALUE_STATE_TAG_CLOSED as i64);
     let is_closed = self.fb.ins().icmp(IntCC::Equal, state_tag, closed_tag);
@@ -5457,7 +5464,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `Instr::SetUpval`'s inline fast path -- `emit_get_upval_fast`'s
+  /// `Instr::SetUpval`'s inline fast path; `emit_get_upval_fast`'s
   /// write-side counterpart. `Closed` needs the same write barrier any
   /// other heap-object field mutation owes (see `emit_write_barrier`);
   /// `Open` writes straight into `regs_var`, no barrier, exactly like
@@ -5471,10 +5478,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let ptr = self.emit_upvalue_obj_ptr(uidx, slow_block);
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    let tag8 = self
-      .fb
-      .ins()
-      .load(types::I8, flags, ptr, object::obj_upvalue_state_tag_offset() as i32);
+    let tag8 = self.fb.ins().load(
+      types::I8,
+      flags,
+      ptr,
+      object::obj_upvalue_state_tag_offset() as i32,
+    );
     let state_tag = self.fb.ins().uextend(types::I64, tag8);
     let closed_tag = self.i64c(object::UPVALUE_STATE_TAG_CLOSED as i64);
     let is_closed = self.fb.ins().icmp(IntCC::Equal, state_tag, closed_tag);
@@ -5519,8 +5528,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Loads an `Obj::Instance`'s `fields` slice base pointer, given a
   /// raw `*const Obj` already proven (by a runtime tag check against
   /// `OBJ_TAG_INSTANCE`, in a block only reachable when `is_obj` was
-  /// ALSO already proven true -- see `emit_self_get_field`'s two-stage
-  /// branch) to actually be one -- see
+  /// ALSO already proven true: see `emit_self_get_field`'s two-stage
+  /// branch) to actually be one: see
   /// `object::obj_instance_fields_ptr_offset()`'s own docs for why this
   /// fixed offset is sound.
   fn load_instance_fields_ptr(&mut self, obj_ptr: IrValue) -> IrValue {
@@ -5561,13 +5570,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     let resolve_block = self.fb.create_block();
 
-    // `proven_list` is a compile-time fact -- exactly one of these two
+    // `proven_list` is a compile-time fact; exactly one of these two
     // arms is ever actually emitted for a given `Instr::GetIndex` site,
     // never both, so `ptr`/`as_int` dominate `resolve_block` either way
     // (a single predecessor chain, just a shorter one when proven).
     let (ptr, as_int) = if proven_list {
       // The object-shape half of the guard (`is_obj` + tag==LIST)
-      // already ran once, at `obj`'s own Instr::CheckParamType -- go
+      // already ran once, at `obj`'s own Instr::CheckParamType; go
       // straight to the pointer; only the index still needs checking
       // here.
       let ptr = self.obj_ptr(obj_val);
@@ -5575,7 +5584,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       if idx_proven_int {
         // `iidx` is proven to be a genuine whole number (see
-        // `typeflow::IntFacts`'s own docs) -- there's nothing left for
+        // `typeflow::IntFacts`'s own docs); there's nothing left for
         // this guard to prove, so there's no guard: straight through
         // to `resolve_block`, not even a branch.
         self.fb.ins().jump(resolve_block, &[]);
@@ -5600,11 +5609,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       (ptr, as_int)
     } else {
       // Both safe to compute unconditionally regardless of the other's
-      // truth value -- neither dereferences memory, see `is_obj`/
+      // truth value; neither dereferences memory, see `is_obj`/
       // `is_number`'s own docs. `type_facts` already proves the index
       // numeric for the overwhelmingly common case (a loop counter
       // indexing a list), so there's no need to pay for a dynamic check
-      // of something the compiler already knows -- same discipline
+      // of something the compiler already knows; same discipline
       // arithmetic/bitwise ops use via `proven_numeric`.
       let is_obj = self.is_obj(obj_val);
       let cheap_guard = if idx_proven_numeric {
@@ -5623,7 +5632,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // `ptr`/`tag` (dereferences memory) and the float round-trip check
       // (pure arithmetic, but only MEANINGFUL once `is_num` is known
       // true) are both only computed here, in a block reachable only
-      // when `cheap_guard` -- and therefore `is_obj` -- was already
+      // when `cheap_guard`; and therefore `is_obj`; was already
       // proven true. Same discipline `emit_self_get_field` uses for its
       // own tag check.
       self.fb.switch_to_block(checked_block);
@@ -5635,7 +5644,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let f = self.to_f64(idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       if idx_proven_int {
-        // See the `proven_list` arm above -- the index half of the
+        // See the `proven_list` arm above; the index half of the
         // guard is a settled fact, only `is_list` still needs checking.
         self
           .fb
@@ -5695,7 +5704,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // the `restore_dirty_from_snapshot` at `done_block`) is needed:
     // `resolve_block`'s own `call_helper` above already mutated
     // `reg_cache` as a side effect of being GENERATED, regardless of
-    // whether it ever runs at runtime -- without resetting back to the
+    // whether it ever runs at runtime; without resetting back to the
     // true pre-instruction state here, `slow_block`'s own
     // `call_checked` would see nothing left to flush and silently emit
     // no flush instructions at all, even on the (here, only) runtime
@@ -5717,8 +5726,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `Instr::SetIndex`'s fast path -- the write-side counterpart of
-  /// `emit_list_get_index`; see its own docs for the shared reasoning,
+  /// `Instr::SetIndex`'s fast path; the write-side counterpart of
+  /// `emit_list_get_index`: see its own docs for the shared reasoning,
   /// including why `reg_cache` needs a hard reset before `slow_block`
   /// (two independent `call_helper` sites: `zuri_jit_list_data` here,
   /// `zuri_jit_set_index` there).
@@ -5853,7 +5862,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // runtime. With two such sites, the FIRST one generated "uses up"
     // the Dirty flag at compile time, so the SECOND site's own
     // `flush_live` sees nothing left to flush and emits no store
-    // instruction at all -- even when, at runtime, only the SECOND
+    // instruction at all; even when, at runtime, only the SECOND
     // block ever actually executes and the first's flush never ran.
     // Resetting back to the snapshot before generating EACH
     // independent branch (not just restoring once at the very end)
@@ -5878,14 +5887,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Bounded so a single scalar-replaced allocation can't blow up this
   /// compiled function's own native stack usage for a pathological
-  /// literal -- matches the spirit (not the letter) of similar caps
+  /// literal; matches the spirit (not the letter) of similar caps
   /// elsewhere in this file. Ordinary code overwhelmingly writes small,
   /// fixed-size list literals; anything bigger just falls through to
   /// the general, heap-allocating path unchanged.
   const MAX_SCALAR_LIST_LEN: u8 = 16;
 
   /// Is `Instr::MakeList{dst, start: _, count}` at `alloc_ip` safe to
-  /// scalar-replace -- keep its `count` elements as ordinary `Value`s
+  /// scalar-replace; keep its `count` elements as ordinary `Value`s
   /// in a Cranelift stack slot (see `emit_scalar_make_list`) instead of
   /// a real heap `Obj::List`, with `dst` never materialized as a
   /// tagged `Value` at all?
@@ -5893,14 +5902,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Two independent conditions, both required:
   /// - `jit::escape::analyze_one` proves `dst` never escapes this
   ///   function (see that module's docs for exactly what's whitelisted
-  ///   -- `GetIndex`/`SetIndex`'s container position already is, with
+  ///  ; `GetIndex`/`SetIndex`'s container position already is, with
   ///   no extension needed here).
   /// - No `Instr::Move` ANYWHERE in this function ever reads `dst`.
   ///   `analyze_one`'s own dataflow WOULD correctly follow a `Move`
   ///   (propagating the "doesn't escape" proof to whatever register it
   ///   copies into), but this compiler's OWN codegen-time tracking
   ///   (`scalar_lists`) does NOT independently replicate that
-  ///   propagation -- deliberately: reimplementing the same
+  ///   propagation; deliberately: reimplementing the same
   ///   reachability/aliasing logic a second time, in a completely
   ///   separate piece of code, is exactly the kind of two-sources-of-
   ///   truth setup that has already produced one real, silent-
@@ -5918,12 +5927,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///   conservative_dst`-covered instruction appears anywhere after
   ///   `alloc_ip`. Root cause, found 2026-08-20: a scalar-replaced
   ///   list's `dst` is NEVER materialized as a real `Value` in `VM::
-  ///   registers` (the entire point of the optimization) -- but
+  ///   registers` (the entire point of the optimization); but
   ///   `emit_speculative_guard` (the ONLY thing that can trigger a
   ///   MID-FUNCTION deopt, and it only ever fires for a
   ///   `conservative_dst`-covered instruction whose destination
   ///   `speculative_regs` bet on) resumes execution in the
-  ///   INTERPRETER on a failed bet -- which has no idea the register
+  ///   INTERPRETER on a failed bet; which has no idea the register
   ///   ever held a list at all, since nothing was ever written there.
   ///   Confirmed by direct repro: a scalar-replaced list created
   ///   before an unrelated dict lookup whose result type varies at
@@ -5943,7 +5952,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///   over-approximation of "no possible deopt while `dst` could
   ///   still be needed" (the true condition would need `dst`'s exact
   ///   last-use `ip`, not just "anywhere in the rest of the function")
-  ///   -- cheap to check, and safe to be wrong in the "still
+  ///  ; cheap to check, and safe to be wrong in the "still
   ///   disallowed" direction. `tests/scalar-list-speculative-guard-scope.zu`
   ///   locks in the repro that found this.
   fn scalar_replace_eligible(&self, alloc_ip: usize, dst: u8, count: u8) -> bool {
@@ -5969,15 +5978,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `Instr::MakeList{dst, start, count}`'s scalar-replaced fast path
   /// (see `scalar_replace_eligible`): copies the `count` source
-  /// registers into a fresh Cranelift stack slot -- ordinary `Value`s,
-  /// never wrapped in a heap `Obj::List` -- records `dst -> (slot,
+  /// registers into a fresh Cranelift stack slot; ordinary `Value`s,
+  /// never wrapped in a heap `Obj::List`; records `dst -> (slot,
   /// count)` in `scalar_lists` for `Instr::GetIndex`/`SetIndex` to
   /// consult, and registers the slot as a GC root.
   ///
   /// Registration happens LAST, strictly after every element slot has
   /// already been written: `VM::jit_scalar_roots`'s whole soundness
   /// argument depends on every slot a GC walk might visit already
-  /// holding a valid `Value` (see that field's own docs) -- an
+  /// holding a valid `Value` (see that field's own docs); an
   /// uninitialized stack slot is neither `nil` nor any other valid tag
   /// pattern, and a GC safepoint CAN fire between two ordinary
   /// instructions (a nested call inside one of the source expressions,
@@ -6003,7 +6012,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `Instr::GetIndex`'s fast path when `obj` is a scalar-replaced
-  /// list (`self.scalar_lists`) -- the SAME bounds-check shape as
+  /// list (`self.scalar_lists`); the SAME bounds-check shape as
   /// `emit_list_get_index` (negative-index wraparound, integer-value
   /// round-trip check), just against a COMPILE-TIME-KNOWN `count` and
   /// a directly-addressable stack slot instead of a runtime-resolved
@@ -6012,14 +6021,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///
   /// Still needs `snapshot_reg_cache`/`restore_dirty_from_snapshot`
   /// even though there's only ONE `call_helper` site here (unlike
-  /// `emit_list_get_index`'s two) -- the relevant condition for needing
+  /// `emit_list_get_index`'s two); the relevant condition for needing
   /// this isn't "how many call_helper sites in this instruction," it's
   /// "does this instruction have a call_helper site that ONLY runs on
   /// a CONDITIONAL branch." `slow_block`'s `flush_live` mutates
   /// `reg_cache` (Dirty -> Clean) the moment its code is GENERATED,
   /// regardless of whether the runtime path taken is fast or slow; if
-  /// left unrestored, a LATER instruction's own `flush_live` -- even a
-  /// completely unrelated one several instructions later -- would see
+  /// left unrestored, a LATER instruction's own `flush_live`; even a
+  /// completely unrelated one several instructions later; would see
   /// a register as already-Clean and skip flushing it, even on a
   /// runtime execution where THIS instruction actually took its fast
   /// path (which never flushes anything) and that register genuinely
@@ -6046,7 +6055,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     // Same discipline `emit_list_get_index`'s own `idx_proven_numeric`
     // skips: nothing left for this half of the guard to prove, so no
-    // check, no branch -- straight through.
+    // check, no branch; straight through.
     if idx_proven_numeric {
       self.fb.ins().jump(checked_block, &[]);
     } else {
@@ -6075,7 +6084,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Same discipline `emit_list_get_index`'s own `idx_proven_int`
     // skips: `iidx` is proven a genuine whole number (`typeflow::
     // IntFacts`), so the float-roundtrip check has nothing left to
-    // prove -- only the bounds still matter.
+    // prove; only the bounds still matter.
     let ok = if idx_proven_int {
       in_bounds
     } else {
@@ -6107,7 +6116,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // actually flushing anything, so a no-op here) and, more
     // importantly, whatever an EARLIER instruction's own conditional
     // `call_helper` site left behind, before `slow_block`'s OWN
-    // `flush_live` runs -- otherwise it could see a register as
+    // `flush_live` runs; otherwise it could see a register as
     // already-Clean from a branch that never actually executed.
     self.reg_cache = snapshot.clone();
     self.fb.switch_to_block(slow_block);
@@ -6120,14 +6129,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &[self.vm_param, base, dst_i, addr, count_c, idx_i],
     );
     // `zuri_jit_scalar_get_index` writes `dst` DIRECTLY to `VM::
-    // registers`, bypassing `store_reg`/`reg_vars` entirely -- matches
+    // registers`, bypassing `store_reg`/`reg_vars` entirely; matches
     // `emit_list_get_index`'s identical slow path, and for the exact
     // same reason: `call_checked`'s automatic `Stale` mark alone isn't
     // enough here, since `fast_block` DID call `store_reg` (a real
     // `def_var`), so without giving THIS block its own `def_var` too,
     // Cranelift's SSA merge at `done_block` would resolve `dst`'s
     // `Variable` to whatever dominating definition existed BEFORE this
-    // instruction on this path -- silently stale, not merely absent.
+    // instruction on this path; silently stale, not merely absent.
     self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
@@ -6135,8 +6144,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `Instr::SetIndex`'s scalar-replaced fast path -- the write-side
-  /// counterpart of `emit_scalar_list_get`; see its own docs for the
+  /// `Instr::SetIndex`'s scalar-replaced fast path; the write-side
+  /// counterpart of `emit_scalar_list_get`: see its own docs for the
   /// shared bounds-check shape and the general reason a snapshot/
   /// restore is needed around ANY conditionally-reached `call_helper`
   /// site, not just ones with two or more sites in one instruction.
@@ -6238,12 +6247,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `Instr::SetGlobal`/`Instr::AssignGlobal`'s inline-cache-style fast
-  /// path -- the write-side counterpart of `emit_get_global`, sharing
+  /// path; the write-side counterpart of `emit_get_global`, sharing
   /// its cache array (`JitInfo::global_slot_cache`) and the same
   /// unconditional flush/stale-mark discipline around the branch (see
   /// that method's own docs for why). No `resync_dst_from_memory` call
   /// is needed on the miss path here the way `emit_get_global` needs
-  /// one for its `dst` -- neither instruction defines a register at
+  /// one for its `dst`; neither instruction defines a register at
   /// all, only reads `src` and writes to `VM::global_slots`, so there's
   /// no register-`Variable` SSA merge at `done_block` to keep
   /// consistent between the two paths.
@@ -6310,7 +6319,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.mark_stale_live(ip);
   }
 
-  // The `GetField`/`SetField` inline fast path -- see
+  // The `GetField`/`SetField` inline fast path: see
   // `emit_ic_get_field`/`emit_ic_set_field` for the general receiver
   // and `emit_self_get_field`/`emit_self_set_field` for the
   // compile-time-resolvable `self.field` case. Both rely on
@@ -6322,7 +6331,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   // Guards
   // ---------------------------------------------------------------
 
-  /// `(bits & QNAN) != QNAN` -- `Value::is_number()`'s exact bit test
+  /// `(bits & QNAN) != QNAN`; `Value::is_number()`'s exact bit test
   /// (see `value.rs`), safe to inline because it only ever inspects the
   /// tagged `u64` itself, never a heap object's contents.
   fn is_number(&mut self, v: IrValue) -> IrValue {
@@ -6338,19 +6347,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `both_numbers`, but skipping the dynamic `is_number` check on
-  /// whichever side `type_facts` already proves numeric -- the same
+  /// whichever side `type_facts` already proves numeric; the same
   /// discipline `emit_list_get_index`'s own `idx_proven_numeric` flag
   /// established for the index operand (see `jit::typeflow::TypeFacts`'s
   /// own docs and the `GetIndex` fast path). Every guarded binary
   /// numeric op (`Add`/`Sub`/`Mul`/`Div`/`Pow`/`Floor`/`Mod`, the
   /// bitwise ops, `Eq`/`Neq`) only ever reaches its OWN `_guarded`
   /// codegen when `both_proven_numeric` was already false at that call
-  /// site -- meaning AT MOST one operand can still be unprovable here,
+  /// site; meaning AT MOST one operand can still be unprovable here,
   /// never both by construction of how those call sites branch. Both
   /// `true` is handled anyway (a static `true`, no check at all) purely
   /// so this function is correct on its own terms regardless of what a
   /// caller passes, not because any current caller reaches it.
-  fn combined_numeric_guard(&mut self, ip: usize, va: IrValue, vb: IrValue, a: u8, b: u8) -> IrValue {
+  fn combined_numeric_guard(
+    &mut self,
+    ip: usize,
+    va: IrValue,
+    vb: IrValue,
+    a: u8,
+    b: u8,
+  ) -> IrValue {
     match (self.proven_numeric(ip, a), self.proven_numeric(ip, b)) {
       (true, true) => self.fb.ins().iconst(types::I8, 1),
       (true, false) => self.is_number(vb),
@@ -6359,11 +6375,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// `(bits & (QNAN|SIGN_BIT)) == (QNAN|SIGN_BIT)` -- `Value::is_obj()`'s
+  /// `(bits & (QNAN|SIGN_BIT)) == (QNAN|SIGN_BIT)`; `Value::is_obj()`'s
   /// exact bit test (see `value.rs`). Safe to inline because it only
   /// inspects the tagged `u64` itself, never dereferences anything.
   /// Telling WHICH heap type a confirmed object is needs a real
-  /// dereference -- see `obj_ptr`/`obj_tag` for the (now sound, since
+  /// dereference: see `obj_ptr`/`obj_tag` for the (now sound, since
   /// `Obj` is `#[repr(C, u8)]`) way to do that inline too.
   fn is_obj(&mut self, v: IrValue) -> IrValue {
     let mask = self.u64c(value::QNAN | value::SIGN_BIT);
@@ -6372,10 +6388,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// Recovers the raw `*const Obj` pointer from a tagged `Value` known
-  /// (by an already-checked `is_obj`) to actually hold one -- the exact
+  /// (by an already-checked `is_obj`) to actually hold one; the exact
   /// inverse of `Value::obj`'s own tagging (`SIGN_BIT | QNAN | ptr`),
   /// masking the tag bits back off. Callers must not call this on a
-  /// `Value` that hasn't already been proven `is_obj` -- the result is
+  /// `Value` that hasn't already been proven `is_obj`; the result is
   /// garbage (though not unsound to COMPUTE; it's only unsound to
   /// DEREFERENCE) otherwise.
   fn obj_ptr(&mut self, v: IrValue) -> IrValue {
@@ -6383,7 +6399,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().band(v, mask)
   }
 
-  /// Reads `Obj`'s own tag byte straight out of memory -- sound only
+  /// Reads `Obj`'s own tag byte straight out of memory; sound only
   /// because `Obj` is `#[repr(C, u8)]` with an explicit discriminant on
   /// every variant (see that type's own docs), which is what makes
   /// "the tag is a `u8` at offset 0" a real, load-bearing guarantee
@@ -6422,7 +6438,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// Wraps a boolean condition into a Zuri `Value` bit pattern (`nil`/
-  /// `true`/`false` share the same `QNAN`-tagged layout -- see
+  /// `true`/`false` share the same `QNAN`-tagged layout: see
   /// `value.rs`): `cond` selects between the baked `TRUE_VAL`/
   /// `FALSE_VAL` constants directly, with no branch at all.
   fn bool_value(&mut self, cond: IrValue) -> IrValue {
@@ -6431,13 +6447,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().select(cond, t, f)
   }
 
-  /// `Value::is_falsey()` -- fully inlined, no helper call at all,
+  /// `Value::is_falsey()`; fully inlined, no helper call at all,
   /// UNLESS `cond`'s register holds a heap object at runtime (a
   /// bigint/string/bytes might be empty-and-therefore-falsey; any other
-  /// heap type never is -- see `value.rs`'s own `is_falsey` doc
+  /// heap type never is: see `value.rs`'s own `is_falsey` doc
   /// comment). `Value`'s tag space is exactly {number, nil, true,
   /// false, object}, and only the "object" case needs a real
-  /// dereference to resolve -- nil/bool/number are each decidable from
+  /// dereference to resolve; nil/bool/number are each decidable from
   /// the bit pattern alone: `nil` and `false` are exact bit-pattern
   /// matches, and a number is falsey iff it's `<= 0.0` (real IEEE-754
   /// comparison, not a bit compare, to get `-0.0`/NaN right). This is
@@ -6455,7 +6471,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // `call_helper`'s automatic wrapping bundled into `obj_block`
     // below: `obj_block` only actually runs at runtime when `cond`
     // holds a heap object, which is FAR from every call (a loop
-    // condition or `if` on a bool/number never takes it) -- the
+    // condition or `if` on a bool/number never takes it); the
     // register cache can't know in advance which way THIS particular
     // check will go, so it has to assume the conservative case (a
     // helper call, and therefore a real safepoint, COULD happen here)
@@ -6473,7 +6489,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(obj_block);
     // `Value::is_falsey`'s own definition (value.rs) never treats ANY
     // object as falsey except an empty Str/Bytes or a non-positive
-    // BigInt -- every other heap kind (List, Dict, Instance, Closure,
+    // BigInt; every other heap kind (List, Dict, Instance, Closure,
     // ...) is unconditionally NOT falsey, decidable from the tag byte
     // alone with no payload inspection. So: check the tag first, and
     // only actually call the helper (to inspect the payload) for the
@@ -6530,7 +6546,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(merge_block, &[]);
 
     self.fb.switch_to_block(merge_block);
-    // Mirrors the unconditional flush above -- `obj_block`'s helper
+    // Mirrors the unconditional flush above; `obj_block`'s helper
     // call, if it ran, could have relocated/invalidated other live
     // registers, and there's no way to tell from here which branch
     // was actually taken.
@@ -6545,7 +6561,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   // ---------------------------------------------------------------
 
   fn emit_instruction(&mut self, ip: usize, instr: Instr) -> bool {
-    // See `current_ip`'s own docs -- every nested helper/`call_indirect`
+    // See `current_ip`'s own docs; every nested helper/`call_indirect`
     // this instruction's own codegen issues (there can be more than
     // one, e.g. `emit_fast_call`'s prepare call plus its fast-path
     // `call_indirect`) consults this SAME value.
@@ -6557,14 +6573,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // instead, regardless of which predecessor is ACTUALLY taken at
     // runtime. Every predecessor edge is responsible for its OWN
     // flush before branching HERE (see `flush_before_jump` for forward/
-    // fall-through edges, `emit_safepoint` for back edges) -- this
+    // fall-through edges, `emit_safepoint` for back edges); this
     // block itself must NOT also flush via `use_var`: on the back
     // edge specifically, that would read whatever Cranelift's own SSA
     // construction is holding for the `Variable` in a machine
     // register/spill slot, a location GC cannot see or fix up, and
     // writing it back over memory can clobber a relocation that
     // already ran (see `flush_before_jump`'s own docs for the full
-    // reasoning -- this was a real, confirmed bug, not a hypothetical
+    // reasoning; this was a real, confirmed bug, not a hypothetical
     // one). By the time control reaches here via ANY edge, memory is
     // already correct; all that's needed is invalidating this
     // compiler's OWN bookkeeping so later code in/after this block
@@ -6632,17 +6648,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if let Some(recip) = self.div_by_pow2_reciprocal(ip, b) {
           // See `div_by_pow2_reciprocal`'s own docs: `b`'s value is a
           // compile-time-known constant, so no guard on IT is needed at
-          // all -- only `a` still might not be numeric.
+          // all; only `a` still might not be numeric.
           if self.proven_numeric(ip, a) {
             self.emit_binary_numeric_proven(dst, a, b, move |fc, fa, _fb| {
               let r = fc.fb.ins().f64const(recip);
               fc.fb.ins().fmul(fa, r)
             });
           } else {
-            self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_div_slow", move |fc, fa, _fb| {
-              let r = fc.fb.ins().f64const(recip);
-              fc.fb.ins().fmul(fa, r)
-            });
+            self.emit_binary_numeric_guarded(
+              ip,
+              dst,
+              a,
+              b,
+              "zuri_jit_div_slow",
+              move |fc, fa, _fb| {
+                let r = fc.fb.ins().f64const(recip);
+                fc.fb.ins().fmul(fa, r)
+              },
+            );
           }
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
@@ -6742,7 +6765,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(dst, a, b, Self::shift_right_unsigned);
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitushr", Self::shift_right_unsigned);
+          self.emit_bitwise_guarded(
+            ip,
+            dst,
+            a,
+            b,
+            "zuri_jit_bitushr",
+            Self::shift_right_unsigned,
+          );
         }
         false
       },
@@ -6955,13 +6985,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         self.flush_before_jump(ip + 1);
         let target_block = self.jump_target_block(ip, target_ip);
-        self.fb.ins().brif(
-          is_falsey,
-          target_block,
-          &[],
-          self.blocks[ip + 1],
-          &[],
-        );
+        self
+          .fb
+          .ins()
+          .brif(is_falsey, target_block, &[], self.blocks[ip + 1], &[]);
         true
       },
       Instr::JmpIfTrue { cond, offset } => {
@@ -6976,13 +7003,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         self.flush_before_jump(ip + 1);
         let target_block = self.jump_target_block(ip, target_ip);
-        self.fb.ins().brif(
-          is_truthy,
-          target_block,
-          &[],
-          self.blocks[ip + 1],
-          &[],
-        );
+        self
+          .fb
+          .ins()
+          .brif(is_truthy, target_block, &[], self.blocks[ip + 1], &[]);
         true
       },
 
@@ -6992,7 +7016,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         num_args,
       } => {
         // Inlining is checked BEFORE the safepoint, because an inlined
-        // body emits no call, no allocation and no frame push -- there
+        // body emits no call, no allocation and no frame push; there
         // is nothing for a collection to be owed at such a site, and
         // the enclosing loop's own back edge still carries one.
         if let Some(CallTarget::Known {
@@ -7008,7 +7032,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         match self.call_targets.get(&ip).copied() {
           Some(CallTarget::SelfRecursive) => self.emit_self_call(dst, func, num_args),
           // `entry == 0` means "resolved, but not compiled yet" (see
-          // `CallTarget::Known::entry`) -- there is no address to jump
+          // `CallTarget::Known::entry`); there is no address to jump
           // to, so this falls through to the ordinary resolver exactly
           // as an unresolved site would.
           Some(CallTarget::Known {
@@ -7225,7 +7249,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         obj,
         name_const,
       } => {
-        // A scalar-replaced instance has no object to read from -- the
+        // A scalar-replaced instance has no object to read from; the
         // field IS the stack slot, so this becomes a plain load.
         if let Some((slot, field)) = self.scalar_instance_slot(obj, name_const) {
           let v = self
@@ -7310,7 +7334,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // string calling e.g. `.length()` (a `ListIntrinsic` name too)
         // would otherwise still walk into `emit_list_intrinsic`, pay
         // for its own `proven_list`-false runtime guard, and land in
-        // that guard's slow arm anyway -- strictly more work than
+        // that guard's slow arm anyway; strictly more work than
         // going straight to a proven string's own fast paths
         // (`Value::String` is never a number or a list, so neither
         // intrinsic could ever legally apply here regardless of name).
@@ -7514,11 +7538,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let matched = self.fb.ins().icmp(IntCC::NotEqual, target, no_match);
 
         // A hit sets `ip` directly to an arbitrary absolute bytecode
-        // position -- unlike every other jump, the destination isn't
+        // position; unlike every other jump, the destination isn't
         // known until runtime, so this can't be a direct `Block`
         // branch. Route through a tiny indirect trampoline instead:
         // `br_table`-free by construction (avoids that API's exact
-        // shape entirely) -- a chain comparing the returned target ip
+        // shape entirely); a chain comparing the returned target ip
         // against every jump-table VALUE this specific `UsingJump`
         // could have produced, each already known at compile time from
         // `chunk.jump_tables[table_idx]`.
@@ -7593,10 +7617,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::MulImm { dst, a, imm_const } => {
-        // No inline fast path beyond the numeric guard -- the
+        // No inline fast path beyond the numeric guard; the
         // non-numeric fallback (string/list repeat) is common enough
         // (and cheap enough to check for) that `zuri_jit_mulimm_slow`
-        // handles the WHOLE non-fast-path case uniformly; see its docs.
+        // handles the WHOLE non-fast-path case uniformly: see its docs.
         if self.proven_numeric(ip, a) {
           self
             .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
@@ -7710,13 +7734,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// GC safepoint -- see `runtime::zuri_jit_gc_safepoint`'s own docs.
+  /// GC safepoint: see `runtime::zuri_jit_gc_safepoint`'s own docs.
   /// Emitted at every loop back-edge and function/method call site,
   /// matching the standard "safepoints at back-edges and calls"
   /// baseline-JIT policy this project's design calls for.
   ///
   /// `Heap::needs_major_gc()`/`needs_minor_gc()` are each just a
-  /// threshold compare -- inlined here (four loads + two compares, one
+  /// threshold compare; inlined here (four loads + two compares, one
   /// pair per generation) so the overwhelmingly common case (neither
   /// generation near its threshold) costs that instead of an
   /// unconditional FFI call at EVERY loop iteration and call site. The
@@ -7749,7 +7773,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // call, so a version that over-fires would pay a full FFI round
     // trip at every safepoint for as long as the two disagreed, and
     // the helper would decline to collect each time. Hence the
-    // subtraction here rather than reusing `bytes` directly -- see
+    // subtraction here rather than reusing `bytes` directly: see
     // `Heap::old_bytes_allocated` for why it cannot underflow.
     let old_bytes = self.fb.ins().isub(bytes, young_bytes);
     let needs_major = self
@@ -7769,7 +7793,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let needs_some_gc = self.fb.ins().bor(needs_major, needs_minor);
 
     // `flush_live`/`mark_stale_live` MUST run unconditionally, in
-    // shared code BEFORE this branch -- not inside `gc_block` (which
+    // shared code BEFORE this branch; not inside `gc_block` (which
     // is only entered at runtime if `needs_some_gc` is actually true).
     // This is a genuine safepoint regardless of whether a collection
     // ends up running THIS time: at compile time we can't know which
@@ -7778,7 +7802,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // happen right here) every single time. Bundling this inside
     // `call_helper`'s automatic wrapping (as every OTHER call site in
     // this file correctly does) would silently condition it on
-    // `gc_block` actually being entered -- on the overwhelmingly
+    // `gc_block` actually being entered; on the overwhelmingly
     // common "no collection needed this time" path, that call (and
     // therefore the flush) would never actually execute, while every
     // instruction compiled AFTER this one would wrongly believe
@@ -7806,7 +7830,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `emit_binary_numeric_guarded`'s fast-path body with the guard,
-  /// branch, and slow-path fallback removed entirely -- valid only
+  /// branch, and slow-path fallback removed entirely; valid only
   /// when the caller has already confirmed (via `type_facts`) that `a`
   /// and `b` are PROVEN numeric at this instruction, so the slow path
   /// could never be reached anyway.
@@ -7835,14 +7859,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// without this, Cranelift's own SSA construction never sees a
   /// `def_var` for `dst` on the slow side at all, so its merge at the
   /// branches' join point would resolve a later `use_var` to whatever
-  /// pre-instruction value dominated the slow edge -- silently
+  /// pre-instruction value dominated the slow edge; silently
   /// discarding the slow path's real result if that's the path actually
   /// taken at runtime. Simply marking `dst` `Stale` (what `call_helper`'s
   /// generic `any_dst` handling already does for every helper-written
   /// destination) is NOT sufficient here specifically: `Stale` means
   /// "trust memory on the next read," but the FAST path's own result is
   /// deliberately never written to memory at all (that's the entire
-  /// point of `store_reg`'s laziness) -- a stale-triggered reload would
+  /// point of `store_reg`'s laziness); a stale-triggered reload would
   /// silently return the OLD, pre-instruction value if the fast path is
   /// the one that actually ran. Calling this right after the slow
   /// helper makes both branches leave `dst` in the exact same kind of
@@ -7892,7 +7916,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `emit_bitwise_guarded`'s fast path, unguarded -- see
+  /// `emit_bitwise_guarded`'s fast path, unguarded: see
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_bitwise_proven(
     &mut self,
@@ -7956,7 +7980,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// A binary `f64` operation that has no Cranelift instruction,
-  /// reached as a DIRECT call to its `jit::runtime` helper -- the
+  /// reached as a DIRECT call to its `jit::runtime` helper; the
   /// `Instr::Mod`/`Instr::Pow` counterpart of `NumberIntrinsic::Call`.
   ///
   /// Goes through `call_helper_raw`, not `call_helper`: these helpers
@@ -8000,7 +8024,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `>>`'s exact semantics: `x.checked_shr(y as u32).unwrap_or(0)`.
   /// An ARITHMETIC shift (Rust's `>>` on `i64` sign-extends), but still
-  /// zero -- not `-1` -- for a negative `x` shifted by 64 or more, since
+  /// zero; not `-1`; for a negative `x` shifted by 64 or more, since
   /// that is the `unwrap_or(0)` case rather than a saturating shift.
   /// See `shift_left` for the shared count-cast reasoning.
   fn shift_right(fb: &mut FunctionBuilder, x: IrValue, y: IrValue) -> IrValue {
@@ -8042,12 +8066,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.call_checked(helper, &[self.vm_param, base, dst_i, a_i, b_i]);
   }
 
-  /// `Instr::Eq`/`Instr::Neq` -- fully inlined except when BOTH
+  /// `Instr::Eq`/`Instr::Neq`; fully inlined except when BOTH
   /// operands are heap objects (needing `Obj`-aware content comparison
-  /// -- list/dict structural equality, or pointer identity for
-  /// everything else -- which always needs a real dereference). Eq/Neq
+  ///; list/dict structural equality, or pointer identity for
+  /// everything else; which always needs a real dereference). Eq/Neq
   /// never consult an operator override (matches the interpreter's own
-  /// handler exactly -- see `vm.rs`).
+  /// handler exactly: see `vm.rs`).
   ///
   /// `Value::equals`'s own logic is: real IEEE-754 compare when both
   /// are numbers; recursive/pointer compare when both are objects;
@@ -8059,7 +8083,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `x == nil` chains through linked structures, `flag == true`, a
   /// number compared against a non-number, ...) is just one more
   /// branch away from the number fast path, no helper call at all.
-  /// `emit_compare_guarded`'s `num_block` path directly -- valid only
+  /// `emit_compare_guarded`'s `num_block` path directly; valid only
   /// when `a`/`b` are PROVEN numeric, so the object/raw-bits cases can
   /// never apply.
   fn emit_compare_proven_numeric(&mut self, dst: u8, a: u8, b: u8, cc: IntCC) {
@@ -8130,7 +8154,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `emit_fcompare_guarded`'s fast path, unguarded -- see
+  /// `emit_fcompare_guarded`'s fast path, unguarded: see
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_fcompare_proven(
     &mut self,
@@ -8186,7 +8210,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `emit_addimm`'s fast path, unguarded -- see
+  /// `emit_addimm`'s fast path, unguarded: see
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_addimm_proven(&mut self, dst: u8, a: u8, imm_const: u16) {
     let va = self.load_reg(a);
@@ -8232,7 +8256,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `emit_imm_numeric_guarded`'s fast path, unguarded -- see
+  /// `emit_imm_numeric_guarded`'s fast path, unguarded: see
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_imm_numeric_proven(
     &mut self,
@@ -8288,7 +8312,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `emit_imm_compare_guarded`'s fast path, unguarded -- see
+  /// `emit_imm_compare_guarded`'s fast path, unguarded: see
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_imm_compare_proven(
     &mut self,
@@ -8344,14 +8368,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.restore_dirty_from_snapshot(&snapshot, dst);
   }
 
-  /// `EqImm`/`NeqImm` -- like the interpreter's own handler, this is
+  /// `EqImm`/`NeqImm`; like the interpreter's own handler, this is
   /// pure `Value::equals` against a KNOWN-numeric constant, no operator
   /// override lookup ever. Fully inlinable with no helper fallback at
   /// all: when `a` is itself a number, real IEEE-754 equality decides
   /// it; otherwise `Value::equals` falls through to a raw bit compare
   /// (see `value.rs`), which is exactly what comparing the two `u64`s
   /// directly already gives here.
-  /// `emit_imm_eq`'s `num_block` path directly -- valid only when `a`
+  /// `emit_imm_eq`'s `num_block` path directly; valid only when `a`
   /// is PROVEN numeric.
   fn emit_imm_eq_proven(&mut self, dst: u8, a: u8, imm_const: u16, want_eq: bool) {
     let va = self.load_reg(a);

@@ -36,7 +36,7 @@ var BEST_COMPRESSION = 9
 var DEFAULT_COMPRESSION = -1
 
 
-# compression strategy; see compress() for details
+# compression strategy: see compress() for details
 
 /**
  * Filtered compression strategy.

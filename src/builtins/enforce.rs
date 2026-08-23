@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 //! Standardized argument validation for native function/method bodies
-//! -- the Rust-side equivalent of the C runtime's `ENFORCE_ARG_COUNT`/
+//!; the Rust-side equivalent of the C runtime's `ENFORCE_ARG_COUNT`/
 //! `ENFORCE_ARG_TYPE` macros. Exists so every native gets identically
 //! phrased errors for free, instead of every file hand-rolling its own
 //! `format!("... expects a string, got {}", ...)` (which had already
@@ -15,7 +15,7 @@
 //!
 //! `#[macro_export]` puts these at the crate root (`crate::enforce_arg_count!`,
 //! or `zuri::enforce_arg_count!` from an external crate), not nested
-//! under this module -- deliberately, so a library author writing their
+//! under this module; deliberately, so a library author writing their
 //! own natives against this crate doesn't need to know or care that
 //! `enforce.rs` is where they happen to live.
 
@@ -38,25 +38,25 @@ pub enum ArgType {
   List,
   Dict,
   Range,
-  /// Anything `Instr::Call` can invoke -- closure, bound method, or
-  /// native -- matching `Value::is_callable()`.
+  /// Anything `Instr::Call` can invoke; closure, bound method, or
+  /// native; matching `Value::is_callable()`.
   Function,
   Class,
   /// Any instance, regardless of class. For "must be an instance of
   /// SPECIFICALLY class X", check `v.is_instance() &&
-  /// v.as_instance().class.as_class().name == "X"` by hand -- narrow
+  /// v.as_instance().class.as_class().name == "X"` by hand; narrow
   /// enough, and rare enough among CURRENT natives, not to warrant its
   /// own variant yet.
   Instance,
   Nil,
   /// A `Ptr` wrapping specifically the resource named by the given
-  /// tag (see `ObjPtr::type_name`) -- e.g.
+  /// tag (see `ObjPtr::type_name`); e.g.
   /// `ArgType::PtrOf("sqlite3_connection")`. Distinct from a bare
   /// "any Ptr" check: a `gd_image` handed to a function expecting a
   /// `sqlite3_connection` should fail here, not at the `downcast`
   /// call inside the native body.
   PtrOf(&'static str),
-  /// Accepts anything -- useful for `enforce_arg_types!`'s uniform
+  /// Accepts anything; useful for `enforce_arg_types!`'s uniform
   /// call shape when only SOME positions need a real constraint.
   Any,
 }
@@ -100,7 +100,7 @@ impl ArgType {
       // baked into the variant's own match arm). Handled by
       // `describe_types`/the macros calling `type_name()` directly
       // instead where the ACTUAL received value's tag matters more
-      // than the generic label anyway -- see `ptr_type_mismatch_msg`
+      // than the generic label anyway: see `ptr_type_mismatch_msg`
       // below for the real (informative) message every `enforce_*`
       // callsite actually emits for this variant.
       ArgType::PtrOf(_) => "a pointer",
@@ -112,7 +112,7 @@ impl ArgType {
 
 /// Joins several `ArgType` labels into one readable phrase --
 /// `"a number"`, `"a number or a list"`, `"a string, a list, or a
-/// dict"` -- for the `*_any_of*!` macros' error messages. `pub`, not
+/// dict"`; for the `*_any_of*!` macros' error messages. `pub`, not
 /// `pub(crate)`, since the free-function `enforce_arg_type_any_of!` is
 /// itself `#[macro_export]`ed and needs this reachable from wherever
 /// that macro expands, including an external crate.
@@ -135,7 +135,7 @@ pub fn describe_types(types: &[ArgType]) -> String {
 /// comment), `$n` counts the receiver too, matching how every existing
 /// native already indexes `ctx.args` directly. Meant for natives
 /// registered `variadic` (e.g. via `method_opt`) whose min_arity floor
-/// alone isn't precise enough -- an EXACT-arity native's count is
+/// alone isn't precise enough; an EXACT-arity native's count is
 /// already fully enforced up front by `VM::call_native`, before the
 /// body ever runs, so this would just be a redundant second check
 /// there.
@@ -154,7 +154,7 @@ macro_rules! enforce_arg_count {
   };
 }
 
-/// Like `enforce_arg_count!`, but for a RANGE -- `trim([chr])` accepts
+/// Like `enforce_arg_count!`, but for a RANGE; `trim([chr])` accepts
 /// 1 or 2 (receiver + optional char), `index_of(str, [start])` accepts
 /// 2 or 3, etc.
 #[macro_export]
@@ -175,7 +175,7 @@ macro_rules! enforce_arg_range {
 
 /// Enforce that `ctx.args[$idx]` exists and matches `$ty` (an
 /// `ArgType`). `$idx` is a raw position into `ctx.args`, same as every
-/// other place in this codebase indexes it directly -- 0 is the
+/// other place in this codebase indexes it directly; 0 is the
 /// receiver for a method-style native, 1.. are the real arguments; for
 /// a free-function native with no implicit receiver (see `natives.rs`)
 /// it's 0.. directly. Missing entirely (an out-of-range index) is
@@ -232,7 +232,7 @@ macro_rules! enforce_arg_type_opt {
 
 /// Enforce several REQUIRED argument types in one call:
 /// `enforce_arg_types!(ctx, 1 => ArgType::String, 2 => ArgType::Number)`.
-/// Purely `enforce_arg_type!` repeated per pair -- exists so a native
+/// Purely `enforce_arg_type!` repeated per pair; exists so a native
 /// with several positional constraints reads as one declaration block
 /// at the top of the function instead of a stack of near-identical
 /// lines.
@@ -273,7 +273,7 @@ macro_rules! enforce_arg_type_any_of {
   };
 }
 
-/// Optional-argument counterpart to `enforce_arg_type_any_of!` -- a
+/// Optional-argument counterpart to `enforce_arg_type_any_of!`; a
 /// missing argument is not an error, only a present-but-wrong-shaped
 /// one is. Same relationship `enforce_arg_type_opt!` has to
 /// `enforce_arg_type!`.
@@ -298,7 +298,7 @@ macro_rules! enforce_arg_type_any_of_opt {
 /// produces a message naming the ACTUAL wrapped type on a mismatch
 /// (e.g. "expects argument 1 to be a sqlite3_connection, got a
 /// gd_image") instead of the generic "a pointer" `ArgType::label`
-/// falls back to for this variant. Free-function form; see
+/// falls back to for this variant. Free-function form: see
 /// `enforce_method_arg_ptr!` below for the method-style counterpart.
 #[macro_export]
 macro_rules! enforce_arg_ptr {
@@ -339,7 +339,7 @@ macro_rules! enforce_arg_ptr {
 //
 // Every native registered through `builtins::method`/`method_n`/
 // `method_opt` (see `builtins/mod.rs`) is invoked with the RECEIVER
-// spliced into `ctx.args[0]` -- `Instr::Invoke`'s calling convention,
+// spliced into `ctx.args[0]`; `Instr::Invoke`'s calling convention,
 // not something the user ever typed. A user calling `x.abs(1)` wrote
 // ONE argument; `ctx.args.len()` at that point is TWO. The
 // `enforce_arg_*!` family above reports raw `ctx.args` counts/indices
@@ -352,13 +352,13 @@ macro_rules! enforce_arg_ptr {
 // number has the receiver subtracted back out: `$n`/`$min`/`$max`
 // count only the REAL arguments (what a Zuri program actually wrote
 // between the parens), and `$idx` for a type check is that same
-// 1-based real-argument position -- which, since the receiver already
+// 1-based real-argument position; which, since the receiver already
 // occupies `ctx.args[0]`, happens to equal the raw `ctx.args` index
 // directly (`ctx.args[1]` IS argument 1, so the index itself needs no
-// further adjustment -- only the printed numbers in the free-function
+// further adjustment; only the printed numbers in the free-function
 // versions' `$idx + 1` did, and this family drops that `+ 1`).
 //
-// Deliberately NOT `#[macro_export]`/`pub` -- these encode a calling
+// Deliberately NOT `#[macro_export]`/`pub`; these encode a calling
 // convention (`Instr::Invoke`'s receiver-splicing) that's purely an
 // implementation detail of how THIS runtime dispatches `obj.method()`
 // calls. A library author writing their own natives against this
@@ -370,7 +370,7 @@ macro_rules! enforce_arg_ptr {
 // Every method-table native already goes through `VM::call_native`'s
 // own arity check first (see its call site in `Instr::Invoke`/
 // `dispatch_call`), which guarantees `ctx.args.len() >= 1` (the
-// receiver) before a native body ever runs -- so `ctx.args.len() - 1`
+// receiver) before a native body ever runs; so `ctx.args.len() - 1`
 // below can never underflow.
 
 macro_rules! enforce_method_arg_count {

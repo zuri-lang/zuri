@@ -30,7 +30,7 @@ struct Local {
   captured: bool,
 }
 
-/// Everything about compiling a function -- its own chunk, register
+/// Everything about compiling a function; its own chunk, register
 /// allocator, locals table, scope depth, and the upvalue descriptors it's
 /// accumulated so far. `Compiler` holds a STACK of these (one per level of
 /// function nesting currently being compiled), which is what makes upvalue
@@ -40,7 +40,7 @@ struct Local {
 struct FunctionScope {
   chunk: Chunk,
   /// High-water mark of `next_reg`. Unlike `next_reg`, this never goes
-  /// back down when `free_regs_to` runs -- it's what becomes
+  /// back down when `free_regs_to` runs; it's what becomes
   /// `ObjFunction.num_registers` once this function finishes compiling.
   next_reg: u8,
   max_reg: u8,
@@ -51,7 +51,7 @@ struct FunctionScope {
   /// references to outer-scope names. Order matches `Instr::GetUpval`'s
   /// `idx` and becomes `ObjFunction.upvalues`.
   upvalues: Vec<UpvalueDescriptor>,
-  /// Stack of currently-open loops, innermost last -- what `break` and
+  /// Stack of currently-open loops, innermost last; what `break` and
   /// `continue` target. Doesn't cross function boundaries: a closure
   /// declared inside a loop starts with an empty stack, so `break` inside
   /// it (if it were otherwise valid) can't reach the enclosing loop.
@@ -86,9 +86,9 @@ impl FunctionScope {
 /// One active loop's jump targets, live only while compiling that loop's
 /// body.
 struct LoopContext {
-  /// Where `continue` jumps back to -- the condition re-check.
+  /// Where `continue` jumps back to; the condition re-check.
   continue_target: usize,
-  /// Where `break` jumps forward to -- patched once the loop's exit point
+  /// Where `break` jumps forward to; patched once the loop's exit point
   /// is known, after the whole body has compiled.
   break_jumps: Vec<usize>,
   /// Register mark at the loop body's own entry. `break`/`continue` emit
@@ -112,7 +112,7 @@ pub struct Compiler<'a> {
   is_repl: bool,
   source_path: Rc<str>,
   /// The module every `ObjFunction` this Compiler produces belongs to
-  /// -- `None` for the main script/REPL (functions get
+  ///; `None` for the main script/REPL (functions get
   /// `globals_module: None`, i.e. the VM's root table, exactly as
   /// before this feature existed). Set once via
   /// `set_current_module`, right after `Compiler::new`, when
@@ -188,10 +188,10 @@ impl<'a> Compiler<'a> {
   }
 
   /// `ast::Type` (what the parser produced) -> `chunk::ParamType` (what
-  /// `Instr::CheckParamType` actually reads at runtime) -- a plain
+  /// `Instr::CheckParamType` actually reads at runtime); a plain
   /// rename for every built-in, except `Instance`, whose class name
   /// needs interning as a string constant the check can look up by
-  /// index. Never called for `Type::Any` -- see
+  /// index. Never called for `Type::Any`: see
   /// `emit_param_type_checks`'s own docs on why that one skips
   /// emission entirely rather than becoming a `ParamType` variant.
   fn ast_type_to_param_type(&mut self, t: &Type) -> ParamType {
@@ -222,7 +222,7 @@ impl<'a> Compiler<'a> {
 
   /// Emits one `Instr::CheckParamType` per typed parameter, in
   /// parameter order, right after their registers are allocated but
-  /// before the body compiles -- so a mismatched argument raises before
+  /// before the body compiles; so a mismatched argument raises before
   /// the function does anything with it, exactly like the reference C
   /// runtime's own `compile_type_check` placement. `params`/`regs` are
   /// parallel (every params[i] a plain `Expr::Argument`, its register
@@ -273,7 +273,7 @@ impl<'a> Compiler<'a> {
       };
       let check_idx = self.add_param_check(check);
       // A fresh `FunctionScope` starts `current_line` at 0 (see its own
-      // field docs) -- nothing else sets it before the body's first
+      // field docs); nothing else sets it before the body's first
       // statement does, and these checks run before that. Without this,
       // an uncaught `TypeError` from a bad argument would blame line 0
       // instead of the parameter's own line.
@@ -283,7 +283,7 @@ impl<'a> Compiler<'a> {
   }
 
   /// Report a genuine, user-triggerable compile error anchored to a
-  /// real token from the AST -- exactly the same shape the parser's own
+  /// real token from the AST; exactly the same shape the parser's own
   /// `ParseError`s use, so both phases format identically (see
   /// `format_parse_errors` in zuri.rs).
   fn report_error(&mut self, message: String, token: &Token) {
@@ -291,8 +291,8 @@ impl<'a> Compiler<'a> {
   }
 
   /// Same, for the handful of sites with no surviving `Token` in the
-  /// AST at all -- `Expr::Self_`/`Expr::Parent` are unit variants,
-  /// `Stmt::Break`/`Stmt::Continue` carry no payload -- so this falls
+  /// AST at all; `Expr::Self_`/`Expr::Parent` are unit variants,
+  /// `Stmt::Break`/`Stmt::Continue` carry no payload; so this falls
   /// back to whatever line `current_line` was last stamped with (see
   /// `Compiler::emit`). At worst slightly stale within the same
   /// statement; never the wrong function or file.
@@ -306,7 +306,7 @@ impl<'a> Compiler<'a> {
   }
 
   /// A register holding `nil`, handed back from an expression-compiling
-  /// site right after `report_error`/`report_error_here` -- keeps the
+  /// site right after `report_error`/`report_error_here`; keeps the
   /// bytecode structurally valid (every caller still gets *a* register)
   /// even though the function is already known to be invalid and will
   /// never actually run. Mirrors the parser's own `EMPTY_TOKEN`
@@ -321,7 +321,7 @@ impl<'a> Compiler<'a> {
 
   /// Shared overflow check for every "num_args + 1" call-argument
   /// counter (a plain `.checked_add(1).expect(...)` used to panic here
-  /// in four different places) -- one real limit (255 args in a single
+  /// in four different places); one real limit (255 args in a single
   /// call), reported once per call site instead of duplicated
   /// ad-hoc.
   fn checked_arg_count(&mut self, num_args: u8, token: Option<&Token>) -> u8 {
@@ -340,8 +340,8 @@ impl<'a> Compiler<'a> {
 
   /// Purely syntactic privacy check, run at the exact point a `.name`
   /// access (Get, Set, or a method-call routed through compile_invoke) is
-  /// compiled. Both facts it depends on -- does `name` start with '_',
-  /// and is the receiver spelled `self`/`parent` -- are fully known from
+  /// compiled. Both facts it depends on; does `name` start with '_',
+  /// and is the receiver spelled `self`/`parent`; are fully known from
   /// the AST at THIS point, for every access site in the program,
   /// regardless of what the receiver's value turns out to be once the
   /// program runs. That's also why the rule can't be narrowed to "methods
@@ -436,11 +436,11 @@ impl<'a> Compiler<'a> {
   /// means a caller keeps the ordinary control-flow jump it would have
   /// emitted anyway), so every arm here only returns true when EVERY
   /// path through `stmt` is provably covered. A `Block`'s own answer
-  /// defers entirely to its last statement -- sound regardless of what
+  /// defers entirely to its last statement; sound regardless of what
   /// any EARLIER statement does, since if the last one never falls
   /// through, nothing after it is reachable either way. `While` is
   /// always false here even though `while true { ... }` genuinely can
-  /// never fall through either -- proving that soundly means proving
+  /// never fall through either; proving that soundly means proving
   /// every exit from the loop body is covered too, which is more
   /// analysis than this optimization is worth.
   fn stmt_never_falls_through(stmt: &Stmt) -> bool {
@@ -480,7 +480,7 @@ impl<'a> Compiler<'a> {
   /// Does `scopes[scope_idx]` have access to `name` as an upvalue? Checks
   /// whether the DIRECTLY enclosing function (`scope_idx - 1`) has it as a
   /// local (capture it directly), and if not, recurses outward in case
-  /// some function further out has it -- in which case each intermediate
+  /// some function further out has it; in which case each intermediate
   /// function threads it through as `UpvalueDescriptor::Upvalue`, chaining
   /// the capture inward one level at a time.
   fn resolve_upvalue(&mut self, scope_idx: usize, name: &str) -> Option<u8> {
@@ -507,7 +507,7 @@ impl<'a> Compiler<'a> {
   /// Does any local currently in scope, at register `from` or above,
   /// need closing before a `break`/`continue` jumps out from under it?
   /// Used instead of the `locals[locals_mark..]` slice `Stmt::Block`
-  /// checks, since a mid-block jump doesn't truncate `locals` -- every
+  /// checks, since a mid-block jump doesn't truncate `locals`; every
   /// local from an enclosing scope is still sitting in the same Vec.
   fn locals_captured_from(&self, from: u8) -> bool {
     self
@@ -531,7 +531,7 @@ impl<'a> Compiler<'a> {
 
   /// Compile a function's PARAMETERS and BODY into a standalone
   /// `ObjFunction` prototype. Does NOT bind the resulting function
-  /// anywhere -- callers (`compile_function_decl`, `Expr::Anonymous`)
+  /// anywhere; callers (`compile_function_decl`, `Expr::Anonymous`)
   /// decide that.
   fn compile_function_prototype(
     &mut self,
@@ -633,8 +633,8 @@ impl<'a> Compiler<'a> {
   }
 
   /// Like `compile_function_prototype`, but for a class method: register
-  /// 0 is ALWAYS reserved for the receiver -- even for a static method,
-  /// which never reads it -- so every call site (Invoke/InvokeSuper) can
+  /// 0 is ALWAYS reserved for the receiver; even for a static method,
+  /// which never reads it; so every call site (Invoke/InvokeSuper) can
   /// use one uniform register layout regardless of whether the target
   /// turns out to be static or not. Only non-static methods get a named
   /// "self" local pointing at it, which is what makes `self` a compile
@@ -723,7 +723,7 @@ impl<'a> Compiler<'a> {
 
   /// Compile a class's own (non-static) field initializers into a
   /// single arity-1 (self) function, run once per instance at
-  /// construction time -- see `VM::instantiate`. Own field names were
+  /// construction time: see `VM::instantiate`. Own field names were
   /// already registered into the class's field_slots table via
   /// Instr::DeclareField before this runs, but that happens at CLASS
   /// declaration time, well before any instance (and thus any call to
@@ -784,7 +784,7 @@ impl<'a> Compiler<'a> {
   /// shell that inherits its method/field tables, register this
   /// class's own fields and build their initializer, evaluate its own
   /// static members, compile and attach its own methods, resolve the
-  /// constructor, then bind the class as a global -- mirroring how a
+  /// constructor, then bind the class as a global; mirroring how a
   /// top-level function declaration binds itself, just with a lot more
   /// steps in between.
   fn compile_class_decl(
@@ -819,9 +819,9 @@ impl<'a> Compiler<'a> {
     });
 
     // Alias the (already-evaluated) superclass value as a synthetic
-    // local named "@superclass" -- never reachable as a real
+    // local named "@superclass"; never reachable as a real
     // identifier, since the lexer never produces one starting with '@'
-    // -- purely so every method compiled below can find it through the
+    //; purely so every method compiled below can find it through the
     // same resolve_variable/resolve_upvalue machinery used for any
     // other captured outer local. That's what lets `parent.foo()` work
     // even from inside a closure nested several levels deep in a
@@ -854,7 +854,7 @@ impl<'a> Compiler<'a> {
       }
     }
 
-    // A field doesn't have to go through an explicit `var` -- `self.x =
+    // A field doesn't have to go through an explicit `var`; `self.x =
     // value` anywhere in one of this class's own (non-static) methods,
     // most commonly the constructor, is just as visible to the compiler
     // at class-declaration time and counts as "predeclared" the same
@@ -864,7 +864,7 @@ impl<'a> Compiler<'a> {
     // redundant instruction; a name inherited from a superclass is
     // invisible to this scan (the superclass's layout only exists as a
     // runtime Value by now) and is instead deduped where it actually
-    // matters -- Instr::DeclareField's own handler in vm.rs.
+    // matters; Instr::DeclareField's own handler in vm.rs.
     let explicit_names: Vec<String> = own_fields
       .iter()
       .filter_map(|p| match p {
@@ -985,11 +985,11 @@ impl<'a> Compiler<'a> {
     self.free_regs_to(mark);
   }
 
-  /// `class Name > Target { ... }` -- monkey-patches new methods directly
+  /// `class Name > Target { ... }`; monkey-patches new methods directly
   /// into an ALREADY-DECLARED class's live method table, rather than
   /// building a new class of its own. Every member must be `static`
   /// (enforced below) and takes the instance it's called on as an
-  /// ordinary, explicit first parameter -- there's no implicit `self`
+  /// ordinary, explicit first parameter; there's no implicit `self`
   /// binding here, since these compile as plain functions (just tagged
   /// `is_method: true` so Invoke/GetField still treat the installed
   /// closure as receiver-expecting once it's sitting in a real method
@@ -1065,7 +1065,7 @@ impl<'a> Compiler<'a> {
   }
 
   /// Resolve the current method's implicit receiver to a register,
-  /// exactly like resolving any other named local -- `self` is pushed
+  /// exactly like resolving any other named local; `self` is pushed
   /// as a real (synthetic) Local when compiling a method body
   /// specifically so nested closures can capture it as an upvalue
   /// through the same mechanism as any other outer local (see
@@ -1102,15 +1102,15 @@ impl<'a> Compiler<'a> {
     }
   }
 
-  /// `obj.method(args)` -- fused into one Invoke instruction rather
+  /// `obj.method(args)`; fused into one Invoke instruction rather
   /// than a Get producing a bound-method object followed by a plain
   /// Call, to skip that heap allocation on every method call. The
-  /// receiver is duplicated into `obj_reg + 1`; see Instr::Invoke's own
+  /// receiver is duplicated into `obj_reg + 1`: see Instr::Invoke's own
   /// doc comment for why.
   fn compile_invoke(&mut self, obj: &Expr, method: &Token, args: &[Expr]) -> u8 {
     let method_name = Self::identifier_name(method);
 
-    // `parent.foo(...)` never reaches this function -- it's intercepted
+    // `parent.foo(...)` never reaches this function; it's intercepted
     // earlier and routed to compile_invoke_super, which is
     // unconditionally privileged (see check_private_access's own doc
     // comment for why this has to be checked here, purely
@@ -1162,9 +1162,9 @@ impl<'a> Compiler<'a> {
     dst
   }
 
-  /// `parent.method(args)` -- statically resolves which class's method
+  /// `parent.method(args)`; statically resolves which class's method
   /// table to look in (the current method's lexical superclass,
-  /// captured via the synthetic "@superclass" local -- see
+  /// captured via the synthetic "@superclass" local: see
   /// `compile_class_decl`) while still binding the CURRENT self, unlike
   /// a plain virtual `self.method()` call.
   fn compile_invoke_super(&mut self, method: &Token, args: &[Expr]) -> u8 {
@@ -1228,7 +1228,7 @@ impl<'a> Compiler<'a> {
   }
 
   // Mirrors compile_invoke_super, minus the method-name lookup
-  /// `parent(args)` -- calls the SUPERCLASS's own constructor on the
+  /// `parent(args)`; calls the SUPERCLASS's own constructor on the
   /// CURRENT self. See `Instr::CallSuperCtor`'s doc comment for why this
   /// reads `ObjClass::constructor` directly instead of a name lookup.
   fn compile_super_ctor_call(&mut self, args: &[Expr]) -> u8 {
@@ -1302,7 +1302,7 @@ impl<'a> Compiler<'a> {
   /// `LIST_LITERAL_CHUNK_SIZE` is built INCREMENTALLY instead: an empty
   /// list, then repeated `list.extend(chunk)` calls, each `chunk` a
   /// small, ordinary `MakeList` of its own. This is what lets a
-  /// several-hundred-element literal compile at all -- a single
+  /// several-hundred-element literal compile at all; a single
   /// `MakeList` over the whole thing would need one register PER
   /// ELEMENT, all live at once, which this VM's `u8`-sized register
   /// operands can't address past ~255.
@@ -1330,11 +1330,11 @@ impl<'a> Compiler<'a> {
   }
 
   /// One bounded (`<= LIST_LITERAL_CHUNK_SIZE` elements) list literal,
-  /// via a single `MakeList` -- the ORIGINAL `Expr::List` compiling
+  /// via a single `MakeList`; the ORIGINAL `Expr::List` compiling
   /// logic, just factored out and switched from raw register arithmetic
   /// to `alloc_reg()` (which reports a proper compile error instead of
   /// panicking if this function is somehow already almost out of
-  /// registers -- see `alloc_reg`'s own overflow handling).
+  /// registers: see `alloc_reg`'s own overflow handling).
   fn compile_list_chunk(&mut self, elements: &[Expr]) -> u8 {
     let start = self.cur().next_reg;
     let mut count: u8 = 0;
@@ -1436,9 +1436,9 @@ impl<'a> Compiler<'a> {
   /// Emits `receiver_reg.extend(arg_reg)` as an ordinary `Invoke` --
   /// shared by both the list and dict chunking paths above. Follows the
   /// exact same calling convention `compile_invoke` always uses (the
-  /// receiver is duplicated into `obj + 1`; see `Instr::Invoke`'s own
+  /// receiver is duplicated into `obj + 1`: see `Instr::Invoke`'s own
   /// doc comment), even though the native `extend()` methods only
-  /// actually read `obj + 2..` -- staying consistent with the general
+  /// actually read `obj + 2..`; staying consistent with the general
   /// convention is simpler than special-casing "this call happens to
   /// target a native."
   fn emit_extend_call(&mut self, receiver_reg: u8, arg_reg: u8) {
@@ -1635,7 +1635,7 @@ impl<'a> Compiler<'a> {
         let mark = self.cur().next_reg;
         let result = mark;
 
-        // Force lhs into the fixed result register -- same trick as
+        // Force lhs into the fixed result register; same trick as
         // Condition: mutually-exclusive control-flow paths can share a
         // register number, but a bare local-variable read for lhs won't
         // land there "for free", so Move if needed.
@@ -1701,7 +1701,7 @@ impl<'a> Compiler<'a> {
         result
       },
       Expr::Assign(target, value) => match target.as_ref() {
-        // `obj[idx] = value` -- and, via the parser's generic Increment/
+        // `obj[idx] = value`; and, via the parser's generic Increment/
         // Decrement desugaring in assign_expr, also `obj[idx]++` /
         // `obj[idx]--`. No explicit free here (matching the VarLoc::Global
         // case below): value_reg is the expression's result and must stay
@@ -1870,7 +1870,7 @@ impl<'a> Compiler<'a> {
       Expr::Get(obj, field) => {
         let field_name = Self::identifier_name(field);
 
-        // Both self.x and parent.x count as privileged here -- a plain
+        // Both self.x and parent.x count as privileged here; a plain
         // (non-call) property access through `parent` is never virtual
         // to begin with (see compile_receiver's own doc comment).
         self.check_private_access(
@@ -1987,7 +1987,7 @@ impl<'a> Compiler<'a> {
   ///
   /// `labels`/`bodies` are already index-aligned by the parser (a `when
   /// a, b { block }` with multiple labels desugars into one entry per
-  /// label, each pointing at its own CLONE of the same block -- see
+  /// label, each pointing at its own CLONE of the same block: see
   /// Parser::using_stmt). This groups those clones back together via
   /// structural equality over adjacent entries (always contiguous,
   /// since the parser only ever produces them that way), so each
@@ -1999,7 +1999,7 @@ impl<'a> Compiler<'a> {
   /// checked FIRST at runtime via one `Instr::UsingJump`, in O(1)
   /// regardless of arm count. Only labels that AREN'T compile-time-
   /// knowable (an arbitrary expression, a variable, a BigNumber, ...)
-  /// fall back to sequential evaluate-and-compare -- and even then,
+  /// fall back to sequential evaluate-and-compare; and even then,
   /// only those specific labels, never the constant ones.
   fn compile_using(
     &mut self,
@@ -2043,7 +2043,7 @@ impl<'a> Compiler<'a> {
       });
       r
     };
-    // Reserve `subj` for the whole statement -- every dynamic-label
+    // Reserve `subj` for the whole statement; every dynamic-label
     // comparison and, eventually, every group body reads it.
     self.free_regs_to(subj + 1);
 
@@ -2175,8 +2175,8 @@ impl<'a> Compiler<'a> {
 
   /// `catch { body } as var { error_block }` (and the two shorter
   /// forms). `var`, if present, is declared as an ORDINARY Local in the
-  /// CURRENT scope (not a nested one) -- exactly like a `var` statement
-  /// -- so it stays resolvable for the rest of the enclosing scope, per
+  /// CURRENT scope (not a nested one); exactly like a `var` statement
+  ///; so it stays resolvable for the rest of the enclosing scope, per
   /// spec ("used whenever or wherever in the code"). Deliberately does
   /// NOT run the redeclaration check `var` itself uses: writing several
   /// sequential `catch {...} as e` blocks reusing the same name is the
@@ -2219,11 +2219,11 @@ impl<'a> Compiler<'a> {
 
     // Both the normal-completion fallthrough (right here) and an
     // error's direct jump (via PushCatch's own offset) converge at
-    // this exact point -- see Instr::PushCatch's doc comment.
+    // this exact point: see Instr::PushCatch's doc comment.
     self.patch_jump(push_at);
 
     // REPL top-level persistence: mirrors Stmt::Var's own is_repl
-    // special-case -- a REPL line's register file is gone by the time
+    // special-case; a REPL line's register file is gone by the time
     // the NEXT line compiles (each is a fresh Chunk), so without this,
     // the caught error would be unreachable outside the exact
     // catch statement that declared it.
@@ -2260,18 +2260,18 @@ impl<'a> Compiler<'a> {
   /// Binds `value_reg`'s CURRENT value to `name` in the enclosing
   /// scope, exactly like `var name = <value_reg>` would if the value
   /// were already sitting in a register instead of coming from
-  /// `compile_expression(initializer)` -- shared by every import
+  /// `compile_expression(initializer)`; shared by every import
   /// binding form (the default promoted binding, and each selectively
   /// imported name).
   ///
   /// Unlike `var`, this is NOT a redeclaration error if `name` is
-  /// already a local in this exact scope -- `import` is idempotent by
+  /// already a local in this exact scope; `import` is idempotent by
   /// name (`import .foo` twice, or the same name appearing in two
   /// `{ ... }` selective imports, must silently rebind rather than
-  /// fail; see the "importing it again should not re-execute the
+  /// fail: see the "importing it again should not re-execute the
   /// module" case). In that case the EXISTING local's register is just
   /// repointed at the new value; `value_reg`'s register is otherwise
-  /// left permanently allocated (same as any other local -- reclaimed
+  /// left permanently allocated (same as any other local; reclaimed
   /// only when the enclosing scope closes), never freed here.
   fn declare_import_binding(&mut self, name: String, token: &Token, value_reg: u8, exported: bool) {
     if (self.is_repl && self.cur().scope_depth == 0) || exported {
@@ -2345,7 +2345,7 @@ impl<'a> Compiler<'a> {
 
     if imports_all {
       self.emit(Instr::ImportAll { module: mod_reg });
-      // Nothing persists past this statement -- safe to reclaim.
+      // Nothing persists past this statement; safe to reclaim.
       self.free_regs_to(mod_reg);
       return;
     }
@@ -2403,7 +2403,7 @@ impl<'a> Compiler<'a> {
         // that signals "no meaningful return value" by yielding nil
         // (echoing that on every `a.append(x)`-style call would be
         // pure noise). Nested inside a block (an `if`/`while`/function
-        // body typed at the REPL) is deliberately excluded -- only a
+        // body typed at the REPL) is deliberately excluded; only a
         // truly top-level statement gets this treatment, so loop
         // bodies don't print once per iteration.
         if self.is_repl && self.cur().scope_depth == 0 {
@@ -2459,7 +2459,7 @@ impl<'a> Compiler<'a> {
           Some(else_stmt) => {
             // Skip the usual "hop over `else`" jump when `then_branch`
             // can never fall through to it in the first place (see
-            // `Self::stmt_never_falls_through`'s own docs) -- not just
+            // `Self::stmt_never_falls_through`'s own docs); not just
             // an optimization: with nothing forcing the compiler to pad
             // the chunk with an implicit trailing instruction once its
             // real last one already exits some other way, patching a
@@ -2598,7 +2598,7 @@ impl<'a> Compiler<'a> {
           // If the initializer resolved to a PRE-EXISTING register (e.g. a
           // bare read of another local, like `var t = n`), adopting that
           // register directly as this new local's home would make the two
-          // names ALIAS the same physical storage -- any future write to
+          // names ALIAS the same physical storage; any future write to
           // either one would silently corrupt the other. Only a register
           // freshly allocated for this expression (>= mark) is safe to
           // adopt as-is; anything else needs its own copy.
@@ -2728,7 +2728,7 @@ impl<'a> Compiler<'a> {
 }
 
 /// Recursively walk a method's body collecting every field name it
-/// assigns via `self.NAME = ...` -- these count as "predeclared" just
+/// assigns via `self.NAME = ...`; these count as "predeclared" just
 /// as much as an explicit `var NAME` does, since the compiler can see
 /// them by scanning the class's own AST at declaration time, well
 /// before any instance exists (see `Compiler::compile_class_decl`).
@@ -2869,11 +2869,11 @@ fn collect_self_fields_expr(expr: &Expr, out: &mut Vec<String>) {
 }
 
 /// Recognizes exactly the AST shapes `Value::equals` treats as
-/// content-comparable primitives -- nil, bool, number, string -- as
+/// content-comparable primitives; nil, bool, number, string; as
 /// eligible for `Instr::UsingJump`'s O(1) jump table. Anything else (an
 /// arbitrary runtime expression, a BigNumber literal, etc.) returns
 /// None and falls back to the sequential dynamic-label path in
-/// `Compiler::compile_using` -- correctness is unaffected either way,
+/// `Compiler::compile_using`; correctness is unaffected either way,
 /// this only decides which path a given label's comparison takes.
 fn expr_as_jump_key(expr: &Expr) -> Option<JumpKey> {
   match expr {
@@ -2887,7 +2887,7 @@ fn expr_as_jump_key(expr: &Expr) -> Option<JumpKey> {
 }
 
 /// Does `expr` name a compile-time-known numeric literal? Only
-/// `Integer`/`Float` -- NOT `BigNumber`, which needs its own bigint
+/// `Integer`/`Float`; NOT `BigNumber`, which needs its own bigint
 /// arithmetic path and never participates in this fusion.
 fn literal_as_f64(expr: &Expr) -> Option<f64> {
   match expr {
@@ -2897,7 +2897,7 @@ fn literal_as_f64(expr: &Expr) -> Option<f64> {
   }
 }
 
-/// `EXPR + LITERAL` / `EXPR - LITERAL` / `EXPR * LITERAL` -- collapses
+/// `EXPR + LITERAL` / `EXPR - LITERAL` / `EXPR * LITERAL`; collapses
 /// what would otherwise be LoadConst+{Add,Sub,Mul} (two dispatches)
 /// into one fused instruction with the literal embedded as a
 /// constant-pool reference rather than loaded into its own register.
@@ -2913,7 +2913,7 @@ fn imm_arith_ctor(op: &TokenKind) -> Option<fn(u8, u8, u16) -> Instr> {
   }
 }
 
-/// Same idea as `imm_arith_ctor`, for comparisons -- `n < 2`,
+/// Same idea as `imm_arith_ctor`, for comparisons; `n < 2`,
 /// `depth <= 0`, `x == 0`, all extremely common terminal-check/loop-
 /// bound patterns.
 fn imm_logical_ctor(op: &TokenKind) -> Option<fn(u8, u8, u16) -> Instr> {
@@ -2936,7 +2936,7 @@ mod owning_class_name_tests {
 
   /// Returns the compiled top-level `ObjFunction` TOGETHER WITH the
   /// `Heap` it was compiled against, and the caller must keep BOTH
-  /// alive for as long as it inspects the result -- the returned
+  /// alive for as long as it inspects the result; the returned
   /// function's own constant pool holds raw `Value` pointers into
   /// this exact heap's backing storage (every string/nested-function
   /// constant the compiler allocates via `heap.alloc_string_old`/
@@ -2955,7 +2955,7 @@ mod owning_class_name_tests {
   }
 
   /// A method's `owning_class_name` must name the class it was
-  /// actually declared inside -- the whole point of the link (see
+  /// actually declared inside; the whole point of the link (see
   /// `ObjFunction::owning_class_name`'s own docs).
   #[test]
   fn method_gets_owning_class_name() {

@@ -1,4 +1,4 @@
-//! `_os` builtin module -- native backing for `libs/os.zu`.
+//! `_os` builtin module; native backing for `libs/os.zu`.
 
 use std::fs;
 use std::path::Path;
@@ -48,7 +48,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   members.push(("platform", platform_val));
 
   // The current CLI only ever accepts a single (script path) argument
-  // -- see `zuri.rs`'s `args.len() > 2` guard -- so there is never
+  //: see `zuri.rs`'s `args.len() > 2` guard; so there is never
   // anything past the executable and the script path itself to skip;
   // kept as a real (if today always-empty) skip(2) so this keeps
   // working the moment extra-argument support is added there.
@@ -101,7 +101,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 // exec / info / sleep
 
 /// `_os.exec(cmd)` -> `[exit_code, output]`. Runs `cmd` through the
-/// platform shell (`cmd /C` on Windows, `sh -c` elsewhere) -- matches
+/// platform shell (`cmd /C` on Windows, `sh -c` elsewhere); matches
 /// `os.zu`'s own doc comment ("Executes the given shell (or command
 /// prompt for Windows) commands").
 fn exec(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -186,7 +186,7 @@ fn gather_uname() -> (String, String, String, String, String) {
 }
 
 /// Best-effort fallback where `uname` isn't a meaningful thing to shell
-/// out to (Windows) -- built from Rust's own compile-time platform
+/// out to (Windows); built from Rust's own compile-time platform
 /// constants rather than left blank.
 #[cfg(not(unix))]
 fn gather_uname() -> (String, String, String, String, String) {
@@ -287,7 +287,7 @@ fn createdir(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Flat listing (plus the synthetic `.`/`..` entries the doc example
-/// shows) -- when `recursive` is set, nested entries are appended
+/// shows); when `recursive` is set, nested entries are appended
 /// depth-first after their own containing directory's siblings.
 fn readdir(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 2);

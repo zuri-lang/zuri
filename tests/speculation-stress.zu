@@ -44,7 +44,7 @@ class Box {
 }
 
 # h is warmed up with numeric args, then later called with an object
-# that overloads +  -- must still dispatch to the operator override,
+# that overloads + ; must still dispatch to the operator override,
 # not treat it as a number.
 def h(a, b) {
   return a + b

@@ -64,7 +64,7 @@ fn upper(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(u))
 }
 
-/// Count of numbers between the range's bounds -- direction-
+/// Count of numbers between the range's bounds; direction-
 /// independent (per spec, swapping bounds gives the same result).
 fn range_span(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -83,7 +83,7 @@ fn within(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Iterates from the lower bound up to (but not including) the upper
-/// bound, regardless of the range's own written direction -- matching
+/// bound, regardless of the range's own written direction; matching
 /// the documented example where `(25..18).loop(...)` counts DOWN from
 /// 25 to 19 (not up).
 fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -92,7 +92,7 @@ fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (l, u) = ctx.args[0].as_range();
   // Pinned (not just a plain local) because `callback` is reused
-  // across every iteration below -- if it's still Young and a later
+  // across every iteration below; if it's still Young and a later
   // iteration's own `call_value` triggers a collection that relocates
   // it, an un-pinned local would go stale from that point on. `i`
   // itself needs no such treatment: it's always a plain number, never
@@ -148,7 +148,7 @@ fn get_step(ctx: &mut ZuriContext) -> Result<Value, String> {
 // @key / @value: iterable protocol decorators.
 
 /// `index` here is an internal 0-based ITERATION COUNT (not a raw
-/// value in the range) -- `_value` below turns it into the actual
+/// value in the range); `_value` below turns it into the actual
 /// number by scaling it by `step` and offsetting from `lower`. This
 /// mirrors the pre-existing (step-less) behavior exactly when
 /// `step == 1.0`.

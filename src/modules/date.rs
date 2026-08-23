@@ -1,15 +1,15 @@
-//! `_date` builtin module -- native primitives backing `libs/date.zu`.
+//! `_date` builtin module; native primitives backing `libs/date.zu`.
 //!
 //! `libs/date.zu` implements essentially everything itself in pure Zuri --
 //! civil calendar math, `Date.format()`/`parse()`/`parse_format()`, the
-//! whole `Date` class -- see that file's own doc comments (`grep -n
+//! whole `Date` class: see that file's own doc comments (`grep -n
 //! '_date\.' libs/date.zu` turns up exactly three call sites). This module
 //! is the native backing for those three: the system's current UTC clock
 //! (`gmtime()`), the system's current LOCAL clock with real timezone/DST
 //! information (`localtime()`), and the inverse of the latter (`mktime()`
-//! -- "what UTC epoch second does this local broken-down time correspond
-//! to"). Everything else in `date.zu` -- including `Date.to_time()`, the
-//! Julian-date conversions, and the format/parse machinery -- needs no
+//!; "what UTC epoch second does this local broken-down time correspond
+//! to"). Everything else in `date.zu`; including `Date.to_time()`, the
+//! Julian-date conversions, and the format/parse machinery; needs no
 //! native support at all.
 //!
 //! `gmtime()`/`localtime()` return a dict shaped exactly like the
@@ -31,7 +31,7 @@
 //! ## Platform support
 //!
 //! On Unix, all three natives are thin wrappers around the platform's own
-//! `gmtime_r`/`localtime_r`/`mktime` -- which is what gives `localtime()`
+//! `gmtime_r`/`localtime_r`/`mktime`; which is what gives `localtime()`
 //! correct real-world DST and zone-abbreviation behavior for free, via
 //! the system's own tzdata, rather than this crate trying to vendor a
 //! timezone database.
@@ -64,7 +64,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-// Portable proleptic-Gregorian civil calendar math -- the non-Unix
+// Portable proleptic-Gregorian civil calendar math; the non-Unix
 // fallback. Correct across `date.zu`'s own documented year range
 // (1..9999) and well beyond it.
 
@@ -118,13 +118,13 @@ struct BrokenDown {
 }
 
 /// Current wall-clock time as (whole seconds since epoch, microseconds
-/// within that second) -- a single `SystemTime` sample so both halves
+/// within that second); a single `SystemTime` sample so both halves
 /// agree, rather than reading the clock twice.
 fn now_secs_and_micros() -> (i64, i64) {
   match SystemTime::now().duration_since(UNIX_EPOCH) {
     Ok(d) => (d.as_secs() as i64, (d.subsec_nanos() / 1000) as i64),
     Err(e) => {
-      // Clock set before the Unix epoch -- fall back to the negative
+      // Clock set before the Unix epoch; fall back to the negative
       // offset `e` already carries rather than panicking. Deliberately
       // rare; there's no natural way to propagate an Err from a helper
       // used unconditionally by every call site below.
@@ -184,7 +184,7 @@ fn broken_down_to_dict(ctx: &mut ZuriContext, bd: BrokenDown, microseconds: i64)
   ])
 }
 
-// gmtime / localtime -- Unix
+// gmtime / localtime; Unix
 
 #[cfg(unix)]
 fn tm_to_broken_down(tm: &libc::tm, is_utc: bool) -> BrokenDown {
@@ -242,7 +242,7 @@ fn localtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(broken_down_to_dict(ctx, bd, micros))
 }
 
-// gmtime / localtime -- non-Unix fallback
+// gmtime / localtime; non-Unix fallback
 
 #[cfg(not(unix))]
 fn gmtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -255,7 +255,7 @@ fn gmtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 #[cfg(not(unix))]
 fn localtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   // No portable way to read the local timezone/DST rules without a
-  // vendored tzdata -- degrade to UTC, same fallback `os.rs`'s own
+  // vendored tzdata; degrade to UTC, same fallback `os.rs`'s own
   // `gather_uname` uses for platform facts it can't get portably either.
   gmtime_fn(ctx)
 }
@@ -335,7 +335,7 @@ fn mktime_impl(
   seconds: i64,
   _is_dst: Option<bool>,
 ) -> Result<Value, String> {
-  // No local timezone database available portably -- treat the given
+  // No local timezone database available portably; treat the given
   // fields as UTC, same "degrade to UTC" fallback `localtime()` uses on
   // non-Unix, computed via the same civil-calendar math `gmtime()` falls
   // back to there.

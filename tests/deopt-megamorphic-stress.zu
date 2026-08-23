@@ -1,12 +1,12 @@
 # Adversarial stress test for real deoptimization's bailout counter.
 #
 # `get_val`'s return value alternates between a number and a string on
-# EVERY call -- the worst case for a speculative guard that bets on a
+# EVERY call; the worst case for a speculative guard that bets on a
 # single type: whichever type the guess locks onto, the OPPOSITE
 # happens on (about) every other invocation once compiled. Before the
 # MAX_DEOPTS_BEFORE_BAILOUT fix, each mismatch inside `run`'s hot loop
 # would deoptimize by recursing into a NEW nested interpreter call
-# from inside invoke_compiled/zuri_jit_call_finish -- one native stack
+# from inside invoke_compiled/zuri_jit_call_finish; one native stack
 # frame per loop iteration, with no bound, guaranteed to blow the
 # stack well before this loop's half-million iterations complete. The
 # fix should make this fall back to pure interpretation permanently

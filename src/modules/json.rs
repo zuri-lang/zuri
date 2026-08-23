@@ -1,4 +1,4 @@
-//! `json` builtin module -- `encode`/`decode` between Zuri values and
+//! `json` builtin module; `encode`/`decode` between Zuri values and
 //! JSON text (RFC 8259).
 //!
 //! ## Encoding
@@ -8,11 +8,11 @@
 //! own `Display`, matching how every other object-with-string-keys
 //! language treats a non-string map key). An INSTANCE is encoded by
 //! calling its class's `@to_json` decorator method, if it declares
-//! one -- see `libs/set.zu`'s and `libs/url.zu`'s own `@to_json`
-//! methods for existing examples of this exact convention -- and
+//! one: see `libs/set.zu`'s and `libs/url.zu`'s own `@to_json`
+//! methods for existing examples of this exact convention; and
 //! JSON-encoding whatever that method returns instead. An instance
 //! whose class declares no `@to_json` (or any other value with no
-//! sensible JSON representation -- a function, a class, a file, a
+//! sensible JSON representation; a function, a class, a file, a
 //! bigint, bytes) is a hard encode error, not a silent `null`/`"..."`
 //! substitution.
 //!
@@ -21,7 +21,7 @@
 //! A standard recursive-descent parser producing the matching Zuri
 //! primitives: JSON `null` -> nil, `true`/`false` -> bool, a JSON
 //! number -> Zuri number (always, even for something written as an
-//! integer -- this VM has no separate int type), a JSON string ->
+//! integer; this VM has no separate int type), a JSON string ->
 //! string (with full `\uXXXX`/surrogate-pair support), a JSON array ->
 //! list, a JSON object -> dict.
 
@@ -34,7 +34,7 @@ use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use crate::{enforce_arg_range, enforce_arg_type, enforce_arg_type_opt};
 
-/// Default for `encode`'s third (`max_depth`) argument -- see
+/// Default for `encode`'s third (`max_depth`) argument: see
 /// `encode_fn`'s own doc comment.
 const DEFAULT_MAX_DEPTH: f64 = 1024.0;
 
@@ -60,8 +60,8 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 /// whitespace encoding and a formatted one indented two spaces per
 /// nesting level, per spec ("a non-compact one is formatted using two
 /// spaces instead of tabs"). `max_depth` (default `1024`) bounds how
-/// deeply nested containers -- and `@to_json` calls, which recurse
-/// back into this same encoder -- are allowed to go, so a cyclic
+/// deeply nested containers; and `@to_json` calls, which recurse
+/// back into this same encoder; are allowed to go, so a cyclic
 /// `@to_json` override (or a pathologically deep structure) fails
 /// with a catchable error instead of overflowing the Rust call stack.
 fn encode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -76,7 +76,7 @@ fn encode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Same idea as `optional_bool`, for `encode`/`dump`'s shared
-/// `max_depth` argument -- missing or `nil` means "use the default
+/// `max_depth` argument; missing or `nil` means "use the default
 /// (1024)"; anything present that isn't a non-negative integer is an
 /// error.
 fn optional_max_depth(ctx: &ZuriContext, idx: usize) -> Result<usize, String> {
@@ -167,7 +167,7 @@ fn encode_value(
     } else {
       // Pinned, and re-read via `ctx.vm.pinned(mark + i)` right before
       // EACH recursive call below, rather than iterated directly out
-      // of `items` -- a sibling element's own `@to_json` call
+      // of `items`; a sibling element's own `@to_json` call
       // (reached recursively from `encode_value` below) can trigger a
       // collection, and `items` itself is just a plain owned `Vec`,
       // not a GC root, so any not-yet-visited element still sitting
@@ -206,7 +206,7 @@ fn encode_value(
     if pairs.is_empty() {
       out.push_str("{}");
     } else {
-      // Same reasoning as the list case above -- `mark + 2*i` is key
+      // Same reasoning as the list case above; `mark + 2*i` is key
       // `i`, `mark + 2*i + 1` is value `i`.
       let n = pairs.len();
       let mark = ctx
@@ -301,7 +301,7 @@ fn encode_json_string(s: &str, out: &mut String) {
 ///
 /// `allow_comments` (default `true`) permits `//` line comments and
 /// `/* ... */` block comments anywhere whitespace would otherwise be
-/// legal -- a JSONC-style relaxation of strict RFC 8259, off only when
+/// legal; a JSONC-style relaxation of strict RFC 8259, off only when
 /// explicitly disabled.
 fn decode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 1, 2);
@@ -330,14 +330,14 @@ fn decode_source(
   Ok(value)
 }
 
-/// A `Vec<char>`-backed cursor over the source text -- mirrors the
+/// A `Vec<char>`-backed cursor over the source text; mirrors the
 /// same "index a Vec<char>, not a byte string" approach this crate's
 /// own `Lexer` (see `src/compiler/lexer.rs`) already uses, so a
 /// multi-byte UTF-8 character never gets split across a byte offset.
 struct JsonInput {
   chars: Vec<char>,
   pos: usize,
-  /// Whether `skip_ws` also consumes `//`/`/* */` comments -- see
+  /// Whether `skip_ws` also consumes `//`/`/* */` comments: see
   /// `decode_fn`'s own doc comment.
   allow_comments: bool,
 }
@@ -372,7 +372,7 @@ impl JsonInput {
   }
 
   /// Skips whitespace and, when `allow_comments` is set, `//` line
-  /// comments and `/* ... */` block comments -- interleaved freely,
+  /// comments and `/* ... */` block comments; interleaved freely,
   /// same as ordinary whitespace, so e.g. `[1, /* two */ 2]` parses.
   /// An unterminated block comment is left for the surrounding parse
   /// to report as "unexpected end of input", rather than duplicating
@@ -496,7 +496,7 @@ fn parse_json_string(input: &mut JsonInput) -> Result<String, String> {
         Some('u') => {
           let cp = read_hex4(input)?;
           if (0xD800..=0xDBFF).contains(&cp) {
-            // High surrogate -- must be followed by a low surrogate
+            // High surrogate; must be followed by a low surrogate
             // to form one real codepoint (RFC 8259 §7).
             if input.advance() != Some('\\') || input.advance() != Some('u') {
               return Err("json.decode(): expected low surrogate after high surrogate".to_string());
@@ -566,9 +566,9 @@ fn parse_array(ctx: &mut ZuriContext, input: &mut JsonInput) -> Result<Value, St
   Ok(ctx.heap().alloc_list(items))
 }
 
-// parse / dump -- file-backed decode/encode
+// parse / dump; file-backed decode/encode
 
-/// `json.parse(path, allow_comments: ?bool)` -- reads the file at
+/// `json.parse(path, allow_comments: ?bool)`; reads the file at
 /// `path` and decodes its content the same way `decode` would. A
 /// missing file gets its own distinct message (rather than the raw,
 /// somewhat opaque OS error text) since "the path doesn't exist" is

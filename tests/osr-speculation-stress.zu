@@ -1,11 +1,11 @@
 # h's first parameter is sometimes numeric, sometimes a string, across
-# DIFFERENT recursive invocations -- whichever invocation happens to
+# DIFFERENT recursive invocations; whichever invocation happens to
 # trigger compilation (ordinary call OR OSR, race-dependent) seeds the
 # speculative sample. Later/sibling invocations with the OPPOSITE type
 # must still get correct results if their own execution reaches an
 # already-compiled entry via OSR while running with a mismatched type.
 # The loop itself stays purely numeric (bounded cost) regardless of
-# `n`'s type -- `n` only feeds `sum`'s SEED, so a mismatched `n` still
+# `n`'s type; `n` only feeds `sum`'s SEED, so a mismatched `n` still
 # exercises the guard without blowing up into pathological string
 # growth.
 def h(n, depth) {

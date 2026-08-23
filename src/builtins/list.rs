@@ -71,7 +71,7 @@ where
     Obj::List(items) => f(&mut items.borrow_mut()),
     _ => unreachable!("with_list_mut called on a non-list Value"),
   };
-  // Coarse and unconditional -- see `write_barrier`'s own docs. Costs
+  // Coarse and unconditional: see `write_barrier`'s own docs. Costs
   // one no-op branch on the (overwhelmingly common) read-only/young
   // calls through here, in exchange for never having to audit which of
   // this file's many list methods actually mutate.
@@ -179,7 +179,7 @@ fn pop(ctx: &mut ZuriContext) -> Result<Value, String> {
   }))
 }
 
-/// `shift([count])` -- removes `count` items (default 1) from the
+/// `shift([count])`; removes `count` items (default 1) from the
 /// front. Per spec: if `count` exceeds the list's current length, the
 /// ENTIRE list is cleared and `nil` is returned (not a partial/short
 /// list of whatever happened to be available).
@@ -234,7 +234,7 @@ fn remove(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::nil())
 }
 
-/// Per spec this returns a NEW list in reverse order -- unlike `sort`,
+/// Per spec this returns a NEW list in reverse order; unlike `sort`,
 /// it does not mutate the receiver in place.
 fn reverse(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -245,7 +245,7 @@ fn reverse(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// Precedence bucket for `sort()`, matching the documented ordering:
 /// nil, boolean, numbers, strings, ranges, lists, dictionaries, bytes,
-/// functions/classes -- anything else (instances, upvalues, ...) sorts
+/// functions/classes; anything else (instances, upvalues, ...) sorts
 /// last. There is no `file` type in this VM, so that documented bucket
 /// is simply absent here.
 fn sort_rank(v: &Value) -> u8 {
@@ -305,7 +305,7 @@ fn compare_values(a: &Value, b: &Value) -> Ordering {
   Ordering::Equal
 }
 
-/// Sorts in-place and returns the (same) list -- also sorting any
+/// Sorts in-place and returns the (same) list; also sorting any
 /// directly-nested lists' own items, matching the documented example.
 fn sort(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -373,7 +373,7 @@ fn is_empty(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(ctx.args[0].list_len() == 0))
 }
 
-/// `take(n)` -- first `n` items, or the whole list (copied) if
+/// `take(n)`; first `n` items, or the whole list (copied) if
 /// `n >= length()`. For `n < 0`, per spec this is `length() + n`
 /// items from the front (verified against the documented example:
 /// an 11-element list, `take(-5)`, yields 6 elements).
@@ -428,7 +428,7 @@ fn unique(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.vm.heap_mut().alloc_list(result))
 }
 
-/// `zip(items...: list...)` -- variadic list of other lists, merged
+/// `zip(items...: list...)`; variadic list of other lists, merged
 /// column-wise with the receiver. Missing entries (when another list
 /// is shorter than the receiver) become `nil`, per spec.
 fn zip(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -503,11 +503,11 @@ fn to_dict(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// Pins `list_val`, `callback`, and every one of `list_val`'s current
 /// elements into `gc_pins` for the duration of an each/map/filter/
 /// some/every/reduce-style callback loop, returning `(mark, count)`
-/// -- `mark` is `list_val`'s own pinned slot, `mark + 1` is
+///; `mark` is `list_val`'s own pinned slot, `mark + 1` is
 /// `callback`'s, and `mark + 2 + i` is element `i`'s. Every one of
 /// these MUST be re-read via `ctx.vm.pinned(...)` fresh on each loop
 /// iteration from here on, never taken from a local variable spanning
-/// more than one `call_value` -- see `VM::pin_values`'s own docs on
+/// more than one `call_value`: see `VM::pin_values`'s own docs on
 /// why: any of these can be relocated by a collection triggered from
 /// INSIDE an earlier iteration's own callback invocation, and a stale
 /// local has no way to notice.
@@ -636,7 +636,7 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
   // `list_val` = `mark`, `callback` = `mark + 1`, items start at
-  // `mark + 2` -- see `pin_each_call`'s own docs. The optional initial
+  // `mark + 2`: see `pin_each_call`'s own docs. The optional initial
   // accumulator (`ctx.args[2]`, if given) is pinned separately, right
   // after the items, so it too survives across every iteration's own
   // `call_value`.

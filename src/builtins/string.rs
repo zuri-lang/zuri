@@ -57,7 +57,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
 
 // Regex support.
 
-/// Recognizes a Zuri regex literal -- a pattern surrounded by two
+/// Recognizes a Zuri regex literal; a pattern surrounded by two
 /// identical non-word delimiter characters, with any modifier letters
 /// following the closing delimiter (e.g. `/[a-z]+/mi`). `None` for a
 /// plain string, which every regex-accepting method below falls back
@@ -78,7 +78,7 @@ fn parse_regex(s: &str) -> Option<(&str, &str)> {
 
 /// Compile a Zuri regex's pattern/modifiers into a `regex::Regex`. See
 /// this file's module-level caveat: the `regex` crate is NOT PCRE2 --
-/// no backreferences, no lookaround, no named groups -- and only
+/// no backreferences, no lookaround, no named groups; and only
 /// `i`/`m`/`s`/`x`/`U`/`u` of Zuri's documented modifiers have a direct
 /// equivalent here; `A`/`D`/`J` are accepted but ignored.
 fn compile_regex(pattern: &str, modifiers: &str) -> Result<Regex, String> {
@@ -272,8 +272,8 @@ fn rtrim(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// Joins a string, list, or dict's items using `self` as the
 /// separator. List/dict items are stringified via `Value`'s own
-/// `Display` -- the same representation `to_string()` uses everywhere
-/// else -- rather than requiring every element to already be a string.
+/// `Display`; the same representation `to_string()` uses everywhere
+/// else; rather than requiring every element to already be a string.
 fn join(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type_any_of!(ctx, 1, [ArgType::String, ArgType::List, ArgType::Dict]);
@@ -497,7 +497,7 @@ fn string_match(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// `{group_index: [every match's text for that group]}` for every
-/// capture group (group 0 is always the whole match) -- an empty dict
+/// capture group (group 0 is always the whole match); an empty dict
 /// entry list per group when nothing matched at all, never `false`
 /// (unlike `match()`, which distinguishes "no match" from "a match").
 fn string_matches(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -558,7 +558,7 @@ fn replace(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.vm.heap_mut().alloc_string(result))
 }
 
-/// Calls back into Zuri code once per match -- `call_value` already
+/// Calls back into Zuri code once per match; `call_value` already
 /// pads missing parameters with `nil` and ignores extras (see its own
 /// doc comment), so this can always pass the full `(match, groups...,
 /// offset, string)` argument list regardless of how many the callback
@@ -620,7 +620,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let s = ctx.args[0].as_str().to_string();
   // `ctx.args` itself is not a GC root (see `VM::pin_values`'s own
-  // docs) -- pinning the original string here is what keeps the
+  // docs); pinning the original string here is what keeps the
   // final `Ok(...)` below safe to return, in addition to `callback`
   // needing it for the same reason every other iterate+callback
   // native does.

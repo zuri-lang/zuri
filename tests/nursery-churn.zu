@@ -1,7 +1,7 @@
 # Fast synthetic stand-in for the memory-floor investigation: churns
 # through many short-lived list allocations (crossing the 32MB minor-GC
 # threshold repeatedly), mirroring the shape of binary-tree-2.zu's
-# allocation pattern without its slow deep recursion -- lets debug
+# allocation pattern without its slow deep recursion; lets debug
 # builds iterate in seconds instead of minutes.
 def churn(rounds, per_round) {
   iter var i = 0; i < rounds; i += 1 {

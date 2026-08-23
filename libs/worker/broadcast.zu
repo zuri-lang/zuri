@@ -4,7 +4,7 @@
  * `Broadcast`, a one-to-many channel built on top of `Channel`. Every
  * value sent is delivered to every current subscriber, unlike a plain
  * `Channel`, where each value goes to exactly one receiver. Built
- * entirely out of `Channel` -- a `Broadcast` is just a small registry
+ * entirely out of `Channel`; a `Broadcast` is just a small registry
  * of subscriber channels plus fan-out logic, no separate native
  * plumbing of its own.
  */
@@ -16,7 +16,7 @@ import .error { WorkerError }
  * A one-to-many channel. Call `subscribe()` to get a `Channel` that
  * receives every value sent afterward.
  *
- * A subscriber only sees values sent AFTER it subscribes -- there is
+ * A subscriber only sees values sent AFTER it subscribes; there is
  * no history or replay of earlier ones.
  */
 class Broadcast {

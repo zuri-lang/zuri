@@ -14,7 +14,7 @@ def branch_merge_agrees(flag) {
   } else {
     x = [4, 5, 6]
   }
-  /* both arms assign a list -- x should be proven list right here */
+  /* both arms assign a list; x should be proven list right here */
   return x[0] + x[1] + x[2]
 }
 
@@ -25,7 +25,7 @@ def branch_merge_disagrees(flag) {
   } else {
     x = 99
   }
-  /* only one arm is a list -- x must NOT be proven list; indexing the
+  /* only one arm is a list; x must NOT be proven list; indexing the
    * non-list arm has to raise, not read garbage memory */
   if flag {
     return x[0] + x[1] + x[2]
@@ -49,7 +49,7 @@ def list_repeat_through_move(n) {
   var a = [7] * n
   var b = a
   b[0] = 1000
-  /* a and b alias the same list -- proving b a list must not lose
+  /* a and b alias the same list; proving b a list must not lose
    * that a is one too */
   return a[0] + a[n - 1] + b[n - 1]
 }
@@ -65,7 +65,7 @@ def typed_param_sum(vals: list) {
 def reassigned_to_non_list(flag) {
   var x = [1, 2, 3]
   if flag {
-    /* a plain number is never indexable, unlike a string -- this is
+    /* a plain number is never indexable, unlike a string; this is
      * what actually forces the slow path to raise if `x` were
      * (wrongly) still trusted to be a list here */
     x = 42

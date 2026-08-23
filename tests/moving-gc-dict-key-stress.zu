@@ -4,7 +4,7 @@
 # ...) by raw pointer bits. If a key object gets relocated by a minor
 # collection and the dict's `index` hashmap isn't rebuilt afterward,
 # the key becomes unfindable under its NEW hash while the OLD bucket
-# still points at a slot that's since been reset/reused -- either a
+# still points at a slot that's since been reset/reused; either a
 # silent lookup failure or, worse, a wrong-entry collision.
 #
 # Uses lists as keys (list identity, not content, is what dict lookup

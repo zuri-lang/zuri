@@ -1,4 +1,4 @@
-//! Escape analysis -- phase 1 of a multi-phase effort (see this
+//! Escape analysis; phase 1 of a multi-phase effort (see this
 //! project's own perf-investigation notes for the full roadmap).
 //!
 //! This phase answers one narrow, purely intraprocedural question,
@@ -7,7 +7,7 @@
 //! copied into, within that same function) be proven to never let it
 //! outlive this function's own execution? If yes, the value is safe to
 //! allocate somewhere cheaper than the GC heap (a stack slot, or
-//! eventually scalar-replaced registers entirely) -- see `jit::codegen`
+//! eventually scalar-replaced registers entirely): see `jit::codegen`
 //! for how that's eventually used; this module only ever proves facts,
 //! never changes codegen by itself.
 //!
@@ -16,7 +16,7 @@
 //! - No interprocedural reasoning at all: a tracked value passed as an
 //!   argument to any `Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`, or
 //!   used as the receiver of one, is unconditionally treated as
-//!   escaping -- there's no call-graph, no per-function summary, no
+//!   escaping; there's no call-graph, no per-function summary, no
 //!   attempt to prove a callee doesn't retain what it's handed. Real
 //!   patterns like `tree_with(depth).count()` (binary-tree's own hot
 //!   path) won't be proven non-escaping by this phase alone, since
@@ -30,7 +30,7 @@
 //!   even if that container is itself later proven non-escaping. A
 //!   future phase could propagate "container doesn't escape" down to
 //!   its contents; this one doesn't attempt it.
-//! - No scalar replacement -- proving non-escape doesn't yet do
+//! - No scalar replacement; proving non-escape doesn't yet do
 //!   anything; wiring a proof into actual stack allocation is a
 //!   separate, later, codegen-side change.
 //!
@@ -39,7 +39,7 @@
 //! Zuri lets user code hook into what look like "plain" operations:
 //! `GetField` on a name that resolves to a method (not a field)
 //! implicitly wraps the receiver in a freshly-allocated `BoundMethod`
-//! -- which stores the receiver into a new heap object, a real escape
+//!; which stores the receiver into a new heap object, a real escape
 //! path a naive reading of "GetField just reads a field" would miss
 //! entirely. Arithmetic/bitwise/concat ops dispatch to user-defined
 //! operator overloads (`@add`, `@sub`, ...) for non-numeric operands.
@@ -54,11 +54,11 @@
 //! deliberate and non-negotiable for this module.
 //!
 //! (`Print` was considered for the escaping side on the theory that it
-//! might dispatch to a user-overridden `to_string()` -- checked against
+//! might dispatch to a user-overridden `to_string()`; checked against
 //! the actual handler, `jit::runtime::zuri_jit_print`, which just calls
 //! `println!("{}", v)`, i.e. Rust's own `Display for Value`. For
 //! `Obj::Instance` that's a hardcoded `write!(f, "<instance of {}>",
-//! i.class.as_class().name)` (see `value.rs`) -- reads the class's own
+//! i.class.as_class().name)` (see `value.rs`); reads the class's own
 //! name, never retains or dispatches on the instance itself. No
 //! user-overridable `to_string()` exists in this codebase as of this
 //! writing, so `Print` is verified safe below; if/when that spec
@@ -67,30 +67,30 @@
 //!
 //! Verified-safe operations (see each match arm below for the specific
 //! code path that justifies it):
-//! - `Move` (a plain register copy -- propagates tracking, never
+//! - `Move` (a plain register copy; propagates tracking, never
 //!   escapes).
 //! - `Eq`/`Neq`/`EqImm`/`NeqImm` (`Value::equals` on two `Obj::
-//!   Instance`s is `std::ptr::eq`, unconditionally -- see
-//!   `value.rs`'s own `equals` -- never a user-code dispatch).
+//!   Instance`s is `std::ptr::eq`, unconditionally: see
+//!   `value.rs`'s own `equals`; never a user-code dispatch).
 //! - `JmpIfFalse`/`JmpIfTrue` (`Value::is_falsey` treats every heap
 //!   kind except `Str`/`Bytes`/`BigInt` as unconditionally not falsey,
-//!   decided from the tag byte alone -- see `codegen::emit_is_falsey`'s
-//!   own docs -- never a payload read or user-code dispatch for an
+//!   decided from the tag byte alone: see `codegen::emit_is_falsey`'s
+//!   own docs; never a payload read or user-code dispatch for an
 //!   `Instance`).
 //! - `Print` (see the paragraph above).
 //! - Being the container (never the stored value) of `SetField`/
-//!   `SetFieldInit`/`SetMethod`/`DeclareStatic`/`SetIndex` -- writing
+//!   `SetFieldInit`/`SetMethod`/`DeclareStatic`/`SetIndex`; writing
 //!   into your own field/slot doesn't hand your identity to anything
 //!   new.
 //! - Being the container/index-key operand (never the stored value) of
-//!   `GetIndex`/`SetIndex` -- Dict key lookup is also `Value::equals`,
+//!   `GetIndex`/`SetIndex`; Dict key lookup is also `Value::equals`,
 //!   same `ptr::eq` guarantee as above.
 //!
-//! Everything else that reads a tracked register -- including
+//! Everything else that reads a tracked register; including
 //! `GetField`'s `obj` (the `BoundMethod`-wrapping risk above),
 //! `Return`, `SetGlobal`/`AssignGlobal`, `SetUpval`, `Closure`
 //! capturing it, any `Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`
-//! operand, `Raise`, arithmetic/bitwise/concat/unary ops -- is
+//! operand, `Raise`, arithmetic/bitwise/concat/unary ops; is
 //! escaping.
 
 use rustc_hash::FxHashSet;
@@ -105,12 +105,12 @@ use crate::vm::object::{ObjClass, ObjFunction, UpvalueDescriptor};
 /// because no method of that same name would ever shadow them.
 /// Computed once, from a live `&ObjClass`, by whatever caller has VM
 /// access to resolve one (this module itself deliberately never
-/// touches the VM -- see its own docs) -- sound as a permanent fact,
+/// touches the VM: see its own docs); sound as a permanent fact,
 /// not a one-shot snapshot, because Zuri classes are immutable after
 /// construction (NOTES.md: "new fields and methods cannot be added at
-/// runtime"; see `ObjFunction::owning_class_name`'s own docs for the
+/// runtime": see `ObjFunction::owning_class_name`'s own docs for the
 /// same reasoning). Currently only consulted for a method's own
-/// `self` (register 0) -- see `analyze_one`/`compute_param_summary`'s
+/// `self` (register 0): see `analyze_one`/`compute_param_summary`'s
 /// own docs on why that's the one case resolvable without further
 /// receiver-type inference.
 pub struct ClassFieldSafety {
@@ -120,7 +120,7 @@ pub struct ClassFieldSafety {
 impl ClassFieldSafety {
   /// `field_slots`/`methods` are pre-merged with every ancestor class
   /// already (see `ObjClass`'s own field docs), so this automatically
-  /// accounts for inherited collisions too -- a subclass overriding
+  /// accounts for inherited collisions too; a subclass overriding
   /// an inherited field with a same-named method (or vice versa) is
   /// exactly as unsafe as a same-class collision, and already shows
   /// up here without any extra superclass-walking.
@@ -141,12 +141,12 @@ impl ClassFieldSafety {
 
 /// A bitset over bytecode register indices, tracking which registers
 /// may currently hold a reference to the one allocation this analysis
-/// run is tracking -- the "may" (union-at-merge) counterpart to
+/// run is tracking; the "may" (union-at-merge) counterpart to
 /// `typeflow::RegSet`'s "must" (intersect-at-merge) semantics. Built as
 /// its own small type, deliberately not sharing `RegSet` itself,
 /// specifically so this newer, less-proven analysis can never
 /// accidentally perturb `typeflow`'s own already-trusted "must"
-/// fixed-points -- the two need different merge operators (union here,
+/// fixed-points; the two need different merge operators (union here,
 /// intersection there), and keeping them as distinct types makes it a
 /// compile error to accidentally call the wrong one, rather than a
 /// silent logic bug from calling `and_assign` where `or_assign`
@@ -161,7 +161,7 @@ impl AliasSet {
     num_registers.div_ceil(64).max(1)
   }
 
-  /// Nothing aliases yet -- the correct seed for every block except the
+  /// Nothing aliases yet; the correct seed for every block except the
   /// one immediately following the allocation site itself (a "may"
   /// analysis starts empty and only grows via union, the mirror image
   /// of `RegSet::full`'s role in a "must" analysis).
@@ -193,7 +193,7 @@ impl AliasSet {
     }
   }
 
-  /// Union merge -- a "may" analysis's fixed point grows monotonically
+  /// Union merge; a "may" analysis's fixed point grows monotonically
   /// via union at every merge point (if either predecessor path could
   /// have left the allocation in this register, the merged state must
   /// say so too), the exact mirror of `RegSet::and_assign`'s
@@ -208,7 +208,7 @@ impl AliasSet {
 /// A bitset over registers for a "must" (intersect-at-merge) fact --
 /// used below by `self_reference_facts` to prove a register definitely
 /// (on every path, not just possibly) still holds an unmodified
-/// self-reference. A separate type from `AliasSet`, on purpose -- see
+/// self-reference. A separate type from `AliasSet`, on purpose: see
 /// that type's own docs on why mixing "may" and "must" merge operators
 /// under one type invites a silent logic bug instead of a compile
 /// error.
@@ -222,7 +222,7 @@ impl MustSet {
     num_registers.div_ceil(64).max(1)
   }
 
-  /// Nothing proven -- the correct seed for the entry block (register
+  /// Nothing proven; the correct seed for the entry block (register
   /// 0's caller-supplied argument is never statically a self-
   /// reference, nor is anything else, before any code has run).
   fn empty(num_registers: usize) -> Self {
@@ -231,7 +231,7 @@ impl MustSet {
     }
   }
 
-  /// Everything (optimistically) proven -- the correct seed for every
+  /// Everything (optimistically) proven; the correct seed for every
   /// other block, so a real predecessor's facts only ever narrow it
   /// down via `and_assign`, never widen it (the same reasoning
   /// `typeflow::RegSet::full` documents for its own analogous role).
@@ -269,7 +269,7 @@ impl MustSet {
     }
   }
 
-  /// Intersect merge -- a "must" analysis's fixed point only ever
+  /// Intersect merge; a "must" analysis's fixed point only ever
   /// narrows at a merge point (a fact holds after the merge only if
   /// every predecessor path already proved it).
   fn and_assign(&mut self, other: &MustSet) {
@@ -281,12 +281,12 @@ impl MustSet {
 
 /// For every bytecode position in `proto`, which registers definitely
 /// (on every path reaching that position) still hold an unmodified
-/// self-reference -- the result of a `GetGlobal` whose name matches
+/// self-reference; the result of a `GetGlobal` whose name matches
 /// `proto`'s own name, never redefined since. This is what lets
 /// `Call`/`Invoke` sites be recognized as provably self-recursive
 /// (calling this exact function, not some other value that merely
 /// happens to occupy the same register) without needing live access to
-/// the actual runtime global table -- see the module-level "Phase 2"
+/// the actual runtime global table: see the module-level "Phase 2"
 /// docs for why self-recursion specifically is the one call-target
 /// case this analysis can resolve without that.
 ///
@@ -294,7 +294,7 @@ impl MustSet {
 /// `full()` seed at every non-entry block, narrowed by intersection at
 /// merges): a register only counts as a proven self-reference if every
 /// path agrees, and anything not proven here is conservatively treated
-/// as "might not be self" -- the safe direction to be wrong in, since
+/// as "might not be self"; the safe direction to be wrong in, since
 /// a false "is definitely self" would misapply this function's own
 /// (possibly still-escaping) parameter summary to what's actually a
 /// call to something else entirely.
@@ -314,7 +314,7 @@ pub(crate) fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
 /// `proto`'s own name. `self_reference_facts` is the `target_name ==
 /// proto.name` special case (kept separate since self-recursion needs
 /// no runtime guard at all once proven, whereas a call to some other
-/// named global -- see `global_ref_facts` -- still needs a value-
+/// named global: see `global_ref_facts`; still needs a value-
 /// identity guard, since unlike a function's own name, an arbitrary
 /// global binding can be reassigned).
 fn global_ref_facts_for(proto: &ObjFunction, is_target_name: impl Fn(u16) -> bool) -> Vec<MustSet> {
@@ -369,7 +369,7 @@ fn global_ref_facts_for(proto: &ObjFunction, is_target_name: impl Fn(u16) -> boo
     if ip == 0 {
       new_in = MustSet::empty(num_registers);
     } else if !any_pred {
-      // Unreachable code -- vacuously "everything proven" is safe,
+      // Unreachable code; vacuously "everything proven" is safe,
       // same reasoning as `typeflow::analyze`'s own identical case.
       new_in = MustSet::full(num_registers);
     }
@@ -393,7 +393,7 @@ fn global_ref_facts_for(proto: &ObjFunction, is_target_name: impl Fn(u16) -> boo
 /// position, which registers definitely still hold an unmodified read
 /// of the global named `target_name`. Used by
 /// `VM::resolve_call_targets` to prove a `Call` site's callee register
-/// is a specific, statically-known top-level function -- unlike
+/// is a specific, statically-known top-level function; unlike
 /// `self_reference_facts`, the proven identity here still needs a
 /// runtime value-identity guard before a direct call is safe (an
 /// arbitrary global binding, unlike a function's own name, can be
@@ -409,12 +409,12 @@ pub(crate) fn global_ref_facts(proto: &ObjFunction, target_name: &str) -> Vec<Mu
 }
 
 /// Does this instruction's normal (non-tracked-register) behavior
-/// write some other, unrelated value into a register -- i.e. should
+/// write some other, unrelated value into a register; i.e. should
 /// that register be killed from the alias set (it no longer holds
 /// whatever it held before this instruction ran)? `Move` is handled
 /// separately (it's the one case that propagates tracking instead of
 /// killing it), so this only needs to cover every other register-
-/// defining instruction -- exactly `typeflow::any_dst`, reused as-is
+/// defining instruction; exactly `typeflow::any_dst`, reused as-is
 /// rather than re-deriving the same exhaustive match a second time.
 fn kill_target(instr: &Instr) -> Option<u8> {
   if matches!(instr, Instr::Move { .. }) {
@@ -424,13 +424,13 @@ fn kill_target(instr: &Instr) -> Option<u8> {
 }
 
 /// Is `GetField{obj: 0, name_const, ..}` (i.e. `self.NAME` inside a
-/// method) proven safe -- name resolves to a field, never a method, on
+/// method) proven safe; name resolves to a field, never a method, on
 /// `proto`'s own class, so no `BoundMethod` wrapping can happen? Needs
 /// both: `proto` actually knows which class it belongs to
-/// (`owning_class_name`, set for every method -- see that field's own
+/// (`owning_class_name`, set for every method: see that field's own
 /// docs), and the caller supplied that class's already-resolved
 /// `ClassFieldSafety` (this module never touches the VM itself to
-/// resolve the name -> live `ObjClass` step -- see `ClassFieldSafety`'s
+/// resolve the name -> live `ObjClass` step: see `ClassFieldSafety`'s
 /// own docs). Absent either one, conservatively unsafe.
 fn self_getfield_is_safe(
   proto: &ObjFunction,
@@ -454,7 +454,7 @@ fn self_getfield_is_safe(
 ///
 /// Same `BoundMethod`-shadowing question, asked about a different
 /// object: reading `d.x` off a freshly built `Vec3` is only a plain
-/// field read if `Vec3` has no method also called `x` -- otherwise it
+/// field read if `Vec3` has no method also called `x`; otherwise it
 /// materializes a `BoundMethod` capturing `d`, which genuinely leaks
 /// it. The difference is only where the class comes from: `self`'s is
 /// `proto.owning_class_name`, while an allocation's is known to
@@ -481,7 +481,7 @@ fn tracked_getfield_is_safe(
 }
 
 /// Every register whose use by `instr`, if it currently aliases the
-/// tracked allocation, proves the allocation escapes -- see this
+/// tracked allocation, proves the allocation escapes: see this
 /// module's own docs for the verified-safe allowlist this is the
 /// complement of. Deliberately structured as an exhaustive match over
 /// every `Instr` variant (mirroring `typeflow::mark_uses`'s own
@@ -489,19 +489,19 @@ fn tracked_getfield_is_safe(
 /// new instruction variant to the language is a compile error here
 /// (forces an explicit, deliberate decision about its escape
 /// implications) instead of silently falling into either an
-/// over-conservative or -- far worse -- an unsound default.
+/// over-conservative or; far worse; an unsound default.
 fn escaping_reads(instr: &Instr) -> Vec<u8> {
   match *instr {
     Instr::LoadConst { .. } | Instr::LoadNil { .. } | Instr::LoadBool { .. } => vec![],
 
-    // Verified safe -- see module docs.
+    // Verified safe: see module docs.
     Instr::Move { .. } => vec![],
     Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. } => vec![],
     Instr::Eq { .. } | Instr::Neq { .. } => vec![],
     Instr::EqImm { .. } | Instr::NeqImm { .. } => vec![],
     Instr::Print { .. } => vec![],
 
-    // Arithmetic/bitwise/concat/unary -- all dispatch to user-defined
+    // Arithmetic/bitwise/concat/unary; all dispatch to user-defined
     // operator overloads for non-numeric operands (see
     // `jit::runtime`'s `*_slow` helpers), which could do anything with
     // the operand, including storing it somewhere long-lived.
@@ -534,7 +534,7 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
 
     Instr::Jmp { .. } => vec![],
 
-    // Every argument and the callee/receiver register itself -- no
+    // Every argument and the callee/receiver register itself; no
     // interprocedural summaries yet (see module docs), so any of these
     // escapes unconditionally.
     Instr::Call { func, num_args, .. } => (func..=func.saturating_add(num_args)).collect(),
@@ -558,14 +558,14 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
     Instr::SetGlobal { src, .. } | Instr::AssignGlobal { src, .. } => vec![src],
 
     // Capturing a local register as an upvalue lets a closure that may
-    // outlive this frame reach it -- an escape. Only `Local(n)`
+    // outlive this frame reach it; an escape. Only `Local(n)`
     // descriptors read a current register at all; `Upvalue(n)` passes
     // an already-captured value through, not a fresh register read.
     Instr::Closure { .. } => {
       // Resolving the capture list needs `proto.chunk.constants`, not
-      // available from `instr` alone -- handled by the caller
+      // available from `instr` alone; handled by the caller
       // (`analyze_one`), which has `proto` in scope. This arm exists
-      // only so the match stays exhaustive; see `analyze_one`'s own
+      // only so the match stays exhaustive: see `analyze_one`'s own
       // Closure handling for the real logic.
       vec![]
     },
@@ -573,7 +573,7 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
     Instr::SetUpval { src, .. } => vec![src],
     Instr::CloseUpvalues { .. } => vec![],
 
-    // Folded into a new List/Dict this analysis doesn't track -- no
+    // Folded into a new List/Dict this analysis doesn't track; no
     // transitive containment yet (see module docs), so unconditionally
     // escaping.
     Instr::MakeList { start, count, .. } => (start..start.saturating_add(count)).collect(),
@@ -583,16 +583,16 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
 
     Instr::MakeClass { superclass, .. } => superclass.into_iter().collect(),
     Instr::DeclareField { .. } | Instr::FinalizeClass { .. } => vec![],
-    // The container (`class`) is safe -- writing into your own
+    // The container (`class`) is safe; writing into your own
     // slot/method table doesn't hand your identity to anything new.
-    // The stored value (`src`) escapes -- see module docs on why this
+    // The stored value (`src`) escapes: see module docs on why this
     // phase doesn't yet try to prove transitive containment.
     Instr::SetFieldInit { src, .. }
     | Instr::SetMethod { src, .. }
     | Instr::DeclareStatic { src, .. } => vec![src],
 
     // `obj`'s use here is not safe, despite reading like a plain field
-    // access -- see module docs on `GetField`'s implicit `BoundMethod`
+    // access: see module docs on `GetField`'s implicit `BoundMethod`
     // wrapping when the name resolves to a method instead of a field.
     Instr::GetField { obj, .. } => vec![obj],
     Instr::SetField { obj: _, src, .. } => vec![src],
@@ -627,7 +627,7 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
 
 /// One function's worth of escape facts, computed on demand per
 /// allocation site rather than eagerly for every `Call` in the
-/// function -- `analyze_one` is cheap enough (one small fixed point
+/// function; `analyze_one` is cheap enough (one small fixed point
 /// over the function's own instruction count) that callers needing
 /// only a handful of sites checked don't pay for the rest.
 pub struct EscapeResult {
@@ -635,7 +635,7 @@ pub struct EscapeResult {
 }
 
 /// Proves (or fails to prove) that the value defined at `alloc_ip`
-/// never escapes `proto`'s own execution -- see this module's own docs
+/// never escapes `proto`'s own execution: see this module's own docs
 /// for exactly what "escapes" covers and doesn't yet cover.
 ///
 /// `alloc_ip` must name an instruction with a real destination
@@ -648,7 +648,7 @@ pub struct EscapeResult {
 /// `proto` itself: an allocation passed as an argument to such a call,
 /// in a position mapping onto a parameter Phase 2 already proved
 /// doesn't escape, is no longer conservatively flagged just because
-/// some call touched it -- e.g. `TreeNode(...)` built once and then
+/// some call touched it; e.g. `TreeNode(...)` built once and then
 /// threaded unchanged through further recursive calls of the same
 /// function that never store it anywhere. Every other call target
 /// (anything not provably self) is still fully conservative, exactly
@@ -670,7 +670,7 @@ pub fn analyze_one(
   let num_registers = proto.num_registers as usize;
 
   let Some(alloc_reg) = typeflow::any_dst(&code[alloc_ip]) else {
-    // Not a register-defining instruction at all -- nothing to track,
+    // Not a register-defining instruction at all; nothing to track,
     // vacuously "escapes" (there's no allocation here to prove
     // anything about, so callers must not act on this as a green
     // light).
@@ -683,7 +683,7 @@ pub fn analyze_one(
   let preds = typeflow::build_predecessors(proto);
 
   // `entry[ip]`/`out[ip]` are meaningless (left empty, never read) for
-  // `alloc_ip` itself -- its role in this analysis is exactly one
+  // `alloc_ip` itself; its role in this analysis is exactly one
   // fixed fact ("right after this instruction, `alloc_reg` holds the
   // tracked allocation"), asserted once below via `seeded_alloc_out`,
   // never recomputed by the generic per-instruction transfer this loop
@@ -692,7 +692,7 @@ pub fn analyze_one(
   // operands (e.g. a constructor call's arguments) aren't reads of the
   // value this analysis run is tracking (which doesn't exist until
   // this instruction finishes), and recomputing its `out` generically
-  // from `entry[alloc_ip]` (always empty -- nothing reaches the
+  // from `entry[alloc_ip]` (always empty; nothing reaches the
   // allocation site already aliasing itself) would silently overwrite
   // the seed with an empty set.
   let mut entry: Vec<AliasSet> = vec![AliasSet::empty(num_registers); code_len];
@@ -733,7 +733,7 @@ pub fn analyze_one(
     let instr = &code[ip];
     let mut new_out = entry[ip].clone();
 
-    // `Closure` needs `proto` to resolve its capture list -- handled
+    // `Closure` needs `proto` to resolve its capture list; handled
     // here rather than in `escaping_reads`, which only sees `instr`.
     if let Instr::Closure { proto_const, .. } = *instr {
       let nested = proto.chunk.constants[proto_const as usize].as_func();
@@ -783,7 +783,7 @@ pub fn analyze_one(
       // allocation; when it does, the read is harmless precisely when
       // the name cannot resolve to a method on the receiver's class.
       // `self` and a tracked allocation differ only in where that
-      // class is known from -- see the two `*_getfield_is_safe`
+      // class is known from: see the two `*_getfield_is_safe`
       // helpers.
       if entry[ip].get(obj) {
         let safe = if obj == 0 && proto.is_method {
@@ -817,7 +817,7 @@ pub fn analyze_one(
       // inside a loop being reached again via the loop's own back
       // edge is the everyday case, not an exotic one), but its
       // `entry`/`out` are the fixed seed (`seeded_alloc_out`), never
-      // recomputed generically -- see this function's own docs on why
+      // recomputed generically: see this function's own docs on why
       // processing it through the ordinary transfer function would
       // silently overwrite that seed. Any other ip whose predecessor
       // is `alloc_ip` already gets the seed correctly via the `p ==
@@ -840,11 +840,11 @@ pub fn analyze_one(
 // ---------------------------------------------------------------------
 //
 // Extends Phase 1 with exactly one interprocedural case: a function
-// calling itself (detected via `self_reference_facts`, above -- the
+// calling itself (detected via `self_reference_facts`, above; the
 // one call-target case resolvable without live access to the runtime
-// global table; see this module's top-level docs). For a self-
+// global table: see this module's top-level docs). For a self-
 // recursive call, an argument that maps onto one of this function's
-// own parameters no longer escapes unconditionally -- it escapes only
+// own parameters no longer escapes unconditionally; it escapes only
 // if that same parameter is (from the rest of this computation)
 // already known to escape, which is exactly the parameter-escape
 // summary this section computes, via a small Kleene/Tarski fixed-point
@@ -854,12 +854,12 @@ pub fn analyze_one(
 //
 // This is monotonic (a parameter can only ever flip from `Local` to
 // `Escapes`, never back), so the iteration is bounded by `arity` steps
-// and converges to the least fixed point -- the most precise summary
+// and converges to the least fixed point; the most precise summary
 // that's still fully sound, the same Kleene-iteration shape any
 // recursive dataflow summary computation uses.
 //
 // Still not enough, on its own, to prove real recursive-return patterns
-// like `tree_with(depth).count()` non-escaping -- two gaps remain,
+// like `tree_with(depth).count()` non-escaping; two gaps remain,
 // deliberately left for a later phase rather than rushed here:
 // - `Return` is still treated as an unconditional escape (inherited
 //   from `escaping_reads`), not "escapes only if the caller's use of
@@ -867,19 +867,19 @@ pub fn analyze_one(
 //   lattice (`Local` / `EscapesViaReturn` / `Escapes`), not attempted
 //   here.
 // - `GetField`'s receiver is still conservatively escaping (the
-//   `BoundMethod`-wrapping risk -- see module docs), which is exactly
+//   `BoundMethod`-wrapping risk: see module docs), which is exactly
 //   what `count()`'s `self.left`/`self.right` reads hit. Resolving
 //   that needs proving a specific `GetField` site resolves to a field,
 //   never a method, which needs class-shape knowledge this analysis
 //   doesn't have.
 // - Method calls (`Invoke`) are not resolved for self-recursion at
-//   all -- `count()` recurses via `self.left.count()`, an `Invoke`,
+//   all; `count()` recurses via `self.left.count()`, an `Invoke`,
 //   not a `Call`; only direct `GetGlobal`-based self-calls (like
 //   `tree_with`'s own recursion) are handled here.
 
 /// One function's parameter-escape summary: `param_escapes[i]` is
 /// whether register `i` (parameter `i`, for `i < proto.arity`)
-/// escapes this function's own body -- see this section's own docs on
+/// escapes this function's own body: see this section's own docs on
 /// exactly what's (and isn't) accounted for.
 pub struct FuncEscapeSummary {
   pub param_escapes: Vec<bool>,
@@ -887,7 +887,7 @@ pub struct FuncEscapeSummary {
 
 /// Same core walk as `analyze_one`, but seeded at a parameter register
 /// from the function's entry (`ip = 0`) instead of an allocation
-/// site's own destination, and -- the one real difference -- consults
+/// site's own destination, and; the one real difference; consults
 /// `guess` (the in-progress summary from the current fixed-point
 /// iteration) instead of unconditionally flagging a self-recursive
 /// call's argument as escaping.
@@ -920,7 +920,7 @@ fn analyze_param_escape(
   // The seed: `param_reg` holds the tracked parameter from the very
   // first instruction onward (unlike `analyze_one`'s `alloc_ip`, whose
   // own operands aren't reads of the not-yet-existing tracked
-  // allocation, a parameter is live from instruction 0 itself -- `ip =
+  // allocation, a parameter is live from instruction 0 itself; `ip =
   // 0` is an ordinary instruction here, not a seed-only site, so it
   // goes through the exact same loop body as everything else below).
   entry[0].set(param_reg, true);
@@ -968,9 +968,9 @@ fn analyze_param_escape(
     // `guess` for that parameter instead of unconditionally escaping.
     // Any argument register beyond `proto.arity` (an arity mismatch,
     // or a variadic tail) has no corresponding parameter to consult
-    // -- conservatively escapes, same as an ordinary unresolved call.
+    //; conservatively escapes, same as an ordinary unresolved call.
     // `GetField` on `self` is handled exactly like `analyze_one`'s own
-    // -- see `self_getfield_is_safe`'s own docs.
+    //: see `self_getfield_is_safe`'s own docs.
     let is_self_get_field =
       matches!(instr, Instr::GetField { obj, .. } if *obj == 0) && proto.is_method;
     if let Instr::Call { func, num_args, .. } = *instr
@@ -1022,7 +1022,7 @@ fn analyze_param_escape(
   escaped
 }
 
-/// Computes `proto`'s own parameter-escape summary -- see this
+/// Computes `proto`'s own parameter-escape summary: see this
 /// section's own docs for the fixed-point shape and its known limits.
 pub fn compute_param_summary(
   proto: &ObjFunction,
@@ -1043,7 +1043,7 @@ pub fn compute_param_summary(
     let mut changed = false;
     for i in 0..arity {
       if guess[i] {
-        continue; // already escaping -- monotonic, can't un-escape
+        continue; // already escaping; monotonic, can't un-escape
       }
       if analyze_param_escape(proto, i as u8, &self_ref, &guess, self_class_safety) {
         next[i] = true;

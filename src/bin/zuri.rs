@@ -109,7 +109,7 @@ fn abort_launch(name: &str, reason: &str) -> ! {
 }
 
 /// `std::io::Error`'s own `Display` renders `NotFound` as "No such file
-/// or directory (os error 2)" on Linux -- strip the OS-specific suffix
+/// or directory (os error 2)" on Linux; strip the OS-specific suffix
 /// so it matches the C implementation's message exactly.
 fn io_error_reason(e: &std::io::Error) -> String {
   match e.kind() {
@@ -142,7 +142,7 @@ fn run_file(vm: &mut VM, file: &str) {
   };
 
   // Canonicalize so stack traces show a full, unambiguous path,
-  // matching the target format -- falls back to the given (possibly
+  // matching the target format; falls back to the given (possibly
   // relative) path if that fails for any reason.
   let display_path: Rc<str> = Rc::from(
     fs::canonicalize(&resolved)

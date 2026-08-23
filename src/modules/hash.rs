@@ -1,8 +1,8 @@
-//! `_hash` builtin module -- native primitives backing `libs/hash.zu`.
+//! `_hash` builtin module; native primitives backing `libs/hash.zu`.
 //!
 //! `libs/hash.zu` (the user-facing `hash` module) implements everything
-//! documented in its own docblocks -- `md5()`, `sha256()`, `hmac_*()`,
-//! `pbkdf2()`, hex encoding, argument validation, etc -- as ordinary Zuri
+//! documented in its own docblocks; `md5()`, `sha256()`, `hmac_*()`,
+//! `pbkdf2()`, hex encoding, argument validation, etc; as ordinary Zuri
 //! source, the same way `libs/os.zu` is a thin Zuri wrapper around the
 //! `_os` native module (see `src/modules/os.rs`). This module is that
 //! native backing for `_hash`: it does only the parts that genuinely
@@ -11,7 +11,7 @@
 //! into `_hash.hash(algorithm, data)` for every algorithm EXCEPT the FNV
 //! family and GOST, which it special-cases to `_hash.fnv1(data)` /
 //! `_hash.fnv1_64(data)` / `_hash.fnv1a(data)` / `_hash.fnv1a_64(data)` /
-//! `_hash.gost(data)` directly -- see `hash.zu`'s own `hash()` body.
+//! `_hash.gost(data)` directly: see `hash.zu`'s own `hash()` body.
 //!
 //! Every native here returns the RAW DIGEST as a `bytes` value; hex
 //! encoding (the default, most common presentation) is entirely `hash.zu`'s
@@ -46,7 +46,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 
 // Helpers
 
-/// `hash.zu` accepts `{string|bytes}` for every data argument -- strings
+/// `hash.zu` accepts `{string|bytes}` for every data argument; strings
 /// are hashed over their UTF-8 bytes, matching `string.to_bytes()`
 /// elsewhere in this VM.
 fn data_bytes(v: Value) -> Result<Vec<u8>, String> {
@@ -65,7 +65,7 @@ fn data_bytes(v: Value) -> Result<Vec<u8>, String> {
 /// Every algorithm `hash.zu`'s `hash()` dispatcher forwards to
 /// `_hash.hash()` (i.e. everything documented EXCEPT the FNV family and
 /// GOST, which get their own dedicated natives below). Names are matched
-/// lowercase -- `hash.zu` already lowercases before calling in.
+/// lowercase; `hash.zu` already lowercases before calling in.
 fn digest_bytes(algorithm: &str, data: &[u8]) -> Result<Vec<u8>, String> {
   use blake2::{Blake2b512, Blake2s256};
   use md2::Md2;
@@ -103,7 +103,7 @@ fn digest_bytes(algorithm: &str, data: &[u8]) -> Result<Vec<u8>, String> {
     "sha3-512" => Sha3_512::digest(data).to_vec(),
     // SHAKE is an XOF (arbitrary-length output); this module picks the
     // conventional fixed output length used when SHAKE stands in for a
-    // regular digest -- 32 bytes for SHAKE128, 64 for SHAKE256 (twice
+    // regular digest; 32 bytes for SHAKE128, 64 for SHAKE256 (twice
     // their security level in bytes, matching common usage e.g. in
     // Ethereum/Keccak-family tooling).
     "shake128" => {
@@ -134,7 +134,7 @@ fn digest_bytes(algorithm: &str, data: &[u8]) -> Result<Vec<u8>, String> {
   })
 }
 
-// FNV -- non-cryptographic, but part of the documented algorithm family
+// FNV; non-cryptographic, but part of the documented algorithm family
 
 fn fnv1_32(data: &[u8]) -> u32 {
   let mut h: u32 = 0x811c_9dc5;
@@ -244,7 +244,7 @@ fn fnv1a_64_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(out))
 }
 
-/// `_hash.gost(data)` -- GOST R 34.11-94 using the CryptoPro S-box
+/// `_hash.gost(data)`; GOST R 34.11-94 using the CryptoPro S-box
 /// parameter set, the most common real-world GOST94 variant.
 fn gost_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);

@@ -7,7 +7,7 @@
 # real scan of the same string pushed a second time. Only one `}` ever
 # arrived to pop it, and the leftover entry made the NEXT `}` in the
 # program get swallowed as "end of interpolation" instead of closing a
-# block -- so an unrelated block several lines later failed to parse.
+# block; so an unrelated block several lines later failed to parse.
 #
 # Every line below therefore pairs an interpolation with a following
 # braced block. They must all run, not just parse.

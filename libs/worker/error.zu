@@ -32,8 +32,8 @@ class WorkerTimeoutError < WorkerError {
 /**
  * Raised from `Worker.join()`, `Channel.send()`, `Channel.recv()`,
  * `worker.wait_any()`, `worker.wait_all()`, or `worker.select()`
- * when the CALLING worker -- the one blocked in that call, not
- * whatever it was waiting on -- is `cancel()`ed while still waiting.
+ * when the CALLING worker; the one blocked in that call, not
+ * whatever it was waiting on; is `cancel()`ed while still waiting.
  */
 class WorkerCancelledError < WorkerError {
   @new(message) {

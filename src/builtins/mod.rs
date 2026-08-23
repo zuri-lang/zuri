@@ -11,7 +11,7 @@
 //! just for values that don't have one. `Instr::Invoke`'s handler is
 //! the only caller; the resolved `NativeFunction` is run through the
 //! ordinary `VM::call_native` path (arity checking included for free),
-//! with the receiver spliced in as the implicit first argument -- the
+//! with the receiver spliced in as the implicit first argument; the
 //! same calling convention a real bound method already uses.
 
 use std::sync::LazyLock;
@@ -49,7 +49,7 @@ mod range;
 mod string;
 
 /// Every primitive "kind" that owns its own builtin-method table.
-/// Instances/classes are deliberately absent -- an instance's real
+/// Instances/classes are deliberately absent; an instance's real
 /// class methods take priority (checked by the caller before ever
 /// reaching `lookup`), and a class itself never gets a builtin method
 /// at all (see `lookup`'s early return).
@@ -71,7 +71,7 @@ enum Kind {
 
 impl Kind {
   fn of(v: Value) -> Option<Self> {
-    // Cheap tag-bit checks first -- no pointer dereference at all.
+    // Cheap tag-bit checks first; no pointer dereference at all.
     if v.is_number() {
       return Some(Kind::Number);
     }
@@ -105,8 +105,8 @@ impl Kind {
 
 type MethodTable = FxHashMap<&'static str, NativeFunction>;
 
-/// `min_arity` is always 1 -- the implicit receiver, spliced in by the
-/// caller as `args[0]` -- since every builtin below currently takes no
+/// `min_arity` is always 1; the implicit receiver, spliced in by the
+/// caller as `args[0]`; since every builtin below currently takes no
 /// further arguments; `call_native`'s existing arity check is what
 /// turns e.g. `x.length(1)` into a proper ArgumentError for free,
 /// rather than every method re-validating its own arg count.
@@ -140,7 +140,7 @@ pub fn method_n(name: &'static str, arity: u8, func: NativeFn) -> (&'static str,
 }
 
 /// Same as `method_n`, but the trailing arguments beyond
-/// `required_extra` are OPTIONAL rather than fixed -- `min_arity`
+/// `required_extra` are OPTIONAL rather than fixed; `min_arity`
 /// becomes a floor and the native itself is responsible for checking
 /// `ctx.args.len()` to see how many of its optional parameters were
 /// actually supplied. Used for spec'd-optional trailing params like
@@ -188,14 +188,14 @@ fn table_for(kind: Kind) -> &'static MethodTable {
 }
 
 /// Resolve `name` as a builtin method on `receiver`. `None` isn't an
-/// error -- it just means `name` isn't one of these, and the caller
+/// error; it just means `name` isn't one of these, and the caller
 /// (`Instr::Invoke`) reports its own "undefined"/"cannot call" error
 /// with whatever wording fits its context (instance vs. bare
 /// primitive).
 ///
 /// Classes are excluded outright: a class is a template, not a value
 /// with contents to stringify or measure.
-/// Every `Kind`, in declaration order -- the index space
+/// Every `Kind`, in declaration order; the index space
 /// `OPERATOR_NAMES` is built over.
 const ALL_KINDS: [Kind; 12] = [
   Kind::Number,
@@ -222,7 +222,7 @@ const ALL_KINDS: [Kind; 12] = [
 /// answer "no" in a load, a shift and an AND, with no string
 /// comparison at all. A first-byte collision (two decorators sharing
 /// the letter after `@`) only costs a fall-through to the real table
-/// lookup, never a wrong answer -- so correctness never depends on the
+/// lookup, never a wrong answer; so correctness never depends on the
 /// summary being precise, only on it never CLEARING a bit for something
 /// the table has.
 ///
@@ -249,7 +249,7 @@ fn deco_bit(deco: &str) -> Option<u64> {
 }
 
 /// Resolve an OPERATOR decorator (`@add`, `@lshift`, ...) on a builtin
-/// receiver -- `lookup` specialized for the one caller that asks
+/// receiver; `lookup` specialized for the one caller that asks
 /// millions of times and almost always gets `None`. Same answer as
 /// `lookup` for any `@`-prefixed name, reached without hashing.
 pub fn lookup_operator(receiver: Value, deco: &str) -> Option<&'static NativeFunction> {
@@ -278,7 +278,7 @@ pub fn lookup_operator(receiver: Value, deco: &str) -> Option<&'static NativeFun
 /// Exists so a call site can cache "which table did this resolve
 /// against last time" and compare that with one integer compare, rather
 /// than re-running `lookup`'s hash of the method name and the `memcmp`
-/// that confirms it -- which is what a `.length()` in a loop was paying
+/// that confirms it; which is what a `.length()` in a loop was paying
 /// on every single iteration. Cheap to compute: `Kind::of` is tag-bit
 /// tests plus at most one dereference of the object header.
 ///
@@ -312,7 +312,7 @@ pub fn lookup(receiver: Value, name: &str) -> Option<&'static NativeFunction> {
 
 /// `Value` already implements `Display` with exactly the
 /// representation every other part of the VM uses (echo, string
-/// interpolation, ...), so this is the one source of truth -- reachable
+/// interpolation, ...), so this is the one source of truth; reachable
 /// here as `.to_string()` too, for every kind except a class.
 fn to_string(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
@@ -337,7 +337,7 @@ mod operator_lookup_tests {
 
   /// The fast negative path must never hide a method the real table
   /// has: for every kind, every `@` name it defines must have its bit
-  /// set. (The converse is deliberately NOT required -- a spare set bit
+  /// set. (The converse is deliberately NOT required; a spare set bit
   /// only costs a fall-through, never a wrong answer.)
   #[test]
   fn operator_masks_never_hide_a_real_method() {
@@ -359,15 +359,29 @@ mod operator_lookup_tests {
   #[test]
   fn lookup_operator_agrees_with_lookup() {
     let decos = [
-      "@add", "@sub", "@mul", "@div", "@mod", "@pow", "@floordiv", "@and", "@or", "@xor",
-      "@lshift", "@rshift", "@urshift", "@lt", "@lte", "@gt", "@gte", "@neg", "@not", "@key",
+      "@add",
+      "@sub",
+      "@mul",
+      "@div",
+      "@mod",
+      "@pow",
+      "@floordiv",
+      "@and",
+      "@or",
+      "@xor",
+      "@lshift",
+      "@rshift",
+      "@urshift",
+      "@lt",
+      "@lte",
+      "@gt",
+      "@gte",
+      "@neg",
+      "@not",
+      "@key",
       "@value",
     ];
-    let probes = [
-      Value::number(1.0),
-      Value::bool(true),
-      Value::nil(),
-    ];
+    let probes = [Value::number(1.0), Value::bool(true), Value::nil()];
     for v in probes {
       for deco in decos {
         assert_eq!(

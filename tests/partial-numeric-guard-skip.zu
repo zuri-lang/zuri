@@ -1,13 +1,13 @@
 /* Exercises jit::codegen::combined_numeric_guard: when exactly ONE
  * operand of a guarded binary numeric/bitwise/comparison op is already
  * proven numeric (typed param, say) but the other isn't, the emitted
- * guard should check only the unproven side -- not redundantly
+ * guard should check only the unproven side; not redundantly
  * re-check the side type_facts already settled. Same discipline
  * project_getindex_type_facts_skip already established for GetIndex's
  * index operand, extended here to Add/Sub/Mul/Div/Pow/Floor/Mod, the
  * bitwise ops, and Eq/Neq. This only checks OBSERVABLE correctness
  * (guards still catch a genuinely non-numeric unproven operand, and
- * still compute the right answer when it IS numeric) -- the actual
+ * still compute the right answer when it IS numeric); the actual
  * instruction-count reduction was verified separately via
  * ZURI_JIT_LOG_IR. Run past the JIT tiering threshold.
  */

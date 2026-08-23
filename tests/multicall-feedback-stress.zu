@@ -7,12 +7,12 @@
 # on every call EXCEPT one, right in the middle of warm-up, where it's a
 # string. A one-shot sample taken from whichever call happens to trip
 # the threshold might get lucky and never see that string call, wrongly
-# speculating `b` as always-numeric -- which would still be CORRECT
+# speculating `b` as always-numeric; which would still be CORRECT
 # (the entry guard re-validates for real either way) but would mean the
 # accumulator isn't doing anything. Confirmed via ZURI_JIT_LOG=1 that
 # `p` compiles with speculative_params=0x1 (bit 0 for `a` survives, bit
 # 1 for `b` is correctly and permanently excluded by the one string
-# call), never 0x3 -- proving the AND-accumulation is actually driving
+# call), never 0x3; proving the AND-accumulation is actually driving
 # the decision, not just along for the ride. Large iteration count is
 # deliberate: gives the background compiler thread enough wall-clock
 # room to finish and get drained/logged before the (otherwise very

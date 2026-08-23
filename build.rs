@@ -65,7 +65,7 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
   // not `OUT_DIR`: a `.rs` file directly under `tests/` would be
   // auto-discovered by Cargo as its OWN separate integration-test
   // binary (it's just a pile of `#[test] fn ...` calling `run_fixture`,
-  // which only exists in `zu_conformance.rs` -- compiled standalone it
+  // which only exists in `zu_conformance.rs`; compiled standalone it
   // wouldn't build), while `OUT_DIR` is per-build-script-process and
   // not visible to other targets' `env!()` without extra
   // `cargo:rustc-env` forwarding. A subdirectory is invisible to
@@ -129,17 +129,17 @@ fn sanitize_ident(s: &str) -> String {
   out
 }
 
-/// Sanitizes, then unconditionally wraps in `r#` -- a raw identifier is
+/// Sanitizes, then unconditionally wraps in `r#`; a raw identifier is
 /// a pure lexer-level escape with no semantic difference from the
 /// plain identifier (`r#foo` and `foo` name the same thing) whether or
 /// not the text happens to be a keyword. We handle the one error the
-/// language itself carves out -- `self`/`Self`/`super`/`crate` can
-/// never be raw identifiers, `r#` or not -- is narrow enough to just
+/// language itself carves out; `self`/`Self`/`super`/`crate` can
+/// never be raw identifiers, `r#` or not; is narrow enough to just
 /// check for directly.
 fn escape_ident(s: &str) -> String {
   let sanitized = sanitize_ident(s);
   // `sanitize_ident` already lowercases, so `Self` and `self` collapse
-  // to the same string here -- only three literal cases to check.
+  // to the same string here; only three literal cases to check.
   if matches!(sanitized.as_str(), "self" | "super" | "crate") {
     format!("{sanitized}_")
   } else {

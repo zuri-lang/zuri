@@ -1,5 +1,5 @@
 /**
- * Worker-driven counterpart to mandlebrot.zu -- each row's pixels
+ * Worker-driven counterpart to mandlebrot.zu; each row's pixels
  * depend only on that row's own y, never on any other row, so the
  * image is split into one contiguous row range per pool worker and
  * computed concurrently. Each worker returns its own rows as plain
@@ -19,7 +19,7 @@
 import worker
 
 # `Mandelbrot` only holds the pure per-row math, with no reference to
-# `worker` anywhere in it -- spawning `computeRows` as a bound
+# `worker` anywhere in it; spawning `computeRows` as a bound
 # method transfers the WHOLE class, methods included, and a class
 # that references an imported module ANYWHERE in it can't cross a
 # worker boundary at all. Orchestration (`compute()` below) stays

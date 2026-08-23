@@ -2,11 +2,11 @@
  * path for a receiver typeflow::StringFacts proves is ALWAYS a
  * Value::String at that call site, skipping straight to
  * zuri_jit_invoke_string instead of paying for a doomed
- * zuri_jit_invoke_prepare attempt first) -- both of StringFacts' seed
+ * zuri_jit_invoke_prepare attempt first); both of StringFacts' seed
  * instructions (a `string`-typed parameter's own CheckParamType, and
  * `Concat`), the ordinary unproven fallback, and the register-reuse
  * case that used to be unsound (a string-proven register reassigned
- * to a non-string down one branch -- see the `any_dst` fix in
+ * to a non-string down one branch: see the `any_dst` fix in
  * jit::typeflow's transfer_list/transfer_int/transfer_string). Every
  * function below calls `.length()` on a proven string at least once --
  * that name collides with `ListIntrinsic`, which used to be checked
@@ -28,7 +28,7 @@ def proven_param_string_methods(s: string) {
 def concat_proven_methods(a: string, b: string) {
   var s = a + b
   /* s is proven a string here via the Add-both-operands-proven-string
-   * arm, NOT via a param type check -- exercises StringFacts' other
+   * arm, NOT via a param type check; exercises StringFacts' other
    * seed. */
   return s.length() + (s.contains(b) ? 1 : 0) + s.upper().length()
 }
@@ -36,7 +36,7 @@ def concat_proven_methods(a: string, b: string) {
 def unproven_but_always_string_methods(s: string|number) {
   /* the union type check means StringFacts can't prove s a string here
    * (a `number` arm is legal too), even though every call in this test
-   * passes a real string -- must still dispatch upper()/length()
+   * passes a real string; must still dispatch upper()/length()
    * correctly through the ordinary, unproven path. */
   return s.upper().length()
 }
@@ -49,7 +49,7 @@ def reused_register_length(flag) {
   }
   /* register reuse: s is proven a string going INTO the if, then
    * reassigned to a number (an Add, not a string source) in one
-   * branch -- must NOT still be treated as a proven string past the
+   * branch; must NOT still be treated as a proven string past the
    * merge. */
   return s.length()
 }

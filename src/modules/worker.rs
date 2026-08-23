@@ -1,8 +1,8 @@
-//! `_worker` builtin module -- native backing for `libs/worker.zu`.
+//! `_worker` builtin module; native backing for `libs/worker.zu`.
 //!
 //! Real concurrency, not cooperative-only: workers run on a small,
 //! configurable pool of actual OS threads (see `worker_util::pool`),
-//! each with its own fully independent `VM`/`Heap` -- this VM's object
+//! each with its own fully independent `VM`/`Heap`; this VM's object
 //! model (raw heap pointers, non-atomic inline caches, a `thread_local!`
 //! GC remembered set) was never built to be shared across threads, so
 //! nothing here shares one. A worker's arguments and return value
@@ -106,7 +106,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 /// Builds the `[status, value]` pair every worker/channel query
 /// native returns. `value` already exists (it's whatever
 /// `transfer::materialize` or a plain leaf alloc just produced) but
-/// sits only in a local Rust variable -- pin it across the two further
+/// sits only in a local Rust variable; pin it across the two further
 /// allocations needed to assemble the pair (`status`'s own string,
 /// then the list itself), so a collection triggered by either can't
 /// invalidate it. Mirrors `VM::instantiate`'s own pin-across-
@@ -120,7 +120,7 @@ fn status_pair(vm: &mut VM, status: &'static str, value: Value) -> Value {
   result
 }
 
-/// Like `status_pair`, but for `select`'s three-element result -- the
+/// Like `status_pair`, but for `select`'s three-element result; the
 /// winning channel's index alongside its status and value. `index` is
 /// always a plain number (or `nil` on timeout), never a heap value, so
 /// unlike `value` it needs no pinning of its own.
@@ -159,7 +159,7 @@ fn channel_state_of_value(v: Value) -> Result<Arc<pool::ChannelState>, String> {
     .ok_or_else(|| "invalid channel handle".to_string())
 }
 
-/// Reads an optional `timeout` argument -- `nil` (the `.zu` side's
+/// Reads an optional `timeout` argument; `nil` (the `.zu` side's
 /// default for an omitted parameter) means "no timeout", anything else
 /// must be a non-negative number of seconds.
 fn optional_timeout(ctx: &ZuriContext, idx: usize) -> Result<Option<Duration>, String> {
@@ -231,7 +231,7 @@ fn is_shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
 // ---------------------------------------------------------------------
 
 /// Returns `["error", message]` rather than a Rust `Err` for anything
-/// that goes wrong -- unlike every OTHER native in this codebase,
+/// that goes wrong; unlike every OTHER native in this codebase,
 /// `spawn()`'s failures are all genuine `WorkerError` territory
 /// (an un-transferable argument, a bad spawn target), and only the
 /// `.zu` wrapper can raise that specific class (see the module docs
@@ -353,7 +353,7 @@ fn is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(state.is_cancelled()))
 }
 
-/// Backs the ambient `worker.is_cancelled()` -- checks the worker
+/// Backs the ambient `worker.is_cancelled()`; checks the worker
 /// the CALLING worker thread is currently running, found via
 /// `pool::is_current_cancelled()`'s thread-local rather than a handle
 /// argument. Outside a worker thread it's always `false`.
@@ -498,7 +498,7 @@ fn select(ctx: &mut ZuriContext) -> Result<Value, String> {
     },
     pool::SelectOutcome::Ready(_, pool::RecvOutcome::TimedOut | pool::RecvOutcome::Cancelled) => {
       unreachable!(
-        "try_recv never produces TimedOut/Cancelled -- select_channels only calls try_recv"
+        "try_recv never produces TimedOut/Cancelled; select_channels only calls try_recv"
       )
     },
   }
@@ -547,7 +547,7 @@ fn channel_len(ctx: &mut ZuriContext) -> Result<Value, String> {
 // Debug-only
 // ---------------------------------------------------------------------
 
-/// Deliberately panics -- exists ONLY so the library test suite has a
+/// Deliberately panics; exists ONLY so the library test suite has a
 /// way to verify, end to end, that a Rust-level panic inside a
 /// worker's own execution is isolated to that one worker rather
 /// than taking down the whole process (see `pool::worker_loop`).

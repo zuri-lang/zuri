@@ -5,7 +5,7 @@
  *
  * Each depth bucket in the main loop below builds and counts its own
  * `iterations` trees completely independently of every other bucket
- * -- nothing is shared between them -- so each bucket is handed to
+ *; nothing is shared between them; so each bucket is handed to
  * its own worker instead of running through them one at a time.
  * Trees themselves never cross a worker boundary: each worker
  * builds, counts, and discards its own trees entirely inside its own
@@ -18,7 +18,7 @@
 import worker
 
 # `TreeNode`/`tree_with`/`churn_depth` reference nothing from
-# `worker` -- spawning `churn_depth` transfers it (and everything
+# `worker`; spawning `churn_depth` transfers it (and everything
 # it transitively touches) fresh, and a value that references an
 # imported module anywhere in it can't cross a worker boundary at
 # all. `main()`, which DOES use `worker`, is never itself spawned.

@@ -250,7 +250,7 @@ impl Token {
   }
 
   /// Human-readable label for this token, used in syntax-error
-  /// messages -- e.g. "def" for a `Def` keyword, "x" for
+  /// messages; e.g. "def" for a `Def` keyword, "x" for
   /// `Identifier("x")`, "@my_decorator" for a decorator. Falls back to
   /// a lowercased Debug form for symbol/keyword tokens without their
   /// own payload; not hand-tuned per symbol, but covers every current

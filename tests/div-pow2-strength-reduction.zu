@@ -7,7 +7,7 @@
  * fast path, the guarded (unproven receiver) path, a non-power-of-two
  * divisor (must stay real division), a negative power-of-two divisor,
  * a divisor reaching the Div through a MERGE POINT with two DIFFERENT
- * literals (must NOT take the shortcut -- genuinely not a single known
+ * literals (must NOT take the shortcut; genuinely not a single known
  * constant there), a constant HOISTED into a local and reused across
  * every iteration of a loop (the case a purely local "check the
  * immediately preceding instruction" heuristic could never catch --
@@ -27,12 +27,12 @@ def proven_div_neg4(x: number) {
 }
 
 def proven_div3(x: number) {
-  /* NOT a power of two -- must still be real division */
+  /* NOT a power of two; must still be real division */
   return x / 3.0
 }
 
 def unproven_div2(x) {
-  /* x's type isn't proven -- exercises the guarded path with the
+  /* x's type isn't proven; exercises the guarded path with the
    * reciprocal rewrite still applied. */
   return x / 2.0
 }
@@ -66,7 +66,7 @@ def reassigned_to_nonconstant(n) {
   var d = 2.0
   var first = 10.0 / d
   d = n
-  /* d is REASSIGNED to a genuinely runtime value -- must NOT still be
+  /* d is REASSIGNED to a genuinely runtime value; must NOT still be
    * treated as the constant 2.0 here. */
   var second = 10.0 / d
   return first + second

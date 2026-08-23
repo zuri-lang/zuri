@@ -15,10 +15,10 @@ use crate::{
 // native) isn't in any file available here, and grafting a guess at
 // it on top of an unseen system risked being flatly wrong. This repo
 // already has number INSTANCE methods (`.abs()`, `.max()`), so these
-// are added the same way -- `n.sin()`, `n.factorial()`, etc. `sum()`/
+// are added the same way; `n.sin()`, `n.factorial()`, etc. `sum()`/
 // `product()` are left out entirely: they operate on a (possibly
 // nested) ITERABLE, not a single receiver number, so they don't fit
-// this dispatch model at all -- those two only make sense as free
+// this dispatch model at all; those two only make sense as free
 // functions on whatever `math` turns out to be.
 pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   build(vec![
@@ -145,7 +145,7 @@ fn factorial(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Emits `fn $name(ctx) -> Result<Value, String>` calling the given
-/// `f64` method with no further arguments -- covers every single-
+/// `f64` method with no further arguments; covers every single-
 /// argument (just the receiver) math wrapper below in one place
 /// instead of hand-writing the same three lines dozens of times.
 macro_rules! unary_math {
@@ -186,7 +186,7 @@ fn log1p(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(ctx.args[0].as_number().ln_1p()))
 }
 
-/// `y.atan2(x)` -- per spec, the RECEIVER is the y-coordinate and the
+/// `y.atan2(x)`; per spec, the RECEIVER is the y-coordinate and the
 /// argument is the x-coordinate (matching `f64::atan2`'s own
 /// `self=y, x` convention directly).
 fn atan2(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -198,7 +198,7 @@ fn atan2(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// `-1`/`0`/`1`, with `0`/`-0` preserved for a zero input (unlike
-/// `f64::signum`, which returns `+/-1.0` even for zero) -- per spec.
+/// `f64::signum`, which returns `+/-1.0` even for zero); per spec.
 fn sign(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   let n = ctx.args[0].as_number();
@@ -227,7 +227,7 @@ fn is_finite(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 /// Fractional part as a WHOLE number by shifting the digits after the
-/// decimal point left of it -- per spec's own example, `1.92.fraction()
+/// decimal point left of it; per spec's own example, `1.92.fraction()
 /// == 92`, not `0.92`.
 fn fraction(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);

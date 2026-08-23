@@ -13,7 +13,7 @@
 //! Instead, the threshold scales with the function's own compiled
 //! bytecode instruction count (`chunk.code.len()`), computed once (see
 //! `JitInfo::new` in `vm::object`) when the function is first compiled
-//! to bytecode -- well before it's ever executed, let alone JIT'd.
+//! to bytecode; well before it's ever executed, let alone JIT'd.
 //! Bigger functions get a lower threshold (they're doing more work per
 //! call, so compiling them pays for itself sooner, and the interpreter
 //! is paying dispatch overhead on more instructions per call in the
@@ -24,24 +24,24 @@
 //! illustrating the shape, not literal calibration targets): 100
 //! instructions -> ~56 calls; 1000 instructions -> ~18 calls. A
 //! 3-instruction one-liner clamps at the ceiling (compiling it at all
-//! is speculative -- most never get called enough to matter, so the
+//! is speculative; most never get called enough to matter, so the
 //! ceiling protects against wasting compilation effort on code that
 //! runs a handful of times and never again); a 20,000-instruction
-//! monster clamps at the floor (compile it almost immediately -- even
+//! monster clamps at the floor (compile it almost immediately; even
 //! one call through the interpreter's dispatch loop at that size is
 //! expensive enough that the fixed cost of compiling is trivial by
 //! comparison).
 //!
 //! `sqrt`, rather than a straight inverse-linear `K / n`, was chosen
 //! deliberately: `K / n` punishes mid-sized functions (a few hundred
-//! instructions -- extremely common for real functions) far too
+//! instructions; extremely common for real functions) far too
 //! aggressively relative to tiny ones, while `sqrt` gives a gentler,
 //! more evenly-spread curve across the whole realistic size range.
 //!
 //! Both constants (`K` for whole-function call warm-up, and the
 //! smaller one for a single loop's own OSR back-edge warm-up) are
 //! overridable via environment variables purely for benchmarking/
-//! tuning during development -- `ZURI_JIT_CALL_K` / `ZURI_JIT_OSR_K` --
+//! tuning during development; `ZURI_JIT_CALL_K` / `ZURI_JIT_OSR_K` --
 //! read once and cached, never touched by ordinary use.
 
 use std::sync::OnceLock;
@@ -61,7 +61,7 @@ fn call_k() -> f64 {
 /// Numerator for a single loop's own back-edge OSR warm-up curve.
 /// Smaller than `call_k()` so a long-running loop inside a function
 /// that's only ever called once or twice (a `main`-style entry point,
-/// a one-shot batch job) still gets compiled -- OSR is what makes that
+/// a one-shot batch job) still gets compiled; OSR is what makes that
 /// case possible at all, since whole-function call warm-up alone would
 /// never fire for it.
 fn osr_k() -> f64 {
@@ -81,7 +81,7 @@ const OSR_WARMUP_MAX: u32 = 20_000;
 
 fn curve(k: f64, instruction_count: usize, min: u32, max: u32) -> u32 {
   // A function with (near-)zero instructions can't meaningfully divide
-  // by sqrt(n) -- treat it as size 1 so the formula stays well-defined
+  // by sqrt(n); treat it as size 1 so the formula stays well-defined
   // and just lands at the ceiling, matching the "essentially free to
   // interpret forever" intuition for a trivial body.
   let n = (instruction_count.max(1)) as f64;
@@ -93,7 +93,7 @@ fn curve(k: f64, instruction_count: usize, min: u32, max: u32) -> u32 {
 }
 
 /// How many real invocations this function needs before the VM
-/// compiles it -- see the module-level docs for the shape of the curve.
+/// compiles it: see the module-level docs for the shape of the curve.
 pub fn call_threshold(instruction_count: usize) -> u32 {
   curve(
     call_k(),

@@ -27,8 +27,8 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 }
 
 /// Wraps standard-stream fd `fd` as a `FileHandle`. On Unix this
-/// DUPLICATES the fd first, so a Zuri-side `.close()` -- or this
-/// object simply being GC'd and dropped -- closes only the
+/// DUPLICATES the fd first, so a Zuri-side `.close()`; or this
+/// object simply being GC'd and dropped; closes only the
 /// duplicate, never the process's real stdin/stdout/stderr.
 #[cfg(unix)]
 fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
@@ -217,7 +217,7 @@ fn read_secure_line(obscure_text: &str) -> io::Result<String> {
 
 #[cfg(not(unix))]
 fn read_secure_line(_obscure_text: &str) -> io::Result<String> {
-  // No portable no-echo terminal API here -- fall back to a visible
+  // No portable no-echo terminal API here; fall back to a visible
   // read rather than failing outright.
   let mut buf = String::new();
   io::stdin().read_line(&mut buf)?;

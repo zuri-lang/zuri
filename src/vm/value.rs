@@ -11,7 +11,7 @@
 //! infinities) to encode every other kind of value: nil, true, false, and
 //! pointers to heap objects (strings, functions, ...).
 //! This is the same trick used by JavaScriptCore, SpiderMonkey, LuaJIT and
-//! the clox VM from "Crafting Interpreters" -- here it's adapted to a
+//! the clox VM from "Crafting Interpreters"; here it's adapted to a
 //! register machine and extended with a Str/Function object model.
 //!
 //! Layout used here:
@@ -41,13 +41,13 @@ use crate::vm::object::ListStorage;
 
 // Visible at `pub(crate)` (not just private) because the Cranelift JIT
 // backend (see `jit::codegen`) needs to replicate these exact bit tests
-// as inline machine code for its fast paths -- e.g. "is both operands a
-// plain number" -- rather than paying a real function-call round trip
+// as inline machine code for its fast paths; e.g. "is both operands a
+// plain number"; rather than paying a real function-call round trip
 // into `Value::is_number()` for the hottest possible check in the
 // entire VM. `Value` being `#[repr(transparent)]` around a `u64` is
 // what makes this safe to do from outside this module: the JIT never
 // needs to know anything about `Obj`'s layout (which is NOT replicated
-// this way -- see `jit::runtime` for why anything touching a heap
+// this way: see `jit::runtime` for why anything touching a heap
 // object's contents instead calls back into real Rust code).
 pub(crate) const QNAN: u64 = 0x7ffc_0000_0000_0000; // exponent all 1s + top mantissa bit set: guaranteed non-NaN-we-produce
 pub(crate) const SIGN_BIT: u64 = 0x8000_0000_0000_0000;
@@ -76,13 +76,13 @@ impl Value {
     Value(NIL_VAL)
   }
 
-  /// `nil` in a const context -- `ListStorage`'s inline buffer needs to
+  /// `nil` in a const context; `ListStorage`'s inline buffer needs to
   /// be initialised in `const fn new`.
   pub const fn nil_const() -> Value {
     Value(NIL_VAL)
   }
 
-  /// Reconstruct a `Value` from its raw NaN-boxed bit pattern -- used
+  /// Reconstruct a `Value` from its raw NaN-boxed bit pattern; used
   /// only at the JIT/native-code boundary (see `jit::runtime`), where
   /// compiled code passes register contents across the ABI as plain
   /// `u64`s rather than `Value`s. Every bit pattern this can be called
@@ -93,7 +93,7 @@ impl Value {
     Value(bits)
   }
 
-  /// The inverse of `from_bits` -- the raw bit pattern the JIT stores
+  /// The inverse of `from_bits`; the raw bit pattern the JIT stores
   /// directly into a register slot (`VM::registers` is just `[Value]`,
   /// and `Value` is `#[repr(transparent)]` around a `u64`, so this is a
   /// same-layout reinterpretation, not a real conversion).
@@ -131,7 +131,7 @@ impl Value {
 
   /// Wrap a raw pointer to a heap object as a Value. Safety: the pointer
   /// must stay valid for as long as this Value (and any copy of it) is
-  /// reachable -- see `Heap` in object.rs, which owns every object for the
+  /// reachable: see `Heap` in object.rs, which owns every object for the
   /// lifetime of the VM.
   #[inline]
   pub fn obj(ptr: *const Obj) -> Value {
@@ -225,7 +225,7 @@ impl Value {
     self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::BoundMethod(_))
   }
 
-  /// Is this something Instr::Call can invoke -- closure OR native. Same
+  /// Is this something Instr::Call can invoke; closure OR native. Same
   /// concept to a Zuri program; different call paths internally.
   pub fn is_callable(&self) -> bool {
     self.is_closure() || self.is_bound_method() || self.is_native() || self.is_class()
@@ -298,7 +298,7 @@ impl Value {
     }
   }
 
-  /// Number of bytes -- `Instr::GetIndex`/`SetIndex`/`GetSlice`'s
+  /// Number of bytes; `Instr::GetIndex`/`SetIndex`/`GetSlice`'s
   /// bounds-checking entry point for a `bytes` receiver; avoids
   /// `as_bytes()`'s full clone just to check a length.
   pub fn bytes_len(&self) -> usize {
@@ -317,7 +317,7 @@ impl Value {
     }
   }
 
-  /// Returns false if `index` is out of bounds -- callers (Instr::SetIndex's
+  /// Returns false if `index` is out of bounds; callers (Instr::SetIndex's
   /// handler) are expected to have already bounds-checked via
   /// `bytes_len()`, so this is a defensive double-check, not the
   /// primary bounds enforcement.
@@ -459,7 +459,7 @@ impl Value {
     write_barrier(self.as_obj());
   }
 
-  /// Position of `key` in insertion order -- O(1) average via the
+  /// Position of `key` in insertion order; O(1) average via the
   /// same index `dict_get` uses. What `@key`/`@value` (see
   /// `builtins/dict.rs`) use instead of a linear scan to step forward
   /// through a dict during iteration.
@@ -519,7 +519,7 @@ impl Value {
   /// Same trust model as every other `as_*` here: safe only because
   /// `Value` is never used across a stale heap pointer (see `Heap`'s own
   /// docs). Returned as a `Ref`/`RefMut` rather than `&`/`&mut` because
-  /// `ObjClass`'s tables are `RefCell`-wrapped -- see `Obj::Class`.
+  /// `ObjClass`'s tables are `RefCell`-wrapped: see `Obj::Class`.
   pub fn as_class(&self) -> std::cell::Ref<'_, ObjClass> {
     debug_assert!(self.is_class());
     match unsafe { &*self.as_obj() } {
@@ -613,7 +613,7 @@ impl Value {
   }
 
   /// The wrapped resource's type tag, or `None` if this isn't a Ptr at
-  /// all -- the first check a native should make before downcasting.
+  /// all; the first check a native should make before downcasting.
   pub fn ptr_type_name(&self) -> Option<&'static str> {
     if !self.is_ptr() {
       return None;
@@ -739,7 +739,7 @@ impl Value {
 
   /// Like `type_name()`, but for a class or an instance of one, reports
   /// the user-given class name instead of the generic "class"/"instance"
-  /// -- what error messages want when they say what type was actually
+  ///; what error messages want when they say what type was actually
   /// passed. Everything else just defers to `type_name()`, which is
   /// already just as accurate for any type that isn't user-named.
   pub fn argument_type_name(&self) -> String {
@@ -755,13 +755,13 @@ impl Value {
   }
 }
 
-/// Zuri's `%` on two numbers -- `f64::rem` semantics exactly, but
+/// Zuri's `%` on two numbers; `f64::rem` semantics exactly, but
 /// computed with an integer remainder whenever both operands are
 /// integers, which is the overwhelmingly common case.
 ///
 /// Rust's `f64 % f64` lowers to a `fmod` call, and in this build that
 /// resolves to `compiler_builtins`' portable SOFTWARE implementation
-/// rather than anything the hardware does -- it showed up as ~13% of
+/// rather than anything the hardware does; it showed up as ~13% of
 /// `benchmarks/fasta.zu`, whose random generator is
 /// `(seed * IA + IC) % IM` over small integers. A single `idiv` is
 /// dramatically cheaper for exactly that shape.
@@ -923,11 +923,7 @@ mod num_rem_tests {
     for _ in 0..200_000 {
       let a = ((next() as i64) >> (next() % 63)) as f64;
       let b = ((next() as i64) >> (next() % 63)) as f64;
-      assert_eq!(
-        num_rem(a, b).to_bits(),
-        (a % b).to_bits(),
-        "{a} % {b}"
-      );
+      assert_eq!(num_rem(a, b).to_bits(), (a % b).to_bits(), "{a} % {b}");
       checked += 1;
     }
     assert!(checked > 0);

@@ -151,7 +151,7 @@ pub enum Instr {
     cond: u8,
     offset: i16,
   },
-  /// Jump by `offset` if register `cond` is truthy -- the complement of
+  /// Jump by `offset` if register `cond` is truthy; the complement of
   /// JmpIfFalse, used for short-circuiting `or`.
   JmpIfTrue {
     cond: u8,
@@ -236,7 +236,7 @@ pub enum Instr {
   /// Build a new class shell: clones the superclass's already-merged
   /// method table, field-slot layout, and constructor (inheriting them
   /// wholesale), or starts empty if `superclass` is None. Statics are
-  /// deliberately NOT inherited here -- see `ObjClass`'s doc comment.
+  /// deliberately NOT inherited here: see `ObjClass`'s doc comment.
   MakeClass {
     dst: u8,
     name_const: u16,
@@ -259,7 +259,7 @@ pub enum Instr {
     src: u8,
   },
   /// Register one of this class's OWN static members (field or method
-  /// -- both are just Values in the same table). Only ever emitted
+  ///; both are just Values in the same table). Only ever emitted
   /// while a class is being declared.
   DeclareStatic {
     class: u8,
@@ -291,9 +291,9 @@ pub enum Instr {
   /// before emitting this (see `Compiler::compile_invoke`), which is
   /// where the callee's own register 0 (self) ends up; user arguments
   /// follow at `obj + 2 ..`. This applies uniformly to every dispatch
-  /// path reached from here -- a real class method (`invoke_prebound`),
+  /// path reached from here; a real class method (`invoke_prebound`),
   /// a field holding a callable (`dispatch_call(base, obj+1, ...)`), AND
-  /// a builtin native (`builtins::lookup`) -- so any new fallback added
+  /// a builtin native (`builtins::lookup`); so any new fallback added
   /// here must read its arguments starting at `obj + 2`, never `obj + 1`.
   Invoke {
     dst: u8,
@@ -302,7 +302,7 @@ pub enum Instr {
     num_args: u8,
   },
   /// Like `Invoke`, but looks the method up on the STATIC class in
-  /// register `superclass` directly -- no dynamic dispatch -- while
+  /// register `superclass` directly; no dynamic dispatch; while
   /// still binding the current `self` (duplicated by the compiler into
   /// `superclass + 1`, same convention as `Invoke`). This is what makes
   /// `parent.foo()` call the lexically-fixed ancestor's method even
@@ -313,7 +313,7 @@ pub enum Instr {
     method_const: u16,
     num_args: u8,
   },
-  /// `parent(args)` -- calls the SUPERCLASS's own resolved constructor
+  /// `parent(args)`; calls the SUPERCLASS's own resolved constructor
   /// (`ObjClass::constructor`) directly on the CURRENT `self`, the
   /// constructor equivalent of `InvokeSuper`'s method calls. Unlike an
   /// ordinary `SomeClass(args)` call, this never allocates a new
@@ -330,7 +330,7 @@ pub enum Instr {
     num_args: u8,
   },
 
-  /// `import PATH` -- loads (or reuses the cached) module for
+  /// `import PATH`; loads (or reuses the cached) module for
   /// `path_const`, resolved relative to `importer_const` (the CURRENT
   /// file's own path, a compile-time constant) when `path_const` starts
   /// with `.`/`..`, or via the standard search path otherwise. Leaves
@@ -344,17 +344,17 @@ pub enum Instr {
     path_const: u16,
     importer_const: u16,
   },
-  /// `import PATH { * }` -- merges every name currently in `module`'s
+  /// `import PATH { * }`; merges every name currently in `module`'s
   /// namespace into whichever globals table the CURRENTLY EXECUTING
   /// function's own top-level bindings belong to (the running module's
-  /// namespace, or the VM's root table for the main script/REPL -- see
+  /// namespace, or the VM's root table for the main script/REPL: see
   /// `ObjFunction::globals_module`). No local/module-binding variable
   /// is created, matching the documented behavior.
   ImportAll {
     module: u8,
   },
   /// `import PATH [as NAME]` (default, non-selective, non-`{*}` form)
-  /// -- wraps `module` together with whichever of its members is named
+  ///; wraps `module` together with whichever of its members is named
   /// `name_const` into a callable `ObjModuleBinding`. `name_const` is
   /// the LOCAL binding name (NAME, or the last import path segment),
   /// enabling both `NAME.other_member` access and, if that name matches
@@ -365,7 +365,7 @@ pub enum Instr {
     name_const: u16,
   },
 
-  /// `obj[idx]` -- supported for List, Bytes (yields a number 0-255),
+  /// `obj[idx]`; supported for List, Bytes (yields a number 0-255),
   /// String (yields a 1-character string, indexed by Unicode scalar
   /// value, not byte offset), and Dict (`idx` used as a key via
   /// Value::equals, not coerced to a number).
@@ -374,7 +374,7 @@ pub enum Instr {
     obj: u8,
     idx: u8,
   },
-  /// `obj[idx] = src` -- List and Bytes overwrite an existing element
+  /// `obj[idx] = src`; List and Bytes overwrite an existing element
   /// in place (index must already be in bounds); Dict inserts or
   /// updates a key. Strings are immutable and always error here.
   SetIndex {
@@ -382,10 +382,10 @@ pub enum Instr {
     idx: u8,
     src: u8,
   },
-  /// `obj[lo, hi]` -- supported for List, Bytes, and String only (not
+  /// `obj[lo, hi]`; supported for List, Bytes, and String only (not
   /// Dict). Both bounds are INCLUSIVE. A Nil value in `lo` (register
   /// content, not a compile-time fact) defaults to 0; a Nil in `hi`
-  /// defaults to the last valid index -- see Instr::GetSlice's own
+  /// defaults to the last valid index: see Instr::GetSlice's own
   /// handler in vm.rs for the full resolution rules.
   GetSlice {
     dst: u8,
@@ -394,7 +394,7 @@ pub enum Instr {
     hi: u8,
   },
 
-  /// `lower..upper` -- valid in either direction (`upper` may be less
+  /// `lower..upper`; valid in either direction (`upper` may be less
   /// than, equal to, or greater than `lower`); both bounds must resolve
   /// to numbers at runtime (checked in Instr::MakeRange's own handler).
   MakeRange {
@@ -416,7 +416,7 @@ pub enum Instr {
     table_idx: u16,
   },
 
-  /// `raise EXPR` -- EXPR must evaluate to an Error (or subclass)
+  /// `raise EXPR`; EXPR must evaluate to an Error (or subclass)
   /// instance; the VM validates this and overwrites its `stacktrace`
   /// field, then propagates it as a catchable error. Also what
   /// `Compiler::compile_assert` desugars into on a failed assertion.
@@ -426,11 +426,11 @@ pub enum Instr {
   /// `catch { body } as var { error_block }`. Pushed BEFORE `body`
   /// compiles, popped by `Instr::PopCatch` on normal completion.
   /// `var_reg` (if the `as` clause was present) is a register in the
-  /// SAME frame this instruction executes in -- pre-loaded with Nil --
+  /// SAME frame this instruction executes in; pre-loaded with Nil --
   /// that either stays Nil (no error) or gets overwritten with the
   /// caught error by the VM's unwind logic. `offset` is a relative
   /// jump-style offset (same encoding/patching as Jmp) to where
-  /// execution resumes on EITHER path -- normal fallthrough past
+  /// execution resumes on EITHER path; normal fallthrough past
   /// PopCatch, or an error jumping there directly.
   PushCatch {
     var_reg: Option<u8>,
@@ -488,18 +488,18 @@ pub enum Instr {
     imm_const: u16,
   },
 
-  /// Enforces a declared parameter type annotation -- `def f(x: number)`
+  /// Enforces a declared parameter type annotation; `def f(x: number)`
   /// compiles this as the very first thing the function body does for
   /// `x`, one instruction per typed parameter, in parameter order.
   /// `check_idx` indexes `Chunk::param_checks` for the actual type list/
   /// nullability/name (a `u16` side-table index, same pattern as
   /// `LoadConst`'s `const_idx`, rather than baking that data into the
-  /// instruction itself -- a union type plus a parameter name string
+  /// instruction itself; a union type plus a parameter name string
   /// doesn't fit in fixed-width fields). Raises `TypeError` on mismatch
   /// (see `VM`'s own handler); never a no-op unless the check passes,
   /// but reading `reg` itself has no other effect on it. An UNTYPED
   /// parameter (or one whose only declared type is `any`) gets no
-  /// instruction at all -- see `Compiler::emit_param_type_checks`.
+  /// instruction at all: see `Compiler::emit_param_type_checks`.
   CheckParamType {
     reg: u8,
     check_idx: u16,
@@ -507,21 +507,21 @@ pub enum Instr {
 }
 
 /// A compile-time-constant `using` case label's value, in a form that's
-/// both `Hash` and `Eq` -- `Value` itself can't be (NaN-boxed f64 bit
+/// both `Hash` and `Eq`; `Value` itself can't be (NaN-boxed f64 bit
 /// patterns don't have well-behaved hashing/equality for arbitrary
 /// floats), so this is a small, deliberately narrow parallel
 /// representation built only from the handful of AST literal shapes
 /// `Compiler::compile_using` treats as constant (see `expr_as_jump_key`
 /// in compiler.rs) and the matching runtime Values that can appear as a
 /// `using` subject (see `value_to_jump_key` in vm.rs). A label/subject
-/// that isn't one of these -- a list, dict, instance, negative-number
-/// literal, BigNumber, etc. -- always falls back to the sequential
+/// that isn't one of these; a list, dict, instance, negative-number
+/// literal, BigNumber, etc.; always falls back to the sequential
 /// dynamic-label path, never into this table.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum JumpKey {
   Nil,
   Bool(bool),
-  /// The label/subject's exact `f64::to_bits()` pattern -- an exact
+  /// The label/subject's exact `f64::to_bits()` pattern; an exact
   /// bit-for-bit match, not IEEE `==`, so e.g. `-0.0` and `0.0` (equal
   /// under `==`, different bit patterns) could in principle land in
   /// different entries. Not a concern for any label written as an
@@ -532,7 +532,7 @@ pub enum JumpKey {
 }
 
 /// One `Instr::GetField`/`Instr::SetField` site's monomorphic inline
-/// cache entry -- see `Chunk::field_cache`.
+/// cache entry: see `Chunk::field_cache`.
 ///
 /// `#[repr(C)]` because `jit::codegen` reads both fields by baked
 /// compile-time offset from a baked cell address, so declaration order
@@ -573,7 +573,7 @@ pub struct InvokeCacheCell {
   pub payload: Cell<u64>,
 }
 
-/// One shape an `Instr::CheckParamType` may demand -- deliberately a
+/// One shape an `Instr::CheckParamType` may demand; deliberately a
 /// closed, exhaustive match on `Value`/`Obj`'s own tag space (see
 /// `Value::is_number`/`is_obj`/`Obj`'s discriminant), never a call
 /// through the `is_*`/`instance_of` GLOBAL FUNCTIONS a Zuri program can
@@ -596,21 +596,21 @@ pub enum ParamType {
   Dict,
   Range,
   File,
-  /// A closure, bound method, or native -- NOT a class (that's
+  /// A closure, bound method, or native; NOT a class (that's
   /// `Class`). Matches `Value::is_callable()` minus the class case.
   Function,
-  /// `type` in source -- a class value itself, e.g. passing `Vec3` as
+  /// `type` in source; a class value itself, e.g. passing `Vec3` as
   /// an argument rather than a `Vec3` instance.
   Class,
   /// Anything `Instr::Call`/`Instr::Invoke` can invoke, INCLUDING a
-  /// class (calling one constructs an instance) -- `Value::is_callable()`
+  /// class (calling one constructs an instance); `Value::is_callable()`
   /// exactly.
   Callable,
   /// A list, dict, string, bytes, or an instance whose class declares
   /// both `@iter` and `@itern`.
   Iterable,
   /// A specific user class, by name. `u16` indexes `Chunk::constants`
-  /// for the class's name (a string) -- resolved through the SAME
+  /// for the class's name (a string); resolved through the SAME
   /// `Chunk::global_cache` a plain `Instr::GetGlobal` uses (keyed by
   /// the owning `Instr::CheckParamType`'s own bytecode position), so a
   /// hot function's repeated calls pay the name lookup once, not once
@@ -628,21 +628,21 @@ pub struct ParamTypeCheck {
   /// For the raised `TypeError`'s message only.
   pub param_name: String,
   /// 1-based position among ALL of the function's parameters (typed or
-  /// not) -- also message-only.
+  /// not); also message-only.
   pub position: u32,
-  /// `?` before the type list -- a bare `nil` argument always passes,
+  /// `?` before the type list; a bare `nil` argument always passes,
   /// regardless of `types`.
   pub nullable: bool,
   /// One or more (a `|`-separated union in source); the argument must
   /// match AT LEAST ONE. Never empty, and never contains a param
-  /// annotated `any`/left untyped -- `Compiler::emit_param_type_checks`
+  /// annotated `any`/left untyped; `Compiler::emit_param_type_checks`
   /// skips emitting any instruction at all for those, since there is
   /// nothing to check.
   pub types: Vec<ParamType>,
 }
 
 impl ParamType {
-  /// Human-readable description for a `TypeError` message -- mirrors
+  /// Human-readable description for a `TypeError` message; mirrors
   /// `builtins::enforce::ArgType::label`'s phrasing (`"a number"`, `"a
   /// list"`, ...) for consistency with every other argument-type error
   /// this runtime raises. `Instance`'s label is the only one that isn't
@@ -673,7 +673,7 @@ impl ParamType {
 }
 
 /// Joins a `ParamTypeCheck`'s `types` into one readable phrase, same
-/// shape as `builtins::enforce::describe_types` -- `"a number"`, `"a
+/// shape as `builtins::enforce::describe_types`; `"a number"`, `"a
 /// number or a string"`, `"a number, a string, or an Error"`.
 pub fn describe_param_types(types: &[ParamType], chunk: &Chunk) -> String {
   let labels: Vec<String> = types.iter().map(|t| t.label(chunk)).collect();
@@ -693,12 +693,12 @@ pub struct Chunk {
   pub code: Vec<Instr>,
   pub constants: Vec<Value>,
   /// One entry per `using` statement that has at least one constant
-  /// case label -- see `Instr::UsingJump`.
+  /// case label: see `Instr::UsingJump`.
   pub jump_tables: Vec<FxHashMap<JumpKey, usize>>,
-  /// Parallel to `code` -- `lines[i]` is the source line `code[i]` was
-  /// compiled from (statement granularity; see
+  /// Parallel to `code`; `lines[i]` is the source line `code[i]` was
+  /// compiled from (statement granularity: see
   /// `Compiler::emit`/`FunctionScope::current_line`). Used only to
-  /// build a stack trace on a raised or uncaught error -- see
+  /// build a stack trace on a raised or uncaught error: see
   /// `VM::build_stacktrace`.
   pub lines: Vec<u32>,
   /// Inline cache for global variable access: maps a GetGlobal/
@@ -706,13 +706,13 @@ pub struct Chunk {
   /// the global slot it resolved to the FIRST time it executed. Every
   /// later execution of that same instruction skips the name lookup
   /// (a string hash + FxHashMap probe) entirely and indexes straight
-  /// into VM::global_slots. Never invalidated -- once a name resolves
+  /// into VM::global_slots. Never invalidated; once a name resolves
   /// to a slot it keeps that slot for the life of the VM (globals are
   /// never renamed or removed, only reassigned in place).
   pub global_cache: RefCell<FxHashMap<usize, (bool, u32)>>,
   /// Monomorphic inline cache for `Instr::GetField`/`Instr::SetField`
   /// on an INSTANCE receiver (never consulted by the interpreter, which
-  /// has no analogous per-instruction cache of its own) -- one cell per
+  /// has no analogous per-instruction cache of its own); one cell per
   /// instruction position, so both the `jit::runtime` helpers and
   /// JIT-GENERATED CODE ITSELF can reach a site's entry by fixed
   /// address, with no hash and no `RefCell` borrow. See
@@ -721,7 +721,7 @@ pub struct Chunk {
   /// fast path that reads it directly.
   ///
   /// Allocated once, lazily, at exactly `code.len()` cells (see
-  /// `field_cache_cell`) and never resized -- generated code bakes the
+  /// `field_cache_cell`) and never resized; generated code bakes the
   /// address of an individual cell as an immediate, so the backing
   /// allocation must outlive the compiled code and never move.
   ///
@@ -733,20 +733,20 @@ pub struct Chunk {
   /// can (contrast `invoke_cache`, whose own docs spell out the
   /// relocation hazard that applies to it).
   field_cache: OnceCell<Box<[FieldCacheCell]>>,
-  /// Same idea as `field_cache`, for `Instr::Invoke` -- see
+  /// Same idea as `field_cache`, for `Instr::Invoke`: see
   /// `InvokeCacheCell`. Was a `RefCell<FxHashMap<usize, _>>`, which cost
   /// a borrow-flag check and a hash probe on every dynamic method call
   /// before it could answer a question a single load answers now.
   ///
   /// Unlike `field_cache`, a false HIT on the class-method half hands
-  /// back `payload` for the WRONG class, dereferenced as a closure -- a
+  /// back `payload` for the WRONG class, dereferenced as a closure; a
   /// genuine memory-safety risk, not just a data bug. In practice this
   /// needs two coincidences at once: a nursery address getting reused by
   /// a DIFFERENT class object specifically (not just any object), AND
   /// the exact same call site being hit again with THAT class as the new
   /// receiver before its cache entry is ever overwritten by an
   /// intervening real miss. Not yet observed in this project's own
-  /// extensive stress testing, and not fixed here -- the honest fix is
+  /// extensive stress testing, and not fixed here; the honest fix is
   /// invalidating every live chunk's cache on each collection (no
   /// registry of "every live chunk" exists to do that cheaply today) or
   /// switching the cached class key to something collision-proof against
@@ -754,7 +754,7 @@ pub struct Chunk {
   /// primitive half has no such hazard: a `NativeFunction` is `'static`.
   invoke_cache: OnceCell<Box<[InvokeCacheCell]>>,
   /// One entry per `Instr::CheckParamType` this chunk emits, in the
-  /// order they're emitted (parameter order) -- `check_idx` indexes
+  /// order they're emitted (parameter order); `check_idx` indexes
   /// straight into this, same relationship `const_idx` has to
   /// `constants`.
   pub param_checks: Vec<ParamTypeCheck>,
@@ -778,7 +778,7 @@ impl Chunk {
       .get(ip)
   }
 
-  /// This instruction position's own `Instr::Invoke` cache cell -- the
+  /// This instruction position's own `Instr::Invoke` cache cell; the
   /// `field_cache_cell` of `invoke_cache`, with the same lazy allocation
   /// and the same `None` for an `ip` past the array.
   pub fn invoke_cache_cell(&self, ip: usize) -> Option<&InvokeCacheCell> {
@@ -850,7 +850,7 @@ impl fmt::Display for Chunk {
 }
 
 /// Human-readable name for an instruction's own variant, ignoring its
-/// operands -- used only by the ZURI_OPCODE_PROFILE instrumentation in
+/// operands; used only by the ZURI_OPCODE_PROFILE instrumentation in
 /// vm.rs to identify which opcodes (and which adjacent PAIRS of
 /// opcodes) actually dominate real execution, so instruction fusion
 /// can target what's really hot instead of a guess.

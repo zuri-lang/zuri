@@ -32,11 +32,11 @@ pub enum Expr {
 
   /*  Trailing `u32` on the six variants below is the source line of
    the operator/delimiter that makes this node fallible (the `+`,
-   the `(`, the `[`, the `..`) -- not the node's start. Read by the
+   the `(`, the `[`, the `..`); not the node's start. Read by the
    compiler at the exact point it emits that node's own instruction,
    after operands are already compiled, so nothing an operand's own
    compilation does to intervening state can clobber it. Get/Set/
-   Identifier need no such field -- they already carry a `Token`
+   Identifier need no such field; they already carry a `Token`
    with its own `.line`.
   */
   Unary(TokenKind, Box<Expr>, u32),

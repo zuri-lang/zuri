@@ -161,7 +161,7 @@ impl Lexer {
 
   // Called with the opening `/*` already consumed, `self.start` still
   // pointing at the `/`. Nests, same as before comments were real
-  // tokens -- `/* outer /* inner */ still outer */` closes once, at the
+  // tokens; `/* outer /* inner */ still outer */` closes once, at the
   // final `*/`.
   fn doc_block(&mut self) -> Token {
     let mut nesting: i32 = 1;
@@ -321,7 +321,7 @@ impl Lexer {
     // follow it (after an optional sign). Consuming it unconditionally
     // would swallow the leading letter of an adjacent identifier --
     // `1elephant` would lex as the malformed literal `1e` plus
-    // `lephant` -- and `1e` then parses as nothing at all.
+    // `lephant`; and `1e` then parses as nothing at all.
     let has_exponent = (self.peek() == 'e' || self.peek() == 'E')
       && (is_digit(self.next())
         || ((self.next() == '+' || self.next() == '-') && is_digit(self.peek_n(3))));
@@ -408,7 +408,7 @@ impl Lexer {
 
       if c == '\\' && i + 9 < end && self.source[i + 1] == 'U' {
         // `char::from_u32` can still fail even on a validly-parsed hex
-        // number -- surrogate code points (D800-DFFF) and anything past
+        // number; surrogate code points (D800-DFFF) and anything past
         // 10FFFF are valid u32s but not valid Unicode scalar values.
         if let Some(char) = u32::from_str_radix(&self.get_string(i + 2, i + 10), 16)
           .ok()

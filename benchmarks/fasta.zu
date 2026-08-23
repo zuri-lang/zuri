@@ -2,7 +2,7 @@
 # https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
 #
 # By Richard Ore
-# based on -- the Naive transliteration from Drake Diedrich's C program
+# based on; the Naive transliteration from Drake Diedrich's C program
 # contributed by Isaac Gouy
 # at https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/fasta-node-8.html
 
