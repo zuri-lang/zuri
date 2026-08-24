@@ -66,6 +66,11 @@ impl Repl {
       .unwrap_or(Path::new(""))
       .join("history.txt");
 
+    let mut completed_words = keywords.clone();
+    completed_words.push(".exit".to_string());
+    completed_words.push(".help".to_string());
+    completed_words.push(".credits".to_string());
+
     let history = Box::new(
       FileBackedHistory::with_file(
         usize::from_str_radix(env!("ZURI_HISTORY_SIZE"), 10).unwrap_or(1000),
@@ -86,8 +91,8 @@ impl Repl {
     );
 
     let editor = Reedline::create()
-      .with_highlighter(Box::new(ZuriHighlighter::new(keywords.clone())))
-      .with_completer(Box::new(DefaultCompleter::new(keywords)))
+      .with_highlighter(Box::new(ZuriHighlighter::new(keywords)))
+      .with_completer(Box::new(DefaultCompleter::new(completed_words)))
       .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
       .with_edit_mode(Box::new(Emacs::new(keybindings)))
       .with_validator(Box::new(DefaultValidator))

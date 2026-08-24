@@ -14,6 +14,7 @@ regex = "1.13.1"
 rustc-hash = "2.1.3"
 smallvec = "1.15.2"
 mimalloc = { version = "0.1.52", default-features = false }
+minus = { version = "5.7.2", features = ["static_output"] }
 
 # --- hash module (src/modules/hash.rs) -------------------------------------
 digest = "0.10"

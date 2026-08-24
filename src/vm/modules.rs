@@ -91,7 +91,7 @@ fn import_search(vm: &mut VM, raw_path: &str) -> ImportResult {
 /// `$ZURI_ROOT/libs`, falling back to a `libs` directory next to the
 /// running executable; this implementation's equivalent of the
 /// documented `%BLADE_INSTALL_ROOT%/libs`.
-fn install_root_libs() -> Option<PathBuf> {
+pub fn install_root_libs() -> Option<PathBuf> {
   if let Ok(root) = std::env::var("ZURI_ROOT") {
     return Some(PathBuf::from(root).join("libs"));
   }

@@ -1,10 +1,12 @@
 use mimalloc::MiMalloc;
+use minus::{self, Pager};
 use std::io::ErrorKind;
 use std::path::Path;
 use std::rc::Rc;
 use std::{env, fs, process};
 use zuri::compiler::parser::ParserError;
 use zuri::compiler::token::KEYWORD_TOKENS;
+use zuri::vm::modules::install_root_libs;
 
 use itertools::Itertools;
 use zuri::compiler::{compiler::Compiler, lexer::Lexer, parser::Parser};
@@ -24,6 +26,28 @@ fn print_repl_help() {
 
 fn format_parse_errors(errors: &[ParserError], path: &str, source: &str) -> String {
   errors.iter().map(|e| e.render(path, source)).join("\n\n")
+}
+
+fn print_credits() -> Result<(), String> {
+  if let Some(libs_root) = install_root_libs() {
+    if let Some(license_file) = libs_root.parent().map(|p| p.join("LICENSE")) {
+      if let Ok(content) = fs::read_to_string(license_file) {
+        let pager = Pager::new();
+
+        #[allow(deprecated)]
+        {
+          _ = pager.set_exit_strategy(minus::ExitStrategy::PagerQuit);
+        }
+
+        if let Ok(()) = pager.push_str(content) {
+          let _ = minus::page_all(pager);
+          return Ok(());
+        }
+      }
+    }
+  }
+
+  Err("Could not load LICENSE file".to_string())
 }
 
 fn run_repl(vm: &mut VM) {
@@ -55,6 +79,11 @@ fn run_repl(vm: &mut VM) {
         return Err(());
       } else if buffer.eq(".help") {
         print_repl_help();
+        return Ok(());
+      } else if buffer.eq(".credits") {
+        if let Err(message) = print_credits() {
+          eprintln!("{}", message);
+        }
         return Ok(());
       }
 

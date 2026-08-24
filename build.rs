@@ -47,8 +47,11 @@ fn main() {
   println!("cargo:rerun-if-changed=Cargo.toml");
 
   let libs_dir = Path::new(&manifest_dir).join("libs");
+  copy_to_output("libs", &env::var("PROFILE").unwrap()).expect("Could not copy libs");
   println!("cargo:rerun-if-changed={}", libs_dir.display());
-  copy_to_output("libs", &env::var("PROFILE").unwrap()).expect("Could not copy");
+
+  copy_to_output("LICENSE", &env::var("PROFILE").unwrap()).expect("Could not copy license file");
+  println!("cargo:rerun-if-changed=LICENSE");
 
   generate_zu_conformance_tests(&manifest_dir);
 }
