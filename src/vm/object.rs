@@ -11,29 +11,29 @@ use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
 /// Number of object slots per chunk. Chosen so a chunk is a few hundred
-/// KB -- large enough to amortize the cost of growing, small enough that
+/// KB; large enough to amortize the cost of growing, small enough that
 /// early GC cycles don't need to wait for one huge chunk to fill before
 /// the free list has anything to give back.
 const CHUNK_SIZE: usize = 8192;
 
-/// Backing storage for `Obj::List` -- re-exported from `vm::list`,
+/// Backing storage for `Obj::List`; re-exported from `vm::list`,
 /// which explains why it is a hand-rolled `#[repr(C)]` vector rather
 /// than `Vec` or a `SmallVec`.
 pub use crate::vm::list::ListStorage;
 
 /// Everything a Value's pointer tag can point at.
 ///
-/// `#[repr(C, u8)]`, with an explicit discriminant on every variant --
+/// `#[repr(C, u8)]`, with an explicit discriminant on every variant;
 /// NOT the default (niche-optimized, otherwise-unspecified) Rust enum
 /// layout every OTHER enum in this codebase gets to use for free. This
 /// costs real precision: the compiler is no longer free to pick
 /// whatever layout it likes, and every variant's payload now lives at
 /// the SAME fixed byte offset (a C-style tagged union, tag first, then
-/// one shared payload region sized/aligned to the largest variant) --
+/// one shared payload region sized/aligned to the largest variant):
 /// see `OBJ_TAG_*`/`OBJ_PAYLOAD_OFFSET` in this module, which exist
 /// ONLY because this repr makes them sound to write down as fixed
 /// numbers. The payoff is that `jit::codegen` can (in a LATER,
-/// separate piece of work -- see that module's own docs on why this
+/// separate piece of work: see that module's own docs on why this
 /// alone isn't sufficient yet) check a Value's actual `Obj` kind and
 /// reach into specific variants' payloads directly from generated
 /// machine code, with no helper-function call, the same way it already
@@ -46,7 +46,7 @@ pub use crate::vm::list::ListStorage;
 /// variance across variants. Every large-relative-to-the-rest variant
 /// is boxed (see `Func`/`Class`/`Module`'s own doc comments) precisely
 /// to keep that shared payload region small, since it sets every OTHER
-/// variant's size too -- re-verify with `size_of::<Obj>()` if a new
+/// variant's size too; re-verify with `size_of::<Obj>()` if a new
 /// variant is ever added that's meaningfully larger than the rest.
 #[repr(C, u8)]
 pub enum Obj {
@@ -60,27 +60,27 @@ pub enum Obj {
   /// insertion-order `Vec` plus an `FxHashMap` index) is large relative
   /// to the common case, and no current benchmark or hot path indexes
   /// through a `Dict` anywhere near as often as it does a `List` or
-  /// `Instance` -- unlike `List`, there's no small-N inline case worth
+  /// `Instance`; unlike `List`, there's no small-N inline case worth
   /// preserving here.
   Dict(Box<RefCell<DictStorage>>) = 4,
-  /// A function PROTOTYPE -- the static, compiled-once result of one
+  /// A function PROTOTYPE; the static, compiled-once result of one
   /// `function` declaration or literal. Shared by every closure ever
   /// created from it; holds no per-call-site state itself.
   Func(Box<ObjFunction>) = 5,
   BoundMethod(ObjBoundMethod) = 6,
-  /// A function VALUE at runtime -- a prototype plus the specific
+  /// A function VALUE at runtime; a prototype plus the specific
   /// upvalues captured at the moment this particular closure was
   /// created. Every callable Value is one of these, even a top-level
   /// function that captures nothing (its `upvalues` is just empty).
   Closure(ObjClosure) = 7,
   /// A captured variable. Starts Open, pointing at a live register in
-  /// some still-executing frame -- reads/writes through the upvalue and
+  /// some still-executing frame; reads/writes through the upvalue and
   /// through the original local are the same memory. Closed when that
   /// frame's register would otherwise become invalid (block exit or
   /// function return): the current value is copied out, and the upvalue
   /// owns it from then on.
   Upvalue(Cell<UpvalueState>) = 8,
-  /// A native (Rust-implemented) function -- callable through the exact
+  /// A native (Rust-implemented) function; callable through the exact
   /// same Instr::Call path as a Closure, but with no CallFrame, no
   /// register-window setup, and no heap allocation on the call path:
   /// its arguments are a zero-copy slice straight into the caller's own
@@ -89,13 +89,13 @@ pub enum Obj {
   /// See `ObjClass`'s own doc comment. Wrapped in a `RefCell` (unlike
   /// every other heap object here, which is immutable-after-creation
   /// except through a `Cell`-wrapped field) because a class's tables
-  /// keep growing throughout its own declaration -- `RefCell` is the
+  /// keep growing throughout its own declaration; `RefCell` is the
   /// safe way to do that through the same shared `*const Obj` pointer
   /// every other Value already uses, rather than reaching for unsafe
   /// mutation.
   Class(Box<RefCell<ObjClass>>) = 10,
   Instance(ObjInstance) = 11,
-  /// A `lower..upper` range value -- valid in either direction (see
+  /// A `lower..upper` range value; valid in either direction (see
   /// Expr::Range's compilation in compiler.rs). Stored as raw f64s, not
   /// Values, specifically so this is a GC leaf: nothing here is ever a
   /// heap pointer, so the mark phase's worklist never needs to descend
@@ -109,9 +109,9 @@ pub enum Obj {
     /// the default.
     step: Cell<f64>,
   } = 12,
-  /// A `file(...)` object -- see `FileHandle`. Boxed: a file handle is
+  /// A `file(...)` object: see `FileHandle`. Boxed: a file handle is
   /// created once per `file(...)` call, not once per value the program
-  /// manipulates -- same rarity argument as `Module`.
+  /// manipulates; same rarity argument as `Module`.
   File(Box<RefCell<FileHandle>>) = 13,
   /// See `ObjModule`'s own doc comment. Boxed like `Func`/`Class` --
   /// `ObjModule` (two `String`s plus a `ModuleNamespace`, itself a
@@ -123,7 +123,7 @@ pub enum Obj {
   /// every common allocation is a clear win.
   Module(Box<RefCell<ObjModule>>) = 14,
   /// See `ObjModuleBinding`'s own doc comment. Boxed: created once per
-  /// `import` site, not once per value the program manipulates -- same
+  /// `import` site, not once per value the program manipulates; same
   /// rarity argument as `Module`.
   ModuleBinding(Box<ObjModuleBinding>) = 15,
   /// See `ObjPtr`'s own doc comment.
@@ -131,7 +131,7 @@ pub enum Obj {
 }
 
 /// Fixed numeric tags matching `Obj`'s own explicit discriminants one
-/// for one -- kept as named constants (rather than requiring every
+/// for one; kept as named constants (rather than requiring every
 /// caller to write the literal number) so `jit::codegen`'s later
 /// dereference-and-compare fast paths read as "is this an Instance"
 /// instead of "does this byte equal 11". A `#[test]` below cross-checks
@@ -157,11 +157,11 @@ pub const OBJ_TAG_MODULE_BINDING: u8 = 15;
 pub const OBJ_TAG_PTR: u8 = 16;
 
 impl Obj {
-  /// Reads the tag byte directly rather than matching -- exists so a
+  /// Reads the tag byte directly rather than matching; exists so a
   /// test can cross-check it against `OBJ_TAG_*` (and so any FUTURE
   /// Rust-side code that wants the numeric tag doesn't need to
   /// duplicate a 17-arm match). NOT what `jit::codegen`'s eventual fast
-  /// path will use -- that reads the SAME byte directly out of raw
+  /// path will use; that reads the SAME byte directly out of raw
   /// memory at a compile-time-baked offset, with no function call at
   /// all; this exists purely for verification from safe Rust.
   #[inline]
@@ -173,7 +173,7 @@ impl Obj {
 }
 
 /// Byte offset from an `Obj`'s own address to where its payload
-/// actually starts -- the same for EVERY variant, since `#[repr(C,
+/// actually starts; the same for EVERY variant, since `#[repr(C,
 /// u8)]` lays every variant's payload at one shared, tag-sized-and-
 /// aligned offset (a C-style tagged union), never a per-variant one.
 ///
@@ -183,11 +183,11 @@ impl Obj {
 /// what the layout SHOULD be, this measures what it ACTUALLY is: builds
 /// one real `Obj::Instance`, matches it back apart to get a genuine
 /// `&ObjInstance` pointer, and takes the byte difference from the
-/// enclosing `Obj`'s own address -- the same technique
+/// enclosing `Obj`'s own address; the same technique
 /// `obj_repr_tests`/`field_storage_tests` already use to verify claims
 /// about this repr instead of trusting them. Computed once and cached,
 /// since it never changes at runtime (the layout is fixed at compile
-/// time; only the observation of it happens lazily here) -- every JIT
+/// time; only the observation of it happens lazily here); every JIT
 /// compile that needs it (see `jit::codegen`'s field-access fast path)
 /// reads the same cached value.
 pub fn obj_payload_offset() -> usize {
@@ -207,7 +207,7 @@ pub fn obj_payload_offset() -> usize {
 }
 
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be
-/// `Obj::Instance` to that instance's `fields` slice base pointer --
+/// `Obj::Instance` to that instance's `fields` slice base pointer;
 /// `obj_payload_offset()` (tag -> `ObjInstance` start) plus
 /// `ObjInstance`/`FieldStorage`'s own `#[repr(C)]`-guaranteed field
 /// offsets, unlike `obj_payload_offset()` itself these don't need a
@@ -223,7 +223,7 @@ pub fn obj_instance_fields_ptr_offset() -> usize {
 }
 
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be
-/// `Obj::Instance` to that instance's own `class` field -- same
+/// `Obj::Instance` to that instance's own `class` field; same
 /// reasoning as `obj_instance_fields_ptr_offset`, just one field over.
 /// Consumed by `jit::codegen`'s self-invoke fast path
 /// (`emit_self_invoke`) to read a receiver's class directly for its
@@ -239,8 +239,8 @@ mod obj_repr_tests {
 
   /// Confirms `Cell<Option<EntryFn>>` (a function pointer, which can
   /// never validly be null) actually gets Rust's documented null-
-  /// pointer niche optimization -- i.e. is exactly pointer-sized, no
-  /// separate discriminant byte -- which is the entire soundness
+  /// pointer niche optimization; i.e. is exactly pointer-sized, no
+  /// separate discriminant byte; which is the entire soundness
   /// argument behind `obj_function_jit_entry_offset()` reading it as a
   /// plain `u64` from generated code. A future Rust version changing
   /// this (extremely unlikely, since it's a documented guarantee, not
@@ -259,7 +259,7 @@ mod obj_repr_tests {
 
   /// Cross-checks every `OBJ_TAG_*` constant against the enum's own
   /// explicit discriminants, via `Obj::tag()` on one real instance of
-  /// each variant -- catches the failure mode this whole scheme exists
+  /// each variant; catches the failure mode this whole scheme exists
   /// to avoid: a constant silently drifting out of sync after someone
   /// edits `= N` on a variant without updating the matching constant.
   #[test]
@@ -287,7 +287,7 @@ mod obj_repr_tests {
   }
 
   /// Confirms the memory-cost claim in `Obj`'s own doc comment stays
-  /// true -- fails loudly (rather than silently regressing every heap
+  /// true; fails loudly (rather than silently regressing every heap
   /// object's size) if a future variant grows past what
   /// `RefCell<ListStorage>` (the largest currently-unboxed variant)
   /// costs today.
@@ -300,7 +300,7 @@ mod obj_repr_tests {
   /// starts; this checks a SECOND, independently-constructed
   /// `Obj::Instance` lands its `class`/`fields` at exactly
   /// `obj_payload_offset() + offset_of!(ObjInstance, ...)` from the
-  /// ENCLOSING `Obj`'s own address -- i.e. that the measurement isn't
+  /// ENCLOSING `Obj`'s own address; i.e. that the measurement isn't
   /// somehow specific to the one probe value used to compute it.
   #[test]
   fn payload_offset_matches_real_instance_fields() {
@@ -321,7 +321,7 @@ mod obj_repr_tests {
   }
 
   /// Cross-checks `UPVALUE_STATE_TAG_*` against `UpvalueState`'s own
-  /// explicit discriminants -- same failure mode `tags_match_discriminants`
+  /// explicit discriminants; same failure mode `tags_match_discriminants`
   /// guards against, one type over.
   #[test]
   fn upvalue_state_tags_match_discriminants() {
@@ -335,7 +335,7 @@ mod obj_repr_tests {
   /// Confirms `obj_upvalue_state_tag_offset()`/
   /// `obj_upvalue_state_payload_offset()` land where a real
   /// `Obj::Upvalue(Cell<UpvalueState>)` actually puts its tag and
-  /// payload for BOTH variants -- `jit::codegen`'s inline `GetUpval`/
+  /// payload for BOTH variants; `jit::codegen`'s inline `GetUpval`/
   /// `SetUpval` fast path reads either through these same two offsets,
   /// branching only on the tag byte.
   #[test]
@@ -373,7 +373,7 @@ pub enum UpvalueDescriptor {
 
 /// `#[repr(C, u8)]` for the same reason `Obj` itself is: a C-style
 /// tagged union puts BOTH variants' payload at one shared, fixed byte
-/// offset from this type's own address (each is one 8-byte word --
+/// offset from this type's own address (each is one 8-byte word;
 /// `usize` and `Value` are the same size), which is what lets
 /// `jit::codegen`'s inline `GetUpval`/`SetUpval` fast path
 /// (`emit_upvalue_obj_ptr` and friends) read or write EITHER an open
@@ -392,7 +392,7 @@ pub const UPVALUE_STATE_TAG_OPEN: u8 = 0;
 pub const UPVALUE_STATE_TAG_CLOSED: u8 = 1;
 
 impl UpvalueState {
-  /// Reads the tag byte directly -- see `Obj::tag()`'s identical
+  /// Reads the tag byte directly: see `Obj::tag()`'s identical
   /// reasoning; exists for verification, not for `jit::codegen` to call.
   #[inline]
   pub fn tag(&self) -> u8 {
@@ -403,8 +403,8 @@ impl UpvalueState {
 }
 
 /// Byte offset from a `Cell<UpvalueState>`'s (or a bare `UpvalueState`'s
-/// -- `Cell<T>` shares `T`'s layout) own address to where its payload
-/// word lives -- the SAME offset for `Open`'s `usize` and `Closed`'s
+///; `Cell<T>` shares `T`'s layout) own address to where its payload
+/// word lives; the SAME offset for `Open`'s `usize` and `Closed`'s
 /// `Value`, since a C-style tagged union gives every variant one shared
 /// payload region (see `UpvalueState`'s own docs). Measured the same
 /// runtime-probe way `obj_payload_offset()` is, for the same reason:
@@ -425,7 +425,7 @@ pub fn upvalue_state_payload_offset() -> usize {
 }
 
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be
-/// `Obj::Upvalue` to its `UpvalueState` tag byte -- always
+/// `Obj::Upvalue` to its `UpvalueState` tag byte; always
 /// `obj_payload_offset()` itself, since the `Cell<UpvalueState>` payload
 /// starts there and a `UpvalueState`'s own tag sits at ITS offset 0.
 /// Named separately from `obj_payload_offset()` purely so call sites
@@ -435,7 +435,7 @@ pub fn obj_upvalue_state_tag_offset() -> usize {
 }
 
 /// Byte offset from a `*const Obj` known to be `Obj::Upvalue` to its
-/// payload word -- an open register index OR a closed-over `Value`,
+/// payload word; an open register index OR a closed-over `Value`,
 /// whichever the tag byte at `obj_upvalue_state_tag_offset()` says this
 /// particular instance holds. Consulted by `jit::codegen`'s inline
 /// `GetUpval`/`SetUpval` fast path only after that tag check.
@@ -463,7 +463,7 @@ pub struct ObjFunction {
   pub upvalues: Vec<UpvalueDescriptor>,
 
   /// True for a method (instance OR static) compiled via
-  /// `Compiler::compile_method_prototype` -- register 0 of its frame is
+  /// `Compiler::compile_method_prototype`; register 0 of its frame is
   /// reserved for an implicit receiver even when unused (a static
   /// method's own body never reads it), which is what lets the fused
   /// Invoke/InvokeSuper instructions use one uniform calling convention
@@ -482,14 +482,14 @@ pub struct ObjFunction {
   /// declaration (this project doesn't have those today, but nothing
   /// stops a future local/nested class from producing one). A NAME,
   /// not a `*const ObjClass`, because the class object itself doesn't
-  /// exist yet at compile time -- it's built at RUNTIME when the
+  /// exist yet at compile time; it's built at RUNTIME when the
   /// `class Foo { ... }` declaration statement actually executes (see
   /// `Instr::MakeClass`/`FinalizeClass`). Resolving this to the real,
   /// live `ObjClass` (to inspect its `field_slots`/`methods` for a
-  /// name collision -- see `jit::escape`'s GetField-safety docs) is
+  /// name collision: see `jit::escape`'s GetField-safety docs) is
   /// the JIT compiler's own job, done once at JIT-compile time (main-
   /// thread, real VM access available) by looking up the CURRENT
-  /// global bound to this name -- sound because Zuri classes are
+  /// global bound to this name; sound because Zuri classes are
   /// immutable after construction (NOTES.md: "new fields and methods
   /// cannot be added at runtime"), so whatever `field_slots`/`methods`
   /// that lookup finds are permanent facts, not a one-shot snapshot
@@ -505,15 +505,15 @@ pub struct ObjFunction {
 
   /// Which module's global namespace this function's own
   /// `GetGlobal`/`SetGlobal`/`AssignGlobal` instructions resolve
-  /// against. `None` means the VM's shared ROOT table -- the main
+  /// against. `None` means the VM's shared ROOT table; the main
   /// script and the REPL, exactly the pre-module-system behavior, so
   /// every existing non-module program is completely unaffected. Set
   /// once, uniformly, for every function a `Compiler` instance
-  /// produces, via `Compiler::set_current_module` -- see
+  /// produces, via `Compiler::set_current_module`: see
   /// `vm::modules::run_module_source`.
   pub globals_module: Option<Value>,
 
-  /// Tiering/JIT state for this prototype -- see `crate::jit`. Lives
+  /// Tiering/JIT state for this prototype: see `crate::jit`. Lives
   /// here (not on `ObjClosure`) because every closure created from the
   /// same prototype shares the same compiled machine code; a closure
   /// only contributes its own upvalues on top.
@@ -525,42 +525,42 @@ pub struct ObjFunction {
 /// already-compiled code) and the JIT compiler itself (see
 /// `crate::jit::codegen`). Every field here uses interior mutability
 /// because `ObjFunction` is reached only through a shared `*const
-/// ObjFunction` / `&ObjFunction` for its whole life -- exactly like
+/// ObjFunction` / `&ObjFunction` for its whole life; exactly like
 /// `Chunk::global_cache` already does for its own inline cache.
 pub struct JitInfo {
   /// Real invocations of this prototype (via `Instr::Call`, `Invoke`,
-  /// `call_value`, ...) since the VM started -- NOT bytecode
+  /// `call_value`, ...) since the VM started; NOT bytecode
   /// instructions executed. Compared against `call_threshold`.
   pub call_count: Cell<u32>,
   /// This function's own whole-function warmup threshold, precomputed
-  /// once at construction time from its bytecode length -- see
+  /// once at construction time from its bytecode length: see
   /// `crate::jit::warmup::call_threshold`. Larger functions amortize
   /// the fixed cost of compilation over fewer calls, so they warm up
   /// sooner than tiny ones.
   pub call_threshold: u32,
   /// This function's threshold for a single loop's own back-edge count
-  /// to trigger on-stack replacement -- see
+  /// to trigger on-stack replacement: see
   /// `crate::jit::warmup::osr_threshold`. Deliberately smaller than
   /// `call_threshold` scaled the same way, so a function that's called
   /// exactly once (e.g. a `main`) but immediately enters a long loop
   /// still gets compiled without waiting for a second call that may
   /// never come.
   pub osr_threshold: u32,
-  /// Set once a compilation attempt has run and PRODUCED code -- the
+  /// Set once a compilation attempt has run and PRODUCED code; the
   /// single, allocation-free "is this compiled, and if so what do I
   /// call" check consulted on EVERY `Instr::Call`/`Invoke`/... site,
   /// deliberately a bare `Cell` of a `Copy` function pointer rather
   /// than hidden behind a `RefCell<Option<Rc<...>>>`. A borrow-flag
   /// check plus a refcount bump on every single hot call turned out to
   /// cost real, measurable time once call-heavy code (recursive
-  /// fibonacci, tree traversal, ...) got compiled -- exactly the kind
-  /// of code a JIT most needs to win on -- so this field is the
+  /// fibonacci, tree traversal, ...) got compiled; exactly the kind
+  /// of code a JIT most needs to win on; so this field is the
   /// leanest thing that can answer "do I have compiled code, and where
   /// is its entry point" with nothing more than a single memory load.
   pub entry: Cell<Option<crate::jit::EntryFn>>,
   /// The bytecode-ip -> osr-id map for this function's own loop
   /// headers, populated at the same time `entry` is. Kept OFF the hot
-  /// call path on purpose -- unlike `entry`, this is only ever
+  /// call path on purpose; unlike `entry`, this is only ever
   /// consulted from `VM::maybe_osr`, itself only reached from a
   /// backward `Instr::Jmp` (cold relative to a call site in
   /// call-dominated code), so the `RefCell`'s cost doesn't matter here
@@ -568,20 +568,20 @@ pub struct JitInfo {
   pub osr_ids: RefCell<Option<FxHashMap<usize, i32>>>,
   /// Set once a compilation attempt has run and FAILED, or the
   /// function was found ineligible up front (contains `Raise`/
-  /// `PushCatch`/`PopCatch` -- see the `crate::jit` module docs for why
+  /// `PushCatch`/`PopCatch`: see the `crate::jit` module docs for why
   /// error-handling bytecode is never compiled). Sticky: later warm
   /// call sites see this and stop trying, rather than re-attempting a
   /// doomed compilation on every single call.
   pub ineligible: Cell<bool>,
   /// Per-loop-header back-edge hit counts, keyed by the bytecode `ip`
-  /// the loop's `Instr::Jmp` back-edge targets -- consulted only by
+  /// the loop's `Instr::Jmp` back-edge targets; consulted only by
   /// that instruction's own handler in `vm.rs` to decide when a
   /// specific loop is hot enough to trigger (or use, if compilation
   /// already happened) on-stack replacement.
   pub osr_counts: RefCell<FxHashMap<usize, u32>>,
   /// True from the moment a compile job for this function is handed
   /// to the background compiler thread (see `VM::enqueue_or_ready`)
-  /// until its result is drained (`VM::drain_jit_results`) -- prevents
+  /// until its result is drained (`VM::drain_jit_results`); prevents
   /// enqueueing a second, redundant compile for the same prototype
   /// while one is already in flight. Main-thread-only, like every
   /// other `JitInfo` field: the background thread never reads or
@@ -589,7 +589,7 @@ pub struct JitInfo {
   pub compiling: Cell<bool>,
   /// Argument-type feedback accumulated, via bitwise AND, across EVERY
   /// call recorded by `VM::record_call_feedback` since this function
-  /// started warming up -- bit `i` survives only if parameter `i` was
+  /// started warming up; bit `i` survives only if parameter `i` was
   /// observed numeric on every single call seen so far, exactly the
   /// polymorphic-inline-cache pattern of "keep believing the guess
   /// until a call actually contradicts it". Starts at `!0` (every bit
@@ -598,26 +598,26 @@ pub struct JitInfo {
   /// to non-numeric; `feedback_samples` is what distinguishes "no
   /// evidence yet" from "confirmed by evidence" for a caller that only
   /// has this field to look at. Read at compile-enqueue time instead of
-  /// a one-shot single-call sample -- see `VM::combined_param_feedback`.
+  /// a one-shot single-call sample: see `VM::combined_param_feedback`.
   pub numeric_feedback: Cell<u64>,
   /// Number of calls that have contributed to `numeric_feedback` so
   /// far. Needed because `numeric_feedback` alone can't distinguish
   /// "every call observed had numeric args" from "no call has been
-  /// observed yet" -- both read as `!0`.
+  /// observed yet"; both read as `!0`.
   pub feedback_samples: Cell<u32>,
   /// Per-`GetGlobal`-instruction inline cache for compiled code ONLY
   /// (the interpreter has its own, separate `Chunk::global_cache` --
   /// see that field's docs): `global_slot_cache[ip]` is the resolved
   /// slot for the `GetGlobal` at that bytecode position, or `-1` if
   /// never resolved (or resolved against a QUALIFIED module namespace
-  /// rather than the root globals table -- see
+  /// rather than the root globals table: see
   /// `jit::runtime::zuri_jit_get_global`'s own docs on why only a root
   /// resolution ever gets cached here). Unlike `Chunk::global_cache`
   /// (a `RefCell<HashMap>`, fine for the interpreter's own Rust-side
   /// lookups but not something generated machine code can probe), this
   /// is a flat, fixed-size array living at a STABLE address for
   /// exactly as long as this `ObjFunction` does (old-generation,
-  /// non-moving -- see `Heap::alloc_old`'s own docs) -- safe to bake as
+  /// non-moving: see `Heap::alloc_old`'s own docs); safe to bake as
   /// a compile-time-constant base pointer and index straight into with
   /// two Cranelift `load`s and a compare, no helper call at all on a
   /// cache hit. Sized once, at construction, to this function's own
@@ -643,11 +643,11 @@ impl JitInfo {
   }
 }
 
-/// A method value bound to a specific receiver -- produced only when a
+/// A method value bound to a specific receiver; produced only when a
 /// method is accessed WITHOUT being called immediately (`var f =
 /// obj.method`), so it can be stored, passed around, and invoked later
 /// on its own. Direct call-site method calls (`obj.method(args)`,
-/// `self.method(args)`, `parent.method(args)`) never go through this --
+/// `self.method(args)`, `parent.method(args)`) never go through this;
 /// they're compiled straight to Invoke/InvokeSuper, which look up and
 /// call in one step with no heap allocation. This exists purely for the
 /// "method as a first-class value" case.
@@ -663,7 +663,7 @@ pub struct ObjBoundMethod {
 #[repr(C)]
 pub struct ObjClosure {
   /// The prototype this closure was created from, as the tagged `Value`
-  /// that points at its `Obj::Func` -- not a raw pointer -- so the GC's
+  /// that points at its `Obj::Func`; not a raw pointer; so the GC's
   /// mark phase can trace it like any other reference and keep the
   /// prototype (and everything in its constant pool) alive for exactly
   /// as long as some closure still needs it.
@@ -673,7 +673,7 @@ pub struct ObjClosure {
   pub upvalues: Vec<Value>,
 }
 
-/// A module's own global namespace -- structurally identical to
+/// A module's own global namespace; structurally identical to
 /// `VM::global_slots`/`global_names` (a growable slot Vec plus a
 /// name->slot map), just scoped to one module instead of the whole
 /// VM. This is what gives every module a truly separate set of
@@ -696,7 +696,7 @@ impl ModuleNamespace {
 
   /// Find-or-create `name`'s slot, growing the table with a fresh
   /// nil-initialized slot the first time this specific module sees
-  /// that name -- mirrors `VM::get_or_create_global_slot` exactly.
+  /// that name; mirrors `VM::get_or_create_global_slot` exactly.
   pub fn get_or_create_slot(&mut self, name: &str) -> u32 {
     if let Some(&s) = self.names.get(name) {
       return s;
@@ -722,25 +722,25 @@ impl ModuleNamespace {
 /// because its namespace keeps growing throughout its own top-level
 /// execution.
 pub struct ObjModule {
-  /// Display/error-message name -- the file's own stem, or the
+  /// Display/error-message name; the file's own stem, or the
   /// enclosing directory's name for a package's `index.zu`. NOT
   /// necessarily the name any particular importer bound it to (see
   /// `ObjModuleBinding`).
   pub name: String,
-  /// Canonical, absolute source path -- this module's own `__file__`,
+  /// Canonical, absolute source path; this module's own `__file__`,
   /// and the cache key `vm::modules` dedupes on.
   pub path: String,
   pub namespace: ModuleNamespace,
   /// False for the entire duration this module's own top-level code
-  /// is executing -- lets a circular import observe a partially
-  /// populated module instead of recursing forever; see
+  /// is executing; lets a circular import observe a partially
+  /// populated module instead of recursing forever: see
   /// `vm::modules::load_from_candidate`.
   pub loaded: bool,
 }
 
 /// What `import PATH [as NAME]` (the default, non-selective,
 /// non-`{*}` form) actually binds NAME to, instead of the raw
-/// `Obj::Module` -- see `Instr::MakePromoted`. Promotion has to be
+/// `Obj::Module`: see `Instr::MakePromoted`. Promotion has to be
 /// resolved PER IMPORT SITE rather than fixed on the module object
 /// itself: the exact same cached module can be promoted under
 /// different names by different importers (`import jump` promotes to
@@ -749,18 +749,18 @@ pub struct ObjModule {
 pub struct ObjModuleBinding {
   pub module: Value,
   /// The module member matching this binding's own name, if it
-  /// exists AND is callable -- what makes `NAME(...)` work directly.
+  /// exists AND is callable; what makes `NAME(...)` work directly.
   /// `None` means this binding just forwards `.field` access; calling
   /// it directly is a TypeError.
   pub promoted: Option<Value>,
   /// The LOCAL name this was bound under (NAME, or the last import
-  /// path segment) -- purely for Display / error messages, matching
+  /// path segment); purely for Display / error messages, matching
   /// the documented REPL rendering `<module m at ...>`.
   pub bind_name: String,
 }
 
 /// `#[repr(C)]` so `jit::codegen` can read `func` by fixed offset (see
-/// `obj_native_func_offset`) -- field order here is part of the
+/// `obj_native_func_offset`); field order here is part of the
 /// generated code's contract, not an implementation detail.
 #[repr(C)]
 pub struct NativeFunction {
@@ -774,7 +774,7 @@ pub struct NativeFunction {
   /// `method_n`/`method_opt`), i.e. does `VM::call_native` splice an
   /// implicit receiver into `args[0]` before this runs? Free functions
   /// (`natives.rs`) leave this `false`. Consulted ONLY by
-  /// `VM::call_native`'s own arity-mismatch message -- see that call
+  /// `VM::call_native`'s own arity-mismatch message: see that call
   /// site's doc comment for why the count a user sees has to have the
   /// receiver subtracted back out.
   pub is_method: bool,
@@ -784,11 +784,11 @@ pub struct NativeFunction {
 /// A class value: the shared, heap-allocated "shape" every instance of
 /// it points back at. Method/field-slot tables are fully merged with
 /// the superclass chain once, at declaration time (see `Instr::MakeClass`)
-/// -- so a call site never needs to walk ancestors to find an instance
+///; so a call site never needs to walk ancestors to find an instance
 /// method or a field's slot index, just one hashmap lookup. Statics are
 /// the deliberate error: `static_slots`/`statics` hold ONLY this
 /// class's own declarations, and a lookup that misses walks `superclass`
-/// live (see `lookup_static` in vm.rs) -- so an inherited static genuinely
+/// live (see `lookup_static` in vm.rs); so an inherited static genuinely
 /// shares storage with wherever it's actually declared, rather than being
 /// copied.
 pub struct ObjClass {
@@ -796,7 +796,7 @@ pub struct ObjClass {
   pub superclass: Option<Value>,
   /// Own + inherited instance methods, pre-merged (own overrides
   /// inherited of the same name). Also where a self-named method (this
-  /// class's constructor, if it declares one) lives -- see
+  /// class's constructor, if it declares one) lives: see
   /// `Instr::FinalizeClass`.
   pub methods: FxHashMap<String, Value>,
   /// Name -> slot index for OWN + inherited instance fields, pre-merged
@@ -805,24 +805,24 @@ pub struct ObjClass {
   pub field_slots: FxHashMap<String, u16>,
   pub field_count: u16,
   /// This class's OWN declared instance fields' initializer (arity 1:
-  /// self) -- None if it declares no instance fields itself. Ancestors'
+  /// self); None if it declares no instance fields itself. Ancestors'
   /// own initializers are invoked separately (root to leaf) at
-  /// construction time -- see `VM::instantiate` -- so this is
+  /// construction time: see `VM::instantiate`; so this is
   /// deliberately NOT chained to call the superclass's initializer.
   pub own_field_initializer: Option<Value>,
   /// Resolved once, when the class is declared (see
   /// `Instr::FinalizeClass`): this class's own same-named method if it
   /// declares one, else inherited from the nearest ancestor that does,
-  /// else None (no constructor anywhere in the chain -- valid, just
+  /// else None (no constructor anywhere in the chain; valid, just
   /// means "run field inits and stop").
   pub constructor: Option<Value>,
   /// Own-only static fields AND static methods, unified in one
   /// namespace (a static method is just a Value that happens to be a
-  /// Closure) -- deliberately not merged with the superclass at
-  /// declaration time; see the struct-level doc comment above.
+  /// Closure); deliberately not merged with the superclass at
+  /// declaration time: see the struct-level doc comment above.
   pub static_slots: FxHashMap<String, u16>,
   pub statics: Vec<Cell<Value>>,
-  /// Which globals table the class declaration itself lives in -- `None`
+  /// Which globals table the class declaration itself lives in; `None`
   /// for the main script, `Some(module)` otherwise. Exactly
   /// `ObjFunction::globals_module` for whichever function was executing
   /// the `class` declaration; stamped once at `Instr::MakeClass` and
@@ -835,27 +835,27 @@ pub struct ObjClass {
   pub globals_module: Option<Value>,
 }
 
-/// A `#[repr(C)]`-guaranteed-layout owning slice of `Cell<Value>` --
+/// A `#[repr(C)]`-guaranteed-layout owning slice of `Cell<Value>`;
 /// `ObjInstance`'s own field storage, in place of a plain
 /// `Vec<Cell<Value>>`. Exists purely so `jit::codegen`'s field-access
-/// fast path (a LATER piece of work -- see `Obj`'s own docs on the
+/// fast path (a LATER piece of work: see `Obj`'s own docs on the
 /// two-layer plan this is part of) can compute `ptr + slot * 8`
 /// directly from generated machine code against a real, documented
 /// layout guarantee. `Vec<T>`/`Box<[T]>`'s own internal representation
 /// is NOT an official stability guarantee the way a `#[repr(C)]`
-/// struct's field layout is -- every Rust compiler today happens to lay
+/// struct's field layout is; every Rust compiler today happens to lay
 /// out a fat pointer as `{data, len}`, but nothing in the language
 /// promises that stays true, which is exactly the gap this closes.
 ///
 /// Never resized after construction (see `ObjInstance`'s own docs: a
 /// fixed-size, flat, slot-indexed array, sized once at allocation
-/// time) -- so this only ever needs to support "allocate once, read/
+/// time); so this only ever needs to support "allocate once, read/
 /// write elements through `Cell`, free once," never growth.
 ///
 /// Derefs to `[Cell<Value>]` specifically so every existing
 /// `.get()`/`.set()`/indexing/`.iter()`/`.iter_mut()`/`.len()` call
 /// site (GC marking, field access, `Display`, ...) keeps working
-/// completely unchanged -- this type is a drop-in replacement for
+/// completely unchanged; this type is a drop-in replacement for
 /// `Vec<Cell<Value>>` at every current use site, not a new API surface
 /// callers need to learn.
 #[repr(C)]
@@ -866,11 +866,11 @@ pub struct FieldStorage {
 
 // SAFETY: `FieldStorage` owns its allocation exclusively (like
 // `Box<[Cell<Value>]>`, which it's built from and tears back down into
-// on `Drop`) -- nothing outside this type ever holds a second pointer
+// on `Drop`); nothing outside this type ever holds a second pointer
 // to the same allocation. `Cell<Value>` itself is `!Sync` (as it
 // already was via `Vec<Cell<Value>>`, so this introduces no NEW
 // restriction), which is exactly why only `Send` is asserted here, not
-// `Sync` -- moving an owned, exclusively-held allocation to another
+// `Sync`; moving an owned, exclusively-held allocation to another
 // thread is sound; sharing `&FieldStorage` across threads for
 // concurrent `Cell` mutation never was and still isn't.
 unsafe impl Send for FieldStorage {}
@@ -879,7 +879,7 @@ impl FieldStorage {
   fn new(len: usize) -> FieldStorage {
     let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
     // `Box<[T]>::into_raw` never lies about the length it hands back
-    // in the resulting fat pointer -- reading `.len()` off it (rather
+    // in the resulting fat pointer; reading `.len()` off it (rather
     // than reusing the `len` local) would be equally correct; using
     // the local just avoids a fat-pointer-to-thin-pointer-plus-len
     // decomposition here.
@@ -888,7 +888,7 @@ impl FieldStorage {
   }
 
   /// Tears down a `FieldStorage` WITHOUT freeing its backing allocation
-  /// -- the exact inverse of `new`/`from_raw_parts`, for `Heap::
+  ///; the exact inverse of `new`/`from_raw_parts`, for `Heap::
   /// reset_nursery`'s pooling path, which wants to recycle a dead
   /// instance's buffer rather than hand it back to the allocator. Every
   /// cell keeps whatever value it last held; the caller (`reset_nursery`)
@@ -902,7 +902,7 @@ impl FieldStorage {
 
   /// Reconstructs a `FieldStorage` from a `(ptr, len)` pair previously
   /// produced by `into_raw_parts` on a `FieldStorage` of this SAME
-  /// `len` -- reusing a buffer at any other length would read/write out
+  /// `len`; reusing a buffer at any other length would read/write out
   /// of bounds. The caller must also have already reset every cell to
   /// `Value::nil()` (see `into_raw_parts`'s own docs); this function
   /// does not re-check either invariant.
@@ -915,7 +915,7 @@ impl std::ops::Deref for FieldStorage {
   type Target = [Cell<Value>];
   fn deref(&self) -> &[Cell<Value>] {
     // SAFETY: `ptr`/`len` were produced together by `Box::into_raw` in
-    // `new` and never mutated afterward (no resize support -- see this
+    // `new` and never mutated afterward (no resize support: see this
     // type's own docs), so they still describe exactly the live
     // allocation `new` created.
     unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
@@ -924,7 +924,7 @@ impl std::ops::Deref for FieldStorage {
 
 impl std::ops::DerefMut for FieldStorage {
   fn deref_mut(&mut self) -> &mut [Cell<Value>] {
-    // SAFETY: same as `deref` -- `&mut self` here proves exclusive
+    // SAFETY: same as `deref`; `&mut self` here proves exclusive
     // access to the allocation `deref`'s safety comment already
     // establishes is still valid.
     unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
@@ -935,7 +935,7 @@ impl Drop for FieldStorage {
   fn drop(&mut self) {
     // SAFETY: reconstructs the EXACT `Box<[Cell<Value>]>` `new` took
     // apart via `Box::into_raw` (same pointer, same length), and lets
-    // normal `Box` drop glue free it -- the inverse operation, run
+    // normal `Box` drop glue free it; the inverse operation, run
     // exactly once (Rust's own `Drop` contract guarantees `drop` is
     // never called twice on the same value).
     unsafe {
@@ -947,12 +947,12 @@ impl Drop for FieldStorage {
 }
 
 /// An instance value. `fields` is a fixed-size, flat, slot-indexed
-/// array sized to `class.field_count` at allocation time -- there is no
+/// array sized to `class.field_count` at allocation time; there is no
 /// dynamic/open field set; a name not present in `class.field_slots` is
 /// a runtime error (see `Instr::GetField`/`SetField` in vm.rs).
 ///
 /// `#[repr(C)]` for the same reason `Obj` itself is (see that type's
-/// own docs) -- `jit::codegen`'s field-access fast path needs to reach
+/// own docs); `jit::codegen`'s field-access fast path needs to reach
 /// `class`/`fields` at fixed, guaranteed offsets from a raw `*const
 /// ObjInstance`, not offsets the compiler is otherwise free to
 /// rearrange.
@@ -1023,7 +1023,7 @@ impl DictStorage {
   }
 
   /// Builds storage from raw pairs, de-duplicating by VALUE equality
-  /// (via `set`'s own last-write-wins rule) -- same semantics the old
+  /// (via `set`'s own last-write-wins rule); same semantics the old
   /// `Heap::alloc_dict` had.
   pub fn from_pairs(pairs: Vec<(Value, Value)>) -> Self {
     let mut storage = DictStorage::new();
@@ -1057,7 +1057,7 @@ impl DictStorage {
 
   /// Rebuilds `index` from scratch against `entries`' CURRENT key
   /// bits. Needed after anything rewrites a key's `Value` in place
-  /// without going through `set` -- specifically, a minor collection
+  /// without going through `set`; specifically, a minor collection
   /// relocating a reference-type key (`DictKey`'s `Hash` impl hashes
   /// the raw pointer for exactly those, see its own docs), which
   /// changes that key's hash without `index`'s stored bucket knowing
@@ -1070,7 +1070,7 @@ impl DictStorage {
   }
 }
 
-/// Runtime state behind a `file(...)` object -- see `Obj::File`.
+/// Runtime state behind a `file(...)` object: see `Obj::File`.
 /// `handle` is `None` exactly when the file is currently closed
 /// (never successfully opened, closed via `.close()`, or auto-closed
 /// after a full, unlengthed `.read()`); every method needing real I/O
@@ -1085,12 +1085,12 @@ pub struct FileHandle {
   pub binary: bool,
   pub handle: Option<File>,
   /// True only for the `io.stdin`/`io.stdout`/`io.stderr` objects
-  /// built by `modules::io::std_file` -- these wrap a DUPLICATED
+  /// built by `modules::io::std_file`; these wrap a DUPLICATED
   /// standard-stream file descriptor and have no real path on disk to
   /// reopen (`path` is a display-only sentinel like `"<stdout>"`).
   /// `.read()`/`.write()` normally reopen-then-close around each call
   /// (see `builtins::file::do_read`/`do_write`) so a bare `file(...)`
-  /// object works as a one-shot convenience call -- that reopen would
+  /// object works as a one-shot convenience call; that reopen would
   /// simply fail for a stream, so this flag makes `.read()`/`.write()`
   /// behave like `.gets()`/`.puts()` instead: use (and keep open)
   /// whatever handle is already there.
@@ -1098,8 +1098,8 @@ pub struct FileHandle {
 }
 
 /// A type-erased handle to an arbitrary Rust value, letting a native
-/// module wrap an external resource -- a SQLite connection, a libgd
-/// image buffer, a TLS context, a compiled regex, anything -- as an
+/// module wrap an external resource; a SQLite connection, a libgd
+/// image buffer, a TLS context, a compiled regex, anything; as an
 /// ordinary Zuri `Value` that can be stored in variables, lists,
 /// dicts, and instance fields, and passed to/from native functions
 /// just like any other value.
@@ -1107,11 +1107,11 @@ pub struct FileHandle {
 /// Cleanup needs no separate finalizer callback:
 /// `value` is a real, owned Rust value, so when this `ObjPtr` is
 /// dropped (by `Heap::sweep`, the same as every other dead object)
-/// its own `Drop` impl runs -- closing a connection, freeing a
+/// its own `Drop` impl runs; closing a connection, freeing a
 /// buffer, whatever the wrapped type does when it goes out of scope
 /// in ordinary Rust code.
 pub struct ObjPtr {
-  /// A short, stable identifier for what's wrapped -- e.g.
+  /// A short, stable identifier for what's wrapped; e.g.
   /// `"sqlite3_connection"`, `"gd_image"`, `"openssl_ctx"`. Checked
   /// by natives via `Value::ptr_type_name()`/`Value::is_ptr_type()`
   /// before downcasting: `Any::downcast` alone matches on `TypeId`,
@@ -1129,7 +1129,7 @@ pub struct ObjPtr {
   /// `+ Send`, not just `Any`: what makes it sound for
   /// `modules::worker_util::transfer` to MOVE a wrapped resource
   /// (a socket, a future db connection, ...) to a worker's own
-  /// worker thread -- see `ObjPtr::take`. Costs nothing to every
+  /// worker thread: see `ObjPtr::take`. Costs nothing to every
   /// existing user of this type: every native module that currently
   /// wraps something in a `Ptr` already wraps a plain, self-contained
   /// resource with no thread-affinity of its own (no `Rc`/`RefCell`
@@ -1155,13 +1155,13 @@ impl ObjPtr {
   /// own use of this exact `mem::replace`-to-`Box::new(())` idiom) --
   /// `type_name`/`downcast_*` reflect nothing useful on this `ObjPtr`
   /// afterward. Used when a resource genuinely MOVES to another
-  /// isolate rather than being copied -- the one case in the whole
+  /// isolate rather than being copied; the one case in the whole
   /// worker-transfer system where the source side can't stay valid
   /// afterward (see `modules::worker_util::transfer`'s own docs on
   /// why a `Ptr` is the sole error to "always copy, never share,
   /// source stays valid"). Callers are responsible for also updating
   /// `type_name` if they want `ptr_type_name()` to say something more
-  /// specific than "still tagged, but empty" -- this only swaps the
+  /// specific than "still tagged, but empty"; this only swaps the
   /// payload.
   pub fn take(&mut self) -> Box<dyn Any + Send> {
     std::mem::replace(&mut self.value, Box::new(()))
@@ -1169,14 +1169,14 @@ impl ObjPtr {
 }
 
 /// Everything a native function body gets handed. `args` is an OWNED
-/// copy of the call's arguments, not a borrow into VM::registers -- it
+/// copy of the call's arguments, not a borrow into VM::registers; it
 /// has to be, because `vm` is a live &mut VM at the same time, and a
 /// slice into the VM's own register array would alias with that. This
 /// is the real cost of letting natives call back into Zuri code via
 /// `vm.call_value(...)`.
 ///
 /// `name` is the SAME string as `NativeFunction::name` this call was
-/// dispatched through -- carried here specifically so the
+/// dispatched through; carried here specifically so the
 /// `enforce_arg_*!` family (see `builtins::enforce`) can generate
 /// "'foo' expects ..." messages without every native having to spell
 /// its own name out by hand at every call site.
@@ -1195,12 +1195,12 @@ impl<'a> ZuriContext<'a> {
 
 /// A plain fn pointer, not a boxed closure. Takes &mut Heap (not &mut VM)
 /// specifically so it can be called while a slice of VM::registers is
-/// still borrowed -- see the disjoint-field-borrow note in Instr::Call.
+/// still borrowed: see the disjoint-field-borrow note in Instr::Call.
 pub type NativeFn = fn(&mut ZuriContext) -> Result<Value, String>;
 
 /// Which generation a `GcBox` currently belongs to. Every object is
 /// born `Young`, living in the nursery; the first time it survives a
-/// minor collection, it's promoted -- copied for real into old-
+/// minor collection, it's promoted; copied for real into old-
 /// generation chunk storage (see `Heap::forward_or_promote`), never
 /// moved again after that.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1211,32 +1211,32 @@ enum Generation {
 }
 
 /// `Generation::Old`'s own discriminant, as the raw byte a
-/// `#[repr(u8)]` enum actually stores -- what `jit::codegen`'s inlined
+/// `#[repr(u8)]` enum actually stores; what `jit::codegen`'s inlined
 /// write barrier compares the byte it loads from `GcBox::generation`
 /// against, with no way to name the Rust enum itself. Cross-checked
 /// against the real discriminant by `gcbox_layout_tests`.
 pub const GENERATION_OLD_BYTE: u8 = 1;
 
 thread_local! {
-  /// Head of the remembered set -- every `Old` object that's been
+  /// Head of the remembered set; every `Old` object that's been
   /// mutated since the last collection, threaded through
   /// `GcBox::list_next` (see that field's docs). A minor collection
   /// treats each of these as an extra root (specifically: walks its
   /// children looking for young objects to keep alive), since an old
   /// object mutated after its last full scan is the only way an
-  /// old->young pointer can exist -- see `write_barrier`.
+  /// old->young pointer can exist: see `write_barrier`.
   ///
   /// Thread-local rather than a `Heap` field because several of this
   /// GC's mutation choke points (`Value::list_set`, `Value::dict_set`,
   /// `ModuleNamespace::set`, ...) only ever have a bare `*const Obj` in
-  /// hand, never a `&Heap` -- there's only ever one `VM`/`Heap`
+  /// hand, never a `&Heap`; there's only ever one `VM`/`Heap`
   /// instantiated per process (confirmed: `VM::new` has exactly one
   /// call site, in `bin/zuri.rs`), so a thread-local is sound and
   /// avoids threading a `&Heap` through every one of those call sites.
   static REMEMBERED_HEAD: Cell<*const GcBox> = const { Cell::new(std::ptr::null()) };
 }
 
-/// Write barrier -- call after mutating any field of an ALREADY-LIVE
+/// Write barrier; call after mutating any field of an ALREADY-LIVE
 /// heap object (never needed for a value being written at
 /// construction time, since a just-allocated object is always Young
 /// by construction and Young objects are always fully rescanned by
@@ -1244,8 +1244,8 @@ thread_local! {
 ///
 /// Deliberately coarse: it doesn't inspect what was actually written,
 /// only whether `container` itself is `Old`. Any mutation of an old
-/// object -- regardless of whether the new value happens to be a
-/// young pointer, an old pointer, or not a pointer at all -- adds it
+/// object; regardless of whether the new value happens to be a
+/// young pointer, an old pointer, or not a pointer at all; adds it
 /// to the remembered set (idempotently; `remembered` guards against
 /// queuing the same box twice before the next collection drains it).
 /// A field-precise barrier would need to know the specific value being
@@ -1271,12 +1271,12 @@ pub(crate) fn write_barrier(container: *const Obj) {
 }
 
 /// Byte offset from a `*const Obj` BACK to its owning `GcBox`'s
-/// `generation` byte -- negative, since the `obj` payload is the last
+/// `generation` byte; negative, since the `obj` payload is the last
 /// field of the header (see `GcBox`'s own deliberate field ordering).
 ///
 /// Exists so `jit::codegen` can inline `write_barrier`'s own guard
 /// (`generation == Old && !remembered`) as two byte loads and a branch,
-/// instead of paying a real call on every single field write -- the
+/// instead of paying a real call on every single field write; the
 /// overwhelmingly common answer at a hot mutation site is "no barrier
 /// needed" (either the object is still young, or it's old and was
 /// already remembered earlier this cycle), and that answer costs
@@ -1298,7 +1298,7 @@ pub fn obj_to_gcbox_generation_offset() -> i32 {
 ///
 /// Exists so a compiled call site can guard on WHICH NATIVE a callee
 /// register holds without baking the object's address, which a minor
-/// collection would invalidate the first time it promoted it -- the
+/// collection would invalidate the first time it promoted it; the
 /// same hazard `obj_closure_function_offset` exists for, and the reason
 /// `alloc_native` deliberately stays a young allocation.
 ///
@@ -1309,7 +1309,7 @@ pub fn obj_native_func_offset() -> usize {
 }
 
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be
-/// `Obj::Closure` to that closure's `function` field -- the tagged
+/// `Obj::Closure` to that closure's `function` field; the tagged
 /// `Value` naming its prototype.
 ///
 /// Exists so a compiled call site can guard on WHICH FUNCTION a callee
@@ -1342,7 +1342,7 @@ pub fn obj_closure_function_offset() -> usize {
 /// Sound to read as a plain `u64` with no further interpretation:
 /// `Cell<Option<EntryFn>>` has a null-pointer niche (a function pointer
 /// is never validly null), so `0` and "the entry address" are the
-/// type's own only two representations -- no separate `is_some` tag
+/// type's own only two representations; no separate `is_some` tag
 /// byte to also read.
 pub const fn obj_function_jit_entry_offset() -> usize {
   std::mem::offset_of!(ObjFunction, jit) + std::mem::offset_of!(JitInfo, entry)
@@ -1355,7 +1355,7 @@ pub const fn obj_function_jit_entry_offset() -> usize {
 /// reason `obj_payload_offset` is: `RefCell`'s own field order is not
 /// guaranteed, so the only honest way to learn where its value sits is
 /// to ask a live one via `as_ptr()`. Everything past that point IS
-/// guaranteed -- `ListStorage` is `#[repr(C)]` precisely so compiled
+/// guaranteed; `ListStorage` is `#[repr(C)]` precisely so compiled
 /// code can read its `ptr`/`len` directly (see `vm::list`).
 pub fn obj_list_storage_offset() -> usize {
   static OFFSET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
@@ -1371,7 +1371,7 @@ pub fn obj_list_storage_offset() -> usize {
 }
 
 /// Byte offset from a proven-`Obj::List` pointer to the element data
-/// pointer -- what `jit::codegen` loads instead of calling back into
+/// pointer; what `jit::codegen` loads instead of calling back into
 /// Rust for it.
 pub fn obj_list_ptr_offset() -> i32 {
   (obj_list_storage_offset() + crate::vm::list::LIST_PTR_OFFSET as usize) as i32
@@ -1383,22 +1383,22 @@ pub fn obj_list_len_offset() -> i32 {
 }
 
 /// `obj_list_ptr_offset`'s sibling for the inline element buffer, which
-/// is where the elements live whenever the data pointer is null -- see
+/// is where the elements live whenever the data pointer is null: see
 /// `vm::list::ListStorage`.
 pub fn obj_list_inline_offset() -> i32 {
   (obj_list_storage_offset() + crate::vm::list::LIST_INLINE_OFFSET as usize) as i32
 }
 
 /// `obj_to_gcbox_generation_offset`'s sibling for the `remembered`
-/// flag -- see its docs.
+/// flag: see its docs.
 pub fn obj_to_gcbox_remembered_offset() -> i32 {
   std::mem::offset_of!(GcBox, remembered) as i32 - std::mem::offset_of!(GcBox, obj) as i32
 }
 
 /// Byte offsets from a proven-`Obj::Str` pointer to that `String`'s
 /// heap data pointer and UTF-8 BYTE length (not the codepoint count
-/// `StringIntrinsic::Length` computes -- that's a scan over these same
-/// bytes) -- what `jit::codegen` reads directly for `StringIntrinsic::
+/// `StringIntrinsic::Length` computes; that's a scan over these same
+/// bytes); what `jit::codegen` reads directly for `StringIntrinsic::
 /// IsEmpty`/`Length` instead of calling back into Rust for either.
 ///
 /// Unlike `obj_list_storage_offset`, there's no `#[repr(C)]` type of
@@ -1407,7 +1407,7 @@ pub fn obj_to_gcbox_remembered_offset() -> i32 {
 /// part of any language guarantee. What IS guaranteed is that the
 /// standard library picks exactly ONE layout for `String` per compiled
 /// build, the same one for every `String` value that build ever
-/// creates -- so measuring it once against a live probe and caching
+/// creates; so measuring it once against a live probe and caching
 /// the result is sound for the same reason `obj_list_storage_offset`'s
 /// own `RefCell` probe is: whatever offsets are found here are the
 /// offsets every OTHER `String` in this exact binary was laid out
@@ -1415,7 +1415,7 @@ pub fn obj_to_gcbox_remembered_offset() -> i32 {
 ///
 /// The probe deliberately over-allocates capacity (`with_capacity(64)`
 /// then `push_str` a short probe text) so its length and capacity are
-/// GUARANTEED distinct values -- `String::from(short_literal)` alone
+/// GUARANTEED distinct values; `String::from(short_literal)` alone
 /// would allocate exact-fit, making `len == capacity`, which would
 /// make the two indistinguishable by value when scanning raw bytes
 /// below.
@@ -1455,13 +1455,13 @@ fn obj_str_data_offsets() -> (i32, i32) {
 }
 
 /// Byte offset from a proven-`Obj::Str` pointer to the string's raw
-/// UTF-8 byte data -- see `obj_str_data_offsets`'s own docs.
+/// UTF-8 byte data: see `obj_str_data_offsets`'s own docs.
 pub fn obj_str_ptr_offset() -> i32 {
   obj_str_data_offsets().0
 }
 
 /// `obj_str_ptr_offset`'s sibling for the BYTE length (not codepoint
-/// count) -- see `obj_str_data_offsets`'s own docs.
+/// count): see `obj_str_data_offsets`'s own docs.
 pub fn obj_str_len_offset() -> i32 {
   obj_str_data_offsets().1
 }
@@ -1472,7 +1472,7 @@ mod gcbox_layout_tests {
 
   /// The two offsets `jit::codegen`'s inlined write barrier reads
   /// through, checked against a REAL allocated object rather than
-  /// against `offset_of!` again -- i.e. that applying them to a
+  /// against `offset_of!` again; i.e. that applying them to a
   /// `*const Obj` handed out by `Heap::alloc` actually lands on that
   /// object's own header bytes, and that those bytes read back as the
   /// values `write_barrier` itself would have inspected.
@@ -1521,7 +1521,7 @@ mod gcbox_layout_tests {
   }
 
   /// `obj_str_ptr_offset`/`obj_str_len_offset` must land on a REAL
-  /// allocated string's actual data pointer and byte length -- checked
+  /// allocated string's actual data pointer and byte length; checked
   /// against a fresh allocation distinct from the probe
   /// `obj_str_data_offsets` measures against internally, and with a
   /// length that (unlike the internal probe) is NOT ASCII, to also
@@ -1589,7 +1589,7 @@ mod gcbox_layout_tests {
 /// non-moving, though: an object born into the nursery (see
 /// `Heap::alloc`) gets relocated for real, via an actual copy, the
 /// first time it survives a minor collection (see
-/// `Heap::forward_or_promote`/`VM::collect_minor`) -- "promotion" is
+/// `Heap::forward_or_promote`/`VM::collect_minor`); "promotion" is
 /// a genuine address change, not a bit-flip. `Value` still stays a
 /// bare pointer safely, but the invariant that makes it sound is
 /// broader now: every reference to a young object gets found and
@@ -1601,11 +1601,11 @@ mod gcbox_layout_tests {
 /// Field order here is deliberate, not incidental: `#[repr(C)]` lays
 /// fields out in DECLARATION order with natural alignment padding, no
 /// reordering, so the four single-byte flags plus `chunk_idx` (a
-/// `u32`, not `usize` -- chunks never remotely approach 4 billion) are
+/// `u32`, not `usize`; chunks never remotely approach 4 billion) are
 /// grouped first to pack into exactly 8 bytes with zero padding,
 /// before the two 8-byte-aligned fields. The "obvious" declaration
 /// order (bools, then `size`, then the pointer fields) leaves multiple
-/// 6-byte alignment gaps instead -- 24 extra bytes per object instead
+/// 6-byte alignment gaps instead; 24 extra bytes per object instead
 /// of 8, which is real allocation throughput lost on every single
 /// object in an allocation-heavy workload.
 #[repr(C)]
@@ -1618,7 +1618,7 @@ struct GcBox {
   /// before the next minor collection doesn't push it again.
   remembered: Cell<bool>,
   /// Index into `Heap::chunks` of the chunk that owns this box.
-  /// Needed so a minor collection's sweep -- which finds dead young
+  /// Needed so a minor collection's sweep; which finds dead young
   /// objects via the intrusive young-list, not by iterating chunks --
   /// still knows which chunk's own free-list/live-count to update,
   /// exactly as `Heap::sweep`'s chunk-major iteration does today for a
@@ -1636,17 +1636,17 @@ struct GcBox {
 
 /// One fixed-capacity block of GcBox storage. Never grows past
 /// `CHUNK_SIZE` (enforced in `Heap::alloc`), so its backing buffer never
-/// reallocates -- every pointer handed out into a chunk stays valid for
+/// reallocates; every pointer handed out into a chunk stays valid for
 /// the chunk's whole lifetime, which is the whole lifetime of `Heap`.
 /// Moving the `Chunk` struct itself (e.g. when the outer `chunks: Vec`
 /// grows) only moves the Vec's (ptr, len, cap) header, never the buffer
-/// it points at -- so that's safe too.
+/// it points at; so that's safe too.
 struct GcChunk {
   slots: Vec<GcBox>,
   /// Dead slots within THIS chunk, ready for reuse with no allocator
   /// call. Kept local (not a heap-wide free list) specifically so that
   /// when `live_count` hits zero, dropping the whole `Chunk` also drops
-  /// this list -- nothing outside needs to be purged or cross-referenced.
+  /// this list; nothing outside needs to be purged or cross-referenced.
   free: Vec<*mut GcBox>,
   /// How many slots in this chunk are currently live. When this hits
   /// zero, every slot in the chunk is garbage and the whole chunk (and
@@ -1659,7 +1659,7 @@ struct GcChunk {
 /// lets a Value stay a plain Copy u64.
 #[derive(Default)]
 pub struct Heap {
-  /// `None` marks a chunk that's been reclaimed -- kept as a hole
+  /// `None` marks a chunk that's been reclaimed; kept as a hole
   /// rather than removed, so no other chunk's index ever shifts.
   chunks: Vec<Option<GcChunk>>,
   /// Stack of chunk indices known to have spare capacity (a free slot,
@@ -1680,14 +1680,14 @@ pub struct Heap {
   next_gc: usize,
   live_count: usize,
   /// Bytes allocated into the young generation since the last minor
-  /// (or major) collection -- deliberately tracked separately from
+  /// (or major) collection; deliberately tracked separately from
   /// `bytes_allocated`, which is the whole-heap total major collection
   /// already keys off. This is what lets a minor collection trigger
   /// far more often, on a far smaller budget.
   young_bytes_allocated: usize,
   /// The young generation's own storage: bump-allocated, chunked
   /// EXACTLY like `chunks` is for the old generation, and for the
-  /// same reason -- each individual `NurseryChunk`'s own buffer is
+  /// same reason; each individual `NurseryChunk`'s own buffer is
   /// reserved at a fixed capacity and never reallocates once
   /// created, so a `Value` pointing into one stays valid for as long
   /// as that chunk exists, but the OUTER `Vec` here is free to grow
@@ -1700,13 +1700,13 @@ pub struct Heap {
   ///
   /// Every object here lives at wherever `alloc`'s bump-push left it
   /// until the next minor collection either copies it out to old-gen
-  /// storage (it survived) or drops it in place (it didn't) -- see
+  /// storage (it survived) or drops it in place (it didn't): see
   /// `VM::collect_minor` and `reset_nursery`.
   nursery_chunks: Vec<NurseryChunk>,
   /// Index into `nursery_chunks` of the chunk `alloc` is currently
   /// bump-allocating into. Reset to 0 by `reset_nursery`, since every
   /// retained chunk starts that next cycle empty and ready for reuse
-  /// in order -- see `MAX_RETAINED_NURSERY_CHUNKS`'s own docs for why
+  /// in order: see `MAX_RETAINED_NURSERY_CHUNKS`'s own docs for why
   /// `alloc` walks forward through already-allocated chunks instead of
   /// just always using `nursery_chunks.last()` (which would skip past
   /// every retained-but-not-yet-touched chunk straight to allocating a
@@ -1721,8 +1721,8 @@ pub struct Heap {
   /// same `cur == end` comparison already routes to `refill_nursery` --
   /// no separate initialization check.
   ///
-  /// **While a chunk is active, this cursor -- NOT that chunk's
-  /// `slots.len()` -- is the source of truth for how many slots are in
+  /// **While a chunk is active, this cursor; NOT that chunk's
+  /// `slots.len()`; is the source of truth for how many slots are in
   /// use.** `Vec::push` cannot be the allocation step if generated code
   /// is ever to perform it inline (see `jit::codegen`'s allocation fast
   /// path and `Obj`'s own docs on the `#[repr(C, u8)]` layout that
@@ -1730,10 +1730,10 @@ pub struct Heap {
   /// by `sync_active_chunk_len`, which MUST run before anything
   /// iterates `nursery_chunks`.
   nursery_cur: *mut GcBox,
-  /// One past the last usable slot of the active chunk -- see
+  /// One past the last usable slot of the active chunk: see
   /// `nursery_cur`.
   nursery_end: *mut GcBox,
-  /// Compile-time string constants, deduplicated by content -- see
+  /// Compile-time string constants, deduplicated by content: see
   /// `alloc_string_old`. Entries live for the whole program (they are a
   /// constant pool, bounded by the program's own text), and are marked
   /// as roots by `VM::collect_garbage`.
@@ -1741,7 +1741,7 @@ pub struct Heap {
   /// Recycled `FieldStorage` buffers, keyed by their exact field count
   /// (a class's `field_count` is fixed for its whole lifetime, so a
   /// buffer freed for one instance of a class is immediately valid for
-  /// the NEXT instance of any class with that same field count -- no
+  /// the NEXT instance of any class with that same field count; no
   /// bug-prone "close enough" resizing). Populated by `reset_nursery`
   /// when a dead `Obj::Instance` is reclaimed (its `FieldStorage`'s
   /// backing allocation is pulled out via `into_raw_parts` instead of
@@ -1749,17 +1749,17 @@ pub struct Heap {
   /// be a real `malloc`+`free` pair on every short-lived instance into
   /// a plain `Vec::pop`/`push` most of the time. Bounded per size class
   /// by `FIELD_STORAGE_POOL_CAP` so a one-off burst of a rarely-used
-  /// field count doesn't hold memory forever -- exactly the same
+  /// field count doesn't hold memory forever; exactly the same
   /// "retain some, drop the rest" tradeoff `MAX_RETAINED_NURSERY_CHUNKS`
   /// already makes for nursery chunks.
   field_storage_pool: FieldStoragePool,
 }
 
-/// One fixed-capacity block of nursery `GcBox` storage -- the young
+/// One fixed-capacity block of nursery `GcBox` storage; the young
 /// generation's counterpart to `GcChunk`, deliberately a separate,
 /// leaner type: nursery objects are never individually freed or
 /// reused mid-cycle (every survivor is copied OUT, every non-survivor
-/// dies with the whole chunk reset at once -- see `reset_nursery`),
+/// dies with the whole chunk reset at once: see `reset_nursery`),
 /// so there's no need for `GcChunk`'s own `free`-list/`live_count`
 /// bookkeeping here at all.
 struct NurseryChunk {
@@ -1767,7 +1767,7 @@ struct NurseryChunk {
 }
 
 /// Cap on how many recycled buffers `Heap::field_storage_pool` retains
-/// PER field-count size class -- large enough to cover a single hot
+/// PER field-count size class; large enough to cover a single hot
 /// size class's worth of survivors from one collection cycle in an
 /// allocation-heavy, deep-recursion workload (tens of thousands of
 /// same-field-count instances dying at once is normal there), without
@@ -1775,14 +1775,14 @@ struct NurseryChunk {
 /// entry is one `*mut Cell<Value>` (8 bytes), so even this cap costs
 /// only a few megabytes of pointer-array overhead at its absolute
 /// worst. Past the cap, a freed buffer is still dropped for real
-/// instead of hoarded forever -- the exact same "retain some, drop the
+/// instead of hoarded forever; the exact same "retain some, drop the
 /// rest" shape `MAX_RETAINED_NURSERY_CHUNKS` already uses.
 const FIELD_STORAGE_POOL_CAP: usize = 1 << 20; // ~1,048,576
 
 /// How many field counts `FieldStoragePool` serves from its direct,
 /// index-addressed free lists (`0..FIELD_STORAGE_DIRECT_CLASSES`);
 /// anything larger falls back to `FieldStoragePool::overflow`. Covers
-/// essentially every real class -- a type with more than 32 instance
+/// essentially every real class; a type with more than 32 instance
 /// fields is rare, and the fallback is only slower, never wrong.
 const FIELD_STORAGE_DIRECT_CLASSES: usize = 33;
 
@@ -1793,7 +1793,7 @@ const FIELD_STORAGE_DIRECT_CLASSES: usize = 33;
 /// buffer sitting in the pool is dead memory, so the link to the next
 /// free buffer is stored in its own first cell rather than in any
 /// side table. Popping one is a load, a store, and a decrement, with
-/// no hashing and no `Vec` -- which is the point. This is on the path
+/// no hashing and no `Vec`; which is the point. This is on the path
 /// of every single instance allocation, and it is meant to be
 /// reproducible directly as generated machine code (`#[repr(C)]`, and
 /// `heads` first, so a head slot is reachable at a compile-time-known
@@ -1810,7 +1810,7 @@ struct FieldStoragePool {
   heads: [*mut Cell<Value>; FIELD_STORAGE_DIRECT_CLASSES],
   counts: [u32; FIELD_STORAGE_DIRECT_CLASSES],
   /// Field counts at or beyond `FIELD_STORAGE_DIRECT_CLASSES` fall back
-  /// to a hash map -- not worth a dedicated array slot for shapes this
+  /// to a hash map; not worth a dedicated array slot for shapes this
   /// large and rare.
   overflow: FxHashMap<usize, Vec<*mut Cell<Value>>>,
 }
@@ -1832,7 +1832,7 @@ impl FieldStoragePool {
 
   /// Pops a recycled buffer of exactly `len` cells, or `None`.
   /// Every cell of the returned buffer is `Value::nil()`, upholding
-  /// `FieldStorage::new`'s postcondition -- including the first, which
+  /// `FieldStorage::new`'s postcondition; including the first, which
   /// `give` overwrote with the free-list link.
   fn take(&mut self, len: usize) -> Option<*mut Cell<Value>> {
     if len == 0 {
@@ -1886,7 +1886,7 @@ impl FieldStoragePool {
   }
 }
 
-/// Byte offsets of `Heap::bytes_allocated`/`next_gc` -- combined with
+/// Byte offsets of `Heap::bytes_allocated`/`next_gc`; combined with
 /// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
 /// `needs_major_gc()`'s check directly instead of an FFI call at every
 /// safepoint. See `vm::VM_HEAP_OFFSET`'s own docs for why this is sound.
@@ -1894,17 +1894,17 @@ pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize = std::mem::offset_of!(Heap,
 pub(crate) const HEAP_NEXT_GC_OFFSET: usize = std::mem::offset_of!(Heap, next_gc);
 /// Same idea as the two offsets above, for the young generation's own
 /// allocation counter. There's no `young_next_gc` offset to go with
-/// it -- unlike `next_gc`, that threshold is a fixed constant
+/// it; unlike `next_gc`, that threshold is a fixed constant
 /// (`Heap::YOUNG_NEXT_GC`) baked directly into compiled code instead
-/// of read from memory; see that const's own docs.
+/// of read from memory: see that const's own docs.
 pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
   std::mem::offset_of!(Heap, young_bytes_allocated);
 
 /// Frees every buffer still sitting in `field_storage_pool` when the
-/// `Heap` itself is torn down (process exit -- there's exactly one
+/// `Heap` itself is torn down (process exit; there's exactly one
 /// `Heap` for the VM's whole life, so this runs once, not a hot path).
 /// Without this, every pooled `*mut Cell<Value>` is just a raw pointer
-/// with no owning Rust value anywhere -- `Vec<*mut T>`'s own `Drop`
+/// with no owning Rust value anywhere; `Vec<*mut T>`'s own `Drop`
 /// only frees the `Vec`'s OWN backing array, never what its pointers
 /// point AT, so skipping this would be a genuine leak.
 impl Drop for Heap {
@@ -1921,7 +1921,7 @@ impl Drop for Heap {
         // SAFETY: produced by `into_raw_parts` on a `FieldStorage` of
         // exactly `len` cells, linked in at most once, and unreachable
         // from anywhere else by the time the `Heap` is being torn down
-        // -- so this is its one and only free.
+        //; so this is its one and only free.
         drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
         ptr = next;
       }
@@ -1937,38 +1937,38 @@ impl Drop for Heap {
 }
 
 impl Heap {
-  /// Floor for `next_gc` -- keeps a small/short-lived program from
+  /// Floor for `next_gc`; keeps a small/short-lived program from
   /// triggering a collection after every third allocation.
   const MIN_NEXT_GC: usize = 16 * 1024 * 1024;
   /// After a sweep, the next major collection is scheduled at this
   /// multiple of the OLD generation's surviving size (see
-  /// `needs_major_gc`) -- so it directly sets how much dead-but-
+  /// `needs_major_gc`); so it directly sets how much dead-but-
   /// promoted garbage the old generation may accumulate before being
   /// swept again, and therefore trades peak RSS against major-GC
   /// frequency.
   ///
   /// 1.25 rather than a looser 1.5: once `needs_major_gc` stopped
   /// firing on every cycle, that extra slack bought little wall-clock
-  /// for a real jump in peak RSS -- not worth it.
+  /// for a real jump in peak RSS; not worth it.
   const GC_HEAP_GROW_FACTOR: f32 = 1.25;
-  /// Fixed (not growing) budget for the young generation -- kept
+  /// Fixed (not growing) budget for the young generation; kept
   /// small and constant, unlike `next_gc`, specifically so minor
   /// collections stay cheap and frequent for the whole run instead of
   /// the young budget creeping up alongside the live heap. Exposed as
   /// `pub(crate)` (not just used internally) so `jit::codegen` can
   /// bake it into compiled code as a compile-time immediate instead
-  /// of a runtime load -- sound specifically because it's the one
+  /// of a runtime load; sound specifically because it's the one
   /// threshold in this collector that's truly constant.
   /// 128MB, not the 32MB this originally shipped with: measured
   /// directly on `benchmarks/binary-tree.zu` (`ZURI_GC_LOG=1`), 32MB
   /// meant EVERY single minor collection promoted 100% of what it
-  /// scanned -- `[gc-minor] promoted/freed across N -> N objects` with
+  /// scanned; `[gc-minor] promoted/freed across N -> N objects` with
   /// N unchanged on both sides, every single time, because one
   /// mid-sized recursive tree construction alone (a depth-20 binary
   /// tree is ~144MB of `TreeNode`s) already outlives a 32MB nursery
   /// cycle while still fully reachable from the in-progress recursion.
   /// Old-generation then only reclaims that same garbage later, via
-  /// the strictly more expensive mark-sweep major collection -- exactly
+  /// the strictly more expensive mark-sweep major collection; exactly
   /// the cost a young generation exists to avoid paying. 128MB gives
   /// real headroom for that same recursive pattern's smaller, genuinely
   /// short-lived calls to die for free.
@@ -1979,13 +1979,13 @@ impl Heap {
   /// immediate reuse. Sized to comfortably cover one full
   /// `YOUNG_NEXT_GC` budget's worth of chunks with some headroom for a
   /// burst that slightly overruns before the next safepoint check
-  /// catches it -- see `reset_nursery`'s own docs for why retaining
+  /// catches it: see `reset_nursery`'s own docs for why retaining
   /// these (instead of freeing every cycle down to one) matters:
   /// truncating to a single chunk every cycle drives thousands of
   /// ~1.2MB alloc/free calls through the allocator on a long-running,
   /// allocation-heavy program, which is exactly the pattern that
   /// pushes glibc's malloc into retaining fragmented,
-  /// never-returned-to-the-OS memory -- inflating RSS well past what
+  /// never-returned-to-the-OS memory; inflating RSS well past what
   /// the GC's own live-byte accounting would justify.
   const MAX_RETAINED_NURSERY_CHUNKS: usize =
     (Self::YOUNG_NEXT_GC / (CHUNK_SIZE * std::mem::size_of::<GcBox>())) + 4;
@@ -2039,7 +2039,7 @@ impl Heap {
   /// total `bytes_allocated`, which is what makes this collector
   /// generational in practice and not just in structure. Nursery
   /// allocation walks the total up continuously, so a total-based
-  /// threshold is really a threshold on ALLOCATION RATE -- and since
+  /// threshold is really a threshold on ALLOCATION RATE; and since
   /// `run_until`'s safepoint checks this before `needs_minor_gc`, the
   /// major collection would win every race, running a full mark and
   /// sweep of the whole old generation on a schedule that has nothing
@@ -2060,7 +2060,7 @@ impl Heap {
 
   /// Has the young generation grown enough that a cheap minor
   /// collection is worth running? Checked far more often than
-  /// `needs_major_gc` -- see `YOUNG_NEXT_GC`.
+  /// `needs_major_gc`: see `YOUNG_NEXT_GC`.
   #[inline]
   pub fn needs_minor_gc(&self) -> bool {
     self.young_bytes_allocated > Self::YOUNG_NEXT_GC
@@ -2075,7 +2075,7 @@ impl Heap {
   }
 
   /// Is the object behind `ptr` currently in the young generation?
-  /// A cheap, read-only peek -- unlike `forward_or_promote`, this
+  /// A cheap, read-only peek; unlike `forward_or_promote`, this
   /// never relocates anything, just answers the question. Used by
   /// `VM::ensure_stable_for_compiled_entry` to decide, before paying
   /// for a full minor collection, whether one is even needed.
@@ -2087,7 +2087,7 @@ impl Heap {
 
   /// Mark the object behind `ptr` reachable this cycle. Returns true
   /// the FIRST time (caller should walk its children), false on repeat
-  /// visits -- same contract the old HashSet-based version had.
+  /// visits; same contract the old HashSet-based version had.
   pub(crate) fn mark_object(ptr: *const Obj) -> bool {
     let gcbox = unsafe { &*Self::gcbox_of(ptr) };
     debug_assert!(gcbox.live.get(), "marking a supposedly-dead object");
@@ -2095,7 +2095,7 @@ impl Heap {
   }
 
   /// Rough size in bytes attributed to one heap object, used only to
-  /// decide *when* to collect -- not an exact accounting (e.g. a
+  /// decide *when* to collect; not an exact accounting (e.g. a
   /// `BigInt`'s own heap limbs aren't sized individually), just enough
   /// to make `next_gc` track real memory pressure instead of raw object
   /// count.
@@ -2143,7 +2143,7 @@ impl Heap {
 
   /// Every new object is born here: a plain bump-push into the
   /// nursery's current chunk (a fresh one appended whenever the last
-  /// one is full -- see `NurseryChunk`'s own docs on why this never
+  /// one is full: see `NurseryChunk`'s own docs on why this never
   /// needs to reallocate an EXISTING chunk's buffer, so every `Value`
   /// already handed out stays valid no matter how much more gets
   /// allocated afterward). Old-generation allocation only happens
@@ -2192,7 +2192,7 @@ impl Heap {
           generation: Cell::new(Generation::Young),
           remembered: Cell::new(false),
           list_next: Cell::new(std::ptr::null()),
-          // Unused for nursery objects -- see `GcBox::chunk_idx`'s own
+          // Unused for nursery objects: see `GcBox::chunk_idx`'s own
           // docs; nothing ever looks this up for a `Young` box, since
           // nursery chunks are never individually freed/reused
           // mid-cycle.
@@ -2242,7 +2242,7 @@ impl Heap {
   /// Writes the active chunk's bump cursor back into its `Vec`'s own
   /// length, making `slots.len()` correct again.
   ///
-  /// Must run before ANYTHING iterates `nursery_chunks` -- while a
+  /// Must run before ANYTHING iterates `nursery_chunks`; while a
   /// chunk is active its `slots.len()` is deliberately stale and the
   /// cursor is the truth (see `nursery_cur`). Idempotent, so callers
   /// may run it defensively.
@@ -2260,23 +2260,23 @@ impl Heap {
   }
 
   /// Allocates directly into OLD-generation storage, never the
-  /// nursery -- for object kinds that must NEVER move, because
+  /// nursery; for object kinds that must NEVER move, because
   /// something outside the GC's own reach caches their address as a
   /// raw pointer with no relocation hook of its own. `ObjFunction` is
   /// the one real case today: `jit::codegen` bakes a compiled
   /// function's OWN prototype address as a machine-code IMMEDIATE
   /// (see `FuncCompiler`'s use of `self.proto as *const ObjFunction`)
-  /// -- once that's baked into installed machine code, there is no
+  ///; once that's baked into installed machine code, there is no
   /// second chance to fix it up the way a `Value` sitting in a
   /// register or object field gets fixed up by `VM::collect_minor`.
   /// Since a function prototype is compiled once (into the enclosing
-  /// chunk's constant pool -- see `Instr::Closure`) and referenced
+  /// chunk's constant pool: see `Instr::Closure`) and referenced
   /// for the rest of the program's life, it gains nothing from young-
   /// gen's fast bump-allocate/early-death optimization anyway, so
   /// skipping the nursery entirely costs nothing real.
   ///
   /// Unconditionally write-barriers the object it just created before
-  /// returning it -- NOT an optional safety margin. The usual "a
+  /// returning it; NOT an optional safety margin. The usual "a
   /// freshly allocated object never needs a barrier for its own
   /// construction-time writes" exemption (see `write_barrier`'s own
   /// docs) relies specifically on the object being born Young, so
@@ -2306,14 +2306,14 @@ impl Heap {
     Value::obj(obj_ptr)
   }
 
-  /// Moves an already-computed `(size, obj)` pair -- the payload of a
+  /// Moves an already-computed `(size, obj)` pair; the payload of a
   /// young object a minor collection just found still reachable --
   /// directly into old-generation chunk storage. Exactly the
   /// candidate/free/new-chunk search `alloc` used to run for every
   /// object back when young and old shared the same storage, just
   /// parameterized on an already-known size/payload instead of
   /// computing them fresh, and tagging the result `Old` immediately
-  /// rather than `Young` -- a promoted object is never "young" for
+  /// rather than `Young`; a promoted object is never "young" for
   /// even one instant, since it only exists because it already
   /// survived a full minor collection.
   ///
@@ -2323,7 +2323,7 @@ impl Heap {
   /// allocation event, so counting it again here would double-count
   /// every survivor.
   ///
-  /// Returns the new `GcBox`'s address -- for the caller
+  /// Returns the new `GcBox`'s address; for the caller
   /// (`forward_or_promote`) to record as this object's forwarding
   /// target and to walk its children from.
   fn promote_into_old(&mut self, size: usize, obj: Obj) -> *const GcBox {
@@ -2369,11 +2369,11 @@ impl Heap {
         return chunk.slots.last().unwrap();
       }
 
-      // Neither a free slot nor spare capacity left -- stale candidate.
+      // Neither a free slot nor spare capacity left; stale candidate.
       self.candidates.pop();
     }
 
-    // No usable candidate -- start a fresh chunk.
+    // No usable candidate; start a fresh chunk.
     let idx = self.chunks.len();
     let mut chunk = GcChunk {
       slots: Vec::with_capacity(CHUNK_SIZE),
@@ -2398,12 +2398,12 @@ impl Heap {
 
   /// Resolves ONE possibly-young pointer during a minor collection's
   /// copy phase: if `ptr` isn't currently `Young`, it's already old
-  /// (or was already forwarded earlier THIS SAME cycle -- see below)
+  /// (or was already forwarded earlier THIS SAME cycle: see below)
   /// and needs no relocation, so it's returned unchanged. Otherwise:
   ///
   /// - If this exact object was already forwarded earlier in this
-  ///   cycle (`marked` -- repurposed here as "already forwarded", not
-  ///   its usual mark-sweep meaning -- see `GcBox::marked`'s sibling
+  ///   cycle (`marked`; repurposed here as "already forwarded", not
+  ///   its usual mark-sweep meaning: see `GcBox::marked`'s sibling
   ///   docs), `list_next` (repurposed the same way as the forwarding
   ///   target) already holds its new address; every reference to the
   ///   SAME object converges on the SAME new copy this way, which is
@@ -2411,7 +2411,7 @@ impl Heap {
   ///   pointer-equality cases) correct across a collection.
   /// - Otherwise, this is the FIRST reference to it found this cycle:
   ///   move its `Obj` payload out (a real, ownership-transferring
-  ///   move via `ptr::read` -- copying the bytes would leave the
+  ///   move via `ptr::read`; copying the bytes would leave the
   ///   nursery slot and the new slot both "owning" e.g. the same
   ///   `String`'s heap buffer, a double-free waiting to happen),
   ///   promote it into old-gen storage, mark the OLD slot forwarded,
@@ -2433,12 +2433,12 @@ impl Heap {
     }
     let size = gcbox.size;
     // SAFETY: not yet forwarded (checked above), so `obj` hasn't been
-    // read out yet -- this takes ownership exactly once. Every future
+    // read out yet; this takes ownership exactly once. Every future
     // reference to this SAME nursery slot takes the `marked` branch
     // above instead of reaching this read again.
     let moved = unsafe { std::ptr::read(&gcbox.obj) };
     // `ptr::read` copies the bytes out but does NOT erase the source
-    // -- without overwriting it right now, this slot would still look
+    //; without overwriting it right now, this slot would still look
     // like a perfectly valid `Obj` sharing ownership of the SAME
     // Rust-level allocations (a `String`'s buffer, a `Vec<Value>`'s
     // backing store, ...) the new promoted copy now legitimately owns.
@@ -2454,7 +2454,7 @@ impl Heap {
     // SAFETY: writes through a raw pointer derived straight from
     // `gcbox_ptr`, never through the shared `gcbox` reference above
     // (casting `&T` to `*mut T` and writing through THAT is UB even
-    // when nothing else is aliasing it) -- `gcbox_ptr` itself is sound
+    // when nothing else is aliasing it); `gcbox_ptr` itself is sound
     // to write through for the same reason every other GC-internal
     // mutation in this file is: collection-time access to a `GcBox` is
     // always effectively exclusive.
@@ -2483,7 +2483,7 @@ impl Heap {
   ///
   /// Free-standing (takes `pool` explicitly rather than `&mut self`)
   /// so `reset_nursery` can call it from inside a loop that's already
-  /// borrowing a DIFFERENT field of `self` (`nursery_chunks`) -- the
+  /// borrowing a DIFFERENT field of `self` (`nursery_chunks`); the
   /// same disjoint-field-borrow pattern `VM::forward_slot` uses, and
   /// for the identical reason (see that function's own docs): a
   /// `&mut self` method here would make the borrow checker treat it as
@@ -2494,13 +2494,13 @@ impl Heap {
       Obj::Instance(instance) => {
         let (ptr, len) = instance.fields.into_raw_parts();
         // SAFETY: `ptr` was just produced by `into_raw_parts` on a
-        // `FieldStorage` of exactly `len` cells -- valid to index
+        // `FieldStorage` of exactly `len` cells; valid to index
         // `0..len`.
         for i in 0..len {
           unsafe { (*ptr.add(i)).set(Value::nil()) };
         }
         if !pool.give(ptr, len) {
-          // Pool declined it (size class full, or not poolable) -- drop
+          // Pool declined it (size class full, or not poolable); drop
           // it for real rather than hoarding it forever.
           // SAFETY: same `(ptr, len)` pair `into_raw_parts` just
           // handed back, reconstructed exactly once.
@@ -2515,14 +2515,14 @@ impl Heap {
 
   /// Reclaims the nursery after a minor collection's copy phase has
   /// fully drained its worklist: by construction, every slot NOT
-  /// forwarded this cycle (`marked == false`) is garbage -- nothing
+  /// forwarded this cycle (`marked == false`) is garbage; nothing
   /// still reachable can point at it, since `collect_minor` visited
   /// every root and every live object's children before calling this.
-  /// Its `Obj` payload (and whatever it owns -- a `String`'s buffer, a
+  /// Its `Obj` payload (and whatever it owns; a `String`'s buffer, a
   /// `List`'s backing `SmallVec`, ...) is dropped in place via
   /// `reclaim_dead_obj`, exactly what `sweep`/the old `sweep_young`
   /// used to do for a dead slot. A forwarded slot's `obj` was already
-  /// MOVED OUT via `ptr::read` in `forward_or_promote` -- dropping it
+  /// MOVED OUT via `ptr::read` in `forward_or_promote`; dropping it
   /// again here would be a double-free, which is exactly what `marked`
   /// (this cycle's forwarding flag) exists to distinguish.
   ///
@@ -2532,7 +2532,7 @@ impl Heap {
   /// second time over slots this function already handled by hand.
   /// Every chunk up to `MAX_RETAINED_NURSERY_CHUNKS` is kept around
   /// (emptied, not dropped) for the next cycle to bump-allocate into
-  /// with zero further allocator calls -- unlike the old generation's
+  /// with zero further allocator calls; unlike the old generation's
   /// `sweep`, which genuinely wants to return a fully-empty chunk's
   /// memory (old objects can live indefinitely, so an idle old chunk
   /// is likely to stay idle), the nursery refills every single minor
@@ -2543,7 +2543,7 @@ impl Heap {
   /// memory instead of holding it as permanent inventory forever.
   pub(crate) fn reset_nursery(&mut self) {
     // The active chunk's `slots.len()` is stale by design while it is
-    // being bump-allocated into -- publish it before iterating, or
+    // being bump-allocated into; publish it before iterating, or
     // every slot allocated since the last refill is invisible here and
     // silently leaks its payload instead of being reclaimed.
     self.sync_active_chunk_len();
@@ -2554,7 +2554,7 @@ impl Heap {
         if !gcbox.marked.get() {
           freed_bytes += gcbox.size;
           // SAFETY: never forwarded (checked above), so `obj` was
-          // never moved out before now -- this is its one and only
+          // never moved out before now; this is its one and only
           // move, mirroring `forward_or_promote`'s own `ptr::read` for
           // the forwarded case. `chunk.slots.set_len(0)` below never
           // runs any destructor over this slot again either way.
@@ -2564,7 +2564,7 @@ impl Heap {
         }
       }
       // SAFETY: every slot in this chunk has either been moved out
-      // (forwarded) or dropped in place (above) -- none of them owns
+      // (forwarded) or dropped in place (above); none of them owns
       // anything that still needs cleanup, so shrinking the logical
       // length to 0 without running element destructors a second
       // time is exactly right.
@@ -2589,21 +2589,21 @@ impl Heap {
     self.alloc(Obj::Str(s.into()))
   }
 
-  /// Deliberately `alloc_old`, not `alloc` -- for `Compiler`'s own
+  /// Deliberately `alloc_old`, not `alloc`; for `Compiler`'s own
   /// use building a chunk's CONSTANT POOL (method/field/class names,
   /// string literals, ...) specifically, never for runtime string
   /// creation. See `alloc_old`'s own docs: `jit::codegen::bake_const`
   /// bakes a constant's raw bits as a machine-code immediate, so
   /// anything that can end up in `Chunk::constants` needs the exact
   /// same "never moves" guarantee `ObjFunction` needs, for the exact
-  /// same reason -- and gains nothing from the nursery either way,
+  /// same reason; and gains nothing from the nursery either way,
   /// since a constant pool entry lives exactly as long as its chunk.
   /// Allocates a COMPILE-TIME string constant, interned: two identical
   /// literals anywhere in the program (or across separately compiled
   /// modules) become one shared heap object.
   ///
   /// This is the funnel every constant-pool string goes through --
-  /// literals, method names, field names, class names -- so a name like
+  /// literals, method names, field names, class names; so a name like
   /// `x` used at fifty sites costs one allocation instead of fifty, and
   /// the constant pool's total footprint becomes the program's set of
   /// DISTINCT strings rather than its count of string occurrences.
@@ -2632,7 +2632,7 @@ impl Heap {
   }
 
   /// Every interned compile-time string, for the major collector's root
-  /// scan -- see `alloc_string_old`. Without this the sweep would free
+  /// scan: see `alloc_string_old`. Without this the sweep would free
   /// strings the table still points at.
   pub(crate) fn interned_strings(&self) -> impl Iterator<Item = Value> + '_ {
     self.interned_strings.values().copied()
@@ -2646,7 +2646,7 @@ impl Heap {
     self.alloc(Obj::BigInt(s.into()))
   }
 
-  /// `alloc_bigint`'s `alloc_old` counterpart -- see
+  /// `alloc_bigint`'s `alloc_old` counterpart: see
   /// `alloc_string_old`'s own docs; a `BigInt` literal can ALSO end
   /// up baked as a constant-pool immediate the same way a string
   /// literal can.
@@ -2659,7 +2659,7 @@ impl Heap {
   }
 
   /// Builds a Dict from raw (key, value) pairs, de-duplicating by
-  /// VALUE equality (not pointer identity -- two distinct string
+  /// VALUE equality (not pointer identity; two distinct string
   /// objects with the same text collide, matching every other
   /// language's dict-literal semantics), keeping the LAST occurrence
   /// of any repeated key.
@@ -2668,7 +2668,7 @@ impl Heap {
     self.alloc(Obj::Dict(Box::new(RefCell::new(storage))))
   }
 
-  /// Deliberately `alloc_old`, not `alloc` -- see `alloc_old`'s own
+  /// Deliberately `alloc_old`, not `alloc`: see `alloc_old`'s own
   /// docs on why a function prototype must never be young.
   pub fn alloc_function(&mut self, f: ObjFunction) -> Value {
     self.alloc_old(Obj::Func(Box::new(f)))
@@ -2680,7 +2680,7 @@ impl Heap {
   /// Same argument as `alloc_class`, one level down. A method closure
   /// is created once, by the `Instr::Closure`/`Instr::SetMethod` pair
   /// that runs when its class is declared, and then lives in that
-  /// class's method table for as long as the class does -- so the
+  /// class's method table for as long as the class does; so the
   /// nursery never buys it anything, while its address moving out from
   /// under a compile-time-baked guard costs real performance silently
   /// (see `alloc_class`'s own docs for how that failure mode looks).
@@ -2689,7 +2689,7 @@ impl Heap {
   /// able to bake a constructor's `Value` bits at all: with the
   /// closure immovable, `zuri_jit_construct_prepare` needs neither the
   /// `ObjClass` read that finds `constructor` nor the
-  /// `ensure_stable_for_compiled_entry` generation probe -- two
+  /// `ensure_stable_for_compiled_entry` generation probe; two
   /// dependent, cache-missing loads on every single instance built.
   ///
   /// Ordinary closures stay young deliberately: those genuinely are
@@ -2712,7 +2712,7 @@ impl Heap {
 
   /// Convenience for a function that captures nothing (the common case:
   /// every top-level function, and any nested function that happens not
-  /// to reference an enclosing local) -- allocates the prototype and
+  /// to reference an enclosing local); allocates the prototype and
   /// wraps it in a trivial empty-upvalue closure in one step.
   pub fn alloc_plain_closure(&mut self, f: ObjFunction) -> Value {
     let proto_val = self.alloc_function(f);
@@ -2724,24 +2724,24 @@ impl Heap {
 
   /// Ordinary young allocation, deliberately NOT `alloc_old`.
   ///
-  /// Moving natives to the old generation looks harmless -- they're
-  /// registered once at startup and live for the whole program -- but
+  /// Moving natives to the old generation looks harmless; they're
+  /// registered once at startup and live for the whole program; but
   /// `alloc_old` runs a `write_barrier`, joining every native to the
   /// remembered set immediately. `sweep` frees old boxes (and drops
   /// whole chunks) without unlinking them from that intrusive list
   /// threaded through `GcBox::list_next`, and `promote_into_old` can
-  /// then recycle such a slot and truncate the chain -- a real
+  /// then recycle such a slot and truncate the chain; a real
   /// use-after-free, not a theoretical one.
   ///
   /// `jit::codegen` therefore may NOT bake a native's address as a
   /// call-site guard, since a young native relocates on its first minor
-  /// collection -- it guards on the `NativeFn` pointer instead, which
+  /// collection; it guards on the `NativeFn` pointer instead, which
   /// relocation cannot change. See `obj_native_func_offset`.
   pub fn alloc_native(&mut self, native: NativeFunction) -> Value {
     self.alloc(Obj::Native(native))
   }
 
-  /// Deliberately `alloc_old`, not `alloc` -- the same decision, for
+  /// Deliberately `alloc_old`, not `alloc`; the same decision, for
   /// the same reason, as `alloc_function` right above.
   ///
   /// A class is a declaration-time entity: one is created per `class`
@@ -2749,7 +2749,7 @@ impl Heap {
   /// instance's own `class` field for as long as any instance lives.
   /// Born in the nursery it would survive every minor collection
   /// anyway, so the only thing the young generation ever did for it
-  /// was copy it once -- and then RELOCATE it, which is the part that
+  /// was copy it once; and then RELOCATE it, which is the part that
   /// actively broke things.
   ///
   /// Relocation is what makes this load-bearing rather than a micro-
@@ -2758,7 +2758,7 @@ impl Heap {
   /// code as a compile-time guard immediate. A function crosses its
   /// warmup threshold long before the first minor collection has had
   /// any reason to run, so those bits were routinely taken while the
-  /// class was still young -- and the moment it was promoted, every
+  /// class was still young; and the moment it was promoted, every
   /// guard baked against it stopped matching FOREVER. The optimization
   /// did not misbehave, it silently stopped existing, permanently
   /// falling back to the general path with no signal that anything was
@@ -2766,9 +2766,9 @@ impl Heap {
   /// lifetime, which is what those guards always assumed.
   ///
   /// Safe with respect to the generational invariant because every
-  /// mutation that stores a `Value` into a class -- `SetFieldInit`,
+  /// mutation that stores a `Value` into a class; `SetFieldInit`,
   /// `SetMethod`, `DeclareStatic`, `FinalizeClass`, in both the
-  /// interpreter and `jit::runtime` -- already ends in a
+  /// interpreter and `jit::runtime`; already ends in a
   /// `write_barrier` on the class, so old-to-young references out of
   /// one are tracked by the remembered set exactly as they must be.
   /// (`DeclareField` needs none: it stores only a name and a `u16`
@@ -2787,7 +2787,7 @@ impl Heap {
     // The base term is not optional. Dropping it under-reports every
     // instance's true cost, so `young_bytes_allocated` (which drives
     // `needs_minor_gc`) lets the nursery grow far larger than intended
-    // before a collection fires -- and since a `GcBox` costs real
+    // before a collection fires; and since a `GcBox` costs real
     // memory the accounting never sees, peak RSS balloons on
     // allocation-heavy workloads while the byte counter still looks
     // normal.
@@ -2797,7 +2797,7 @@ impl Heap {
 
   /// Pops a recycled buffer of exactly `len` cells off
   /// `field_storage_pool` if one's available, otherwise falls back to a
-  /// real allocation -- see `field_storage_pool`'s own docs. Every
+  /// real allocation: see `field_storage_pool`'s own docs. Every
   /// pooled buffer was reset to all-`Value::nil()` before being pushed
   /// (`reset_nursery`), so this upholds `FieldStorage::new`'s exact
   /// postcondition either way.
@@ -2854,7 +2854,7 @@ impl Heap {
   /// recompute `bytes_allocated` and re-arm `next_gc` off the resulting
   /// live size. Returns how many objects were freed.
   ///
-  /// This only performs the sweep half of mark-and-sweep -- `reachable`
+  /// This only performs the sweep half of mark-and-sweep; `reachable`
   /// must already be the complete, transitively-closed set of live
   /// objects (see `VM::collect_garbage`), or anything missing from it
   /// gets freed out from under whatever still references it.
@@ -2862,7 +2862,7 @@ impl Heap {
   /// Visits every resident chunk. A slot that's live but wasn't marked
   /// this cycle is garbage: its contents are dropped in place and it
   /// goes on its chunk's local free list. A chunk whose live_count hits
-  /// zero -- every slot in it dead -- is dropped ENTIRELY, returning its
+  /// zero; every slot in it dead; is dropped ENTIRELY, returning its
   /// backing allocation (and, for a block this size, typically the
   /// underlying pages) to the allocator instead of holding it as
   /// permanent inventory.
@@ -2896,7 +2896,7 @@ impl Heap {
             // most of a binary-tree-shaped workload's garbage survives
             // long enough to be promoted (see `reclaim_dead_obj`'s own
             // docs), so THIS is where the majority of its FieldStorage
-            // actually dies -- skipping the pool here left it fed
+            // actually dies; skipping the pool here left it fed
             // almost exclusively by the rare object that dies still in
             // the nursery.
             let obj = std::mem::replace(
@@ -2927,7 +2927,7 @@ impl Heap {
     }
 
     self.live_count -= freed;
-    // Re-armed against the surviving OLD set specifically -- the same
+    // Re-armed against the surviving OLD set specifically; the same
     // quantity `needs_major_gc` now tests, so `GC_HEAP_GROW_FACTOR`
     // means what it says: allow the long-lived set to grow by half
     // again before paying for another full collection.
@@ -2964,7 +2964,7 @@ mod field_storage_tests {
   use super::*;
 
   /// `jit::codegen`'s eventual fast path needs these two offsets to be
-  /// exactly what `#[repr(C)]` promises -- verify it directly rather
+  /// exactly what `#[repr(C)]` promises; verify it directly rather
   /// than trusting the derivation.
   #[test]
   fn offsets_match_repr_c_expectations() {
@@ -3006,7 +3006,7 @@ mod field_storage_tests {
 
   /// Repeated alloc/drop in a loop is the closest a unit test gets to
   /// proving the `Drop` impl neither leaks nor double-frees without
-  /// reaching for a whole separate tool -- ASAN/valgrind is the real
+  /// reaching for a whole separate tool; ASAN/valgrind is the real
   /// verification, run separately, but this at least exercises the
   /// exact `Box::into_raw`/`Box::from_raw` round trip many times over
   /// varied sizes.

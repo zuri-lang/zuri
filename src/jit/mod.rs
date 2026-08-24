@@ -91,7 +91,7 @@ pub fn log_enabled() -> bool {
   *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG").is_some())
 }
 
-/// Dump each compiled function's full Cranelift IR to stderr --
+/// Dump each compiled function's full Cranelift IR to stderr;
 /// `ZURI_JIT_LOG_IR=1`. Separate from `log_enabled` since this is
 /// substantially noisier (one full IR listing per compiled function).
 pub fn log_ir_enabled() -> bool {
@@ -174,7 +174,7 @@ pub struct CompiledFunction {
 ///   worth baking: the constructor's own compiled entry generally
 ///   doesn't exist yet when the site's caller is compiled, so it still
 ///   gets resolved per call. This is purely a "which of the two shapes
-///   belongs here" hint and needs no guard of its own --
+///   belongs here" hint and needs no guard of its own;
 ///   `zuri_jit_new_prepare` re-checks the callee register itself and
 ///   returns zero (falling through to the same general path an
 ///   unclassified site would take) if the global has since been

@@ -77,7 +77,7 @@ fn parse_regex(s: &str) -> Option<(&str, &str)> {
 }
 
 /// Compile a Zuri regex's pattern/modifiers into a `regex::Regex`. See
-/// this file's module-level caveat: the `regex` crate is NOT PCRE2 --
+/// this file's module-level caveat: the `regex` crate is NOT PCRE2;
 /// no backreferences, no lookaround, no named groups; and only
 /// `i`/`m`/`s`/`x`/`U`/`u` of Zuri's documented modifiers have a direct
 /// equivalent here; `A`/`D`/`J` are accepted but ignored.

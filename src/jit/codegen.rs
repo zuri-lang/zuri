@@ -35,8 +35,8 @@ use crate::vm::object::{self, ObjFunction};
 use crate::vm::value::{self};
 use crate::vm::vm;
 
-/// Byte offset (from a `*mut VM`) of the cached registers pointer --
-/// see `vm::VM::regs_ptr_cache`'s docs. Read directly by compiled code
+/// Byte offset (from a `*mut VM`) of the cached registers pointer 
+/// (see `vm::VM::regs_ptr_cache`'s docs). Read directly by compiled code
 /// (entry-block init and `refresh_regs`) instead of calling into Rust,
 /// since this is re-fetched at essentially every helper-call site.
 const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;

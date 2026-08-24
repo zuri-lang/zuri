@@ -620,7 +620,7 @@ pub enum ParamType {
   Instance(u16),
 }
 
-/// One `Instr::CheckParamType` site's full declared constraint --
+/// One `Instr::CheckParamType` site's full declared constraint;
 /// everything `parse_type`/`Expr::TypeHint` captured for this parameter,
 /// carried through to bytecode. `Chunk::param_checks[check_idx]`.
 #[derive(Clone, Debug)]

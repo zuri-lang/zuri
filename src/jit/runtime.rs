@@ -868,7 +868,7 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
 /// `jit::codegen`'s inline construct fast path's ONE remaining real
 /// call: allocating the instance and pinning it, exactly `VM::
 /// alloc_and_pin_instance`'s job (see its own docs for why this is
-/// deliberately NOT paired with a register-window growth check --
+/// deliberately NOT paired with a register-window growth check;
 /// generated code has already verified the window fits, via the same
 /// `emit_call_checks` its matching `emit_frame_construction` call
 /// uses). Returns the new instance's `Value` bits.
@@ -948,7 +948,7 @@ pub unsafe extern "C" fn zuri_jit_new_finish(
 /// resolved direct-call paths (`emit_self_call`/`emit_known_call`/
 /// `emit_self_invoke`: see `jit::CallTarget`'s own docs for how those
 /// callees get proven ahead of time). Unlike `zuri_jit_call_prepare`/
-/// `zuri_jit_invoke_prepare`, this does no resolution work at all --
+/// `zuri_jit_invoke_prepare`, this does no resolution work at all;
 /// `callee_bits` is already known to be exactly the right closure
 /// (either this function's own, for self-recursion, or one already
 /// guarded by a value/class-identity check in generated code), so this
@@ -1085,7 +1085,7 @@ pub unsafe extern "C" fn zuri_jit_call(
 /// `builtins::lookup`, backed by this call site's own monomorphic cache.
 ///
 /// The lookup itself is a hash of the method name plus the `memcmp`
-/// that confirms it, against a table chosen by the receiver's kind --
+/// that confirms it, against a table chosen by the receiver's kind;
 /// and the tables are `'static` and immutable after startup, so a site
 /// that saw a string receiver last time will resolve the same name to
 /// the same function pointer every time it sees a string again. Caching
@@ -1774,7 +1774,7 @@ pub unsafe extern "C" fn zuri_jit_push_scalar_root(
 }
 
 /// `Instr::GetIndex`'s slow-path fallback for a scalar-replaced list
-/// (`jit::codegen::FuncCompiler::emit_scalar_list_get`'s own docs) --
+/// (`jit::codegen::FuncCompiler::emit_scalar_list_get`'s own docs);
 /// everything the inline fast path didn't prove safe (a non-numeric or
 /// non-integer index, or a genuinely out-of-bounds one) still needs the
 /// real error-raising logic, but there is no heap `Obj::List` to hand
@@ -1805,7 +1805,7 @@ pub unsafe extern "C" fn zuri_jit_scalar_get_index(
   }
 }
 
-/// `Instr::SetIndex`'s slow-path fallback for a scalar-replaced list --
+/// `Instr::SetIndex`'s slow-path fallback for a scalar-replaced list;
 /// the write-side counterpart of `zuri_jit_scalar_get_index`, see its
 /// own docs.
 pub unsafe extern "C" fn zuri_jit_scalar_set_index(

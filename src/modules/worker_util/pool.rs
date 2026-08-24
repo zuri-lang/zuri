@@ -37,10 +37,10 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 const MAX_POOL_SIZE: usize = 4096;
 
-/// `Ptr::type_name` a `Worker`/`Channel` handle is tagged with --
+/// `Ptr::type_name` a `Worker`/`Channel` handle is tagged with;
 /// shared between `worker.rs` (which allocates these) and
 /// `transfer.rs` (which needs to recognize them as thread-safe,
-/// freely-shareable handles rather than exclusive resources to move --
+/// freely-shareable handles rather than exclusive resources to move:
 /// see `transfer::capture_value`'s own docs on the distinction).
 pub const WORKER_PTR_TYPE: &str = "zuri::worker";
 pub const CHANNEL_PTR_TYPE: &str = "zuri::channel";
@@ -54,7 +54,7 @@ static CONFIGURED_SIZE: Mutex<Option<usize>> = Mutex::new(None);
 
 /// Sets how many worker threads the pool starts with. Only takes
 /// effect if the pool hasn't started yet (its size is fixed for the
-/// rest of the process once the first worker actually runs) --
+/// rest of the process once the first worker actually runs);
 /// returns `false` rather than an error in that case, since "someone
 /// already spawned something" isn't really exceptional, just too
 /// late.
@@ -338,7 +338,7 @@ pub fn is_current_cancelled() -> bool {
   CURRENT_WORKER.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
 }
 
-/// Whether this thread is currently running a worker at all --
+/// Whether this thread is currently running a worker at all;
 /// distinct from `is_current_cancelled`, which is `false` both when
 /// there's no current worker AND when there is one but it hasn't
 /// been cancelled. The blocking primitives below need to tell those
@@ -385,7 +385,7 @@ fn wake_gate() -> &'static (Mutex<()>, Condvar) {
 
 /// Called after any state change a `wait_any`/`select` predicate might
 /// depend on (a worker finishing, a channel gaining a value or
-/// closing). Momentarily taking the gate's mutex before notifying --
+/// closing). Momentarily taking the gate's mutex before notifying;
 /// rather than just calling `notify_all`; is what avoids a lost
 /// wakeup: it guarantees this can't land in the gap between a waiter's
 /// last check and the moment it actually starts waiting on the
@@ -490,7 +490,7 @@ pub fn wait_all_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) 
 }
 
 /// Blocks until at least one of `states` (channels) has a value ready
-/// to receive or is closed, returning its index and the outcome --
+/// to receive or is closed, returning its index and the outcome;
 /// already taken off the winning channel's own queue, same as
 /// `try_recv`. Same ordering/timeout behavior as
 /// `wait_any_workers`.
@@ -895,7 +895,7 @@ pub fn spawn(
 }
 
 /// Stops the pool from accepting any further `spawn()` calls, then
-/// blocks until every task already queued or running has finished --
+/// blocks until every task already queued or running has finished;
 /// nothing in flight is abandoned. One-way: once this returns (or even
 /// while it's still waiting), `spawn()` keeps failing for the rest of
 /// the process.

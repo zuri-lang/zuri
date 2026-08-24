@@ -46,7 +46,7 @@
 
 use std::sync::OnceLock;
 
-/// Numerator for the whole-function call-count warm-up curve --
+/// Numerator for the whole-function call-count warm-up curve;
 /// `threshold = CALL_K / sqrt(instruction_count)`.
 fn call_k() -> f64 {
   static K: OnceLock<f64> = OnceLock::new();

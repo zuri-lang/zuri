@@ -235,7 +235,7 @@ impl TypeFacts {
 /// before any code runs), this has no single seed point: it changes
 /// what `transfer` computes for the out set at whatever ip the
 /// matching instruction actually executes at, and the existing
-/// fixed-point worklist propagates that forward like any other fact --
+/// fixed-point worklist propagates that forward like any other fact;
 /// no changes needed to the merge/iteration logic itself.
 ///
 /// Deliberately not restricted to a hardcoded instruction allowlist:
@@ -249,7 +249,7 @@ impl TypeFacts {
 /// Soundness comes from the same place it always does in this JIT:
 /// `codegen` never trusts this seed's claim without a real runtime
 /// guard planted exactly at the instruction's own definition site
-/// (checking the actual value just computed, not a proxy for it) --
+/// (checking the actual value just computed, not a proxy for it):
 /// see `jit::codegen::FuncCompiler`'s own docs on the mid-function
 /// guard-and-fork this drives. A wrong guess here costs a fallback
 /// jump into the general body's continuation, never a wrong answer.
@@ -990,7 +990,7 @@ impl ConstFact {
 /// intersection at merges, monotonically converges), just over a flat
 /// per-register lattice (`ConstFact`) instead of a boolean bitset.
 ///
-/// Seeded from a numeric `LoadConst` and propagated through `Move` --
+/// Seeded from a numeric `LoadConst` and propagated through `Move`;
 /// deliberately NOT through arithmetic (`Add`/`Sub`/`Mul`/`Neg` on two
 /// already-known constants COULD be folded further, and would be sound
 /// to, but that is real constant-FOLDING, a distinct, larger feature
@@ -1134,7 +1134,7 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
 /// (optimistic `full()` seed at every non-entry block, narrowed by
 /// intersection at merges) for the same reason: a register only counts
 /// as proven non-reference if every path agrees, and a register never
-/// proven here is conservatively treated as "might be a reference" --
+/// proven here is conservatively treated as "might be a reference";
 /// the safe direction to be wrong in, since this feeds a GC safepoint's
 /// decision about which registers need to be spilled and scanned as
 /// roots (see the JIT SSA plan's Stage 4). Getting this backwards
@@ -1162,7 +1162,7 @@ impl RefFacts {
 /// new `BigInt`/`String`/`List` when its operands call for one (see
 /// `VM::binary_add_values`), and `Lt`/`Le`/`Gt`/`Ge` fall through to a
 /// user-defined `try_operator_override` (which can return literally
-/// anything) whenever their operands aren't both provably numeric --
+/// anything) whenever their operands aren't both provably numeric;
 /// but the moment both operands are proven numeric by `type_facts`, the
 /// interpreter's own plain-number fast path is the only branch that can
 /// possibly fire (every other branch requires an operand that isn't a
@@ -1516,7 +1516,7 @@ fn transfer(in_set: &RegSet, instr: &Instr, proto: &ObjFunction, speculative_reg
 }
 
 /// The destination register of `instr`, if it's one of `transfer`'s
-/// "conservative, always unproven unless speculated" instructions --
+/// "conservative, always unproven unless speculated" instructions;
 /// exactly the same instruction list as that match arm above (making
 /// this a single source of truth would require restructuring
 /// `transfer` itself; until then, the two must be kept in sync by
@@ -1627,7 +1627,7 @@ pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
 /// register's multiple, possibly-unrelated definitions it actually
 /// observed. Two confirmed real patterns this catches: a call's own
 /// callee-load register reused, in place, for the call's result
-/// (`GetGlobal dst=r` immediately followed by `Call dst=r, func=r`) --
+/// (`GetGlobal dst=r` immediately followed by `Call dst=r, func=r`);
 /// the snapshot sees the numeric result and wrongly also credits the
 /// callee load, which is never a number; and a receiver register
 /// reused for a method call's (non-numeric) return value while also
@@ -1657,7 +1657,7 @@ fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
 }
 
 /// Every bytecode position `ip`'s instruction can transfer control to,
-/// including the implicit fallthrough to `ip + 1` where applicable --
+/// including the implicit fallthrough to `ip + 1` where applicable;
 /// the forward edges the fixed-point worklist propagates facts along.
 /// `pub(crate)` (not just used internally) so other fixed-point passes
 /// over the same bytecode shape (e.g. `jit::escape`'s may-alias
@@ -1685,7 +1685,7 @@ pub(crate) fn successors(ip: usize, instr: &Instr, proto: &ObjFunction) -> Vec<u
 
 /// Predecessor list for every bytecode position, built once up front
 /// (a single forward scan) rather than inverting `successors` on every
-/// worklist pop. `pub(crate)` for the same reason `successors` is --
+/// worklist pop. `pub(crate)` for the same reason `successors` is:
 /// see its own docs.
 pub(crate) fn build_predecessors(proto: &ObjFunction) -> Vec<Vec<usize>> {
   let code = &proto.chunk.code;

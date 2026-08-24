@@ -410,7 +410,7 @@ fn read_uint(bytes: &[u8], endian: Endian) -> u128 {
 }
 
 /// `v` is the value's full two's-complement bit pattern (as produced by
-/// an `i128 as u128` cast, which is a bitcast, not a range check) --
+/// an `i128 as u128` cast, which is a bitcast, not a range check);
 /// truncating it to the target width and byte order is then just a
 /// matter of narrowing casts, which correctly preserve two's-complement
 /// truncation for negative values.

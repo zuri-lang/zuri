@@ -424,7 +424,7 @@ fn is_int(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(v.is_number() && v.as_number().fract() == 0.0))
 }
 
-/// Matches this VM's actual iteration protocol; `@key`/`@value` --
+/// Matches this VM's actual iteration protocol; `@key`/`@value`;
 /// rather than an `@iter`/`@itern` pair that was never implemented
 /// here (see `for`-loop desugaring in the parser, and
 /// `range.rs`/`list.rs`/etc.'s own `@key`/`@value` natives).

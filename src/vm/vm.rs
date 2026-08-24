@@ -31,7 +31,7 @@ use crate::vm::value::Value;
 /// blowing the OS stack.
 const MAX_JIT_CALL_DEPTH: u32 = 1024;
 
-/// Bounds nested `resolve_possible_deopt` calls, not lifetime deopt count --
+/// Bounds nested `resolve_possible_deopt` calls, not lifetime deopt count;
 /// a function that deopts constantly but never while a previous deopt is
 /// still unwinding is fine and stays compiled. What's dangerous is a
 /// polymorphic call site nesting deopt-inside-deopt with no bound, each

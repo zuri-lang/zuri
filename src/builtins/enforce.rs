@@ -21,7 +21,7 @@
 
 use crate::vm::value::Value;
 
-/// Mirrors the C runtime's `IS_STRING`/`IS_NUMBER`/... predicates --
+/// Mirrors the C runtime's `IS_STRING`/`IS_NUMBER`/... predicates;
 /// one variant per `Value::is_*` check, usable as the type argument to
 /// `enforce_arg_type!`/`enforce_arg_types!`. Bundles both the runtime
 /// check (`matches`) and its human-readable name (`label`) so an error
@@ -110,7 +110,7 @@ impl ArgType {
   }
 }
 
-/// Joins several `ArgType` labels into one readable phrase --
+/// Joins several `ArgType` labels into one readable phrase;
 /// `"a number"`, `"a number or a list"`, `"a string, a list, or a
 /// dict"`; for the `*_any_of*!` macros' error messages. `pub`, not
 /// `pub(crate)`, since the free-function `enforce_arg_type_any_of!` is
@@ -208,7 +208,7 @@ macro_rules! enforce_arg_type {
   };
 }
 
-/// Like `enforce_arg_type!`, but a MISSING argument is not an error --
+/// Like `enforce_arg_type!`, but a MISSING argument is not an error;
 /// only a present-but-wrong-typed one is. For a spec'd-optional
 /// trailing parameter (`lpad(width, [fill])`'s `fill`), pair this with
 /// a plain `ctx.args.get($idx)` read for the actual default-value
@@ -243,7 +243,7 @@ macro_rules! enforce_arg_types {
   };
 }
 
-/// Like `enforce_arg_type!`, but accepts a UNION of shapes --
+/// Like `enforce_arg_type!`, but accepts a UNION of shapes;
 /// `enforce_arg_type_any_of!(ctx, 0, [ArgType::Number, ArgType::List])`
 /// for something like `bytes(n | list)`, where no single `ArgType`
 /// describes what's actually accepted.
@@ -294,7 +294,7 @@ macro_rules! enforce_arg_type_any_of_opt {
   };
 }
 
-/// Like `enforce_arg_type!`, but specifically for `ArgType::PtrOf(tag)` --
+/// Like `enforce_arg_type!`, but specifically for `ArgType::PtrOf(tag)`;
 /// produces a message naming the ACTUAL wrapped type on a mismatch
 /// (e.g. "expects argument 1 to be a sqlite3_connection, got a
 /// gd_image") instead of the generic "a pointer" `ArgType::label`

@@ -215,7 +215,7 @@ fn get(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// Splits on a delimiter byte sequence, returning a list of new bytes
 /// objects. An EMPTY delimiter (`bytes(0)`, i.e. a zero-length byte
-/// stream) splits into one single-byte bytes object per input byte --
+/// stream) splits into one single-byte bytes object per input byte;
 /// mirrors `string.split()`'s own empty-delimiter special case, and is
 /// what the documented `'test'.to_bytes().split(bytes(0))` example
 /// actually exercises.

@@ -205,7 +205,7 @@ impl AliasSet {
   }
 }
 
-/// A bitset over registers for a "must" (intersect-at-merge) fact --
+/// A bitset over registers for a "must" (intersect-at-merge) fact;
 /// used below by `self_reference_facts` to prove a register definitely
 /// (on every path, not just possibly) still holds an unmodified
 /// self-reference. A separate type from `AliasSet`, on purpose: see
@@ -643,7 +643,7 @@ pub struct EscapeResult {
 /// that register (and whatever it's copied into via `Move`) forward
 /// from `alloc_ip`'s own successor(s) to the end of the function.
 ///
-/// Consults `proto`'s own self-recursive parameter summary (Phase 2 --
+/// Consults `proto`'s own self-recursive parameter summary (Phase 2:
 /// see that section's own docs) for any `Call` provably targeting
 /// `proto` itself: an allocation passed as an argument to such a call,
 /// in a position mapping onto a parameter Phase 2 already proved
@@ -656,7 +656,7 @@ pub struct EscapeResult {
 ///
 /// `self_class_safety`, if supplied, also resolves `GetField` on
 /// `self` for a name proven collision-free on `proto`'s own class
-/// (see `ClassFieldSafety`'s own docs and `self_getfield_is_safe`) --
+/// (see `ClassFieldSafety`'s own docs and `self_getfield_is_safe`);
 /// `None` reproduces Phase 1's original, fully conservative GetField
 /// treatment exactly.
 pub fn analyze_one(

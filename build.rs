@@ -55,8 +55,8 @@ fn main() {
 
 /// Generates one `#[test]` function per `tests/*.zu` fixture that has
 /// a matching `tests/*.out` file, so `cargo test` reports each fixture
-/// independently (which one failed, not just an aggregate count) --
-/// see `tests/zu_conformance.rs`, which `include!`s the generated file
+/// independently (which one failed, not just an aggregate count)
+/// (see `tests/zu_conformance.rs`), which `include!`s the generated file
 /// and provides the actual `run_fixture` implementation each generated
 /// test calls.
 fn generate_zu_conformance_tests(manifest_dir: &str) {

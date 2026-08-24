@@ -63,7 +63,7 @@ where
 }
 
 /// Recursively clones List/Dict CONTENTS (not just their top-level
-/// container), so `.clone()` really is the documented "deep copy" --
+/// container), so `.clone()` really is the documented "deep copy";
 /// a nested list/dict inside the original can be mutated afterward
 /// without the clone seeing it. Every other kind of Value (numbers,
 /// strings, instances, closures, ...) is left as-is: strings are
@@ -145,7 +145,7 @@ fn contains(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(found))
 }
 
-/// Adds all key-value pairs from `x` into this dict, in-place --
+/// Adds all key-value pairs from `x` into this dict, in-place;
 /// mirrors `list.extend()`'s in-place mutation.
 fn extend(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);

@@ -19,7 +19,7 @@ use crate::jit::runtime;
 use crate::jit::{CompileFacts, EntryFn, codegen, typeflow};
 use crate::vm::object::ObjFunction;
 
-/// Everything `JitEngine::build_ir` extracts from a `&ObjFunction` --
+/// Everything `JitEngine::build_ir` extracts from a `&ObjFunction`;
 /// enough to hand off to `jit::background`'s compiler thread for the
 /// expensive part (`Context::compile`, see that module's docs on why
 /// this needs no further access to `proto` or the `JITModule` at all),

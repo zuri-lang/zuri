@@ -131,7 +131,7 @@ fn push_indent(out: &mut String, depth: usize) {
 }
 
 /// Appends `v`'s JSON representation onto `out`. Recurses for list/
-/// dict elements and for whatever an `@to_json` override returns --
+/// dict elements and for whatever an `@to_json` override returns;
 /// `depth` counts every such recursive step, checked against
 /// `opts.max_depth` up front.
 fn encode_value(
@@ -597,7 +597,7 @@ fn read_json_file(path: &str) -> Result<String, String> {
   })
 }
 
-/// `json.dump(value, path, compact: ?bool, max_depth: ?number)` --
+/// `json.dump(value, path, compact: ?bool, max_depth: ?number)`;
 /// encodes `value` exactly as `encode` would, then writes the result
 /// to `path`, creating the file if it doesn't exist and overwriting
 /// it if it does. Encoding errors (an un-`@to_json`-able instance, a

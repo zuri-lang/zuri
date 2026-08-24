@@ -576,7 +576,7 @@ fn capture_closure(
 
 /// Captures the function prototype `func_val` (an `Obj::Func`) points
 /// at, returning a `Ref` into a `TransferNode::Proto` arena entry.
-/// Memoizes `func_val` BEFORE capturing its constants/root-globals --
+/// Memoizes `func_val` BEFORE capturing its constants/root-globals;
 /// required for a recursive top-level function (`def fact(n) { ...
 /// fact(n - 1) ... }`, calling itself by name via `GetGlobal`), whose
 /// own root-globals scan would otherwise recurse into capturing
@@ -749,7 +749,7 @@ fn capture_class(
 /// FinalizeClass`), so `materialize` just re-derives it from the
 /// rebuilt `methods` map instead of risking the two drifting apart.
 ///
-/// Statics are mutable, shared, per-class state on the source side --
+/// Statics are mutable, shared, per-class state on the source side;
 /// captured as a one-time SNAPSHOT here, same as an upvalue or a
 /// root global. Once a class crosses into a worker, its statics
 /// there are independent: neither side's later mutations are visible
