@@ -110,7 +110,7 @@ class Channel {
   /**
    * @returns int: the number of values currently queued.
    */
-  len() {
+  length() {
     return _worker.channel_len(self._ptr)
   }
 
