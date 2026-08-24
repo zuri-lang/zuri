@@ -459,7 +459,7 @@ impl InlineOp {
   }
 }
 
-/// A List builtin the JIT emits directly instead of dispatching to --
+/// A List builtin the JIT emits directly instead of dispatching to; 
 /// `NumberIntrinsic`'s counterpart, same reasoning: skip real method-
 /// name lookup (`builtins::lookup`'s hash + `memcmp`, what
 /// `builtins::method_table_key`'s own docs call out `.length()` in a

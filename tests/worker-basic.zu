@@ -62,7 +62,7 @@ if e {
 var ch = worker.channel(2)
 ch.send('hello')
 ch.send([1, 2, 3])
-echo ch.len()
+echo ch.length()
 echo ch.recv()
 echo ch.recv()
 ch.close()

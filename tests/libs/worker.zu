@@ -367,12 +367,12 @@ def test_channel_try_recv() {
 
 def test_channel_len() {
   var ch = worker.channel()
-  assert ch.len() == 0, 'a fresh channel must report zero queued values'
+  assert ch.length() == 0, 'a fresh channel must report zero queued values'
   ch.send(1)
   ch.send(2)
-  assert ch.len() == 2, 'len() must reflect the number of unread queued values'
+  assert ch.length() == 2, 'len() must reflect the number of unread queued values'
   ch.recv()
-  assert ch.len() == 1, 'len() must decrease as values are received'
+  assert ch.length() == 1, 'len() must decrease as values are received'
   echo 'test_channel_len passed'
 }
 
@@ -570,7 +570,7 @@ def test_select_returns_ready_channel() {
   var result = worker.select([x, y, z])
   assert result[0] == z, 'select() must report the channel that was actually ready'
   assert result[1] == 'picked me', 'select() must return the value already received from it'
-  assert z.len() == 0, 'the value select() returned must have been removed from the channel'
+  assert z.length() == 0, 'the value select() returned must have been removed from the channel'
   echo 'test_select_returns_ready_channel passed'
 }
 
@@ -884,7 +884,7 @@ def test_scope_waits_for_children_even_without_joining_them() {
       marker.send(true)
     }, done_marker)
   })
-  assert done_marker.len() == 1, 'scope() must not return until every spawned child has actually finished'
+  assert done_marker.length() == 1, 'scope() must not return until every spawned child has actually finished'
   echo 'test_scope_waits_for_children_even_without_joining_them passed'
 }
 
@@ -1026,7 +1026,7 @@ def test_broadcast_late_subscriber_misses_earlier_sends() {
   assert early.recv() == 'before', 'a subscriber sees everything sent after it subscribed'
   assert early.recv() == 'after', 'a subscriber sees everything sent after it subscribed'
   assert late.recv() == 'after', 'a subscriber must not see values sent before it subscribed'
-  assert late.len() == 0, 'a late subscriber has nothing queued beyond what was sent after it joined'
+  assert late.length() == 0, 'a late subscriber has nothing queued beyond what was sent after it joined'
   echo 'test_broadcast_late_subscriber_misses_earlier_sends passed'
 }
 
@@ -1041,7 +1041,7 @@ def test_broadcast_unsubscribe() {
 
   b.send('only s2')
   assert s2.recv() == 'only s2', 's2 must still receive broadcasts'
-  assert s1.len() == 0, 'an unsubscribed channel must not receive further broadcasts'
+  assert s1.length() == 0, 'an unsubscribed channel must not receive further broadcasts'
   echo 'test_broadcast_unsubscribe passed'
 }
 
@@ -1085,7 +1085,7 @@ def test_broadcast_bounded_capacity_drops_when_full() {
   b.send('b')
 
   assert slow.recv() == 'a', 'a slow subscriber keeps whatever fit in its buffer'
-  assert slow.len() == 0, 'a value that arrived while the buffer was full must be dropped, not queued'
+  assert slow.length() == 0, 'a value that arrived while the buffer was full must be dropped, not queued'
   echo 'test_broadcast_bounded_capacity_drops_when_full passed'
 }
 
