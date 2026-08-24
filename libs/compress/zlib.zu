@@ -1,5 +1,5 @@
 /**
- * @module deflate
+ * @module zlib
  * 
  * This is the Zlib submodule for the compress module.
  * 
@@ -194,4 +194,69 @@ def compress(data, level, strategy, wbits, memory_level) {
  */
 def decompress(data, wbits) {
   return _compress.decompress(data, wbits)
+}
+
+
+import .gzip { GzipDecoder, GzipEncoder }
+
+
+/**
+ * A streaming Deflate encoder.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.zlib
+ * %> var encoder = zlib.DeflateEncoder()
+ * %> encoder.write('hello world')
+ * 11
+ * %> encoder.finish()
+ * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
+ * ```
+ */
+class ZlibEncoder < GzipEncoder {
+
+  /**
+   * Creates a new streaming Deflate encoder at the given level (0..=9).
+   * 
+   * @param ?number level - Default 1
+   */
+  @new(level) {
+    self._ptr = _compress.gzip_new_encoder(true, level)
+  }
+}
+
+
+/**
+ * Streaming zlib decompressor implemention. This decoder reads standard 
+ * zlib blocks and frames produced at any zlib compression level.
+ * 
+ * Wraps a byte stream of compressed data and yields decompressed bytes.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> import compress.zlib
+ * %> var data = zlib.compress('hello world')
+ * %> data
+ * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
+ * %> 
+ * %> var decoder = zlib.DeflateDecoder(data)
+ * %> decoder.read_as_string()
+ * hello world
+ * ```
+ * 
+ * This decoder is level-independent and supports standard zlib frames 
+ * produced by all zlib compression levels.
+ */
+class ZlibDecoder < GzipDecoder {
+
+  /**
+   * Creates a Zlib decoder
+   * 
+   * @param bytes source
+   */
+  @new(source) {
+    self._ptr = _compress.gzip_new_decoder(true, source)
+  }
 }

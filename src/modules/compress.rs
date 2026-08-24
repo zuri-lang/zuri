@@ -505,12 +505,13 @@ fn gzip_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn gzip_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_range!(ctx, 1, 2);
+  enforce_arg_range!(ctx, 1, 3);
 
   let zlib_header = optional_bool(ctx, 0, false)?;
   let level = optional_number(ctx, 1, 1.0)? as i32;
+  let window_bits = optional_number(ctx, 2, 15.0)? as u8;
 
-  let encoder = DeflateEncoder::new(level, zlib_header);
+  let encoder = DeflateEncoder::new(level, zlib_header, window_bits);
   Ok(ctx.heap().alloc_ptr(GZIP_ENCODER_NAME, encoder))
 }
 
@@ -608,13 +609,14 @@ fn gzip_encoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 fn gzip_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_range!(ctx, 1, 2);
+  enforce_arg_range!(ctx, 1, 3);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
 
   let data = ctx.args[1].as_bytes();
   let zlib_header = optional_bool(ctx, 0, false)?;
+  let window_bits = optional_number(ctx, 2, 15.0)? as u8;
 
-  let decoder = DeflateDecoder::new(data, zlib_header);
+  let decoder = DeflateDecoder::new(data, zlib_header, window_bits);
   Ok(ctx.heap().alloc_ptr(GZIP_DECODER_NAME, decoder))
 }
 

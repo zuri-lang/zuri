@@ -1254,7 +1254,7 @@ impl VM {
     let locations = self.frame_locations();
     let mut out = format!("{}\n", err_style.paint(format!("Unhandled {}", summary)));
 
-    if let Some((path, line, _)) = locations.last() {
+    if let Some((path, line, _)) = locations.first() {
       let source = if path.as_ref() == entry_path {
         Some(Cow::Borrowed(entry_source))
       } else {

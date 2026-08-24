@@ -52,7 +52,7 @@ class GzipEncoder {
    * @param ?number level - Default 1
    */
   @new(level) {
-    self._ptr = _compress.gzip_new_encoder(false, level)
+    self._ptr = _compress.gzip_new_encoder(true, level, 31)
   }
 
   /**
@@ -180,7 +180,7 @@ class GzipDecoder {
    * @param bytes source
    */
   @new(source) {
-    self._ptr = _compress.gzip_new_decoder(false, source)
+    self._ptr = _compress.gzip_new_decoder(true, source, 31)
   }
 
   /**
@@ -254,7 +254,7 @@ class GzipDecoder {
    * @returns number
    */
   available() {
-    return _compress.gzip_encoder_available(self._ptr)
+    return _compress.gzip_decoder_available(self._ptr)
   }
 
   /**
@@ -263,7 +263,7 @@ class GzipDecoder {
    * @returns bool
    */
   finished() {
-    return _compress.gzip_encoder_finished(self._ptr)
+    return _compress.gzip_decoder_finished(self._ptr)
   }
 
   /**
@@ -272,7 +272,7 @@ class GzipDecoder {
    * @returns number
    */
   total_in() {
-    return _compress.gzip_encoder_total_in(self._ptr)
+    return _compress.gzip_decoder_total_in(self._ptr)
   }
 
   /**
@@ -281,6 +281,360 @@ class GzipDecoder {
    * @returns number
    */
   total_out() {
-    return _compress.gzip_encoder_total_out(self._ptr)
+    return _compress.gzip_decoder_total_out(self._ptr)
+  }
+}
+
+
+/**
+ * The GzFile class implements a GZip based I/O system 
+ * that allows you use treat Gzip streams (bytes) as if they were 
+ * a file.
+ * 
+ * The class implements the essentials of a file except those 
+ * that ties it to the operating system filesystem such as 
+ * symbolic links, chmod and set time.
+ * 
+ * See the tutorial on [working with files](/tutorial/working-with-files) 
+ * for more information.
+ */
+class GzFile {
+  var _is_encoder
+  var _inner
+
+  /**
+   * Returns a new GzFile object bounded to a physical file at 
+   * the given path and opened in the given mode. See [[file]] 
+   * for a description of the supported file modes.
+   * 
+   * @param string path
+   * @param ?string mode
+   * @returns GzFile
+   */
+  @new(path: string, mode: ?string, _inner) {
+    if mode == nil {
+      mode = 'r'
+    }
+
+    self._is_encoder = !mode.contains('r')
+    self._file = file(path, mode)
+
+    if _inner {
+      self._inner = _inner
+    } else if self._is_encoder {
+      self._inner = GzipEncoder()
+    } else {
+      self._inner = GzipDecoder(self._file.read())
+    }
+  }
+
+  /**
+   * Returns `true` if the underlying file bounded to GzFile 
+   * actually exists or `false` otherwise.
+   * 
+   * @returns bool
+   */
+  exists() {
+    return self._file.exists()
+  }
+
+  /**
+   * Closes the stream to an opened GzFile. You'll rarely ever 
+   * need to call this method yourself in most use cases.
+   */
+  close() {
+    if self._is_encoder {
+      self._file.write(self._inner.finish())
+    }
+
+    self._inner.close()
+    self._file.close()
+  }
+
+  /**
+   * Flushes the remaning data into the GzFile underlying file 
+   * and returns the byte stream returned.
+   * 
+   * @returns bytes
+   */
+  flush() {
+    if self._is_encoder {
+      self._file.write(self._inner.flush())
+    }
+
+    return self._file.flush()
+  }
+
+  /**
+   * Opens the stream to a GzFile for the operation originally 
+   * specified on the GzFile object during creation. 
+   * 
+   * You may need to call this method after a call to `read()` 
+   * if the length isn't specified or `write()` if you wish to 
+   * read or write again as the GzFile will already be closed.
+   * 
+   * @returns bool
+   */
+  open() {
+    return self._file.open()
+  }
+
+  /**
+   * Reads the content of an opened GzFile up to the specified length 
+   * and returns it as string or bytes if the GzFile was opened in the 
+   * binary mode. If the length is not specified, the GzFile will be 
+   * read to the end.
+   * 
+   * This method requires that the GzFile be opened in the read mode 
+   * (default mode) or a mode that supports reading. If you aren't 
+   * reading the full length of the GzFile, you'll need to call the 
+   * close() method to free the GzFile for further reading, otherwise, 
+   * the close() method will be automatically called for you.
+   * 
+   * @param number length: Default = -1
+   * @returns bytes
+   * @throws Error
+   */
+  read(length: ?number) {
+    if self._is_encoder or self._inner.finished() {
+      raise Error('Invalid stream state')
+    }
+
+    if length != nil {
+      return self._inner.read(length)
+    } else {
+      return self._inner.read_all()
+    }
+  }
+
+  /**
+   * Same as `read()`, but doesn't open or close the GzFile automatically.
+   * 
+   * @param number length: Default = -1
+   * @returns bytes
+   * @throws Error
+   */
+  gets(length: number) {
+    if self._is_encoder or self._inner.finished() {
+      raise Error('Invalid stream state')
+    }
+
+    return self._inner.read(length)
+  }
+
+  /**
+   * Writes a string or bytes to an opened GzFile at the current insertion 
+   * point. When the GzFile is opened with the a mode enabled, write will 
+   * always start from the end of the GzFile. 
+   * 
+   * If the seek() method has been previously called, write will begin 
+   * from the seeked position, otherwise it will start at the beginning 
+   * of the GzFile.
+   * 
+   * @param bytes|string
+   * @returns number
+   */
+  write(data: bytes|string) {
+    if !self._is_encoder or self._inner.finished() {
+      raise Error('Invalid stream state')
+    }
+
+    return self._inner.write(data)
+  }
+
+  /**
+   * Same as `write()`, but doesn't open or close the GzFile automatically.
+   * 
+   * @param bytes|string
+   * @returns number
+   */
+  puts(data: bytes|string) {
+    if !self._is_encoder or self._inner.finished() {
+      raise Error('Invalid stream state')
+    }
+
+    return self._inner.write(data)
+  }
+
+  /**
+   * Returns the integer file descriptor number that is used by the 
+   * underlying implementation to request I/O operations from the 
+   * operating system. This can be very useful for low-level interfaces 
+   * that uses or act as GzFile descriptors.
+   * 
+   * @returns number
+   */
+  number() {
+    return self._file.number()
+  }
+
+  /**
+   * Returns `true` if the underlying file of GzFile is a TTY device 
+   * or `false` otherwise.
+   * 
+   * @returns bool
+   */
+  is_tty() {
+    return self._file.is_tty()
+  }
+
+  /**
+   * Returns `true` if the GzFile is open for reading or writing and 
+   * `false` otherwise.
+   * 
+   * @returns bool
+   */
+  is_open() {
+    return self._file.is_open() 
+      and !self._inner.finished()
+  }
+
+  /**
+   * Returns `true` if the GzFile is closed for reading or writing and 
+   * `false` otherwise.
+   */
+  is_closed() {
+    return self._file.is_closed() 
+      or self._inner.finished()
+  }
+
+  /**
+   * See [[file.symlink]]
+   * 
+   * @returns bool
+   */
+  symlink(path: string) {
+    return self._file.symlink(path)
+  }
+
+  /**
+   * Returns the statistics or details of the GzFile.
+   * 
+   * See the working with files documentation for more information 
+   * about the `stats()` method.
+   * 
+   * @returns dict
+   */
+  stats() {
+    return self._file.stats()
+  }
+
+  /**
+   * Deletes the underlying file pointed to by GzFile
+   * 
+   * Any further attempt to perform most operations on the GzFile 
+   * after calling `delete()` will raise an error.
+   * 
+   * @returns bool
+   */
+  delete() {
+    self._inner.finish()
+    return self._file.delete()
+  }
+
+  /**
+   * Renames the underlying file pointed to by GzFile to the new 
+   * name and returns `true` if it succeeds or `false` otherwise.
+   * 
+   * @returns bool
+   */
+  rename(new_name) {
+    return self._file.rename(new_name)
+  }
+
+  /**
+   * Returns a new GzFile with the source cloned and opened with 
+   * the same mode as the current GzFile.
+   * 
+   * @returns [[io.GzFile]]
+   */
+  copy() {
+    return GzFile(self._file.path(), self._file.mode(), self._inner)
+  }
+
+  /**
+   * Returns the physical path of the file pointed to by GzFile.
+   * 
+   * @returns string
+   */
+  path() {
+    return self._file.path()
+  }
+
+  /**
+   * Returns the absolute path of the physical file pointed to by GzFile.
+   * 
+   * @returns string
+   */
+  abs_path() {
+    return self._file.abs_path()
+  }
+
+  /**
+   * Truncates the entire GzFile if length is not given or truncates 
+   * the GzFile such that only length number of bytes is left in it.
+   * 
+   * @returns bool
+   */
+  truncate(length: ?int) {
+    return self._file.truncate(length)
+  }
+  
+  /**
+   * Updates the permission for the file bounded by GzFile.
+   * 
+   * @returns bool
+   */
+  chmod(number: int) {
+    return self._file.chmod(number)
+  }
+
+  /**
+   * Sets the last access time and last modified time of the GzFile.
+   * 
+   * @return bool
+   */
+  set_times(atime: int, mtime: int) {
+    return self._file.set_times(atime, mtime)
+  }
+
+  /**
+   * Sets the position of a GzFile reader or writer in a GzFile. 
+   * 
+   * The position must be within the range of the GzFile size. The 
+   * `seek_type` argument must be on of [[io.SEEK_SET]], 
+   * [[io.SEEK_CUR]] or [[io.SEEK_END]].
+   * 
+   * @returns bool
+   */
+  seek(position: int, seek_type: int) {
+    return self._file.seek(position, seek_type)
+  }
+
+  /**
+   * Returns the current position of the reader/writer in the GzFile.
+   * 
+   * @return number
+   */
+  tell() {
+    return self._file.tell()
+  }
+
+  /**
+   * Returns the mode in which the current GzFile was opened.
+   * 
+   * @return string
+   */
+  mode() {
+    return self._file.mode()
+  }
+
+  /**
+   * Returns the name of the file pointed to by GzFile.
+   * 
+   * @returns string
+   */
+  name() {
+    return self._file.name()
   }
 }

@@ -136,7 +136,7 @@ def _octdec(v) {
  */
 class Tar {
 
-  var file
+  var _file
   var _comp_type = COMPRESS_AUTO
   var _comp_level = 9
   var _handle
@@ -155,17 +155,26 @@ class Tar {
    * @throws {TarIllegalCompressionError}
    */
   set_compression(level: ?int, type: ?int) {
-    if !level level = 9
-    if !type type = COMPRESS_AUTO
+    if !level {
+      level = 9
+    }
+    if !type {
+      type = COMPRESS_AUTO
+    }
 
     self._compression_check(type)
-    if level < -1 or level >  9
+    if level < -1 or level >  9 {
       raise TarIllegalCompressionError('compression level should be between -1 and 9')
+    }
+
     self._comp_level = level
     self._comp_type = type
 
-    if level == 0 self._comp_type = COMPRESS_NONE
-    if type == COMPRESS_NONE self._comp_level = 0
+    if level == COMPRESS_NONE {
+      self._comp_type = COMPRESS_NONE
+    } else if type == COMPRESS_NONE {
+      self._comp_level = COMPRESS_NONE
+    }
   }
 
   /**
@@ -178,17 +187,21 @@ class Tar {
   open(file: string) {
     self._file = file
 
-    if self._comp_type == COMPRESS_AUTO
+    if self._comp_type == COMPRESS_AUTO {
       self.set_compression(self._comp_level, self.file_type(file))
+    }
 
-    if self._comp_type == COMPRESS_GZIP
-      self._handle = zlib.gzopen(self._file, 'rb')
-    else if self._comp_type == COMPRESS_BZIP
+    if self._comp_type == COMPRESS_GZIP {
+      self._handle = gzip.GzFile(self._file, 'rb')
+    } else if self._comp_type == COMPRESS_BZIP {
       raise TarIllegalCompressionError('bzip2 is not supported')
-    else self._handle = file(self._file, 'rb')
+    } else {
+      self._handle = file(self._file, 'rb')
+    }
 
-    if !self._handle
+    if !self._handle {
       raise TarIOError('could not open file "${self._file}" for reading')
+    }
 
     self._closed = false
   }
@@ -204,8 +217,9 @@ class Tar {
    * @return {list[dict]}
    */
   contents() {
-    if self._closed or !self._file
+    if self._closed or !self._file {
       raise TarIOError('cannot read from a closed archive')
+    }
 
     var result = [], read
 
@@ -269,6 +283,8 @@ class Tar {
         header.filename == self._strip(header.filename, is_dir, strip)
       }
 
+      header.filename = header.filename.trim('\0')
+
       # skip unwanted files
       if header.filename.length() == 0 continue
       if exclude and header.filename.match(exclude) continue
@@ -276,13 +292,16 @@ class Tar {
 
       # create output directory
       var output = os.join_paths(outdir, header.filename)
-      var directory = is_dir ? output : os.dir_name(output)
-      if !os.dir_exists(directory)
+      var directory = (is_dir ? output : os.dir_name(output)).rtrim('/')
+      if !os.dir_exists(directory) {
         os.create_dir(directory)
+      }
 
       # extract data
       if !is_dir {
+        echo output
         var fp = file(output, 'wb')
+        fp.open()
 
         var size = header.size // 512
         iter var i = 0; i < size; i++ {
@@ -293,11 +312,13 @@ class Tar {
           fp.puts(self._read_bytes(512)[,rem])
         }
 
-        # set times
-        fp.chmod(header.perm)
-        fp.set_times(-1, header.mtime)
-
         fp.close()
+
+        fp = file(output)
+
+        # set times
+        # fp.chmod(header.perm)
+        # fp.set_times(-1, header.mtime)
       } else {
         self._skip_bytes((header.size / 512).ceil() * 512)  # the size is usually 0 for directories
       }
@@ -449,7 +470,9 @@ class Tar {
    * @throws {TarIOError}
    */
   close() {
-    if self._closed return
+    if self._closed {
+      return
+    }
 
     if self._can_write {
       self._write_bytes(struct.pack('a512', ''))
@@ -457,11 +480,11 @@ class Tar {
     }
 
     if self._file {
-      if self._comp_type == COMPRESS_GZIP
-        self._handle.close()
-      else if self._comp_type == COMPRESS_BZIP
+      if self._comp_type == COMPRESS_BZIP {
         raise TarIllegalCompressionError('bzip2 is not supported')
-      else self._handle.close()
+      } else {
+        self._handle.close()
+      }
 
       self._file = nil
       self._handle = nil
@@ -483,13 +506,16 @@ class Tar {
   get_archive() {
     self.close()
 
-    if self._comp_type == COMPRESS_AUTO
+    if self._comp_type == COMPRESS_AUTO {
       self._comp_type = COMPRESS_NONE
+    }
 
-    if self._comp_type == COMPRESS_GZIP
+    if self._comp_type == COMPRESS_GZIP {
       return zlib.compress(self._memory, self._comp_level, zlib.DEFAULT_STRATEGY, zlib.MAX_WBITS | 16)
-    else if self._comp_type == COMPRESS_BZIP
+    } else if self._comp_type == COMPRESS_BZIP {
       raise TarIllegalCompressionError('bzip2 is not supported')
+    }
+
     return self._memory
   }
 
@@ -503,8 +529,10 @@ class Tar {
    * @returns {bool}
    */
   save(path: string) {
-    if self._comp_type == COMPRESS_AUTO
+    if self._comp_type == COMPRESS_AUTO {
       self.set_compression(self._comp_level, self.file_type(path))
+    }
+
     return file(path, 'wb').write(self._memory)
   }
 
@@ -522,11 +550,17 @@ class Tar {
   add_directory(directory: string, file_blacklist: ?list, ext_blacklist: ?list) {
     directory = directory.replace('/\\\\/', '/')
 
-    if !os.dir_exists(directory)
+    if !os.dir_exists(directory) {
       raise TarIOError('directory ${directory} not found')
+    }
 
-    if !file_blacklist file_blacklist = []
-    if !ext_blacklist ext_blacklist = []
+    if !file_blacklist {
+      file_blacklist = []
+    }
+
+    if !ext_blacklist {
+      ext_blacklist = []
+    }
 
 		self._add_files(directory, '', file_blacklist, ext_blacklist)
 	}
@@ -557,8 +591,9 @@ class Tar {
           }
 
           # check file blacklist here...
-          if file_blacklist.contains(npath)
+          if file_blacklist.contains(npath) {
             return
+          }
 
           if os.is_dir(npath) {
             self._add_files(gpath, source, file_blacklist, ext_blacklist)
@@ -571,8 +606,9 @@ class Tar {
 	}
 
   _compression_check(type) {
-    if type == COMPRESS_BZIP
+    if type == COMPRESS_BZIP {
       raise TarIllegalCompressionError('bzip2 is not supported')
+    }
   }
 
   /**
@@ -590,29 +626,39 @@ class Tar {
 
     if ff.exists() {
       var stat = ff.stats()
+
       if stat.is_readable and stat.size > 5 {
         ff.open()
         var magic = ff.gets(5)
         ff.close()
 
-        if magic.to_string().starts_with('\x42\x5a') return COMPRESS_BZIP
-        if magic.to_string().starts_with('\x1f\x86') return COMPRESS_GZIP
+        if magic.to_string().starts_with('\x42\x5a') {
+          return COMPRESS_BZIP
+        }
+        if magic.to_string().starts_with('\x1f\x86') {
+          return COMPRESS_GZIP
+        }
       }
     }
 
     # else rely on filename
-    if f.ends_with('.gz') or f.ends_with('.tgz') return COMPRESS_GZIP
-    else if f.ends_with('.bz2') or f.ends_with('.tbz') return COMPRESS_BZIP
+    if f.ends_with('.gz') or f.ends_with('.tgz') {
+      return COMPRESS_GZIP
+    } else if f.ends_with('.bz2') or f.ends_with('.tbz') {
+      return COMPRESS_BZIP
+    }
 
     return COMPRESS_NONE
   }
 
   _read_bytes(length) {
-    if self._comp_type == COMPRESS_GZIP
+    if self._comp_type == COMPRESS_GZIP {
       return self._handle.read(length)
-    else if self._comp_type == COMPRESS_BZIP
+    } else if self._comp_type == COMPRESS_BZIP {
       raise TarIllegalCompressionError('bzip2 is not supported')
-    else return self._handle.gets(length)
+    } else {
+      return self._handle.gets(length)
+    }
   }
 
   _write_bytes(data) {
@@ -620,42 +666,53 @@ class Tar {
     if !self._file {
       self._memory += data
       written = data.length()
-    } else if self._comp_type == COMPRESS_GZIP
+    } else if self._comp_type == COMPRESS_GZIP {
       written = self._handle.read(length)
-    else if self._comp_type == COMPRESS_BZIP
+    } else if self._comp_type == COMPRESS_BZIP {
       raise TarIllegalCompressionError('bzip2 is not supported')
-    else written = self._handle.gets(length)
+    } else {
+      written = self._handle.gets(length)
+    }
 
-    if !written raise TarIOError('failed to write to archive stream')
+    if !written {
+      raise TarIOError('failed to write to archive stream')
+    }
+
     return written
   }
 
   _skip_bytes(bytes) {
-    if self._comp_type == COMPRESS_GZIP
-      self._handle.seek(bytes, io.SEEK_CUR)
-    else if self._comp_type == COMPRESS_BZIP
+    if self._comp_type == COMPRESS_BZIP {
       raise TarIllegalCompressionError('bzip2 is not supported')
-    else self._handle.seek(bytes, io.SEEK_CUR)
+    } else {
+      self._handle.seek(bytes, io.SEEK_CUR)
+    }
   }
 
   _parse_header(block) {
-    if !block or block.length() != 512
+    if !block or block.length() != 512 {
       raise TarCorruptedError('unexpected length of header')
+    }
 
-    block = block.to_string().ascii()
-    if !block.trim() return false
+    block = block.to_string()
+    if !block.trim() {
+      return false
+    }
 
     var chks = 0
     iter var i = 0; i < 148; i++ {
-      chks += block[i]ord()
+      chks += block[i].ord()
     }
+
     chks += 256
     iter var i = 156; i < 512; i++ {
       chks += block[i].ord()
     }
     
     var header = struct.unpack(_header_unpack, block)
-    if !header raise TarCorruptedError('failed to parse header')
+    if !header {
+      raise TarCorruptedError('failed to parse header')
+    }
     
     var result = {
       checksum: _octdec(header.checksum.trim())
@@ -716,10 +773,12 @@ class Tar {
 
   _header_from_path(path, _as) {
     var fp = file(path)
-    if !fp.exists()
+    if !fp.exists() {
       raise Error('file "${path}" does not exist')
+    }
 
     var stat = fp.stats()
+
     return {
       filename: _as ? _as : fp.path(),
       perm: stat.mode or 0c664,
@@ -755,6 +814,7 @@ class Tar {
       if file.length() > 100 or dir.length() > 155 {
         # we're still too large. Let's use GNU longlink
         self._write_raw_file_header('././@LongLink', 0, 0, 0, name.length(), 0, 'L')
+
         iter var i = 0; i < name.length(); i += 512 {
           self._write_bytes(struct.pack('a512', name[i,i+512]))
         }
@@ -780,6 +840,7 @@ class Tar {
     iter var i = 0; i < 148; i++ {
       chks += first_data[i]
     }
+
     chks += 256
     iter var i = 156; i < 512; i++ {
       chks += last_data[i - 156]
@@ -806,19 +867,26 @@ class Tar {
  * @param {string} destination the destination of the compressed TAR ball.
  */
 def compress(path: string, destination: string) {
-  if !destination
+  if !destination {
     destination = os.base_name(path) + '.tar.gz'
+  }
 
   var tar = Tar()
   var is_dir = os.dir_exists(path)
   var is_file = file(path).exists()
 
-  if !is_dir and !is_file
+  if !is_dir and !is_file {
     raise TarIOError('cannot find path "${path}"')
+  }
 
   tar.create()
-  if is_dir tar.add_directory(path)
-  else tar.add_file(path)
+
+  if is_dir {
+    tar.add_directory(path)
+  } else {
+    tar.add_file(path)
+  }
+
   tar.save(destination)
 }
 
@@ -831,8 +899,10 @@ def compress(path: string, destination: string) {
  * @returns {list} list of extracted items
  */
 def extract(file: string, destination: string) {
-  if !destination
+  if !destination {
     destination = '.'.join(file.split('.')[,-1])
+  }
+
   var tar = Tar()
   tar.open(file)
   return tar.extract(destination)

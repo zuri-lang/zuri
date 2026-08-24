@@ -1,9 +1,11 @@
 Unhandled ValueError: bottomed out
-  --> @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:8
+  --> @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:3
 
-  6 | }
-  7 | 
-> 8 | recurse(30)
+  1 | def recurse(n) {
+  2 |   if n <= 0 {
+> 3 |     raise ValueError("bottomed out")
+  4 |   }
+  5 |   recurse(n - 1)
 
 Stack trace (most recent call last):
   at recurse() @@ROOT/tests/deep-recursion-stacktrace-truncation.zu:3

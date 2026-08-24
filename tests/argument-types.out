@@ -1,9 +1,9 @@
 Unhandled TypeError: test() expects parameter 'num' (argument 1) to be a Number, got string
-  --> @@ROOT/tests/argument-types.zu:5
+  --> @@ROOT/tests/argument-types.zu:1
 
+> 1 | def test(num: Number) {
+  2 |   echo num
   3 | }
-  4 | 
-> 5 | test('hello')
 
 Stack trace (most recent call last):
   at test() @@ROOT/tests/argument-types.zu:1

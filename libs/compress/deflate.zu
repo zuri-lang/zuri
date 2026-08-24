@@ -54,7 +54,7 @@ class DeflateEncoder < GzipEncoder {
    * @param ?number level - Default 1
    */
   @new(level) {
-    self._ptr = _compress.gzip_new_encoder(true, level)
+    self._ptr = _compress.gzip_new_encoder(false, level)
   }
 }
 
@@ -89,6 +89,6 @@ class DeflateDecoder < GzipDecoder {
    * @param bytes source
    */
   @new(source) {
-    self._ptr = _compress.gzip_new_decoder(true, source)
+    self._ptr = _compress.gzip_new_decoder(false, source)
   }
 }

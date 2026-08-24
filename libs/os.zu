@@ -249,8 +249,8 @@ def set_env(name: string, value: string, overwrite: ?bool) {
  * @returns boolean
  */
 def create_dir(path: string, permission: ?int, recursive: ?bool) {
-  if !path.ends_with(path_separator)
-    path += path_separator
+  # if !path.ends_with(path_separator)
+  #   path += path_separator
 
   if platform == 'windows' {
     path = path.replace('@\/@', '\\')

@@ -254,19 +254,19 @@ fn createdir(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 1, ArgType::Number);
   enforce_arg_type!(ctx, 2, ArgType::Bool);
 
-  let path = ctx.args[0].as_str().to_string();
+  let path = ctx.args[0].as_str();
   let permission = ctx.args[1].as_number() as u32;
   let recursive = ctx.args[2].as_bool();
 
   // Per spec: "if the directory already exists, it returns false".
-  if Path::new(&path).exists() {
+  if Path::new(path).exists() {
     return Ok(Value::bool(false));
   }
 
   let result = if recursive {
-    fs::create_dir_all(&path)
+    fs::create_dir_all(path)
   } else {
-    fs::create_dir(&path)
+    fs::create_dir(path)
   };
 
   match result {
@@ -274,7 +274,7 @@ fn createdir(ctx: &mut ZuriContext) -> Result<Value, String> {
       #[cfg(unix)]
       {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(permission));
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(permission));
       }
       #[cfg(not(unix))]
       {

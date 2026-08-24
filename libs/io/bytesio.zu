@@ -26,7 +26,9 @@ class BytesIO {
    * @param string mode: The I/O open mode - Default is `r`
    */
   @new(source, mode) {
-    if !mode mode = 'r'
+    if !mode {
+      mode = 'r'
+    }
 
     if !is_bytes(source) {
       raise TypeError('BytesIO must take source from a bytearray')
@@ -68,6 +70,8 @@ class BytesIO {
    * You may need to call this method after a call to `read()` 
    * if the length isn't specified or `write()` if you wish to 
    * read or write again as the BytesIO will already be closed.
+   * 
+   * @returns bool
    */
   open() {
     return self._do_open()
@@ -143,7 +147,9 @@ class BytesIO {
       raise TypeError('string or bytes expected')
     }
 
-    if is_string(data) data = data.to_bytes()
+    if is_string(data) {
+      data = data.to_bytes()
+    }
 
     if !self._open {
       self._do_open()
@@ -163,7 +169,9 @@ class BytesIO {
       raise TypeError('string or bytes expected')
     }
 
-    if is_string(data) data = data.to_bytes()
+    if is_string(data) {
+      data = data.to_bytes()
+    }
 
     return self._write(data)
   }
@@ -321,7 +329,10 @@ class BytesIO {
    * @returns bool
    */
   truncate(length) {
-    if !length length = 0
+    if !length {
+      length = 0
+    }
+
     if !is_number(length) {
       raise TypeError('invalid I/O data truncation length')
     }
@@ -351,8 +362,14 @@ class BytesIO {
       raise TypeError('mtime must be a number')
     }
 
-    if atime != -1 self._atime = atime
-    if mtime != -1 self._mtime = mtime
+    if atime != -1 {
+      self._atime = atime
+    }
+
+    if mtime != -1 {
+      self._mtime = mtime
+    }
+
     return true
   }
 
@@ -370,7 +387,10 @@ class BytesIO {
       raise TypeError('invalid I/O seek position')
     }
 
-    if seek_type == nil seek_type = 0
+    if seek_type == nil {
+      seek_type = 0
+    }
+
     if !is_number(seek_type) or seek_type < 0 or seek_type > 2 {
       raise ValueError('invalid seek type')
     }
@@ -410,11 +430,15 @@ class BytesIO {
   }
 
   _can_read() {
-    return self._open and (self._mode.contains('r') or self._mode.contains('+') or self._mode.contains('a'))
+    return self._open and (self._mode.contains('r') 
+      or self._mode.contains('+') 
+      or self._mode.contains('a'))
   }
 
   _can_write() {
-    return self._open and (self._mode.contains('w') or self._mode.contains('+') or self._mode.contains('a'))
+    return self._open and (self._mode.contains('w') 
+      or self._mode.contains('+') 
+      or self._mode.contains('a'))
   }
 
   _do_open() {

@@ -35,11 +35,11 @@ impl DeflateEncoder {
   /// - 1: fastest
   /// - 9: best compression
   /// - 6: normal/default compression
-  pub fn new(level: i32, zlib_header: bool) -> Self {
+  pub fn new(level: i32, zlib_header: bool, window_bits: u8) -> Self {
     Self {
       // false = raw DEFLATE, without a zlib header.
       // 15    = 32 KiB DEFLATE window.
-      deflate: Deflate::new(level, zlib_header, 15),
+      deflate: Deflate::new(level, zlib_header, window_bits),
 
       input: Vec::new(),
 
@@ -307,9 +307,9 @@ pub struct DeflateDecoder {
 }
 
 impl DeflateDecoder {
-  pub fn new(data: Vec<u8>, zlib_header: bool) -> Self {
+  pub fn new(data: Vec<u8>, zlib_header: bool, window_bits: u8) -> Self {
     Self {
-      inflate: Inflate::new(zlib_header, 15),
+      inflate: Inflate::new(zlib_header, window_bits),
 
       input: data,
       input_pos: 0,
