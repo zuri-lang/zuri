@@ -49,6 +49,8 @@ const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET 
 /// Byte offset of `VM::method_table_generation`: see that field's own
 /// docs and `emit_self_invoke`'s use of it.
 const METHOD_TABLE_GENERATION_OFFSET: i32 = vm::VM_METHOD_TABLE_GENERATION_OFFSET as i32;
+/// Byte offset of `VM::interned_ascii`: see that field's own docs.
+const INTERNED_ASCII_OFFSET: i32 = vm::VM_INTERNED_ASCII_OFFSET as i32;
 /// Byte offset (from a `*mut VM`) of the frame stack's own data
 /// pointer; `VM_FRAMES_OFFSET + FRAMESTACK_PTR_OFFSET`, combined once
 /// here so every call site just uses the finished number. See
@@ -2942,6 +2944,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     num_args: u8,
   ) -> Option<Vec<(usize, Instr)>> {
     if callee.variadic || callee.arity != num_args || !callee.upvalues.is_empty() {
+      if crate::jit::log_enabled() {
+        eprintln!("[jit] inline '{}' rejected: variadic/arity/upvalues (arity={}, num_args={}, upval={})", callee.name, callee.arity, num_args, callee.upvalues.len());
+      }
       return None;
     }
     // The callee's registers are addressed as caller registers
@@ -2949,10 +2954,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // never materializes them, but the argument mapping below still has
     // to stay inside a `u8`.
     if (func as usize) + 1 + (callee.num_registers as usize) > u8::MAX as usize {
+      if crate::jit::log_enabled() {
+        eprintln!("[jit] inline '{}' rejected: reg limit", callee.name);
+      }
       return None;
     }
     let code = &callee.chunk.code;
     if code.len() > Self::MAX_INLINE_OPS {
+      if crate::jit::log_enabled() {
+        eprintln!("[jit] inline '{}' rejected: code len {}", callee.name, code.len());
+      }
       return None;
     }
 
@@ -2961,6 +2972,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // A parameter is numeric exactly when the caller already proved
       // the argument it is passed is.
       if !self.proven_numeric(ip, func + 1 + i) {
+        if crate::jit::log_enabled() {
+          eprintln!("[jit] inline '{}' rejected: arg {} (reg {}) not proven numeric at ip {}", callee.name, i, func + 1 + i, ip);
+        }
         return None;
       }
       *numeric.get_mut(i as usize)? = true;
@@ -3077,10 +3091,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             return None;
           }
         },
-        // Everything else; jumps, calls, field/index access, anything
-        // that can allocate or raise; disqualifies the whole callee.
-        _ => return None,
+        _ => {
+          if crate::jit::log_enabled() {
+            eprintln!("[jit] inline '{}' rejected: unsupported op at {} {:?}", callee.name, i, instr);
+          }
+          return None;
+        },
       }
+    }
+    if crate::jit::log_enabled() {
+      eprintln!("[jit] inline '{}' rejected: no Return found", callee.name);
     }
     None
   }
@@ -5534,6 +5554,91 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  fn emit_str_add(
+    &mut self,
+    _ip: usize,
+    dst: u8,
+    a: u8,
+    b: u8,
+  ) {
+    let va = self.load_reg(a);
+    let vb = self.load_reg(b);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    if dst == a {
+      let is_obj_a = self.is_obj(va);
+      let is_obj_b = self.is_obj(vb);
+      let both_obj = self.fb.ins().band(is_obj_a, is_obj_b);
+
+      let check_tags_block = self.fb.create_block();
+      self.fb.ins().brif(both_obj, check_tags_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(check_tags_block);
+      let ptr_a = self.obj_ptr(va);
+      let ptr_b = self.obj_ptr(vb);
+      let tag_a = self.obj_tag(ptr_a);
+      let tag_b = self.obj_tag(ptr_b);
+      let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+      let is_str_a = self.fb.ins().icmp(IntCC::Equal, tag_a, tag_str);
+      let is_str_b = self.fb.ins().icmp(IntCC::Equal, tag_b, tag_str);
+      let both_str = self.fb.ins().band(is_str_a, is_str_b);
+
+      let check_inplace_block = self.fb.create_block();
+      self.fb.ins().brif(both_str, check_inplace_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(check_inplace_block);
+      let gen_off = object::obj_to_gcbox_generation_offset();
+      let gen_byte = self.fb.ins().load(types::I8, flags, ptr_a, gen_off);
+      let zero_u8 = self.fb.ins().iconst(types::I8, 0); // Generation::Young is 0
+      let is_young_a = self.fb.ins().icmp(IntCC::Equal, gen_byte, zero_u8);
+
+      let young_inplace_block = self.fb.create_block();
+      self.fb.ins().brif(is_young_a, young_inplace_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(young_inplace_block);
+      let len_a = self.fb.ins().load(types::I64, flags, ptr_a, object::obj_str_len_offset());
+      let cap_a = self.fb.ins().load(types::I64, flags, ptr_a, object::obj_str_cap_offset());
+      let len_b = self.fb.ins().load(types::I64, flags, ptr_b, object::obj_str_len_offset());
+      let total_len = self.fb.ins().iadd(len_a, len_b);
+      let can_fit = self.fb.ins().icmp(IntCC::UnsignedLessThanOrEqual, total_len, cap_a);
+
+      let append_1_block = self.fb.create_block();
+      self.fb.ins().brif(can_fit, append_1_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(append_1_block);
+      let data_a = self.fb.ins().load(types::I64, flags, ptr_a, object::obj_str_ptr_offset());
+      let data_b = self.fb.ins().load(types::I64, flags, ptr_b, object::obj_str_ptr_offset());
+      let dst_addr = self.fb.ins().iadd(data_a, len_a);
+      let one = self.i64c(1);
+      let is_one_char = self.fb.ins().icmp(IntCC::Equal, len_b, one);
+      let single_byte_block = self.fb.create_block();
+      self.fb.ins().brif(is_one_char, single_byte_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(single_byte_block);
+      let b_byte = self.fb.ins().load(types::I8, flags, data_b, 0);
+      self.fb.ins().store(flags, b_byte, dst_addr, 0);
+      self.fb.ins().store(flags, total_len, ptr_a, object::obj_str_len_offset());
+      self.store_reg(dst, va);
+      self.fb.ins().jump(done_block, &[]);
+    } else {
+      self.fb.ins().jump(slow_block, &[]);
+    }
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let a_i = self.idx(a);
+    let b_i = self.idx(b);
+    self.call_checked("zuri_jit_str_add", &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
   fn emit_list_get_index(
     &mut self,
     ip: usize,
@@ -5624,13 +5729,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       let f = self.to_f64(idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      let check_str_block = self.fb.create_block();
       if idx_proven_int {
         // See the `proven_list` arm above; the index half of the
         // guard is a settled fact, only `is_list` still needs checking.
         self
           .fb
           .ins()
-          .brif(is_list, resolve_block, &[], slow_block, &[]);
+          .brif(is_list, resolve_block, &[], check_str_block, &[]);
       } else {
         let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
         let is_int = self.fb.ins().fcmp(
@@ -5642,8 +5748,51 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self
           .fb
           .ins()
-          .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+          .brif(list_and_int, resolve_block, &[], check_str_block, &[]);
       }
+
+      self.fb.switch_to_block(check_str_block);
+      let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+      let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
+      let str_resolve_block = self.fb.create_block();
+      if idx_proven_int {
+        self.fb.ins().brif(is_str, str_resolve_block, &[], slow_block, &[]);
+      } else {
+        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+        let is_int = self.fb.ins().fcmp(
+          cranelift_codegen::ir::condcodes::FloatCC::Equal,
+          f,
+          roundtrip,
+        );
+        let str_and_int = self.fb.ins().band(is_str, is_int);
+        self.fb.ins().brif(str_and_int, str_resolve_block, &[], slow_block, &[]);
+      }
+
+      self.fb.switch_to_block(str_resolve_block);
+      let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+      let str_data_ptr = self.fb.ins().load(types::I64, flags, ptr, object::obj_str_ptr_offset());
+      let str_len = self.fb.ins().load(types::I64, flags, ptr, object::obj_str_len_offset());
+      let str_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, str_len);
+      let str_fast_block = self.fb.create_block();
+      self.fb.ins().brif(str_in_bounds, str_fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(str_fast_block);
+      let byte_addr = self.fb.ins().iadd(str_data_ptr, as_int);
+      let byte_val8 = self.fb.ins().load(types::I8, flags, byte_addr, 0);
+      let byte_val64 = self.fb.ins().uextend(types::I64, byte_val8);
+      let c128 = self.i64c(128);
+      let is_ascii = self.fb.ins().icmp(IntCC::UnsignedLessThan, byte_val64, c128);
+      let ascii_load_block = self.fb.create_block();
+      self.fb.ins().brif(is_ascii, ascii_load_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(ascii_load_block);
+      let interned_offset = self.fb.ins().imul_imm_s(byte_val64, 8);
+      let vm_base = self.vm_param;
+      let interned_table_addr = self.fb.ins().iadd_imm_s(vm_base, INTERNED_ASCII_OFFSET as i64);
+      let elem_addr = self.fb.ins().iadd(interned_table_addr, interned_offset);
+      let char_val = self.fb.ins().load(types::I64, flags, elem_addr, 0);
+      self.store_reg(dst, char_val);
+      self.fb.ins().jump(done_block, &[]);
       (ptr, as_int)
     };
 
@@ -6572,12 +6721,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
         } else if self.both_proven_string(ip, a, b) {
-          let base = self.base_param;
-          let dst_i = self.idx(dst);
-          let a_i = self.idx(a);
-          let b_i = self.idx(b);
-          self.call_checked("zuri_jit_str_add", &[self.vm_param, base, dst_i, a_i, b_i]);
-          self.resync_dst_from_memory(dst);
+          self.emit_str_add(ip, dst, a, b);
         } else {
           self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| {
             fc.fb.ins().fadd(fa, fb)
@@ -6664,46 +6808,48 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::Mod { dst, a, b } => {
+        let va = self.load_reg(a);
+        let vb = self.load_reg(b);
+        let fa = self.to_f64(va);
+        let fb_ = self.to_f64(vb);
+        let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
+        let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+        let zero = self.i64c(0);
+        let is_pos_denom = self.fb.ins().icmp(IntCC::SignedGreaterThan, ib, zero);
+
+        let rem_block = self.fb.create_block();
+        let slow_block = self.fb.create_block();
+        let done_block = self.fb.create_block();
+
         if self.both_proven_int(ip, a, b) {
-          let va = self.load_reg(a);
-          let vb = self.load_reg(b);
-          let fa = self.to_f64(va);
-          let fb_ = self.to_f64(vb);
-          let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
-          let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
-          let zero = self.i64c(0);
-          let is_pos_denom = self.fb.ins().icmp(IntCC::SignedGreaterThan, ib, zero);
-          let rem_block = self.fb.create_block();
-          let slow_block = self.fb.create_block();
-          let done_block = self.fb.create_block();
           self.fb.ins().brif(is_pos_denom, rem_block, &[], slow_block, &[]);
-
-          self.fb.switch_to_block(rem_block);
-          let rem = self.fb.ins().srem(ia, ib);
-          let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
-          let rem_adj = self.fb.ins().iadd(rem, ib);
-          let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
-          let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
-          let res_val = self.from_f64(res_f);
-          self.store_reg(dst, res_val);
-          self.fb.ins().jump(done_block, &[]);
-
-          self.fb.switch_to_block(slow_block);
-          let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
-          let fallback_val = self.from_f64(fallback);
-          self.store_reg(dst, fallback_val);
-          self.fb.ins().jump(done_block, &[]);
-
-          self.fb.switch_to_block(done_block);
-        } else if self.both_proven_numeric(ip, a, b) {
-          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| {
-            fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb)
-          });
         } else {
-          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_mod", |fc, fa, fb| {
-            fc.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb)
-          });
+          let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
+          let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
+          let is_int_a = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
+          let is_int_b = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
+          let both_int = self.fb.ins().band(is_int_a, is_int_b);
+          let can_fast = self.fb.ins().band(both_int, is_pos_denom);
+          self.fb.ins().brif(can_fast, rem_block, &[], slow_block, &[]);
         }
+
+        self.fb.switch_to_block(rem_block);
+        let rem = self.fb.ins().srem(ia, ib);
+        let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
+        let rem_adj = self.fb.ins().iadd(rem, ib);
+        let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
+        let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
+        let res_val = self.from_f64(res_f);
+        self.store_reg(dst, res_val);
+        self.fb.ins().jump(done_block, &[]);
+
+        self.fb.switch_to_block(slow_block);
+        let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
+        let fallback_val = self.from_f64(fallback);
+        self.store_reg(dst, fallback_val);
+        self.fb.ins().jump(done_block, &[]);
+
+        self.fb.switch_to_block(done_block);
         false
       },
 

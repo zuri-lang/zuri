@@ -1401,14 +1401,15 @@ pub fn obj_to_gcbox_remembered_offset() -> i32 {
 /// would allocate exact-fit, making `len == capacity`, which would
 /// make the two indistinguishable by value when scanning raw bytes
 /// below.
-fn obj_str_data_offsets() -> (i32, i32) {
-  static OFFSETS: std::sync::OnceLock<(i32, i32)> = std::sync::OnceLock::new();
+fn obj_str_data_offsets() -> (i32, i32, i32) {
+  static OFFSETS: std::sync::OnceLock<(i32, i32, i32)> = std::sync::OnceLock::new();
   *OFFSETS.get_or_init(|| {
     let mut probe_string = String::with_capacity(64);
     probe_string.push_str("zuri-string-offset-probe");
     let want_ptr = probe_string.as_ptr() as usize;
     let want_len = probe_string.len();
-    debug_assert_ne!(want_len, probe_string.capacity());
+    let want_cap = probe_string.capacity();
+    debug_assert_ne!(want_len, want_cap);
 
     let probe = Obj::Str(probe_string);
     let obj_bytes = unsafe {
@@ -1421,17 +1422,21 @@ fn obj_str_data_offsets() -> (i32, i32) {
     let word = std::mem::size_of::<usize>();
     let mut ptr_off = None;
     let mut len_off = None;
+    let mut cap_off = None;
     for i in (0..=obj_bytes.len() - word).step_by(word) {
       let value = usize::from_ne_bytes(obj_bytes[i..i + word].try_into().unwrap());
       if value == want_ptr {
         ptr_off = Some(i as i32);
       } else if value == want_len {
         len_off = Some(i as i32);
+      } else if value == want_cap {
+        cap_off = Some(i as i32);
       }
     }
     (
       ptr_off.expect("String's data pointer not found anywhere in Obj::Str's raw bytes"),
       len_off.expect("String's byte length not found anywhere in Obj::Str's raw bytes"),
+      cap_off.expect("String's capacity not found anywhere in Obj::Str's raw bytes"),
     )
   })
 }
@@ -1446,6 +1451,11 @@ pub fn obj_str_ptr_offset() -> i32 {
 /// count): see `obj_str_data_offsets`'s own docs.
 pub fn obj_str_len_offset() -> i32 {
   obj_str_data_offsets().1
+}
+
+/// Byte offset from a proven-`Obj::Str` pointer to the string's capacity.
+pub fn obj_str_cap_offset() -> i32 {
+  obj_str_data_offsets().2
 }
 
 #[cfg(test)]

@@ -924,6 +924,10 @@ fn transfer_string(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSe
     // pass has no business claiming as a string.
     Instr::Add { dst, a, b } => out.set(dst, in_set.get(a) && in_set.get(b)),
 
+    Instr::GetIndex { dst, obj, .. } => {
+      out.set(dst, in_set.get(obj));
+    },
+
     // A parameter checked as EXACTLY `string` (not a union) is provably
     // a string on every path past this instruction; same reasoning
     // `transfer_list`'s own `CheckParamType` arm uses.
@@ -970,7 +974,7 @@ pub fn analyze_string(proto: &ObjFunction, preds: &[Vec<usize>]) -> StringFacts 
 
   let has_string_source = code.iter().any(|i| match i {
     Instr::LoadConst { const_idx, .. } => proto.chunk.constants[*const_idx as usize].is_string(),
-    Instr::Concat { .. } => true,
+    Instr::Concat { .. } | Instr::GetIndex { .. } | Instr::Add { .. } => true,
     _ => false,
   });
   if !has_string_source {

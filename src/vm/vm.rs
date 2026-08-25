@@ -1824,6 +1824,24 @@ impl VM {
           continue;
         }
         let callee_proto = resolved.as_closure().function.as_func();
+        for (cip, cinstr) in callee_proto.chunk.code.iter().enumerate() {
+          let name_const = match cinstr {
+            crate::vm::chunk::Instr::GetGlobal { name_const, .. }
+            | crate::vm::chunk::Instr::SetGlobal { name_const, .. }
+            | crate::vm::chunk::Instr::AssignGlobal { name_const, .. } => *name_const,
+            _ => continue,
+          };
+          if let Some(name_val) = callee_proto.chunk.constants.get(name_const as usize)
+            && name_val.is_string()
+          {
+            let name = name_val.as_str();
+            if let Some((is_root, slot)) = self.resolve_global(callee_proto.globals_module, name) {
+              if is_root {
+                callee_proto.jit.global_slot_cache[cip].set(slot as i64);
+              }
+            }
+          }
+        }
         if std::ptr::eq(callee_proto, proto_ptr) {
           targets.insert(ip, CallTarget::SelfRecursive);
           break;
