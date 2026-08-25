@@ -275,6 +275,17 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(n))
 }
 
+thread_local! {
+  pub(crate) static STDOUT_BUFFER: std::cell::RefCell<std::io::BufWriter<std::io::Stdout>> =
+    std::cell::RefCell::new(std::io::BufWriter::with_capacity(65536, std::io::stdout()));
+}
+
+pub fn flush_stdout() {
+  STDOUT_BUFFER.with(|buf| {
+    let _ = buf.borrow_mut().flush();
+  });
+}
+
 /// Unlike `echo` (which always appends a newline and only ever prints
 /// one value), `print()` writes every argument back-to-back with no
 /// separator and no trailing newline; and, critically, writes a
@@ -284,31 +295,31 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// time, as `benchmarks/mandlebrot.zu` and `mandlebrot-fast.zu` both
 /// do) directly to stdout.
 fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
-  let mut stdout = std::io::stdout();
+  STDOUT_BUFFER.with(|buf_cell| -> Result<Value, String> {
+    let mut stdout = buf_cell.borrow_mut();
 
-  for v in ctx.args.iter() {
-    if v.is_bytes() {
-      let raw = v.as_bytes();
-      stdout.write_all(&raw).map_err(|e| e.to_string())?;
-    } else if v.is_string() {
-      let s = v.as_str();
-      stdout.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
-    } else if v.is_list() {
-      let items = v.as_list();
-      let is_byte_list = !items.is_empty() && items.iter().all(|x| x.is_number());
-      if is_byte_list {
-        let raw: Vec<u8> = items.iter().map(|x| x.as_number() as u8).collect();
+    for v in ctx.args.iter() {
+      if v.is_bytes() {
+        let raw = v.as_bytes();
         stdout.write_all(&raw).map_err(|e| e.to_string())?;
+      } else if v.is_string() {
+        let s = v.as_str();
+        stdout.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
+      } else if v.is_list() {
+        let items = v.as_list();
+        let is_byte_list = !items.is_empty() && items.iter().all(|x| x.is_number());
+        if is_byte_list {
+          let raw: Vec<u8> = items.iter().map(|x| x.as_number() as u8).collect();
+          stdout.write_all(&raw).map_err(|e| e.to_string())?;
+        } else {
+          write!(stdout, "{}", v).map_err(|e| e.to_string())?;
+        }
       } else {
         write!(stdout, "{}", v).map_err(|e| e.to_string())?;
       }
-    } else {
-      write!(stdout, "{}", v).map_err(|e| e.to_string())?;
     }
-  }
-
-  stdout.flush().map_err(|e| e.to_string())?;
-  Ok(Value::nil())
+    Ok(Value::nil())
+  })
 }
 
 thread_local! {

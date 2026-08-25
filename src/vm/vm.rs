@@ -1296,7 +1296,9 @@ impl VM {
       scalar_roots_mark: self.jit_scalar_roots.len(),
       compiled: false,
     });
-    self.run_until(0)?;
+    let res = self.run_until(0);
+    crate::vm::natives::flush_stdout();
+    res?;
     Ok(())
   }
 
