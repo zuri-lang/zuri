@@ -445,7 +445,10 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
 
     // See `IntFacts`'s own docs: sound at every magnitude, no overflow
     // check needed.
-    Instr::Add { dst, a, b } | Instr::Sub { dst, a, b } | Instr::Mul { dst, a, b } => {
+    Instr::Add { dst, a, b }
+    | Instr::Sub { dst, a, b }
+    | Instr::Mul { dst, a, b }
+    | Instr::Mod { dst, a, b } => {
       out.set(dst, in_set.get(a) && in_set.get(b));
     },
     Instr::AddImm { dst, a, imm_const }

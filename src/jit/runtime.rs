@@ -385,6 +385,36 @@ pub unsafe extern "C" fn zuri_jit_mul_slow(
   }
 }
 
+pub unsafe extern "C" fn zuri_jit_str_add(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  a: u64,
+  b: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let va = vm.get_reg(base as usize, a as u8);
+  let vb = vm.get_reg(base as usize, b as u8);
+  let sa = va.as_str();
+  let sb = vb.as_str();
+  if sa.is_empty() {
+    vm.set_reg(base as usize, dst as u8, vb);
+    return OK;
+  }
+  if sb.is_empty() {
+    vm.set_reg(base as usize, dst as u8, va);
+    return OK;
+  }
+  let total_len = sa.len() + sb.len();
+  let cap = if total_len <= 64 { 64 } else { total_len };
+  let mut s = String::with_capacity(cap);
+  s.push_str(sa);
+  s.push_str(sb);
+  let v = vm.heap.alloc_string(s);
+  vm.set_reg(base as usize, dst as u8, v);
+  OK
+}
+
 pub unsafe extern "C" fn zuri_jit_concat(
   vm_ptr: *mut VM,
   base: u64,
@@ -2735,6 +2765,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_gt_slow),
     spec5!(zuri_jit_ge_slow),
     spec5!(zuri_jit_add_slow),
+    spec5!(zuri_jit_str_add),
     spec5!(zuri_jit_mul_slow),
     spec5!(zuri_jit_concat),
     spec5!(zuri_jit_eq_slow),

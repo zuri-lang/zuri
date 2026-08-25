@@ -730,7 +730,7 @@ pub struct VM {
   /// `benchmarks/fasta.zu`'s runtime).
   ///
   /// Empty until the first ASCII character is indexed.
-  interned_ascii: Vec<Value>,
+  pub(crate) interned_ascii: [Value; 128],
   /// Every module loaded so far, keyed by canonical path (or
   /// `"builtin:NAME"`). Makes re-importing a no-op and is what breaks
   /// circular imports (see `vm::modules::load_from_candidate`). Also a GC
@@ -790,6 +790,7 @@ pub(crate) const VM_REGS_PTR_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs
 /// Byte offset of `VM::jit_ip`: see that field's own docs.
 pub(crate) const VM_JIT_IP_OFFSET: usize = std::mem::offset_of!(VM, jit_ip);
 /// Byte offset of `VM::global_slots_ptr_cache`: see that field's own docs.
+pub(crate) const VM_INTERNED_ASCII_OFFSET: usize = std::mem::offset_of!(VM, interned_ascii);
 pub(crate) const VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET: usize =
   std::mem::offset_of!(VM, global_slots_ptr_cache);
 /// Byte offset of `VM::method_table_generation`: see that field's own
@@ -837,7 +838,7 @@ type RunResult<T> = Result<T, Value>;
 
 impl VM {
   pub fn new(heap: Heap) -> Self {
-    VM {
+    let mut vm = VM {
       is_repl: false,
       registers: Vec::new(),
       regs_ptr_cache: Cell::new(std::ptr::null_mut()),
@@ -861,7 +862,7 @@ impl VM {
       jit_call_depth: Cell::new(0),
       deopt_reentrancy_depth: Cell::new(0),
       builtin_errors: FxHashMap::default(),
-      interned_ascii: Vec::new(),
+      interned_ascii: [Value::nil(); 128],
       global_slots: Vec::new(),
       global_names: FxHashMap::default(),
       modules: FxHashMap::default(),
@@ -875,7 +876,11 @@ impl VM {
       log_gc: *ZURI_LOG_GC,
       heap,
       method_table_generation: Cell::new(0),
+    };
+    for b in 0u8..128 {
+      vm.interned_ascii[b as usize] = vm.heap.alloc_old(Obj::Str(String::from(b as char)));
     }
+    vm
   }
 
   pub fn init(&mut self) {
@@ -3139,11 +3144,6 @@ impl VM {
   fn interned_char(&mut self, c: char) -> Value {
     if !c.is_ascii() {
       return self.heap.alloc_string(c.to_string());
-    }
-    if self.interned_ascii.is_empty() {
-      self.interned_ascii = (0u8..128)
-        .map(|b| self.heap.alloc_old(Obj::Str(String::from(b as char))))
-        .collect();
     }
     self.interned_ascii[c as usize]
   }

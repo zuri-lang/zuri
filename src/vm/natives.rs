@@ -290,6 +290,9 @@ fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     if v.is_bytes() {
       let raw = v.as_bytes();
       stdout.write_all(&raw).map_err(|e| e.to_string())?;
+    } else if v.is_string() {
+      let s = v.as_str();
+      stdout.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
     } else if v.is_list() {
       let items = v.as_list();
       let is_byte_list = !items.is_empty() && items.iter().all(|x| x.is_number());
