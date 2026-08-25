@@ -161,7 +161,7 @@ pub unsafe extern "C" fn zuri_jit_is_falsey(vm_ptr: *mut VM, base: u64, src: u64
 pub unsafe extern "C" fn zuri_jit_print(vm_ptr: *mut VM, base: u64, src: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
-  println!("{}", v);
+  crate::vm::natives::echo_value(v);
   OK
 }
 

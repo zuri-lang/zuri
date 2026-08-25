@@ -275,14 +275,34 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(n))
 }
 
-thread_local! {
-  pub(crate) static STDOUT_BUFFER: std::cell::RefCell<std::io::BufWriter<std::io::Stdout>> =
-    std::cell::RefCell::new(std::io::BufWriter::with_capacity(65536, std::io::stdout()));
+fn get_stdout_buffer_capacity() -> usize {
+  std::env::var("ZURI_STDOUT_BUFFER_SIZE")
+    .ok()
+    .and_then(|s| s.parse::<usize>().ok())
+    .unwrap_or(65536)
 }
 
+thread_local! {
+  pub(crate) static STDOUT_BUFFER: std::cell::RefCell<std::io::BufWriter<std::io::Stdout>> =
+    std::cell::RefCell::new(std::io::BufWriter::with_capacity(
+      get_stdout_buffer_capacity(),
+      std::io::stdout(),
+    ));
+}
+
+#[inline]
 pub fn flush_stdout() {
   STDOUT_BUFFER.with(|buf| {
     let _ = buf.borrow_mut().flush();
+  });
+}
+
+/// Emits `echo`'s value followed by a newline into the shared stdout buffer.
+#[inline]
+pub fn echo_value(v: Value) {
+  STDOUT_BUFFER.with(|buf_cell| {
+    let mut stdout = buf_cell.borrow_mut();
+    let _ = writeln!(stdout, "{}", v);
   });
 }
 

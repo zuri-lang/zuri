@@ -3649,7 +3649,7 @@ impl VM {
 
           Instr::Print { src } => {
             let v = self.get_reg(base, src);
-            println!("{}", v);
+            crate::vm::natives::echo_value(v);
           },
 
           Instr::CheckParamType { reg, check_idx } => {
