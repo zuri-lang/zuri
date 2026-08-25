@@ -636,6 +636,8 @@ struct FuncCompiler<'a, 'b> {
   /// One persistent Cranelift Variable per bytecode register, live
   /// for the whole compiled function.
   reg_vars: Vec<Variable>,
+  reg_f64: [Option<IrValue>; 256],
+  global_vars: FxHashMap<i64, Variable>,
   /// The bytecode position emit_instruction is currently translating.
   current_ip: usize,
   /// Which registers are live at every bytecode position.
@@ -650,6 +652,7 @@ struct FuncCompiler<'a, 'b> {
   /// general helper path in that case, identical to before this field
   /// existed.
   self_field_slots: FxHashMap<String, u16>,
+  self_numeric_fields: rustc_hash::FxHashSet<String>,
   /// `self_field_slots`' counterpart for a typed, non-`self` parameter
   /// register: see `jit::CompileFacts::param_field_slots`'s own docs.
   param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
@@ -795,7 +798,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let preds = typeflow::build_predecessors(proto);
-    let type_facts = typeflow::analyze(proto, &preds, None, None);
+    let type_facts = typeflow::analyze(proto, &preds, None, None, &facts.self_numeric_fields);
     let int_facts = typeflow::analyze_int(proto, &preds);
     let list_facts = typeflow::analyze_list(proto, &preds);
     let string_facts = typeflow::analyze_string(proto, &preds);
@@ -829,9 +832,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // placeholders here are never actually read before that, since
       // `run` always executes before any `emit_instruction` call.
       reg_vars: Vec::new(),
+      reg_f64: [None; 256],
+      global_vars: FxHashMap::default(),
       current_ip: 0,
       liveness,
       self_field_slots: facts.self_field_slots,
+      self_numeric_fields: facts.self_numeric_fields,
       param_field_slots: facts.param_field_slots,
       own_func_id,
       self_class_bits: facts.self_class_bits,
@@ -989,6 +995,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.def_var(self.reg_vars[r], v);
     }
 
+    let flags_init = cranelift_codegen::ir::MemFlagsData::trusted();
+    let slots_ptr_init = self.fb.ins().load(
+      types::I64,
+      flags_init,
+      self.vm_param,
+      GLOBAL_SLOTS_PTR_CACHE_OFFSET,
+    );
+    let mut unique_slots: rustc_hash::FxHashSet<i64> = rustc_hash::FxHashSet::default();
+    for slot_cell in &self.proto.jit.global_slot_cache {
+      let slot = slot_cell.get();
+      if slot >= 0 {
+        unique_slots.insert(slot);
+      }
+    }
+    for &slot in &unique_slots {
+      let var = self.fb.declare_var(types::I64);
+      let byte_off = (slot * 8) as i32;
+      let initial_val = self.fb.ins().load(types::I64, flags_init, slots_ptr_init, byte_off);
+      self.fb.def_var(var, initial_val);
+      self.global_vars.insert(slot, var);
+    }
+
     // If speculating on EITHER function parameters or a mid-function
     // value (`speculative_regs`: see `jit::typeflow::SpeculativeRegs`),
     // allocate a SECOND set of blocks now (before the entry dispatch,
@@ -1009,6 +1037,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           &self.preds,
           self.speculative_params,
           self.speculative_regs,
+          &self.self_numeric_fields,
         );
         Some((blocks, facts))
       } else {
@@ -1036,6 +1065,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Pass 1: the general body.
     for ip in 0..self.blocks.len() {
       self.fb.switch_to_block(self.blocks[ip]);
+      self.reg_f64.fill(None);
       self.guarded_instances.clear();
       let instr = self.proto.chunk.code[ip];
       let terminated = self.emit_instruction(ip, instr);
@@ -1053,6 +1083,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let code_len = self.blocks.len();
       for ip in 0..code_len {
         self.fb.switch_to_block(self.blocks[ip]);
+        self.reg_f64.fill(None);
         self.guarded_instances.clear();
         let instr = self.proto.chunk.code[ip];
         let terminated = self.emit_instruction(ip, instr);
@@ -1349,10 +1380,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.use_var(self.reg_vars[r as usize])
   }
 
+  fn load_reg_f64(&mut self, r: u8) -> IrValue {
+    if let Some(f) = self.reg_f64[r as usize] {
+      return f;
+    }
+    let v = self.load_reg(r);
+    let f = self.to_f64(v);
+    self.reg_f64[r as usize] = Some(f);
+    f
+  }
+
   fn store_reg(&mut self, r: u8, v: IrValue) {
     self.fb.def_var(self.reg_vars[r as usize], v);
+    self.reg_f64[r as usize] = None;
     self.scalar_lists.remove(&r);
     self.scalar_instances.remove(&r);
+  }
+
+  fn store_reg_f64(&mut self, r: u8, f: IrValue) {
+    let v = self.from_f64(f);
+    self.store_reg(r, v);
+    self.reg_f64[r as usize] = Some(f);
   }
 
   fn flush_live(&mut self, ip: usize) {
@@ -1361,6 +1409,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let v = self.fb.use_var(self.reg_vars[r as usize]);
       self.store_reg_mem(r, v);
     }
+    self.flush_globals();
   }
 
   fn reload_live(&mut self, ip: usize) {
@@ -1368,6 +1417,43 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     for r in live {
       let v = self.load_reg_mem(r);
       self.fb.def_var(self.reg_vars[r as usize], v);
+    }
+    self.reload_globals();
+  }
+
+  fn flush_globals(&mut self) {
+    if self.global_vars.is_empty() {
+      return;
+    }
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let slots_ptr = self.fb.ins().load(
+      types::I64,
+      flags,
+      self.vm_param,
+      GLOBAL_SLOTS_PTR_CACHE_OFFSET,
+    );
+    for (&slot, &var) in &self.global_vars {
+      let v = self.fb.use_var(var);
+      let byte_off = (slot * 8) as i32;
+      self.fb.ins().store(flags, v, slots_ptr, byte_off);
+    }
+  }
+
+  fn reload_globals(&mut self) {
+    if self.global_vars.is_empty() {
+      return;
+    }
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let slots_ptr = self.fb.ins().load(
+      types::I64,
+      flags,
+      self.vm_param,
+      GLOBAL_SLOTS_PTR_CACHE_OFFSET,
+    );
+    for (&slot, &var) in &self.global_vars {
+      let byte_off = (slot * 8) as i32;
+      let v = self.fb.ins().load(types::I64, flags, slots_ptr, byte_off);
+      self.fb.def_var(var, v);
     }
   }
 
@@ -4047,6 +4133,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let slot = self.proto.jit.global_slot_cache[ip].get();
     if slot >= 0 {
+      if let Some(&var) = self.global_vars.get(&slot) {
+        let v = self.fb.use_var(var);
+        if self.proven_numeric(ip, dst) {
+          let f = self.to_f64(v);
+          self.store_reg_f64(dst, f);
+        } else {
+          self.store_reg(dst, v);
+        }
+        return;
+      }
       let slots_ptr = self.fb.ins().load(
         types::I64,
         flags,
@@ -4055,7 +4151,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       );
       let byte_off = (slot * 8) as i32;
       let v = self.fb.ins().load(types::I64, flags, slots_ptr, byte_off);
-      self.store_reg(dst, v);
+      if self.proven_numeric(ip, dst) {
+        let f = self.to_f64(v);
+        self.store_reg_f64(dst, f);
+      } else {
+        self.store_reg(dst, v);
+      }
       return;
     }
 
@@ -4083,7 +4184,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let byte_off = self.fb.ins().imul_imm_s(cached, 8);
     let addr = self.fb.ins().iadd(slots_ptr, byte_off);
     let v = self.fb.ins().load(types::I64, flags, addr, 0);
-    self.store_reg(dst, v);
+    if self.proven_numeric(ip, dst) {
+      let f = self.to_f64(v);
+      self.store_reg_f64(dst, f);
+    } else {
+      self.store_reg(dst, v);
+    }
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(miss_block);
@@ -5838,8 +5944,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
       let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
       let str_resolve_block = self.fb.create_block();
+      let check_bytes_get_block = self.fb.create_block();
       if idx_proven_int {
-        self.fb.ins().brif(is_str, str_resolve_block, &[], slow_block, &[]);
+        self.fb.ins().brif(is_str, str_resolve_block, &[], check_bytes_get_block, &[]);
       } else {
         let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
         let is_int = self.fb.ins().fcmp(
@@ -5848,8 +5955,42 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           roundtrip,
         );
         let str_and_int = self.fb.ins().band(is_str, is_int);
-        self.fb.ins().brif(str_and_int, str_resolve_block, &[], slow_block, &[]);
+        self.fb.ins().brif(str_and_int, str_resolve_block, &[], check_bytes_get_block, &[]);
       }
+
+      self.fb.switch_to_block(check_bytes_get_block);
+      let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
+      let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
+      let bytes_resolve_block = self.fb.create_block();
+      if idx_proven_int {
+        self.fb.ins().brif(is_bytes, bytes_resolve_block, &[], slow_block, &[]);
+      } else {
+        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+        let is_int = self.fb.ins().fcmp(
+          cranelift_codegen::ir::condcodes::FloatCC::Equal,
+          f,
+          roundtrip,
+        );
+        let bytes_and_int = self.fb.ins().band(is_bytes, is_int);
+        self.fb.ins().brif(bytes_and_int, bytes_resolve_block, &[], slow_block, &[]);
+      }
+
+      self.fb.switch_to_block(bytes_resolve_block);
+      let flags_b = cranelift_codegen::ir::MemFlagsData::trusted();
+      let bytes_data_ptr = self.fb.ins().load(types::I64, flags_b, ptr, object::obj_bytes_ptr_offset());
+      let bytes_len = self.fb.ins().load(types::I64, flags_b, ptr, object::obj_bytes_len_offset());
+      let bytes_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, bytes_len);
+      let bytes_fast_block = self.fb.create_block();
+      self.fb.ins().brif(bytes_in_bounds, bytes_fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(bytes_fast_block);
+      let byte_elem_addr = self.fb.ins().iadd(bytes_data_ptr, as_int);
+      let b8 = self.fb.ins().load(types::I8, flags_b, byte_elem_addr, 0);
+      let b8_u64 = self.fb.ins().uextend(types::I64, b8);
+      let b_f = self.fb.ins().fcvt_from_uint(types::F64, b8_u64);
+      let b_val = self.from_f64(b_f);
+      self.store_reg(dst, b_val);
+      self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(str_resolve_block);
       let flags = cranelift_codegen::ir::MemFlagsData::trusted();
@@ -5999,11 +6140,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       let f = self.to_f64(idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      let check_bytes_set_block = self.fb.create_block();
       if idx_proven_int {
         self
           .fb
           .ins()
-          .brif(is_list, resolve_block, &[], slow_block, &[]);
+          .brif(is_list, resolve_block, &[], check_bytes_set_block, &[]);
       } else {
         let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
         let is_int = self.fb.ins().fcmp(
@@ -6015,8 +6157,41 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self
           .fb
           .ins()
-          .brif(list_and_int, resolve_block, &[], slow_block, &[]);
+          .brif(list_and_int, resolve_block, &[], check_bytes_set_block, &[]);
       }
+
+      self.fb.switch_to_block(check_bytes_set_block);
+      let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
+      let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
+      let bytes_resolve_block = self.fb.create_block();
+      if idx_proven_int {
+        self.fb.ins().brif(is_bytes, bytes_resolve_block, &[], slow_block, &[]);
+      } else {
+        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+        let is_int = self.fb.ins().fcmp(
+          cranelift_codegen::ir::condcodes::FloatCC::Equal,
+          f,
+          roundtrip,
+        );
+        let bytes_and_int = self.fb.ins().band(is_bytes, is_int);
+        self.fb.ins().brif(bytes_and_int, bytes_resolve_block, &[], slow_block, &[]);
+      }
+
+      self.fb.switch_to_block(bytes_resolve_block);
+      let flags_set = cranelift_codegen::ir::MemFlagsData::trusted();
+      let bytes_data_ptr = self.fb.ins().load(types::I64, flags_set, ptr, object::obj_bytes_ptr_offset());
+      let bytes_len = self.fb.ins().load(types::I64, flags_set, ptr, object::obj_bytes_len_offset());
+      let bytes_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, bytes_len);
+      let bytes_fast_block = self.fb.create_block();
+      self.fb.ins().brif(bytes_in_bounds, bytes_fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(bytes_fast_block);
+      let byte_elem_addr = self.fb.ins().iadd(bytes_data_ptr, as_int);
+      let f_src = self.to_f64(src_val);
+      let i_src = self.fb.ins().fcvt_to_sint_sat(types::I64, f_src);
+      let u8_src = self.fb.ins().ireduce(types::I8, i_src);
+      self.fb.ins().store(flags_set, u8_src, byte_elem_addr, 0);
+      self.fb.ins().jump(done_block, &[]);
       (ptr, as_int)
     };
 
@@ -6444,18 +6619,36 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// no register-`Variable` SSA merge at `done_block` to keep
   /// consistent between the two paths.
   fn emit_set_global(&mut self, ip: usize, src: u8, name_const: u16, slow_helper: &'static str) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let slot = self.proto.jit.global_slot_cache[ip].get();
+    if slot >= 0 {
+      if let Some(&var) = self.global_vars.get(&slot) {
+        let v = self.load_reg(src);
+        self.fb.def_var(var, v);
+        return;
+      }
+      let slots_ptr = self.fb.ins().load(
+        types::I64,
+        flags,
+        self.vm_param,
+        GLOBAL_SLOTS_PTR_CACHE_OFFSET,
+      );
+      let byte_off = (slot * 8) as i32;
+      let v = self.load_reg(src);
+      self.fb.ins().store(flags, v, slots_ptr, byte_off);
+      return;
+    }
+
     let cache_ptr = self.proto.jit.global_slot_cache.as_ptr() as i64;
     let cache_base = self.i64c(cache_ptr);
     let cached = self.fb.ins().load(
       types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
+      flags,
       cache_base,
       (ip as i32) * 8,
     );
     let neg1 = self.i64c(-1);
     let is_hit = self.fb.ins().icmp(IntCC::NotEqual, cached, neg1);
-
-    self.flush_live(ip);
 
     let hit_block = self.fb.create_block();
     let miss_block = self.fb.create_block();
@@ -6465,20 +6658,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(hit_block);
     let slots_ptr = self.fb.ins().load(
       types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
+      flags,
       self.vm_param,
       GLOBAL_SLOTS_PTR_CACHE_OFFSET,
     );
     let byte_off = self.fb.ins().imul_imm_s(cached, 8);
     let addr = self.fb.ins().iadd(slots_ptr, byte_off);
     let v = self.load_reg(src);
-    self
-      .fb
-      .ins()
-      .store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
+    self.fb.ins().store(flags, v, addr, 0);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(miss_block);
+    self.flush_live(ip);
     let base = self.base_param;
     let src_i = self.idx(src);
     let func_ptr = self.func_ptr_const();
@@ -6500,10 +6691,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(ok_block);
     self.refresh_regs();
+    self.reload_live(ip);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
-    self.reload_live(ip);
   }
 
   // The `GetField`/`SetField` inline fast path: see
@@ -6777,7 +6968,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     match instr {
       Instr::LoadConst { dst, const_idx } => {
         let v = self.bake_const(const_idx);
-        self.store_reg(dst, v);
+        let const_val = self.proto.chunk.constants[const_idx as usize];
+        if const_val.is_number() {
+          let f = self.to_f64(v);
+          self.store_reg_f64(dst, f);
+        } else {
+          self.store_reg(dst, v);
+        }
         false
       },
       Instr::LoadNil { dst } => {
@@ -6795,8 +6992,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::Move { dst, src } => {
-        let v = self.load_reg(src);
-        self.store_reg(dst, v);
+        if let Some(f) = self.reg_f64[src as usize] {
+          self.store_reg_f64(dst, f);
+        } else {
+          let v = self.load_reg(src);
+          self.store_reg(dst, v);
+        }
         false
       },
 
@@ -7329,6 +7530,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let zero = self.i64c(0);
           self.call_checked("zuri_jit_close_upvalues", &[self.vm_param, base, zero]);
         }
+        self.flush_globals();
         let v = self.load_reg(src);
         self.fb.ins().return_(&[v]);
         true
@@ -8095,13 +8297,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     b: u8,
     fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
   ) {
-    let va = self.load_reg(a);
-    let vb = self.load_reg(b);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.load_reg_f64(a);
+    let fb_ = self.load_reg_f64(b);
     let fr = fast(self, fa, fb_);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
   }
 
   /// Re-establishes `reg_vars[dst]` (via a real memory read, then a
@@ -8460,13 +8659,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_addimm`'s fast path, unguarded: see
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_addimm_proven(&mut self, dst: u8, a: u8, imm_const: u16) {
-    let va = self.load_reg(a);
-    let fa = self.to_f64(va);
+    let fa = self.load_reg_f64(a);
     let fimm_bits = self.bake_f64_bits(imm_const);
     let fimm = self.to_f64(fimm_bits);
     let fr = self.fb.ins().fadd(fa, fimm);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
   }
 
   fn emit_addimm(&mut self, dst: u8, a: u8, imm_const: u16) {
@@ -8510,13 +8707,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     imm_const: u16,
     fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
   ) {
-    let va = self.load_reg(a);
-    let fa = self.to_f64(va);
+    let fa = self.load_reg_f64(a);
     let fimm_bits = self.bake_f64_bits(imm_const);
     let fimm = self.to_f64(fimm_bits);
     let fr = fast(self, fa, fimm);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
   }
 
   fn emit_imm_numeric_guarded(
@@ -8564,8 +8759,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     imm_const: u16,
     cc: cranelift_codegen::ir::condcodes::FloatCC,
   ) {
-    let va = self.load_reg(a);
-    let fa = self.to_f64(va);
+    let fa = self.load_reg_f64(a);
     let fimm_bits = self.bake_f64_bits(imm_const);
     let fimm = self.to_f64(fimm_bits);
     let cmp = self.fb.ins().fcmp(cc, fa, fimm);

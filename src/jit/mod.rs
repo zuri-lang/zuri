@@ -301,6 +301,7 @@ pub enum CallTarget {
 #[derive(Default)]
 pub struct CompileFacts {
   pub self_field_slots: FxHashMap<String, u16>,
+  pub self_numeric_fields: rustc_hash::FxHashSet<String>,
   /// `self_field_slots`' counterpart for an ORDINARY (non-`self`)
   /// parameter register whose declared type is a single, non-nullable,
   /// resolvable class; e.g. `def dot(v: Vec3, n: number)`. Keyed by

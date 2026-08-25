@@ -1458,6 +1458,51 @@ pub fn obj_str_cap_offset() -> i32 {
   obj_str_data_offsets().2
 }
 
+fn obj_bytes_data_offsets() -> (i32, i32) {
+  static OFFSETS: std::sync::OnceLock<(i32, i32)> = std::sync::OnceLock::new();
+  *OFFSETS.get_or_init(|| {
+    let mut probe_vec: Vec<u8> = Vec::with_capacity(64);
+    probe_vec.extend_from_slice(b"zuri-bytes-offset-probe");
+    let want_ptr = probe_vec.as_ptr() as usize;
+    let want_len = probe_vec.len();
+    debug_assert_ne!(want_len, probe_vec.capacity());
+
+    let probe = Obj::Bytes(std::cell::RefCell::new(probe_vec));
+    let obj_bytes = unsafe {
+      std::slice::from_raw_parts(
+        &probe as *const Obj as *const u8,
+        std::mem::size_of::<Obj>(),
+      )
+    };
+
+    let word = std::mem::size_of::<usize>();
+    let mut ptr_off = None;
+    let mut len_off = None;
+    for i in (0..=obj_bytes.len() - word).step_by(word) {
+      let value = usize::from_ne_bytes(obj_bytes[i..i + word].try_into().unwrap());
+      if value == want_ptr {
+        ptr_off = Some(i as i32);
+      } else if value == want_len {
+        len_off = Some(i as i32);
+      }
+    }
+    (
+      ptr_off.expect("Bytes' data pointer not found anywhere in Obj::Bytes' raw bytes"),
+      len_off.expect("Bytes' byte length not found anywhere in Obj::Bytes' raw bytes"),
+    )
+  })
+}
+
+/// Byte offset from a proven-`Obj::Bytes` pointer to the bytes data buffer.
+pub fn obj_bytes_ptr_offset() -> i32 {
+  obj_bytes_data_offsets().0
+}
+
+/// Byte offset from a proven-`Obj::Bytes` pointer to the bytes length.
+pub fn obj_bytes_len_offset() -> i32 {
+  obj_bytes_data_offsets().1
+}
+
 #[cfg(test)]
 mod gcbox_layout_tests {
   use super::*;

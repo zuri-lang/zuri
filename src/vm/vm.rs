@@ -1463,6 +1463,28 @@ impl VM {
   /// can be reassigned after declaration. If the name no longer resolves to
   /// a class that actually owns `proto`, we return `None` and fall back to
   /// the general path.
+  fn resolve_self_numeric_fields(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
+    let mut numeric_fields = rustc_hash::FxHashSet::default();
+    let Some(frame) = self.frames.last() else { return numeric_fields; };
+    if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
+      return numeric_fields;
+    }
+    let Some(self_val) = self.registers.get(frame.base) else { return numeric_fields; };
+    if !self_val.is_instance() {
+      return numeric_fields;
+    }
+    let inst = self_val.as_instance();
+    let class = inst.class.as_class();
+    for (name, &slot) in &class.field_slots {
+      if let Some(cell) = inst.fields.get(slot as usize) {
+        if cell.get().is_number() {
+          numeric_fields.insert(name.clone());
+        }
+      }
+    }
+    numeric_fields
+  }
+
   fn resolve_self_field_slots(&self, proto: &ObjFunction) -> Option<FxHashMap<String, u16>> {
     let class_name = proto.owning_class_name.as_ref()?;
     let (is_root, slot) = self.resolve_global(proto.globals_module, class_name)?;
@@ -1904,6 +1926,7 @@ impl VM {
     }
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
+      self_numeric_fields: self.resolve_self_numeric_fields(proto),
       param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
       call_targets,
