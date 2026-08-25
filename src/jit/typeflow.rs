@@ -802,7 +802,6 @@ pub fn analyze_bool(proto: &ObjFunction, preds: &[Vec<usize>]) -> BoolFacts {
 
   BoolFacts { entry }
 }
-}
 
 pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
   let code = &proto.chunk.code;

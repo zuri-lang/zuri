@@ -460,15 +460,16 @@ enum ListIntrinsic {
   First,
   /// `nil` for an empty list; matches `builtins::list::last`.
   Last,
+  Append,
 }
 
 impl ListIntrinsic {
-  /// Same role as `NumberIntrinsic::arity`; every variant here is
-  /// zero-arg today, but kept as a real method (not a bare `0`) so a
-  /// future variant that needs an argument doesn't have to touch the
-  /// call site's own eligibility check.
+  /// Same role as `NumberIntrinsic::arity`.
   fn arity(self) -> u8 {
-    0
+    match self {
+      ListIntrinsic::Length | ListIntrinsic::IsEmpty | ListIntrinsic::First | ListIntrinsic::Last => 0,
+      ListIntrinsic::Append => 1,
+    }
   }
 
   fn of(name: &str) -> Option<ListIntrinsic> {
@@ -477,6 +478,7 @@ impl ListIntrinsic {
       "is_empty" => ListIntrinsic::IsEmpty,
       "first" => ListIntrinsic::First,
       "last" => ListIntrinsic::Last,
+      "append" => ListIntrinsic::Append,
       _ => return None,
     })
   }
@@ -602,6 +604,7 @@ struct FuncCompiler<'a, 'b> {
   /// String receiver can never satisfy. Same lifetime/scope as
   /// `type_facts`/`int_facts`/`list_facts`.
   string_facts: typeflow::StringFacts,
+  bool_facts: typeflow::BoolFacts,
   /// Which registers are PROVEN to hold one exact, statically-known
   /// `f64` constant at each bytecode position: see `jit::typeflow::
   /// ConstFacts`'s own docs. Consulted by `div_by_pow2_reciprocal` to
@@ -4953,6 +4956,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.fb.switch_to_block(done_block);
         self.fb.block_params(done_block)[0]
       },
+      ListIntrinsic::Append => unreachable!(),
     }
   }
 
@@ -7140,7 +7144,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if let Some(op) = ListIntrinsic::of(self.method_name(method_const))
           && op.arity() == num_args
         {
-          self.emit_list_intrinsic(ip, dst, obj, method_const, num_args, op);
+          if matches!(op, ListIntrinsic::Append) {
+            self.emit_list_append(ip, dst, obj, method_const);
+          } else {
+            self.emit_list_intrinsic(ip, dst, obj, method_const, num_args, op);
+          }
           return false;
         }
         if let Some(op) = StringIntrinsic::of(self.method_name(method_const))
