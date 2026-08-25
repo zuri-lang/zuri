@@ -340,8 +340,9 @@ pub fn analyze(
   // not occasionally. Strip any register written by more than one
   // distinct speculatable instruction before it ever reaches
   // `transfer`, so a seed only ever attaches to the one definition
-  // site it was actually sampled from.
-  let spec_regs = 0u64;
+  let spec_regs = speculative_regs
+    .map(|mask| mask & !ambiguous_speculative_regs(code))
+    .unwrap_or(0);
 
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];

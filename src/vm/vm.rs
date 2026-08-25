@@ -2022,6 +2022,7 @@ impl VM {
   /// beyond the parameter range doesn't have a stable call-independent
   /// identity, it can be a different bytecode-level variable on different
   /// calls, so continuous accumulation isn't a natural fit here.
+  #[allow(dead_code)]
   fn sample_all_reg_types(&self, proto: &ObjFunction) -> Option<typeflow::SpeculativeRegs> {
     let frame = self.frames.last()?;
     if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
