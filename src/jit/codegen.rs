@@ -96,11 +96,8 @@ const PROTO_JIT_ENTRY_OFFSET: i32 = object::obj_function_jit_entry_offset() as i
 /// unconditional FFI call on every loop back-edge and call site, only
 /// actually calling into Rust on the rare branch where a collection
 /// (of either kind) is really about to happen.
-const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
-  (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
-const HEAP_NEXT_GC_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NEXT_GC_OFFSET) as i32;
-const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
-  (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
+const HEAP_JIT_GC_NEEDED_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_JIT_GC_NEEDED_OFFSET) as i32;
 
 /// Compiles `proto`'s bytecode into `fb`'s function body. Returns the
 /// bytecode-ip -> osr-id map (`CompiledFunction::osr_ids`) on success,
@@ -717,6 +714,7 @@ struct FuncCompiler<'a, 'b> {
   /// struct's other per-body state), so it's identical for both the
   /// general and specialized body if this compile has one.
   proven_param_shapes: FxHashMap<u8, ParamShape>,
+  guarded_instances: FxHashMap<u8, (IrValue, IrValue)>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -840,6 +838,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .iter()
         .any(|i| matches!(i, Instr::Closure { .. })),
       proven_param_shapes: Self::compute_proven_shapes(proto),
+      guarded_instances: FxHashMap::default(),
     }
   }
 
@@ -998,6 +997,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Pass 1: the general body.
     for ip in 0..self.blocks.len() {
       self.fb.switch_to_block(self.blocks[ip]);
+      self.guarded_instances.clear();
       let instr = self.proto.chunk.code[ip];
       let terminated = self.emit_instruction(ip, instr);
       if !terminated {
@@ -1014,6 +1014,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let code_len = self.blocks.len();
       for ip in 0..code_len {
         self.fb.switch_to_block(self.blocks[ip]);
+        self.guarded_instances.clear();
         let instr = self.proto.chunk.code[ip];
         let terminated = self.emit_instruction(ip, instr);
         if terminated {
@@ -3081,30 +3082,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// relocates it.
   fn emit_callee_proto_guard(&mut self, callee_val: IrValue, guard_bits: u64, fail_block: Block) {
     let is_obj = self.is_obj(callee_val);
-    let obj_block = self.fb.create_block();
-    self.fb.ins().brif(is_obj, obj_block, &[], fail_block, &[]);
-
-    self.fb.switch_to_block(obj_block);
     let ptr = self.obj_ptr(callee_val);
-    let tag = self.obj_tag(ptr);
-    let tag_closure = self.i64c(object::OBJ_TAG_CLOSURE as i64);
-    let is_closure = self.fb.ins().icmp(IntCC::Equal, tag, tag_closure);
-    let proto_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_closure, proto_block, &[], fail_block, &[]);
-
-    self.fb.switch_to_block(proto_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let func_off = object::obj_closure_function_offset() as i32;
-    let proto = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      ptr,
-      func_off,
-    );
+    let proto = self.fb.ins().load(types::I64, flags, ptr, func_off);
     let want = self.u64c(guard_bits);
-    let is_hit = self.fb.ins().icmp(IntCC::Equal, proto, want);
+    let same_proto = self.fb.ins().icmp(IntCC::Equal, proto, want);
+    let is_hit = self.fb.ins().band(is_obj, same_proto);
     let hit_block = self.fb.create_block();
     self.fb.ins().brif(is_hit, hit_block, &[], fail_block, &[]);
     self.fb.switch_to_block(hit_block);
@@ -3875,14 +3859,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_safepoint`'s `gc_block` does; avoiding a second, redundant
   /// flush/stale-mark from `call_helper`'s own automatic wrapping.
   fn emit_get_global(&mut self, ip: usize, dst: u8, name_const: u16) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let slot = self.proto.jit.global_slot_cache[ip].get();
+    if slot >= 0 {
+      let slots_ptr = self.fb.ins().load(
+        types::I64,
+        flags,
+        self.vm_param,
+        GLOBAL_SLOTS_PTR_CACHE_OFFSET,
+      );
+      let byte_off = (slot * 8) as i32;
+      let v = self.fb.ins().load(types::I64, flags, slots_ptr, byte_off);
+      self.store_reg(dst, v);
+      return;
+    }
+
     let cache_ptr = self.proto.jit.global_slot_cache.as_ptr() as i64;
     let cache_base = self.i64c(cache_ptr);
-    let cached = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      cache_base,
-      (ip as i32) * 8,
-    );
+    let cached = self
+      .fb
+      .ins()
+      .load(types::I64, flags, cache_base, (ip as i32) * 8);
     let neg1 = self.i64c(-1);
     let is_hit = self.fb.ins().icmp(IntCC::NotEqual, cached, neg1);
 
@@ -3894,18 +3891,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(hit_block);
     let slots_ptr = self.fb.ins().load(
       types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
+      flags,
       self.vm_param,
       GLOBAL_SLOTS_PTR_CACHE_OFFSET,
     );
     let byte_off = self.fb.ins().imul_imm_s(cached, 8);
     let addr = self.fb.ins().iadd(slots_ptr, byte_off);
-    let v = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      addr,
-      0,
-    );
+    let v = self.fb.ins().load(types::I64, flags, addr, 0);
     self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
 
@@ -4295,6 +4287,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// only implementation of those cases and is also what FILLS the
   /// cache for the next time round.
   fn emit_ic_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, cache: IrValue) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    if let Some(&(_ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
+      let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
+      let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+      let v = self.fb.ins().load(types::I64, flags, addr, 0);
+      self.store_reg(dst, v);
+      return;
+    }
+
     let recv = self.load_reg(obj);
 
     let slow_block = self.fb.create_block();
@@ -4302,13 +4303,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
     let fields_ptr = self.load_instance_fields_ptr(ptr);
+    self.guarded_instances.insert(obj, (ptr, fields_ptr));
     let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
-    let v = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      addr,
-      0,
-    );
+    let v = self.fb.ins().load(types::I64, flags, addr, 0);
     self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
 
@@ -4361,21 +4358,39 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// restore; the receiver included, since `resync_receiver_from_memory`
   /// has already made its `Variable` authoritative on both arms.
   fn emit_ic_set_field(&mut self, ip: usize, obj: u8, name_const: u16, src: u8, cache: IrValue) {
-    let recv = self.load_reg(obj);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let src_val = self.load_reg(src);
+
+    if let Some(&(ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
+      let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
+      let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+      self.fb.ins().store(flags, src_val, addr, 0);
+      if !self.proven_numeric(ip, src) {
+        let is_obj = self.is_obj(src_val);
+        let barrier_block = self.fb.create_block();
+        let pass_block = self.fb.create_block();
+        self
+          .fb
+          .ins()
+          .brif(is_obj, barrier_block, &[], pass_block, &[]);
+        self.fb.switch_to_block(barrier_block);
+        self.emit_write_barrier(ptr);
+        self.fb.ins().jump(pass_block, &[]);
+        self.fb.switch_to_block(pass_block);
+      }
+      return;
+    }
+
+    let recv = self.load_reg(obj);
 
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
     let fields_ptr = self.load_instance_fields_ptr(ptr);
+    self.guarded_instances.insert(obj, (ptr, fields_ptr));
     let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
-    self.fb.ins().store(
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      src_val,
-      addr,
-      0,
-    );
+    self.fb.ins().store(flags, src_val, addr, 0);
     if !self.proven_numeric(ip, src) {
       let is_obj = self.is_obj(src_val);
       let barrier_block = self.fb.create_block();
@@ -4423,6 +4438,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.emit_self_invoke(ip, dst, obj, method_const, num_args, class_bits, generation);
       return;
     }
+
     let base = self.base_param;
     let vm_p = self.vm_param;
     let obj_i = self.idx(obj);
@@ -6541,7 +6557,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       Instr::Jmp { offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
-        if offset < 0 {
+        if offset < 0 && self.loop_has_allocations(target_ip, ip) {
           self.emit_safepoint();
         }
         let target_block = self.jump_target_block(ip, target_ip);
@@ -6553,7 +6569,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let falsey = self.emit_is_falsey(cond);
         let zero = self.i64c(0);
         let is_falsey = self.fb.ins().icmp(IntCC::NotEqual, falsey, zero);
-        if offset < 0 {
+        if offset < 0 && self.loop_has_allocations(target_ip, ip) {
           self.emit_safepoint();
         }
         let target_block = self.jump_target_block(ip, target_ip);
@@ -6568,7 +6584,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let truthy = self.emit_is_falsey(cond);
         let zero = self.i64c(0);
         let is_truthy = self.fb.ins().icmp(IntCC::Equal, truthy, zero);
-        if offset < 0 {
+        if offset < 0 && self.loop_has_allocations(target_ip, ip) {
           self.emit_safepoint();
         }
         let target_block = self.jump_target_block(ip, target_ip);
@@ -7329,66 +7345,49 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// happen; it re-checks both thresholds itself too, so a stale read
   /// here (never possible mid-single-threaded-execution anyway)
   /// couldn't cause an incorrect collection either way.
+  fn is_allocating_instr(&self, ip: usize) -> bool {
+    let instr = &self.proto.chunk.code[ip];
+    match instr {
+      Instr::MakeList { .. }
+      | Instr::MakeDict { .. }
+      | Instr::MakeClass { .. }
+      | Instr::Closure { .. }
+      | Instr::Concat { .. }
+      | Instr::Import { .. }
+      | Instr::MakeRange { .. }
+      | Instr::GetSlice { .. }
+      | Instr::MakePromoted { .. }
+      | Instr::InvokeSuper { .. }
+      | Instr::CallSuperCtor { .. } => true,
+      Instr::Call { func, num_args, .. } => {
+        if let Some(CallTarget::Known { proto_ptr, .. }) = self.call_targets.get(&ip).copied() {
+          let callee = unsafe { &*(proto_ptr as *const ObjFunction) };
+          if self.inline_plan(ip, callee, *func, *num_args).is_some() {
+            return false;
+          }
+        }
+        true
+      },
+      Instr::Invoke { .. } => true,
+      _ => false,
+    }
+  }
+
+  fn loop_has_allocations(&self, target_ip: usize, current_ip: usize) -> bool {
+    let start = target_ip.min(current_ip);
+    let end = target_ip.max(current_ip);
+    (start..=end).any(|ip| self.is_allocating_instr(ip))
+  }
+
   fn emit_safepoint(&mut self) {
-    let bytes = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      self.vm_param,
-      HEAP_BYTES_ALLOCATED_OFFSET,
-    );
-    let next_gc = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      self.vm_param,
-      HEAP_NEXT_GC_OFFSET,
-    );
-    let young_bytes = self.fb.ins().load(
-      types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
-      self.vm_param,
-      HEAP_YOUNG_BYTES_ALLOCATED_OFFSET,
-    );
-    // Must stay EXACTLY `Heap::needs_major_gc`'s own comparison, not a
-    // conservative approximation of it: this test gates a real helper
-    // call, so a version that over-fires would pay a full FFI round
-    // trip at every safepoint for as long as the two disagreed, and
-    // the helper would decline to collect each time. Hence the
-    // subtraction here rather than reusing `bytes` directly: see
-    // `Heap::old_bytes_allocated` for why it cannot underflow.
-    let old_bytes = self.fb.ins().isub(bytes, young_bytes);
-    let needs_major = self
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let needed = self
       .fb
       .ins()
-      .icmp(IntCC::UnsignedGreaterThan, old_bytes, next_gc);
+      .load(types::I8, flags, self.vm_param, HEAP_JIT_GC_NEEDED_OFFSET);
+    let zero = self.fb.ins().iconst(types::I8, 0);
+    let needs_some_gc = self.fb.ins().icmp(IntCC::NotEqual, needed, zero);
 
-    // `YOUNG_NEXT_GC` is the one threshold in this collector that's
-    // truly fixed (never grows the way `next_gc` does), so it's baked
-    // in as a compile-time immediate instead of a third runtime load.
-    let young_next_gc = self.i64c(object::Heap::YOUNG_NEXT_GC as i64);
-    let needs_minor = self
-      .fb
-      .ins()
-      .icmp(IntCC::UnsignedGreaterThan, young_bytes, young_next_gc);
-
-    let needs_some_gc = self.fb.ins().bor(needs_major, needs_minor);
-
-    // `flush_live`/`mark_stale_live` MUST run unconditionally, in
-    // shared code BEFORE this branch; not inside `gc_block` (which
-    // is only entered at runtime if `needs_some_gc` is actually true).
-    // This is a genuine safepoint regardless of whether a collection
-    // ends up running THIS time: at compile time we can't know which
-    // way `needs_some_gc` will go on any given call, so the register
-    // cache has to assume the conservative case (a collection COULD
-    // happen right here) every single time. Bundling this inside
-    // `call_helper`'s automatic wrapping (as every OTHER call site in
-    // this file correctly does) would silently condition it on
-    // `gc_block` actually being entered; on the overwhelmingly
-    // common "no collection needed this time" path, that call (and
-    // therefore the flush) would never actually execute, while every
-    // instruction compiled AFTER this one would wrongly believe
-    // memory was already made current. Using `call_helper_raw` inside
-    // `gc_block` avoids double-flushing/double-staling against the
-    // unconditional calls below.
     let gc_block = self.fb.create_block();
     let done_block = self.fb.create_block();
     self

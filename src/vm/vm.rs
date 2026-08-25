@@ -1856,12 +1856,25 @@ impl VM {
     let (speculative_params, speculative_regs) = if self.no_jit_specialization {
       (None, None)
     } else {
-      (
-        self.combined_param_feedback(proto),
-        self.sample_all_reg_types(proto),
-      )
+      (self.combined_param_feedback(proto), None)
     };
     let (call_targets, construct_info) = self.resolve_call_targets(proto);
+    for (ip, instr) in proto.chunk.code.iter().enumerate() {
+      let name_const = match instr {
+        crate::vm::chunk::Instr::GetGlobal { name_const, .. }
+        | crate::vm::chunk::Instr::SetGlobal { name_const, .. }
+        | crate::vm::chunk::Instr::AssignGlobal { name_const, .. } => *name_const,
+        _ => continue,
+      };
+      if let Some(name_val) = proto.chunk.constants.get(name_const as usize)
+        && name_val.is_obj()
+      {
+        let name = name_val.as_str();
+        if let Some((_is_root, slot)) = self.resolve_global(proto.globals_module, name) {
+          proto.jit.global_slot_cache[ip].set(slot as i64);
+        }
+      }
+    }
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
       param_field_slots: self.resolve_param_field_slots(proto),
@@ -4959,6 +4972,7 @@ impl VM {
     self.heap.drain_remembered();
 
     let freed = self.heap.sweep();
+    self.heap.update_jit_gc_needed();
     if self.log_gc {
       eprintln!(
         "[gc-major] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",

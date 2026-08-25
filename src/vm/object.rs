@@ -1685,6 +1685,8 @@ pub struct Heap {
   /// already keys off. This is what lets a minor collection trigger
   /// far more often, on a far smaller budget.
   young_bytes_allocated: usize,
+  /// Mirror of needs_minor_gc() || needs_major_gc() for JIT safepoints
+  pub jit_gc_needed: bool,
   /// The young generation's own storage: bump-allocated, chunked
   /// EXACTLY like `chunks` is for the old generation, and for the
   /// same reason; each individual `NurseryChunk`'s own buffer is
@@ -1890,15 +1892,7 @@ impl FieldStoragePool {
 /// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
 /// `needs_major_gc()`'s check directly instead of an FFI call at every
 /// safepoint. See `vm::VM_HEAP_OFFSET`'s own docs for why this is sound.
-pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize = std::mem::offset_of!(Heap, bytes_allocated);
-pub(crate) const HEAP_NEXT_GC_OFFSET: usize = std::mem::offset_of!(Heap, next_gc);
-/// Same idea as the two offsets above, for the young generation's own
-/// allocation counter. There's no `young_next_gc` offset to go with
-/// it; unlike `next_gc`, that threshold is a fixed constant
-/// (`Heap::YOUNG_NEXT_GC`) baked directly into compiled code instead
-/// of read from memory: see that const's own docs.
-pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
-  std::mem::offset_of!(Heap, young_bytes_allocated);
+pub(crate) const HEAP_JIT_GC_NEEDED_OFFSET: usize = std::mem::offset_of!(Heap, jit_gc_needed);
 
 /// Frees every buffer still sitting in `field_storage_pool` when the
 /// `Heap` itself is torn down (process exit; there's exactly one
@@ -1998,6 +1992,7 @@ impl Heap {
       next_gc: Self::MIN_NEXT_GC,
       live_count: 0,
       young_bytes_allocated: 0,
+      jit_gc_needed: false,
       nursery_chunks: Vec::new(),
       nursery_fill_idx: 0,
       nursery_cur: std::ptr::null_mut(),
@@ -2061,6 +2056,11 @@ impl Heap {
   /// Has the young generation grown enough that a cheap minor
   /// collection is worth running? Checked far more often than
   /// `needs_major_gc`: see `YOUNG_NEXT_GC`.
+  #[inline]
+  pub fn update_jit_gc_needed(&mut self) {
+    self.jit_gc_needed = self.needs_minor_gc() || self.needs_major_gc();
+  }
+
   #[inline]
   pub fn needs_minor_gc(&self) -> bool {
     self.young_bytes_allocated > Self::YOUNG_NEXT_GC
@@ -2180,6 +2180,7 @@ impl Heap {
     self.bytes_allocated += size;
     self.young_bytes_allocated += size;
     self.live_count += 1;
+    self.update_jit_gc_needed();
 
     unsafe {
       std::ptr::write(
@@ -2300,6 +2301,7 @@ impl Heap {
     let size = Self::approx_size(&obj);
     self.bytes_allocated += size;
     self.live_count += 1;
+    self.update_jit_gc_needed();
     let gcbox_ptr = self.promote_into_old(size, obj);
     let obj_ptr = unsafe { &(*gcbox_ptr).obj as *const Obj };
     write_barrier(obj_ptr);

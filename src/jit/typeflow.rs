@@ -341,9 +341,7 @@ pub fn analyze(
   // distinct speculatable instruction before it ever reaches
   // `transfer`, so a seed only ever attaches to the one definition
   // site it was actually sampled from.
-  let spec_regs = speculative_regs
-    .map(|mask| mask & !ambiguous_speculative_regs(code))
-    .unwrap_or(0);
+  let spec_regs = 0u64;
 
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
@@ -1637,10 +1635,35 @@ pub(crate) fn any_dst(instr: &Instr) -> Option<u8> {
 /// credit the other. Both make an `emit_speculative_guard` check that
 /// fails on every invocation, not occasionally: see `analyze`'s own
 /// docs at its `spec_regs` computation.
+fn is_speculatable_def(instr: &Instr) -> bool {
+  matches!(
+    instr,
+    Instr::Call { .. }
+      | Instr::GetGlobal { .. }
+      | Instr::Closure { .. }
+      | Instr::GetUpval { .. }
+      | Instr::MakeList { .. }
+      | Instr::MakeDict { .. }
+      | Instr::MakeClass { .. }
+      | Instr::GetField { .. }
+      | Instr::Invoke { .. }
+      | Instr::InvokeSuper { .. }
+      | Instr::CallSuperCtor { .. }
+      | Instr::Import { .. }
+      | Instr::MakePromoted { .. }
+      | Instr::GetIndex { .. }
+      | Instr::GetSlice { .. }
+      | Instr::MakeRange { .. }
+  )
+}
+
 fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
   let mut seen: u64 = 0;
   let mut ambiguous: u64 = 0;
   for instr in code {
+    if !is_speculatable_def(instr) {
+      continue;
+    }
     let Some(dst) = any_dst(instr) else {
       continue;
     };
