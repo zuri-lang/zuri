@@ -946,6 +946,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.base_param = params[1];
     self.closure_param = params[2];
     let osr_param = params[3];
+    let fast_args = [params[4], params[5], params[6], params[7]];
 
     self.regs_var = self.fb.declare_var(types::I64);
     let initial_regs = self.load_regs_ptr_cache();
@@ -954,12 +955,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let eight = self.fb.ins().iconst(types::I64, 8);
     self.base_bytes = self.fb.ins().imul(self.base_param, eight);
 
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
+
     let num_regs = self.proto.num_registers as usize;
     self.reg_vars = (0..num_regs)
       .map(|_| self.fb.declare_var(types::I64))
       .collect();
     for r in 0..num_regs {
-      let v = self.load_reg_mem(r as u8);
+      let mem_v = self.load_reg_mem(r as u8);
+      let v = if r < 4 && r < self.proto.arity as usize {
+        self.fb.ins().select(is_normal, fast_args[r], mem_v)
+      } else {
+        mem_v
+      };
       self.fb.def_var(self.reg_vars[r], v);
     }
 
@@ -1513,6 +1522,49 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// path `call_indirect` in `emit_fast_call` targets. Imported at most
   /// once per compiled function and cached, since it's the exact same
   /// shape at every call site.
+  fn reg_addr_at_base(&mut self, base: IrValue, r: u8) -> IrValue {
+    let regs = self.fb.use_var(self.regs_var);
+    let base_bytes = self.fb.ins().imul_imm_s(base, 8);
+    let with_base = self.fb.ins().iadd(regs, base_bytes);
+    if r == 0 {
+      with_base
+    } else {
+      self.fb.ins().iadd_imm_s(with_base, (r as i64) * 8)
+    }
+  }
+
+  fn load_reg_mem_at_base(&mut self, base: IrValue, r: u8) -> IrValue {
+    let addr = self.reg_addr_at_base(base, r);
+    self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      addr,
+      0,
+    )
+  }
+
+  fn load_call_arg_values(&mut self, first_arg_reg: u8, num_args: u8) -> [IrValue; 4] {
+    let nil_c = self.u64c(crate::vm::value::Value::nil().to_bits());
+    let mut args = [nil_c, nil_c, nil_c, nil_c];
+    for k in 0..4u8 {
+      if k < num_args {
+        args[k as usize] = self.load_reg(first_arg_reg + k);
+      }
+    }
+    args
+  }
+
+  fn load_construct_arg_values(&mut self, instance: IrValue, first_arg_reg: u8, num_args: u8) -> [IrValue; 4] {
+    let nil_c = self.u64c(crate::vm::value::Value::nil().to_bits());
+    let mut args = [instance, nil_c, nil_c, nil_c];
+    for k in 0..3u8 {
+      if k < num_args {
+        args[(k + 1) as usize] = self.load_reg(first_arg_reg + k);
+      }
+    }
+    args
+  }
+
   fn entry_sig_ref(&mut self) -> SigRef {
     if let Some(sig) = self.entry_sig {
       return sig;
@@ -1522,6 +1574,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     sig.params.push(AbiParam::new(types::I64)); // base
     sig.params.push(AbiParam::new(types::I64)); // closure
     sig.params.push(AbiParam::new(types::I32)); // osr_id
+    sig.params.push(AbiParam::new(types::I64)); // a0
+    sig.params.push(AbiParam::new(types::I64)); // a1
+    sig.params.push(AbiParam::new(types::I64)); // a2
+    sig.params.push(AbiParam::new(types::I64)); // a3
     sig.returns.push(AbiParam::new(types::I64));
     let sig_ref = self.fb.import_signature(sig);
     self.entry_sig = Some(sig_ref);
@@ -2137,6 +2193,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     prepare_args: &[IrValue],
     new_base: IrValue,
     dst: u8,
+    first_arg_reg: u8,
+    num_args: u8,
     slow_helper: &'static str,
     slow_args: &[IrValue],
   ) {
@@ -2166,20 +2224,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     };
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let sig = self.entry_sig_ref();
-    // A genuine nested call into another compiled Zuri function's own
-    // entry point; NOT routed through `call_helper` (this is a
-    // `call_indirect` to JIT-compiled code, not a `jit::runtime`
-    // helper), so the flush/stale-mark bracketing it gets automatically
-    // there has to be done explicitly here instead. The callee is free
-    // to allocate, trigger a GC safepoint, or recurse arbitrarily
-    // deep; exactly the kind of call this cache exists to stay
-    // correct across.
+    let [a0, a1, a2, a3] = self.load_call_arg_values(first_arg_reg, num_args);
     self.flush_live(self.current_ip);
     let call =
       self
         .fb
         .ins()
-        .call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1]);
+        .call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1, a0, a1, a2, a3]);
     let ret_bits = self.fb.inst_results(call)[0];
     self.reload_live(self.current_ip);
     self.refresh_regs();
@@ -2439,11 +2490,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let sig = self.entry_sig_ref();
       // Identical bracketing requirement to `emit_fast_call`'s own
       // `call_indirect`: see the note there.
+      let instance_val = self.load_reg_mem_at_base(new_base, 0);
+      let [a0, a1, a2, a3] = self.load_construct_arg_values(instance_val, func + 1, num_args);
       self.flush_live(self.current_ip);
       self
         .fb
         .ins()
-        .call_indirect(sig, prepare, &[vm_p, new_base, closure_bits, neg1]);
+        .call_indirect(sig, prepare, &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3]);
       self.reload_live(self.current_ip);
       self.refresh_regs();
       self.call_checked("zuri_jit_new_finish", &[vm_p, base, dst_i, new_base]);
@@ -2468,11 +2521,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let neg1 = self.fb.ins().iconst(types::I32, -1);
       let sig = self.entry_sig_ref();
       let closure_bits = self.u64c(ctor_bits);
+      let instance_val = self.load_reg_mem_at_base(new_base, 0);
+      let [a0, a1, a2, a3] = self.load_construct_arg_values(instance_val, func + 1, num_args);
       self.flush_live(self.current_ip);
       self
         .fb
         .ins()
-        .call_indirect(sig, entry, &[vm_p, new_base, closure_bits, neg1]);
+        .call_indirect(sig, entry, &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3]);
       self.reload_live(self.current_ip);
       self.refresh_regs();
       self.emit_inline_construct_finish(dst, new_base);
@@ -2537,11 +2592,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let sig = self.entry_sig_ref();
     // Identical bracketing requirement to `emit_fast_call`'s own
     // `call_indirect`: see the note there.
+    let instance_val = self.load_reg_mem_at_base(new_base, 0);
+    let [a0, a1, a2, a3] = self.load_construct_arg_values(instance_val, func + 1, num_args);
     self.flush_live(self.current_ip);
     self
       .fb
       .ins()
-      .call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1]);
+      .call_indirect(sig, prepare, &[self.vm_param, new_base, closure_bits, neg1, a0, a1, a2, a3]);
     self.reload_live(self.current_ip);
     self.refresh_regs();
     // Reuses the operands materialized before the branch rather than
@@ -2558,6 +2615,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &[vm_p, base, func_i, num_args_i, dst_i],
       new_base,
       dst,
+      func + 1,
+      num_args,
       "zuri_jit_call",
       &[vm_p, base, func_i, num_args_i, dst_i],
     );
@@ -2630,11 +2689,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .module
         .declare_func_in_func(self.own_func_id, self.fb.func);
       let neg1 = self.fb.ins().iconst(types::I32, -1);
+      let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
       self.flush_live(self.current_ip);
       let call = self
         .fb
         .ins()
-        .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+        .call(func_ref, &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3]);
       let ret_bits = self.fb.inst_results(call)[0];
       self.reload_live(self.current_ip);
       self.refresh_regs();
@@ -2688,11 +2748,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .module
       .declare_func_in_func(self.own_func_id, self.fb.func);
     let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
     self.flush_live(self.current_ip);
     let call = self
       .fb
       .ins()
-      .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+      .call(func_ref, &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3]);
     let ret_bits = self.fb.inst_results(call)[0];
     self.reload_live(self.current_ip);
     self.refresh_regs();
@@ -3522,6 +3583,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &[vm_p, base, func_i, num_args_i, dst_i],
       new_base,
       dst,
+      func + 1,
+      num_args,
       "zuri_jit_call",
       &[vm_p, base, func_i, num_args_i, dst_i],
     );
@@ -3572,11 +3635,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let entry_addr = self.u64c(entry as u64);
       let sig = self.entry_sig_ref();
       let neg1 = self.fb.ins().iconst(types::I32, -1);
+      let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
       self.flush_live(self.current_ip);
       let call = self
         .fb
         .ins()
-        .call_indirect(sig, entry_addr, &[vm_p, new_base, callee_val, neg1]);
+        .call_indirect(sig, entry_addr, &[vm_p, new_base, callee_val, neg1, a0, a1, a2, a3]);
       let ret_bits = self.fb.inst_results(call)[0];
       self.reload_live(self.current_ip);
       self.refresh_regs();
@@ -3614,11 +3678,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let entry_addr = self.u64c(entry as u64);
     let sig = self.entry_sig_ref();
     let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
     self.flush_live(self.current_ip);
     let call = self
       .fb
       .ins()
-      .call_indirect(sig, entry_addr, &[vm_p, new_base, callee_val, neg1]);
+      .call_indirect(sig, entry_addr, &[vm_p, new_base, callee_val, neg1, a0, a1, a2, a3]);
     let ret_bits = self.fb.inst_results(call)[0];
     self.reload_live(self.current_ip);
     self.refresh_regs();
@@ -3802,11 +3867,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .module
         .declare_func_in_func(self.own_func_id, self.fb.func);
       let neg1 = self.fb.ins().iconst(types::I32, -1);
+      let [a0, a1, a2, a3] = self.load_call_arg_values(obj + 1, num_args + 1);
       self.flush_live(ip);
       let call = self
         .fb
         .ins()
-        .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+        .call(func_ref, &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3]);
       let ret_bits = self.fb.inst_results(call)[0];
       self.reload_live(ip);
       self.refresh_regs();
@@ -3818,12 +3884,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.ins().jump(done_block, &[]);
     } else {
       // Fully-inline path: see `emit_inline_frame_push`'s own docs.
-      // `try_direct_block` is already reached only after the receiver-
-      // class/generation guard above passed, so no further guard is
-      // needed before this; `emit_inline_frame_push`'s own runtime
-      // checks (depth/registers/frame capacity) are all that's left,
-      // and any of THEM failing falls to the exact same `slow_block`
-      // the class/generation guard itself already falls to.
       let proto_bits = self.proto as *const ObjFunction as u64;
       let closure_ptr = self.obj_ptr(closure_bits);
       self.emit_inline_frame_push(
@@ -3843,11 +3903,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .module
         .declare_func_in_func(self.own_func_id, self.fb.func);
       let neg1 = self.fb.ins().iconst(types::I32, -1);
+      let [a0, a1, a2, a3] = self.load_call_arg_values(obj + 1, num_args + 1);
       self.flush_live(ip);
       let call = self
         .fb
         .ins()
-        .call(func_ref, &[vm_p, new_base, closure_bits, neg1]);
+        .call(func_ref, &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3]);
       let ret_bits = self.fb.inst_results(call)[0];
       self.reload_live(ip);
       self.refresh_regs();
@@ -4478,6 +4539,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &[vm_p, base, obj_i, num_args_i, dst_i, name, func_ptr, ip_c],
       new_base,
       dst,
+      obj + 1,
+      num_args + 1,
       "zuri_jit_invoke",
       &[vm_p, base, obj_i, num_args_i, dst_i, name, cache],
     );

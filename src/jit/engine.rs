@@ -163,6 +163,10 @@ impl JitEngine {
     sig.params.push(AbiParam::new(types::I64)); // base: u64
     sig.params.push(AbiParam::new(types::I64)); // closure: u64 (tagged Value bits)
     sig.params.push(AbiParam::new(types::I32)); // osr_id: i32 (-1 = ordinary entry)
+    sig.params.push(AbiParam::new(types::I64)); // a0
+    sig.params.push(AbiParam::new(types::I64)); // a1
+    sig.params.push(AbiParam::new(types::I64)); // a2
+    sig.params.push(AbiParam::new(types::I64)); // a3
     sig.returns.push(AbiParam::new(types::I64)); // return value bits
 
     let func_id = self

@@ -2200,10 +2200,25 @@ impl VM {
     // deopt.
     let entered_idx = self.frames.len() - 1;
     let was_compiled = std::mem::replace(&mut self.frames[entered_idx].compiled, true);
+    let a0 = self.registers.get(base + 0).copied().unwrap_or(Value::nil()).to_bits();
+    let a1 = self.registers.get(base + 1).copied().unwrap_or(Value::nil()).to_bits();
+    let a2 = self.registers.get(base + 2).copied().unwrap_or(Value::nil()).to_bits();
+    let a3 = self.registers.get(base + 3).copied().unwrap_or(Value::nil()).to_bits();
     // SAFETY: entry was produced by JitEngine::compile_function for this
     // exact prototype; base is this frame's own register-window start,
     // matching the compiled calling convention.
-    let result_bits = unsafe { entry(self as *mut VM, base as u64, closure_val.to_bits(), osr_id) };
+    let result_bits = unsafe {
+      entry(
+        self as *mut VM,
+        base as u64,
+        closure_val.to_bits(),
+        osr_id,
+        a0,
+        a1,
+        a2,
+        a3,
+      )
+    };
     self.jit_call_depth.set(self.jit_call_depth.get() - 1);
     if let Some(frame) = self.frames.get_mut(entered_idx) {
       frame.compiled = was_compiled;
