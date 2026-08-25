@@ -27,6 +27,8 @@ use crate::vm::value::Value;
 pub const LIST_PTR_OFFSET: i32 = 0;
 /// Byte offset of the element count within `ListStorage`. Same deal.
 pub const LIST_LEN_OFFSET: i32 = 8;
+/// Byte offset of the allocated capacity within `ListStorage`.
+pub const LIST_CAP_OFFSET: i32 = 16;
 /// Byte offset of the inline element buffer. Same deal.
 pub const LIST_INLINE_OFFSET: i32 = 24;
 
@@ -113,6 +115,52 @@ impl ListStorage {
       v.grow_to(cap);
     }
     v
+  }
+
+  pub fn from_elem(elem: Value, count: usize) -> ListStorage {
+    let mut storage = ListStorage::with_capacity(count);
+    if count <= INLINE_CAP {
+      for i in 0..count {
+        storage.inline[i] = elem;
+      }
+    } else {
+      unsafe {
+        for i in 0..count {
+          storage.ptr.add(i).write(elem);
+        }
+      }
+    }
+    storage.len = count;
+    storage
+  }
+
+  pub fn repeat_slice(slice: &[Value], count: usize) -> ListStorage {
+    let total_len = slice.len().saturating_mul(count);
+    let mut storage = ListStorage::with_capacity(total_len);
+    if slice.len() == 1 {
+      return Self::from_elem(slice[0], count);
+    }
+    if total_len <= INLINE_CAP {
+      let mut idx = 0;
+      for _ in 0..count {
+        for &item in slice {
+          storage.inline[idx] = item;
+          idx += 1;
+        }
+      }
+    } else {
+      unsafe {
+        let mut dst = storage.ptr;
+        for _ in 0..count {
+          for &item in slice {
+            dst.write(item);
+            dst = dst.add(1);
+          }
+        }
+      }
+    }
+    storage.len = total_len;
+    storage
   }
 
   #[inline]
@@ -409,6 +457,10 @@ mod tests {
     assert_eq!(
       (&s.len as *const _ as usize) - base,
       LIST_LEN_OFFSET as usize
+    );
+    assert_eq!(
+      (&s.cap as *const _ as usize) - base,
+      LIST_CAP_OFFSET as usize
     );
     assert_eq!(
       (&s.inline as *const _ as usize) - base,

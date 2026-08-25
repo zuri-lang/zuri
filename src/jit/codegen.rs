@@ -794,6 +794,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let int_facts = typeflow::analyze_int(proto, &preds);
     let list_facts = typeflow::analyze_list(proto, &preds);
     let string_facts = typeflow::analyze_string(proto, &preds);
+    let bool_facts = typeflow::analyze_bool(proto, &preds);
     let const_facts = typeflow::analyze_const(proto, &preds);
     let liveness = typeflow::liveness(proto, &preds);
     FuncCompiler {
@@ -814,6 +815,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       int_facts,
       list_facts,
       string_facts,
+      bool_facts,
       const_facts,
       preds,
       speculative_params,
@@ -4748,6 +4750,75 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// proven a list at `ip`, there is nothing left to guard, so the
   /// whole call collapses to the couple of loads `emit_list_intrinsic_
   /// value` computes, no branch at all.
+  fn emit_list_append(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+  ) {
+    let recv = self.load_reg(obj);
+    let item = self.load_reg(obj + 2);
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let push_block = self.fb.create_block();
+
+    let ptr = if self.proven_list(ip, obj) {
+      let p = self.obj_ptr(recv);
+      self.fb.ins().jump(push_block, &[]);
+      p
+    } else {
+      let is_obj = self.is_obj(recv);
+      let checked_block = self.fb.create_block();
+      self.fb.ins().brif(is_obj, checked_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(checked_block);
+      let ptr = self.obj_ptr(recv);
+      let tag = self.obj_tag(ptr);
+      let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+      let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+      self.fb.ins().brif(is_list, push_block, &[], slow_block, &[]);
+      ptr
+    };
+
+    self.fb.switch_to_block(push_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let len = self.fb.ins().load(types::I64, flags, ptr, object::obj_list_len_offset());
+    let heap_ptr = self.fb.ins().load(types::I64, flags, ptr, object::obj_list_ptr_offset());
+    let cap = self.fb.ins().load(types::I64, flags, ptr, object::obj_list_cap_offset());
+    let inline_cap = self.i64c(crate::vm::list::INLINE_CAP as i64);
+    let zero = self.i64c(0);
+    let is_inline = self.fb.ins().icmp(IntCC::Equal, heap_ptr, zero);
+    let eff_cap = self.fb.ins().select(is_inline, inline_cap, cap);
+    let can_push = self.fb.ins().icmp(IntCC::UnsignedLessThan, len, eff_cap);
+
+    let fast_block = self.fb.create_block();
+    self.fb.ins().brif(can_push, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let inline_ptr = self.fb.ins().iadd_imm_s(ptr, object::obj_list_inline_offset() as i64);
+    let data_ptr = self.fb.ins().select(is_inline, inline_ptr, heap_ptr);
+    let byte_off = self.fb.ins().imul_imm_s(len, 8);
+    let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
+    self.fb.ins().store(flags, item, elem_addr, 0);
+    let new_len = self.fb.ins().iadd_imm_s(len, 1);
+    self.fb.ins().store(flags, new_len, ptr, object::obj_list_len_offset());
+    self.emit_write_barrier(ptr);
+    let nil = self.u64c(value::NIL_VAL);
+    self.store_reg(dst, nil);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_invoke(ip, dst, obj, method_const, 1);
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
   fn emit_list_intrinsic(
     &mut self,
     ip: usize,
@@ -6161,6 +6232,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// overwhelming majority of cases (a loop counter, a comparison
   /// result, ...) matters far more here than for most other ops.
   fn emit_is_falsey(&mut self, cond: u8) -> IrValue {
+    if self.bool_facts.is_bool(self.current_ip, cond) {
+      let v = self.load_reg(cond);
+      let false_val = self.u64c(value::FALSE_VAL);
+      let is_false = self.fb.ins().icmp(IntCC::Equal, v, false_val);
+      return self.fb.ins().uextend(types::I64, is_false);
+    }
+
     if self.proven_numeric(self.current_ip, cond) {
       let v = self.load_reg(cond);
       let fv = self.to_f64(v);
@@ -6660,13 +6738,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::JmpIfFalse { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
-        let falsey = self.emit_is_falsey(cond);
-        let zero = self.i64c(0);
-        let is_falsey = self.fb.ins().icmp(IntCC::NotEqual, falsey, zero);
+        let target_block = self.jump_target_block(ip, target_ip);
         if offset < 0 && self.loop_has_allocations(target_ip, ip) {
           self.emit_safepoint();
         }
-        let target_block = self.jump_target_block(ip, target_ip);
+        if self.bool_facts.is_bool(ip, cond) {
+          let v = self.load_reg(cond);
+          let false_val = self.u64c(value::FALSE_VAL);
+          let is_false = self.fb.ins().icmp(IntCC::Equal, v, false_val);
+          self
+            .fb
+            .ins()
+            .brif(is_false, target_block, &[], self.blocks[ip + 1], &[]);
+          return true;
+        }
+        let falsey = self.emit_is_falsey(cond);
+        let zero = self.i64c(0);
+        let is_falsey = self.fb.ins().icmp(IntCC::NotEqual, falsey, zero);
         self
           .fb
           .ins()
@@ -6675,13 +6763,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::JmpIfTrue { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
-        let truthy = self.emit_is_falsey(cond);
-        let zero = self.i64c(0);
-        let is_truthy = self.fb.ins().icmp(IntCC::Equal, truthy, zero);
+        let target_block = self.jump_target_block(ip, target_ip);
         if offset < 0 && self.loop_has_allocations(target_ip, ip) {
           self.emit_safepoint();
         }
-        let target_block = self.jump_target_block(ip, target_ip);
+        if self.bool_facts.is_bool(ip, cond) {
+          let v = self.load_reg(cond);
+          let true_val = self.u64c(value::TRUE_VAL);
+          let is_true = self.fb.ins().icmp(IntCC::Equal, v, true_val);
+          self
+            .fb
+            .ins()
+            .brif(is_true, target_block, &[], self.blocks[ip + 1], &[]);
+          return true;
+        }
+        let truthy = self.emit_is_falsey(cond);
+        let zero = self.i64c(0);
+        let is_truthy = self.fb.ins().icmp(IntCC::Equal, truthy, zero);
         self
           .fb
           .ins()

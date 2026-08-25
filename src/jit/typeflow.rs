@@ -716,6 +716,94 @@ fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet 
 /// list at all. `preds`: see `analyze`'s own docs on why this takes
 /// it as a parameter instead of computing it fresh (the short-circuit
 /// above means this particular analysis often doesn't even need it).
+
+pub struct BoolFacts {
+  entry: Vec<RegSet>,
+}
+
+impl BoolFacts {
+  #[inline]
+  pub fn is_bool(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+}
+
+fn transfer_bool(in_set: &RegSet, instr: &Instr) -> RegSet {
+  let mut out = in_set.clone();
+  match *instr {
+    Instr::LoadBool { dst, .. }
+    | Instr::Not { dst, .. }
+    | Instr::Eq { dst, .. }
+    | Instr::Neq { dst, .. }
+    | Instr::Lt { dst, .. }
+    | Instr::Le { dst, .. }
+    | Instr::Gt { dst, .. }
+    | Instr::Ge { dst, .. } => out.set(dst, true),
+
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        out.set(dst, false);
+      }
+    }
+  }
+  out
+}
+
+pub fn analyze_bool(proto: &ObjFunction, preds: &[Vec<usize>]) -> BoolFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer_bool(&entry[ip], &code[ip]))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_bool(&entry[ip], &code[ip]);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  BoolFacts { entry }
+}
+}
+
 pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();

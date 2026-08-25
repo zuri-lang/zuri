@@ -1360,6 +1360,10 @@ pub fn obj_list_len_offset() -> i32 {
   (obj_list_storage_offset() + crate::vm::list::LIST_LEN_OFFSET as usize) as i32
 }
 
+pub fn obj_list_cap_offset() -> i32 {
+  (obj_list_storage_offset() + crate::vm::list::LIST_CAP_OFFSET as usize) as i32
+}
+
 /// `obj_list_ptr_offset`'s sibling for the inline element buffer, which
 /// is where the elements live whenever the data pointer is null: see
 /// `vm::list::ListStorage`.

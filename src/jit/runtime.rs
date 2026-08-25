@@ -554,9 +554,9 @@ pub unsafe extern "C" fn zuri_jit_mulimm_slow(
   if va.is_list() {
     let count = imm as usize;
     let value = if count < usize::MAX {
-      va.as_list().to_vec().repeat(count)
+      crate::vm::list::ListStorage::repeat_slice(&va.as_list(), count)
     } else {
-      Vec::new()
+      crate::vm::list::ListStorage::new()
     };
     let v = vm.heap.alloc_list(value);
     vm.set_reg(base as usize, dst as u8, v);

@@ -4773,9 +4773,9 @@ impl VM {
     } else if va.is_list() && vb.is_number() {
       let count = vb.as_number() as usize;
       let value = if count < usize::MAX {
-        va.as_list().to_vec().repeat(count)
+        crate::vm::list::ListStorage::repeat_slice(&va.as_list(), count)
       } else {
-        Vec::new()
+        crate::vm::list::ListStorage::new()
       };
       let v = self.heap.alloc_list(value);
       return Ok(self.set_reg(base, dst, v));
