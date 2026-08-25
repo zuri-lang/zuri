@@ -2099,18 +2099,13 @@ pub unsafe extern "C" fn zuri_jit_get_field(
     let hit = cell.is_some_and(|c| c.class_bits.get() == class_bits);
 
     if hit {
-      let idx = (cell.unwrap().byte_offset.get() as usize
-        - crate::vm::object::obj_instance_inline_fields_offset())
-        / size_of::<Value>();
+      let idx = (cell.unwrap().byte_offset.get() as usize) / size_of::<Value>();
       Ok(inst.fields[idx].get())
     } else {
       let class = inst.class.as_class();
       if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
         if let Some(c) = cell {
-          c.byte_offset.set(
-            crate::vm::object::obj_instance_inline_fields_offset() as u64
-              + idx as u64 * size_of::<Value>() as u64,
-          );
+          c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
           c.class_bits.set(class_bits);
         }
         Ok(inst.fields[idx as usize].get())
@@ -2217,9 +2212,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
     let hit = cell.is_some_and(|c| c.class_bits.get() == class_bits);
 
     if hit {
-      let idx = (cell.unwrap().byte_offset.get() as usize
-        - crate::vm::object::obj_instance_inline_fields_offset())
-        / size_of::<Value>();
+      let idx = (cell.unwrap().byte_offset.get() as usize) / size_of::<Value>();
       inst.fields[idx].set(value);
       write_barrier(receiver.as_obj());
       Ok(())
@@ -2228,10 +2221,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
       match class.field_slots.get(name_val.as_str()).copied() {
         Some(idx) => {
           if let Some(c) = cell {
-            c.byte_offset.set(
-              crate::vm::object::obj_instance_inline_fields_offset() as u64
-                + idx as u64 * size_of::<Value>() as u64,
-            );
+            c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
             c.class_bits.set(class_bits);
           }
           inst.fields[idx as usize].set(value);

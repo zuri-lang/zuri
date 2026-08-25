@@ -4049,12 +4049,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     if proven {
       let ptr = self.obj_ptr(self_val);
-      let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
+      let fields_ptr = self.load_instance_fields_ptr(ptr);
       let v = self.fb.ins().load(
         types::I64,
         cranelift_codegen::ir::MemFlagsData::trusted(),
-        ptr,
-        off,
+        fields_ptr,
+        (slot as i32) * 8,
       );
       self.store_reg(dst, v);
       return;
@@ -4079,12 +4079,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(is_instance, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
     let v = self.fb.ins().load(
       types::I64,
       cranelift_codegen::ir::MemFlagsData::trusted(),
-      ptr,
-      off,
+      fields_ptr,
+      (slot as i32) * 8,
     );
     self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
@@ -4134,12 +4134,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     if proven {
       let ptr = self.obj_ptr(self_val);
-      let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
+      let fields_ptr = self.load_instance_fields_ptr(ptr);
       self.fb.ins().store(
         cranelift_codegen::ir::MemFlagsData::trusted(),
         src_val,
-        ptr,
-        off,
+        fields_ptr,
+        (slot as i32) * 8,
       );
       self.emit_write_barrier(ptr);
       return;
@@ -4164,12 +4164,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(is_instance, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
     self.fb.ins().store(
       cranelift_codegen::ir::MemFlagsData::trusted(),
       src_val,
-      ptr,
-      off,
+      fields_ptr,
+      (slot as i32) * 8,
     );
     self.emit_write_barrier(ptr);
     self.fb.ins().jump(done_block, &[]);
@@ -4312,9 +4312,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// cache for the next time round.
   fn emit_ic_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, cache: IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    if let Some(&(ptr, _)) = self.guarded_instances.get(&obj) {
+    if let Some(&(_ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
       let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
-      let addr = self.fb.ins().iadd(ptr, byte_offset);
+      let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
       let v = self.fb.ins().load(types::I64, flags, addr, 0);
       self.store_reg(dst, v);
       return;
@@ -4326,8 +4326,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
-    self.guarded_instances.insert(obj, (ptr, ptr));
-    let addr = self.fb.ins().iadd(ptr, byte_offset);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    self.guarded_instances.insert(obj, (ptr, fields_ptr));
+    let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
     let v = self.fb.ins().load(types::I64, flags, addr, 0);
     self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
@@ -4384,9 +4385,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let src_val = self.load_reg(src);
 
-    if let Some(&(ptr, _)) = self.guarded_instances.get(&obj) {
+    if let Some(&(ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
       let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
-      let addr = self.fb.ins().iadd(ptr, byte_offset);
+      let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
       self.fb.ins().store(flags, src_val, addr, 0);
       if !self.proven_numeric(ip, src) {
         let is_obj = self.is_obj(src_val);
@@ -4410,8 +4411,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
-    self.guarded_instances.insert(obj, (ptr, ptr));
-    let addr = self.fb.ins().iadd(ptr, byte_offset);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    self.guarded_instances.insert(obj, (ptr, fields_ptr));
+    let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
     self.fb.ins().store(flags, src_val, addr, 0);
     if !self.proven_numeric(ip, src) {
       let is_obj = self.is_obj(src_val);
@@ -5193,13 +5195,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// branch) to actually be one: see
   /// `object::obj_instance_fields_ptr_offset()`'s own docs for why this
   /// fixed offset is sound.
-  fn load_instance_fields_ptr(&mut self, obj_ptr: IrValue) -> IrValue {
-    let off = object::obj_instance_fields_ptr_offset() as i32;
+    fn load_instance_fields_ptr(&mut self, obj_ptr: IrValue) -> IrValue {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     self.fb.ins().load(
       types::I64,
-      cranelift_codegen::ir::MemFlagsData::trusted(),
+      flags,
       obj_ptr,
-      off,
+      object::obj_instance_fields_offset() as i32,
     )
   }
 

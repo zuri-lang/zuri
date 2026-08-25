@@ -229,10 +229,10 @@ pub fn obj_instance_fields_ptr_offset() -> usize {
 /// (`emit_self_invoke`) to read a receiver's class directly for its
 /// own guard, with no `zuri_jit_invoke_prepare` call at all on the
 /// guard check itself.
-pub fn obj_instance_inline_fields_offset() -> usize {
+pub fn obj_instance_fields_offset() -> usize {
   obj_payload_offset()
     + std::mem::offset_of!(ObjInstance, fields)
-    + std::mem::offset_of!(FieldStorage, inline)
+    + std::mem::offset_of!(FieldStorage, ptr)
 }
 
 pub fn obj_instance_class_offset() -> usize {
@@ -864,106 +864,57 @@ pub struct ObjClass {
 /// completely unchanged; this type is a drop-in replacement for
 /// `Vec<Cell<Value>>` at every current use site, not a new API surface
 /// callers need to learn.
-pub const INLINE_FIELD_STORAGE_CAP: usize = 8;
-
 #[repr(C)]
 pub struct FieldStorage {
   ptr: *mut Cell<Value>,
   len: usize,
-  inline: [Cell<Value>; INLINE_FIELD_STORAGE_CAP],
 }
 
 unsafe impl Send for FieldStorage {}
 
 impl FieldStorage {
   fn new(len: usize) -> FieldStorage {
-    let mut storage = FieldStorage {
-      ptr: std::ptr::null_mut(),
+    let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
+    FieldStorage {
+      ptr: Box::into_raw(boxed) as *mut Cell<Value>,
       len,
-      inline: [
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-      ],
-    };
-    if len > INLINE_FIELD_STORAGE_CAP {
-      let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
-      storage.ptr = Box::into_raw(boxed) as *mut Cell<Value>;
     }
-    storage
   }
 
   fn into_raw_parts(self) -> (*mut Cell<Value>, usize) {
-    if self.len <= INLINE_FIELD_STORAGE_CAP {
-      return (std::ptr::null_mut(), self.len);
-    }
     let this = std::mem::ManuallyDrop::new(self);
     (this.ptr, this.len)
   }
 
   unsafe fn from_raw_parts(ptr: *mut Cell<Value>, len: usize) -> FieldStorage {
-    FieldStorage {
-      ptr,
-      len,
-      inline: [
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-        Cell::new(Value::nil()),
-      ],
-    }
+    FieldStorage { ptr, len }
   }
 
   pub fn as_fields_ptr(&self) -> *const Cell<Value> {
-    if self.len <= INLINE_FIELD_STORAGE_CAP {
-      self.inline.as_ptr()
-    } else {
-      self.ptr
-    }
+    self.ptr
   }
 
   pub fn as_fields_mut_ptr(&mut self) -> *mut Cell<Value> {
-    if self.len <= INLINE_FIELD_STORAGE_CAP {
-      self.inline.as_mut_ptr()
-    } else {
-      self.ptr
-    }
+    self.ptr
   }
 }
 
 impl std::ops::Deref for FieldStorage {
   type Target = [Cell<Value>];
   fn deref(&self) -> &[Cell<Value>] {
-    if self.len <= INLINE_FIELD_STORAGE_CAP {
-      &self.inline[..self.len]
-    } else {
-      unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
+    unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
   }
 }
 
 impl std::ops::DerefMut for FieldStorage {
   fn deref_mut(&mut self) -> &mut [Cell<Value>] {
-    if self.len <= INLINE_FIELD_STORAGE_CAP {
-      &mut self.inline[..self.len]
-    } else {
-      unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
+    unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
   }
 }
 
 impl Drop for FieldStorage {
   fn drop(&mut self) {
-    if self.len > INLINE_FIELD_STORAGE_CAP && !self.ptr.is_null() {
+    if !self.ptr.is_null() {
       unsafe {
         drop(Box::from_raw(std::slice::from_raw_parts_mut(
           self.ptr, self.len,
@@ -2522,9 +2473,6 @@ impl Heap {
     match obj {
       Obj::Instance(instance) => {
         let (ptr, len) = instance.fields.into_raw_parts();
-        if ptr.is_null() {
-          return;
-        }
         for i in 0..len {
           unsafe { (*ptr.add(i)).set(Value::nil()) };
         }
@@ -2825,9 +2773,6 @@ impl Heap {
   /// (`reset_nursery`), so this upholds `FieldStorage::new`'s exact
   /// postcondition either way.
   fn take_field_storage(&mut self, len: usize) -> FieldStorage {
-    if len <= INLINE_FIELD_STORAGE_CAP {
-      return FieldStorage::new(len);
-    }
     if let Some(ptr) = self.field_storage_pool.take(len) {
       return unsafe { FieldStorage::from_raw_parts(ptr, len) };
     }
