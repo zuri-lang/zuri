@@ -4376,7 +4376,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       addr,
       0,
     );
-    self.emit_write_barrier(ptr);
+    if !self.proven_numeric(ip, src) {
+      let is_obj = self.is_obj(src_val);
+      let barrier_block = self.fb.create_block();
+      let pass_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(is_obj, barrier_block, &[], pass_block, &[]);
+      self.fb.switch_to_block(barrier_block);
+      self.emit_write_barrier(ptr);
+      self.fb.ins().jump(pass_block, &[]);
+      self.fb.switch_to_block(pass_block);
+    }
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -5278,19 +5290,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(resolve_block);
     let (data_ptr, len) = self.load_list_ptr_len(ptr);
-    // Negative-index wraparound (`list[-1]` == last element), matching
-    // `VM::coerce_index`'s own semantics exactly.
-    let zero = self.fb.ins().iconst(types::I64, 0);
-    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
-    let wrapped = self.fb.ins().iadd(as_int, len);
-    let i_adj = self.fb.ins().select(is_neg, wrapped, as_int);
-
-    let ge_zero = self
-      .fb
-      .ins()
-      .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
-    let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
-    let in_bounds = self.fb.ins().band(ge_zero, lt_len);
+    let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
     let fast_block = self.fb.create_block();
     self
@@ -5299,7 +5299,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(in_bounds, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let byte_off = self.fb.ins().imul_imm_s(i_adj, 8);
+    let byte_off = self.fb.ins().imul_imm_s(as_int, 8);
     let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
     let v = self.fb.ins().load(
       types::I64,
@@ -5431,17 +5431,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(resolve_block);
     let (data_ptr, len) = self.load_list_ptr_len(ptr);
-    let zero = self.fb.ins().iconst(types::I64, 0);
-    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
-    let wrapped = self.fb.ins().iadd(as_int, len);
-    let i_adj = self.fb.ins().select(is_neg, wrapped, as_int);
-
-    let ge_zero = self
-      .fb
-      .ins()
-      .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
-    let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
-    let in_bounds = self.fb.ins().band(ge_zero, lt_len);
+    let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
     let fast_block = self.fb.create_block();
     self
@@ -5450,7 +5440,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(in_bounds, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let byte_off = self.fb.ins().imul_imm_s(i_adj, 8);
+    let byte_off = self.fb.ins().imul_imm_s(as_int, 8);
     let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
     self.fb.ins().store(
       cranelift_codegen::ir::MemFlagsData::trusted(),
