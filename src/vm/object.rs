@@ -1584,6 +1584,28 @@ mod gcbox_layout_tests {
     assert_eq!(bytes, text.as_bytes());
   }
 
+  /// `obj_bytes_ptr_offset`/`obj_bytes_len_offset` must land on a REAL
+  /// allocated Bytes object's actual data pointer and byte length.
+  #[test]
+  fn bytes_offsets_land_on_real_data_and_len() {
+    let mut heap = Heap::default();
+    let raw = vec![0x12u8, 0x34, 0x56, 0x78];
+    let v = heap.alloc_bytes(raw.clone());
+    let obj = v.as_obj();
+    assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_BYTES);
+
+    let ptr_slot =
+      unsafe { (obj as *const u8).offset(obj_bytes_ptr_offset() as isize) as *const usize };
+    let len_slot =
+      unsafe { (obj as *const u8).offset(obj_bytes_len_offset() as isize) as *const usize };
+    let data_ptr = unsafe { *ptr_slot } as *const u8;
+    let byte_len = unsafe { *len_slot };
+
+    assert_eq!(byte_len, raw.len());
+    let bytes = unsafe { std::slice::from_raw_parts(data_ptr, byte_len) };
+    assert_eq!(bytes, raw.as_slice());
+  }
+
   /// `obj_closure_function_offset` must land on a real closure's own
   /// `function` field, checked against an actual allocation rather than
   /// against `offset_of!` a second time.

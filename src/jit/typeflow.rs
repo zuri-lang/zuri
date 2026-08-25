@@ -2466,6 +2466,35 @@ mod ref_classify_tests {
   }
 
   #[test]
+  fn global_numeric_flow_proves_add_nonref() {
+    let name_val: &'static Obj = Box::leak(Box::new(Obj::Str("g".to_string())));
+    let name_val = Value::obj(name_val as *const Obj);
+    let code = vec![
+      Instr::LoadConst {
+        dst: 0,
+        const_idx: 1,
+      },
+      Instr::SetGlobal {
+        name_const: 0,
+        src: 0,
+      },
+      Instr::GetGlobal {
+        dst: 1,
+        name_const: 0,
+      },
+      Instr::Add { dst: 2, a: 1, b: 0 },
+      Instr::Return { src: 2 },
+    ];
+    let f = make_func(code, vec![name_val, Value::number(2.0)], 3);
+    let types = analyze(&f, &build_predecessors(&f), None, None, &rustc_hash::FxHashSet::default());
+    let refs = classify_refs(&f, &types);
+    assert!(
+      refs.is_never_ref(4, 2),
+      "global proven numeric after SetGlobal -> Add result is proven non-ref"
+    );
+  }
+
+  #[test]
   fn eq_always_nonref_regardless_of_operand_types() {
     // Eq calls Value::equals directly, no operator-override hook --
     // provably non-ref even though neither operand is proven numeric.
