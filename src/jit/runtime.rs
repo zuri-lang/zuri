@@ -363,6 +363,11 @@ pub unsafe extern "C" fn zuri_jit_add_slow(
   b: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
+  let va = vm.get_reg(base as usize, a as u8);
+  let vb = vm.get_reg(base as usize, b as u8);
+  if va.is_string() && vb.is_string() {
+    return unsafe { zuri_jit_str_add(vm_ptr, base, dst, a, b) };
+  }
   match vm.binary_add(base as usize, dst as u8, a as u8, b as u8, "+") {
     Ok(()) => OK,
     Err(e) => fail(vm, e),

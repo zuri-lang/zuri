@@ -5639,6 +5639,89 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  fn emit_str_add_dynamic(
+    &mut self,
+    _ip: usize,
+    dst: u8,
+    a: u8,
+    b: u8,
+    done_block: Block,
+  ) {
+    let va = self.load_reg(a);
+    let vb = self.load_reg(b);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+
+    let slow_block = self.fb.create_block();
+
+    if dst == a {
+      let is_obj_a = self.is_obj(va);
+      let is_obj_b = self.is_obj(vb);
+      let both_obj = self.fb.ins().band(is_obj_a, is_obj_b);
+
+      let check_tags_block = self.fb.create_block();
+      self.fb.ins().brif(both_obj, check_tags_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(check_tags_block);
+      let ptr_a = self.obj_ptr(va);
+      let ptr_b = self.obj_ptr(vb);
+      let tag_a = self.obj_tag(ptr_a);
+      let tag_b = self.obj_tag(ptr_b);
+      let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+      let is_str_a = self.fb.ins().icmp(IntCC::Equal, tag_a, tag_str);
+      let is_str_b = self.fb.ins().icmp(IntCC::Equal, tag_b, tag_str);
+      let both_str = self.fb.ins().band(is_str_a, is_str_b);
+
+      let check_inplace_block = self.fb.create_block();
+      self.fb.ins().brif(both_str, check_inplace_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(check_inplace_block);
+      let gen_off = object::obj_to_gcbox_generation_offset();
+      let gen_byte = self.fb.ins().load(types::I8, flags, ptr_a, gen_off);
+      let zero_u8 = self.fb.ins().iconst(types::I8, 0); // Generation::Young is 0
+      let is_young_a = self.fb.ins().icmp(IntCC::Equal, gen_byte, zero_u8);
+
+      let young_inplace_block = self.fb.create_block();
+      self.fb.ins().brif(is_young_a, young_inplace_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(young_inplace_block);
+      let len_a = self.fb.ins().load(types::I64, flags, ptr_a, object::obj_str_len_offset());
+      let cap_a = self.fb.ins().load(types::I64, flags, ptr_a, object::obj_str_cap_offset());
+      let len_b = self.fb.ins().load(types::I64, flags, ptr_b, object::obj_str_len_offset());
+      let total_len = self.fb.ins().iadd(len_a, len_b);
+      let can_fit = self.fb.ins().icmp(IntCC::UnsignedLessThanOrEqual, total_len, cap_a);
+
+      let append_1_block = self.fb.create_block();
+      self.fb.ins().brif(can_fit, append_1_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(append_1_block);
+      let data_a = self.fb.ins().load(types::I64, flags, ptr_a, object::obj_str_ptr_offset());
+      let data_b = self.fb.ins().load(types::I64, flags, ptr_b, object::obj_str_ptr_offset());
+      let dst_addr = self.fb.ins().iadd(data_a, len_a);
+      let one = self.i64c(1);
+      let is_one_char = self.fb.ins().icmp(IntCC::Equal, len_b, one);
+      let single_byte_block = self.fb.create_block();
+      self.fb.ins().brif(is_one_char, single_byte_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(single_byte_block);
+      let b_byte = self.fb.ins().load(types::I8, flags, data_b, 0);
+      self.fb.ins().store(flags, b_byte, dst_addr, 0);
+      self.fb.ins().store(flags, total_len, ptr_a, object::obj_str_len_offset());
+      self.store_reg(dst, va);
+      self.fb.ins().jump(done_block, &[]);
+    } else {
+      self.fb.ins().jump(slow_block, &[]);
+    }
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let a_i = self.idx(a);
+    let b_i = self.idx(b);
+    self.call_checked("zuri_jit_add_slow", &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+  }
+
   fn emit_list_get_index(
     &mut self,
     ip: usize,
@@ -6723,9 +6806,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         } else if self.both_proven_string(ip, a, b) {
           self.emit_str_add(ip, dst, a, b);
         } else {
-          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_add_slow", |fc, fa, fb| {
-            fc.fb.ins().fadd(fa, fb)
-          });
+          let va = self.load_reg(a);
+          let vb = self.load_reg(b);
+          let na = self.is_number(va);
+          let nb = self.is_number(vb);
+          let both_num = self.fb.ins().band(na, nb);
+
+          let num_block = self.fb.create_block();
+          let not_num_block = self.fb.create_block();
+          let done_block = self.fb.create_block();
+          self.fb.ins().brif(both_num, num_block, &[], not_num_block, &[]);
+
+          self.fb.switch_to_block(num_block);
+          let fa = self.to_f64(va);
+          let fb_ = self.to_f64(vb);
+          let res_f = self.fb.ins().fadd(fa, fb_);
+          let res_v = self.from_f64(res_f);
+          self.store_reg(dst, res_v);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(not_num_block);
+          self.emit_str_add_dynamic(ip, dst, a, b, done_block);
+
+          self.fb.switch_to_block(done_block);
         }
         false
       },
