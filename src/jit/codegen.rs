@@ -989,6 +989,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         None
       };
 
+    for (ip, instr) in self.proto.chunk.code.iter().enumerate() {
+      if let Instr::MakeList { dst, count, .. } = *instr {
+        if self.scalar_replace_eligible(ip, dst, count) && !self.scalar_lists.contains_key(&dst) {
+          let s = self.fb.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            count as u32 * 8,
+            3,
+          ));
+          self.scalar_lists.insert(dst, (s, count));
+        }
+      }
+    }
+
     self.emit_entry_dispatch(
       osr_param,
       specialized.as_ref().map(|(b, f)| (b.as_slice(), f)),
@@ -1083,6 +1096,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// empty; the loop never touches the speculated value at all)
   /// skips the guard and routes straight to the general body: the
   /// specialized block there would be behaviorally identical anyway.
+  fn emit_osr_scalar_list_init(&mut self, ip: usize) {
+    if ip == 0 || self.scalar_lists.is_empty() {
+      return;
+    }
+    let lists: Vec<(u8, StackSlot, u8)> = self
+      .scalar_lists
+      .iter()
+      .map(|(&dst, &(slot, count))| (dst, slot, count))
+      .collect();
+    for (dst, slot, count) in lists {
+      let slot_addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+      let dst_c = self.u64c(dst as u64);
+      let count_c = self.u64c(count as u64);
+      self.call_helper(
+        "zuri_jit_init_osr_scalar_list",
+        &[self.vm_param, self.base_param, dst_c, slot_addr, count_c],
+      );
+    }
+  }
+
   fn emit_entry_dispatch(
     &mut self,
     osr_param: IrValue,
@@ -1091,8 +1124,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
 
-    let normal_route = specialized.map(|_| self.fb.create_block());
-    let normal_target = normal_route.unwrap_or(self.blocks[0]);
+    let normal_route = Some(self.fb.create_block());
+    let normal_target = normal_route.unwrap();
 
     let mut next_check = self.fb.create_block();
     self
@@ -1117,16 +1150,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let id_const = self.fb.ins().iconst(types::I32, id as i64);
       let is_this = self.fb.ins().icmp(IntCC::Equal, osr_param, id_const);
       let after = self.fb.create_block();
-      if specialized.is_some() {
-        let route = self.fb.create_block();
-        self.fb.ins().brif(is_this, route, &[], after, &[]);
-        routes.push((route, ip));
-      } else {
-        self
-          .fb
-          .ins()
-          .brif(is_this, self.blocks[ip], &[], after, &[]);
-      }
+      let route = self.fb.create_block();
+      self.fb.ins().brif(is_this, route, &[], after, &[]);
+      routes.push((route, ip));
       next_check = after;
     }
 
@@ -1143,6 +1169,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if let Some((spec_blocks, spec_facts)) = specialized {
       for (route_block, ip) in routes {
         self.fb.switch_to_block(route_block);
+        self.emit_osr_scalar_list_init(ip);
         let mask = spec_facts.numeric_mask_at(ip);
         if mask == 0 {
           if self.speculative_regs.is_some() {
@@ -4016,12 +4043,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     if proven {
       let ptr = self.obj_ptr(self_val);
-      let fields_ptr = self.load_instance_fields_ptr(ptr);
+      let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
       let v = self.fb.ins().load(
         types::I64,
         cranelift_codegen::ir::MemFlagsData::trusted(),
-        fields_ptr,
-        (slot as i32) * 8,
+        ptr,
+        off,
       );
       self.store_reg(dst, v);
       return;
@@ -4034,12 +4061,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
 
-    // `ptr`/`tag` are only ever computed/dereferenced INSIDE this
-    // block, proven reachable only when `is_obj` was true: see
-    // `is_obj`'s own docs. Computing either unconditionally (e.g. via
-    // a plain boolean AND instead of a real branch) would mean
-    // dereferencing a masked-bits "pointer" for a nil/bool/number
-    // value, which is NOT a valid address and can fault.
     self.fb.switch_to_block(obj_block);
     let ptr = self.obj_ptr(self_val);
     let tag = self.obj_tag(ptr);
@@ -4052,12 +4073,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(is_instance, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
     let v = self.fb.ins().load(
       types::I64,
       cranelift_codegen::ir::MemFlagsData::trusted(),
-      fields_ptr,
-      (slot as i32) * 8,
+      ptr,
+      off,
     );
     self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
@@ -4107,12 +4128,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     if proven {
       let ptr = self.obj_ptr(self_val);
-      let fields_ptr = self.load_instance_fields_ptr(ptr);
+      let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
       self.fb.ins().store(
         cranelift_codegen::ir::MemFlagsData::trusted(),
         src_val,
-        fields_ptr,
-        (slot as i32) * 8,
+        ptr,
+        off,
       );
       self.emit_write_barrier(ptr);
       return;
@@ -4125,9 +4146,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
 
-    // See `emit_self_get_field`'s identical two-stage branch for why
-    // `ptr`/`tag` must only ever be computed inside a block already
-    // proven reachable only when `is_obj` was true.
     self.fb.switch_to_block(obj_block);
     let ptr = self.obj_ptr(self_val);
     let tag = self.obj_tag(ptr);
@@ -4140,12 +4158,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(is_instance, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    let off = (object::obj_instance_inline_fields_offset() as i32) + (slot as i32) * 8;
     self.fb.ins().store(
       cranelift_codegen::ir::MemFlagsData::trusted(),
       src_val,
-      fields_ptr,
-      (slot as i32) * 8,
+      ptr,
+      off,
     );
     self.emit_write_barrier(ptr);
     self.fb.ins().jump(done_block, &[]);
@@ -4288,9 +4306,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// cache for the next time round.
   fn emit_ic_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, cache: IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    if let Some(&(_ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
+    if let Some(&(ptr, _)) = self.guarded_instances.get(&obj) {
       let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
-      let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+      let addr = self.fb.ins().iadd(ptr, byte_offset);
       let v = self.fb.ins().load(types::I64, flags, addr, 0);
       self.store_reg(dst, v);
       return;
@@ -4302,9 +4320,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
-    let fields_ptr = self.load_instance_fields_ptr(ptr);
-    self.guarded_instances.insert(obj, (ptr, fields_ptr));
-    let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+    self.guarded_instances.insert(obj, (ptr, ptr));
+    let addr = self.fb.ins().iadd(ptr, byte_offset);
     let v = self.fb.ins().load(types::I64, flags, addr, 0);
     self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
@@ -4361,9 +4378,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let src_val = self.load_reg(src);
 
-    if let Some(&(ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
+    if let Some(&(ptr, _)) = self.guarded_instances.get(&obj) {
       let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
-      let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+      let addr = self.fb.ins().iadd(ptr, byte_offset);
       self.fb.ins().store(flags, src_val, addr, 0);
       if !self.proven_numeric(ip, src) {
         let is_obj = self.is_obj(src_val);
@@ -4387,9 +4404,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
-    let fields_ptr = self.load_instance_fields_ptr(ptr);
-    self.guarded_instances.insert(obj, (ptr, fields_ptr));
-    let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
+    self.guarded_instances.insert(obj, (ptr, ptr));
+    let addr = self.fb.ins().iadd(ptr, byte_offset);
     self.fb.ins().store(flags, src_val, addr, 0);
     if !self.proven_numeric(ip, src) {
       let is_obj = self.is_obj(src_val);
@@ -5604,11 +5620,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// for instance), so there is a real window here to get right, not a
   /// theoretical one.
   fn emit_scalar_make_list(&mut self, dst: u8, start: u8, count: u8) {
-    let slot = self.fb.create_sized_stack_slot(StackSlotData::new(
-      StackSlotKind::ExplicitSlot,
-      count as u32 * 8,
-      3,
-    ));
+    let slot = self
+      .scalar_lists
+      .get(&dst)
+      .map(|&(s, _)| s)
+      .unwrap_or_else(|| {
+        let s = self.fb.create_sized_stack_slot(StackSlotData::new(
+          StackSlotKind::ExplicitSlot,
+          count as u32 * 8,
+          3,
+        ));
+        self.scalar_lists.insert(dst, (s, count));
+        s
+      });
     for i in 0..count {
       let v = self.load_reg(start + i);
       self
@@ -5619,7 +5643,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
     let count_c = self.u64c(count as u64);
     self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
-    self.scalar_lists.insert(dst, (slot, count));
   }
 
   /// `Instr::GetIndex`'s fast path when `obj` is a scalar-replaced

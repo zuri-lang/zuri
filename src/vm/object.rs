@@ -229,6 +229,12 @@ pub fn obj_instance_fields_ptr_offset() -> usize {
 /// (`emit_self_invoke`) to read a receiver's class directly for its
 /// own guard, with no `zuri_jit_invoke_prepare` call at all on the
 /// guard check itself.
+pub fn obj_instance_inline_fields_offset() -> usize {
+  obj_payload_offset()
+    + std::mem::offset_of!(ObjInstance, fields)
+    + std::mem::offset_of!(FieldStorage, inline)
+}
+
 pub fn obj_instance_class_offset() -> usize {
   obj_payload_offset() + std::mem::offset_of!(ObjInstance, class)
 }
@@ -858,90 +864,101 @@ pub struct ObjClass {
 /// completely unchanged; this type is a drop-in replacement for
 /// `Vec<Cell<Value>>` at every current use site, not a new API surface
 /// callers need to learn.
+pub const INLINE_FIELD_STORAGE_CAP: usize = 3;
+
 #[repr(C)]
 pub struct FieldStorage {
   ptr: *mut Cell<Value>,
   len: usize,
+  inline: [Cell<Value>; INLINE_FIELD_STORAGE_CAP],
 }
 
-// SAFETY: `FieldStorage` owns its allocation exclusively (like
-// `Box<[Cell<Value>]>`, which it's built from and tears back down into
-// on `Drop`); nothing outside this type ever holds a second pointer
-// to the same allocation. `Cell<Value>` itself is `!Sync` (as it
-// already was via `Vec<Cell<Value>>`, so this introduces no NEW
-// restriction), which is exactly why only `Send` is asserted here, not
-// `Sync`; moving an owned, exclusively-held allocation to another
-// thread is sound; sharing `&FieldStorage` across threads for
-// concurrent `Cell` mutation never was and still isn't.
 unsafe impl Send for FieldStorage {}
 
 impl FieldStorage {
   fn new(len: usize) -> FieldStorage {
-    let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
-    // `Box<[T]>::into_raw` never lies about the length it hands back
-    // in the resulting fat pointer; reading `.len()` off it (rather
-    // than reusing the `len` local) would be equally correct; using
-    // the local just avoids a fat-pointer-to-thin-pointer-plus-len
-    // decomposition here.
-    let ptr = Box::into_raw(boxed) as *mut Cell<Value>;
-    FieldStorage { ptr, len }
+    let mut storage = FieldStorage {
+      ptr: std::ptr::null_mut(),
+      len,
+      inline: [
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+      ],
+    };
+    if len > INLINE_FIELD_STORAGE_CAP {
+      let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
+      storage.ptr = Box::into_raw(boxed) as *mut Cell<Value>;
+    }
+    storage
   }
 
-  /// Tears down a `FieldStorage` WITHOUT freeing its backing allocation
-  ///; the exact inverse of `new`/`from_raw_parts`, for `Heap::
-  /// reset_nursery`'s pooling path, which wants to recycle a dead
-  /// instance's buffer rather than hand it back to the allocator. Every
-  /// cell keeps whatever value it last held; the caller (`reset_nursery`)
-  /// is responsible for resetting them to `Value::nil()` before the
-  /// buffer is ever handed back out by `from_raw_parts`, since that's
-  /// `new`'s own guarantee callers of `alloc_instance` rely on.
   fn into_raw_parts(self) -> (*mut Cell<Value>, usize) {
+    if self.len <= INLINE_FIELD_STORAGE_CAP {
+      return (std::ptr::null_mut(), self.len);
+    }
     let this = std::mem::ManuallyDrop::new(self);
     (this.ptr, this.len)
   }
 
-  /// Reconstructs a `FieldStorage` from a `(ptr, len)` pair previously
-  /// produced by `into_raw_parts` on a `FieldStorage` of this SAME
-  /// `len`; reusing a buffer at any other length would read/write out
-  /// of bounds. The caller must also have already reset every cell to
-  /// `Value::nil()` (see `into_raw_parts`'s own docs); this function
-  /// does not re-check either invariant.
   unsafe fn from_raw_parts(ptr: *mut Cell<Value>, len: usize) -> FieldStorage {
-    FieldStorage { ptr, len }
+    FieldStorage {
+      ptr,
+      len,
+      inline: [
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+      ],
+    }
+  }
+
+  pub fn as_fields_ptr(&self) -> *const Cell<Value> {
+    if self.len <= INLINE_FIELD_STORAGE_CAP {
+      self.inline.as_ptr()
+    } else {
+      self.ptr
+    }
+  }
+
+  pub fn as_fields_mut_ptr(&mut self) -> *mut Cell<Value> {
+    if self.len <= INLINE_FIELD_STORAGE_CAP {
+      self.inline.as_mut_ptr()
+    } else {
+      self.ptr
+    }
   }
 }
 
 impl std::ops::Deref for FieldStorage {
   type Target = [Cell<Value>];
   fn deref(&self) -> &[Cell<Value>] {
-    // SAFETY: `ptr`/`len` were produced together by `Box::into_raw` in
-    // `new` and never mutated afterward (no resize support: see this
-    // type's own docs), so they still describe exactly the live
-    // allocation `new` created.
-    unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    if self.len <= INLINE_FIELD_STORAGE_CAP {
+      &self.inline[..self.len]
+    } else {
+      unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
   }
 }
 
 impl std::ops::DerefMut for FieldStorage {
   fn deref_mut(&mut self) -> &mut [Cell<Value>] {
-    // SAFETY: same as `deref`; `&mut self` here proves exclusive
-    // access to the allocation `deref`'s safety comment already
-    // establishes is still valid.
-    unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    if self.len <= INLINE_FIELD_STORAGE_CAP {
+      &mut self.inline[..self.len]
+    } else {
+      unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
   }
 }
 
 impl Drop for FieldStorage {
   fn drop(&mut self) {
-    // SAFETY: reconstructs the EXACT `Box<[Cell<Value>]>` `new` took
-    // apart via `Box::into_raw` (same pointer, same length), and lets
-    // normal `Box` drop glue free it; the inverse operation, run
-    // exactly once (Rust's own `Drop` contract guarantees `drop` is
-    // never called twice on the same value).
-    unsafe {
-      drop(Box::from_raw(std::slice::from_raw_parts_mut(
-        self.ptr, self.len,
-      )));
+    if self.len > INLINE_FIELD_STORAGE_CAP && !self.ptr.is_null() {
+      unsafe {
+        drop(Box::from_raw(std::slice::from_raw_parts_mut(
+          self.ptr, self.len,
+        )));
+      }
     }
   }
 }
@@ -2495,21 +2512,15 @@ impl Heap {
     match obj {
       Obj::Instance(instance) => {
         let (ptr, len) = instance.fields.into_raw_parts();
-        // SAFETY: `ptr` was just produced by `into_raw_parts` on a
-        // `FieldStorage` of exactly `len` cells; valid to index
-        // `0..len`.
+        if ptr.is_null() {
+          return;
+        }
         for i in 0..len {
           unsafe { (*ptr.add(i)).set(Value::nil()) };
         }
         if !pool.give(ptr, len) {
-          // Pool declined it (size class full, or not poolable); drop
-          // it for real rather than hoarding it forever.
-          // SAFETY: same `(ptr, len)` pair `into_raw_parts` just
-          // handed back, reconstructed exactly once.
           drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
         }
-        // `instance.class` is a plain `Value` (Copy, no `Drop`) --
-        // nothing else in this variant needs cleanup.
       },
       other => drop(other),
     }
@@ -2804,12 +2815,10 @@ impl Heap {
   /// (`reset_nursery`), so this upholds `FieldStorage::new`'s exact
   /// postcondition either way.
   fn take_field_storage(&mut self, len: usize) -> FieldStorage {
+    if len <= INLINE_FIELD_STORAGE_CAP {
+      return FieldStorage::new(len);
+    }
     if let Some(ptr) = self.field_storage_pool.take(len) {
-      // SAFETY: every pointer the pool holds was produced by
-      // `FieldStorage::into_raw_parts` on a `FieldStorage` of this
-      // exact `len` (the free lists are indexed/keyed by it), had every
-      // cell reset to `Value::nil()`, and is handed out at most once
-      // (`take` unlinks it, so it can never be handed out twice).
       return unsafe { FieldStorage::from_raw_parts(ptr, len) };
     }
     FieldStorage::new(len)
