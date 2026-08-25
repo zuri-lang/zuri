@@ -76,9 +76,8 @@ pub fn intern(name: &str) -> NameId {
     return id;
   }
   let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
-  let id = NameId(
-    u32::try_from(interner.names.len()).expect("zuri: more than u32::MAX distinct names"),
-  );
+  let id =
+    NameId(u32::try_from(interner.names.len()).expect("zuri: more than u32::MAX distinct names"));
   interner.names.push(leaked);
   interner.ids.insert(leaked, id);
   id

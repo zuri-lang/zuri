@@ -279,7 +279,10 @@ impl Token {
 impl fmt::Display for Token {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self.kind.clone() {
-      TokenKind::Literal(s) | TokenKind::Interpolation(s) | TokenKind::Comment(s) | TokenKind::DocBlock(s) => {
+      TokenKind::Literal(s)
+      | TokenKind::Interpolation(s)
+      | TokenKind::Comment(s)
+      | TokenKind::DocBlock(s) => {
         write!(f, "{}", s)
       },
       TokenKind::Decorator(s) => write!(f, "{}", s),

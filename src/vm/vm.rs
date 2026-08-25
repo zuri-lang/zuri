@@ -1870,8 +1870,10 @@ impl VM {
         && name_val.is_obj()
       {
         let name = name_val.as_str();
-        if let Some((_is_root, slot)) = self.resolve_global(proto.globals_module, name) {
-          proto.jit.global_slot_cache[ip].set(slot as i64);
+        if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name) {
+          if is_root {
+            proto.jit.global_slot_cache[ip].set(slot as i64);
+          }
         }
       }
     }

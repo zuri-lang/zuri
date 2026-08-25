@@ -2822,6 +2822,31 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec6!(zuri_jit_set_global),
     spec6!(zuri_jit_assign_global),
     spec6!(zuri_jit_get_slice),
+    spec5!(zuri_jit_init_osr_scalar_list),
     spec7!(zuri_jit_make_class),
   ]
+}
+
+#[inline(always)]
+pub unsafe extern "C" fn zuri_jit_init_osr_scalar_list(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  slot_addr: u64,
+  count: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let reg = vm.get_reg(base as usize, dst as u8);
+  if reg.is_obj() {
+    let obj = reg.as_obj();
+    if let crate::vm::object::Obj::List(cell) = unsafe { &*obj } {
+      let list = cell.borrow();
+      let count = (count as usize).min(list.len());
+      let slot_ptr = slot_addr as *mut Value;
+      for i in 0..count {
+        unsafe { *slot_ptr.add(i) = list.get(i).copied().unwrap_or(Value::nil()) };
+      }
+    }
+  }
+  0
 }

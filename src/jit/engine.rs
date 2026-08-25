@@ -77,7 +77,7 @@ impl JitEngine {
     // than as a miscompile) and off in release.
     #[cfg(not(debug_assertions))]
     flag_builder.set("enable_verifier", "false").unwrap();
-    flag_builder.set("opt_level", "speed").unwrap();
+    flag_builder.set("opt_level", "speed_and_size").unwrap();
     // The backtracking allocator produces measurably better code
     // (fewer spills/moves) than the single-pass one, at the cost of
     // more compile time; a trade that only became strictly correct

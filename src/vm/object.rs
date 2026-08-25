@@ -864,7 +864,7 @@ pub struct ObjClass {
 /// completely unchanged; this type is a drop-in replacement for
 /// `Vec<Cell<Value>>` at every current use site, not a new API surface
 /// callers need to learn.
-pub const INLINE_FIELD_STORAGE_CAP: usize = 3;
+pub const INLINE_FIELD_STORAGE_CAP: usize = 8;
 
 #[repr(C)]
 pub struct FieldStorage {
@@ -881,6 +881,11 @@ impl FieldStorage {
       ptr: std::ptr::null_mut(),
       len,
       inline: [
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
         Cell::new(Value::nil()),
         Cell::new(Value::nil()),
         Cell::new(Value::nil()),
@@ -906,6 +911,11 @@ impl FieldStorage {
       ptr,
       len,
       inline: [
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
+        Cell::new(Value::nil()),
         Cell::new(Value::nil()),
         Cell::new(Value::nil()),
         Cell::new(Value::nil()),

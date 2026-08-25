@@ -1208,6 +1208,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           .ins()
           .brif(guard, spec_blocks[ip], &[], self.blocks[ip], &[]);
       }
+    } else {
+      for (route_block, ip) in routes {
+        self.fb.switch_to_block(route_block);
+        self.emit_osr_scalar_list_init(ip);
+        self.fb.ins().jump(self.blocks[ip], &[]);
+      }
     }
   }
 

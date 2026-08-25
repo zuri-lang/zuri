@@ -113,7 +113,10 @@ impl ParserError {
     };
 
     let mut lines = vec![
-      format!("{}", err_style.paint(format!("SyntaxError: {}", self.message))),
+      format!(
+        "{}",
+        err_style.paint(format!("SyntaxError: {}", self.message))
+      ),
       format!(
         "  {} {}:{}:{}",
         locator_style.paint("-->"),
