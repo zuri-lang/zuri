@@ -297,12 +297,13 @@ pub fn flush_stdout() {
   });
 }
 
-/// Emits `echo`'s value followed by a newline into the shared stdout buffer.
+/// Emits `echo`'s value followed by a newline into the shared stdout buffer and flushes.
 #[inline]
 pub fn echo_value(v: Value) {
   STDOUT_BUFFER.with(|buf_cell| {
     let mut stdout = buf_cell.borrow_mut();
     let _ = writeln!(stdout, "{}", v);
+    let _ = stdout.flush();
   });
 }
 
