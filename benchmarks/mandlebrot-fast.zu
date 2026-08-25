@@ -3,7 +3,13 @@
  * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
  * 
  * Richard Ore, based on
- * Greg Buchholz's simple C #2 program buffered, by Isaac Gouy. 
+ * Greg Buchholz's simple C #2 program buffered, by Isaac Gouy.
+ * 
+ * @note The name `mandlebrot-fast` is purely historical and does 
+ *    not indicate that this implementation of mandlebrot runs 
+ *    faster than the one in `mandlebrot.zu`. In fact, under most 
+ *    scenarios and architecture, the reverse is actually the 
+ *    case.
  */
 
 import os
@@ -15,6 +21,8 @@ var zr, zi, cr, ci, tr, ti
 
 const h = os.args.get(2, '16000').to_number(), w = h
 const bytes_per_row = w >> 3
+
+var start = time()
 
 print('P4\n${w} ${h}\n')
 
@@ -54,3 +62,5 @@ iter var y = 0; y < h; y++ {
 
   print(row)
 }
+
+echo 'Time taken = ${time() - start}s'
