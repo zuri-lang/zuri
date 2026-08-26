@@ -1230,6 +1230,61 @@ impl VM {
     format!("{}: {}", type_name, message)
   }
 
+  /// Formats an error that occurred inside a worker isolate with its
+  /// source snippet and stack trace.
+  pub fn format_worker_error(&self, exc: Value) -> String {
+    let summary = self.describe_error(exc);
+    if !exc.is_instance() {
+      return summary;
+    }
+    let inst = exc.as_instance();
+    let class = inst.class.as_class();
+    let Some(&idx) = class.field_slots.get("stacktrace") else {
+      return summary;
+    };
+    let trace_val = inst.fields[idx as usize].get();
+    if !trace_val.is_list() {
+      return summary;
+    }
+    let trace_list = trace_val.as_list();
+    if trace_list.is_empty() {
+      return summary;
+    }
+
+    let mut locations: Vec<(Rc<str>, u32, String)> = Vec::with_capacity(trace_list.len());
+    for item in trace_list {
+      if item.is_string() {
+        let s = item.as_str();
+        if let Some((loc, name_part)) = s.split_once(" -> ") {
+          if let Some((path, line_str)) = loc.rsplit_once(':') {
+            if let Ok(line) = line_str.parse::<u32>() {
+              let name = name_part.strip_suffix("()").unwrap_or(name_part);
+              locations.push((Rc::<str>::from(path), line, name.to_string()));
+            }
+          }
+        }
+      }
+    }
+
+    if locations.is_empty() {
+      return summary;
+    }
+
+    let mut out = format!("{}\n", summary);
+    if let Some((path, line, _)) = locations.first() {
+      let source = std::fs::read_to_string(path.as_ref()).ok();
+      out.push_str(&render_error_site(
+        path,
+        *line,
+        source.as_deref(),
+        false,
+      ));
+    }
+    out.push('\n');
+    out.push_str(&render_stacktrace(&locations, false));
+    out
+  }
+
   /// Full multi-line "Unhandled ..." block the CLI/REPL print at the top
   /// level: a header, a snippet of source around the exact line that
   /// raised (2 lines of context on each side, that line marked), and a

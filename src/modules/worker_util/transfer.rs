@@ -41,7 +41,6 @@
 //! duplicating a resource that can't be soundly duplicated.
 
 use std::any::Any;
-use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -1179,6 +1178,7 @@ fn materialize_ref(
         function: proto_val,
         upvalues: shells,
       });
+      write_barrier(closure_val.as_obj());
       let p = vm.pin_values([closure_val]);
       node_pin[idx as usize] = Some(p);
 
@@ -1222,6 +1222,14 @@ fn materialize_class(
   arena: &[TransferNode],
   node_pin: &mut Vec<Option<usize>>,
 ) -> Result<Value, String> {
+  if let Some(existing) = vm.lookup_global(&cc.name) {
+    if existing.is_class() {
+      let p = vm.pin_values([existing]);
+      node_pin[idx as usize] = Some(p);
+      return Ok(existing);
+    }
+  }
+
   let placeholder = vm.heap_mut().alloc_class(crate::vm::object::ObjClass {
     name: cc.name.clone(),
     superclass: None,
@@ -1279,45 +1287,10 @@ fn materialize_class(
     c.statics = statics;
   }
   write_barrier(class_val.as_obj());
+  vm.define_global(cc.name.clone(), class_val);
   Ok(class_val)
 }
 
-/// Rebuilds `proto` (`arena[idx]`, always a `TransferNode::Proto`) as
-/// a real `Obj::Func` `Value` on `vm`'s own heap.
-///
-/// Constants form a pure, acyclic compile-time DAG (a nested
-/// prototype can never reference an ancestor; it doesn't exist yet
-/// at the point the nested one is compiled), so they're safe to
-/// materialize before this entry is memoized, mirroring
-/// `capture_prototype`'s own reasoning. Only `root_globals`, resolved
-/// dynamically BY NAME, can cycle back to this very prototype; a
-/// recursive top-level function calling itself by name; which is
-/// why `node_pin[idx]` is set only after the function itself exists,
-/// but before `root_globals` are resolved.
-/// Like `materialize_value`, but for an entry that's about to land in
-/// a `Chunk::constants` slot specifically. A regular runtime `String`/
-/// `BigInt` is fine to materialize into the movable nursery; nothing
-/// but ordinary `Value` reads ever touch it, and the GC keeps those
-/// current across a relocation same as any other reference. A
-/// CONSTANT-POOL string/bigint is different: `jit::codegen::bake_const`
-/// embeds a constant's raw bits directly as a machine-code immediate
-/// the moment the surrounding method gets compiled, so once that's
-/// baked in, nothing ever revisits it to follow a relocation; the
-/// object has to simply never move, which is exactly what
-/// `alloc_string_old`/`alloc_bigint_old` (what the compiler itself
-/// uses for every constant-pool entry it ever creates) guarantee and
-/// the ordinary `alloc_string`/`alloc_bigint` `materialize_value`
-/// calls do not.
-///
-/// This is what a real, hard-to-reproduce crash traced back to: a
-/// materialized prototype's string constants went through
-/// `materialize_value`'s ordinary (movable) path, so the very next
-/// minor collection to promote one of them left every already-JIT-
-/// compiled `GetField`/method-name lookup holding a dangling pointer.
-/// Every other constant kind `materialize_value` can produce (a
-/// number, a nested prototype/closure, a class) already goes through
-/// its own `alloc_old`-based allocator, so only `Str`/`BigInt` need
-/// special-casing here.
 fn materialize_constant(
   vm: &mut VM,
   tv: &TransferValue,
@@ -1331,14 +1304,6 @@ fn materialize_constant(
   }
 }
 
-thread_local! {
-  static ISOLATE_PROTO_CACHE: RefCell<FxHashMap<usize, Value>> = RefCell::new(FxHashMap::default());
-}
-
-pub fn reset_isolate_proto_cache() {
-  ISOLATE_PROTO_CACHE.with(|c| c.borrow_mut().clear());
-}
-
 fn materialize_prototype(
   vm: &mut VM,
   proto: &CapturedFunction,
@@ -1347,10 +1312,13 @@ fn materialize_prototype(
   node_pin: &mut Vec<Option<usize>>,
 ) -> Result<Value, String> {
   let proto_id = proto.data.id;
-  if let Some(cached_val) = ISOLATE_PROTO_CACHE.with(|c| c.borrow().get(&proto_id).copied()) {
-    let p = vm.pin_values([cached_val]);
-    node_pin[idx as usize] = Some(p);
-    return Ok(cached_val);
+  let key = format!("__proto_{}", proto_id);
+  if let Some(cached_val) = vm.lookup_global(&key) {
+    if cached_val.is_func() {
+      let p = vm.pin_values([cached_val]);
+      node_pin[idx as usize] = Some(p);
+      return Ok(cached_val);
+    }
   }
 
   let globals_module = match &proto.data.home {
@@ -1398,6 +1366,7 @@ fn materialize_prototype(
     jit,
   };
   let fn_val = vm.heap_mut().alloc_function(fn_obj);
+  write_barrier(fn_val.as_obj());
   let p = vm.pin_values([fn_val]);
   node_pin[idx as usize] = Some(p);
 
@@ -1406,8 +1375,7 @@ fn materialize_prototype(
     vm.define_global(name.clone(), val);
   }
 
-  vm.define_global(format!("__proto_{}", proto_id), fn_val);
-  ISOLATE_PROTO_CACHE.with(|c| c.borrow_mut().insert(proto_id, fn_val));
+  vm.define_global(key, fn_val);
 
   Ok(vm.pinned(p))
 }

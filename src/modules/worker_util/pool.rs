@@ -232,7 +232,6 @@ struct WorkerIsolate {
 
 impl WorkerIsolate {
   fn new() -> Self {
-    transfer::reset_isolate_proto_cache();
     let mut vm = VM::new(Heap::new());
     vm.init();
     WorkerIsolate { vm }
@@ -569,14 +568,27 @@ mod tests {
 }
 
 fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, String> {
-  let callee = transfer::materialize(&mut isolate.vm, &task.callee)?;
-  // `callee` sits only in this local until `call_value` copies it
-  // into a register; pin it across `args`' own materialize call,
-  // which can itself allocate (and therefore collect).
-  let pin = isolate.vm.pin_values([callee]);
-  let args_val = transfer::materialize(&mut isolate.vm, &task.args)?;
-  let callee = isolate.vm.pinned(pin);
-  isolate.vm.unpin(pin);
+  let mark = isolate.vm.pin_values(std::iter::empty());
+  match transfer::materialize(&mut isolate.vm, &task.callee) {
+    Ok(v) => {
+      isolate.vm.pin_values([v]);
+    }
+    Err(e) => {
+      isolate.vm.unpin(mark);
+      return Err(e);
+    }
+  };
+  match transfer::materialize(&mut isolate.vm, &task.args) {
+    Ok(v) => {
+      isolate.vm.pin_values([v]);
+    }
+    Err(e) => {
+      isolate.vm.unpin(mark);
+      return Err(e);
+    }
+  };
+  let callee = isolate.vm.pinned(mark);
+  let args_val = isolate.vm.pinned(mark + 1);
 
   let args = args_val.as_list();
 
@@ -589,6 +601,7 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
   let (target, full_args) = if callee.is_bound_method() {
     let bm = callee.as_bound_method();
     if !bm.method.is_closure() {
+      isolate.vm.unpin(mark);
       return Err("worker spawn target is not a callable function".to_string());
     }
     let mut full = Vec::with_capacity(args.len() + 1);
@@ -598,13 +611,16 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
   } else if callee.is_closure() {
     (callee, args)
   } else {
+    isolate.vm.unpin(mark);
     return Err("worker spawn target is not a callable function".to_string());
   };
 
-  match isolate.vm.call_value(target, &full_args) {
+  let result = match isolate.vm.call_value(target, &full_args) {
     Ok(ret) => transfer::capture(&isolate.vm, ret),
-    Err(exc) => Err(isolate.vm.describe_error(exc)),
-  }
+    Err(exc) => Err(isolate.vm.format_worker_error(exc)),
+  };
+  isolate.vm.unpin(mark);
+  result
 }
 
 // ---------------------------------------------------------------------

@@ -8277,8 +8277,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(needs_some_gc, gc_block, &[], done_block, &[]);
 
     self.fb.switch_to_block(gc_block);
+    self.publish_ip();
     self.flush_live(self.current_ip);
     self.call_helper_raw("zuri_jit_gc_safepoint", &[self.vm_param]);
+    self.refresh_regs();
     self.reload_live(self.current_ip);
     self.fb.ins().jump(done_block, &[]);
 
