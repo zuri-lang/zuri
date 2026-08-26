@@ -4419,7 +4419,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         fields_ptr,
         (slot as i32) * 8,
       );
-      self.emit_write_barrier(ptr);
+      self.emit_write_barrier_for_store(ip, src, src_val, ptr);
       return;
     }
 
@@ -4449,7 +4449,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       fields_ptr,
       (slot as i32) * 8,
     );
-    self.emit_write_barrier(ptr);
+    self.emit_write_barrier_for_store(ip, src, src_val, ptr);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -5019,7 +5019,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().store(flags, item, elem_addr, 0);
     let new_len = self.fb.ins().iadd_imm_s(len, 1);
     self.fb.ins().store(flags, new_len, ptr, object::obj_list_len_offset());
-    self.emit_write_barrier(ptr);
+    self.emit_write_barrier_for_store(ip, obj + 2, item, ptr);
     let nil = self.u64c(value::NIL_VAL);
     self.store_reg(dst, nil);
     self.fb.ins().jump(done_block, &[]);
@@ -5364,6 +5364,37 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `emit_write_barrier`'s own guard is already cheap, but it's still
+  /// two loads and a branch paid on every single mutation, including
+  /// ones where the value going in is a plain number. A number can
+  /// never introduce an old->young pointer, so a store of one can
+  /// never owe the barrier anything; `emit_ic_set_field` worked this
+  /// out first, and this just gives every other field/element mutation
+  /// site the same shortcut instead of leaving them to duplicate it by
+  /// hand. `proven_numeric` skips the runtime check entirely when
+  /// `type_facts` already settled it at compile time; otherwise one
+  /// `is_obj` test decides whether `emit_write_barrier` is worth
+  /// reaching at all.
+  ///
+  /// This is what `fannkuch-redux` and friends actually want: their
+  /// hot loops are almost pure `list[i] = <number>` traffic, where the
+  /// old unconditional barrier call was paying real generation/
+  /// remembered-set overhead on every element write for no possible
+  /// benefit.
+  fn emit_write_barrier_for_store(&mut self, ip: usize, src_reg: u8, src_val: IrValue, obj_ptr: IrValue) {
+    if self.proven_numeric(ip, src_reg) {
+      return;
+    }
+    let is_obj = self.is_obj(src_val);
+    let barrier_block = self.fb.create_block();
+    let pass_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, barrier_block, &[], pass_block, &[]);
+    self.fb.switch_to_block(barrier_block);
+    self.emit_write_barrier(obj_ptr);
+    self.fb.ins().jump(pass_block, &[]);
+    self.fb.switch_to_block(pass_block);
+  }
+
   /// `GetUpval`/`SetUpval`'s shared front half: resolves `closure_param
   /// .upvalues[uidx]` and confirms it's really an `Obj::Upvalue`,
   /// leaving its raw `*const Obj` current on return. Branches to
@@ -5485,7 +5516,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `Open` writes straight into `regs_var`, no barrier, exactly like
   /// `zuri_jit_set_upval`'s own `Open` arm (a register is never a GC
   /// root-set boundary the way a heap object's own memory is).
-  fn emit_set_upval_fast(&mut self, uidx: u8, src: u8) {
+  fn emit_set_upval_fast(&mut self, ip: usize, uidx: u8, src: u8) {
     let src_val = self.load_reg(src);
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -5513,7 +5544,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(closed_block);
     self.fb.ins().store(flags, src_val, ptr, payload_off);
-    self.emit_write_barrier(ptr);
+    self.emit_write_barrier_for_store(ip, src, src_val, ptr);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(open_block);
@@ -6234,7 +6265,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       elem_addr,
       0,
     );
-    self.emit_write_barrier(ptr);
+    self.emit_write_barrier_for_store(ip, src, src_val, ptr);
     self.fb.ins().jump(done_block, &[]);
 
     // See `restore_dirty_from_snapshot`'s own docs for the established
@@ -7650,7 +7681,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::SetUpval { idx: uidx, src } => {
-        self.emit_set_upval_fast(uidx, src);
+        self.emit_set_upval_fast(ip, uidx, src);
         false
       },
       Instr::CloseUpvalues { from } => {
