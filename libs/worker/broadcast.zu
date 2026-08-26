@@ -1,23 +1,124 @@
 /**
  * @module broadcast
  *
- * `Broadcast`, a one-to-many channel built on top of `Channel`. Every
- * value sent is delivered to every current subscriber, unlike a plain
- * `Channel`, where each value goes to exactly one receiver. Built
- * entirely out of `Channel`; a `Broadcast` is just a small registry
- * of subscriber channels plus fan-out logic, no separate native
- * plumbing of its own.
+ * One-to-many (fan-out) publish-subscribe message distribution for worker isolates.
+ *
+ * ## Overview
+ *
+ * While a standard `Channel` provides one-to-one or many-to-one message delivery
+ * (where each sent message is consumed by exactly one receiver), a `Broadcast`
+ * hub provides **one-to-many publish-subscribe** semantics. Every value published
+ * via `Broadcast.send()` is cloned and delivered to *all* currently active subscriber
+ * channels.
+ *
+ * `Broadcast` is built on top of Zuri's thread-safe `Channel` primitives,
+ * inheriting the same deep-copy memory isolation guarantees: published values
+ * cross isolate barriers cleanly without shared mutable state.
+ *
+ * Re-exported by the `worker` module, so `import worker` is sufficient to use
+ * `worker.Broadcast` and `worker.broadcast()`.
+ *
+ * ## Subscription & Message Delivery
+ *
+ * - **Dynamic Subscription**: Calling `broadcast.subscribe()` registers a new
+ *   subscriber and returns a dedicated `Channel` for that subscriber.
+ * - **No Historical Replay**: Subscribers only receive messages published *after*
+ *   they subscribe. Past messages published prior to subscription are not replayed.
+ * - **Independent Consumer Queues**: Each subscriber possesses its own queue buffer.
+ *   One slow consumer reading slowly from its channel does not prevent fast consumers
+ *   from receiving their copies at full speed.
+ *
+ * ## Backpressure & Drop-on-Full Semantics
+ *
+ * - **Unbounded Subscriber Channels (`capacity: 0` or `nil`)**:
+ *   Each subscriber channel grows dynamically. Published messages are always
+ *   delivered to all subscribers without dropping.
+ * - **Bounded Subscriber Channels (`capacity: n > 0`)**:
+ *   When a subscriber's individual channel buffer reaches capacity `n`, the broadcaster
+ *   uses a non-blocking send (`timeout: 0`). If the buffer is full, the message is
+ *   **dropped specifically for that slow subscriber** rather than blocking the publisher
+ *   or stalling other subscribers. This prevents a single lagging worker from
+ *   causing system-wide backpressure or deadlocks.
+ *
+ * ## Lifecycle & Graceful Teardown
+ *
+ * - **Unsubscribing**: A subscriber can be removed by calling `broadcast.unsubscribe(ch)`.
+ *   The channel stops receiving new broadcasts, but any previously queued messages
+ *   remain readable.
+ * - **Closing**: Calling `broadcast.close()` closes the broadcast hub and all active
+ *   subscriber channels. Subscribed workers will drain their remaining buffered
+ *   messages, after which subsequent `recv()` calls return `nil`. Attempting to
+ *   call `send()` or `subscribe()` on a closed broadcast raises a `WorkerError`.
+ * - **Automatic Pruning**: If a subscriber closes its channel independently, the
+ *   broadcast hub automatically detects the closed channel during the next `send()`
+ *   and prunes it from the subscriber registry.
+ *
+ * ## Examples
+ *
+ * ### 1. Publish-Subscribe Event Fan-Out
+ *
+ * ```zuri
+ * import worker
+ *
+ * var hub = worker.broadcast()
+ *
+ * # Worker 1: Logging service
+ * var sub1 = hub.subscribe()
+ * var logger = worker.spawn(def(ch) {
+ *   while true {
+ *     var msg = ch.recv()
+ *     if msg == nil break
+ *     echo "[Logger] ${msg}"
+ *   }
+ * }, sub1)
+ *
+ * # Worker 2: Metrics service
+ * var sub2 = hub.subscribe()
+ * var metrics = worker.spawn(def(ch) {
+ *   var count = 0
+ *   while true {
+ *     var msg = ch.recv()
+ *     if msg == nil break
+ *     count++
+ *   }
+ *   return count
+ * }, sub2)
+ *
+ * # Broadcast events to all subscribers
+ * hub.send("event: user_login")
+ * hub.send("event: page_view")
+ * hub.close()
+ *
+ * logger.join()
+ * echo "Total metrics events: ${metrics.join()}"
+ * ```
+ *
+ * ### 2. Dynamic Unsubscription
+ *
+ * ```zuri
+ * import worker
+ *
+ * var hub = worker.broadcast()
+ * var sub = hub.subscribe()
+ *
+ * hub.send("first message")
+ * echo sub.recv() # "first message"
+ *
+ * hub.unsubscribe(sub)
+ * hub.send("second message") # Not delivered to sub
+ *
+ * echo sub.try_recv() # nil
+ * hub.close()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import .channel { Channel }
 import .error { WorkerError }
 
 /**
- * A one-to-many channel. Call `subscribe()` to get a `Channel` that
- * receives every value sent afterward.
- *
- * A subscriber only sees values sent AFTER it subscribes; there is
- * no history or replay of earlier ones.
+ * A one-to-many publish-subscribe message distribution hub.
  */
 class Broadcast {
   var _subscribers
@@ -25,11 +126,18 @@ class Broadcast {
   var _closed
 
   /**
-   * @param ?int capacity: each subscriber's own buffer size, same
-   *   meaning as `Channel`'s. `nil` or `0` (the default) means
-   *   unbounded. With a bounded capacity, a subscriber that falls
-   *   behind simply misses whatever `send()`s don't fit rather than
-   *   blocking the sender or the other subscribers.
+   * Constructs a new `Broadcast` hub.
+   *
+   * @param ?int capacity: Buffer capacity for each subscriber channel created
+   *   via `subscribe()`. `nil` or `0` (the default) creates unbounded channels.
+   *   When bounded, slow subscribers whose buffers are full will drop missed
+   *   broadcasts rather than blocking the publisher.
+   *
+   * ```zuri
+   * import worker
+   * var hub = worker.broadcast()      // Unbounded subscriber buffers
+   * var bounded_hub = worker.broadcast(50) // Drop on full after 50 items
+   * ```
    */
   @new(capacity: ?int) {
     self._subscribers = []
@@ -38,10 +146,18 @@ class Broadcast {
   }
 
   /**
-   * Registers a new subscriber and returns its `Channel`.
+   * Registers a new subscriber to this broadcast hub and returns a dedicated
+   * `Channel` for receiving published messages.
    *
-   * @returns Channel
-   * @raises WorkerError if the broadcast is already closed
+   * Subscribers only receive messages sent after the moment of subscription.
+   *
+   * @returns Channel: A channel delivering published broadcasts.
+   * @raises WorkerError if the broadcast hub has already been closed.
+   *
+   * ```zuri
+   * var sub_ch = hub.subscribe()
+   * worker.spawn(worker_func, sub_ch)
+   * ```
    */
   subscribe() {
     if self._closed {
@@ -53,13 +169,18 @@ class Broadcast {
   }
 
   /**
-   * Removes `channel` from the subscriber list; it stops receiving
-   * further `send()`s. Values already queued on it remain readable.
-   * Harmless if `channel` was already removed, or was never a
-   * subscriber of this broadcast.
+   * Unregisters a subscriber `channel` from this broadcast hub.
    *
-   * @param Channel channel: a handle previously returned by
-   *   `subscribe()`.
+   * The channel immediately stops receiving new broadcasts. Any messages already
+   * buffered in the channel remain readable via `recv()`.
+   *
+   * If `channel` was not subscribed or was already removed, this call is a no-op.
+   *
+   * @param Channel channel: The subscriber channel returned by `subscribe()`.
+   *
+   * ```zuri
+   * hub.unsubscribe(sub_ch)
+   * ```
    */
   unsubscribe(channel) {
     var kept = []
@@ -72,12 +193,20 @@ class Broadcast {
   }
 
   /**
-   * Delivers `value` to every current subscriber. A subscriber whose
-   * buffer is full (bounded `capacity` only) simply misses this
-   * value rather than blocking the send.
+   * Delivers `value` to all currently registered subscribers.
    *
-   * @param any value
-   * @raises WorkerError if the broadcast is closed
+   * If a subscriber's channel has a bounded capacity and is currently full,
+   * the message is dropped for that specific subscriber without blocking the
+   * sender or delaying other subscribers.
+   *
+   * Any subscriber channels discovered to be closed are automatically pruned.
+   *
+   * @param any value: The value or object graph to broadcast.
+   * @raises WorkerError if the broadcast hub has been closed.
+   *
+   * ```zuri
+   * hub.send("alert: system update")
+   * ```
    */
   send(value) {
     if self._closed {
@@ -98,9 +227,15 @@ class Broadcast {
   }
 
   /**
-   * Closes the broadcast and every current subscriber's channel.
-   * `subscribe()` afterward raises `WorkerError`; values already
-   * queued on subscriber channels remain readable.
+   * Closes the broadcast hub and all active subscriber channels.
+   *
+   * Subscribed channels can continue draining any remaining buffered messages.
+   * Once drained, subsequent calls to `recv()` on subscriber channels will
+   * return `nil`. Calling `send()` or `subscribe()` after closing raises `WorkerError`.
+   *
+   * ```zuri
+   * hub.close()
+   * ```
    */
   close() {
     self._closed = true
@@ -110,14 +245,28 @@ class Broadcast {
   }
 
   /**
-   * @returns bool: `true` if the broadcast is closed.
+   * Checks whether the broadcast hub has been closed.
+   *
+   * @returns bool: `true` if closed, `false` otherwise.
+   *
+   * ```zuri
+   * if !hub.is_closed() {
+   *   hub.send("active")
+   * }
+   * ```
    */
   is_closed() {
     return self._closed
   }
 
   /**
-   * @returns int: the number of current subscribers.
+   * Returns the current number of active subscribers registered to this hub.
+   *
+   * @returns int: Count of registered subscriber channels.
+   *
+   * ```zuri
+   * echo "Subscribers listening: ${hub.subscriber_count()}"
+   * ```
    */
   subscriber_count() {
     return self._subscribers.length()
@@ -125,9 +274,17 @@ class Broadcast {
 }
 
 /**
- * @param ?int capacity: `nil` or `0` (the default) means unbounded.
+ * Creates a new one-to-many `Broadcast` distribution hub.
+ *
+ * @param ?int capacity: Per-subscriber buffer capacity (`nil` or `0` means unbounded).
  * @returns Broadcast
+ *
+ * ```zuri
+ * import worker
+ * var hub = worker.broadcast()
+ * ```
  */
 def broadcast(capacity: ?int) {
   return Broadcast(capacity)
 }
+

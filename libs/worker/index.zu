@@ -217,12 +217,28 @@
  * ```zuri
  * import worker
  *
- * var total = worker.scope(@(s) {
- *   var w1 = s.spawn(@() { return 10 * 2 })
- *   var w2 = s.spawn(@() { return 20 * 2 })
+ * var total = worker.scope(def(s) {
+ *   var w1 = s.spawn(def() { return 10 * 2 })
+ *   var w2 = s.spawn(def() { return 20 * 2 })
  *   return w1.join() + w2.join()
  * })
  * echo "Total: ${total}"
+ * ```
+ *
+ * ### Publish-Subscribe (`Broadcast`)
+ *
+ * ```zuri
+ * import worker
+ *
+ * var hub = worker.broadcast()
+ * var sub1 = hub.subscribe()
+ * var sub2 = hub.subscribe()
+ *
+ * worker.spawn(def(c) { echo "Worker 1: ${c.recv()}" }, sub1)
+ * worker.spawn(def(c) { echo "Worker 2: ${c.recv()}" }, sub2)
+ *
+ * hub.send("Hello Subscribers!")
+ * hub.close()
  * ```
  *
  * @copyright 2026, Richard Ore and Zuri contributors
