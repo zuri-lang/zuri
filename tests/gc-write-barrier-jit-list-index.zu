@@ -1,0 +1,47 @@
+# Write-barrier coverage for JIT-compiled `Instr::SetIndex` on a list
+# (`lst[i] = ...`), the case `gc-write-barrier-stress.zu` doesn't
+# reliably reach: that test's list is small and short-lived enough per
+# mutation that the interpreter usually handles it before this code
+# ever gets JIT-compiled. Once a script's own top-level body is
+# compiled (a large enough loop OSRs the whole containing function,
+# not just the loop), a list index write goes through the compiled
+# fast path instead.
+#
+# `Heap::forward_or_promote` returns immediately for any non-Young
+# object and never enqueues it, so a minor collection reaches an old
+# list's elements ONLY through `Heap::drain_remembered`. A young value
+# stored into an old list without a barrier is therefore invisible to
+# the collector and gets freed while still referenced.
+#
+# Needs real scale to be sensitive: promoting `lst` and then reclaiming
+# the value written into it both require enough allocation pressure
+# that a smaller iteration count here reliably passes even with the
+# barrier removed. Verified by removing the barrier: this reports a
+# wrong `lst[0].v` (or a different type entirely) most runs, never a
+# stable, correct one.
+
+class Box {
+  var v
+  @new(x) {
+    self.v = x
+  }
+}
+
+var lst = [nil]
+
+var i = 0
+while i < 400_000 {
+  var junk = [Box(i), Box(i + 1), Box(i + 2), Box(i + 3)]
+  i += 1
+}
+
+lst[0] = Box(999_999)
+
+var j = 0
+while j < 400_000 {
+  var junk2 = [Box(j), Box(j + 1), Box(j + 2), Box(j + 3)]
+  j += 1
+}
+
+echo 'lst[0] type: ${typeof(lst[0])}'
+echo 'lst[0].v: ${lst[0].v}'

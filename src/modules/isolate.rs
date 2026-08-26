@@ -17,7 +17,7 @@ use std::time::Duration;
 use crate::builtins::enforce::ArgType;
 use crate::modules::isolate_util::{pool, transfer};
 use crate::modules::{BuiltinModuleDef, native};
-use crate::vm::object::ZuriContext;
+use crate::vm::object::{ListStorage, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_ptr, enforce_arg_type, enforce_arg_type_any_of};
@@ -295,12 +295,26 @@ fn map_batch(ctx: &mut ZuriContext) -> Result<Value, String> {
     pool::WaitAllOutcome::TimedOut => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
     pool::WaitAllOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
     pool::WaitAllOutcome::Ready => {
-      let pin_mark = ctx.vm.pin_values(std::iter::empty());
-      for s in &states {
+      // One pinned root (the list itself) instead of one per result:
+      // `vm.gc_pins` gets a full linear scan on every GC, so pinning
+      // every materialized value individually made a large map() pay
+      // O(pin count) root-scan cost on each of the many collections a
+      // long join loop triggers. Writing straight into the list's own
+      // slots is exactly as safe as pinning each value: `list_set`
+      // calls `write_barrier` itself, so it's correct whether the list
+      // is still young or has already been promoted to old partway
+      // through the loop.
+      let count = states.len();
+      let list_val = ctx
+        .vm
+        .heap_mut()
+        .alloc_list(ListStorage::from_elem(Value::nil(), count));
+      let pin_mark = ctx.vm.pin_values([list_val]);
+      for (idx, s) in states.iter().enumerate() {
         match s.join() {
           pool::JoinOutcome::Ok(graph) => {
             let val = transfer::materialize(ctx.vm, &graph)?;
-            ctx.vm.pin_values([val]);
+            list_val.list_set(idx, val);
           },
           pool::JoinOutcome::Err(msg) => {
             ctx.vm.unpin(pin_mark);
@@ -310,9 +324,6 @@ fn map_batch(ctx: &mut ZuriContext) -> Result<Value, String> {
           pool::JoinOutcome::Pending | pool::JoinOutcome::Cancelled => unreachable!(),
         }
       }
-      let count = states.len();
-      let results: Vec<Value> = (0..count).map(|i| ctx.vm.pinned(pin_mark + i)).collect();
-      let list_val = ctx.vm.heap_mut().alloc_list(results);
       ctx.vm.unpin(pin_mark);
       Ok(status_pair(ctx.vm, "ok", list_val))
     },

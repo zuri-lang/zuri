@@ -6234,6 +6234,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       elem_addr,
       0,
     );
+    self.emit_write_barrier(ptr);
     self.fb.ins().jump(done_block, &[]);
 
     // See `restore_dirty_from_snapshot`'s own docs for the established
