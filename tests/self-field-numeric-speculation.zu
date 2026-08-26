@@ -1,0 +1,37 @@
+# Regression for a bug found 2026-08-26: the JIT used to sample
+# whichever instance happened to be self at compile time and, if a
+# field held a number then, bake "self.field is always a number" into
+# the SHARED compiled body with no runtime guard behind it at all.
+#
+# Warm the method on a numeric field, then call it once on an instance
+# whose field is a string. Correct behavior matches the interpreter's
+# polymorphic + operator (string concatenation); the bug silently
+# returned the field's own value unchanged, because the miscompiled
+# add did a raw float add on the field's raw bits and a NaN-boxed
+# pointer's payload just passes through float arithmetic untouched.
+#
+# 200_000 iterations comfortably clears the JIT's adaptive call-warmup
+# ceiling (100_000, see src/jit/warmup.rs), so this reliably exercises
+# the compiled path rather than the interpreter regardless of load.
+
+class Poly {
+  var v
+
+  @new(x) {
+    self.v = x
+  }
+
+  bump() {
+    return self.v + 1
+  }
+}
+
+var numeric_instance = Poly(5)
+var warm_result = 0
+iter var i = 0; i < 200_000; i++ {
+  warm_result = numeric_instance.bump()
+}
+echo 'warm result: ${warm_result}'
+
+var string_instance = Poly('oops')
+echo 'poly result: ${string_instance.bump()}'

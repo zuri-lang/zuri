@@ -96,6 +96,9 @@ def _summary() {
   echo '\n========================================='
   echo ' Results: ' + _pass + ' passed, ' + _fail + ' failed, ' + _skip + ' skipped'
   echo '=========================================\n'
+  if _fail > 0 {
+    raise Error('Test suite failed with ${_fail} failure(s).')
+  }
 }
 
 

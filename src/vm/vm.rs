@@ -1508,15 +1508,8 @@ impl VM {
   /// guarded per-access by `emit_speculative_guard`, which re-validates
   /// the real value and deopts on a mismatch); it must never reach the
   /// general/shared body's facts, since that body has no guard
-  /// mechanism at all and would treat the bet as an unconditional
-  /// truth. That was a real, confirmed bug as of 2026-08-26: `class
-  /// Poly { var v; bump() { return self.v + 1 } }`, warmed on a `Poly`
-  /// whose `v` is a number then called once on a `Poly` whose `v` is a
-  /// string, compiled `self.v + 1` to a raw `fadd` on the field's raw
-  /// bits with no type check, and silently returned the field's own
-  /// value unchanged (a NaN-boxed pointer's payload passes through
-  /// float arithmetic untouched on this hardware) instead of the
-  /// correct `"oops1"`. See `tests/self-field-numeric-speculation.zu`.
+  /// mechanism at all and would treat the bet as an unconditional truth
+  /// instead of the guess it actually is.
   fn resolve_self_numeric_fields(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
     let mut numeric_fields = rustc_hash::FxHashSet::default();
     let Some(frame) = self.frames.last() else {

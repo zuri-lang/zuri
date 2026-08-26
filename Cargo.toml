@@ -89,6 +89,15 @@ codegen-units = 1
 # under every other isolate and the main thread. Default (unwind).
 # panic = "abort"
 
+# Big-integer RSA key generation is unusably slow at debug opt-level.
+# Bumping just these two packages keeps the zuri crate itself on fast
+# normal debug builds.
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
 [features]
 opcode-profile = []
 ast-log = []

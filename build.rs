@@ -108,8 +108,17 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
     while !seen_names.insert(test_name.clone()) {
       test_name.push('_');
     }
+    // A top-level fixture is checked by exact output match; one that
+    // lives in a subdirectory owns its own pass/fail logic (see
+    // `run_exit_code_fixture`'s own docs) and is checked by exit code
+    // alone.
+    let runner = if rel.components().count() > 1 {
+      "run_exit_code_fixture"
+    } else {
+      "run_fixture"
+    };
     code.push_str(&format!(
-      "#[test]\nfn {test_name}() {{ run_fixture({:?}); }}\n\n",
+      "#[test]\nfn {test_name}() {{ {runner}({:?}); }}\n\n",
       zu_path.display().to_string()
     ));
   }
