@@ -1,0 +1,27 @@
+class Calculator {
+  var multiplier
+  var offset
+  var resultSum = 0.0
+
+  @new(multiplier, offset) {
+    self.multiplier = multiplier
+    self.offset = offset
+  }
+
+  compute(val) {
+    var intermediate = val * self.multiplier + self.offset
+    self.resultSum = self.resultSum + intermediate
+    return intermediate
+  }
+
+  runLoop(n) {
+    iter var i = 0; i < n; i++ {
+      self.compute(i * 0.5)
+    }
+  }
+}
+
+var calc = Calculator(2.5, 10.0)
+calc.runLoop(200)
+
+echo "Calculated sum: ${calc.resultSum}"

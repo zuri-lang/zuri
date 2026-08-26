@@ -1,0 +1,14 @@
+var s = "100"
+var num = s.to_number()
+
+var text = "sample_string_data"
+var len = text.length()
+
+var sum = 0.0
+iter var i = 0; i < num; i++ {
+  sum = sum + (i % len) + (i % 5)
+}
+
+echo "Converted number: ${num}"
+echo "Length: ${len}"
+echo "Sum: ${sum}"

@@ -1,0 +1,16 @@
+var buf = bytes(8)
+echo "Initial length: ${buf.length()}"
+
+iter var i = 0; i < 8; i++ {
+  buf[i] = 48 + i
+}
+
+print("Buffer contents: ")
+print(buf)
+echo ""
+
+var acc = 0
+iter var j = 0; j < 8; j++ {
+  acc = (acc << 1) | (j % 2)
+}
+echo "Accumulated bits: ${acc}"

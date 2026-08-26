@@ -1,0 +1,13 @@
+print("Line 1 from print: ")
+echo "Line 1 from echo"
+
+print("Line 2 from print\n")
+echo "Line 2 from echo"
+
+var b = bytes(3)
+b[0] = 65
+b[1] = 66
+b[2] = 67
+
+print(b)
+echo " <- following bytes"

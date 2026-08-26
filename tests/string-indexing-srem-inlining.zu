@@ -1,0 +1,28 @@
+var message = "antigravity"
+var len = message.length()
+
+var char_codes = []
+iter var i = 0; i < len; i++ {
+  char_codes.append(message[i])
+}
+
+# Hardware srem test (including negative values)
+var rem1 = 17 % 5
+var rem2 = -17 % 5
+var rem3 = 17 % -5
+var rem4 = -17 % -5
+
+var global_counter = 0
+
+def leaf_increment(step) {
+  global_counter = global_counter + step
+  return global_counter
+}
+
+iter var k = 0; k < 10; k++ {
+  leaf_increment(k)
+}
+
+echo "Chars: ${char_codes.length()}"
+echo "Rem: ${rem1}, ${rem2}, ${rem3}, ${rem4}"
+echo "Final counter: ${global_counter}"

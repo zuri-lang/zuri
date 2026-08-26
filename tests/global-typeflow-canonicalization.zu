@@ -1,0 +1,18 @@
+const LIMIT = 50
+const SCALE = 1.5
+
+var total = 0.0
+var count = 0
+
+def helper(v) {
+  return v * SCALE
+}
+
+iter var i = 0; i < LIMIT; i++ {
+  total = total + helper(i)
+  count++
+}
+
+echo "Total: ${total}"
+echo "Count: ${count}"
+echo "Limit: ${LIMIT}"

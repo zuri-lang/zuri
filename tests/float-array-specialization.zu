@@ -1,0 +1,15 @@
+var float_list = []
+iter var i = 0; i < 50; i++ {
+  float_list.append(i * 1.25)
+}
+
+var sum = 0.0
+iter var j = 0; j < float_list.length(); j++ {
+  float_list[j] = float_list[j] + 0.5
+  sum = sum + float_list[j]
+}
+
+echo "Float list length: ${float_list.length()}"
+echo "Float list sum: ${sum}"
+echo "First: ${float_list[0]}"
+echo "Last: ${float_list[49]}"
