@@ -9,7 +9,7 @@ true
 true
 2
 7
-operator '-' not defined for call signature (number, string)
-operator '*' not defined for call signature (number, string)
-operator '&' not defined for call signature (number, string)
-operator '|' not defined for call signature (number, string)
+operator '-' not defined for call signature (int, string)
+operator '*' not defined for call signature (int, string)
+operator '&' not defined for call signature (int, string)
+operator '|' not defined for call signature (int, string)

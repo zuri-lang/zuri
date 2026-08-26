@@ -34,6 +34,7 @@ pub fn install(vm: &mut VM) {
   register(vm, "is_class", 1, false, is_class);
   register(vm, "is_dict", 1, false, is_dict);
   register(vm, "is_file", 1, false, is_file);
+  register(vm, "is_float", 1, false, is_float);
   register(vm, "is_function", 1, false, is_function);
   register(vm, "is_instance", 1, false, is_instance);
   register(vm, "is_int", 1, false, is_int);
@@ -453,10 +454,27 @@ fn is_instance(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(ctx.args[0].is_instance()))
 }
 
+/// Deliberately a semantic check (`fract() == 0.0`), not `Value::is_int()`'s
+/// raw tag test: the JIT doesn't yet re-tag every arithmetic result as
+/// a boxed integer when it happens to come out whole (`Value::from_f64`
+/// still always produces the plain-float encoding), so the tag alone
+/// would make `is_int(2 + 3)` depend on whether that addition ran
+/// interpreted or JIT-compiled. Once the JIT's own numeric codegen
+/// produces the same encoding the interpreter does for a whole-number
+/// result, this can switch to the cheap tag check; until then, this is
+/// the version that's actually tier-independent.
 fn is_int(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   let v = ctx.args[0];
   Ok(Value::bool(v.is_number() && v.as_number().fract() == 0.0))
+}
+
+/// `is_int`'s complement; see its docs on why this stays a semantic
+/// check rather than `Value::is_float()`'s raw tag test for now.
+fn is_float(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  let v = ctx.args[0];
+  Ok(Value::bool(v.is_number() && v.as_number().fract() != 0.0))
 }
 
 /// Matches this VM's actual iteration protocol; `@key`/`@value`;

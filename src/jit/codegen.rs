@@ -6761,13 +6761,53 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   // Guards
   // ---------------------------------------------------------------
 
-  /// `(bits & QNAN) != QNAN`; `Value::is_number()`'s exact bit test
-  /// (see `value.rs`), safe to inline because it only ever inspects the
-  /// tagged `u64` itself, never a heap object's contents.
+  /// `(bits & (QNAN|TAG_INT)) == (QNAN|TAG_INT)`; `Value::is_int()`'s
+  /// exact bit test. A boxed integer still has the full `QNAN` pattern
+  /// set (same space singletons live in), so it can only be told apart
+  /// from a plain float by also checking `TAG_INT` -- `is_number`
+  /// below is the function that actually needs that distinction to
+  /// stay correct.
+  fn is_smi(&mut self, v: IrValue) -> IrValue {
+    let mask = self.u64c(value::QNAN | value::TAG_INT);
+    let masked = self.fb.ins().band(v, mask);
+    self.fb.ins().icmp(IntCC::Equal, masked, mask)
+  }
+
+  /// Recovers the raw `i64` from a `Value` already proven `is_smi`;
+  /// `Value::as_int()`'s exact shift trick, done in IR instead of in
+  /// Rust. Two shifts, no float unit involved at all.
+  fn smi_to_i64(&mut self, v: IrValue) -> IrValue {
+    let shl = self.fb.ins().ishl_imm_s(v, 16);
+    self.fb.ins().sshr_imm_s(shl, 16)
+  }
+
+  /// The inverse of `smi_to_i64`: packs an `i64` already known to be
+  /// in `SMI_MIN..SMI_MAX` as a boxed integer. Callers must have
+  /// already proven the range themselves (an out-of-range `i64` here
+  /// would corrupt the tag/QNAN bits it gets OR'd into) -- this never
+  /// range-checks on its own, same discipline `Value::integer`'s own
+  /// `debug_assert!` documents on the Rust side.
+  fn i64_to_smi(&mut self, i: IrValue) -> IrValue {
+    let mask = self.u64c(value::PTR_MASK);
+    let masked = self.fb.ins().band(i, mask);
+    let tag = self.u64c(value::QNAN | value::TAG_INT);
+    self.fb.ins().bor(masked, tag)
+  }
+
+  /// `Value::is_number()`'s exact bit test (see `value.rs`): a plain
+  /// float OR a boxed integer, i.e. `(bits & QNAN) != QNAN` (the
+  /// original float-only test) unioned with `is_smi`. Getting this
+  /// wrong doesn't just misclassify a number as "not a number" --
+  /// every caller that confirms `is_number` before calling `to_f64`
+  /// relies on this being right, and `to_f64` on a value that's
+  /// actually an untagged int reads its QNAN+TAG_INT+payload bits as
+  /// if they were a real double, which is nonsense, not almost-right.
   fn is_number(&mut self, v: IrValue) -> IrValue {
     let qnan = self.u64c(value::QNAN);
     let masked = self.fb.ins().band(v, qnan);
-    self.fb.ins().icmp(IntCC::NotEqual, masked, qnan)
+    let is_float = self.fb.ins().icmp(IntCC::NotEqual, masked, qnan);
+    let is_smi = self.is_smi(v);
+    self.fb.ins().bor(is_float, is_smi)
   }
 
   fn both_numbers(&mut self, va: IrValue, vb: IrValue) -> IrValue {
@@ -6853,18 +6893,99 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().band(oa, ob)
   }
 
+  /// Recovers the numeric value of `bits` as a genuine `f64`, whichever
+  /// of the two encodings it's actually in. For a real float this is
+  /// the free bitcast it always was; for a boxed integer, the raw bits
+  /// are QNAN+TAG_INT+payload, NOT a valid double, so those must be
+  /// decoded via `smi_to_i64` and properly converted instead of
+  /// reinterpreted. Every caller of this that already knows (via
+  /// `type_facts`/`proven_numeric`, or by construction) that `bits`
+  /// can only ever be a genuine float should keep proving that
+  /// statically rather than paying this branch; this is the
+  /// correctness fallback every OTHER call site needs until it grows
+  /// its own dedicated Smi fast path (see `is_smi`/`smi_to_i64`).
   fn to_f64(&mut self, bits: IrValue) -> IrValue {
+    let is_smi = self.is_smi(bits);
+    let smi_block = self.fb.create_block();
+    let float_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.append_block_param(done_block, types::F64);
     self
       .fb
       .ins()
-      .bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), bits)
+      .brif(is_smi, smi_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_block);
+    let as_int = self.smi_to_i64(bits);
+    let from_int = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    self.fb.ins().jump(done_block, &[from_int.into()]);
+
+    self.fb.switch_to_block(float_block);
+    let bitcast = self
+      .fb
+      .ins()
+      .bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), bits);
+    self.fb.ins().jump(done_block, &[bitcast.into()]);
+
+    self.fb.switch_to_block(done_block);
+    self.fb.block_params(done_block)[0]
   }
 
+  /// Boxes a genuine `f64` result back into a `Value`'s bit pattern,
+  /// auto-selecting between the two encodings exactly like
+  /// `Value::number` does on the Rust side. Getting this wrong doesn't
+  /// break a value's ARITHMETIC (`as_number` decodes either encoding
+  /// correctly either way), but it broke real tests before this
+  /// checked the Smi case: `Instr::LoadConst` boxes a numeric constant
+  /// by decoding it through `to_f64` then re-boxing through this
+  /// function, so a plain bitcast here silently downgraded every
+  /// constant (and every arithmetic result) that started out
+  /// Smi-tagged back to plain-float the moment it touched a JIT
+  /// register, making `type_name()` say "float" for a value the
+  /// interpreter would call "int" for the exact same source line.
+  ///
+  /// This is the correctness fallback, not the fast path: it pays a
+  /// real `fcvt_to_sint_sat` + roundtrip check on every call until
+  /// each individual arithmetic instruction grows its own dedicated
+  /// Smi+Smi path that packs a result via `i64_to_smi` directly and
+  /// never reaches this at all for the common case (see `is_smi`'s
+  /// own docs).
   fn from_f64(&mut self, f: IrValue) -> IrValue {
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let is_whole = self
+      .fb
+      .ins()
+      .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, f, roundtrip);
+    let smi_min = self.i64c(value::SMI_MIN);
+    let smi_max = self.i64c(value::SMI_MAX);
+    let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, as_int, smi_min);
+    let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, smi_max);
+    let in_range = self.fb.ins().band(ge_min, lt_max);
+    let fits_smi = self.fb.ins().band(is_whole, in_range);
+
+    let smi_block = self.fb.create_block();
+    let float_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.append_block_param(done_block, types::I64);
     self
       .fb
       .ins()
-      .bitcast(types::I64, cranelift_codegen::ir::MemFlagsData::new(), f)
+      .brif(fits_smi, smi_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_block);
+    let smi = self.i64_to_smi(as_int);
+    self.fb.ins().jump(done_block, &[smi.into()]);
+
+    self.fb.switch_to_block(float_block);
+    let bitcast = self
+      .fb
+      .ins()
+      .bitcast(types::I64, cranelift_codegen::ir::MemFlagsData::new(), f);
+    self.fb.ins().jump(done_block, &[bitcast.into()]);
+
+    self.fb.switch_to_block(done_block);
+    self.fb.block_params(done_block)[0]
   }
 
   /// Wraps a boolean condition into a Zuri `Value` bit pattern (`nil`/

@@ -1,4 +1,4 @@
-Unhandled TypeError: cannot call a number
+Unhandled TypeError: cannot call a int
   --> @@ROOT/tests/new-with-non-class-is-an-error.zu:1
 
 > 1 | 3()

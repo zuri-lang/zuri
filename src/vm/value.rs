@@ -57,7 +57,15 @@ pub(crate) const TAG_FALSE: u64 = 0b10;
 pub(crate) const TAG_TRUE: u64 = 0b11;
 
 // set only for boxed integers; unset for nil/true/false and for pointers
-// const TAG_INT: u64 = 1 << 49;
+pub(crate) const TAG_INT: u64 = 1 << 49;
+
+/// Smallest/largest `i64` a boxed integer can hold: the low 48 bits
+/// (`PTR_MASK`'s own width), two's complement. `Value::integer`'s
+/// range assert and `fits_smi`'s range check both derive from these
+/// two constants rather than repeating the magic numbers, so the two
+/// checks can't quietly drift apart from each other.
+pub(crate) const SMI_MIN: i64 = -(1i64 << 47);
+pub(crate) const SMI_MAX: i64 = 1i64 << 47;
 
 pub(crate) const NIL_VAL: u64 = QNAN | TAG_NIL;
 pub(crate) const FALSE_VAL: u64 = QNAN | TAG_FALSE;
@@ -107,14 +115,25 @@ impl Value {
     Value(if b { TRUE_VAL } else { FALSE_VAL })
   }
 
-  // #[inline]
-  // pub fn integer(n: i64) -> Value {
-  //   debug_assert!(
-  //     n >= -(1i64 << 47) && n < (1i64 << 47),
-  //     "integer out of range for a 48-bit packed Value"
-  //   );
-  //   Value(QNAN | TAG_INT | ((n as u64) & PTR_MASK))
-  // }
+  #[inline]
+  pub(crate) fn integer(n: i64) -> Value {
+    debug_assert!(
+      n >= SMI_MIN && n < SMI_MAX,
+      "integer out of range for a 48-bit packed Value"
+    );
+    Value(QNAN | TAG_INT | ((n as u64) & PTR_MASK))
+  }
+
+  /// Whether `n` can be packed as a boxed integer without losing
+  /// anything: whole, finite, and inside the 48-bit range `as_int`
+  /// can sign-extend back out exactly. Kept as its own function
+  /// (rather than inlined into `number`) so `Value::integer`'s own
+  /// range assert and this check are provably testing the same
+  /// boundary, both against `SMI_MIN`/`SMI_MAX`.
+  #[inline]
+  fn fits_smi(n: f64) -> bool {
+    n.is_finite() && n.fract() == 0.0 && n >= SMI_MIN as f64 && n < SMI_MAX as f64
+  }
 
   #[inline]
   pub fn number(n: f64) -> Value {
@@ -124,6 +143,14 @@ impl Value {
     // be mistaken for one of our tagged values.
     if n.is_nan() {
       Value(0x7ff8_0000_0000_0000)
+    } else if Self::fits_smi(n) {
+      // `n as i64` is exact here: `fits_smi` already confirmed `n` is
+      // whole and within `i64`'s range, so this can't truncate or
+      // saturate. Whole numbers are the overwhelming majority of
+      // array indices, loop counters, and lengths, which is exactly
+      // where boxing as an integer instead of a float pays off: see
+      // `is_int`/`as_int` below.
+      Value::integer(n as i64)
     } else {
       Value(n.to_bits())
     }
@@ -140,14 +167,28 @@ impl Value {
     Value(SIGN_BIT | QNAN | bits)
   }
 
-  // #[inline]
-  // pub fn is_int(&self) -> bool {
-  //   (self.0 & (QNAN | SIGN_BIT | TAG_INT)) == (QNAN | TAG_INT)
-  // }
+  #[inline]
+  pub(crate) fn is_int(&self) -> bool {
+    (self.0 & (QNAN | SIGN_BIT | TAG_INT)) == (QNAN | TAG_INT)
+  }
+
+  /// The plain-float half of `is_number()`; `TAG_INT` unset. Its own
+  /// named accessor (rather than folding straight into `is_number`)
+  /// so `type_name()` can tell a whole-number value apart from a
+  /// fractional one, the way the language's `int`/`number` parameter
+  /// type annotations already do semantically -- see `is_int`'s own
+  /// docs. Everywhere that just wants "is this any kind of numeric
+  /// value" (arithmetic, generic argument checks, comparisons) should
+  /// keep using `is_number`/`as_number`; this is only for the rarer
+  /// case of needing to distinguish the two encodings specifically.
+  #[inline]
+  pub fn is_float(&self) -> bool {
+    !self.is_int() && (self.0 & QNAN) != QNAN
+  }
 
   #[inline]
   pub fn is_number(&self) -> bool {
-    (self.0 & QNAN) != QNAN
+    self.is_int() || self.is_float()
   }
 
   #[inline]
@@ -231,18 +272,32 @@ impl Value {
     self.is_closure() || self.is_bound_method() || self.is_native() || self.is_class()
   }
 
-  // #[inline]
-  // pub fn as_int(&self) -> i64 {
-  //   debug_assert!(self.is_int());
-  //   let raw = (self.0 & PTR_MASK) as i64;
+  #[inline]
+  pub(crate) fn as_int(&self) -> i64 {
+    debug_assert!(self.is_int());
+    let raw = (self.0 & PTR_MASK) as i64;
 
-  //   // sign-extend bit 47 out to a full i64 — same trick x86-64 uses for 48-bit canonical addresses
-  //   (raw << 16) >> 16
-  // }
+    // sign-extend bit 47 out to a full i64 — same trick x86-64 uses for 48-bit canonical addresses
+    (raw << 16) >> 16
+  }
 
   #[inline]
   pub fn as_number(&self) -> f64 {
     debug_assert!(self.is_number());
+    if self.is_int() {
+      self.as_int() as f64
+    } else {
+      f64::from_bits(self.0)
+    }
+  }
+
+  /// `as_number()` for a value already known `is_float()`; skips the
+  /// int-tag check `as_number` has to do to stay correct for either
+  /// encoding. Exists for the same reason `is_float` does -- see its
+  /// docs.
+  #[inline]
+  pub fn as_float(&self) -> f64 {
+    debug_assert!(self.is_float());
     f64::from_bits(self.0)
   }
 
@@ -704,11 +759,10 @@ impl Value {
   }
 
   pub fn type_name(&self) -> &'static str {
-    /* if self.is_int() {
+    if self.is_int() {
       "int"
-    } else */
-    if self.is_number() {
-      "number"
+    } else if self.is_float() {
+      "float"
     } else if self.is_nil() {
       "nil"
     } else if self.is_bool() {
@@ -800,10 +854,9 @@ pub fn num_rem(a: f64, b: f64) -> f64 {
 
 impl std::fmt::Display for Value {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    /* if self.is_int() {
+    if self.is_int() {
       write!(f, "{}", self.as_int())
-    } else */
-    if self.is_number() {
+    } else if self.is_number() {
       write!(f, "{}", self.as_number())
     } else if self.is_nil() {
       write!(f, "nil")
@@ -899,6 +952,136 @@ impl std::fmt::Display for Value {
     } else {
       write!(f, "<invalid value>")
     }
+  }
+}
+
+#[cfg(test)]
+mod value_tests {
+  use super::*;
+
+  #[test]
+  fn integer_round_trips_at_boundaries() {
+    let samples = [
+      0i64,
+      1,
+      -1,
+      SMI_MAX - 1,
+      SMI_MIN,
+      12345,
+      -987654321,
+    ];
+    for &n in &samples {
+      let v = Value::integer(n);
+      assert!(v.is_int(), "{n} should be tagged as an int");
+      assert_eq!(v.as_int(), n);
+      assert_eq!(v.as_number(), n as f64);
+    }
+  }
+
+  #[test]
+  fn number_selects_int_encoding_for_whole_values_in_range() {
+    for &n in &[0.0f64, 1.0, -1.0, 42.0, -42.0, (SMI_MAX - 1) as f64, SMI_MIN as f64] {
+      let v = Value::number(n);
+      assert!(v.is_int(), "{n} should have been boxed as an int");
+      assert_eq!(v.as_number(), n);
+    }
+  }
+
+  #[test]
+  fn number_falls_back_to_float_outside_smi_range_or_fractional() {
+    // Whole, but one past what 48 bits can hold either direction.
+    for &n in &[SMI_MAX as f64, SMI_MIN as f64 - 1.0, 1e18, -1e18] {
+      let v = Value::number(n);
+      assert!(!v.is_int(), "{n} is out of Smi range, must stay a float");
+      assert_eq!(v.as_number(), n);
+    }
+    // Fractional values never become an int no matter the magnitude.
+    for &n in &[3.5f64, -3.5, 0.1] {
+      let v = Value::number(n);
+      assert!(!v.is_int(), "{n} has a fractional part, must stay a float");
+      assert_eq!(v.as_number(), n);
+    }
+  }
+
+  #[test]
+  fn negative_zero_collapses_to_int_zero() {
+    let v = Value::number(-0.0);
+    assert!(v.is_int());
+    assert_eq!(v.as_int(), 0);
+    assert!(v.equals(&Value::number(0.0)));
+  }
+
+  #[test]
+  fn nan_still_canonicalizes_and_is_never_an_int() {
+    let v = Value::number(f64::NAN);
+    assert!(!v.is_int());
+    assert!(v.is_number());
+    assert!(v.as_number().is_nan());
+  }
+
+  #[test]
+  fn is_float_and_is_int_are_mutually_exclusive() {
+    let ints = [Value::integer(0), Value::integer(-1), Value::number(5.0)];
+    for v in ints {
+      assert!(v.is_int());
+      assert!(!v.is_float());
+      assert!(v.is_number());
+    }
+    let floats = [Value::number(3.5), Value::number(-0.1), Value::number(1e18)];
+    for v in floats {
+      assert!(v.is_float());
+      assert!(!v.is_int());
+      assert!(v.is_number());
+      assert_eq!(v.as_float(), v.as_number());
+    }
+    assert!(!Value::nil().is_number());
+    assert!(!Value::nil().is_float());
+    assert!(!Value::bool(true).is_float());
+  }
+
+  #[test]
+  fn int_and_float_never_collide_with_singletons_or_pointers() {
+    assert!(!Value::integer(0).is_nil());
+    assert!(!Value::integer(0).is_bool());
+    assert!(!Value::integer(0).is_obj());
+    assert!(!Value::integer(-1).is_nil());
+    assert!(!Value::integer(-1).is_bool());
+    assert!(!Value::integer(-1).is_obj());
+
+    assert!(!Value::nil().is_int());
+    assert!(!Value::bool(true).is_int());
+    assert!(!Value::bool(false).is_int());
+  }
+
+  #[test]
+  fn equals_and_is_falsey_work_across_int_and_float() {
+    assert!(Value::integer(5).equals(&Value::number(5.0)));
+    assert!(!Value::integer(5).equals(&Value::number(5.5)));
+    // Zuri treats any number <= 0 as falsey, not just zero -- this
+    // holds for the int encoding exactly as it always has for float.
+    assert!(Value::integer(0).is_falsey());
+    assert!(Value::integer(-1).is_falsey());
+    assert!(!Value::integer(1).is_falsey());
+  }
+
+  #[test]
+  fn type_name_distinguishes_int_from_float() {
+    assert_eq!(Value::integer(5).type_name(), "int");
+    assert_eq!(Value::number(5.5).type_name(), "float");
+    // Whichever path produced it, a whole number in Smi range is
+    // always "int" -- `Value::number` auto-selects the encoding, it
+    // doesn't leave the caller a choice.
+    assert_eq!(Value::number(5.0).type_name(), "int");
+    assert_eq!(format!("{}", Value::integer(5)), "5");
+    assert_eq!(format!("{}", Value::integer(-5)), "-5");
+    // Whole-valued float and equal-valued int must print identically:
+    // `f64::Display` already omits a trailing `.0` for whole numbers,
+    // so the int Display branch is not a user-visible formatting
+    // change either.
+    assert_eq!(
+      format!("{}", Value::number(5.0)),
+      format!("{}", Value::integer(5))
+    );
   }
 }
 

@@ -2,4 +2,4 @@
 65000
 25000
 55000
-object of type number does not define method 'length'
+object of type int does not define method 'length'

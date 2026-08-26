@@ -6,7 +6,7 @@
 2.3333333333333335
 3.3333333333333335
 4.5
-operator '/' not defined for call signature (string, number)
+operator '/' not defined for call signature (string, int)
 4
 2
 249999750000
