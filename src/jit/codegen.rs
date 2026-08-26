@@ -1413,6 +1413,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn reload_live(&mut self, ip: usize) {
+    self.refresh_regs();
     let live: Vec<u8> = self.liveness.live_regs_at(ip).collect();
     for r in live {
       let v = self.load_reg_mem(r);
