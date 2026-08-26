@@ -10,7 +10,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -158,15 +158,6 @@ impl WorkerPool {
     for i in 0..size {
       thread::Builder::new()
         .name(format!("{}{}", WORKER_THREAD_PREFIX, i))
-        // Rust's own default for a spawned thread is 2MB, well under
-        // what the MAIN thread gets from the OS (8MB via `ulimit -s`
-        // on a typical Linux setup); recursive Zuri code that runs
-        // fine un-spawned can blow a worker's stack. That's not a
-        // catchable panic either: a real stack overflow bypasses
-        // `catch_unwind` entirely and aborts the WHOLE PROCESS, not
-        // just the one worker, which is exactly the guarantee
-        // `worker_loop`'s panic isolation exists to give. 16MB, double
-        // a typical main thread's own, gives real headroom instead.
         .stack_size(8 * 1024 * 1024)
         .spawn(worker_loop)
         .expect("failed to spawn worker worker thread");
@@ -184,15 +175,14 @@ impl WorkerPool {
   }
 
   /// Notifies whoever's in `shutdown()` waiting on `in_flight` to
-  /// reach zero. Momentarily taking `idle_lock` before notifying,
-  /// rather than just calling `notify_all`, avoids the same
-  /// lost-wakeup window `wake_all_waiters` guards against: see its
-  /// own docs.
+  /// reach zero.
   fn task_completed(&self) {
-    self.in_flight.fetch_sub(1, Ordering::AcqRel);
+    let prev = self.in_flight.fetch_sub(1, Ordering::AcqRel);
     self.running.fetch_sub(1, Ordering::AcqRel);
-    drop(lock(&self.idle_lock));
-    self.idle.notify_all();
+    if self.shutting_down.load(Ordering::Relaxed) && prev == 1 {
+      drop(lock(&self.idle_lock));
+      self.idle.notify_all();
+    }
   }
 }
 
@@ -242,6 +232,7 @@ struct WorkerIsolate {
 
 impl WorkerIsolate {
   fn new() -> Self {
+    transfer::reset_isolate_proto_cache();
     let mut vm = VM::new(Heap::new());
     vm.init();
     WorkerIsolate { vm }
@@ -251,7 +242,11 @@ impl WorkerIsolate {
 fn worker_loop() {
   let mut isolate = WorkerIsolate::new();
   let pool = pool();
+  let mut local_tasks: VecDeque<Task> = VecDeque::with_capacity(32);
   loop {
+    let task = if let Some(t) = local_tasks.pop_front() {
+      t
+    } else {
     let task = {
       let mut queue = lock(&pool.queue);
       while queue.is_empty() {
@@ -261,15 +256,14 @@ fn worker_loop() {
           .unwrap_or_else(PoisonError::into_inner);
       }
       let task = queue.pop_front().unwrap();
-      // // The call to shrink_to_fit here keeps memory utilization down
-      // // a lot when thousands of concurrent workers are fired. Hoewver,
-      // // it also brings down performance marginally (about 1.25x).
-      // //
-      // // Also, for smaller concurrent workers which will account for
-      // // the majority of the use-case, it is an expensive overhead.
-      // // For now, we're leaving it out.
-      // queue.shrink_to_fit();
+      let batch_count = queue.len().min(31);
+      for _ in 0..batch_count {
+        if let Some(t) = queue.pop_front() {
+          local_tasks.push_back(t);
+        }
+      }
       task
+      queue.pop_front().unwrap()
     };
     pool.running.fetch_add(1, Ordering::AcqRel);
 
@@ -369,28 +363,27 @@ const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 // wait_any / select
 // ---------------------------------------------------------------------
 
-/// Shared wakeup signal for `wait_any_workers`/`select_channels`. A
-/// worker finishing or a channel changing has no way to know in
-/// advance whether one of THESE calls happens to be waiting on it, so
-/// rather than each `WorkerState`/`ChannelState` tracking its own
-/// list of interested waiters, every such event just notifies this one
-/// condvar and a waiter re-scans its own (always small) candidate list
-/// each time it wakes. Simpler and just as correct as per-object
-/// waiter bookkeeping, at the cost of a wider wakeup fan-out that
-/// doesn't matter at this scale.
+/// Shared wakeup signal for `wait_any_workers`/`select_channels`.
 fn wake_gate() -> &'static (Mutex<()>, Condvar) {
   static GATE: OnceLock<(Mutex<()>, Condvar)> = OnceLock::new();
   GATE.get_or_init(|| (Mutex::new(()), Condvar::new()))
 }
 
-/// Called after any state change a `wait_any`/`select` predicate might
-/// depend on (a worker finishing, a channel gaining a value or
-/// closing). Momentarily taking the gate's mutex before notifying;
-/// rather than just calling `notify_all`; is what avoids a lost
-/// wakeup: it guarantees this can't land in the gap between a waiter's
-/// last check and the moment it actually starts waiting on the
-/// condvar, which is the usual race for a condvar guarding a predicate
-/// that lives in a mutex OTHER than the one it waits on.
+static ACTIVE_WAKE_LISTENERS: AtomicUsize = AtomicUsize::new(0);
+
+struct WakeListenerGuard;
+impl WakeListenerGuard {
+  fn new() -> Self {
+    ACTIVE_WAKE_LISTENERS.fetch_add(1, Ordering::SeqCst);
+    WakeListenerGuard
+  }
+}
+impl Drop for WakeListenerGuard {
+  fn drop(&mut self) {
+    ACTIVE_WAKE_LISTENERS.fetch_sub(1, Ordering::SeqCst);
+  }
+}
+
 fn wake_all_waiters() {
   let (m, cv) = wake_gate();
   drop(lock(m));
@@ -425,6 +418,10 @@ pub enum SelectOutcome {
 /// index into the slice; ties (more than one already done) resolve
 /// to whichever comes first in the caller's own list.
 pub fn wait_any_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAnyOutcome {
+  if let Some(i) = states.iter().position(|s| s.is_done()) {
+    return WaitAnyOutcome::Ready(i);
+  }
+  let _guard = WakeListenerGuard::new();
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
@@ -454,39 +451,38 @@ pub fn wait_any_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) 
   }
 }
 
-/// Blocks until EVERY one of `states` has finished. Unlike
-/// `wait_any_workers` there's no "which one" to report; the
-/// caller already has the whole list and can `join()` each once this
-/// returns `Ready`.
+/// Blocks until EVERY one of `states` has finished.
 pub fn wait_all_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAllOutcome {
-  let deadline = timeout.map(|d| Instant::now() + d);
-  let (m, cv) = wake_gate();
-  let mut guard = lock(m);
-  loop {
-    if states.iter().all(|s| s.is_done()) {
-      return WaitAllOutcome::Ready;
-    }
+  let started = Instant::now();
+  for s in states {
     if is_current_cancelled() {
       return WaitAllOutcome::Cancelled;
     }
-    guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
-      Some(d) if d.is_zero() => return WaitAllOutcome::TimedOut,
-      Some(d) => {
-        let (g, result) = cv
-          .wait_timeout(guard, d)
-          .unwrap_or_else(PoisonError::into_inner);
-        if result.timed_out() {
+    if s.is_done() {
+      continue;
+    }
+    let remaining = match timeout {
+      Some(t) => {
+        let elapsed = started.elapsed();
+        if elapsed >= t {
           return if states.iter().all(|s| s.is_done()) {
             WaitAllOutcome::Ready
           } else {
             WaitAllOutcome::TimedOut
           };
         }
-        g
+        Some(t - elapsed)
       },
-      None => cv.wait(guard).unwrap_or_else(PoisonError::into_inner),
+      None => None,
     };
+
+    match s.join_inner(remaining) {
+      JoinOutcome::Ok(_) | JoinOutcome::Err(_) => {},
+      JoinOutcome::Pending => return WaitAllOutcome::TimedOut,
+      JoinOutcome::Cancelled => return WaitAllOutcome::Cancelled,
+    }
   }
+  WaitAllOutcome::Ready
 }
 
 /// Blocks until at least one of `states` (channels) has a value ready
@@ -495,6 +491,12 @@ pub fn wait_all_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) 
 /// `try_recv`. Same ordering/timeout behavior as
 /// `wait_any_workers`.
 pub fn select_channels(states: &[Arc<ChannelState>], timeout: Option<Duration>) -> SelectOutcome {
+  for (i, s) in states.iter().enumerate() {
+    if let Some(outcome) = s.try_recv() {
+      return SelectOutcome::Ready(i, outcome);
+    }
+  }
+  let _guard = WakeListenerGuard::new();
   let deadline = timeout.map(|d| Instant::now() + d);
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
@@ -645,7 +647,12 @@ pub enum JoinOutcome {
   Cancelled,
 }
 
+const STATUS_PENDING: u8 = 0;
+const STATUS_OK: u8 = 1;
+const STATUS_ERR: u8 = 2;
+
 pub struct WorkerState {
+  status: AtomicU8,
   slot: Mutex<Slot>,
   cv: Condvar,
   /// Set once `join()`/`try_join()` has actually reported a finished
@@ -668,6 +675,7 @@ pub struct WorkerState {
 impl WorkerState {
   fn new(name: Option<String>) -> Self {
     WorkerState {
+      status: AtomicU8::new(STATUS_PENDING),
       slot: Mutex::new(Slot::Pending),
       cv: Condvar::new(),
       observed: AtomicBool::new(false),
@@ -682,12 +690,9 @@ impl WorkerState {
 
   pub fn cancel(&self) {
     self.cancelled.store(true, Ordering::Relaxed);
-    // Wakes any `wait_any`/`wait_all`/`select` blocked on `wake_gate`
-    // right away, in case the worker THEY belong to was just
-    // cancelled. `join`/`send`/`recv` don't listen to this gate (see
-    // `CANCEL_POLL_INTERVAL`'s own docs); they notice on their next
-    // poll tick instead.
-    wake_all_waiters();
+    if ACTIVE_WAKE_LISTENERS.load(Ordering::Relaxed) > 0 {
+      wake_all_waiters();
+    }
   }
 
   pub fn is_cancelled(&self) -> bool {
@@ -695,14 +700,22 @@ impl WorkerState {
   }
 
   fn finish(&self, result: Result<TransferGraph, String>) {
-    let mut slot = lock(&self.slot);
-    *slot = match result {
-      Ok(g) => Slot::Ok(g),
-      Err(m) => Slot::Err(m),
+    let new_status = match &result {
+      Ok(_) => STATUS_OK,
+      Err(_) => STATUS_ERR,
     };
-    drop(slot);
+    {
+      let mut slot = lock(&self.slot);
+      *slot = match result {
+        Ok(g) => Slot::Ok(g),
+        Err(m) => Slot::Err(m),
+      };
+      self.status.store(new_status, Ordering::Release);
+    }
     self.cv.notify_all();
-    wake_all_waiters();
+    if ACTIVE_WAKE_LISTENERS.load(Ordering::Relaxed) > 0 {
+      wake_all_waiters();
+    }
   }
 
   /// Blocks the calling thread until the worker finishes. Callable
@@ -725,14 +738,7 @@ impl WorkerState {
     self.join_inner(Some(timeout))
   }
 
-  /// Shared implementation for `join`/`join_timeout`. `deadline` of
-  /// `None` means "wait forever"; but that only ever compiles down
-  /// to a single indefinite `Condvar::wait` when the CALLER isn't
-  /// itself running inside a worker, since there's nothing to poll
-  /// for cancellation of in that case. Inside a worker, every wait
-  ///; bounded or not; is chopped into `CANCEL_POLL_INTERVAL`-sized
-  /// ticks so the calling worker's own cancellation is noticed
-  /// promptly rather than only once the wait would otherwise finish.
+  /// Shared implementation for `join`/`join_timeout`.
   fn join_inner(&self, deadline: Option<Duration>) -> JoinOutcome {
     if deadline.is_none() && !in_worker_context() {
       let mut slot = lock(&self.slot);
@@ -753,14 +759,6 @@ impl WorkerState {
 
     let started = Instant::now();
     loop {
-      // `tick` is the wait budget for THIS iteration only; computed
-      // from what's left of `deadline`, but never checked against zero
-      // before the real wait_timeout_while call below. A `deadline` of
-      // exactly zero (an explicit `timeout: 0`) still has to attempt
-      // the real check at least once: `wait_timeout_while` evaluates
-      // its predicate before ever looking at the duration, so a zero
-      // tick still catches an outcome that was ALREADY there, and only
-      // reports `Pending`/timeout afterward if it genuinely wasn't.
       let remaining = deadline.map(|d| d.saturating_sub(started.elapsed()));
       let tick = remaining.map_or(CANCEL_POLL_INTERVAL, |r| r.min(CANCEL_POLL_INTERVAL));
 
@@ -791,6 +789,9 @@ impl WorkerState {
   }
 
   pub fn try_join(&self) -> JoinOutcome {
+    if !self.is_done() {
+      return JoinOutcome::Pending;
+    }
     match &*lock(&self.slot) {
       Slot::Pending => JoinOutcome::Pending,
       Slot::Ok(g) => {
@@ -805,20 +806,19 @@ impl WorkerState {
   }
 
   pub fn is_done(&self) -> bool {
-    !matches!(&*lock(&self.slot), Slot::Pending)
+    self.status.load(Ordering::Acquire) != STATUS_PENDING
   }
 
   /// Like `try_join`, but never marks the outcome "observed"; pure
-  /// introspection for `Worker.status()`. `try_join`/`join`
-  /// themselves double as "I've seen this failure, don't warn about
-  /// it going unhandled" (see `Drop`'s own docs); a caller just
-  /// checking progress shouldn't accidentally suppress that warning
-  /// for a failure it never actually looked at.
+  /// introspection for `Worker.status()`.
   pub fn peek(&self) -> JoinOutcome {
-    match &*lock(&self.slot) {
-      Slot::Pending => JoinOutcome::Pending,
-      Slot::Ok(g) => JoinOutcome::Ok(g.clone()),
-      Slot::Err(m) => JoinOutcome::Err(m.clone()),
+    match self.status.load(Ordering::Acquire) {
+      STATUS_PENDING => JoinOutcome::Pending,
+      _ => match &*lock(&self.slot) {
+        Slot::Pending => JoinOutcome::Pending,
+        Slot::Ok(g) => JoinOutcome::Ok(g.clone()),
+        Slot::Err(m) => JoinOutcome::Err(m.clone()),
+      },
     }
   }
 }
@@ -856,12 +856,7 @@ impl Drop for WorkerState {
 }
 
 /// Captures `callee`/`args` (on the CALLING isolate's own heap, via
-/// `vm`) and queues them for the pool to pick up. `args` is expected
-/// to be a Zuri list Value; capturing it as one graph is what makes
-/// aliasing BETWEEN arguments (two args pointing at the same nested
-/// list, say) survive the trip along with aliasing within each one.
-/// `name` is a purely cosmetic label from `spawn_named()`; `None`
-/// for a plain `spawn()`.
+/// `vm`) and queues them for the pool to pick up.
 pub fn spawn(
   vm: &VM,
   callee: Value,
@@ -878,11 +873,6 @@ pub fn spawn(
   };
   let p = pool();
   {
-    // Checking `shutting_down` and enqueuing under the SAME lock is
-    // what makes this race-free against a concurrent `shutdown()`:
-    // either this sees the flag already set and bails out, or
-    // `shutdown()` hasn't set it yet and this task is safely counted
-    // in `in_flight` before shutdown can start waiting for zero.
     let mut queue = lock(&p.queue);
     if p.shutting_down.load(Ordering::Acquire) {
       return Err("cannot spawn: the worker pool is shutting down".to_string());
@@ -892,6 +882,41 @@ pub fn spawn(
   }
   p.not_empty.notify_one();
   Ok(state)
+}
+
+/// Spawns a batch of workers for `map()`, capturing the callee once
+/// and submitting all tasks under a single lock.
+pub fn spawn_batch(
+  vm: &VM,
+  callee: Value,
+  args_items: &[Value],
+) -> Result<Vec<Arc<WorkerState>>, String> {
+  let callee_graph = transfer::capture(vm, callee)?;
+  let mut states = Vec::with_capacity(args_items.len());
+  let mut tasks = Vec::with_capacity(args_items.len());
+
+  for &item in args_items {
+    let args_graph = transfer::capture_as_args_list(vm, item)?;
+    let state = Arc::new(WorkerState::new(None));
+    tasks.push(Task {
+      callee: callee_graph.clone(),
+      args: args_graph,
+      state: state.clone(),
+    });
+    states.push(state);
+  }
+
+  let p = pool();
+  {
+    let mut queue = lock(&p.queue);
+    if p.shutting_down.load(Ordering::Acquire) {
+      return Err("cannot spawn: the worker pool is shutting down".to_string());
+    }
+    p.in_flight.fetch_add(tasks.len(), Ordering::AcqRel);
+    queue.extend(tasks);
+  }
+  p.not_empty.notify_all();
+  Ok(states)
 }
 
 /// Stops the pool from accepting any further `spawn()` calls, then

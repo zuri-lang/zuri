@@ -41,6 +41,7 @@
 //! duplicating a resource that can't be soundly duplicated.
 
 use std::any::Any;
+use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -132,33 +133,25 @@ pub enum NamedKind {
 /// reached, same as any other unresolved global.
 #[derive(Clone)]
 pub struct CapturedFunction {
-  name: String,
-  variadic: bool,
-  arity: u8,
-  num_registers: u8,
-  code: Vec<Instr>,
-  constants: Vec<TransferValue>,
-  jump_tables: Vec<FxHashMap<JumpKey, usize>>,
-  lines: Vec<u32>,
-  param_checks: Vec<ParamTypeCheck>,
-  upvalue_descriptors: Vec<UpvalueDescriptor>,
-  is_method: bool,
-  owning_class_name: Option<String>,
-  home: Option<Home>,
-  /// Only ever non-empty when `home` is `None`: a snapshot of every
-  /// root global this function's OWN bytecode references by name
-  /// (`GetGlobal`/`SetGlobal`/`AssignGlobal`), captured at the moment
-  /// it crossed the boundary. A `home: Some(module)` function doesn't
-  /// need this; loading its module (see `materialize_prototype`)
-  /// already defines every one of ITS globals as a side effect, the
-  /// same way `import`ing it would. The main script has no such
-  /// "load" step (see `Home`'s own docs on why), so a function
-  /// declared there instead carries pre-resolved snapshots of exactly
-  /// the globals it actually touches; including, transitively,
-  /// whatever THOSE values' own dependencies are, since capturing a
-  /// global whose value is itself a main-script function recurses
-  /// into this same field for that function, and so on.
-  root_globals: Vec<(String, TransferValue)>,
+  pub data: Arc<CapturedFunctionData>,
+}
+
+pub struct CapturedFunctionData {
+  pub id: usize,
+  pub name: String,
+  pub variadic: bool,
+  pub arity: u8,
+  pub num_registers: u8,
+  pub code: Vec<Instr>,
+  pub constants: Vec<TransferValue>,
+  pub jump_tables: Vec<FxHashMap<JumpKey, usize>>,
+  pub lines: Vec<u32>,
+  pub param_checks: Vec<ParamTypeCheck>,
+  pub upvalue_descriptors: Vec<UpvalueDescriptor>,
+  pub is_method: bool,
+  pub owning_class_name: Option<String>,
+  pub home: Option<Home>,
+  pub root_globals: Vec<(String, TransferValue)>,
 }
 
 /// A structurally-captured class: see `capture_class_structural`.
@@ -284,6 +277,91 @@ pub struct TransferGraph {
 /// into a `TransferGraph`. Read-only; never allocates on `vm`'s
 /// heap, so it can't itself trigger a collection.
 pub fn capture(vm: &VM, root: Value) -> Result<TransferGraph, String> {
+  if root.is_nil() {
+    return Ok(TransferGraph {
+      root: TransferValue::Nil,
+      arena: Vec::new(),
+    });
+  }
+  if root.is_bool() {
+    return Ok(TransferGraph {
+      root: TransferValue::Bool(root.as_bool()),
+      arena: Vec::new(),
+    });
+  }
+  if root.is_number() {
+    return Ok(TransferGraph {
+      root: TransferValue::Number(root.as_number()),
+      arena: Vec::new(),
+    });
+  }
+  if root.is_string() {
+    return Ok(TransferGraph {
+      root: TransferValue::Str(root.as_str().to_string()),
+      arena: Vec::new(),
+    });
+  }
+  if root.is_bytes() {
+    return Ok(TransferGraph {
+      root: TransferValue::Bytes(root.as_bytes()),
+      arena: Vec::new(),
+    });
+  }
+  if root.is_bigint() {
+    return Ok(TransferGraph {
+      root: TransferValue::BigInt(root.as_bigint().clone()),
+      arena: Vec::new(),
+    });
+  }
+  if root.is_range() {
+    let (lower, upper) = root.as_range();
+    return Ok(TransferGraph {
+      root: TransferValue::Range {
+        lower,
+        upper,
+        step: root.range_step(),
+      },
+      arena: Vec::new(),
+    });
+  }
+  if root.is_native() {
+    let n = root.as_native();
+    return Ok(TransferGraph {
+      root: TransferValue::Native {
+        name: n.name,
+        min_arity: n.min_arity,
+        variadic: n.variadic,
+        is_method: n.is_method,
+        func: n.func,
+      },
+      arena: Vec::new(),
+    });
+  }
+  if root.is_ptr_type(pool::CHANNEL_PTR_TYPE) {
+    let handle = root
+      .as_ptr_cell()
+      .borrow()
+      .downcast_ref::<Arc<pool::ChannelState>>()
+      .cloned()
+      .ok_or_else(|| "internal error: malformed channel handle".to_string())?;
+    return Ok(TransferGraph {
+      root: TransferValue::ChannelHandle(handle),
+      arena: Vec::new(),
+    });
+  }
+  if root.is_ptr_type(pool::WORKER_PTR_TYPE) {
+    let handle = root
+      .as_ptr_cell()
+      .borrow()
+      .downcast_ref::<Arc<pool::WorkerState>>()
+      .cloned()
+      .ok_or_else(|| "internal error: malformed worker handle".to_string())?;
+    return Ok(TransferGraph {
+      root: TransferValue::WorkerHandle(handle),
+      arena: Vec::new(),
+    });
+  }
+
   let mut arena = Vec::new();
   let mut memo: FxHashMap<usize, u32> = FxHashMap::default();
   let root = capture_value(vm, root, &mut arena, &mut memo)?;
@@ -595,29 +673,29 @@ fn capture_prototype(
   }
 
   let proto = func_val.as_func();
-  let home = match proto.globals_module {
-    None => None,
-    Some(m) => Some(Home {
-      path: m.as_module().path.clone(),
-    }),
-  };
+  let home = proto.globals_module.map(|m| Home {
+    path: m.as_module().path.clone(),
+  });
 
   let idx = arena.len() as u32;
   arena.push(TransferNode::Proto(CapturedFunction {
-    name: proto.name.clone(),
-    variadic: proto.variadic,
-    arity: proto.arity,
-    num_registers: proto.num_registers,
-    code: proto.chunk.code.clone(),
-    constants: Vec::new(),
-    jump_tables: proto.chunk.jump_tables.clone(),
-    lines: proto.chunk.lines.clone(),
-    param_checks: proto.chunk.param_checks.clone(),
-    upvalue_descriptors: proto.upvalues.clone(),
-    is_method: proto.is_method,
-    owning_class_name: proto.owning_class_name.clone(),
-    home: home.clone(),
-    root_globals: Vec::new(),
+    data: Arc::new(CapturedFunctionData {
+      id: ptr,
+      name: proto.name.clone(),
+      variadic: proto.variadic,
+      arity: proto.arity,
+      num_registers: proto.num_registers,
+      code: proto.chunk.code.clone(),
+      constants: Vec::new(),
+      jump_tables: proto.chunk.jump_tables.clone(),
+      lines: proto.chunk.lines.clone(),
+      param_checks: proto.chunk.param_checks.clone(),
+      upvalue_descriptors: proto.upvalues.clone(),
+      is_method: proto.is_method,
+      owning_class_name: proto.owning_class_name.clone(),
+      home: home.clone(),
+      root_globals: Vec::new(),
+    }),
   }));
   memo.insert(ptr, idx);
 
@@ -633,9 +711,26 @@ fn capture_prototype(
     Vec::new()
   };
 
+  let full_data = Arc::new(CapturedFunctionData {
+    id: ptr,
+    name: proto.name.clone(),
+    variadic: proto.variadic,
+    arity: proto.arity,
+    num_registers: proto.num_registers,
+    code: proto.chunk.code.clone(),
+    constants,
+    jump_tables: proto.chunk.jump_tables.clone(),
+    lines: proto.chunk.lines.clone(),
+    param_checks: proto.chunk.param_checks.clone(),
+    upvalue_descriptors: proto.upvalues.clone(),
+    is_method: proto.is_method,
+    owning_class_name: proto.owning_class_name.clone(),
+    home,
+    root_globals,
+  });
+
   if let TransferNode::Proto(cf) = &mut arena[idx as usize] {
-    cf.constants = constants;
-    cf.root_globals = root_globals;
+    cf.data = full_data;
   }
   Ok(TransferValue::Ref(idx))
 }
@@ -874,6 +969,52 @@ fn find_binding_name(vm: &VM, home: &Home, v: Value) -> Option<String> {
 /// may itself run arbitrary Zuri top-level code (loading a module),
 /// so; unlike `capture`; this needs `&mut VM`.
 pub fn materialize(vm: &mut VM, graph: &TransferGraph) -> Result<Value, String> {
+  if graph.arena.is_empty() {
+    return match &graph.root {
+      TransferValue::Nil => Ok(Value::nil()),
+      TransferValue::Bool(b) => Ok(Value::bool(*b)),
+      TransferValue::Number(n) => Ok(Value::number(*n)),
+      TransferValue::BigInt(b) => Ok(vm.heap_mut().alloc_bigint(b.clone())),
+      TransferValue::Str(s) => Ok(vm.heap_mut().alloc_string(s.clone())),
+      TransferValue::Bytes(b) => Ok(vm.heap_mut().alloc_bytes(b.clone())),
+      TransferValue::Range { lower, upper, step } => {
+        let v = vm.heap_mut().alloc_range(*lower, *upper);
+        v.range_set_step(*step);
+        Ok(v)
+      },
+      TransferValue::Native {
+        name,
+        min_arity,
+        variadic,
+        is_method,
+        func,
+      } => Ok(vm.heap_mut().alloc_native(NativeFunction {
+        name,
+        min_arity: *min_arity,
+        variadic: *variadic,
+        is_method: *is_method,
+        func: *func,
+      })),
+      TransferValue::Named { home, name, kind } => resolve_named(vm, home, name, kind),
+      TransferValue::Prelude(name) => vm.lookup_global(name).ok_or_else(|| {
+        format!(
+          "internal error: builtin error class '{}' missing from the \
+           destination isolate's own prelude",
+          name
+        )
+      }),
+      TransferValue::ChannelHandle(state) => Ok(
+        vm.heap_mut()
+          .alloc_ptr(pool::CHANNEL_PTR_TYPE, state.clone()),
+      ),
+      TransferValue::WorkerHandle(state) => Ok(
+        vm.heap_mut()
+          .alloc_ptr(pool::WORKER_PTR_TYPE, state.clone()),
+      ),
+      TransferValue::Ref(_) => unreachable!(),
+    };
+  }
+
   let outer_mark = vm.pin_values(std::iter::empty());
   let mut node_pin: Vec<Option<usize>> = vec![None; graph.arena.len()];
   let result = materialize_value(vm, &graph.root, &graph.arena, &mut node_pin);
@@ -1190,6 +1331,14 @@ fn materialize_constant(
   }
 }
 
+thread_local! {
+  static ISOLATE_PROTO_CACHE: RefCell<FxHashMap<usize, Value>> = RefCell::new(FxHashMap::default());
+}
+
+pub fn reset_isolate_proto_cache() {
+  ISOLATE_PROTO_CACHE.with(|c| c.borrow_mut().clear());
+}
+
 fn materialize_prototype(
   vm: &mut VM,
   proto: &CapturedFunction,
@@ -1197,30 +1346,38 @@ fn materialize_prototype(
   arena: &[TransferNode],
   node_pin: &mut Vec<Option<usize>>,
 ) -> Result<Value, String> {
-  let globals_module = match &proto.home {
+  let proto_id = proto.data.id;
+  if let Some(cached_val) = ISOLATE_PROTO_CACHE.with(|c| c.borrow().get(&proto_id).copied()) {
+    let p = vm.pin_values([cached_val]);
+    node_pin[idx as usize] = Some(p);
+    return Ok(cached_val);
+  }
+
+  let globals_module = match &proto.data.home {
     None => None,
     Some(home) => Some(load_module_cached(vm, &home.path)?),
   };
 
   let mark = vm.pin_values(std::iter::empty());
-  for c in &proto.constants {
+  for c in &proto.data.constants {
     let v = materialize_constant(vm, c, arena, node_pin)?;
     vm.pin_values([v]);
   }
-  let constants: Vec<Value> = (0..proto.constants.len())
+  let constants: Vec<Value> = (0..proto.data.constants.len())
     .map(|i| vm.pinned(mark + i))
     .collect();
 
   let mut chunk = Chunk::new();
-  chunk.code = proto.code.clone();
+  chunk.code = proto.data.code.clone();
   chunk.constants = constants;
-  chunk.jump_tables = proto.jump_tables.clone();
-  chunk.lines = proto.lines.clone();
-  chunk.param_checks = proto.param_checks.clone();
+  chunk.jump_tables = proto.data.jump_tables.clone();
+  chunk.lines = proto.data.lines.clone();
+  chunk.param_checks = proto.data.param_checks.clone();
   let jit = JitInfo::new(chunk.code.len());
 
   let source_path: Rc<str> = Rc::from(
     proto
+      .data
       .home
       .as_ref()
       .map(|h| h.path.as_str())
@@ -1228,14 +1385,14 @@ fn materialize_prototype(
   );
 
   let fn_obj = ObjFunction {
-    name: proto.name.clone(),
-    variadic: proto.variadic,
+    name: proto.data.name.clone(),
+    variadic: proto.data.variadic,
     chunk,
-    arity: proto.arity,
-    num_registers: proto.num_registers,
-    upvalues: proto.upvalue_descriptors.clone(),
-    is_method: proto.is_method,
-    owning_class_name: proto.owning_class_name.clone(),
+    arity: proto.data.arity,
+    num_registers: proto.data.num_registers,
+    upvalues: proto.data.upvalue_descriptors.clone(),
+    is_method: proto.data.is_method,
+    owning_class_name: proto.data.owning_class_name.clone(),
     source_path,
     globals_module,
     jit,
@@ -1244,10 +1401,13 @@ fn materialize_prototype(
   let p = vm.pin_values([fn_val]);
   node_pin[idx as usize] = Some(p);
 
-  for (name, tv) in &proto.root_globals {
+  for (name, tv) in &proto.data.root_globals {
     let val = materialize_value(vm, tv, arena, node_pin)?;
     vm.define_global(name.clone(), val);
   }
+
+  vm.define_global(format!("__proto_{}", proto_id), fn_val);
+  ISOLATE_PROTO_CACHE.with(|c| c.borrow_mut().insert(proto_id, fn_val));
 
   Ok(vm.pinned(p))
 }
@@ -1319,3 +1479,18 @@ fn load_module_cached(vm: &mut VM, path: &str) -> Result<Value, String> {
   crate::vm::modules::load_from_candidate(vm, Path::new(path), path)
     .map_err(|e| vm.describe_error(e))
 }
+
+/// Captures a single value as a 1-element arguments list without
+/// allocating a temporary Zuri list on the source heap.
+pub fn capture_as_args_list(vm: &VM, item: Value) -> Result<TransferGraph, String> {
+  let mut arena = Vec::new();
+  let mut memo: FxHashMap<usize, u32> = FxHashMap::default();
+  let item_tv = capture_value(vm, item, &mut arena, &mut memo)?;
+  let list_idx = arena.len() as u32;
+  arena.push(TransferNode::List(vec![item_tv]));
+  Ok(TransferGraph {
+    root: TransferValue::Ref(list_idx),
+    arena,
+  })
+}
+

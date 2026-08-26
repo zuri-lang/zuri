@@ -563,11 +563,20 @@ def wait_all(workers: list, timeout: ?number) {
  *   cancelled while blocked here
  */
 def map(fn: function, items: list, timeout: ?number) {
-  var tasks = []
-  for item in items {
-    tasks.append(spawn(fn, item))
+  if items.length() == 0 {
+    return []
   }
-  return wait_all(tasks, timeout)
+  var r = _worker.map(fn, items, timeout)
+  if r[0] == 'timeout' {
+    raise WorkerTimeoutError('map() timed out after ${timeout} seconds')
+  }
+  if r[0] == 'cancelled' {
+    raise WorkerCancelledError('map() was interrupted: the calling worker was cancelled')
+  }
+  if r[0] == 'error' {
+    raise WorkerError(r[1])
+  }
+  return r[1]
 }
 
 /**

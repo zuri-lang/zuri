@@ -41,11 +41,9 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "queued_count",
       native(vm, "queued_count", 0, false, queued_count),
     ),
-    (
-      "is_shutdown",
-      native(vm, "is_shutdown", 0, false, is_shutdown),
-    ),
+    ("is_shutdown", native(vm, "is_shutdown", 0, false, is_shutdown)),
     ("spawn", native(vm, "spawn", 3, false, spawn)),
+    ("map", native(vm, "map", 3, false, map_batch)),
     ("join", native(vm, "join", 2, false, join)),
     ("try_join", native(vm, "try_join", 1, false, try_join)),
     ("is_done", native(vm, "is_done", 1, false, is_done)),
@@ -259,6 +257,64 @@ fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
     Err(msg) => {
       let value = ctx.vm.heap_mut().alloc_string(msg);
       Ok(status_pair(ctx.vm, "error", value))
+    },
+  }
+}
+
+fn map_batch(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 3);
+  enforce_arg_type!(ctx, 0, ArgType::Function);
+  enforce_arg_type!(ctx, 1, ArgType::List);
+  enforce_arg_type_any_of!(ctx, 2, [ArgType::Number, ArgType::Nil]);
+
+  let fn_val = ctx.args[0];
+  if !fn_val.is_closure() && !fn_val.is_bound_method() {
+    let msg = ctx.vm.heap_mut().alloc_string(format!(
+      "{}() expects a plain function, method, or bound method but not a native or a class",
+      ctx.name
+    ));
+    return Ok(status_pair(ctx.vm, "error", msg));
+  }
+
+  let items = ctx.args[1].as_list();
+  if items.is_empty() {
+    let empty_list = ctx.vm.heap_mut().alloc_list(Vec::new());
+    return Ok(status_pair(ctx.vm, "ok", empty_list));
+  }
+
+  let timeout = optional_timeout(ctx, 2)?;
+  let states = match pool::spawn_batch(ctx.vm, fn_val, &items) {
+    Ok(s) => s,
+    Err(msg) => {
+      let value = ctx.vm.heap_mut().alloc_string(msg);
+      return Ok(status_pair(ctx.vm, "error", value));
+    },
+  };
+
+  match pool::wait_all_workers(&states, timeout) {
+    pool::WaitAllOutcome::TimedOut => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
+    pool::WaitAllOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
+    pool::WaitAllOutcome::Ready => {
+      let pin_mark = ctx.vm.pin_values(std::iter::empty());
+      for s in &states {
+        match s.join() {
+          pool::JoinOutcome::Ok(graph) => {
+            let val = transfer::materialize(ctx.vm, &graph)?;
+            ctx.vm.pin_values([val]);
+          },
+          pool::JoinOutcome::Err(msg) => {
+            ctx.vm.unpin(pin_mark);
+            let value = ctx.vm.heap_mut().alloc_string(msg);
+            return Ok(status_pair(ctx.vm, "error", value));
+          },
+          pool::JoinOutcome::Pending | pool::JoinOutcome::Cancelled => unreachable!(),
+        }
+      }
+      let count = states.len();
+      let results: Vec<Value> = (0..count).map(|i| ctx.vm.pinned(pin_mark + i)).collect();
+      let list_val = ctx.vm.heap_mut().alloc_list(results);
+      ctx.vm.unpin(pin_mark);
+      Ok(status_pair(ctx.vm, "ok", list_val))
     },
   }
 }
