@@ -135,8 +135,8 @@ class Broadcast {
    *
    * ```zuri
    * import worker
-   * var hub = worker.broadcast()      // Unbounded subscriber buffers
-   * var bounded_hub = worker.broadcast(50) // Drop on full after 50 items
+   * var hub = worker.broadcast()      # Unbounded subscriber buffers
+   * var bounded_hub = worker.broadcast(50) # Drop on full after 50 items
    * ```
    */
   @new(capacity: ?int) {
