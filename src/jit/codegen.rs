@@ -7114,44 +7114,101 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::Mod { dst, a, b } => {
         let va = self.load_reg(a);
         let vb = self.load_reg(b);
-        let fa = self.to_f64(va);
-        let fb_ = self.to_f64(vb);
-        let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
-        let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
-        let zero = self.i64c(0);
-        let is_pos_denom = self.fb.ins().icmp(IntCC::SignedGreaterThan, ib, zero);
-
-        let rem_block = self.fb.create_block();
-        let slow_block = self.fb.create_block();
         let done_block = self.fb.create_block();
 
-        if self.both_proven_int(ip, a, b) {
-          self.fb.ins().brif(is_pos_denom, rem_block, &[], slow_block, &[]);
+        if self.both_proven_numeric(ip, a, b) {
+          let fa = self.to_f64(va);
+          let fb_ = self.to_f64(vb);
+          let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
+          let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+          let zero = self.i64c(0);
+          let is_pos_denom = self.fb.ins().icmp(IntCC::SignedGreaterThan, ib, zero);
+
+          let rem_block = self.fb.create_block();
+          let fmod_block = self.fb.create_block();
+
+          if self.both_proven_int(ip, a, b) {
+            self.fb.ins().brif(is_pos_denom, rem_block, &[], fmod_block, &[]);
+          } else {
+            let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
+            let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
+            let is_int_a = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
+            let is_int_b = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
+            let both_int = self.fb.ins().band(is_int_a, is_int_b);
+            let can_fast = self.fb.ins().band(both_int, is_pos_denom);
+            self.fb.ins().brif(can_fast, rem_block, &[], fmod_block, &[]);
+          }
+
+          self.fb.switch_to_block(rem_block);
+          let rem = self.fb.ins().srem(ia, ib);
+          let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
+          let rem_adj = self.fb.ins().iadd(rem, ib);
+          let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
+          let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
+          let res_val = self.from_f64(res_f);
+          self.store_reg(dst, res_val);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(fmod_block);
+          let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
+          let fallback_val = self.from_f64(fallback);
+          self.store_reg(dst, fallback_val);
+          self.fb.ins().jump(done_block, &[]);
         } else {
-          let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
-          let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
-          let is_int_a = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
-          let is_int_b = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
-          let both_int = self.fb.ins().band(is_int_a, is_int_b);
-          let can_fast = self.fb.ins().band(both_int, is_pos_denom);
-          self.fb.ins().brif(can_fast, rem_block, &[], slow_block, &[]);
+          let guard = self.combined_numeric_guard(ip, va, vb, a, b);
+          let num_block = self.fb.create_block();
+          let slow_block = self.fb.create_block();
+
+          self.fb.ins().brif(guard, num_block, &[], slow_block, &[]);
+
+          self.fb.switch_to_block(num_block);
+          let fa = self.to_f64(va);
+          let fb_ = self.to_f64(vb);
+          let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
+          let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+          let zero = self.i64c(0);
+          let is_pos_denom = self.fb.ins().icmp(IntCC::SignedGreaterThan, ib, zero);
+
+          let rem_block = self.fb.create_block();
+          let fmod_block = self.fb.create_block();
+
+          if self.both_proven_int(ip, a, b) {
+            self.fb.ins().brif(is_pos_denom, rem_block, &[], fmod_block, &[]);
+          } else {
+            let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
+            let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
+            let is_int_a = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
+            let is_int_b = self.fb.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
+            let both_int = self.fb.ins().band(is_int_a, is_int_b);
+            let can_fast = self.fb.ins().band(both_int, is_pos_denom);
+            self.fb.ins().brif(can_fast, rem_block, &[], fmod_block, &[]);
+          }
+
+          self.fb.switch_to_block(rem_block);
+          let rem = self.fb.ins().srem(ia, ib);
+          let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
+          let rem_adj = self.fb.ins().iadd(rem, ib);
+          let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
+          let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
+          let res_val = self.from_f64(res_f);
+          self.store_reg(dst, res_val);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(fmod_block);
+          let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
+          let fallback_val = self.from_f64(fallback);
+          self.store_reg(dst, fallback_val);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(slow_block);
+          let base = self.base_param;
+          let dst_i = self.idx(dst);
+          let a_i = self.idx(a);
+          let b_i = self.idx(b);
+          self.call_checked("zuri_jit_mod", &[self.vm_param, base, dst_i, a_i, b_i]);
+          self.resync_dst_from_memory(dst);
+          self.fb.ins().jump(done_block, &[]);
         }
-
-        self.fb.switch_to_block(rem_block);
-        let rem = self.fb.ins().srem(ia, ib);
-        let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
-        let rem_adj = self.fb.ins().iadd(rem, ib);
-        let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
-        let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
-        let res_val = self.from_f64(res_f);
-        self.store_reg(dst, res_val);
-        self.fb.ins().jump(done_block, &[]);
-
-        self.fb.switch_to_block(slow_block);
-        let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
-        let fallback_val = self.from_f64(fallback);
-        self.store_reg(dst, fallback_val);
-        self.fb.ins().jump(done_block, &[]);
 
         self.fb.switch_to_block(done_block);
         false
