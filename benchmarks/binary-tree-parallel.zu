@@ -62,16 +62,18 @@ def main(n) {
 
   var long_lived_tree = tree_with(max_depth)
 
-  var jobs = []
+  var jobs = [], opts = []
   iter var depth = min_depth; depth <= max_depth; depth += 2 {
     var iterations = 1 << (max_depth - depth + min_depth)
-    jobs.append([depth, iterations])
+
+    var opt = [depth, iterations]
+    opts.append(opt)
+    jobs.append(worker.spawn(churn_depth, opt))
   }
 
-  var sums = worker.map(churn_depth, jobs)
-
   iter var idx = 0; idx < jobs.length(); idx++ {
-    echo '${jobs[idx][1]}\t trees of depth ${jobs[idx][0]}\t check: ${sums[idx]}'
+    var sum = jobs[idx].join()
+    echo '${opts[idx][1]}\t trees of depth ${opts[idx][0]}\t check: ${sum}'
   }
 
   echo 'long lived tree of depth ${max_depth}\t check: ${long_lived_tree.count()}'
