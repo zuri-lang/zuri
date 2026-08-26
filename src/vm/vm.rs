@@ -1498,21 +1498,25 @@ impl VM {
     self.jit_compiler.as_mut().unwrap()
   }
 
-  /// Resolves the class a method's `self` is guaranteed to be an instance
-  /// of, then maps every field name safe to read/write on it directly (no
-  /// `BoundMethod`-wrapping risk) to its slot index. `None` for a
-  /// non-method function or unprovable resolution.
-  ///
-  /// Field slots are stable across inheritance; `Instr::Class` clones the
-  /// superclass's `field_slots` wholesale and `DeclareField` only appends,
-  /// never renumbers; so a slot resolved from the method's declaring
-  /// class stays correct for any subclass `self` actually is at runtime.
-  ///
-  /// Resolving by name (`owning_class_name`) rather than back-pointer needs
-  /// one extra check: the global binding, unlike the class object itself,
-  /// can be reassigned after declaration. If the name no longer resolves to
-  /// a class that actually owns `proto`, we return `None` and fall back to
-  /// the general path.
+  /// Samples whichever instance happens to be `self` at the moment a
+  /// method is queued for JIT compilation and hands back the set of its
+  /// fields that hold a number right then. This is a ONE-SHOT SAMPLE of
+  /// a single instance, not a proof -- a different instance, or this
+  /// same one after a later reassignment, can easily hold something
+  /// else in the same field. `jit::codegen` may only ever fold this
+  /// into `type_facts` on the SPECULATIVE side (the specialized body,
+  /// guarded per-access by `emit_speculative_guard`, which re-validates
+  /// the real value and deopts on a mismatch); it must never reach the
+  /// general/shared body's facts, since that body has no guard
+  /// mechanism at all and would treat the bet as an unconditional
+  /// truth. That was a real, confirmed bug as of 2026-08-26: `class
+  /// Poly { var v; bump() { return self.v + 1 } }`, warmed on a `Poly`
+  /// whose `v` is a number then called once on a `Poly` whose `v` is a
+  /// string, compiled `self.v + 1` to a raw `fadd` on the field's raw
+  /// bits with no type check, and silently returned the field's own
+  /// value unchanged (a NaN-boxed pointer's payload passes through
+  /// float arithmetic untouched on this hardware) instead of the
+  /// correct `"oops1"`. See `tests/self-field-numeric-speculation.zu`.
   fn resolve_self_numeric_fields(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
     let mut numeric_fields = rustc_hash::FxHashSet::default();
     let Some(frame) = self.frames.last() else {
@@ -1539,6 +1543,21 @@ impl VM {
     numeric_fields
   }
 
+  /// Resolves the class a method's `self` is guaranteed to be an instance
+  /// of, then maps every field name safe to read/write on it directly (no
+  /// `BoundMethod`-wrapping risk) to its slot index. `None` for a
+  /// non-method function or unprovable resolution.
+  ///
+  /// Field slots are stable across inheritance; `Instr::Class` clones the
+  /// superclass's `field_slots` wholesale and `DeclareField` only appends,
+  /// never renumbers; so a slot resolved from the method's declaring
+  /// class stays correct for any subclass `self` actually is at runtime.
+  ///
+  /// Resolving by name (`owning_class_name`) rather than back-pointer needs
+  /// one extra check: the global binding, unlike the class object itself,
+  /// can be reassigned after declaration. If the name no longer resolves to
+  /// a class that actually owns `proto`, we return `None` and fall back to
+  /// the general path.
   fn resolve_self_field_slots(&self, proto: &ObjFunction) -> Option<FxHashMap<String, u16>> {
     let class_name = proto.owning_class_name.as_ref()?;
     let (is_root, slot) = self.resolve_global(proto.globals_module, class_name)?;
@@ -4678,8 +4697,8 @@ impl VM {
   /// (pointing at a live register in some still-executing frame) or
   /// already Closed; the same two-way read `Instr::GetUpval` does
   /// inline. `pub(crate)` so code outside the interpreter loop (e.g.
-  /// `modules::worker_util`, which needs to snapshot a closure's
-  /// captured values before they can cross a thread boundary) can read
+  /// `modules::isolate_util`, which needs to snapshot a closure's
+  /// captured values before they can cross an isolate boundary) can read
   /// one without duplicating that match.
   pub(crate) fn read_upvalue(&self, upvalue: Value) -> Value {
     match upvalue.as_upvalue().get() {

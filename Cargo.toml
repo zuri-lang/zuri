@@ -82,11 +82,11 @@ debug = true
 lto = "thin"
 codegen-units = 1
 # Was "abort" purely to shave a little startup/runtime overhead off
-# the single-threaded interpreter. Now that worker worker threads
+# the single-threaded interpreter. Now that isolate pool threads
 # exist, unwinding is required: it's the only way a bug in one
-# worker's own execution path can be caught and turned into a
-# WorkerError instead of aborting the entire process out from
-# under every other worker and the main thread. Default (unwind).
+# isolate's own execution path can be caught and turned into an
+# IsolateError instead of aborting the entire process out from
+# under every other isolate and the main thread. Default (unwind).
 # panic = "abort"
 
 [features]

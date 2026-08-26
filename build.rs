@@ -79,23 +79,28 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
   fs::create_dir_all(&generated_dir).expect("failed to create tests/generated/");
   let dest = generated_dir.join("zu_conformance_generated.rs");
 
-  let mut zu_files: Vec<_> = fs::read_dir(&tests_dir)
-    .expect("tests/ directory should exist")
-    .filter_map(|entry| entry.ok())
-    .map(|entry| entry.path())
-    .filter(|p| p.extension().is_some_and(|ext| ext == "zu"))
-    .filter(|p| p.with_extension("out").exists())
-    .collect();
+  let mut zu_files = Vec::new();
+  collect_zu_files(&tests_dir, &generated_dir, &mut zu_files);
   zu_files.sort();
 
   let mut seen_names = std::collections::HashSet::new();
   let mut code = String::new();
   for zu_path in &zu_files {
-    let stem = zu_path
-      .file_stem()
-      .and_then(|s| s.to_str())
-      .unwrap_or_else(|| panic!("non-UTF8 fixture name: {}", zu_path.display()));
-    let mut test_name = escape_ident(stem);
+    // Subdirectory fixtures (e.g. `tests/libs/isolate.zu`) get their
+    // parent folder folded into the test name, so `cargo test`'s
+    // output tells you which suite a failure came from at a glance
+    // instead of every subdirectory's fixtures being indistinguishable
+    // underscore-suffixed siblings of the top-level ones.
+    let rel = zu_path
+      .strip_prefix(&tests_dir)
+      .unwrap_or(zu_path)
+      .with_extension("");
+    let name_source = rel
+      .components()
+      .map(|c| c.as_os_str().to_str().unwrap_or("_"))
+      .collect::<Vec<_>>()
+      .join("_");
+    let mut test_name = escape_ident(&name_source);
     // Two fixture stems could collide after sanitization (e.g. names
     // differing only by a character `sanitize_ident` folds away). So we
     // disambiguate rather than silently generating two functions with
@@ -115,6 +120,29 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
   // regenerated; content changes to an existing .zu/.out don't, since
   // `run_fixture` reads both fresh at test-run time, not build time.
   println!("cargo:rerun-if-changed={}", tests_dir.display());
+}
+
+/// Walks `dir` looking for `.zu` fixtures with a matching `.out`,
+/// descending into subdirectories (`tests/libs/`, and whatever else
+/// shows up later) so a fixture doesn't have to live directly under
+/// `tests/` to be picked up. Skips `skip_dir` (`tests/generated/`,
+/// this script's own output) so it never tries to read back its own
+/// generated Rust as a candidate `.zu` fixture.
+fn collect_zu_files(dir: &Path, skip_dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+  let entries = fs::read_dir(dir)
+    .unwrap_or_else(|e| panic!("failed to read directory {}: {e}", dir.display()));
+  for entry in entries.filter_map(|entry| entry.ok()) {
+    let path = entry.path();
+    if path == skip_dir {
+      continue;
+    }
+    if path.is_dir() {
+      collect_zu_files(&path, skip_dir, out);
+    } else if path.extension().is_some_and(|ext| ext == "zu") && path.with_extension("out").exists()
+    {
+      out.push(path);
+    }
+  }
 }
 
 fn sanitize_ident(s: &str) -> String {

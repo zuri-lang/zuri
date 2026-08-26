@@ -835,9 +835,9 @@ pub struct ObjClass {
   /// never changed afterward. Every class reaches `Instr::FinalizeClass`
   /// (which already rejects a duplicate name in this same scope), so
   /// this is always resolvable back to a real `(home, name)` pair --
-  /// see `modules::worker_util` for the one consumer that actually
+  /// see `modules::isolate_util` for the one consumer that actually
   /// needs it: re-finding a class by name in a freshly-loaded copy of
-  /// its own home module when a worker crosses isolate boundaries.
+  /// its own home module when a value crosses an isolate boundary.
   pub globals_module: Option<Value>,
 }
 
@@ -1105,9 +1105,9 @@ pub struct ObjPtr {
   /// lifecycle like everything else.
   ///
   /// `+ Send`, not just `Any`: what makes it sound for
-  /// `modules::worker_util::transfer` to MOVE a wrapped resource
-  /// (a socket, a future db connection, ...) to a worker's own
-  /// worker thread: see `ObjPtr::take`. Costs nothing to every
+  /// `modules::isolate_util::transfer` to MOVE a wrapped resource
+  /// (a socket, a future db connection, ...) to a destination
+  /// isolate's own thread: see `ObjPtr::take`. Costs nothing to every
   /// existing user of this type: every native module that currently
   /// wraps something in a `Ptr` already wraps a plain, self-contained
   /// resource with no thread-affinity of its own (no `Rc`/`RefCell`
@@ -1134,8 +1134,8 @@ impl ObjPtr {
   /// `type_name`/`downcast_*` reflect nothing useful on this `ObjPtr`
   /// afterward. Used when a resource genuinely MOVES to another
   /// isolate rather than being copied; the one case in the whole
-  /// worker-transfer system where the source side can't stay valid
-  /// afterward (see `modules::worker_util::transfer`'s own docs on
+  /// isolate-transfer system where the source side can't stay valid
+  /// afterward (see `modules::isolate_util::transfer`'s own docs on
   /// why a `Ptr` is the sole error to "always copy, never share,
   /// source stays valid"). Callers are responsible for also updating
   /// `type_name` if they want `ptr_type_name()` to say something more
@@ -2891,7 +2891,7 @@ impl Heap {
   /// `ObjPtr::take` on some OTHER heap (possibly on another thread --
   /// that's the entire point) and is now just a type-erased box with
   /// no concrete `T` left to name. Used only by
-  /// `modules::worker_util::transfer`, rebuilding a moved `Ptr` on
+  /// `modules::isolate_util::transfer`, rebuilding a moved `Ptr` on
   /// a destination isolate.
   pub fn alloc_ptr_boxed(&mut self, type_name: &'static str, value: Box<dyn Any + Send>) -> Value {
     self.alloc(Obj::Ptr(RefCell::new(ObjPtr { type_name, value })))

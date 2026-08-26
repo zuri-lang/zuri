@@ -34,17 +34,21 @@
  *
  * Instead of allocating a dedicated OS thread or a dedicated runtime stack for
  * every dispatched task, calling `isolate.spawn()` creates a lightweight `Task`
- * descriptor queued into a lock-free, multi-producer multi-consumer crossbeam queue.
+ * descriptor (the callee and its arguments, already captured into a
+ * heap-independent snapshot) and pushes it onto a shared, mutex-guarded queue.
  *
  * - **Isolate Pooling & Reuse**: A fixed pool of isolate OS threads, configured via
  *   `configure()` and defaulting to the system's available CPU core count is
  *   pre-warmed at startup. These isolate threads continuously drain the task
  *   queue, executing tasks sequentially within their long-lived isolate contexts.
- * - **Sub-Microsecond Task Density**: Because queued tasks represent lightweight
- *   transfer descriptors rather than suspended OS threads, applications can
- *   rapidly enqueue massive task bursts (e.g. 100,000+ jobs) with minimal RAM
- *   overhead (~1.2 KB per task) and sub-microsecond queue dispatch latencies,
- *   achieving coroutine-like density with true multi-core parallel execution.
+ * - **Small, Fixed-Size Task Descriptors**: Because a queued task is a captured
+ *   value snapshot rather than a suspended OS thread, applications can enqueue
+ *   large task bursts (e.g. 100,000+ jobs) without paying for a dedicated stack
+ *   or heap per task. The fixed part of a task (its queue slot plus its join
+ *   handle) is a few hundred bytes; a task's actual total footprint on top of
+ *   that scales with whatever the callee's own arguments and captured state
+ *   need to carry across the boundary, same as any other value transfer
+ *   described above.
  *
  * ## Garbage Collection & Scalability Under Load
  *
@@ -95,7 +99,7 @@
  * | **Concurrency Paradigm** | M:N green threads on a single shared heap | Thread-pooled shared-nothing isolates / actors |
  * | **Memory Safety** | Shared memory; data races possible without mutexes | Data-race free by design via physical isolation |
  * | **GC Impact** | Shared global GC cycles and allocator write barriers | Independent per-isolate GC; zero STW cross-talk |
- * | **Task Density** | ~2 KB per goroutine stack | ~1.2 KB per queued task; pooled thread reuse |
+ * | **Task Density** | ~2 KB per goroutine stack | a few hundred bytes of fixed queue/handle overhead per task; pooled thread reuse |
  * | **Communication** | Shared-memory pointer channels or locks | Deep-copied value graphs or moved native resources |
  * | **Primary Strengths** | Ultra-high-concurrency non-blocking I/O multiplexing | Compute-heavy parallel processing & task pipelines |
  *

@@ -798,7 +798,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let preds = typeflow::build_predecessors(proto);
-    let type_facts = typeflow::analyze(proto, &preds, None, None, &facts.self_numeric_fields);
+    // The general body gets NO self-field numeric facts at all, not
+    // `facts.self_numeric_fields`: those are a one-shot sample of a
+    // single instance (see `VM::resolve_self_numeric_fields`'s own
+    // docs), and this body has no guard mechanism to re-validate them.
+    // The real set still reaches the specialized body below, through
+    // `self.self_numeric_fields`, where `emit_speculative_guard`
+    // re-checks every bet against the actual value and deopts on a
+    // mismatch.
+    let no_self_numeric_fields = rustc_hash::FxHashSet::default();
+    let type_facts = typeflow::analyze(proto, &preds, None, None, &no_self_numeric_fields);
     let int_facts = typeflow::analyze_int(proto, &preds);
     let list_facts = typeflow::analyze_list(proto, &preds);
     let string_facts = typeflow::analyze_string(proto, &preds);
@@ -1028,7 +1037,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     //; `emit_entry_dispatch` needs them NOW to build a SOUND per-OSR-
     // target guard (see its own docs).
     let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> =
-      if self.speculative_params.is_some() || self.speculative_regs.is_some() {
+      if self.speculative_params.is_some()
+        || self.speculative_regs.is_some()
+        || !self.self_numeric_fields.is_empty()
+      {
         let blocks = (0..self.blocks.len())
           .map(|_| self.fb.create_block())
           .collect();
@@ -1229,17 +1241,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.emit_osr_scalar_list_init(ip);
         let mask = spec_facts.numeric_mask_at(ip);
         if mask == 0 {
-          if self.speculative_regs.is_some() {
+          if self.speculative_regs.is_some() || !self.self_numeric_fields.is_empty() {
             // Nothing is proven AT this exact entry point, but the
             // specialized body may still contain its own, INDEPENDENT
             // mid-function speculative guards further along (see
             // `emit_speculative_guard`); route into it unconditionally
             // rather than skipping straight to general, so ordinary
-            // (non-OSR) execution still reaches them. When only
+            // (non-OSR) execution still reaches them. A straight-line
+            // method whose only speculation is a `self.field` numeric
+            // guess (no loop, no OSR target, entry mask always 0) is
+            // exactly this case: the guess only becomes checkable AFTER
+            // `Instr::GetField` runs, never at entry itself, so entry
+            // must still hand off to the specialized body for the
+            // mid-function guard to ever run at all. When only
             // parameter speculation is in play (`speculative_regs` is
-            // `None`), `spec_blocks[ip]` onward is behaviorally
-            // identical to `self.blocks[ip]` in this case; exactly
-            // the reasoning that already justified the unconditional
+            // `None` AND `self_numeric_fields` is empty), `spec_blocks[ip]`
+            // onward is behaviorally identical to `self.blocks[ip]` in
+            // this case; exactly the reasoning that already justified
+            // the unconditional
             // general jump below, still applies whenever there's no
             // OTHER kind of speculation that could benefit downstream.
             self.fb.ins().jump(spec_blocks[ip], &[]);
