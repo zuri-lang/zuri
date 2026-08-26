@@ -1,7 +1,7 @@
 /**
  * @module broadcast
  *
- * One-to-many (fan-out) publish-subscribe message distribution for worker isolates.
+ * One-to-many (fan-out) publish-subscribe message distribution for isolate isolates.
  *
  * ## Overview
  *
@@ -15,8 +15,8 @@
  * inheriting the same deep-copy memory isolation guarantees: published values
  * cross isolate barriers cleanly without shared mutable state.
  *
- * Re-exported by the `worker` module, so `import worker` is sufficient to use
- * `worker.Broadcast` and `worker.broadcast()`.
+ * Re-exported by the `isolate` module, so `import isolate` is sufficient to use
+ * `isolate.Broadcast` and `isolate.broadcast()`.
  *
  * ## Subscription & Message Delivery
  *
@@ -37,7 +37,7 @@
  *   When a subscriber's individual channel buffer reaches capacity `n`, the broadcaster
  *   uses a non-blocking send (`timeout: 0`). If the buffer is full, the message is
  *   **dropped specifically for that slow subscriber** rather than blocking the publisher
- *   or stalling other subscribers. This prevents a single lagging worker from
+ *   or stalling other subscribers. This prevents a single lagging isolate from
  *   causing system-wide backpressure or deadlocks.
  *
  * ## Lifecycle & Graceful Teardown
@@ -46,9 +46,9 @@
  *   The channel stops receiving new broadcasts, but any previously queued messages
  *   remain readable.
  * - **Closing**: Calling `broadcast.close()` closes the broadcast hub and all active
- *   subscriber channels. Subscribed workers will drain their remaining buffered
+ *   subscriber channels. Subscribed isolates will drain their remaining buffered
  *   messages, after which subsequent `recv()` calls return `nil`. Attempting to
- *   call `send()` or `subscribe()` on a closed broadcast raises a `WorkerError`.
+ *   call `send()` or `subscribe()` on a closed broadcast raises a `IsolateError`.
  * - **Automatic Pruning**: If a subscriber closes its channel independently, the
  *   broadcast hub automatically detects the closed channel during the next `send()`
  *   and prunes it from the subscriber registry.
@@ -58,13 +58,13 @@
  * ### 1. Publish-Subscribe Event Fan-Out
  *
  * ```zuri
- * import worker
+ * import isolate
  *
- * var hub = worker.broadcast()
+ * var hub = isolate.broadcast()
  *
- * # Worker 1: Logging service
+ * # Isolate 1: Logging service
  * var sub1 = hub.subscribe()
- * var logger = worker.spawn(def(ch) {
+ * var logger = isolate.spawn(def(ch) {
  *   while true {
  *     var msg = ch.recv()
  *     if msg == nil break
@@ -72,9 +72,9 @@
  *   }
  * }, sub1)
  *
- * # Worker 2: Metrics service
+ * # Isolate 2: Metrics service
  * var sub2 = hub.subscribe()
- * var metrics = worker.spawn(def(ch) {
+ * var metrics = isolate.spawn(def(ch) {
  *   var count = 0
  *   while true {
  *     var msg = ch.recv()
@@ -96,9 +96,9 @@
  * ### 2. Dynamic Unsubscription
  *
  * ```zuri
- * import worker
+ * import isolate
  *
- * var hub = worker.broadcast()
+ * var hub = isolate.broadcast()
  * var sub = hub.subscribe()
  *
  * hub.send("first message")
@@ -115,7 +115,7 @@
  */
 
 import .channel { Channel }
-import .error { WorkerError }
+import .error { IsolateError }
 
 /**
  * A one-to-many publish-subscribe message distribution hub.
@@ -134,9 +134,9 @@ class Broadcast {
    *   broadcasts rather than blocking the publisher.
    *
    * ```zuri
-   * import worker
-   * var hub = worker.broadcast()      # Unbounded subscriber buffers
-   * var bounded_hub = worker.broadcast(50) # Drop on full after 50 items
+   * import isolate
+   * var hub = isolate.broadcast()      # Unbounded subscriber buffers
+   * var bounded_hub = isolate.broadcast(50) # Drop on full after 50 items
    * ```
    */
   @new(capacity: ?int) {
@@ -152,16 +152,16 @@ class Broadcast {
    * Subscribers only receive messages sent after the moment of subscription.
    *
    * @returns Channel: A channel delivering published broadcasts.
-   * @raises WorkerError if the broadcast hub has already been closed.
+   * @raises IsolateError if the broadcast hub has already been closed.
    *
    * ```zuri
    * var sub_ch = hub.subscribe()
-   * worker.spawn(worker_func, sub_ch)
+   * isolate.spawn(isolate_func, sub_ch)
    * ```
    */
   subscribe() {
     if self._closed {
-      raise WorkerError('cannot subscribe: the broadcast is closed')
+      raise IsolateError('cannot subscribe: the broadcast is closed')
     }
     var ch = Channel(self._capacity)
     self._subscribers.append(ch)
@@ -202,7 +202,7 @@ class Broadcast {
    * Any subscriber channels discovered to be closed are automatically pruned.
    *
    * @param any value: The value or object graph to broadcast.
-   * @raises WorkerError if the broadcast hub has been closed.
+   * @raises IsolateError if the broadcast hub has been closed.
    *
    * ```zuri
    * hub.send("alert: system update")
@@ -210,7 +210,7 @@ class Broadcast {
    */
   send(value) {
     if self._closed {
-      raise WorkerError('cannot send on a closed broadcast')
+      raise IsolateError('cannot send on a closed broadcast')
     }
     var alive = []
     for ch in self._subscribers {
@@ -231,7 +231,7 @@ class Broadcast {
    *
    * Subscribed channels can continue draining any remaining buffered messages.
    * Once drained, subsequent calls to `recv()` on subscriber channels will
-   * return `nil`. Calling `send()` or `subscribe()` after closing raises `WorkerError`.
+   * return `nil`. Calling `send()` or `subscribe()` after closing raises `IsolateError`.
    *
    * ```zuri
    * hub.close()
@@ -280,8 +280,8 @@ class Broadcast {
  * @returns Broadcast
  *
  * ```zuri
- * import worker
- * var hub = worker.broadcast()
+ * import isolate
+ * var hub = isolate.broadcast()
  * ```
  */
 def broadcast(capacity: ?int) {

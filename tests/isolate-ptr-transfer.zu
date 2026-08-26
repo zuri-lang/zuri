@@ -1,13 +1,13 @@
-import worker
+import isolate
 import compress.gzip
 
 def compress_it(enc) {
-  enc.write('hello from a worker, compressed on another thread')
+  enc.write('hello from a isolate, compressed on another thread')
   return enc.finish()
 }
 
 var enc = gzip.GzipEncoder(6)
-var t = worker.spawn(compress_it, enc)
+var t = isolate.spawn(compress_it, enc)
 var result = t.join()
 echo result.length() > 0
 

@@ -1,16 +1,16 @@
-import worker
+import isolate
 import compress.gzip
-import .worker_worker
-import .worker_panic_worker
+import .isolate_isolate
+import .isolate_panic_isolate
 
 def test_basic_spawn_join() {
-  var t = worker.spawn(worker_worker.square, 9)
+  var t = isolate.spawn(isolate_isolate.square, 9)
   assert t.join() == 81, 'basic spawn/join should return the callee result'
   echo 'test_basic_spawn_join passed'
 }
 
 def test_join_is_repeatable() {
-  var t = worker.spawn(worker_worker.square, 7)
+  var t = isolate.spawn(isolate_isolate.square, 7)
   var first = t.join()
   var second = t.join()
   var third = t.join()
@@ -20,28 +20,28 @@ def test_join_is_repeatable() {
 }
 
 def test_is_done_and_try_join() {
-  # a worker blocked on a channel recv cannot possibly have
+  # a isolate blocked on a channel recv cannot possibly have
   # finished yet, so this is a deterministic way to observe "pending"
   # rather than racing a fast function against our own check.
-  var gate = worker.channel(0)
-  var t = worker.spawn(@(ch) {
+  var gate = isolate.channel(0)
+  var t = isolate.spawn(@(ch) {
     var v = ch.recv()
     return v * 2
   }, gate)
 
-  assert !t.is_done(), 'worker blocked on an unfed channel must not be done yet'
+  assert !t.is_done(), 'isolate blocked on an unfed channel must not be done yet'
   assert t.try_join() == nil, 'try_join() must return nil while pending'
 
   gate.send(21)
-  assert t.join() == 42, 'join() must block until the worker actually finishes'
-  assert t.is_done(), 'worker must be done after join() returns'
+  assert t.join() == 42, 'join() must block until the isolate actually finishes'
+  assert t.is_done(), 'isolate must be done after join() returns'
   assert t.try_join() == 42, 'try_join() must return the result once finished'
   echo 'test_is_done_and_try_join passed'
 }
 
 def test_closure_capturing_local() {
-  var add5 = worker_worker.make_adder(5)
-  var t = worker.spawn(add5, 10)
+  var add5 = isolate_isolate.make_adder(5)
+  var t = isolate.spawn(add5, 10)
   assert t.join() == 15, 'closure must carry its captured value across'
   echo 'test_closure_capturing_local passed'
 }
@@ -53,14 +53,14 @@ def test_closure_mutation_independence() {
     return state[0]
   }
 
-  var t1 = worker.spawn(bump)
-  var t2 = worker.spawn(bump)
+  var t1 = isolate.spawn(bump)
+  var t2 = isolate.spawn(bump)
   var r1 = t1.join()
   var r2 = t2.join()
 
-  assert r1 == 1, 'each worker must see its own independent snapshot, starting fresh'
-  assert r2 == 1, 'a second worker spawned from the same closure gets its own copy too'
-  assert state[0] == 0, 'mutating the captured list inside a worker must not affect the caller'
+  assert r1 == 1, 'each isolate must see its own independent snapshot, starting fresh'
+  assert r2 == 1, 'a second isolate spawned from the same closure gets its own copy too'
+  assert state[0] == 0, 'mutating the captured list inside a isolate must not affect the caller'
 
   state[0] += 1
   assert state[0] == 1, 'mutating the caller copy afterward must not affect anything already sent'
@@ -68,26 +68,26 @@ def test_closure_mutation_independence() {
 }
 
 def test_recursive_closure() {
-  var fact = worker_worker.make_fact()
-  var t = worker.spawn(fact, 6)
+  var fact = isolate_isolate.make_fact()
+  var t = isolate.spawn(fact, 6)
   assert t.join() == 720, 'a closure capturing itself must round-trip correctly'
   echo 'test_recursive_closure passed'
 }
 
 def test_closure_references_module_global() {
-  var t = worker.spawn(worker_worker.uses_module_global, 5)
-  assert t.join() == 105, 'a function referencing its own module global must resolve it on the worker'
+  var t = isolate.spawn(isolate_isolate.uses_module_global, 5)
+  assert t.join() == 105, 'a function referencing its own module global must resolve it on the isolate'
   echo 'test_closure_references_module_global passed'
 }
 
 def test_anonymous_lambda() {
-  var t = worker.spawn(@(n) { return n + 100 }, 1)
+  var t = isolate.spawn(@(n) { return n + 100 }, 1)
   assert t.join() == 101, 'an anonymous lambda never bound to a name must still be spawnable'
   echo 'test_anonymous_lambda passed'
 }
 
 def test_main_script_function() {
-  var t = worker.spawn(local_double, 21)
+  var t = isolate.spawn(local_double, 21)
   assert t.join() == 42, 'a function declared directly in this script must be spawnable'
   echo 'test_main_script_function passed'
 }
@@ -101,17 +101,17 @@ def test_main_script_function_raises_builtin_error() {
   # referencing it is a `GetGlobal` against the VM's own root table,
   # picked up transitively as a root global this main-script function
   # depends on. `TypeError` (like every builtin error class) is
-  # installed fresh by every worker's own `VM::init`, not declared in
+  # installed fresh by every isolate's own `VM::init`, not declared in
   # any module; a naive structural clone of it would produce a class
-  # the worker's own `raise`/`catch` doesn't recognize, turning this
+  # the isolate's own `raise`/`catch` doesn't recognize, turning this
   # into a confusing "can only raise an Error or subclass" failure
   # instead of the real one.
-  var t = worker.spawn(local_boom)
+  var t = isolate.spawn(local_boom)
   catch {
     t.join()
   } as e
-  assert e != nil, 'raising a builtin error class inside a worker must surface on join()'
-  assert instance_of(e, worker.WorkerError), 'it must surface as an ordinary WorkerError'
+  assert e != nil, 'raising a builtin error class inside a isolate must surface on join()'
+  assert instance_of(e, isolate.IsolateError), 'it must surface as an ordinary IsolateError'
   assert e.message.contains('a builtin error class raised from a main-script function'),
     'the original message must be preserved, not replaced by an internal raise-machinery error'
   echo 'test_main_script_function_raises_builtin_error passed'
@@ -123,7 +123,7 @@ def local_double(n) {
 
 def test_main_script_class() {
   var box = LocalBox(41)
-  var t = worker.spawn(@() { return box.value + 1 })
+  var t = isolate.spawn(@() { return box.value + 1 })
   assert t.join() == 42, 'a class declared directly in this script must cross correctly'
   echo 'test_main_script_class passed'
 }
@@ -133,28 +133,28 @@ class LocalBox {
   @new(value) { self.value = value }
 }
 
-def test_main_script_class_constructed_inside_worker() {
+def test_main_script_class_constructed_inside_isolate() {
   # a structurally-transferred class's constructor must actually run
-  # on the worker side too, not just when an already-built instance
+  # on the isolate side too, not just when an already-built instance
   # crosses as data; this is what test_main_script_class exercises.
-  var t = worker.spawn(@() {
+  var t = isolate.spawn(@() {
     var box = LocalBox(9)
     return box.value
   })
-  assert t.join() == 9, "a class's own @new() must run correctly when constructed inside a worker"
-  echo 'test_main_script_class_constructed_inside_worker passed'
+  assert t.join() == 9, "a class's own @new() must run correctly when constructed inside a isolate"
+  echo 'test_main_script_class_constructed_inside_isolate passed'
 }
 
-def test_main_script_class_survives_gc_and_jit_warmup_inside_worker() {
+def test_main_script_class_survives_gc_and_jit_warmup_inside_isolate() {
   # a materialized prototype's string constants (field/method names)
   # must be allocated the same "never moves" way the compiler's own
   # constants are: enough iterations here both warms this method up
   # to JIT-compiled code (which bakes a field name's raw bits in as a
-  # machine-code immediate) AND pushes the worker's nursery through a
+  # machine-code immediate) AND pushes the isolate's nursery through a
   # real minor collection; if a constant were movable, that
   # collection would relocate it out from under the already-baked
-  # pointer and crash the whole process, not just this worker.
-  var t = worker.spawn(@() {
+  # pointer and crash the whole process, not just this isolate.
+  var t = isolate.spawn(@() {
     var sum = 0
     iter var i = 0; i < 20000; i++ {
       var box = LocalBox(i)
@@ -162,55 +162,55 @@ def test_main_script_class_survives_gc_and_jit_warmup_inside_worker() {
     }
     return sum
   })
-  assert t.join() == 199990000, 'field access on a fresh instance must stay correct across a GC inside the worker'
-  echo 'test_main_script_class_survives_gc_and_jit_warmup_inside_worker passed'
+  assert t.join() == 199990000, 'field access on a fresh instance must stay correct across a GC inside the isolate'
+  echo 'test_main_script_class_survives_gc_and_jit_warmup_inside_isolate passed'
 }
 
 def test_module_scoped_class_instance() {
-  var c = worker_worker.make_counter(10)
-  var t = worker.spawn(@(counter) { return counter.increment() }, c)
+  var c = isolate_isolate.make_counter(10)
+  var t = isolate.spawn(@(counter) { return counter.increment() }, c)
   assert t.join() == 11, 'an instance argument must round-trip with its own methods usable'
-  assert c.value == 10, 'mutating the copy inside a worker must not affect the caller instance'
+  assert c.value == 10, 'mutating the copy inside a isolate must not affect the caller instance'
   echo 'test_module_scoped_class_instance passed'
 }
 
 def test_bound_method_as_spawn_target() {
-  var c = worker_worker.make_counter(5)
-  var t = worker.spawn(c.increment)
+  var c = isolate_isolate.make_counter(5)
+  var t = isolate.spawn(c.increment)
   assert t.join() == 6, 'a bound method must be directly spawnable, receiver included'
   echo 'test_bound_method_as_spawn_target passed'
 }
 
 def test_bound_method_as_argument() {
-  var a = worker_worker.make_counter(3)
-  var b = worker_worker.make_counter(4)
-  var t = worker.spawn(@(sum_fn, other) { return sum_fn(other) }, a.sum_with, b)
-  assert t.join() == 7, 'a bound method passed as ordinary data must still be callable on the worker'
+  var a = isolate_isolate.make_counter(3)
+  var b = isolate_isolate.make_counter(4)
+  var t = isolate.spawn(@(sum_fn, other) { return sum_fn(other) }, a.sum_with, b)
+  assert t.join() == 7, 'a bound method passed as ordinary data must still be callable on the isolate'
   echo 'test_bound_method_as_argument passed'
 }
 
 def test_class_inheritance_across_boundary() {
-  var d = worker_worker.make_dog('Rex')
-  var t = worker.spawn(@(animal) { return animal.speak() }, d)
+  var d = isolate_isolate.make_dog('Rex')
+  var t = isolate.spawn(@(animal) { return animal.speak() }, d)
   assert t.join() == 'Rex barks', 'an overridden method must resolve to the subclass version'
   echo 'test_class_inheritance_across_boundary passed'
 }
 
 def test_class_statics_snapshot_independence() {
-  var before = worker_worker.Counter.created
-  var t = worker.spawn(worker_worker.make_counter, 1)
+  var before = isolate_isolate.Counter.created
+  var t = isolate.spawn(isolate_isolate.make_counter, 1)
   t.join()
-  # the worker constructed its own Counter on its own isolated copy
+  # the isolate constructed its own Counter on its own isolated copy
   # of the class, so the caller's own static field is untouched.
-  assert worker_worker.Counter.created == before,
-    'a static field mutated on the worker must not affect the caller-side class'
+  assert isolate_isolate.Counter.created == before,
+    'a static field mutated on the isolate must not affect the caller-side class'
   echo 'test_class_statics_snapshot_independence passed'
 }
 
 def test_nested_collection_aliasing() {
   var shared = [1, 2, 3]
   var outer = [shared, shared]
-  var t = worker.spawn(@(pair) {
+  var t = isolate.spawn(@(pair) {
     pair[0].append(4)
     return pair[1].length()
   }, outer)
@@ -222,7 +222,7 @@ def test_nested_collection_aliasing() {
 def test_self_referential_list_does_not_hang() {
   var cyclic = [1, 2]
   cyclic.append(cyclic)
-  var t = worker.spawn(@(x) {
+  var t = isolate.spawn(@(x) {
     return is_list(x[2]) and x.length()
   }, cyclic)
   assert t.join() == 3, 'a self-referential list must round-trip without hanging or corrupting its shape'
@@ -231,65 +231,65 @@ def test_self_referential_list_does_not_hang() {
 
 def test_dict_argument() {
   var d = { a: 1, b: 2 }
-  var t = worker.spawn(@(m) { return m['a'] + m['b'] }, d)
+  var t = isolate.spawn(@(m) { return m['a'] + m['b'] }, d)
   assert t.join() == 3, 'a dict argument must cross correctly'
   echo 'test_dict_argument passed'
 }
 
-def test_multiple_concurrent_workers() {
+def test_multiple_concurrent_isolates() {
   var tasks = []
   var i = 0
   while i < 8 {
-    tasks.append(worker.spawn(worker_worker.square, i))
+    tasks.append(isolate.spawn(isolate_isolate.square, i))
     i += 1
   }
 
   var j = 0
   while j < 8 {
-    assert tasks[j].join() == j * j, 'each concurrently-spawned worker must return its own correct result'
+    assert tasks[j].join() == j * j, 'each concurrently-spawned isolate must return its own correct result'
     j += 1
   }
-  echo 'test_multiple_concurrent_workers passed'
+  echo 'test_multiple_concurrent_isolates passed'
 }
 
 def test_uncaught_error_propagates() {
-  var t = worker.spawn(worker_worker.boom)
+  var t = isolate.spawn(isolate_isolate.boom)
   catch {
     t.join()
   } as e
-  assert e != nil, 'an uncaught error inside a worker must surface on join()'
-  assert instance_of(e, worker.WorkerError), 'it must surface specifically as a WorkerError'
+  assert e != nil, 'an uncaught error inside a isolate must surface on join()'
+  assert instance_of(e, isolate.IsolateError), 'it must surface specifically as a IsolateError'
   echo 'test_uncaught_error_propagates passed'
 }
 
-def test_worker_panic_is_isolated() {
-  var t = worker.spawn(worker_panic_worker.trigger_panic)
+def test_isolate_panic_is_isolated() {
+  var t = isolate.spawn(isolate_panic_isolate.trigger_panic)
   catch {
     t.join()
   } as e
-  assert e != nil, 'a Rust-level panic inside a worker must surface on join(), not crash the process'
-  assert instance_of(e, worker.WorkerError), 'a panic must surface as an ordinary WorkerError'
+  assert e != nil, 'a Rust-level panic inside a isolate must surface on join(), not crash the process'
+  assert instance_of(e, isolate.IsolateError), 'a panic must surface as an ordinary IsolateError'
 
-  # the pool's worker threads must survive a panic and keep serving
-  # later workers; a panicked isolate is rebuilt, never reused.
-  var t2 = worker.spawn(worker_worker.square, 9)
-  assert t2.join() == 81, 'the pool must still work correctly after a panic on one of its workers'
-  echo 'test_worker_panic_is_isolated passed'
+  # the pool's isolate threads must survive a panic and keep serving
+  # later isolates; a panicked isolate is rebuilt, never reused.
+  var t2 = isolate.spawn(isolate_isolate.square, 9)
+  assert t2.join() == 81, 'the pool must still work correctly after a panic on one of its isolates'
+  echo 'test_isolate_panic_is_isolated passed'
 }
 
 def test_uncaught_error_message_preserved() {
-  var t = worker.spawn(worker_worker.boom_typed)
+  var t = isolate.spawn(isolate_isolate.boom_typed)
   catch {
     t.join()
   } as e
-  assert e != nil, 'a typed error must still be caught as a WorkerError'
-  assert e.message.contains('bad type from worker'), 'the original error text should be preserved in the message'
+  assert e != nil, 'a typed error must still be caught as a IsolateError'
+  assert e.message.contains('bad type from isolate'), 'the original error text should be preserved in the message'
   echo 'test_uncaught_error_message_preserved passed'
 }
 
 def test_spawn_rejects_non_function() {
   catch {
-    worker.spawn(42)
+    isolate.spawn(42)
   } as e
   assert e != nil and instance_of(e, TypeError), 'spawning a non-function must raise TypeError'
   echo 'test_spawn_rejects_non_function passed'
@@ -297,16 +297,16 @@ def test_spawn_rejects_non_function() {
 
 def test_spawn_rejects_native_function() {
   catch {
-    worker.spawn(time)
+    isolate.spawn(time)
   } as e
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'spawning a native function must be rejected as a WorkerError'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'spawning a native function must be rejected as a IsolateError'
   echo 'test_spawn_rejects_native_function passed'
 }
 
 def test_spawn_rejects_class() {
   catch {
-    worker.spawn(worker_worker.Counter)
+    isolate.spawn(isolate_isolate.Counter)
   } as e
   assert e != nil and instance_of(e, TypeError),
     'spawning a class itself (as opposed to an instance method) must be rejected as not callable'
@@ -316,23 +316,23 @@ def test_spawn_rejects_class() {
 def test_file_handle_rejected() {
   var f = file(__file__)
   catch {
-    worker.spawn(worker_worker.square, f)
+    isolate.spawn(isolate_isolate.square, f)
   } as e
   f.close()
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'a file handle must never be allowed to cross a worker boundary'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'a file handle must never be allowed to cross a isolate boundary'
   echo 'test_file_handle_rejected passed'
 }
 
 def test_channel_basic_send_recv() {
-  var ch = worker.channel()
+  var ch = isolate.channel()
   ch.send('hello')
   assert ch.recv() == 'hello', 'a sent value must be received unchanged'
   echo 'test_channel_basic_send_recv passed'
 }
 
 def test_channel_fifo_order() {
-  var ch = worker.channel()
+  var ch = isolate.channel()
   ch.send(1)
   ch.send(2)
   ch.send(3)
@@ -342,7 +342,7 @@ def test_channel_fifo_order() {
 }
 
 def test_channel_close_semantics() {
-  var ch = worker.channel()
+  var ch = isolate.channel()
   ch.send('a')
   ch.close()
 
@@ -353,12 +353,12 @@ def test_channel_close_semantics() {
   catch {
     ch.send('too late')
   } as e
-  assert e != nil and instance_of(e, worker.WorkerError), 'send() on a closed channel must raise'
+  assert e != nil and instance_of(e, isolate.IsolateError), 'send() on a closed channel must raise'
   echo 'test_channel_close_semantics passed'
 }
 
 def test_channel_try_recv() {
-  var ch = worker.channel()
+  var ch = isolate.channel()
   assert ch.try_recv() == nil, 'try_recv() on an empty channel must return nil, not block'
   ch.send('x')
   assert ch.try_recv() == 'x', 'try_recv() must return an already-queued value immediately'
@@ -366,7 +366,7 @@ def test_channel_try_recv() {
 }
 
 def test_channel_len() {
-  var ch = worker.channel()
+  var ch = isolate.channel()
   assert ch.length() == 0, 'a fresh channel must report zero queued values'
   ch.send(1)
   ch.send(2)
@@ -377,8 +377,8 @@ def test_channel_len() {
 }
 
 def test_channel_producer_consumer() {
-  var ch = worker.channel(2)
-  var producer = worker.spawn(@(out) {
+  var ch = isolate.channel(2)
+  var producer = isolate.spawn(@(out) {
     var i = 0
     while i < 20 {
       out.send(i)
@@ -399,18 +399,18 @@ def test_channel_producer_consumer() {
 
   assert count == 20, 'a consumer draining a bounded channel must receive every message the producer sent'
   assert total == 190, 'every message must arrive with its correct value (sum 0..19 == 190)'
-  assert producer.join() == 20, 'the producer worker must still complete normally afterward'
+  assert producer.join() == 20, 'the producer isolate must still complete normally afterward'
   echo 'test_channel_producer_consumer passed'
 }
 
 def test_channel_constructor_validation() {
   catch {
-    worker.channel('bad')
+    isolate.channel('bad')
   } as e1
   assert e1 != nil and instance_of(e1, TypeError), 'a non-integer capacity must raise TypeError'
 
   catch {
-    worker.channel(-1)
+    isolate.channel(-1)
   } as e2
   assert e2 != nil and instance_of(e2, ValueError), 'a negative capacity must raise ValueError'
   echo 'test_channel_constructor_validation passed'
@@ -418,14 +418,14 @@ def test_channel_constructor_validation() {
 
 def test_ptr_transfer_move_semantics() {
   var enc = gzip.GzipEncoder(6)
-  var t = worker.spawn(@(e) {
-    e.write('data compressed on a worker thread')
+  var t = isolate.spawn(@(e) {
+    e.write('data compressed on a isolate thread')
     return e.finish()
   }, enc)
 
   var result = t.join()
   assert is_bytes(result) and result.length() > 0,
-    'a native resource argument must be usable on the worker and produce a real result'
+    'a native resource argument must be usable on the isolate and produce a real result'
 
   catch {
     enc.write('should not work on the sender anymore')
@@ -435,8 +435,8 @@ def test_ptr_transfer_move_semantics() {
 }
 
 def test_cancellation_cooperative() {
-  var started = worker.channel(0)
-  var t = worker.spawn(worker_worker.cancellable_loop, started)
+  var started = isolate.channel(0)
+  var t = isolate.spawn(isolate_isolate.cancellable_loop, started)
   started.recv()
 
   assert !t.is_cancelled(), 'must not be cancelled before cancel() is called'
@@ -448,68 +448,68 @@ def test_cancellation_cooperative() {
   echo 'test_cancellation_cooperative passed'
 }
 
-def test_cancel_on_finished_worker() {
-  var t = worker.spawn(worker_worker.square, 5)
+def test_cancel_on_finished_isolate() {
+  var t = isolate.spawn(isolate_isolate.square, 5)
   assert t.join() == 25, 'expected 25'
-  assert !t.is_cancelled(), 'a worker must not be cancelled unless cancel() was actually called'
+  assert !t.is_cancelled(), 'a isolate must not be cancelled unless cancel() was actually called'
   t.cancel()
-  assert t.is_cancelled(), 'cancel() on an already-finished worker is a harmless no-op, not an error'
-  echo 'test_cancel_on_finished_worker passed'
+  assert t.is_cancelled(), 'cancel() on an already-finished isolate is a harmless no-op, not an error'
+  echo 'test_cancel_on_finished_isolate passed'
 }
 
-def test_is_cancelled_outside_a_worker() {
-  assert !worker.is_cancelled(), 'is_cancelled() outside any worker must always be false'
-  echo 'test_is_cancelled_outside_a_worker passed'
+def test_is_cancelled_outside_a_isolate() {
+  assert !isolate.is_cancelled(), 'is_cancelled() outside any isolate must always be false'
+  echo 'test_is_cancelled_outside_a_isolate passed'
 }
 
 def test_join_timeout_elapses() {
-  var gate = worker.channel(0)
-  var t = worker.spawn(@(ch) { return ch.recv() }, gate)
+  var gate = isolate.channel(0)
+  var t = isolate.spawn(@(ch) { return ch.recv() }, gate)
 
   var timed_out = false
   catch {
     t.join(0.05)
   } as e {
-    timed_out = instance_of(e, worker.WorkerTimeoutError)
+    timed_out = instance_of(e, isolate.IsolateTimeoutError)
   }
-  assert timed_out, 'join(timeout) must raise WorkerTimeoutError once the timeout elapses'
+  assert timed_out, 'join(timeout) must raise IsolateTimeoutError once the timeout elapses'
 
   gate.send(99)
-  assert t.join() == 99, 'the worker must still be joinable normally afterward'
+  assert t.join() == 99, 'the isolate must still be joinable normally afterward'
   echo 'test_join_timeout_elapses passed'
 }
 
 def test_join_timeout_succeeds_in_time() {
-  var t = worker.spawn(worker_worker.square, 6)
+  var t = isolate.spawn(isolate_isolate.square, 6)
   assert t.join(5) == 36, 'join(timeout) must return the result normally when it finishes in time'
   echo 'test_join_timeout_succeeds_in_time passed'
 }
 
 def test_channel_send_timeout() {
-  var ch = worker.channel(1)
+  var ch = isolate.channel(1)
   ch.send(1)
 
   var timed_out = false
   catch {
     ch.send(2, 0.05)
   } as e {
-    timed_out = instance_of(e, worker.WorkerTimeoutError)
+    timed_out = instance_of(e, isolate.IsolateTimeoutError)
   }
-  assert timed_out, 'send(timeout) on a full channel must raise WorkerTimeoutError'
+  assert timed_out, 'send(timeout) on a full channel must raise IsolateTimeoutError'
   assert ch.recv() == 1, 'the value already queued must still be there'
   echo 'test_channel_send_timeout passed'
 }
 
 def test_channel_recv_timeout() {
-  var ch = worker.channel(0)
+  var ch = isolate.channel(0)
 
   var timed_out = false
   catch {
     ch.recv(0.05)
   } as e {
-    timed_out = instance_of(e, worker.WorkerTimeoutError)
+    timed_out = instance_of(e, isolate.IsolateTimeoutError)
   }
-  assert timed_out, 'recv(timeout) on an empty channel must raise WorkerTimeoutError'
+  assert timed_out, 'recv(timeout) on an empty channel must raise IsolateTimeoutError'
 
   ch.send(7)
   assert ch.recv() == 7, 'the channel must still work normally afterward'
@@ -517,16 +517,16 @@ def test_channel_recv_timeout() {
 }
 
 def test_wait_any_returns_first_finished() {
-  var gate_a = worker.channel(0)
-  var gate_b = worker.channel(0)
-  var gate_c = worker.channel(0)
-  var a = worker.spawn(@(ch) { return ch.recv() }, gate_a)
-  var b = worker.spawn(@(ch) { return ch.recv() }, gate_b)
-  var c = worker.spawn(@(ch) { return ch.recv() }, gate_c)
+  var gate_a = isolate.channel(0)
+  var gate_b = isolate.channel(0)
+  var gate_c = isolate.channel(0)
+  var a = isolate.spawn(@(ch) { return ch.recv() }, gate_a)
+  var b = isolate.spawn(@(ch) { return ch.recv() }, gate_b)
+  var c = isolate.spawn(@(ch) { return ch.recv() }, gate_c)
 
   gate_b.send(2)
-  var winner = worker.wait_any([a, b, c])
-  assert winner == b, 'wait_any() must return the worker that actually finished'
+  var winner = isolate.wait_any([a, b, c])
+  assert winner == b, 'wait_any() must return the isolate that actually finished'
   assert winner.join() == 2, 'the winning handle must still be joinable normally'
 
   gate_a.send(1)
@@ -538,36 +538,36 @@ def test_wait_any_returns_first_finished() {
 
 def test_wait_any_rejects_empty_list() {
   catch {
-    worker.wait_any([])
+    isolate.wait_any([])
   } as e
   assert e != nil and instance_of(e, ValueError), 'wait_any() must reject an empty list'
   echo 'test_wait_any_rejects_empty_list passed'
 }
 
 def test_wait_any_timeout() {
-  var gate = worker.channel(0)
-  var t = worker.spawn(@(ch) { return ch.recv() }, gate)
+  var gate = isolate.channel(0)
+  var t = isolate.spawn(@(ch) { return ch.recv() }, gate)
 
   var timed_out = false
   catch {
-    worker.wait_any([t], 0.05)
+    isolate.wait_any([t], 0.05)
   } as e {
-    timed_out = instance_of(e, worker.WorkerTimeoutError)
+    timed_out = instance_of(e, isolate.IsolateTimeoutError)
   }
-  assert timed_out, 'wait_any() must raise WorkerTimeoutError once the timeout elapses'
+  assert timed_out, 'wait_any() must raise IsolateTimeoutError once the timeout elapses'
 
   gate.send(7)
-  assert t.join() == 7, 'the worker must still be joinable normally after a timed-out wait_any()'
+  assert t.join() == 7, 'the isolate must still be joinable normally after a timed-out wait_any()'
   echo 'test_wait_any_timeout passed'
 }
 
 def test_select_returns_ready_channel() {
-  var x = worker.channel(1)
-  var y = worker.channel(1)
-  var z = worker.channel(1)
+  var x = isolate.channel(1)
+  var y = isolate.channel(1)
+  var z = isolate.channel(1)
   z.send('picked me')
 
-  var result = worker.select([x, y, z])
+  var result = isolate.select([x, y, z])
   assert result[0] == z, 'select() must report the channel that was actually ready'
   assert result[1] == 'picked me', 'select() must return the value already received from it'
   assert z.length() == 0, 'the value select() returned must have been removed from the channel'
@@ -575,11 +575,11 @@ def test_select_returns_ready_channel() {
 }
 
 def test_select_on_closed_channel() {
-  var open_ch = worker.channel(0)
-  var closed_ch = worker.channel(0)
+  var open_ch = isolate.channel(0)
+  var closed_ch = isolate.channel(0)
   closed_ch.close()
 
-  var result = worker.select([open_ch, closed_ch])
+  var result = isolate.select([open_ch, closed_ch])
   assert result[0] == closed_ch, 'a closed, empty channel counts as immediately ready'
   assert result[1] == nil, 'a closed channel yields nil, same as recv() on one'
   echo 'test_select_on_closed_channel passed'
@@ -587,22 +587,22 @@ def test_select_on_closed_channel() {
 
 def test_select_rejects_empty_list() {
   catch {
-    worker.select([])
+    isolate.select([])
   } as e
   assert e != nil and instance_of(e, ValueError), 'select() must reject an empty list'
   echo 'test_select_rejects_empty_list passed'
 }
 
 def test_select_timeout() {
-  var ch = worker.channel(0)
+  var ch = isolate.channel(0)
 
   var timed_out = false
   catch {
-    worker.select([ch], 0.05)
+    isolate.select([ch], 0.05)
   } as e {
-    timed_out = instance_of(e, worker.WorkerTimeoutError)
+    timed_out = instance_of(e, isolate.IsolateTimeoutError)
   }
-  assert timed_out, 'select() must raise WorkerTimeoutError once the timeout elapses'
+  assert timed_out, 'select() must raise IsolateTimeoutError once the timeout elapses'
 
   ch.send(9)
   assert ch.recv() == 9, 'the channel must still work normally afterward'
@@ -610,52 +610,52 @@ def test_select_timeout() {
 }
 
 def test_wait_all_collects_results_in_order() {
-  var a = worker.spawn(worker_worker.square, 2)
-  var b = worker.spawn(worker_worker.square, 3)
-  var c = worker.spawn(worker_worker.square, 4)
-  var results = worker.wait_all([a, b, c])
+  var a = isolate.spawn(isolate_isolate.square, 2)
+  var b = isolate.spawn(isolate_isolate.square, 3)
+  var c = isolate.spawn(isolate_isolate.square, 4)
+  var results = isolate.wait_all([a, b, c])
   assert results == [4, 9, 16], 'wait_all() must return results in the same order as its input'
   echo 'test_wait_all_collects_results_in_order passed'
 }
 
 def test_wait_all_empty_list() {
-  assert worker.wait_all([]) == [], 'wait_all() on an empty list must return an empty list'
+  assert isolate.wait_all([]) == [], 'wait_all() on an empty list must return an empty list'
   echo 'test_wait_all_empty_list passed'
 }
 
 def test_wait_all_raises_first_failure() {
-  var ok = worker.spawn(worker_worker.square, 5)
-  var failing = worker.spawn(worker_worker.boom)
+  var ok = isolate.spawn(isolate_isolate.square, 5)
+  var failing = isolate.spawn(isolate_isolate.boom)
   var e = nil
   catch {
-    worker.wait_all([ok, failing])
+    isolate.wait_all([ok, failing])
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'wait_all() must surface a failing worker as WorkerError'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'wait_all() must surface a failing isolate as IsolateError'
   echo 'test_wait_all_raises_first_failure passed'
 }
 
 def test_wait_all_timeout() {
-  var gate = worker.channel(0)
-  var t = worker.spawn(@(ch) { return ch.recv() }, gate)
+  var gate = isolate.channel(0)
+  var t = isolate.spawn(@(ch) { return ch.recv() }, gate)
 
   var timed_out = false
   catch {
-    worker.wait_all([t], 0.05)
+    isolate.wait_all([t], 0.05)
   } as e {
-    timed_out = instance_of(e, worker.WorkerTimeoutError)
+    timed_out = instance_of(e, isolate.IsolateTimeoutError)
   }
-  assert timed_out, 'wait_all() must raise WorkerTimeoutError once the timeout elapses'
+  assert timed_out, 'wait_all() must raise IsolateTimeoutError once the timeout elapses'
 
   gate.send(3)
-  assert t.join() == 3, 'the worker must still be joinable normally afterward'
+  assert t.join() == 3, 'the isolate must still be joinable normally afterward'
   echo 'test_wait_all_timeout passed'
 }
 
 def test_map_runs_in_parallel_and_preserves_order() {
-  var results = worker.map(worker_worker.square, [1, 2, 3, 4, 5])
+  var results = isolate.map(isolate_isolate.square, [1, 2, 3, 4, 5])
   assert results == [1, 4, 9, 16, 25], 'map() must apply fn to every item and preserve input order'
   echo 'test_map_runs_in_parallel_and_preserves_order passed'
 }
@@ -663,19 +663,19 @@ def test_map_runs_in_parallel_and_preserves_order() {
 def test_map_propagates_failure() {
   var e = nil
   catch {
-    worker.map(@(n) { raise TypeError('boom ${n}') }, [1, 2])
+    isolate.map(@(n) { raise TypeError('boom ${n}') }, [1, 2])
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'map() must surface a failing call as WorkerError'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'map() must surface a failing call as IsolateError'
   echo 'test_map_propagates_failure passed'
 }
 
 def test_cancel_interrupts_blocked_recv() {
-  var started = worker.channel(0)
-  var gate = worker.channel(0)
-  var t = worker.spawn(@(st, ch) {
+  var started = isolate.channel(0)
+  var gate = isolate.channel(0)
+  var t = isolate.spawn(@(st, ch) {
     st.send(true)
     return ch.recv()
   }, started, gate)
@@ -688,18 +688,18 @@ def test_cancel_interrupts_blocked_recv() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'a worker cancelled while blocked in recv() must fail'
-  assert e.message.starts_with('WorkerCancelledError:'),
-    'the failure must specifically be a WorkerCancelledError, not a generic one'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'a isolate cancelled while blocked in recv() must fail'
+  assert e.message.starts_with('IsolateCancelledError:'),
+    'the failure must specifically be a IsolateCancelledError, not a generic one'
   echo 'test_cancel_interrupts_blocked_recv passed'
 }
 
 def test_cancel_interrupts_blocked_send() {
-  var started = worker.channel(0)
-  var ch = worker.channel(1)
+  var started = isolate.channel(0)
+  var ch = isolate.channel(1)
   ch.send(1)
-  var t = worker.spawn(@(st, c) {
+  var t = isolate.spawn(@(st, c) {
     st.send(true)
     c.send(2)
     return nil
@@ -713,19 +713,19 @@ def test_cancel_interrupts_blocked_send() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'a worker cancelled while blocked in send() must fail'
-  assert e.message.starts_with('WorkerCancelledError:'),
-    'the failure must specifically be a WorkerCancelledError, not a generic one'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'a isolate cancelled while blocked in send() must fail'
+  assert e.message.starts_with('IsolateCancelledError:'),
+    'the failure must specifically be a IsolateCancelledError, not a generic one'
   echo 'test_cancel_interrupts_blocked_send passed'
 }
 
 def test_cancel_interrupts_blocked_join() {
-  var inner_gate = worker.channel(0)
-  var inner = worker.spawn(@(ch) { return ch.recv() }, inner_gate)
+  var inner_gate = isolate.channel(0)
+  var inner = isolate.spawn(@(ch) { return ch.recv() }, inner_gate)
 
-  var started = worker.channel(0)
-  var outer = worker.spawn(@(st, target) {
+  var started = isolate.channel(0)
+  var outer = isolate.spawn(@(st, target) {
     st.send(true)
     return target.join()
   }, started, inner)
@@ -738,22 +738,22 @@ def test_cancel_interrupts_blocked_join() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'a worker cancelled while blocked joining another must fail'
-  assert e.message.starts_with('WorkerCancelledError:'),
-    'the failure must specifically be a WorkerCancelledError, not a generic one'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'a isolate cancelled while blocked joining another must fail'
+  assert e.message.starts_with('IsolateCancelledError:'),
+    'the failure must specifically be a IsolateCancelledError, not a generic one'
 
   inner_gate.send(1)
-  assert inner.join() == 1, 'the worker being joined is unaffected and still completes normally'
+  assert inner.join() == 1, 'the isolate being joined is unaffected and still completes normally'
   echo 'test_cancel_interrupts_blocked_join passed'
 }
 
 def test_cancel_interrupts_wait_any() {
-  var target_gate = worker.channel(0)
-  var target = worker.spawn(@(ch) { return ch.recv() }, target_gate)
+  var target_gate = isolate.channel(0)
+  var target = isolate.spawn(@(ch) { return ch.recv() }, target_gate)
 
-  var started = worker.channel(0)
-  var t = worker.spawn(worker_worker.wait_any_one, started, target)
+  var started = isolate.channel(0)
+  var t = isolate.spawn(isolate_isolate.wait_any_one, started, target)
   started.recv()
   t.cancel()
 
@@ -763,10 +763,10 @@ def test_cancel_interrupts_wait_any() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'a worker cancelled while blocked in wait_any() must fail'
-  assert e.message.starts_with('WorkerCancelledError:'),
-    'the failure must specifically be a WorkerCancelledError, not a generic one'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'a isolate cancelled while blocked in wait_any() must fail'
+  assert e.message.starts_with('IsolateCancelledError:'),
+    'the failure must specifically be a IsolateCancelledError, not a generic one'
 
   target_gate.send(1)
   target.join()
@@ -774,11 +774,11 @@ def test_cancel_interrupts_wait_any() {
 }
 
 def test_cancel_interrupts_wait_all() {
-  var target_gate = worker.channel(0)
-  var target = worker.spawn(@(ch) { return ch.recv() }, target_gate)
+  var target_gate = isolate.channel(0)
+  var target = isolate.spawn(@(ch) { return ch.recv() }, target_gate)
 
-  var started = worker.channel(0)
-  var t = worker.spawn(worker_worker.wait_all_one, started, target)
+  var started = isolate.channel(0)
+  var t = isolate.spawn(isolate_isolate.wait_all_one, started, target)
   started.recv()
   t.cancel()
 
@@ -788,10 +788,10 @@ def test_cancel_interrupts_wait_all() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'a worker cancelled while blocked in wait_all() must fail'
-  assert e.message.starts_with('WorkerCancelledError:'),
-    'the failure must specifically be a WorkerCancelledError, not a generic one'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'a isolate cancelled while blocked in wait_all() must fail'
+  assert e.message.starts_with('IsolateCancelledError:'),
+    'the failure must specifically be a IsolateCancelledError, not a generic one'
 
   target_gate.send(1)
   target.join()
@@ -799,10 +799,10 @@ def test_cancel_interrupts_wait_all() {
 }
 
 def test_cancel_interrupts_select() {
-  var empty_ch = worker.channel(0)
+  var empty_ch = isolate.channel(0)
 
-  var started = worker.channel(0)
-  var t = worker.spawn(worker_worker.select_one, started, empty_ch)
+  var started = isolate.channel(0)
+  var t = isolate.spawn(isolate_isolate.select_one, started, empty_ch)
   started.recv()
   t.cancel()
 
@@ -812,21 +812,21 @@ def test_cancel_interrupts_select() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'a worker cancelled while blocked in select() must fail'
-  assert e.message.starts_with('WorkerCancelledError:'),
-    'the failure must specifically be a WorkerCancelledError, not a generic one'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'a isolate cancelled while blocked in select() must fail'
+  assert e.message.starts_with('IsolateCancelledError:'),
+    'the failure must specifically be a IsolateCancelledError, not a generic one'
   echo 'test_cancel_interrupts_select passed'
 }
 
 def test_scope_reports_real_child_failure_not_cancellation_artifact() {
-  var started = worker.channel(0)
-  var gate = worker.channel(0)
+  var started = isolate.channel(0)
+  var gate = isolate.channel(0)
   var e = nil
   catch {
-    worker.scope(@(s) {
+    isolate.scope(@(s) {
       # spawned FIRST; if the cancellation-artifact filtering in
-      # scope() were broken, this one's own WorkerCancelledError
+      # scope() were broken, this one's own IsolateCancelledError
       # would incorrectly win as "first" in spawn order once cancelled
       s.spawn(@(st, ch) {
         st.send(true)
@@ -838,29 +838,29 @@ def test_scope_reports_real_child_failure_not_cancellation_artifact() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'scope() must raise WorkerError from the genuinely failing child'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'scope() must raise IsolateError from the genuinely failing child'
   assert e.message.contains('the real bug'), 'scope() must report the ACTUAL bug'
-  assert !e.message.contains('WorkerCancelledError'),
+  assert !e.message.contains('IsolateCancelledError'),
     'scope() must not report a cancelled sibling as the root cause'
   echo 'test_scope_reports_real_child_failure_not_cancellation_artifact passed'
 }
 
 def test_spawn_named_and_name() {
-  var t = worker.spawn(worker_worker.square, 3)
-  assert t.name() == nil, 'a plain spawn() must leave the worker unnamed'
+  var t = isolate.spawn(isolate_isolate.square, 3)
+  assert t.name() == nil, 'a plain spawn() must leave the isolate unnamed'
   assert t.join() == 9, 'expected 9'
 
-  var named = worker.spawn_named('squarer', worker_worker.square, 4)
+  var named = isolate.spawn_named('squarer', isolate_isolate.square, 4)
   assert named.name() == 'squarer', 'spawn_named() must set the name spawn() leaves unset'
   assert named.join() == 16, 'expected 16'
   echo 'test_spawn_named_and_name passed'
 }
 
 def test_scope_spawn_named() {
-  var result = worker.scope(@(s) {
-    var t = s.spawn_named('scoped-worker', worker_worker.square, 5)
-    assert t.name() == 'scoped-worker', 'Scope.spawn_named() must set the name'
+  var result = isolate.scope(@(s) {
+    var t = s.spawn_named('scoped-isolate', isolate_isolate.square, 5)
+    assert t.name() == 'scoped-isolate', 'Scope.spawn_named() must set the name'
     return t.join()
   })
   assert result == 25, 'expected 25'
@@ -868,9 +868,9 @@ def test_scope_spawn_named() {
 }
 
 def test_scope_happy_path() {
-  var result = worker.scope(@(s) {
-    var a = s.spawn(worker_worker.square, 3)
-    var b = s.spawn(worker_worker.square, 4)
+  var result = isolate.scope(@(s) {
+    var a = s.spawn(isolate_isolate.square, 3)
+    var b = s.spawn(isolate_isolate.square, 4)
     return a.join() + b.join()
   })
   assert result == 25, 'scope() must return whatever body() returned when nothing failed'
@@ -878,8 +878,8 @@ def test_scope_happy_path() {
 }
 
 def test_scope_waits_for_children_even_without_joining_them() {
-  var done_marker = worker.channel(1)
-  worker.scope(@(s) {
+  var done_marker = isolate.channel(1)
+  isolate.scope(@(s) {
     s.spawn(@(marker) {
       marker.send(true)
     }, done_marker)
@@ -889,20 +889,20 @@ def test_scope_waits_for_children_even_without_joining_them() {
 }
 
 def test_scope_child_failure_cancels_siblings_and_raises() {
-  var started = worker.channel(0)
+  var started = isolate.channel(0)
   var slow_handle = nil
   var e = nil
   catch {
-    worker.scope(@(s) {
-      slow_handle = s.spawn(worker_worker.cancellable_loop, started)
+    isolate.scope(@(s) {
+      slow_handle = s.spawn(isolate_isolate.cancellable_loop, started)
       started.recv()
       s.spawn(@() { raise TypeError('kaboom') })
     })
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
-    'scope() must raise WorkerError once a child fails'
+  assert e != nil and instance_of(e, isolate.IsolateError),
+    'scope() must raise IsolateError once a child fails'
   assert slow_handle.is_done(), 'scope() must not return until every child, cancelled or not, has finished'
   assert slow_handle.join() < 5000000,
     'the sibling must have noticed cancellation rather than hitting its safety cap'
@@ -910,12 +910,12 @@ def test_scope_child_failure_cancels_siblings_and_raises() {
 }
 
 def test_scope_body_failure_cancels_children_and_wins() {
-  var started = worker.channel(0)
+  var started = isolate.channel(0)
   var slow_handle = nil
   var e = nil
   catch {
-    worker.scope(@(s) {
-      slow_handle = s.spawn(worker_worker.cancellable_loop, started)
+    isolate.scope(@(s) {
+      slow_handle = s.spawn(isolate_isolate.cancellable_loop, started)
       started.recv()
       raise ValueError('body blew up')
     })
@@ -929,12 +929,12 @@ def test_scope_body_failure_cancels_children_and_wins() {
 }
 
 def test_status_reflects_lifecycle() {
-  var t = worker.spawn(worker_worker.square, 6)
+  var t = isolate.spawn(isolate_isolate.square, 6)
   assert t.status() == 'pending' or t.status() == 'done', 'status() must report a real lifecycle state'
   assert t.join() == 36, 'expected 36'
   assert t.status() == 'done', 'status() must report done once finished successfully'
 
-  var f = worker.spawn(worker_worker.boom)
+  var f = isolate.spawn(isolate_isolate.boom)
   catch { f.join() } as e
   assert f.status() == 'error', 'status() must report error once finished with an uncaught error'
   echo 'test_status_reflects_lifecycle passed'
@@ -944,7 +944,7 @@ def test_status_does_not_suppress_unobserved_warning() {
   # peek()-based status() must never mark a failure "observed" --
   # poll it a few times and confirm join() can still see the failure
   # normally afterward.
-  var f = worker.spawn(worker_worker.boom)
+  var f = isolate.spawn(isolate_isolate.boom)
   f.status()
   f.status()
   var e = nil
@@ -953,21 +953,21 @@ def test_status_does_not_suppress_unobserved_warning() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError),
+  assert e != nil and instance_of(e, isolate.IsolateError),
     'polling status() must not interfere with join() still seeing the failure'
   echo 'test_status_does_not_suppress_unobserved_warning passed'
 }
 
 def test_introspection_pool_counts() {
-  var size = worker.pool_size()
-  var started = worker.channel(0)
+  var size = isolate.pool_size()
+  var started = isolate.channel(0)
   var gates = []
   var tasks = []
   var i = 0
   while i < size {
-    var g = worker.channel(0)
+    var g = isolate.channel(0)
     gates.append(g)
-    tasks.append(worker.spawn(@(st, ch) {
+    tasks.append(isolate.spawn(@(st, ch) {
       st.send(true)
       return ch.recv()
     }, started, g))
@@ -982,12 +982,12 @@ def test_introspection_pool_counts() {
   }
 
   # one more than the pool can possibly run at once; guaranteed to
-  # sit in the queue, since every worker is confirmed busy above
-  var extra_gate = worker.channel(0)
-  var extra = worker.spawn(@(ch) { return ch.recv() }, extra_gate)
+  # sit in the queue, since every isolate is confirmed busy above
+  var extra_gate = isolate.channel(0)
+  var extra = isolate.spawn(@(ch) { return ch.recv() }, extra_gate)
 
-  assert worker.active_count() >= size, 'active_count() must report every busy worker'
-  assert worker.queued_count() >= 1, 'a task beyond the pool size must sit in the queue'
+  assert isolate.active_count() >= size, 'active_count() must report every busy isolate'
+  assert isolate.queued_count() >= 1, 'a task beyond the pool size must sit in the queue'
 
   for g in gates {
     g.send(1)
@@ -1001,12 +1001,12 @@ def test_introspection_pool_counts() {
 }
 
 def test_introspection_is_shutdown() {
-  assert !worker.is_shutdown(), 'is_shutdown() must be false before shutdown() is called'
+  assert !isolate.is_shutdown(), 'is_shutdown() must be false before shutdown() is called'
   echo 'test_introspection_is_shutdown passed'
 }
 
 def test_broadcast_fanout_to_all_subscribers() {
-  var b = worker.broadcast()
+  var b = isolate.broadcast()
   var s1 = b.subscribe()
   var s2 = b.subscribe()
 
@@ -1017,7 +1017,7 @@ def test_broadcast_fanout_to_all_subscribers() {
 }
 
 def test_broadcast_late_subscriber_misses_earlier_sends() {
-  var b = worker.broadcast()
+  var b = isolate.broadcast()
   var early = b.subscribe()
   b.send('before')
   var late = b.subscribe()
@@ -1031,7 +1031,7 @@ def test_broadcast_late_subscriber_misses_earlier_sends() {
 }
 
 def test_broadcast_unsubscribe() {
-  var b = worker.broadcast()
+  var b = isolate.broadcast()
   var s1 = b.subscribe()
   var s2 = b.subscribe()
   assert b.subscriber_count() == 2, 'expected two subscribers'
@@ -1046,7 +1046,7 @@ def test_broadcast_unsubscribe() {
 }
 
 def test_broadcast_close_closes_subscribers() {
-  var b = worker.broadcast()
+  var b = isolate.broadcast()
   var s = b.subscribe()
   b.close()
 
@@ -1056,7 +1056,7 @@ def test_broadcast_close_closes_subscribers() {
 }
 
 def test_broadcast_rejects_operations_after_close() {
-  var b = worker.broadcast()
+  var b = isolate.broadcast()
   b.close()
 
   var e = nil
@@ -1065,7 +1065,7 @@ def test_broadcast_rejects_operations_after_close() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError), 'subscribe() after close() must raise'
+  assert e != nil and instance_of(e, isolate.IsolateError), 'subscribe() after close() must raise'
 
   e = nil
   catch {
@@ -1073,12 +1073,12 @@ def test_broadcast_rejects_operations_after_close() {
   } as caught {
     e = caught
   }
-  assert e != nil and instance_of(e, worker.WorkerError), 'send() after close() must raise'
+  assert e != nil and instance_of(e, isolate.IsolateError), 'send() after close() must raise'
   echo 'test_broadcast_rejects_operations_after_close passed'
 }
 
 def test_broadcast_bounded_capacity_drops_when_full() {
-  var b = worker.broadcast(1)
+  var b = isolate.broadcast(1)
   var slow = b.subscribe()
 
   b.send('a')
@@ -1093,29 +1093,29 @@ def test_shutdown_drains_and_blocks_new_spawns() {
   # this must stay the LAST test in the file; shutdown() is
   # permanent for the rest of the process, so nothing after it can
   # spawn() again.
-  var gate = worker.channel(0)
-  var t1 = worker.spawn(@(ch) { return ch.recv() }, gate)
-  var t2 = worker.spawn(worker_worker.square, 6)
+  var gate = isolate.channel(0)
+  var t1 = isolate.spawn(@(ch) { return ch.recv() }, gate)
+  var t2 = isolate.spawn(isolate_isolate.square, 6)
 
   gate.send(11)
-  worker.shutdown()
+  isolate.shutdown()
 
   assert t1.join() == 11, 'a task already in flight when shutdown() was called must still finish'
   assert t2.join() == 36, 'a task already in flight when shutdown() was called must still finish'
 
   var rejected = false
   catch {
-    worker.spawn(worker_worker.square, 1)
+    isolate.spawn(isolate_isolate.square, 1)
   } as e {
-    rejected = instance_of(e, worker.WorkerError)
+    rejected = instance_of(e, isolate.IsolateError)
   }
-  assert rejected, 'spawn() after shutdown() must be rejected as a WorkerError'
+  assert rejected, 'spawn() after shutdown() must be rejected as a IsolateError'
   echo 'test_shutdown_drains_and_blocks_new_spawns passed'
 }
 
 def test_configure_rejects_invalid() {
   catch {
-    worker.configure(0)
+    isolate.configure(0)
   } as e
   assert e != nil and instance_of(e, ValueError), 'configure() must reject a non-positive thread count'
   echo 'test_configure_rejects_invalid passed'
@@ -1124,14 +1124,14 @@ def test_configure_rejects_invalid() {
 def test_configure_after_pool_started() {
   # by this point in the suite the pool has already started many times
   # over, so configure() must reliably report that it had no effect.
-  assert worker.configure(2) == false,
+  assert isolate.configure(2) == false,
     'configure() must return false once the pool has already started'
   echo 'test_configure_after_pool_started passed'
 }
 
 def test_pool_size_and_cpu_count() {
-  assert worker.pool_size() > 0, 'pool_size() must report a real, positive worker count'
-  assert worker.cpu_count() > 0, 'cpu_count() must report a real, positive CPU count'
+  assert isolate.pool_size() > 0, 'pool_size() must report a real, positive isolate count'
+  assert isolate.cpu_count() > 0, 'cpu_count() must report a real, positive CPU count'
   echo 'test_pool_size_and_cpu_count passed'
 }
 
@@ -1146,8 +1146,8 @@ test_anonymous_lambda()
 test_main_script_function()
 test_main_script_function_raises_builtin_error()
 test_main_script_class()
-test_main_script_class_constructed_inside_worker()
-test_main_script_class_survives_gc_and_jit_warmup_inside_worker()
+test_main_script_class_constructed_inside_isolate()
+test_main_script_class_survives_gc_and_jit_warmup_inside_isolate()
 test_module_scoped_class_instance()
 test_bound_method_as_spawn_target()
 test_bound_method_as_argument()
@@ -1156,9 +1156,9 @@ test_class_statics_snapshot_independence()
 test_nested_collection_aliasing()
 test_self_referential_list_does_not_hang()
 test_dict_argument()
-test_multiple_concurrent_workers()
+test_multiple_concurrent_isolates()
 test_uncaught_error_propagates()
-test_worker_panic_is_isolated()
+test_isolate_panic_is_isolated()
 test_uncaught_error_message_preserved()
 test_spawn_rejects_non_function()
 test_spawn_rejects_native_function()
@@ -1173,8 +1173,8 @@ test_channel_producer_consumer()
 test_channel_constructor_validation()
 test_ptr_transfer_move_semantics()
 test_cancellation_cooperative()
-test_cancel_on_finished_worker()
-test_is_cancelled_outside_a_worker()
+test_cancel_on_finished_isolate()
+test_is_cancelled_outside_a_isolate()
 test_join_timeout_elapses()
 test_join_timeout_succeeds_in_time()
 test_channel_send_timeout()

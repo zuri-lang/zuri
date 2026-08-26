@@ -1,11 +1,11 @@
 /**
- * Helper module for `tests/libs/worker.zu`; plain, module-scoped
+ * Helper module for `tests/libs/isolate.zu`; plain, module-scoped
  * declarations used to exercise the "Named" (by-binding) resolution
  * path, as opposed to the structural transplant path a main-script
  * declaration goes through.
  */
 
-import worker
+import isolate
 
 var counter_seed = 100
 
@@ -39,11 +39,11 @@ def uses_module_global(n) {
 }
 
 def boom() {
-  raise Error('boom from worker')
+  raise Error('boom from isolate')
 }
 
 def boom_typed() {
-  raise TypeError('bad type from worker')
+  raise TypeError('bad type from isolate')
 }
 
 class Counter {
@@ -84,13 +84,13 @@ def make_dog(name) {
 }
 
 # Signals on `started` the moment it's actually running, then spins
-# until `worker.is_cancelled()` sees the caller's `cancel()`. The
+# until `isolate.is_cancelled()` sees the caller's `cancel()`. The
 # rendezvous means a test can call `cancel()` knowing the loop has
-# already started, instead of racing worker startup.
+# already started, instead of racing isolate startup.
 def cancellable_loop(started) {
   started.send(true)
   var iterations = 0
-  while !worker.is_cancelled() {
+  while !isolate.is_cancelled() {
     iterations += 1
     if iterations > 5000000 {
       break
@@ -99,24 +99,24 @@ def cancellable_loop(started) {
   return iterations
 }
 
-# The next three exist so a cancellation test can put a worker
+# The next three exist so a cancellation test can put a isolate
 # blocked inside wait_any()/wait_all()/select(); those all need
-# `worker` in scope, so (like `cancellable_loop` above) they have to
+# `isolate` in scope, so (like `cancellable_loop` above) they have to
 # live in a real module rather than a main-script closure; a
-# main-script closure captures its own `import worker` as a
-# root-global snapshot, and a Module value can't cross a worker
+# main-script closure captures its own `import isolate` as a
+# root-global snapshot, and a Module value can't cross a isolate
 # boundary at all.
 def wait_any_one(started, target) {
   started.send(true)
-  return worker.wait_any([target])
+  return isolate.wait_any([target])
 }
 
 def wait_all_one(started, target) {
   started.send(true)
-  return worker.wait_all([target])
+  return isolate.wait_all([target])
 }
 
 def select_one(started, ch) {
   started.send(true)
-  return worker.select([ch])
+  return isolate.select([ch])
 }

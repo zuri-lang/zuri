@@ -1,10 +1,10 @@
 /**
- * Worker scalability stress test. Every other worker benchmark
- * in this directory asks "does spreading real work across workers
+ * Isolate scalability stress test. Every other isolate benchmark
+ * in this directory asks "does spreading real work across isolates
  * make it faster"; this one asks a different question: how does the
- * worker machinery itself (spawn, queue, transfer, join) hold up
- * under a genuinely massive number of workers, not just a handful
- * of big chunks. `WORKER_COUNT` workers are spawned, each
+ * isolate machinery itself (spawn, queue, transfer, join) hold up
+ * under a genuinely massive number of isolates, not just a handful
+ * of big chunks. `ISOLATE_COUNT` isolates are spawned, each
  * running a non-trivial, non-trivially-fast function, and every one
  * of them is joined before this reports how long the whole thing took.
  *
@@ -12,14 +12,14 @@
  * the in-script wall-clock timer below.
  */
 
-import worker
+import isolate
 
-const WORKER_COUNT = 1_000_000
+const ISOLATE_COUNT = 1_000_000
 
 /**
- * A deliberately non-trivial per-worker workload; a trial-
+ * A deliberately non-trivial per-isolate workload; a trial-
  * division primality check followed by a small run of floating point
- * work, so each worker does real, measurable computation rather
+ * work, so each isolate does real, measurable computation rather
  * than being a bare no-op that would only measure spawn overhead.
  */
 def complex_work(n) {
@@ -40,17 +40,17 @@ def complex_work(n) {
 }
 
 var jobs = []
-iter var i = 0; i < WORKER_COUNT; i++ {
+iter var i = 0; i < ISOLATE_COUNT; i++ {
   jobs.append(1_000 + (i % 1_000))
 }
 
 var start = time()
-var results = worker.map(complex_work, jobs)
+var results = isolate.map(complex_work, jobs)
 
 var primes = 0
 for r in results {
   primes += r
 }
 
-echo '${WORKER_COUNT} workers spawned, ${primes} returned prime'
+echo '${ISOLATE_COUNT} isolates spawned, ${primes} returned prime'
 echo '\nTotal time taken = ${time() - start}s'

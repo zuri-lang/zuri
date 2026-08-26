@@ -1,13 +1,13 @@
 /* The Computer Language Benchmarks Game
  * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
  *
- * binary-trees Zuri #1 program, worker-driven counterpart
+ * binary-trees Zuri #1 program, isolate-driven counterpart
  *
  * Each depth bucket in the main loop below builds and counts its own
  * `iterations` trees completely independently of every other bucket
  *; nothing is shared between them; so each bucket is handed to
- * its own worker instead of running through them one at a time.
- * Trees themselves never cross a worker boundary: each worker
+ * its own isolate instead of running through them one at a time.
+ * Trees themselves never cross a isolate boundary: each isolate
  * builds, counts, and discards its own trees entirely inside its own
  * isolate, only the small integer sum comes back.
  *
@@ -15,13 +15,13 @@
  * *reset*
 */
 
-import worker
+import isolate
 
 # `TreeNode`/`tree_with`/`churn_depth` reference nothing from
-# `worker`; spawning `churn_depth` transfers it (and everything
+# `isolate`; spawning `churn_depth` transfers it (and everything
 # it transitively touches) fresh, and a value that references an
-# imported module anywhere in it can't cross a worker boundary at
-# all. `main()`, which DOES use `worker`, is never itself spawned.
+# imported module anywhere in it can't cross a isolate boundary at
+# all. `main()`, which DOES use `isolate`, is never itself spawned.
 class TreeNode {
   @new(left, right) {
     self.left = left
@@ -68,7 +68,7 @@ def main(n) {
 
     var opt = [depth, iterations]
     opts.append(opt)
-    jobs.append(worker.spawn(churn_depth, opt))
+    jobs.append(isolate.spawn(churn_depth, opt))
   }
 
   iter var idx = 0; idx < jobs.length(); idx++ {

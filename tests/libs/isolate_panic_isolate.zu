@@ -1,0 +1,12 @@
+/**
+ * Helper module for `tests/libs/isolate.zu`'s panic-isolation test.
+ * Kept separate from `isolate_isolate.zu` so that ordinary isolate
+ * functions aren't sitting next to a deliberate crash trigger.
+ */
+
+import _isolate
+
+def trigger_panic() {
+  _isolate.debug_panic()
+  return 'unreachable'
+}

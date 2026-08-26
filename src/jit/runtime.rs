@@ -2018,6 +2018,7 @@ pub unsafe extern "C" fn zuri_jit_make_class(
     statics: Vec::new(),
     globals_module: func.globals_module,
   });
+  write_barrier(class_val.as_obj());
   vm.set_reg(base, dst as u8, class_val);
   OK
 }

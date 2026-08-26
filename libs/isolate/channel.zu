@@ -2,18 +2,18 @@
  * @module channel
  *
  * Thread-safe, multi-producer multi-consumer (MPMC) communication queues for
- * passing values and messages across worker isolates.
+ * passing values and messages across isolate isolates.
  *
  * ## Overview
  *
  * Channels provide synchronized, data-race-free message passing between
- * concurrent worker isolates. Because Zuri workers execute within isolated heaps,
+ * concurrent isolate isolates. Because Zuri isolates execute within isolated heaps,
  * sending a value over a `Channel` deep-copies the object graph across the
  * boundary barrier, preserving internal references and graph topologies without
  * sharing mutable memory.
  *
- * `Channel` handles are re-exported by the `worker` module, making them accessible
- * directly via `worker.Channel` or `worker.channel()`.
+ * `Channel` handles are re-exported by the `isolate` module, making them accessible
+ * directly via `isolate.Channel` or `isolate.channel()`.
  *
  * ## Channel Types & Backpressure
  *
@@ -22,7 +22,7 @@
  *   as needed.
  * - **Bounded Channels (`capacity: n > 0`)**:
  *   The channel holds at most `n` unread messages. Calling `send()` when the
- *   queue is full blocks the sending worker until a consumer calls `recv()`,
+ *   queue is full blocks the sending isolate until a consumer calls `recv()`,
  *   providing automatic backpressure to prevent producer tasks from exhausting
  *   system memory.
  *
@@ -37,11 +37,11 @@
  *   without blocking, returning `nil` if the channel is currently empty.
  * - **Closing**: `Channel.close()` shuts down the channel for subsequent sends.
  *   Messages already in the queue remain readable until drained. Subsequent calls
- *   to `send()` on a closed channel raise a `WorkerError`.
+ *   to `send()` on a closed channel raise a `IsolateError`.
  *
  * ## Multiplexing with `select()`
  *
- * The `select()` function allows a worker to wait on multiple channels
+ * The `select()` function allows a isolate to wait on multiple channels
  * simultaneously. It blocks until at least one channel is ready to deliver a value
  * (or is closed), returning a pair `[ready_channel, value]`.
  *
@@ -50,9 +50,9 @@
  * ### 1. Producer-Consumer Pipeline
  *
  * ```zuri
- * import worker
+ * import isolate
  *
- * var ch = worker.channel(10) // Bounded channel with capacity 10
+ * var ch = isolate.channel(10) // Bounded channel with capacity 10
  *
  * def producer(out_ch) {
  *   iter var i = 1; i <= 5; i++ {
@@ -61,7 +61,7 @@
  *   out_ch.close()
  * }
  *
- * var producer_task = worker.spawn(producer, ch)
+ * var producer_task = isolate.spawn(producer, ch)
  *
  * while true {
  *   var msg = ch.recv()
@@ -72,21 +72,21 @@
  * producer_task.join()
  * ```
  *
- * ### 2. Fan-Out / Fan-In Worker Pool
+ * ### 2. Fan-Out / Fan-In Isolate Pool
  *
  * ```zuri
- * import worker
+ * import isolate
  *
- * var results = worker.channel()
+ * var results = isolate.channel()
  *
- * def worker_job(worker_id, count, out_ch) {
+ * def isolate_job(isolate_id, count, out_ch) {
  *   iter var i = 1; i <= count; i++ {
- *     out_ch.send("worker-${worker_id}-result-${i}")
+ *     out_ch.send("isolate-${isolate_id}-result-${i}")
  *   }
  * }
  *
- * var w1 = worker.spawn(worker_job, 1, 3, results)
- * var w2 = worker.spawn(worker_job, 2, 3, results)
+ * var w1 = isolate.spawn(isolate_job, 1, 3, results)
+ * var w2 = isolate.spawn(isolate_job, 2, 3, results)
  *
  * iter var i = 0; i < 6; i++ {
  *   echo results.recv()
@@ -99,16 +99,16 @@
  * ### 3. Multiplexing Channels with `select()`
  *
  * ```zuri
- * import worker
+ * import isolate
  *
- * var ch1 = worker.channel()
- * var ch2 = worker.channel()
+ * var ch1 = isolate.channel()
+ * var ch2 = isolate.channel()
  *
- * worker.spawn(@(c) { c.send("from ch1") }, ch1)
- * worker.spawn(@(c) { c.send("from ch2") }, ch2)
+ * isolate.spawn(@(c) { c.send("from ch1") }, ch1)
+ * isolate.spawn(@(c) { c.send("from ch2") }, ch2)
  *
  * iter var i = 0; i < 2; i++ {
- *   var result = worker.select([ch1, ch2], 1.0)
+ *   var result = isolate.select([ch1, ch2], 1.0)
  *   var ready_ch = result[0]
  *   var value = result[1]
  *   echo "Got: ${value}"
@@ -118,8 +118,8 @@
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
-import _worker
-import .error { WorkerError, WorkerTimeoutError, WorkerCancelledError }
+import _isolate
+import .error { IsolateError, IsolateTimeoutError, IsolateCancelledError }
 
 /**
  * A thread-safe, multi-producer multi-consumer (MPMC) message queue.
@@ -135,9 +135,9 @@ class Channel {
    * @raises ValueError if `capacity` is negative.
    *
    * ```zuri
-   * import worker
-   * var unbounded = worker.channel()
-   * var bounded = worker.channel(100)
+   * import isolate
+   * var unbounded = isolate.channel()
+   * var bounded = isolate.channel(100)
    * ```
    */
   @new(capacity: ?int) {
@@ -147,22 +147,22 @@ class Channel {
     if capacity < 0 {
       raise ValueError('Channel() expects capacity to be non-negative, got ${capacity}')
     }
-    self._ptr = _worker.channel_new(capacity)
+    self._ptr = _isolate.channel_new(capacity)
   }
 
   /**
    * Sends `value` into the channel.
    *
    * If the channel is bounded and currently full, this call blocks the calling
-   * worker until space becomes available, the timeout elapses, or the caller
+   * isolate until space becomes available, the timeout elapses, or the caller
    * is cancelled.
    *
    * @param any value: The value or object graph to send.
    * @param ?number timeout: Maximum seconds to wait before timing out. Waits
    *   indefinitely if omitted or `nil`.
-   * @raises WorkerError if the channel has been closed.
-   * @raises WorkerTimeoutError if `timeout` seconds elapse before space is available.
-   * @raises WorkerCancelledError if the calling worker is cancelled while blocked.
+   * @raises IsolateError if the channel has been closed.
+   * @raises IsolateTimeoutError if `timeout` seconds elapse before space is available.
+   * @raises IsolateCancelledError if the calling isolate is cancelled while blocked.
    *
    * ```zuri
    * ch.send("data payload")
@@ -170,15 +170,15 @@ class Channel {
    * ```
    */
   send(value, timeout: ?number) {
-    var status = _worker.channel_send(self._ptr, value, timeout)
+    var status = _isolate.channel_send(self._ptr, value, timeout)
     if status == 'closed' {
-      raise WorkerError('cannot send on a closed channel')
+      raise IsolateError('cannot send on a closed channel')
     }
     if status == 'timeout' {
-      raise WorkerTimeoutError('send() timed out after ${timeout} seconds')
+      raise IsolateTimeoutError('send() timed out after ${timeout} seconds')
     }
     if status == 'cancelled' {
-      raise WorkerCancelledError('send() was interrupted: the calling worker was cancelled')
+      raise IsolateCancelledError('send() was interrupted: the calling isolate was cancelled')
     }
   }
 
@@ -191,8 +191,8 @@ class Channel {
    * @param ?number timeout: Maximum seconds to wait for a message. Waits
    *   indefinitely if omitted or `nil`.
    * @returns any: The received value, or `nil` if the channel is closed and empty.
-   * @raises WorkerTimeoutError if `timeout` seconds elapse before a value is received.
-   * @raises WorkerCancelledError if the calling worker is cancelled while blocked.
+   * @raises IsolateTimeoutError if `timeout` seconds elapse before a value is received.
+   * @raises IsolateCancelledError if the calling isolate is cancelled while blocked.
    *
    * ```zuri
    * var item = ch.recv()
@@ -200,15 +200,15 @@ class Channel {
    * ```
    */
   recv(timeout: ?number) {
-    var r = _worker.channel_recv(self._ptr, timeout)
+    var r = _isolate.channel_recv(self._ptr, timeout)
     if r[0] == 'closed' {
       return nil
     }
     if r[0] == 'timeout' {
-      raise WorkerTimeoutError('recv() timed out after ${timeout} seconds')
+      raise IsolateTimeoutError('recv() timed out after ${timeout} seconds')
     }
     if r[0] == 'cancelled' {
-      raise WorkerCancelledError('recv() was interrupted: the calling worker was cancelled')
+      raise IsolateCancelledError('recv() was interrupted: the calling isolate was cancelled')
     }
     return r[1]
   }
@@ -227,7 +227,7 @@ class Channel {
    * ```
    */
   try_recv() {
-    var r = _worker.channel_try_recv(self._ptr)
+    var r = _isolate.channel_try_recv(self._ptr)
     if r[0] == 'ok' {
       return r[1]
     }
@@ -238,14 +238,14 @@ class Channel {
    * Closes the channel.
    *
    * Buffered messages remain available for consumers to read via `recv()` or
-   * `try_recv()`. Calling `send()` after closing raises `WorkerError`.
+   * `try_recv()`. Calling `send()` after closing raises `IsolateError`.
    *
    * ```zuri
    * ch.close()
    * ```
    */
   close() {
-    _worker.channel_close(self._ptr)
+    _isolate.channel_close(self._ptr)
   }
 
   /**
@@ -260,7 +260,7 @@ class Channel {
    * ```
    */
   is_closed() {
-    return _worker.channel_is_closed(self._ptr)
+    return _isolate.channel_is_closed(self._ptr)
   }
 
   /**
@@ -273,7 +273,7 @@ class Channel {
    * ```
    */
   length() {
-    return _worker.channel_len(self._ptr)
+    return _isolate.channel_len(self._ptr)
   }
 
   /**
@@ -293,9 +293,9 @@ class Channel {
  * @returns Channel
  *
  * ```zuri
- * import worker
- * var unbounded = worker.channel()
- * var bounded = worker.channel(50)
+ * import isolate
+ * var unbounded = isolate.channel()
+ * var bounded = isolate.channel(50)
  * ```
  */
 def channel(capacity: ?int) {
@@ -318,15 +318,15 @@ def channel(capacity: ?int) {
  * @returns list: A two-element list `[ready_channel, value]`, where `value` is
  *   the message received (`nil` if the channel was closed and drained).
  * @raises ValueError if `channels` is empty.
- * @raises WorkerTimeoutError if `timeout` seconds elapse before any channel is ready.
- * @raises WorkerCancelledError if the calling worker is cancelled while blocked.
+ * @raises IsolateTimeoutError if `timeout` seconds elapse before any channel is ready.
+ * @raises IsolateCancelledError if the calling isolate is cancelled while blocked.
  *
  * ```zuri
- * import worker
- * var ch1 = worker.channel()
- * var ch2 = worker.channel()
+ * import isolate
+ * var ch1 = isolate.channel()
+ * var ch2 = isolate.channel()
  *
- * var res = worker.select([ch1, ch2], 1.5)
+ * var res = isolate.select([ch1, ch2], 1.5)
  * var active_ch = res[0]
  * var msg = res[1]
  * echo "Received ${msg} from channel"
@@ -340,12 +340,12 @@ def select(channels: list, timeout: ?number) {
   for c in channels {
     ptrs.append(c.handle())
   }
-  var r = _worker.select(ptrs, timeout)
+  var r = _isolate.select(ptrs, timeout)
   if r[1] == 'timeout' {
-    raise WorkerTimeoutError('select() timed out after ${timeout} seconds')
+    raise IsolateTimeoutError('select() timed out after ${timeout} seconds')
   }
   if r[1] == 'cancelled' {
-    raise WorkerCancelledError('select() was interrupted: the calling worker was cancelled')
+    raise IsolateCancelledError('select() was interrupted: the calling isolate was cancelled')
   }
   return [channels[r[0]], r[2]]
 }

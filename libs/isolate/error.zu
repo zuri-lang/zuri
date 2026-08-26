@@ -1,0 +1,43 @@
+/**
+ * @module error
+ *
+ * `IsolateError`, kept in its own leaf module (no imports of its
+ * own) so both `index` and `channel` can depend on it without a
+ * circular import between them. Re-exported by `isolate`.
+ */
+
+/**
+ * Raised when a isolate's function raises an uncaught error, a
+ * `Channel` operation fails, or a value cannot cross a isolate
+ * boundary.
+ */
+class IsolateError < Error {
+  @new(message) {
+    self.message = message or self.message
+    self.type = 'IsolateError'
+  }
+}
+
+/**
+ * Raised when `Isolate.join()`, `Channel.send()`, or `Channel.recv()`
+ * is given a `timeout` and it elapses before the operation completes.
+ */
+class IsolateTimeoutError < IsolateError {
+  @new(message) {
+    self.message = message or self.message
+    self.type = 'IsolateTimeoutError'
+  }
+}
+
+/**
+ * Raised from `Isolate.join()`, `Channel.send()`, `Channel.recv()`,
+ * `isolate.wait_any()`, `isolate.wait_all()`, or `isolate.select()`
+ * when the CALLING isolate; the one blocked in that call, not
+ * whatever it was waiting on; is `cancel()`ed while still waiting.
+ */
+class IsolateCancelledError < IsolateError {
+  @new(message) {
+    self.message = message or self.message
+    self.type = 'IsolateCancelledError'
+  }
+}

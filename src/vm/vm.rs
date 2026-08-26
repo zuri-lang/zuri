@@ -1230,9 +1230,9 @@ impl VM {
     format!("{}: {}", type_name, message)
   }
 
-  /// Formats an error that occurred inside a worker isolate with its
+  /// Formats an error that occurred inside an isolate with its
   /// source snippet and stack trace.
-  pub fn format_worker_error(&self, exc: Value) -> String {
+  pub fn format_isolate_error(&self, exc: Value) -> String {
     let summary = self.describe_error(exc);
     if !exc.is_instance() {
       return summary;
@@ -1273,12 +1273,7 @@ impl VM {
     let mut out = format!("{}\n", summary);
     if let Some((path, line, _)) = locations.first() {
       let source = std::fs::read_to_string(path.as_ref()).ok();
-      out.push_str(&render_error_site(
-        path,
-        *line,
-        source.as_deref(),
-        false,
-      ));
+      out.push_str(&render_error_site(path, *line, source.as_deref(), false));
     }
     out.push('\n');
     out.push_str(&render_stacktrace(&locations, false));
@@ -1520,11 +1515,15 @@ impl VM {
   /// the general path.
   fn resolve_self_numeric_fields(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
     let mut numeric_fields = rustc_hash::FxHashSet::default();
-    let Some(frame) = self.frames.last() else { return numeric_fields; };
+    let Some(frame) = self.frames.last() else {
+      return numeric_fields;
+    };
     if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
       return numeric_fields;
     }
-    let Some(self_val) = self.registers.get(frame.base) else { return numeric_fields; };
+    let Some(self_val) = self.registers.get(frame.base) else {
+      return numeric_fields;
+    };
     if !self_val.is_instance() {
       return numeric_fields;
     }
@@ -2304,10 +2303,30 @@ impl VM {
     // deopt.
     let entered_idx = self.frames.len() - 1;
     let was_compiled = std::mem::replace(&mut self.frames[entered_idx].compiled, true);
-    let a0 = self.registers.get(base + 0).copied().unwrap_or(Value::nil()).to_bits();
-    let a1 = self.registers.get(base + 1).copied().unwrap_or(Value::nil()).to_bits();
-    let a2 = self.registers.get(base + 2).copied().unwrap_or(Value::nil()).to_bits();
-    let a3 = self.registers.get(base + 3).copied().unwrap_or(Value::nil()).to_bits();
+    let a0 = self
+      .registers
+      .get(base + 0)
+      .copied()
+      .unwrap_or(Value::nil())
+      .to_bits();
+    let a1 = self
+      .registers
+      .get(base + 1)
+      .copied()
+      .unwrap_or(Value::nil())
+      .to_bits();
+    let a2 = self
+      .registers
+      .get(base + 2)
+      .copied()
+      .unwrap_or(Value::nil())
+      .to_bits();
+    let a3 = self
+      .registers
+      .get(base + 3)
+      .copied()
+      .unwrap_or(Value::nil())
+      .to_bits();
     // SAFETY: entry was produced by JitEngine::compile_function for this
     // exact prototype; base is this frame's own register-window start,
     // matching the compiled calling convention.
@@ -3980,6 +3999,7 @@ impl VM {
               statics: Vec::new(),
               globals_module: func.globals_module,
             });
+            write_barrier(class_val.as_obj());
             self.set_reg(base, dst, class_val);
           },
 
@@ -5284,6 +5304,9 @@ impl VM {
         for cell in &class.statics {
           mark(cell.get());
         }
+        if let Some(m) = class.globals_module {
+          mark(m);
+        }
       },
       Obj::Instance(inst) => {
         mark(inst.class);
@@ -5389,6 +5412,9 @@ impl VM {
         }
         for cell in class.statics.iter_mut() {
           relocate(cell.get_mut() as *mut Value);
+        }
+        if let Some(m) = class.globals_module.as_mut() {
+          relocate(m as *mut Value);
         }
       },
       Obj::Instance(inst) => {

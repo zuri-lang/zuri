@@ -1,6 +1,6 @@
-//! The worker pool: a small, configurable number of persistent
-//! worker OS threads, each owning its own totally independent `VM`/
-//! `Heap` ("isolate"). A worker is a task queued onto this pool; a
+//! The isolate pool: a small, configurable number of persistent
+//! isolate OS threads, each owning its own totally independent `VM`/
+//! `Heap` ("isolate"). A isolate is a task queued onto this pool; a
 //! channel is a plain thread-safe queue of already-`capture`d
 //! messages. Nothing here ever shares a `Value`, a heap pointer, or
 //! compiled bytecode between threads: see `transfer` for what
@@ -24,8 +24,8 @@ use super::transfer::{self, TransferGraph};
 /// `mutex.lock().unwrap()`, but tolerant of poisoning: a panic while
 /// SOME OTHER thread held this exact lock (never expected in ordinary
 /// operation, but possible if a bug elsewhere manages to panic while
-/// touching shared pool/channel/worker state directly, as opposed
-/// to inside a worker's own isolated VM: see `worker_loop`'s own
+/// touching shared pool/channel/isolate state directly, as opposed
+/// to inside a isolate's own isolated VM: see `isolate_loop`'s own
 /// docs on why THAT kind of panic is handled separately) doesn't
 /// cascade into every future access panicking too. The guarded data
 /// here is always a plain queue/slot/flag with no invariant that a
@@ -37,31 +37,31 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 const MAX_POOL_SIZE: usize = 4096;
 
-/// `Ptr::type_name` a `Worker`/`Channel` handle is tagged with;
-/// shared between `worker.rs` (which allocates these) and
+/// `Ptr::type_name` a `Isolate`/`Channel` handle is tagged with;
+/// shared between `isolate.rs` (which allocates these) and
 /// `transfer.rs` (which needs to recognize them as thread-safe,
 /// freely-shareable handles rather than exclusive resources to move:
 /// see `transfer::capture_value`'s own docs on the distinction).
-pub const WORKER_PTR_TYPE: &str = "zuri::worker";
+pub const ISOLATE_PTR_TYPE: &str = "zuri::isolate";
 pub const CHANNEL_PTR_TYPE: &str = "zuri::channel";
 
 // ---------------------------------------------------------------------
 // Pool sizing/lifecycle
 // ---------------------------------------------------------------------
 
-static POOL: OnceLock<WorkerPool> = OnceLock::new();
+static POOL: OnceLock<IsolatePool> = OnceLock::new();
 static CONFIGURED_SIZE: Mutex<Option<usize>> = Mutex::new(None);
 
-/// Sets how many worker threads the pool starts with. Only takes
+/// Sets how many isolate threads the pool starts with. Only takes
 /// effect if the pool hasn't started yet (its size is fixed for the
-/// rest of the process once the first worker actually runs);
+/// rest of the process once the first isolate actually runs);
 /// returns `false` rather than an error in that case, since "someone
 /// already spawned something" isn't really exceptional, just too
 /// late.
 pub fn configure(n: usize) -> Result<bool, String> {
   if n == 0 || n > MAX_POOL_SIZE {
     return Err(format!(
-      "worker pool size must be between 1 and {}, got {}",
+      "isolate pool size must be between 1 and {}, got {}",
       MAX_POOL_SIZE, n
     ));
   }
@@ -88,13 +88,13 @@ pub fn cpu_count() -> usize {
   default_size()
 }
 
-/// The pool's real worker count. Starts the pool (with whatever size
+/// The pool's real isolate count. Starts the pool (with whatever size
 /// `configure` set, or the CPU count otherwise) if it hasn't already.
 pub fn pool_size() -> usize {
   pool().size
 }
 
-/// Workers actively being run by a worker RIGHT NOW; doesn't
+/// Isolates actively being run by a isolate RIGHT NOW; doesn't
 /// include ones still waiting in the queue. Starts the pool if it
 /// hasn't already (there's nothing running on a pool that was never
 /// started).
@@ -102,7 +102,7 @@ pub fn active_count() -> usize {
   pool().running.load(Ordering::Acquire)
 }
 
-/// Workers queued but not yet picked up by a worker. Starts the
+/// Isolates queued but not yet picked up by a isolate. Starts the
 /// pool if it hasn't already.
 pub fn queued_count() -> usize {
   lock(&pool().queue).len()
@@ -115,14 +115,14 @@ pub fn is_shutdown() -> bool {
   pool().shutting_down.load(Ordering::Acquire)
 }
 
-fn pool() -> &'static WorkerPool {
+fn pool() -> &'static IsolatePool {
   POOL.get_or_init(|| {
     let size = lock(&CONFIGURED_SIZE).unwrap_or_else(default_size);
-    WorkerPool::start(size)
+    IsolatePool::start(size)
   })
 }
 
-struct WorkerPool {
+struct IsolatePool {
   queue: Mutex<VecDeque<Task>>,
   not_empty: Condvar,
   size: usize,
@@ -131,7 +131,7 @@ struct WorkerPool {
   /// decremented once a task's `finish()` has actually run (success,
   /// ordinary failure, or a caught panic all count).
   in_flight: AtomicUsize,
-  /// Workers a worker has actually picked up and is currently
+  /// Isolates a isolate has actually picked up and is currently
   /// running; the subset of `in_flight` that isn't still sitting in
   /// `queue`. Purely for introspection (`active_count()`).
   running: AtomicUsize,
@@ -147,22 +147,22 @@ struct WorkerPool {
   idle_lock: Mutex<()>,
 }
 
-/// Worker thread names share this prefix; checked by the panic hook
-/// below to tell a fully-handled worker panic apart from a real,
+/// Isolate thread names share this prefix; checked by the panic hook
+/// below to tell a fully-handled isolate panic apart from a real,
 /// nowhere-else-caught one on any other thread.
-const WORKER_THREAD_PREFIX: &str = "zuri-worker-";
+const ISOLATE_THREAD_PREFIX: &str = "zuri-isolate-";
 
-impl WorkerPool {
+impl IsolatePool {
   fn start(size: usize) -> Self {
-    install_worker_panic_hook();
+    install_isolate_panic_hook();
     for i in 0..size {
       thread::Builder::new()
-        .name(format!("{}{}", WORKER_THREAD_PREFIX, i))
+        .name(format!("{}{}", ISOLATE_THREAD_PREFIX, i))
         .stack_size(8 * 1024 * 1024)
-        .spawn(worker_loop)
-        .expect("failed to spawn worker worker thread");
+        .spawn(isolate_loop)
+        .expect("failed to spawn isolate isolate thread");
     }
-    WorkerPool {
+    IsolatePool {
       queue: Mutex::new(VecDeque::new()),
       not_empty: Condvar::new(),
       size,
@@ -186,26 +186,26 @@ impl WorkerPool {
   }
 }
 
-/// A worker panic is always caught by `catch_unwind` in `worker_loop`
-/// and surfaced to Zuri as an ordinary `WorkerError`; it was
+/// A isolate panic is always caught by `catch_unwind` in `isolate_loop`
+/// and surfaced to Zuri as an ordinary `IsolateError`; it was
 /// never actually a crash. Printing Rust's own default "thread ...
 /// panicked at ..." notice for one anyway would look exactly like an
 /// unhandled crash to anyone watching stderr, which is actively
 /// misleading for something the pool fully recovered from. This
-/// installs a hook that skips the default report for worker threads
+/// installs a hook that skips the default report for isolate threads
 /// specifically and defers to whatever hook was already installed
 /// (Rust's own default, unless something else replaced it first) for
 /// every other thread, main included; a REAL uncaught panic
 /// anywhere else still gets reported exactly as before.
-fn install_worker_panic_hook() {
+fn install_isolate_panic_hook() {
   static INSTALLED: std::sync::Once = std::sync::Once::new();
   INSTALLED.call_once(|| {
     let previous = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
-      let is_worker = thread::current()
+      let is_isolate = thread::current()
         .name()
-        .is_some_and(|n| n.starts_with(WORKER_THREAD_PREFIX));
-      if !is_worker {
+        .is_some_and(|n| n.starts_with(ISOLATE_THREAD_PREFIX));
+      if !is_isolate {
         previous(info);
       }
     }));
@@ -218,28 +218,28 @@ fn install_worker_panic_hook() {
 struct Task {
   callee: TransferGraph,
   args: TransferGraph,
-  state: Arc<WorkerState>,
+  state: Arc<IsolateState>,
 }
 
-/// A worker thread's own isolate: one `VM`/`Heap`, built once and
+/// A isolate thread's own isolate: one `VM`/`Heap`, built once and
 /// reused for every task this thread ever picks up; loading a
 /// task's home (see `transfer::Home`) is cached per-isolate, so only
 /// the very first task from a given module/entry script pays to
 /// compile and run it.
-struct WorkerIsolate {
+struct IsolateIsolate {
   vm: VM,
 }
 
-impl WorkerIsolate {
+impl IsolateIsolate {
   fn new() -> Self {
     let mut vm = VM::new(Heap::new());
     vm.init();
-    WorkerIsolate { vm }
+    IsolateIsolate { vm }
   }
 }
 
-fn worker_loop() {
-  let mut isolate = WorkerIsolate::new();
+fn isolate_loop() {
+  let mut isolate = IsolateIsolate::new();
   let pool = pool();
   loop {
     let task = {
@@ -256,21 +256,21 @@ fn worker_loop() {
 
     // Cloned out BEFORE `run_task` runs, not read off `task` afterward:
     // a caught panic (see below) means `task` may never come back from
-    // that call in any usable form, but the worker's own result
+    // that call in any usable form, but the isolate's own result
     // slot still needs to be resolved either way.
     let state = task.state.clone();
 
     // Ambient for the DURATION of this one task; `is_current_cancelled`
     // reads it back with no explicit handle needed, the same way a
-    // spawned function never has to be handed its own `Worker` back
+    // spawned function never has to be handed its own `Isolate` back
     // just to ask "was I cancelled?". Cleared unconditionally
     // afterward (both the Ok and panic arms below), never left
     // pointing at a finished task's state while this thread picks up
     // its next one.
-    CURRENT_WORKER.with(|c| *c.borrow_mut() = Some(state.clone()));
+    CURRENT_ISOLATE.with(|c| *c.borrow_mut() = Some(state.clone()));
 
-    // `catch_unwind` isolates a panic to just the ONE worker that
-    // caused it, rather than taking down every other worker and the
+    // `catch_unwind` isolates a panic to just the ONE isolate that
+    // caused it, rather than taking down every other isolate and the
     // main thread with it: see `Cargo.toml`'s own note on why
     // `panic = "abort"` had to go for this to even be possible.
     // `AssertUnwindSafe` because `&mut isolate.vm` isn't provably
@@ -290,54 +290,54 @@ fn worker_loop() {
         // "what's inside it". The explicit deref forces the reference
         // at the actual panic value instead.
         state.finish(Err(format!(
-          "worker panicked: {}",
+          "isolate panicked: {}",
           panic_message(&*payload)
         )));
-        isolate = WorkerIsolate::new();
+        isolate = IsolateIsolate::new();
       },
     }
-    CURRENT_WORKER.with(|c| *c.borrow_mut() = None);
+    CURRENT_ISOLATE.with(|c| *c.borrow_mut() = None);
     pool.task_completed();
   }
 }
 
 thread_local! {
-  /// The worker THIS worker thread is currently running, if any --
+  /// The isolate THIS isolate thread is currently running, if any --
   /// what lets `is_current_cancelled` answer "was I cancelled?" with
-  /// no explicit handle passed in, the same way each worker's own
+  /// no explicit handle passed in, the same way each isolate's own
   /// isolate needs no explicit parameter either. Set/cleared around
-  /// each task in `worker_loop`; `None` between tasks and on any
-  /// thread that isn't a worker worker at all.
-  static CURRENT_WORKER: RefCell<Option<Arc<WorkerState>>> = const { RefCell::new(None) };
+  /// each task in `isolate_loop`; `None` between tasks and on any
+  /// thread that isn't a isolate isolate at all.
+  static CURRENT_ISOLATE: RefCell<Option<Arc<IsolateState>>> = const { RefCell::new(None) };
 }
 
-/// Whether the worker currently running ON THIS THREAD has been
+/// Whether the isolate currently running ON THIS THREAD has been
 /// `cancel()`ed. `false` (never `true`) on a thread that isn't a
-/// worker worker, or between tasks on one that is; there's
+/// isolate isolate, or between tasks on one that is; there's
 /// nothing to have been cancelled either way.
 pub fn is_current_cancelled() -> bool {
-  CURRENT_WORKER.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
+  CURRENT_ISOLATE.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
 }
 
-/// Whether this thread is currently running a worker at all;
+/// Whether this thread is currently running a isolate at all;
 /// distinct from `is_current_cancelled`, which is `false` both when
-/// there's no current worker AND when there is one but it hasn't
+/// there's no current isolate AND when there is one but it hasn't
 /// been cancelled. The blocking primitives below need to tell those
 /// two apart: a plain blocking wait from the main thread (or any other
-/// non-worker caller) has nothing to poll for and should just block
+/// non-isolate caller) has nothing to poll for and should just block
 /// the old way, at zero extra cost.
-fn in_worker_context() -> bool {
-  CURRENT_WORKER.with(|c| c.borrow().is_some())
+fn in_isolate_context() -> bool {
+  CURRENT_ISOLATE.with(|c| c.borrow().is_some())
 }
 
-/// How often a blocking wait inside a worker re-checks whether ITS
-/// OWN worker (the caller, not whatever it's waiting on) has been
+/// How often a blocking wait inside a isolate re-checks whether ITS
+/// OWN isolate (the caller, not whatever it's waiting on) has been
 /// cancelled. `cancel()` itself wakes `wait_any`/`wait_all`/`select`
 /// immediately (they already sit on `wake_gate`), but `join`/`send`/
 /// `recv` wait on their own per-object `Condvar` instead; putting
 /// THOSE on `wake_gate` too would mean every blocked join/send/recv in
 /// the whole process wakes up on every unrelated channel send or
-/// worker finishing, which turns the common case from "wakes the
+/// isolate finishing, which turns the common case from "wakes the
 /// one relevant waiter" into an O(waiters) storm per event. Polling a
 /// private condvar at a short, fixed interval instead keeps the common
 /// case cheap and exactly as it was; the cost is that a cancellation
@@ -350,7 +350,7 @@ const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 // wait_any / select
 // ---------------------------------------------------------------------
 
-/// Shared wakeup signal for `wait_any_workers`/`select_channels`.
+/// Shared wakeup signal for `wait_any_isolates`/`select_channels`.
 fn wake_gate() -> &'static (Mutex<()>, Condvar) {
   static GATE: OnceLock<(Mutex<()>, Condvar)> = OnceLock::new();
   GATE.get_or_init(|| (Mutex::new(()), Condvar::new()))
@@ -377,19 +377,19 @@ fn wake_all_waiters() {
   cv.notify_all();
 }
 
-/// Outcome of `wait_any_workers`.
+/// Outcome of `wait_any_isolates`.
 pub enum WaitAnyOutcome {
   Ready(usize),
   TimedOut,
-  /// The CALLING worker was cancelled while blocked here.
+  /// The CALLING isolate was cancelled while blocked here.
   Cancelled,
 }
 
-/// Outcome of `wait_all_workers`.
+/// Outcome of `wait_all_isolates`.
 pub enum WaitAllOutcome {
   Ready,
   TimedOut,
-  /// The CALLING worker was cancelled while blocked here.
+  /// The CALLING isolate was cancelled while blocked here.
   Cancelled,
 }
 
@@ -397,14 +397,14 @@ pub enum WaitAllOutcome {
 pub enum SelectOutcome {
   Ready(usize, RecvOutcome),
   TimedOut,
-  /// The CALLING worker was cancelled while blocked here.
+  /// The CALLING isolate was cancelled while blocked here.
   Cancelled,
 }
 
 /// Blocks until at least one of `states` has finished, returning its
 /// index into the slice; ties (more than one already done) resolve
 /// to whichever comes first in the caller's own list.
-pub fn wait_any_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAnyOutcome {
+pub fn wait_any_isolates(states: &[Arc<IsolateState>], timeout: Option<Duration>) -> WaitAnyOutcome {
   if let Some(i) = states.iter().position(|s| s.is_done()) {
     return WaitAnyOutcome::Ready(i);
   }
@@ -439,7 +439,7 @@ pub fn wait_any_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) 
 }
 
 /// Blocks until EVERY one of `states` has finished.
-pub fn wait_all_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) -> WaitAllOutcome {
+pub fn wait_all_isolates(states: &[Arc<IsolateState>], timeout: Option<Duration>) -> WaitAllOutcome {
   let started = Instant::now();
   for s in states {
     if is_current_cancelled() {
@@ -476,7 +476,7 @@ pub fn wait_all_workers(states: &[Arc<WorkerState>], timeout: Option<Duration>) 
 /// to receive or is closed, returning its index and the outcome;
 /// already taken off the winning channel's own queue, same as
 /// `try_recv`. Same ordering/timeout behavior as
-/// `wait_any_workers`.
+/// `wait_any_isolates`.
 pub fn select_channels(states: &[Arc<ChannelState>], timeout: Option<Duration>) -> SelectOutcome {
   for (i, s) in states.iter().enumerate() {
     if let Some(outcome) = s.try_recv() {
@@ -532,7 +532,7 @@ mod tests {
   use super::*;
 
   /// A panic isn't caught anywhere in this module without going
-  /// through `worker_loop`'s full task-queue/isolate machinery, so
+  /// through `isolate_loop`'s full task-queue/isolate machinery, so
   /// this exercises the actual mechanism (`catch_unwind` plus the
   /// `&*payload` deref: see that call site's own docs on why a bare
   /// `&payload` silently reads the wrong thing) directly, without
@@ -567,7 +567,7 @@ mod tests {
   }
 }
 
-fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, String> {
+fn run_task(isolate: &mut IsolateIsolate, task: &Task) -> Result<TransferGraph, String> {
   let mark = isolate.vm.pin_values(std::iter::empty());
   match transfer::materialize(&mut isolate.vm, &task.callee) {
     Ok(v) => {
@@ -602,7 +602,7 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
     let bm = callee.as_bound_method();
     if !bm.method.is_closure() {
       isolate.vm.unpin(mark);
-      return Err("worker spawn target is not a callable function".to_string());
+      return Err("isolate spawn target is not a callable function".to_string());
     }
     let mut full = Vec::with_capacity(args.len() + 1);
     full.push(bm.receiver);
@@ -612,19 +612,19 @@ fn run_task(isolate: &mut WorkerIsolate, task: &Task) -> Result<TransferGraph, S
     (callee, args)
   } else {
     isolate.vm.unpin(mark);
-    return Err("worker spawn target is not a callable function".to_string());
+    return Err("isolate spawn target is not a callable function".to_string());
   };
 
   let result = match isolate.vm.call_value(target, &full_args) {
     Ok(ret) => transfer::capture(&isolate.vm, ret),
-    Err(exc) => Err(isolate.vm.format_worker_error(exc)),
+    Err(exc) => Err(isolate.vm.format_isolate_error(exc)),
   };
   isolate.vm.unpin(mark);
   result
 }
 
 // ---------------------------------------------------------------------
-// Worker handles
+// Isolate handles
 // ---------------------------------------------------------------------
 
 enum Slot {
@@ -635,10 +635,10 @@ enum Slot {
   /// or an infrastructure failure (bad spawn target, a value that
   /// couldn't cross the isolate boundary, ...). Deliberately not the
   /// original error `Value` itself: that `Value` lives on the
-  /// WORKER's own heap and can't be handed back across the thread
+  /// ISOLATE's own heap and can't be handed back across the thread
   /// boundary any more than any other `Value` can: see `transfer`'s
-  /// own docs. `libs/worker.zu` wraps this text in its own
-  /// `WorkerError` on `.join()`.
+  /// own docs. `libs/isolate.zu` wraps this text in its own
+  /// `IsolateError` on `.join()`.
   Err(String),
 }
 
@@ -646,7 +646,7 @@ pub enum JoinOutcome {
   Pending,
   Ok(TransferGraph),
   Err(String),
-  /// The CALLING worker (not the one being joined) was cancelled
+  /// The CALLING isolate (not the one being joined) was cancelled
   /// while blocked here.
   Cancelled,
 }
@@ -655,7 +655,7 @@ const STATUS_PENDING: u8 = 0;
 const STATUS_OK: u8 = 1;
 const STATUS_ERR: u8 = 2;
 
-pub struct WorkerState {
+pub struct IsolateState {
   status: AtomicU8,
   slot: Mutex<Slot>,
   cv: Condvar,
@@ -663,22 +663,22 @@ pub struct WorkerState {
   /// outcome (`Ok` or `Err`) to someone: see `Drop`'s own docs.
   observed: AtomicBool,
   /// Set by `cancel()`, read by `is_current_cancelled()` from inside
-  /// the worker's own execution; purely COOPERATIVE, same as
+  /// the isolate's own execution; purely COOPERATIVE, same as
   /// every other language's cancellation token: nothing here stops
-  /// already-running code on its own. A worker that never checks
+  /// already-running code on its own. A isolate that never checks
   /// simply runs to completion regardless of this flag.
   cancelled: AtomicBool,
   /// Set once, at `spawn()` time, by whoever used `spawn_named()`
   /// instead of plain `spawn()`. Purely a debugging/introspection
   /// label; never read for anything that affects behavior; so it
   /// gets folded into the unobserved-failure warning (see `Drop`) and
-  /// exposed read-only via `Worker.name()`.
+  /// exposed read-only via `Isolate.name()`.
   name: Option<String>,
 }
 
-impl WorkerState {
+impl IsolateState {
   fn new(name: Option<String>) -> Self {
-    WorkerState {
+    IsolateState {
       status: AtomicU8::new(STATUS_PENDING),
       slot: Mutex::new(Slot::Pending),
       cv: Condvar::new(),
@@ -722,13 +722,13 @@ impl WorkerState {
     }
   }
 
-  /// Blocks the calling thread until the worker finishes. Callable
+  /// Blocks the calling thread until the isolate finishes. Callable
   /// more than once (and from more than one joiner); always returns
   /// the same, already-computed outcome once it's in.
   ///
-  /// If the CALLING worker (not this one) is cancelled while
+  /// If the CALLING isolate (not this one) is cancelled while
   /// blocked here, gives up early with `JoinOutcome::Cancelled` --
-  /// join() is itself a blocking wait a cancelled worker can be
+  /// join() is itself a blocking wait a cancelled isolate can be
   /// stuck in, same as `Channel.send`/`recv`.
   pub fn join(&self) -> JoinOutcome {
     self.join_inner(None)
@@ -744,7 +744,7 @@ impl WorkerState {
 
   /// Shared implementation for `join`/`join_timeout`.
   fn join_inner(&self, deadline: Option<Duration>) -> JoinOutcome {
-    if deadline.is_none() && !in_worker_context() {
+    if deadline.is_none() && !in_isolate_context() {
       let mut slot = lock(&self.slot);
       loop {
         match &*slot {
@@ -814,7 +814,7 @@ impl WorkerState {
   }
 
   /// Like `try_join`, but never marks the outcome "observed"; pure
-  /// introspection for `Worker.status()`.
+  /// introspection for `Isolate.status()`.
   pub fn peek(&self) -> JoinOutcome {
     match self.status.load(Ordering::Acquire) {
       STATUS_PENDING => JoinOutcome::Pending,
@@ -827,13 +827,13 @@ impl WorkerState {
   }
 }
 
-impl Drop for WorkerState {
-  /// A worker's failure doesn't otherwise go anywhere unless
+impl Drop for IsolateState {
+  /// A isolate's failure doesn't otherwise go anywhere unless
   /// something calls `join()`/`try_join()` on it; exactly like a
   /// plain `std::thread` whose `JoinHandle` is dropped without ever
   /// being joined, an uncaught error or a caught panic inside a
   /// fire-and-forget `spawn()` would silently vanish once the last
-  /// `Worker` handle (and the pool's own internal one) goes out of
+  /// `Isolate` handle (and the pool's own internal one) goes out of
   /// scope. A dropped `String` costs nothing to check for and losing
   /// a real failure silently is worse than one unwanted log line, so
   /// this reports it; the same trade-off Rust's own default panic
@@ -845,12 +845,12 @@ impl Drop for WorkerState {
     if let Slot::Err(message) = &*self.slot.get_mut().unwrap_or_else(PoisonError::into_inner) {
       match &self.name {
         Some(name) => eprintln!(
-          "warning: worker '{}' failed but its result was never checked \
+          "warning: isolate '{}' failed but its result was never checked \
            (no join()/try_join() was called before its handle was dropped): {}",
           name, message
         ),
         None => eprintln!(
-          "warning: a worker failed but its result was never checked \
+          "warning: a isolate failed but its result was never checked \
            (no join()/try_join() was called before its handle was dropped): {}",
           message
         ),
@@ -866,10 +866,10 @@ pub fn spawn(
   callee: Value,
   args: Value,
   name: Option<String>,
-) -> Result<Arc<WorkerState>, String> {
+) -> Result<Arc<IsolateState>, String> {
   let callee = transfer::capture(vm, callee)?;
   let args = transfer::capture(vm, args)?;
-  let state = Arc::new(WorkerState::new(name));
+  let state = Arc::new(IsolateState::new(name));
   let task = Task {
     callee,
     args,
@@ -879,7 +879,7 @@ pub fn spawn(
   {
     let mut queue = lock(&p.queue);
     if p.shutting_down.load(Ordering::Acquire) {
-      return Err("cannot spawn: the worker pool is shutting down".to_string());
+      return Err("cannot spawn: the isolate pool is shutting down".to_string());
     }
     p.in_flight.fetch_add(1, Ordering::AcqRel);
     queue.push_back(task);
@@ -888,20 +888,20 @@ pub fn spawn(
   Ok(state)
 }
 
-/// Spawns a batch of workers for `map()`, capturing the callee once
+/// Spawns a batch of isolates for `map()`, capturing the callee once
 /// and submitting all tasks under a single lock.
 pub fn spawn_batch(
   vm: &VM,
   callee: Value,
   args_items: &[Value],
-) -> Result<Vec<Arc<WorkerState>>, String> {
+) -> Result<Vec<Arc<IsolateState>>, String> {
   let callee_graph = transfer::capture(vm, callee)?;
   let mut states = Vec::with_capacity(args_items.len());
   let mut tasks = Vec::with_capacity(args_items.len());
 
   for &item in args_items {
     let args_graph = transfer::capture_as_args_list(vm, item)?;
-    let state = Arc::new(WorkerState::new(None));
+    let state = Arc::new(IsolateState::new(None));
     tasks.push(Task {
       callee: callee_graph.clone(),
       args: args_graph,
@@ -914,7 +914,7 @@ pub fn spawn_batch(
   {
     let mut queue = lock(&p.queue);
     if p.shutting_down.load(Ordering::Acquire) {
-      return Err("cannot spawn: the worker pool is shutting down".to_string());
+      return Err("cannot spawn: the isolate pool is shutting down".to_string());
     }
     p.in_flight.fetch_add(tasks.len(), Ordering::AcqRel);
     queue.extend(tasks);
@@ -970,7 +970,7 @@ pub enum RecvOutcome {
   /// `recv`/`recv_timeout` only; never produced by `try_recv`, which
   /// doesn't block in the first place.
   TimedOut,
-  /// The CALLING worker was cancelled while blocked here.
+  /// The CALLING isolate was cancelled while blocked here.
   Cancelled,
 }
 
@@ -978,7 +978,7 @@ pub enum SendOutcome {
   Sent,
   Closed,
   TimedOut,
-  /// The CALLING worker was cancelled while blocked here.
+  /// The CALLING isolate was cancelled while blocked here.
   Cancelled,
 }
 
@@ -1009,7 +1009,7 @@ impl ChannelState {
   }
 
   /// Blocks while the channel is at capacity. If the CALLING
-  /// worker is cancelled while blocked here, gives up early with
+  /// isolate is cancelled while blocked here, gives up early with
   /// `SendOutcome::Cancelled`.
   pub fn send(&self, value: TransferGraph) -> SendOutcome {
     self.send_inner(value, None)
@@ -1023,9 +1023,9 @@ impl ChannelState {
 
   /// Shared implementation for `send`/`send_timeout`; same
   /// no-poll-unless-needed and `CANCEL_POLL_INTERVAL`-ticked shape as
-  /// `WorkerState::join_inner`: see its own docs for why.
+  /// `IsolateState::join_inner`: see its own docs for why.
   fn send_inner(&self, value: TransferGraph, deadline: Option<Duration>) -> SendOutcome {
-    if deadline.is_none() && !in_worker_context() {
+    if deadline.is_none() && !in_isolate_context() {
       let mut inner = lock(&self.inner);
       loop {
         if inner.closed {
@@ -1084,7 +1084,7 @@ impl ChannelState {
   }
 
   /// Blocks until a message arrives or the channel is closed AND
-  /// drained. If the CALLING worker is cancelled while blocked
+  /// drained. If the CALLING isolate is cancelled while blocked
   /// here, gives up early with `RecvOutcome::Cancelled`.
   pub fn recv(&self) -> RecvOutcome {
     self.recv_inner(None)
@@ -1100,7 +1100,7 @@ impl ChannelState {
   /// Shared implementation for `recv`/`recv_timeout`; same shape as
   /// `send_inner`/`join_inner`: see `CANCEL_POLL_INTERVAL`'s docs.
   fn recv_inner(&self, deadline: Option<Duration>) -> RecvOutcome {
-    if deadline.is_none() && !in_worker_context() {
+    if deadline.is_none() && !in_isolate_context() {
       let mut inner = lock(&self.inner);
       loop {
         if let Some(v) = inner.queue.pop_front() {

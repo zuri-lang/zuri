@@ -1,34 +1,34 @@
-import worker
-import .worker_worker
+import isolate
+import .isolate_isolate
 
 # module-scoped free function
-var t1 = worker.spawn(worker_worker.square, 9)
+var t1 = isolate.spawn(isolate_isolate.square, 9)
 echo t1.join()
 
 # closure returned by a module function, capturing a parameter
-var add5 = worker_worker.make_adder(5)
-var t2 = worker.spawn(add5, 10)
+var add5 = isolate_isolate.make_adder(5)
+var t2 = isolate.spawn(add5, 10)
 echo t2.join()
 
 # recursive closure that captures itself
-var fact = worker_worker.make_fact()
-var t3 = worker.spawn(fact, 6)
+var fact = isolate_isolate.make_fact()
+var t3 = isolate.spawn(fact, 6)
 echo t3.join()
 
 # a plain function declared directly in THIS script
 def double(n) {
   return n * 2
 }
-var t4 = worker.spawn(double, 21)
+var t4 = isolate.spawn(double, 21)
 echo t4.join()
 
 # an anonymous inline lambda, never bound to a name
-var t5 = worker.spawn(@(n) { return n + 100 }, 1)
+var t5 = isolate.spawn(@(n) { return n + 100 }, 1)
 echo t5.join()
 
 # a class instance (module-scoped class) passed as an argument
-var p = worker_worker.make_point(3, 4)
-var t6 = worker.spawn(p.sum)
+var p = isolate_isolate.make_point(3, 4)
+var t6 = isolate.spawn(p.sum)
 echo t6.join()
 
 # a class declared directly in this script
@@ -37,11 +37,11 @@ class LocalBox {
   @new(v) { self.v = v }
 }
 var box = LocalBox(41)
-var t7 = worker.spawn(@() { return box.v + 1 })
+var t7 = isolate.spawn(@() { return box.v + 1 })
 echo t7.join()
 
 # is_done()/try_join() before and after completion
-var t8 = worker.spawn(worker_worker.square, 5)
+var t8 = isolate.spawn(isolate_isolate.square, 5)
 echo t8.join()
 echo t8.is_done()
 echo t8.try_join()
@@ -49,9 +49,9 @@ echo t8.try_join()
 # join() is repeatable
 echo t1.join()
 
-# an uncaught error inside the worker surfaces as WorkerError
+# an uncaught error inside the isolate surfaces as IsolateError
 catch {
-  var failing = worker.spawn(worker_worker.boom)
+  var failing = isolate.spawn(isolate_isolate.boom)
   failing.join()
 } as e
 if e {
@@ -59,7 +59,7 @@ if e {
 }
 
 # channels
-var ch = worker.channel(2)
+var ch = isolate.channel(2)
 ch.send('hello')
 ch.send([1, 2, 3])
 echo ch.length()
@@ -77,5 +77,5 @@ if e2 {
 }
 
 # pool sizing is at least 1 (machine-dependent, only sanity-checked)
-echo worker.pool_size() > 0
-echo worker.cpu_count() > 0
+echo isolate.pool_size() > 0
+echo isolate.cpu_count() > 0

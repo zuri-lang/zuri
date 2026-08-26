@@ -1,7 +1,7 @@
 //! Heap-independent snapshot of a Zuri value; the only thing that
-//! ever crosses a worker spawn/join or channel send/recv.
+//! ever crosses a isolate spawn/join or channel send/recv.
 //!
-//! Every isolate (worker thread) owns its own private `VM`/`Heap`,
+//! Every isolate (isolate thread) owns its own private `VM`/`Heap`,
 //! and this VM's object model was never built to be touched from more
 //! than one thread: `Value`s are raw `*const Obj` pointers, `Chunk`s
 //! carry non-atomic inline caches, and the GC's remembered set is a
@@ -33,7 +33,7 @@
 //! `"<moved>"`, unusable on the source side from then on) and wraps it
 //! in a `PtrSlot`; an `Arc<Mutex<Option<...>>>`; rather than moving
 //! it in directly, specifically so `TransferValue`/`TransferGraph` can
-//! stay plain `Clone` (needed so a worker's `.join()` result stays
+//! stay plain `Clone` (needed so a isolate's `.join()` result stays
 //! freely re-readable, same as any other value). Cloning a `PtrSlot`
 //! only clones the `Arc`; the payload underneath is still consumed at
 //! most once, by whichever `materialize` call reaches it first --
@@ -66,18 +66,18 @@ type PtrSlot = Arc<Mutex<Option<(&'static str, Box<dyn Any + Send>)>>>;
 ///
 /// Deliberately only ever a `.zu` MODULE, never the program's own
 /// entry script; this restriction applies to the `Named` (by-
-/// binding) resolution strategy specifically, NOT to workers in
+/// binding) resolution strategy specifically, NOT to isolates in
 /// general (see `CapturedFunction` for the other strategy, which has
 /// no such restriction). A module's top level is expected to be
 /// side-effect-light (declarations, mostly) and is only ever run once
-/// and cached; exactly what re-resolving it on a worker isolate
+/// and cached; exactly what re-resolving it on a isolate isolate
 /// needs. The entry script has no such expectation: it's the
 /// program's own real, imperative top-level logic, which commonly
-/// includes the very `worker.spawn`/`.join()` calls that would
-/// trigger this resolution in the first place. Bootstrapping a worker
+/// includes the very `isolate.spawn`/`.join()` calls that would
+/// trigger this resolution in the first place. Bootstrapping a isolate
 /// by re-running it would re-run those calls too; recursively
 /// spawning more work and, for a script that blocks on `.join()` at
-/// its own top level (extremely common), deadlocking the worker
+/// its own top level (extremely common), deadlocking the isolate
 /// against itself. Python's `multiprocessing` hits the identical
 /// hazard with its `spawn` start method and resolves it the same way:
 /// a spawn target must be importable from a module, never defined in
@@ -214,8 +214,8 @@ pub enum TransferValue {
   /// both sides. See `capture_value`'s own docs on why this is NOT
   /// treated like an ordinary `Ptr`.
   ChannelHandle(Arc<pool::ChannelState>),
-  /// A `Worker` handle; same reasoning as `ChannelHandle`.
-  WorkerHandle(Arc<pool::WorkerState>),
+  /// A `Isolate` handle; same reasoning as `ChannelHandle`.
+  IsolateHandle(Arc<pool::IsolateState>),
   Ref(u32),
 }
 
@@ -348,15 +348,15 @@ pub fn capture(vm: &VM, root: Value) -> Result<TransferGraph, String> {
       arena: Vec::new(),
     });
   }
-  if root.is_ptr_type(pool::WORKER_PTR_TYPE) {
+  if root.is_ptr_type(pool::ISOLATE_PTR_TYPE) {
     let handle = root
       .as_ptr_cell()
       .borrow()
-      .downcast_ref::<Arc<pool::WorkerState>>()
+      .downcast_ref::<Arc<pool::IsolateState>>()
       .cloned()
-      .ok_or_else(|| "internal error: malformed worker handle".to_string())?;
+      .ok_or_else(|| "internal error: malformed isolate handle".to_string())?;
     return Ok(TransferGraph {
-      root: TransferValue::WorkerHandle(handle),
+      root: TransferValue::IsolateHandle(handle),
       arena: Vec::new(),
     });
   }
@@ -452,7 +452,7 @@ fn capture_value(
     // synchronized (`Mutex`+`Condvar`) specifically so it CAN be used
     // concurrently from both sides at once; that's the entire point
     // of a channel. Cloning the `Arc` (never moving/taking it) is what
-    // lets the very channel a worker was just handed still be sent
+    // lets the very channel a isolate was just handed still be sent
     // on/received from by the code that spawned it.
     let handle = v
       .as_ptr_cell()
@@ -462,18 +462,18 @@ fn capture_value(
       .ok_or_else(|| "internal error: malformed channel handle".to_string())?;
     return Ok(TransferValue::ChannelHandle(handle));
   }
-  if v.is_ptr_type(pool::WORKER_PTR_TYPE) {
-    // Same reasoning as `Channel` above: a `Worker` handle is a
+  if v.is_ptr_type(pool::ISOLATE_PTR_TYPE) {
+    // Same reasoning as `Channel` above: a `Isolate` handle is a
     // synchronized, freely-shareable reference to a result slot, not
-    // an exclusive resource; cloning it is what lets a `Worker`
-    // handle be passed into (or returned from) another worker.
+    // an exclusive resource; cloning it is what lets a `Isolate`
+    // handle be passed into (or returned from) another isolate.
     let handle = v
       .as_ptr_cell()
       .borrow()
-      .downcast_ref::<Arc<pool::WorkerState>>()
+      .downcast_ref::<Arc<pool::IsolateState>>()
       .cloned()
-      .ok_or_else(|| "internal error: malformed worker handle".to_string())?;
-    return Ok(TransferValue::WorkerHandle(handle));
+      .ok_or_else(|| "internal error: malformed isolate handle".to_string())?;
+    return Ok(TransferValue::IsolateHandle(handle));
   }
   if v.is_ptr() {
     // A genuine MOVE, not a copy: see this module's own top-level
@@ -542,7 +542,7 @@ fn capture_value(
   }
 
   Err(format!(
-    "cannot send a {} across workers; only nil, bool, number, string, \
+    "cannot send a {} across isolates; only nil, bool, number, string, \
      bytes, bigint, range, list, dict, instance, class, bound method, \
      function, and native-pointer values can cross",
     v.type_name()
@@ -572,10 +572,10 @@ fn capture_closure(
   // whatever closure THAT run independently creates for the same
   // name, with its own independently-recreated upvalues. A module-
   // level `def`/`var` commonly closes over another plain (non-`@`-
-  // exported) import in the same file; e.g. `import _worker` is
+  // exported) import in the same file; e.g. `import _isolate` is
   // just a local of the file's own top-level scope, so any nested
   // function referencing it captures it as an upvalue; and a
-  // `Module`/`ModuleBinding` value can never itself cross a worker
+  // `Module`/`ModuleBinding` value can never itself cross a isolate
   // boundary. Gating this on an empty upvalue list would reject
   // exactly that ordinary case, forcing it down the STRUCTURAL path
   // below where it genuinely does need to move that upvalue and
@@ -772,7 +772,7 @@ fn capture_root_globals(
     };
     let captured = capture_value(vm, current, arena, memo).map_err(|e| {
       format!(
-        "cannot send this function across workers: global '{}' it \
+        "cannot send this function across isolates: global '{}' it \
          depends on can't cross: {}",
         name, e
       )
@@ -794,7 +794,7 @@ fn capture_class(
   };
 
   // A builtin error class (`Error`, `TypeError`, ...) is installed
-  // fresh by `VM::init` on every worker isolate already; it isn't
+  // fresh by `VM::init` on every isolate isolate already; it isn't
   // declared in any module a `Home` could point at, and structurally
   // cloning it would produce a class that LOOKS the same but isn't the
   // exact object the destination's own `VM::raise`/`Instr::Raise`
@@ -845,7 +845,7 @@ fn capture_class(
 ///
 /// Statics are mutable, shared, per-class state on the source side;
 /// captured as a one-time SNAPSHOT here, same as an upvalue or a
-/// root global. Once a class crosses into a worker, its statics
+/// root global. Once a class crosses into a isolate, its statics
 /// there are independent: neither side's later mutations are visible
 /// to the other. There's no other sound option in a shared-nothing
 /// model: see this module's own top-level docs.
@@ -1006,9 +1006,9 @@ pub fn materialize(vm: &mut VM, graph: &TransferGraph) -> Result<Value, String> 
         vm.heap_mut()
           .alloc_ptr(pool::CHANNEL_PTR_TYPE, state.clone()),
       ),
-      TransferValue::WorkerHandle(state) => Ok(
+      TransferValue::IsolateHandle(state) => Ok(
         vm.heap_mut()
-          .alloc_ptr(pool::WORKER_PTR_TYPE, state.clone()),
+          .alloc_ptr(pool::ISOLATE_PTR_TYPE, state.clone()),
       ),
       TransferValue::Ref(_) => unreachable!(),
     };
@@ -1064,9 +1064,9 @@ fn materialize_value(
       vm.heap_mut()
         .alloc_ptr(pool::CHANNEL_PTR_TYPE, state.clone()),
     ),
-    TransferValue::WorkerHandle(state) => Ok(
+    TransferValue::IsolateHandle(state) => Ok(
       vm.heap_mut()
-        .alloc_ptr(pool::WORKER_PTR_TYPE, state.clone()),
+        .alloc_ptr(pool::ISOLATE_PTR_TYPE, state.clone()),
     ),
     TransferValue::Ref(idx) => materialize_ref(vm, *idx, arena, node_pin),
   }
@@ -1142,7 +1142,7 @@ fn materialize_ref(
       let Some((type_name, payload)) = taken else {
         return Err(
           "this native resource was already consumed by an earlier read \
-          ; a worker result or channel message containing a native \
+          ; a isolate result or channel message containing a native \
            pointer can only be materialized once, by whichever join()/\
            recv() reaches it first"
             .to_string(),
@@ -1349,7 +1349,7 @@ fn materialize_prototype(
       .home
       .as_ref()
       .map(|h| h.path.as_str())
-      .unwrap_or("<worker>"),
+      .unwrap_or("<isolate>"),
   );
 
   let fn_obj = ObjFunction {

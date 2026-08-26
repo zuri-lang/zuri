@@ -16,14 +16,14 @@ mod crypto;
 mod date;
 mod hash;
 mod io;
+mod isolate;
+mod isolate_util;
 mod json;
 mod math;
 mod net_tcp;
 mod net_udp;
 mod os;
 mod r#struct;
-mod worker;
-mod worker_util;
 
 use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
@@ -46,7 +46,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   date::MODULE,
   r#struct::MODULE,
   compress::MODULE,
-  worker::MODULE,
+  isolate::MODULE,
   net_tcp::MODULE,
   net_udp::MODULE,
 ];

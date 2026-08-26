@@ -1,8 +1,8 @@
 /**
- * Worker-driven counterpart to mandlebrot.zu; each row's pixels
+ * Isolate-driven counterpart to mandlebrot.zu; each row's pixels
  * depend only on that row's own y, never on any other row, so the
- * image is split into one contiguous row range per pool worker and
- * computed concurrently. Each worker returns its own rows as plain
+ * image is split into one contiguous row range per pool isolate and
+ * computed concurrently. Each isolate returns its own rows as plain
  * byte lists (there's no shared flush buffer to write into across
  * isolates the way the sequential version has), and the main thread
  * prints them back out in row order once every chunk is in.
@@ -16,13 +16,13 @@
  * parallelized by Richard Ore
  */
 
-import worker
+import isolate
 
 # `Mandelbrot` only holds the pure per-row math, with no reference to
-# `worker` anywhere in it; spawning `computeRows` as a bound
+# `isolate` anywhere in it; spawning `computeRows` as a bound
 # method transfers the WHOLE class, methods included, and a class
 # that references an imported module ANYWHERE in it can't cross a
-# worker boundary at all. Orchestration (`compute()` below) stays
+# isolate boundary at all. Orchestration (`compute()` below) stays
 # entirely outside the class for exactly that reason.
 class Mandelbrot {
   var size
@@ -85,15 +85,15 @@ def compute(size)
   echo "P4\n${size} ${size}\n"
 
   var m = Mandelbrot(size)
-  var workers = worker.pool_size()
-  var rowsPerJob = (size + workers - 1) // workers
+  var isolates = isolate.pool_size()
+  var rowsPerJob = (size + isolates - 1) // isolates
   var jobs = []
 
   iter var y0 = 0; y0 < size; y0 += rowsPerJob {
     jobs.append([y0, (y0 + rowsPerJob).min(size)])
   }
 
-  var chunks = worker.map(m.computeRows, jobs)
+  var chunks = isolate.map(m.computeRows, jobs)
   for rows in chunks {
     for row in rows {
       print(row)

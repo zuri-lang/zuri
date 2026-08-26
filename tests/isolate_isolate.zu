@@ -38,5 +38,5 @@ def make_point(x, y) {
 }
 
 def boom() {
-  raise Error('boom from worker')
+  raise Error('boom from isolate')
 }

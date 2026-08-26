@@ -1,21 +1,21 @@
-//! `_worker` builtin module; native backing for `libs/worker.zu`.
+//! `_isolate` builtin module; native backing for `libs/isolate.zu`.
 //!
-//! Real concurrency, not cooperative-only: workers run on a small,
-//! configurable pool of actual OS threads (see `worker_util::pool`),
+//! Real concurrency, not cooperative-only: isolates run on a small,
+//! configurable pool of actual OS threads (see `isolate_util::pool`),
 //! each with its own fully independent `VM`/`Heap`; this VM's object
 //! model (raw heap pointers, non-atomic inline caches, a `thread_local!`
 //! GC remembered set) was never built to be shared across threads, so
-//! nothing here shares one. A worker's arguments and return value
+//! nothing here shares one. A isolate's arguments and return value
 //! cross thread boundaries as a heap-independent snapshot instead (see
-//! `worker_util::transfer`), and its spawn target is looked up by
+//! `isolate_util::transfer`), and its spawn target is looked up by
 //! name against a freshly-loaded copy of its own defining module/entry
-//! script on whichever worker picks it up.
+//! script on whichever isolate picks it up.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::builtins::enforce::ArgType;
-use crate::modules::worker_util::{pool, transfer};
+use crate::modules::isolate_util::{pool, transfer};
 use crate::modules::{BuiltinModuleDef, native};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
@@ -23,7 +23,7 @@ use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_ptr, enforce_arg_type, enforce_arg_type_any_of};
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
-  name: "_worker",
+  name: "_isolate",
   build,
 };
 
@@ -101,7 +101,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 // Small shared helpers
 // ---------------------------------------------------------------------
 
-/// Builds the `[status, value]` pair every worker/channel query
+/// Builds the `[status, value]` pair every isolate/channel query
 /// native returns. `value` already exists (it's whatever
 /// `transfer::materialize` or a plain leaf alloc just produced) but
 /// sits only in a local Rust variable; pin it across the two further
@@ -131,17 +131,17 @@ fn select_result(vm: &mut VM, index: Value, status: &'static str, value: Value) 
   result
 }
 
-fn worker_state_of(ctx: &ZuriContext, idx: usize) -> Result<Arc<pool::WorkerState>, String> {
-  worker_state_of_value(ctx.args[idx])
+fn isolate_state_of(ctx: &ZuriContext, idx: usize) -> Result<Arc<pool::IsolateState>, String> {
+  isolate_state_of_value(ctx.args[idx])
 }
 
-fn worker_state_of_value(v: Value) -> Result<Arc<pool::WorkerState>, String> {
+fn isolate_state_of_value(v: Value) -> Result<Arc<pool::IsolateState>, String> {
   let cell = v.as_ptr_cell();
   let borrowed = cell.borrow();
   borrowed
-    .downcast_ref::<Arc<pool::WorkerState>>()
+    .downcast_ref::<Arc<pool::IsolateState>>()
     .cloned()
-    .ok_or_else(|| "invalid worker handle".to_string())
+    .ok_or_else(|| "invalid isolate handle".to_string())
 }
 
 fn channel_state_of(ctx: &ZuriContext, idx: usize) -> Result<Arc<pool::ChannelState>, String> {
@@ -225,15 +225,15 @@ fn is_shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 // ---------------------------------------------------------------------
-// Workers
+// Isolates
 // ---------------------------------------------------------------------
 
 /// Returns `["error", message]` rather than a Rust `Err` for anything
 /// that goes wrong; unlike every OTHER native in this codebase,
-/// `spawn()`'s failures are all genuine `WorkerError` territory
+/// `spawn()`'s failures are all genuine `IsolateError` territory
 /// (an un-transferable argument, a bad spawn target), and only the
 /// `.zu` wrapper can raise that specific class (see the module docs
-/// on why `WorkerError` lives in Zuri source, not the prelude).
+/// on why `IsolateError` lives in Zuri source, not the prelude).
 /// Matches `join`/`channel_recv`/etc.'s own `[status, value]` shape.
 fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 3);
@@ -251,7 +251,7 @@ fn spawn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let name = (!ctx.args[2].is_nil()).then(|| ctx.args[2].as_str().to_string());
   match pool::spawn(ctx.vm, fn_val, ctx.args[1], name) {
     Ok(state) => {
-      let ptr = ctx.vm.heap_mut().alloc_ptr(pool::WORKER_PTR_TYPE, state);
+      let ptr = ctx.vm.heap_mut().alloc_ptr(pool::ISOLATE_PTR_TYPE, state);
       Ok(status_pair(ctx.vm, "ok", ptr))
     },
     Err(msg) => {
@@ -291,7 +291,7 @@ fn map_batch(ctx: &mut ZuriContext) -> Result<Value, String> {
     },
   };
 
-  match pool::wait_all_workers(&states, timeout) {
+  match pool::wait_all_isolates(&states, timeout) {
     pool::WaitAllOutcome::TimedOut => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
     pool::WaitAllOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
     pool::WaitAllOutcome::Ready => {
@@ -321,9 +321,9 @@ fn map_batch(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn join(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 2);
-  enforce_arg_ptr!(ctx, 0, pool::WORKER_PTR_TYPE);
+  enforce_arg_ptr!(ctx, 0, pool::ISOLATE_PTR_TYPE);
   let timeout = optional_timeout(ctx, 1)?;
-  let state = worker_state_of(ctx, 0)?;
+  let state = isolate_state_of(ctx, 0)?;
   let outcome = match timeout {
     Some(d) => state.join_timeout(d),
     None => state.join(),
@@ -344,8 +344,8 @@ fn join(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn try_join(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, pool::WORKER_PTR_TYPE);
-  let state = worker_state_of(ctx, 0)?;
+  enforce_arg_ptr!(ctx, 0, pool::ISOLATE_PTR_TYPE);
+  let state = isolate_state_of(ctx, 0)?;
   match state.try_join() {
     pool::JoinOutcome::Pending => Ok(status_pair(ctx.vm, "pending", Value::nil())),
     pool::JoinOutcome::Ok(graph) => {
@@ -364,15 +364,15 @@ fn try_join(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn is_done(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, pool::WORKER_PTR_TYPE);
-  let state = worker_state_of(ctx, 0)?;
+  enforce_arg_ptr!(ctx, 0, pool::ISOLATE_PTR_TYPE);
+  let state = isolate_state_of(ctx, 0)?;
   Ok(Value::bool(state.is_done()))
 }
 
 fn status(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, pool::WORKER_PTR_TYPE);
-  let state = worker_state_of(ctx, 0)?;
+  enforce_arg_ptr!(ctx, 0, pool::ISOLATE_PTR_TYPE);
+  let state = isolate_state_of(ctx, 0)?;
   let s = match state.peek() {
     pool::JoinOutcome::Pending => "pending",
     pool::JoinOutcome::Ok(_) => "done",
@@ -386,8 +386,8 @@ fn status(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn name(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, pool::WORKER_PTR_TYPE);
-  let state = worker_state_of(ctx, 0)?;
+  enforce_arg_ptr!(ctx, 0, pool::ISOLATE_PTR_TYPE);
+  let state = isolate_state_of(ctx, 0)?;
   match state.name() {
     Some(n) => Ok(ctx.vm.heap_mut().alloc_string(n)),
     None => Ok(Value::nil()),
@@ -396,23 +396,23 @@ fn name(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn cancel(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, pool::WORKER_PTR_TYPE);
-  let state = worker_state_of(ctx, 0)?;
+  enforce_arg_ptr!(ctx, 0, pool::ISOLATE_PTR_TYPE);
+  let state = isolate_state_of(ctx, 0)?;
   state.cancel();
   Ok(Value::nil())
 }
 
 fn is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_ptr!(ctx, 0, pool::WORKER_PTR_TYPE);
-  let state = worker_state_of(ctx, 0)?;
+  enforce_arg_ptr!(ctx, 0, pool::ISOLATE_PTR_TYPE);
+  let state = isolate_state_of(ctx, 0)?;
   Ok(Value::bool(state.is_cancelled()))
 }
 
-/// Backs the ambient `worker.is_cancelled()`; checks the worker
-/// the CALLING worker thread is currently running, found via
+/// Backs the ambient `isolate.is_cancelled()`; checks the isolate
+/// the CALLING isolate thread is currently running, found via
 /// `pool::is_current_cancelled()`'s thread-local rather than a handle
-/// argument. Outside a worker thread it's always `false`.
+/// argument. Outside a isolate thread it's always `false`.
 fn current_is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
   Ok(Value::bool(pool::is_current_cancelled()))
@@ -425,16 +425,16 @@ fn wait_any(ctx: &mut ZuriContext) -> Result<Value, String> {
   let items = ctx.args[0].as_list();
   let mut states = Vec::with_capacity(items.len());
   for v in &items {
-    if !v.is_ptr_type(pool::WORKER_PTR_TYPE) {
+    if !v.is_ptr_type(pool::ISOLATE_PTR_TYPE) {
       return Err(format!(
-        "{}() expects a list of workers, got a value of type {}",
+        "{}() expects a list of isolates, got a value of type {}",
         ctx.name,
         v.type_name()
       ));
     }
-    states.push(worker_state_of_value(*v)?);
+    states.push(isolate_state_of_value(*v)?);
   }
-  match pool::wait_any_workers(&states, timeout) {
+  match pool::wait_any_isolates(&states, timeout) {
     pool::WaitAnyOutcome::Ready(i) => Ok(status_pair(ctx.vm, "ok", Value::number(i as f64))),
     pool::WaitAnyOutcome::TimedOut => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
     pool::WaitAnyOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
@@ -448,16 +448,16 @@ fn wait_all(ctx: &mut ZuriContext) -> Result<Value, String> {
   let items = ctx.args[0].as_list();
   let mut states = Vec::with_capacity(items.len());
   for v in &items {
-    if !v.is_ptr_type(pool::WORKER_PTR_TYPE) {
+    if !v.is_ptr_type(pool::ISOLATE_PTR_TYPE) {
       return Err(format!(
-        "{}() expects a list of workers, got a value of type {}",
+        "{}() expects a list of isolates, got a value of type {}",
         ctx.name,
         v.type_name()
       ));
     }
-    states.push(worker_state_of_value(*v)?);
+    states.push(isolate_state_of_value(*v)?);
   }
-  let status = match pool::wait_all_workers(&states, timeout) {
+  let status = match pool::wait_all_isolates(&states, timeout) {
     pool::WaitAllOutcome::Ready => "ok",
     pool::WaitAllOutcome::TimedOut => "timeout",
     pool::WaitAllOutcome::Cancelled => "cancelled",
@@ -605,11 +605,11 @@ fn channel_len(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// Deliberately panics; exists ONLY so the library test suite has a
 /// way to verify, end to end, that a Rust-level panic inside a
-/// worker's own execution is isolated to that one worker rather
-/// than taking down the whole process (see `pool::worker_loop`).
+/// isolate's own execution is isolated to that one isolate rather
+/// than taking down the whole process (see `pool::isolate_loop`).
 /// `#[cfg(debug_assertions)]`, so this never exists in a release
 /// build; there is no way to reach it from a shipped binary.
 #[cfg(debug_assertions)]
 fn debug_panic(_ctx: &mut ZuriContext) -> Result<Value, String> {
-  panic!("_worker.debug_panic() was called")
+  panic!("_isolate.debug_panic() was called")
 }
