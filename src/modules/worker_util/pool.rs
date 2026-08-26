@@ -242,11 +242,7 @@ impl WorkerIsolate {
 fn worker_loop() {
   let mut isolate = WorkerIsolate::new();
   let pool = pool();
-  let mut local_tasks: VecDeque<Task> = VecDeque::with_capacity(32);
   loop {
-    let task = if let Some(t) = local_tasks.pop_front() {
-      t
-    } else {
     let task = {
       let mut queue = lock(&pool.queue);
       while queue.is_empty() {
@@ -255,14 +251,6 @@ fn worker_loop() {
           .wait(queue)
           .unwrap_or_else(PoisonError::into_inner);
       }
-      let task = queue.pop_front().unwrap();
-      let batch_count = queue.len().min(31);
-      for _ in 0..batch_count {
-        if let Some(t) = queue.pop_front() {
-          local_tasks.push_back(t);
-        }
-      }
-      task
       queue.pop_front().unwrap()
     };
     pool.running.fetch_add(1, Ordering::AcqRel);
