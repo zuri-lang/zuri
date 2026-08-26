@@ -537,6 +537,7 @@ class Scope {
    * worker.scope(def(s) {
    *   s.spawn(task1)
    *   s.spawn(task2)
+   * 
    *   for child in s.children() {
    *     echo "Child worker active"
    *   }
