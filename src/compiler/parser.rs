@@ -669,7 +669,7 @@ impl<'a> Parser<'a> {
       TokenKind::Lparen => self.grouping(),
       TokenKind::Lbrace => self.dict(),
       TokenKind::Lbracket => self.list(),
-      TokenKind::At => self.anonymous(),
+      TokenKind::At | TokenKind::Def => self.anonymous(),
       _ => {
         self.report_error_at(
           format!("Unexpected token {:?}", prev.describe()),
@@ -1788,7 +1788,16 @@ impl<'a> Parser<'a> {
       TokenKind::Lbrace => self.block(),
       TokenKind::Import => self.import_stmt(),
       TokenKind::Catch => self.catch_stmt(),
-      TokenKind::Def => Stmt::Decl(Box::new(self.function_decl())),
+      TokenKind::Def => {
+        if matches!(self.peek().kind, TokenKind::Identifier(_))
+          || matches!(self.peek().kind, TokenKind::Decorator(_))
+        {
+          Stmt::Decl(Box::new(self.function_decl()))
+        } else {
+          self.rewind();
+          self.expression_stmt(false)
+        }
+      },
       TokenKind::Continue => Stmt::Continue,
       TokenKind::Break => Stmt::Break,
       TokenKind::Return => {
@@ -2070,7 +2079,16 @@ impl<'a> Parser<'a> {
     self.ignore_newlines();
 
     let result = match self.advance().kind {
-      TokenKind::Def => self.function_decl(),
+      TokenKind::Def => {
+        if matches!(self.peek().kind, TokenKind::Identifier(_))
+          || matches!(self.peek().kind, TokenKind::Decorator(_))
+        {
+          self.function_decl()
+        } else {
+          self.rewind();
+          Decl::Stmt(Box::new(self.statement()))
+        }
+      },
       TokenKind::Class => self.class_decl(),
       TokenKind::Lbrace => {
         if !check_tok!(self, TokenKind::Newline) && self.block_count == 0 {

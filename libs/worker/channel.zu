@@ -1,23 +1,144 @@
 /**
  * @module channel
  *
- * Thread-safe queues for passing values between workers. Re-exported
- * by `worker`, so `import worker` alone is enough to use
- * `worker.Channel`/`worker.channel()`.
+ * Thread-safe, multi-producer multi-consumer (MPMC) communication queues for
+ * passing values and messages across worker isolates.
+ *
+ * ## Overview
+ *
+ * Channels provide synchronized, data-race-free message passing between
+ * concurrent worker isolates. Because Zuri workers execute within isolated heaps,
+ * sending a value over a `Channel` deep-copies the object graph across the
+ * boundary barrier, preserving internal references and graph topologies without
+ * sharing mutable memory.
+ *
+ * `Channel` handles are re-exported by the `worker` module, making them accessible
+ * directly via `worker.Channel` or `worker.channel()`.
+ *
+ * ## Channel Types & Backpressure
+ *
+ * - **Unbounded Channels (`capacity: 0` or `nil`)**:
+ *   Messages are enqueued without blocking `send()`. The queue dynamically grows
+ *   as needed.
+ * - **Bounded Channels (`capacity: n > 0`)**:
+ *   The channel holds at most `n` unread messages. Calling `send()` when the
+ *   queue is full blocks the sending worker until a consumer calls `recv()`,
+ *   providing automatic backpressure to prevent producer tasks from exhausting
+ *   system memory.
+ *
+ * ## Channel Lifecycle
+ *
+ * - **Sending**: `Channel.send(val, timeout)` pushes a value into the channel.
+ *   If the channel is bounded and full, the call blocks until capacity is available
+ *   or `timeout` elapses.
+ * - **Receiving**: `Channel.recv(timeout)` blocks until a value arrives. If the
+ *   channel is closed and all queued items have been drained, `recv()` returns `nil`.
+ * - **Non-blocking Peek**: `Channel.try_recv()` retrieves the next value immediately
+ *   without blocking, returning `nil` if the channel is currently empty.
+ * - **Closing**: `Channel.close()` shuts down the channel for subsequent sends.
+ *   Messages already in the queue remain readable until drained. Subsequent calls
+ *   to `send()` on a closed channel raise a `WorkerError`.
+ *
+ * ## Multiplexing with `select()`
+ *
+ * The `select()` function allows a worker to wait on multiple channels
+ * simultaneously. It blocks until at least one channel is ready to deliver a value
+ * (or is closed), returning a pair `[ready_channel, value]`.
+ *
+ * ## Examples
+ *
+ * ### 1. Producer-Consumer Pipeline
+ *
+ * ```zuri
+ * import worker
+ *
+ * var ch = worker.channel(10) // Bounded channel with capacity 10
+ *
+ * def producer(out_ch) {
+ *   iter var i = 1; i <= 5; i++ {
+ *     out_ch.send("item-${i}")
+ *   }
+ *   out_ch.close()
+ * }
+ *
+ * var producer_task = worker.spawn(producer, ch)
+ *
+ * while true {
+ *   var msg = ch.recv()
+ *   if msg == nil break // Channel is closed and empty
+ *   echo "Received: ${msg}"
+ * }
+ *
+ * producer_task.join()
+ * ```
+ *
+ * ### 2. Fan-Out / Fan-In Worker Pool
+ *
+ * ```zuri
+ * import worker
+ *
+ * var results = worker.channel()
+ *
+ * def worker_job(worker_id, count, out_ch) {
+ *   iter var i = 1; i <= count; i++ {
+ *     out_ch.send("worker-${worker_id}-result-${i}")
+ *   }
+ * }
+ *
+ * var w1 = worker.spawn(worker_job, 1, 3, results)
+ * var w2 = worker.spawn(worker_job, 2, 3, results)
+ *
+ * iter var i = 0; i < 6; i++ {
+ *   echo results.recv()
+ * }
+ *
+ * w1.join()
+ * w2.join()
+ * ```
+ *
+ * ### 3. Multiplexing Channels with `select()`
+ *
+ * ```zuri
+ * import worker
+ *
+ * var ch1 = worker.channel()
+ * var ch2 = worker.channel()
+ *
+ * worker.spawn(@(c) { c.send("from ch1") }, ch1)
+ * worker.spawn(@(c) { c.send("from ch2") }, ch2)
+ *
+ * iter var i = 0; i < 2; i++ {
+ *   var result = worker.select([ch1, ch2], 1.0)
+ *   var ready_ch = result[0]
+ *   var value = result[1]
+ *   echo "Got: ${value}"
+ * }
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import _worker
 import .error { WorkerError, WorkerTimeoutError, WorkerCancelledError }
 
 /**
- * A thread-safe queue for passing values between workers.
+ * A thread-safe, multi-producer multi-consumer (MPMC) message queue.
  */
 class Channel {
   var _ptr
 
   /**
-   * @param ?int capacity: maximum number of unread messages before
-   *   `send()` blocks. `nil` or `0` (the default) means unbounded.
+   * Constructs a new `Channel` with the specified capacity limit.
+   *
+   * @param ?int capacity: Maximum number of buffered items before `send()`
+   *   blocks for backpressure. `nil` or `0` creates an unbounded channel.
+   * @raises ValueError if `capacity` is negative.
+   *
+   * ```zuri
+   * import worker
+   * var unbounded = worker.channel()
+   * var bounded = worker.channel(100)
+   * ```
    */
   @new(capacity: ?int) {
     if capacity == nil {
@@ -30,15 +151,23 @@ class Channel {
   }
 
   /**
-   * Sends `value` on the channel, blocking while it is at capacity.
+   * Sends `value` into the channel.
    *
-   * @param any value
-   * @param number timeout: seconds to wait before giving up. Waits
-   *   indefinitely if omitted.
-   * @raises WorkerError if the channel is closed
-   * @raises WorkerTimeoutError if `timeout` elapses first
-   * @raises WorkerCancelledError if the CALLING worker is
-   *   cancelled while blocked here
+   * If the channel is bounded and currently full, this call blocks the calling
+   * worker until space becomes available, the timeout elapses, or the caller
+   * is cancelled.
+   *
+   * @param any value: The value or object graph to send.
+   * @param ?number timeout: Maximum seconds to wait before timing out. Waits
+   *   indefinitely if omitted or `nil`.
+   * @raises WorkerError if the channel has been closed.
+   * @raises WorkerTimeoutError if `timeout` seconds elapse before space is available.
+   * @raises WorkerCancelledError if the calling worker is cancelled while blocked.
+   *
+   * ```zuri
+   * ch.send("data payload")
+   * ch.send(42, 0.5) // wait at most 500ms
+   * ```
    */
   send(value, timeout: ?number) {
     var status = _worker.channel_send(self._ptr, value, timeout)
@@ -54,15 +183,21 @@ class Channel {
   }
 
   /**
-   * Blocks until a value is available and returns it. Returns `nil`
-   * once the channel is closed and empty.
+   * Blocks until a message is available and retrieves it.
    *
-   * @param number timeout: seconds to wait before giving up. Waits
-   *   indefinitely if omitted.
-   * @returns any
-   * @raises WorkerTimeoutError if `timeout` elapses first
-   * @raises WorkerCancelledError if the CALLING worker is
-   *   cancelled while blocked here
+   * If the channel is closed and all buffered messages have been received,
+   * `recv()` returns `nil`.
+   *
+   * @param ?number timeout: Maximum seconds to wait for a message. Waits
+   *   indefinitely if omitted or `nil`.
+   * @returns any: The received value, or `nil` if the channel is closed and empty.
+   * @raises WorkerTimeoutError if `timeout` seconds elapse before a value is received.
+   * @raises WorkerCancelledError if the calling worker is cancelled while blocked.
+   *
+   * ```zuri
+   * var item = ch.recv()
+   * var timed_item = ch.recv(2.0)
+   * ```
    */
   recv(timeout: ?number) {
     var r = _worker.channel_recv(self._ptr, timeout)
@@ -79,10 +214,17 @@ class Channel {
   }
 
   /**
-   * Returns the next available value, or `nil` if none is available.
-   * Does not block.
+   * Attempts to receive a value without blocking.
    *
-   * @returns any
+   * @returns any: The next available message, or `nil` if the channel is currently
+   *   empty or closed.
+   *
+   * ```zuri
+   * var item = ch.try_recv()
+   * if item != nil {
+   *   echo "Processed: ${item}"
+   * }
+   * ```
    */
   try_recv() {
     var r = _worker.channel_try_recv(self._ptr)
@@ -93,31 +235,51 @@ class Channel {
   }
 
   /**
-   * Closes the channel. Queued values may still be received;
-   * `send()` afterward raises `WorkerError`.
+   * Closes the channel.
+   *
+   * Buffered messages remain available for consumers to read via `recv()` or
+   * `try_recv()`. Calling `send()` after closing raises `WorkerError`.
+   *
+   * ```zuri
+   * ch.close()
+   * ```
    */
   close() {
     _worker.channel_close(self._ptr)
   }
 
   /**
-   * @returns bool: `true` if the channel is closed.
+   * Checks whether the channel has been closed.
+   *
+   * @returns bool: `true` if the channel is closed, `false` otherwise.
+   *
+   * ```zuri
+   * if !ch.is_closed() {
+   *   ch.send("active")
+   * }
+   * ```
    */
   is_closed() {
     return _worker.channel_is_closed(self._ptr)
   }
 
   /**
-   * @returns int: the number of values currently queued.
+   * Returns the current number of buffered, unread messages in the channel.
+   *
+   * @returns int: Number of queued items.
+   *
+   * ```zuri
+   * var pending = ch.length()
+   * ```
    */
   length() {
     return _worker.channel_len(self._ptr)
   }
 
   /**
-   * This channel's underlying native handle, needed by `select()` to
-   * operate on a plain list of `Channel`s from outside the class. Not
-   * meant for direct use.
+   * Returns the underlying native channel pointer.
+   *
+   * Used internally by `select()`. Not intended for direct application usage.
    */
   handle() {
     return self._ptr
@@ -125,32 +287,50 @@ class Channel {
 }
 
 /**
- * @param ?int capacity: `nil` or `0` (the default) means unbounded.
+ * Creates a new thread-safe `Channel`.
+ *
+ * @param ?int capacity: Maximum buffered messages. `nil` or `0` means unbounded.
  * @returns Channel
+ *
+ * ```zuri
+ * import worker
+ * var unbounded = worker.channel()
+ * var bounded = worker.channel(50)
+ * ```
  */
 def channel(capacity: ?int) {
   return Channel(capacity)
 }
 
 /**
- * Blocks until at least one of `channels` has a value ready to
- * receive or is closed, and returns which one and what it yielded --
- * the returned value has already been removed from that channel's
- * queue, exactly as if `recv()` had been called on it directly.
+ * Multiplexes across multiple channels, blocking until at least one channel is
+ * ready to deliver a value or is closed.
  *
- * Ties (more than one channel already ready) resolve to whichever
- * comes first in `channels`.
+ * The ready value is consumed from the selected channel exactly as if `recv()`
+ * were called on it directly.
  *
- * @param [Channel] channels: must not be empty.
- * @param number timeout: seconds to wait before giving up. Waits
- *   indefinitely if omitted.
- * @returns [Channel, any]: the channel that was ready, and the value
- *   received from it (`nil` if that channel was closed and empty).
- * @raises ValueError if `channels` is empty
- * @raises WorkerTimeoutError if `timeout` elapses before any
- *   channel is ready
- * @raises WorkerCancelledError if the CALLING worker is
- *   cancelled while blocked here
+ * If multiple channels are ready simultaneously, ties are resolved in favor
+ * of the channel with the lower index in `channels`.
+ *
+ * @param list channels: A non-empty list of `Channel` instances.
+ * @param ?number timeout: Maximum seconds to wait before timing out. Waits
+ *   indefinitely if omitted or `nil`.
+ * @returns list: A two-element list `[ready_channel, value]`, where `value` is
+ *   the message received (`nil` if the channel was closed and drained).
+ * @raises ValueError if `channels` is empty.
+ * @raises WorkerTimeoutError if `timeout` seconds elapse before any channel is ready.
+ * @raises WorkerCancelledError if the calling worker is cancelled while blocked.
+ *
+ * ```zuri
+ * import worker
+ * var ch1 = worker.channel()
+ * var ch2 = worker.channel()
+ *
+ * var res = worker.select([ch1, ch2], 1.5)
+ * var active_ch = res[0]
+ * var msg = res[1]
+ * echo "Received ${msg} from channel"
+ * ```
  */
 def select(channels: list, timeout: ?number) {
   if channels.length() == 0 {
@@ -169,3 +349,4 @@ def select(channels: list, timeout: ?number) {
   }
   return [channels[r[0]], r[2]]
 }
+
