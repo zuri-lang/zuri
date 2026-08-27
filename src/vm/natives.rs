@@ -108,21 +108,21 @@ fn instance_of(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_type_any_of!(ctx, 0, [ArgType::Number, ArgType::List]);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::Int, ArgType::List]);
 
   let v = ctx.args[0];
-  if v.is_number() {
-    let bytes = ctx.heap().alloc_bytes(vec![0; v.as_number() as usize]);
+  if v.is_int() {
+    let bytes = ctx.heap().alloc_bytes(vec![0; v.as_int() as usize]);
     return Ok(bytes);
   } else if v.is_list() {
     let is_valid_list = v
       .as_list()
       .iter()
-      .all(|f| f.is_number() && 0.0 <= f.as_number() && f.as_number() <= 255.0);
+      .all(|f| f.is_int() && 0 <= f.as_int() && f.as_int() <= 255);
 
     if !is_valid_list {
       return Err(format!(
-        "bytes() expects a list of numbers, got {}",
+        "bytes() expects a list of ints, got {}",
         v.type_name()
       ));
     }
@@ -130,7 +130,7 @@ fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
     let bytes = ctx.heap().alloc_bytes(
       v.as_list()
         .iter()
-        .map(|f| f.as_number() as u8)
+        .map(|f| f.as_int() as u8)
         .collect::<Vec<_>>(),
     );
 
@@ -329,9 +329,9 @@ fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
         stdout.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
       } else if v.is_list() {
         let items = v.as_list();
-        let is_byte_list = !items.is_empty() && items.iter().all(|x| x.is_number());
+        let is_byte_list = !items.is_empty() && items.iter().all(|x| x.is_int());
         if is_byte_list {
-          let raw: Vec<u8> = items.iter().map(|x| x.as_number() as u8).collect();
+          let raw: Vec<u8> = items.iter().map(|x| x.as_int() as u8).collect();
           stdout.write_all(&raw).map_err(|e| e.to_string())?;
         } else {
           write!(stdout, "{}", v).map_err(|e| e.to_string())?;

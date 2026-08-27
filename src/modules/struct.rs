@@ -121,7 +121,7 @@ use num_traits::ToPrimitive;
 use crate::builtins::enforce::ArgType;
 use crate::modules::{BuiltinModuleDef, native};
 use crate::vm::object::{Heap, Obj, ZuriContext};
-use crate::vm::value::Value;
+use crate::vm::value::{SMI_MAX, SMI_MIN, Value};
 use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_type, enforce_arg_type_any_of, enforce_arg_type_opt};
 
@@ -435,20 +435,20 @@ fn write_int(out: &mut Vec<u8>, code: char, v: i128) {
   }
 }
 
-/// 2^53; the largest integer magnitude an f64 can hold exactly.
-const F64_SAFE_INT: i128 = 9_007_199_254_740_992;
-
+/// An unpacked integer format code should always come back as an
+/// actual integer -- a Smi when it fits, a bigint otherwise -- never
+/// silently demoted to a float just because it's still exact as one.
 fn int_to_value(v: i128, heap: &mut Heap) -> Value {
-  if v >= -F64_SAFE_INT && v <= F64_SAFE_INT {
-    Value::number(v as f64)
+  if v >= SMI_MIN as i128 && v < SMI_MAX as i128 {
+    Value::integer(v as i64)
   } else {
     heap.alloc_bigint(BigInt::from(v))
   }
 }
 
 fn uint_to_value(v: u128, heap: &mut Heap) -> Value {
-  if v <= F64_SAFE_INT as u128 {
-    Value::number(v as f64)
+  if v < SMI_MAX as u128 {
+    Value::integer(v as i64)
   } else {
     heap.alloc_bigint(BigInt::from(v))
   }
@@ -727,7 +727,7 @@ fn flatten_pack_args(args: &[Value]) -> Vec<Value> {
     if arg.is_list() {
       items.extend(arg.as_list());
     } else if arg.is_bytes() {
-      items.extend(arg.as_bytes().into_iter().map(|b| Value::number(b as f64)));
+      items.extend(arg.as_bytes().into_iter().map(|b| Value::integer(b as i64)));
     } else {
       items.push(arg);
     }
@@ -1017,12 +1017,12 @@ fn pack_from_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn pack_into_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
-  enforce_arg_type!(ctx, 2, ArgType::Number);
+  enforce_arg_type!(ctx, 2, ArgType::Int);
 
   let format = ctx.args[0].as_str().to_string();
   let buffer = ctx.args[1];
-  let offset = ctx.args[2].as_number();
-  if offset < 0.0 || offset.fract() != 0.0 {
+  let offset = ctx.args[2].as_int();
+  if offset < 0 {
     return Err("struct.pack_into(): offset must be a non-negative integer".to_string());
   }
   let offset = offset as usize;
@@ -1039,7 +1039,7 @@ fn pack_into_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     v[offset..end].copy_from_slice(&packed);
   });
 
-  Ok(Value::number(packed.len() as f64))
+  Ok(Value::integer(packed.len() as i64))
 }
 
 /// `struct.unpack(format, data: bytes|string, offset: ?number)` ->
@@ -1049,7 +1049,7 @@ fn pack_into_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn unpack_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
-  enforce_arg_type_opt!(ctx, 2, ArgType::Number);
+  enforce_arg_type_opt!(ctx, 2, ArgType::Int);
 
   let format = ctx.args[0].as_str().to_string();
   let data: Vec<u8> = if ctx.args[1].is_bytes() {
@@ -1057,7 +1057,7 @@ fn unpack_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   } else {
     ctx.args[1].as_str().as_bytes().to_vec()
   };
-  let offset = ctx.args.get(2).map(|v| v.as_number() as usize).unwrap_or(0);
+  let offset = ctx.args.get(2).map(|v| v.as_int() as usize).unwrap_or(0);
   if offset > data.len() {
     return Err(format!(
       "struct.unpack(): offset {} is beyond the data length {}",
@@ -1078,7 +1078,7 @@ fn calcsize_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let format = ctx.args[0].as_str().to_string();
   let groups = parse_format(&format)?;
   let size = format_size(&groups)?;
-  Ok(Value::number(size as f64))
+  Ok(Value::integer(size as i64))
 }
 
 /// `struct.iter_unpack(format, data: bytes|string)` -> `list[dict]`.

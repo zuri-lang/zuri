@@ -1,0 +1,14 @@
+A
+A
+int
+int
+5
+5
+'chr' expects a whole number, got 65.5
+'bin' expects a whole number, got 10.5
+'hex' expects a whole number, got 10.5
+'oct' expects a whole number, got 10.5
+1010
+a
+12
+120

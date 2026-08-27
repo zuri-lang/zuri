@@ -1,0 +1,66 @@
+/* Coverage for string.rs's Int/Float split: every offset, width, and
+ * match-position argument (index_of, count, lpad, rpad, match position
+ * offset, matches() offset, each's char index) is now strictly
+ * ArgType::Int -- a fractional value is rejected. Returned lengths,
+ * character codes, positions, and iteration indices box as genuine
+ * ints too.
+ */
+
+var s = 'hello world'
+
+echo s.length()
+echo typeof(s.length())
+
+echo 'h'.ord()
+echo typeof('h'.ord())
+
+echo s.index_of('world')
+echo typeof(s.index_of('world'))
+
+echo s.count('o')
+echo typeof(s.count('o'))
+
+echo s.lpad(15, '*')
+echo s.rpad(15, '*')
+
+var m = s.match('/wor(l)d/')
+echo m.get(0)
+echo typeof(m.get(0))
+
+var ms = s.matches('/(o)/')
+echo ms.get(0)
+echo typeof(ms.get(0))
+
+var out = s.replace_with('/o/', @(match, offset, whole) {
+  echo typeof(offset)
+  return '0'
+})
+echo out
+
+s.each(@(c, i) {
+  if i == 0 {
+    echo typeof(i)
+  }
+})
+
+for k, v in 'abc' {
+  echo '${typeof(k)} ${k} ${v}'
+}
+
+catch { s.lpad(1.5, '*') } as e1
+echo e1.message
+
+catch { s.rpad(1.5, '*') } as e2
+echo e2.message
+
+catch { s.index_of('x', 1.5) } as e3
+echo e3.message
+
+catch { s.match('/x/', 1.5) } as e4
+echo e4.message
+
+catch { s.matches('/x/', 1.5) } as e5
+echo e5.message
+
+/* Whole-valued floats still work: they're Smi-tagged automatically. */
+echo s.lpad(15.0, '*')

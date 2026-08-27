@@ -1,0 +1,27 @@
+/* Coverage for hash.rs's Int/Float split: hash.id() used to box its
+ * raw 64-bit hash as a float, which silently rounds for any hash
+ * past 2^53 and can make two genuinely different values collide.
+ * It should come back as a Smi when it fits, a bigint otherwise, and
+ * different values should keep producing different ids at scale.
+ */
+
+import hash
+
+echo typeof(hash.id(5))
+echo typeof(hash.id('hello'))
+echo typeof(hash.id([1, 2, 3]))
+echo hash.id(5) == hash.id(5)
+echo hash.id('same') == hash.id('same')
+echo hash.id('a') == hash.id('b')
+
+var ids = []
+for i in 1..2001 {
+  ids.append(hash.id('item-${i}'))
+}
+echo ids.length()
+
+var unique = {}
+for id in ids {
+  unique.set(id, true)
+}
+echo unique.length()

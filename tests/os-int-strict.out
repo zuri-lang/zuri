@@ -1,0 +1,7 @@
+int
+4
+int
+int
+0
+true
+chmod() expects parameter 'mode' (argument 2) to be an int, got float

@@ -1,0 +1,7 @@
+hello
+'read' expects argument 1 to be an int, got float
+'seek' expects argument 1 to be an int, got float
+1
+int
+2
+int

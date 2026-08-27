@@ -1,4 +1,4 @@
 9
 30
 index 5 out of bounds (length 3)
-index must be a number, got string
+index must be an int, got string

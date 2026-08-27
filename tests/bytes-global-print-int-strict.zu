@@ -1,0 +1,26 @@
+/* Coverage for natives.rs's Int/Float split: the global bytes()
+ * constructor's size argument and byte-list elements are now
+ * strictly ints, and print()'s "all-numeric list -> raw bytes" fast
+ * path only kicks in for an all-int list; a fractional element falls
+ * back to normal list display instead of silently truncating.
+ */
+
+var b1 = bytes(4)
+echo b1.length()
+echo typeof(b1.length())
+
+var b2 = bytes([1, 2, 3])
+echo b2
+
+catch { bytes(4.5) } as e1
+echo e1.message
+
+catch { bytes([1, 2.5, 3]) } as e2
+echo e2.message
+
+/* Whole-valued floats still work: they're Smi-tagged automatically. */
+echo bytes([1.0, 2.0, 3.0])
+
+print([72, 101, 108, 108, 111])
+echo ''
+print([72, 101.5, 108, 108, 111])

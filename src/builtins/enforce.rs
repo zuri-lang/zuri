@@ -31,6 +31,20 @@ use crate::vm::value::Value;
 #[derive(Clone, Copy)]
 pub enum ArgType {
   Number,
+  /// Specifically the Smi-tagged half of `Number`: a plain float that
+  /// happens to hold a whole value (e.g. one outside the Smi range)
+  /// does NOT satisfy this, unlike `Number`'s own historical tolerance
+  /// for "any numeric value that round-trips through an integer."
+  /// Reserved for parameters that are genuinely integer-only by
+  /// nature -- indices, counts, positions -- now that int and float
+  /// are real, distinct types rather than both just being `Number`.
+  Int,
+  /// `Int`'s mirror: specifically the plain-float half of `Number`. An
+  /// int does NOT satisfy this, even though its value is trivially
+  /// representable as one -- for a parameter that's conceptually
+  /// continuous (a rate, a fraction, a physical measurement) rather
+  /// than incidentally whole.
+  Float,
   Bool,
   String,
   Bytes,
@@ -65,6 +79,8 @@ impl ArgType {
   pub fn matches(self, v: Value) -> bool {
     match self {
       ArgType::Number => v.is_number(),
+      ArgType::Int => v.is_int(),
+      ArgType::Float => v.is_float(),
       ArgType::Bool => v.is_bool(),
       ArgType::String => v.is_string(),
       ArgType::Bytes => v.is_bytes(),
@@ -84,6 +100,8 @@ impl ArgType {
   pub fn label(self) -> &'static str {
     match self {
       ArgType::Number => "a number",
+      ArgType::Int => "an int",
+      ArgType::Float => "a float",
       ArgType::Bool => "a bool",
       ArgType::String => "a string",
       ArgType::Bytes => "bytes",

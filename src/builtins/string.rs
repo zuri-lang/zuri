@@ -113,20 +113,17 @@ fn optional_char(ctx: &ZuriContext, idx: usize, default: char) -> Result<char, S
 fn optional_offset(ctx: &ZuriContext, idx: usize) -> Result<usize, String> {
   match ctx.args.get(idx) {
     None => Ok(0),
-    Some(v) if v.is_number() => Ok(v.as_number().max(0.0) as usize),
-    Some(v) => Err(format!("offset must be a number, got {}", v.type_name())),
+    Some(v) if v.is_int() => Ok(v.as_int().max(0) as usize),
+    Some(v) => Err(format!("offset must be an int, got {}", v.type_name())),
   }
 }
 
 fn expect_width(ctx: &ZuriContext, idx: usize) -> Result<usize, String> {
   let v = ctx.args[idx];
-  if !v.is_number() {
-    return Err(format!(
-      "expected a number for width, got {}",
-      v.type_name()
-    ));
+  if !v.is_int() {
+    return Err(format!("expected an int for width, got {}", v.type_name()));
   }
-  Ok(v.as_number().max(0.0) as usize)
+  Ok(v.as_int().max(0) as usize)
 }
 
 /// Char-index (not byte-index) offset into `s`, matching how the rest
@@ -141,7 +138,7 @@ fn char_offset_to_byte(s: &str, char_offset: usize) -> usize {
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
 
-  Ok(Value::number(ctx.args[0].as_str().chars().count() as f64))
+  Ok(Value::integer(ctx.args[0].as_str().chars().count() as i64))
 }
 
 fn upper(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -240,7 +237,7 @@ fn ord(ctx: &mut ZuriContext) -> Result<Value, String> {
     ));
   }
 
-  Ok(Value::number(s.chars().nth(0).unwrap() as u32 as f64))
+  Ok(Value::integer(s.chars().nth(0).unwrap() as u32 as i64))
 }
 
 fn trim(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -335,22 +332,22 @@ fn split(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
   enforce_method_arg_type!(ctx, 1, ArgType::String);
-  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Int);
 
   let haystack: Vec<char> = ctx.args[0].as_str().chars().collect();
   let needle: Vec<char> = ctx.args[1].as_str().chars().collect();
   let start = optional_offset(ctx, 2)?;
 
   if needle.is_empty() || start + needle.len() > haystack.len() {
-    return Ok(Value::number(-1.0));
+    return Ok(Value::integer(-1));
   }
 
   for i in start..=haystack.len() - needle.len() {
     if haystack[i..i + needle.len()] == needle[..] {
-      return Ok(Value::number(i as f64));
+      return Ok(Value::integer(i as i64));
     }
   }
-  Ok(Value::number(-1.0))
+  Ok(Value::integer(-1))
 }
 
 fn starts_with(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -384,8 +381,8 @@ fn count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::String);
 
-  Ok(Value::number(
-    ctx.args[0].as_str().matches(ctx.args[1].as_str()).count() as f64,
+  Ok(Value::integer(
+    ctx.args[0].as_str().matches(ctx.args[1].as_str()).count() as i64,
   ))
 }
 
@@ -394,8 +391,8 @@ fn to_number(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let s = ctx.args[0].as_str();
   let base = if ctx.args.len() == 2 {
-    enforce_method_arg_type!(ctx, 1, ArgType::Number);
-    ctx.args[1].as_number() as u32
+    enforce_method_arg_type!(ctx, 1, ArgType::Int);
+    ctx.args[1].as_int() as u32
   } else {
     10
   };
@@ -429,7 +426,7 @@ fn to_bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn lpad(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
   enforce_method_arg_type_opt!(ctx, 2, ArgType::String);
 
   let s = ctx.args[0].as_str().to_string();
@@ -447,7 +444,7 @@ fn lpad(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn rpad(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
   enforce_method_arg_type_opt!(ctx, 2, ArgType::String);
 
   let s = ctx.args[0].as_str().to_string();
@@ -469,7 +466,7 @@ fn rpad(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn string_match(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
   enforce_method_arg_type!(ctx, 1, ArgType::String);
-  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Int);
 
   let s = ctx.args[0].as_str().to_string();
   let pattern_str = ctx.args[1].as_str().to_string();
@@ -484,7 +481,7 @@ fn string_match(ctx: &mut ZuriContext) -> Result<Value, String> {
           ctx
             .vm
             .heap_mut()
-            .alloc_dict(vec![(Value::number(0.0), matched)]),
+            .alloc_dict(vec![(Value::integer(0), matched)]),
         )
       },
       None => Ok(Value::bool(false)),
@@ -503,7 +500,7 @@ fn string_match(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn string_matches(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
   enforce_method_arg_type!(ctx, 1, ArgType::String);
-  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Int);
 
   let s = ctx.args[0].as_str().to_string();
   let pattern_str = ctx.args[1].as_str().to_string();
@@ -526,7 +523,7 @@ fn string_matches(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut pairs = Vec::with_capacity(num_groups);
   for (g, col) in columns.into_iter().enumerate() {
     let list_val = ctx.vm.heap_mut().alloc_list(col);
-    pairs.push((Value::number(g as f64), list_val));
+    pairs.push((Value::integer(g as i64), list_val));
   }
   Ok(ctx.vm.heap_mut().alloc_dict(pairs))
 }
@@ -596,7 +593,7 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
         None => Value::nil(),
       });
     }
-    call_args.push(Value::number(m.start() as f64));
+    call_args.push(Value::integer(m.start() as i64));
     call_args.push(ctx.vm.pinned(mark + 1));
 
     let callback = ctx.vm.pinned(mark);
@@ -631,7 +628,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
     let callback = ctx.vm.pinned(mark + 1);
     ctx
       .vm
-      .call_value(callback, &[char_val, Value::number(i as f64)])
+      .call_value(callback, &[char_val, Value::integer(i as i64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
   }
 
@@ -651,33 +648,33 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   if val.is_nil() {
-    return Ok(Value::number(0.0));
+    return Ok(Value::integer(0));
   }
 
-  if !val.is_number() {
+  if !val.is_int() {
     return Err(format!(
       "strings are numerically indexed, {} given",
       val.type_name()
     ));
   }
 
-  let index = val.as_number() as usize;
-  if index < obj.chars().count() - 1 {
-    return Ok(Value::number(index as f64 + 1.0));
+  let index = val.as_int() as usize;
+  if obj.chars().count() > 0 && index < obj.chars().count() - 1 {
+    return Ok(Value::integer(index as i64 + 1));
   }
 
   Ok(Value::nil())
 }
 
 fn _value(ctx: &mut ZuriContext) -> Result<Value, String> {
-  if !ctx.args[1].is_number() {
+  if !ctx.args[1].is_int() {
     return Err("strings are numerically indexed".to_string());
   }
 
-  let index = ctx.args[1].as_number();
+  let index = ctx.args[1].as_int();
   let obj = ctx.args[0].as_str();
 
-  if index > -1.0 && index < obj.chars().count() as f64 {
+  if index >= 0 && (index as usize) < obj.chars().count() {
     let v = obj.chars().nth(index as usize).unwrap().to_string();
     return Ok(ctx.vm.heap_mut().alloc_string(v));
   }

@@ -72,28 +72,28 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 
   // dirent `d_type` constants (POSIX values; -1 where genuinely
   // unsupported by the platform, per spec).
-  members.push(("DT_UNKNOWN", Value::number(0.0)));
-  members.push(("DT_FIFO", Value::number(1.0)));
-  members.push(("DT_CHR", Value::number(2.0)));
-  members.push(("DT_DIR", Value::number(4.0)));
-  members.push(("DT_BLK", Value::number(6.0)));
-  members.push(("DT_REG", Value::number(8.0)));
-  members.push(("DT_LNK", Value::number(10.0)));
-  members.push(("DT_SOCK", Value::number(12.0)));
+  members.push(("DT_UNKNOWN", Value::integer(0)));
+  members.push(("DT_FIFO", Value::integer(1)));
+  members.push(("DT_CHR", Value::integer(2)));
+  members.push(("DT_DIR", Value::integer(4)));
+  members.push(("DT_BLK", Value::integer(6)));
+  members.push(("DT_REG", Value::integer(8)));
+  members.push(("DT_LNK", Value::integer(10)));
+  members.push(("DT_SOCK", Value::integer(12)));
   #[cfg(any(
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
     target_os = "macos"
   ))]
-  members.push(("DT_WHT", Value::number(14.0)));
+  members.push(("DT_WHT", Value::integer(14)));
   #[cfg(not(any(
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
     target_os = "macos"
   )))]
-  members.push(("DT_WHT", Value::number(-1.0)));
+  members.push(("DT_WHT", Value::integer(-1)));
 
   members
 }
@@ -119,7 +119,7 @@ fn exec(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   match output {
     Ok(out) => {
-      let code = out.status.code().unwrap_or(-1) as f64;
+      let code = out.status.code().unwrap_or(-1) as i64;
       let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
       if !out.stderr.is_empty() {
         if !text.is_empty() {
@@ -128,7 +128,7 @@ fn exec(ctx: &mut ZuriContext) -> Result<Value, String> {
         text.push_str(&String::from_utf8_lossy(&out.stderr));
       }
       let out_val = ctx.vm.heap_mut().alloc_string(text);
-      let items = vec![Value::number(code), out_val];
+      let items = vec![Value::integer(code), out_val];
       Ok(ctx.vm.heap_mut().alloc_list(items))
     },
     Err(e) => Err(format!("failed to execute command: {}", e)),
@@ -251,11 +251,11 @@ fn setenv(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn createdir(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 3);
   enforce_arg_type!(ctx, 0, ArgType::String);
-  enforce_arg_type!(ctx, 1, ArgType::Number);
+  enforce_arg_type!(ctx, 1, ArgType::Int);
   enforce_arg_type!(ctx, 2, ArgType::Bool);
 
   let path = ctx.args[0].as_str();
-  let permission = ctx.args[1].as_number() as u32;
+  let permission = ctx.args[1].as_int() as u32;
   let recursive = ctx.args[2].as_bool();
 
   // Per spec: "if the directory already exists, it returns false".
@@ -340,10 +340,10 @@ fn collect_dir_entries_inner(
 fn chmod_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 2);
   enforce_arg_type!(ctx, 0, ArgType::String);
-  enforce_arg_type!(ctx, 1, ArgType::Number);
+  enforce_arg_type!(ctx, 1, ArgType::Int);
 
   let path = ctx.args[0].as_str().to_string();
-  let mode = ctx.args[1].as_number() as u32;
+  let mode = ctx.args[1].as_int() as u32;
 
   #[cfg(unix)]
   {
@@ -433,8 +433,8 @@ fn exists_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn exit_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_type!(ctx, 0, ArgType::Number);
-  let code = ctx.args[0].as_number() as i32;
+  enforce_arg_type!(ctx, 0, ArgType::Int);
+  let code = ctx.args[0].as_int() as i32;
   std::process::exit(code);
 }
 

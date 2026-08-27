@@ -1,0 +1,8 @@
+int
+int
+500
+5
+int
+(68 65 6c 6c 6f)
+'set_ttl' expects argument 1 to be an int, got float
+'read' expects argument 1 to be an int, got float

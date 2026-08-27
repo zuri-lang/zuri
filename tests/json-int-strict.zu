@@ -1,0 +1,15 @@
+/* Coverage for json.rs's Int/Float split: encode()/dump()'s
+ * max_depth argument is a genuine int now, and a decoded JSON number
+ * still comes back as int or float depending on the number itself,
+ * not always float.
+ */
+
+import json
+
+echo json.encode({a: 1, b: 2.5})
+echo json.decode('{"a": 1, "b": 2.5}')
+echo typeof(json.decode('5'))
+echo typeof(json.decode('5.5'))
+
+catch { json.encode({a: 1}, false, 4.5) } as e1
+echo e1.message

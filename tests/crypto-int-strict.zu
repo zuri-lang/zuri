@@ -1,0 +1,22 @@
+/* Coverage for crypto.rs's Int/Float split: random_bytes()'s count,
+ * argon2's cost/thread/hash_len options, and hkdf()'s output length
+ * are all genuine ints now, not floats standing in for them.
+ */
+
+import crypto
+
+var b = crypto.random_bytes(16)
+echo b.length()
+
+catch { crypto.random_bytes(16.5) } as e1
+echo e1.message
+
+var salt = crypto.random_bytes(16)
+var hashed = crypto.argon2.hash('password', salt, {t_cost: 2, m_cost: 1024, threads: 1, hash_len: 16})
+echo typeof(hashed)
+
+var key = crypto.hkdf(b, salt, 'info'.to_bytes(), 32)
+echo key.length()
+
+catch { crypto.hkdf(b, salt, 'info'.to_bytes(), 32.5) } as e3
+echo e3.message

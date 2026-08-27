@@ -1,0 +1,22 @@
+/* Coverage for os.rs's Int/Float split: dirent type constants,
+ * os.exec()'s exit code, and chmod's mode are all genuine ints now,
+ * not floats standing in for them.
+ */
+
+import os
+
+echo typeof(os.DT_DIR)
+echo os.DT_DIR
+echo typeof(os.DT_REG)
+
+var result = os.exec('echo hi')
+echo typeof(result.get(0))
+echo result.get(0)
+
+os.create_dir('tmp/os_int_check_dir', 0c755, true)
+os.chmod('tmp/os_int_check_dir', 0c700)
+echo os.is_dir('tmp/os_int_check_dir')
+os.remove_dir('tmp/os_int_check_dir')
+
+catch { os.chmod('tmp', 0.5) } as e1
+echo e1.message

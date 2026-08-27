@@ -129,9 +129,9 @@ fn open(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// length given; `gets()` never opens or closes automatically.
 fn do_read(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 0, 1);
-  enforce_method_arg_type_opt!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type_opt!(ctx, 1, ArgType::Int);
 
-  let length = ctx.args.get(1).map(|v| v.as_number() as usize);
+  let length = ctx.args.get(1).map(|v| v.as_int() as usize);
   let binary = ctx.args[0].as_file_cell().borrow().binary;
 
   let mut is_stream = false;
@@ -382,8 +382,8 @@ fn copy(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// object's own stream is currently closed.
 fn truncate(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 0, 1);
-  enforce_method_arg_type_opt!(ctx, 1, ArgType::Number);
-  let length = ctx.args.get(1).map(|v| v.as_number() as u64).unwrap_or(0);
+  enforce_method_arg_type_opt!(ctx, 1, ArgType::Int);
+  let length = ctx.args.get(1).map(|v| v.as_int() as u64).unwrap_or(0);
 
   let p = with_file_mut(ctx.args[0], |fh| fh.path.clone());
   let file = std::fs::OpenOptions::new()
@@ -396,11 +396,11 @@ fn truncate(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn chmod(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
   #[cfg(unix)]
   {
     use std::os::unix::fs::PermissionsExt;
-    let mode = ctx.args[1].as_number() as u32;
+    let mode = ctx.args[1].as_int() as u32;
     let p = with_file_mut(ctx.args[0], |fh| fh.path.clone());
     let perms = std::fs::Permissions::from_mode(mode);
     std::fs::set_permissions(&p, perms).map_err(|e| e.to_string())?;
@@ -416,20 +416,20 @@ fn chmod(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// per spec.
 fn set_times(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
-  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
+  enforce_method_arg_type!(ctx, 2, ArgType::Int);
 
-  let atime = ctx.args[1].as_number();
-  let mtime = ctx.args[2].as_number();
+  let atime = ctx.args[1].as_int();
+  let mtime = ctx.args[2].as_int();
   let p = with_file_mut(ctx.args[0], |fh| fh.path.clone());
 
   let mut times = std::fs::FileTimes::new();
-  if atime >= 0.0 {
+  if atime >= 0 {
     times = times.set_accessed(
       std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(atime as u64),
     );
   }
-  if mtime >= 0.0 {
+  if mtime >= 0 {
     times = times.set_modified(
       std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(mtime as u64),
     );
@@ -448,11 +448,11 @@ fn set_times(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// `io` module for `io.SEEK_*`.
 fn seek(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
-  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
+  enforce_method_arg_type!(ctx, 2, ArgType::Int);
 
-  let position = ctx.args[1].as_number() as i64;
-  let kind = ctx.args[2].as_number() as i64;
+  let position = ctx.args[1].as_int();
+  let kind = ctx.args[2].as_int();
 
   let from = match kind {
     0 => std::io::SeekFrom::Start(position.max(0) as u64),

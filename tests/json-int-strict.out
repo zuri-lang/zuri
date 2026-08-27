@@ -1,0 +1,5 @@
+{"a":1,"b":2.5}
+{a: 1, b: 2.5}
+int
+float
+encode() expects argument 3 to be an int, got float

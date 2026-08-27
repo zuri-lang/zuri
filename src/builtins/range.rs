@@ -165,30 +165,30 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   if val.is_nil() {
-    return Ok(Value::number(0.0));
+    return Ok(Value::integer(0));
   }
 
-  if !val.is_number() {
+  if !val.is_int() {
     return Err(format!(
       "ranges are numerically indexed, {} given",
       val.type_name()
     ));
   }
 
-  let index = val.as_number() as i64;
+  let index = val.as_int();
   if index < count - 1 {
-    return Ok(Value::number(index as f64 + 1.0));
+    return Ok(Value::integer(index + 1));
   }
 
   Ok(Value::nil())
 }
 
 fn _value(ctx: &mut ZuriContext) -> Result<Value, String> {
-  if !ctx.args[1].is_number() {
+  if !ctx.args[1].is_int() {
     return Err("ranges are numerically indexed".to_string());
   }
 
-  let index = ctx.args[1].as_number();
+  let index = ctx.args[1].as_int() as f64;
   let (lower, upper) = ctx.args[0].as_range();
   let step = ctx.args[0].range_step();
   let step = if step > 0.0 { step } else { 1.0 };

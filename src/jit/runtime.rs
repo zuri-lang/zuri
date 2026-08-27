@@ -2522,8 +2522,15 @@ pub unsafe extern "C" fn zuri_jit_make_promoted(
 
 macro_rules! num_intrinsic {
   ($name:ident, $f:ident) => {
+    // These are reached through `NumberIntrinsic::Call`'s raw-bits
+    // path (`call_helper_raw(helper, &[vm, recv, ...])`), which hands
+    // over the receiver's RAW BOXED `Value` bits, not a pre-decoded
+    // float the way `call_f64_intrinsic`'s callers (`Mod`/`Pow`) do.
+    // A Smi's bits read as a plain `f64::from_bits` are QNAN+TAG_INT+
+    // payload, not a valid double -- `Value::from_bits(..).as_number()`
+    // is what actually decodes either encoding correctly.
     pub unsafe extern "C" fn $name(_vm_ptr: *mut VM, bits: u64) -> u64 {
-      Value::number(f64::from_bits(bits).$f()).to_bits()
+      Value::number(Value::from_bits(bits).as_number().$f()).to_bits()
     }
   };
 }
@@ -2531,7 +2538,12 @@ macro_rules! num_intrinsic {
 macro_rules! num_intrinsic2 {
   ($name:ident, $f:ident) => {
     pub unsafe extern "C" fn $name(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
-      Value::number(f64::from_bits(a).$f(f64::from_bits(b))).to_bits()
+      Value::number(
+        Value::from_bits(a)
+          .as_number()
+          .$f(Value::from_bits(b).as_number()),
+      )
+      .to_bits()
     }
   };
 }

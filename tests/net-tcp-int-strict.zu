@@ -1,0 +1,37 @@
+/* Coverage for net_tcp.rs's Int/Float split: TTL, read timeout,
+ * write()'s byte count, and read()'s length argument are all genuine
+ * ints now, not floats standing in for them.
+ */
+
+import net
+
+var server = net.TcpStream()
+server.bind('127.0.0.1:0')
+var addr = server.local_address()
+
+var client = net.TcpStream()
+client.connect(addr)
+var accepted = server.accept()
+
+client.set_ttl(64)
+echo typeof(client.get_ttl())
+client.set_read_timeout(500)
+echo typeof(client.get_read_timeout())
+echo client.get_read_timeout()
+
+var written = client.write('hello')
+echo written
+echo typeof(written)
+
+var received = accepted.read(5)
+echo received
+
+catch { client.set_ttl(64.5) } as e1
+echo e1.message
+
+catch { client.read(5.5) } as e2
+echo e2.message
+
+client.close()
+accepted.close()
+server.close()

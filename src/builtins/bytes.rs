@@ -72,15 +72,15 @@ where
 /// `bytes[i] = x`.
 fn expect_byte(ctx: &ZuriContext, idx: usize) -> Result<u8, String> {
   let v = ctx.args[idx];
-  if !v.is_number() {
+  if !v.is_int() {
     return Err(format!(
-      "'{}' expects a number, got {}",
+      "'{}' expects an int, got {}",
       ctx.name,
       v.type_name()
     ));
   }
-  let n = v.as_number();
-  if n.fract() != 0.0 || !(0.0..=255.0).contains(&n) {
+  let n = v.as_int();
+  if !(0..=255).contains(&n) {
     return Err(format!(
       "'{}' expects an integer in 0..=255, got {}",
       ctx.name, n
@@ -91,7 +91,7 @@ fn expect_byte(ctx: &ZuriContext, idx: usize) -> Result<u8, String> {
 
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  Ok(Value::number(ctx.args[0].bytes_len() as f64))
+  Ok(Value::integer(ctx.args[0].bytes_len() as i64))
 }
 
 fn append(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -120,22 +120,22 @@ fn extend(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
-  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Int);
 
   let target = expect_byte(ctx, 1)?;
   let start = match ctx.args.get(2) {
-    Some(v) => v.as_number().max(0.0) as usize,
+    Some(v) => v.as_int().max(0) as usize,
     None => 0,
   };
 
   let bytes = ctx.args[0].as_bytes();
   if start >= bytes.len() {
-    return Ok(Value::number(-1.0));
+    return Ok(Value::integer(-1));
   }
   match bytes[start..].iter().position(|&b| b == target) {
-    Some(pos) => Ok(Value::number((start + pos) as f64)),
-    None => Ok(Value::number(-1.0)),
+    Some(pos) => Ok(Value::integer((start + pos) as i64)),
+    None => Ok(Value::integer(-1)),
   }
 }
 
@@ -144,26 +144,23 @@ fn pop(ctx: &mut ZuriContext) -> Result<Value, String> {
   let popped = with_bytes_mut(ctx.args[0], |v| v.pop());
   Ok(
     popped
-      .map(|b| Value::number(b as f64))
+      .map(|b| Value::integer(b as i64))
       .unwrap_or(Value::nil()),
   )
 }
 
 fn remove(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
-  let idx = ctx.args[1].as_number();
+  let idx = ctx.args[1].as_int();
   let len = ctx.args[0].bytes_len();
-  if idx < 0.0 || idx as usize >= len {
-    return Err(format!(
-      "bytes index {} out of range at remove()",
-      idx as i64
-    ));
+  if idx < 0 || idx as usize >= len {
+    return Err(format!("bytes index {} out of range at remove()", idx));
   }
   let idx = idx as usize;
   let removed = with_bytes_mut(ctx.args[0], |v| v.remove(idx));
-  Ok(Value::number(removed as f64))
+  Ok(Value::integer(removed as i64))
 }
 
 /// Reverses the byte stream IN PLACE; mirrors the phrasing/behavior
@@ -180,7 +177,7 @@ fn first(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(
     ctx.args[0]
       .bytes_get(0)
-      .map(|b| Value::number(b as f64))
+      .map(|b| Value::integer(b as i64))
       .unwrap_or(Value::nil()),
   )
 }
@@ -194,22 +191,22 @@ fn last(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(
     ctx.args[0]
       .bytes_get(len - 1)
-      .map(|b| Value::number(b as f64))
+      .map(|b| Value::integer(b as i64))
       .unwrap_or(Value::nil()),
   )
 }
 
 fn get(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
-  let idx = ctx.args[1].as_number();
+  let idx = ctx.args[1].as_int();
   let len = ctx.args[0].bytes_len();
-  if idx < 0.0 || idx as usize >= len {
-    return Err(format!("bytes index {} out of range at get()", idx as i64));
+  if idx < 0 || idx as usize >= len {
+    return Err(format!("bytes index {} out of range at get()", idx));
   }
-  Ok(Value::number(
-    ctx.args[0].bytes_get(idx as usize).unwrap() as f64
+  Ok(Value::integer(
+    ctx.args[0].bytes_get(idx as usize).unwrap() as i64
   ))
 }
 
@@ -318,7 +315,7 @@ fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {
   let items: Vec<Value> = ctx.args[0]
     .as_bytes()
     .into_iter()
-    .map(|b| Value::number(b as f64))
+    .map(|b| Value::integer(b as i64))
     .collect();
   Ok(ctx.vm.heap_mut().alloc_list(items))
 }
@@ -346,7 +343,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
       .vm
       .call_value(
         callback,
-        &[Value::number(b as f64), Value::number(i as f64)],
+        &[Value::integer(b as i64), Value::integer(i as i64)],
       )
       .map_err(|e| ctx.vm.describe_error(e))?;
   }
@@ -367,29 +364,29 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   if val.is_nil() {
-    return Ok(Value::number(0.0));
+    return Ok(Value::integer(0));
   }
-  if !val.is_number() {
+  if !val.is_int() {
     return Err(format!(
       "bytes are numerically indexed, {} given",
       val.type_name()
     ));
   }
-  let index = val.as_number() as usize;
+  let index = val.as_int() as usize;
   if len > 0 && index < len - 1 {
-    return Ok(Value::number(index as f64 + 1.0));
+    return Ok(Value::integer(index as i64 + 1));
   }
   Ok(Value::nil())
 }
 
 fn _value(ctx: &mut ZuriContext) -> Result<Value, String> {
-  if !ctx.args[1].is_number() {
+  if !ctx.args[1].is_int() {
     return Err("bytes are numerically indexed".to_string());
   }
-  let index = ctx.args[1].as_number();
+  let index = ctx.args[1].as_int();
   let obj = ctx.args[0];
-  if index > -1.0 && index < obj.bytes_len() as f64 {
-    return Ok(Value::number(obj.bytes_get(index as usize).unwrap() as f64));
+  if index >= 0 && (index as usize) < obj.bytes_len() {
+    return Ok(Value::integer(obj.bytes_get(index as usize).unwrap() as i64));
   }
   Ok(Value::nil())
 }

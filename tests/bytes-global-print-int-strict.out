@@ -1,0 +1,8 @@
+4
+int
+(01 02 03)
+bytes() expects argument 1 to be an int or a list, got float
+bytes() expects a list of ints, got list
+(01 02 03)
+Hello
+[72, 101.5, 108, 108, 111]

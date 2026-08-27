@@ -12,7 +12,7 @@ use crate::{
   },
   enforce_arg_count, enforce_arg_range, enforce_arg_type, enforce_arg_type_any_of,
   modules::{
-    BuiltinModuleDef, compress_util::DeflateDecoderError, native, optional_bool, optional_number,
+    BuiltinModuleDef, compress_util::DeflateDecoderError, native, optional_bool, optional_int,
   },
   vm::{object::ZuriContext, value::Value, vm::VM},
 };
@@ -402,11 +402,11 @@ fn compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   let default_config = DeflateConfig::default();
 
   let config = DeflateConfig {
-    level: optional_number(ctx, 1, default_config.level as f64)? as i32,
-    strategy: Strategy::try_from(optional_number(ctx, 2, Strategy::Default as i32 as f64)? as i32)
+    level: optional_int(ctx, 1, default_config.level as i64)? as i32,
+    strategy: Strategy::try_from(optional_int(ctx, 2, Strategy::Default as i32 as i64)? as i32)
       .map_err(|_| "Invalid strategy".to_string())?,
-    window_bits: optional_number(ctx, 3, default_config.window_bits as f64)? as i32,
-    mem_level: optional_number(ctx, 4, default_config.mem_level as f64)? as i32,
+    window_bits: optional_int(ctx, 3, default_config.window_bits as i64)? as i32,
+    mem_level: optional_int(ctx, 4, default_config.mem_level as i64)? as i32,
     method: default_config.method,
   };
 
@@ -426,7 +426,7 @@ fn decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(ctx.args);
   let default_config: InflateConfig = InflateConfig::default();
-  let window_bits = optional_number(ctx, 1, default_config.window_bits as f64)? as i32;
+  let window_bits = optional_int(ctx, 1, default_config.window_bits as i64)? as i32;
 
   let decompressed_data =
     decompress_data(&data, window_bits).map_err(|x| parse_zlib_inflate_error(x))?;
@@ -508,8 +508,8 @@ fn gzip_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 1, 3);
 
   let zlib_header = optional_bool(ctx, 0, false)?;
-  let level = optional_number(ctx, 1, 1.0)? as i32;
-  let window_bits = optional_number(ctx, 2, 15.0)? as u8;
+  let level = optional_int(ctx, 1, 1)? as i32;
+  let window_bits = optional_int(ctx, 2, 15)? as u8;
 
   let encoder = DeflateEncoder::new(level, zlib_header, window_bits);
   Ok(ctx.heap().alloc_ptr(GZIP_ENCODER_NAME, encoder))
@@ -549,10 +549,10 @@ fn gzip_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(&ctx.args[1..]);
 
-  Ok(Value::number(
+  Ok(Value::integer(
     encoder
       .write(data.as_slice())
-      .map_err(parse_zlib_deflate_error)? as f64,
+      .map_err(parse_zlib_deflate_error)? as i64,
   ))
 }
 
@@ -575,7 +575,7 @@ fn gzip_encoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let encoder = ptr.downcast_mut::<DeflateEncoder>().unwrap();
 
-  Ok(Value::number(encoder.available() as f64))
+  Ok(Value::integer(encoder.available() as i64))
 }
 
 fn gzip_encoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -614,7 +614,7 @@ fn gzip_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = ctx.args[1].as_bytes();
   let zlib_header = optional_bool(ctx, 0, false)?;
-  let window_bits = optional_number(ctx, 2, 15.0)? as u8;
+  let window_bits = optional_int(ctx, 2, 15)? as u8;
 
   let decoder = DeflateDecoder::new(data, zlib_header, window_bits);
   Ok(ctx.heap().alloc_ptr(GZIP_DECODER_NAME, decoder))
@@ -636,12 +636,12 @@ fn gzip_decoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn gzip_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let decoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = Vec::new();
   let bytes_read = decoder
@@ -658,12 +658,12 @@ fn gzip_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn gzip_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(GZIP_DECODER_NAME));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let decoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   decoder
@@ -711,7 +711,7 @@ fn gzip_decoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let encoder = ptr.downcast_mut::<DeflateDecoder>().unwrap();
 
-  Ok(Value::number(encoder.available() as f64))
+  Ok(Value::integer(encoder.available() as i64))
 }
 
 fn gzip_decoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -751,9 +751,9 @@ fn adler32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
 
   let data = get_data(ctx.args);
-  let checksum = adler32(optional_number(ctx, 1, 0.0)? as u32, &data);
+  let checksum = adler32(optional_int(ctx, 1, 0)? as u32, &data);
 
-  Ok(Value::number(checksum as f64))
+  Ok(Value::integer(checksum as i64))
 }
 
 fn crc32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -761,9 +761,9 @@ fn crc32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
 
   let data = get_data(ctx.args);
-  let checksum = crc32(optional_number(ctx, 1, 0.0)? as u32, &data);
+  let checksum = crc32(optional_int(ctx, 1, 0)? as u32, &data);
 
-  Ok(Value::number(checksum as f64))
+  Ok(Value::integer(checksum as i64))
 }
 
 // ZSTD
@@ -776,7 +776,7 @@ fn zstd_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
 
   let data = get_data(ctx.args);
-  let level = optional_number(ctx, 1, 1.0)? as i32;
+  let level = optional_int(ctx, 1, 1)? as i32;
 
   let compressed_data = zrip::compress(&data, level).map_err(parse_zrip_compress_error)?;
 
@@ -797,8 +797,8 @@ fn zstd_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn zstd_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 0, 3);
 
-  let level = optional_number(ctx, 0, 1.0)? as i32;
-  let window_log = optional_number(ctx, 1, 10.0)? as u32;
+  let level = optional_int(ctx, 0, 1)? as i32;
+  let window_log = optional_int(ctx, 1, 10)? as u32;
   let ldm = optional_bool(ctx, 2, false)?;
 
   let option = zrip::Options::default().window_log(window_log).ldm(ldm);
@@ -846,8 +846,8 @@ fn zstd_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(&ctx.args[1..]);
 
-  Ok(Value::number(
-    encoder.write(data.as_slice()).map_err(|x| x.to_string())? as f64,
+  Ok(Value::integer(
+    encoder.write(data.as_slice()).map_err(|x| x.to_string())? as i64,
   ))
 }
 
@@ -911,14 +911,14 @@ fn zstd_decoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn zstd_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_DECODER_NAME));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let decoder = ptr
     .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
     .unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   let bytes_read = decoder
@@ -935,14 +935,14 @@ fn zstd_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn zstd_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(ZSTD_DECODER_NAME));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let decoder = ptr
     .downcast_mut::<zrip::FrameDecoder<Cursor<Vec<u8>>>>()
     .unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   decoder
@@ -1050,8 +1050,8 @@ fn lz4_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(&ctx.args[1..]);
 
-  Ok(Value::number(
-    encoder.write(data.as_slice()).map_err(|x| x.to_string())? as f64,
+  Ok(Value::integer(
+    encoder.write(data.as_slice()).map_err(|x| x.to_string())? as i64,
   ))
 }
 
@@ -1101,14 +1101,14 @@ fn lz4_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn lz4_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_DECODER_NAME));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let decoder = ptr
     .downcast_mut::<lz4_flex::frame::FrameDecoder<Cursor<Vec<u8>>>>()
     .unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   let bytes_read = decoder
@@ -1125,14 +1125,14 @@ fn lz4_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn lz4_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(LZ4_DECODER_NAME));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let decoder = ptr
     .downcast_mut::<lz4_flex::frame::FrameDecoder<Cursor<Vec<u8>>>>()
     .unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   decoder

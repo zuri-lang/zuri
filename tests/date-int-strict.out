@@ -1,0 +1,12 @@
+int
+int
+int
+int
+int
+int
+int
+int
+int
+int
+int
+mktime() expects argument 1 to be an int, got float

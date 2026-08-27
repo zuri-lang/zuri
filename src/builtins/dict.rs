@@ -93,7 +93,7 @@ fn deep_clone(ctx: &mut ZuriContext, v: Value) -> Value {
 
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  Ok(Value::number(ctx.args[0].dict_len() as f64))
+  Ok(Value::integer(ctx.args[0].dict_len() as i64))
 }
 
 fn add(ctx: &mut ZuriContext) -> Result<Value, String> {

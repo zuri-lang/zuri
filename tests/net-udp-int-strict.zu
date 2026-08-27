@@ -1,0 +1,33 @@
+/* Coverage for net_udp.rs's Int/Float split: TTL, send()'s byte
+ * count, and receive()'s length argument are all genuine ints now,
+ * not floats standing in for them.
+ */
+
+import net
+
+var server = net.UdpSocket()
+server.bind('127.0.0.1:0')
+var addr = server.local_address()
+
+var client = net.UdpSocket()
+client.bind('127.0.0.1:0')
+client.connect(addr)
+
+client.set_ttl(64)
+echo typeof(client.get_ttl())
+
+var sent = client.send('hi')
+echo sent
+echo typeof(sent)
+
+var received = server.receive(2)
+echo received
+
+catch { client.set_ttl(64.5) } as e1
+echo e1.message
+
+catch { server.receive(2.5) } as e2
+echo e2.message
+
+client.close()
+server.close()

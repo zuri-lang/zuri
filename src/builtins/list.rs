@@ -81,7 +81,7 @@ where
 
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  Ok(Value::number(ctx.args[0].list_len() as f64))
+  Ok(Value::integer(ctx.args[0].list_len() as i64))
 }
 
 fn append(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -111,7 +111,7 @@ fn count(ctx: &mut ZuriContext) -> Result<Value, String> {
     .iter()
     .filter(|v| v.equals(&target))
     .count();
-  Ok(Value::number(n as f64))
+  Ok(Value::integer(n as i64))
 }
 
 fn extend(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -124,36 +124,36 @@ fn extend(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
-  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Int);
 
   let target = ctx.args[1];
   let start = match ctx.args.get(2) {
-    Some(v) => v.as_number().max(0.0) as usize,
+    Some(v) => v.as_int().max(0) as usize,
     None => 0,
   };
 
   let items = ctx.args[0].as_list();
   if start >= items.len() {
-    return Ok(Value::number(-1.0));
+    return Ok(Value::integer(-1));
   }
 
   for (i, item) in items.iter().enumerate().skip(start) {
     if item.equals(&target) {
-      return Ok(Value::number(i as f64));
+      return Ok(Value::integer(i as i64));
     }
   }
-  Ok(Value::number(-1.0))
+  Ok(Value::integer(-1))
 }
 
 fn insert(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);
-  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type!(ctx, 2, ArgType::Int);
 
   let item = ctx.args[1];
-  let index = ctx.args[2].as_number();
-  if index < 0.0 {
+  let index = ctx.args[2].as_int();
+  if index < 0 {
     return Err(format!(
-      "'{}' expects argument 2 to be a non-negative number, got {}",
+      "'{}' expects argument 2 to be a non-negative int, got {}",
       ctx.name, index
     ));
   }
@@ -185,10 +185,10 @@ fn pop(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// list of whatever happened to be available).
 fn shift(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 0, 1);
-  enforce_method_arg_type_opt!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type_opt!(ctx, 1, ArgType::Int);
 
   let count = match ctx.args.get(1) {
-    Some(v) => v.as_number().max(0.0) as usize,
+    Some(v) => v.as_int().max(0) as usize,
     None => 1,
   };
 
@@ -209,15 +209,12 @@ fn shift(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn remove_at(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
-  let idx = ctx.args[1].as_number();
+  let idx = ctx.args[1].as_int();
   let len = ctx.args[0].list_len();
-  if idx < 0.0 || idx as usize >= len {
-    return Err(format!(
-      "list index {} out of range at remove_at()",
-      idx as i64
-    ));
+  if idx < 0 || idx as usize >= len {
+    return Err(format!("list index {} out of range at remove_at()", idx));
   }
   let idx = idx as usize;
   Ok(with_list_mut(ctx.args[0], |v| v.remove(idx)))
@@ -334,14 +331,14 @@ fn contains(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn delete(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
-  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
+  enforce_method_arg_type!(ctx, 2, ArgType::Int);
 
-  let lower = ctx.args[1].as_number();
-  let upper = ctx.args[2].as_number();
+  let lower = ctx.args[1].as_int();
+  let upper = ctx.args[2].as_int();
   let len = ctx.args[0].list_len();
 
-  if lower < 0.0 || upper < 0.0 || lower > upper || lower as usize >= len || upper as usize >= len {
+  if lower < 0 || upper < 0 || lower > upper || lower as usize >= len || upper as usize >= len {
     return Err(format!(
       "'{}' invalid range {}..{} for a list of length {}",
       ctx.name, lower, upper, len
@@ -351,7 +348,7 @@ fn delete(ctx: &mut ZuriContext) -> Result<Value, String> {
   let lo = lower as usize;
   let hi = upper as usize;
   let removed = with_list_mut(ctx.args[0], |v| v.drain(lo..=hi).count());
-  Ok(Value::number(removed as f64))
+  Ok(Value::integer(removed as i64))
 }
 
 fn first(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -379,11 +376,11 @@ fn is_empty(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// an 11-element list, `take(-5)`, yields 6 elements).
 fn take(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let items = ctx.args[0].as_list();
   let len = items.len() as i64;
-  let n = ctx.args[1].as_number() as i64;
+  let n = ctx.args[1].as_int();
 
   let take_count = if n < 0 { (len + n).max(0) } else { n.min(len) };
 
@@ -393,15 +390,15 @@ fn take(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn get(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 1, 2);
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
-  let idx = ctx.args[1].as_number();
+  let idx = ctx.args[1].as_int();
   let len = ctx.args[0].list_len();
-  if idx < 0.0 || idx as usize >= len {
+  if idx < 0 || idx as usize >= len {
     return if ctx.args.len() == 3 {
       Ok(ctx.args[2])
     } else {
-      Err(format!("list index {} out of range at get()", idx as i64))
+      Err(format!("list index {} out of range at get()", idx))
     };
   }
   Ok(ctx.args[0].list_get(idx as usize).unwrap())
@@ -495,7 +492,7 @@ fn to_dict(ctx: &mut ZuriContext) -> Result<Value, String> {
   let pairs: Vec<(Value, Value)> = items
     .into_iter()
     .enumerate()
-    .map(|(i, v)| (Value::number(i as f64), v))
+    .map(|(i, v)| (Value::integer(i as i64), v))
     .collect();
   Ok(ctx.vm.heap_mut().alloc_dict(pairs))
 }
@@ -533,7 +530,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
     let item = ctx.vm.pinned(mark + 2 + i);
     ctx
       .vm
-      .call_value(callback, &[item, Value::number(i as f64)])
+      .call_value(callback, &[item, Value::integer(i as i64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
   }
 
@@ -554,7 +551,7 @@ fn map_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     let item = ctx.vm.pinned(mark + 2 + i);
     let mapped = ctx
       .vm
-      .call_value(callback, &[item, Value::number(i as f64)])
+      .call_value(callback, &[item, Value::integer(i as i64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
     result.push(mapped);
   }
@@ -574,7 +571,7 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
     let item = ctx.vm.pinned(mark + 2 + i);
     let keep = ctx
       .vm
-      .call_value(callback, &[item, Value::number(i as f64)])
+      .call_value(callback, &[item, Value::integer(i as i64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
     if !keep.is_falsey() {
       // Re-read again: `call_value` above may have relocated it since
@@ -597,7 +594,7 @@ fn some_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     let item = ctx.vm.pinned(mark + 2 + i);
     let result = ctx
       .vm
-      .call_value(callback, &[item, Value::number(i as f64)])
+      .call_value(callback, &[item, Value::integer(i as i64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
     if !result.is_falsey() {
       ctx.vm.unpin(mark);
@@ -619,7 +616,7 @@ fn every(ctx: &mut ZuriContext) -> Result<Value, String> {
     let item = ctx.vm.pinned(mark + 2 + i);
     let result = ctx
       .vm
-      .call_value(callback, &[item, Value::number(i as f64)])
+      .call_value(callback, &[item, Value::integer(i as i64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
     if result.is_falsey() {
       ctx.vm.unpin(mark);
@@ -659,7 +656,7 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
     let list_val = ctx.vm.pinned(mark);
     acc = ctx
       .vm
-      .call_value(callback, &[acc, item, Value::number(i as f64), list_val])
+      .call_value(callback, &[acc, item, Value::integer(i as i64), list_val])
       .map_err(|e| ctx.vm.describe_error(e))?;
   }
 
@@ -678,28 +675,28 @@ fn _key(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   if val.is_nil() {
-    return Ok(Value::number(0.0));
+    return Ok(Value::integer(0));
   }
-  if !val.is_number() {
+  if !val.is_int() {
     return Err(format!(
       "lists are numerically indexed, {} given",
       val.type_name()
     ));
   }
-  let index = val.as_number() as usize;
+  let index = val.as_int() as usize;
   if len > 0 && index < len - 1 {
-    return Ok(Value::number(index as f64 + 1.0));
+    return Ok(Value::integer(index as i64 + 1));
   }
   Ok(Value::nil())
 }
 
 fn _value(ctx: &mut ZuriContext) -> Result<Value, String> {
-  if !ctx.args[1].is_number() {
+  if !ctx.args[1].is_int() {
     return Err("lists are numerically indexed".to_string());
   }
-  let index = ctx.args[1].as_number();
+  let index = ctx.args[1].as_int();
   let obj = ctx.args[0];
-  if index > -1.0 && index < obj.list_len() as f64 {
+  if index >= 0 && (index as usize) < obj.list_len() {
     return Ok(obj.list_get(index as usize).unwrap());
   }
   Ok(Value::nil())

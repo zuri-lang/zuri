@@ -1,0 +1,27 @@
+/* Coverage for dict.rs's and range.rs's Int/Float split: dict length
+ * and a range's own iteration KEY are genuine ints now; the range's
+ * own VALUES still legitimately track whatever type its bounds/step
+ * are, since a range can be float-bounded on purpose.
+ */
+
+var d = {a: 1, b: 2, c: 3}
+echo d.length()
+echo typeof(d.length())
+
+for k, v in (10..15) {
+  echo '${typeof(k)} ${k} ${v}'
+}
+
+echo (10..15).lower()
+echo typeof((10..15).lower())
+echo (1.5..5.5).lower()
+echo typeof((1.5..5.5).lower())
+
+for k, v in (1.5..5.5) {
+  echo '${typeof(k)} ${k} ${v}'
+}
+
+var r = (1..10).step(2)
+echo r.get_step()
+echo typeof(r.get_step())
+r.loop(@(i) { echo i })

@@ -7,7 +7,7 @@ use crate::builtins::enforce::{
   enforce_method_arg_type_any_of,
 };
 use crate::enforce_arg_count;
-use crate::modules::{BuiltinModuleDef, native, optional_number};
+use crate::modules::{BuiltinModuleDef, native, optional_int};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -354,9 +354,9 @@ fn tcp_connect(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   let address = ctx.args[1].as_str();
-  let timeout = optional_number(ctx, 2, 0.0)?;
+  let timeout = optional_int(ctx, 2, 0)?;
 
-  let stream = if timeout == 0.0 {
+  let stream = if timeout == 0 {
     TcpStream::connect(address)
   } else {
     let addr: SocketAddr = address.parse::<SocketAddr>().map_err(|e| e.to_string())?;
@@ -400,11 +400,11 @@ fn tcp_shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
 
-  let how_type = optional_number(ctx, 1, 0.0)?;
+  let how_type = optional_int(ctx, 1, 0)?;
   let how = match how_type {
-    0.0 => Ok(Shutdown::Both),
-    1.0 => Ok(Shutdown::Read),
-    2.0 => Ok(Shutdown::Write),
+    0 => Ok(Shutdown::Both),
+    1 => Ok(Shutdown::Read),
+    2 => Ok(Shutdown::Write),
     _ => Err("Unknown shutdown kind"),
   }?;
 
@@ -416,13 +416,13 @@ fn tcp_shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn tcp_set_read_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
-  let timeout = ctx.args[1].as_number();
+  let timeout = ctx.args[1].as_int();
 
-  let duration = if timeout > 0.0 {
+  let duration = if timeout > 0 {
     Some(Duration::from_millis(timeout as u64))
   } else {
     None
@@ -441,22 +441,22 @@ fn tcp_get_read_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
 
   if let Some(timeout) = tcp.read_timeout()? {
-    Ok(Value::number(timeout.as_millis() as f64))
+    Ok(Value::integer(timeout.as_millis() as i64))
   } else {
-    Ok(Value::number(-1.0))
+    Ok(Value::integer(-1))
   }
 }
 
 fn tcp_set_write_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
-  let timeout = ctx.args[1].as_number();
+  let timeout = ctx.args[1].as_int();
 
-  let duration = if timeout > -1.0 {
+  let duration = if timeout > -1 {
     Some(Duration::from_millis(timeout as u64))
   } else {
     None
@@ -475,9 +475,9 @@ fn tcp_get_write_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
 
   if let Some(timeout) = tcp.write_timeout()? {
-    Ok(Value::number(timeout.as_millis() as f64))
+    Ok(Value::integer(timeout.as_millis() as i64))
   } else {
-    Ok(Value::number(-1.0))
+    Ok(Value::integer(-1))
   }
 }
 
@@ -507,12 +507,12 @@ fn tcp_get_nodelay(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn tcp_set_ttl(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
 
-  tcp.set_ttl(ctx.args[1].as_number() as u32)?;
+  tcp.set_ttl(ctx.args[1].as_int() as u32)?;
 
   Ok(Value::nil())
 }
@@ -524,7 +524,7 @@ fn tcp_get_ttl(ctx: &mut ZuriContext) -> Result<Value, String> {
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
 
-  Ok(Value::number(tcp.ttl().unwrap_or(0) as f64))
+  Ok(Value::integer(tcp.ttl().unwrap_or(0) as i64))
 }
 
 fn tcp_peek(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -533,7 +533,7 @@ fn tcp_peek(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let tcp = ptr.downcast_ref::<ZuriTcp>().unwrap();
-  let length = optional_number(ctx, 1, 1.0)? as usize;
+  let length = optional_int(ctx, 1, 1)? as usize;
 
   let mut buffer = vec![0u8; length];
   let len = tcp.peek(&mut buffer)?;
@@ -575,12 +575,12 @@ fn tcp_set_non_blocking(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn tcp_read(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let tcp = ptr.downcast_mut::<ZuriTcp>().unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   let bytes_read = tcp.read(buffer.as_mut_slice())?;
@@ -595,12 +595,12 @@ fn tcp_read(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn tcp_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let tcp = ptr.downcast_mut::<ZuriTcp>().unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   tcp.read_exact(buffer.as_mut_slice())?;
@@ -644,7 +644,7 @@ fn tcp_write(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(&ctx.args[1..]);
 
-  Ok(Value::number(tcp.write(data.as_slice())? as f64))
+  Ok(Value::integer(tcp.write(data.as_slice())? as i64))
 }
 
 fn tcp_write_all(ctx: &mut ZuriContext) -> Result<Value, String> {

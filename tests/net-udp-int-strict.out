@@ -1,0 +1,6 @@
+int
+2
+int
+(68 69)
+'set_ttl' expects argument 1 to be an int, got float
+'receive' expects argument 1 to be an int, got float

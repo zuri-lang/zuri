@@ -1,0 +1,5 @@
+16
+random_bytes() expects argument 1 to be an int, got float
+string
+32
+hkdf() expects argument 4 to be an int, got float

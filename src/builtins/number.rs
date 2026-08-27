@@ -77,29 +77,44 @@ fn abs(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(ctx.args[0].as_number().abs()))
 }
 
+/// Character codes and bit patterns are integer-domain concepts; a
+/// fractional receiver has no sensible codepoint or bit pattern, so
+/// `chr`/`bin`/`hex`/`oct` all reject one the same way `factorial()`
+/// already does above -- whole-valued floats are still fine, only the
+/// fractional part is the problem.
+fn expect_whole(ctx: &ZuriContext) -> Result<f64, String> {
+  let n = ctx.args[0].as_number();
+  if n.fract() != 0.0 {
+    return Err(format!("'{}' expects a whole number, got {}", ctx.name, n));
+  }
+  Ok(n)
+}
+
 fn chr(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let c = char::from_u32(ctx.args[0].as_number() as u32)
-    .unwrap_or('\0')
-    .to_string();
+  let n = expect_whole(ctx)?;
+  let c = char::from_u32(n as u32).unwrap_or('\0').to_string();
   Ok(ctx.heap().alloc_string(c))
 }
 
 fn bin(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let c = format!("{:b}", ctx.args[0].as_number() as u64);
+  let n = expect_whole(ctx)?;
+  let c = format!("{:b}", n as u64);
   Ok(ctx.heap().alloc_string(c))
 }
 
 fn hex(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let c = format!("{:x}", ctx.args[0].as_number() as u64);
+  let n = expect_whole(ctx)?;
+  let c = format!("{:x}", n as u64);
   Ok(ctx.heap().alloc_string(c))
 }
 
 fn oct(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let c = format!("{:o}", ctx.args[0].as_number() as u64);
+  let n = expect_whole(ctx)?;
+  let c = format!("{:o}", n as u64);
   Ok(ctx.heap().alloc_string(c))
 }
 

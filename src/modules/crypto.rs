@@ -168,10 +168,10 @@ fn make_keypair_dict(ctx: &mut ZuriContext, private_pem: String, public_pem: Str
 
 fn random_bytes_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_type!(ctx, 0, ArgType::Number);
+  enforce_arg_type!(ctx, 0, ArgType::Int);
 
-  let n = ctx.args[0].as_number();
-  if n.fract() != 0.0 || n < 1.0 || n > 65536.0 {
+  let n = ctx.args[0].as_int();
+  if !(1..=65536).contains(&n) {
     return Err("random_bytes(): n must be an integer between 1 and 65536".to_string());
   }
 
@@ -491,9 +491,9 @@ fn rsa_generate_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::{RsaPrivateKey, RsaPublicKey};
 
   enforce_arg_count!(ctx, 1);
-  enforce_arg_type!(ctx, 0, ArgType::Number);
+  enforce_arg_type!(ctx, 0, ArgType::Int);
 
-  let bits = ctx.args[0].as_number() as i64;
+  let bits = ctx.args[0].as_int();
   if bits != 2048 && bits != 4096 {
     return Err("rsa_generate(): bits must be 2048 or 4096".to_string());
   }
@@ -906,14 +906,14 @@ fn argon2_hash_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
         ));
       }
       for (k, v) in opts.as_dict() {
-        if !k.is_string() || !v.is_number() {
+        if !k.is_string() || !v.is_int() {
           continue;
         }
         match k.as_str() {
-          "t_cost" => t_cost = v.as_number() as u32,
-          "m_cost" => m_cost = v.as_number() as u32,
-          "threads" => threads = v.as_number() as u32,
-          "hash_len" => hash_len = v.as_number() as usize,
+          "t_cost" => t_cost = v.as_int() as u32,
+          "m_cost" => m_cost = v.as_int() as u32,
+          "threads" => threads = v.as_int() as u32,
+          "hash_len" => hash_len = v.as_int() as usize,
           _ => {},
         }
       }
@@ -963,14 +963,14 @@ fn hkdf_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 0, ArgType::Bytes);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
   enforce_arg_type!(ctx, 2, ArgType::Bytes);
-  enforce_arg_type!(ctx, 3, ArgType::Number);
+  enforce_arg_type!(ctx, 3, ArgType::Int);
 
   let ikm = ctx.args[0].as_bytes();
   let salt = ctx.args[1].as_bytes();
   let info = ctx.args[2].as_bytes();
-  let length = ctx.args[3].as_number();
+  let length = ctx.args[3].as_int();
 
-  if length.fract() != 0.0 || length < 1.0 || length > 8160.0 {
+  if !(1..=8160).contains(&length) {
     return Err("hkdf(): length must be an integer between 1 and 8160".to_string());
   }
 

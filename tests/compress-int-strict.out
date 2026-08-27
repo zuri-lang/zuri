@@ -1,0 +1,6 @@
+int
+int
+907060870
+(68 65 6c 6c 6f 20 77 6f 72 6c 64)
+compress() expects argument 2 to be an int, got float
+crc32() expects argument 2 to be an int, got float

@@ -88,13 +88,13 @@ fn optional_bool(ctx: &ZuriContext, idx: usize, default: bool) -> Result<bool, S
   }
 }
 
-fn optional_number(ctx: &ZuriContext, idx: usize, default: f64) -> Result<f64, String> {
+fn optional_int(ctx: &ZuriContext, idx: usize, default: i64) -> Result<i64, String> {
   match ctx.args.get(idx) {
     None => Ok(default),
     Some(v) if v.is_nil() => Ok(default),
-    Some(v) if v.is_number() => Ok(v.as_number()),
+    Some(v) if v.is_int() => Ok(v.as_int()),
     Some(v) => Err(format!(
-      "{}() expects argument {} to be a number, got {}",
+      "{}() expects argument {} to be an int, got {}",
       ctx.name,
       idx + 1,
       v.type_name()

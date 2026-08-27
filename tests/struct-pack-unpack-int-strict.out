@@ -1,0 +1,15 @@
+1000
+int
+1125899906842624n
+bigint
+9007199254740993n
+bigint
+true
+18446744073709551615n
+bigint
+16
+int
+8
+int
+pack_into() expects argument 3 to be an int, got float
+unpack() expects argument 3 to be an int, got float

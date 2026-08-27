@@ -169,18 +169,18 @@ fn broken_down_to_dict(ctx: &mut ZuriContext, bd: BrokenDown, microseconds: i64)
   let zone_val = ctx.heap().alloc_string(bd.zone);
 
   ctx.heap().alloc_dict(vec![
-    (k_year, Value::number(bd.year as f64)),
-    (k_month, Value::number(bd.month as f64)),
-    (k_day, Value::number(bd.day as f64)),
-    (k_week_day, Value::number(bd.week_day as f64)),
-    (k_year_day, Value::number(bd.year_day as f64)),
-    (k_hour, Value::number(bd.hour as f64)),
-    (k_minute, Value::number(bd.minute as f64)),
-    (k_seconds, Value::number(bd.seconds as f64)),
-    (k_microseconds, Value::number(microseconds as f64)),
+    (k_year, Value::integer(bd.year)),
+    (k_month, Value::integer(bd.month as i64)),
+    (k_day, Value::integer(bd.day as i64)),
+    (k_week_day, Value::integer(bd.week_day)),
+    (k_year_day, Value::integer(bd.year_day)),
+    (k_hour, Value::integer(bd.hour as i64)),
+    (k_minute, Value::integer(bd.minute as i64)),
+    (k_seconds, Value::integer(bd.seconds as i64)),
+    (k_microseconds, Value::integer(microseconds)),
     (k_is_dst, Value::bool(bd.is_dst)),
     (k_zone, zone_val),
-    (k_gmt_offset, Value::number(bd.gmt_offset as f64)),
+    (k_gmt_offset, Value::integer(bd.gmt_offset)),
   ])
 }
 
@@ -264,19 +264,19 @@ fn localtime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn mktime_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 7);
-  enforce_arg_type!(ctx, 0, ArgType::Number);
-  enforce_arg_type!(ctx, 1, ArgType::Number);
-  enforce_arg_type!(ctx, 2, ArgType::Number);
-  enforce_arg_type!(ctx, 3, ArgType::Number);
-  enforce_arg_type!(ctx, 4, ArgType::Number);
-  enforce_arg_type!(ctx, 5, ArgType::Number);
+  enforce_arg_type!(ctx, 0, ArgType::Int);
+  enforce_arg_type!(ctx, 1, ArgType::Int);
+  enforce_arg_type!(ctx, 2, ArgType::Int);
+  enforce_arg_type!(ctx, 3, ArgType::Int);
+  enforce_arg_type!(ctx, 4, ArgType::Int);
+  enforce_arg_type!(ctx, 5, ArgType::Int);
 
-  let year = ctx.args[0].as_number() as i64;
-  let month = ctx.args[1].as_number() as i64;
-  let day = ctx.args[2].as_number() as i64;
-  let hour = ctx.args[3].as_number() as i64;
-  let minute = ctx.args[4].as_number() as i64;
-  let seconds = ctx.args[5].as_number() as i64;
+  let year = ctx.args[0].as_int();
+  let month = ctx.args[1].as_int();
+  let day = ctx.args[2].as_int();
+  let hour = ctx.args[3].as_int();
+  let minute = ctx.args[4].as_int();
+  let seconds = ctx.args[5].as_int();
 
   let is_dst = match ctx.args.get(6) {
     None => None,
@@ -322,7 +322,7 @@ fn mktime_impl(
   if t == -1 {
     return Err("mktime(): the given date/time cannot be represented".to_string());
   }
-  Ok(Value::number(t as f64))
+  Ok(Value::integer(t as i64))
 }
 
 #[cfg(not(unix))]
@@ -341,5 +341,5 @@ fn mktime_impl(
   // back to there.
   let days = days_from_civil(year, month as u32, day as u32);
   let secs = days * 86400 + hour * 3600 + minute * 60 + seconds;
-  Ok(Value::number(secs as f64))
+  Ok(Value::integer(secs))
 }

@@ -367,7 +367,7 @@ def dir_exists(path: string) {
  * @param number code
  * @returns
  */
-def exit(code: number) {
+def exit(code: int) {
   _os.exit(code)
 }
 

@@ -1,0 +1,28 @@
+/* Coverage for number.rs's Int/Float split: chr()/bin()/hex()/oct()
+ * are integer-domain operations that now reject a fractional
+ * receiver instead of silently truncating it. int() and factorial()
+ * already worked correctly through Value::number's own auto-select
+ * and stay that way (factorial in particular must still accept a
+ * whole-valued float larger than a Smi can hold).
+ */
+
+echo 65.chr()
+echo 65.0.chr()
+echo typeof(5.int())
+echo typeof(5.5.int())
+echo 5.int()
+echo 5.5.int()
+
+catch { 65.5.chr() } as e1
+echo e1.message
+catch { 10.5.bin() } as e2
+echo e2.message
+catch { 10.5.hex() } as e3
+echo e3.message
+catch { 10.5.oct() } as e4
+echo e4.message
+
+echo 10.bin()
+echo 10.hex()
+echo 10.oct()
+echo 5.0.factorial()

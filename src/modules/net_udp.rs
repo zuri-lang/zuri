@@ -7,7 +7,7 @@ use crate::builtins::enforce::{
   enforce_method_arg_type_any_of,
 };
 use crate::enforce_arg_count;
-use crate::modules::{BuiltinModuleDef, native, optional_number};
+use crate::modules::{BuiltinModuleDef, native, optional_int};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -478,13 +478,13 @@ fn udp_local_address(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn udp_set_read_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
-  let timeout = ctx.args[1].as_number();
+  let timeout = ctx.args[1].as_int();
 
-  let duration = if timeout > -1.0 {
+  let duration = if timeout > -1 {
     Some(Duration::from_millis(timeout as u64))
   } else {
     None
@@ -503,22 +503,22 @@ fn udp_get_read_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
 
   if let Some(timeout) = udp.read_timeout()? {
-    Ok(Value::number(timeout.as_millis() as f64))
+    Ok(Value::integer(timeout.as_millis() as i64))
   } else {
-    Ok(Value::number(-1.0))
+    Ok(Value::integer(-1))
   }
 }
 
 fn udp_set_write_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
-  let timeout = ctx.args[1].as_number();
+  let timeout = ctx.args[1].as_int();
 
-  let duration = if timeout > -1.0 {
+  let duration = if timeout > -1 {
     Some(Duration::from_millis(timeout as u64))
   } else {
     None
@@ -537,21 +537,21 @@ fn udp_get_write_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
 
   if let Some(timeout) = udp.write_timeout()? {
-    Ok(Value::number(timeout.as_millis() as f64))
+    Ok(Value::integer(timeout.as_millis() as i64))
   } else {
-    Ok(Value::number(-1.0))
+    Ok(Value::integer(-1))
   }
 }
 
 fn udp_set_ttl(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
 
-  udp.set_ttl(ctx.args[1].as_number() as u32)?;
+  udp.set_ttl(ctx.args[1].as_int() as u32)?;
 
   Ok(Value::nil())
 }
@@ -563,18 +563,18 @@ fn udp_get_ttl(ctx: &mut ZuriContext) -> Result<Value, String> {
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
 
-  Ok(Value::number(udp.ttl().unwrap_or(0) as f64))
+  Ok(Value::integer(udp.ttl().unwrap_or(0) as i64))
 }
 
 fn udp_set_multicast_ttl_v4(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
 
-  udp.set_multicast_ttl_v4(ctx.args[1].as_number() as u32)?;
+  udp.set_multicast_ttl_v4(ctx.args[1].as_int() as u32)?;
 
   Ok(Value::nil())
 }
@@ -586,7 +586,7 @@ fn udp_get_multicast_ttl_v4(ctx: &mut ZuriContext) -> Result<Value, String> {
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
 
-  Ok(Value::number(udp.multicast_ttl_v4().unwrap_or(0) as f64))
+  Ok(Value::integer(udp.multicast_ttl_v4().unwrap_or(0) as i64))
 }
 
 fn udp_set_broadcast(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -664,7 +664,7 @@ fn udp_peek(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
-  let length = optional_number(ctx, 1, 1.0)? as usize;
+  let length = optional_int(ctx, 1, 1)? as usize;
 
   let mut buffer = vec![0u8; length];
   let len = udp.peek(&mut buffer)?;
@@ -682,7 +682,7 @@ fn udp_peek_from(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let ptr = ctx.args[0].as_ptr_cell().borrow();
   let udp = ptr.downcast_ref::<ZuriUdp>().unwrap();
-  let length = optional_number(ctx, 1, 1.0)? as usize;
+  let length = optional_int(ctx, 1, 1)? as usize;
 
   let mut buffer = vec![0u8; length];
   let (_, addr) = udp.peek_from(&mut buffer)?;
@@ -731,12 +731,12 @@ fn udp_set_non_blocking(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn udp_receive(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let udp = ptr.downcast_mut::<ZuriUdp>().unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   let bytes_read = udp.receive(buffer.as_mut_slice())?;
@@ -751,12 +751,12 @@ fn udp_receive(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn udp_receive_from(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
-  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type!(ctx, 1, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let udp = ptr.downcast_mut::<ZuriUdp>().unwrap();
 
-  let length = ctx.args[1].as_number() as usize;
+  let length = ctx.args[1].as_int() as usize;
 
   let mut buffer = vec![0u8; length];
   udp.receive_from(buffer.as_mut_slice())?;
@@ -774,7 +774,7 @@ fn udp_send(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(&ctx.args[1..]);
 
-  Ok(Value::number(udp.send(data.as_slice())? as f64))
+  Ok(Value::integer(udp.send(data.as_slice())? as i64))
 }
 
 fn udp_send_to(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -788,8 +788,8 @@ fn udp_send_to(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let data = get_data(&ctx.args[1..]);
 
-  Ok(Value::number(
-    udp.send_to(data.as_slice(), ctx.args[2].as_str())? as f64,
+  Ok(Value::integer(
+    udp.send_to(data.as_slice(), ctx.args[2].as_str())? as i64,
   ))
 }
 
@@ -858,7 +858,7 @@ fn udp_join_multicast_v6(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
   enforce_method_arg_type!(ctx, 1, ArgType::String);
-  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type!(ctx, 2, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let udp = ptr.downcast_mut::<ZuriUdp>().unwrap();
@@ -868,7 +868,7 @@ fn udp_join_multicast_v6(ctx: &mut ZuriContext) -> Result<Value, String> {
     .parse::<Ipv6Addr>()
     .map_err(|e| e.to_string())?;
 
-  udp.join_multicast_v6(&addr, ctx.args[2].as_number() as u32)?;
+  udp.join_multicast_v6(&addr, ctx.args[2].as_int() as u32)?;
 
   Ok(Value::nil())
 }
@@ -877,7 +877,7 @@ fn udp_leave_multicast_v6(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(UDP_STREAM));
   enforce_method_arg_type!(ctx, 1, ArgType::String);
-  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+  enforce_method_arg_type!(ctx, 2, ArgType::Int);
 
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let udp = ptr.downcast_mut::<ZuriUdp>().unwrap();
@@ -887,7 +887,7 @@ fn udp_leave_multicast_v6(ctx: &mut ZuriContext) -> Result<Value, String> {
     .parse::<Ipv6Addr>()
     .map_err(|e| e.to_string())?;
 
-  udp.leave_multicast_v6(&addr, ctx.args[2].as_number() as u32)?;
+  udp.leave_multicast_v6(&addr, ctx.args[2].as_int() as u32)?;
 
   Ok(Value::nil())
 }

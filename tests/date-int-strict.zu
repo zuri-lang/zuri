@@ -1,0 +1,24 @@
+/* Coverage for date.rs's Int/Float split: every broken-down calendar
+ * field, mktime()'s inputs, and its returned epoch timestamp are all
+ * genuine ints now, not floats standing in for them.
+ */
+
+import date
+
+var d = date.gmtime()
+echo typeof(d.year)
+echo typeof(d.month)
+echo typeof(d.day)
+echo typeof(d.hour)
+echo typeof(d.minute)
+echo typeof(d.seconds)
+echo typeof(d.microseconds)
+echo typeof(d.week_day)
+echo typeof(d.year_day)
+echo typeof(d.gmt_offset)
+
+var t = date.mktime(2022, 3, 5, 17, 30, 55, false)
+echo typeof(t)
+
+catch { date.mktime(2022.5, 3, 5, 17, 30, 55, false) } as e1
+echo e1.message

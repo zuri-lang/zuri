@@ -1,0 +1,27 @@
+11
+int
+104
+int
+6
+int
+2
+int
+****hello world
+hello world****
+world
+string
+[o, o]
+list
+int
+int
+hell0 w0rld
+int
+int 0 a
+int 1 b
+int 2 c
+'lpad' expects argument 1 to be an int, got float
+'rpad' expects argument 1 to be an int, got float
+'index_of' expects argument 2 to be an int, got float
+'match' expects argument 2 to be an int, got float
+'matches' expects argument 2 to be an int, got float
+****hello world

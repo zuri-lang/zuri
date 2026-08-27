@@ -1,0 +1,45 @@
+/* Coverage for bytes.rs's Int/Float split: every byte value and
+ * index/position argument (append, index_of, remove, get) is now
+ * strictly ArgType::Int -- a fractional or whole-but-float value is
+ * rejected. Returned byte values, indices, and counts box as genuine
+ * ints too.
+ */
+
+var b = bytes([10, 20, 30, 40, 50])
+
+echo b.length()
+echo typeof(b.length())
+
+echo b.get(2)
+echo typeof(b.get(2))
+echo b.index_of(30)
+
+b.append(99)
+echo b
+
+echo b.pop()
+echo b.first()
+echo b.last()
+echo b.remove(0)
+echo b
+echo b.to_list()
+
+b.each(@(byte, i) { echo '${i}: ${byte} (${typeof(byte)}, ${typeof(i)})' })
+
+catch { b.get(1.5) } as e1
+echo e1.message
+
+catch { b.append(2.5) } as e2
+echo e2.message
+
+catch { b.append(300) } as e3
+echo e3.message
+
+catch { b.remove(1.5) } as e4
+echo e4.message
+
+catch { b.index_of(1.5) } as e5
+echo e5.message
+
+/* Whole-valued floats still work: they're Smi-tagged automatically. */
+echo b.get(1.0)

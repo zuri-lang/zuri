@@ -1,0 +1,54 @@
+/* Coverage for struct.rs's Int/Float split: an unpacked integer
+ * format code always comes back as a genuine integer -- a Smi when
+ * it fits, a bigint otherwise -- never silently demoted to a float
+ * just because it's still exact as one. pack_into/unpack offsets are
+ * strictly ArgType::Int too.
+ */
+
+import struct
+
+/* A value that fits comfortably inside the 48-bit Smi range should
+ * unpack as a genuine int. */
+var small = struct.pack('q', 1000)
+var small_dict = struct.unpack('q', small)
+echo small_dict.get('1')
+echo typeof(small_dict.get('1'))
+
+/* A value past the Smi range but still exactly representable as a
+ * float (well under 2^53) used to come back tagged as a float; it
+ * should now come back as a bigint instead, since it's still exactly
+ * an integer. */
+var mid = struct.pack('q', 1125899906842624)
+var mid_dict = struct.unpack('q', mid)
+echo mid_dict.get('1')
+echo typeof(mid_dict.get('1'))
+
+/* A value that isn't even exactly representable as a float (past
+ * 2^53) needs a real bigint literal going in to survive the round
+ * trip at all; confirms unpack preserves every bit rather than
+ * quietly settling for "close enough". */
+var huge = struct.pack('q', 9007199254740993n)
+var huge_dict = struct.unpack('q', huge)
+echo huge_dict.get('1')
+echo typeof(huge_dict.get('1'))
+echo huge_dict.get('1') == 9007199254740993n
+
+/* Unsigned 64-bit max exercises uint_to_value the same way. */
+var umax = struct.pack('Q', 18446744073709551615n)
+var umax_dict = struct.unpack('Q', umax)
+echo umax_dict.get('1')
+echo typeof(umax_dict.get('1'))
+
+echo struct.calcsize('qQ')
+echo typeof(struct.calcsize('qQ'))
+
+var buf = bytes([0, 0, 0, 0, 0, 0, 0, 0])
+var written = struct.pack_into('q', buf, 0, 42)
+echo written
+echo typeof(written)
+
+catch { struct.pack_into('q', buf, 1.5, 42) } as e1
+echo e1.message
+
+catch { struct.unpack('q', small, 1.5) } as e2
+echo e2.message

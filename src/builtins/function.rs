@@ -50,7 +50,7 @@ fn arity(ctx: &mut ZuriContext) -> Result<Value, String> {
     _ => 0,
   };
 
-  Ok(Value::number(r as f64))
+  Ok(Value::integer(r as i64))
 }
 
 fn is_variadic(ctx: &mut ZuriContext) -> Result<Value, String> {

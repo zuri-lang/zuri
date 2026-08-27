@@ -19,11 +19,12 @@
 //! `{string|bytes}` return type and the `as_bytes` flag's semantics.
 
 use digest::Digest;
+use num_bigint::BigInt;
 
 use crate::builtins::enforce::ArgType;
 use crate::modules::{BuiltinModuleDef, native};
 use crate::vm::object::{DictKey, ZuriContext};
-use crate::vm::value::Value;
+use crate::vm::value::{SMI_MAX, Value};
 use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_type};
 
@@ -200,7 +201,18 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let mut hasher = rustc_hash::FxHasher::default();
   DictKey(v).hash(&mut hasher);
-  Ok(Value::number(hasher.finish() as f64))
+  let h = hasher.finish();
+
+  // A raw u64 hash spans the full 64-bit space, so most results don't
+  // fit a Smi and shouldn't be silently rounded to the nearest float
+  // either -- that would let two genuinely different hashes collide
+  // once truncated, breaking the "iff" this function's doc comment
+  // promises. Bigint keeps every bit intact for the common large case.
+  if h < SMI_MAX as u64 {
+    Ok(Value::integer(h as i64))
+  } else {
+    Ok(ctx.heap().alloc_bigint(BigInt::from(h)))
+  }
 }
 
 /// `_hash.hash(algorithm, data)` -> raw digest `bytes`. See

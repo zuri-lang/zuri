@@ -1,0 +1,21 @@
+/* Coverage for compress.rs's Int/Float split: checksum results and
+ * the compression level/window-bits/seed arguments are all genuine
+ * ints now, not floats standing in for them.
+ */
+
+import compress.checksum
+import compress.zlib
+
+echo typeof(checksum.crc32('hello'))
+echo typeof(checksum.adler32('hello'))
+echo checksum.crc32('hello')
+
+var packed = zlib.compress('hello world', 6, nil, 15, 8)
+var back = zlib.decompress(packed, 15)
+echo back
+
+catch { zlib.compress('hello', 6.5, nil, 15, 8) } as e1
+echo e1.message
+
+catch { checksum.crc32('hello', 1.5) } as e2
+echo e2.message

@@ -83,9 +83,9 @@ fn optional_max_depth(ctx: &ZuriContext, idx: usize) -> Result<usize, String> {
   match ctx.args.get(idx) {
     None => Ok(DEFAULT_MAX_DEPTH as usize),
     Some(v) if v.is_nil() => Ok(DEFAULT_MAX_DEPTH as usize),
-    Some(v) if v.is_number() => {
-      let n = v.as_number();
-      if n.fract() != 0.0 || n < 0.0 {
+    Some(v) if v.is_int() => {
+      let n = v.as_int();
+      if n < 0 {
         Err(format!(
           "{}() expects argument {} (max_depth) to be a non-negative integer, got {}",
           ctx.name,
@@ -97,7 +97,7 @@ fn optional_max_depth(ctx: &ZuriContext, idx: usize) -> Result<usize, String> {
       }
     },
     Some(v) => Err(format!(
-      "{}() expects argument {} to be a number, got {}",
+      "{}() expects argument {} to be an int, got {}",
       ctx.name,
       idx + 1,
       v.type_name()
@@ -608,7 +608,7 @@ fn dump_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_range!(ctx, 2, 4);
   enforce_arg_type!(ctx, 1, ArgType::String);
   enforce_arg_type_opt!(ctx, 2, ArgType::Bool);
-  enforce_arg_type_opt!(ctx, 3, ArgType::Number);
+  enforce_arg_type_opt!(ctx, 3, ArgType::Int);
 
   let value = ctx.args[0];
   let path = ctx.args[1].as_str().to_string();

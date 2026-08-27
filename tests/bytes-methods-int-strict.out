@@ -1,0 +1,22 @@
+5
+int
+30
+int
+2
+(0a 14 1e 28 32 63)
+99
+10
+50
+10
+(14 1e 28 32)
+[20, 30, 40, 50]
+0: 20 (int, int)
+1: 30 (int, int)
+2: 40 (int, int)
+3: 50 (int, int)
+'get' expects argument 1 to be an int, got float
+'append' expects an int, got float
+'append' expects an integer in 0..=255, got 300
+'remove' expects argument 1 to be an int, got float
+'index_of' expects argument 1 to be an int, got float
+30

@@ -1,0 +1,50 @@
+/* Coverage for the tagged-integer (Smi) representation added to
+ * `Value`: whole numbers in range now box as a distinct "int" tag
+ * instead of always being a plain float, and the language surface
+ * (typeof/is_int/is_float, arithmetic, equality) needs to keep
+ * treating that as an implementation detail everywhere it isn't
+ * deliberately exposed. Interpreter-only; see
+ * smi-jit-tier-consistency.zu for the compiled-code side of this.
+ */
+
+echo typeof(5)
+echo typeof(5.5)
+echo typeof(-3)
+echo typeof(0)
+echo typeof(-0.0)
+echo typeof(1e18)
+echo typeof(140737488355327)
+echo typeof(140737488355328)
+
+echo is_int(5)
+echo is_int(5.5)
+echo is_float(5)
+echo is_float(5.5)
+echo is_number(5)
+echo is_number(5.5)
+echo is_number("5")
+
+/* Whole numbers stay exact well past ordinary loop-counter/array-index
+ * magnitudes, and the representation flips seamlessly across the
+ * boundary of what a Smi can hold. */
+echo 140737488355327 + 1
+echo -140737488355328 - 1
+echo 100000000 * 100000000
+
+/* -0.0 collapses to the same int as 0, matching plain IEEE equality. */
+echo -0.0 == 0.0
+echo 5 == 5.0
+
+echo 2 + 3
+echo 10 - 4
+echo 6 * 7
+echo 5 & 3
+echo 5 | 2
+echo 12 ^ 5
+echo ~5
+echo 1 << 4
+echo 256 >> 4
+
+echo (5).max(3)
+echo (5).min(3)
+echo (2).max(2.5)

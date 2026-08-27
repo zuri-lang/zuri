@@ -1,0 +1,67 @@
+/* Coverage for list.rs's Int/Float split: index/count/position
+ * arguments (get, insert, remove_at, delete, shift, take, index_of)
+ * are now strictly ArgType::Int -- a float, even a whole-valued one
+ * outside Smi range, must be rejected, not silently truncated. Return
+ * values that are inherently counts/indices (length, count, index_of,
+ * delete's removed-count, to_dict's keys, each/map/filter/some/every/
+ * reduce's callback index) box as genuine ints now too.
+ */
+
+var lst = [10, 20, 30, 40, 50]
+
+echo lst.length()
+echo typeof(lst.length())
+
+echo lst.get(2)
+echo lst.index_of(30)
+echo typeof(lst.index_of(30))
+echo lst.index_of(999)
+echo lst.count(30)
+
+lst.insert(99, 2)
+echo lst
+
+echo lst.remove_at(0)
+echo lst
+
+echo lst.take(2)
+echo lst.delete(0, 1)
+echo lst
+
+var lst2 = [1, 2, 3]
+lst2.each(@(v, i) { echo '${i}: ${v} (${typeof(i)})' })
+echo lst2.to_dict()
+
+catch {
+  lst2.get(1.5)
+} as e1
+echo e1.message
+
+catch {
+  lst2.insert(9, 1.5)
+} as e2
+echo e2.message
+
+catch {
+  lst2.remove_at(1.5)
+} as e3
+echo e3.message
+
+catch {
+  lst2.shift(1.5)
+} as e4
+echo e4.message
+
+catch {
+  lst2.delete(0, 1.5)
+} as e5
+echo e5.message
+
+catch {
+  lst2.take(1.5)
+} as e6
+echo e6.message
+
+/* Whole-valued floats still work: they're Smi-tagged automatically,
+ * not genuinely float. */
+echo lst2.get(1.0)

@@ -1,0 +1,18 @@
+/* Coverage for isolate.rs's Int/Float split: pool sizing counters
+ * and channel length are all genuine ints now, not floats standing
+ * in for them.
+ */
+
+import isolate
+
+echo typeof(isolate.pool_size())
+echo typeof(isolate.cpu_count())
+echo typeof(isolate.active_count())
+echo typeof(isolate.queued_count())
+
+var ch = isolate.channel(4)
+echo typeof(ch.length())
+ch.send('a')
+ch.send('b')
+echo ch.length()
+echo typeof(ch.length())

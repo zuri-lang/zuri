@@ -5518,23 +5518,21 @@ impl VM {
 }
 
 impl VM {
+  /// Strictly `is_int()`: now that int and float are genuinely
+  /// distinct types (not just an internal encoding optimization), a
+  /// float no longer qualifies as an index even when its value happens
+  /// to be whole -- an index IS an int, by nature, the same way
+  /// `needs_int(5.5)` already correctly rejects a fractional float.
+  /// Before this, indexing tolerated any numeric value that round-
+  /// tripped through `i64`, which was the correct rule back when every
+  /// number was a float and there was no other kind of "whole number"
+  /// to accept.
   fn value_as_index(&mut self, index: Value) -> RunResult<i64> {
-    // The common case by far: a Smi is already exactly the integer an
-    // index needs to be, with nothing left to validate -- no float
-    // decode, no roundtrip check, just the raw value.
     if index.is_int() {
       return Ok(index.as_int());
     }
-    if !index.is_number() {
-      let msg = format!("index must be a number, got {}", index.type_name());
-      return Err(self.raise("TypeError", msg));
-    }
-    let n = index.as_number();
-    let i = n as i64;
-    if i as f64 != n {
-      return Err(self.raise("TypeError", format!("index must be an integer, got {}", n)));
-    }
-    Ok(i)
+    let msg = format!("index must be an int, got {}", index.type_name());
+    Err(self.raise("TypeError", msg))
   }
 
   pub(crate) fn coerce_index(&mut self, index: Value, len: usize) -> RunResult<usize> {

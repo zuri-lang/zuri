@@ -1,0 +1,27 @@
+/* Coverage for file.rs's and function.rs's Int/Float split: read
+ * length, seek position/kind, and a function's arity are all genuine
+ * ints now, not floats standing in for them.
+ */
+
+var path = 'tmp/file-function-int-strict-scratch.txt'
+var f = file(path, 'w')
+f.write('hello world')
+
+var g = file(path, 'r')
+g.open()
+echo g.read(5)
+
+catch { g.read(5.5) } as e1
+echo e1.message
+
+catch { g.seek(0.5, 0) } as e2
+echo e2.message
+
+g.seek(1, 0)
+echo g.tell()
+echo typeof(g.tell())
+g.close()
+g.delete()
+
+echo (@(a, b) { return a + b }).arity()
+echo typeof((@(a, b) { return a + b }).arity())

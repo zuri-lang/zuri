@@ -182,9 +182,9 @@ fn optional_timeout(ctx: &ZuriContext, idx: usize) -> Result<Option<Duration>, S
 
 fn configure(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_type!(ctx, 0, ArgType::Number);
-  let n = ctx.args[0].as_number();
-  if n.fract() != 0.0 || n < 1.0 {
+  enforce_arg_type!(ctx, 0, ArgType::Int);
+  let n = ctx.args[0].as_int();
+  if n < 1 {
     return Err(format!(
       "{}() expects a positive whole number, got {}",
       ctx.name, n
@@ -195,12 +195,12 @@ fn configure(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn pool_size(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
-  Ok(Value::number(pool::pool_size() as f64))
+  Ok(Value::integer(pool::pool_size() as i64))
 }
 
 fn cpu_count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
-  Ok(Value::number(pool::cpu_count() as f64))
+  Ok(Value::integer(pool::cpu_count() as i64))
 }
 
 fn shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -211,12 +211,12 @@ fn shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn active_count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
-  Ok(Value::number(pool::active_count() as f64))
+  Ok(Value::integer(pool::active_count() as i64))
 }
 
 fn queued_count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
-  Ok(Value::number(pool::queued_count() as f64))
+  Ok(Value::integer(pool::queued_count() as i64))
 }
 
 fn is_shutdown(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -452,7 +452,7 @@ fn wait_any(ctx: &mut ZuriContext) -> Result<Value, String> {
     states.push(isolate_state_of_value(*v)?);
   }
   match pool::wait_any_isolates(&states, timeout) {
-    pool::WaitAnyOutcome::Ready(i) => Ok(status_pair(ctx.vm, "ok", Value::number(i as f64))),
+    pool::WaitAnyOutcome::Ready(i) => Ok(status_pair(ctx.vm, "ok", Value::integer(i as i64))),
     pool::WaitAnyOutcome::TimedOut => Ok(status_pair(ctx.vm, "timeout", Value::nil())),
     pool::WaitAnyOutcome::Cancelled => Ok(status_pair(ctx.vm, "cancelled", Value::nil())),
   }
@@ -488,9 +488,9 @@ fn wait_all(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn channel_new(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
-  enforce_arg_type!(ctx, 0, ArgType::Number);
-  let raw = ctx.args[0].as_number();
-  let capacity = if raw <= 0.0 { None } else { Some(raw as usize) };
+  enforce_arg_type!(ctx, 0, ArgType::Int);
+  let raw = ctx.args[0].as_int();
+  let capacity = if raw <= 0 { None } else { Some(raw as usize) };
   let state = Arc::new(pool::ChannelState::new(capacity));
   Ok(ctx.vm.heap_mut().alloc_ptr(pool::CHANNEL_PTR_TYPE, state))
 }
@@ -562,11 +562,11 @@ fn select(ctx: &mut ZuriContext) -> Result<Value, String> {
     )),
     pool::SelectOutcome::Ready(i, pool::RecvOutcome::Value(graph)) => {
       let value = transfer::materialize(ctx.vm, &graph)?;
-      let index = Value::number(i as f64);
+      let index = Value::integer(i as i64);
       Ok(select_result(ctx.vm, index, "ok", value))
     },
     pool::SelectOutcome::Ready(i, pool::RecvOutcome::Closed) => {
-      let index = Value::number(i as f64);
+      let index = Value::integer(i as i64);
       Ok(select_result(ctx.vm, index, "closed", Value::nil()))
     },
     pool::SelectOutcome::Ready(_, pool::RecvOutcome::TimedOut | pool::RecvOutcome::Cancelled) => {
@@ -613,7 +613,7 @@ fn channel_len(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_ptr!(ctx, 0, pool::CHANNEL_PTR_TYPE);
   let state = channel_state_of(ctx, 0)?;
-  Ok(Value::number(state.len() as f64))
+  Ok(Value::integer(state.len() as i64))
 }
 
 // ---------------------------------------------------------------------

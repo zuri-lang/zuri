@@ -270,6 +270,15 @@ enum NumberIntrinsic {
   /// `n.int()`; Rust's `as i64` cast is saturating with NaN mapping
   /// to zero, which is precisely `fcvt_to_sint_sat`'s own definition.
   Int,
+  /// `n.max(m)`/`n.min(m)`; unlike every other binary intrinsic here,
+  /// this one gets a genuine int-specialized path (a plain `i64`
+  /// compare + select, no float unit touched at all) when both
+  /// operands are Smis, since "which is bigger" has no NaN/rounding
+  /// subtlety to preserve the way sin/cos/log/pow do -- there's no
+  /// float-domain behavior an int-only comparison could get wrong.
+  /// Falls back to `is_max`'s helper (`zuri_jit_num_max`/`_min`,
+  /// already Smi-aware for the mixed/float case) otherwise.
+  MaxMin { is_max: bool, helper: &'static str },
   /// A direct call to the named `jit::runtime` helper: `(vm, bits)` for
   /// `arity` 0, `(vm, recv_bits, arg_bits)` for `arity` 1.
   Call { helper: &'static str, arity: u8 },
@@ -306,6 +315,7 @@ impl NumberIntrinsic {
   fn arity(self) -> u8 {
     match self {
       NumberIntrinsic::Call { arity, .. } => arity,
+      NumberIntrinsic::MaxMin { .. } => 1,
       _ => 0,
     }
   }
@@ -410,13 +420,13 @@ impl NumberIntrinsic {
         arity: 0,
       },
 
-      "max" => Call {
+      "max" => MaxMin {
+        is_max: true,
         helper: "zuri_jit_num_max",
-        arity: 1,
       },
-      "min" => Call {
+      "min" => MaxMin {
+        is_max: false,
         helper: "zuri_jit_num_min",
-        arity: 1,
       },
       "atan2" => Call {
         helper: "zuri_jit_num_atan2",
@@ -1419,6 +1429,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn store_reg_f64(&mut self, r: u8, f: IrValue) {
     let v = self.from_f64(f);
     self.store_reg(r, v);
+    self.reg_f64[r as usize] = Some(f);
+  }
+
+  /// Like `store_reg_f64`, but for a caller (`emit_add_numeric` and
+  /// its siblings) that already has BOTH the boxed bits and the
+  /// value's `f64` form in hand -- from a Smi as much as from a real
+  /// float, `emit_add_numeric`'s own docs explain why a Smi result
+  /// carries one too -- so there's no need to re-derive either one
+  /// from the other the way `store_reg_f64` does. Populating the
+  /// cache here (instead of leaving it to `store_reg`'s unconditional
+  /// clear) is what lets a chain of arithmetic on the same value skip
+  /// re-decoding an intermediate result's float form on every step.
+  fn store_reg_numeric(&mut self, r: u8, bits: IrValue, f: IrValue) {
+    self.store_reg(r, bits);
     self.reg_f64[r as usize] = Some(f);
   }
 
@@ -4946,8 +4970,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       NumberIntrinsic::Int => {
         let f = self.to_f64(recv);
         let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-        let r = self.fb.ins().fcvt_from_sint(types::F64, i);
-        self.from_f64(r)
+        // `.int()`'s whole point is producing a genuine integer, so
+        // box it as one directly instead of round-tripping back
+        // through a float just for `from_f64`'s plain bitcast to
+        // throw the distinction away again.
+        self.box_i64(i)
       },
       NumberIntrinsic::Call { helper, .. } => {
         let vm = self.vm_param;
@@ -4955,6 +4982,56 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           Some(a) => self.call_helper_raw(helper, &[vm, recv, a]),
           None => self.call_helper_raw(helper, &[vm, recv]),
         }
+      },
+      NumberIntrinsic::MaxMin { is_max, helper } => {
+        // `arity() == 1` for this variant, so `arg` is always `Some`
+        // here; see `NumberIntrinsic::arity`.
+        //
+        // A REAL branch, not `select`: unlike every other fast path
+        // in this file that computes both sides unconditionally, the
+        // "slow" side here is a genuine helper CALL, not a couple of
+        // cheap instructions -- `select`ing between a cheap compare
+        // and an unconditionally-executed call would pay for the call
+        // every single time regardless of which result gets kept,
+        // defeating the entire point. A real branch is safe to use
+        // here (unlike `to_f64`'s hot, ubiquitous call sites) because
+        // `max`/`min` calls are comparatively rare per function; the
+        // compile-time blowup that ruled out branching in `to_f64`
+        // came from its sheer call-site density, not from branching
+        // itself being unsafe in general.
+        let a = arg.expect("MaxMin always has one argument");
+        let a_smi = self.is_smi(recv);
+        let b_smi = self.is_smi(a);
+        let both_smi = self.fb.ins().band(a_smi, b_smi);
+
+        let smi_block = self.fb.create_block();
+        let slow_block = self.fb.create_block();
+        let done_block = self.fb.create_block();
+        self.fb.append_block_param(done_block, types::I64);
+        self
+          .fb
+          .ins()
+          .brif(both_smi, smi_block, &[], slow_block, &[]);
+
+        self.fb.switch_to_block(smi_block);
+        let ia = self.smi_to_i64(recv);
+        let ib = self.smi_to_i64(a);
+        let cc = if is_max {
+          IntCC::SignedGreaterThan
+        } else {
+          IntCC::SignedLessThan
+        };
+        let a_wins = self.fb.ins().icmp(cc, ia, ib);
+        let smi_result = self.fb.ins().select(a_wins, recv, a);
+        self.fb.ins().jump(done_block, &[smi_result.into()]);
+
+        self.fb.switch_to_block(slow_block);
+        let vm = self.vm_param;
+        let float_result = self.call_helper_raw(helper, &[vm, recv, a]);
+        self.fb.ins().jump(done_block, &[float_result.into()]);
+
+        self.fb.switch_to_block(done_block);
+        self.fb.block_params(done_block)[0]
       },
     }
   }
@@ -5101,10 +5178,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ptr = self.obj_ptr(recv);
     let (data_ptr, len) = self.load_list_ptr_len(ptr);
     match op {
-      ListIntrinsic::Length => {
-        let len_f = self.fb.ins().fcvt_from_sint(types::F64, len);
-        self.from_f64(len_f)
-      },
+      ListIntrinsic::Length => self.box_i64(len),
       ListIntrinsic::IsEmpty => {
         let zero = self.fb.ins().iconst(types::I64, 0);
         let is_empty = self.fb.ins().icmp(IntCC::Equal, len, zero);
@@ -5307,8 +5381,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
         self.fb.switch_to_block(done_block);
         let count_final = self.fb.block_params(done_block)[0];
-        let count_f = self.fb.ins().fcvt_from_sint(types::F64, count_final);
-        self.from_f64(count_f)
+        self.box_i64(count_final)
       },
     }
   }
@@ -5603,7 +5676,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     obj: u8,
     iidx: u8,
     idx_proven_numeric: bool,
-    idx_proven_int: bool,
   ) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
@@ -5613,28 +5685,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     let resolve_block = self.fb.create_block();
 
+    // Strictly `is_int()` now (see `value_as_index`'s own docs): a
+    // whole-valued float no longer qualifies as an index, so there's
+    // nothing left for a value-level "proven whole number" fact to
+    // change here -- every case reduces to one Smi check.
     let (ptr, as_int) = if proven_str {
       let ptr = self.obj_ptr(obj_val);
-      let f = self.to_f64(idx_val);
-      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      if idx_proven_int {
-        self.fb.ins().jump(resolve_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let idx_ok = if idx_proven_numeric {
-          is_int
-        } else {
-          let is_num = self.is_number(idx_val);
-          self.fb.ins().band(is_num, is_int)
-        };
-        self.fb.ins().brif(idx_ok, resolve_block, &[], slow_block, &[]);
-      }
-      (ptr, as_int)
+      let is_smi_idx = self.is_smi(idx_val);
+      let smi_int = self.smi_to_i64(idx_val);
+      self.fb.ins().brif(is_smi_idx, resolve_block, &[], slow_block, &[]);
+      (ptr, smi_int)
     } else {
       let is_obj = self.is_obj(obj_val);
       let cheap_guard = if idx_proven_numeric {
@@ -5653,21 +5713,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
       let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
 
-      let f = self.to_f64(idx_val);
-      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      if idx_proven_int {
-        self.fb.ins().brif(is_str, resolve_block, &[], slow_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let str_and_int = self.fb.ins().band(is_str, is_int);
-        self.fb.ins().brif(str_and_int, resolve_block, &[], slow_block, &[]);
-      }
-      (ptr, as_int)
+      let is_smi_idx = self.is_smi(idx_val);
+      let smi_int = self.smi_to_i64(idx_val);
+      let str_and_int = self.fb.ins().band(is_str, is_smi_idx);
+      self.fb.ins().brif(str_and_int, resolve_block, &[], slow_block, &[]);
+      (ptr, smi_int)
     };
 
     self.fb.switch_to_block(resolve_block);
@@ -5886,7 +5936,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     obj: u8,
     iidx: u8,
     idx_proven_numeric: bool,
-    idx_proven_int: bool,
   ) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
@@ -5895,44 +5944,41 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
     let resolve_block = self.fb.create_block();
+    // Every path into `resolve_block` writes its own `as_int` through
+    // this `Variable` right before jumping/branching there, rather
+    // than returning it as a plain SSA value the way `ptr` still is:
+    // the `proven_list && idx_proven_int` case below is a REAL
+    // Cranelift-level branch with two distinct predecessors (Smi vs
+    // float decode), so `resolve_block` needs an actual merge for it,
+    // not just "whichever single value happens to dominate" the way
+    // every other case here still works (`proven_list` itself is a
+    // compile-time fact, so those other arms only ever emit ONE
+    // dominating definition regardless of which Rust branch ran).
+    let as_int_var = self.fb.declare_var(types::I64);
 
-    // `proven_list` is a compile-time fact; exactly one of these two
-    // arms is ever actually emitted for a given `Instr::GetIndex` site,
-    // never both, so `ptr`/`as_int` dominate `resolve_block` either way
-    // (a single predecessor chain, just a shorter one when proven).
-    let (ptr, as_int) = if proven_list {
+    let ptr = if proven_list {
       // The object-shape half of the guard (`is_obj` + tag==LIST)
       // already ran once, at `obj`'s own Instr::CheckParamType; go
       // straight to the pointer; only the index still needs checking
       // here.
       let ptr = self.obj_ptr(obj_val);
-      let f = self.to_f64(idx_val);
-      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      if idx_proven_int {
-        // `iidx` is proven to be a genuine whole number (see
-        // `typeflow::IntFacts`'s own docs); there's nothing left for
-        // this guard to prove, so there's no guard: straight through
-        // to `resolve_block`, not even a branch.
-        self.fb.ins().jump(resolve_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let idx_ok = if idx_proven_numeric {
-          is_int
-        } else {
-          let is_num = self.is_number(idx_val);
-          self.fb.ins().band(is_num, is_int)
-        };
-        self
-          .fb
-          .ins()
-          .brif(idx_ok, resolve_block, &[], slow_block, &[]);
-      }
-      (ptr, as_int)
+      // An index is strictly `is_int()` now (see `value_as_index`'s
+      // own docs on why a whole-valued float no longer qualifies), so
+      // there's nothing left to decide based on `idx_proven_int`
+      // (a VALUE-level "this f64 has no fractional part" fact, not a
+      // TAG-level one) -- every case reduces to the same check: a Smi
+      // decodes via two cheap shifts and proceeds, anything else
+      // (including a provably-whole float outside Smi range, which
+      // the old value-level fact would have accepted) goes to the slow
+      // path, which raises the same `TypeError` the interpreter does.
+      let is_smi_idx = self.is_smi(idx_val);
+      let smi_int = self.smi_to_i64(idx_val);
+      self.fb.def_var(as_int_var, smi_int);
+      self
+        .fb
+        .ins()
+        .brif(is_smi_idx, resolve_block, &[], slow_block, &[]);
+      ptr
     } else {
       // Both safe to compute unconditionally regardless of the other's
       // truth value; neither dereferences memory, see `is_obj`/
@@ -5967,64 +6013,36 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
       let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
 
-      let f = self.to_f64(idx_val);
-      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      // Strictly `is_int()` now (see `value_as_index`'s own docs): one
+      // Smi check up front, ANDed into each tag check below, replaces
+      // the old per-tag float-roundtrip validation entirely -- a
+      // provably-whole float no longer passes any of these, list,
+      // string, or bytes alike.
+      let is_smi_idx = self.is_smi(idx_val);
+      let smi_int = self.smi_to_i64(idx_val);
+      let as_int = smi_int;
       let check_str_block = self.fb.create_block();
-      if idx_proven_int {
-        // See the `proven_list` arm above; the index half of the
-        // guard is a settled fact, only `is_list` still needs checking.
-        self
-          .fb
-          .ins()
-          .brif(is_list, resolve_block, &[], check_str_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let list_and_int = self.fb.ins().band(is_list, is_int);
-        self
-          .fb
-          .ins()
-          .brif(list_and_int, resolve_block, &[], check_str_block, &[]);
-      }
+      self.fb.def_var(as_int_var, as_int);
+      let list_and_int = self.fb.ins().band(is_list, is_smi_idx);
+      self
+        .fb
+        .ins()
+        .brif(list_and_int, resolve_block, &[], check_str_block, &[]);
 
       self.fb.switch_to_block(check_str_block);
       let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
       let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
       let str_resolve_block = self.fb.create_block();
       let check_bytes_get_block = self.fb.create_block();
-      if idx_proven_int {
-        self.fb.ins().brif(is_str, str_resolve_block, &[], check_bytes_get_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let str_and_int = self.fb.ins().band(is_str, is_int);
-        self.fb.ins().brif(str_and_int, str_resolve_block, &[], check_bytes_get_block, &[]);
-      }
+      let str_and_int = self.fb.ins().band(is_str, is_smi_idx);
+      self.fb.ins().brif(str_and_int, str_resolve_block, &[], check_bytes_get_block, &[]);
 
       self.fb.switch_to_block(check_bytes_get_block);
       let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
       let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
       let bytes_resolve_block = self.fb.create_block();
-      if idx_proven_int {
-        self.fb.ins().brif(is_bytes, bytes_resolve_block, &[], slow_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let bytes_and_int = self.fb.ins().band(is_bytes, is_int);
-        self.fb.ins().brif(bytes_and_int, bytes_resolve_block, &[], slow_block, &[]);
-      }
+      let bytes_and_int = self.fb.ins().band(is_bytes, is_smi_idx);
+      self.fb.ins().brif(bytes_and_int, bytes_resolve_block, &[], slow_block, &[]);
 
       self.fb.switch_to_block(bytes_resolve_block);
       let flags_b = cranelift_codegen::ir::MemFlagsData::trusted();
@@ -6068,10 +6086,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let char_val = self.fb.ins().load(types::I64, flags, elem_addr, 0);
       self.store_reg(dst, char_val);
       self.fb.ins().jump(done_block, &[]);
-      (ptr, as_int)
+      ptr
     };
 
     self.fb.switch_to_block(resolve_block);
+    let as_int = self.fb.use_var(as_int_var);
     let (data_ptr, len) = self.load_list_ptr_len(ptr);
     let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
@@ -6129,7 +6148,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     iidx: u8,
     src: u8,
     idx_proven_numeric: bool,
-    idx_proven_int: bool,
   ) {
     let obj_val = self.load_reg(obj);
     let idx_val = self.load_reg(iidx);
@@ -6143,31 +6161,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     let resolve_block = self.fb.create_block();
 
+    // Strictly `is_int()` now (see `value_as_index`'s own docs): a
+    // whole-valued float no longer qualifies as an index, so every
+    // case here reduces to a single Smi check, same simplification
+    // `emit_list_get_index` went through.
     let (ptr, as_int) = if proven_list {
       let ptr = self.obj_ptr(obj_val);
-      let f = self.to_f64(idx_val);
-      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      if idx_proven_int {
-        self.fb.ins().jump(resolve_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let idx_ok = if idx_proven_numeric {
-          is_int
-        } else {
-          let is_num = self.is_number(idx_val);
-          self.fb.ins().band(is_num, is_int)
-        };
-        self
-          .fb
-          .ins()
-          .brif(idx_ok, resolve_block, &[], slow_block, &[]);
-      }
-      (ptr, as_int)
+      let is_smi_idx = self.is_smi(idx_val);
+      let smi_int = self.smi_to_i64(idx_val);
+      self.fb.ins().brif(is_smi_idx, resolve_block, &[], slow_block, &[]);
+      (ptr, smi_int)
     } else {
       let is_obj = self.is_obj(obj_val);
       let cheap_guard = if idx_proven_numeric {
@@ -6189,44 +6192,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
       let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
 
-      let f = self.to_f64(idx_val);
-      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      let is_smi_idx = self.is_smi(idx_val);
+      let smi_int = self.smi_to_i64(idx_val);
       let check_bytes_set_block = self.fb.create_block();
-      if idx_proven_int {
-        self
-          .fb
-          .ins()
-          .brif(is_list, resolve_block, &[], check_bytes_set_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let list_and_int = self.fb.ins().band(is_list, is_int);
-        self
-          .fb
-          .ins()
-          .brif(list_and_int, resolve_block, &[], check_bytes_set_block, &[]);
-      }
+      let list_and_int = self.fb.ins().band(is_list, is_smi_idx);
+      self
+        .fb
+        .ins()
+        .brif(list_and_int, resolve_block, &[], check_bytes_set_block, &[]);
 
       self.fb.switch_to_block(check_bytes_set_block);
       let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
       let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
       let bytes_resolve_block = self.fb.create_block();
-      if idx_proven_int {
-        self.fb.ins().brif(is_bytes, bytes_resolve_block, &[], slow_block, &[]);
-      } else {
-        let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-        let is_int = self.fb.ins().fcmp(
-          cranelift_codegen::ir::condcodes::FloatCC::Equal,
-          f,
-          roundtrip,
-        );
-        let bytes_and_int = self.fb.ins().band(is_bytes, is_int);
-        self.fb.ins().brif(bytes_and_int, bytes_resolve_block, &[], slow_block, &[]);
-      }
+      let bytes_and_int = self.fb.ins().band(is_bytes, is_smi_idx);
+      self.fb.ins().brif(bytes_and_int, bytes_resolve_block, &[], slow_block, &[]);
+      let as_int = smi_int;
 
       self.fb.switch_to_block(bytes_resolve_block);
       let flags_set = cranelift_codegen::ir::MemFlagsData::trusted();
@@ -6464,7 +6445,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     count: u8,
     iidx: u8,
     idx_proven_numeric: bool,
-    idx_proven_int: bool,
   ) {
     let idx_val = self.load_reg(iidx);
     let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
@@ -6486,8 +6466,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     self.fb.switch_to_block(checked_block);
-    let f = self.to_f64(idx_val);
-    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    // Strictly `is_int()` now (see `value_as_index`'s own docs): no
+    // more float-roundtrip validation, and no `to_f64` needed at all
+    // since a rejected value never gets used as a real number here --
+    // `smi_to_i64` is only ever meaningful once `is_smi_idx` holds.
+    let is_smi_idx = self.is_smi(idx_val);
+    let as_int = self.smi_to_i64(idx_val);
 
     let len = self.i64c(count as i64);
     let zero = self.fb.ins().iconst(types::I64, 0);
@@ -6500,21 +6484,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
     let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
     let in_bounds = self.fb.ins().band(ge_zero, lt_len);
-    // Same discipline `emit_list_get_index`'s own `idx_proven_int`
-    // skips: `iidx` is proven a genuine whole number (`typeflow::
-    // IntFacts`), so the float-roundtrip check has nothing left to
-    // prove; only the bounds still matter.
-    let ok = if idx_proven_int {
-      in_bounds
-    } else {
-      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-      let is_int = self.fb.ins().fcmp(
-        cranelift_codegen::ir::condcodes::FloatCC::Equal,
-        f,
-        roundtrip,
-      );
-      self.fb.ins().band(is_int, in_bounds)
-    };
+    let ok = self.fb.ins().band(is_smi_idx, in_bounds);
 
     let fast_block = self.fb.create_block();
     self.fb.ins().brif(ok, fast_block, &[], slow_block, &[]);
@@ -6586,7 +6556,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     iidx: u8,
     src: u8,
     idx_proven_numeric: bool,
-    idx_proven_int: bool,
   ) {
     let idx_val = self.load_reg(iidx);
     let src_val = self.load_reg(src);
@@ -6606,8 +6575,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     self.fb.switch_to_block(checked_block);
-    let f = self.to_f64(idx_val);
-    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    // Strictly `is_int()` now: see `emit_scalar_list_get`'s own docs.
+    let is_smi_idx = self.is_smi(idx_val);
+    let as_int = self.smi_to_i64(idx_val);
 
     let len = self.i64c(count as i64);
     let zero = self.fb.ins().iconst(types::I64, 0);
@@ -6620,17 +6590,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .icmp(IntCC::SignedGreaterThanOrEqual, i_adj, zero);
     let lt_len = self.fb.ins().icmp(IntCC::SignedLessThan, i_adj, len);
     let in_bounds = self.fb.ins().band(ge_zero, lt_len);
-    let ok = if idx_proven_int {
-      in_bounds
-    } else {
-      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-      let is_int = self.fb.ins().fcmp(
-        cranelift_codegen::ir::condcodes::FloatCC::Equal,
-        f,
-        roundtrip,
-      );
-      self.fb.ins().band(is_int, in_bounds)
-    };
+    let ok = self.fb.ins().band(is_smi_idx, in_bounds);
 
     let fast_block = self.fb.create_block();
     self.fb.ins().brif(ok, fast_block, &[], slow_block, &[]);
@@ -7171,8 +7131,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           let va = self.load_reg(a);
           let vb = self.load_reg(b);
-          let bits = self.emit_add_numeric(va, vb);
-          self.store_reg(dst, bits);
+          let (bits, f) = self.emit_add_numeric(va, vb);
+          self.store_reg_numeric(dst, bits, f);
         } else if self.both_proven_string(ip, a, b) {
           self.emit_str_add(ip, dst, a, b);
         } else {
@@ -7188,8 +7148,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.fb.ins().brif(both_num, num_block, &[], not_num_block, &[]);
 
           self.fb.switch_to_block(num_block);
-          let res_v = self.emit_add_numeric(va, vb);
-          self.store_reg(dst, res_v);
+          let (res_v, f) = self.emit_add_numeric(va, vb);
+          self.store_reg_numeric(dst, res_v, f);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(not_num_block);
@@ -7201,20 +7161,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Sub { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
+          let va = self.load_reg(a);
+          let vb = self.load_reg(b);
+          let (bits, f) = self.emit_sub_numeric(va, vb);
+          self.store_reg_numeric(dst, bits, f);
         } else {
-          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_sub_slow", |fc, fa, fb| {
-            fc.fb.ins().fsub(fa, fb)
+          self.emit_guarded_numeric_op(ip, dst, a, b, "zuri_jit_sub_slow", |fc, va, vb| {
+            fc.emit_sub_numeric(va, vb)
           });
         }
         false
       },
       Instr::Mul { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
+          let va = self.load_reg(a);
+          let vb = self.load_reg(b);
+          let (bits, f) = self.emit_mul_numeric(va, vb);
+          self.store_reg_numeric(dst, bits, f);
         } else {
-          self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_mul_slow", |fc, fa, fb| {
-            fc.fb.ins().fmul(fa, fb)
+          self.emit_guarded_numeric_op(ip, dst, a, b, "zuri_jit_mul_slow", |fc, va, vb| {
+            fc.emit_mul_numeric(va, vb)
           });
         }
         false
@@ -7225,7 +7191,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           // compile-time-known constant, so no guard on IT is needed at
           // all; only `a` still might not be numeric.
           if self.proven_numeric(ip, a) {
-            self.emit_binary_numeric_proven(dst, a, b, move |fc, fa, _fb| {
+            self.emit_binary_numeric_proven_autobox(dst, a, b, move |fc, fa, _fb| {
               let r = fc.fb.ins().f64const(recip);
               fc.fb.ins().fmul(fa, r)
             });
@@ -7243,7 +7209,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             );
           }
         } else if self.both_proven_numeric(ip, a, b) {
-          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
+          self.emit_binary_numeric_proven_autobox(dst, a, b, |fc, fa, fb| fc.fb.ins().fdiv(fa, fb));
         } else {
           self.emit_binary_numeric_guarded(ip, dst, a, b, "zuri_jit_div_slow", |fc, fa, fb| {
             fc.fb.ins().fdiv(fa, fb)
@@ -7310,8 +7276,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
           let rem_adj = self.fb.ins().iadd(rem, ib);
           let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
-          let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
-          let res_val = self.from_f64(res_f);
+          // This branch's whole reason to exist is a genuine integer
+          // remainder (the float-`fmod` fallback below is what handles
+          // anything that isn't), so box it as one directly.
+          let res_val = self.box_i64(final_rem);
           self.store_reg(dst, res_val);
           self.fb.ins().jump(done_block, &[]);
 
@@ -7355,8 +7323,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
           let rem_adj = self.fb.ins().iadd(rem, ib);
           let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
-          let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
-          let res_val = self.from_f64(res_f);
+          // This branch's whole reason to exist is a genuine integer
+          // remainder (the float-`fmod` fallback below is what handles
+          // anything that isn't), so box it as one directly.
+          let res_val = self.box_i64(final_rem);
           self.store_reg(dst, res_val);
           self.fb.ins().jump(done_block, &[]);
 
@@ -7444,11 +7414,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::BitNot { dst, src } => {
         if self.proven_numeric(ip, src) {
           let v = self.load_reg(src);
-          let f = self.to_f64(v);
-          let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+          let i = self.to_i64_for_bitwise(v);
           let inv = self.fb.ins().bnot(i);
-          let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
-          let bits = self.from_f64(r);
+          let bits = self.box_i64(inv);
           self.store_reg(dst, bits);
         } else {
           let v = self.load_reg(src);
@@ -7459,11 +7427,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.fb.ins().brif(is_num, fast_block, &[], slow_block, &[]);
 
           self.fb.switch_to_block(fast_block);
-          let f = self.to_f64(v);
-          let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+          let i = self.to_i64_for_bitwise(v);
           let inv = self.fb.ins().bnot(i);
-          let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
-          let bits = self.from_f64(r);
+          let bits = self.box_i64(inv);
           self.store_reg(dst, bits);
           self.fb.ins().jump(done_block, &[]);
 
@@ -8141,35 +8107,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         idx: iidx,
       } => {
         if let Some(&(slot, count)) = self.scalar_lists.get(&obj) {
-          self.emit_scalar_list_get(
-            dst,
-            slot,
-            count,
-            iidx,
-            self.proven_numeric(ip, iidx),
-            self.proven_int(ip, iidx),
-          );
+          self.emit_scalar_list_get(dst, slot, count, iidx, self.proven_numeric(ip, iidx));
           return false;
         }
         if self.proven_string(ip, obj) {
-          self.emit_str_get_index(
-            ip,
-            dst,
-            obj,
-            iidx,
-            self.proven_numeric(ip, iidx),
-            self.proven_int(ip, iidx),
-          );
+          self.emit_str_get_index(ip, dst, obj, iidx, self.proven_numeric(ip, iidx));
           return false;
         }
-        self.emit_list_get_index(
-          ip,
-          dst,
-          obj,
-          iidx,
-          self.proven_numeric(ip, iidx),
-          self.proven_int(ip, iidx),
-        );
+        self.emit_list_get_index(ip, dst, obj, iidx, self.proven_numeric(ip, iidx));
         false
       },
       Instr::SetIndex {
@@ -8178,24 +8123,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         src,
       } => {
         if let Some(&(slot, count)) = self.scalar_lists.get(&obj) {
-          self.emit_scalar_list_set(
-            slot,
-            count,
-            iidx,
-            src,
-            self.proven_numeric(ip, iidx),
-            self.proven_int(ip, iidx),
-          );
+          self.emit_scalar_list_set(slot, count, iidx, src, self.proven_numeric(ip, iidx));
           return false;
         }
-        self.emit_list_set_index(
-          ip,
-          obj,
-          iidx,
-          src,
-          self.proven_numeric(ip, iidx),
-          self.proven_int(ip, iidx),
-        );
+        self.emit_list_set_index(ip, obj, iidx, src, self.proven_numeric(ip, iidx));
         false
       },
       Instr::GetSlice { dst, obj, lo, hi } => {
@@ -8302,17 +8233,41 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::SubImm { dst, a, imm_const } => {
+        // `bake_const`, not `bake_f64_bits`: see `emit_addimm_proven`'s
+        // docs on why the immediate needs its real Smi-or-float tag
+        // preserved rather than forced through a float re-encoding.
         if self.proven_numeric(ip, a) {
-          self
-            .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
+          let va = self.load_reg(a);
+          let vimm = self.bake_const(imm_const);
+          let (bits, f) = self.emit_sub_numeric(va, vimm);
+          self.store_reg_numeric(dst, bits, f);
         } else {
-          self.emit_imm_numeric_guarded(
-            dst,
-            a,
-            imm_const,
+          let va = self.load_reg(a);
+          let guard = self.is_number(va);
+          let fast_block = self.fb.create_block();
+          let slow_block = self.fb.create_block();
+          let done_block = self.fb.create_block();
+          self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
+
+          self.fb.switch_to_block(fast_block);
+          let vimm = self.bake_const(imm_const);
+          let (bits, f) = self.emit_sub_numeric(va, vimm);
+          self.store_reg_numeric(dst, bits, f);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(slow_block);
+          let base = self.base_param;
+          let dst_i = self.idx(dst);
+          let a_i = self.idx(a);
+          let imm_bits = self.bake_f64_bits(imm_const);
+          self.call_checked(
             "zuri_jit_subimm_slow",
-            |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm),
+            &[self.vm_param, base, dst_i, a_i, imm_bits],
           );
+          self.resync_dst_from_memory(dst);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(done_block);
         }
         false
       },
@@ -8322,16 +8277,37 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // (and cheap enough to check for) that `zuri_jit_mulimm_slow`
         // handles the WHOLE non-fast-path case uniformly: see its docs.
         if self.proven_numeric(ip, a) {
-          self
-            .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
+          let va = self.load_reg(a);
+          let vimm = self.bake_const(imm_const);
+          let (bits, f) = self.emit_mul_numeric(va, vimm);
+          self.store_reg_numeric(dst, bits, f);
         } else {
-          self.emit_imm_numeric_guarded(
-            dst,
-            a,
-            imm_const,
+          let va = self.load_reg(a);
+          let guard = self.is_number(va);
+          let fast_block = self.fb.create_block();
+          let slow_block = self.fb.create_block();
+          let done_block = self.fb.create_block();
+          self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
+
+          self.fb.switch_to_block(fast_block);
+          let vimm = self.bake_const(imm_const);
+          let (bits, f) = self.emit_mul_numeric(va, vimm);
+          self.store_reg_numeric(dst, bits, f);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(slow_block);
+          let base = self.base_param;
+          let dst_i = self.idx(dst);
+          let a_i = self.idx(a);
+          let imm_bits = self.bake_f64_bits(imm_const);
+          self.call_checked(
             "zuri_jit_mulimm_slow",
-            |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm),
+            &[self.vm_param, base, dst_i, a_i, imm_bits],
           );
+          self.resync_dst_from_memory(dst);
+          self.fb.ins().jump(done_block, &[]);
+
+          self.fb.switch_to_block(done_block);
         }
         false
       },
@@ -8523,16 +8499,43 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// it via `type_name()` disagreeing about a JIT-computed value
   /// depending on which tier actually ran the addition.
   ///
-  /// `select`, not a branch: both the integer and float sums are
-  /// cheap to compute unconditionally and neither can trap on any bit
-  /// pattern (same reasoning as `to_f64`'s own fix, which hit a real
-  /// compile-time blowup from creating fresh blocks at a call site
-  /// this hot).
-  fn emit_add_numeric(&mut self, va: IrValue, vb: IrValue) -> IrValue {
+  /// A real branch, not `select`: this is `Add`'s OWN dispatch between
+  /// int and float math, called at every `Add`/`AddImm` site in the
+  /// program, not a handful of ubiquitous low-level helpers like
+  /// `to_f64`/`from_f64` (which stay `select`-based for the compile-
+  /// time reason documented on `to_f64`). A given `Add` site in real
+  /// code is almost always monomorphic -- a loop counter is always an
+  /// int, an accumulator is always a float -- so a branch here
+  /// predicts essentially perfectly and the "other side" costs
+  /// nothing at runtime; `select` would instead pay for BOTH the
+  /// integer dance (smi decode, range check, repack) and the float
+  /// dance on every single addition, forever, even in code that only
+  /// ever sees floats. That unconditional double cost is exactly what
+  /// turned a float-heavy benchmark like spectral-norm 3x slower the
+  /// one time this was `select`-based instead of branched.
+  ///
+  /// Returns `(boxed_bits, value_as_f64)`: every caller stores the
+  /// result via `store_reg_numeric`, not plain `store_reg`, so the
+  /// destination register's `reg_f64` cache comes out of this already
+  /// populated -- a chain of arithmetic on the same value (extremely
+  /// common: `a + b + c + d`) then never re-derives the float form of
+  /// an intermediate result through a fresh `is_smi` check, the same
+  /// caching `load_reg_f64`/`store_reg_f64` always gave the OLD
+  /// proven-numeric path and that plain `store_reg` (which unconditio-
+  /// nally clears the cache) would otherwise throw away here.
+  fn emit_add_numeric(&mut self, va: IrValue, vb: IrValue) -> (IrValue, IrValue) {
     let a_smi = self.is_smi(va);
     let b_smi = self.is_smi(vb);
     let both_smi = self.fb.ins().band(a_smi, b_smi);
 
+    let smi_block = self.fb.create_block();
+    let float_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let result_var = self.fb.declare_var(types::I64);
+    let result_f64_var = self.fb.declare_var(types::F64);
+    self.fb.ins().brif(both_smi, smi_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_block);
     let ia = self.smi_to_i64(va);
     let ib = self.smi_to_i64(vb);
     // Two 48-bit-range values can never overflow a real `iadd`; the
@@ -8544,15 +8547,168 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, sum, smi_min);
     let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, sum, smi_max);
     let in_range = self.fb.ins().band(ge_min, lt_max);
-    let smi_ok = self.fb.ins().band(both_smi, in_range);
-    let smi_packed = self.i64_to_smi(sum);
+    let smi_ok_block = self.fb.create_block();
+    self.fb.ins().brif(in_range, smi_ok_block, &[], float_block, &[]);
 
+    self.fb.switch_to_block(smi_ok_block);
+    let smi_packed = self.i64_to_smi(sum);
+    let sum_f64 = self.fb.ins().fcvt_from_sint(types::F64, sum);
+    self.fb.def_var(result_var, smi_packed);
+    self.fb.def_var(result_f64_var, sum_f64);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(float_block);
     let fa = self.to_f64(va);
     let fb_ = self.to_f64(vb);
     let float_sum = self.fb.ins().fadd(fa, fb_);
     let float_boxed = self.from_f64(float_sum);
+    self.fb.def_var(result_var, float_boxed);
+    self.fb.def_var(result_f64_var, float_sum);
+    self.fb.ins().jump(done_block, &[]);
 
-    self.fb.ins().select(smi_ok, smi_packed, float_boxed)
+    self.fb.switch_to_block(done_block);
+    (self.fb.use_var(result_var), self.fb.use_var(result_f64_var))
+  }
+
+  /// `-`, `emit_add_numeric`'s mirror. Same reasoning throughout: two
+  /// 48-bit-range values can't overflow a real `isub`, only the Smi
+  /// range check on the difference matters. Branch-based and cache-
+  /// populating for the same reasons `emit_add_numeric` is: see its
+  /// own docs.
+  fn emit_sub_numeric(&mut self, va: IrValue, vb: IrValue) -> (IrValue, IrValue) {
+    let a_smi = self.is_smi(va);
+    let b_smi = self.is_smi(vb);
+    let both_smi = self.fb.ins().band(a_smi, b_smi);
+
+    let smi_block = self.fb.create_block();
+    let float_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let result_var = self.fb.declare_var(types::I64);
+    let result_f64_var = self.fb.declare_var(types::F64);
+    self.fb.ins().brif(both_smi, smi_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_block);
+    let ia = self.smi_to_i64(va);
+    let ib = self.smi_to_i64(vb);
+    let diff = self.fb.ins().isub(ia, ib);
+    let smi_min = self.i64c(value::SMI_MIN);
+    let smi_max = self.i64c(value::SMI_MAX);
+    let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, diff, smi_min);
+    let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, diff, smi_max);
+    let in_range = self.fb.ins().band(ge_min, lt_max);
+    let smi_ok_block = self.fb.create_block();
+    self.fb.ins().brif(in_range, smi_ok_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_ok_block);
+    let smi_packed = self.i64_to_smi(diff);
+    let diff_f64 = self.fb.ins().fcvt_from_sint(types::F64, diff);
+    self.fb.def_var(result_var, smi_packed);
+    self.fb.def_var(result_f64_var, diff_f64);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(float_block);
+    let fa = self.to_f64(va);
+    let fb_ = self.to_f64(vb);
+    let float_diff = self.fb.ins().fsub(fa, fb_);
+    let float_boxed = self.from_f64(float_diff);
+    self.fb.def_var(result_var, float_boxed);
+    self.fb.def_var(result_f64_var, float_diff);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    (self.fb.use_var(result_var), self.fb.use_var(result_f64_var))
+  }
+
+  /// `*`, `emit_add_numeric`'s other mirror -- except multiplying two
+  /// Smis genuinely CAN overflow `i64` itself (2^47 * 2^47 is nowhere
+  /// near representable), unlike add/sub, so this needs `smul_overflow`
+  /// checked first, not just a post-hoc range check on a product that
+  /// might already be garbage from having wrapped. Branch-based for
+  /// the same reason `emit_add_numeric` is: see its own docs.
+  fn emit_mul_numeric(&mut self, va: IrValue, vb: IrValue) -> (IrValue, IrValue) {
+    let a_smi = self.is_smi(va);
+    let b_smi = self.is_smi(vb);
+    let both_smi = self.fb.ins().band(a_smi, b_smi);
+
+    let smi_block = self.fb.create_block();
+    let float_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let result_var = self.fb.declare_var(types::I64);
+    let result_f64_var = self.fb.declare_var(types::F64);
+    self.fb.ins().brif(both_smi, smi_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_block);
+    let ia = self.smi_to_i64(va);
+    let ib = self.smi_to_i64(vb);
+    let (product, overflowed) = self.fb.ins().smul_overflow(ia, ib);
+    let no_overflow = self.fb.ins().bnot(overflowed);
+    let smi_min = self.i64c(value::SMI_MIN);
+    let smi_max = self.i64c(value::SMI_MAX);
+    let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, product, smi_min);
+    let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, product, smi_max);
+    let in_range = self.fb.ins().band(ge_min, lt_max);
+    let product_ok = self.fb.ins().band(in_range, no_overflow);
+    let smi_ok_block = self.fb.create_block();
+    self.fb.ins().brif(product_ok, smi_ok_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_ok_block);
+    let smi_packed = self.i64_to_smi(product);
+    let product_f64 = self.fb.ins().fcvt_from_sint(types::F64, product);
+    self.fb.def_var(result_var, smi_packed);
+    self.fb.def_var(result_f64_var, product_f64);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(float_block);
+    let fa = self.to_f64(va);
+    let fb_ = self.to_f64(vb);
+    let float_product = self.fb.ins().fmul(fa, fb_);
+    let float_boxed = self.from_f64(float_product);
+    self.fb.def_var(result_var, float_boxed);
+    self.fb.def_var(result_f64_var, float_product);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    (self.fb.use_var(result_var), self.fb.use_var(result_f64_var))
+  }
+
+  /// Like `emit_binary_numeric_guarded`, but the fast path operates on
+  /// the raw BOXED `Value` bits directly rather than pre-converted
+  /// floats -- for operators (`Sub`, `Mul`) with their own dedicated
+  /// Smi-aware computation instead of always going through
+  /// `to_f64`/float-math (see `emit_add_numeric`'s own docs on why
+  /// that distinction matters for tier consistency, not just speed).
+  fn emit_guarded_numeric_op(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    a: u8,
+    b: u8,
+    slow_helper: &'static str,
+    fast: impl FnOnce(&mut Self, IrValue, IrValue) -> (IrValue, IrValue),
+  ) {
+    let va = self.load_reg(a);
+    let vb = self.load_reg(b);
+    let guard = self.combined_numeric_guard(ip, va, vb, a, b);
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let (bits, f) = fast(self, va, vb);
+    self.store_reg_numeric(dst, bits, f);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let a_i = self.idx(a);
+    let b_i = self.idx(b);
+    self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, b_i]);
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
   }
 
   /// `emit_binary_numeric_guarded`'s fast-path body with the guard,
@@ -8571,6 +8727,87 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let fb_ = self.load_reg_f64(b);
     let fr = fast(self, fa, fb_);
     self.store_reg_f64(dst, fr);
+  }
+
+  /// Like `emit_binary_numeric_proven`, but boxes the result via
+  /// `box_f64_autoselect` instead of the always-float `store_reg_f64`.
+  /// Worth the extra branch+roundtrip-check only at a call site whose
+  /// result is genuinely often exactly whole despite coming out of
+  /// float math -- `Div` is the one that actually matters: the
+  /// interpreter's own `Div` already auto-selects a Smi via
+  /// `Value::number` when the quotient happens to land on a whole
+  /// number (very common for the kind of integer-ish index/offset
+  /// arithmetic real programs divide, e.g. spectral-norm's
+  /// `(i+j)*(i+j+1)/2+i+1`), but the JIT's old `Div` fast path never
+  /// did -- a real tier inconsistency, and worse than that here: an
+  /// entire chain of otherwise-Smi int arithmetic got permanently
+  /// knocked onto the float-tagged path the moment it passed through
+  /// one `/`, so every subsequent `Add`/`Sub`/`Mul` paid their
+  /// mixed-tag branch for the rest of the expression for no reason.
+  /// `Pow`/`Floor`/`Mod` don't get this treatment: they either rarely
+  /// land on an exact whole number (`Pow`) or already have their own
+  /// dedicated int-result handling elsewhere, so the extra check
+  /// wouldn't pay for itself the way it does for plain `/`.
+  fn emit_binary_numeric_proven_autobox(
+    &mut self,
+    dst: u8,
+    a: u8,
+    b: u8,
+    fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
+  ) {
+    let fa = self.load_reg_f64(a);
+    let fb_ = self.load_reg_f64(b);
+    let fr = fast(self, fa, fb_);
+    let (bits, f) = self.box_f64_autoselect(fr);
+    self.store_reg_numeric(dst, bits, f);
+  }
+
+  /// Boxes `f` the way `Value::number` does on the Rust side: a Smi
+  /// when `f` is finite, whole, and inside the 48-bit range, a plain
+  /// float otherwise. Deliberately NOT a drop-in replacement for
+  /// `from_f64` (which stays a plain bitcast everywhere else -- see
+  /// its own docs on why an auto-selecting version turned out to be a
+  /// severe, across-the-board slowdown when tried globally); this
+  /// pays a real `fcvt_to_sint_sat` + roundtrip check, only worth it
+  /// at the handful of call sites (`emit_binary_numeric_proven_autobox`)
+  /// where the result is genuinely often exactly whole. `fcvt_to_sint_sat`
+  /// saturates rather than traps on NaN/out-of-range input, and the
+  /// roundtrip `fcmp` correctly comes back false for NaN (NaN never
+  /// equals anything, including itself), so neither routes into the
+  /// Smi branch by accident.
+  fn box_f64_autoselect(&mut self, f: IrValue) -> (IrValue, IrValue) {
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let matches = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::Equal,
+      f,
+      roundtrip,
+    );
+    let smi_min = self.i64c(value::SMI_MIN);
+    let smi_max = self.i64c(value::SMI_MAX);
+    let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, as_int, smi_min);
+    let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, smi_max);
+    let in_range = self.fb.ins().band(ge_min, lt_max);
+    let smi_ok = self.fb.ins().band(matches, in_range);
+
+    let smi_block = self.fb.create_block();
+    let float_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let result_var = self.fb.declare_var(types::I64);
+    self.fb.ins().brif(smi_ok, smi_block, &[], float_block, &[]);
+
+    self.fb.switch_to_block(smi_block);
+    let packed = self.i64_to_smi(as_int);
+    self.fb.def_var(result_var, packed);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(float_block);
+    let boxed = self.from_f64(f);
+    self.fb.def_var(result_var, boxed);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    (self.fb.use_var(result_var), f)
   }
 
   /// Re-establishes `reg_vars[dst]` (via a real memory read, then a
@@ -8639,6 +8876,46 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `emit_bitwise_guarded`'s fast path, unguarded: see
   /// `emit_binary_numeric_proven`'s docs.
+  /// Decodes a boxed `Value` to a raw `i64` for a bitwise op, skipping
+  /// the `to_f64`+`fcvt_to_sint_sat` round trip entirely when it's
+  /// already a Smi (two shifts instead of a real float conversion) --
+  /// mirrors `emit_add_numeric`'s own decode half. `select`, not a
+  /// branch: bitwise call sites are common enough per function that
+  /// this needed the same no-new-blocks discipline `to_f64` itself
+  /// settled on, not the "rare call site" exception `MaxMin` gets to
+  /// use.
+  fn to_i64_for_bitwise(&mut self, v: IrValue) -> IrValue {
+    let is_smi = self.is_smi(v);
+    let smi_int = self.smi_to_i64(v);
+    let f = self.to_f64(v);
+    let float_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    self.fb.ins().select(is_smi, smi_int, float_int)
+  }
+
+  /// Packs an `i64` that's ALREADY KNOWN to be the real, intended
+  /// integer value (a bitwise result, a list/string length, `.int()`,
+  /// `Mod`) as a Smi when it fits, falling back to float otherwise --
+  /// the interpreter gets this for free every time it calls
+  /// `Value::number`, whose own auto-select does exactly this; this is
+  /// that same decision made explicit in IR for a value the JIT
+  /// already has as a raw `i64`, no float round trip needed to get
+  /// there. Deliberately NOT folded into `from_f64` itself: that
+  /// helper stays a plain bitcast because most of its callers hold a
+  /// genuine, arbitrary-precision float where this check would be
+  /// wasted work, and making it universal was a real, measured
+  /// regression (see `from_f64`'s own docs).
+  fn box_i64(&mut self, i: IrValue) -> IrValue {
+    let smi_min = self.i64c(value::SMI_MIN);
+    let smi_max = self.i64c(value::SMI_MAX);
+    let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, i, smi_min);
+    let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, i, smi_max);
+    let in_range = self.fb.ins().band(ge_min, lt_max);
+    let smi_packed = self.i64_to_smi(i);
+    let f = self.fb.ins().fcvt_from_sint(types::F64, i);
+    let float_boxed = self.from_f64(f);
+    self.fb.ins().select(in_range, smi_packed, float_boxed)
+  }
+
   fn emit_bitwise_proven(
     &mut self,
     dst: u8,
@@ -8648,13 +8925,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
-    let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
-    let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+    let ia = self.to_i64_for_bitwise(va);
+    let ib = self.to_i64_for_bitwise(vb);
     let ir = fast(self.fb, ia, ib);
-    let fr = self.fb.ins().fcvt_from_sint(types::F64, ir);
-    let bits = self.from_f64(fr);
+    let bits = self.box_i64(ir);
     self.store_reg(dst, bits);
   }
 
@@ -8676,13 +8950,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
-    let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
-    let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+    let ia = self.to_i64_for_bitwise(va);
+    let ib = self.to_i64_for_bitwise(vb);
     let ir = fast(self.fb, ia, ib);
-    let fr = self.fb.ins().fcvt_from_sint(types::F64, ir);
-    let bits = self.from_f64(fr);
+    let bits = self.box_i64(ir);
     self.store_reg(dst, bits);
     self.fb.ins().jump(done_block, &[]);
 
@@ -8937,8 +9208,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn emit_addimm_proven(&mut self, dst: u8, a: u8, imm_const: u16) {
     let va = self.load_reg(a);
     let vimm = self.bake_const(imm_const);
-    let bits = self.emit_add_numeric(va, vimm);
-    self.store_reg(dst, bits);
+    let (bits, f) = self.emit_add_numeric(va, vimm);
+    self.store_reg_numeric(dst, bits, f);
   }
 
   fn emit_addimm(&mut self, dst: u8, a: u8, imm_const: u16) {
@@ -8951,8 +9222,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(fast_block);
     let vimm = self.bake_const(imm_const);
-    let bits = self.emit_add_numeric(va, vimm);
-    self.store_reg(dst, bits);
+    let (bits, f) = self.emit_add_numeric(va, vimm);
+    self.store_reg_numeric(dst, bits, f);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -8964,58 +9235,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       "zuri_jit_addimm_slow",
       &[self.vm_param, base, dst_i, a_i, imm_bits],
     );
-    self.resync_dst_from_memory(dst);
-    self.fb.ins().jump(done_block, &[]);
-
-    self.fb.switch_to_block(done_block);
-  }
-
-  /// `emit_imm_numeric_guarded`'s fast path, unguarded: see
-  /// `emit_binary_numeric_proven`'s docs.
-  fn emit_imm_numeric_proven(
-    &mut self,
-    dst: u8,
-    a: u8,
-    imm_const: u16,
-    fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
-  ) {
-    let fa = self.load_reg_f64(a);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
-    let fr = fast(self, fa, fimm);
-    self.store_reg_f64(dst, fr);
-  }
-
-  fn emit_imm_numeric_guarded(
-    &mut self,
-    dst: u8,
-    a: u8,
-    imm_const: u16,
-    slow_helper: &'static str,
-    fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
-  ) {
-    let va = self.load_reg(a);
-    let guard = self.is_number(va);
-    let fast_block = self.fb.create_block();
-    let slow_block = self.fb.create_block();
-    let done_block = self.fb.create_block();
-    self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
-
-    self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
-    let fr = fast(self, fa, fimm);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
-    self.fb.ins().jump(done_block, &[]);
-
-    self.fb.switch_to_block(slow_block);
-    let base = self.base_param;
-    let dst_i = self.idx(dst);
-    let a_i = self.idx(a);
-    let imm_bits = self.bake_f64_bits(imm_const);
-    self.call_checked(slow_helper, &[self.vm_param, base, dst_i, a_i, imm_bits]);
     self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
