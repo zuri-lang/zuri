@@ -39,6 +39,7 @@
 //! reassigned from the call's own result, which isn't proven).
 
 use rustc_hash::FxHashMap;
+use smallvec::{SmallVec, smallvec};
 
 use crate::vm::chunk::{Instr, ParamType};
 use crate::vm::object::ObjFunction;
@@ -48,7 +49,7 @@ use crate::vm::object::ObjFunction;
 /// than a handful of words' worth of registers.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RegSet {
-  words: Vec<u64>,
+  words: SmallVec<[u64; 8]>,
 }
 
 impl RegSet {
@@ -62,7 +63,7 @@ impl RegSet {
   /// run).
   fn empty(num_registers: usize) -> Self {
     RegSet {
-      words: vec![0u64; Self::word_count(num_registers)],
+      words: smallvec![0u64; Self::word_count(num_registers)],
     }
   }
 
@@ -75,7 +76,7 @@ impl RegSet {
   /// correct answer rather than getting stuck too conservative.
   fn full(num_registers: usize) -> Self {
     let words = Self::word_count(num_registers);
-    let mut v = vec![u64::MAX; words];
+    let mut v = smallvec![u64::MAX; words];
     // Clear any bits past `num_registers` in the last word so equality
     // comparisons between two `full()`-seeded sets behave sanely (not
     // load-bearing for correctness, just keeps the representation

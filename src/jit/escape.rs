@@ -94,6 +94,7 @@
 //! escaping.
 
 use rustc_hash::FxHashSet;
+use smallvec::{SmallVec, smallvec};
 
 use crate::jit::typeflow;
 use crate::vm::chunk::Instr;
@@ -214,7 +215,7 @@ impl AliasSet {
 /// error.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct MustSet {
-  words: Vec<u64>,
+  words: SmallVec<[u64; 4]>,
 }
 
 impl MustSet {
@@ -227,7 +228,7 @@ impl MustSet {
   /// reference, nor is anything else, before any code has run).
   fn empty(num_registers: usize) -> Self {
     MustSet {
-      words: vec![0u64; Self::word_count(num_registers)],
+      words: smallvec![0u64; Self::word_count(num_registers)],
     }
   }
 
@@ -237,7 +238,7 @@ impl MustSet {
   /// `typeflow::RegSet::full` documents for its own analogous role).
   fn full(num_registers: usize) -> Self {
     let words = Self::word_count(num_registers);
-    let mut v = vec![u64::MAX; words];
+    let mut v = smallvec![u64::MAX; words];
     let extra_bits = words * 64 - num_registers;
     if extra_bits > 0
       && let Some(last) = v.last_mut()
