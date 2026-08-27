@@ -238,42 +238,20 @@ impl IsolateIsolate {
   }
 }
 
-/// How many tasks an idle isolate thread grabs from the shared queue
-/// per lock acquisition, once there's more than one waiting.
-///
-/// `isolate-stress` is what exposed the need for this: with one
-/// `pop_front` per task, a batch of a million tiny isolates meant a
-/// million lock/unlock cycles on `pool.queue`, contended across every
-/// isolate thread, and that contention (not the actual per-task work)
-/// was the dominant cost. Draining a whole chunk under a single lock
-/// cuts that down by roughly this factor with no change to what runs
-/// or in what order results come back, since nothing about `map()`'s
-/// result ordering depends on which thread ran which task, only on
-/// each `Task`'s own `IsolateState` reporting back to the right slot.
-/// Bounded rather than draining the whole queue in one grab, so an
-/// idle thread doesn't starve every other one out of work the moment
-/// a big batch lands.
-const DEQUEUE_BATCH: usize = 64;
-
 fn isolate_loop() {
   let mut isolate = IsolateIsolate::new();
   let pool = pool();
   let mut local: VecDeque<Task> = VecDeque::new();
   loop {
-    let task = match local.pop_front() {
-      Some(t) => t,
-      None => {
-        let mut queue = lock(&pool.queue);
-        while queue.is_empty() {
-          queue = pool
-            .not_empty
-            .wait(queue)
-            .unwrap_or_else(PoisonError::into_inner);
-        }
-        let n = queue.len().min(DEQUEUE_BATCH);
-        local.extend(queue.drain(..n));
-        local.pop_front().unwrap()
-      },
+    let task = {
+      let mut queue = lock(&pool.queue);
+      while queue.is_empty() {
+        queue = pool
+          .not_empty
+          .wait(queue)
+          .unwrap_or_else(PoisonError::into_inner);
+      }
+      queue.pop_front().unwrap()
     };
     pool.running.fetch_add(1, Ordering::AcqRel);
 
@@ -427,7 +405,10 @@ pub enum SelectOutcome {
 /// Blocks until at least one of `states` has finished, returning its
 /// index into the slice; ties (more than one already done) resolve
 /// to whichever comes first in the caller's own list.
-pub fn wait_any_isolates(states: &[Arc<IsolateState>], timeout: Option<Duration>) -> WaitAnyOutcome {
+pub fn wait_any_isolates(
+  states: &[Arc<IsolateState>],
+  timeout: Option<Duration>,
+) -> WaitAnyOutcome {
   if let Some(i) = states.iter().position(|s| s.is_done()) {
     return WaitAnyOutcome::Ready(i);
   }
@@ -462,7 +443,10 @@ pub fn wait_any_isolates(states: &[Arc<IsolateState>], timeout: Option<Duration>
 }
 
 /// Blocks until EVERY one of `states` has finished.
-pub fn wait_all_isolates(states: &[Arc<IsolateState>], timeout: Option<Duration>) -> WaitAllOutcome {
+pub fn wait_all_isolates(
+  states: &[Arc<IsolateState>],
+  timeout: Option<Duration>,
+) -> WaitAllOutcome {
   let started = Instant::now();
   for s in states {
     if is_current_cancelled() {
@@ -595,20 +579,20 @@ fn run_task(isolate: &mut IsolateIsolate, task: &Task) -> Result<TransferGraph, 
   match transfer::materialize(&mut isolate.vm, &task.callee) {
     Ok(v) => {
       isolate.vm.pin_values([v]);
-    }
+    },
     Err(e) => {
       isolate.vm.unpin(mark);
       return Err(e);
-    }
+    },
   };
   match transfer::materialize(&mut isolate.vm, &task.args) {
     Ok(v) => {
       isolate.vm.pin_values([v]);
-    }
+    },
     Err(e) => {
       isolate.vm.unpin(mark);
       return Err(e);
-    }
+    },
   };
   let callee = isolate.vm.pinned(mark);
   let args_val = isolate.vm.pinned(mark + 1);

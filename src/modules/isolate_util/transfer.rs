@@ -1461,4 +1461,3 @@ pub fn capture_as_args_list(vm: &VM, item: Value) -> Result<TransferGraph, Strin
     arena,
   })
 }
-

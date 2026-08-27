@@ -41,7 +41,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "queued_count",
       native(vm, "queued_count", 0, false, queued_count),
     ),
-    ("is_shutdown", native(vm, "is_shutdown", 0, false, is_shutdown)),
+    (
+      "is_shutdown",
+      native(vm, "is_shutdown", 0, false, is_shutdown),
+    ),
     ("spawn", native(vm, "spawn", 3, false, spawn)),
     ("map", native(vm, "map", 3, false, map_batch)),
     ("join", native(vm, "join", 2, false, join)),

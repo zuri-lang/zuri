@@ -138,8 +138,8 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
 /// this script's own output) so it never tries to read back its own
 /// generated Rust as a candidate `.zu` fixture.
 fn collect_zu_files(dir: &Path, skip_dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-  let entries = fs::read_dir(dir)
-    .unwrap_or_else(|e| panic!("failed to read directory {}: {e}", dir.display()));
+  let entries =
+    fs::read_dir(dir).unwrap_or_else(|e| panic!("failed to read directory {}: {e}", dir.display()));
   for entry in entries.filter_map(|entry| entry.ok()) {
     let path = entry.path();
     if path == skip_dir {
