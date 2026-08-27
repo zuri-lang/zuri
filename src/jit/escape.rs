@@ -214,7 +214,7 @@ impl AliasSet {
 /// under one type invites a silent logic bug instead of a compile
 /// error.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct MustSet {
+pub struct MustSet {
   words: SmallVec<[u64; 4]>,
 }
 
@@ -299,14 +299,19 @@ impl MustSet {
 /// a false "is definitely self" would misapply this function's own
 /// (possibly still-escaping) parameter summary to what's actually a
 /// call to something else entirely.
-pub(crate) fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
+pub fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
+  let preds = typeflow::build_predecessors(proto);
+  self_reference_facts_with_preds(proto, &preds)
+}
+
+pub fn self_reference_facts_with_preds(proto: &ObjFunction, preds: &[Vec<usize>]) -> Vec<MustSet> {
   let is_self_name = |name_const: u16| -> bool {
     match proto.chunk.constants.get(name_const as usize) {
       Some(v) if v.is_string() => v.as_str() == proto.name,
       _ => false,
     }
   };
-  global_ref_facts_for(proto, is_self_name)
+  global_ref_facts_for(proto, preds, is_self_name)
 }
 
 /// Generalization of `self_reference_facts`: same "must" analysis,
@@ -318,11 +323,14 @@ pub(crate) fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
 /// named global: see `global_ref_facts`; still needs a value-
 /// identity guard, since unlike a function's own name, an arbitrary
 /// global binding can be reassigned).
-fn global_ref_facts_for(proto: &ObjFunction, is_target_name: impl Fn(u16) -> bool) -> Vec<MustSet> {
+fn global_ref_facts_for(
+  proto: &ObjFunction,
+  preds: &[Vec<usize>],
+  is_target_name: impl Fn(u16) -> bool,
+) -> Vec<MustSet> {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
-  let preds = typeflow::build_predecessors(proto);
 
   let mut entry: Vec<MustSet> = (0..code_len)
     .map(|ip| {
@@ -401,7 +409,16 @@ fn global_ref_facts_for(proto: &ObjFunction, is_target_name: impl Fn(u16) -> boo
 /// reassigned), so the caller pairs this with the resolved `Value`'s
 /// bits for that guard.
 pub(crate) fn global_ref_facts(proto: &ObjFunction, target_name: &str) -> Vec<MustSet> {
-  global_ref_facts_for(proto, |name_const| {
+  let preds = typeflow::build_predecessors(proto);
+  global_ref_facts_with_preds(proto, &preds, target_name)
+}
+
+pub(crate) fn global_ref_facts_with_preds(
+  proto: &ObjFunction,
+  preds: &[Vec<usize>],
+  target_name: &str,
+) -> Vec<MustSet> {
+  global_ref_facts_for(proto, preds, |name_const| {
     match proto.chunk.constants.get(name_const as usize) {
       Some(v) if v.is_string() => v.as_str() == target_name,
       _ => false,
@@ -666,6 +683,29 @@ pub fn analyze_one(
   self_class_safety: Option<&ClassFieldSafety>,
   alloc_class_safety: Option<&ClassFieldSafety>,
 ) -> EscapeResult {
+  let preds = typeflow::build_predecessors(proto);
+  let self_ref = self_reference_facts_with_preds(proto, &preds);
+  let self_summary = compute_param_summary_with_facts(proto, self_class_safety, &preds, &self_ref);
+  analyze_one_with_facts(
+    proto,
+    alloc_ip,
+    self_class_safety,
+    alloc_class_safety,
+    &preds,
+    &self_ref,
+    &self_summary.param_escapes,
+  )
+}
+
+pub fn analyze_one_with_facts(
+  proto: &ObjFunction,
+  alloc_ip: usize,
+  self_class_safety: Option<&ClassFieldSafety>,
+  alloc_class_safety: Option<&ClassFieldSafety>,
+  preds: &[Vec<usize>],
+  self_ref: &[MustSet],
+  self_summary: &[bool],
+) -> EscapeResult {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
@@ -677,11 +717,6 @@ pub fn analyze_one(
     // light).
     return EscapeResult { escapes: true };
   };
-
-  let self_ref = self_reference_facts(proto);
-  let self_summary = compute_param_summary(proto, self_class_safety);
-
-  let preds = typeflow::build_predecessors(proto);
 
   // `entry[ip]`/`out[ip]` are meaningless (left empty, never read) for
   // `alloc_ip` itself; its role in this analysis is exactly one
@@ -765,11 +800,7 @@ pub fn analyze_one(
           continue;
         }
         let param_idx = (k - 1) as usize;
-        let escapes_here = self_summary
-          .param_escapes
-          .get(param_idx)
-          .copied()
-          .unwrap_or(true);
+        let escapes_here = self_summary.get(param_idx).copied().unwrap_or(true);
         if escapes_here {
           escaped = true;
         }
@@ -904,11 +935,11 @@ fn analyze_param_escape(
   self_ref: &[MustSet],
   guess: &[bool],
   self_class_safety: Option<&ClassFieldSafety>,
+  preds: &[Vec<usize>],
 ) -> bool {
   let code = &proto.chunk.code;
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
-  let preds = typeflow::build_predecessors(proto);
 
   if code_len == 0 {
     return false;
@@ -1029,6 +1060,17 @@ pub fn compute_param_summary(
   proto: &ObjFunction,
   self_class_safety: Option<&ClassFieldSafety>,
 ) -> FuncEscapeSummary {
+  let preds = typeflow::build_predecessors(proto);
+  let self_ref = self_reference_facts_with_preds(proto, &preds);
+  compute_param_summary_with_facts(proto, self_class_safety, &preds, &self_ref)
+}
+
+pub fn compute_param_summary_with_facts(
+  proto: &ObjFunction,
+  self_class_safety: Option<&ClassFieldSafety>,
+  preds: &[Vec<usize>],
+  self_ref: &[MustSet],
+) -> FuncEscapeSummary {
   let arity = proto.arity as usize;
   if arity == 0 {
     return FuncEscapeSummary {
@@ -1036,7 +1078,6 @@ pub fn compute_param_summary(
     };
   }
 
-  let self_ref = self_reference_facts(proto);
   let mut guess = vec![false; arity];
 
   loop {
@@ -1046,7 +1087,7 @@ pub fn compute_param_summary(
       if guess[i] {
         continue; // already escaping; monotonic, can't un-escape
       }
-      if analyze_param_escape(proto, i as u8, &self_ref, &guess, self_class_safety) {
+      if analyze_param_escape(proto, i as u8, self_ref, &guess, self_class_safety, preds) {
         next[i] = true;
         changed = true;
       }

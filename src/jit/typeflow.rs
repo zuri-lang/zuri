@@ -842,6 +842,33 @@ pub fn analyze_bool(proto: &ObjFunction, preds: &[Vec<usize>]) -> BoolFacts {
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
 
+  let has_bool_seed = code.iter().any(|i| match i {
+    Instr::LoadBool { .. }
+    | Instr::Not { .. }
+    | Instr::Eq { .. }
+    | Instr::Neq { .. }
+    | Instr::Lt { .. }
+    | Instr::Le { .. }
+    | Instr::Gt { .. }
+    | Instr::Ge { .. }
+    | Instr::LtImm { .. }
+    | Instr::LeImm { .. }
+    | Instr::GtImm { .. }
+    | Instr::GeImm { .. }
+    | Instr::EqImm { .. }
+    | Instr::NeqImm { .. } => true,
+    Instr::CheckParamType { check_idx, .. } => {
+      let check = &proto.chunk.param_checks[*check_idx as usize];
+      !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Bool)
+    },
+    _ => false,
+  });
+  if !has_bool_seed {
+    return BoolFacts {
+      entry: vec![RegSet::empty(num_registers); code_len],
+    };
+  }
+
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
@@ -1229,10 +1256,12 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
 
-  let has_numeric_const = code.iter().any(|i| match i {
-    Instr::LoadConst { const_idx, .. } => proto.chunk.constants[*const_idx as usize].is_number(),
-    _ => false,
-  });
+  let has_div = code.iter().any(|i| matches!(i, Instr::Div { .. }));
+  let has_numeric_const = has_div
+    && code.iter().any(|i| match i {
+      Instr::LoadConst { const_idx, .. } => proto.chunk.constants[*const_idx as usize].is_number(),
+      _ => false,
+    });
   if !has_numeric_const {
     return ConstFacts {
       entry: vec![vec![ConstFact::Bottom; num_registers]; code_len],

@@ -623,8 +623,9 @@ struct FuncCompiler<'a, 'b> {
   /// predecessor counts in `run`); it depends only on `proto`'s
   /// control flow, never on what any one of those passes is proving,
   /// so recomputing it per-pass was pure repeated work paid on every
-  /// single JIT compile.
   preds: Vec<Vec<usize>>,
+  self_ref_facts: std::cell::OnceCell<Vec<crate::jit::escape::MustSet>>,
+  self_summary: std::cell::OnceCell<crate::jit::escape::FuncEscapeSummary>,
   /// A ONE-SHOT type sample of the call that triggered this
   /// compilation (bit `r` = fixed-arity parameter register `r` held a
   /// number); `None` after filtering out an all-zero sample. See
@@ -838,6 +839,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       bool_facts,
       const_facts,
       preds,
+      self_ref_facts: std::cell::OnceCell::new(),
+      self_summary: std::cell::OnceCell::new(),
       speculative_params,
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available; empty
@@ -2412,6 +2415,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// this optimization on essentially every real numeric workload,
   /// since those are exactly the functions that get a specialized
   /// body.
+  fn escape_analyze_one(
+    &self,
+    alloc_ip: usize,
+    self_class_safety: Option<&escape::ClassFieldSafety>,
+    alloc_class_safety: Option<&escape::ClassFieldSafety>,
+  ) -> escape::EscapeResult {
+    let self_ref = self
+      .self_ref_facts
+      .get_or_init(|| escape::self_reference_facts_with_preds(self.proto, &self.preds));
+    let self_summary = self.self_summary.get_or_init(|| {
+      escape::compute_param_summary_with_facts(self.proto, self_class_safety, &self.preds, self_ref)
+    });
+    escape::analyze_one_with_facts(
+      self.proto,
+      alloc_ip,
+      self_class_safety,
+      alloc_class_safety,
+      &self.preds,
+      self_ref,
+      &self_summary.param_escapes,
+    )
+  }
+
   fn scalar_construct_eligible(&self, ip: usize, dst: u8) -> bool {
     let Some(info) = self.construct_info.get(&ip) else {
       return false;
@@ -2426,7 +2452,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         return false;
       }
     }
-    !escape::analyze_one(self.proto, ip, None, Some(&info.safety)).escapes
+    !self
+      .escape_analyze_one(ip, None, Some(&info.safety))
+      .escapes
   }
 
   /// Builds a proven-non-escaping instance with NO heap allocation:
@@ -6623,7 +6651,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         return false;
       }
     }
-    !escape::analyze_one(self.proto, alloc_ip, None, None).escapes
+    !self.escape_analyze_one(alloc_ip, None, None).escapes
   }
 
   /// `Instr::MakeList{dst, start, count}`'s scalar-replaced fast path
