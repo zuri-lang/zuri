@@ -22,6 +22,7 @@ use crate::vm::object::{
   Heap, ListStorage, NativeFunction, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding,
   UpvalueDescriptor, UpvalueState, ZuriContext, write_barrier,
 };
+use crate::vm::value;
 use crate::vm::value::Value;
 
 /// Interpreted recursion never touches the native stack, only heap-bounded
@@ -4735,7 +4736,18 @@ impl VM {
   {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
-    if va.is_number() && vb.is_number() {
+    if va.is_int() && vb.is_int() {
+      // `as_number() as i64` on an already-boxed int would decode it
+      // to a float and immediately cast that back to an int -- two
+      // wasted conversions for a value that's already sitting there
+      // as an `i64` in everything but name. `as_int()` is exactly
+      // that raw value.
+      return Ok(self.set_reg(
+        base,
+        dst,
+        Value::number(op(va.as_int(), vb.as_int()) as f64),
+      ));
+    } else if va.is_number() && vb.is_number() {
       return Ok(self.set_reg(
         base,
         dst,
@@ -4810,7 +4822,21 @@ impl VM {
     vb: Value,
     op_name: &str,
   ) -> RunResult<Value> {
-    if va.is_number() && vb.is_number() {
+    if va.is_int() && vb.is_int() {
+      // Two 48-bit-range values can never overflow `i64` addition
+      // itself; the only thing that can happen is the sum landing
+      // outside the Smi range, which needs its own explicit check
+      // here -- routing an in-range sum through `Value::number`
+      // instead would box it as a float first only for `Value::number`
+      // to immediately convert it right back to decide it fits,
+      // wasting the exact float round-trip this path exists to skip.
+      let sum = va.as_int() + vb.as_int();
+      return Ok(if (value::SMI_MIN..value::SMI_MAX).contains(&sum) {
+        Value::integer(sum)
+      } else {
+        Value::number(sum as f64)
+      });
+    } else if va.is_number() && vb.is_number() {
       return Ok(Value::number(va.as_number() + vb.as_number()));
     } else if va.is_bigint() && vb.is_bigint() {
       return Ok(self.heap.alloc_bigint(va.as_bigint() + vb.as_bigint()));
@@ -4887,7 +4913,21 @@ impl VM {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
 
-    if va.is_number() && vb.is_number() {
+    if va.is_int() && vb.is_int() {
+      // Unlike addition, two Smis multiplied really can overflow `i64`
+      // itself (2^47 * 2^47 is nowhere near representable), so this
+      // needs `checked_mul`, not just a post-hoc range check on the
+      // product. `None` falls back to genuine float multiplication of
+      // the decoded operands, not a wrapped/garbage product.
+      let result = match va.as_int().checked_mul(vb.as_int()) {
+        Some(product) if (value::SMI_MIN..value::SMI_MAX).contains(&product) => {
+          Value::integer(product)
+        },
+        Some(product) => Value::number(product as f64),
+        None => Value::number(va.as_int() as f64 * vb.as_int() as f64),
+      };
+      return Ok(self.set_reg(base, dst, result));
+    } else if va.is_number() && vb.is_number() {
       return Ok(self.set_reg(base, dst, Value::number(va.as_number() * vb.as_number())));
     } else if va.is_bigint() && vb.is_bigint() {
       let v = self.heap.alloc_bigint(va.as_bigint() * vb.as_bigint());
@@ -5479,6 +5519,12 @@ impl VM {
 
 impl VM {
   fn value_as_index(&mut self, index: Value) -> RunResult<i64> {
+    // The common case by far: a Smi is already exactly the integer an
+    // index needs to be, with nothing left to validate -- no float
+    // decode, no roundtrip check, just the raw value.
+    if index.is_int() {
+      return Ok(index.as_int());
+    }
     if !index.is_number() {
       let msg = format!("index must be a number, got {}", index.type_name());
       return Err(self.raise("TypeError", msg));

@@ -6788,11 +6788,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// range-checks on its own, same discipline `Value::integer`'s own
   /// `debug_assert!` documents on the Rust side.
   ///
-  /// Not called yet: this is the packing half a real arithmetic Smi
-  /// fast path needs, landing with the rest of that work; kept here
-  /// now rather than reintroduced later since `is_smi`/`smi_to_i64`
-  /// already needed to exist for `to_f64`'s correctness fix.
-  #[allow(dead_code)]
   fn i64_to_smi(&mut self, i: IrValue) -> IrValue {
     let mask = self.u64c(value::PTR_MASK);
     let masked = self.fb.ins().band(i, mask);
@@ -7174,7 +7169,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       Instr::Add { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
+          let va = self.load_reg(a);
+          let vb = self.load_reg(b);
+          let bits = self.emit_add_numeric(va, vb);
+          self.store_reg(dst, bits);
         } else if self.both_proven_string(ip, a, b) {
           self.emit_str_add(ip, dst, a, b);
         } else {
@@ -7190,10 +7188,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.fb.ins().brif(both_num, num_block, &[], not_num_block, &[]);
 
           self.fb.switch_to_block(num_block);
-          let fa = self.to_f64(va);
-          let fb_ = self.to_f64(vb);
-          let res_f = self.fb.ins().fadd(fa, fb_);
-          let res_v = self.from_f64(res_f);
+          let res_v = self.emit_add_numeric(va, vb);
           self.store_reg(dst, res_v);
           self.fb.ins().jump(done_block, &[]);
 
@@ -8515,6 +8510,51 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `+` on two values already known numeric, producing a genuine Smi
+  /// result when both operands are Smis and the sum still fits --
+  /// unlike the shared `emit_binary_numeric_proven`/`_guarded` path
+  /// (still used for `Sub`/`Mul`/etc, which route every result through
+  /// the plain-bitcast `from_f64`), so `1 + 2` compiled by the JIT
+  /// tags its result exactly the way the interpreter's
+  /// `binary_add_values` already does. Getting this wrong isn't a
+  /// value bug (`as_number` reads either encoding correctly either
+  /// way) but it is a real, user-visible tier inconsistency:
+  /// `tests/string-invoke-stress.zu`'s `reused_register_length` caught
+  /// it via `type_name()` disagreeing about a JIT-computed value
+  /// depending on which tier actually ran the addition.
+  ///
+  /// `select`, not a branch: both the integer and float sums are
+  /// cheap to compute unconditionally and neither can trap on any bit
+  /// pattern (same reasoning as `to_f64`'s own fix, which hit a real
+  /// compile-time blowup from creating fresh blocks at a call site
+  /// this hot).
+  fn emit_add_numeric(&mut self, va: IrValue, vb: IrValue) -> IrValue {
+    let a_smi = self.is_smi(va);
+    let b_smi = self.is_smi(vb);
+    let both_smi = self.fb.ins().band(a_smi, b_smi);
+
+    let ia = self.smi_to_i64(va);
+    let ib = self.smi_to_i64(vb);
+    // Two 48-bit-range values can never overflow a real `iadd`; the
+    // only thing to check is whether the sum still fits the Smi
+    // range, not whether the addition itself overflowed.
+    let sum = self.fb.ins().iadd(ia, ib);
+    let smi_min = self.i64c(value::SMI_MIN);
+    let smi_max = self.i64c(value::SMI_MAX);
+    let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, sum, smi_min);
+    let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, sum, smi_max);
+    let in_range = self.fb.ins().band(ge_min, lt_max);
+    let smi_ok = self.fb.ins().band(both_smi, in_range);
+    let smi_packed = self.i64_to_smi(sum);
+
+    let fa = self.to_f64(va);
+    let fb_ = self.to_f64(vb);
+    let float_sum = self.fb.ins().fadd(fa, fb_);
+    let float_boxed = self.from_f64(float_sum);
+
+    self.fb.ins().select(smi_ok, smi_packed, float_boxed)
+  }
+
   /// `emit_binary_numeric_guarded`'s fast-path body with the guard,
   /// branch, and slow-path fallback removed entirely; valid only
   /// when the caller has already confirmed (via `type_facts`) that `a`
@@ -8887,13 +8927,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   /// `emit_addimm`'s fast path, unguarded: see
-  /// `emit_binary_numeric_proven`'s docs.
+  /// `emit_binary_numeric_proven`'s docs. Uses `bake_const`, not
+  /// `bake_f64_bits`: the constant pool already holds this immediate
+  /// correctly Smi-or-float-tagged from `Value::number`, and
+  /// `emit_add_numeric` needs that real tag to decide whether the
+  /// result can stay a Smi too -- `bake_f64_bits` would force it
+  /// through a float re-encoding first, the exact tier-inconsistency
+  /// `emit_add_numeric` exists to avoid (see its own docs).
   fn emit_addimm_proven(&mut self, dst: u8, a: u8, imm_const: u16) {
-    let fa = self.load_reg_f64(a);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
-    let fr = self.fb.ins().fadd(fa, fimm);
-    self.store_reg_f64(dst, fr);
+    let va = self.load_reg(a);
+    let vimm = self.bake_const(imm_const);
+    let bits = self.emit_add_numeric(va, vimm);
+    self.store_reg(dst, bits);
   }
 
   fn emit_addimm(&mut self, dst: u8, a: u8, imm_const: u16) {
@@ -8905,11 +8950,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
-    let fr = self.fb.ins().fadd(fa, fimm);
-    let bits = self.from_f64(fr);
+    let vimm = self.bake_const(imm_const);
+    let bits = self.emit_add_numeric(va, vimm);
     self.store_reg(dst, bits);
     self.fb.ins().jump(done_block, &[]);
 
