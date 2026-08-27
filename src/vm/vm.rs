@@ -5531,6 +5531,12 @@ impl VM {
     if index.is_int() {
       return Ok(index.as_int());
     }
+    if index.is_float() {
+      let n = index.as_number();
+      if n.fract() == 0.0 && n >= value::SMI_MIN as f64 && n <= value::SMI_MAX as f64 {
+        return Ok(n as i64);
+      }
+    }
     let msg = format!("index must be an int, got {}", index.type_name());
     Err(self.raise("TypeError", msg))
   }
