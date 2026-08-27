@@ -1913,7 +1913,12 @@ impl VM {
       speculative_regs,
       facts,
     };
-    if self.jit_compiler().job_tx.send(job).is_err() {
+    let sent = if let Some(tx) = self.jit_compiler().job_tx.as_ref() {
+      tx.send(job).is_ok()
+    } else {
+      false
+    };
+    if !sent {
       // The background thread is gone; shouldn't happen (it lives
       // for the whole process), but if it did, undo the pin/flag so
       // proto just stays interpreted forever rather than wedged in a
@@ -3776,7 +3781,7 @@ impl VM {
             }
             let proto = proto_val.as_func();
 
-            let mut captured = Vec::with_capacity(proto.upvalues.len());
+            let mut captured = smallvec::SmallVec::with_capacity(proto.upvalues.len());
             for desc in &proto.upvalues {
               let upval = match *desc {
                 UpvalueDescriptor::Local(reg) => {
@@ -5609,5 +5614,11 @@ fn value_to_jump_key(v: Value) -> Option<JumpKey> {
     Some(JumpKey::Str(v.as_str().to_string()))
   } else {
     None
+  }
+}
+
+impl Drop for VM {
+  fn drop(&mut self) {
+    drop(self.jit_compiler.take());
   }
 }

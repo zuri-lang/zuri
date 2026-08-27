@@ -82,26 +82,27 @@ pub struct CompileResult {
 }
 
 pub struct JitCompilerHandle {
-  pub job_tx: Sender<CompileJob>,
+  pub job_tx: Option<Sender<CompileJob>>,
   pub result_rx: Receiver<CompileResult>,
   pub results_pending: Arc<AtomicBool>,
   pub shutdown: Arc<AtomicBool>,
+  pub thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for JitCompilerHandle {
   fn drop(&mut self) {
     self.shutdown.store(true, Ordering::Release);
+    drop(self.job_tx.take());
+    if let Some(thread) = self.thread.take() {
+      let _ = thread.join();
+    }
   }
 }
 
 /// Spawns the single background compiler thread and returns the
 /// job/result channel handles the VM uses to talk to it. The thread
-/// runs for the rest of the process; like the compiled code it
-/// produces (see `CompiledFunction`'s own docs), it is never torn
-/// down; when the job sender is dropped (VM shutdown), its loop below
-/// exits and the thread ends naturally, which this deliberately does
-/// not wait on (a short-lived CLI process has no need to join a
-/// background worker before exiting).
+/// runs until VM shutdown, at which point `JitCompilerHandle::drop`
+/// signals shutdown and joins the worker cleanly before heap deallocation.
 pub fn spawn() -> JitCompilerHandle {
   let (job_tx, job_rx) = channel::<CompileJob>();
   let (result_tx, result_rx) = channel::<CompileResult>();
@@ -110,16 +111,17 @@ pub fn spawn() -> JitCompilerHandle {
   let shutdown = Arc::new(AtomicBool::new(false));
   let worker_shutdown = Arc::clone(&shutdown);
 
-  std::thread::Builder::new()
+  let thread = std::thread::Builder::new()
     .name("zuri-jit-compiler".to_string())
     .spawn(move || compiler_loop(job_rx, result_tx, worker_pending, worker_shutdown))
     .expect("zuri: failed to spawn the background JIT compiler thread");
 
   JitCompilerHandle {
-    job_tx,
+    job_tx: Some(job_tx),
     result_rx,
     results_pending,
     shutdown,
+    thread: Some(thread),
   }
 }
 
@@ -140,6 +142,7 @@ fn compiler_loop(
       job.speculative_params,
       job.speculative_regs,
       job.facts,
+      Some(&shutdown),
     ) {
       Ok((entry, osr_ids)) => (Ok(entry), osr_ids),
       Err(e) => (Err(e), FxHashMap::default()),

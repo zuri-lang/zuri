@@ -127,6 +127,7 @@ pub fn compile(
   speculative_params: Option<u64>,
   speculative_regs: Option<typeflow::SpeculativeRegs>,
   facts: CompileFacts,
+  shutdown: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<FxHashMap<usize, i32>, String> {
   // A function that establishes a CATCH handler is still never compiled:
   // `PushCatch`/`PopCatch` maintain unwind state the interpreter owns,
@@ -176,6 +177,7 @@ pub fn compile(
     speculative_params,
     speculative_regs,
     facts,
+    shutdown,
   );
   fc.run()
 }
@@ -727,6 +729,7 @@ struct FuncCompiler<'a, 'b> {
   /// general and specialized body if this compile has one.
   proven_param_shapes: FxHashMap<u8, ParamShape>,
   guarded_instances: FxHashMap<u8, (IrValue, IrValue)>,
+  shutdown: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -917,6 +920,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
     facts: CompileFacts,
+    shutdown: Option<&'a std::sync::atomic::AtomicBool>,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let preds = typeflow::build_predecessors(proto);
@@ -987,6 +991,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .any(|i| matches!(i, Instr::Closure { .. })),
       proven_param_shapes: Self::compute_proven_shapes(proto),
       guarded_instances: FxHashMap::default(),
+      shutdown,
     }
   }
 
@@ -1205,6 +1210,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     // Pass 1: the general body.
     for ip in 0..self.blocks.len() {
+      if let Some(shutdown) = self.shutdown {
+        if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+          return Err("compilation aborted: VM shutdown".to_string());
+        }
+      }
       self.fb.switch_to_block(self.blocks[ip]);
       self.reg_f64.fill(None);
       self.guarded_instances.clear();
@@ -1223,6 +1233,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       let code_len = self.blocks.len();
       for ip in 0..code_len {
+        if let Some(shutdown) = self.shutdown {
+          if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err("compilation aborted: VM shutdown".to_string());
+          }
+        }
         self.fb.switch_to_block(self.blocks[ip]);
         self.reg_f64.fill(None);
         self.guarded_instances.clear();
@@ -2418,10 +2433,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .load(types::I64, flags, obj_ptr, object::obj_list_ptr_offset());
-    let len = self
+    let len32 = self
       .fb
       .ins()
-      .load(types::I64, flags, obj_ptr, object::obj_list_len_offset());
+      .load(types::I32, flags, obj_ptr, object::obj_list_len_offset());
+    let len = self.fb.ins().uextend(types::I64, len32);
     let inline_ptr = self
       .fb
       .ins()
@@ -5202,18 +5218,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(push_block);
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    let len = self
+    let len32 = self
       .fb
       .ins()
-      .load(types::I64, flags, ptr, object::obj_list_len_offset());
+      .load(types::I32, flags, ptr, object::obj_list_len_offset());
+    let len = self.fb.ins().uextend(types::I64, len32);
     let heap_ptr = self
       .fb
       .ins()
       .load(types::I64, flags, ptr, object::obj_list_ptr_offset());
-    let cap = self
+    let cap32 = self
       .fb
       .ins()
-      .load(types::I64, flags, ptr, object::obj_list_cap_offset());
+      .load(types::I32, flags, ptr, object::obj_list_cap_offset());
+    let cap = self.fb.ins().uextend(types::I64, cap32);
     let inline_cap = self.i64c(crate::vm::list::INLINE_CAP as i64);
     let zero = self.i64c(0);
     let is_inline = self.fb.ins().icmp(IntCC::Equal, heap_ptr, zero);
@@ -5236,10 +5254,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
     self.fb.ins().store(flags, item, elem_addr, 0);
     let new_len = self.fb.ins().iadd_imm_s(len, 1);
+    let new_len32 = self.fb.ins().ireduce(types::I32, new_len);
     self
       .fb
       .ins()
-      .store(flags, new_len, ptr, object::obj_list_len_offset());
+      .store(flags, new_len32, ptr, object::obj_list_len_offset());
     self.emit_write_barrier_for_store(ip, obj + 2, item, ptr);
     let nil = self.u64c(value::NIL_VAL);
     self.store_reg(dst, nil);
@@ -5808,12 +5827,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// fixed offset is sound.
   fn load_instance_fields_ptr(&mut self, obj_ptr: IrValue) -> IrValue {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    self.fb.ins().load(
+    let heap_ptr = self.fb.ins().load(
       types::I64,
       flags,
       obj_ptr,
       object::obj_instance_fields_offset() as i32,
-    )
+    );
+    let inline_ptr = self.fb.ins().iadd_imm_s(
+      obj_ptr,
+      object::obj_instance_fields_inline_offset() as i64,
+    );
+    let zero = self.i64c(0);
+    let is_inline = self.fb.ins().icmp(IntCC::Equal, heap_ptr, zero);
+    self.fb.ins().select(is_inline, inline_ptr, heap_ptr)
   }
 
   /// `Instr::GetIndex`'s fast path for `list[i]` with a plain, already

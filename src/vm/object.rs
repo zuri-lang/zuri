@@ -1,5 +1,6 @@
 use num_bigint::BigInt;
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::fs::File;
@@ -235,6 +236,12 @@ pub fn obj_instance_fields_offset() -> usize {
     + std::mem::offset_of!(FieldStorage, ptr)
 }
 
+pub fn obj_instance_fields_inline_offset() -> usize {
+  obj_payload_offset()
+    + std::mem::offset_of!(ObjInstance, fields)
+    + std::mem::offset_of!(FieldStorage, inline)
+}
+
 pub fn obj_instance_class_offset() -> usize {
   obj_payload_offset() + std::mem::offset_of!(ObjInstance, class)
 }
@@ -299,7 +306,8 @@ mod obj_repr_tests {
   /// costs today.
   #[test]
   fn size_unchanged_from_baseline() {
-    assert_eq!(std::mem::size_of::<Obj>(), 56);
+    assert_eq!(std::mem::size_of::<Obj>(), 48);
+    assert_eq!(std::mem::size_of::<GcBox>(), 64);
   }
 
   /// `obj_payload_offset()` measures where `Obj::Instance`'s payload
@@ -676,7 +684,7 @@ pub struct ObjClosure {
   pub function: Value,
   /// One entry per `function.upvalues` descriptor, in the same order.
   /// Each Value here points at an `Obj::Upvalue`.
-  pub upvalues: Vec<Value>,
+  pub upvalues: SmallVec<[Value; 2]>,
 }
 
 /// A module's own global namespace; structurally identical to
@@ -864,51 +872,85 @@ pub struct ObjClass {
 /// completely unchanged; this type is a drop-in replacement for
 /// `Vec<Cell<Value>>` at every current use site, not a new API surface
 /// callers need to learn.
+pub const INLINE_FIELDS: usize = 2;
+
 #[repr(C)]
 pub struct FieldStorage {
   ptr: *mut Cell<Value>,
-  len: usize,
+  len: u32,
+  inline: [Cell<Value>; INLINE_FIELDS],
 }
 
 unsafe impl Send for FieldStorage {}
 
 impl FieldStorage {
-  fn new(len: usize) -> FieldStorage {
-    let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
-    FieldStorage {
-      ptr: Box::into_raw(boxed) as *mut Cell<Value>,
-      len,
+  pub fn new(len: usize) -> FieldStorage {
+    if len <= INLINE_FIELDS {
+      FieldStorage {
+        ptr: std::ptr::null_mut(),
+        len: len as u32,
+        inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
+      }
+    } else {
+      let boxed: Box<[Cell<Value>]> = vec![Cell::new(Value::nil()); len].into_boxed_slice();
+      FieldStorage {
+        ptr: Box::into_raw(boxed) as *mut Cell<Value>,
+        len: len as u32,
+        inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
+      }
     }
   }
 
-  fn into_raw_parts(self) -> (*mut Cell<Value>, usize) {
+  pub fn into_raw_parts(self) -> (*mut Cell<Value>, usize) {
     let this = std::mem::ManuallyDrop::new(self);
-    (this.ptr, this.len)
+    (this.ptr, this.len as usize)
   }
 
-  unsafe fn from_raw_parts(ptr: *mut Cell<Value>, len: usize) -> FieldStorage {
-    FieldStorage { ptr, len }
+  pub unsafe fn from_raw_parts(ptr: *mut Cell<Value>, len: usize) -> FieldStorage {
+    FieldStorage {
+      ptr,
+      len: len as u32,
+      inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
+    }
   }
 
   pub fn as_fields_ptr(&self) -> *const Cell<Value> {
-    self.ptr
+    if self.ptr.is_null() {
+      self.inline.as_ptr()
+    } else {
+      self.ptr
+    }
   }
 
   pub fn as_fields_mut_ptr(&mut self) -> *mut Cell<Value> {
-    self.ptr
+    if self.ptr.is_null() {
+      self.inline.as_mut_ptr()
+    } else {
+      self.ptr
+    }
   }
 }
 
 impl std::ops::Deref for FieldStorage {
   type Target = [Cell<Value>];
+  #[inline(always)]
   fn deref(&self) -> &[Cell<Value>] {
-    unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    if self.ptr.is_null() {
+      &self.inline[..self.len as usize]
+    } else {
+      unsafe { std::slice::from_raw_parts(self.ptr, self.len as usize) }
+    }
   }
 }
 
 impl std::ops::DerefMut for FieldStorage {
+  #[inline(always)]
   fn deref_mut(&mut self) -> &mut [Cell<Value>] {
-    unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    if self.ptr.is_null() {
+      &mut self.inline[..self.len as usize]
+    } else {
+      unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len as usize) }
+    }
   }
 }
 
@@ -917,7 +959,8 @@ impl Drop for FieldStorage {
     if !self.ptr.is_null() {
       unsafe {
         drop(Box::from_raw(std::slice::from_raw_parts_mut(
-          self.ptr, self.len,
+          self.ptr,
+          self.len as usize,
         )));
       }
     }
@@ -1627,7 +1670,7 @@ mod gcbox_layout_tests {
     });
     let closure = heap.alloc_closure(ObjClosure {
       function: proto,
-      upvalues: Vec::new(),
+      upvalues: SmallVec::new(),
     });
     let obj = closure.as_obj();
     assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_CLOSURE);
@@ -1683,7 +1726,6 @@ struct GcBox {
   /// exactly as `Heap::sweep`'s chunk-major iteration does today for a
   /// full collection.
   chunk_idx: u32,
-  size: usize,
   /// Intrusive singly-linked list, threaded through `GcBox` itself,
   /// used for BOTH the remembered set and the young-generation set --
   /// never both at once for the same box (a box is only ever in one of
@@ -1838,7 +1880,7 @@ struct NurseryChunk {
 /// worst. Past the cap, a freed buffer is still dropped for real
 /// instead of hoarded forever; the exact same "retain some, drop the
 /// rest" shape `MAX_RETAINED_NURSERY_CHUNKS` already uses.
-const FIELD_STORAGE_POOL_CAP: usize = 1 << 20; // ~1,048,576
+const FIELD_STORAGE_POOL_CAP: usize = 4096;
 
 /// How many field counts `FieldStoragePool` serves from its direct,
 /// index-addressed free lists (`0..FIELD_STORAGE_DIRECT_CLASSES`);
@@ -1896,7 +1938,7 @@ impl FieldStoragePool {
   /// `FieldStorage::new`'s postcondition; including the first, which
   /// `give` overwrote with the free-list link.
   fn take(&mut self, len: usize) -> Option<*mut Cell<Value>> {
-    if len == 0 {
+    if len <= INLINE_FIELDS {
       return None;
     }
     if len < FIELD_STORAGE_DIRECT_CLASSES {
@@ -1923,7 +1965,7 @@ impl FieldStoragePool {
   /// Every cell must already be `Value::nil()` on entry; cell 0 is
   /// then repurposed as the free-list link, and `take` restores it.
   fn give(&mut self, ptr: *mut Cell<Value>, len: usize) -> bool {
-    if len == 0 {
+    if ptr.is_null() || len <= INLINE_FIELDS {
       return false;
     }
     if len < FIELD_STORAGE_DIRECT_CLASSES {
@@ -2247,7 +2289,6 @@ impl Heap {
         GcBox {
           live: Cell::new(true),
           marked: Cell::new(false),
-          size,
           obj,
           generation: Cell::new(Generation::Young),
           remembered: Cell::new(false),
@@ -2361,7 +2402,7 @@ impl Heap {
     self.bytes_allocated += size;
     self.live_count += 1;
     self.update_jit_gc_needed();
-    let gcbox_ptr = self.promote_into_old(size, obj);
+    let gcbox_ptr = self.promote_into_old(obj);
     let obj_ptr = unsafe { &(*gcbox_ptr).obj as *const Obj };
     write_barrier(obj_ptr);
     Value::obj(obj_ptr)
@@ -2387,7 +2428,7 @@ impl Heap {
   /// Returns the new `GcBox`'s address; for the caller
   /// (`forward_or_promote`) to record as this object's forwarding
   /// target and to walk its children from.
-  fn promote_into_old(&mut self, size: usize, obj: Obj) -> *const GcBox {
+  fn promote_into_old(&mut self, obj: Obj) -> *const GcBox {
     loop {
       let Some(&idx) = self.candidates.last() else {
         break;
@@ -2405,7 +2446,6 @@ impl Heap {
         unsafe {
           (*ptr).live.set(true);
           (*ptr).marked.set(false);
-          (*ptr).size = size;
           (*ptr).obj = obj;
           (*ptr).generation.set(Generation::Old);
           (*ptr).remembered.set(false);
@@ -2419,7 +2459,6 @@ impl Heap {
         chunk.slots.push(GcBox {
           live: Cell::new(true),
           marked: Cell::new(false),
-          size,
           obj,
           generation: Cell::new(Generation::Old),
           remembered: Cell::new(false),
@@ -2444,7 +2483,6 @@ impl Heap {
     chunk.slots.push(GcBox {
       live: Cell::new(true),
       marked: Cell::new(false),
-      size,
       obj,
       generation: Cell::new(Generation::Old),
       remembered: Cell::new(false),
@@ -2492,7 +2530,6 @@ impl Heap {
       let new_gcbox = gcbox.list_next.get();
       return unsafe { &(*new_gcbox).obj };
     }
-    let size = gcbox.size;
     // SAFETY: not yet forwarded (checked above), so `obj` hasn't been
     // read out yet; this takes ownership exactly once. Every future
     // reference to this SAME nursery slot takes the `marked` branch
@@ -2529,7 +2566,7 @@ impl Heap {
         },
       );
     }
-    let new_gcbox = self.promote_into_old(size, moved);
+    let new_gcbox = self.promote_into_old(moved);
     gcbox.marked.set(true);
     gcbox.list_next.set(new_gcbox);
     worklist.push(unsafe { &(*new_gcbox).obj });
@@ -2554,11 +2591,13 @@ impl Heap {
     match obj {
       Obj::Instance(instance) => {
         let (ptr, len) = instance.fields.into_raw_parts();
-        for i in 0..len {
-          unsafe { (*ptr.add(i)).set(Value::nil()) };
-        }
-        if !pool.give(ptr, len) {
-          drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
+        if !ptr.is_null() {
+          for i in 0..len {
+            unsafe { (*ptr.add(i)).set(Value::nil()) };
+          }
+          if !pool.give(ptr, len) {
+            drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
+          }
         }
       },
       other => drop(other),
@@ -2604,7 +2643,7 @@ impl Heap {
     for chunk in self.nursery_chunks.iter_mut() {
       for gcbox in chunk.slots.iter_mut() {
         if !gcbox.marked.get() {
-          freed_bytes += gcbox.size;
+          freed_bytes += Self::approx_size(&gcbox.obj);
           // SAFETY: never forwarded (checked above), so `obj` was
           // never moved out before now; this is its one and only
           // move, mirroring `forward_or_promote`'s own `ptr::read` for
@@ -2770,7 +2809,7 @@ impl Heap {
     let proto_val = self.alloc_function(f);
     self.alloc_closure(ObjClosure {
       function: proto_val,
-      upvalues: Vec::new(),
+      upvalues: SmallVec::new(),
     })
   }
 
@@ -2854,6 +2893,9 @@ impl Heap {
   /// (`reset_nursery`), so this upholds `FieldStorage::new`'s exact
   /// postcondition either way.
   fn take_field_storage(&mut self, len: usize) -> FieldStorage {
+    if len <= INLINE_FIELDS {
+      return FieldStorage::new(len);
+    }
     if let Some(ptr) = self.field_storage_pool.take(len) {
       return unsafe { FieldStorage::from_raw_parts(ptr, len) };
     }
@@ -2937,7 +2979,7 @@ impl Heap {
           if gcbox.marked.get() {
             gcbox.marked.set(false);
           } else {
-            self.bytes_allocated = self.bytes_allocated.saturating_sub(gcbox.size);
+            self.bytes_allocated = self.bytes_allocated.saturating_sub(Self::approx_size(&gcbox.obj));
             // Route through the same FieldStorage-recycling path
             // `reset_nursery` uses instead of a plain assignment-drop:
             // most of a binary-tree-shaped workload's garbage survives
@@ -3010,7 +3052,7 @@ impl Heap {
 mod field_storage_tests {
   use super::*;
 
-  /// `jit::codegen`'s eventual fast path needs these two offsets to be
+  /// `jit::codegen`'s eventual fast path needs these offsets to be
   /// exactly what `#[repr(C)]` promises; verify it directly rather
   /// than trusting the derivation.
   #[test]
@@ -3018,12 +3060,16 @@ mod field_storage_tests {
     assert_eq!(std::mem::offset_of!(FieldStorage, ptr), 0);
     assert_eq!(
       std::mem::offset_of!(FieldStorage, len),
-      std::mem::size_of::<*mut Cell<Value>>()
+      8
+    );
+    assert_eq!(
+      std::mem::offset_of!(FieldStorage, inline),
+      16
     );
   }
 
   #[test]
-  fn read_write_roundtrip() {
+  fn read_write_roundtrip_heap() {
     let mut fs = FieldStorage::new(4);
     assert_eq!(fs.len(), 4);
     for c in fs.iter() {
@@ -3042,6 +3088,19 @@ mod field_storage_tests {
       count += 1;
     }
     assert_eq!(fs[2].get().as_number(), 2.0);
+  }
+
+  #[test]
+  fn read_write_roundtrip_inline() {
+    let fs = FieldStorage::new(2);
+    assert_eq!(fs.len(), 2);
+    for c in fs.iter() {
+      assert!(c.get().is_nil());
+    }
+    fs[0].set(Value::number(10.0));
+    fs[1].set(Value::number(20.0));
+    assert_eq!(fs[0].get().as_number(), 10.0);
+    assert_eq!(fs[1].get().as_number(), 20.0);
   }
 
   #[test]

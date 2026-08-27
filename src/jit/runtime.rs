@@ -1648,7 +1648,7 @@ pub unsafe extern "C" fn zuri_jit_make_closure(
   let closure_val = Value::from_bits(closure_bits);
   let current_closure: &ObjClosure = closure_val.as_closure();
 
-  let mut captured = Vec::with_capacity(proto.upvalues.len());
+  let mut captured = smallvec::SmallVec::with_capacity(proto.upvalues.len());
   for desc in &proto.upvalues {
     let upval = match *desc {
       UpvalueDescriptor::Local(reg) => {

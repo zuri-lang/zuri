@@ -28,42 +28,23 @@ pub const LIST_PTR_OFFSET: i32 = 0;
 /// Byte offset of the element count within `ListStorage`. Same deal.
 pub const LIST_LEN_OFFSET: i32 = 8;
 /// Byte offset of the allocated capacity within `ListStorage`.
-pub const LIST_CAP_OFFSET: i32 = 16;
+pub const LIST_CAP_OFFSET: i32 = 12;
 /// Byte offset of the inline element buffer. Same deal.
-pub const LIST_INLINE_OFFSET: i32 = 24;
+pub const LIST_INLINE_OFFSET: i32 = 16;
 
 /// How many elements live in the object itself before a heap buffer is
 /// allocated.
-///
-/// Two, not the four the `SmallVec<[Value; 4]>` this replaced had, and
-/// the reason is `size_of::<Obj>()`. `RefCell<ListStorage>` is the
-/// largest unboxed `Obj` variant, so it sets every heap object's size,
-/// and `obj_repr_tests::size_unchanged_from_baseline` pins that at 56
-/// bytes. `SmallVec` fit four elements in that budget by unioning its
-/// inline buffer with the heap pointer/length pair; this layout cannot,
-/// because generated code reads `ptr` and `len` at fixed offsets whether
-/// or not the list has spilled. Four elements here would take `Obj` to
-/// 72 bytes; a 28% memory regression on every object in the heap,
-/// which costs far more than the extra two slots buy.
-///
-/// Two still covers the case `Obj`'s own doc comment cites: a
-/// `[left, right]` tree node never pays a second allocation.
 pub const INLINE_CAP: usize = 2;
 
 /// `ptr` is null exactly when the elements live in `inline`, and points
 /// at an owned heap buffer otherwise. Generated code resolves that with
 /// a compare and a select against the object's own address: see
 /// `jit::codegen::FuncCompiler::load_list_ptr_len`.
-///
-/// A self-pointer would have made the inline case branchless, but the
-/// collector MOVES objects and would leave it dangling; a null flag
-/// survives relocation because it encodes a relationship, not an
-/// address.
 #[repr(C)]
 pub struct ListStorage {
   ptr: *mut Value,
-  len: usize,
-  cap: usize,
+  len: u32,
+  cap: u32,
   inline: [Value; INLINE_CAP],
 }
 
@@ -105,7 +86,7 @@ impl ListStorage {
     if self.ptr.is_null() {
       INLINE_CAP
     } else {
-      self.cap
+      self.cap as usize
     }
   }
 
@@ -130,7 +111,7 @@ impl ListStorage {
         }
       }
     }
-    storage.len = count;
+    storage.len = count as u32;
     storage
   }
 
@@ -159,13 +140,13 @@ impl ListStorage {
         }
       }
     }
-    storage.len = total_len;
+    storage.len = total_len as u32;
     storage
   }
 
   #[inline]
   pub fn len(&self) -> usize {
-    self.len
+    self.len as usize
   }
 
   #[inline]
@@ -185,13 +166,13 @@ impl ListStorage {
   /// Reallocates the buffer to exactly `new_cap` elements. Callers are
   /// responsible for never shrinking below `len`.
   fn grow_to(&mut self, new_cap: usize) {
-    debug_assert!(new_cap >= self.len);
+    debug_assert!(new_cap >= self.len as usize);
     let new_layout = ListStorage::layout_for(new_cap);
     let spilling = self.ptr.is_null();
     let new_ptr = if spilling {
       unsafe { alloc(new_layout) }
     } else {
-      let old_layout = ListStorage::layout_for(self.cap);
+      let old_layout = ListStorage::layout_for(self.cap as usize);
       unsafe { realloc(self.ptr as *mut u8, old_layout, new_layout.size()) }
     };
     if new_ptr.is_null() {
@@ -201,11 +182,11 @@ impl ListStorage {
       // First heap buffer: carry the inline elements over. `Value` is
       // `Copy`, so this is a memcpy with nothing to move or drop.
       unsafe {
-        std::ptr::copy_nonoverlapping(self.inline.as_ptr(), new_ptr as *mut Value, self.len);
+        std::ptr::copy_nonoverlapping(self.inline.as_ptr(), new_ptr as *mut Value, self.len as usize);
       }
     }
     self.ptr = new_ptr as *mut Value;
-    self.cap = new_cap;
+    self.cap = new_cap as u32;
   }
 
   /// Doubling growth, with a floor of 4 so a list built one `append` at
@@ -216,8 +197,7 @@ impl ListStorage {
     let new_cap = if self.ptr.is_null() {
       INLINE_CAP * 2
     } else {
-      self
-        .cap
+      (self.cap as usize)
         .checked_mul(2)
         .expect("zuri: list capacity overflow")
     };
@@ -225,8 +205,7 @@ impl ListStorage {
   }
 
   pub fn reserve(&mut self, additional: usize) {
-    let needed = self
-      .len
+    let needed = (self.len as usize)
       .checked_add(additional)
       .expect("zuri: list capacity overflow");
     if needed > self.effective_cap() {
@@ -238,10 +217,10 @@ impl ListStorage {
 
   #[inline]
   pub fn push(&mut self, value: Value) {
-    if self.len == self.effective_cap() {
+    if self.len as usize == self.effective_cap() {
       self.grow_for_push();
     }
-    unsafe { self.data_ptr_mut().add(self.len).write(value) };
+    unsafe { self.data_ptr_mut().add(self.len as usize).write(value) };
     self.len += 1;
   }
 
@@ -251,28 +230,28 @@ impl ListStorage {
       return None;
     }
     self.len -= 1;
-    Some(unsafe { self.data_ptr().add(self.len).read() })
+    Some(unsafe { self.data_ptr().add(self.len as usize).read() })
   }
 
   pub fn insert(&mut self, index: usize, value: Value) {
-    assert!(index <= self.len, "zuri: list insert index out of bounds");
-    if self.len == self.effective_cap() {
+    assert!(index <= self.len as usize, "zuri: list insert index out of bounds");
+    if self.len as usize == self.effective_cap() {
       self.grow_for_push();
     }
     unsafe {
       let at = self.data_ptr_mut().add(index);
-      std::ptr::copy(at, at.add(1), self.len - index);
+      std::ptr::copy(at, at.add(1), (self.len as usize) - index);
       at.write(value);
     }
     self.len += 1;
   }
 
   pub fn remove(&mut self, index: usize) -> Value {
-    assert!(index < self.len, "zuri: list remove index out of bounds");
+    assert!(index < self.len as usize, "zuri: list remove index out of bounds");
     unsafe {
       let at = self.data_ptr_mut().add(index);
       let out = at.read();
-      std::ptr::copy(at.add(1), at, self.len - index - 1);
+      std::ptr::copy(at.add(1), at, (self.len as usize) - index - 1);
       self.len -= 1;
       out
     }
@@ -285,8 +264,8 @@ impl ListStorage {
 
   #[inline]
   pub fn truncate(&mut self, len: usize) {
-    if len < self.len {
-      self.len = len;
+    if len < self.len as usize {
+      self.len = len as u32;
     }
   }
 
@@ -295,11 +274,11 @@ impl ListStorage {
     unsafe {
       std::ptr::copy_nonoverlapping(
         other.as_ptr(),
-        self.data_ptr_mut().add(self.len),
+        self.data_ptr_mut().add(self.len as usize),
         other.len(),
       );
     }
-    self.len += other.len();
+    self.len += other.len() as u32;
   }
 
   /// Removes `range` and hands back the removed elements. Collected
@@ -316,18 +295,18 @@ impl ListStorage {
     let end = match range.end_bound() {
       Bound::Included(&n) => n + 1,
       Bound::Excluded(&n) => n,
-      Bound::Unbounded => self.len,
+      Bound::Unbounded => self.len as usize,
     };
     assert!(
-      start <= end && end <= self.len,
+      start <= end && end <= self.len as usize,
       "zuri: list drain range out of bounds"
     );
     let removed: Vec<Value> = self[start..end].to_vec();
     unsafe {
       let base = self.data_ptr_mut();
-      std::ptr::copy(base.add(end), base.add(start), self.len - end);
+      std::ptr::copy(base.add(end), base.add(start), (self.len as usize) - end);
     }
-    self.len -= end - start;
+    self.len -= (end - start) as u32;
     removed.into_iter()
   }
 }
@@ -335,7 +314,7 @@ impl ListStorage {
 impl Drop for ListStorage {
   fn drop(&mut self) {
     if !self.ptr.is_null() {
-      unsafe { dealloc(self.ptr as *mut u8, ListStorage::layout_for(self.cap)) };
+      unsafe { dealloc(self.ptr as *mut u8, ListStorage::layout_for(self.cap as usize)) };
     }
   }
 }
@@ -348,7 +327,7 @@ impl Default for ListStorage {
 
 impl Clone for ListStorage {
   fn clone(&self) -> ListStorage {
-    let mut out = ListStorage::with_capacity(self.len);
+    let mut out = ListStorage::with_capacity(self.len as usize);
     out.extend_from_slice(self);
     out
   }
@@ -359,14 +338,14 @@ impl Deref for ListStorage {
 
   #[inline]
   fn deref(&self) -> &[Value] {
-    unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len) }
+    unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len as usize) }
   }
 }
 
 impl DerefMut for ListStorage {
   #[inline]
   fn deref_mut(&mut self) -> &mut [Value] {
-    unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len) }
+    unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len as usize) }
   }
 }
 

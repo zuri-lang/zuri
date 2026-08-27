@@ -1173,7 +1173,8 @@ fn materialize_ref(
         shell_pins.push(vm.pin_values([shell]));
       }
       let proto_val = vm.pinned(proto_pin);
-      let shells: Vec<Value> = shell_pins.iter().map(|&p| vm.pinned(p)).collect();
+      let shells: smallvec::SmallVec<[Value; 2]> =
+        shell_pins.iter().map(|&p| vm.pinned(p)).collect();
       let closure_val = vm.heap_mut().alloc_closure(ObjClosure {
         function: proto_val,
         upvalues: shells,

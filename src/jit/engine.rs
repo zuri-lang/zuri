@@ -146,8 +146,14 @@ impl JitEngine {
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
     facts: CompileFacts,
+    shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
-    let mut pending = self.build_ir(proto, speculative_params, speculative_regs, facts)?;
+    let mut pending = self.build_ir(proto, speculative_params, speculative_regs, facts, shutdown)?;
+    if let Some(shutdown) = shutdown {
+      if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err("compilation aborted: VM shutdown".to_string());
+      }
+    }
     let mut ctrl_plane = cranelift_codegen::control::ControlPlane::default();
     let compile_result = pending.ctx.compile(&*self.isa, &mut ctrl_plane);
     let (bytes, alignment, relocs) = match compile_result {
@@ -190,6 +196,7 @@ impl JitEngine {
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
     facts: CompileFacts,
+    shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<PendingCompile, String> {
     self.next_id += 1;
     let name = format!("zuri_fn_{}", self.next_id);
@@ -231,6 +238,7 @@ impl JitEngine {
         speculative_params,
         speculative_regs,
         facts,
+        shutdown,
       )?;
       builder.seal_all_blocks();
       builder.finalize(self.module.target_config());
