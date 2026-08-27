@@ -241,7 +241,6 @@ impl IsolateIsolate {
 fn isolate_loop() {
   let mut isolate = IsolateIsolate::new();
   let pool = pool();
-  let mut local: VecDeque<Task> = VecDeque::new();
   loop {
     let task = {
       let mut queue = lock(&pool.queue);
