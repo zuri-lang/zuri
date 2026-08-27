@@ -136,6 +136,42 @@ impl JitEngine {
     self.isa.clone()
   }
 
+  /// Fully compiles `proto` from bytecode to native machine code and
+  /// finalizes it into executable memory in `module`, returning the
+  /// callable entry point and any loop OSR entry points. Runs
+  /// entirely on the dedicated background compiler worker thread.
+  pub fn compile_function(
+    &mut self,
+    proto: &ObjFunction,
+    speculative_params: Option<u64>,
+    speculative_regs: Option<typeflow::SpeculativeRegs>,
+    facts: CompileFacts,
+  ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
+    let mut pending = self.build_ir(proto, speculative_params, speculative_regs, facts)?;
+    let mut ctrl_plane = cranelift_codegen::control::ControlPlane::default();
+    let compile_result = pending.ctx.compile(&*self.isa, &mut ctrl_plane);
+    let (bytes, alignment, relocs) = match compile_result {
+      Ok(_) => {
+        let compiled_code = pending
+          .ctx
+          .compiled_code()
+          .expect("Context::compile just succeeded");
+        let alignment = compiled_code.buffer.alignment as u64;
+        let bytes = compiled_code.code_buffer().to_vec();
+        let relocs: Vec<ModuleReloc> = compiled_code
+          .buffer
+          .relocs()
+          .iter()
+          .map(|r| ModuleReloc::from_mach_reloc(r, &pending.ctx.func, pending.func_id))
+          .collect();
+        (bytes, alignment, relocs)
+      },
+      Err(e) => return Err(format!("backend compile failed: {e:?}")),
+    };
+    let entry = self.install_compiled(pending.func_id, alignment, &bytes, &relocs)?;
+    Ok((entry, std::mem::take(&mut pending.osr_ids)))
+  }
+
   /// Stage 1 of compiling `proto`: translate its bytecode to Cranelift
   /// IR (`jit::codegen`'s job) and declare a slot for it in `module`.
   /// This is the only stage that touches `proto`, so it must run

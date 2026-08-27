@@ -114,6 +114,7 @@ use crate::vm::object::{ObjClass, ObjFunction, UpvalueDescriptor};
 /// `self` (register 0): see `analyze_one`/`compute_param_summary`'s
 /// own docs on why that's the one case resolvable without further
 /// receiver-type inference.
+#[derive(Clone)]
 pub struct ClassFieldSafety {
   safe_field_names: FxHashSet<String>,
 }
@@ -408,6 +409,7 @@ fn global_ref_facts_for(
 /// arbitrary global binding, unlike a function's own name, can be
 /// reassigned), so the caller pairs this with the resolved `Value`'s
 /// bits for that guard.
+#[allow(dead_code)]
 pub(crate) fn global_ref_facts(proto: &ObjFunction, target_name: &str) -> Vec<MustSet> {
   let preds = typeflow::build_predecessors(proto);
   global_ref_facts_with_preds(proto, &preds, target_name)

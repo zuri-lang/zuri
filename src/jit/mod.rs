@@ -297,45 +297,39 @@ pub enum CallTarget {
 /// touches) and hands to `codegen::compile`, bundled into one struct
 /// rather than an ever-growing parameter list as this tier gains more
 /// static-proof-driven fast paths. See each field's producer for the
+#[derive(Clone)]
+pub enum ResolvedGlobal {
+  Class {
+    guard_bits: u64,
+    generation: u64,
+    field_count: u16,
+    ctor_bits: u64,
+    proto_ptr: usize,
+    safety: escape::ClassFieldSafety,
+    field_slots: FxHashMap<String, u16>,
+    simple_ctor_param_slots: Option<Vec<u16>>,
+  },
+  Native {
+    guard_fn: u64,
+    native_ptr: usize,
+  },
+  Closure {
+    entry: usize,
+    guard_bits: u64,
+    proto_ptr: usize,
+  },
+}
+
+/// A snapshot of facts resolved about `proto` before compilation, each
+/// carrying its own whole-function or whole-class proof with a
 /// soundness argument specific to it.
 #[derive(Default)]
 pub struct CompileFacts {
   pub self_field_slots: FxHashMap<String, u16>,
   pub self_numeric_fields: rustc_hash::FxHashSet<String>,
-  /// `self_field_slots`' counterpart for an ORDINARY (non-`self`)
-  /// parameter register whose declared type is a single, non-nullable,
-  /// resolvable class; e.g. `def dot(v: Vec3, n: number)`. Keyed by
-  /// the parameter's own register (a function can have several typed
-  /// params, unlike `self` which is always register 0), each mapping to
-  /// `(that class's own Value bits, its field-name -> slot table)` --
-  /// the bits let `Instr::CheckParamType` itself inline down to a
-  /// class-bits compare, the slots let `GetField`/`SetField` skip
-  /// straight to a fixed offset; same "no method of the same name
-  /// could shadow this field" filter `resolve_self_field_slots`
-  /// applies. Resolved in `vm::vm::VM::resolve_param_field_slots`.
   pub param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
-  /// `(self`'s own class as `Value` bits, `VM::method_table_generation`
-  /// at the moment this was resolved`)`; set exactly when `proto` is
-  /// a method and its owning class's method table maps `proto`'s own
-  /// name back to `proto` itself (the same "owns_proto" proof
-  /// `self_field_slots` already needs: see
-  /// `vm::vm::VM::resolve_self_field_slots`). Lets `Instr::Invoke` sites
-  /// whose method name matches `proto`'s own name (e.g. `self.left
-  /// .count()` inside `count`'s own body) skip the resolver with just a
-  /// receiver-class guard: any receiver whose class is bit-identical to
-  /// this one is guaranteed, by that same proof, to resolve this exact
-  /// compiled method; as long as the class's method table hasn't been
-  /// monkey-patched (`compiler::compile_extension_decl` can legally do
-  /// this to an already-live class at any point) since this proof was
-  /// taken, which is what the paired generation snapshot guards
-  /// against: see `VM::method_table_generation`'s own docs.
   pub self_class_bits: Option<(u64, u64)>,
-  pub call_targets: FxHashMap<usize, CallTarget>,
-  /// Everything a construction site needs to be a candidate for scalar
-  /// replacement; keyed by the site's bytecode ip, and resolved in
-  /// `vm::vm::VM::resolve_construct_target`, the one place with the
-  /// live `ObjClass` needed to answer any of it.
-  pub construct_info: FxHashMap<usize, ConstructInfo>,
+  pub globals_snapshot: FxHashMap<String, ResolvedGlobal>,
 }
 
 /// One construction site's compile-time view of the class it builds.

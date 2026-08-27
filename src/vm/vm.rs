@@ -12,10 +12,7 @@ use num_traits::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::builtins;
-use crate::jit::{
-  CallTarget, CompileFacts, ConstructInfo as CompileConstructInfo, EntryFn, JitEngine, background,
-  escape, typeflow,
-};
+use crate::jit::{CompileFacts, EntryFn, background, escape, typeflow};
 use crate::vm::chunk::{Instr, JumpKey, ParamType};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -672,12 +669,6 @@ pub struct VM {
   jit_scalar_roots_len: Cell<usize>,
   /// Active `catch` handlers, innermost last.
   catch_stack: Vec<CatchHandler>,
-  /// Owns the Cranelift `JITModule` and drives whole-function compilation.
-  /// Lazily built on the first real compile, not at `VM::new()` — ISA/CPU
-  /// probing and helper signature setup is real work a short script (or
-  /// `ZURI_JIT=0`) shouldn't pay for. Lives for the rest of the process
-  /// once built; compiled code is never unloaded or recompiled.
-  jit_engine: Option<JitEngine>,
   /// Handle to the single background compiler thread, lazily spawned
   /// alongside `jit_engine`. `None` until the first function crosses its
   /// warmup threshold.
@@ -852,7 +843,6 @@ impl VM {
       jit_scalar_roots: Vec::new(),
       jit_scalar_roots_len: Cell::new(0),
       catch_stack: Vec::new(),
-      jit_engine: None,
       jit_compiler: None,
       pending_jit_compiles: Vec::new(),
       jit_pending_error: Cell::new(Value::nil()),
@@ -1486,14 +1476,9 @@ impl VM {
     None
   }
 
-  fn jit_engine(&mut self) -> &mut JitEngine {
-    self.jit_engine.get_or_insert_with(JitEngine::new)
-  }
-
   fn jit_compiler(&mut self) -> &mut background::JitCompilerHandle {
     if self.jit_compiler.is_none() {
-      let isa = self.jit_engine().isa_handle();
-      self.jit_compiler = Some(background::spawn(isa));
+      self.jit_compiler = Some(background::spawn());
     }
     self.jit_compiler.as_mut().unwrap()
   }
@@ -1765,12 +1750,7 @@ impl VM {
     None
   }
 
-  fn resolve_construct_target(
-    &self,
-    class_val: Value,
-    ip: usize,
-    safety_sink: Option<&mut FxHashMap<usize, CompileConstructInfo>>,
-  ) -> Option<CallTarget> {
+  fn snapshot_class_target(&self, class_val: Value) -> Option<crate::jit::ResolvedGlobal> {
     let (field_count, ctor, superclass) = {
       let class = class_val.as_class();
       if class.own_field_initializer.is_some() {
@@ -1809,43 +1789,24 @@ impl VM {
       return None;
     }
 
-    if let Some(sink) = safety_sink {
-      let class = class_val.as_class();
-      sink.insert(
-        ip,
-        CompileConstructInfo {
-          safety: escape::ClassFieldSafety::from_class(&class),
-          field_slots: class.field_slots.clone(),
-          field_count,
-          simple_ctor_param_slots: Self::simple_ctor_param_slots(ctor_proto, &class),
-        },
-      );
-    }
-    Some(CallTarget::ConstructKnown {
+    let class = class_val.as_class();
+    Some(crate::jit::ResolvedGlobal::Class {
       guard_bits: class_val.to_bits(),
       generation: self.method_table_generation.get(),
       field_count,
       ctor_bits: ctor.to_bits(),
-      // ObjFunction is allocated old-generation and never moves, same
-      // guarantee run_until's cached func_ptr relies on.
       proto_ptr: ctor_proto as *const ObjFunction as usize,
+      safety: escape::ClassFieldSafety::from_class(&class),
+      field_slots: class.field_slots.clone(),
+      simple_ctor_param_slots: Self::simple_ctor_param_slots(ctor_proto, &class),
     })
   }
 
-  fn resolve_call_targets(
+  fn snapshot_globals(
     &self,
     proto: &ObjFunction,
-  ) -> (
-    FxHashMap<usize, CallTarget>,
-    FxHashMap<usize, CompileConstructInfo>,
-  ) {
-    let mut targets = FxHashMap::default();
-    let mut field_safety = FxHashMap::default();
-    let proto_ptr = proto as *const ObjFunction;
-
-    // Owned Strings, not borrowed &strs: runs once per JIT compile, not
-    // per call, so the allocation is irrelevant and it avoids tying the
-    // return value's lifetime to proto.chunk.constants' borrow.
+  ) -> FxHashMap<String, crate::jit::ResolvedGlobal> {
+    let mut out = FxHashMap::default();
     let mut candidate_names: Vec<String> = Vec::new();
     for instr in &proto.chunk.code {
       if let Instr::GetGlobal { name_const, .. } = instr
@@ -1858,61 +1819,25 @@ impl VM {
         }
       }
     }
-    if candidate_names.is_empty() {
-      return (targets, field_safety);
-    }
-
-    let self_facts = escape::self_reference_facts(proto);
-    let named_facts: Vec<(String, Vec<escape::MustSet>)> = candidate_names
-      .into_iter()
-      // proto.name is already covered by self_facts with no runtime guard
-      // needed; re-analyzing it here would only produce a weaker
-      // guard-requiring classification for sites that don't need one.
-      .filter(|name| name != &proto.name)
-      .map(|name| {
-        let facts = escape::global_ref_facts(proto, &name);
-        (name, facts)
-      })
-      .collect();
-
-    for (ip, instr) in proto.chunk.code.iter().enumerate() {
-      let Instr::Call { func, .. } = instr else {
+    for name in candidate_names {
+      let Some((is_root, slot)) = self.resolve_global(proto.globals_module, &name) else {
         continue;
       };
-      if self_facts[ip].get(*func) {
-        targets.insert(ip, CallTarget::SelfRecursive);
-        continue;
-      }
-      for (name, facts) in &named_facts {
-        if !facts[ip].get(*func) {
-          continue;
+      let resolved = self.read_resolved(proto.globals_module, is_root, slot);
+      if resolved.is_class() {
+        if let Some(target) = self.snapshot_class_target(resolved) {
+          out.insert(name, target);
         }
-        let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name) else {
-          continue;
-        };
-        let resolved = self.read_resolved(proto.globals_module, is_root, slot);
-        if resolved.is_class() {
-          targets.insert(
-            ip,
-            self
-              .resolve_construct_target(resolved, ip, Some(&mut field_safety))
-              .unwrap_or(CallTarget::Construct),
-          );
-          break;
-        }
-        if resolved.is_native() {
-          targets.insert(
-            ip,
-            CallTarget::KnownNative {
-              guard_fn: resolved.as_native().func as usize as u64,
-              native_ptr: resolved.as_native() as *const NativeFunction as usize,
-            },
-          );
-          break;
-        }
-        if !resolved.is_closure() {
-          continue;
-        }
+      } else if resolved.is_native() {
+        let n = resolved.as_native();
+        out.insert(
+          name,
+          crate::jit::ResolvedGlobal::Native {
+            guard_fn: n.func as usize as u64,
+            native_ptr: n as *const NativeFunction as usize,
+          },
+        );
+      } else if resolved.is_closure() {
         let callee_proto = resolved.as_closure().function.as_func();
         for (cip, cinstr) in callee_proto.chunk.code.iter().enumerate() {
           let name_const = match cinstr {
@@ -1932,46 +1857,28 @@ impl VM {
             }
           }
         }
-        if std::ptr::eq(callee_proto, proto_ptr) {
-          targets.insert(ip, CallTarget::SelfRecursive);
-          break;
-        }
-        // Recorded even when the callee isn't compiled yet: codegen can
-        // still inline it from bytecode alone, and a 0 entry here means
-        // "not compiled yet", not "unresolved".
-        targets.insert(
-          ip,
-          CallTarget::Known {
+        out.insert(
+          name,
+          crate::jit::ResolvedGlobal::Closure {
             entry: callee_proto.jit.entry.get().map_or(0, |e| e as usize),
             guard_bits: resolved.as_closure().function.to_bits(),
             proto_ptr: callee_proto as *const ObjFunction as usize,
           },
         );
-        break;
       }
     }
-    (targets, field_safety)
+    out
   }
 
-  /// Builds `proto`'s IR synchronously, the only stage that touches
-  /// `proto`, then hands the result to the background compiler thread for
-  /// the expensive part, pinning `proto_value` as a GC root for the round
-  /// trip. If IR-building itself fails, `proto` is marked ineligible
-  /// immediately since there's nothing to enqueue.
+  /// Builds a snapshot of facts resolved about `proto` in $O(1)$ without
+  /// performing any whole-function dataflow analyses on the main VM thread,
+  /// then hands the job to the background compiler thread.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
-    // Debugging knob for the specialized-body machinery: a value read via
-    // a variable-index GetIndex, once returned from a function that gets a
-    // specialized body, can freeze at a stale value on later calls.
-    // Setting this forces every function to compile general-body-only, to
-    // isolate whether a symptom depends on specialization at all. Unlike
-    // ZURI_JIT=0, every function still tiers up, just without ever gaining
-    // a specialized body.
     let (speculative_params, speculative_regs) = if self.no_jit_specialization {
       (None, None)
     } else {
       (self.combined_param_feedback(proto), None)
     };
-    let (call_targets, construct_info) = self.resolve_call_targets(proto);
     for (ip, instr) in proto.chunk.code.iter().enumerate() {
       let name_const = match instr {
         crate::vm::chunk::Instr::GetGlobal { name_const, .. }
@@ -1995,33 +1902,16 @@ impl VM {
       self_numeric_fields: self.resolve_self_numeric_fields(proto),
       param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
-      call_targets,
-      construct_info,
+      globals_snapshot: self.snapshot_globals(proto),
     };
-    let pending =
-      match self
-        .jit_engine()
-        .build_ir(proto, speculative_params, speculative_regs, facts)
-      {
-        Ok(pending) => pending,
-        Err(reason) => {
-          if crate::jit::log_enabled() {
-            eprintln!("[jit] '{}' ineligible: {}", proto.name, reason);
-          }
-          proto.jit.ineligible.set(true);
-          return;
-        },
-      };
 
     proto.jit.compiling.set(true);
     self.pending_jit_compiles.push(proto_value);
     let job = background::CompileJob {
-      ctx: pending.ctx,
-      func_id: pending.func_id,
-      osr_ids: pending.osr_ids,
       proto: background::SendPtr(proto as *const ObjFunction),
       speculative_params,
       speculative_regs,
+      facts,
     };
     if self.jit_compiler().job_tx.send(job).is_err() {
       // The background thread is gone; shouldn't happen (it lives
@@ -2059,12 +1949,7 @@ impl VM {
       // SAFETY: result.proto was pinned in pending_jit_compiles from the
       // moment its job was enqueued until right here.
       let proto = unsafe { &*result.proto.0 };
-      let install_outcome = result.outcome.and_then(|(bytes, alignment, relocs)| {
-        self
-          .jit_engine()
-          .install_compiled(result.func_id, alignment, &bytes, &relocs)
-      });
-      match install_outcome {
+      match result.outcome {
         Ok(entry) => {
           if crate::jit::log_enabled() {
             eprintln!(

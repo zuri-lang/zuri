@@ -789,6 +789,124 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     out
   }
 
+  fn resolve_call_targets_from_snapshot(
+    proto: &ObjFunction,
+    preds: &[Vec<usize>],
+    globals: &FxHashMap<String, crate::jit::ResolvedGlobal>,
+  ) -> (
+    FxHashMap<usize, CallTarget>,
+    FxHashMap<usize, crate::jit::ConstructInfo>,
+  ) {
+    let mut targets = FxHashMap::default();
+    let mut construct_info = FxHashMap::default();
+
+    let self_facts = escape::self_reference_facts_with_preds(proto, preds);
+    if globals.is_empty() {
+      for (ip, instr) in proto.chunk.code.iter().enumerate() {
+        if let Instr::Call { func, .. } = instr
+          && self_facts[ip].get(*func)
+        {
+          targets.insert(ip, CallTarget::SelfRecursive);
+        }
+      }
+      return (targets, construct_info);
+    }
+
+    let named_facts: Vec<(&String, Vec<escape::MustSet>)> = globals
+      .keys()
+      .filter(|name| *name != &proto.name)
+      .map(|name| {
+        let facts = escape::global_ref_facts_with_preds(proto, preds, name);
+        (name, facts)
+      })
+      .collect();
+
+    let proto_ptr = proto as *const ObjFunction;
+    for (ip, instr) in proto.chunk.code.iter().enumerate() {
+      let Instr::Call { func, .. } = instr else {
+        continue;
+      };
+      if self_facts[ip].get(*func) {
+        targets.insert(ip, CallTarget::SelfRecursive);
+        continue;
+      }
+      for (name, facts) in &named_facts {
+        if !facts[ip].get(*func) {
+          continue;
+        }
+        let Some(resolved) = globals.get(*name) else {
+          continue;
+        };
+        match resolved {
+          crate::jit::ResolvedGlobal::Class {
+            guard_bits,
+            generation,
+            field_count,
+            ctor_bits,
+            proto_ptr: ctor_proto_ptr,
+            safety,
+            field_slots,
+            simple_ctor_param_slots,
+          } => {
+            construct_info.insert(
+              ip,
+              crate::jit::ConstructInfo {
+                safety: safety.clone(),
+                field_slots: field_slots.clone(),
+                field_count: *field_count,
+                simple_ctor_param_slots: simple_ctor_param_slots.clone(),
+              },
+            );
+            targets.insert(
+              ip,
+              CallTarget::ConstructKnown {
+                guard_bits: *guard_bits,
+                generation: *generation,
+                field_count: *field_count,
+                ctor_bits: *ctor_bits,
+                proto_ptr: *ctor_proto_ptr,
+              },
+            );
+            break;
+          },
+          crate::jit::ResolvedGlobal::Native {
+            guard_fn,
+            native_ptr,
+          } => {
+            targets.insert(
+              ip,
+              CallTarget::KnownNative {
+                guard_fn: *guard_fn,
+                native_ptr: *native_ptr,
+              },
+            );
+            break;
+          },
+          crate::jit::ResolvedGlobal::Closure {
+            entry,
+            guard_bits,
+            proto_ptr: callee_proto_ptr,
+          } => {
+            if *callee_proto_ptr == proto_ptr as usize {
+              targets.insert(ip, CallTarget::SelfRecursive);
+            } else {
+              targets.insert(
+                ip,
+                CallTarget::Known {
+                  entry: *entry,
+                  guard_bits: *guard_bits,
+                  proto_ptr: *callee_proto_ptr,
+                },
+              );
+            }
+            break;
+          },
+        }
+      }
+    }
+    (targets, construct_info)
+  }
+
   fn new(
     fb: &'a mut FunctionBuilder<'b>,
     module: &'a mut JITModule,
@@ -818,6 +936,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let bool_facts = typeflow::analyze_bool(proto, &preds);
     let const_facts = typeflow::analyze_const(proto, &preds);
     let liveness = typeflow::liveness(proto, &preds);
+    let (call_targets, construct_info) =
+      Self::resolve_call_targets_from_snapshot(proto, &preds, &facts.globals_snapshot);
     FuncCompiler {
       fb,
       module,
@@ -856,8 +976,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       param_field_slots: facts.param_field_slots,
       own_func_id,
       self_class_bits: facts.self_class_bits,
-      call_targets: facts.call_targets,
-      construct_info: facts.construct_info,
+      call_targets,
+      construct_info,
       scalar_instances: FxHashMap::default(),
       scalar_lists: FxHashMap::default(),
       frame_can_open_upvalues: proto
