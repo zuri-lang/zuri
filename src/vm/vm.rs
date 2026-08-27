@@ -673,6 +673,13 @@ pub struct VM {
   /// alongside `jit_engine`. `None` until the first function crosses its
   /// warmup threshold.
   jit_compiler: Option<background::JitCompilerHandle>,
+  /// For isolate VMs: a shared background compiler job sender and reply channel.
+  shared_compiler: Option<(
+    std::sync::mpsc::Sender<background::CompileJob>,
+    std::sync::mpsc::Receiver<background::CompileResult>,
+    std::sync::mpsc::Sender<background::CompileResult>,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+  )>,
   /// GC roots for every function with a background compile enqueued or in
   /// flight, pinned from job submission until `drain_jit_results` — the
   /// compiled-code round trip crosses a thread boundary the GC can't
@@ -844,6 +851,7 @@ impl VM {
       jit_scalar_roots_len: Cell::new(0),
       catch_stack: Vec::new(),
       jit_compiler: None,
+      shared_compiler: None,
       pending_jit_compiles: Vec::new(),
       jit_pending_error: Cell::new(Value::nil()),
       pending_deopt_ip: Cell::new(-1),
@@ -1476,6 +1484,15 @@ impl VM {
     None
   }
 
+  pub fn set_shared_jit_compiler(
+    &mut self,
+    job_tx: std::sync::mpsc::Sender<background::CompileJob>,
+  ) {
+    let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+    let pending = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    self.shared_compiler = Some((job_tx, reply_rx, reply_tx, pending));
+  }
+
   fn jit_compiler(&mut self) -> &mut background::JitCompilerHandle {
     if self.jit_compiler.is_none() {
       self.jit_compiler = Some(background::spawn());
@@ -1907,16 +1924,28 @@ impl VM {
 
     proto.jit.compiling.set(true);
     self.pending_jit_compiles.push(proto_value);
-    let job = background::CompileJob {
-      proto: background::SendPtr(proto as *const ObjFunction),
-      speculative_params,
-      speculative_regs,
-      facts,
-    };
-    let sent = if let Some(tx) = self.jit_compiler().job_tx.as_ref() {
-      tx.send(job).is_ok()
+    let sent = if let Some((job_tx, _, reply_tx, pending)) = &self.shared_compiler {
+      let job = background::CompileJob {
+        proto: background::SendPtr(proto as *const ObjFunction),
+        speculative_params,
+        speculative_regs,
+        facts,
+        reply_to: Some((reply_tx.clone(), std::sync::Arc::clone(pending))),
+      };
+      job_tx.send(job).is_ok()
     } else {
-      false
+      let job = background::CompileJob {
+        proto: background::SendPtr(proto as *const ObjFunction),
+        speculative_params,
+        speculative_regs,
+        facts,
+        reply_to: None,
+      };
+      if let Some(tx) = self.jit_compiler().job_tx.as_ref() {
+        tx.send(job).is_ok()
+      } else {
+        false
+      }
     };
     if !sent {
       // The background thread is gone; shouldn't happen (it lives
@@ -1933,22 +1962,23 @@ impl VM {
   /// results get installed lazily, whenever something asks, with no
   /// separate polling thread needed.
   fn drain_jit_results(&mut self) {
-    let Some(handle) = self.jit_compiler.as_ref() else {
-      return;
-    };
-    // The clear must precede the drain loop below, never follow it --
-    // see JitCompilerHandle::results_pending.
-    if !handle.results_pending.load(Ordering::Acquire) {
-      return;
-    }
-    handle.results_pending.store(false, Ordering::Relaxed);
-    // Collect into an owned Vec first: looping try_recv directly while
-    // also calling self.jit_engine() per result would overlap the
-    // channel's borrow of self.jit_compiler with the &mut self each
-    // installation needs.
     let mut results = Vec::new();
-    while let Ok(result) = self.jit_compiler.as_ref().unwrap().result_rx.try_recv() {
-      results.push(result);
+    if let Some((_, reply_rx, _, pending)) = &self.shared_compiler {
+      if pending.load(Ordering::Acquire) {
+        pending.store(false, Ordering::Relaxed);
+        while let Ok(result) = reply_rx.try_recv() {
+          results.push(result);
+        }
+      }
+    } else if let Some(handle) = self.jit_compiler.as_ref() {
+      if handle.results_pending.load(Ordering::Acquire) {
+        handle.results_pending.store(false, Ordering::Relaxed);
+        while let Ok(result) = handle.result_rx.try_recv() {
+          results.push(result);
+        }
+      }
+    } else {
+      return;
     }
     for result in results {
       // SAFETY: result.proto was pinned in pending_jit_compiles from the

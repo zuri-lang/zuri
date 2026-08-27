@@ -70,6 +70,11 @@ pub struct CompileJob {
   /// the log line (see `jit::typeflow::SpeculativeRegs`'s own docs).
   pub speculative_regs: Option<typeflow::SpeculativeRegs>,
   pub facts: CompileFacts,
+  /// Optional target for the finished result. When provided (e.g. for
+  /// shared isolate workers), the result is sent to this channel and its
+  /// `results_pending` flag is updated, allowing multiple VMs to share a single
+  /// compiler queue.
+  pub reply_to: Option<(Sender<CompileResult>, Arc<AtomicBool>)>,
 }
 
 pub struct CompileResult {
@@ -125,6 +130,27 @@ pub fn spawn() -> JitCompilerHandle {
   }
 }
 
+pub fn spawn_named(
+  name: String,
+) -> (
+  Sender<CompileJob>,
+  Arc<AtomicBool>,
+  std::thread::JoinHandle<()>,
+) {
+  let (job_tx, job_rx) = channel::<CompileJob>();
+  let (result_tx, _result_rx) = channel::<CompileResult>();
+  let results_pending = Arc::new(AtomicBool::new(false));
+  let shutdown = Arc::new(AtomicBool::new(false));
+  let worker_shutdown = Arc::clone(&shutdown);
+
+  let thread = std::thread::Builder::new()
+    .name(name)
+    .spawn(move || compiler_loop(job_rx, result_tx, results_pending, worker_shutdown))
+    .expect("zuri: failed to spawn background JIT compiler thread");
+
+  (job_tx, shutdown, thread)
+}
+
 fn compiler_loop(
   job_rx: Receiver<CompileJob>,
   result_tx: Sender<CompileResult>,
@@ -132,10 +158,21 @@ fn compiler_loop(
   shutdown: Arc<AtomicBool>,
 ) {
   let mut engine = JitEngine::new();
-  for job in job_rx {
+  loop {
     if shutdown.load(Ordering::Relaxed) {
       return;
     }
+    let job = match job_rx.recv_timeout(std::time::Duration::from_millis(50)) {
+      Ok(job) => job,
+      Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+        if shutdown.load(Ordering::Relaxed) {
+          return;
+        }
+        continue;
+      },
+      Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+    };
+
     let proto = unsafe { &*job.proto.0 };
     let (outcome, osr_ids) = match engine.compile_function(
       proto,
@@ -159,12 +196,15 @@ fn compiler_loop(
       speculative_regs: job.speculative_regs,
       outcome,
     };
-    // A closed result channel means the VM has shut down; nothing
-    // left to report to, so just stop.
-    if result_tx.send(result).is_err() {
-      return;
+    if let Some((reply_tx, reply_pending)) = job.reply_to {
+      if reply_tx.send(result).is_ok() {
+        reply_pending.store(true, Ordering::Release);
+      }
+    } else {
+      if result_tx.send(result).is_err() {
+        return;
+      }
+      results_pending.store(true, Ordering::Release);
     }
-    // Strictly after the `send` above: see `results_pending`'s docs.
-    results_pending.store(true, Ordering::Release);
   }
 }

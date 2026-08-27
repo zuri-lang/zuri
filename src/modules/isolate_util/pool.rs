@@ -122,6 +122,12 @@ fn pool() -> &'static IsolatePool {
   })
 }
 
+struct IsolateCompiler {
+  job_tx: std::sync::mpsc::Sender<crate::jit::background::CompileJob>,
+  shutdown: Arc<AtomicBool>,
+  thread: Option<std::thread::JoinHandle<()>>,
+}
+
 struct IsolatePool {
   queue: Mutex<VecDeque<Task>>,
   not_empty: Condvar,
@@ -145,6 +151,7 @@ struct IsolatePool {
   /// already is atomic.
   idle: Condvar,
   idle_lock: Mutex<()>,
+  compiler: Mutex<Option<IsolateCompiler>>,
 }
 
 /// Isolate thread names share this prefix; checked by the panic hook
@@ -171,6 +178,33 @@ impl IsolatePool {
       shutting_down: AtomicBool::new(false),
       idle: Condvar::new(),
       idle_lock: Mutex::new(()),
+      compiler: Mutex::new(None),
+    }
+  }
+
+  fn get_or_spawn_compiler(&self) -> std::sync::mpsc::Sender<crate::jit::background::CompileJob> {
+    let mut comp = lock(&self.compiler);
+    if let Some(c) = comp.as_ref() {
+      return c.job_tx.clone();
+    }
+    let (job_tx, shutdown, thread) =
+      crate::jit::background::spawn_named("zuri-jit-compiler-isolate".to_string());
+    *comp = Some(IsolateCompiler {
+      job_tx: job_tx.clone(),
+      shutdown,
+      thread: Some(thread),
+    });
+    job_tx
+  }
+
+  fn stop_compiler(&self) {
+    let mut comp = lock(&self.compiler);
+    if let Some(mut c) = comp.take() {
+      c.shutdown.store(true, Ordering::Release);
+      drop(c.job_tx);
+      if let Some(thread) = c.thread.take() {
+        let _ = thread.join();
+      }
     }
   }
 
@@ -179,6 +213,9 @@ impl IsolatePool {
   fn task_completed(&self) {
     let prev = self.in_flight.fetch_sub(1, Ordering::AcqRel);
     self.running.fetch_sub(1, Ordering::AcqRel);
+    if prev == 1 {
+      self.stop_compiler();
+    }
     if self.shutting_down.load(Ordering::Relaxed) && prev == 1 {
       drop(lock(&self.idle_lock));
       self.idle.notify_all();
@@ -253,6 +290,9 @@ fn isolate_loop() {
       queue.pop_front().unwrap()
     };
     pool.running.fetch_add(1, Ordering::AcqRel);
+
+    let compiler_tx = pool.get_or_spawn_compiler();
+    isolate.vm.set_shared_jit_compiler(compiler_tx);
 
     // Cloned out BEFORE `run_task` runs, not read off `task` afterward:
     // a caught panic (see below) means `task` may never come back from
@@ -947,17 +987,28 @@ pub fn shutdown(timeout: Option<Duration>) -> bool {
   let mut guard = lock(&p.idle_lock);
   loop {
     if p.in_flight.load(Ordering::Acquire) == 0 {
+      p.stop_compiler();
       return true;
     }
     guard = match deadline.map(|dl| dl.saturating_duration_since(Instant::now())) {
-      Some(d) if d.is_zero() => return p.in_flight.load(Ordering::Acquire) == 0,
+      Some(d) if d.is_zero() => {
+        let done = p.in_flight.load(Ordering::Acquire) == 0;
+        if done {
+          p.stop_compiler();
+        }
+        return done;
+      },
       Some(d) => {
         let (g, result) = p
           .idle
           .wait_timeout(guard, d)
           .unwrap_or_else(PoisonError::into_inner);
         if result.timed_out() {
-          return p.in_flight.load(Ordering::Acquire) == 0;
+          let done = p.in_flight.load(Ordering::Acquire) == 0;
+          if done {
+            p.stop_compiler();
+          }
+          return done;
         }
         g
       },
