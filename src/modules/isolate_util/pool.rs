@@ -238,42 +238,19 @@ impl IsolateIsolate {
   }
 }
 
-/// How many tasks an idle isolate thread grabs from the shared queue
-/// per lock acquisition, once there's more than one waiting.
-///
-/// `isolate-stress` is what exposed the need for this: with one
-/// `pop_front` per task, a batch of a million tiny isolates meant a
-/// million lock/unlock cycles on `pool.queue`, contended across every
-/// isolate thread, and that contention (not the actual per-task work)
-/// was the dominant cost. Draining a whole chunk under a single lock
-/// cuts that down by roughly this factor with no change to what runs
-/// or in what order results come back, since nothing about `map()`'s
-/// result ordering depends on which thread ran which task, only on
-/// each `Task`'s own `IsolateState` reporting back to the right slot.
-/// Bounded rather than draining the whole queue in one grab, so an
-/// idle thread doesn't starve every other one out of work the moment
-/// a big batch lands.
-const DEQUEUE_BATCH: usize = 64;
-
 fn isolate_loop() {
   let mut isolate = IsolateIsolate::new();
   let pool = pool();
-  let mut local: VecDeque<Task> = VecDeque::new();
   loop {
-    let task = match local.pop_front() {
-      Some(t) => t,
-      None => {
-        let mut queue = lock(&pool.queue);
-        while queue.is_empty() {
-          queue = pool
-            .not_empty
-            .wait(queue)
-            .unwrap_or_else(PoisonError::into_inner);
-        }
-        let n = queue.len().min(DEQUEUE_BATCH);
-        local.extend(queue.drain(..n));
-        local.pop_front().unwrap()
-      },
+    let task = {
+      let mut queue = lock(&pool.queue);
+      while queue.is_empty() {
+        queue = pool
+          .not_empty
+          .wait(queue)
+          .unwrap_or_else(PoisonError::into_inner);
+      }
+      queue.pop_front().unwrap()
     };
     pool.running.fetch_add(1, Ordering::AcqRel);
 

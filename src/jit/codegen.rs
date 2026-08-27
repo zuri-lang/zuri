@@ -6787,6 +6787,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// would corrupt the tag/QNAN bits it gets OR'd into) -- this never
   /// range-checks on its own, same discipline `Value::integer`'s own
   /// `debug_assert!` documents on the Rust side.
+  ///
+  /// Not called yet: this is the packing half a real arithmetic Smi
+  /// fast path needs, landing with the rest of that work; kept here
+  /// now rather than reintroduced later since `is_smi`/`smi_to_i64`
+  /// already needed to exist for `to_f64`'s correctness fix.
+  #[allow(dead_code)]
   fn i64_to_smi(&mut self, i: IrValue) -> IrValue {
     let mask = self.u64c(value::PTR_MASK);
     let masked = self.fb.ins().band(i, mask);
@@ -6904,31 +6910,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// statically rather than paying this branch; this is the
   /// correctness fallback every OTHER call site needs until it grows
   /// its own dedicated Smi fast path (see `is_smi`/`smi_to_i64`).
+  /// `select`, not a branch: creating a fresh 3-block diamond inside
+  /// every one of this function's many call sites turned out to be
+  /// pathological for compile time on real functions (a full minute
+  /// plus to JIT-compile code that used to be instant, root-caused via
+  /// `tests/libs/date.zu`'s `days_in_month()`), almost certainly from
+  /// how many never-individually-sealed blocks that piles up across a
+  /// function with several numeric operations (`seal_all_blocks` is
+  /// only ever called once, at the very end, for the whole function).
+  /// Computing both conversions unconditionally and picking one is
+  /// straight-line code instead: no new blocks, so no compile-time
+  /// blowup, and both `smi_to_i64`+`fcvt_from_sint` and the bitcast
+  /// are safe to run on bits that turn out not to match -- neither can
+  /// trap on any 64-bit pattern, the unused result is simply thrown
+  /// away.
   fn to_f64(&mut self, bits: IrValue) -> IrValue {
     let is_smi = self.is_smi(bits);
-    let smi_block = self.fb.create_block();
-    let float_block = self.fb.create_block();
-    let done_block = self.fb.create_block();
-    self.fb.append_block_param(done_block, types::F64);
-    self
-      .fb
-      .ins()
-      .brif(is_smi, smi_block, &[], float_block, &[]);
-
-    self.fb.switch_to_block(smi_block);
     let as_int = self.smi_to_i64(bits);
     let from_int = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-    self.fb.ins().jump(done_block, &[from_int.into()]);
-
-    self.fb.switch_to_block(float_block);
     let bitcast = self
       .fb
       .ins()
       .bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), bits);
-    self.fb.ins().jump(done_block, &[bitcast.into()]);
-
-    self.fb.switch_to_block(done_block);
-    self.fb.block_params(done_block)[0]
+    self.fb.ins().select(is_smi, from_int, bitcast)
   }
 
   /// Boxes a genuine `f64` result back into a `Value`'s bit pattern,
@@ -6950,42 +6954,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Smi+Smi path that packs a result via `i64_to_smi` directly and
   /// never reaches this at all for the common case (see `is_smi`'s
   /// own docs).
+  /// Plain bitcast, deliberately NOT Smi-aware: this runs on every
+  /// arithmetic result in JIT-compiled code, and an auto-selecting
+  /// version (checked here once, then reverted) turned out to be a
+  /// severe, across-the-board slowdown -- exactly the `fcvt`-per-value
+  /// cost this whole project exists to eliminate, just reintroduced at
+  /// a different choke point. `Instr::LoadConst`'s own codegen is
+  /// where a numeric constant actually needs to keep the constant
+  /// pool's already-correct tag (see its own docs); nothing else that
+  /// calls `from_f64` today is expected to produce a genuinely
+  /// Smi-taggable whole number, so paying this check unconditionally
+  /// for all of them was never worth it. A real arithmetic fast path
+  /// that wants a Smi result should pack one directly via
+  /// `i64_to_smi`, never by routing through here.
   fn from_f64(&mut self, f: IrValue) -> IrValue {
-    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
-    let is_whole = self
-      .fb
-      .ins()
-      .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, f, roundtrip);
-    let smi_min = self.i64c(value::SMI_MIN);
-    let smi_max = self.i64c(value::SMI_MAX);
-    let ge_min = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, as_int, smi_min);
-    let lt_max = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, smi_max);
-    let in_range = self.fb.ins().band(ge_min, lt_max);
-    let fits_smi = self.fb.ins().band(is_whole, in_range);
-
-    let smi_block = self.fb.create_block();
-    let float_block = self.fb.create_block();
-    let done_block = self.fb.create_block();
-    self.fb.append_block_param(done_block, types::I64);
     self
       .fb
       .ins()
-      .brif(fits_smi, smi_block, &[], float_block, &[]);
-
-    self.fb.switch_to_block(smi_block);
-    let smi = self.i64_to_smi(as_int);
-    self.fb.ins().jump(done_block, &[smi.into()]);
-
-    self.fb.switch_to_block(float_block);
-    let bitcast = self
-      .fb
-      .ins()
-      .bitcast(types::I64, cranelift_codegen::ir::MemFlagsData::new(), f);
-    self.fb.ins().jump(done_block, &[bitcast.into()]);
-
-    self.fb.switch_to_block(done_block);
-    self.fb.block_params(done_block)[0]
+      .bitcast(types::I64, cranelift_codegen::ir::MemFlagsData::new(), f)
   }
 
   /// Wraps a boolean condition into a Zuri `Value` bit pattern (`nil`/
@@ -7140,13 +7126,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // re-reads it instead of trusting a stale `Variable`.
     match instr {
       Instr::LoadConst { dst, const_idx } => {
+        // `v` already carries whichever tag `Value::number` gave this
+        // constant at compile time (Smi or plain float); storing it
+        // straight through is what actually preserves that. Routing
+        // a numeric constant through `to_f64`/`store_reg_f64` here
+        // used to re-box it via `from_f64` on the way back in, which
+        // silently downgraded every whole-number constant to
+        // plain-float the moment it was loaded (see `from_f64`'s own
+        // docs on why that helper stays a plain bitcast now).
         let v = self.bake_const(const_idx);
         let const_val = self.proto.chunk.constants[const_idx as usize];
+        self.store_reg(dst, v);
         if const_val.is_number() {
+          // Still worth warming `reg_f64`'s cache with the decoded
+          // form so an immediately-following float use of this same
+          // constant doesn't redo `to_f64`'s own `is_smi` check; this
+          // is purely a cache hint, `store_reg` above already did the
+          // encoding-preserving work.
           let f = self.to_f64(v);
-          self.store_reg_f64(dst, f);
-        } else {
-          self.store_reg(dst, v);
+          self.reg_f64[dst as usize] = Some(f);
         }
         false
       },
