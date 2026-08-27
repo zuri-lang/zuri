@@ -2979,7 +2979,9 @@ impl Heap {
           if gcbox.marked.get() {
             gcbox.marked.set(false);
           } else {
-            self.bytes_allocated = self.bytes_allocated.saturating_sub(Self::approx_size(&gcbox.obj));
+            self.bytes_allocated = self
+              .bytes_allocated
+              .saturating_sub(Self::approx_size(&gcbox.obj));
             // Route through the same FieldStorage-recycling path
             // `reset_nursery` uses instead of a plain assignment-drop:
             // most of a binary-tree-shaped workload's garbage survives
@@ -3058,14 +3060,8 @@ mod field_storage_tests {
   #[test]
   fn offsets_match_repr_c_expectations() {
     assert_eq!(std::mem::offset_of!(FieldStorage, ptr), 0);
-    assert_eq!(
-      std::mem::offset_of!(FieldStorage, len),
-      8
-    );
-    assert_eq!(
-      std::mem::offset_of!(FieldStorage, inline),
-      16
-    );
+    assert_eq!(std::mem::offset_of!(FieldStorage, len), 8);
+    assert_eq!(std::mem::offset_of!(FieldStorage, inline), 16);
   }
 
   #[test]

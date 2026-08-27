@@ -148,7 +148,8 @@ impl JitEngine {
     facts: CompileFacts,
     shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
-    let mut pending = self.build_ir(proto, speculative_params, speculative_regs, facts, shutdown)?;
+    let mut pending =
+      self.build_ir(proto, speculative_params, speculative_regs, facts, shutdown)?;
     if let Some(shutdown) = shutdown {
       if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
         return Err("compilation aborted: VM shutdown".to_string());

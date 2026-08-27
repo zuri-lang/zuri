@@ -5833,10 +5833,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       obj_ptr,
       object::obj_instance_fields_offset() as i32,
     );
-    let inline_ptr = self.fb.ins().iadd_imm_s(
-      obj_ptr,
-      object::obj_instance_fields_inline_offset() as i64,
-    );
+    let inline_ptr = self
+      .fb
+      .ins()
+      .iadd_imm_s(obj_ptr, object::obj_instance_fields_inline_offset() as i64);
     let zero = self.i64c(0);
     let is_inline = self.fb.ins().icmp(IntCC::Equal, heap_ptr, zero);
     self.fb.ins().select(is_inline, inline_ptr, heap_ptr)

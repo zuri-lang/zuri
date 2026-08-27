@@ -1488,9 +1488,13 @@ impl VM {
     &mut self,
     job_tx: std::sync::mpsc::Sender<background::CompileJob>,
   ) {
-    let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-    let pending = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    self.shared_compiler = Some((job_tx, reply_rx, reply_tx, pending));
+    if let Some((current_job_tx, _, _, _)) = &mut self.shared_compiler {
+      *current_job_tx = job_tx;
+    } else {
+      let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+      let pending = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+      self.shared_compiler = Some((job_tx, reply_rx, reply_tx, pending));
+    }
   }
 
   fn jit_compiler(&mut self) -> &mut background::JitCompilerHandle {
@@ -1819,10 +1823,7 @@ impl VM {
     })
   }
 
-  fn snapshot_globals(
-    &self,
-    proto: &ObjFunction,
-  ) -> FxHashMap<String, crate::jit::ResolvedGlobal> {
+  fn snapshot_globals(&self, proto: &ObjFunction) -> FxHashMap<String, crate::jit::ResolvedGlobal> {
     let mut out = FxHashMap::default();
     let mut candidate_names: Vec<String> = Vec::new();
     for instr in &proto.chunk.code {

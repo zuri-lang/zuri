@@ -182,7 +182,11 @@ impl ListStorage {
       // First heap buffer: carry the inline elements over. `Value` is
       // `Copy`, so this is a memcpy with nothing to move or drop.
       unsafe {
-        std::ptr::copy_nonoverlapping(self.inline.as_ptr(), new_ptr as *mut Value, self.len as usize);
+        std::ptr::copy_nonoverlapping(
+          self.inline.as_ptr(),
+          new_ptr as *mut Value,
+          self.len as usize,
+        );
       }
     }
     self.ptr = new_ptr as *mut Value;
@@ -234,7 +238,10 @@ impl ListStorage {
   }
 
   pub fn insert(&mut self, index: usize, value: Value) {
-    assert!(index <= self.len as usize, "zuri: list insert index out of bounds");
+    assert!(
+      index <= self.len as usize,
+      "zuri: list insert index out of bounds"
+    );
     if self.len as usize == self.effective_cap() {
       self.grow_for_push();
     }
@@ -247,7 +254,10 @@ impl ListStorage {
   }
 
   pub fn remove(&mut self, index: usize) -> Value {
-    assert!(index < self.len as usize, "zuri: list remove index out of bounds");
+    assert!(
+      index < self.len as usize,
+      "zuri: list remove index out of bounds"
+    );
     unsafe {
       let at = self.data_ptr_mut().add(index);
       let out = at.read();
@@ -314,7 +324,12 @@ impl ListStorage {
 impl Drop for ListStorage {
   fn drop(&mut self) {
     if !self.ptr.is_null() {
-      unsafe { dealloc(self.ptr as *mut u8, ListStorage::layout_for(self.cap as usize)) };
+      unsafe {
+        dealloc(
+          self.ptr as *mut u8,
+          ListStorage::layout_for(self.cap as usize),
+        )
+      };
     }
   }
 }
