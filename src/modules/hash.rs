@@ -19,13 +19,33 @@
 //! `{string|bytes}` return type and the `as_bytes` flag's semantics.
 
 use digest::Digest;
+use num_bigint::BigInt;
 
 use crate::builtins::enforce::ArgType;
 use crate::modules::{BuiltinModuleDef, native};
-use crate::vm::object::{DictKey, ZuriContext};
+use crate::vm::object::{DictKey, Heap, ZuriContext};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_type};
+
+/// 2^53, the largest integer magnitude an `f64` can hold exactly --
+/// same threshold and reasoning as `struct::F64_SAFE_INT`. A 64-bit
+/// hash routinely exceeds this, and `_hash.id`'s own doc comment
+/// promises `hash.id(a) == hash.id(b)` iff `a`/`b` collide as dict
+/// keys; silently rounding the hash through `f64` would let two
+/// hashes that differ only in bits an `f64` can't represent collide
+/// as equal `number`s despite being genuinely different, breaking
+/// that guarantee for roughly half of all possible 64-bit hash
+/// values.
+const F64_SAFE_INT: u64 = 9_007_199_254_740_992;
+
+fn hash_to_value(h: u64, heap: &mut Heap) -> Value {
+  if h <= F64_SAFE_INT {
+    Value::number(h as f64)
+  } else {
+    heap.alloc_bigint(BigInt::from(h))
+  }
+}
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   name: "_hash",
@@ -200,7 +220,8 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let mut hasher = rustc_hash::FxHasher::default();
   DictKey(v).hash(&mut hasher);
-  Ok(Value::number(hasher.finish() as f64))
+  let h = hasher.finish();
+  Ok(hash_to_value(h, ctx.heap()))
 }
 
 /// `_hash.hash(algorithm, data)` -> raw digest `bytes`. See

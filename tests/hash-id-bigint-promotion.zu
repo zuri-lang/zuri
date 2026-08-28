@@ -1,0 +1,29 @@
+/* `hash.id(value)`'s own doc comment promises `hash.id(a) ==
+ * hash.id(b)` iff `a`/`b` collide as dict keys -- routing the
+ * underlying 64-bit hash through a plain `number` broke that for
+ * roughly half of all possible hash outputs (anything past 2^53
+ * silently rounds through f64). It should promote to bigint instead,
+ * exactly like struct's integer codes already do.
+ *
+ * FxHasher (what hash.id uses internally) has a fixed, unseeded
+ * algorithm, so hashing the same fixed set of keys always produces
+ * the same values on every run/machine -- this is a real,
+ * deterministic regression test, not a probabilistic one. */
+import hash
+
+var saw_bigint = false
+var saw_number = false
+iter var i = 0; i < 200; i += 1 {
+  var h = hash.id('key_${i}')
+  if typeof(h) == 'bigint' {
+    saw_bigint = true
+  } else {
+    saw_number = true
+  }
+}
+echo saw_bigint
+echo saw_number
+
+/* Same input always hashes to the same value, whichever type it
+ * lands on -- the promotion itself must not break determinism. */
+echo hash.id('stable') == hash.id('stable')

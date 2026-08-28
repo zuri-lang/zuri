@@ -1,0 +1,20 @@
+/* `Q` (unsigned 64-bit) at the u64::MAX boundary. The symptom this
+ * originally surfaced as looked like a struct.rs bug (pack/unpack
+ * returning 0 instead of the real value); the actual bug was the
+ * lexer silently zeroing the LITERAL before struct ever saw it (see
+ * tests/big-integer-literal-overflow.zu) -- struct's own bigint-
+ * promotion logic was correct all along. This locks in the full
+ * round-trip so a regression in either place gets caught. */
+import struct
+
+var packed = struct.pack('Q', 18446744073709551615)
+var unpacked = struct.unpack('Q', packed)
+echo unpacked.get('1')
+echo typeof(unpacked.get('1'))
+
+/* A value inside the safe-float range should still come back as a
+ * plain number, not needlessly promoted to bigint. */
+var small_packed = struct.pack('Q', 1000)
+var small_unpacked = struct.unpack('Q', small_packed)
+echo small_unpacked.get('1')
+echo typeof(small_unpacked.get('1'))

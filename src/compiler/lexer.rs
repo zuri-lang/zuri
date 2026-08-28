@@ -350,7 +350,26 @@ impl Lexer {
     if number.contains('.') || has_exponent {
       self.make_token(TokenKind::Double(f64::from_str(number).unwrap_or(0.0)))
     } else {
-      self.make_token(TokenKind::Integer(i64::from_str(number).unwrap_or(0)))
+      // A plain decimal integer too large for `i64` (anything from
+      // `9223372036854775808` up) used to hit this same `unwrap_or`
+      // footgun the exponent case above already had fixed: `i64::
+      // from_str` fails, and defaulting to `0` silently threw the
+      // whole literal away. It should become a real `bigint`, not a
+      // lossy float and certainly not zero -- exactly what the `n`
+      // suffix a few lines up already does for an explicit bigint
+      // literal, so this reuses that same `BigNumber` token rather
+      // than inventing a second bigint path. `number` is already
+      // known to be pure ASCII digits at this point (only `is_digit`
+      // ever advanced the scan), so `BigInt::from_str` failing here
+      // would mean the scanner itself is broken, not that the input
+      // was malformed -- an error token either way, never a silent 0.
+      match i64::from_str(number) {
+        Ok(n) => self.make_token(TokenKind::Integer(n)),
+        Err(_) => match BigInt::from_str(number) {
+          Ok(n) => self.make_token(TokenKind::BigNumber(n)),
+          Err(_) => self.make_error("invalid integer literal".to_string()),
+        },
+      }
     }
   }
 
