@@ -2411,10 +2411,35 @@ impl VM {
   /// moment its native frame goes away. Multi-frame removal sites (catch
   /// unwind, `clear_frames`) do the same truncation inline instead, since
   /// they remove more than one frame at once.
+  ///
+  /// Also discards any `catch_stack` entry left behind by the frame
+  /// that's going away without ever reaching its own `Instr::PopCatch`
+  /// -- a `return` (or any other early exit) straight out of a `catch {
+  /// ... }` body compiles no such cleanup of its own (see
+  /// `Compiler::compile_catch`/`compile_statement`'s `Stmt::Return`
+  /// arm), so without this, the handler's `CatchHandler::frame_depth`
+  /// keeps pointing at a frame that no longer exists. A LATER, entirely
+  /// unrelated error raised anywhere shallower than that stale depth
+  /// would then find it via `handle_error`'s `frame_depth > stop_depth`
+  /// check, "handle" it by resuming at `resume_ip` (an instruction
+  /// index into the departed frame's OWN chunk) inside whatever frame
+  /// is now current, and start executing that frame's bytecode from a
+  /// meaningless offset -- corrupting execution in a way that can look
+  /// like a register holding the wrong value, a function being called
+  /// twice, or a `TypeError` calling something that was never callable.
+  /// A function containing `Instr::PushCatch` is never JIT-compiled
+  /// (`codegen::is_eligible`), so the frame that could leave a stale
+  /// handler here is always interpreted, and its `Instr::Return` always
+  /// calls this function directly; there's no separate JIT-inlined
+  /// frame-pop path that also needs this same cleanup.
   fn pop_frame_inner(&mut self) -> CallFrame {
     let frame = self.frames.pop().expect("pop_frame_inner: no frame to pop");
     self.jit_scalar_roots.truncate(frame.scalar_roots_mark);
     self.jit_scalar_roots_len.set(self.jit_scalar_roots.len());
+    let new_len = self.frames.len();
+    while matches!(self.catch_stack.last(), Some(h) if h.frame_depth > new_len) {
+      self.catch_stack.pop();
+    }
     frame
   }
 

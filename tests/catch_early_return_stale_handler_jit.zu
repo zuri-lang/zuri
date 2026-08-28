@@ -1,0 +1,33 @@
+# Same regression as catch_early_return_stale_handler.zu, but run
+# inside a hot loop so the CALLER around raises() (never raises()
+# itself: a function containing catch is never JIT-eligible, see
+# codegen::is_eligible) gets tiered up while the bug's trigger keeps
+# firing on every iteration. Guards specifically against the fix in
+# VM::pop_frame_inner only working while interpreted and silently
+# breaking again once the surrounding loop is JIT-compiled.
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+def noisy() {
+  return 1
+}
+
+var ok_count = 0
+var caught_count = 0
+
+iter var i = 0; i < 50000; i++ {
+  catch {
+    assert raises(@() { noisy() }), 'expected raises() to report no exception occurred'
+    ok_count++
+  } as e {
+    caught_count++
+  }
+}
+
+echo 'ok_count=' + ok_count
+echo 'caught_count=' + caught_count

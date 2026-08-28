@@ -1,0 +1,3 @@
+called
+caught: expected raises() to report no exception occurred
+done

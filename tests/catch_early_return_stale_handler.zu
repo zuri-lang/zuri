@@ -1,0 +1,25 @@
+# Regression test: a `return` straight out of a `catch { ... } as e`
+# body used to leave that handler's frame_depth stale on catch_stack
+# once the enclosing function returned, since nothing popped it. A
+# later, unrelated error (the assert below) would then find that
+# stale entry and "resume" at its resume_ip inside whatever frame
+# happened to be current, running the wrong bytecode; the observable
+# symptom here was `fn` getting invoked a second time and the
+# assert's own message never surfacing at all. Fixed in
+# `VM::pop_frame_inner`, which now discards any catch_stack entry
+# left behind by the frame it just removed.
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+catch {
+  assert raises(@() { echo 'called' }), 'expected raises() to report no exception occurred'
+} as e {
+  echo 'caught: ' + e.message
+}
+
+echo 'done'
