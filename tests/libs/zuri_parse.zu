@@ -171,6 +171,28 @@ for id_node in identifiers {
 }
 ok('find_nodes() returns every node of the requested kind')
 
+# ---------------------------------------------------------------------------
+# parse_file() / dump_file()
+# ---------------------------------------------------------------------------
+var scratch_path = 'tmp/zuri_parse_file_scratch.zu'
+var scratch_file = file(scratch_path, 'w')
+scratch_file.write('def add(a, b) {\n  return a + b\n}\n')
+scratch_file.close()
+
+var file_nodes = zuri.parse_file(scratch_path)
+assert file_nodes.length() == 1, 'parse_file() must parse the file content, not an empty/default source'
+assert file_nodes[0].kind == 'Function', 'parse_file() must actually read the file content'
+assert file_nodes[0].fields.name == 'add', 'parse_file() must parse the function correctly'
+
+assert raises(@() { zuri.parse_file('tmp/zuri_this_file_does_not_exist.zu') }),
+  'parse_file() on a missing file must raise'
+ok('parse_file() reads and parses a real file')
+
+var dump = zuri.dump_file(scratch_path)
+assert is_string(dump), 'dump_file() must return a string'
+assert dump == file_nodes[0].dump(), 'dump_file() must match dumping the result of parse_file() by hand'
+ok('dump_file() matches parsing then dumping the same file by hand')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

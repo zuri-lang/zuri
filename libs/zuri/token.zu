@@ -109,3 +109,16 @@ def tokenize(source) {
   }
   return tokens
 }
+
+/**
+ * Reads the file at `path` and lexes its contents; exactly
+ * `tokenize(file(path).read())`, for the common case of lexing a
+ * real file rather than a source string you've already got in hand.
+ *
+ * @param string path: Path to the Zuri source file to lex
+ * @returns list[Token]
+ * @throws Error if `path` can't be opened or read
+ */
+def tokenize_file(path) {
+  return tokenize(file(path).read())
+}

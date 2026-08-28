@@ -4,24 +4,32 @@
  * the lexer. It should promote to bigint instead, exactly like an
  * explicit `n`-suffixed literal does. */
 
-/* Within i64 range but past f64's exact-integer range: still a lossy
+/**
+ * Within i64 range but past f64's exact-integer range: still a lossy
  * float today (a separate, known, pre-existing limitation this test
- * isn't about) -- documented here so a change to this boundary is
- * caught, not silently drifted. */
+ * isn't about) which is documented here so a change to this boundary 
+ * is caught, not silently drifted.
+ */
 echo 9223372036854775807
 echo typeof(9223372036854775807)
 
-/* Exactly one past i64::MAX (2^63) -- the actual overflow boundary
- * that used to become 0. */
+/**
+ * Exactly one past i64::MAX (2^63): the actual overflow boundary
+ * that used to become 0.
+ */
 echo 9223372036854775808
 echo typeof(9223372036854775808)
 
-/* u64::MAX -- the natural, commonly-hit case (e.g. a full 64-bit hash
- * or bitmask literal). */
+/**
+ * u64::MAX: the natural, commonly-hit case (e.g. a full 64-bit hash
+ * or bitmask literal).
+ */
 echo 18446744073709551615
 echo typeof(18446744073709551615)
 
-/* Much larger than any fixed-width integer -- confirms this isn't a
- * u64-specific fix, arbitrary precision actually works. */
+/**
+ * Much larger than any fixed-width integer: confirms this isn't a
+ * u64-specific fix, arbitrary precision actually works.
+ */
 echo 123456789012345678901234567890
 echo typeof(123456789012345678901234567890)

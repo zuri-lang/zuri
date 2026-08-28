@@ -1507,7 +1507,7 @@ impl VM {
   /// Samples whichever instance happens to be `self` at the moment a
   /// method is queued for JIT compilation and hands back the set of its
   /// fields that hold a number right then. This is a ONE-SHOT SAMPLE of
-  /// a single instance, not a proof -- a different instance, or this
+  /// a single instance, not a proof, i.e. a different instance, or this
   /// same one after a later reassignment, can easily hold something
   /// else in the same field. `jit::codegen` may only ever fold this
   /// into `type_facts` on the SPECULATIVE side (the specialized body,
@@ -2424,9 +2424,10 @@ impl VM {
   /// check, "handle" it by resuming at `resume_ip` (an instruction
   /// index into the departed frame's OWN chunk) inside whatever frame
   /// is now current, and start executing that frame's bytecode from a
-  /// meaningless offset -- corrupting execution in a way that can look
-  /// like a register holding the wrong value, a function being called
-  /// twice, or a `TypeError` calling something that was never callable.
+  /// meaningless offset thereby corrupting execution in a way that can
+  /// look like a register holding the wrong value, a function being
+  /// called twice, or a `TypeError` calling something that was never
+  /// callable.
   /// A function containing `Instr::PushCatch` is never JIT-compiled
   /// (`codegen::is_eligible`), so the frame that could leave a stale
   /// handler here is always interpreted, and its `Instr::Return` always

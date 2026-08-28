@@ -14,6 +14,15 @@
  * - `zuri.reflect` inspects live functions/classes/modules, and reads
  *   or updates an instance's own properties; see {zuri.reflect}.
  *
+ * The ordinary starting point in practice is a real file on disk, not
+ * a source string already sitting in a variable, so each of the three
+ * above also has a `_file` counterpart that reads `path` first:
+ * `tokenize_file(path)`, `parse_file(path)`, `compile_file(path)`.
+ * There's a fourth, `dump_file(path)`, with no bare-`source`
+ * equivalent of its own; it reads and parses `path`, then returns the
+ * `dump()` of every top-level node, which is usually the single
+ * fastest way to answer "what's actually in this file".
+ *
  * ## The mental model
  *
  * `tokenize()`/`parse()`/`compile()` all return the same SHAPE of
@@ -107,9 +116,12 @@
  *
  * So, end to end, the actual workflow is:
  *
- * 1. Call `parse()`/`compile()` on something real.
- * 2. `dump()` the node/instruction you care about, to see its actual
- *    shape.
+ * 1. Call `parse_file()`/`compile_file()` on something real (or
+ *    `parse()`/`compile()`, if you already have the source as a
+ *    string). `echo zuri.dump_file(path)` first, if you just want to
+ *    look before writing any real code against it.
+ * 2. `dump()` the specific node/instruction you care about, to see
+ *    its actual shape.
  * 3. `walk_nodes()`/`walk_instrs()` (or `find_nodes()`/
  *    `find_instrs()`) to do something with every one of that kind,
  *    wherever it appears.

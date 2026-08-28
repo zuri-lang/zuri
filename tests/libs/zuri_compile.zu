@@ -145,6 +145,28 @@ var returns_inside = zuri.find_instrs(closures[0].fields.prototype.instructions,
 assert returns_inside.length() > 0, 'find_instrs() must work on a nested instruction list too'
 ok('find_instrs() returns every instruction of the requested opcode, anywhere in the tree')
 
+# ---------------------------------------------------------------------------
+# compile_file()
+# ---------------------------------------------------------------------------
+var scratch_path = 'tmp/zuri_compile_file_scratch.zu'
+var scratch_file = file(scratch_path, 'w')
+scratch_file.write('var x = 42')
+scratch_file.close()
+
+var file_instrs = zuri.compile_file(scratch_path)
+var file_load_const = nil
+for instr in file_instrs {
+  if instr.op == 'LoadConst' {
+    file_load_const = instr
+  }
+}
+assert file_load_const != nil, 'compile_file() must actually compile the file content'
+assert file_load_const.fields.value == 42, 'compile_file() must resolve constants the same way compile() does'
+
+assert raises(@() { zuri.compile_file('tmp/zuri_this_file_does_not_exist.zu') }),
+  'compile_file() on a missing file must raise'
+ok('compile_file() reads and compiles a real file')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

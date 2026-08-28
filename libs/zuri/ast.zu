@@ -334,6 +334,44 @@ def parse(source) {
   return nodes
 }
 
+/**
+ * Reads the file at `path` and parses its contents; exactly
+ * `parse(file(path).read())`, for the common case of parsing a real
+ * file rather than a source string you've already got in hand.
+ *
+ * @param string path: Path to the Zuri source file to parse
+ * @returns list[Node]
+ * @throws Error if `path` can't be opened or read, or has a syntax
+ *   error
+ */
+def parse_file(path) {
+  return parse(file(path).read())
+}
+
+/**
+ * Reads, parses, and dumps the file at `path` in one call: the
+ * fastest way to answer "what does this file's AST actually look
+ * like". Equivalent to parsing `path` and joining every resulting
+ * top-level node's own `dump()` with a blank line between them.
+ *
+ * ```zuri
+ * import zuri
+ * echo zuri.dump_file('main.zu')
+ * ```
+ *
+ * @param string path: Path to the Zuri source file to parse and dump
+ * @returns string
+ * @throws Error if `path` can't be opened or read, or has a syntax
+ *   error
+ */
+def dump_file(path) {
+  var dumps = []
+  for node in parse_file(path) {
+    dumps.append(node.dump())
+  }
+  return "\n\n".join(dumps)
+}
+
 def _describe(value) {
   if instance_of(value, Node) {
     return value.kind
