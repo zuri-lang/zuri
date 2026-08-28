@@ -1,0 +1,12 @@
+def bump(v) {
+  return v + 1
+}
+
+var last = 0
+iter var i = 0; i < 200000; i++ {
+  last = bump(5)
+}
+echo 'warm result: ${last}'
+
+var result = bump('oops')
+echo 'poly result: ${result}'

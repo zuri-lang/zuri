@@ -1,0 +1,22 @@
+
+def mutate_sum(a, b, c) {
+  var tmp = [a, b, c]
+  var i = 0
+  while i < 3 {
+    tmp[i] = tmp[i] * 2
+    i = i + 1
+  }
+  return tmp[0] + tmp[1] + tmp[2]
+}
+
+var total2 = 0
+iter var i = 0; i < 200000; i++ {
+  var s = mutate_sum(i, i + 1, i + 2)
+  var expected = (i * 2) + ((i + 1) * 2) + ((i + 2) * 2)
+  if s != expected {
+    echo "MISMATCH at i=" + i + ": got " + s + " expected " + expected
+    break
+  }
+}
+
+echo 'No mismatch'
