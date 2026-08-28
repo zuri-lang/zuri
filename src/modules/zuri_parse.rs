@@ -13,14 +13,21 @@
 //! `src/compiler/parser.rs`); this is what makes the result "lossless
 //! enough to rewrite the file from" for anything at statement/
 //! declaration granularity. A comment written INSIDE an expression
-//! (`foo(a, /* x */ b)`, a list/dict literal spanning several lines
-//! with a comment on its own line in the middle, ...) is NOT
-//! preserved and is silently dropped: CLAUDE.md's Zuri style never
-//! places a comment there in the first place (a comment is always its
-//! own whole line, between statements/declarations/class members), so
-//! the parser's expression grammar was deliberately left untouched
-//! rather than threading trivia capture through every expression rule
-//! for a case real, style-conformant Zuri source never produces.
+//! (`foo(a, # x` on one line, `b)` on the next, ...) is never attached
+//! inside that expression's own node (there's no node kind for it, and
+//! never will be: CLAUDE.md's Zuri style never places a comment there
+//! in the first place). It's still captured, though, not dropped: the
+//! parser's trivia buffer doesn't distinguish "seen while parsing this
+//! statement's own expression" from "seen while chasing trailing
+//! whitespace toward the next one", so it comes back as an ordinary
+//! sibling node immediately after the smallest enclosing statement/
+//! declaration/class-member, in that statement's own surrounding list,
+//! rather than nested inside the expression it visually sat in. Source
+//! written against CLAUDE.md's own comment convention never hits this,
+//! since every comment there is already its own whole line between
+//! statements; this only affects source that breaks that convention,
+//! and even then costs only where the comment ends up attached in the
+//! tree, not the comment itself.
 
 use crate::builtins::enforce::ArgType;
 use crate::compiler::ast::{Decl, Expr, Stmt, Type};

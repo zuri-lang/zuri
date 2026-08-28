@@ -31,18 +31,41 @@
  * list, at the top level, inside a `{ }` block, or between two class
  * members.
  *
- * This is a firm limitation, not a rare edge case: a comment written
- * inside an expression is silently dropped, not preserved as a node.
- * That covers a comment between call arguments, inside a list/dict
- * literal, or anywhere else mid-expression. CLAUDE.md's own Zuri style
- * guide never places a comment there in the first place. A comment is
- * always its own whole line, sitting between statements, declarations,
- * or class members, so the parser's expression grammar was
- * deliberately left untouched rather than threading trivia capture
- * through every expression rule for a case real, style-conformant
- * Zuri source never actually produces. Source written against that
- * convention loses nothing; source that puts a comment somewhere that
- * convention doesn't allow will lose that one comment.
+ * A comment written inside an expression is NOT lost, but it isn't
+ * attached inside that expression's own node either. There's no
+ * `Node` kind for "a comment sitting between two call arguments", and
+ * there never will be, since CLAUDE.md's own Zuri style guide never
+ * places a comment there in the first place (a comment is always its
+ * own whole line, between statements/declarations/class members, not
+ * mid-expression). What actually happens: the comment is captured as
+ * a standalone `'Comment'`/`'DocBlock'` node and placed as a sibling
+ * of the SMALLEST enclosing statement/declaration/class-member, in
+ * that same surrounding list, immediately after it (before whatever
+ * real node follows in that list, or at the list's own end if nothing
+ * does). It stays exactly as deeply nested as the statement that
+ * contained it; a comment inside an `if` body three blocks deep comes
+ * back three blocks deep too, never hoisted to the top.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * var source = "def foo() {\n  echo bar(a, # x\n  b)\n  echo 2\n}\n"
+ * var body = zuri.parse(source)[0].fields.body.fields.statements
+ * echo body[0].kind        # Echo, the statement the comment sat inside
+ * echo body[1].kind        # Comment, landed right after it, not inside it
+ * echo body[1].fields.text # ' x'
+ * echo body[2].kind        # Echo, the "echo 2" line, unaffected
+ * ```
+ *
+ * Source written against CLAUDE.md's own comment-placement convention
+ * is completely unaffected by this: every comment in real,
+ * style-conformant Zuri source is already its own whole line between
+ * statements, which is exactly the case `parse()` places correctly,
+ * in its original position. This only matters for source that breaks
+ * that convention, and even then, nothing is thrown away; the
+ * comment's `line`/`col` still point at where it actually appeared,
+ * it's just not a descendant of the expression node it visually sat
+ * inside.
  *
  * ```zuri
  * import zuri

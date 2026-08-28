@@ -107,11 +107,30 @@ assert methods[2].kind == 'Comment', 'a trailing comment after the last method i
 ok('comments between class members land next to the member they precede')
 
 # ---------------------------------------------------------------------------
-# Comments inside expressions are a documented, deliberate exclusion
+# A comment inside an expression is captured, not lost, but it lands
+# as a sibling right after the smallest enclosing statement, not
+# nested inside the expression it visually sat in
 # ---------------------------------------------------------------------------
 var no_expr_comment_nodes = zuri.parse('var x = 1 + 2')
 assert no_expr_comment_nodes.length() == 1, 'a plain var declaration has no comments to preserve'
-ok('ordinary source with no comments parses without incident (baseline for the exclusion above)')
+ok('ordinary source with no comments parses without incident (baseline for the case below)')
+
+var expr_comment_source = "def foo() {\n  echo bar(a, # x\n  b)\n  echo 2\n}\n"
+var expr_comment_body = zuri.parse(expr_comment_source)[0].fields.body.fields.statements
+assert expr_comment_body.length() == 3, 'the comment must still show up as its own node, not vanish'
+assert expr_comment_body[0].kind == 'Echo', 'first statement is the one the comment sat inside'
+assert expr_comment_body[1].kind == 'Comment', 'the comment lands right after that statement'
+assert expr_comment_body[1].fields.text == ' x', 'the comment text itself is unaffected by where it landed'
+assert expr_comment_body[2].kind == 'Echo', 'the following statement is unaffected'
+ok('a comment embedded inside an expression is preserved as a sibling of the statement it sat inside')
+
+var nested_source = "def foo() {\n  if true {\n    echo bar(a, # w\n    b)\n  }\n  echo 2\n}\n"
+var nested_stmts = zuri.parse(nested_source)[0].fields.body.fields.statements
+var inner_stmts = nested_stmts[0].fields.then.fields.statements
+assert inner_stmts.length() == 2, 'the comment stays nested inside the same block it was found in'
+assert inner_stmts[1].kind == 'Comment', 'not hoisted out to the enclosing function body'
+assert nested_stmts.length() == 2, 'the outer block only has the if and the trailing echo, nothing extra'
+ok('an embedded comment stays exactly as deeply nested as the statement that contained it')
 
 # ---------------------------------------------------------------------------
 # Syntax errors raise rather than returning a partial AST
