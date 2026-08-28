@@ -20,7 +20,9 @@ mod isolate;
 mod isolate_util;
 mod json;
 mod math;
+mod net_dtls;
 mod net_tcp;
+mod net_tls;
 mod net_udp;
 mod os;
 mod r#struct;
@@ -47,7 +49,9 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   r#struct::MODULE,
   compress::MODULE,
   isolate::MODULE,
+  net_dtls::MODULE,
   net_tcp::MODULE,
+  net_tls::MODULE,
   net_udp::MODULE,
 ];
 

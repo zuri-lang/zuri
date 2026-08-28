@@ -1,0 +1,309 @@
+/**
+ * @module dtls
+ *
+ * Datagram Transport Layer Security over a `UdpSocket` - the same
+ * certificate-based encryption and authentication `tls` provides, but
+ * for protocols that need UDP's unordered, connectionless delivery
+ * instead of a TCP byte stream (voice/video, and anything else where a
+ * dropped packet should just be dropped rather than stall everything
+ * behind it).
+ *
+ * Unlike `tls`, this module owns its own socket rather than wrapping one
+ * you've already opened - DTLS has to multiplex several peer
+ * conversations over a single bound UDP port itself, since UDP has no
+ * concept of a per-peer connection the OS can hand you separately the
+ * way `accept()` does for TCP.
+ *
+ * @note DTLS doesn't negotiate ALPN protocols the way TLS does - there's
+ *    no `set_alpn()`/`alpn_protocol()` here.
+ *
+ * A client:
+ *
+ * ```zuri
+ * import net.dtls
+ *
+ * var config = dtls.DtlsConfig()
+ * var socket = dtls.DtlsSocket()
+ * socket.connect(config, '203.0.113.10:5684')
+ *
+ * socket.write('hello')
+ * echo socket.read(1024)
+ * socket.close()
+ * ```
+ *
+ * A server, accepting many clients on one bound port:
+ *
+ * ```zuri
+ * import net.dtls
+ *
+ * var config = dtls.DtlsConfig()
+ * config.set_cert_chain(cert_chain_pem, private_key_pem)
+ *
+ * var server = dtls.DtlsSocket()
+ * server.bind('0.0.0.0:5684')
+ *
+ * while true {
+ *   var client = server.accept(config)
+ *   echo 'connection from ${client.peer_address()}'
+ *   client.write('hello over DTLS')
+ * }
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _net_dtls
+import net.tls { PeerCertificate }
+
+/**
+ * The trust roots and optional certificate a DTLS handshake needs - the
+ * same idea as `tls.TlsConfig`, minus the TLS-specific ALPN/version
+ * options DTLS doesn't have.
+ */
+class DtlsConfig {
+
+  /**
+   * Returns a new `DtlsConfig` with sensible defaults: the bundled
+   * Mozilla root certificate list and no client/server certificate.
+   */
+  @new() {
+    self._ptr = _net_dtls.dtls_config_new()
+  }
+
+  /**
+   * Hands out this config's underlying native handle - `DtlsSocket`
+   * needs it and, like any `_`-prefixed field, `_ptr` isn't otherwise
+   * reachable from outside this class.
+   *
+   * @returns Ptr
+   */
+  native_ptr() {
+    return self._ptr
+  }
+
+  /**
+   * Chooses where trusted root certificate authorities come from. Same
+   * meaning as `tls.TlsConfig.set_root_store()`.
+   *
+   * @param string mode: `'bundled'` or `'native'`
+   * @throws Error if `mode` is neither, or (for `'native'`) if the OS
+   *   trust store can't be read
+   */
+  set_root_store(mode) {
+    _net_dtls.dtls_config_set_root_store(self._ptr, mode)
+  }
+
+  /**
+   * Adds one or more PEM-encoded certificates to this config's trusted
+   * roots. Same meaning as `tls.TlsConfig.add_ca_pem()`.
+   *
+   * @param string pem: One or more PEM-encoded CA certificates
+   * @throws Error if none of the certificates in `pem` could be parsed
+   */
+  add_ca_pem(pem) {
+    _net_dtls.dtls_config_add_ca_pem(self._ptr, pem)
+  }
+
+  /**
+   * Sets the certificate chain and private key this side presents.
+   * Required before `DtlsSocket.accept()` can be used with this config.
+   *
+   * @param string cert_chain_pem: The end-entity certificate followed by
+   *   any intermediate certificates, all PEM-encoded
+   * @param string key_pem: The PEM-encoded private key matching the
+   *   end-entity certificate
+   * @throws Error if either PEM can't be parsed, or if the key doesn't
+   *   match the certificate
+   */
+  set_cert_chain(cert_chain_pem, key_pem) {
+    _net_dtls.dtls_config_set_cert_chain(self._ptr, cert_chain_pem, key_pem)
+  }
+
+  /**
+   * For a server config: whether to require the connecting peer to
+   * present a trusted certificate (mutual TLS).
+   *
+   * @param bool required
+   */
+  require_client_cert(required) {
+    _net_dtls.dtls_config_require_client_cert(self._ptr, required)
+  }
+
+  /**
+   * Disables certificate verification entirely. Same meaning, and same
+   * "development and testing only" caveat, as
+   * `tls.TlsConfig.set_insecure()`.
+   *
+   * @param bool insecure
+   */
+  set_insecure(insecure) {
+    _net_dtls.dtls_config_set_insecure(self._ptr, insecure)
+  }
+}
+
+/**
+ * A DTLS socket, in either its connected (client or accepted-server)
+ * role or its listening role.
+ *
+ * @printable
+ */
+class DtlsSocket {
+
+  /**
+   * Returns a new, unbound `DtlsSocket`. Call `bind()` to listen for
+   * incoming connections, or `connect()` to dial out to one.
+   */
+  @new(_ptr) {
+    self._ptr = _ptr == nil ?
+      _net_dtls.dtls_new() :
+      _ptr
+  }
+
+  /**
+   * Binds this socket to `address` and prepares it to accept incoming
+   * DTLS associations via `accept()`. Unlike a TCP listener, this same
+   * bound socket also carries every subsequently accepted connection's
+   * traffic - DTLS multiplexes by peer address rather than handing out
+   * a fresh OS socket per connection.
+   *
+   * @param string address: The host:port to bind and listen on
+   * @throws Error if binding fails (e.g. the address is already in use)
+   */
+  bind(address) {
+    _net_dtls.dtls_bind(self._ptr, address)
+  }
+
+  /**
+   * Opens a DTLS association with `address`, performing the full
+   * handshake before returning. `server_name` is used to verify the
+   * peer's certificate, the same way `tls.TlsStream.connect()` uses it;
+   * omit it to fall back to verifying against the resolved IP address
+   * instead of a hostname.
+   *
+   * @param DtlsConfig config: The trust roots and options to handshake with
+   * @param string address: The host:port to connect to
+   * @param ?string server_name: The hostname to verify the peer's
+   *   certificate against
+   * @throws Error if resolution or the handshake fails, or the peer's
+   *   certificate isn't trusted or doesn't match `server_name`
+   */
+  connect(config, address, server_name) {
+    _net_dtls.dtls_connect(self._ptr, config.native_ptr(), address, server_name)
+  }
+
+  /**
+   * Waits for the next peer to complete a handshake and returns a new
+   * `DtlsSocket` representing that specific peer's association. Only
+   * valid on a bound socket. Blocks (subject to `set_read_timeout()`)
+   * until a new peer finishes handshaking; existing peers' traffic
+   * keeps flowing to their own `DtlsSocket` instances in the meantime.
+   *
+   * @param DtlsConfig config: Must have a certificate chain set via
+   *   `DtlsConfig.set_cert_chain()`
+   * @returns DtlsSocket a socket for the newly accepted peer
+   * @throws Error if this socket isn't bound, `config` has no
+   *   certificate chain, or (with `require_client_cert()`) a peer's
+   *   handshake didn't present a trusted certificate
+   */
+  accept(config) {
+    return DtlsSocket(_net_dtls.dtls_accept(self._ptr, config.native_ptr()))
+  }
+
+  /**
+   * Reads the next decrypted application-data message, up to `length`
+   * bytes of it. DTLS preserves message boundaries the way UDP does:
+   * this always returns one whole message (truncated to `length` if it
+   * was longer), never a partial one glued to the next.
+   *
+   * @param number length: The maximum number of bytes to return
+   * @returns bytes the next message, up to `length` bytes
+   * @throws Error on an underlying I/O or DTLS record error, or if the
+   *   configured read timeout elapses first
+   */
+  read(length) {
+    return _net_dtls.dtls_read(self._ptr, length)
+  }
+
+  /**
+   * Encrypts and sends `data` as a single application-data message to
+   * the peer this socket is connected/accepted for.
+   *
+   * @param {bytes|string} data: The bytes (or UTF-8 text) to send
+   * @returns number the number of bytes sent
+   * @throws Error on an underlying I/O or DTLS record error
+   */
+  write(data) {
+    return _net_dtls.dtls_write(self._ptr, data)
+  }
+
+  /**
+   * The local socket address this instance is bound to.
+   *
+   * @returns string
+   * @throws Error if this socket isn't bound
+   */
+  local_address() {
+    return _net_dtls.dtls_local_address(self._ptr)
+  }
+
+  /**
+   * The remote peer's socket address.
+   *
+   * @returns string
+   * @throws Error if this socket isn't a connected/accepted association
+   */
+  peer_address() {
+    return _net_dtls.dtls_peer_address(self._ptr)
+  }
+
+  /**
+   * Sets how long `read()` may block before raising a timeout error.
+   * Pass `0` (or any negative number) to block indefinitely, which is
+   * the default.
+   *
+   * @param number timeout: Milliseconds, or a non-positive number to
+   *   disable the timeout
+   */
+  set_read_timeout(timeout) {
+    _net_dtls.dtls_set_read_timeout(self._ptr, timeout)
+  }
+
+  /**
+   * Releases this socket. Safe to call more than once. Only closes this
+   * particular peer association's bookkeeping - if this is a listening
+   * socket, other already-accepted `DtlsSocket` instances sharing its
+   * underlying bound port are unaffected.
+   */
+  close() {
+    _net_dtls.dtls_close(self._ptr)
+  }
+
+  /**
+   * The peer's end-entity certificate, or `nil` if the peer didn't
+   * present one.
+   *
+   * @returns ?PeerCertificate
+   */
+  peer_certificate() {
+    var der = _net_dtls.dtls_peer_certificate_der(self._ptr)
+    if der == nil {
+      return nil
+    }
+    return PeerCertificate(
+      der,
+      _net_dtls.dtls_peer_certificate_subject(self._ptr),
+      _net_dtls.dtls_peer_certificate_issuer(self._ptr),
+      _net_dtls.dtls_peer_certificate_sans(self._ptr),
+      _net_dtls.dtls_peer_certificate_not_before(self._ptr),
+      _net_dtls.dtls_peer_certificate_not_after(self._ptr)
+    )
+  }
+
+  to_string() {
+    return '<DtlsSocket>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

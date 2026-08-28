@@ -1,0 +1,44 @@
+/**
+ * Helper module for `tests/libs/net_dtls.zu` - server-side isolate
+ * functions, the same pattern `net_tls_server.zu` and
+ * `isolate_isolate.zu` already use.
+ */
+
+import net.dtls
+
+/**
+ * Plain echo server: accepts one association, echoes back whatever the
+ * client sends prefixed with 'echo:'.
+ */
+def echo_server(port_channel, server_cert, server_key) {
+  var config = dtls.DtlsConfig()
+  config.set_cert_chain(server_cert, server_key)
+
+  var server = dtls.DtlsSocket()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address())
+
+  var client = server.accept(config)
+  var received = client.read(1024).to_string()
+  client.write('echo:' + received)
+}
+
+/**
+ * Server that requires a trusted client certificate and reports back
+ * its subject, so the test can assert on it.
+ */
+def mutual_dtls_server(port_channel, server_cert, server_key, ca_cert) {
+  var config = dtls.DtlsConfig()
+  config.set_cert_chain(server_cert, server_key)
+  config.add_ca_pem(ca_cert)
+  config.require_client_cert(true)
+
+  var server = dtls.DtlsSocket()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address())
+
+  var client = server.accept(config)
+  var cert = client.peer_certificate()
+  var subject = cert == nil ? nil : cert.subject()
+  client.write('subject:' + (subject or 'nil'))
+}

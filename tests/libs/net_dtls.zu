@@ -1,0 +1,150 @@
+/**
+ * test_net_dtls.zu
+ *
+ * Test suite for the `net.dtls` standard library module: client/server
+ * echo over a real certificate chain (exercising the full handshake,
+ * including whatever cookie exchange the underlying DTLS association
+ * needs internally), certificate rejection, and mutual DTLS.
+ *
+ * Uses the same throwaway self-signed CA/server/client certificate
+ * fixture as `net_tls.zu`; see that file for where it came from.
+ */
+
+import isolate
+import net.dtls
+import .net_dtls_server
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+var ca_cert = '-----BEGIN CERTIFICATE-----
+MIIBnDCCAUOgAwIBAgIUeWaA1kIpfHmP8pCrmYnl7E501IUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAcMRowGAYDVQQDDBFadXJpIFRlc3QgUm9vdCBDQTBZMBMG
+ByqGSM49AgEGCCqGSM49AwEHA0IABFAaDC18AhIebjzRZpFvvbvzcuboDHU5lMqS
+ikGzkBAJSpBvmNiilC6S87CtECJcSyUH99BGoXW1V7ZKPyY8fJijYzBhMB0GA1Ud
+DgQWBBQ3dj3HS36c++2sfxUEXvzdETg99zAfBgNVHSMEGDAWgBQ3dj3HS36c++2s
+fxUEXvzdETg99zAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAKBggq
+hkjOPQQDAgNHADBEAiB9+2A7FyeRsuGsGYMK8doy3Il6VM9aaoeg44Z+VhpdogIg
+O/OaIrLQfEgEqK/tBQDGYtaFpM2SiUwNlGYCpDYL2OM=
+-----END CERTIFICATE-----
+'
+
+var server_cert = '-----BEGIN CERTIFICATE-----
+MIIBxjCCAWugAwIBAgIUKY6KD8+UhDTVfnuwbeg/aqGZjEUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAAQktM0xvAHGLQrfkjDG9GgqlkQ7Jp/M3J5nouQxtkO2DRbN
+8wTgShvkOwPLtTn4QsZzNvNcfYd5yVw3QEbWUygko4GSMIGPMAwGA1UdEwEB/wQC
+MAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMBoGA1UdEQQT
+MBGCCWxvY2FsaG9zdIcEfwAAATAdBgNVHQ4EFgQUYWdSTBIeJ8/+kYIfmzI1jQtz
+t3owHwYDVR0jBBgwFoAUN3Y9x0t+nPvtrH8VBF783RE4PfcwCgYIKoZIzj0EAwID
+SQAwRgIhAKyTEhmIrP+F4HYULeh1NlzYB+Fn8xgSY3OHQEemXM0eAiEA+zIv/TKY
+ygqPPVtOmV8uMme4Jp3vxdZJhkGY4OPTTUQ=
+-----END CERTIFICATE-----
+'
+
+var server_key = '-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIKCvr/d71GiDa9QHie6zXXMk+h/PJ6j2mc2dr31IL/xIoAoGCCqGSM49
+AwEHoUQDQgAEJLTNMbwBxi0K35IwxvRoKpZEOyafzNyeZ6LkMbZDtg0WzfME4Eob
+5DsDy7U5+ELGczbzXH2HeclcN0BG1lMoJA==
+-----END EC PRIVATE KEY-----
+'
+
+var client_cert = '-----BEGIN CERTIFICATE-----
+MIIBqjCCAU+gAwIBAgIUKY6KD8+UhDTVfnuwbeg/aqGZjEYwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAWMRQwEgYDVQQDDAt0ZXN0LWNsaWVudDBZMBMGByqGSM49
+AgEGCCqGSM49AwEHA0IABPpEubbKD+COTVAgX9PLA1TCLpOuLmG/2/cCOrAjStdf
+NuGrPGJM0AqZgiLhm1IH3gow+Nl18wVI3GieAqs5VgujdTBzMAwGA1UdEwEB/wQC
+MAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMCMB0GA1UdDgQW
+BBSpmMdyvpV5Sd4lcMVyWf4pcJbqVDAfBgNVHSMEGDAWgBQ3dj3HS36c++2sfxUE
+XvzdETg99zAKBggqhkjOPQQDAgNJADBGAiEA5dpnSnMT2whA1urBOmT+S954n0DW
+1RxxbBjooxvwo5wCIQC1EcA/38elJ+MRYGEFUy5M+CXzI61XmxwJwTZcg+m5Aw==
+-----END CERTIFICATE-----
+'
+
+var client_key = '-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEICD/OA+dzRj0XteI85TA0YLHWz7/FT7R0tecx0lsmegRoAoGCCqGSM49
+AwEHoUQDQgAE+kS5tsoP4I5NUCBf08sDVMIuk64uYb/b9wI6sCNK11824as8YkzQ
+CpmCIuGbUgfeCjD42XXzBUjcaJ4CqzlWCw==
+-----END EC PRIVATE KEY-----
+'
+
+echo '═══════════════════════════════════════════════════════'
+echo '  net.dtls module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Client/server echo, over a real certificate chain and full handshake
+# ---------------------------------------------------------------------------
+var ch1 = isolate.channel(1)
+var task1 = isolate.spawn(net_dtls_server.echo_server, ch1, server_cert, server_key)
+var addr1 = ch1.recv()
+
+var config1 = dtls.DtlsConfig()
+config1.add_ca_pem(ca_cert)
+
+var socket1 = dtls.DtlsSocket()
+socket1.connect(config1, addr1, 'localhost')
+socket1.write('hello')
+var reply1 = socket1.read(1024).to_string()
+task1.join()
+
+assert reply1 == 'echo:hello', 'expected the server to echo back the message'
+ok('client/server echo round-trip over a verified certificate chain')
+
+# ---------------------------------------------------------------------------
+# Certificate rejection: an untrusted root must be refused
+# ---------------------------------------------------------------------------
+var ch2 = isolate.channel(1)
+var task2 = isolate.spawn(net_dtls_server.echo_server, ch2, server_cert, server_key)
+var addr2 = ch2.recv()
+
+var config2 = dtls.DtlsConfig() # bundled roots only - does not trust our test CA
+
+var socket2 = dtls.DtlsSocket()
+assert raises(@() { socket2.connect(config2, addr2, 'localhost') }),
+  'connecting without trusting the test CA must raise'
+ok('untrusted certificate is rejected')
+
+# ---------------------------------------------------------------------------
+# Mutual DTLS: server requires and verifies a client certificate
+# ---------------------------------------------------------------------------
+var ch3 = isolate.channel(1)
+var task3 = isolate.spawn(
+  net_dtls_server.mutual_dtls_server, ch3, server_cert, server_key, ca_cert)
+var addr3 = ch3.recv()
+
+var config3 = dtls.DtlsConfig()
+config3.add_ca_pem(ca_cert)
+config3.set_cert_chain(client_cert, client_key)
+
+var socket3 = dtls.DtlsSocket()
+socket3.connect(config3, addr3, 'localhost')
+var reply3 = socket3.read(1024).to_string()
+task3.join()
+
+assert reply3 == 'subject:CN=test-client',
+  'server must see and report the client certificate subject'
+ok('mutual DTLS: server verifies and reads the client certificate')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

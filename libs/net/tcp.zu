@@ -103,9 +103,22 @@ class TcpStream {
    * Returns a new instance of a {TcpStream}.
    */
   @new(_ptr) {
-    self._ptr = _ptr == nil ? 
-      _net_tcp.tcp_new() : 
+    self._ptr = _ptr == nil ?
+      _net_tcp.tcp_new() :
       _ptr
+  }
+
+  /**
+   * Hands out this stream's underlying native socket handle. `_ptr` is
+   * private the way every field prefixed with `_` is, so a sibling
+   * module like `tls` - which needs to take an already-connected
+   * `TcpStream` and wrap it, without belonging to this class or
+   * inheriting from it - has no other way to reach it.
+   *
+   * @returns Ptr
+   */
+  native_ptr() {
+    return self._ptr
   }
 
   /**

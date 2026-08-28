@@ -1,0 +1,262 @@
+/**
+ * test_net_tls.zu
+ *
+ * Test suite for the `net.tls` standard library module: client/server
+ * echo over a real certificate chain, certificate rejection, mutual
+ * TLS, ALPN negotiation, STARTTLS-style upgrade, peer-certificate
+ * introspection, and a non-blocking socket handshake.
+ *
+ * The certificate/key PEM constants below are a throwaway, fixed test
+ * fixture: a self-signed root CA plus a server leaf and a client leaf
+ * both signed by it, generated once with OpenSSL and committed here
+ * rather than generated at test time, so this suite doesn't depend on
+ * the `crypto` module. They aren't used or trusted anywhere outside
+ * this test.
+ *
+ * Every scenario runs its server side in a spawned isolate (see
+ * `net_tls_server.zu`) so the client and server can talk to each other
+ * within a single test process, following the same pattern
+ * `tests/libs/isolate.zu` already uses.
+ */
+
+import isolate
+import net
+import net.tls
+import .net_tls_server
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+var ca_cert = '-----BEGIN CERTIFICATE-----
+MIIBnDCCAUOgAwIBAgIUeWaA1kIpfHmP8pCrmYnl7E501IUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAcMRowGAYDVQQDDBFadXJpIFRlc3QgUm9vdCBDQTBZMBMG
+ByqGSM49AgEGCCqGSM49AwEHA0IABFAaDC18AhIebjzRZpFvvbvzcuboDHU5lMqS
+ikGzkBAJSpBvmNiilC6S87CtECJcSyUH99BGoXW1V7ZKPyY8fJijYzBhMB0GA1Ud
+DgQWBBQ3dj3HS36c++2sfxUEXvzdETg99zAfBgNVHSMEGDAWgBQ3dj3HS36c++2s
+fxUEXvzdETg99zAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAKBggq
+hkjOPQQDAgNHADBEAiB9+2A7FyeRsuGsGYMK8doy3Il6VM9aaoeg44Z+VhpdogIg
+O/OaIrLQfEgEqK/tBQDGYtaFpM2SiUwNlGYCpDYL2OM=
+-----END CERTIFICATE-----
+'
+
+var server_cert = '-----BEGIN CERTIFICATE-----
+MIIBxjCCAWugAwIBAgIUKY6KD8+UhDTVfnuwbeg/aqGZjEUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAAQktM0xvAHGLQrfkjDG9GgqlkQ7Jp/M3J5nouQxtkO2DRbN
+8wTgShvkOwPLtTn4QsZzNvNcfYd5yVw3QEbWUygko4GSMIGPMAwGA1UdEwEB/wQC
+MAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMBoGA1UdEQQT
+MBGCCWxvY2FsaG9zdIcEfwAAATAdBgNVHQ4EFgQUYWdSTBIeJ8/+kYIfmzI1jQtz
+t3owHwYDVR0jBBgwFoAUN3Y9x0t+nPvtrH8VBF783RE4PfcwCgYIKoZIzj0EAwID
+SQAwRgIhAKyTEhmIrP+F4HYULeh1NlzYB+Fn8xgSY3OHQEemXM0eAiEA+zIv/TKY
+ygqPPVtOmV8uMme4Jp3vxdZJhkGY4OPTTUQ=
+-----END CERTIFICATE-----
+'
+
+var server_key = '-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIKCvr/d71GiDa9QHie6zXXMk+h/PJ6j2mc2dr31IL/xIoAoGCCqGSM49
+AwEHoUQDQgAEJLTNMbwBxi0K35IwxvRoKpZEOyafzNyeZ6LkMbZDtg0WzfME4Eob
+5DsDy7U5+ELGczbzXH2HeclcN0BG1lMoJA==
+-----END EC PRIVATE KEY-----
+'
+
+var client_cert = '-----BEGIN CERTIFICATE-----
+MIIBqjCCAU+gAwIBAgIUKY6KD8+UhDTVfnuwbeg/aqGZjEYwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAWMRQwEgYDVQQDDAt0ZXN0LWNsaWVudDBZMBMGByqGSM49
+AgEGCCqGSM49AwEHA0IABPpEubbKD+COTVAgX9PLA1TCLpOuLmG/2/cCOrAjStdf
+NuGrPGJM0AqZgiLhm1IH3gow+Nl18wVI3GieAqs5VgujdTBzMAwGA1UdEwEB/wQC
+MAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMCMB0GA1UdDgQW
+BBSpmMdyvpV5Sd4lcMVyWf4pcJbqVDAfBgNVHSMEGDAWgBQ3dj3HS36c++2sfxUE
+XvzdETg99zAKBggqhkjOPQQDAgNJADBGAiEA5dpnSnMT2whA1urBOmT+S954n0DW
+1RxxbBjooxvwo5wCIQC1EcA/38elJ+MRYGEFUy5M+CXzI61XmxwJwTZcg+m5Aw==
+-----END CERTIFICATE-----
+'
+
+var client_key = '-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEICD/OA+dzRj0XteI85TA0YLHWz7/FT7R0tecx0lsmegRoAoGCCqGSM49
+AwEHoUQDQgAE+kS5tsoP4I5NUCBf08sDVMIuk64uYb/b9wI6sCNK11824as8YkzQ
+CpmCIuGbUgfeCjD42XXzBUjcaJ4CqzlWCw==
+-----END EC PRIVATE KEY-----
+'
+
+echo '═══════════════════════════════════════════════════════'
+echo '  net.tls module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Client/server echo, over a real certificate chain
+# ---------------------------------------------------------------------------
+var ch1 = isolate.channel(1)
+var task1 = isolate.spawn(net_tls_server.echo_server, ch1, server_cert, server_key)
+var addr1 = ch1.recv()
+
+var config1 = tls.TlsConfig()
+config1.add_ca_pem(ca_cert)
+
+var tcp1 = net.TcpStream()
+tcp1.connect(addr1)
+var stream1 = tls.TlsStream.connect(tcp1, config1, 'localhost')
+stream1.write_all('hello')
+stream1.shutdown()
+var reply1 = stream1.read_as_string()
+stream1.close()
+task1.join()
+
+assert reply1 == 'echo:hello', 'expected the server to echo back the message'
+ok('client/server echo round-trip over a verified certificate chain')
+
+# ---------------------------------------------------------------------------
+# Certificate rejection: an untrusted root must be refused
+# ---------------------------------------------------------------------------
+var ch2 = isolate.channel(1)
+var task2 = isolate.spawn(net_tls_server.echo_server, ch2, server_cert, server_key)
+var addr2 = ch2.recv()
+
+var config2 = tls.TlsConfig() # bundled roots only - does not trust our test CA
+
+var tcp2 = net.TcpStream()
+tcp2.connect(addr2)
+assert raises(@() { tls.TlsStream.connect(tcp2, config2, 'localhost') }),
+  'connecting without trusting the test CA must raise'
+ok('untrusted certificate is rejected')
+
+# ---------------------------------------------------------------------------
+# Mutual TLS: server requires and verifies a client certificate
+# ---------------------------------------------------------------------------
+var ch3 = isolate.channel(1)
+var task3 = isolate.spawn(
+  net_tls_server.mutual_tls_server, ch3, server_cert, server_key, ca_cert)
+var addr3 = ch3.recv()
+
+var config3 = tls.TlsConfig()
+config3.add_ca_pem(ca_cert)
+config3.set_cert_chain(client_cert, client_key)
+
+var tcp3 = net.TcpStream()
+tcp3.connect(addr3)
+var stream3 = tls.TlsStream.connect(tcp3, config3, 'localhost')
+stream3.shutdown()
+var reply3 = stream3.read_as_string()
+stream3.close()
+task3.join()
+
+assert reply3 == 'subject:CN=test-client',
+  'server must see and report the client certificate subject'
+ok('mutual TLS: server verifies and reads the client certificate')
+
+# ---------------------------------------------------------------------------
+# ALPN negotiation
+# ---------------------------------------------------------------------------
+var ch4 = isolate.channel(1)
+var task4 = isolate.spawn(
+  net_tls_server.alpn_server, ch4, server_cert, server_key, ['h2', 'http/1.1'])
+var addr4 = ch4.recv()
+
+var config4 = tls.TlsConfig()
+config4.add_ca_pem(ca_cert)
+config4.set_alpn(['http/1.1'])
+
+var tcp4 = net.TcpStream()
+tcp4.connect(addr4)
+var stream4 = tls.TlsStream.connect(tcp4, config4, 'localhost')
+assert stream4.alpn_protocol() == 'http/1.1',
+  'client must see the negotiated ALPN protocol too'
+# The server never reads from the client here, it just replies and
+# closes - so, unlike the echo/mTLS scenarios, there's nothing for the
+# client to signal EOF on first; shutdown() before reading would just
+# race the server's own close.
+var reply4 = stream4.read_as_string()
+stream4.close()
+task4.join()
+
+assert reply4 == 'negotiated:http/1.1',
+  'client and server must negotiate the one protocol they both offer'
+ok('ALPN negotiation picks the overlapping protocol')
+
+# ---------------------------------------------------------------------------
+# STARTTLS-style upgrade: plaintext greeting, then wrap the same socket
+# ---------------------------------------------------------------------------
+var ch5 = isolate.channel(1)
+var task5 = isolate.spawn(net_tls_server.starttls_server, ch5, server_cert, server_key)
+var addr5 = ch5.recv()
+
+var config5 = tls.TlsConfig()
+config5.add_ca_pem(ca_cert)
+
+var tcp5 = net.TcpStream()
+tcp5.connect(addr5)
+var greeting = tcp5.read_exact(11) # '220 ready\r\n'
+tcp5.write_all('STARTTLS\r\n')
+var stream5 = tls.TlsStream.connect(tcp5, config5, 'localhost')
+var reply5 = stream5.read_all()
+stream5.close()
+task5.join()
+
+assert greeting.to_string() == '220 ready\r\n', 'must read the plaintext greeting first'
+assert reply5.to_string() == 'secure-hello',
+  'the connection must be encrypted, and usable, after the STARTTLS upgrade'
+ok('STARTTLS-style upgrade after a plaintext greeting')
+
+# ---------------------------------------------------------------------------
+# Non-blocking socket: the handshake must work by retrying on the
+# underlying socket's own WouldBlock, same contract as plain TcpStream
+# ---------------------------------------------------------------------------
+var ch6 = isolate.channel(1)
+var task6 = isolate.spawn(net_tls_server.non_blocking_server, ch6, server_cert, server_key)
+var addr6 = ch6.recv()
+
+var config6 = tls.TlsConfig()
+config6.add_ca_pem(ca_cert)
+
+# A handshake is a multi-flight exchange, not a single request, so
+# connect() drives it to completion internally rather than surfacing a
+# WouldBlock the caller would have to retry (retrying would mean
+# starting a brand new ClientHello over a connection that already has
+# a partial one on the wire). Non-blocking mode still has to produce a
+# correct result, not just an immediate one.
+var tcp6 = net.TcpStream()
+tcp6.connect(addr6)
+tcp6.set_non_blocking(true)
+var stream6 = tls.TlsStream.connect(tcp6, config6, 'localhost')
+
+# Once established, a read/write DOES keep the normal "caller retries
+# the same call" contract - each is independent at the TCP-byte level,
+# unlike the handshake. Loop until the server's reply actually arrives.
+var reply6 = nil
+var read_attempts = 0
+while reply6 == nil and read_attempts < 10000 {
+  catch {
+    var chunk = stream6.read(16)
+    if chunk.length() > 0 {
+      reply6 = chunk.to_string()
+    }
+  } as e
+  read_attempts++
+}
+stream6.close()
+task6.join()
+
+assert reply6 == 'ok', 'the stream must be fully usable once the handshake completes'
+ok('TLS handshake completes correctly over a non-blocking socket')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

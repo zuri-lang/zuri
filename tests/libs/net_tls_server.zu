@@ -1,0 +1,121 @@
+/**
+ * Helper module for `tests/libs/net_tls.zu` - server-side isolate
+ * functions. Kept in its own file, the same way `isolate_isolate.zu`
+ * backs `isolate.zu`: a spawned isolate resolves a function by module
+ * binding rather than transplanting a main-script closure, and a
+ * closure capturing an imported module namespace (like `tls`) can't be
+ * transplanted anyway.
+ */
+
+import net
+import net.tls
+
+/**
+ * Plain echo server: accepts one connection, echoes back whatever the
+ * client sends prefixed with 'echo:', then closes.
+ */
+def echo_server(port_channel, server_cert, server_key) {
+  var config = tls.TlsConfig()
+  config.set_cert_chain(server_cert, server_key)
+
+  var server = net.TcpStream()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address())
+
+  var client = server.accept()
+  var tls_client = tls.TlsStream.accept(client, config)
+  var received = tls_client.read_as_string()
+  tls_client.write_all('echo:' + received)
+  tls_client.close()
+  server.close()
+}
+
+/**
+ * Server that requires a trusted client certificate and reports back
+ * whatever it saw, so the test can assert on it.
+ */
+def mutual_tls_server(port_channel, server_cert, server_key, ca_cert) {
+  var config = tls.TlsConfig()
+  config.set_cert_chain(server_cert, server_key)
+  config.add_ca_pem(ca_cert)
+  config.require_client_cert(true)
+
+  var server = net.TcpStream()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address())
+
+  var client = server.accept()
+  catch {
+    var tls_client = tls.TlsStream.accept(client, config)
+    var cert = tls_client.peer_certificate()
+    var subject = cert == nil ? nil : cert.subject()
+    tls_client.write_all('subject:' + (subject or 'nil'))
+    tls_client.close()
+  } as e
+  if e {
+    port_channel.send('server-error:' + e.message)
+  }
+  server.close()
+}
+
+/**
+ * Server offering ALPN protocols, reporting back whichever one was
+ * negotiated.
+ */
+def alpn_server(port_channel, server_cert, server_key, protocols) {
+  var config = tls.TlsConfig()
+  config.set_cert_chain(server_cert, server_key)
+  config.set_alpn(protocols)
+
+  var server = net.TcpStream()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address())
+
+  var client = server.accept()
+  var tls_client = tls.TlsStream.accept(client, config)
+  tls_client.write_all('negotiated:' + (tls_client.alpn_protocol() or 'nil'))
+  tls_client.close()
+  server.close()
+}
+
+/**
+ * STARTTLS-style server: exchanges a plaintext greeting first, then
+ * upgrades the same connection to TLS.
+ */
+def starttls_server(port_channel, server_cert, server_key) {
+  var config = tls.TlsConfig()
+  config.set_cert_chain(server_cert, server_key)
+
+  var server = net.TcpStream()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address())
+
+  var client = server.accept()
+  client.write_all('220 ready\r\n')
+  client.read_exact(10) # 'STARTTLS\r\n'
+
+  var tls_client = tls.TlsStream.accept(client, config)
+  tls_client.write_all('secure-hello')
+  tls_client.close()
+  server.close()
+}
+
+/**
+ * Server for the non-blocking-socket test: sets the accepted socket
+ * non-blocking before wrapping it, and reports whether the handshake
+ * still completed correctly.
+ */
+def non_blocking_server(port_channel, server_cert, server_key) {
+  var config = tls.TlsConfig()
+  config.set_cert_chain(server_cert, server_key)
+
+  var server = net.TcpStream()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address())
+
+  var client = server.accept()
+  var tls_client = tls.TlsStream.accept(client, config)
+  tls_client.write_all('ok')
+  tls_client.close()
+  server.close()
+}

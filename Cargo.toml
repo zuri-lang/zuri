@@ -64,6 +64,31 @@ cranelift-module = "0.134"
 cranelift-native = "0.134"
 target-lexicon = "0.13"
 
+# --- net::tls / net::dtls (src/modules/net_tls.rs, src/modules/net_dtls.rs) ----
+# rustls picks aws-lc-rs as its crypto provider by default (the "aws_lc_rs"
+# feature below); rtc-dtls is told to use the same provider via its own
+# "aws-lc-rs" feature so we only ever link one crypto backend, not two.
+rustls = { version = "0.23", features = ["aws_lc_rs", "log"] }
+rustls-pki-types = { version = "1", features = ["std"] }
+rustls-pemfile = "2"
+webpki-roots = "1"
+rustls-native-certs = "0.8"
+x509-cert = { version = "0.3", features = ["std", "pem"] }
+rtc-dtls = { version = "0.20", default-features = false, features = ["aws-lc-rs", "pem"] }
+# rtc-shared is a transitive dependency of rtc-dtls already, but rtc-dtls's
+# public API (Endpoint::connect/read/write) returns its Result/Error type
+# directly, so it needs to be named here too rather than just along for
+# the ride.
+rtc-shared = "0.20"
+bytes = "1"
+# rcgen bridges a parsed PKCS#8 private key into rtc-dtls's own
+# CryptoPrivateKey type; rtc-dtls's Certificate::from_pem() turned out to
+# reject standard "-----BEGIN PRIVATE KEY-----" PEM (it checks the PEM tag
+# against the literal "PRIVATE_KEY", which no real key ever has), so
+# certificates are built through rcgen::KeyPair directly instead. Matched
+# to aws_lc_rs so it isn't pulling in ring on top of everything else.
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+
 
 [build-dependencies]
 chrono = "0.4.45"

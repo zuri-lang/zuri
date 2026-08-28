@@ -101,7 +101,14 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   ]
 }
 
-const TCP_STREAM: &str = "zuri::net::TcpStream";
+pub(crate) const TCP_STREAM: &str = "zuri::net::TcpStream";
+
+/// Tag a `TcpStream` is switched to once its underlying socket has been
+/// handed off to a `TlsStream` for a STARTTLS-style upgrade, same idea as
+/// `tcp_close`'s own invalidation below: the Zuri-level instance is dead
+/// and any further method call on it should fail loudly instead of
+/// silently operating on a socket that TLS now owns.
+pub(crate) const TCP_STREAM_UPGRADED: &str = "zuri::net::TcpStream::__upgraded__";
 
 fn get_data(args: &[Value]) -> Vec<u8> {
   let value = args[0];
@@ -112,7 +119,7 @@ fn get_data(args: &[Value]) -> Vec<u8> {
   }
 }
 
-struct ZuriTcp {
+pub(crate) struct ZuriTcp {
   pub stream: Option<TcpStream>,
   pub listener: Option<TcpListener>,
 }
@@ -141,6 +148,17 @@ impl ZuriTcp {
 
   fn is_bound(&self) -> bool {
     self.listener.is_some()
+  }
+
+  /// Hands the connected socket out to a caller that's about to wrap it in
+  /// TLS. Used for STARTTLS-style upgrades, where the connection starts out
+  /// plaintext and only becomes encrypted partway through, on the same
+  /// underlying socket, rather than by reconnecting.
+  pub(crate) fn take_stream(&mut self) -> Result<TcpStream, String> {
+    self
+      .stream
+      .take()
+      .ok_or_else(|| INVALID_STREAM_ERR.to_string())
   }
 
   fn peer_addr(&self) -> Result<SocketAddr, String> {
