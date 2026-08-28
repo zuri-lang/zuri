@@ -1,0 +1,98 @@
+/**
+ * test_zuri_tokenize.zu
+ *
+ * Test suite for `zuri.tokenize()`: token kinds, positions, spans,
+ * values, and the `Error`-kind fallback for malformed input.
+ */
+
+import zuri
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  zuri.tokenize() — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Basic token kinds and order
+# ---------------------------------------------------------------------------
+var tokens = zuri.tokenize('var x = 1 + 2')
+assert tokens.length() == 7, 'expected 7 tokens (6 real tokens plus Eof)'
+assert tokens[0].kind == 'Var', 'first token must be Var'
+assert tokens[1].kind == 'Identifier', 'second token must be an Identifier'
+assert tokens[1].value == 'x', 'the Identifier value must be the variable name'
+assert tokens[2].kind == 'Equal', 'third token must be Equal'
+assert tokens[3].kind == 'Integer', 'fourth token must be Integer'
+assert tokens[3].value == 1, 'the Integer value must be 1'
+assert tokens[4].kind == 'Plus', 'fifth token must be Plus'
+assert tokens[5].kind == 'Integer', 'sixth token must be Integer'
+assert tokens[5].value == 2, 'the Integer value must be 2'
+assert tokens[6].kind == 'Eof', 'the list must end with an Eof token'
+ok('basic token kinds and values')
+
+# ---------------------------------------------------------------------------
+# Positions and spans
+# ---------------------------------------------------------------------------
+var pos_tokens = zuri.tokenize('  foo')
+assert pos_tokens[0].kind == 'Identifier', 'first real token must be the identifier'
+assert pos_tokens[0].line == 1, 'identifier must be on line 1'
+assert pos_tokens[0].column == 3, 'identifier must start at column 3 (after two spaces)'
+assert pos_tokens[0].text == 'foo', 'text must be the exact source slice'
+assert pos_tokens[0].end - pos_tokens[0].start == 3, 'span must cover exactly 3 characters'
+ok('token positions and spans')
+
+# ---------------------------------------------------------------------------
+# Nothing is filtered: comments, doc blocks, and newlines are real tokens
+# ---------------------------------------------------------------------------
+var trivia_tokens = zuri.tokenize('x # a comment\ny')
+var kinds = []
+for t in trivia_tokens {
+  kinds.append(t.kind)
+}
+assert kinds.contains('Comment'), 'a line comment must appear as its own token'
+assert kinds.contains('Newline'), 'newlines must appear as their own tokens'
+
+var comment_token = nil
+for t in trivia_tokens {
+  if t.kind == 'Comment' {
+    comment_token = t
+  }
+}
+assert comment_token != nil, 'must have found the comment token'
+assert comment_token.value == ' a comment', 'comment value must exclude the leading #'
+assert comment_token.is_trivia(), 'a Comment token must report is_trivia() as true'
+ok('comments and newlines are preserved as real tokens')
+
+# ---------------------------------------------------------------------------
+# Malformed input surfaces as an Error-kind token, not a raised exception
+# ---------------------------------------------------------------------------
+var bad_tokens = zuri.tokenize("var s = 'unterminated")
+var found_error = false
+for t in bad_tokens {
+  if t.kind == 'Error' {
+    found_error = true
+    assert t.value.message != nil, 'an Error token must carry a message'
+  }
+}
+assert found_error, 'an unterminated string must surface as an Error-kind token'
+ok('malformed input surfaces as an Error token instead of raising')
+
+# ---------------------------------------------------------------------------
+# to_string()
+# ---------------------------------------------------------------------------
+var str_tokens = zuri.tokenize('x')
+assert str_tokens[0].to_string() == 'Identifier@1:1', 'to_string() must be kind@line:column'
+ok('Token.to_string()')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -1,0 +1,137 @@
+/**
+ * test_zuri_parse.zu
+ *
+ * Test suite for `zuri.parse()`: structural node shapes across
+ * expressions, statements, and declarations, plus the comment/doc
+ * block preservation that makes the result usable for rebuilding a
+ * source file.
+ */
+
+import zuri
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  zuri.parse() — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Expressions
+# ---------------------------------------------------------------------------
+var expr_nodes = zuri.parse('var x = 1 + 2 * 3')
+assert expr_nodes.length() == 1, 'a single var declaration parses to one top-level node'
+var stmt_node = expr_nodes[0]
+assert stmt_node.kind == 'Stmt', 'a bare statement at top level wraps in a Stmt node'
+var var_node = stmt_node.fields.statement
+assert var_node.kind == 'Var', 'the wrapped statement must be a Var'
+assert var_node.fields.name == 'x', 'Var node must carry the variable name'
+var add_node = var_node.fields.value
+assert add_node.kind == 'Binary', 'the initializer must be a Binary node'
+assert add_node.fields.op == 'Plus', 'the outer operator must be Plus'
+assert add_node.fields.left.kind == 'Integer', 'the left operand must be an Integer'
+assert add_node.fields.left.fields.value == 1, 'the left operand must be 1'
+var mul_node = add_node.fields.right
+assert mul_node.kind == 'Binary', 'the right operand must itself be a Binary node'
+assert mul_node.fields.op == 'Multiply', 'the inner operator must be Multiply'
+ok('expression nesting and operator precedence are reflected in the AST')
+
+# ---------------------------------------------------------------------------
+# Statements and declarations
+# ---------------------------------------------------------------------------
+var fn_source = 'def add(a, b) {\n  return a + b\n}\n'
+var fn_nodes = zuri.parse(fn_source)
+assert fn_nodes.length() == 1, 'a single function declaration parses to one top-level node'
+var fn_node = fn_nodes[0]
+assert fn_node.kind == 'Function', 'top-level node must be a Function'
+assert fn_node.fields.name == 'add', 'Function node must carry its own name'
+assert fn_node.fields.parameters.length() == 2, 'Function node must carry both parameters'
+assert fn_node.fields.parameters[0].fields.name == 'a', 'first parameter must be named a'
+var body = fn_node.fields.body
+assert body.kind == 'Block', 'a function body is a Block node'
+assert body.fields.statements.length() == 1, 'the block has exactly one statement'
+assert body.fields.statements[0].kind == 'Return', 'that statement is a Return'
+ok('function declarations, parameters, and bodies parse correctly')
+
+# ---------------------------------------------------------------------------
+# Comment preservation: leading, mid-block, and doc blocks
+# ---------------------------------------------------------------------------
+var commented_source = '# leading comment\ndef greet() {\n  # inside the block\n  return 1\n}\n'
+var commented_nodes = zuri.parse(commented_source)
+assert commented_nodes.length() == 2, 'a leading comment is its own top-level sibling node'
+assert commented_nodes[0].kind == 'Comment', 'the first node must be the leading comment'
+assert commented_nodes[0].fields.text == ' leading comment', 'comment text excludes the leading #'
+assert commented_nodes[1].kind == 'Function', 'the second node must be the function itself'
+var greet_body = commented_nodes[1].fields.body.fields.statements
+assert greet_body.length() == 2, 'the block has the comment plus the return statement'
+assert greet_body[0].kind == 'Comment', 'the in-block comment must appear before the statement it precedes'
+assert greet_body[1].kind == 'Return', 'the return statement follows the comment'
+ok('leading and in-block comments are preserved in their original position')
+
+var doc_source = '/**\n * a helper function\n */\ndef helper() {\n  return 1\n}\n'
+var doc_nodes = zuri.parse(doc_source)
+assert doc_nodes.length() == 2, 'a leading doc block is its own top-level sibling node'
+assert doc_nodes[0].kind == 'DocBlock', 'the first node must be the doc block'
+assert doc_nodes[1].kind == 'Function', 'the second node must be the function'
+ok('doc blocks are preserved distinctly from ordinary comments')
+
+# ---------------------------------------------------------------------------
+# Comments between class members: fields vs methods, and a trailing one
+# ---------------------------------------------------------------------------
+var class_source = 'class Foo {\n  # comment before a field\n  var bar = 1\n\n  # comment before a method\n  baz() {\n    return self.bar\n  }\n  # trailing comment\n}\n'
+var class_nodes = zuri.parse(class_source)
+assert class_nodes.length() == 1, 'a single class declaration parses to one top-level node'
+var class_node = class_nodes[0]
+assert class_node.kind == 'Class', 'top-level node must be a Class'
+var properties = class_node.fields.properties
+var methods = class_node.fields.methods
+assert properties.length() == 2, 'properties list has the comment plus the field'
+assert properties[0].kind == 'Comment', 'the field comment precedes the field'
+assert properties[1].kind == 'Property', 'the field itself follows its comment'
+assert methods.length() == 3, 'methods list has the comment, the method, and the trailing comment'
+assert methods[0].kind == 'Comment', 'the method comment precedes the method'
+assert methods[1].kind == 'Method', 'the method itself follows its comment'
+assert methods[2].kind == 'Comment', 'a trailing comment after the last method is preserved too'
+ok('comments between class members land next to the member they precede')
+
+# ---------------------------------------------------------------------------
+# Comments inside expressions are a documented, deliberate exclusion
+# ---------------------------------------------------------------------------
+var no_expr_comment_nodes = zuri.parse('var x = 1 + 2')
+assert no_expr_comment_nodes.length() == 1, 'a plain var declaration has no comments to preserve'
+ok('ordinary source with no comments parses without incident (baseline for the exclusion above)')
+
+# ---------------------------------------------------------------------------
+# Syntax errors raise rather than returning a partial AST
+# ---------------------------------------------------------------------------
+assert raises(@() { zuri.parse('def (') }), 'malformed source must raise, not return a partial AST'
+ok('a syntax error raises instead of returning a partial result')
+
+# ---------------------------------------------------------------------------
+# Node.to_string()
+# ---------------------------------------------------------------------------
+var ts_nodes = zuri.parse('var y = 1')
+# A `Var` node's position is its own name token's, not the `var`
+# keyword's, so `y` (the 5th character) is where it points.
+assert ts_nodes[0].to_string() == 'Stmt@1:5', 'to_string() must be kind@line:col when a position exists'
+assert ts_nodes[0].fields.statement.to_string() == 'Var@1:5', 'a nested node has its own to_string() too'
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

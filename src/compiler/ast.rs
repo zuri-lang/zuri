@@ -88,6 +88,13 @@ pub enum Stmt {
   Decl(Box<Decl>),
   Var(Token, Box<Expr>, Option<Box<Expr>>, bool),
   VarList(Vec<Stmt>),
+
+  // A standalone comment or doc block, sitting between two statements at
+  // its original lexical position. The compiler never emits anything for
+  // these; they exist purely so `zuri.parse()` can hand back an AST that
+  // still has every comment in it, in place, for the `ast` module. See
+  // the matching `Decl::Trivia` for the top-level/class-body equivalent.
+  Trivia(Token),
 }
 
 impl From<Stmt> for NodeKind {
@@ -106,6 +113,9 @@ pub enum Decl {
   Method(Token, Vec<Expr>, Box<Stmt>, bool, bool),
   Property(Token, Box<Expr>, Box<Expr>, bool, bool),
   Class(Token, Option<Box<Expr>>, Vec<Decl>, Vec<Decl>, bool),
+
+  // Same purpose as `Stmt::Trivia`, at top level and inside class bodies.
+  Trivia(Token),
 }
 
 impl Decl {

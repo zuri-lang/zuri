@@ -26,6 +26,10 @@ mod net_tls;
 mod net_udp;
 mod os;
 mod r#struct;
+mod zuri_compile;
+mod zuri_lex;
+mod zuri_parse;
+mod zuri_reflect;
 
 use crate::vm::object::{NativeFn, NativeFunction, ZuriContext};
 use crate::vm::value::Value;
@@ -53,6 +57,10 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   net_tcp::MODULE,
   net_tls::MODULE,
   net_udp::MODULE,
+  zuri_compile::MODULE,
+  zuri_lex::MODULE,
+  zuri_parse::MODULE,
+  zuri_reflect::MODULE,
 ];
 
 pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {

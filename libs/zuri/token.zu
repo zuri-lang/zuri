@@ -1,0 +1,111 @@
+/**
+ * @module token
+ *
+ * The {Token} type `zuri.tokenize()` returns: one entry per lexical
+ * token the lexer found in a source file, in source order, with
+ * nothing filtered out. Comments, doc blocks, and newlines are all
+ * ordinary tokens here, exactly as the lexer itself produces them.
+ * The parser's own grammar quietly skips those when it runs, but
+ * `tokenize()` reports everything the lexer actually saw.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * for t in zuri.tokenize('var x = 1 + 2') {
+ *   echo '${t.kind} ${t.line}:${t.column} ${t.text}'
+ * }
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _zuri_lex
+
+/**
+ * One lexical token from a Zuri source file.
+ *
+ * Every instance has:
+ *  - `kind` (string): the token's kind, e.g. `'Identifier'`, `'Plus'`,
+ *    `'Comment'`, `'Eof'`, the exact variant name from the lexer's own
+ *    token kind enum.
+ *  - `line` / `column` (number): 1-indexed source position this token
+ *    starts at; `column` counts characters, not bytes.
+ *  - `start` / `end` (number): character offsets into the source
+ *    string spanning this token's exact text.
+ *  - `text` (string): this token's exact source text,
+ *    `source[start, end]`, delimiters included: a string literal's
+ *    quotes, a doc block's opening and closing markers, and so on.
+ *  - `value` (any): this token's own payload, where it has one, a
+ *    literal, identifier, comment, or doc block's string content, a
+ *    number, or a bigint. `nil` for every fixed symbol or keyword,
+ *    and for `Newline`/`Eof`. An `Error`-kind token instead carries
+ *    `{ message, line, offset }` describing what went wrong.
+ *
+ * @printable
+ */
+class Token {
+
+  /**
+   * Returns a new instance of a {Token}. Ordinary Zuri code never
+   * needs to call this directly, since `zuri.tokenize()` builds these
+   * for you.
+   *
+   * @param dict data: `{ kind, line, column, start, end, text, value }`,
+   *   as produced by the native lexer backing
+   */
+  @new(data) {
+    self.kind = data.kind
+    self.line = data.line
+    self.column = data.column
+    self.start = data.start
+    self.end = data.end
+    self.text = data.text
+    self.value = data.value
+  }
+
+  /**
+   * Is this token a comment or a doc block? Neither ever reaches the
+   * parser's own grammar, but both are real entries in
+   * `zuri.tokenize()`'s output.
+   *
+   * @returns bool
+   */
+  is_trivia() {
+    return self.kind == 'Comment' or self.kind == 'DocBlock'
+  }
+
+  /**
+   * This token as `kind@line:column`, e.g. `'Identifier@1:5'`.
+   * @returns string
+   */
+  to_string() {
+    return '${self.kind}@${self.line}:${self.column}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Lexes `source` in full and returns every token it contains, in
+ * source order, as a list of {Token}.
+ *
+ * Nothing is filtered: `Comment`, `DocBlock`, and `Newline` tokens are
+ * all included, and the list always ends with one `Eof` token.
+ *
+ * A lexer-level problem in `source`, an unterminated string, an
+ * unbalanced doc block, an unexpected character, does not raise; it
+ * surfaces as an ordinary token with `kind` `'Error'` instead, so this
+ * function is total over any input, including malformed source.
+ *
+ * @param string source: The Zuri source to lex
+ * @returns list[Token]
+ */
+def tokenize(source) {
+  var tokens = []
+  for raw in _zuri_lex.tokenize(source) {
+    tokens.append(Token(raw))
+  }
+  return tokens
+}

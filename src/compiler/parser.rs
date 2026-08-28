@@ -190,6 +190,13 @@ pub struct Parser<'a> {
   // newlines (blank lines, comment-only lines, any mix of both) instead
   // of exactly one token ahead.
   lookahead: std::collections::VecDeque<Token>,
+  // Comment/DocBlock tokens `scan_real_token` pulled off the lexer but
+  // kept out of the grammar's sight, waiting to be turned into `Decl::
+  // Trivia`/`Stmt::Trivia` siblings by whichever list-building loop
+  // (`parse`, `block`, `class_decl`) next reaches a "between items" point.
+  // Always empty once fully drained; see `drain_trivia_into_decls`/
+  // `drain_trivia_into_stmts`.
+  pending_trivia: Vec<Token>,
 }
 
 impl<'a> Display for Parser<'a> {
@@ -214,21 +221,28 @@ impl<'a> Parser<'a> {
         kind: TokenKind::None,
         line: 0,
         column: 0,
+        start: 0,
+        end: 0,
       },
       previous: Token {
         kind: TokenKind::None,
         line: 0,
         column: 0,
+        start: 0,
+        end: 0,
       },
       last_previous: Token {
         kind: TokenKind::None,
         line: 0,
         column: 0,
+        start: 0,
+        end: 0,
       },
       anonymous_count: 0,
       functions_count: 0,
       errors: Vec::new(),
       lookahead: std::collections::VecDeque::new(),
+      pending_trivia: Vec::new(),
     }
   }
 
@@ -305,19 +319,27 @@ impl<'a> Parser<'a> {
   }
 
   // Pulls one grammar-visible token straight from the lexer, silently
-  // skipping the priming sentinel (`None`) and comment trivia
-  // (`Comment`/`DocBlock` are real tokens now, for the `ast` module, but
-  // the grammar itself never sees them; same as before they existed),
-  // and reporting+skipping lexer-level `Error` tokens as they're found.
+  // skipping the priming sentinel (`None`) and reporting+skipping
+  // lexer-level `Error` tokens as they're found. Comment/DocBlock tokens
+  // are real tokens too, but the grammar itself never sees them; they're
+  // stashed onto `pending_trivia` instead of being discarded, for the
+  // `Decl::Trivia`/`Stmt::Trivia` nodes `parse`/`block`/`class_decl` build
+  // from them (see `drain_trivia_into_decls`/`drain_trivia_into_stmts`).
   // Shared by `advance` (when there's nothing already queued) and
-  // `peek_at` (to fill the queue), so both see identical trivia handling.
+  // `peek_at` (to fill the queue), so both see identical trivia handling,
+  // and since `peek_at`'s lookahead queue is a strict forward FIFO that's
+  // never rewound at the lexer level, each comment in the source is
+  // captured here exactly once no matter how far ahead the grammar peeks.
   fn scan_real_token(&mut self) -> Token {
     loop {
       let tok = self.lexer.scan();
 
-      if tok.kind == TokenKind::None
-        || matches!(tok.kind, TokenKind::Comment(..) | TokenKind::DocBlock(..))
-      {
+      if tok.kind == TokenKind::None {
+        continue;
+      }
+
+      if matches!(tok.kind, TokenKind::Comment(..) | TokenKind::DocBlock(..)) {
+        self.pending_trivia.push(tok);
         continue;
       }
 
@@ -329,6 +351,25 @@ impl<'a> Parser<'a> {
       }
 
       return tok;
+    }
+  }
+
+  // Turns every trivia token buffered since the last drain into a sibling
+  // `Decl::Trivia`/`Stmt::Trivia`, in the order the tokens were scanned.
+  // Called at each "between items" point in `parse`/`block`/`class_decl`
+  // (never inside `declaration`/`statement` themselves, whose own leading
+  // `ignore_newlines` would otherwise swallow trivia before the item it
+  // precedes has even started being built). See the doc comments on
+  // those three call sites for why each drain point is where it is.
+  fn drain_trivia_into_decls(&mut self, out: &mut Vec<Decl>) {
+    for tok in self.pending_trivia.drain(..) {
+      out.push(Decl::Trivia(tok));
+    }
+  }
+
+  fn drain_trivia_into_stmts(&mut self, out: &mut Vec<Stmt>) {
+    for tok in self.pending_trivia.drain(..) {
+      out.push(Stmt::Trivia(tok));
     }
   }
 
@@ -1170,9 +1211,14 @@ impl<'a> Parser<'a> {
 
     let mut vals = Vec::new();
     self.ignore_newlines();
+    // Same reasoning as `parse`'s priming drain: this is what makes
+    // comments right after the opening `{` visible here rather than
+    // getting silently eaten by `statement`'s own leading `ignore_newlines`.
+    self.drain_trivia_into_stmts(&mut vals);
 
     while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() {
       vals.push(self.statement());
+      self.drain_trivia_into_stmts(&mut vals);
     }
 
     consume_tok!(self, TokenKind::Rbrace, "Expected '}' at end of block.");
@@ -2017,6 +2063,12 @@ impl<'a> Parser<'a> {
     let mut properties = Vec::new();
     let mut methods = Vec::new();
     let mut is_extension = false;
+    // Which list the most recently parsed real member landed in, so a
+    // trailing comment right before the closing `}` (nothing left to
+    // peek ahead at, so the "which list does this precede" trick below
+    // doesn't apply) can instead follow whatever it comes right AFTER.
+    // `None` only while the body has had no real member yet.
+    let mut last_member_was_method: Option<bool> = None;
 
     let superclass = if match_tok!(self, TokenKind::Less) {
       let target_class_name =
@@ -2050,20 +2102,68 @@ impl<'a> Parser<'a> {
     while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() {
       self.ignore_newlines();
 
+      // The `ignore_newlines` above can itself walk all the way past a
+      // trailing comment up to the closing `}` (or EOF on malformed
+      // input), which would make the `while` condition above false on
+      // its *next* check without the loop body ever running again,
+      // so this can't be folded into that condition. It has to be
+      // re-checked here, every iteration, before touching `properties`/
+      // `methods`.
+      if check_tok!(self, TokenKind::Rbrace) || self.is_at_end() {
+        break;
+      }
+
+      // Peek past an optional `static` to see whether the member that's
+      // about to be parsed is a field (`var`/`const`) or a method, so any
+      // comments buffered since the last member land in whichever list
+      // this one actually precedes.
+      let member_start = if matches!(self.current.kind, TokenKind::Static) {
+        self.peek_at(1).kind
+      } else {
+        self.current.kind.clone()
+      };
+
+      if matches!(member_start, TokenKind::Var | TokenKind::Const) {
+        self.drain_trivia_into_decls(&mut properties);
+      } else {
+        self.drain_trivia_into_decls(&mut methods);
+      }
+
       let is_static = match_tok!(self, TokenKind::Static);
 
       if match_tok!(self, TokenKind::Var) {
         properties.push(self.class_field(is_static, false));
+        last_member_was_method = Some(false);
       } else if match_tok!(self, TokenKind::Const) {
         properties.push(self.class_field(is_static, true));
+        last_member_was_method = Some(false);
       } else {
         // `def` before a method name is optional sugar; consumed and ignored.
         if match_tok!(self, TokenKind::Def) {}
 
         methods.push(self.method_decl(is_static));
+        last_member_was_method = Some(true);
       }
 
       self.ignore_newlines();
+    }
+
+    // Trailing comments after the last member, before the closing `}`:
+    // nothing in `properties`/`methods` "comes after" them, so they're
+    // attached to whichever list the member right BEFORE them belongs
+    // to (a trailing comment after a class's last field, with no methods
+    // following, reads as commentary on that field, not on an unrelated
+    // and possibly nonexistent method); `methods` only as a fallback for
+    // a body with no real members at all to follow. A caller wanting the
+    // true interleaved order across both lists should merge and sort by
+    // `(line, col)`, see `ast.zu`'s docs. Deliberately outside the loop
+    // above rather than in a branch of it: the loop can exit either via
+    // its own top-of-body break or via the outer `while` condition going
+    // false first (exactly the case the comment on that break explains),
+    // so this is the one point guaranteed to run either way.
+    match last_member_was_method {
+      Some(false) => self.drain_trivia_into_decls(&mut properties),
+      _ => self.drain_trivia_into_decls(&mut methods),
     }
 
     consume_tok!(
@@ -2115,8 +2215,21 @@ impl<'a> Parser<'a> {
   pub fn parse(&mut self) -> Result<Vec<Decl>, Vec<ParserError>> {
     let mut result = Vec::new();
 
+    // Prime `current` (it starts as an unscanned `None` sentinel) and
+    // skip any leading blank lines, same as `declaration`'s own leading
+    // `ignore_newlines` would do. Done here first so *this* drain, not
+    // declaration's, is the one that sees comments at the very top of the
+    // file. Every drain below relies on the item just parsed having
+    // already consumed its own trailing newlines/trivia (`declaration`
+    // always ends with `ignore_newlines`), so by the time control returns
+    // here `pending_trivia` holds exactly what sits between that item and
+    // the next one.
+    self.ignore_newlines();
+    self.drain_trivia_into_decls(&mut result);
+
     while !self.is_at_end() {
       result.push(self.declaration());
+      self.drain_trivia_into_decls(&mut result);
     }
 
     if self.errors.is_empty() {

@@ -1,0 +1,154 @@
+/**
+ * @module compile
+ *
+ * The {Instr} type `zuri.compile()` returns: a generic representation
+ * of one VM instruction, tagged by `op` (`'LoadConst'`, `'Add'`,
+ * `'Jmp'`, ...) with a `fields` dict holding that opcode's own
+ * operands. As with {zuri.ast.Node}, there's one `Instr` class rather
+ * than one class per opcode. The instruction set has around sixty
+ * opcodes, and a dedicated class per opcode would be sixty
+ * near-identical classes to keep in sync with the compiler forever
+ * after.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * for instr in zuri.compile('var x = 1 + 2') {
+ *   echo '${instr.op} ${instr.fields}'
+ * }
+ * ```
+ *
+ * ## Resolved operands
+ *
+ * `compile()` returns a flat instruction list, matching the VM's own
+ * `Instr` type, but several opcodes (`LoadConst`, `GetGlobal`,
+ * `GetField`, `Invoke`, ...) only carry a raw index into the
+ * compiler's own constant pool, which isn't otherwise exposed. Rather
+ * than force every caller to also separately fetch and correlate a
+ * constants table, each such field gets its already-resolved value
+ * embedded right on the instruction too, alongside the raw index:
+ * e.g. a `LoadConst` node's `fields` has both `const_idx` (the raw
+ * index) and `value` (what it actually points at). A resolved field
+ * is never literally named after the raw index's own subject when
+ * that word is a reserved keyword (`const`, `class`, ...), since a
+ * dict key can't be read back with plain dot-access syntax then;
+ * `class` becomes `class_reg` (it's a register index anyway, not a
+ * resolved class value), and similarly for a handful of others.
+ *
+ * A `Closure` instruction's resolved value is a nested function
+ * prototype (`{ name, arity, variadic, instructions }`), whose own
+ * `instructions` is recursively wrapped the exact same way, so a
+ * script with functions or methods in it exposes their bodies too,
+ * not just the code immediately around them.
+ *
+ * Every instruction node carries the source `line` it was compiled
+ * from, but never a column. The compiler's own line tracking is
+ * line-only (statement granularity), unlike a {zuri.token.Token}'s or
+ * {zuri.ast.Node}'s position, which both have real column info from
+ * the lexer/parser.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _zuri_compile
+
+/**
+ * One VM instruction.
+ *
+ * @printable
+ */
+class Instr {
+
+  /**
+   * Returns a new instance of an {Instr} directly, from already-
+   * wrapped field values. Ordinary Zuri code should use `zuri.compile()`
+   * instead; this constructor does no wrapping of its own.
+   *
+   * @param string op: The opcode name, e.g. `'LoadConst'`, `'Add'`
+   * @param ?number line: The source line this instruction was
+   *   compiled from, or `nil` if the compiler never stamped one
+   * @param dict fields: This opcode's own operands, already wrapped
+   */
+  @new(op, line, fields) {
+    self.op = op
+    self.line = line
+    self.fields = fields
+  }
+
+  /**
+   * This instruction as `op@line`, e.g. `'LoadConst@3'`, or just `op`
+   * when it carries no line.
+   * @returns string
+   */
+  to_string() {
+    if self.line == nil {
+      return self.op
+    }
+    return '${self.op}@${self.line}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Recursively wraps a raw value from an instruction's `fields` dict
+ * (or a nested function prototype's own fields): an instruction-shaped
+ * dict becomes an {Instr}, a list has this applied to each of its own
+ * entries, a nested function prototype dict (recognized by its own
+ * `instructions` entry) gets that entry wrapped the same way, and
+ * everything else (a string, number, bool, `nil`, or a plain
+ * jump-table/param-check entry) passes through as-is.
+ */
+def _wrap_instr(value) {
+  if is_list(value) {
+    var result = []
+    for item in value {
+      result.append(_wrap_instr(item))
+    }
+    return result
+  }
+
+  if is_dict(value) and value.get('op', nil) != nil and value.get('fields', nil) != nil {
+    return _instr_from_dict(value)
+  }
+
+  if is_dict(value) and value.get('instructions', nil) != nil {
+    var wrapped = {}
+    for key in value.keys() {
+      wrapped[key] = _wrap_instr(value[key])
+    }
+    return wrapped
+  }
+
+  return value
+}
+
+def _instr_from_dict(data) {
+  var fields = {}
+  for key in data.fields.keys() {
+    fields[key] = _wrap_instr(data.fields[key])
+  }
+  return Instr(data.op, data.line, fields)
+}
+
+/**
+ * Compiles `source` as a standalone script and returns its
+ * instructions as a flat list of {Instr}. See this module's own doc
+ * comment for exactly what each instruction carries.
+ *
+ * Raises (rather than returning partial bytecode) on a lexer, parser,
+ * or compiler error.
+ *
+ * @param string source: The Zuri source to compile
+ * @returns list[Instr]
+ * @throws Error if `source` doesn't compile
+ */
+def compile(source) {
+  var instrs = []
+  for raw in _zuri_compile.compile(source) {
+    instrs.append(_instr_from_dict(raw))
+  }
+  return instrs
+}

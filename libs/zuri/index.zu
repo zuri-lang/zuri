@@ -1,0 +1,44 @@
+/**
+ * @module zuri
+ *
+ * Exposes Zuri's own compiler pipeline as a library: lexing, parsing,
+ * and compiling a Zuri source file, plus a `reflect` submodule for
+ * inspecting live functions, classes, and modules at runtime.
+ *
+ * - `tokenize(source)` returns every lexical token in `source`, in
+ *   order; see {zuri.token}.
+ * - `parse(source)` returns `source`'s AST as a list of nodes, with
+ *   every comment and doc block preserved in place; see {zuri.ast}.
+ * - `compile(source)` returns `source`'s compiled VM instructions;
+ *   see {zuri.compile}.
+ * - `zuri.reflect` inspects live functions/classes/modules, and reads
+ *   or updates an instance's own properties; see {zuri.reflect}.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * for t in zuri.tokenize('var x = 1') {
+ *   echo t.kind
+ * }
+ *
+ * for node in zuri.parse('var x = 1') {
+ *   echo node.kind
+ * }
+ *
+ * for instr in zuri.compile('var x = 1') {
+ *   echo instr.op
+ * }
+ *
+ * def add(a, b) {
+ *   return a + b
+ * }
+ * echo zuri.reflect.function_info(add).arity
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.token { * }
+import @.ast { * }
+import @.compile { * }
+import @.reflect

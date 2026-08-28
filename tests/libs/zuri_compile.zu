@@ -1,0 +1,113 @@
+/**
+ * test_zuri_compile.zu
+ *
+ * Test suite for `zuri.compile()`: instruction shapes, resolved
+ * constants embedded inline, and nested function bodies reached
+ * through a Closure instruction.
+ */
+
+import zuri
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  zuri.compile() — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# A flat list of instructions comes back
+# ---------------------------------------------------------------------------
+var instrs = zuri.compile('var x = 1')
+assert instrs.length() > 0, 'compiling a simple script must produce at least one instruction'
+assert instance_of(instrs[0], zuri.Instr), 'each entry must be an Instr instance'
+ok('compile() returns a non-empty flat instruction list')
+
+# ---------------------------------------------------------------------------
+# LoadConst embeds its resolved constant, not just the raw index
+# ---------------------------------------------------------------------------
+var const_instrs = zuri.compile('var x = 42')
+var load_const = nil
+for instr in const_instrs {
+  if instr.op == 'LoadConst' {
+    load_const = instr
+  }
+}
+assert load_const != nil, 'a numeric literal must compile through a LoadConst'
+assert load_const.fields.const_idx != nil, 'LoadConst must carry the raw constant index'
+assert load_const.fields.value == 42, 'LoadConst must also carry the already-resolved value'
+ok('LoadConst embeds its resolved constant value inline')
+
+# ---------------------------------------------------------------------------
+# SetGlobal resolves the global's name
+# ---------------------------------------------------------------------------
+var global_instrs = zuri.compile('var counter = 1')
+var set_global = nil
+for instr in global_instrs {
+  if instr.op == 'SetGlobal' {
+    set_global = instr
+  }
+}
+assert set_global != nil, 'a top-level var declaration must compile through a SetGlobal'
+assert set_global.fields.name == 'counter', 'SetGlobal must resolve the global name from the constant pool'
+ok('SetGlobal resolves the global name inline')
+
+# ---------------------------------------------------------------------------
+# A Closure instruction exposes the nested function's own body
+# ---------------------------------------------------------------------------
+var closure_source = 'def add(a, b) {\n  return a + b\n}\n'
+var closure_instrs = zuri.compile(closure_source)
+var closure_instr = nil
+for instr in closure_instrs {
+  if instr.op == 'Closure' {
+    closure_instr = instr
+  }
+}
+assert closure_instr != nil, 'a function declaration must compile through a Closure instruction'
+var prototype = closure_instr.fields.prototype
+assert prototype.name == 'add', 'the resolved prototype must carry the function name'
+assert prototype.arity == 2, 'the resolved prototype must carry its arity'
+assert prototype.instructions.length() > 0, 'the resolved prototype must expose its own instructions'
+assert instance_of(prototype.instructions[0], zuri.Instr),
+  'nested instructions must be Instr instances too, not raw dicts'
+var found_return = false
+for nested in prototype.instructions {
+  if nested.op == 'Return' {
+    found_return = true
+  }
+}
+assert found_return, 'the nested function body must include its own Return instruction'
+ok('a Closure instruction exposes its nested function body, recursively wrapped')
+
+# ---------------------------------------------------------------------------
+# Every instruction carries a line, but no column
+# ---------------------------------------------------------------------------
+var line_instrs = zuri.compile('var x = 1')
+assert line_instrs[0].line != nil, 'an instruction compiled from real source must carry a line'
+ok('instructions carry their source line')
+
+# ---------------------------------------------------------------------------
+# A compile error raises rather than returning partial bytecode
+# ---------------------------------------------------------------------------
+assert raises(@() { zuri.compile('def (') }), 'malformed source must raise, not return partial bytecode'
+ok('a compile error raises instead of returning a partial result')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

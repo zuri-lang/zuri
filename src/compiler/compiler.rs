@@ -2786,7 +2786,12 @@ fn collect_self_fields_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         collect_self_fields_stmt(s, out);
       }
     },
-    Stmt::None | Stmt::FixContinue | Stmt::Continue | Stmt::Break | Stmt::Import(..) => {},
+    Stmt::None
+    | Stmt::FixContinue
+    | Stmt::Continue
+    | Stmt::Break
+    | Stmt::Import(..)
+    | Stmt::Trivia(_) => {},
   }
 }
 

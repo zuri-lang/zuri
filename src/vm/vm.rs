@@ -1359,7 +1359,7 @@ impl VM {
       return self.call_native(native, args);
     }
     if !callee.is_closure() {
-      let msg = format!("cannot call a {}", callee.type_name());
+      let msg = format!("cannot call object of type {}", callee.type_name());
       return Err(self.raise("TypeError", msg));
     }
 
@@ -2990,7 +2990,7 @@ impl VM {
     let callee = self.get_reg(base, func_reg);
 
     if !callee.is_obj() {
-      let msg = format!("cannot call a {}", callee.type_name());
+      let msg = format!("cannot call object of type {}", callee.type_name());
       return Err(self.raise("TypeError", msg));
     }
 
@@ -3070,7 +3070,7 @@ impl VM {
         }
       },
       _ => {
-        let msg = format!("cannot call a {}", callee.type_name());
+        let msg = format!("cannot call object of type {}", callee.type_name());
         Err(self.raise("TypeError", msg))
       },
     }
@@ -3117,7 +3117,7 @@ impl VM {
     sync: bool,
   ) -> RunResult<()> {
     if !callee.is_closure() {
-      let msg = format!("cannot call a {}", callee.type_name());
+      let msg = format!("cannot call object of type {}", callee.type_name());
       return Err(self.raise("TypeError", msg));
     }
 

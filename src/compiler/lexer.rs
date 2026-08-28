@@ -156,7 +156,7 @@ impl Lexer {
 
     let column = self.start - line_start + 1;
 
-    Token::new(kind, self.start_line, column)
+    Token::new(kind, self.start_line, column, self.start, self.current)
   }
 
   // Called with the opening `/*` already consumed, `self.start` still

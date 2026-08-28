@@ -1,0 +1,202 @@
+/**
+ * @module ast
+ *
+ * The {Node} type `zuri.parse()` returns: a generic representation of
+ * one AST node, tagged by `kind` (`'Binary'`, `'If'`, `'Function'`,
+ * ...) with a `fields` dict holding whatever that kind carries. There
+ * is one `Node` class rather than one class per grammar rule, since
+ * the grammar has roughly fifty expression/statement/declaration
+ * shapes, and a dedicated class per shape would mean fifty near-
+ * identical classes to maintain in lockstep with the parser forever
+ * after. A `fields` entry that's itself node-shaped (or a list of
+ * node-shaped entries) is already wrapped into a {Node} recursively,
+ * so you never need to call `Node.from_dict()` yourself.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * for node in zuri.parse('def add(a, b) { return a + b }') {
+ *   echo node.kind
+ * }
+ * # Function
+ * ```
+ *
+ * ## Comments and doc blocks
+ *
+ * `parse()`'s whole point, beyond exposing the grammar itself, is that
+ * its result is complete enough to rebuild the source file from. Every
+ * `#`-comment and doc block comment in the file comes back as its own
+ * `'Comment'`/`'DocBlock'`-kind node, sitting exactly where it
+ * appeared: as a sibling in the surrounding statement/declaration
+ * list, at the top level, inside a `{ }` block, or between two class
+ * members.
+ *
+ * This is a firm limitation, not a rare edge case: a comment written
+ * inside an expression is silently dropped, not preserved as a node.
+ * That covers a comment between call arguments, inside a list/dict
+ * literal, or anywhere else mid-expression. CLAUDE.md's own Zuri style
+ * guide never places a comment there in the first place. A comment is
+ * always its own whole line, sitting between statements, declarations,
+ * or class members, so the parser's expression grammar was
+ * deliberately left untouched rather than threading trivia capture
+ * through every expression rule for a case real, style-conformant
+ * Zuri source never actually produces. Source written against that
+ * convention loses nothing; source that puts a comment somewhere that
+ * convention doesn't allow will lose that one comment.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * var source = "# a helper function\ndef add(a, b) {\n  return a + b\n}\n"
+ * var nodes = zuri.parse(source)
+ * echo nodes[0].kind        # Comment
+ * echo nodes[0].fields.text # " a helper function"
+ * echo nodes[1].kind        # Function
+ * ```
+ *
+ * A class body's fields and methods are two separate lists
+ * (`Decl::Class`'s own shape, mirrored here as a `Class` node's
+ * `properties`/`methods` fields), so a comment between a field and a
+ * method lands in `methods`, whichever list the member right after it
+ * belongs to, and a comment between two fields lands in `properties`.
+ * See `Node`'s own field-by-field notes below. Code that wants the
+ * true interleaved order across both lists, to rebuild a class body
+ * exactly as written, should merge `properties ++ methods` and sort by
+ * `(line, col)`.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _zuri_parse
+
+/**
+ * One AST node: an expression, statement, declaration, type hint, or
+ * a standalone comment/doc block sitting between two of those.
+ *
+ * @printable
+ */
+class Node {
+
+  /**
+   * Returns a new instance of a {Node} directly, from already-wrapped
+   * field values. Ordinary Zuri code should use `Node.from_dict()` or
+   * `zuri.parse()` instead, since this constructor does no wrapping of
+   * its own.
+   *
+   * @param string kind: The node's kind, e.g. `'Binary'`, `'If'`
+   * @param ?number line: The node's source line, or `nil` if this kind
+   *   of node carries no position (see `from_dict`'s own docs)
+   * @param ?number col: The node's source column, or `nil`
+   * @param dict fields: This kind's own fields, already wrapped
+   */
+  @new(kind, line, col, fields) {
+    self.kind = kind
+    self.line = line
+    self.col = col
+    self.fields = fields
+  }
+
+  /**
+   * Builds a {Node} from the raw dict `zuri.parse()`'s native backing
+   * produces (`{ kind, line, col, fields }`), recursively wrapping any
+   * node-shaped entry inside `fields`, a single nested node or a list
+   * of them, into its own {Node}. A `fields` entry that isn't
+   * node-shaped (a string, a number, a bool, `nil`, or a plain dict
+   * like a `Var` node's `type_hint` when there isn't one) passes
+   * through unchanged.
+   *
+   * `line`/`col` are best-effort, not guaranteed on every node: most
+   * AST shapes carry a position (an identifier, an operator, a
+   * declaration's own name), but a handful of purely structural nodes
+   * (an empty `Block`, `None`) don't, and come back with `line`/`col`
+   * both `nil`. This never affects what `fields` contains, since
+   * position is a convenience for pointing at where something is, not
+   * part of the information rebuilding source needs.
+   *
+   * @param dict data: `{ kind, line, col, fields }`
+   * @returns Node
+   */
+  static from_dict(data) {
+    var fields = {}
+    for key in data.fields.keys() {
+      fields[key] = _wrap_node(data.fields[key])
+    }
+    return Node(data.kind, data.line, data.col, fields)
+  }
+
+  /**
+   * Is this node a standalone comment or doc block (as opposed to a
+   * real expression/statement/declaration)? See this module's own doc
+   * comment for exactly where these can and can't appear.
+   *
+   * @returns bool
+   */
+  is_trivia() {
+    return self.kind == 'Comment' or self.kind == 'DocBlock'
+  }
+
+  /**
+   * This node as `kind@line:col`, e.g. `'Binary@3:5'`, or just `kind`
+   * when it carries no position.
+   * @returns string
+   */
+  to_string() {
+    if self.line == nil {
+      return self.kind
+    }
+    return '${self.kind}@${self.line}:${self.col}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Recursively wraps a raw value from a node's `fields` dict: a
+ * node-shaped dict becomes a {Node}, a list has this applied to each
+ * of its own entries, and everything else (a string, number, bool,
+ * `nil`, or a plain non-node dict) passes through as-is.
+ *
+ * A dict counts as "node-shaped" when it carries both a `kind` and a
+ * `fields` entry, the two keys nothing else `zuri.parse()` produces
+ * happens to have together, so this can't misfire on a `TypeHint`'s
+ * plain `{ types, nullable }` fields dict or similar.
+ */
+def _wrap_node(value) {
+  if is_list(value) {
+    var result = []
+    for item in value {
+      result.append(_wrap_node(item))
+    }
+    return result
+  }
+
+  if is_dict(value) and value.get('kind', nil) != nil and value.get('fields', nil) != nil {
+    return Node.from_dict(value)
+  }
+
+  return value
+}
+
+/**
+ * Parses `source` in full and returns its top-level declarations as a
+ * list of {Node}. See this module's own doc comment for the exact
+ * shape, and in particular for what is and isn't preserved around
+ * comments.
+ *
+ * Raises (rather than returning a partial result) on a syntax error,
+ * since there is no meaningful AST to hand back for source the parser
+ * itself couldn't make sense of.
+ *
+ * @param string source: The Zuri source to parse
+ * @returns list[Node]
+ * @throws Error if `source` has a syntax error
+ */
+def parse(source) {
+  var nodes = []
+  for raw in _zuri_parse.parse(source) {
+    nodes.append(Node.from_dict(raw))
+  }
+  return nodes
+}

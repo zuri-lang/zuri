@@ -236,17 +236,25 @@ pub struct Token {
   pub kind: TokenKind,
   pub line: usize,
   pub column: usize,
+  // Char offsets (not bytes; the lexer scans a Vec<char>) into the
+  // source this token came from, covering the token's exact text
+  // including any delimiters (a string literal's quotes, a doc block's
+  // `/*`/`*/`, ...). Lets a caller recover a token's literal source
+  // slice without re-lexing, which is what `zuri.tokenize()` needs for
+  // its `text` field.
+  pub start: usize,
+  pub end: usize,
 }
 
 impl Token {
   #[inline]
-  pub fn new(kind: TokenKind, line: usize, column: usize) -> Self {
-    Self { kind, line, column }
+  pub fn new(kind: TokenKind, line: usize, column: usize, start: usize, end: usize) -> Self {
+    Self { kind, line, column, start, end }
   }
 
   #[inline]
   pub fn copy_to(&self, kind: TokenKind) -> Self {
-    Self::new(kind, self.line, self.column)
+    Self::new(kind, self.line, self.column, self.start, self.end)
   }
 
   /// Human-readable label for this token, used in syntax-error
@@ -393,6 +401,8 @@ pub static EMPTY_TOKEN: Token = Token {
   kind: TokenKind::Eof,
   line: 0,
   column: 0,
+  start: 0,
+  end: 0,
 };
 
 pub static KEYWORD_TOKENS: &[TokenKind] = &[
