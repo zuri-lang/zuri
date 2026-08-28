@@ -34,6 +34,8 @@
  * echo a.equals(b)
  * echo a.octets()
  * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 
@@ -101,23 +103,23 @@ def _parse_group(group, original) {
     value = value * 16 + _hex_digit(group[i], original)
     i = i + 1
   }
+  
   return value
 }
 
 def _hex_digit(c, original) {
-  # var code = c.to_number()
-  # if code >= 48 and code <= 57 {
-  #   return code - 48
-  # }
-  # if code >= 97 and code <= 102 {
-  #   return code - 97 + 10
-  # }
-  # if code >= 64 and code <= 70 {
-  #   return code - 65 + 10
-  # }
-  # raise Error('invalid IPv6 address: ${original}')
+  var value = c.to_number(16)
 
-  return c.to_number().hex()
+  # to_number(16) silently returns 0 for anything it can't parse as
+  # base-16, rather than raising, so a 0 is ambiguous: it's either a
+  # real '0' or a bogus character (e.g. 'g') that just defaulted to
+  # zero. Only worth telling apart in that one case - a non-zero
+  # result is already known good, straight from the parse.
+  if value == 0 and c != '0' {
+    raise Error('invalid IPv6 address: ${original}')
+  }
+
+  return value
 }
 
 /**
@@ -709,7 +711,7 @@ class Ipv6 {
    * @returns list
    */
   to_list() {
-    return self._segment
+    return self._segments
   }
 
   @to_string() {

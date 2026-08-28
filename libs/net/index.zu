@@ -8,6 +8,7 @@
  * - `TcpStream` provides functionality for communication over TCP,
  * - `UdpSocket` provides functionality for communication over UDP,
  * - `Ip` provides functionality for manuipulating IP addresses,
+ * - `SocketAddr` pairs an IP address with a port,
  * - `net.tls` wraps a `TcpStream` in Transport Layer Security,
  * - `net.dtls` provides Datagram Transport Layer Security over UDP.
  *
@@ -17,5 +18,6 @@
 import @.tcp { * }
 import @.udp { * }
 import @.ip { * }
+import @.addr { * }
 import @.tls
 import @.dtls

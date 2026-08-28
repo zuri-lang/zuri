@@ -2,17 +2,13 @@
  * @module dtls
  *
  * Datagram Transport Layer Security over a `UdpSocket` - the same
- * certificate-based encryption and authentication `tls` provides, but
- * for protocols that need UDP's unordered, connectionless delivery
- * instead of a TCP byte stream (voice/video, and anything else where a
- * dropped packet should just be dropped rather than stall everything
- * behind it).
+ * certificate-based encryption and authentication `tls` provides, for
+ * protocols built on UDP instead of TCP.
  *
- * Unlike `tls`, this module owns its own socket rather than wrapping one
- * you've already opened - DTLS has to multiplex several peer
- * conversations over a single bound UDP port itself, since UDP has no
- * concept of a per-peer connection the OS can hand you separately the
- * way `accept()` does for TCP.
+ * Unlike `tls`, `DtlsSocket` owns its own socket rather than wrapping
+ * one you've already opened: a UDP port has no OS-level concept of a
+ * per-peer connection, so a single bound `DtlsSocket` multiplexes every
+ * accepted peer itself, by remote address.
  *
  * @note DTLS doesn't negotiate ALPN protocols the way TLS does - there's
  *    no `set_alpn()`/`alpn_protocol()` here.
@@ -53,7 +49,18 @@
  */
 
 import _net_dtls
-import net.tls { PeerCertificate }
+import .addr { SocketAddr }
+import .tls { PeerCertificate }
+
+/**
+ * Accepts either a plain `'ip:port'` string or a `SocketAddr` (as
+ * `local_address()`/`peer_address()` hand back) anywhere an address is
+ * expected, so the natural "connect to what another socket is
+ * listening on" round-trip doesn't force a manual `.to_string()`.
+ */
+def _addr_string(address) {
+  return instance_of(address, SocketAddr) ? address.to_string() : address
+}
 
 /**
  * The trust roots and optional certificate a DTLS handshake needs - the
@@ -161,16 +168,13 @@ class DtlsSocket {
 
   /**
    * Binds this socket to `address` and prepares it to accept incoming
-   * DTLS associations via `accept()`. Unlike a TCP listener, this same
-   * bound socket also carries every subsequently accepted connection's
-   * traffic - DTLS multiplexes by peer address rather than handing out
-   * a fresh OS socket per connection.
+   * DTLS associations via `accept()`.
    *
-   * @param string address: The host:port to bind and listen on
+   * @param {string|SocketAddr} address: The host:port to bind and listen on
    * @throws Error if binding fails (e.g. the address is already in use)
    */
   bind(address) {
-    _net_dtls.dtls_bind(self._ptr, address)
+    _net_dtls.dtls_bind(self._ptr, _addr_string(address))
   }
 
   /**
@@ -181,14 +185,14 @@ class DtlsSocket {
    * instead of a hostname.
    *
    * @param DtlsConfig config: The trust roots and options to handshake with
-   * @param string address: The host:port to connect to
+   * @param {string|SocketAddr} address: The host:port to connect to
    * @param ?string server_name: The hostname to verify the peer's
    *   certificate against
    * @throws Error if resolution or the handshake fails, or the peer's
    *   certificate isn't trusted or doesn't match `server_name`
    */
   connect(config, address, server_name) {
-    _net_dtls.dtls_connect(self._ptr, config.native_ptr(), address, server_name)
+    _net_dtls.dtls_connect(self._ptr, config.native_ptr(), _addr_string(address), server_name)
   }
 
   /**
@@ -239,21 +243,21 @@ class DtlsSocket {
   /**
    * The local socket address this instance is bound to.
    *
-   * @returns string
+   * @returns SocketAddr
    * @throws Error if this socket isn't bound
    */
   local_address() {
-    return _net_dtls.dtls_local_address(self._ptr)
+    return SocketAddr.parse(_net_dtls.dtls_local_address(self._ptr))
   }
 
   /**
    * The remote peer's socket address.
    *
-   * @returns string
+   * @returns SocketAddr
    * @throws Error if this socket isn't a connected/accepted association
    */
   peer_address() {
-    return _net_dtls.dtls_peer_address(self._ptr)
+    return SocketAddr.parse(_net_dtls.dtls_peer_address(self._ptr))
   }
 
   /**

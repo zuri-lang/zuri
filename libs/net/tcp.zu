@@ -48,6 +48,17 @@
  */
 
 import _net_tcp
+import .addr { SocketAddr }
+
+/**
+ * Accepts either a plain `'ip:port'` string or a `SocketAddr` (as
+ * `local_address()`/`peer_address()` hand back) anywhere an address is
+ * expected, so the natural "connect to what another socket is
+ * listening on" round-trip doesn't force a manual `.to_string()`.
+ */
+def _addr_string(address) {
+  return instance_of(address, SocketAddr) ? address.to_string() : address
+}
 
 /**
  * Used with `TcpStream.shutdown()` to select which half (or both halves)
@@ -137,16 +148,16 @@ class TcpStream {
    * would be performed and no multi-address fallback is guaranteed.
    *
    * @note a timeout of `0` is the same as specifying no timeout.
-   * @param string address: The host:port to connect to
-   * @param ?int timeout: Optional milliseconds to wait before giving up; 
+   * @param {string|SocketAddr} address: The host:port to connect to
+   * @param ?int timeout: Optional milliseconds to wait before giving up;
    *    omit for an untimed connection attempt
    * @throws Error if resolution fails, if every resolved address
-   *    refuses the connection, or (when `timeout` is given) if `address` 
-   *    cannot be parsed as an `ip:port` literal or the timeout elapses 
+   *    refuses the connection, or (when `timeout` is given) if `address`
+   *    cannot be parsed as an `ip:port` literal or the timeout elapses
    *    first.
    */
   connect(address, timeout) {
-      _net_tcp.tcp_connect(self._ptr, address, timeout)
+      _net_tcp.tcp_connect(self._ptr, _addr_string(address), timeout)
   }
 
   /**
@@ -159,12 +170,12 @@ class TcpStream {
    * via `local_address()`. If `address` resolves to multiple addresses, 
    * binding is attempted against each in turn until one succeeds.
    *
-   * @param string address: The host:port to bind and listen on
+   * @param {string|SocketAddr} address: The host:port to bind and listen on
    * @throws Error if resolution fails or every resolved address
    *   fails to bind (e.g. because it is already in use)
    */
   bind(address) {
-    _net_tcp.tcp_bind(self._ptr, address)
+    _net_tcp.tcp_bind(self._ptr, _addr_string(address))
   }
 
   /**
@@ -187,28 +198,28 @@ class TcpStream {
 
   /**
    * Returns the socket address of the remote peer this stream is
-   * connected to, formatted as `ip:port` (`[ip]:port` for IPv6).
+   * connected to.
    *
-   * @returns string the peer's address
+   * @returns SocketAddr the peer's address
    * @throws Error if this instance is not a connected stream
    */
   peer_address() {
-    return _net_tcp.tcp_peer_address(self._ptr)
+    return SocketAddr.parse(_net_tcp.tcp_peer_address(self._ptr))
   }
 
   /**
-   * Returns the local socket address of this instance, i.e. the address 
-   * it connected from if it is a stream, or the address it is listening 
-   * on if it is a listener, formatted as `ip:port` (`[ip]:port` for IPv6).
-   * 
-   * This is particularly useful for discovering the actual port chosen 
+   * Returns the local socket address of this instance, i.e. the address
+   * it connected from if it is a stream, or the address it is listening
+   * on if it is a listener.
+   *
+   * This is particularly useful for discovering the actual port chosen
    * by the OS after binding to port `0`.
    *
-   * @returns string the local address
+   * @returns SocketAddr the local address
    * @throws Error if this instance is neither connected nor bound
    */
   local_address() {
-    return _net_tcp.tcp_local_address(self._ptr)
+    return SocketAddr.parse(_net_tcp.tcp_local_address(self._ptr))
   }
 
   /**
@@ -517,10 +528,10 @@ class TcpStream {
    */
   to_string() {
     if self.is_connected() {
-      return '<TcpStream ${self.local_address()} -> ${self.peer_address()}>'
+      return '<TcpStream ${self.local_address().to_string()} -> ${self.peer_address().to_string()}>'
     }
     if self.is_bound() {
-      return '<TcpStream listening on ${self.local_address()}>'
+      return '<TcpStream listening on ${self.local_address().to_string()}>'
     }
     return '<TcpStream unconnected>'
   }

@@ -2,18 +2,11 @@
  * @module tls
  *
  * Transport Layer Security over a `TcpStream`, built on top of `rustls`.
- * This module doesn't open connections itself - it wraps a `TcpStream`
- * you've already connected (or accepted, or exchanged some plaintext
- * over) and turns it into an encrypted, certificate-verified stream from
- * that point on.
- *
- * There's no separate "implicit" vs "explicit" (STARTTLS) API here,
- * because at the TLS layer there isn't really a difference between the
- * two: both are just "run a handshake over this already-connected
- * socket, right now." A protocol like HTTPS or IMAPS wraps the stream
- * immediately after connecting; a protocol like SMTP or FTPS exchanges a
- * greeting and a `STARTTLS`/`AUTH TLS` command in plaintext first and
- * only wraps the stream afterwards. Either way, the call is the same.
+ * `TlsStream.connect()`/`accept()` take an already-connected `TcpStream`
+ * and run a handshake over it, turning it into an encrypted,
+ * certificate-verified stream. That works equally well right after
+ * `connect()` (HTTPS, IMAPS) or after a STARTTLS-style plaintext
+ * exchange (SMTP, FTPS) - see the second example below.
  *
  * A basic HTTPS-style client:
  *

@@ -1,0 +1,464 @@
+/**
+ * @module addr
+ *
+ * Socket addresses: an IP address and a port. `SocketAddrV4` and
+ * `SocketAddrV6` each represent an address of their respective family,
+ * while `SocketAddr` is a small wrapper around either one for code
+ * that needs to accept and work with both interchangeably just like 
+ * the same relationship `Ip` has to `Ipv4`/`Ipv6`.
+ *
+ * An IPv6 address may also carry a zone/scope identifier (RFC 4007),
+ * used to disambiguate a link-local address between network
+ * interfaces, e.g. `fe80::1%3`.
+ *
+ * `TcpStream`, `UdpSocket`, and `DtlsSocket` return these from
+ * `local_address()`/`peer_address()`.
+ *
+ * ```zuri
+ * import net
+ *
+ * var server = net.TcpStream()
+ * server.bind('0.0.0.0:8080')
+ *
+ * var local = server.local_address()
+ * echo 'listening on ${local.ip()}, port ${local.port()}'
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .ip { Ip, Ipv4, Ipv6 }
+
+def _validate_port(value) {
+  if value == nil or !is_number(value) {
+    raise Error('a port must be a number between 0 and 65535')
+  }
+
+  var port = value.int()
+  if port < 0 or port > 65535 {
+    raise Error('a port must be a number between 0 and 65535')
+  }
+
+  return port
+}
+
+def _parse_port(part, original) {
+  if part.length() == 0 or part.length() > 5 {
+    raise Error('invalid socket address: ${original}')
+  }
+
+  if part.length() > 1 and part[0] == '0' {
+    raise Error('invalid socket address: ${original}')
+  }
+
+  var value = 0
+  var i = 0
+  while i < part.length() {
+    var code = part[i].ord()
+    if code < 48 or code > 57 {
+      raise Error('invalid socket address: ${original}')
+    }
+    value = value * 10 + (code - 48)
+    i = i + 1
+  }
+
+  if value > 65535 {
+    raise Error('invalid socket address: ${original}')
+  }
+
+  return value
+}
+
+def _parse_scope_id(part, original) {
+  if part.length() == 0 {
+    raise Error('invalid socket address: ${original}')
+  }
+
+  var value = 0
+  var i = 0
+  while i < part.length() {
+    var code = part[i].ord()
+    if code < 48 or code > 57 {
+      raise Error('invalid socket address: ${original}')
+    }
+    value = value * 10 + (code - 48)
+    i = i + 1
+  }
+
+  return value
+}
+
+/**
+ * An IPv4 address and port, e.g. `192.168.1.10:8080`.
+ *
+ * @printable
+ */
+class SocketAddrV4 {
+
+  /**
+   * Returns a new instance of a {SocketAddrV4}.
+   *
+   * @param Ipv4 address: The IP address
+   * @param number port: The port, `0`-`65535`
+   * @throws Error if `address` is not an {Ipv4}, or `port` is missing
+   *   or outside `0`-`65535`
+   */
+  @new(address, port) {
+    if address == nil or !instance_of(address, Ipv4) {
+      raise Error('SocketAddrV4 requires an Ipv4 address')
+    }
+    self._ip = address
+    self._port = _validate_port(port)
+  }
+
+  /**
+   * Parses an address given as `ip:port`, e.g. `'192.168.1.10:8080'`.
+   *
+   * @param string address: The address to parse
+   * @returns SocketAddrV4
+   * @throws Error if `address` isn't a well-formed IPv4 address
+   *   followed by `:` and a port from `0` to `65535`
+   */
+  static parse(address) {
+    if address == nil {
+      raise Error('invalid socket address: nil')
+    }
+
+    var colon = address.index_of(':')
+    if colon < 0 {
+      raise Error('invalid socket address: ${address}')
+    }
+
+    var ip = Ipv4.parse(address[0, colon])
+    var port = _parse_port(address[colon + 1, address.length()], address)
+
+    return SocketAddrV4(ip, port)
+  }
+
+  /**
+   * The IP address.
+   * @returns Ipv4
+   */
+  ip() {
+    return self._ip
+  }
+
+  /**
+   * The port.
+   * @returns number
+   */
+  port() {
+    return self._port
+  }
+
+  /**
+   * Whether `other` refers to the same address and port as this one.
+   *
+   * @param SocketAddrV4 other: The address to compare against
+   * @returns bool
+   */
+  equals(other) {
+    if other == nil or !instance_of(other, SocketAddrV4) {
+      return false
+    }
+    return self._port == other.port() and self._ip.equals(other.ip())
+  }
+
+  /**
+   * This address as `ip:port`, e.g. `'192.168.1.10:8080'`.
+   * @returns string
+   */
+  to_string() {
+    return '${self._ip.to_string()}:${self._port}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * An IPv6 address and port, e.g. `[2001:db8::1]:8080`, optionally
+ * carrying a zone/scope identifier (RFC 4007) that disambiguates a
+ * link-local address between network interfaces, e.g.
+ * `[fe80::1%3]:8080`.
+ *
+ * @printable
+ */
+class SocketAddrV6 {
+
+  /**
+   * Returns a new instance of a {SocketAddrV6}.
+   *
+   * @param Ipv6 address: The IP address
+   * @param number port: The port, `0`-`65535`
+   * @param ?number scope_id: The zone/scope identifier, or `0`
+   *   (the default) if this address isn't scoped to a particular
+   *   interface
+   * @throws Error if `address` is not an {Ipv6}, `port` is missing or
+   *   outside `0`-`65535`, or `scope_id` is negative
+   */
+  @new(address, port, scope_id) {
+    if address == nil or !instance_of(address, Ipv6) {
+      raise Error('SocketAddrV6 requires an Ipv6 address')
+    }
+    self._ip = address
+    self._port = _validate_port(port)
+
+    var scope = scope_id or 0
+    if !is_number(scope) or scope < 0 {
+      raise Error('a scope id must be a non-negative number')
+    }
+    self._scope_id = scope.int()
+  }
+
+  /**
+   * Parses an address given as `[ip]:port` or, for a scoped address,
+   * `[ip%scope_id]:port`, e.g. `'[::1]:8080'` or `'[fe80::1%3]:8080'`.
+   *
+   * @param string address: The address to parse
+   * @returns SocketAddrV6
+   * @throws Error if `address` isn't a well-formed bracketed IPv6
+   *   address followed by `:` and a port from `0` to `65535`
+   */
+  static parse(address) {
+    if address == nil or address.length() == 0 or address[0] != '[' {
+      raise Error('invalid socket address: ${address}')
+    }
+
+    var close = address.index_of(']')
+    if close < 0 {
+      raise Error('invalid socket address: ${address}')
+    }
+
+    var rest = address[close + 1, address.length()]
+    if rest.length() == 0 or rest[0] != ':' {
+      raise Error('invalid socket address: ${address}')
+    }
+
+    var inner = address[1, close]
+    var ip_part = inner
+    var scope_id = 0
+
+    var percent = inner.index_of('%')
+    if percent > -1 {
+      ip_part = inner[0, percent]
+      scope_id = _parse_scope_id(inner[percent + 1, inner.length()], address)
+    }
+
+    var ip = Ipv6.parse(ip_part)
+    var port = _parse_port(rest[1, rest.length()], address)
+
+    return SocketAddrV6(ip, port, scope_id)
+  }
+
+  /**
+   * The IP address.
+   * @returns Ipv6
+   */
+  ip() {
+    return self._ip
+  }
+
+  /**
+   * The port.
+   * @returns number
+   */
+  port() {
+    return self._port
+  }
+
+  /**
+   * The zone/scope identifier, or `0` if this address isn't scoped to
+   * a particular network interface.
+   * @returns number
+   */
+  scope_id() {
+    return self._scope_id
+  }
+
+  /**
+   * Whether `other` refers to the same address, port, and scope as
+   * this one.
+   *
+   * @param SocketAddrV6 other: The address to compare against
+   * @returns bool
+   */
+  equals(other) {
+    if other == nil or !instance_of(other, SocketAddrV6) {
+      return false
+    }
+    return self._port == other.port() and
+      self._scope_id == other.scope_id() and
+      self._ip.equals(other.ip())
+  }
+
+  /**
+   * This address as `[ip]:port`, or `[ip%scope_id]:port` if it carries
+   * a non-zero scope id.
+   * @returns string
+   */
+  to_string() {
+    if self._scope_id != 0 {
+      return '[${self._ip.to_string()}%${self._scope_id}]:${self._port}'
+    }
+    return '[${self._ip.to_string()}]:${self._port}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Either a {SocketAddrV4} or a {SocketAddrV6}, for code that needs to
+ * accept and work with socket addresses of either family without
+ * committing to one upfront.
+ *
+ * @printable
+ */
+class SocketAddr {
+
+  /**
+   * Wraps an already-constructed {SocketAddrV4} or {SocketAddrV6}.
+   * Application code should generally prefer `SocketAddr.parse()`,
+   * `SocketAddr.v4()`, or `SocketAddr.v6()` over calling this
+   * directly.
+   *
+   * @param {SocketAddrV4|SocketAddrV6} inner: The address to wrap
+   */
+  @new(inner) {
+    self._inner = inner
+  }
+
+  /**
+   * Wraps an IPv4 address and port as a {SocketAddr}.
+   *
+   * @param Ipv4 address: The IP address
+   * @param number port: The port, `0`-`65535`
+   * @returns SocketAddr
+   */
+  static v4(address, port) {
+    return SocketAddr(SocketAddrV4(address, port))
+  }
+
+  /**
+   * Wraps an IPv6 address and port as a {SocketAddr}.
+   *
+   * @param Ipv6 address: The IP address
+   * @param number port: The port, `0`-`65535`
+   * @param ?number scope_id: The zone/scope identifier, or `0`
+   * @returns SocketAddr
+   */
+  static v6(address, port, scope_id) {
+    return SocketAddr(SocketAddrV6(address, port, scope_id))
+  }
+
+  /**
+   * Parses `address` as either an IPv4 or IPv6 socket address,
+   * choosing the family based on whether it starts with `[`.
+   *
+   * @param string address: The address to parse, e.g.
+   *   `'192.168.1.10:8080'` or `'[::1]:8080'`
+   * @returns SocketAddr
+   * @throws Error if `address` is not a well-formed IPv4 or IPv6
+   *   socket address
+   */
+  static parse(address) {
+    if address == nil {
+      raise Error('invalid socket address: nil')
+    }
+
+    if address.length() > 0 and address[0] == '[' {
+      return SocketAddr(SocketAddrV6.parse(address))
+    }
+    return SocketAddr(SocketAddrV4.parse(address))
+  }
+
+  /**
+   * Whether this is a {SocketAddrV4}.
+   * @returns bool
+   */
+  is_v4() {
+    return instance_of(self._inner, SocketAddrV4)
+  }
+
+  /**
+   * Whether this is a {SocketAddrV6}.
+   * @returns bool
+   */
+  is_v6() {
+    return instance_of(self._inner, SocketAddrV6)
+  }
+
+  /**
+   * Returns the wrapped {SocketAddrV4}, or `nil` if this is an IPv6
+   * address.
+   * @returns ?SocketAddrV4
+   */
+  as_v4() {
+    if !self.is_v4() {
+      return nil
+    }
+    return self._inner
+  }
+
+  /**
+   * Returns the wrapped {SocketAddrV6}, or `nil` if this is an IPv4
+   * address.
+   * @returns ?SocketAddrV6
+   */
+  as_v6() {
+    if !self.is_v6() {
+      return nil
+    }
+    return self._inner
+  }
+
+  /**
+   * The IP address, wrapped as an {Ip} so it can be worked with
+   * without committing to a family.
+   * @returns Ip
+   */
+  ip() {
+    return self.is_v4() ? Ip.v4(self._inner.ip()) : Ip.v6(self._inner.ip())
+  }
+
+  /**
+   * The port.
+   * @returns number
+   */
+  port() {
+    return self._inner.port()
+  }
+
+  /**
+   * Whether `other` refers to the same address as this one. An IPv4
+   * address and an IPv6 address are never equal, even if one is the
+   * IPv4-mapped form of the other.
+   *
+   * @param SocketAddr other: The address to compare against
+   * @returns bool
+   */
+  equals(other) {
+    if other == nil or !instance_of(other, SocketAddr) {
+      return false
+    }
+    if self.is_v4() != other.is_v4() {
+      return false
+    }
+    return self._inner.equals(other.is_v4() ? other.as_v4() : other.as_v6())
+  }
+
+  /**
+   * This address in its family's standard notation.
+   * @returns string
+   */
+  to_string() {
+    return self._inner.to_string()
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

@@ -1,0 +1,153 @@
+/**
+ * test_net_addr.zu
+ *
+ * Test suite for the `net.addr` standard library module: parsing and
+ * formatting `SocketAddrV4`/`SocketAddrV6`, the `SocketAddr` wrapper,
+ * error handling, and round-tripping through `TcpStream`/`UdpSocket`'s
+ * `local_address()`/`peer_address()`/`connect()`/`bind()`.
+ */
+
+import net
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  net.addr module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# SocketAddrV4
+# ---------------------------------------------------------------------------
+var v4 = net.SocketAddrV4.parse('192.168.1.10:8080')
+assert v4.ip().equals(net.Ipv4.parse('192.168.1.10')), 'SocketAddrV4.parse must extract the IP'
+assert v4.port() == 8080, 'SocketAddrV4.parse must extract the port'
+assert v4.to_string() == '192.168.1.10:8080', 'SocketAddrV4.to_string() must round-trip'
+ok('SocketAddrV4.parse() and to_string() round-trip')
+
+var v4b = net.SocketAddrV4(net.Ipv4(192, 168, 1, 10), 8080)
+assert v4.equals(v4b), 'two SocketAddrV4 with the same ip and port must be equal'
+assert !v4.equals(net.SocketAddrV4(net.Ipv4(192, 168, 1, 10), 9090)),
+  'a different port must not be equal'
+ok('SocketAddrV4.equals()')
+
+assert raises(@() { net.SocketAddrV4.parse('not-an-address') }),
+  'a malformed address must raise'
+assert raises(@() { net.SocketAddrV4.parse('192.168.1.10:99999') }),
+  'a port above 65535 must raise'
+assert raises(@() { net.SocketAddrV4.parse('192.168.1.10') }),
+  'an address with no port must raise'
+assert raises(@() { net.SocketAddrV4(net.Ipv4(1, 2, 3, 4), -1) }),
+  'a negative port must raise'
+ok('SocketAddrV4 rejects malformed input')
+
+# ---------------------------------------------------------------------------
+# SocketAddrV6
+# ---------------------------------------------------------------------------
+var v6 = net.SocketAddrV6.parse('[2001:db8::1]:443')
+assert v6.ip().equals(net.Ipv6.parse('2001:db8::1')), 'SocketAddrV6.parse must extract the IP'
+assert v6.port() == 443, 'SocketAddrV6.parse must extract the port'
+assert v6.scope_id() == 0, 'an unscoped address must default to scope id 0'
+assert v6.to_string() == '[2001:db8::1]:443', 'SocketAddrV6.to_string() must round-trip'
+ok('SocketAddrV6.parse() and to_string() round-trip (no scope)')
+
+var v6s = net.SocketAddrV6.parse('[fe80::1%3]:9999')
+assert v6s.scope_id() == 3, 'SocketAddrV6.parse must extract the zone/scope id'
+assert v6s.to_string() == '[fe80::1%3]:9999', 'a scoped address must round-trip with %scope_id'
+ok('SocketAddrV6 zone/scope identifier (RFC 4007)')
+
+assert v6.equals(net.SocketAddrV6(net.Ipv6.parse('2001:db8::1'), 443, 0)),
+  'two SocketAddrV6 with the same ip, port, and scope must be equal'
+assert !v6.equals(v6s), 'different scope ids must not be equal'
+ok('SocketAddrV6.equals()')
+
+assert raises(@() { net.SocketAddrV6.parse('2001:db8::1:443') }),
+  'an address missing brackets must raise'
+assert raises(@() { net.SocketAddrV6.parse('[2001:db8::1]') }),
+  'an address with no port must raise'
+ok('SocketAddrV6 rejects malformed input')
+
+# ---------------------------------------------------------------------------
+# SocketAddr (family-agnostic wrapper)
+# ---------------------------------------------------------------------------
+var a4 = net.SocketAddr.parse('10.0.0.1:22')
+assert a4.is_v4() and !a4.is_v6(), 'a dotted-decimal address must parse as v4'
+assert a4.as_v4() != nil and a4.as_v6() == nil, 'as_v4()/as_v6() must match the family'
+assert a4.ip().is_ipv4(), 'ip() must return an Ip wrapping the same family'
+assert a4.port() == 22, 'port() must delegate to the wrapped address'
+
+var a6 = net.SocketAddr.parse('[::1]:22')
+assert a6.is_v6() and !a6.is_v4(), 'a bracketed address must parse as v6'
+assert a6.as_v6() != nil and a6.as_v4() == nil, 'as_v4()/as_v6() must match the family'
+ok('SocketAddr dispatches to the right family by parsing')
+
+assert net.SocketAddr.v4(net.Ipv4(1, 2, 3, 4), 80).to_string() == '1.2.3.4:80',
+  'SocketAddr.v4() must build a working v4 wrapper'
+assert net.SocketAddr.v6(net.Ipv6.unspecified(), 80).to_string() == '[::]:80',
+  'SocketAddr.v6() must build a working v6 wrapper'
+ok('SocketAddr.v4()/v6() construction')
+
+assert net.SocketAddr.parse('10.0.0.1:22').equals(net.SocketAddr.parse('10.0.0.1:22')),
+  'two equal SocketAddr must compare equal regardless of family wrapping'
+assert !a4.equals(a6), 'a v4 and a v6 address must never be equal'
+ok('SocketAddr.equals()')
+
+# ---------------------------------------------------------------------------
+# Round-tripping through TcpStream/UdpSocket
+# ---------------------------------------------------------------------------
+var server = net.TcpStream()
+server.bind('127.0.0.1:0')
+var local = server.local_address()
+assert instance_of(local, net.SocketAddr), 'local_address() must return a SocketAddr'
+assert local.is_v4(), 'binding to 127.0.0.1 must produce a v4 address'
+assert local.port() > 0, 'the OS-assigned ephemeral port must be reported'
+
+# The returned SocketAddr must be directly usable as a connect() target -
+# the whole point of no longer handing back a bare string.
+var client = net.TcpStream()
+client.connect(local)
+var accepted = server.accept()
+assert instance_of(accepted.peer_address(), net.SocketAddr),
+  'peer_address() must also return a SocketAddr'
+assert accepted.peer_address().ip().as_ipv4().equals(net.Ipv4.localhost()),
+  'the accepted peer must be seen as connecting from localhost'
+client.close()
+accepted.close()
+server.close()
+ok('TcpStream.local_address()/peer_address() round-trip through connect()')
+
+var udp_server = net.UdpSocket()
+udp_server.bind('127.0.0.1:0')
+var udp_local = udp_server.local_address()
+assert instance_of(udp_local, net.SocketAddr), 'UdpSocket.local_address() must return a SocketAddr'
+
+var udp_client = net.UdpSocket()
+udp_client.bind('127.0.0.1:0')
+udp_client.send_to('ping', udp_local)
+var received = udp_server.peek_from(16)
+assert instance_of(received.address, net.SocketAddr),
+  'peek_from() must return a SocketAddr in its address field'
+assert received.data.to_string() == 'ping', 'the datagram itself must still come through correctly'
+udp_client.close()
+udp_server.close()
+ok('UdpSocket.local_address()/peek_from() round-trip through send_to()')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

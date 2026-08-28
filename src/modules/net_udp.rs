@@ -670,7 +670,7 @@ fn udp_peek(ctx: &mut ZuriContext) -> Result<Value, String> {
   let len = udp.peek(&mut buffer)?;
 
   if len > 0 {
-    Ok(ctx.heap().alloc_bytes(buffer))
+    Ok(ctx.heap().alloc_bytes(&buffer[0..len]))
   } else {
     Ok(Value::nil())
   }
@@ -685,20 +685,19 @@ fn udp_peek_from(ctx: &mut ZuriContext) -> Result<Value, String> {
   let length = optional_number(ctx, 1, 1.0)? as usize;
 
   let mut buffer = vec![0u8; length];
-  let (_, addr) = udp.peek_from(&mut buffer)?;
+  let (received, addr) = udp.peek_from(&mut buffer)?;
+  buffer.truncate(received);
 
-  let dict = ctx.heap().alloc_dict(Vec::new());
+  let data_key = ctx.heap().alloc_string("data");
+  let data_value = ctx.heap().alloc_bytes(buffer);
+  let address_key = ctx.heap().alloc_string("address");
+  let address_value = ctx.heap().alloc_string(addr.to_string());
 
-  dict.as_dict().push((
-    ctx.heap().alloc_string("data"),
-    ctx.heap().alloc_bytes(buffer),
-  ));
-  dict.as_dict().push((
-    ctx.heap().alloc_string("address"),
-    ctx.heap().alloc_string(addr.to_string()),
-  ));
-
-  Ok(dict)
+  Ok(
+    ctx
+      .heap()
+      .alloc_dict(vec![(data_key, data_value), (address_key, address_value)]),
+  )
 }
 
 fn udp_get_error(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -759,9 +758,9 @@ fn udp_receive_from(ctx: &mut ZuriContext) -> Result<Value, String> {
   let length = ctx.args[1].as_number() as usize;
 
   let mut buffer = vec![0u8; length];
-  udp.receive_from(buffer.as_mut_slice())?;
+  let (bytes_read, _) = udp.receive_from(buffer.as_mut_slice())?;
 
-  Ok(ctx.heap().alloc_bytes(buffer))
+  Ok(ctx.heap().alloc_bytes(&buffer[0..bytes_read]))
 }
 
 fn udp_send(ctx: &mut ZuriContext) -> Result<Value, String> {

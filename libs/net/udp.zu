@@ -47,6 +47,17 @@
  */
 
 import _net_udp
+import .addr { SocketAddr }
+
+/**
+ * Accepts either a plain `'ip:port'` string or a `SocketAddr` (as
+ * `local_address()`/`peer_address()` hand back) anywhere an address is
+ * expected, so the natural "connect to what another socket is
+ * listening on" round-trip doesn't force a manual `.to_string()`.
+ */
+def _addr_string(address) {
+  return instance_of(address, SocketAddr) ? address.to_string() : address
+}
 
 /**
  * A UDP socket, usable for both sending and receiving datagrams, either
@@ -90,12 +101,13 @@ class UdpSocket {
    * resolve to several addresses; they are tried in turn and the first
    * one that succeeds is used.
    *
-   * @param string address: The host:port to treat as the default peer
+   * @param {string|SocketAddr} address: The host:port to treat as the
+   *   default peer
    * @throws Error if resolution fails or every resolved address is
    *   rejected
    */
   connect(address) {
-    _net_udp.udp_connect(self._ptr, address)
+    _net_udp.udp_connect(self._ptr, _addr_string(address))
   }
 
   /**
@@ -108,36 +120,36 @@ class UdpSocket {
    * via `local_address()`. If `address` resolves to multiple addresses,
    * binding is attempted against each in turn until one succeeds.
    *
-   * @param string address: The host:port to bind and receive on
+   * @param {string|SocketAddr} address: The host:port to bind and
+   *   receive on
    * @throws Error if resolution fails or every resolved address
    *   fails to bind (e.g. because it is already in use)
    */
   bind(address) {
-    _net_udp.udp_bind(self._ptr, address)
+    _net_udp.udp_bind(self._ptr, _addr_string(address))
   }
 
   /**
    * Returns the address of the remote peer this socket was connected to
-   * via `connect()`, formatted as `ip:port` (`[ip]:port` for IPv6).
+   * via `connect()`.
    *
-   * @returns string the peer's address
+   * @returns SocketAddr the peer's address
    * @throws Error if this socket has not been connected
    */
   peer_address() {
-    return _net_udp.udp_peer_address(self._ptr)
+    return SocketAddr.parse(_net_udp.udp_peer_address(self._ptr))
   }
 
   /**
-   * Returns the local socket address of this instance, formatted as
-   * `ip:port` (`[ip]:port` for IPv6). Particularly useful for
-   * discovering the actual port chosen by the OS after binding to
-   * port `0`.
+   * Returns the local socket address of this instance. Particularly
+   * useful for discovering the actual port chosen by the OS after
+   * binding to port `0`.
    *
-   * @returns string the local address
+   * @returns SocketAddr the local address
    * @throws Error if this socket has not been bound
    */
   local_address() {
-    return _net_udp.udp_local_address(self._ptr)
+    return SocketAddr.parse(_net_udp.udp_local_address(self._ptr))
   }
 
   /**
@@ -220,12 +232,15 @@ class UdpSocket {
    * this does not require a connected socket.
    *
    * @param number length: The maximum number of bytes to peek
-   * @returns {data: bytes, address: string} the pending datagram's
+   * @returns {data: bytes, address: SocketAddr} the pending datagram's
    *   bytes and the address it was sent from
    * @throws Error on an underlying I/O error
    */
   peek_from(length) {
-    return _net_udp.udp_peek_from(self._ptr, length)
+    var result = _net_udp.udp_peek_from(self._ptr, length)
+    var data = result.data
+    var address = SocketAddr.parse(result.address)
+    return { data, address }
   }
 
   /**
@@ -431,14 +446,15 @@ class UdpSocket {
    * if any.
    *
    * @param {bytes|string} data: The bytes (or UTF-8 text) to send
-   * @param string address: The host:port to send the datagram to
+   * @param {string|SocketAddr} address: The host:port to send the
+   *   datagram to
    * @returns number the number of bytes sent (equal to the size of
    *   `data` on success)
    * @throws Error on an underlying I/O error, or if the configured
    *   write timeout elapses first
    */
   send_to(data, address) {
-    return _net_udp.udp_send_to(self._ptr, data, address)
+    return _net_udp.udp_send_to(self._ptr, data, _addr_string(address))
   }
 
   /**
@@ -528,9 +544,9 @@ class UdpSocket {
     }
 
     catch {
-      return '<UdpSocket ${local} -> ${self.peer_address()}>'
+      return '<UdpSocket ${local.to_string()} -> ${self.peer_address().to_string()}>'
     } as e {
-      return '<UdpSocket bound on ${local}>'
+      return '<UdpSocket bound on ${local.to_string()}>'
     }
   }
 
