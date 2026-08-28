@@ -51,6 +51,7 @@
  */
 
 import _zuri_compile
+import ._tree
 
 /**
  * One VM instruction.
@@ -77,18 +78,44 @@ class Instr {
 
   /**
    * This instruction as `op@line`, e.g. `'LoadConst@3'`, or just `op`
-   * when it carries no line.
+   * when it carries no line. A one-line summary; use `dump()` to
+   * actually see what's inside an instruction.
    * @returns string
    */
   to_string() {
-    if self.line == nil {
-      return self.op
-    }
-    return '${self.op}@${self.line}'
+    return _header(self)
   }
 
   @to_string() {
     return self.to_string()
+  }
+
+  /**
+   * A readable, indented, multi-line dump of this instruction and
+   * everything inside it, recursively (including a `Closure`
+   * instruction's own nested function body). Same idea as
+   * {zuri.ast.Node.dump}: the actual way to find out what an
+   * opcode's `fields` looks like is to run something and read the
+   * dump, not to guess a key name from the opcode's name alone.
+   *
+   * ```zuri
+   * import zuri
+   *
+   * var instrs = zuri.compile('var x = 1')
+   * echo instrs[0].dump()
+   * ```
+   * prints
+   * ```
+   * LoadConst@0
+   *   dst: 0
+   *   const_idx: 1
+   *   value: 1
+   * ```
+   *
+   * @returns string
+   */
+  dump() {
+    return "\n".join(_dump_lines(self, 0))
   }
 }
 
@@ -131,6 +158,137 @@ def _instr_from_dict(data) {
     fields[key] = _wrap_instr(data.fields[key])
   }
   return Instr(data.op, data.line, fields)
+}
+
+# --- dump() support ---
+
+def _indent(level) {
+  var s = ''
+  iter var i = 0; i < level; i++ {
+    s = s + '  '
+  }
+  return s
+}
+
+def _dump_scalar(value) {
+  if value == nil {
+    return 'nil'
+  }
+  if is_string(value) {
+    return "'" + value + "'"
+  }
+  return '${value}'
+}
+
+def _header(instr) {
+  if instr.line == nil {
+    return instr.op
+  }
+  return '${instr.op}@${instr.line}'
+}
+
+def _dump_dict_lines(dict, indent) {
+  var lines = []
+  for key in dict.keys() {
+    var value = dict[key]
+    if instance_of(value, Instr) or is_list(value) or is_dict(value) {
+      lines.append(_indent(indent) + key + ':')
+      lines.extend(_dump_lines(value, indent + 1))
+    } else {
+      lines.append(_indent(indent) + key + ': ' + _dump_scalar(value))
+    }
+  }
+  return lines
+}
+
+def _dump_lines(value, indent) {
+  if instance_of(value, Instr) {
+    var lines = [_indent(indent) + _header(value)]
+    lines.extend(_dump_dict_lines(value.fields, indent + 1))
+    return lines
+  }
+
+  if is_dict(value) {
+    return _dump_dict_lines(value, indent)
+  }
+
+  if is_list(value) {
+    if value.is_empty() {
+      return [_indent(indent) + '[]']
+    }
+    var lines = []
+    for item in value {
+      lines.extend(_dump_lines(item, indent))
+    }
+    return lines
+  }
+
+  return [_indent(indent) + _dump_scalar(value)]
+}
+
+def _describe(value) {
+  if instance_of(value, Instr) {
+    return value.op
+  }
+  return nil
+}
+
+/**
+ * Recursively visits every instruction reachable from `instrs`
+ * (typically `zuri.compile()`'s own result, or any single {Instr}
+ * plucked out of it), including inside a `Closure` instruction's own
+ * nested function body, in the order they appear, calling `visitor`
+ * for each one.
+ *
+ * `visitor` is either a plain function, called with every instruction
+ * (`visitor(instr)`), or a dict from opcode name to function, where
+ * only a matching instruction gets called
+ * (`visitor[instr.op](instr)`). Reach for the dict form when you only
+ * care about one or two opcodes.
+ *
+ * Always visits the whole tree; there's no way for `visitor` to skip
+ * descending into a nested function body.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * var instrs = zuri.compile(source)
+ *
+ * # every global name this script writes to, anywhere, including
+ * # inside nested function bodies
+ * var written = []
+ * zuri.walk_instrs(instrs, {
+ *   SetGlobal: @(instr) { written.append(instr.fields.name) },
+ * })
+ * ```
+ *
+ * @param Instr|list[Instr] instrs
+ * @param function|dict visitor
+ */
+def walk_instrs(instrs, visitor) {
+  _tree.walk(instrs, _describe, visitor, is_dict(visitor))
+}
+
+/**
+ * Every instruction reachable from `instrs` whose `op` is `op`, in
+ * the order they appear. Shorthand for the common "just give me a
+ * flat list of these" case `walk_instrs()` itself is built on.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * var instrs = zuri.compile(source)
+ * for jmp in zuri.find_instrs(instrs, 'Jmp') {
+ *   echo jmp.fields.offset
+ * }
+ * ```
+ *
+ * @param Instr|list[Instr] instrs
+ * @param string op
+ * @returns list[Instr]
+ */
+def find_instrs(instrs, op) {
+  return _tree.find(instrs, _describe, op)
 }
 
 /**

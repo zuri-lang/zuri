@@ -127,6 +127,49 @@ var ts_nodes = zuri.parse('var y = 1')
 # keyword's, so `y` (the 5th character) is where it points.
 assert ts_nodes[0].to_string() == 'Stmt@1:5', 'to_string() must be kind@line:col when a position exists'
 assert ts_nodes[0].fields.statement.to_string() == 'Var@1:5', 'a nested node has its own to_string() too'
+ok('Node.to_string()')
+
+# ---------------------------------------------------------------------------
+# Node.dump()
+# ---------------------------------------------------------------------------
+var dump_nodes = zuri.parse('def add(a, b) { return a + b }')
+var dump = dump_nodes[0].dump()
+assert is_string(dump), 'dump() must return a string'
+assert dump.contains("Function@1:5"), 'dump() must show the node header'
+assert dump.contains("name: 'add'"), 'dump() must show a string field quoted'
+assert dump.contains('parameters:'), 'dump() must show a nested-list field name on its own line'
+assert dump.contains("Argument@1:9"), 'dump() must recurse into nested nodes'
+assert dump.contains('is_variadic: false'), 'dump() must show a plain bool field inline'
+# a node with a line but no column must not print a bogus ":nil"
+assert !dump.contains(':nil'), 'dump() must never print a literal nil column'
+ok('Node.dump() produces a readable, correctly nested dump')
+
+# ---------------------------------------------------------------------------
+# zuri.walk_nodes() / zuri.find_nodes()
+# ---------------------------------------------------------------------------
+var walk_source = 'def outer() {\n  def inner() {\n    return 1\n  }\n  return inner()\n}\n'
+var walk_nodes_list = zuri.parse(walk_source)
+
+var fn_names = []
+zuri.walk_nodes(walk_nodes_list, {
+  Function: @(node) { fn_names.append(node.fields.name) },
+})
+assert fn_names.length() == 2, 'walk_nodes() must reach a nested/inner function too'
+assert fn_names.contains('outer'), 'walk_nodes() must find the outer function'
+assert fn_names.contains('inner'), 'walk_nodes() must find the inner function'
+ok('walk_nodes() with a dict visitor reaches every nested node')
+
+var visited_kinds = []
+zuri.walk_nodes(walk_nodes_list, @(node) { visited_kinds.append(node.kind) })
+assert visited_kinds.length() > fn_names.length(), 'a plain-function visitor must be called for every node, not just Function'
+ok('walk_nodes() with a plain function visits every node')
+
+var identifiers = zuri.find_nodes(walk_nodes_list, 'Identifier')
+assert identifiers.length() > 0, 'find_nodes() must find at least one Identifier'
+for id_node in identifiers {
+  assert id_node.kind == 'Identifier', 'find_nodes() must only return nodes of the requested kind'
+}
+ok('find_nodes() returns every node of the requested kind')
 
 # ===========================================================================
 # Final summary

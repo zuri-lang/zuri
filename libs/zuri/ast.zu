@@ -68,6 +68,7 @@
  */
 
 import _zuri_parse
+import ._tree
 
 /**
  * One AST node: an expression, statement, declaration, type hint, or
@@ -105,13 +106,16 @@ class Node {
    * like a `Var` node's `type_hint` when there isn't one) passes
    * through unchanged.
    *
-   * `line`/`col` are best-effort, not guaranteed on every node: most
-   * AST shapes carry a position (an identifier, an operator, a
-   * declaration's own name), but a handful of purely structural nodes
-   * (an empty `Block`, `None`) don't, and come back with `line`/`col`
-   * both `nil`. This never affects what `fields` contains, since
-   * position is a convenience for pointing at where something is, not
-   * part of the information rebuilding source needs.
+   * `line`/`col` are best-effort, not guaranteed on every node. Most
+   * AST shapes carry a full position (an identifier, an operator, a
+   * declaration's own name); a few (`Binary`, `Call`, `Index`, and
+   * other operator/delimiter-driven expressions) only ever carry a
+   * bare source `line`, with `col` always `nil`; and a handful of
+   * purely structural nodes (an empty `Block`, `None`) carry neither,
+   * coming back with `line`/`col` both `nil`. None of this affects
+   * what `fields` contains, since position is a convenience for
+   * pointing at where something is, not part of the information
+   * rebuilding source needs.
    *
    * @param dict data: `{ kind, line, col, fields }`
    * @returns Node
@@ -136,19 +140,82 @@ class Node {
   }
 
   /**
-   * This node as `kind@line:col`, e.g. `'Binary@3:5'`, or just `kind`
-   * when it carries no position.
+   * This node as `kind@line:col`, e.g. `'Binary@3:5'`; `kind@line`
+   * when a position exists but has no column (some AST shapes only
+   * ever carry a bare source line, never a column: see `from_dict`'s
+   * own docs); or just `kind` when it carries no position at all. A
+   * one-line summary; use `dump()` to actually see what's inside a
+   * node.
    * @returns string
    */
   to_string() {
-    if self.line == nil {
-      return self.kind
-    }
-    return '${self.kind}@${self.line}:${self.col}'
+    return _header(self)
   }
 
   @to_string() {
     return self.to_string()
+  }
+
+  /**
+   * A readable, indented, multi-line dump of this node and everything
+   * inside it, recursively. This is the actual way to find out what a
+   * `fields` entry is called for a kind you haven't looked up yet:
+   * `echo node.dump()` and read it, rather than guessing a key name
+   * and checking whether it happens to exist.
+   *
+   * ```zuri
+   * import zuri
+   *
+   * var nodes = zuri.parse('def add(a, b) { return a + b }')
+   * echo nodes[0].dump()
+   * ```
+   * prints
+   * ```
+   * Function@1:5
+   *   name: 'add'
+   *   parameters:
+   *     Argument@1:9
+   *       name: 'a'
+   *       type_hint:
+   *         TypeHint
+   *           types:
+   *             Any
+   *               class_name: nil
+   *           nullable: true
+   *     Argument@1:12
+   *       name: 'b'
+   *       type_hint:
+   *         TypeHint
+   *           types:
+   *             Any
+   *               class_name: nil
+   *           nullable: true
+   *   body:
+   *     Block@1
+   *       statements:
+   *         Return@1
+   *           value:
+   *             Binary@1
+   *               left:
+   *                 Identifier@1:24
+   *                   name: 'a'
+   *               op: 'Plus'
+   *               right:
+   *                 Identifier@1:28
+   *                   name: 'b'
+   *   is_variadic: false
+   * ```
+   *
+   * `Block`/`Return`/`Binary` above only carry a line, never a
+   * column (see `from_dict`'s own docs on which shapes do and don't);
+   * `class_name` is `nil` on `Any` specifically because that field
+   * only ever has a real value on an `Instance` type (a named class
+   * used as a type hint).
+   *
+   * @returns string
+   */
+  dump() {
+    return "\n".join(_dump_lines(self, 0))
   }
 }
 
@@ -179,6 +246,72 @@ def _wrap_node(value) {
   return value
 }
 
+# --- dump() support ---
+#
+# Builds a list of already-indented lines rather than one long string,
+# so a nested call can just `.extend()` the caller's own list instead
+# of juggling partial-line concatenation.
+
+def _indent(level) {
+  var s = ''
+  iter var i = 0; i < level; i++ {
+    s = s + '  '
+  }
+  return s
+}
+
+def _dump_scalar(value) {
+  if value == nil {
+    return 'nil'
+  }
+  if is_string(value) {
+    return "'" + value + "'"
+  }
+  return '${value}'
+}
+
+# Shared by `Node.to_string()` and `dump()`'s own node header line;
+# `line` without `col` is a real, common case (see `from_dict`'s
+# docs), not just a hypothetical to guard against.
+def _header(node) {
+  if node.line == nil {
+    return node.kind
+  }
+  if node.col == nil {
+    return '${node.kind}@${node.line}'
+  }
+  return '${node.kind}@${node.line}:${node.col}'
+}
+
+def _dump_lines(value, indent) {
+  if instance_of(value, Node) {
+    var lines = [_indent(indent) + _header(value)]
+    for key in value.fields.keys() {
+      var field_value = value.fields[key]
+      if instance_of(field_value, Node) or is_list(field_value) {
+        lines.append(_indent(indent + 1) + key + ':')
+        lines.extend(_dump_lines(field_value, indent + 2))
+      } else {
+        lines.append(_indent(indent + 1) + key + ': ' + _dump_scalar(field_value))
+      }
+    }
+    return lines
+  }
+
+  if is_list(value) {
+    if value.is_empty() {
+      return [_indent(indent) + '[]']
+    }
+    var lines = []
+    for item in value {
+      lines.extend(_dump_lines(item, indent))
+    }
+    return lines
+  }
+
+  return [_indent(indent) + _dump_scalar(value)]
+}
+
 /**
  * Parses `source` in full and returns its top-level declarations as a
  * list of {Node}. See this module's own doc comment for the exact
@@ -199,4 +332,71 @@ def parse(source) {
     nodes.append(Node.from_dict(raw))
   }
   return nodes
+}
+
+def _describe(value) {
+  if instance_of(value, Node) {
+    return value.kind
+  }
+  return nil
+}
+
+/**
+ * Recursively visits every node reachable from `nodes` (typically
+ * `zuri.parse()`'s own result, or any single {Node} plucked out of
+ * it), in the order they appear, calling `visitor` for each one. This
+ * is the tool for "do something with every `X`": most real uses of an
+ * AST are a walk, not manual field-by-field navigation.
+ *
+ * `visitor` is either a plain function, called with every node
+ * (`visitor(node)`), or a dict from kind name to function, where only
+ * a node of that kind gets called (`visitor[node.kind](node)`).
+ * Reach for the dict form when you only care about one or two kinds;
+ * it reads as a small dispatch table instead of a chain of `if
+ * node.kind == ...` checks inside a single function.
+ *
+ * Always visits the whole tree; there's no way for `visitor` to skip
+ * descending into a particular node's children.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * var nodes = zuri.parse(source)
+ *
+ * # every function name declared anywhere in the file, including
+ * # nested/inner functions
+ * var names = []
+ * zuri.walk_nodes(nodes, {
+ *   Function: @(node) { names.append(node.fields.name) },
+ * })
+ * ```
+ *
+ * @param Node|list[Node] nodes
+ * @param function|dict visitor
+ */
+def walk_nodes(nodes, visitor) {
+  _tree.walk(nodes, _describe, visitor, is_dict(visitor))
+}
+
+/**
+ * Every node reachable from `nodes` whose `kind` is `kind`, in the
+ * order they appear. Shorthand for the common "just give me a flat
+ * list of these" case `walk_nodes()` itself is built on.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * var nodes = zuri.parse(source)
+ * for comment in zuri.find_nodes(nodes, 'Comment') {
+ *   echo comment.fields.text
+ * }
+ * ```
+ *
+ * @param Node|list[Node] nodes
+ * @param string kind
+ * @returns list[Node]
+ */
+def find_nodes(nodes, kind) {
+  return _tree.find(nodes, _describe, kind)
+  return matches
 }

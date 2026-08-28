@@ -104,6 +104,47 @@ ok('instructions carry their source line')
 assert raises(@() { zuri.compile('def (') }), 'malformed source must raise, not return partial bytecode'
 ok('a compile error raises instead of returning a partial result')
 
+# ---------------------------------------------------------------------------
+# Instr.dump()
+# ---------------------------------------------------------------------------
+var dump_instrs = zuri.compile('var x = 42')
+var load_const_dump = nil
+for instr in dump_instrs {
+  if instr.op == 'LoadConst' {
+    load_const_dump = instr.dump()
+  }
+}
+assert load_const_dump != nil, 'must have found a LoadConst to dump'
+assert is_string(load_const_dump), 'dump() must return a string'
+assert load_const_dump.contains('LoadConst'), 'dump() must show the opcode'
+assert load_const_dump.contains('value: 42'), 'dump() must show the resolved constant value'
+ok('Instr.dump() produces a readable dump with resolved fields')
+
+# ---------------------------------------------------------------------------
+# zuri.walk_instrs() / zuri.find_instrs(): reach inside a Closure's own
+# nested function body, not just the top-level instruction list
+# ---------------------------------------------------------------------------
+var walk_source = 'def add(a, b) {\n  return a + b\n}\n'
+var walk_instrs_list = zuri.compile(walk_source)
+
+var returns_seen = []
+zuri.walk_instrs(walk_instrs_list, {
+  Return: @(instr) { returns_seen.append(instr) },
+})
+assert returns_seen.length() > 0, 'walk_instrs() must reach Return instructions inside the nested Closure body'
+ok('walk_instrs() with a dict visitor reaches instructions inside a nested function body')
+
+var all_visited = []
+zuri.walk_instrs(walk_instrs_list, @(instr) { all_visited.append(instr.op) })
+assert all_visited.length() > returns_seen.length(), 'a plain-function visitor must be called for every instruction'
+ok('walk_instrs() with a plain function visits every instruction')
+
+var closures = zuri.find_instrs(walk_instrs_list, 'Closure')
+assert closures.length() == 1, 'find_instrs() must find exactly one Closure instruction'
+var returns_inside = zuri.find_instrs(closures[0].fields.prototype.instructions, 'Return')
+assert returns_inside.length() > 0, 'find_instrs() must work on a nested instruction list too'
+ok('find_instrs() returns every instruction of the requested opcode, anywhere in the tree')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================
