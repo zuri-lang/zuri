@@ -336,7 +336,8 @@ class TlsStream {
    */
   static connect(tcp_stream, config, server_name) {
     return TlsStream(_net_tls.tls_wrap_client(
-      tcp_stream.native_ptr(), config.native_ptr(), server_name))
+      tcp_stream.native_ptr(), config.native_ptr(), server_name)
+    )
   }
 
   /**
