@@ -1,0 +1,61 @@
+/**
+ * test_io_tty.zu
+ *
+ * Test suite for the `io.TTY` class: wiring into the `io` module,
+ * construction, and behavior against a non-tty stream. A CI/test-harness
+ * environment never has a real terminal attached to stdout (it's always a
+ * captured pipe), so this only covers what's deterministic there: that
+ * `io.TTY` and `io.stdout.is_tty()` exist and behave correctly against a
+ * non-tty stream, and that the raw-mode/size-query natives correctly
+ * report failure (rather than crashing or silently lying) instead of
+ * succeeding. The real success path (a genuine pty) was verified manually
+ * during development and isn't exercised here.
+ */
+
+import io
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  io.TTY — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+assert typeof(io.TTY) == 'class', 'io.TTY must be wired up as a real class on the io module'
+ok('io.TTY is wired up')
+
+var t = io.TTY(io.stdout)
+assert typeof(t) == 'TTY', 'constructing io.TTY(io.stdout) must produce a TTY instance'
+ok('TTY instance construction')
+
+assert !io.stdout.is_tty(), 'stdout in this harness is always a captured pipe, never a real terminal'
+ok('is_tty() correctly reports false for a non-tty stream')
+
+assert raises(@() { t.get_size() }), 'get_size() on a non-tty stream must raise, not crash or silently lie'
+ok('get_size() on a non-tty stream raises')
+
+assert raises(@() { t.get_attr() }), 'get_attr() on a non-tty stream must raise, not crash or silently lie'
+ok('get_attr() on a non-tty stream raises')
+
+assert raises(@() { io.TTY('not a file') }), 'TTY must reject a constructor argument that is not a file'
+ok('TTY rejects a non-file argument')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

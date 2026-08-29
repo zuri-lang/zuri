@@ -1,0 +1,18 @@
+equality does not swallow the operator:
+bool
+false
+true
+inequality does not swallow the operator:
+bool
+true
+false
+works when embedded directly in a condition:
+matched correctly
+a trailing static suffix after the interpolation still works:
+bool
+true
+multiple interpolations in one string still concatenate correctly:
+AmidBend
+true
+plain concatenation with + still works (this direction was never broken):
+--AAAAz

@@ -672,10 +672,32 @@ impl<'a> Parser<'a> {
       let right = self.expression();
       expr = Expr::Binary(Box::new(expr), TokenKind::Plus, Box::new(right), line);
 
-      if !check_tok!(self, TokenKind::Interpolation(_) | TokenKind::Literal(_)) || self.is_at_end()
-      {
-        break;
+      // The token right after a `${...}` expression is always one the
+      // lexer produced for the STATIC text that follows it, never
+      // something to hand to `self.expression()` (which climbs full
+      // operator precedence and would happily keep going past the
+      // string's own closing quote, e.g. swallowing a trailing `==
+      // other` into what should have been a plain literal segment).
+      // `Interpolation(_)` means more text then another `${...}`
+      // follows, so the loop continues; `Literal(_)` is always the
+      // final segment up to the closing quote, so it terminates the
+      // loop right after being appended.
+      if check_tok!(self, TokenKind::Interpolation(_)) {
+        let segment = self.advance().clone();
+        let seg_line = segment.line as u32;
+        let literal = self.compose_literal(segment);
+        expr = Expr::Binary(Box::new(expr), TokenKind::Plus, Box::new(literal), seg_line);
+        continue;
       }
+
+      if check_tok!(self, TokenKind::Literal(_)) {
+        let segment = self.advance().clone();
+        let seg_line = segment.line as u32;
+        let literal = self.compose_literal(segment);
+        expr = Expr::Binary(Box::new(expr), TokenKind::Plus, Box::new(literal), seg_line);
+      }
+
+      break;
     }
 
     expr

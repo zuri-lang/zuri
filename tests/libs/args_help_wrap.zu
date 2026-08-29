@@ -1,0 +1,13 @@
+# -h calls os.exit(0), which terminates the process, so this is spawned
+# as a real subprocess from tests/libs/args.zu rather than run in-process.
+# No .out file on purpose — it's a helper, not a fixture in its own
+# right. Exercises the word-wrap support in the help formatter at a
+# narrow, fixed terminal_width so wrapping is exercised deterministically
+# regardless of whatever the real environment's COLUMNS happens to be.
+import args
+
+var p = args.Parser('wraptest', false)
+p.set_terminal_width(50)
+p.description = 'A description long enough that it must wrap across more than one line at this width.'
+p.add_option('config', 'A fairly long help description for this option, long enough to wrap too', {short_name: 'c', type: args.STRING})
+p.parse(['-h'])

@@ -1,0 +1,145 @@
+/**
+ * test_io_bytesio.zu
+ *
+ * Test suite for `io.BytesIO`: an in-memory, bytearray-backed stream that
+ * exposes the same API surface as a real file. Fully deterministic — no
+ * real filesystem or terminal involved — so unlike `io_tty.zu` this
+ * covers the whole class, not just failure behavior.
+ */
+
+import io
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  io.BytesIO — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Construction
+# ---------------------------------------------------------------------------
+assert raises(@() { io.BytesIO('not bytes') }), 'BytesIO must reject a source that is not a bytearray'
+assert raises(@() { io.BytesIO(bytes(0), 123) }), 'BytesIO must reject a non-string mode'
+ok('BytesIO rejects invalid constructor arguments')
+
+var b = io.BytesIO('hello'.to_bytes(), 'r')
+assert b.exists(), 'a BytesIO must always report exists() as true'
+assert b.is_open(), 'a freshly constructed BytesIO must start open'
+assert !b.is_closed(), 'is_closed() must be the exact inverse of is_open()'
+assert !b.is_tty(), 'a BytesIO is never a tty'
+assert b.mode() == 'r', 'mode() must report back the mode passed to the constructor'
+ok('BytesIO construction defaults')
+
+# ---------------------------------------------------------------------------
+# Reading
+# ---------------------------------------------------------------------------
+var reader = io.BytesIO('hello world'.to_bytes(), 'r')
+assert reader.read(5).to_string() == 'hello', 'read(length) must return exactly that many bytes'
+assert reader.is_closed(), 'read() must auto-close the stream once it returns'
+ok('BytesIO.read() with an explicit length auto-closes')
+
+assert reader.read(1).to_string() == 'h', 'read() must transparently auto-reopen (and so restart from position 0) on a closed stream, not raise'
+ok('BytesIO.read() transparently auto-reopens on its next call')
+
+var reader2 = io.BytesIO('hello world'.to_bytes(), 'r')
+assert reader2.gets(5).to_string() == 'hello', 'gets(length) must read like read() but not auto-close'
+assert reader2.gets(6).to_string() == ' world', 'a second gets() must continue from where the first left off'
+ok('BytesIO.gets() reads without auto-closing')
+
+var reader3 = io.BytesIO('hello'.to_bytes(), 'r')
+assert reader3.read().to_string() == 'hello', 'read() with no length must read to the end of the stream'
+ok('BytesIO.read() with no length reads to the end')
+
+# ---------------------------------------------------------------------------
+# Writing
+# ---------------------------------------------------------------------------
+var writer = io.BytesIO(bytes(0), 'w+')
+assert writer.write('hello ') == 6, 'write() must return the number of bytes written'
+writer.write('world')
+assert writer.source.to_string() == 'hello world', 'successive write() calls must append to the source'
+ok('BytesIO.write() appends and reports byte count')
+
+var writer2 = io.BytesIO(bytes(0), 'w+')
+writer2.puts('a')
+writer2.puts('b')
+assert writer2.source.to_string() == 'ab', 'puts() must write like write() but never auto-close'
+ok('BytesIO.puts() writes without auto-closing')
+
+assert raises(@() { io.BytesIO('x'.to_bytes(), 'r').write('y') }),
+  'writing to a read-only BytesIO must raise'
+ok('BytesIO enforces its declared mode')
+
+# ---------------------------------------------------------------------------
+# Seek/tell
+# ---------------------------------------------------------------------------
+var seeker = io.BytesIO('0123456789'.to_bytes(), 'r+')
+seeker.seek(3, io.SEEK_SET)
+assert seeker.tell() == 3, 'SEEK_SET must set the absolute position'
+seeker.seek(2, io.SEEK_CUR)
+assert seeker.tell() == 5, 'SEEK_CUR must seek relative to the current position'
+seeker.seek(2, io.SEEK_END)
+assert seeker.tell() == 8, 'SEEK_END must seek relative to the end of the stream'
+assert raises(@() { seeker.seek(0, 99) }), 'an out-of-range seek_type must raise'
+ok('BytesIO.seek()/tell() with all three seek types')
+
+# ---------------------------------------------------------------------------
+# Lifecycle, cloning, misc
+# ---------------------------------------------------------------------------
+var lifecycle = io.BytesIO('x'.to_bytes(), 'r')
+lifecycle.close()
+assert lifecycle.is_closed(), 'close() must flip is_closed() to true'
+lifecycle.open()
+assert lifecycle.is_open(), 'open() must reopen a closed BytesIO for further use'
+ok('BytesIO close()/open() lifecycle')
+
+var original = io.BytesIO('shared'.to_bytes(), 'r')
+var copy = original.copy()
+copy.gets(6)
+assert original.tell() == 0, 'copy() must clone the underlying source, not alias it'
+ok('BytesIO.copy() produces an independent clone')
+
+var stat_target = io.BytesIO('12345'.to_bytes(), 'r+')
+var stats = stat_target.stats()
+assert stats.size == 5, 'stats().size must reflect the source length'
+assert stats.is_readable and stats.is_writable, 'an "r+" BytesIO must report both readable and writable'
+ok('BytesIO.stats() reports size and access flags')
+
+assert io.BytesIO(bytes(0), 'r').symlink('x') == false, 'symlink() must always be false for a BytesIO'
+assert io.BytesIO(bytes(0), 'r').rename('x') == false, 'rename() must always be false for a BytesIO'
+assert io.BytesIO(bytes(0), 'r').chmod(0) == false, 'chmod() must always be false for a BytesIO'
+assert io.BytesIO(bytes(0), 'r').path() == '' and io.BytesIO(bytes(0), 'r').abs_path() == '',
+  'a BytesIO has no filesystem path'
+assert io.BytesIO(bytes(0), 'r').name() == '', 'a BytesIO has no name'
+ok('BytesIO filesystem-oriented methods are correctly stubbed out')
+
+var truncated = io.BytesIO('0123456789'.to_bytes(), 'r+')
+truncated.truncate(3)
+assert truncated.stats().size == 10, 'truncate() only affects the readable window, not the underlying source itself'
+ok('BytesIO.truncate()')
+
+var deleted = io.BytesIO('x'.to_bytes(), 'r')
+deleted.delete()
+assert deleted.is_closed(), 'delete() must close the BytesIO'
+assert raises(@() { deleted.gets(1) }), 'reading from a deleted BytesIO must raise'
+ok('BytesIO.delete() disables further use')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

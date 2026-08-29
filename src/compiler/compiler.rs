@@ -2427,8 +2427,10 @@ impl<'a> Compiler<'a> {
         self.free_regs_to(mark);
       },
       Stmt::Echo(value) => {
+        let mark = self.cur().next_reg;
         let reg = self.compile_expression(value);
         self.emit(Instr::Print { src: reg });
+        self.free_regs_to(mark);
       },
       Stmt::Block(statements) => {
         let mark = self.cur().next_reg;

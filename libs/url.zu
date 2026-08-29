@@ -1,19 +1,18 @@
 /**
  * @module url
  *
- * This module provides classes and functions for parsing and
- * processing URLs. This module supports username and passwords
- * in URLs in order to support an arbitrary number of RFC
- * combinations but this does not strictly conform to RFC1738.
+ * This module provides classes and functions for parsing,
+ * building, resolving and processing URLs (and URL-like
+ * identifiers, such as `mailto:` and `tel:` links) per [RFC
+ * 3986](https://tools.ietf.org/html/rfc3986).
  *
- * The scope of URL in this module have not been limited to HTTP
- * or any protocol for that matter. However, where deductible,
- * the module tries to conform to the most appropriate URL for
- * the specified scheme.
+ * The scope of this module is not limited to HTTP or any single
+ * scheme: it will happily parse `ftp://`, `ssh://`, `mailto:`,
+ * or any scheme it has never heard of, and only makes
+ * scheme-specific decisions (like a default port) where the
+ * scheme is one this module actually recognizes.
  *
- * Constructing a URL is vey simple. Here is an example.
- *
- * ### Example
+ * ### Constructing a URL
  *
  * ```zuri-repl
  * %> import url
@@ -22,18 +21,49 @@
  * 'https://example.com:9000'
  * ```
  *
- * What each function and class method does are easy to deduce
- * from their names.
+ * ### Parsing a URL
  *
- * For example, we can use the `parse()` function to convert a
- * URL string into a URL instance like below.
+ * The `parse()` function turns a URL string into a `Url`
+ * instance.
  *
  * ```zuri-repl
- * %> link = url.parse('https://example.com:9000')
+ * %> var link = url.parse('https://example.com:9000/path?q=1#frag')
  * %> link.scheme
  * 'https'
+ * %> link.host
+ * 'example.com'
  * %> link.port
- * '9000'
+ * 9000
+ * %> link.path
+ * '/path'
+ * %> link.query
+ * 'q=1'
+ * %> link.hash
+ * 'frag'
+ * ```
+ *
+ * ### Resolving relative URLs
+ *
+ * `resolve()` implements RFC 3986's relative-reference
+ * resolution algorithm, the same logic a browser uses to turn a
+ * relative `href` on a page into an absolute link.
+ *
+ * ```zuri-repl
+ * %> var base = url.parse('https://example.com/a/b/c')
+ * %> base.resolve('../d').to_string()
+ * 'https://example.com/a/d'
+ * ```
+ *
+ * ### Query strings
+ *
+ * `query_params()` decodes a URL's query string into a
+ * dictionary of `name -> [values]` (a name can legally appear
+ * more than once in a query string, so every value is always a
+ * list).
+ *
+ * ```zuri-repl
+ * %> url.parse('https://example.com?a=1&a=2&b=3').query_params()
+ * {a: [1, 2], b: [3]}
  * ```
  *
  * @copyright 2021, Richard Ore and Zuri contributors
@@ -43,7 +73,8 @@ import types
 
 
 /**
- * Error thrown when a url is malformed
+ * Raised by `parse()` when `strict` is `true` and the given
+ * string cannot be interpreted as a well-formed URL.
  */
 class UrlMalformedError < Error {
   /**
@@ -56,17 +87,28 @@ class UrlMalformedError < Error {
 }
 
 
-# a list of schemes that does not conform to the standard ://
-# after the scheme name in their urls
-var _SIMPLE_SCHEMES = [
-  'mailto', 'tel',  # lowercase
-  'MAILTO', 'TEL',  # uppercase
-]
+# Schemes that identify their content by an opaque string rather
+# than a `//`-prefixed authority (host/port/userinfo); e.g.
+# `mailto:a@b.com` has no host at all, unlike `https://a.b.com`.
+# Matched case-insensitively, so this only needs to list the
+# lowercase form.
+var _SIMPLE_SCHEMES = ['mailto', 'tel', 'sms', 'urn', 'data', 'geo']
+
+# The standard, well-known port for every scheme this module can
+# make a useful guess for. Consulted by `Url.default_port()`; a
+# scheme missing from here simply has no known default.
+var _DEFAULT_PORTS = {
+  ftp: 21, ssh: 22, telnet: 23, smtp: 25, dns: 53, gopher: 70,
+  http: 80, ws: 80, pop3: 110, imap: 143, ldap: 389, https: 443,
+  wss: 443, ftps: 990, imaps: 993, pop3s: 995, socks: 1080,
+  rtmp: 1935, mysql: 3306, postgres: 5432, postgresql: 5432,
+  redis: 6379, mongodb: 27017,
+}
 
 var _ipv6_regex = '/(?:^|(?<=\\s))(([0-9a-fA-F]{1,4}:)' +
   '{7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]' +
-  '{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]' + 
-  '{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]' + 
+  '{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]' +
+  '{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]' +
   '{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]' +
   '{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4})' +
   '{1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:)' +
@@ -74,12 +116,85 @@ var _ipv6_regex = '/(?:^|(?<=\\s))(([0-9a-fA-F]{1,4}:)' +
   '[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}' +
   '[0-9])\\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(?=\\s|$)/'
 
-var _url_punctuations_re = '/^[\-._~:\/?#\[\]@!$&\'()*+,;%=]/'
+var _ipv4_regex = '/^((25[0-5]|(2[0-4]|1[0-9]|[1-9]|)[0-9])(\\.(?!$)|$)){4}$/'
+
+# A valid RFC 3986 scheme: a letter, then any run of letters,
+# digits, `+`, `-`, or `.`.
+var _scheme_regex = '/^[a-zA-Z][a-zA-Z0-9+.-]*$/'
 
 
 /**
- * The Url class provides functionalities for parsing and
- * processing URLs.
+ * Removes `.` and `..` path segments from `path`, per [RFC 3986
+ * §5.2.4](https://tools.ietf.org/html/rfc3986#section-5.2.4).
+ * This is what keeps `resolve()` from leaking a base URL's
+ * discarded segments into its result, e.g. `/a/b/../c`
+ * normalizes to `/a/c`.
+ *
+ * @param string path
+ * @returns string
+ */
+def remove_dot_segments(path: string) {
+  var input = path
+  var output = []
+
+  while !input.is_empty() {
+    if input.starts_with('../') {
+      input = input[3,]
+    } else if input.starts_with('./') {
+      input = input[2,]
+    } else if input.starts_with('/./') {
+      input = '/' + input[3,]
+    } else if input == '/.' {
+      input = '/'
+    } else if input.starts_with('/../') {
+      input = '/' + input[4,]
+      if !output.is_empty() output.pop()
+    } else if input == '/..' {
+      input = '/'
+      if !output.is_empty() output.pop()
+    } else if input == '.' or input == '..' {
+      input = ''
+    } else {
+      var start = input.starts_with('/') ? 1 : 0
+      var next_slash = input.index_of('/', start)
+
+      if next_slash == -1 {
+        output.append(input)
+        input = ''
+      } else {
+        output.append(input[,next_slash])
+        input = input[next_slash,]
+      }
+    }
+  }
+
+  return ''.join(output)
+}
+
+
+# Index of the last occurrence of `needle` in `s`, or -1.
+# `string` only exposes a forward `index_of`, so a trailing
+# search is just a forward search that keeps overwriting its
+# answer.
+def _last_index_of(s, needle) {
+  var result = -1
+  var pos = 0
+
+  while true {
+    var found = s.index_of(needle, pos)
+    if found == -1 break
+    result = found
+    pos = found + 1
+  }
+
+  return result
+}
+
+
+/**
+ * The Url class represents a parsed (or hand-built) URL and
+ * provides methods for inspecting, normalizing, resolving and
+ * re-serializing it.
  *
  * @serializable
  * @printable
@@ -87,77 +202,75 @@ var _url_punctuations_re = '/^[\-._~:\/?#\[\]@!$&\'()*+,;%=]/'
 class Url {
 
   /**
-   * The url scheme e.g. http, https, ftp, tcp etc.
+   * The url scheme e.g. http, https, ftp, tcp etc. `nil` for a
+   * schemeless reference such as a bare path.
    */
   var scheme
 
   /**
-   * The host information contained in the url
+   * The host information contained in the url. For an IPv6
+   * literal this is the address itself, without the surrounding
+   * `[` `]` brackets (those are added back automatically by
+   * `to_string()` and `absolute_url()`).
    */
   var host
 
   /**
-   * The port information contained in the url whenever the url
-   * doesn't indicate, we try to make a best guess based on the
-   * scheme.
+   * The port contained in the url, as a number. `nil` when the
+   * url did not specify one; use `default_port()` or
+   * `effective_port()` to fall back to the scheme's standard
+   * port.
    */
   var port
 
   /**
-   * The path of the URL.
+   * The path of the URL. Always starts with `/` for a URL that
+   * has a host, and always has a value (`/` at minimum, see
+   * `empty_path`) once returned from `parse()`.
    * @default /
    */
   var path = '/'
 
   /**
-   * Hash information contained in the url and it's beginning is
-   * indicated by the hash (#) sign. This value is especially
-   * relevant to some http/https urls and are usually references
-   * to the content of the document at the given url
+   * The url's fragment/hash, without the leading `#`. `nil` if
+   * the url has none.
    */
   var hash
 
   /**
-   * Query/Search information contained in the url and it's
-   * beginning is indicated by the question (?) sign. This value
-   * is especially relevant to some http/https urls and are
-   * usually used to convey data to endpoint based on the GET
-   * method.
+   * The url's raw query string, without the leading `?`. `nil`
+   * if the url has none. See `query_params()` for a decoded,
+   * structured view of this value.
    */
   var query
 
   /**
-   * Username information for authentication are sometimes
-   * embedded in urls. When such information exist, this property
-   * holds the information
+   * The username portion of the url's userinfo, if any.
    */
   var username
 
   /**
-   * Password information for authentication are sometimes
-   * embedded in urls. When such information exist, this property
-   * holds the information
+   * The password portion of the url's userinfo, if any.
    */
   var password
 
   /**
-   * `true` if the url contains the :// section. `false`
-   * otherwise.
+   * `true` if the url contains the `://` (or bare `//`)
+   * authority marker. `false` otherwise.
    */
   var has_slash = false
 
   /**
-   * `true` if the original url contains a path segment even if
-   * its just an `/` and false if the path value of `/` was
-   * implied.
-   * @type bool
+   * `true` if `path` is `/` only because no path was actually
+   * present in the original url (it was implied); `false` if the
+   * original url really did contain that `/`.
    */
   var empty_path = false
 
   /**
    * @param ?string scheme
    * @param ?string host
-   * @param ?string port
+   * @param ?number port
    * @param ?string path
    * @param ?string query
    * @param ?string hash
@@ -168,22 +281,37 @@ class Url {
    * @constructor
    */
   @new(
-    scheme: ?string, host: ?string, port: ?string, path: ?int|string, query: ?string,
-    hash: ?string, username: ?string, password: ?string, has_slash: ?bool, empty_path: ?bool
+    scheme: ?string,
+    host: ?string,
+    port: ?number,
+    path: ?string,
+    query: ?string,
+    hash: ?string,
+    username: ?string,
+    password: ?string,
+    has_slash: ?bool,
+    empty_path: ?bool
   ) {
-    if is_number(port)
-      port = to_string(port)
-
     self.scheme = scheme
     self.host = host
     self.port = port
-    self.path = path
     self.query = query
     self.hash = hash
     self.username = username
     self.password = password
-    self.has_slash = has_slash
-    self.empty_path = empty_path
+    self.has_slash = has_slash == nil ? false : has_slash
+
+    # a caller who leaves `path` unset never actually had one,
+    # same as `parse()` finding none; default `empty_path` to
+    # `true` in that case rather than requiring both arguments to
+    # be passed together
+    if path == nil {
+      self.path = '/'
+      self.empty_path = empty_path == nil ? true : empty_path
+    } else {
+      self.path = path
+      self.empty_path = empty_path == nil ? false : empty_path
+    }
   }
 
   /**
@@ -192,9 +320,196 @@ class Url {
    */
   clone() {
     return Url(
-      self.scheme, self.host, self.port, self.path, self.query,
-      self.hash, self.username, self.password, self.has_slash, self.empty_path
+      self.scheme,
+      self.host,
+      self.port,
+      self.path,
+      self.query,
+      self.hash,
+      self.username,
+      self.password,
+      self.has_slash,
+      self.empty_path
     )
+  }
+
+  /**
+   * Returns `true` if the url is absolute (has a scheme),
+   * `false` if it is a relative reference (e.g. a bare path).
+   *
+   * @returns bool
+   */
+  is_absolute() {
+    return self.scheme != nil and !self.scheme.is_empty()
+  }
+
+  /**
+   * Returns the standard, well-known port for the url's scheme
+   * (e.g. `80` for `http`, `443` for `https`), or `nil` if the
+   * scheme is unset or not one this module recognizes.
+   *
+   * @returns ?number
+   */
+  default_port() {
+    if !self.scheme return nil
+    var key = self.scheme.lower()
+    if _DEFAULT_PORTS.contains(key) return _DEFAULT_PORTS[key]
+    return nil
+  }
+
+  /**
+   * Returns `port` if the url specifies one, otherwise falls
+   * back to `default_port()`.
+   *
+   * @returns ?number
+   */
+  effective_port() {
+    return self.port != nil ? self.port : self.default_port()
+  }
+
+  /**
+   * Decodes the url's query string into a dictionary mapping
+   * each parameter name to a list of its values, since a query
+   * string can legally repeat the same name more than once. A
+   * name with no `=` (e.g. `?flag`) decodes to a single
+   * empty-string value.
+   *
+   * ```zuri-repl
+   * %> url.parse('https://example.com?a=1&a=2&b=3').query_params()
+   * {a: [1, 2], b: [3]}
+   * ```
+   *
+   * @returns dict
+   */
+  query_params() {
+    var result = {}
+    if !self.query or self.query.is_empty() return result
+
+    for pair in self.query.split('&') {
+      if pair.is_empty() continue
+
+      var eq = pair.index_of('=')
+      var key, value
+
+      if eq == -1 {
+        key = decode(pair)
+        value = ''
+      } else {
+        key = decode(pair[,eq])
+        value = decode(pair[eq + 1,])
+      }
+
+      if result.contains(key) {
+        result[key].append(value)
+      } else {
+        result.add(key, [value])
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Returns the first value of query parameter _name_, or
+   * _fallback_ if it isn't present. A convenience shortcut over
+   * `query_params()` for the common case of a parameter that
+   * only appears once.
+   *
+   * @param string name
+   * @param any fallback: Default value is `nil`.
+   * @returns any
+   */
+  get_param(name: string, fallback: any) {
+    var params = self.query_params()
+    if params.contains(name) and !params[name].is_empty() {
+      return params[name][0]
+    }
+    return fallback
+  }
+
+  /**
+   * Returns a new url with `.` and `..` path segments resolved
+   * away, per RFC 3986 §5.2.4. Every other field is left
+   * untouched.
+   *
+   * ```zuri-repl
+   * %> url.parse('https://example.com/a/b/../c').normalize().path
+   * '/a/c'
+   * ```
+   *
+   * @returns Url
+   */
+  normalize() {
+    var result = self.clone()
+    result.path = remove_dot_segments(result.path)
+    return result
+  }
+
+  /**
+   * Resolves _reference_ (a relative or absolute url string, or
+   * another `Url` instance) against this url as a base, per [RFC
+   * 3986 §5](https://tools.ietf.org/html/rfc3986#section-5), the
+   * same algorithm a browser uses to turn a page's relative
+   * `href`s into absolute links.
+   *
+   * ```zuri-repl
+   * %> var base = url.parse('https://example.com/a/b/c')
+   * %> base.resolve('../d').to_string()
+   * 'https://example.com/a/d'
+   * %> base.resolve('/x/y').to_string()
+   * 'https://example.com/x/y'
+   * %> base.resolve('?q=1').to_string()
+   * 'https://example.com/a/b/c?q=1'
+   * ```
+   *
+   * @param string|Url reference
+   * @returns Url
+   */
+  resolve(reference) {
+    var ref = is_string(reference) ? parse(reference) : reference
+
+    if ref.is_absolute() {
+      var result = ref.clone()
+      result.path = remove_dot_segments(result.path)
+      return result
+    }
+
+    var result = Url()
+    result.scheme = self.scheme
+
+    if ref.host {
+      result.username = ref.username
+      result.password = ref.password
+      result.host = ref.host
+      result.port = ref.port
+      result.has_slash = true
+      result.path = remove_dot_segments(ref.path)
+      result.empty_path = ref.empty_path
+      result.query = ref.query
+    } else {
+      result.username = self.username
+      result.password = self.password
+      result.host = self.host
+      result.port = self.port
+      result.has_slash = self.has_slash
+
+      if ref.empty_path {
+        result.path = self.path
+        result.empty_path = self.empty_path
+        result.query = ref.query != nil ? ref.query : self.query
+      } else if ref.path.starts_with('/') {
+        result.path = remove_dot_segments(ref.path)
+        result.empty_path = false
+        result.query = ref.query
+      } else {
+        result.path = remove_dot_segments(_merge_paths(self, ref.path))
+        result.empty_path = false
+        result.query = ref.query
+      }
+    }
+
+    result.hash = ref.hash
+    return result
   }
 
   /**
@@ -205,32 +520,49 @@ class Url {
    * ("?"), or number sign ("#") character, or by the end of the
    * URI.
    *
-   * @note mailto scheme does not have an authority. For this
-   *    reason, mailto schemes return an empty string as
-   *    authority.
+   * @note mailto and other opaque schemes have no authority. For
+   *    this reason, they return an empty string as authority.
    * @returns string
    */
   authority() {
-    if !_SIMPLE_SCHEMES.contains(self.scheme) {
-      var authority = ''
-
-      # some schemes do not allow the userinfo and/or port subcomponents
-      # RFC 3986 [Page 17]
-      if self.username {
-        authority += '${self.username}:'
-
-        if self.password authority += self.password
-        authority += '@'
-      }
-      authority += self.host
-
-      # URI producers and normalizers should omit the ":" delimiter that
-      # separates host from port if the port component is empty
-      if self.port and self.port > 0 authority += ':${self.port}'
-
-      return authority
+    if self.scheme and _SIMPLE_SCHEMES.contains(self.scheme.lower()) {
+      return ''
     }
-    return ''
+
+    var authority = ''
+
+    # some schemes do not allow the userinfo and/or port
+    # subcomponents; RFC 3986 [Page 17]
+    if self.username {
+      authority += '${self.username}:'
+
+      if self.password authority += self.password
+      authority += '@'
+    }
+
+    authority += self.host_for_display()
+
+    # URI producers and normalizers should omit the ":"
+    # delimiter that separates host from port if the port
+    # component is empty
+    if self.port and self.port > 0 authority += ':${self.port}'
+
+    return authority
+  }
+
+  /**
+   * Returns `host`, wrapped in `[` `]` brackets when it looks
+   * like an IPv6 literal, matching how it must appear when
+   * embedded back into a url string. Plain hostnames and IPv4
+   * addresses are returned as-is.
+   *
+   * @returns string
+   */
+  host_for_display() {
+    if self.host and self.host.index_of(':') != -1 {
+      return '[' + self.host + ']'
+    }
+    return self.host or ''
   }
 
   /**
@@ -241,7 +573,7 @@ class Url {
    */
   host_is_ipv4() {
     if self.host {
-      return self.host.match('/^((25[0-5]|(2[0-4]|1[0-9]|[1-9]|)[0-9])(\\.(?!$)|$)){4}$/')
+      return self.host.match(_ipv4_regex) != false
     }
     return false
   }
@@ -255,7 +587,7 @@ class Url {
   host_is_ipv6() {
     if self.host {
       var matched = self.host.match(_ipv6_regex)
-      return matched and matched.length() > 0
+      return matched != false
     }
     return false
   }
@@ -266,9 +598,10 @@ class Url {
    * @returns string
    */
   absolute_url() {
-    var url = '${self.scheme}:'
+    var url = self.scheme ? '${self.scheme}:' : ''
 
-    if !_SIMPLE_SCHEMES.contains(self.scheme) or self.has_slash {
+    var is_simple = self.scheme and _SIMPLE_SCHEMES.contains(self.scheme.lower())
+    if !is_simple or self.has_slash {
       url += '//'
     }
 
@@ -281,23 +614,19 @@ class Url {
       url += '@'
     }
 
-    url += self.host
+    url += self.host_for_display()
 
     if self.port {
       url += ':${self.port}'
     }
-    if self.path {
-      if self.path == '/' and _SIMPLE_SCHEMES.contains(self.scheme) {
-        # do nothing...
-      } else {
-        url += self.path
-      }
-    }
-    if self.hash {
-      url += '#${self.hash}'
+    if self.path and !self.empty_path {
+      url += self.path
     }
     if self.query {
       url += '?${self.query}'
+    }
+    if self.hash {
+      url += '#${self.hash}'
     }
 
     return url
@@ -312,11 +641,11 @@ class Url {
    */
   to_string() {
     var result = ''
-    var has_colon = _SIMPLE_SCHEMES.contains(self.scheme.lower())
+    var has_colon = self.scheme and _SIMPLE_SCHEMES.contains(self.scheme.lower())
 
     result += self.scheme or ''
     result += self.has_slash ? '://' : (has_colon ? ':' : '')
-    
+
     if self.username {
       result += self.username
       result += self.password ? ':' + self.password : ''
@@ -325,20 +654,10 @@ class Url {
       }
     }
 
-    if self.host and self.host.index_of(':') != -1 {
-      # ipv6 address
-      result += '[' + self.host + ']'
-    } else {
-      result += self.host or ''
-    }
-
-    result += self.port ? ':' + self.port : ''
+    result += self.host_for_display()
+    result += self.port ? ':' + self.port.to_string() : ''
     result += self.path and !self.empty_path ? self.path : ''
-
-    if self.query {
-      result += self.query ? '?' + self.query : ''
-    }
-
+    result += self.query ? '?' + self.query : ''
     result += self.hash ? '#' + self.hash : ''
 
     return result
@@ -362,16 +681,52 @@ class Url {
       empty_path: self.empty_path,
     }
   }
+
+  /**
+   * Returns `true` if _other_ is a `Url` whose string form is
+   * identical to this one's. Note that `==` does not call this:
+   * it always falls back to identity comparison for instances,
+   * so use `a.equals(b)` rather than `a == b` to compare two
+   * urls by value.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, Url) return false
+    return self.to_string() == other.to_string()
+  }
 }
 
 
+/**
+ * Per RFC 3986 §5.3: merges `base`'s path with a
+ * relative-reference path `ref_path`, replacing everything after
+ * `base`'s last `/` with `ref_path`. Used internally by
+ * `Url.resolve()`.
+ */
+def _merge_paths(base, ref_path) {
+  if base.host and (!base.path or base.path.is_empty()) {
+    return '/' + ref_path
+  }
+
+  var last_slash = _last_index_of(base.path, '/')
+  if last_slash == -1 {
+    return ref_path
+  }
+  return base.path[,last_slash + 1] + ref_path
+}
+
 
 /**
- * URL-encodes a string
+ * URL-encodes a string.
  *
  * This function is convenient when encoding a string to be used
  * in a query part of a URL, as a convenient way to pass
- * variables to the next page.
+ * variables to the next page. Every byte of the string's UTF-8
+ * encoding that isn't one of the reserved/unreserved characters
+ * defined by RFC 3986 is percent-encoded, so this is safe to use
+ * on text containing multi-byte characters.
  *
  * If strict mode is enabled, space character is encoded with the
  * percent (%) sign in order to conform with RFC 3986. Otherwise,
@@ -384,11 +739,15 @@ class Url {
  */
 def encode(url: string, strict: ?bool) {
   var result = ''
-  url.ascii(true)
+  var bytes = url.ascii()
 
-  for c in url {
-    # keep alphanumeric and other accepted characters intact
-    if ';/:@&$,#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789*-_.~()%'.index_of(c.upper()) != -1
+  for c in bytes {
+    # keep alphanumeric and other accepted characters intact.
+    # '%' is deliberately left off this list: always encoding it
+    # (to '%25') is what makes encode()/decode() a safe round
+    # trip for arbitrary text, even text that itself contains a
+    # literal '%'.
+    if ';/:@&$,#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789*-_.~()'.index_of(c.upper()) != -1
       result += c
     # when in strict mode
     else if strict and '=?'.index_of(c) != -1
@@ -397,7 +756,7 @@ def encode(url: string, strict: ?bool) {
     else if !strict and c == ' ' result += '+'
     # encode all other characters
     else {
-      result += '%${c.ord().hex()}'.upper()
+      result += '%' + c.ord().hex().upper().lpad(2, '0')
     }
   }
 
@@ -414,276 +773,308 @@ def encode(url: string, strict: ?bool) {
  */
 def decode(url: string) {
   # quick exit strategy
-  if url.index_of('%') == -1
+  if url.index_of('%') == -1 and url.index_of('+') == -1
     return url
 
   var lookup_table = '0123456789abcdef'
-
-  var result = ''
+  var result = bytes([])
 
   iter var i = 0; i < url.length(); i++ {
     if url[i] == '%' {
       # decode percent-encoded data here
+      if i + 2 >= url.length()
+        raise UrlMalformedError('incomplete percent-encoding at end of string')
+
       var hexdata = url[i+1, i+3].lower()
+      var hi = lookup_table.index_of(hexdata[0])
+      var lo = lookup_table.index_of(hexdata[1])
 
-      if hexdata.length() != 2 
-        raise UrlMalformedError('bad encoding')
+      if hi == -1 or lo == -1
+        raise UrlMalformedError('invalid percent-encoding "%${hexdata}"')
 
-      result += ((lookup_table.index_of(hexdata[0]) * 16) + lookup_table.index_of(hexdata[1])).chr()
+      result.append(hi * 16 + lo)
       i += 2
+    } else if url[i] == '+' {
+      result.append(32) # space
+    } else {
+      result.extend(url[i].to_bytes())
     }
-    
-    # + should be converted to space as most browsers
-    # will encode space to + (non-strict Url.decode mode)
-    # else if url[i] == '+' result += ' '
-    else result += url[i]
   }
 
-  return result
+  return result.to_string()
+}
+
+/**
+ * Decodes a raw query string (without a leading `?`) into a
+ * dictionary mapping each parameter name to a list of its
+ * values. Equivalent to `parse('?' + query).query_params()`, but
+ * usable directly on a query string with no surrounding url.
+ *
+ * ```zuri-repl
+ * %> url.parse_query('a=1&a=2&b=3')
+ * {a: [1, 2], b: [3]}
+ * ```
+ *
+ * @param string query
+ * @returns dict
+ */
+def parse_query(query: string) {
+  var link = Url()
+  link.query = query
+  return link.query_params()
+}
+
+/**
+ * Returns `true` if `scheme` (case-insensitively) allows the
+ * `://` authority form directly; `false` for opaque schemes such
+ * as `mailto` or `tel` that address their content by an opaque
+ * string instead of a host.
+ *
+ * @param string scheme
+ * @returns bool
+ */
+def has_authority(scheme: string) {
+  return !_SIMPLE_SCHEMES.contains(scheme.lower())
+}
+
+/**
+ * Returns the index right after a leading scheme's `:` in `s`,
+ * or `-1` if `s` does not start with a recognizable scheme. A
+ * bare `host:port` (e.g. `localhost:8080`) is deliberately not
+ * treated as having a scheme, distinguishing it from something
+ * like `mailto:` or `urn:isbn:0451450523`.
+ *
+ * @throws {UrlMalformedError} if `strict` is `true` and `s`
+ *    starts with what is clearly an attempted scheme (a colon
+ *    before any `/`) whose characters do not form a valid one,
+ *    e.g. `ht!tp:`.
+ */
+def _scheme_end(s, strict) {
+  var colon = s.index_of(':')
+  if colon <= 0 return -1
+
+  var candidate = s[,colon]
+  # a '/' before the colon means this was never a scheme
+  # attempt at all, e.g. a relative path segment that just
+  # happens to contain a colon further along
+  if candidate.index_of('/') != -1 return -1
+
+  if !candidate.match(_scheme_regex) {
+    if strict raise UrlMalformedError('invalid scheme "${candidate}"')
+    return -1
+  }
+
+  var rest = s[colon + 1,]
+  if rest.starts_with('//') return colon + 1
+  if _SIMPLE_SCHEMES.contains(candidate.lower()) return colon + 1
+
+  # `host:port` always has an all-digit port up to the next
+  # delimiter (or the end of the string); a real scheme's content
+  # almost never does, so use that to disambiguate.
+  var digits_end = 0
+  while digits_end < rest.length() and types.digit(rest[digits_end]) digits_end++
+
+  if digits_end > 0 and (digits_end == rest.length() or '/?#'.index_of(rest[digits_end]) != -1) {
+    return -1
+  }
+
+  return colon + 1
+}
+
+/**
+ * Returns `true` if `s` (an authority candidate, which may still
+ * carry a trailing `:port`) looks enough like a hostname
+ * (contains a dot, is `localhost`, or is a bracketed IPv6
+ * literal) that a schemeless, authority-less input such as
+ * `example.com/path` should be treated as an implicit
+ * `http://example.com/path` rather than as a bare relative path.
+ * Empty input, and a relative-path segment like `.` or `..`,
+ * never count as a host.
+ */
+def _looks_like_host(s) {
+  if s.is_empty() or s.starts_with('.') return false
+  if s.starts_with('[') return true
+
+  var host_part = s.split(':')[0]
+  return host_part.contains('.') or host_part == 'localhost'
+}
+
+/**
+ * Parses an authority component (`user:pass@host:port`) already
+ * stripped of its own leading `//`, returning `[username,
+ * password, host, port]` (each possibly `nil`).
+ */
+def _parse_authority(authority: string, strict: bool) {
+  var username, password, host, port
+  var rest = authority
+
+  var at = rest.index_of('@')
+  if at != -1 {
+    var userinfo = rest[,at]
+    rest = rest[at + 1,]
+
+    var colon = userinfo.index_of(':')
+    if colon != -1 {
+      username = userinfo[,colon]
+      password = userinfo[colon + 1,]
+    } else {
+      username = userinfo
+    }
+  }
+
+  if rest.starts_with('[') {
+    var close = rest.index_of(']')
+    if close == -1 {
+      if strict raise UrlMalformedError('unterminated IPv6 literal in host')
+      host = rest[1,]
+    } else {
+      host = rest[1, close]
+      rest = rest[close + 1,]
+      if rest.starts_with(':') {
+        var port_str = rest[1,]
+        if strict and !port_str.is_empty() and !port_str.match('/^[0-9]+$/')
+          raise UrlMalformedError('invalid port')
+        if !port_str.is_empty() port = port_str.to_number()
+      }
+    }
+  } else {
+    var colon = rest.index_of(':')
+    if colon != -1 {
+      host = rest[,colon]
+      var port_str = rest[colon + 1,]
+      if strict and !port_str.is_empty() and !port_str.match('/^[0-9]+$/')
+        raise UrlMalformedError('invalid port')
+      if !port_str.is_empty() port = port_str.to_number()
+    } else {
+      host = rest
+    }
+  }
+
+  return [username, password, host, port]
 }
 
 /**
  * Parses given url string into a Url object. If the strict
- * argument is set to `true`, the parser will raise an Error when
- * it encounters a malformed url.
+ * argument is set to `true`, the parser will raise an
+ * `UrlMalformedError` when it encounters a malformed url;
+ * otherwise it makes a best effort and leaves whatever it
+ * couldn't confidently parse as `nil`.
  *
  * @param string url
  * @param ?bool strict: Default value is `false`
  * @returns Url
+ * @throws {UrlMalformedError} if `strict` is `true` and the url
+ *    is malformed.
  */
 def parse(url: string, strict: ?bool) {
-  if strict == nil strict = true
-  url = url.trim() # support urls surrounded by whitespaces
+  if strict == nil strict = false
 
-  var scheme = '', host = '', port, path = '', query, hash, username, password
-  var skip_scheme = false, has_slash = false, empty_path = false
+  var scheme, host, port, path, query, hash, username, password
+  var has_slash = false, empty_path = false
 
-  # following that most urls written without indicating the scheme
-  # are usually http urls, default url scheme to http if none was given
-  # do not do this only when the scheme is mailto:
-  if url.index_of('://') < 0 {
-    var match_found = false
-    for sc in _SIMPLE_SCHEMES {
-      if url.starts_with(sc) {
-        match_found = true
-        break
-      }
-    }
+  var rest = url.trim() # support urls surrounded by whitespaces
 
-    if !match_found {
-      # set temporary host value so that we don't have to scan for the 
-      # host anymore.
-      if url.trim().starts_with('/') {
-        host = ' '
-      }
-
-      url = url.ltrim('/')
-      scheme = 'http'
-      skip_scheme = true
-    }
+  if rest.is_empty() {
+    if strict raise UrlMalformedError('cannot parse an empty url')
+    return Url(nil, nil, nil, '/', nil, nil, nil, nil, false, true)
   }
 
-  # query/search and hash entries tracker
-  var query_starts = false
-  var hash_starts = false
+  # fragment is always the outermost/last component
+  var hash_idx = rest.index_of('#')
+  if hash_idx != -1 {
+    hash = rest[hash_idx + 1,]
+    rest = rest[,hash_idx]
+  }
 
-  iter var i = 0; i < url.length(); i++ {
+  # then the query
+  var query_idx = rest.index_of('?')
+  if query_idx != -1 {
+    query = rest[query_idx + 1,]
+    rest = rest[,query_idx]
+  }
 
-    # simple anonymous function to scan port
-    var _scan_port = @{
-        var _port = ''
-        i++
-        while i < url.length() and types.digit(url[i]) { # id_digit
-          _port += url[i]
-          i++
-        }
-        port = to_number(_port)
+  # then the scheme
+  var scheme_end = _scheme_end(rest, strict)
+  if scheme_end != -1 {
+    scheme = rest[,scheme_end - 1].lower()
+
+    if strict {
+      var starts_with_slashes = rest[scheme_end,].starts_with('//')
+      if has_authority(scheme) and !starts_with_slashes {
+        raise UrlMalformedError('scheme "${scheme}" requires "://" before its authority')
+      } else if !has_authority(scheme) and starts_with_slashes {
+        raise UrlMalformedError('scheme "${scheme}" does not support an authority')
+      }
     }
 
-    if url[i] == ':' {
-      if !scheme {
-        # scan the scheme
-        scheme = url[0, i]
+    rest = rest[scheme_end,]
+  }
 
-        # skipping // if scheme is nota simple scheme that does not use the //
-        if !_SIMPLE_SCHEMES.contains(scheme) {
-          # if the // is missing, it's a malformed url
-          if url[i,i+3] != '://' {
-            if strict 
-              raise UrlMalformedError('expected // at index ${i}')
-            else 
-              break
-          }
-          i += 2
-          if !skip_scheme has_slash = true
-        }
+  # then the authority, if this looks like one (works whether or
+  # not a scheme was found, so both 'https://host' and a bare
+  # '//host' protocol-relative reference take this same path)
+  if rest.starts_with('//') {
+    has_slash = true
+    rest = rest[2,]
 
-        # Scheme names consist of a sequence of characters beginning with a
-        # letter and followed by any combination of letters, digits, plus
-        # ("+"), period ("."), or hyphen ("-").  Although schemes are case-
-        # insensitive, the canonical form is lowercase and documents that
-        # specify schemes must do so with lowercase letters.  An implementation
-        # should accept uppercase letters as equivalent to lowercase in scheme
-        # names (e.g., allow "HTTP" as well as "http") for the sake of robustness.
-        # https://tools.ietf.org/html/rfc3986#section-3.1
-        if !scheme.match('/(?:^|[^a-z0-9.+-])([a-z][a-z0-9.+-]*)$/i') {
-          if strict 
-            raise UrlMalformedError('invalid scheme')
-          else 
-            break
-        }
-      } else if !port {
-        # scan the port number
-        _scan_port()
-      }
-    } else if !host and scheme {
-      if i < url.length() and url[i] == '/' {
-        path = '/'
-        continue
-      }
+    var slash_idx = rest.index_of('/')
+    var authority = slash_idx == -1 ? rest : rest[,slash_idx]
+    rest = slash_idx == -1 ? '' : rest[slash_idx,]
 
-      # scan the host
-      while i < url.length() and (types.digit(url[i]) or types.alpha(url[i]) or 
-          url[i] == '.' or url[i] == '@' or url[i] == '-' or url[i] == '_' or url[i] == '+') {
-        host += url[i]
-        i++
-      }
+    var parsed = _parse_authority(authority, strict)
+    username = parsed[0]
+    password = parsed[1]
+    host = parsed[2]
+    port = parsed[3]
+  } else if !scheme {
+    # schemeless, authority-less input: this module's historical
+    # convention is to treat "example.com/path" the way a
+    # browser address bar would, as an implicit
+    # http://example.com/path, but only when the leading segment
+    # actually looks like a host, so a plain relative path like
+    # "foo/bar" is left alone.
+    if !rest.starts_with('/') {
+      var slash_idx = rest.index_of('/')
+      var candidate = slash_idx == -1 ? rest : rest[,slash_idx]
 
-      if i < url.length() - 1 and url[i] == ':' {
-        if url.length() - 1 > i and (types.alpha(url[i + 1]) or url[i + 1] == '@') {
-          # username password combo encountered...
-          username = host
-          host = '' # we'll need to rescan for the host later...
+      if _looks_like_host(candidate) {
+        scheme = 'http'
+        has_slash = true
+        rest = slash_idx == -1 ? '' : rest[slash_idx,]
 
-          password = ''
-
-          if url[i + 1] != '@' {
-            password = ''
-            i++
-
-            while i < url.length() and url[i] != '@' {
-              password += url[i]
-              i++
-            }
-
-            if url.length() == i {
-              # we read the entire url without a terminating @ sign...
-              # something is wrong with this url and the url is definitely
-              # malformed...
-              if strict 
-                raise UrlMalformedError('url not complete')
-              else 
-                break
-            }
-
-            # we need to go back to @ to let host be scanned completely
-            # at the next iteration because we are now on the first
-            # character of the host segment
-            i--
-          }
-        }
-        _scan_port()
-      }
-
-      # check if the host contains username data
-      # e.g. mailto:username@example.com
-      if host and host.index_of('@') > -1 {
-        var _ = host.split('@')
-        username = _[0]
-        host = _[1]
-      }
-
-      if i == url.length() - 1 and url[i] != '?' and url[i] != '#' {
-        host += url[i]
-      }
-
-      # we'll need to backtrack a a step to actually detect the next query and hash correctly.
-      if i > 0 and i < url.length() and url[i].match(_url_punctuations_re) {
-        i--
-      }
-
-      if host.ends_with('/') {
-        host = host[,-1]
-      }
-    } else if path == '' and host {
-      # scan the address
-
-      # the path is terminated by the first question mark ("?") or 
-      # number sign ("#") character, or by the end of the URI
-      while i < url.length() and url[i] != '?' and url[i] != '#' {
-        path += url[i]
-        i++
-      }
-
-      if path == '' {
-        path = '/'
-        empty_path = true
-      }
-
-      # the path cannot begin with two slash characters
-      # https://tools.ietf.org/html/rfc3986#section-3.3
-      if path.starts_with('//') {
-        if strict 
-          raise UrlMalformedError('invalid path')
-        else 
-          break
-      }
-
-      # what should we parse next
-      query_starts = i < url.length() and url[i] == '?'
-      hash_starts = i < url.length() and url[i] == '#'
-
-      if !path.starts_with('/') and !path.starts_with('.') {
-        # if we haven't scanned everything in which case we'll take our path as is.
-        # path = host.trim() + path
-        # host = ''
-        if !path.matches(_url_punctuations_re) {
-          path = '/' + path
-        }
-      }
-    } else if query_starts {
-
-      if hash_starts {
-        # this is an edge-case where we have the url hash coming
-        # before the url query segment.
-        # while this may be allowed by specific implementations,
-        # but RFC 3986 doesn't allow this.
-        # for this library, we are going strictly RFC 3986
-        # https://tools.ietf.org/html/rfc3986#section-3.4
-        if strict 
-          raise UrlMalformedError('query not allowed at index ${i}')
-        else 
-          break
-      }
-
-      # scan the query
-      # the query is always the last part of a url
-      query = ''
-      while i < url.length() and url[i] != '#' {
-        query += url[i]
-        i++
-      }
-
-      # reset for some abnormal urls that may be correct in users implementation
-      query_starts = false
-
-      hash_starts = i < url.length() and url[i] == '#'
-    } else if hash_starts {
-      # scan the hash
-      hash = ''
-
-      # we are still checking for the ? character
-      # this ensures we don't erroneously
-      while i < url.length() {
-        hash += url[i]
-        i++
+        var parsed = _parse_authority(candidate, strict)
+        username = parsed[0]
+        password = parsed[1]
+        host = parsed[2]
+        port = parsed[3]
       }
     }
   }
 
-  # reset scheme if it never existed in the original link
-  if skip_scheme scheme = ''
+  # whatever remains is the path (or, for an opaque scheme like
+  # mailto:, the opaque data, stored as the path for consistency,
+  # e.g. mailto:a@b.com has path 'a@b.com')
+  if rest.is_empty() {
+    path = '/'
+    empty_path = true
+  } else {
+    var is_simple = scheme and _SIMPLE_SCHEMES.contains(scheme.lower())
+    if !rest.starts_with('/') and !is_simple and host {
+      rest = '/' + rest
+    }
+    path = rest
+  }
 
-  # build a new Url instance and return
-  return Url(scheme, host.trim(), port, path, query, hash, username, password, has_slash, empty_path)
+  return Url(
+    scheme,
+    host,
+    port,
+    path,
+    query,
+    hash,
+    username,
+    password,
+    has_slash,
+    empty_path
+  )
 }

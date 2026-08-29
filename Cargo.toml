@@ -90,6 +90,14 @@ bytes = "1"
 # to aws_lc_rs so it isn't pulling in ring on top of everything else.
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 
+# --- io::TTY.getsize (src/modules/io.rs) -----------------------------------
+# The rest of io::TTY (raw mode, tcgetattr/tcsetattr) is genuinely termios-
+# only and has no Windows equivalent, but console size IS available there
+# via the Win32 console API, so that one function gets its own real
+# implementation instead of the same "not supported" stub as the others.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
+
 
 [build-dependencies]
 chrono = "0.4.45"

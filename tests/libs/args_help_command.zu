@@ -1,0 +1,10 @@
+# --help COMMAND calls os.exit(0), which terminates the process, so
+# this is spawned as a real subprocess from tests/libs/args.zu rather
+# than run in-process. No .out file on purpose — it's a helper, not a
+# fixture in its own right.
+import args
+
+var p = args.Parser('helpy', false)
+var cmd = p.add_command('run', 'Run it')
+cmd.add_option('fast', 'Go fast', {short_name: 'f'})
+p.parse(['--help', 'run'])

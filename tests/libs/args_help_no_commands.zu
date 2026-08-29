@@ -1,0 +1,8 @@
+# -h calls os.exit(0), which terminates the process, so this is spawned
+# as a real subprocess from tests/libs/args.zu rather than run in-process.
+# No .out file on purpose — it's a helper, not a fixture in its own right.
+import args
+
+var p = args.Parser('bare', false)
+p.add_option('x', 'X option', {short_name: 'x', type: args.STRING})
+p.parse(['-h'])

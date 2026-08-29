@@ -1,0 +1,84 @@
+/**
+ * test_io.zu
+ *
+ * Test suite for the core `io` standard library module surface: the
+ * standard stream handles and their `is_tty()`/`is_repl` status, the
+ * seek/capture constants, and the free functions (`flush`, `putc`,
+ * `getc`). `io.TTY` and `io.BytesIO` each get their own dedicated suite
+ * (see `io_tty.zu` and `io_bytesio.zu`).
+ */
+
+import io
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  io module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Standard streams
+# ---------------------------------------------------------------------------
+assert is_file(io.stdin) and is_file(io.stdout) and is_file(io.stderr),
+  'stdin, stdout, and stderr must all be real file handles'
+ok('stdin/stdout/stderr are file handles')
+
+assert io.is_repl == false, 'this test always runs as a script, never inside the REPL'
+ok('is_repl reflects the current execution mode')
+
+assert !io.stdout.is_tty(), 'stdout in this harness is always a captured pipe, never a real terminal'
+assert !io.stderr.is_tty(), 'stderr in this harness is always a captured pipe, never a real terminal'
+ok('is_tty() correctly reports false for a non-tty stream')
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+assert io.SEEK_SET == 0 and io.SEEK_CUR == 1 and io.SEEK_END == 2,
+  'the seek constants must match the conventional SEEK_SET/SEEK_CUR/SEEK_END values'
+assert io.CAPTURE_STDOUT == 0 and io.CAPTURE_STDERR == 1, 'the capture constants must be distinct'
+ok('SEEK_*/CAPTURE_* constants')
+
+# ---------------------------------------------------------------------------
+# Free functions
+# ---------------------------------------------------------------------------
+io.flush(io.stdout)
+ok('flush() succeeds on a real file handle')
+
+assert raises(@() { io.flush(io.BytesIO(bytes(0), 'r')) }), 'flush() must reject a non-file argument (BytesIO is not is_file())'
+assert raises(@() { io.flush('not a file') }), 'flush() must reject a plain string argument'
+ok('flush() validates its argument')
+
+assert raises(@() { io.putc(-1) }), 'putc() must reject a character code below 0'
+assert raises(@() { io.putc(256) }), 'putc() must reject a character code above 255'
+assert raises(@() { io.putc('ab') }), 'putc() must reject a multi-character string'
+assert raises(@() { io.putc([]) }), 'putc() must reject a non-string, non-number argument'
+ok('putc() validates its argument before writing anything')
+
+assert raises(@() { io.getc(-1) }), 'getc() must reject a negative length before touching stdin'
+assert raises(@() { io.getc('x') }), 'getc() must reject a non-numeric length before touching stdin'
+ok('getc() validates its argument before touching stdin')
+
+# getch() and readline() both perform a real blocking read from stdin with
+# no argument validation to exercise safely in an automated, non-tty
+# environment, so they're intentionally not called here.
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -120,17 +120,15 @@ var background = {
 }
 
 def _get_sequence(v, bg) {
-  if v or bg {
-    if v {
-      v = v.to_string().lpad(2, '0')
-    }
-    if bg {
-      bg = bg.to_string().lpad(2, '0')
-    }
+  # `v == 0` (ANSI reset) is a real, present value, not an absent
+  # one, so this checks for `nil` explicitly rather than truthiness;
+  # `0 or bg` would treat a reset code the same as "nothing given".
+  if v == nil and bg == nil return nil
 
-    return '\x1b[${v ? v : ''}${bg ? ";${bg ? bg : ''}" : ''}m'
-  }
-  return nil
+  var v_str = v != nil ? v.to_string().lpad(2, '0') : ''
+  var bg_str = bg != nil ? ';' + bg.to_string().lpad(2, '0') : ''
+
+  return '\x1b[${v_str}${bg_str}m'
 }
 
 /**

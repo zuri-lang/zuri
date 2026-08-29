@@ -259,7 +259,7 @@ class BytesIO {
       mtime: self._mtime,
       atime: self._atime,
       ctime: self._ctime,
-      blocks: max(self.source.length() // 4096, 1),
+      blocks: (self.source.length() // 4096).max(1),
       blksize: 4096,
     }
   }

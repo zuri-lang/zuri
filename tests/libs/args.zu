@@ -1,0 +1,264 @@
+/**
+ * test_args.zu
+ *
+ * Test suite for the `args` standard library module: option types and
+ * their defaults, bundling/abbreviation, `--` end-of-options, positional
+ * arguments, sub-commands (every value-type variant plus action
+ * callbacks), deprecation warnings, `set_terminal_width()`, and the help/
+ * usage text a real invocation produces (including the process-exiting
+ * `-h`/`--help`/missing-value paths, which run as real subprocesses since
+ * they call `os.exit()` directly and would otherwise tear down this whole
+ * suite).
+ */
+
+import args
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+def new_parser() {
+  var p = args.Parser('demo')
+  p.add_option('name', 'Name', {short_name: 'n', type: args.STRING})
+  p.add_option('count', 'Count', {short_name: 'c', type: args.INT, value: 5})
+  p.add_option('score', 'Score', {type: args.NUMBER})
+  p.add_option('verbose', 'Verbose', {short_name: 'v', type: args.BOOL})
+  p.add_option('flag', 'Flag', {short_name: 'f'})
+  p.add_option('tags', 'Tags', {short_name: 't', type: args.LIST})
+  p.add_option('level', 'Level', {type: args.CHOICE, choices: ['low', 'mid', 'high']})
+  p.add_option('color', 'Color', {type: args.CHOICE, choices: {r: 'red', g: 'green'}})
+  p.add_option('maybe', 'Maybe', {type: args.OPTIONAL})
+  return p
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  args module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Basic option types
+# ---------------------------------------------------------------------------
+assert new_parser().parse(['-n', 'Kirk']).options.name == 'Kirk', 'a short-form STRING option must set its value'
+assert new_parser().parse(['--name', 'Kirk']).options.name == 'Kirk', 'a long-form STRING option must set the same value'
+ok('STRING option, short and long form')
+
+assert new_parser().parse([]).options.count == 5, 'an absent option must fall back to its declared default'
+ok('default value applied when option is absent')
+
+assert new_parser().parse(['--count', '10']).options.count == 10, 'an explicit value must override the default'
+ok('INT option overrides the default')
+
+assert new_parser().parse(['--score', '4.5']).options.score == 4.5, 'a NUMBER option must coerce to a float'
+ok('NUMBER option')
+
+assert new_parser().parse(['-v', 'true']).options.verbose == true, 'BOOL must accept "true"'
+assert new_parser().parse(['-v', 'false']).options.verbose == false, 'BOOL must accept "false"'
+assert new_parser().parse(['-v', 'yes']).options.verbose == true, 'BOOL must accept "yes"'
+assert new_parser().parse(['-v', 'no']).options.verbose == false, 'BOOL must accept "no"'
+assert new_parser().parse(['-v', 'on']).options.verbose == true, 'BOOL must accept "on"'
+assert new_parser().parse(['-v', 'off']).options.verbose == false, 'BOOL must accept "off"'
+assert new_parser().parse(['-v', '1']).options.verbose == true, 'BOOL must accept "1"'
+assert new_parser().parse(['-v', '0']).options.verbose == false, 'BOOL must accept "0"'
+ok('BOOL option accepts every documented spelling')
+
+assert new_parser().parse(['-f']).options.flag == true, 'a NONE-type option present on the command line must be true'
+assert !new_parser().parse([]).options.contains('flag'), 'a NONE-type option absent from the command line must not appear in options at all'
+ok('NONE-type option is a plain boolean flag')
+
+# ---------------------------------------------------------------------------
+# LIST, CHOICE, OPTIONAL
+# ---------------------------------------------------------------------------
+assert new_parser().parse(['-t', 'a', 'b', 'c']).options.tags == ['a', 'b', 'c'],
+  'a LIST option must collect every following non-flag token'
+ok('LIST option, space-separated values')
+
+assert new_parser().parse(['--tags', 'x', '--tags', 'y']).options.tags == ['x', 'y'],
+  'repeating a LIST option must merge into one list, not overwrite it'
+ok('LIST option, repeated flag merges values')
+
+assert new_parser().parse(['--level', 'mid']).options.level == 'mid', 'a list-backed CHOICE option must keep the literal value'
+ok('CHOICE option, list-backed')
+
+assert new_parser().parse(['--color', 'r']).options.color == 'red',
+  'a dict-backed CHOICE option must resolve to the mapped value, not the key itself'
+ok('CHOICE option, dict-backed (value is the mapped entry)')
+
+assert new_parser().parse(['--maybe', 'here']).options.maybe == 'here',
+  'an OPTIONAL option followed by a non-flag token must consume it as the value'
+ok('OPTIONAL-type option, value present')
+
+var opt_no_value = new_parser().parse(['--maybe', '-n', 'x']).options
+assert opt_no_value == {maybe: true, name: 'x', count: 5},
+  'an OPTIONAL option immediately followed by another flag must be treated as a bare boolean flag, not swallow the next flag as its value'
+ok('OPTIONAL-type option, no value (next token is a flag)')
+
+assert new_parser().parse(['--maybe']).options.maybe == true,
+  'an OPTIONAL option with nothing following it at all must still be true'
+ok('OPTIONAL-type option, nothing follows at all')
+
+# ---------------------------------------------------------------------------
+# Abbreviation, --
+# ---------------------------------------------------------------------------
+assert new_parser().parse(['--nam', 'Kirk']).options.name == 'Kirk',
+  'an unambiguous long-option prefix must resolve to the full option'
+ok('abbreviated long option, unambiguous prefix')
+
+var p_dashdash = args.Parser('dd')
+p_dashdash.add_option('flag', 'Flag', {short_name: 'f'})
+p_dashdash.add_index('rest', 'Rest', {})
+assert p_dashdash.parse(['--', '-f']).indexes == ['-f'],
+  '"--" must end option parsing, so a later "-f" is read as a positional, not the flag'
+ok('"--" ends option parsing; everything after is positional')
+
+# ---------------------------------------------------------------------------
+# Positional arguments
+# ---------------------------------------------------------------------------
+var p_pos = args.Parser('pos')
+p_pos.add_index('source', 'Source file', {required: true})
+p_pos.add_index('dest', 'Destination file', {required: false, value: 'out.txt'})
+assert p_pos.parse(['in.txt']).indexes == ['in.txt', 'out.txt'],
+  'an omitted optional positional must fall back to its declared default'
+assert p_pos.parse(['in.txt', 'other.txt']).indexes == ['in.txt', 'other.txt'],
+  'an explicit optional positional must override the default'
+ok('positional arguments, required and optional')
+
+var p_pos2 = args.Parser('pos2')
+p_pos2.add_index('n', 'A number', {type: args.INT})
+p_pos2.add_index('mode', 'A mode', {type: args.CHOICE, choices: ['fast', 'slow']})
+assert p_pos2.parse(['42', 'fast']).indexes == [42, 'fast'],
+  'a positional must coerce to its declared type and validate against its choices'
+ok('positional argument type coercion and choices')
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+var p_cmd = new_parser()
+var cmd = p_cmd.add_command('call', 'Make a call')
+cmd.add_option('loud', 'Loud', {short_name: 'l'})
+assert p_cmd.parse(['call']).command == {name: 'call', value: nil}, 'a NONE-type command must resolve with a nil value'
+var called = p_cmd.parse(['call', '-l'])
+assert called.command == {name: 'call', value: nil} and called.options.loud == true,
+  'a command\'s own options must parse independently of the top-level parser\'s options'
+ok('commands, no value')
+
+var p_cmd2 = args.Parser('cmdval')
+p_cmd2.add_command('set', 'Set a value', {type: args.INT})
+assert p_cmd2.parse(['set', '99']).command == {name: 'set', value: 99},
+  'a command with a required typed value must coerce that value'
+ok('commands, with a required typed value')
+
+var p_cmd3 = args.Parser('cmdlist')
+p_cmd3.add_command('add', 'Add items', {type: args.LIST})
+assert p_cmd3.parse(['add', 'x', 'y', 'z']).command == {name: 'add', value: ['x', 'y', 'z']},
+  'a LIST-typed command value must collect every trailing token'
+ok('commands, LIST-typed value collects trailing tokens')
+
+var p_cmd4 = args.Parser('cmdchoice')
+p_cmd4.add_command('mode', 'Set mode', {type: args.CHOICE, choices: ['a', 'b']})
+assert p_cmd4.parse(['mode', 'a']).command == {name: 'mode', value: 'a'},
+  'a CHOICE-typed command value must validate against its choices'
+ok('commands, CHOICE-typed value')
+
+var seen = {called: false}
+var p_action = args.Parser('actiontest')
+p_action.add_command('go', 'Go', {
+  type: args.STRING,
+  action: @(options, value) {
+    seen.called = true
+    seen.value = value
+  }
+})
+p_action.parse(['go', 'somewhere'])
+assert seen == {called: true, value: 'somewhere'},
+  'a command action callback must fire with (options, value) after a successful parse'
+ok('command action callback receives options and value')
+
+# ---------------------------------------------------------------------------
+# Deprecation, terminal width
+# ---------------------------------------------------------------------------
+var p_dep = args.Parser('dep')
+p_dep.add_option('old', 'Old option', {short_name: 'o', deprecated: true, type: args.STRING})
+assert p_dep.parse(['-o', 'val']).options.old == 'val',
+  'a deprecated option must still parse normally (the warning itself goes to stderr, not checked here)'
+ok('deprecated option still parses')
+
+var p_width = args.Parser('width')
+p_width.set_terminal_width(100)
+assert p_width.terminal_width == 100, 'set_terminal_width() must override the auto-detected width'
+ok('set_terminal_width() overrides the auto-detected width')
+
+assert raises(@() { args.Parser('width').set_terminal_width(0) }),
+  'set_terminal_width() must reject a non-positive width'
+assert raises(@() { args.Parser('width').set_terminal_width('wide') }),
+  'set_terminal_width() must reject a non-numeric width'
+ok('set_terminal_width() rejects a non-positive or non-numeric width')
+
+# ---------------------------------------------------------------------------
+# Help/usage text and process-exiting error paths
+#
+# `-h`, `--help COMMAND`, and a missing option value all call os.exit()
+# directly rather than raising, so they can only be observed by actually
+# running them as a separate process; running them in-process here would
+# tear down this whole suite at the first one. `os.exec()` gives us a real
+# subprocess and its captured stdout/exit code to assert on.
+# ---------------------------------------------------------------------------
+def helper_path(name) {
+  return os.join_paths(os.dir_name(__file__), name)
+}
+
+def run_helper(name) {
+  return os.exec(os.exe_path, helper_path(name))
+}
+
+var help_bare = run_helper('args_help_no_commands.zu')
+assert help_bare.exit_code == 0, '-h must exit 0'
+assert help_bare.output.contains('Usage: bare [OPTIONS]'), 'usage line must reflect the parser name with no COMMAND slot (no commands registered)'
+assert help_bare.output.contains('-x, --x <x>'), 'a STRING option with no explicit metavar must default to its own name, not a generic <VALUE>'
+assert !help_bare.output.contains('VALUE'), 'the old generic <VALUE> placeholder must never appear'
+ok('-h prints usage/help and exits 0, with a name-derived option placeholder')
+
+var help_command = run_helper('args_help_command.zu')
+assert help_command.exit_code == 0, '--help COMMAND must exit 0'
+assert help_command.output.contains('Usage: helpy run [OPTIONS]'), 'single-command usage must name both the program and the command'
+assert help_command.output.contains('GLOBAL OPTIONS:'), 'a command with its own help must still list the parent parser\'s options separately'
+ok('--help COMMAND prints that command\'s own usage/help and exits 0')
+
+var help_wrap = run_helper('args_help_wrap.zu')
+assert help_wrap.exit_code == 0, 'a narrow terminal_width must still exit 0'
+assert help_wrap.output.contains('A description long enough that it must wrap'), 'the description must actually be present'
+assert !help_wrap.output.split('\n').some(@(line) { return line.length() > 55 }),
+  'set_terminal_width(50) must actually constrain every wrapped line\'s width'
+ok('set_terminal_width() actually constrains help-text wrapping')
+
+var help_metavar = run_helper('args_help_metavar.zu')
+assert help_metavar.exit_code == 0, '-h must exit 0'
+assert help_metavar.output.contains('-t, --threshold <threshold>'), 'an INT option with no explicit metavar must default to its own name, not its type'
+assert help_metavar.output.contains('-l, --label <text>'), 'an explicit metavar must be honored verbatim'
+assert help_metavar.output.contains('commit <message>'), 'add_command()\'s metavar option must customize a command\'s own value placeholder'
+ok('option and command metavars render correctly in help text')
+
+var missing_value = run_helper('args_missing_value_error.zu')
+assert missing_value.exit_code == 1, 'a missing option value must exit non-zero'
+assert missing_value.output.contains('error: option --name expects <name>'),
+  'the error message must name the value placeholder rather than a generic type label'
+ok('a missing option value prints a clear error and exits 1')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

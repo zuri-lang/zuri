@@ -1,0 +1,11 @@
+# A missing option value calls os.exit(1) via _option_error, which
+# terminates the process, so this is spawned as a real subprocess
+# from tests/libs/args.zu rather than run in-process. No .out file
+# on purpose — it's a helper, not a fixture in its own right.
+# Exercises the wording of the "expects a value" error message, which
+# names the value placeholder rather than a generic type label.
+import args
+
+var p = args.Parser('missingval', false)
+p.add_option('name', 'Name', {short_name: 'n', type: args.STRING})
+p.parse(['--name'])

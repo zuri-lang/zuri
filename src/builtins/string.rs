@@ -94,7 +94,7 @@ fn parse_regex(s: &str) -> Option<(&str, &str)> {
 /// exposed by this crate's safe wrapper, so anchoring is instead
 /// enforced by every caller via `find_at_anchored`/`find_all_captures`,
 /// which discard a match unless it begins exactly where the search
-/// started -- the same observable behavior as the real compile option.
+/// started, matching the real compile option's observable behavior.
 ///
 /// `U` (ungreedy) and `J` (duplicate subpattern names) aren't exposed
 /// as builder options either, but PCRE2's own pattern syntax accepts
@@ -107,8 +107,8 @@ fn compile_regex(pattern: &str, modifiers: &str) -> Result<(Regex, bool), String
   // Zuri strings are always valid UTF-8; matching per-codepoint
   // (rather than per-byte) is what keeps `.` and every byte offset
   // this file hands back to Zuri correct on multi-byte characters,
-  // independent of the `u` modifier -- which, per the spec's own
-  // modifier table, only controls whether \d/\w/\s become Unicode-
+  // independent of the `u` modifier, which (per the spec's own
+  // modifier table) only controls whether \d/\w/\s become Unicode-
   // property-aware instead of ASCII-only.
   builder.utf(true);
 
@@ -174,9 +174,8 @@ fn find_at_anchored<'s>(
 /// behavior matches the crate's own iterator exactly. When `anchored`
 /// is set (the `A` modifier), collection stops at the first match that
 /// doesn't begin exactly where the previous one ended (or, for the
-/// first match, at `search_start`) -- see `compile_regex`'s own docs
-/// on why anchoring is enforced here rather than via a PCRE2 compile
-/// option.
+/// first match, at `search_start`); this is how anchoring is enforced
+/// without a real PCRE2_ANCHORED compile option to reach for.
 fn find_all_captures(
   re: &Regex,
   anchored: bool,
@@ -621,7 +620,10 @@ fn string_match(ctx: &mut ZuriContext) -> Result<Value, String> {
     let (re, anchored) = compile_regex(pattern, modifiers)?;
     match find_at_anchored(&re, anchored, s.as_bytes(), start)? {
       Some(m) => {
-        let matched = ctx.vm.heap_mut().alloc_string(bytes_to_string(m.as_bytes()));
+        let matched = ctx
+          .vm
+          .heap_mut()
+          .alloc_string(bytes_to_string(m.as_bytes()));
         Ok(
           ctx
             .vm
@@ -796,7 +798,7 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
   let num_groups = re.capture_locations().len();
 
   let whole = ctx.vm.heap_mut().alloc_string(s.clone());
-  // `callback` and `whole` are both reused across EVERY match below --
+  // `callback` and `whole` are both reused across EVERY match below;
   // if either is still Young and a later match's own `call_value`
   // triggers a collection that relocates it, an un-pinned local would
   // go stale from that point on. See `VM::pin_values`'s own docs.
@@ -811,7 +813,10 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
     let mut call_args = Vec::with_capacity(num_groups + 1);
     for g in 0..num_groups {
       call_args.push(match locs.get(g) {
-        Some((gs, ge)) => ctx.vm.heap_mut().alloc_string(bytes_to_string(&bytes[gs..ge])),
+        Some((gs, ge)) => ctx
+          .vm
+          .heap_mut()
+          .alloc_string(bytes_to_string(&bytes[gs..ge])),
         None => Value::nil(),
       });
     }
@@ -927,9 +932,7 @@ fn capitalize(ctx: &mut ZuriContext) -> Result<Value, String> {
   let s = ctx.args[0].as_str();
   let mut chars = s.chars();
   let result = match chars.next() {
-    Some(first) => {
-      first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
-    },
+    Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
     None => String::new(),
   };
   Ok(ctx.vm.heap_mut().alloc_string(result))
@@ -978,11 +981,7 @@ fn title(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn ascii(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
 
-  let result: String = ctx.args[0]
-    .as_str()
-    .bytes()
-    .map(|b| b as char)
-    .collect();
+  let result: String = ctx.args[0].as_str().bytes().map(|b| b as char).collect();
   Ok(ctx.vm.heap_mut().alloc_string(result))
 }
 

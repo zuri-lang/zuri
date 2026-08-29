@@ -466,13 +466,11 @@ class TTY {
   static var VTIME      = 17
 
   /**
-   * TTY(std: file)
-   *
    * @note _file_ must be one of stdout and stderr
    * @param file std
    * @constructor
    */
-  TTY(std) {
+  @new(std) {
     if !is_file(std) {
       raise TypeError('TTY expects a standard file as argument, ${typeof(std)} given')
     }

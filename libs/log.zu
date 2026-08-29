@@ -601,7 +601,7 @@ class Transport {
     message += ':'
 
     for arg in records {
-      message += ' ' + to_string(arg)
+      message += ' ' + arg.to_string()
     }
 
     return message.trim()

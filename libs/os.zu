@@ -146,7 +146,8 @@ def exec(...args) {
       raise TypeError('string expected, ${typeof(arg)} given')
   }
 
-  return _os.exec(' '.join(args))
+  var result = _os.exec(' '.join(args))
+  return {exit_code: result[0], output: result[1]}
 }
 
 /**

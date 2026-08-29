@@ -1,0 +1,346 @@
+/**
+ * test_url.zu
+ *
+ * Test suite for the `url` standard library module: URL construction,
+ * parsing (absolute, schemeless, relative, opaque, IPv6-literal, userinfo,
+ * query/hash), query-string helpers, dot-segment normalization, RFC 3986
+ * §5.4 reference resolution, percent-encoding, cloning/equality, and
+ * strict-mode validation.
+ */
+
+import url
+import json
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  url module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Constructor
+# ---------------------------------------------------------------------------
+var built = url.Url('https', 'example.com', 9000)
+assert built.absolute_url() == 'https://example.com:9000', 'no explicit path defaults absolute_url() to the bare authority'
+assert built.path == '/', 'an omitted path must still read back as "/"'
+assert built.empty_path, 'an omitted path must be flagged as empty_path'
+ok('Url() constructor infers empty_path when path is omitted')
+
+var built2 = url.Url('https', 'example.com', 9000, '/x')
+assert built2.absolute_url() == 'https://example.com:9000/x', 'an explicit path must appear in absolute_url()'
+assert !built2.empty_path, 'an explicit path must not be flagged as empty_path'
+ok('Url() constructor with an explicit path')
+
+# ---------------------------------------------------------------------------
+# Basic parsing
+# ---------------------------------------------------------------------------
+var l = url.parse('https://example.com:9000/path?q=1#frag')
+assert l.scheme == 'https', 'scheme must be extracted'
+assert l.host == 'example.com', 'host must be extracted'
+assert l.port == 9000, 'port must be extracted'
+assert l.path == '/path', 'path must be extracted'
+assert l.query == 'q=1', 'query must be extracted'
+assert l.hash == 'frag', 'hash/fragment must be extracted'
+ok('parse() extracts scheme, host, port, path, query, and hash')
+
+var l2 = url.parse('http://example.com')
+assert l2.path == '/', 'a missing path must default to "/"'
+assert l2.empty_path, 'a defaulted "/" path must be flagged as empty_path'
+assert l2.to_string() == 'http://example.com', 'to_string() must omit a defaulted empty path'
+ok('parse() with no port and no path')
+
+var l2b = url.parse('http://example.com/')
+assert l2b.path == '/', 'an explicit trailing slash must still read as "/"'
+assert !l2b.empty_path, 'an explicit trailing slash must NOT be flagged as empty_path'
+ok('an explicit trailing-slash path is distinct from a defaulted one')
+
+# ---------------------------------------------------------------------------
+# Schemeless and relative references
+# ---------------------------------------------------------------------------
+var l3 = url.parse('example.com/foo')
+assert l3.scheme == 'http', 'a host-looking schemeless authority must default to http'
+assert l3.host == 'example.com', 'the host-looking segment must be read as the host'
+assert l3.path == '/foo', 'the remainder must be read as the path'
+ok('schemeless input with a host-looking authority')
+
+var l3b = url.parse('localhost:8080/x')
+assert l3b.scheme == 'http', 'localhost:PORT must default to http, not be mistaken for a scheme'
+assert l3b.host == 'localhost' and l3b.port == 8080, 'localhost:8080 must parse as host+port, not scheme:path'
+assert l3b.path == '/x', 'the remainder must be read as the path'
+ok('schemeless "localhost:PORT/path" is not mistaken for a scheme')
+
+var l4 = url.parse('/foo/bar')
+assert l4.scheme == nil and l4.host == nil, 'a bare absolute path must have no scheme or host'
+assert l4.path == '/foo/bar', 'the whole input must be read as the path'
+ok('bare absolute path with no host')
+
+var l5 = url.parse('foo/bar')
+assert l5.scheme == nil and l5.host == nil, 'a bare relative path must have no scheme or host'
+assert l5.path == 'foo/bar', 'the whole input must be read as the path'
+ok('bare relative path with no host')
+
+var l5b = url.parse('../foo/bar')
+assert l5b.scheme == nil and l5b.host == nil, 'a dot-segment-led relative path must have no scheme or host'
+assert l5b.path == '../foo/bar', 'a relative path must be left alone by parse() (normalize() handles dot-segments)'
+ok('a relative path starting with dot-segments is left untouched by parse()')
+
+# ---------------------------------------------------------------------------
+# Opaque schemes
+# ---------------------------------------------------------------------------
+var l6 = url.parse('mailto:foo@example.com')
+assert l6.scheme == 'mailto', 'an opaque scheme must still be extracted'
+assert l6.path == 'foo@example.com', 'everything after the colon is the opaque path'
+assert l6.absolute_url() == 'mailto:foo@example.com', 'absolute_url() must round-trip an opaque URL'
+assert l6.authority() == '', 'an opaque scheme has no authority'
+ok('mailto is parsed as an opaque scheme, not a host-bearing one')
+
+# ---------------------------------------------------------------------------
+# IPv6 literal hosts
+# ---------------------------------------------------------------------------
+var l7 = url.parse('https://[::1]:8080/x')
+assert l7.host == '::1', 'the brackets must be stripped from the host'
+assert l7.port == 8080, 'the port must still be extracted alongside a bracketed host'
+assert l7.to_string() == 'https://[::1]:8080/x', 'to_string() must re-add the brackets'
+ok('IPv6 literal host with a port')
+
+var l7b = url.parse('https://[2001:db8::1]/x')
+assert l7b.host == '2001:db8::1', 'the brackets must be stripped from the host'
+assert l7b.port == nil, 'a portless IPv6 literal must not fabricate a port'
+assert l7b.to_string() == 'https://[2001:db8::1]/x', 'to_string() must re-add the brackets with no port'
+ok('IPv6 literal host with no port')
+
+# ---------------------------------------------------------------------------
+# Userinfo
+# ---------------------------------------------------------------------------
+var l8 = url.parse('https://user:pass@example.com/x')
+assert l8.username == 'user' and l8.password == 'pass', 'both username and password must be extracted'
+assert l8.host == 'example.com', 'the host must exclude the userinfo'
+ok('userinfo with both username and password')
+
+var l8b = url.parse('https://user@example.com/x')
+assert l8b.username == 'user', 'username must be extracted'
+assert l8b.password == nil, 'an absent password must be nil, not an empty string'
+ok('userinfo with username only')
+
+# ---------------------------------------------------------------------------
+# Query and hash
+# ---------------------------------------------------------------------------
+var l9 = url.parse('https://example.com/foo?x=1&y=2#section')
+assert l9.path == '/foo' and l9.query == 'x=1&y=2' and l9.hash == 'section',
+  'path, query, and hash must all be extracted together correctly'
+ok('query and hash extracted together')
+
+var l10 = url.parse('https://example.com?')
+assert l10.query == '', 'a bare trailing "?" with nothing after it must read as an empty string, distinct from no query at all'
+assert l10.query_params().is_empty(), 'query_params() on an empty query must be an empty dict'
+ok('an empty query string ("?" with nothing after) is distinguished from no query at all')
+
+var l11 = url.parse('//example.com/foo')
+assert l11.scheme == nil, 'a protocol-relative reference must have no scheme'
+assert l11.host == 'example.com', 'the host must still be extracted'
+assert l11.has_slash, 'has_slash must reflect the leading "//"'
+ok('protocol-relative reference ("//host/path")')
+
+assert url.parse('https://example.com//foo//bar').path == '//foo//bar',
+  'double slashes inside an existing path must be preserved verbatim, not collapsed'
+ok('double slashes inside a path are preserved')
+
+# ---------------------------------------------------------------------------
+# Host family detection
+# ---------------------------------------------------------------------------
+assert url.parse('http://192.168.1.1').host_is_ipv4(), 'a dotted-decimal host must be detected as IPv4'
+assert !url.parse('http://192.168.1.1').host_is_ipv6(), 'an IPv4 host must not also read as IPv6'
+assert url.parse('http://[::1]').host_is_ipv6(), 'a bracketed host must be detected as IPv6'
+assert !url.parse('http://[::1]').host_is_ipv4(), 'an IPv6 host must not also read as IPv4'
+assert !url.parse('http://example.com').host_is_ipv4() and !url.parse('http://example.com').host_is_ipv6(),
+  'a hostname must read as neither IPv4 nor IPv6'
+ok('host_is_ipv4() / host_is_ipv6()')
+
+# ---------------------------------------------------------------------------
+# Authority, ports
+# ---------------------------------------------------------------------------
+assert url.parse('https://user:pass@example.com:8080/x').authority() == 'user:pass@example.com:8080',
+  'authority() must reassemble userinfo, host, and port'
+assert url.parse('https://example.com/x').authority() == 'example.com', 'authority() with no userinfo/port must be just the host'
+assert url.parse('mailto:a@b.com').authority() == '', 'an opaque URL must have an empty authority()'
+ok('authority()')
+
+assert url.parse('http://example.com').default_port() == 80, 'http must default to port 80'
+assert url.parse('https://example.com').default_port() == 443, 'https must default to port 443'
+assert url.parse('ftp://example.com').default_port() == 21, 'ftp must default to port 21'
+assert url.parse('foo://example.com').default_port() == nil, 'an unknown scheme must have no known default port'
+ok('default_port() for common schemes')
+
+assert url.parse('http://example.com').effective_port() == 80, 'effective_port() must fall back to the scheme default'
+assert url.parse('http://example.com:8080').effective_port() == 8080, 'effective_port() must prefer an explicit port'
+ok('effective_port()')
+
+# ---------------------------------------------------------------------------
+# is_absolute
+# ---------------------------------------------------------------------------
+assert url.parse('https://example.com').is_absolute(), 'a URL with a scheme must be absolute'
+assert !url.parse('/foo').is_absolute(), 'a bare absolute path has no scheme, so it is not an absolute URL'
+assert !url.parse('foo/bar').is_absolute(), 'a bare relative path is not an absolute URL'
+ok('is_absolute()')
+
+# ---------------------------------------------------------------------------
+# Query-string helpers
+# ---------------------------------------------------------------------------
+var q = url.parse('https://example.com?a=1&a=2&b=3&flag')
+var qp = q.query_params()
+assert qp.a == ['1', '2'] and qp.b == ['3'] and qp.flag == [''],
+  'query_params() must collect repeated keys (as strings, no numeric coercion) and represent a valueless flag as a single empty-string value, matching URLSearchParams convention'
+ok('query_params() with repeated keys and a valueless flag')
+
+assert q.get_param('a') == '1', 'get_param() must return the first value for a repeated key'
+assert q.get_param('b') == '3', 'get_param() must return a single value directly, not wrapped in a list'
+assert q.get_param('missing') == nil, 'get_param() on a missing key must default to nil'
+assert q.get_param('missing', 'fallback') == 'fallback', 'get_param() must honor an explicit fallback'
+ok('get_param()')
+
+assert url.parse_query('x=1&y=2') == {x: ['1'], y: ['2']}, 'parse_query() must be usable standalone, outside of a full URL'
+assert url.parse_query('').is_empty(), 'parse_query() on an empty string must be an empty dict'
+ok('parse_query() standalone helper')
+
+# ---------------------------------------------------------------------------
+# Normalization
+# ---------------------------------------------------------------------------
+assert url.parse('https://example.com/a/b/../c').normalize().path == '/a/c',
+  'normalize() must resolve ".." dot-segments'
+assert url.parse('https://example.com/a/./b').normalize().path == '/a/b',
+  'normalize() must resolve "." dot-segments'
+ok('normalize() resolves dot-segments in a full URL')
+
+assert url.remove_dot_segments('/a/b/../c') == '/a/c', 'remove_dot_segments() must resolve ".."'
+assert url.remove_dot_segments('/a/b/c/./../../g') == '/a/g', 'remove_dot_segments() must resolve nested "." and ".."'
+assert url.remove_dot_segments('mid/content=5/../6') == 'mid/6', 'remove_dot_segments() must work on a relative path too'
+ok('remove_dot_segments() directly')
+
+# ---------------------------------------------------------------------------
+# Reference resolution (RFC 3986 §5.4 examples)
+# ---------------------------------------------------------------------------
+var base = url.parse('https://example.com/a/b/c')
+assert base.resolve('g').to_string() == 'https://example.com/a/b/g', 'RFC 3986 5.4.1: "g"'
+assert base.resolve('./g').to_string() == 'https://example.com/a/b/g', 'RFC 3986 5.4.1: "./g"'
+assert base.resolve('g/').to_string() == 'https://example.com/a/b/g/', 'RFC 3986 5.4.1: "g/"'
+assert base.resolve('/g').to_string() == 'https://example.com/g', 'RFC 3986 5.4.1: "/g"'
+assert base.resolve('//other.com/z').to_string() == 'https://other.com/z', 'RFC 3986 5.4.1: "//other.com/z"'
+assert base.resolve('?y').to_string() == 'https://example.com/a/b/c?y', 'RFC 3986 5.4.1: "?y"'
+assert base.resolve('g?y').to_string() == 'https://example.com/a/b/g?y', 'RFC 3986 5.4.1: "g?y"'
+assert base.resolve('#s').to_string() == 'https://example.com/a/b/c#s', 'RFC 3986 5.4.1: "#s"'
+assert base.resolve('g#s').to_string() == 'https://example.com/a/b/g#s', 'RFC 3986 5.4.1: "g#s"'
+assert base.resolve('').to_string() == 'https://example.com/a/b/c', 'RFC 3986 5.4.1: "" (empty reference)'
+assert base.resolve('.').to_string() == 'https://example.com/a/b/', 'RFC 3986 5.4.1: "."'
+assert base.resolve('./').to_string() == 'https://example.com/a/b/', 'RFC 3986 5.4.1: "./"'
+assert base.resolve('..').to_string() == 'https://example.com/a/', 'RFC 3986 5.4.1: ".."'
+assert base.resolve('../').to_string() == 'https://example.com/a/', 'RFC 3986 5.4.1: "../"'
+assert base.resolve('../g').to_string() == 'https://example.com/a/g', 'RFC 3986 5.4.1: "../g"'
+assert base.resolve('../..').to_string() == 'https://example.com/', 'RFC 3986 5.4.1: "../.."'
+assert base.resolve('../../').to_string() == 'https://example.com/', 'RFC 3986 5.4.1: "../../"'
+assert base.resolve('../../g').to_string() == 'https://example.com/g', 'RFC 3986 5.4.1: "../../g"'
+ok('resolve() matches every RFC 3986 §5.4.1 normal-example vector')
+
+assert base.resolve('http://other.com/z').to_string() == 'http://other.com/z',
+  'resolving an already-absolute reference must return it as-is'
+ok('resolve() with an absolute reference short-circuits to that reference')
+
+var other_url = url.parse('https://example.com/x/y')
+assert base.resolve(other_url).to_string() == 'https://example.com/x/y',
+  'resolve() must also accept a Url instance directly, not just a string'
+ok('resolve() accepts a Url instance directly')
+
+# ---------------------------------------------------------------------------
+# Percent-encoding
+# ---------------------------------------------------------------------------
+assert url.encode('hello world!') == 'hello+world%21', 'encode() must use "+" for spaces and escape reserved punctuation'
+assert url.encode('café') == 'caf%C3%A9', 'encode() must percent-escape multi-byte UTF-8 sequences'
+ok('encode()')
+
+assert url.decode('hello%20world%21') == 'hello world!', 'decode() must turn %20 back into a literal space'
+assert url.decode(url.encode('café')) == 'café', 'encode() and decode() must round-trip multi-byte text'
+assert url.decode('no percent here') == 'no percent here', 'decode() on plain text must be a no-op'
+ok('decode()')
+
+var raw = 'a=1&b=hello world&c=100%special'
+var encoded = url.encode(raw)
+assert url.decode(encoded) == raw, 'encode() followed by decode() must round-trip text containing a literal "%"'
+ok('encode()/decode() round-trip on text with a literal percent sign')
+
+assert raises(@() { url.decode('100%') }), 'a truncated percent-escape at end of string must raise'
+assert raises(@() { url.decode('100%ZZ') }), 'invalid hex digits after "%" must raise'
+ok('decode() rejects malformed percent-escapes')
+
+# ---------------------------------------------------------------------------
+# Clone, equality, string conversion
+# ---------------------------------------------------------------------------
+var a = url.parse('https://example.com/x?y=1')
+var b = a.clone()
+assert b.to_string() == 'https://example.com/x?y=1', 'a clone must round-trip to the same string'
+assert !(a == b), 'clone() must produce a distinct instance, not the same reference'
+assert a.equals(b), 'equals() must compare by value regardless of identity'
+ok('clone() produces a value-equal but reference-distinct copy')
+
+assert a.equals(url.parse('https://example.com/x?y=1')), 'two URLs parsed from the same string must be equals()'
+assert !a.equals(url.parse('https://example.com/x?y=2')), 'a differing query must break equals()'
+assert !a.equals('not a url'), 'equals() against a non-Url value must be false, not raise'
+ok('equals()')
+
+assert url.parse('/relative/path').to_string() == '/relative/path', 'to_string() on a schemeless URL must not fabricate a scheme'
+assert url.parse('example.com/implicit').to_string() == 'http://example.com/implicit',
+  'to_string() on a schemeless-but-host-bearing URL must include the inferred http scheme'
+ok('to_string() vs absolute_url()')
+
+var encoded_json = json.encode(url.parse('https://user:pass@example.com:8080/x?q=1#f'))
+assert encoded_json == '{"scheme":"https","host":"example.com","port":8080,"path":"/x","query":"q=1","hash":"f","username":"user","password":"pass","has_slash":true,"empty_path":false}',
+  'json.encode() must call the Url instance\'s @to_json override, not fall back to a generic instance dump'
+ok('@to_json override fires through json.encode()')
+
+# ---------------------------------------------------------------------------
+# Strict mode
+# ---------------------------------------------------------------------------
+assert !raises(@() { url.parse('https://example.com/ok', true) }), 'a well-formed absolute URL must not raise in strict mode'
+assert !raises(@() { url.parse('mailto:a@b.com', true) }), 'a well-formed opaque URL must not raise in strict mode'
+assert !raises(@() { url.parse('urn:isbn:0451450523', true) }), 'a well-formed urn: URL must not raise in strict mode'
+ok('strict mode accepts well-formed URLs of every shape')
+
+assert raises(@() { url.parse('ht!tp://example.com', true) }), 'an invalid scheme character must raise in strict mode'
+assert raises(@() { url.parse('https:example.com', true) }), 'a scheme missing "://" before its authority must raise in strict mode'
+assert raises(@() { url.parse('mailto://a@b.com', true) }), 'an opaque scheme given an authority must raise in strict mode'
+assert raises(@() { url.parse('https://[::1/path', true) }), 'an unterminated IPv6 literal must raise in strict mode'
+assert raises(@() { url.parse('https://example.com:abc/path', true) }), 'a non-numeric port must raise in strict mode'
+assert raises(@() { url.parse('', true) }), 'an empty url must raise in strict mode'
+ok('strict mode rejects every documented malformed shape')
+
+var empty = url.parse('')
+assert empty.scheme == nil and empty.path == '/' and empty.empty_path,
+  'non-strict mode on an empty url must return a bare, defaulted Url rather than raising'
+ok('non-strict mode tolerates an empty url')
+
+# ---------------------------------------------------------------------------
+# has_authority
+# ---------------------------------------------------------------------------
+assert url.has_authority('https'), 'https must be a scheme that carries an authority'
+assert !url.has_authority('mailto'), 'mailto must be a scheme that does not carry an authority'
+assert !url.has_authority('MAILTO'), 'has_authority() must be case-insensitive'
+ok('has_authority()')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

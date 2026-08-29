@@ -1,0 +1,13 @@
+# -h calls os.exit(0), which terminates the process, so this is spawned
+# as a real subprocess from tests/libs/args.zu rather than run in-process.
+# No .out file on purpose — it's a helper, not a fixture in its own
+# right. Exercises value placeholders in help text: an option with no
+# explicit metavar (falls back to its own name, not its type), one
+# with an explicit metavar, and a command with an explicit metavar.
+import args
+
+var p = args.Parser('metatest', false)
+p.add_option('threshold', 'A threshold', {short_name: 't', type: args.INT})
+p.add_option('label', 'A label', {short_name: 'l', type: args.STRING, metavar: 'text'})
+p.add_command('commit', 'Commit changes', {type: args.STRING, metavar: 'message'})
+p.parse(['-h'])

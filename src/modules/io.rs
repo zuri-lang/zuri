@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{self, BufRead, Read, Write};
 
 use crate::modules::{BuiltinModuleDef, native};
-use crate::vm::object::{FileHandle, ZuriContext};
+use crate::vm::object::{FileHandle, ModuleNamespace, ObjModule, ZuriContext, write_barrier};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
@@ -23,7 +23,44 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("isrepl", Value::bool(vm.is_repl)),
     ("readline", native(vm, "readline", 0, true, readline)),
     ("getch", native(vm, "getch", 0, true, getch)),
+    ("TTY", build_tty_submodule(vm)),
   ]
+}
+
+/// A nested "module" purely as a namespacing device: `libs/io/tty.zu`
+/// calls these as `_io.TTY.tcgetattr(...)`, and a real (if tiny)
+/// `Obj::Module` is what makes dotted-call syntax work for a group of
+/// natives the same way it already does for `_io.readline(...)`
+/// itself; a plain dict wouldn't (`Instr::Invoke` needs a method
+/// table or a module namespace behind `.name(...)`, not a dict
+/// lookup).
+fn build_tty_submodule(vm: &mut VM) -> Value {
+  let module_val = vm.heap_mut().alloc_module(ObjModule {
+    name: "TTY".to_string(),
+    path: "<builtin:_io.TTY>".to_string(),
+    namespace: ModuleNamespace::new(),
+    loaded: true,
+  });
+
+  let members: Vec<(&'static str, Value)> = vec![
+    (
+      "tcgetattr",
+      native(vm, "tcgetattr", 1, true, tty::tcgetattr),
+    ),
+    (
+      "tcsetattr",
+      native(vm, "tcsetattr", 3, false, tty::tcsetattr),
+    ),
+    ("exit_raw", native(vm, "exit_raw", 1, false, tty::exit_raw)),
+    ("getsize", native(vm, "getsize", 1, false, tty::getsize)),
+    ("flush", native(vm, "flush", 1, false, tty::flush)),
+  ];
+  for (name, value) in members {
+    module_val.as_module_mut().namespace.set(name, value);
+    write_barrier(module_val.as_obj());
+  }
+
+  module_val
 }
 
 /// Wraps standard-stream fd `fd` as a `FileHandle`. On Unix this
@@ -225,4 +262,268 @@ fn read_secure_line(_obscure_text: &str) -> io::Result<String> {
     buf.pop();
   }
   Ok(buf)
+}
+
+/// Backs `libs/io/tty.zu`'s `TTY` class: raw termios access, terminal
+/// size, and a TTY-level flush, all keyed off a real file descriptor
+/// (`stdin`/`stdout`/`stderr`, or any other file the caller opened
+/// against a terminal device). Unix-only, matching this file's own
+/// `read_secure_line` split -- there's no portable termios/ioctl
+/// equivalent to fall back to on other platforms, so every function
+/// here just reports "not supported" there instead of pretending to
+/// work.
+mod tty {
+  use crate::vm::object::ZuriContext;
+  use crate::vm::value::Value;
+  use crate::{enforce_arg_count, enforce_arg_range};
+
+  #[cfg(unix)]
+  use std::cell::RefCell;
+  #[cfg(unix)]
+  use std::os::unix::io::AsRawFd;
+
+  #[cfg(unix)]
+  thread_local! {
+    /// The termios each fd had the FIRST time `tcsetattr` touched it
+    /// (see `tcsetattr`'s own docs), consulted by `exit_raw` to put a
+    /// terminal back exactly how it found it. Keyed on the raw fd
+    /// rather than the Zuri file `Value`: `set_raw()`/`exit_raw()`
+    /// are always called on the very same OS descriptor (`self.std`
+    /// never changes underneath a `TTY` instance), and a plain `i32`
+    /// key sidesteps needing the heap object to still be alive (or
+    /// even the same Value bit pattern, across a GC move) at
+    /// `exit_raw` time.
+    static ORIGINAL: RefCell<rustc_hash::FxHashMap<i32, libc::termios>> =
+      RefCell::new(rustc_hash::FxHashMap::default());
+  }
+
+  #[cfg(unix)]
+  fn fd_of(ctx: &ZuriContext, idx: usize) -> Result<i32, String> {
+    let v = *ctx
+      .args
+      .get(idx)
+      .ok_or_else(|| "expected a file argument".to_string())?;
+    if !v.is_file() {
+      return Err(format!("expected a file, got {}", v.type_name()));
+    }
+    let handle = v.as_file_cell().borrow();
+    let file = handle
+      .handle
+      .as_ref()
+      .ok_or_else(|| "file is closed".to_string())?;
+    Ok(file.as_raw_fd())
+  }
+
+  #[cfg(unix)]
+  pub fn tcgetattr(ctx: &mut ZuriContext) -> Result<Value, String> {
+    // A second argument is accepted (`TTY.set_raw()` passes one) but
+    // deliberately ignored: with a real termios read on every call,
+    // there is no "normalized vs. raw" distinction left to make; the
+    // one and only value this ever returns already IS the exact
+    // kernel-reported state.
+    enforce_arg_range!(ctx, 1, 2);
+    let fd = fd_of(ctx, 0)?;
+
+    let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+    if unsafe { libc::tcgetattr(fd, &mut termios) } != 0 {
+      return Err(format!(
+        "tcgetattr failed: {}",
+        std::io::Error::last_os_error()
+      ));
+    }
+
+    let ispeed = unsafe { libc::cfgetispeed(&termios) };
+    let ospeed = unsafe { libc::cfgetospeed(&termios) };
+    let pairs = vec![
+      (Value::number(0.0), Value::number(termios.c_iflag as f64)),
+      (Value::number(1.0), Value::number(termios.c_oflag as f64)),
+      (Value::number(2.0), Value::number(termios.c_cflag as f64)),
+      (Value::number(3.0), Value::number(termios.c_lflag as f64)),
+      (Value::number(4.0), Value::number(ispeed as f64)),
+      (Value::number(5.0), Value::number(ospeed as f64)),
+    ];
+    Ok(ctx.heap().alloc_dict(pairs))
+  }
+
+  /// Sets termios attributes on `file`, merged (not replaced) onto
+  /// whatever the terminal's real current state already is: any of
+  /// the six `TTY_*` keys the caller's dict leaves out simply keeps
+  /// its live value, matching `TTY.set_attr()`'s own documented
+  /// contract. The very first time this is called for a given fd,
+  /// the pre-change state is snapshotted into `ORIGINAL` so
+  /// `exit_raw` has something to restore later.
+  #[cfg(unix)]
+  pub fn tcsetattr(ctx: &mut ZuriContext) -> Result<Value, String> {
+    enforce_arg_count!(ctx, 3);
+    let fd = fd_of(ctx, 0)?;
+
+    let option = ctx.args[1];
+    if !option.is_number() {
+      return Err("tcsetattr() expects a numeric option".to_string());
+    }
+    let opt = match option.as_number() as i64 {
+      0 => libc::TCSANOW,
+      1 => libc::TCSADRAIN,
+      2 => libc::TCSAFLUSH,
+      other => return Err(format!("invalid tcsetattr() option {other}")),
+    };
+
+    let attrs = ctx.args[2];
+    if !attrs.is_dict() {
+      return Err("tcsetattr() expects a dict of attributes".to_string());
+    }
+
+    let mut current: libc::termios = unsafe { std::mem::zeroed() };
+    if unsafe { libc::tcgetattr(fd, &mut current) } != 0 {
+      return Err(format!(
+        "tcgetattr failed: {}",
+        std::io::Error::last_os_error()
+      ));
+    }
+    ORIGINAL.with(|cache| {
+      cache.borrow_mut().entry(fd).or_insert(current);
+    });
+
+    let mut next = current;
+    for (key, value) in attrs.as_dict() {
+      if !key.is_number() || !value.is_number() {
+        continue;
+      }
+      let raw = value.as_number() as u32;
+      match key.as_number() as i64 {
+        0 => next.c_iflag = raw as libc::tcflag_t,
+        1 => next.c_oflag = raw as libc::tcflag_t,
+        2 => next.c_cflag = raw as libc::tcflag_t,
+        3 => next.c_lflag = raw as libc::tcflag_t,
+        4 => unsafe {
+          libc::cfsetispeed(&mut next, raw as libc::speed_t);
+        },
+        5 => unsafe {
+          libc::cfsetospeed(&mut next, raw as libc::speed_t);
+        },
+        _ => {},
+      }
+    }
+
+    let ok = unsafe { libc::tcsetattr(fd, opt, &next) } == 0;
+    Ok(Value::bool(ok))
+  }
+
+  /// Restores whatever `tcsetattr` snapshotted for this fd before its
+  /// own first change (see that function's docs); a no-op returning
+  /// `false` if `tcsetattr` was never called on this fd at all, since
+  /// there is nothing recorded to put back.
+  #[cfg(unix)]
+  pub fn exit_raw(ctx: &mut ZuriContext) -> Result<Value, String> {
+    enforce_arg_count!(ctx, 1);
+    let fd = fd_of(ctx, 0)?;
+
+    let saved = ORIGINAL.with(|cache| cache.borrow_mut().remove(&fd));
+    match saved {
+      Some(original) => {
+        let ok = unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &original) } == 0;
+        Ok(Value::bool(ok))
+      },
+      None => Ok(Value::bool(false)),
+    }
+  }
+
+  /// `[columns, rows]` of the terminal `file` is attached to, via
+  /// `TIOCGWINSZ`.
+  #[cfg(unix)]
+  pub fn getsize(ctx: &mut ZuriContext) -> Result<Value, String> {
+    enforce_arg_count!(ctx, 1);
+    let fd = fd_of(ctx, 0)?;
+
+    let mut size: libc::winsize = unsafe { std::mem::zeroed() };
+    if unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut size) } != 0 {
+      return Err(format!(
+        "failed to query terminal size: {}",
+        std::io::Error::last_os_error()
+      ));
+    }
+
+    let items = vec![
+      Value::number(size.ws_col as f64),
+      Value::number(size.ws_row as f64),
+    ];
+    Ok(ctx.heap().alloc_list(items))
+  }
+
+  /// Discards (rather than merely flushing) whatever input and output
+  /// the terminal has pending, via `tcflush(..., TCIOFLUSH)`; the
+  /// TTY-specific counterpart to an ordinary buffered-stream flush,
+  /// for clearing out e.g. stray keystrokes typed ahead of a prompt.
+  #[cfg(unix)]
+  pub fn flush(ctx: &mut ZuriContext) -> Result<Value, String> {
+    enforce_arg_count!(ctx, 1);
+    let fd = fd_of(ctx, 0)?;
+    let ok = unsafe { libc::tcflush(fd, libc::TCIOFLUSH) } == 0;
+    Ok(Value::bool(ok))
+  }
+
+  #[cfg(not(unix))]
+  pub fn tcgetattr(_ctx: &mut ZuriContext) -> Result<Value, String> {
+    Err("TTY control is not supported on this platform".to_string())
+  }
+
+  #[cfg(not(unix))]
+  pub fn tcsetattr(_ctx: &mut ZuriContext) -> Result<Value, String> {
+    Err("TTY control is not supported on this platform".to_string())
+  }
+
+  #[cfg(not(unix))]
+  pub fn exit_raw(_ctx: &mut ZuriContext) -> Result<Value, String> {
+    Err("TTY control is not supported on this platform".to_string())
+  }
+
+  #[cfg(not(unix))]
+  pub fn flush(_ctx: &mut ZuriContext) -> Result<Value, String> {
+    Err("TTY control is not supported on this platform".to_string())
+  }
+
+  /// `[columns, rows]` of the console `file` is attached to, via the
+  /// Win32 console API. Unlike raw mode / termios attributes (which
+  /// have no Windows counterpart at all), console size genuinely does
+  /// exist there too, so this gets its own real implementation rather
+  /// than the same blanket "not supported" every other function here
+  /// falls back to off-Unix.
+  #[cfg(windows)]
+  pub fn getsize(ctx: &mut ZuriContext) -> Result<Value, String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::Console::{
+      CONSOLE_SCREEN_BUFFER_INFO, GetConsoleScreenBufferInfo,
+    };
+
+    enforce_arg_count!(ctx, 1);
+    let v = ctx.args[0];
+    if !v.is_file() {
+      return Err(format!("expected a file, got {}", v.type_name()));
+    }
+    let handle_ref = v.as_file_cell().borrow();
+    let file = handle_ref
+      .handle
+      .as_ref()
+      .ok_or_else(|| "file is closed".to_string())?;
+    let handle = file.as_raw_handle();
+
+    let mut info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+    if unsafe { GetConsoleScreenBufferInfo(handle, &mut info) } == 0 {
+      return Err("failed to query terminal size".to_string());
+    }
+
+    // The VISIBLE window, not the (usually much taller, scrollback-
+    // including) screen buffer itself: `srWindow` is the same
+    // Left/Top/Right/Bottom-inclusive rectangle every other terminal-
+    // size library on Windows reads this same way.
+    let cols = (info.srWindow.Right - info.srWindow.Left + 1) as f64;
+    let rows = (info.srWindow.Bottom - info.srWindow.Top + 1) as f64;
+    let items = vec![Value::number(cols), Value::number(rows)];
+    Ok(ctx.heap().alloc_list(items))
+  }
+
+  #[cfg(not(any(unix, windows)))]
+  pub fn getsize(_ctx: &mut ZuriContext) -> Result<Value, String> {
+    Err("TTY control is not supported on this platform".to_string())
+  }
 }
