@@ -63,8 +63,35 @@ def test_parse() {
   echo "test_parse passed"
 }
 
+def test_sniff_dialect() {
+  var comma = csv.sniff_dialect("a,b,c\n1,2,3\n4,5,6")
+  assert comma.delimiter == ','
+
+  var semicolon = csv.sniff_dialect("a;b;c\n1;2;3\n4;5;6")
+  assert semicolon.delimiter == ';'
+
+  var tab = csv.sniff_dialect("a\tb\tc\n1\t2\t3\n4\t5\t6")
+  assert tab.delimiter == '\t'
+
+  var pipe = csv.sniff_dialect("a|b|c\n1|2|3\n4|5|6")
+  assert pipe.delimiter == '|'
+
+  # No candidate delimiter appears consistently anywhere in this
+  # sample, so sniff_dialect() must fall back to the first candidate
+  # (a plain comma) rather than raise or pick one at random.
+  var no_delimiter = csv.sniff_dialect("just one column\nanother line\nthird line")
+  assert no_delimiter.delimiter == ','
+
+  # The detected dialect must actually be usable for real parsing.
+  var rows = csv.parse("a;b\n1;2", semicolon)
+  assert rows == [["a", "b"], ["1", "2"]]
+
+  echo "test_sniff_dialect passed"
+}
+
 test_reader()
 test_reader_quoted()
 test_reader_multiline()
 test_writer()
 test_parse()
+test_sniff_dialect()

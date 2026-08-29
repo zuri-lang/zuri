@@ -1,0 +1,128 @@
+/**
+ * test_convert.zu
+ *
+ * Test suite for the `convert` standard library module: hex/bytes/
+ * decimal conversions, arbitrary-base conversion, and endianness
+ * control.
+ */
+
+import convert
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  convert module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# hex_to_bytes() / bytes_to_hex()
+# ---------------------------------------------------------------------------
+assert convert.bytes_to_hex(convert.hex_to_bytes('deadbeef')) == 'deadbeef',
+  'hex_to_bytes() and bytes_to_hex() must round-trip'
+assert convert.hex_to_bytes('00ff') == bytes([0x00, 0xff]), 'hex_to_bytes() must decode each byte pair correctly'
+ok('hex_to_bytes()/bytes_to_hex() round-trip correctly')
+
+assert raises(@() { convert.hex_to_bytes('abc') }),
+  'hex_to_bytes() must raise on an odd-length input rather than guess'
+assert raises(@() { convert.hex_to_bytes(123) }), 'hex_to_bytes() must raise on a non-string argument'
+ok('hex_to_bytes() rejects an odd-length or non-string input')
+
+# ---------------------------------------------------------------------------
+# decimal_to_hex() / hex_to_decimal()
+# ---------------------------------------------------------------------------
+assert convert.decimal_to_hex(255) == 'ff', 'decimal_to_hex() must produce lowercase hex'
+assert convert.decimal_to_hex(255, 4) == '00ff', 'decimal_to_hex() must zero-pad to the given digit count'
+assert convert.decimal_to_hex(0xabcdef, 4) == 'cdef',
+  'decimal_to_hex() must truncate to the least-significant digits when the result is too long'
+ok('decimal_to_hex() pads and truncates correctly')
+
+assert convert.decimal_to_hex(-255, 4) == '-00ff',
+  'decimal_to_hex() must apply digit padding to a negative number too, not just its magnitude'
+ok('decimal_to_hex() forwards the digits parameter through a negative number')
+
+assert convert.hex_to_decimal('ff') == 255, 'hex_to_decimal() must parse a plain hex string'
+assert convert.hex_to_decimal('0xFF') == 255, 'hex_to_decimal() must accept a 0x-prefixed hex string'
+assert convert.hex_to_decimal('ff') == convert.hex_to_decimal('FF'),
+  'hex_to_decimal() must be case-insensitive'
+ok('hex_to_decimal() parses plain and 0x-prefixed hex, case-insensitively')
+
+assert raises(@() { convert.hex_to_decimal('12g4') }), 'hex_to_decimal() must raise on an invalid hex digit'
+ok('hex_to_decimal() rejects an invalid digit rather than silently miscomputing')
+
+# ---------------------------------------------------------------------------
+# unicode_to_hex()
+# ---------------------------------------------------------------------------
+assert convert.unicode_to_hex('A') == '41', 'unicode_to_hex() must return the character\'s code point in hex'
+assert raises(@() { convert.unicode_to_hex('AB') }), 'unicode_to_hex() must raise on more than one character'
+ok('unicode_to_hex() converts a single character to its hex code point')
+
+# ---------------------------------------------------------------------------
+# to_base() / from_base()
+# ---------------------------------------------------------------------------
+assert convert.to_base(255, 16) == 'ff', 'to_base() with base 16 must match decimal_to_hex()'
+assert convert.to_base(10, 2) == '1010', 'to_base() must support base 2'
+assert convert.to_base(64, 8) == '100', 'to_base() must support base 8'
+assert convert.to_base(35, 36) == 'z', 'to_base() must use letters for digits beyond 9'
+assert convert.to_base(0, 16) == '0', 'to_base() of zero must be "0"'
+assert convert.to_base(0, 16, 4) == '0000', 'to_base() of zero must still honor digit padding'
+ok('to_base() converts across a range of radixes, including zero and letter digits')
+
+assert convert.from_base('ff', 16) == 255, 'from_base() must be the inverse of to_base()'
+assert convert.from_base('1010', 2) == 10, 'from_base() must support base 2'
+assert convert.from_base('-101', 2) == -5, 'from_base() must support a leading minus sign'
+assert convert.from_base('Z', 36) == 35, 'from_base() must accept uppercase letter digits'
+ok('from_base() correctly inverts to_base(), including negative values')
+
+assert raises(@() { convert.to_base(10, 1) }), 'to_base() must raise for a base below 2'
+assert raises(@() { convert.to_base(10, 37) }), 'to_base() must raise for a base above 36'
+assert raises(@() { convert.from_base('129', 8) }), 'from_base() must raise on a digit that is invalid for the given base'
+ok('to_base()/from_base() reject an out-of-range base or an invalid digit')
+
+# ---------------------------------------------------------------------------
+# decimal_to_binary() / binary_to_decimal() / decimal_to_octal() / octal_to_decimal()
+# ---------------------------------------------------------------------------
+assert convert.decimal_to_binary(10) == '1010', 'decimal_to_binary() must match to_base(n, 2)'
+assert convert.binary_to_decimal('1010') == 10, 'binary_to_decimal() must match from_base(str, 2)'
+assert convert.decimal_to_octal(64) == '100', 'decimal_to_octal() must match to_base(n, 8)'
+assert convert.octal_to_decimal('100') == 64, 'octal_to_decimal() must match from_base(str, 8)'
+ok('decimal_to_binary()/binary_to_decimal()/decimal_to_octal()/octal_to_decimal() are correct base-2/8 shortcuts')
+
+# ---------------------------------------------------------------------------
+# bytes_to_decimal() / decimal_to_bytes() — endianness
+# ---------------------------------------------------------------------------
+var value = 0x01020304
+var big = convert.decimal_to_bytes(value, 4)
+assert convert.bytes_to_hex(big) == '01020304', 'decimal_to_bytes() must write big-endian by default'
+assert convert.bytes_to_decimal(big) == value, 'bytes_to_decimal() must read big-endian by default'
+ok('decimal_to_bytes()/bytes_to_decimal() round-trip in big-endian by default')
+
+var little = convert.decimal_to_bytes(value, 4, true)
+assert convert.bytes_to_hex(little) == '04030201', 'decimal_to_bytes(little_endian: true) must reverse the byte order'
+assert convert.bytes_to_decimal(little, true) == value,
+  'bytes_to_decimal(little_endian: true) must correctly read a little-endian byte sequence'
+ok('decimal_to_bytes()/bytes_to_decimal() round-trip in little-endian when asked')
+
+assert raises(@() { convert.decimal_to_bytes(-1, 4) }),
+  'decimal_to_bytes() must raise for a negative number rather than guess a signedness convention'
+ok('decimal_to_bytes() rejects a negative input')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

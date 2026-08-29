@@ -35,8 +35,9 @@ var _sep = _os.path_separator
 def join_paths(...paths) {
   var result = ''
   for arg in paths {
-    if !is_string(arg)
+    if !is_string(arg) {
       raise TypeError('string expected, ${typeof(arg)} given')
+    }
 
     arg = arg.trim()
 

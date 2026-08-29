@@ -129,8 +129,9 @@ def create_dir(path: string, permission: ?int, recursive: ?bool) {
  * @returns list[string]
  */
 def read_dir(path: string, recursive: ?bool) {
-  if recursive == nil
+  if recursive == nil {
     recursive = false
+  }
 
   return _os.readdir(path, recursive)
 }

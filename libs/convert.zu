@@ -1,51 +1,56 @@
 /**
  * @module convert
  *
- * This module provides extra data conversion features between
- * non-standard object types as well as different number bases.
+ * Data conversion between hexadecimal, arbitrary numeric bases,
+ * bytes, and decimal numbers.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
-
 var _hex_table = '0123456789abcdef'
+var _base36_table = '0123456789abcdefghijklmnopqrstuvwxyz'
 
 /**
- * Converts hexadecimal string of any length to bytes.
+ * Converts a hexadecimal string of any (even) length to bytes.
  *
  * @param string str
  * @returns bytes
+ * @raises TypeError if `str` isn't a string.
+ * @raises ValueError if `str` has an odd number of characters — a
+ *    hex string always encodes whole bytes, so an odd length is
+ *    ambiguous rather than something this function guesses at.
  */
 def hex_to_bytes(str) {
-  if !is_string(str)
+  if !is_string(str) {
     raise TypeError('string expected, ${typeof(str)} given')
+  }
 
-  # str = ''.join(str.to_list().reverse())
+  if str.length() % 2 != 0 {
+    raise ValueError('hex string must have an even number of characters, got ${str.length()}')
+  }
 
   var length = str.length()
   var b = [0] * (length / 2)
 
-  iter var i = 0; i < length - 1; i += 2 {
-    b[i / 2] = str[i,i+2].to_number(16)
-  }
-  
-  if length % 2 != 0 {
-    b.append(_hex_table.index_of(str[-1].lower()))
+  iter var i = 0; i < length; i += 2 {
+    b[i / 2] = str[i, i + 2].to_number(16)
   }
 
   return bytes(b)
 }
 
 /**
- * Converts binary data (byes) of any length to hexadecimal
+ * Converts binary data (bytes) of any length to its hexadecimal
  * string representation.
  *
  * @param bytes data
  * @returns string
+ * @raises TypeError if `data` isn't bytes.
  */
 def bytes_to_hex(data) {
-  if !is_bytes(data)
+  if !is_bytes(data) {
     raise TypeError('bytes expected, ${typeof(data)} given')
+  }
 
   var hex_string = ''
 
@@ -57,87 +62,46 @@ def bytes_to_hex(data) {
 }
 
 /**
- * Converts the given decimal based number to an hexadecimal
- * string. If digits is provided and the length of the result is
- * less than digits, the result will be padded with zeros on the
- * left. If the length of the result is greater than digits, the
- * result will be truncated to the least significant digits.
+ * Converts the given decimal number to a hexadecimal string. If
+ * `digits` is given and the result is shorter, it's padded with
+ * leading zeros; if the result is longer, it's truncated to the
+ * least-significant `digits` characters.
  *
  * @param number n
  * @param ?number digits
  * @returns string
+ * @raises TypeError if `n` isn't a number.
+ * @raises ValueError if `digits` is given but isn't a number.
  */
 def decimal_to_hex(n, digits) {
-  if !is_number(n)
-    raise TypeError('number expected, ${typeof(n)} given')
-
-  if digits != nil and !is_number(digits) {
-    raise ValueError('digits must be a number')
-  }
-
-  # If n is a floating point number, you want to floor it
-  n = n.floor()
-
-  if n < 0 {
-    return '-' + decimal_to_hex(-n)
-  }
-
-  var result = ''
-  var remaining = n
-
-  while remaining > 0 {
-    var nibble = remaining % 16
-    result  = _hex_table[nibble] + result
-    remaining = (remaining / 16).floor()
-  }
-
-  if digits {
-    while result.length() < digits {
-      result = '0' + result
-    }
-
-    if digits and result.length() > digits {
-      # Truncate to least-significant `digits` characters.
-      result = result[result.length() - digits, result.length()]
-    }
-  }
-
-  return result
+  return to_base(n, 16, digits)
 }
 
 /**
- * Converts the given hexadecimal string to a decimal base 10
- * number.
+ * Converts a hexadecimal string to a decimal (base 10) number.
  *
- * @note string must either contain the plain hexadecimal string
- *    or be in the format 0x[hex string].
+ * @note `str` may either be a plain hex string or carry a leading
+ *    `0x` prefix.
  * @param string str
  * @returns number
+ * @raises TypeError if `str` isn't a string.
+ * @raises ValueError if `str` contains a character that isn't a
+ *    valid hex digit.
  */
 def hex_to_decimal(str) {
-  if !is_string(str)
-    raise TypeError('string expected, ${typeof(str)} given')
-
-  if str.starts_with('0x')
+  if str.starts_with('0x') {
     str = str[2,]
-
-  var l = str.length(), dec = 0
-  str = str.lower()
-
-  iter var i = 0; i < l; i++ {
-    var x = str[i]
-    dec += _hex_table.index_of(x) * (16 ** (l - i - 1))
   }
-
-  return dec
+  return from_base(str, 16)
 }
 
 /**
- * Converts a unicode character to it's equivalent hexadecimal
- * string.
+ * Converts a single unicode character to its hexadecimal code
+ * point.
  *
  * @param char chr
  * @returns string
+ * @raises ValueError if `chr` isn't exactly one character.
  */
 def unicode_to_hex(chr) {
   if !is_string(chr) or chr.length() > 1 {
@@ -148,20 +112,245 @@ def unicode_to_hex(chr) {
 }
 
 /**
- * Converts a bytes (binary data) to a decimal number.
+ * Converts a decimal number to a binary (base 2) string.
  *
- * @param bytes bytes
- * @returns number
+ * @param number n
+ * @param ?number digits: Zero-pads (or truncates) to this many
+ *    characters, same as `decimal_to_hex()`'s `digits` parameter.
+ * @returns string
  */
-def bytes_to_decimal(bytes) {
-  if !is_bytes(bytes)
-    raise TypeError('bytes expected, ${typeof(bytes)} given')
+def decimal_to_binary(n, digits) {
+  return to_base(n, 2, digits)
+}
+
+/**
+ * Converts a binary (base 2) string to a decimal number.
+ *
+ * @param string str
+ * @returns number
+ * @raises ValueError if `str` contains a character other than `0`
+ *    or `1`.
+ */
+def binary_to_decimal(str) {
+  return from_base(str, 2)
+}
+
+/**
+ * Converts a decimal number to an octal (base 8) string.
+ *
+ * @param number n
+ * @param ?number digits: Same as `decimal_to_hex()`'s `digits`
+ *    parameter.
+ * @returns string
+ */
+def decimal_to_octal(n, digits) {
+  return to_base(n, 8, digits)
+}
+
+/**
+ * Converts an octal (base 8) string to a decimal number.
+ *
+ * @param string str
+ * @returns number
+ * @raises ValueError if `str` contains a character outside `0`-`7`.
+ */
+def octal_to_decimal(str) {
+  return from_base(str, 8)
+}
+
+/**
+ * Converts a decimal number to a string in the given `base`,
+ * using `0`-`9` then `a`-`z` for digits beyond 9 (so base 16
+ * produces lowercase hex, matching `decimal_to_hex()`). If `digits`
+ * is given and the result is shorter, it's padded with leading
+ * zeros; if longer, it's truncated to the least-significant
+ * `digits` characters.
+ *
+ * @param number n
+ * @param number base: Between `2` and `36`.
+ * @param ?number digits
+ * @returns string
+ * @raises TypeError if `n` isn't a number.
+ * @raises ValueError if `base` is outside `2`-`36`, or if `digits`
+ *    is given but isn't a number.
+ */
+def to_base(n, base, digits) {
+  if !is_number(n) {
+    raise TypeError('number expected, ${typeof(n)} given')
+  }
+
+  if !is_number(base) or base < 2 or base > 36 {
+    raise ValueError('base must be a number between 2 and 36, got ${base}')
+  }
+
+  if digits != nil and !is_number(digits) {
+    raise ValueError('digits must be a number')
+  }
+
+  # If n is a floating point number, floor it to a whole number
+  # first — there's no fractional-digit representation in an
+  # arbitrary base here.
+  n = n.floor()
+
+  if n < 0 {
+    return '-' + to_base(-n, base, digits)
+  }
+
+  var result = ''
+  var remaining = n
+
+  while remaining > 0 {
+    var digit = remaining % base
+    result = _base36_table[digit] + result
+    remaining = (remaining / base).floor()
+  }
+
+  if result == '' {
+    result = '0'
+  }
+
+  if digits {
+    while result.length() < digits {
+      result = '0' + result
+    }
+
+    if result.length() > digits {
+      # Truncate to the least-significant `digits` characters.
+      result = result[result.length() - digits, result.length()]
+    }
+  }
+
+  return result
+}
+
+/**
+ * Converts a string in the given `base` back to a decimal number.
+ * Accepts an optional leading `-` for a negative value, and digit
+ * letters in either case.
+ *
+ * @param string str
+ * @param number base: Between `2` and `36`.
+ * @returns number
+ * @raises TypeError if `str` isn't a string.
+ * @raises ValueError if `base` is outside `2`-`36`, or if `str`
+ *    contains a character that isn't a valid digit in that base.
+ */
+def from_base(str, base) {
+  if !is_string(str) {
+    raise TypeError('string expected, ${typeof(str)} given')
+  }
+
+  if !is_number(base) or base < 2 or base > 36 {
+    raise ValueError('base must be a number between 2 and 36, got ${base}')
+  }
+
+  var negative = false
+  if str.starts_with('-') {
+    negative = true
+    str = str[1,]
+  }
+
+  str = str.lower()
+  var length = str.length()
+  var dec = 0
+
+  iter var i = 0; i < length; i++ {
+    var ch = str[i]
+    var digit = _base36_table.index_of(ch)
+
+    if digit == -1 or digit >= base {
+      raise ValueError('invalid digit "${ch}" for base ${base}')
+    }
+
+    dec += digit * (base ** (length - i - 1))
+  }
+
+  return negative ? -dec : dec
+}
+
+/**
+ * Converts bytes (binary data) to a decimal number, treating the
+ * bytes as an unsigned integer.
+ *
+ * @param bytes data
+ * @param ?bool little_endian: Default `false` — the most
+ *    significant byte comes first. Set `true` to instead treat the
+ *    least significant byte as first, as many binary file formats
+ *    and network protocols do.
+ * @returns number
+ * @raises TypeError if `data` isn't bytes.
+ */
+def bytes_to_decimal(data, little_endian) {
+  if !is_bytes(data) {
+    raise TypeError('bytes expected, ${typeof(data)} given')
+  }
+
+  if little_endian == nil {
+    little_endian = false
+  }
 
   var decimal = 0
-  for byte in bytes {
-    decimal <<= 8
-    decimal |= byte
+
+  if little_endian {
+    var shift = 0
+    for byte in data {
+      decimal |= byte << shift
+      shift += 8
+    }
+  } else {
+    for byte in data {
+      decimal <<= 8
+      decimal |= byte
+    }
   }
 
   return decimal
+}
+
+/**
+ * Converts a decimal number to bytes, the reverse of
+ * `bytes_to_decimal()`.
+ *
+ * @param number n: Must be non-negative — there's no signedness
+ *    convention (two's complement vs. sign-magnitude) implied
+ *    here, so a negative value is rejected rather than guessed at.
+ * @param number length: The exact number of bytes to produce. If
+ *    `n` doesn't fit in `length` bytes, the most significant
+ *    (excess) bits are silently dropped, the same as fitting a
+ *    number into a fixed-width integer type would.
+ * @param ?bool little_endian: Default `false` — the most
+ *    significant byte is written first. Set `true` for the least
+ *    significant byte first.
+ * @returns bytes
+ * @raises TypeError if `n` isn't a number.
+ * @raises ValueError if `n` is negative, or `length` isn't a
+ *    non-negative number.
+ */
+def decimal_to_bytes(n, length, little_endian) {
+  if !is_number(n) {
+    raise TypeError('number expected, ${typeof(n)} given')
+  }
+
+  if n < 0 {
+    raise ValueError('n must be non-negative, got ${n}')
+  }
+
+  if !is_number(length) or length < 0 {
+    raise ValueError('length must be a non-negative number')
+  }
+
+  if little_endian == nil {
+    little_endian = false
+  }
+
+  n = n.floor()
+  var b = [0] * length
+
+  iter var i = 0; i < length; i++ {
+    var index = little_endian ? i : length - 1 - i
+    b[index] = n & 0xff
+    n = (n / 256).floor()
+  }
+
+  return bytes(b)
 }

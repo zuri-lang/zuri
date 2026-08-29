@@ -64,6 +64,11 @@ ed25519-dalek = { version = "2", features = [
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 hkdf = "0.12"
 argon2 = "0.5"
+# Backs libs/bcrypt.zu specifically (a separate top-level module from
+# crypto.zu), registered in this same _crypto native module right
+# alongside argon2 since both are password-hashing primitives. Pure
+# Rust, no C toolchain dependency, same story as argon2 above.
+bcrypt = "0.19"
 
 # --- compress module (src/modules/compress.rs) ---------------------------------
 

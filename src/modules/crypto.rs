@@ -143,6 +143,12 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "argon2_verify",
       native(vm, "argon2_verify", 2, false, argon2_verify_fn),
     ),
+    // bcrypt (backs libs/bcrypt.zu, a separate top-level module)
+    ("bcrypt_hash", native(vm, "bcrypt_hash", 2, false, bcrypt_hash_fn)),
+    (
+      "bcrypt_verify",
+      native(vm, "bcrypt_verify", 2, false, bcrypt_verify_fn),
+    ),
     // HKDF-SHA256
     ("hkdf", native(vm, "hkdf", 4, false, hkdf_fn)),
   ]
@@ -953,6 +959,37 @@ fn argon2_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let ok = Argon2::default()
     .verify_password(password.as_bytes(), &parsed)
     .is_ok();
+  Ok(Value::bool(ok))
+}
+
+// bcrypt (backs libs/bcrypt.zu)
+
+fn bcrypt_hash_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+  enforce_arg_type!(ctx, 1, ArgType::Number);
+
+  let password = ctx.args[0].as_str();
+  let rounds = ctx.args[1].as_number() as u32;
+
+  let hashed =
+    bcrypt::hash(password, rounds).map_err(|e| crypto_err("bcrypt hashing failed", e))?;
+  Ok(ctx.heap().alloc_string(hashed))
+}
+
+fn bcrypt_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+  enforce_arg_type!(ctx, 1, ArgType::String);
+
+  let password = ctx.args[0].as_str();
+  let known_hash = ctx.args[1].as_str();
+
+  // A malformed or unsupported hash string is a "no match" the same way
+  // a plain wrong password is, not a native error surfaced to script
+  // code, matching bcrypt.zu's own documented compare() behavior
+  // (returns false for a hash that isn't even the right shape).
+  let ok = bcrypt::verify(password, known_hash).unwrap_or(false);
   Ok(Value::bool(ok))
 }
 

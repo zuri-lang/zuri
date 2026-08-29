@@ -267,6 +267,127 @@ class Dialect {
 
 
 # ---------------------------------------------------------------------------
+# Dialect sniffing
+# ---------------------------------------------------------------------------
+
+# How many non-empty lines of the sample to actually look at. A
+# handful is plenty to spot a consistent delimiter, and keeps this
+# cheap even if `sample` is a whole file.
+var _SNIFF_MAX_LINES = 10
+
+# Scores how consistently `counts` (one delimiter-occurrence count
+# per sampled line) agree with each other. Lines sharing the same
+# delimiter count are the actual signal — the more of them agree,
+# the more likely that's the real delimiter — with the shared count
+# itself used only to break ties between two equally-consistent
+# candidates (more fields per line is a stronger signal than a
+# delimiter that barely shows up). Returns `-1` when the delimiter
+# never appears at all.
+def _consistency_score(counts) {
+  if counts.is_empty() {
+    return -1
+  }
+
+  var agreement = {}
+  for count in counts {
+    var key = count.to_string()
+    agreement[key] = agreement.get(key, 0) + 1
+  }
+
+  var best_count = 0
+  var best_agreement = 0
+
+  for count in counts {
+    var key = count.to_string()
+    var seen = agreement.get(key, 0)
+    if seen > best_agreement {
+      best_agreement = seen
+      best_count = count
+    }
+  }
+
+  if best_count == 0 {
+    return -1
+  }
+
+  return best_agreement * 1000 + best_count
+}
+
+/**
+ * Attempts to detect the field delimiter used in `sample` and
+ * returns a `Dialect` configured with it.
+ *
+ * Each candidate delimiter is scored by how consistently it occurs
+ * across the sample's lines — a real delimiter tends to appear the
+ * same number of times on every line, while one that just happens
+ * to show up in the data (a comma inside a sentence, say) doesn't.
+ * The best-scoring candidate wins; if none of them appear
+ * consistently anywhere in `sample`, the first candidate (`,` by
+ * default) is used.
+ *
+ * This only detects the delimiter — not the quote character,
+ * whether a header row is present, or any other `Dialect` field.
+ * Set those on the returned `Dialect` yourself if they differ from
+ * the defaults.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> var dialect = csv.sniff_dialect("a;b;c\n1;2;3\n4;5;6")
+ * %> dialect.delimiter
+ * ';'
+ * ```
+ *
+ * @param string sample: Doesn't need to be the whole file — a few
+ *    representative lines are enough.
+ * @param ?list candidate_delimiters: Default `[',', '\t', ';',
+ *    '|']`.
+ * @returns Dialect
+ */
+def sniff_dialect(sample, candidate_delimiters) {
+  if candidate_delimiters == nil {
+    candidate_delimiters = [',', '\t', ';', '|']
+  }
+
+  var sample_lines = []
+  for line in sample.split('\n') {
+    line = line.rtrim('\r')
+    if line != '' {
+      sample_lines.append(line)
+    }
+    if sample_lines.length() >= _SNIFF_MAX_LINES {
+      break
+    }
+  }
+
+  var dialect = Dialect()
+
+  if sample_lines.is_empty() {
+    return dialect
+  }
+
+  var best_delimiter = candidate_delimiters[0]
+  var best_score = -1
+
+  for delimiter in candidate_delimiters {
+    var counts = []
+    for line in sample_lines {
+      counts.append(line.count(delimiter))
+    }
+
+    var score = _consistency_score(counts)
+    if score > best_score {
+      best_score = score
+      best_delimiter = delimiter
+    }
+  }
+
+  dialect.delimiter = best_delimiter
+  return dialect
+}
+
+
+# ---------------------------------------------------------------------------
 # Internal parser state machine
 # ---------------------------------------------------------------------------
 
@@ -337,7 +458,9 @@ def _parse_record(text, start, dialect, line_num) {
         # CR: may be CRLF or bare CR used as a line ending.
         fields.append('')
         i++; col = 1
-        if i < n and text[i] == '\n' { i++ }
+        if i < n and text[i] == '\n' {
+          i++
+        }
         return { fields: fields, next_pos: i, line: line_num }
       } else if ch == '\n' {
         # LF: bare LF line ending.
@@ -370,7 +493,9 @@ def _parse_record(text, start, dialect, line_num) {
         }
         fields.append(field)
         i++; col = 1
-        if i < n and text[i] == '\n' { i++ }
+        if i < n and text[i] == '\n' {
+          i++
+        }
         return { fields: fields, next_pos: i, line: line_num }
       } else if ch == '\n' {
         # End of record (bare LF).
@@ -440,7 +565,9 @@ def _parse_record(text, start, dialect, line_num) {
         # Closing quote followed by CR — end of record.
         fields.append(field)
         i++; col = 1
-        if i < n and text[i] == '\n' { i++ }
+        if i < n and text[i] == '\n' {
+          i++
+        }
         return { fields: fields, next_pos: i, line: line_num }
       } else if ch == '\n' {
         # Closing quote followed by LF — end of record.
@@ -479,7 +606,9 @@ def _parse_record(text, start, dialect, line_num) {
     # Input ended immediately after a closing quote — valid.
     fields.append(field)
   } else if state == _ST_FIELD {
-    if dialect.trim { field = field.trim() }
+    if dialect.trim {
+      field = field.trim()
+    }
     fields.append(field)
   } else if state == _ST_START and fields.length() == 0 {
     # Truly empty input — return nil so the caller knows there is nothing.
@@ -570,7 +699,7 @@ def _has_bom(text) {
 
 /**
  * An incremental, row-by-row CSV reader that wraps a Zuri
- * `io.file` object (or any object implementing `.read()` and
+ * `file` object (or any object implementing `.read()` and
  * `.close()`).
  *
  * `Reader` implements the iterator protocol so it can be used
@@ -726,7 +855,9 @@ class Reader {
    * @throws CsvError On parse error in strict mode.
    */
   read_record() {
-    if self._done { return nil }
+    if self._done {
+      return nil
+    }
 
     # Skip the empty trailing line that many generators append.
     self._skip_blank_lines()
@@ -1014,7 +1145,9 @@ class Writer {
       raise TypeError('list expected in argument 2 (keys)')
     }
 
-    if rows.length() == 0 { return }
+    if rows.length() == 0 {
+      return
+    }
 
     if keys == nil {
       keys = rows[0].keys()
@@ -1111,14 +1244,18 @@ def parse(text, dialect) {
 
   while pos < text.length() {
     var result = _parse_record(text, pos, dialect, line_num)
-    if result == nil { break }
+    if result == nil {
+      break
+    }
 
     pos      = result.next_pos
     line_num = result.line + 1
     var fields = result.fields
 
     # Skip completely empty records (blank lines).
-    if fields.length() == 1 and fields[0] == '' { continue }
+    if fields.length() == 1 and fields[0] == '' {
+      continue
+    }
 
     if first and dialect.has_header {
       headers = fields
@@ -1210,7 +1347,9 @@ def stringify(rows, dialect, keys) {
   }
   dialect.validate()
 
-  if rows.length() == 0 { return '' }
+  if rows.length() == 0 {
+    return ''
+  }
 
   var result = ''
   var term   = dialect.line_terminator
@@ -1219,7 +1358,9 @@ def stringify(rows, dialect, keys) {
   var first_row = rows[0]
 
   if is_dict(first_row) {
-    if keys == nil { keys = first_row.keys() }
+    if keys == nil {
+      keys = first_row.keys()
+    }
     # Write header.
     var header_parts = []
     for key in keys {
@@ -1286,7 +1427,9 @@ def parse_record(line, dialect) {
   }
   dialect.validate()
   var result = _parse_record(line, 0, dialect, 1)
-  if result == nil { return [] }
+  if result == nil {
+    return []
+  }
   return result.fields
 }
 
@@ -1415,7 +1558,9 @@ def write_file(path, rows, dialect, keys) {
 
   var first = rows[0]
   if is_dict(first) {
-    if keys == nil { keys = first.keys() }
+    if keys == nil {
+      keys = first.keys()
+    }
     writer.write_header(keys)
     for row in rows {
       writer.write_dict(row, keys)
