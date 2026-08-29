@@ -3,13 +3,6 @@
  *
  * Process identity, subprocess execution, and signal handling.
  *
- * `exec()` is the simple, blocking one-shot convenience: run a
- * command, wait for it, get back its exit code and combined output.
- * `spawn()` is for everything `exec()` doesn't cover: streaming a
- * child's stdout/stderr as it's produced, writing to its stdin,
- * overriding its working directory or environment, or checking on
- * it without blocking.
- *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
@@ -28,6 +21,13 @@ import _os
  * - `exit_code`: number - The exit code of the program. Any
  * number other than zero (0) should be treated as a failure. -
  * `output`: string - The output of the program.
+ *
+ * `exec()` is the simple, blocking one-shot convenience: run a
+ * command, wait for it, get back its exit code and combined output.
+ * `spawn()` is for everything `exec()` doesn't cover: streaming a
+ * child's stdout/stderr as it's produced, writing to its stdin,
+ * overriding its working directory or environment, or checking on
+ * it without blocking.
  *
  * Example,
  *
@@ -104,6 +104,7 @@ def kill(pid: int, signal: ?int) {
   if signal == nil {
     signal = 15
   }
+  
   return _os.kill(pid, signal)
 }
 
@@ -146,8 +147,7 @@ def on_signal(name: string, callback: function) {
  * A running (or finished) child process created by `spawn()`.
  *
  * @note constructed only by `spawn()` itself — there's no
- *    meaningful way to build one by hand the way `net.TcpStream()`
- *    can be built empty and connected later, since there's no
+ *    meaningful way to build one by hand since there's no
  *    "spawn it later" step to defer.
  */
 class Process {
@@ -273,7 +273,9 @@ class Process {
  *   (readable/writable through the returned `Process`), `'inherit'`
  *   (shares this process's own stream), or `'null'` (discarded).
  *   `stdin` defaults to `'inherit'`; `stdout` and `stderr` default
- *   to `'pipe'`.
+ *   to `'pipe'`. Do not confuse `'null'` with `nil`. `'null'`
+ *   alludes to `/dev/null` on unix devices which has the same
+ *   behavior.
  *
  * Example,
  *
@@ -282,8 +284,9 @@ class Process {
  * %> p.write_stdin('hello zuri\nhello world\n')
  * true
  * %> p.close_stdin()
- * %> p.read_stdout()
- * b'hello zuri\n'
+ * %> p.read_stdout().to_string()
+ * hello zuri
+ * 
  * %> p.wait()
  * 0
  * ```

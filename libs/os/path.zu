@@ -243,16 +243,11 @@ def expand_user(path: string) {
 
 /**
  * Returns `true` if the resolved form of `candidate` is `base`
- * itself or lies somewhere underneath it, and `false` otherwise —
- * including when `candidate` escapes `base` via `..` segments.
+ * itself or lies somewhere underneath it, and `false` otherwise.
+ * This includes when `candidate` escapes `base` via `..` segments.
  * Both paths are resolved with `abs_path()` first, so relative
  * paths and mixed separators are handled the same way `abs_path()`
  * itself handles them.
- *
- * This is the general form of the "does this archive entry try to
- * write outside the extraction directory" (Zip Slip) check every
- * archive/upload/sandboxing feature eventually needs; reach for
- * this instead of writing that containment logic again.
  *
  * Example,
  *
