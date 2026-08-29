@@ -1,0 +1,31 @@
+/**
+ * # Booleans
+ *
+ * A `bool` is one of the two truth values `true` or `false`.
+ * Like every other value in Zuri, booleans are objects with
+ * their own methods, though the set of methods a boolean
+ * supports is intentionally small.
+ *
+ * ```zuri-repl
+ * %> true.to_string()
+ * 'true'
+ * ```
+ */
+
+
+class bool {
+
+  /**
+   * Returns the string representation of the boolean.
+   *
+   * ```zuri-repl
+   * %> true.to_string()
+   * 'true'
+   * %> false.to_string()
+   * 'false'
+   * ```
+   *
+   * @returns {string}
+   */
+  to_string() {}
+}

@@ -19,8 +19,9 @@ class IsolateError < Error {
 }
 
 /**
- * Raised when `Isolate.join()`, `Channel.send()`, or `Channel.recv()`
- * is given a `timeout` and it elapses before the operation completes.
+ * Raised when `Isolate.join()`, `Channel.send()`, or
+ * `Channel.recv()` is given a `timeout` and it elapses before
+ * the operation completes.
  */
 class IsolateTimeoutError < IsolateError {
   @new(message) {
@@ -30,10 +31,11 @@ class IsolateTimeoutError < IsolateError {
 }
 
 /**
- * Raised from `Isolate.join()`, `Channel.send()`, `Channel.recv()`,
- * `isolate.wait_any()`, `isolate.wait_all()`, or `isolate.select()`
- * when the CALLING isolate; the one blocked in that call, not
- * whatever it was waiting on; is `cancel()`ed while still waiting.
+ * Raised from `Isolate.join()`, `Channel.send()`,
+ * `Channel.recv()`, `isolate.wait_any()`, `isolate.wait_all()`,
+ * or `isolate.select()` when the CALLING isolate; the one
+ * blocked in that call, not whatever it was waiting on; is
+ * `cancel()`ed while still waiting.
  */
 class IsolateCancelledError < IsolateError {
   @new(message) {

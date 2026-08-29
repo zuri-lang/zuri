@@ -1,10 +1,11 @@
 /**
  * @module array
- * 
- * This module provides multiple classes for working with arrays of twos-complement
- * integers in the platform byte order. The classes provided in this module complement
- * the _bytes()_ object and allow higher other binary data manipulation.
- * 
+ *
+ * This module provides multiple classes for working with arrays
+ * of twos-complement integers in the platform byte order. The
+ * classes provided in this module complement the _bytes()_
+ * object and allow higher other binary data manipulation.
+ *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 

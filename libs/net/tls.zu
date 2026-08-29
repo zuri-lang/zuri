@@ -1,12 +1,13 @@
 /**
  * @module tls
  *
- * Transport Layer Security over a `TcpStream`, built on top of `rustls`.
- * `TlsStream.connect()`/`accept()` take an already-connected `TcpStream`
- * and run a handshake over it, turning it into an encrypted,
- * certificate-verified stream. That works equally well right after
- * `connect()` (HTTPS, IMAPS) or after a STARTTLS-style plaintext
- * exchange (SMTP, FTPS) - see the second example below.
+ * Transport Layer Security over a `TcpStream`, built on top of
+ * `rustls`. `TlsStream.connect()`/`accept()` take an
+ * already-connected `TcpStream` and run a handshake over it,
+ * turning it into an encrypted, certificate-verified stream.
+ * That works equally well right after `connect()` (HTTPS, IMAPS)
+ * or after a STARTTLS-style plaintext exchange (SMTP, FTPS) -
+ * see the second example below.
  *
  * A basic HTTPS-style client:
  *
@@ -25,8 +26,9 @@
  * stream.close()
  * ```
  *
- * A STARTTLS-style upgrade looks almost identical, except the wrap
- * happens after a round of plaintext instead of right after connect:
+ * A STARTTLS-style upgrade looks almost identical, except the
+ * wrap happens after a round of plaintext instead of right after
+ * connect:
  *
  * ```zuri
  * import net
@@ -41,8 +43,8 @@
  * var stream = tls.TlsStream.connect(tcp, tls.TlsConfig(), 'mail.example.com')
  * ```
  *
- * A minimal server, reusing `TcpStream`'s own bind/accept for the
- * plaintext side of things:
+ * A minimal server, reusing `TcpStream`'s own bind/accept for
+ * the plaintext side of things:
  *
  * ```zuri
  * import net
@@ -68,31 +70,34 @@
 import _net_tls
 
 /**
- * The handful of choices a TLS handshake needs: which certificate
- * authorities to trust, an optional certificate and private key to
- * present (as a server, or as a client doing mutual TLS), and which
- * protocol versions and ALPN protocols are acceptable.
+ * The handful of choices a TLS handshake needs: which
+ * certificate authorities to trust, an optional certificate and
+ * private key to present (as a server, or as a client doing
+ * mutual TLS), and which protocol versions and ALPN protocols
+ * are acceptable.
  *
- * A single `TlsConfig` can be reused for many connections - build it
- * once and pass it to every `connect()`/`accept()` call rather than
- * constructing a fresh one per connection.
+ * A single `TlsConfig` can be reused for many connections -
+ * build it once and pass it to every `connect()`/`accept()` call
+ * rather than constructing a fresh one per connection.
  */
 class TlsConfig {
 
   /**
-   * Returns a new `TlsConfig` with sensible defaults: the bundled
-   * Mozilla root certificate list, no client/server certificate, no
-   * ALPN protocols, and both TLS 1.2 and TLS 1.3 enabled.
+   * Returns a new `TlsConfig` with sensible defaults: the
+   * bundled Mozilla root certificate list, no client/server
+   * certificate, no ALPN protocols, and both TLS 1.2 and TLS 1.3
+   * enabled.
    */
   @new() {
     self._ptr = _net_tls.tls_config_new()
   }
 
   /**
-   * Hands out this config's underlying native handle, the same way
-   * `TcpStream.native_ptr()` does - `TlsStream`'s `connect()`/`accept()`
-   * need it and, like any `_`-prefixed field, `_ptr` isn't otherwise
-   * reachable from outside this class.
+   * Hands out this config's underlying native handle, the same
+   * way `TcpStream.native_ptr()` does - `TlsStream`'s
+   * `connect()`/`accept()` need it and, like any `_`-prefixed
+   * field, `_ptr` isn't otherwise reachable from outside this
+   * class.
    *
    * @returns Ptr
    */
@@ -101,32 +106,35 @@ class TlsConfig {
   }
 
   /**
-   * Chooses where trusted root certificate authorities come from when
-   * verifying a peer's certificate chain.
+   * Chooses where trusted root certificate authorities come from
+   * when verifying a peer's certificate chain.
    *
-   * `'bundled'` (the default) uses a compiled-in copy of Mozilla's root
-   * list, which is portable and doesn't depend on anything being
-   * installed on the machine. `'native'` uses the operating system's own
-   * trust store instead, which picks up locally-installed or
-   * enterprise-managed CAs that the bundled list doesn't know about.
+   * `'bundled'` (the default) uses a compiled-in copy of
+   * Mozilla's root list, which is portable and doesn't depend on
+   * anything being installed on the machine. `'native'` uses the
+   * operating system's own trust store instead, which picks up
+   * locally-installed or enterprise-managed CAs that the bundled
+   * list doesn't know about.
    *
    * @param string mode: `'bundled'` or `'native'`
-   * @throws Error if `mode` is neither, or (for `'native'`) if the OS
-   *   trust store can't be read
+   * @throws Error if `mode` is neither, or (for `'native'`) if
+   *    the OS trust store can't be read
    */
   set_root_store(mode) {
     _net_tls.tls_config_set_root_store(self._ptr, mode)
   }
 
   /**
-   * Adds one or more PEM-encoded certificates to this config's trusted
-   * roots, on top of whatever `set_root_store()` already selected. Call
-   * this more than once to add several custom CAs - useful for trusting
-   * a self-signed development certificate or a private/internal CA
-   * alongside the normal public trust store.
+   * Adds one or more PEM-encoded certificates to this config's
+   * trusted roots, on top of whatever `set_root_store()` already
+   * selected. Call this more than once to add several custom CAs
+   * - useful for trusting a self-signed development certificate
+   * or a private/internal CA alongside the normal public trust
+   * store.
    *
    * @param string pem: One or more PEM-encoded CA certificates
-   * @throws Error if none of the certificates in `pem` could be parsed
+   * @throws Error if none of the certificates in `pem` could be
+   *    parsed
    */
   add_ca_pem(pem) {
     _net_tls.tls_config_add_ca_pem(self._ptr, pem)
@@ -134,27 +142,30 @@ class TlsConfig {
 
   /**
    * Sets the certificate chain and private key this side of the
-   * connection presents to the other. Required before `TlsStream.accept()`
-   * can be used with this config (a server always needs a certificate);
-   * optional for `TlsStream.connect()`, where it's only needed if the
-   * server requires a client certificate (mutual TLS).
+   * connection presents to the other. Required before
+   * `TlsStream.accept()` can be used with this config (a server
+   * always needs a certificate); optional for
+   * `TlsStream.connect()`, where it's only needed if the server
+   * requires a client certificate (mutual TLS).
    *
-   * @param string cert_chain_pem: The end-entity certificate followed by
-   *   any intermediate certificates, all PEM-encoded
-   * @param string key_pem: The PEM-encoded private key matching the
-   *   end-entity certificate
-   * @throws Error if either PEM can't be parsed, or if the key doesn't
-   *   match the certificate
+   * @param string cert_chain_pem: The end-entity certificate
+   *    followed by any intermediate certificates, all
+   *    PEM-encoded
+   * @param string key_pem: The PEM-encoded private key matching
+   *    the end-entity certificate
+   * @throws Error if either PEM can't be parsed, or if the key
+   *    doesn't match the certificate
    */
   set_cert_chain(cert_chain_pem, key_pem) {
     _net_tls.tls_config_set_cert_chain(self._ptr, cert_chain_pem, key_pem)
   }
 
   /**
-   * For a server config: whether to require the connecting client to
-   * present a trusted certificate (mutual TLS). Verified against the
-   * same root store `set_root_store()`/`add_ca_pem()` configured. Has no
-   * effect on a config only ever used with `TlsStream.connect()`.
+   * For a server config: whether to require the connecting
+   * client to present a trusted certificate (mutual TLS).
+   * Verified against the same root store
+   * `set_root_store()`/`add_ca_pem()` configured. Has no effect
+   * on a config only ever used with `TlsStream.connect()`.
    *
    * @param bool required
    */
@@ -163,10 +174,11 @@ class TlsConfig {
   }
 
   /**
-   * Sets the list of ALPN (Application-Layer Protocol Negotiation)
-   * protocol names this side is willing to speak, in preference order,
-   * e.g. `['h2', 'http/1.1']`. The negotiated protocol - if any - is
-   * available afterwards via `TlsStream.alpn_protocol()`.
+   * Sets the list of ALPN (Application-Layer Protocol
+   * Negotiation) protocol names this side is willing to speak,
+   * in preference order, e.g. `['h2', 'http/1.1']`. The
+   * negotiated protocol - if any - is available afterwards via
+   * `TlsStream.alpn_protocol()`.
    *
    * @param list protocols: Protocol names, most preferred first
    */
@@ -175,27 +187,29 @@ class TlsConfig {
   }
 
   /**
-   * Restricts which TLS protocol versions are acceptable. Pass `'1.2'`
-   * or `'1.3'` for either bound, or `nil` to leave that bound open. Both
-   * versions are enabled by default.
+   * Restricts which TLS protocol versions are acceptable. Pass
+   * `'1.2'` or `'1.3'` for either bound, or `nil` to leave that
+   * bound open. Both versions are enabled by default.
    *
    * @param ?string min: The lowest acceptable version, or `nil`
    * @param ?string max: The highest acceptable version, or `nil`
-   * @throws Error if `min` or `max` is neither `'1.2'`, `'1.3'`, nor `nil`
+   * @throws Error if `min` or `max` is neither `'1.2'`, `'1.3'`,
+   *    nor `nil`
    */
   set_versions(min, max) {
     _net_tls.tls_config_set_versions(self._ptr, min, max)
   }
 
   /**
-   * Disables certificate verification entirely when `insecure` is
-   * `true` - no chain-of-trust check, no hostname check, no expiry
-   * check. Handshake signatures are still verified cryptographically,
-   * so this isn't a total bypass, just an untrusted one.
+   * Disables certificate verification entirely when `insecure`
+   * is `true` - no chain-of-trust check, no hostname check, no
+   * expiry check. Handshake signatures are still verified
+   * cryptographically, so this isn't a total bypass, just an
+   * untrusted one.
    *
    * @note This exists for local development and testing against
-   *    self-signed certificates. Never enable it for a connection that
-   *    handles real traffic.
+   *    self-signed certificates. Never enable it for a
+   *    connection that handles real traffic.
    * @param bool insecure
    */
   set_insecure(insecure) {
@@ -204,9 +218,9 @@ class TlsConfig {
 }
 
 /**
- * The subset of a peer's certificate that's useful to inspect from Zuri
- * code, without needing a full ASN.1/X.509 library on hand. Returned by
- * `TlsStream.peer_certificate()`.
+ * The subset of a peer's certificate that's useful to inspect
+ * from Zuri code, without needing a full ASN.1/X.509 library on
+ * hand. Returned by `TlsStream.peer_certificate()`.
  *
  * @printable
  */
@@ -222,7 +236,8 @@ class PeerCertificate {
   }
 
   /**
-   * The raw DER-encoded certificate, exactly as the peer presented it.
+   * The raw DER-encoded certificate, exactly as the peer
+   * presented it.
    *
    * @returns bytes
    */
@@ -231,8 +246,9 @@ class PeerCertificate {
   }
 
   /**
-   * The certificate's subject, as an RFC 4514-style distinguished name
-   * string, e.g. `'CN=example.com,O=Example Inc,C=US'`.
+   * The certificate's subject, as an RFC 4514-style
+   * distinguished name string, e.g. `'CN=example.com,O=Example
+   * Inc,C=US'`.
    *
    * @returns string
    */
@@ -241,8 +257,8 @@ class PeerCertificate {
   }
 
   /**
-   * The certificate's issuer, in the same distinguished-name format as
-   * `subject()`.
+   * The certificate's issuer, in the same distinguished-name
+   * format as `subject()`.
    *
    * @returns string
    */
@@ -251,8 +267,9 @@ class PeerCertificate {
   }
 
   /**
-   * The certificate's Subject Alternative Names - the DNS names, IP
-   * addresses, email addresses, and URIs it's actually valid for.
+   * The certificate's Subject Alternative Names - the DNS names,
+   * IP addresses, email addresses, and URIs it's actually valid
+   * for.
    *
    * @returns list a list of strings, possibly empty
    */
@@ -261,8 +278,8 @@ class PeerCertificate {
   }
 
   /**
-   * The start of the certificate's validity period, as seconds since
-   * the Unix epoch (UTC).
+   * The start of the certificate's validity period, as seconds
+   * since the Unix epoch (UTC).
    *
    * @returns number
    */
@@ -271,8 +288,8 @@ class PeerCertificate {
   }
 
   /**
-   * The end of the certificate's validity period, as seconds since the
-   * Unix epoch (UTC).
+   * The end of the certificate's validity period, as seconds
+   * since the Unix epoch (UTC).
    *
    * @returns number
    */
@@ -291,14 +308,15 @@ class PeerCertificate {
 
 /**
  * An established TLS connection, wrapping an already-connected
- * `TcpStream`. Always created by wrapping an existing stream - via
- * `connect()` on the client side or `accept()` on the server side -
- * never constructed directly.
+ * `TcpStream`. Always created by wrapping an existing stream -
+ * via `connect()` on the client side or `accept()` on the server
+ * side - never constructed directly.
  *
- * @note The wrapped `TcpStream` is consumed: once `connect()`/`accept()`
- *    returns, the original `TcpStream` instance is dead (the same way
- *    `TcpStream.close()` leaves it dead) and every further read/write
- *    happens through the returned `TlsStream` instead.
+ * @note The wrapped `TcpStream` is consumed: once
+ *    `connect()`/`accept()` returns, the original `TcpStream`
+ *    instance is dead (the same way `TcpStream.close()` leaves
+ *    it dead) and every further read/write happens through the
+ *    returned `TlsStream` instead.
  *
  * @printable
  */
@@ -309,23 +327,24 @@ class TlsStream {
   }
 
   /**
-   * Performs a client-side TLS handshake over `tcp_stream`, verifying
-   * the peer's certificate against `config`'s trusted roots and against
-   * `server_name`.
+   * Performs a client-side TLS handshake over `tcp_stream`,
+   * verifying the peer's certificate against `config`'s trusted
+   * roots and against `server_name`.
    *
-   * `tcp_stream` must already be connected - to the target host for an
-   * implicit-TLS protocol like HTTPS, or to a plaintext connection
-   * that's already had some protocol-specific greeting exchanged over
-   * it for a STARTTLS-style protocol.
+   * `tcp_stream` must already be connected - to the target host
+   * for an implicit-TLS protocol like HTTPS, or to a plaintext
+   * connection that's already had some protocol-specific
+   * greeting exchanged over it for a STARTTLS-style protocol.
    *
-   * @param TcpStream tcp_stream: An already-connected stream; consumed
-   *   by this call
-   * @param TlsConfig config: The trust roots and options to handshake with
+   * @param TcpStream tcp_stream: An already-connected stream;
+   *    consumed by this call
+   * @param TlsConfig config: The trust roots and options to
+   *    handshake with
    * @param string server_name: The hostname to verify the peer's
-   *   certificate against (also sent as the SNI extension)
+   *    certificate against (also sent as the SNI extension)
    * @returns TlsStream
-   * @throws Error if the handshake fails, or the peer's certificate
-   *   isn't trusted or doesn't match `server_name`
+   * @throws Error if the handshake fails, or the peer's
+   *    certificate isn't trusted or doesn't match `server_name`
    */
   static connect(tcp_stream, config, server_name) {
     return TlsStream(_net_tls.tls_wrap_client(
@@ -334,30 +353,31 @@ class TlsStream {
   }
 
   /**
-   * Performs a server-side TLS handshake over `tcp_stream`, presenting
-   * `config`'s certificate chain to the connecting peer.
+   * Performs a server-side TLS handshake over `tcp_stream`,
+   * presenting `config`'s certificate chain to the connecting
+   * peer.
    *
-   * `tcp_stream` must already be connected - typically the result of
-   * `TcpStream.accept()`, either wrapped immediately (implicit TLS) or
-   * after exchanging a protocol-specific plaintext greeting first
-   * (STARTTLS-style).
+   * `tcp_stream` must already be connected - typically the
+   * result of `TcpStream.accept()`, either wrapped immediately
+   * (implicit TLS) or after exchanging a protocol-specific
+   * plaintext greeting first (STARTTLS-style).
    *
-   * @param TcpStream tcp_stream: An already-accepted stream; consumed
-   *   by this call
-   * @param TlsConfig config: Must have a certificate chain set via
-   *   `TlsConfig.set_cert_chain()`
+   * @param TcpStream tcp_stream: An already-accepted stream;
+   *    consumed by this call
+   * @param TlsConfig config: Must have a certificate chain set
+   *    via `TlsConfig.set_cert_chain()`
    * @returns TlsStream
-   * @throws Error if the handshake fails, `config` has no certificate
-   *   chain, or (with `require_client_cert()`) the client didn't present
-   *   a trusted certificate
+   * @throws Error if the handshake fails, `config` has no
+   *    certificate chain, or (with `require_client_cert()`) the
+   *    client didn't present a trusted certificate
    */
   static accept(tcp_stream, config) {
     return TlsStream(_net_tls.tls_wrap_server(tcp_stream.native_ptr(), config.native_ptr()))
   }
 
   /**
-   * Reads up to `length` bytes of decrypted application data. Same
-   * blocking/timeout/EOF semantics as `TcpStream.read()`.
+   * Reads up to `length` bytes of decrypted application data.
+   * Same blocking/timeout/EOF semantics as `TcpStream.read()`.
    *
    * @param number length: The maximum number of bytes to read
    * @returns bytes up to `length` bytes (may be empty on EOF)
@@ -368,21 +388,21 @@ class TlsStream {
   }
 
   /**
-   * Reads exactly `length` bytes, blocking until that many bytes have
-   * arrived.
+   * Reads exactly `length` bytes, blocking until that many bytes
+   * have arrived.
    *
    * @param number length: The exact number of bytes to read
    * @returns bytes exactly `length` bytes
-   * @throws Error if EOF is reached early, or on any other I/O or TLS
-   *   record error
+   * @throws Error if EOF is reached early, or on any other I/O
+   *    or TLS record error
    */
   read_exact(length) {
     return _net_tls.tls_read_exact(self._ptr, length)
   }
 
   /**
-   * Reads until EOF (i.e. until the peer sends `close_notify` and
-   * closes the connection), returning everything received.
+   * Reads until EOF (i.e. until the peer sends `close_notify`
+   * and closes the connection), returning everything received.
    *
    * @returns bytes every byte read up to EOF
    * @throws Error on an underlying I/O or TLS record error
@@ -395,20 +415,21 @@ class TlsStream {
    * Reads until EOF, decoding everything received as UTF-8 text.
    *
    * @returns string every byte read up to EOF, decoded as UTF-8
-   * @throws Error on an underlying I/O error, a TLS record error, or if
-   *   the data isn't valid UTF-8
+   * @throws Error on an underlying I/O error, a TLS record
+   *    error, or if the data isn't valid UTF-8
    */
   read_as_string() {
     return _net_tls.tls_read_as_string(self._ptr)
   }
 
   /**
-   * Encrypts and writes `data`, returning the number of plaintext bytes
-   * actually written. A successful call may write fewer bytes than
-   * `data` contains; use `write_all()` if every byte needs to go out
-   * before continuing.
+   * Encrypts and writes `data`, returning the number of
+   * plaintext bytes actually written. A successful call may
+   * write fewer bytes than `data` contains; use `write_all()` if
+   * every byte needs to go out before continuing.
    *
-   * @param {bytes|string} data: The bytes (or UTF-8 text) to write
+   * @param {bytes|string} data: The bytes (or UTF-8 text) to
+   *    write
    * @returns number the number of bytes actually written
    * @throws Error on an underlying I/O or TLS record error
    */
@@ -417,10 +438,11 @@ class TlsStream {
   }
 
   /**
-   * Encrypts and writes the entirety of `data`, blocking and retrying
-   * internally until every byte has been written.
+   * Encrypts and writes the entirety of `data`, blocking and
+   * retrying internally until every byte has been written.
    *
-   * @param {bytes|string} data: The bytes (or UTF-8 text) to write
+   * @param {bytes|string} data: The bytes (or UTF-8 text) to
+   *    write
    * @throws Error on an underlying I/O or TLS record error
    */
   write_all(data) {
@@ -428,7 +450,8 @@ class TlsStream {
   }
 
   /**
-   * Flushes any buffered ciphertext out to the underlying socket.
+   * Flushes any buffered ciphertext out to the underlying
+   * socket.
    *
    * @throws Error on an underlying I/O error
    */
@@ -437,9 +460,10 @@ class TlsStream {
   }
 
   /**
-   * Sends a `close_notify` alert, telling the peer this side is done
-   * writing. Unlike `close()`, the stream stays usable afterwards for
-   * reading whatever the peer still has left to send.
+   * Sends a `close_notify` alert, telling the peer this side is
+   * done writing. Unlike `close()`, the stream stays usable
+   * afterwards for reading whatever the peer still has left to
+   * send.
    *
    * @throws Error on an underlying I/O error
    */
@@ -448,17 +472,17 @@ class TlsStream {
   }
 
   /**
-   * Sends `close_notify` (best-effort - a peer that's already gone
-   * won't stop this from succeeding) and releases the underlying
-   * socket. Safe to call more than once.
+   * Sends `close_notify` (best-effort - a peer that's already
+   * gone won't stop this from succeeding) and releases the
+   * underlying socket. Safe to call more than once.
    */
   close() {
     _net_tls.tls_close(self._ptr)
   }
 
   /**
-   * The ALPN protocol negotiated during the handshake, or `nil` if
-   * neither side offered one or none matched.
+   * The ALPN protocol negotiated during the handshake, or `nil`
+   * if neither side offered one or none matched.
    *
    * @returns ?string
    */
@@ -467,8 +491,8 @@ class TlsStream {
   }
 
   /**
-   * The peer's end-entity certificate, or `nil` if the peer didn't
-   * present one (only possible on the server side, when
+   * The peer's end-entity certificate, or `nil` if the peer
+   * didn't present one (only possible on the server side, when
    * `TlsConfig.require_client_cert()` wasn't set).
    *
    * @returns ?PeerCertificate

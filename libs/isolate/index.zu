@@ -1,98 +1,117 @@
 /**
  * @module isolate
  *
- * High-throughput parallel concurrency backed by a pool of operating-system
- * isolate threads.
+ * High-throughput parallel concurrency backed by a pool of
+ * operating-system isolate threads.
  *
  * ## Architectural Model: Shared-Nothing Isolates
  *
- * Modern multi-core computing demands concurrency models that scale linearly
- * with CPU core count while safeguarding applications against data races and
- * memory corruption. Zuri addresses this by adopting a **Shared-Nothing Isolate**
- * architecture (similar to the Actor model and Dart/Erlang isolates) rather than
- * shared-memory green threads.
+ * Modern multi-core computing demands concurrency models that
+ * scale linearly with CPU core count while safeguarding
+ * applications against data races and memory corruption. Zuri
+ * addresses this by adopting a **Shared-Nothing Isolate**
+ * architecture (similar to the Actor model and Dart/Erlang
+ * isolates) rather than shared-memory green threads.
  *
- * In Zuri, every isolate thread executes within its own self-contained Virtual
- * Machine (`VM`) instance. Each isolate possesses an independent generational
- * garbage-collected heap, nursery allocator, call frame stack, register array,
- * and global module namespace. Isolates run concurrently across physical CPU cores
- * without sharing heap pointers or mutable structures with other isolates or the
- * main thread.
+ * In Zuri, every isolate thread executes within its own
+ * self-contained Virtual Machine (`VM`) instance. Each isolate
+ * possesses an independent generational garbage-collected heap,
+ * nursery allocator, call frame stack, register array, and
+ * global module namespace. Isolates run concurrently across
+ * physical CPU cores without sharing heap pointers or mutable
+ * structures with other isolates or the main thread.
  *
- * Inter-isolate communication is accomplished strictly across defined boundary
- * barriers. When values, closures, or data structures are transmitted via `spawn()`,
- * `join()`, or `Channel` queues, Zuri traverses the object graph and constructs
- * an isomorphic copy on the destination isolate's heap. This transfer barrier
- * faithfully preserves cyclic graphs, shared object identity within the payload,
- * and class prototypes without sharing mutable memory across thread boundaries.
+ * Inter-isolate communication is accomplished strictly across
+ * defined boundary barriers. When values, closures, or data
+ * structures are transmitted via `spawn()`, `join()`, or
+ * `Channel` queues, Zuri traverses the object graph and
+ * constructs an isomorphic copy on the destination isolate's
+ * heap. This transfer barrier faithfully preserves cyclic
+ * graphs, shared object identity within the payload, and class
+ * prototypes without sharing mutable memory across thread
+ * boundaries.
  *
  * ## Memory Footprint & Task Density
  *
- * High-concurrency systems frequently face a dilemma between heavy operating
- * system threads and complex coroutine runtimes. Zuri reconciles high task density
- * with OS-level multi-core execution through a two-tier scheduling design:
+ * High-concurrency systems frequently face a dilemma between
+ * heavy operating system threads and complex coroutine runtimes.
+ * Zuri reconciles high task density with OS-level multi-core
+ * execution through a two-tier scheduling design:
  *
- * Instead of allocating a dedicated OS thread or a dedicated runtime stack for
- * every dispatched task, calling `isolate.spawn()` creates a lightweight `Task`
- * descriptor (the callee and its arguments, already captured into a
- * heap-independent snapshot) and pushes it onto a shared, mutex-guarded queue.
+ * Instead of allocating a dedicated OS thread or a dedicated
+ * runtime stack for every dispatched task, calling
+ * `isolate.spawn()` creates a lightweight `Task` descriptor (the
+ * callee and its arguments, already captured into a
+ * heap-independent snapshot) and pushes it onto a shared,
+ * mutex-guarded queue.
  *
- * - **Isolate Pooling & Reuse**: A fixed pool of isolate OS threads, configured via
- *   `configure()` and defaulting to the system's available CPU core count is
- *   pre-warmed at startup. These isolate threads continuously drain the task
- *   queue, executing tasks sequentially within their long-lived isolate contexts.
- * - **Small, Fixed-Size Task Descriptors**: Because a queued task is a captured
- *   value snapshot rather than a suspended OS thread, applications can enqueue
- *   large task bursts (e.g. 100,000+ jobs) without paying for a dedicated stack
- *   or heap per task. The fixed part of a task (its queue slot plus its join
- *   handle) is a few hundred bytes; a task's actual total footprint on top of
- *   that scales with whatever the callee's own arguments and captured state
- *   need to carry across the boundary, same as any other value transfer
- *   described above.
+ * - **Isolate Pooling & Reuse**: A fixed pool of isolate OS
+ * threads, configured via `configure()` and defaulting to the
+ * system's available CPU core count is pre-warmed at startup.
+ * These isolate threads continuously drain the task queue,
+ * executing tasks sequentially within their long-lived isolate
+ * contexts. - **Small, Fixed-Size Task Descriptors**: Because a
+ * queued task is a captured value snapshot rather than a
+ * suspended OS thread, applications can enqueue large task
+ * bursts (e.g. 100,000+ jobs) without paying for a dedicated
+ * stack or heap per task. The fixed part of a task (its queue
+ * slot plus its join handle) is a few hundred bytes; a task's
+ * actual total footprint on top of that scales with whatever the
+ * callee's own arguments and captured state need to carry across
+ * the boundary, same as any other value transfer described
+ * above.
  *
  * ## Garbage Collection & Scalability Under Load
  *
- * A frequent performance bottleneck in multi-threaded runtimes is garbage
- * collection cross-talk. When multiple threads share a single global heap, an
- * allocation spike in one thread can trigger global Stop-The-World (STW) pauses,
- * lock contention on shared allocation arenas, or heavy write-barrier synchronization
- * that degrades throughput across all CPU cores.
+ * A frequent performance bottleneck in multi-threaded runtimes
+ * is garbage collection cross-talk. When multiple threads share
+ * a single global heap, an allocation spike in one thread can
+ * trigger global Stop-The-World (STW) pauses, lock contention on
+ * shared allocation arenas, or heavy write-barrier
+ * synchronization that degrades throughput across all CPU cores.
  *
- * Zuri eliminates GC interference through complete heap segregation:
+ * Zuri eliminates GC interference through complete heap
+ * segregation:
  *
- * - **Local Generational Collections**: Every isolate isolate manages its own
- *   nursery and old-generation heaps. Young-generation minor collections and
- *   major mark-sweep cycles execute entirely on the local isolate thread.
- * - **Zero Stop-The-World Pauses Across Threads**: A garbage collection cycle on
- *   Isolate A never halts, pauses, or synchronizes with Isolate B or the main thread.
- *   Compute-heavy, allocation-intensive workloads (such as parallel tree building,
- *   matrix algebra, and image rendering) achieve near-linear multi-core speedup
- *   without GC contention.
+ * - **Local Generational Collections**: Every isolate isolate
+ * manages its own nursery and old-generation heaps.
+ * Young-generation minor collections and major mark-sweep cycles
+ * execute entirely on the local isolate thread. - **Zero
+ * Stop-The-World Pauses Across Threads**: A garbage collection
+ * cycle on Isolate A never halts, pauses, or synchronizes with
+ * Isolate B or the main thread. Compute-heavy,
+ * allocation-intensive workloads (such as parallel tree
+ * building, matrix algebra, and image rendering) achieve
+ * near-linear multi-core speedup without GC contention.
  *
  * ## Data Safety & Race Conditions
  *
- * Concurrency bugs in shared-memory architectures such as data races, torn reads,
- * and lock inversion deadlocks often arise from uncontrolled concurrent access to
- * mutable heap memory.
+ * Concurrency bugs in shared-memory architectures such as data
+ * races, torn reads, and lock inversion deadlocks often arise
+ * from uncontrolled concurrent access to mutable heap memory.
  *
- * - **Data-Race Free by Construction**: Because memory is physically partitioned
- *   into isolated heaps, two isolates can never concurrently mutate the same object
- *   in memory. Data races on heap objects are fundamentally impossible, eliminating
- *   the need for mutex locks or synchronized wrappers around user data structures.
- * - **Snapshot Closure Semantics**: When a closure is passed to a isolate, its
- *   captured local variables and referenced global definitions are snapshot at
- *   dispatch time. The isolate receives an isolated clone of the captured state;
- *   subsequent mutations performed by the caller never affect the isolate, and
- *   isolate mutations never leak back to the caller.
+ * - **Data-Race Free by Construction**: Because memory is
+ * physically partitioned into isolated heaps, two isolates can
+ * never concurrently mutate the same object in memory. Data
+ * races on heap objects are fundamentally impossible,
+ * eliminating the need for mutex locks or synchronized wrappers
+ * around user data structures. - **Snapshot Closure Semantics**:
+ * When a closure is passed to a isolate, its captured local
+ * variables and referenced global definitions are snapshot at
+ * dispatch time. The isolate receives an isolated clone of the
+ * captured state; subsequent mutations performed by the caller
+ * never affect the isolate, and isolate mutations never leak
+ * back to the caller.
  *
  * ## Comparison with Go Goroutines
  *
- * Both Go and Zuri provide lightweight concurrency abstractions, but they optimize
- * for different runtime trade-offs:
+ * Both Go and Zuri provide lightweight concurrency abstractions,
+ * but they optimize for different runtime trade-offs:
  *
- * Go utilizes Communicating Sequential Processes (CSP) built on M:N green threads
- * multiplexed across OS threads with a single shared global heap. Zuri utilizes
- * Thread-Pooled Shared-Nothing Isolates with deep-copy transfer barriers.
+ * Go utilizes Communicating Sequential Processes (CSP) built on
+ * M:N green threads multiplexed across OS threads with a single
+ * shared global heap. Zuri utilizes Thread-Pooled Shared-Nothing
+ * Isolates with deep-copy transfer barriers.
  *
  * | Feature | Go Goroutines | Zuri Isolates |
  * | :--- | :--- | :--- |
@@ -105,76 +124,92 @@
  *
  * ## Values That Can Cross Isolate Boundaries
  *
- * Zuri's value transfer engine supports virtually all language data types across
- * isolate boundaries, including:
+ * Zuri's value transfer engine supports virtually all language
+ * data types across isolate boundaries, including:
  *
- * - **Primitives**: `nil`, `bool`, `number`, `bigint`, `string`, `bytes`, and `range`.
- * - **Collections**: `list` and `dict` (including nested, multidimensional, and cyclic structures).
- * - **Object-Oriented Structures**: Class instances, class declarations (preserving
- *   static fields, superclasses, and method tables), and bound methods.
- * - **Executable Code**: Functions, closures (capturing upvalues), anonymous lambdas,
- *   and top-level scripts.
- * - **Native Handles**: `Ptr` handles (moved linearly), `Channel` handles, and `Isolate` handles.
+ * - **Primitives**: `nil`, `bool`, `number`, `bigint`, `string`,
+ * `bytes`, and `range`. - **Collections**: `list` and `dict`
+ * (including nested, multidimensional, and cyclic structures). -
+ * **Object-Oriented Structures**: Class instances, class
+ * declarations (preserving static fields, superclasses, and
+ * method tables), and bound methods. - **Executable Code**:
+ * Functions, closures (capturing upvalues), anonymous lambdas,
+ * and top-level scripts. - **Native Handles**: `Ptr` handles
+ * (moved linearly), `Channel` handles, and `Isolate` handles.
  *
  * ### Non-Transferable Types
  *
- * Attempting to transmit any of the following values across a isolate boundary will
- * immediately raise a `IsolateError`:
- * - Active operating system file handles (`file(...)`)
- * - Module namespaces or module binding references
+ * Attempting to transmit any of the following values across a
+ * isolate boundary will immediately raise a `IsolateError`: -
+ * Active operating system file handles (`file(...)`) - Module
+ * namespaces or module binding references
  *
  * ## Native Resources & Ownership Transfer
  *
- * Operating system resources encapsulated within native pointers (`Ptr`)—such as
- * database connections, network sockets, or compression streams—cannot be safely
- * duplicated across threads.
+ * Operating system resources encapsulated within native pointers
+ * (`Ptr`)—such as database connections, network sockets, or
+ * compression streams—cannot be safely duplicated across
+ * threads.
  *
- * Zuri enforces **linear ownership transfer (move semantics)** for `Ptr` values:
- * - When a `Ptr` is sent through `spawn()`, `join()`, or a `Channel`, ownership is
- *   transferred to the recipient, and the sender's handle is permanently invalidated.
- * - Subsequent attempts to read or use an invalidated `Ptr` will raise an error.
- * - In contrast, synchronization primitives like `Channel` and `Isolate` handles
- *   are thread-safe and may be freely shared among multiple isolates.
+ * Zuri enforces **linear ownership transfer (move semantics)**
+ * for `Ptr` values: - When a `Ptr` is sent through `spawn()`,
+ * `join()`, or a `Channel`, ownership is transferred to the
+ * recipient, and the sender's handle is permanently invalidated.
+ * - Subsequent attempts to read or use an invalidated `Ptr` will
+ * raise an error. - In contrast, synchronization primitives like
+ * `Channel` and `Isolate` handles are thread-safe and may be
+ * freely shared among multiple isolates.
  *
  * ## Failure Isolation & Fault Tolerance
  *
- * A software defect or unhandled exception within one isolate is strictly contained
- * and will never terminate peer isolates, corrupt the pool, or crash the host process.
+ * A software defect or unhandled exception within one isolate is
+ * strictly contained and will never terminate peer isolates,
+ * corrupt the pool, or crash the host process.
  *
- * - **Structured Error Propagation**: Raised exceptions in a isolate task are
- *   captured and re-raised as `IsolateError` (complete with original source file
- *   and line stack traces) when `join()` or `try_join()` is invoked.
- * - **Automatic Isolate Recycling**: In the rare event of an unrecoverable isolate
- *   panic, the affected isolate thread is safely retired and replaced with a fresh
- *   isolate, maintaining full pool capacity.
- * - **Un-Joined Failure Diagnostics**: If a isolate fails and its handle is dropped
- *   without being joined, a diagnostic warning is emitted to ensure errors are
- *   never silently swallowed.
+ * - **Structured Error Propagation**: Raised exceptions in a
+ * isolate task are captured and re-raised as `IsolateError`
+ * (complete with original source file and line stack traces)
+ * when `join()` or `try_join()` is invoked. - **Automatic
+ * Isolate Recycling**: In the rare event of an unrecoverable
+ * isolate panic, the affected isolate thread is safely retired
+ * and replaced with a fresh isolate, maintaining full pool
+ * capacity. - **Un-Joined Failure Diagnostics**: If a isolate
+ * fails and its handle is dropped without being joined, a
+ * diagnostic warning is emitted to ensure errors are never
+ * silently swallowed.
  *
  * ## Cancellation Semantics
  *
- * Applications can cancel running or queued isolates via `Isolate.cancel()`.
+ * Applications can cancel running or queued isolates via
+ * `Isolate.cancel()`.
  *
- * - **Preemptive Blocking Interruption**: If a isolate is blocked on a channel
- *   operation (`Channel.send()`, `Channel.recv()`), a isolate join (`Isolate.join()`),
- *   or a multiplexer (`select()`, `wait_any()`, `wait_all()`), `cancel()` interrupts
- *   the blocking call promptly with a `IsolateCancelledError`.
- * - **Cooperative Compute Polling**: During active computational loops, code can
- *   cooperatively poll `isolate.is_cancelled()` to gracefully terminate execution.
+ * - **Preemptive Blocking Interruption**: If a isolate is
+ * blocked on a channel operation (`Channel.send()`,
+ * `Channel.recv()`), a isolate join (`Isolate.join()`), or a
+ * multiplexer (`select()`, `wait_any()`, `wait_all()`),
+ * `cancel()` interrupts the blocking call promptly with a
+ * `IsolateCancelledError`. - **Cooperative Compute Polling**:
+ * During active computational loops, code can cooperatively poll
+ * `isolate.is_cancelled()` to gracefully terminate execution.
  *
  * ## Structured Concurrency (`isolate.scope()`)
  *
- * Unbounded background concurrency can lead to orphan tasks, leaked resources,
- * and missed errors if spawned isolates outlive their intended context. Zuri provides
- * **Structured Concurrency** through `isolate.scope(body)` and the `Scope` handle.
+ * Unbounded background concurrency can lead to orphan tasks,
+ * leaked resources, and missed errors if spawned isolates
+ * outlive their intended context. Zuri provides **Structured
+ * Concurrency** through `isolate.scope(body)` and the `Scope`
+ * handle.
  *
- * - **Lifetime Bounded to Lexical Scope**: Any isolate spawned via `s.spawn()` within
- *   a `scope()` block is guaranteed to complete before `scope()` returns.
- * - **Fail-Fast Automatic Cancellation**: If the scope's `body` raises an exception or
- *   if any child isolate fails, all other sibling isolates in that scope are
- *   automatically sent a cancellation signal (`cancel()`), preventing wasted computation.
- * - **Clean Teardown & Error Prioritization**: `scope()` waits for all cancelled
- *   siblings to finish shutting down before propagating the root failure to the caller.
+ * - **Lifetime Bounded to Lexical Scope**: Any isolate spawned
+ * via `s.spawn()` within a `scope()` block is guaranteed to
+ * complete before `scope()` returns. - **Fail-Fast Automatic
+ * Cancellation**: If the scope's `body` raises an exception or
+ * if any child isolate fails, all other sibling isolates in that
+ * scope are automatically sent a cancellation signal
+ * (`cancel()`), preventing wasted computation. - **Clean
+ * Teardown & Error Prioritization**: `scope()` waits for all
+ * cancelled siblings to finish shutting down before propagating
+ * the root failure to the caller.
  *
  * ## Examples
  *
@@ -264,18 +299,18 @@ class Isolate {
   }
 
   /**
-   * Blocks until the isolate finishes and returns its result. May
-   * be called more than once; later calls return immediately with
-   * the same result.
+   * Blocks until the isolate finishes and returns its result.
+   * May be called more than once; later calls return immediately
+   * with the same result.
    *
-   * @param number timeout: seconds to wait before giving up. Waits
-   *   indefinitely if omitted.
+   * @param number timeout: seconds to wait before giving up.
+   *    Waits indefinitely if omitted.
    * @returns any
    * @raises IsolateError if the isolate's function raised an
-   *   uncaught error
+   *    uncaught error
    * @raises IsolateTimeoutError if `timeout` elapses first
-   * @raises IsolateCancelledError if the CALLING isolate (not this
-   *   one) is cancelled while blocked here
+   * @raises IsolateCancelledError if the CALLING isolate (not
+   *    this one) is cancelled while blocked here
    */
   join(timeout: ?number) {
     var r = _isolate.join(self._ptr, timeout)
@@ -301,9 +336,9 @@ class Isolate {
    * raises `IsolateCancelledError`.
    *
    * Otherwise; plain, non-blocking code; cancellation is
-   * cooperative: it does not interrupt code that's already running.
-   * The isolate's own function must check `isolate.is_cancelled()`
-   * and return on its own.
+   * cooperative: it does not interrupt code that's already
+   * running. The isolate's own function must check
+   * `isolate.is_cancelled()` and return on its own.
    */
   cancel() {
     _isolate.cancel(self._ptr)
@@ -311,29 +346,29 @@ class Isolate {
 
   /**
    * @returns bool: `true` if `cancel()` has been called on this
-   *   isolate.
+   *    isolate.
    */
   is_cancelled() {
     return _isolate.is_cancelled(self._ptr)
   }
 
   /**
-   * @returns ?string: the name given via `spawn_named()`, or `nil` if
-   *   this isolate was started with plain `spawn()`.
+   * @returns ?string: the name given via `spawn_named()`, or
+   *    `nil` if this isolate was started with plain `spawn()`.
    */
   name() {
     return _isolate.name(self._ptr)
   }
 
   /**
-   * Returns the isolate's result, or `nil` if it has not finished
-   * yet. Does not block.
+   * Returns the isolate's result, or `nil` if it has not
+   * finished yet. Does not block.
    *
    * @note a isolate that returns `nil` is indistinguishable from
-   *   one still running. Use `is_done()` to tell them apart.
+   *    one still running. Use `is_done()` to tell them apart.
    * @returns any
    * @raises IsolateError if the isolate's function raised an
-   *   uncaught error
+   *    uncaught error
    */
   try_join() {
     var r = _isolate.try_join(self._ptr)
@@ -354,23 +389,24 @@ class Isolate {
   }
 
   /**
-   * Unlike `try_join()`, never marks a failure as "observed"; safe
-   * to poll purely to check progress without silencing the warning a
-   * failure that's never actually `join()`ed/`try_join()`ed would
-   * otherwise get (see the module docs' "Failure isolation" section).
+   * Unlike `try_join()`, never marks a failure as "observed";
+   * safe to poll purely to check progress without silencing the
+   * warning a failure that's never actually
+   * `join()`ed/`try_join()`ed would otherwise get (see the
+   * module docs' "Failure isolation" section).
    *
-   * @returns string: `'pending'` while still running, `'done'` once
-   *   finished successfully, or `'error'` once finished with an
-   *   uncaught error.
+   * @returns string: `'pending'` while still running, `'done'`
+   *    once finished successfully, or `'error'` once finished
+   *    with an uncaught error.
    */
   status() {
     return _isolate.status(self._ptr)
   }
 
   /**
-   * This isolate's underlying native handle, needed by `wait_any()`
-   * to operate on a plain list of `Isolate`s from outside the
-   * class. Not meant for direct use.
+   * This isolate's underlying native handle, needed by
+   * `wait_any()` to operate on a plain list of `Isolate`s from
+   * outside the class. Not meant for direct use.
    */
   handle() {
     return self._ptr
@@ -378,9 +414,9 @@ class Isolate {
 }
 
 /**
- * Starts `fn` running on the isolate pool and returns a handle to
- * it. See the module documentation for which values may cross into
- * `fn` and `args`.
+ * Starts `fn` running on the isolate pool and returns a handle
+ * to it. See the module documentation for which values may cross
+ * into `fn` and `args`.
  *
  * Example:
  *
@@ -396,8 +432,8 @@ class Isolate {
  * @returns Isolate
  * @raises TypeError if `fn` is not callable
  * @raises IsolateError if `fn` is a native function or class,
- *   `fn`/`args` cannot cross a isolate boundary, or the pool has
- *   been `shutdown()`
+ *    `fn`/`args` cannot cross a isolate boundary, or the pool
+ *    has been `shutdown()`
  */
 def _do_spawn(fn, args, name) {
   var r = _isolate.spawn(fn, args, name)
@@ -413,10 +449,10 @@ def spawn(fn: function, ...args) {
 
 /**
  * Same as `spawn()`, but gives the isolate a `name`; purely a
- * debugging label, read back via `Isolate.name()` and included in
- * the "unobserved failure" warning (see the module docs' "Failure
- * isolation" section) if this one fails and is never `join()`ed or
- * `try_join()`ed.
+ * debugging label, read back via `Isolate.name()` and included
+ * in the "unobserved failure" warning (see the module docs'
+ * "Failure isolation" section) if this one fails and is never
+ * `join()`ed or `try_join()`ed.
  *
  * @param string name
  * @param function fn: a closure, bound method, or class method.
@@ -424,8 +460,8 @@ def spawn(fn: function, ...args) {
  * @returns Isolate
  * @raises TypeError if `fn` is not callable
  * @raises IsolateError if `fn` is a native function or class,
- *   `fn`/`args` cannot cross a isolate boundary, or the pool has
- *   been `shutdown()`
+ *    `fn`/`args` cannot cross a isolate boundary, or the pool
+ *    has been `shutdown()`
  */
 def spawn_named(name: string, fn: function, ...args) {
   return _do_spawn(fn, args, name)
@@ -434,20 +470,24 @@ def spawn_named(name: string, fn: function, ...args) {
 /**
  * A structured concurrency supervisor and task nursery.
  *
- * `Scope` manages the lifecycle of a set of concurrent child isolates spawned
- * within a `isolate.scope()` block. It guarantees that:
+ * `Scope` manages the lifecycle of a set of concurrent child
+ * isolates spawned within a `isolate.scope()` block. It
+ * guarantees that:
  *
- * 1. **Lifetime Bounding**: All isolates spawned via `s.spawn()` or `s.spawn_named()`
- *    are tracked by the scope and cannot outlive the enclosing `scope(body)` block.
- * 2. **Fail-Fast Error Handling**: If any child isolate raises an unhandled error
- *    (or if the `scope` body itself fails), all remaining sibling isolates are
- *    automatically cancelled (`cancel()`), preventing wasted computation.
- * 3. **Deterministic Teardown**: `scope()` waits for all active and cancelled
- *    children to complete execution before re-raising the root failure or returning
- *    the body's result.
+ * 1. **Lifetime Bounding**: All isolates spawned via `s.spawn()`
+ *    or `s.spawn_named()` are tracked by the scope and cannot
+ *    outlive the enclosing `scope(body)` block.
+ * 2. **Fail-Fast Error Handling**: If any child isolate raises
+ *    an unhandled error (or if the `scope` body itself fails),
+ *    all remaining sibling isolates are automatically cancelled
+ *    (`cancel()`), preventing wasted computation.
+ * 3. **Deterministic Teardown**: `scope()` waits for all active
+ *    and cancelled children to complete execution before
+ *    re-raising the root failure or returning the body's result.
  *
- * `Scope` instances cannot be constructed directly; they are created and passed
- * to the callback function by `isolate.scope(body)`.
+ * `Scope` instances cannot be constructed directly; they are
+ * created and passed to the callback function by
+ * `isolate.scope(body)`.
  *
  * ## Examples
  *
@@ -497,16 +537,19 @@ class Scope {
   /**
    * Spawns a concurrent isolate task tracked by this scope.
    *
-   * The spawned isolate is bound to this scope's lifecycle: `isolate.scope()` will
-   * not return until this isolate has completed. If this isolate fails, all
-   * sibling isolates in the scope are automatically cancelled.
+   * The spawned isolate is bound to this scope's lifecycle:
+   * `isolate.scope()` will not return until this isolate has
+   * completed. If this isolate fails, all sibling isolates in
+   * the scope are automatically cancelled.
    *
-   * @param function fn: A callable function, closure, or method to execute.
+   * @param function fn: A callable function, closure, or method
+   *    to execute.
    * @param ...any args: Arguments to pass to `fn`.
    * @returns Isolate: A handle to the spawned isolate.
    * @raises TypeError if `fn` is not callable.
-   * @raises IsolateError if `fn` is a native function or class, if `fn`/`args`
-   *   cannot cross isolate boundaries, or if the isolate pool has shut down.
+   * @raises IsolateError if `fn` is a native function or class,
+   *    if `fn`/`args` cannot cross isolate boundaries, or if the
+   *    isolate pool has shut down.
    *
    * ```zuri
    * isolate.scope(def(s) {
@@ -522,18 +565,23 @@ class Scope {
   }
 
   /**
-   * Spawns a named concurrent isolate task tracked by this scope.
+   * Spawns a named concurrent isolate task tracked by this
+   * scope.
    *
-   * Operates identically to `Scope.spawn()`, but assigns an identifier `name`
-   * used in diagnostic error messages and debugging traces.
+   * Operates identically to `Scope.spawn()`, but assigns an
+   * identifier `name` used in diagnostic error messages and
+   * debugging traces.
    *
-   * @param string name: A human-readable identifier for the isolate.
-   * @param function fn: A callable function, closure, or method to execute.
+   * @param string name: A human-readable identifier for the
+   *    isolate.
+   * @param function fn: A callable function, closure, or method
+   *    to execute.
    * @param ...any args: Arguments to pass to `fn`.
    * @returns Isolate: A handle to the spawned isolate.
    * @raises TypeError if `fn` is not callable.
-   * @raises IsolateError if `fn` is a native function or class, if `fn`/`args`
-   *   cannot cross isolate boundaries, or if the isolate pool has shut down.
+   * @raises IsolateError if `fn` is a native function or class,
+   *    if `fn`/`args` cannot cross isolate boundaries, or if the
+   *    isolate pool has shut down.
    *
    * ```zuri
    * isolate.scope(def(s) {
@@ -551,7 +599,8 @@ class Scope {
   /**
    * Returns all `Isolate` handles spawned within this scope.
    *
-   * @returns list: A list of `Isolate` instances in the order they were spawned.
+   * @returns list: A list of `Isolate` instances in the order
+   *    they were spawned.
    *
    * ```zuri
    * isolate.scope(def(s) {
@@ -572,25 +621,31 @@ class Scope {
 /**
  * Executes `body(s)` within a structured concurrency scope.
  *
- * `isolate.scope()` establishes a structured task boundary, guaranteeing that all
- * isolates spawned via `s.spawn()` or `s.spawn_named()` finish before `scope()` returns.
+ * `isolate.scope()` establishes a structured task boundary,
+ * guaranteeing that all isolates spawned via `s.spawn()` or
+ * `s.spawn_named()` finish before `scope()` returns.
  *
  * ## Lifecycle & Error Semantics
  *
- * 1. **Completion Guarantee**: `scope()` blocks until `body(s)` returns and all
- *    child isolates have terminated.
- * 2. **Automatic Cancellation**: If `body` raises an exception or if any child
- *    isolate fails, all other still-running children in the scope are automatically
- *    sent a cancellation signal (`cancel()`).
- * 3. **Graceful Teardown**: `scope()` waits for all cancelled isolates to cleanly
- *    finish their teardown before returning or re-raising.
- * 4. **Error Priority**: If `body` raised an exception, `body`'s exception is
- *    re-raised. Otherwise, the earliest child failure (excluding secondary
- *    `IsolateCancelledError` cascades) is re-raised.
+ * 1. **Completion Guarantee**: `scope()` blocks until `body(s)`
+ *    returns and all child isolates have terminated.
+ * 2. **Automatic Cancellation**: If `body` raises an exception
+ *    or if any child isolate fails, all other still-running
+ *    children in the scope are automatically sent a cancellation
+ *    signal (`cancel()`).
+ * 3. **Graceful Teardown**: `scope()` waits for all cancelled
+ *    isolates to cleanly finish their teardown before returning
+ *    or re-raising.
+ * 4. **Error Priority**: If `body` raised an exception, `body`'s
+ *    exception is re-raised. Otherwise, the earliest child
+ *    failure (excluding secondary `IsolateCancelledError`
+ *    cascades) is re-raised.
  *
- * @param function body: A callback function `def(s)` that receives a fresh `Scope`.
+ * @param function body: A callback function `def(s)` that
+ *    receives a fresh `Scope`.
  * @returns any: The return value of `body(s)`.
- * @raises IsolateError if a child isolate failed and `body` did not raise.
+ * @raises IsolateError if a child isolate failed and `body` did
+ *    not raise.
  * @raises any: Any exception raised by `body(s)`.
  *
  * ```zuri
@@ -650,13 +705,13 @@ def scope(body: function) {
 }
 
 /**
- * Sets the isolate pool's isolate-thread count. Has no effect if the
- * pool has already started; its size is fixed once the first
+ * Sets the isolate pool's isolate-thread count. Has no effect if
+ * the pool has already started; its size is fixed once the first
  * isolate runs.
  *
  * @param int threads
- * @returns bool: `true` if applied, `false` if the pool had already
- *   started.
+ * @returns bool: `true` if applied, `false` if the pool had
+ *    already started.
  * @raises ValueError if `threads` is less than 1
  */
 def configure(threads: int) {
@@ -685,17 +740,18 @@ def cpu_count() {
 }
 
 /**
- * Stops the pool from accepting any further `spawn()` calls, then
- * blocks until every isolate already spawned; queued or already
- * running; has finished. Nothing in flight is abandoned.
+ * Stops the pool from accepting any further `spawn()` calls,
+ * then blocks until every isolate already spawned; queued or
+ * already running; has finished. Nothing in flight is abandoned.
  *
- * Permanent: once called, every `spawn()` for the rest of the process
- * raises `IsolateError`, even if this call itself later times out.
+ * Permanent: once called, every `spawn()` for the rest of the
+ * process raises `IsolateError`, even if this call itself later
+ * times out.
  *
  * @param number timeout: seconds to wait before giving up. Waits
- *   indefinitely if omitted.
+ *    indefinitely if omitted.
  * @raises IsolateTimeoutError if `timeout` elapses with isolates
- *   still in flight
+ *    still in flight
  */
 def shutdown(timeout: ?number) {
   if !_isolate.shutdown(timeout) {
@@ -704,15 +760,16 @@ def shutdown(timeout: ?number) {
 }
 
 /**
- * @returns int: isolates a isolate is actively running right now.
- *   Does not include ones still `queued_count()`.
+ * @returns int: isolates a isolate is actively running right
+ *    now. Does not include ones still `queued_count()`.
  */
 def active_count() {
   return _isolate.active_count()
 }
 
 /**
- * @returns int: isolates spawned but not yet picked up by a isolate.
+ * @returns int: isolates spawned but not yet picked up by a
+ *    isolate.
  */
 def queued_count() {
   return _isolate.queued_count()
@@ -728,18 +785,18 @@ def is_shutdown() {
 /**
  * Blocks until at least one of `isolates` finishes, and returns
  * that one. Useful for reacting to whichever of several tasks
- * completes first, rather than joining them one at a time in a fixed
- * order.
+ * completes first, rather than joining them one at a time in a
+ * fixed order.
  *
  * @param [Isolate] isolates: must not be empty.
  * @param number timeout: seconds to wait before giving up. Waits
- *   indefinitely if omitted.
+ *    indefinitely if omitted.
  * @returns Isolate: whichever one finished first.
  * @raises ValueError if `isolates` is empty
  * @raises IsolateTimeoutError if `timeout` elapses before any of
- *   them finish
+ *    them finish
  * @raises IsolateCancelledError if the CALLING isolate is
- *   cancelled while blocked here
+ *    cancelled while blocked here
  */
 def wait_any(isolates: list, timeout: ?number) {
   if isolates.length() == 0 {
@@ -760,19 +817,19 @@ def wait_any(isolates: list, timeout: ?number) {
 }
 
 /**
- * Blocks until every one of `isolates` has finished, then returns
- * their results in the same order as `isolates`.
+ * Blocks until every one of `isolates` has finished, then
+ * returns their results in the same order as `isolates`.
  *
  * @param [Isolate] isolates: may be empty (returns `[]`).
- * @param number timeout: seconds to wait for all of them combined, not
- *   per isolate. Waits indefinitely if omitted.
+ * @param number timeout: seconds to wait for all of them
+ *    combined, not per isolate. Waits indefinitely if omitted.
  * @returns list
  * @raises IsolateError from the first one (in `isolates` order)
- *   whose function raised, once every one of them has finished
+ *    whose function raised, once every one of them has finished
  * @raises IsolateTimeoutError if `timeout` elapses before all of
- *   them finish
+ *    them finish
  * @raises IsolateCancelledError if the CALLING isolate is
- *   cancelled while blocked here
+ *    cancelled while blocked here
  */
 def wait_all(isolates: list, timeout: ?number) {
   if isolates.length() == 0 {
@@ -799,20 +856,20 @@ def wait_all(isolates: list, timeout: ?number) {
 /**
  * Runs `fn` once per item in `items`, in parallel across the
  * isolate pool, and returns the results in the same order as
- * `items`. Equivalent to spawning a isolate per item and passing the
- * handles to `wait_all()`.
+ * `items`. Equivalent to spawning a isolate per item and passing
+ * the handles to `wait_all()`.
  *
  * @param function fn: a closure, bound method, or class method.
  * @param list items
- * @param number timeout: seconds to wait for the whole batch combined.
- *   Waits indefinitely if omitted.
+ * @param number timeout: seconds to wait for the whole batch
+ *    combined. Waits indefinitely if omitted.
  * @returns list
- * @raises IsolateError from the first item (in `items` order) whose
- *   call raised, once every call has finished
+ * @raises IsolateError from the first item (in `items` order)
+ *    whose call raised, once every call has finished
  * @raises IsolateTimeoutError if `timeout` elapses before every
- *   call finishes
+ *    call finishes
  * @raises IsolateCancelledError if the CALLING isolate is
- *   cancelled while blocked here
+ *    cancelled while blocked here
  */
 def map(fn: function, items: list, timeout: ?number) {
   if items.length() == 0 {
@@ -833,8 +890,9 @@ def map(fn: function, items: list, timeout: ?number) {
 
 /**
  * Checks whether the currently running isolate has been asked to
- * stop via its handle's `cancel()`. Meant to be polled periodically
- * by long-running or looping isolate code so it can return early.
+ * stop via its handle's `cancel()`. Meant to be polled
+ * periodically by long-running or looping isolate code so it can
+ * return early.
  *
  * Calling this outside a isolate (from the main script, or from
  * another thread) always returns `false`.

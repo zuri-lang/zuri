@@ -3,8 +3,8 @@
 import _io
 
 /**
- * class TTY is an interface to TTY terminals this class contains definitions
- * to control TTY terminals
+ * class TTY is an interface to TTY terminals this class contains
+ * definitions to control TTY terminals
  */
 class TTY {
 
@@ -481,8 +481,8 @@ class TTY {
   }
 
   /**
-   * Returns the attribute of the current tty session
-   * The returned attributes is a dict containing the TTY_ flags
+   * Returns the attribute of the current tty session The
+   * returned attributes is a dict containing the TTY_ flags
    *
    * @returns dict
    */
@@ -493,12 +493,12 @@ class TTY {
   /**
    * sets the attributes of the current tty session
    *
-   * >  __NOTE__: 
-   * > - _option_ must be one ot the TCSA options above (see their description above)
-   * > - _attrs_ must be a dictionary of the TTY_ flags listed above
-   * > - one can safely omit any of the TTY_ flags listed above and Zuri will
-   * >   fill in the default values as it exists.
-   * > - This flags will be merged and not overwritten
+   * > __NOTE__: - _option_ must be one ot the TCSA options above
+   * > (see their description above) - _attrs_ must be a
+   * > dictionary of the TTY_ flags listed above - one can safely
+   * > omit any of the TTY_ flags listed above and Zuri will fill
+   * > in the default values as it exists. - This flags will be
+   * > merged and not overwritten
    * @param number option
    * @param dict attr
    * @returns bool
@@ -538,11 +538,13 @@ class TTY {
   }
 
   /**
-   * Returns the size of the current TTY device as a dictionary of cols and rows.
-   * 
-   * - `cols`: The number of text columns that can fit into the TTY device.
-   * - `rows`: The number of text rows that can fit into the TTY device.
-   * 
+   * Returns the size of the current TTY device as a dictionary
+   * of cols and rows.
+   *
+   * - `cols`: The number of text columns that can fit into the
+   * TTY device. - `rows`: The number of text rows that can fit
+   * into the TTY device.
+   *
    * @returns dict
    */
   get_size() {

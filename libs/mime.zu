@@ -1,13 +1,14 @@
 /**
  * @module mime
  *
- * This module provides functions that allow easy mime type detection from files. 
- * It offers support for detecting file type based on name or file headers and it 
- * is completely extensible so that you can add declarations for your own custom 
- * file types.
- * 
+ * This module provides functions that allow easy mime type
+ * detection from files. It offers support for detecting file
+ * type based on name or file headers and it is completely
+ * extensible so that you can add declarations for your own
+ * custom file types.
+ *
  * _See defined functions for example._
- * 
+ *
  * @copyright O2021, Richard Ore
  */
 
@@ -385,17 +386,19 @@ var _mimes = {
 
 
 /**
- * Detects the mimetype of a file based on the
- * extension defined in it's path.
- * 
+ * Detects the mimetype of a file based on the extension defined
+ * in it's path.
+ *
  * Example,
- * 
+ *
  * ```zuri
  * import mime
  * echo mime.detect_from_name('myimage.png')
  * ```
  *
- * @note For popular files such as Jpeg and Pngs, calling this method directly is more efficient and provides a faster lookup.
+ * @note For popular files such as Jpeg and Pngs, calling this
+ *    method directly is more efficient and provides a faster
+ *    lookup.
  * @param string name
  * @returns string
  */
@@ -410,20 +413,24 @@ def detect_from_name(name: string) {
  * Detects the mimetype of a file based on it's file header.
  *
  * When multiple file formats share very similar or shadowing
- * file headers (such as the relationship between Zip files and Docx files),
- * this method will perform an extension before returning it's result.
- * 
+ * file headers (such as the relationship between Zip files and
+ * Docx files), this method will perform an extension before
+ * returning it's result.
+ *
  * Example,
- * 
+ *
  * ```zuri
  * import mime
  * var f = file('my_file.ext', 'rb')
  * echo mime.detect_from_header(f)
  * ```
  *
- * @note For dealing with files without extension, or where the accuracy of the file extension cannot be trusted, this method provides a more efficient lookup.
+ * @note For dealing with files without extension, or where the
+ *    accuracy of the file extension cannot be trusted, this
+ *    method provides a more efficient lookup.
  * @note This method may produce slightly more rigorous results
- * @note This method requires that the file must be opened in binary mode.
+ * @note This method requires that the file must be opened in
+ *    binary mode.
  * @param file file
  * @returns string
  */
@@ -465,16 +472,17 @@ def detect_from_header(file: file) {
 
 /**
  * Performs mimetype detection on a file.
- * 
- * this method is capable of detecting file mimetypes even
- * in the absence of an extension.
  *
- * If the file is opened in binary mode, it first attempt the more
- * accurate header check. If the header check returns a generic result 
- * (i.e. application/octet-stream), it performs an extension lookup.
- * 
+ * this method is capable of detecting file mimetypes even in the
+ * absence of an extension.
+ *
+ * If the file is opened in binary mode, it first attempt the
+ * more accurate header check. If the header check returns a
+ * generic result (i.e. application/octet-stream), it performs an
+ * extension lookup.
+ *
  * Example,
- * 
+ *
  * ```zuri
  * import mime
  * var f = file('myfile', 'rb')
@@ -486,7 +494,8 @@ def detect_from_header(file: file) {
  * echo mime.detect(f)
  * ```
  *
- * @note this method gives the best result, but slightly slower than a direct lookup of name or header.
+ * @note this method gives the best result, but slightly slower
+ *    than a direct lookup of name or header.
  * @param file file
  * @returns string
  */
@@ -502,11 +511,11 @@ def detect(file: file) {
 }
 
 /**
- * Extends the mime module with support for files with the given _extension_ as 
- * defined in the given _format_.
- * 
+ * Extends the mime module with support for files with the given
+ * _extension_ as defined in the given _format_.
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> import mime
  * %> mime.detect_from_name('myfile.ppk')
@@ -516,7 +525,7 @@ def detect(file: file) {
  * %> mime.detect_from_name('myfile.ppk')
  * 'file/ppk'
  * ```
- * 
+ *
  * @note the extension MUST start with `.`
  * @param string extension
  * @param MimeFormat format

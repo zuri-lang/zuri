@@ -1,18 +1,19 @@
 /**
  * @module checksum
- * 
+ *
  * This is the checksum submodule for the compress module.
- * 
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _compress
 
 /**
- * Updates a running Adler-32 checksum with the bytes buf[0,len-1] and
- * return the updated checksum.
- * 
- * @note An Adler-32 checksum is almost as reliable as a CRC-32 but can be computed much faster.
+ * Updates a running Adler-32 checksum with the bytes
+ * buf[0,len-1] and return the updated checksum.
+ *
+ * @note An Adler-32 checksum is almost as reliable as a CRC-32
+ *    but can be computed much faster.
  * @param {bytes|string} data
  * @param ?number initial
  * @returns number
@@ -22,9 +23,9 @@ def adler32(data, initial) {
 }
 
 /**
- * Update a running CRC-32 checksum with the bytes buf[0,len-1] and return the
- * updated CRC-32 checksum.
- * 
+ * Update a running CRC-32 checksum with the bytes buf[0,len-1]
+ * and return the updated CRC-32 checksum.
+ *
  * @param {bytes|string} data
  * @param ?number intial
  * @returns number

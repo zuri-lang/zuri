@@ -1,16 +1,17 @@
 /**
  * @module ast
  *
- * The {Node} type `zuri.parse()` returns: a generic representation of
- * one AST node, tagged by `kind` (`'Binary'`, `'If'`, `'Function'`,
- * ...) with a `fields` dict holding whatever that kind carries. There
- * is one `Node` class rather than one class per grammar rule, since
- * the grammar has roughly fifty expression/statement/declaration
- * shapes, and a dedicated class per shape would mean fifty near-
- * identical classes to maintain in lockstep with the parser forever
- * after. A `fields` entry that's itself node-shaped (or a list of
- * node-shaped entries) is already wrapped into a {Node} recursively,
- * so you never need to call `Node.from_dict()` yourself.
+ * The {Node} type `zuri.parse()` returns: a generic
+ * representation of one AST node, tagged by `kind` (`'Binary'`,
+ * `'If'`, `'Function'`, ...) with a `fields` dict holding
+ * whatever that kind carries. There is one `Node` class rather
+ * than one class per grammar rule, since the grammar has roughly
+ * fifty expression/statement/declaration shapes, and a dedicated
+ * class per shape would mean fifty near- identical classes to
+ * maintain in lockstep with the parser forever after. A `fields`
+ * entry that's itself node-shaped (or a list of node-shaped
+ * entries) is already wrapped into a {Node} recursively, so you
+ * never need to call `Node.from_dict()` yourself.
  *
  * ```zuri
  * import zuri
@@ -23,28 +24,30 @@
  *
  * ## Comments and doc blocks
  *
- * `parse()`'s whole point, beyond exposing the grammar itself, is that
- * its result is complete enough to rebuild the source file from. Every
- * `#`-comment and doc block comment in the file comes back as its own
- * `'Comment'`/`'DocBlock'`-kind node, sitting exactly where it
- * appeared: as a sibling in the surrounding statement/declaration
- * list, at the top level, inside a `{ }` block, or between two class
- * members.
+ * `parse()`'s whole point, beyond exposing the grammar itself,
+ * is that its result is complete enough to rebuild the source
+ * file from. Every `#`-comment and doc block comment in the file
+ * comes back as its own `'Comment'`/`'DocBlock'`-kind node,
+ * sitting exactly where it appeared: as a sibling in the
+ * surrounding statement/declaration list, at the top level,
+ * inside a `{ }` block, or between two class members.
  *
- * A comment written inside an expression is NOT lost, but it isn't
- * attached inside that expression's own node either. There's no
- * `Node` kind for "a comment sitting between two call arguments", and
- * there never will be, since CLAUDE.md's own Zuri style guide never
- * places a comment there in the first place (a comment is always its
- * own whole line, between statements/declarations/class members, not
- * mid-expression). What actually happens: the comment is captured as
- * a standalone `'Comment'`/`'DocBlock'` node and placed as a sibling
- * of the SMALLEST enclosing statement/declaration/class-member, in
- * that same surrounding list, immediately after it (before whatever
- * real node follows in that list, or at the list's own end if nothing
- * does). It stays exactly as deeply nested as the statement that
- * contained it; a comment inside an `if` body three blocks deep comes
- * back three blocks deep too, never hoisted to the top.
+ * A comment written inside an expression is NOT lost, but it
+ * isn't attached inside that expression's own node either.
+ * There's no `Node` kind for "a comment sitting between two call
+ * arguments", and there never will be, since CLAUDE.md's own
+ * Zuri style guide never places a comment there in the first
+ * place (a comment is always its own whole line, between
+ * statements/declarations/class members, not mid-expression).
+ * What actually happens: the comment is captured as a standalone
+ * `'Comment'`/`'DocBlock'` node and placed as a sibling of the
+ * SMALLEST enclosing statement/declaration/class-member, in that
+ * same surrounding list, immediately after it (before whatever
+ * real node follows in that list, or at the list's own end if
+ * nothing does). It stays exactly as deeply nested as the
+ * statement that contained it; a comment inside an `if` body
+ * three blocks deep comes back three blocks deep too, never
+ * hoisted to the top.
  *
  * ```zuri
  * import zuri
@@ -57,15 +60,15 @@
  * echo body[2].kind        # Echo, the "echo 2" line, unaffected
  * ```
  *
- * Source written against CLAUDE.md's own comment-placement convention
- * is completely unaffected by this: every comment in real,
- * style-conformant Zuri source is already its own whole line between
- * statements, which is exactly the case `parse()` places correctly,
- * in its original position. This only matters for source that breaks
- * that convention, and even then, nothing is thrown away; the
- * comment's `line`/`col` still point at where it actually appeared,
- * it's just not a descendant of the expression node it visually sat
- * inside.
+ * Source written against CLAUDE.md's own comment-placement
+ * convention is completely unaffected by this: every comment in
+ * real, style-conformant Zuri source is already its own whole
+ * line between statements, which is exactly the case `parse()`
+ * places correctly, in its original position. This only matters
+ * for source that breaks that convention, and even then, nothing
+ * is thrown away; the comment's `line`/`col` still point at
+ * where it actually appeared, it's just not a descendant of the
+ * expression node it visually sat inside.
  *
  * ```zuri
  * import zuri
@@ -79,13 +82,13 @@
  *
  * A class body's fields and methods are two separate lists
  * (`Decl::Class`'s own shape, mirrored here as a `Class` node's
- * `properties`/`methods` fields), so a comment between a field and a
- * method lands in `methods`, whichever list the member right after it
- * belongs to, and a comment between two fields lands in `properties`.
- * See `Node`'s own field-by-field notes below. Code that wants the
- * true interleaved order across both lists, to rebuild a class body
- * exactly as written, should merge `properties ++ methods` and sort by
- * `(line, col)`.
+ * `properties`/`methods` fields), so a comment between a field
+ * and a method lands in `methods`, whichever list the member
+ * right after it belongs to, and a comment between two fields
+ * lands in `properties`. See `Node`'s own field-by-field notes
+ * below. Code that wants the true interleaved order across both
+ * lists, to rebuild a class body exactly as written, should
+ * merge `properties ++ methods` and sort by `(line, col)`.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -94,22 +97,24 @@ import _zuri_parse
 import ._tree
 
 /**
- * One AST node: an expression, statement, declaration, type hint, or
- * a standalone comment/doc block sitting between two of those.
+ * One AST node: an expression, statement, declaration, type
+ * hint, or a standalone comment/doc block sitting between two of
+ * those.
  *
  * @printable
  */
 class Node {
 
   /**
-   * Returns a new instance of a {Node} directly, from already-wrapped
-   * field values. Ordinary Zuri code should use `Node.from_dict()` or
-   * `zuri.parse()` instead, since this constructor does no wrapping of
-   * its own.
+   * Returns a new instance of a {Node} directly, from
+   * already-wrapped field values. Ordinary Zuri code should use
+   * `Node.from_dict()` or `zuri.parse()` instead, since this
+   * constructor does no wrapping of its own.
    *
    * @param string kind: The node's kind, e.g. `'Binary'`, `'If'`
-   * @param ?number line: The node's source line, or `nil` if this kind
-   *   of node carries no position (see `from_dict`'s own docs)
+   * @param ?number line: The node's source line, or `nil` if
+   *    this kind of node carries no position (see `from_dict`'s
+   *    own docs)
    * @param ?number col: The node's source column, or `nil`
    * @param dict fields: This kind's own fields, already wrapped
    */
@@ -121,24 +126,25 @@ class Node {
   }
 
   /**
-   * Builds a {Node} from the raw dict `zuri.parse()`'s native backing
-   * produces (`{ kind, line, col, fields }`), recursively wrapping any
-   * node-shaped entry inside `fields`, a single nested node or a list
-   * of them, into its own {Node}. A `fields` entry that isn't
-   * node-shaped (a string, a number, a bool, `nil`, or a plain dict
-   * like a `Var` node's `type_hint` when there isn't one) passes
-   * through unchanged.
+   * Builds a {Node} from the raw dict `zuri.parse()`'s native
+   * backing produces (`{ kind, line, col, fields }`),
+   * recursively wrapping any node-shaped entry inside `fields`,
+   * a single nested node or a list of them, into its own {Node}.
+   * A `fields` entry that isn't node-shaped (a string, a number,
+   * a bool, `nil`, or a plain dict like a `Var` node's
+   * `type_hint` when there isn't one) passes through unchanged.
    *
-   * `line`/`col` are best-effort, not guaranteed on every node. Most
-   * AST shapes carry a full position (an identifier, an operator, a
-   * declaration's own name); a few (`Binary`, `Call`, `Index`, and
-   * other operator/delimiter-driven expressions) only ever carry a
-   * bare source `line`, with `col` always `nil`; and a handful of
-   * purely structural nodes (an empty `Block`, `None`) carry neither,
-   * coming back with `line`/`col` both `nil`. None of this affects
-   * what `fields` contains, since position is a convenience for
-   * pointing at where something is, not part of the information
-   * rebuilding source needs.
+   * `line`/`col` are best-effort, not guaranteed on every node.
+   * Most AST shapes carry a full position (an identifier, an
+   * operator, a declaration's own name); a few (`Binary`,
+   * `Call`, `Index`, and other operator/delimiter-driven
+   * expressions) only ever carry a bare source `line`, with
+   * `col` always `nil`; and a handful of purely structural nodes
+   * (an empty `Block`, `None`) carry neither, coming back with
+   * `line`/`col` both `nil`. None of this affects what `fields`
+   * contains, since position is a convenience for pointing at
+   * where something is, not part of the information rebuilding
+   * source needs.
    *
    * @param dict data: `{ kind, line, col, fields }`
    * @returns Node
@@ -152,9 +158,10 @@ class Node {
   }
 
   /**
-   * Is this node a standalone comment or doc block (as opposed to a
-   * real expression/statement/declaration)? See this module's own doc
-   * comment for exactly where these can and can't appear.
+   * Is this node a standalone comment or doc block (as opposed
+   * to a real expression/statement/declaration)? See this
+   * module's own doc comment for exactly where these can and
+   * can't appear.
    *
    * @returns bool
    */
@@ -163,12 +170,12 @@ class Node {
   }
 
   /**
-   * This node as `kind@line:col`, e.g. `'Binary@3:5'`; `kind@line`
-   * when a position exists but has no column (some AST shapes only
-   * ever carry a bare source line, never a column: see `from_dict`'s
-   * own docs); or just `kind` when it carries no position at all. A
-   * one-line summary; use `dump()` to actually see what's inside a
-   * node.
+   * This node as `kind@line:col`, e.g. `'Binary@3:5'`;
+   * `kind@line` when a position exists but has no column (some
+   * AST shapes only ever carry a bare source line, never a
+   * column: see `from_dict`'s own docs); or just `kind` when it
+   * carries no position at all. A one-line summary; use `dump()`
+   * to actually see what's inside a node.
    * @returns string
    */
   to_string() {
@@ -180,11 +187,12 @@ class Node {
   }
 
   /**
-   * A readable, indented, multi-line dump of this node and everything
-   * inside it, recursively. This is the actual way to find out what a
-   * `fields` entry is called for a kind you haven't looked up yet:
-   * `echo node.dump()` and read it, rather than guessing a key name
-   * and checking whether it happens to exist.
+   * A readable, indented, multi-line dump of this node and
+   * everything inside it, recursively. This is the actual way to
+   * find out what a `fields` entry is called for a kind you
+   * haven't looked up yet: `echo node.dump()` and read it,
+   * rather than guessing a key name and checking whether it
+   * happens to exist.
    *
    * ```zuri
    * import zuri
@@ -230,10 +238,10 @@ class Node {
    * ```
    *
    * `Block`/`Return`/`Binary` above only carry a line, never a
-   * column (see `from_dict`'s own docs on which shapes do and don't);
-   * `class_name` is `nil` on `Any` specifically because that field
-   * only ever has a real value on an `Instance` type (a named class
-   * used as a type hint).
+   * column (see `from_dict`'s own docs on which shapes do and
+   * don't); `class_name` is `nil` on `Any` specifically because
+   * that field only ever has a real value on an `Instance` type
+   * (a named class used as a type hint).
    *
    * @returns string
    */
@@ -244,14 +252,16 @@ class Node {
 
 /**
  * Recursively wraps a raw value from a node's `fields` dict: a
- * node-shaped dict becomes a {Node}, a list has this applied to each
- * of its own entries, and everything else (a string, number, bool,
- * `nil`, or a plain non-node dict) passes through as-is.
+ * node-shaped dict becomes a {Node}, a list has this applied to
+ * each of its own entries, and everything else (a string,
+ * number, bool, `nil`, or a plain non-node dict) passes through
+ * as-is.
  *
- * A dict counts as "node-shaped" when it carries both a `kind` and a
- * `fields` entry, the two keys nothing else `zuri.parse()` produces
- * happens to have together, so this can't misfire on a `TypeHint`'s
- * plain `{ types, nullable }` fields dict or similar.
+ * A dict counts as "node-shaped" when it carries both a `kind`
+ * and a `fields` entry, the two keys nothing else `zuri.parse()`
+ * produces happens to have together, so this can't misfire on a
+ * `TypeHint`'s plain `{ types, nullable }` fields dict or
+ * similar.
  */
 def _wrap_node(value) {
   if is_list(value) {
@@ -336,14 +346,14 @@ def _dump_lines(value, indent) {
 }
 
 /**
- * Parses `source` in full and returns its top-level declarations as a
- * list of {Node}. See this module's own doc comment for the exact
- * shape, and in particular for what is and isn't preserved around
- * comments.
+ * Parses `source` in full and returns its top-level declarations
+ * as a list of {Node}. See this module's own doc comment for the
+ * exact shape, and in particular for what is and isn't preserved
+ * around comments.
  *
- * Raises (rather than returning a partial result) on a syntax error,
- * since there is no meaningful AST to hand back for source the parser
- * itself couldn't make sense of.
+ * Raises (rather than returning a partial result) on a syntax
+ * error, since there is no meaningful AST to hand back for
+ * source the parser itself couldn't make sense of.
  *
  * @param string source: The Zuri source to parse
  * @returns list[Node]
@@ -359,13 +369,14 @@ def parse(source) {
 
 /**
  * Reads the file at `path` and parses its contents; exactly
- * `parse(file(path).read())`, for the common case of parsing a real
- * file rather than a source string you've already got in hand.
+ * `parse(file(path).read())`, for the common case of parsing a
+ * real file rather than a source string you've already got in
+ * hand.
  *
  * @param string path: Path to the Zuri source file to parse
  * @returns list[Node]
- * @throws Error if `path` can't be opened or read, or has a syntax
- *   error
+ * @throws Error if `path` can't be opened or read, or has a
+ *    syntax error
  */
 def parse_file(path) {
   return parse(file(path).read())
@@ -374,18 +385,20 @@ def parse_file(path) {
 /**
  * Reads, parses, and dumps the file at `path` in one call: the
  * fastest way to answer "what does this file's AST actually look
- * like". Equivalent to parsing `path` and joining every resulting
- * top-level node's own `dump()` with a blank line between them.
+ * like". Equivalent to parsing `path` and joining every
+ * resulting top-level node's own `dump()` with a blank line
+ * between them.
  *
  * ```zuri
  * import zuri
  * echo zuri.dump_file('main.zu')
  * ```
  *
- * @param string path: Path to the Zuri source file to parse and dump
+ * @param string path: Path to the Zuri source file to parse and
+ *    dump
  * @returns string
- * @throws Error if `path` can't be opened or read, or has a syntax
- *   error
+ * @throws Error if `path` can't be opened or read, or has a
+ *    syntax error
  */
 def dump_file(path) {
   var dumps = []
@@ -403,21 +416,23 @@ def _describe(value) {
 }
 
 /**
- * Recursively visits every node reachable from `nodes` (typically
- * `zuri.parse()`'s own result, or any single {Node} plucked out of
- * it), in the order they appear, calling `visitor` for each one. This
- * is the tool for "do something with every `X`": most real uses of an
- * AST are a walk, not manual field-by-field navigation.
+ * Recursively visits every node reachable from `nodes`
+ * (typically `zuri.parse()`'s own result, or any single {Node}
+ * plucked out of it), in the order they appear, calling
+ * `visitor` for each one. This is the tool for "do something
+ * with every `X`": most real uses of an AST are a walk, not
+ * manual field-by-field navigation.
  *
  * `visitor` is either a plain function, called with every node
- * (`visitor(node)`), or a dict from kind name to function, where only
- * a node of that kind gets called (`visitor[node.kind](node)`).
- * Reach for the dict form when you only care about one or two kinds;
- * it reads as a small dispatch table instead of a chain of `if
- * node.kind == ...` checks inside a single function.
+ * (`visitor(node)`), or a dict from kind name to function, where
+ * only a node of that kind gets called
+ * (`visitor[node.kind](node)`). Reach for the dict form when you
+ * only care about one or two kinds; it reads as a small dispatch
+ * table instead of a chain of `if node.kind == ...` checks
+ * inside a single function.
  *
- * Always visits the whole tree; there's no way for `visitor` to skip
- * descending into a particular node's children.
+ * Always visits the whole tree; there's no way for `visitor` to
+ * skip descending into a particular node's children.
  *
  * ```zuri
  * import zuri
@@ -440,9 +455,9 @@ def walk_nodes(nodes, visitor) {
 }
 
 /**
- * Every node reachable from `nodes` whose `kind` is `kind`, in the
- * order they appear. Shorthand for the common "just give me a flat
- * list of these" case `walk_nodes()` itself is built on.
+ * Every node reachable from `nodes` whose `kind` is `kind`, in
+ * the order they appear. Shorthand for the common "just give me
+ * a flat list of these" case `walk_nodes()` itself is built on.
  *
  * ```zuri
  * import zuri

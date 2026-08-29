@@ -1,0 +1,83 @@
+echo 'to_string / to_bool:'
+echo 5.to_string()
+echo (-5).to_bool()
+echo 5.to_bool()
+
+echo 'abs:'
+echo (-5).abs()
+echo 5.abs()
+echo (-5.5).abs()
+
+echo 'radix conversions:'
+echo 255.chr()
+echo 10.bin()
+echo 255.hex()
+echo 8.oct()
+
+echo 'int:'
+echo 3.9.int()
+echo (-3.9).int()
+
+echo 'max / min:'
+echo 5.max(9)
+echo 9.max(5)
+echo 5.min(9)
+echo 9.min(5)
+
+echo 'factorial:'
+echo 0.factorial()
+echo 1.factorial()
+echo 5.factorial()
+
+echo 'trigonometry:'
+echo 0.0.sin()
+echo 0.0.cos()
+echo 0.0.tan()
+echo 1.0.atan2(1.0)
+
+echo 'hyperbolic:'
+echo 0.0.sinh()
+echo 0.0.cosh()
+echo 0.0.tanh()
+echo 1.0.asinh()
+echo 1.0.acosh()
+echo 0.0.atanh()
+
+echo 'exponential and logarithm:'
+echo 0.0.exp()
+echo 0.0.expm1()
+echo 1.0.log()
+echo 8.0.log2()
+echo 100.0.log10()
+echo 0.0.log1p()
+
+echo 'rounding:'
+echo 3.14159.ceil()
+echo 3.14159.floor()
+echo 3.14159.round()
+echo 3.6.round()
+echo (-3.9).trunc()
+
+echo 'roots:'
+echo 27.0.cbrt()
+echo 16.0.sqrt()
+
+echo 'sign:'
+echo 7.sign()
+echo (-7).sign()
+echo 0.sign()
+
+echo 'is_nan / is_inf / is_finite:'
+echo (0.0/0.0).is_nan()
+echo 5.is_nan()
+echo (1.0/0.0).is_inf()
+echo 5.is_inf()
+echo 5.is_finite()
+echo (1.0/0.0).is_finite()
+
+echo 'fraction:'
+echo 1.92.fraction()
+echo (-1.92).fraction()
+echo 1.5.fraction()
+echo 5.fraction()
+echo 0.001.fraction()

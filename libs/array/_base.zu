@@ -1,33 +1,37 @@
 import _struct
 
 /**
- * This is the base array class from which all other array types inherit. It is not meant to be used directly.
+ * This is the base array class from which all other array types
+ * inherit. It is not meant to be used directly.
  */
 class Array {
 
   /**
-   * This is the internal container for the array data. It is not meant to be accessed directly. 
-   * It is used by the array methods to store and manipulate the array data.
+   * This is the internal container for the array data. It is not
+   * meant to be accessed directly. It is used by the array
+   * methods to store and manipulate the array data.
    */
   var _data
 
   /**
-   * This is the number of bits used to store each item in the array. It is not meant to be accessed directly.
-   * 
+   * This is the number of bits used to store each item in the
+   * array. It is not meant to be accessed directly.
+   *
    * @should_override
    */
   var _bit_size = 1
 
   /**
-   * This is the struct data type used to store each item in the array. It is not meant to be accessed directly.
-   * 
+   * This is the struct data type used to store each item in the
+   * array. It is not meant to be accessed directly.
+   *
    * @should_override
    */
   var _data_type = 'c'
 
   /**
    * The method that sets the value at the given index.
-   * 
+   *
    * @should_override
    */
   _do_set(start, as_bytes) {
@@ -35,8 +39,8 @@ class Array {
   }
 
   /**
-   * Returns the number of items in the array. 
-   * 
+   * Returns the number of items in the array.
+   *
    * @returns number
    */
   length() {
@@ -44,8 +48,9 @@ class Array {
   }
 
   /**
-   * Returns the length of the array if it were to be converted to bytes.
-   * 
+   * Returns the length of the array if it were to be converted
+   * to bytes.
+   *
    * @returns number
    */
   bytes_length() {
@@ -53,8 +58,9 @@ class Array {
   }
 
   /**
-   * Returns the first item in the array or nil if the array is empty.
-   * 
+   * Returns the first item in the array or nil if the array is
+   * empty.
+   *
    * @returns ?number
    */
   first() {
@@ -70,8 +76,9 @@ class Array {
   }
 
   /**
-   * Returns the last item in the array or nil if the array is empty.
-   * 
+   * Returns the last item in the array or nil if the array is
+   * empty.
+   *
    * @returns ?number
    */
   last() {
@@ -87,10 +94,10 @@ class Array {
   }
 
   /**
-   * Returns the number at the specified index in the array. If index is 
-   * outside the boundary of the array indexes (0..(array.length() - 1)), 
-   * an exception is thrown.
-   * 
+   * Returns the number at the specified index in the array. If
+   * index is outside the boundary of the array indexes
+   * (0..(array.length() - 1)), an exception is thrown.
+   *
    * @param number index
    * @returns number
    */
@@ -111,8 +118,9 @@ class Array {
   }
 
   /**
-   * Removes the last element in the array and returns the value of that item.
-   * 
+   * Removes the last element in the array and returns the value
+   * of that item.
+   *
    * @returns ?number
    */
   pop() {
@@ -126,7 +134,7 @@ class Array {
 
   /**
    * Returns the array as a bytes object.
-   * 
+   *
    * @returns bytes
    */
   to_bytes() {
@@ -135,7 +143,7 @@ class Array {
 
   /**
    * Returns the elements of the array as a list of numbers.
-   * 
+   *
    * @returns list
    */
   to_list() {
@@ -148,7 +156,7 @@ class Array {
 
   /**
    * Returns a string representation of the array.
-   * 
+   *
    * @returns string
    */
   to_string() {
@@ -167,13 +175,13 @@ class Array {
     return self.to_list()
   }
 
-  @iter(n) {
+  @value(n) {
     if !is_number(n)
       raise ArgumentError('Arrays are numerically indexed')
     return self.get(n)
   }
 
-  @itern(n) {
+  @key(n) {
     if index == nil return 0
     if !is_number(index)
       raise ArgumentError('Arrays are numerically indexed')

@@ -229,6 +229,14 @@ fn is_finite(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// Fractional part as a WHOLE number by shifting the digits after the
 /// decimal point left of it; per spec's own example, `1.92.fraction()
 /// == 92`, not `0.92`.
+///
+/// Formats at a fixed 10 decimal places (rounding) rather than
+/// `f64`'s own shortest-round-trip `Display`: `1.92_f64.fract()` is
+/// actually `0.9199999999999999` (binary/decimal conversion noise,
+/// not a real fraction), and reading THAT string verbatim turned
+/// `1.92.fraction()` into `9200000000000000` instead of `92`.
+/// Rounding to 10 places lands past where that noise starts without
+/// losing any digit a person would have actually typed.
 fn fraction(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   let n = ctx.args[0].as_number();
@@ -236,8 +244,11 @@ fn fraction(ctx: &mut ZuriContext) -> Result<Value, String> {
   if frac == 0.0 {
     return Ok(Value::number(0.0));
   }
-  let s = format!("{}", frac);
-  let digits = s.split('.').nth(1).unwrap_or("0");
+  let s = format!("{:.10}", frac);
+  let digits = s.split('.').nth(1).unwrap_or("0").trim_end_matches('0');
+  if digits.is_empty() {
+    return Ok(Value::number(0.0));
+  }
   let whole: f64 = digits.parse().unwrap_or(0.0);
   Ok(Value::number(whole))
 }

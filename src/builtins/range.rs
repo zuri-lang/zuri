@@ -85,39 +85,47 @@ fn within(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// Iterates from the lower bound up to (but not including) the upper
 /// bound, regardless of the range's own written direction; matching
 /// the documented example where `(25..18).loop(...)` counts DOWN from
-/// 25 to 19 (not up).
+/// 25 to 19 (not up). Advances by the range's own configured `step()`
+/// (default `1.0`) rather than a hardcoded `1.0`, and calls back with
+/// both the current number AND its iteration index, per spec.
 fn loop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
   let (l, u) = ctx.args[0].as_range();
+  let step = ctx.args[0].range_step();
+  let step = if step > 0.0 { step } else { 1.0 };
   // Pinned (not just a plain local) because `callback` is reused
   // across every iteration below; if it's still Young and a later
   // iteration's own `call_value` triggers a collection that relocates
   // it, an un-pinned local would go stale from that point on. `i`
-  // itself needs no such treatment: it's always a plain number, never
-  // a heap reference.
+  // and `index` need no such treatment: they're always plain numbers,
+  // never heap references.
   let mark = ctx.vm.pin_values([ctx.args[1]]);
 
   if l <= u {
     let mut i = l;
+    let mut index = 0.0;
     while i < u {
       let callback = ctx.vm.pinned(mark);
       ctx
         .vm
-        .call_value(callback, &[Value::number(i)])
+        .call_value(callback, &[Value::number(i), Value::number(index)])
         .map_err(|e| ctx.vm.describe_error(e))?;
-      i += 1.0;
+      i += step;
+      index += 1.0;
     }
   } else {
     let mut i = l;
+    let mut index = 0.0;
     while i > u {
       let callback = ctx.vm.pinned(mark);
       ctx
         .vm
-        .call_value(callback, &[Value::number(i)])
+        .call_value(callback, &[Value::number(i), Value::number(index)])
         .map_err(|e| ctx.vm.describe_error(e))?;
-      i -= 1.0;
+      i -= step;
+      index += 1.0;
     }
   }
 

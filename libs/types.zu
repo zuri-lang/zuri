@@ -1,21 +1,21 @@
 /** 
  * @module type
- * 
+ *
  * Provides type validation and conversion capabilities
- * 
- * This module is wrapper around the builtin functions
- * where applicable and does and return the same thing as the builtin
+ *
+ * This module is wrapper around the builtin functions where
+ * applicable and does and return the same thing as the builtin
  * alternative.
- * 
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 
 /**
  * Returns the name of the type of value
- * 
+ *
  * @note method implemented as part of core language features
- * 
+ *
  * @param any value
  * @returns string
  */
@@ -24,9 +24,9 @@ def of(value: any) {
 }
 
 /**
- * Returns true if the value is a character and digit,
- * otherwise returns false.
- * 
+ * Returns true if the value is a character and digit, otherwise
+ * returns false.
+ *
  * @param string value
  * @returns bool
  */
@@ -40,7 +40,7 @@ def digit(value: string) {
 /**
  * Returns true if the value is a character and alphabetic,
  * otherwise returns false.
- * 
+ *
  * @param string value
  * @returns bool
  */
@@ -53,7 +53,7 @@ def alpha(value: string) {
 
 /**
  * Returns true if the value is an integer or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -63,7 +63,7 @@ def int(value: any) {
 
 /**
  * Returns true if the value is a boolean or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -73,9 +73,9 @@ def bool(value: any) {
 
 /**
  * Returns true if the value is a number or false otherwise.
- * 
+ *
  * @note this method also returns true for integers.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -84,8 +84,9 @@ def number(value: any) {
 }
 
 /**
- * Returns true if the value is a single character or false otherwise.
- * 
+ * Returns true if the value is a single character or false
+ * otherwise.
+ *
  * @param any value
  * @returns bool
  */
@@ -95,7 +96,7 @@ def char(value: any) {
 
 /**
  * Returns true if the value is a string or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -105,7 +106,7 @@ def string(value: any) {
 
 /**
  * Returns true if the value is a bytes or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -115,7 +116,7 @@ def bytes(value: any) {
 
 /**
  * Returns true if the value is a list or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -125,7 +126,7 @@ def list(value: any) {
 
 /**
  * Returns true if the value is a dictionary or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -135,7 +136,7 @@ def dict(value: any) {
 
 /**
  * Returns true if the value is an object or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -145,7 +146,7 @@ def object(value: any) {
 
 /**
  * Returns true if the value is a function or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -155,7 +156,7 @@ def function(value: any) {
 
 /**
  * Returns true if the value is a class or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -165,7 +166,7 @@ def is_a_class(value: any) {
 
 /**
  * Returns true if the value is a file or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -175,7 +176,7 @@ def file(value: any) {
 
 /**
  * Returns true if the value is an iterable or false otherwise.
- * 
+ *
  * @param any value
  * @returns bool
  */
@@ -184,9 +185,9 @@ def iterable(value: any) {
 }
 
 /**
- * Returns true if the value is a callable function or class and false 
- * otherwise.
- * 
+ * Returns true if the value is a callable function or class and
+ * false otherwise.
+ *
  * @param any value
  * @returns bool
  */
@@ -195,9 +196,9 @@ def callable(value: any) {
 }
 
 /**
- * Returns true if the value is an instance the given class, false
- * otherwise.
- * 
+ * Returns true if the value is an instance the given class,
+ * false otherwise.
+ *
  * @param any value
  * @param {type} type
  * @returns bool

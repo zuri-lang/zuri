@@ -1,19 +1,23 @@
 /**
  * @module colors
  *
- * This module provides functionalities for color conversion and manipulation.
+ * This module provides functionalities for color conversion and
+ * manipulation.
  *
- * This module also provides functionalities that enable cross-platform colored terminal outputs
- * that will allow you create beautiful console apps that are user friendly.
+ * This module also provides functionalities that enable
+ * cross-platform colored terminal outputs that will allow you
+ * create beautiful console apps that are user friendly.
  *
- * RGB conversion to other colors that return a floating point or a list of floating points do so
- * to allow users get absolute precision since its really easy for callers to do a `num.round()`
- * on the components of the resulting list.
+ * RGB conversion to other colors that return a floating point or
+ * a list of floating points do so to allow users get absolute
+ * precision since its really easy for callers to do a
+ * `num.round()` on the components of the resulting list.
  *
  * ### Example
  *
- * The example below uses this module to create a success message that will print correctly
- * on almost all terminals (Only Windows 10 version 1901+ supported. All linux and OSX
+ * The example below uses this module to create a success message
+ * that will print correctly on almost all terminals (Only
+ * Windows 10 version 1901+ supported. All linux and OSX
  * terminals are supported). Try it out!
  *
  * ```zuri
@@ -27,7 +31,8 @@
  * colors.text(colors.text('Successful!', colors.style.bold), colors.text_color.green)
  * ```
  *
- * The module also features multiple functions for color conversion. For example,
+ * The module also features multiple functions for color
+ * conversion. For example,
  *
  * ```zuri-repl
  * %> import colors
@@ -35,9 +40,10 @@
  * [0, 87.37864077669903, 33.00970873786409, 59.6078431372549]
  * ```
  *
- * The terminal colors also have simple wrappers that allow supplied colors to `text()`
- * from various color formats. For example, we can specify the color from the HTML
- * hexadecimal color.
+ * The terminal colors also have simple wrappers that allow
+ * supplied colors to `text()` from various color formats. For
+ * example, we can specify the color from the HTML hexadecimal
+ * color.
  *
  * ```zuri
  * import colors
@@ -49,7 +55,7 @@
 
 /**
  * ANSI font styles available for console applications.
- * 
+ *
  * @type dictionary
  */
 var style = {
@@ -66,7 +72,7 @@ var style = {
 
 /**
  * Standard ANSI text colors available for console applications.
- * 
+ *
  * @type dictionary
  */
 var text_color = {
@@ -89,8 +95,9 @@ var text_color = {
 }
 
 /**
- * Standard ANSI background colors available for console applications.
- * 
+ * Standard ANSI background colors available for console
+ * applications.
+ *
  * @type dictionary
  */
 var background = {
@@ -127,8 +134,9 @@ def _get_sequence(v, bg) {
 }
 
 /**
- * Returns a terminal printable text with the given color (or style) and background if given.
- * 
+ * Returns a terminal printable text with the given color (or
+ * style) and background if given.
+ *
  * @note The color argument can be replace with a style.
  * @param string value
  * @param ?int color
@@ -141,7 +149,7 @@ def text(value, color, bg) {
 
 /**
  * Converts RGB color to ASI-256 color number.
- * 
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -165,7 +173,7 @@ def rgb_to_ansi256(r, g, b) {
 
 /**
  * Converts ANSI-256 color number to ANSI-16 color number.
- * 
+ *
  * @param int code
  * @returns number
  */
@@ -203,7 +211,7 @@ def ansi256_to_ansi(code) {
 
 /**
  * Converts the hexadecimal string _h_ to its RGBA component
- * 
+ *
  * @param string h
  * @returns list
  */
@@ -242,7 +250,7 @@ def hex_to_rgb(h) {
 
 /**
  * Converts the given hexadecimal color to its ANSI-256 number.
- * 
+ *
  * @param string color
  * @returns number
  */
@@ -256,8 +264,9 @@ def hex_to_ansi256(color) {
 
 /**
  * Converts the given hexadecimal color to its ANSI-16 number.
- * 
- * @note For use with `text()`, this should be preferred over `hex_to_ansi256`
+ *
+ * @note For use with `text()`, this should be preferred over
+ *    `hex_to_ansi256`
  * @param string color
  * @returns number
  */
@@ -269,9 +278,11 @@ def hex_to_ansi(color) {
 }
 
 /**
- * Converts the given hexadecimal color to its terminal compatible color.
- * 
- * @note For use with `text()`, this should be preferred over `hex_to_ansi256` and `hex_to_ansi`
+ * Converts the given hexadecimal color to its terminal
+ * compatible color.
+ *
+ * @note For use with `text()`, this should be preferred over
+ *    `hex_to_ansi256` and `hex_to_ansi`
  * @note _color_ can include the '#' character. E.g. `#ff0`.
  * @param string color
  * @returns number
@@ -286,7 +297,7 @@ def hex(color) {
 
 /**
  * Converts the given RGB color to its terminal compatible color.
- * 
+ *
  * @param number r
  * @param number g
  * @param number b
@@ -300,7 +311,7 @@ def rgb(r, g, b) {
 
 /**
  * Converts the given HSL color to its terminal compatible color.
- * 
+ *
  * @param number h
  * @param number s
  * @param number l
@@ -317,7 +328,7 @@ def hsl(h, s, l) {
 
 /**
  * Converts the given HSV color to its terminal compatible color.
- * 
+ *
  * @param number h
  * @param number s
  * @param number v
@@ -334,7 +345,7 @@ def hsv(h, s, v) {
 
 /**
  * Converts the given HWB color to its terminal compatible color.
- * 
+ *
  * @param number h
  * @param number w
  * @param number b
@@ -350,8 +361,9 @@ def hwb(h, w, b) {
 }
 
 /**
- * Converts the given CMYK color to its terminal compatible color.
- * 
+ * Converts the given CMYK color to its terminal compatible
+ * color.
+ *
  * @param number c
  * @param number m
  * @param number y
@@ -369,7 +381,7 @@ def cmyk(c, m, y, k) {
 
 /**
  * Converts the given XYZ color to its terminal compatible color.
- * 
+ *
  * @param number x
  * @param number y
  * @param number z
@@ -385,8 +397,9 @@ def xyz(x, y, z) {
 }
 
 /**
- * Converts a RGB components into its corresponding hexadecimal color.
- * 
+ * Converts a RGB components into its corresponding hexadecimal
+ * color.
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -402,7 +415,7 @@ def rgb_to_hex(r, g, b, a) {
 
 /**
  * Converts a RGB color into its corresponding HSL components.
- * 
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -442,7 +455,7 @@ def rgb_to_hsl(r, g, b) {
 
 /**
  * Converts a RGB color into its corresponding HSV components.
- * 
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -475,7 +488,7 @@ def rgb_to_hsv(r, g, b) {
 
 /**
  * Converts a RGB color into its corresponding HWB components.
- * 
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -493,7 +506,7 @@ def rgb_to_hwb(r, g, b) {
 
 /**
  * Converts a RGB color into its corresponding CMYK components.
- * 
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -516,8 +529,9 @@ def rgb_to_cmyk(r, g, b) {
 }
 
 /**
- * Converts a RGB color into its corresponding XYZ color space components.
- * 
+ * Converts a RGB color into its corresponding XYZ color space
+ * components.
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -543,8 +557,9 @@ def rgb_to_xyz(r, g, b) {
 }
 
 /**
- * Converts a RGB color into its corresponding LAB color components.
- * 
+ * Converts a RGB color into its corresponding LAB color
+ * components.
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -574,8 +589,9 @@ def rgb_to_lab(r, g, b) {
 }
 
 /**
- * Converts a HSL color into its corresponding RGB color components.
- * 
+ * Converts a HSL color into its corresponding RGB color
+ * components.
+ *
  * @param number h
  * @param number s
  * @param number l
@@ -629,8 +645,9 @@ def hsl_to_rgb(h, s, l) {
 }
 
 /**
- * Converts a HSL color into its corresponding HSV color components.
- * 
+ * Converts a HSL color into its corresponding HSV color
+ * components.
+ *
  * @param number h
  * @param number s
  * @param number l
@@ -648,8 +665,9 @@ def hsl_to_hsv(h, s, l) {
 }
 
 /**
- * Converts a HSV color into its corresponding RGB color components.
- * 
+ * Converts a HSV color into its corresponding RGB color
+ * components.
+ *
  * @param number h
  * @param number s
  * @param number v
@@ -682,8 +700,9 @@ def hsv_to_rgb(h, s, v) {
 }
 
 /**
- * Converts a HSV color into its corresponding HSL color components.
- * 
+ * Converts a HSV color into its corresponding HSL color
+ * components.
+ *
  * @param number h
  * @param number s
  * @param number v
@@ -709,8 +728,9 @@ def hsv_to_hsl(h, s, v) {
 }
 
 /**
- * Converts a HWB color into its corresponding RGB color components.
- * 
+ * Converts a HWB color into its corresponding RGB color
+ * components.
+ *
  * @param number h
  * @param number w
  * @param number b
@@ -754,8 +774,9 @@ def hwb_to_rgb(h, w, b) {
 }
 
 /**
- * Converts a CMYK color into its corresponding RGB color components.
- * 
+ * Converts a CMYK color into its corresponding RGB color
+ * components.
+ *
  * @param number c
  * @param number m
  * @param number y
@@ -779,8 +800,9 @@ def cmyk_to_rgb(c, m, y, k) {
 }
 
 /**
- * Converts a XYZ color into its corresponding RGB color components.
- * 
+ * Converts a XYZ color into its corresponding RGB color
+ * components.
+ *
  * @param number x
  * @param number y
  * @param number z

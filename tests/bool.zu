@@ -1,0 +1,3 @@
+echo true.to_string()
+echo false.to_string()
+echo 'Result: ${true.to_string()}'

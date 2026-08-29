@@ -1,0 +1,27 @@
+find:
+2
+nil
+find_index:
+1
+-1
+find_last:
+6
+nil
+find_last_index:
+5
+-1
+find_all:
+[2, 4, 6]
+[]
+partition:
+[[2, 4, 6], [1, 3, 5]]
+callbacks receive index:
+4
+4
+empty list:
+nil
+-1
+nil
+-1
+[]
+[[], []]

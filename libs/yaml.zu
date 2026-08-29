@@ -1,61 +1,61 @@
 /**
  * @module yaml
  *
- * A complete, YAML 1.2.2-compliant library for parsing and emitting
- * YAML (YAML Ain't Markup Language) documents.
+ * A complete, YAML 1.2.2-compliant library for parsing and
+ * emitting YAML (YAML Ain't Markup Language) documents.
  *
- * This module implements the YAML 1.2.2 specification published at
- * https://yaml.org/spec/1.2.2/ using the **Core Schema** for implicit
- * type resolution, which is the schema used by most modern YAML implementations.
+ * This module implements the YAML 1.2.2 specification published
+ * at https://yaml.org/spec/1.2.2/ using the **Core Schema** for
+ * implicit type resolution, which is the schema used by most
+ * modern YAML implementations.
  *
  * ## Supported features
  *
  * ### Scalars
- * - Plain (unquoted) scalars with Core Schema type resolution
- * - Single-quoted scalars (no escape processing; `''` → `'`)
- * - Double-quoted scalars with full escape sequence processing
- *   (`\n \t \r \\ \" \/ \b \f \a \v \e \0 \xNN \uNNNN \UNNNNNNNN \N \_ \L \P`)
- * - Literal block scalars (`|`) with `clip`, `strip`, and `keep` chomping
- * - Folded block scalars (`>`) with `clip`, `strip`, and `keep` chomping
+ * - Plain (unquoted) scalars with Core Schema type resolution -
+ * Single-quoted scalars (no escape processing; `''` → `'`) -
+ * Double-quoted scalars with full escape sequence processing
+ * (`\n \t \r \\ \" \/ \b \f \a \v \e \0 \xNN \uNNNN \UNNNNNNNN
+ * \N \_ \L \P`) - Literal block scalars (`|`) with `clip`,
+ * `strip`, and `keep` chomping - Folded block scalars (`>`) with
+ * `clip`, `strip`, and `keep` chomping
  *
  * ### Collections
- * - Block mappings (key: value pairs, indented)
- * - Block sequences (dash-prefixed lists, indented)
- * - Flow mappings (`{ key: value, ... }`)
- * - Flow sequences (`[ item, item, ... ]`)
- * - Nested collections of any depth
- * - Complex (non-scalar) mapping keys with `? ` indicator
+ * - Block mappings (key: value pairs, indented) - Block
+ * sequences (dash-prefixed lists, indented) - Flow mappings (`{
+ * key: value, ... }`) - Flow sequences (`[ item, item, ... ]`) -
+ * Nested collections of any depth - Complex (non-scalar) mapping
+ * keys with `? ` indicator
  *
  * ### Document structure
- * - Multi-document streams separated by `---`
- * - Document end markers `...`
- * - `%YAML` directives (parsed, validated)
- * - `%TAG` directives (parsed)
- * - UTF-8, UTF-16 LE/BE, UTF-32 LE/BE with BOM detection
+ * - Multi-document streams separated by `---` - Document end
+ * markers `...` - `%YAML` directives (parsed, validated) -
+ * `%TAG` directives (parsed) - UTF-8, UTF-16 LE/BE, UTF-32 LE/BE
+ * with BOM detection
  *
  * ### Node properties
- * - Anchors (`&name`) and aliases (`*name`) with full reference resolution
- * - Merge keys (`<<: *anchor`) for dict merging
- * - Explicit tags (`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`,
- *   `!!seq`, `!!map`, `!!binary`, `!<tag:yaml.org,2002:type>`)
+ * - Anchors (`&name`) and aliases (`*name`) with full reference
+ * resolution - Merge keys (`<<: *anchor`) for dict merging -
+ * Explicit tags (`!!str`, `!!int`, `!!float`, `!!bool`,
+ * `!!null`, `!!seq`, `!!map`, `!!binary`,
+ * `!<tag:yaml.org,2002:type>`)
  *
  * ### Core Schema type resolution (implicit)
- * - `null` / `Null` / `NULL` / `~` / empty → `nil`
- * - `true` / `True` / `TRUE` / `false` / `False` / `FALSE` → bool
- * - Decimal integers (with optional `+`/`-` sign) → number
- * - Octal integers `0o[0-7]+` → number
- * - Hexadecimal integers `0x[0-9A-Fa-f]+` → number
- * - Decimal floats (with exponent) → number
- * - `.inf` / `.Inf` / `.INF` / `±.inf` → `math.Infinity` / `-math.Infinity`
- * - `.nan` / `.NaN` / `.NAN` → `0/0` (NaN)
- * - Everything else → string
+ * - `null` / `Null` / `NULL` / `~` / empty → `nil` - `true` /
+ * `True` / `TRUE` / `false` / `False` / `FALSE` → bool - Decimal
+ * integers (with optional `+`/`-` sign) → number - Octal
+ * integers `0o[0-7]+` → number - Hexadecimal integers
+ * `0x[0-9A-Fa-f]+` → number - Decimal floats (with exponent) →
+ * number - `.inf` / `.Inf` / `.INF` / `±.inf` → `math.Infinity`
+ * / `-math.Infinity` - `.nan` / `.NaN` / `.NAN` → `0/0` (NaN) -
+ * Everything else → string
  *
  * ## Emitter features
- * - Round-trips scalars correctly (chooses minimal quoting)
- * - Emits block or flow style per value type
- * - Anchors and aliases for repeated object references
- * - Configurable indentation (default: 2)
- * - Configurable line width for scalar wrapping (default: 80)
+ * - Round-trips scalars correctly (chooses minimal quoting) -
+ * Emits block or flow style per value type - Anchors and aliases
+ * for repeated object references - Configurable indentation
+ * (default: 2) - Configurable line width for scalar wrapping
+ * (default: 80)
  *
  * ## Quick start
  *
@@ -101,11 +101,12 @@ import math
 /**
  * Error raised when a YAML parsing or emission error occurs.
  *
- * @property string  message  Human-readable error description.
- * @property number  line     1-based line number where the error occurred
- *                            (`-1` when not applicable).
- * @property number  column   1-based column number (`-1` when not applicable).
- * @property string  context  Optional additional context string.
+ * @property string message Human-readable error description.
+ * @property number line 1-based line number where the error
+ *    occurred (`-1` when not applicable).
+ * @property number column 1-based column number (`-1` when not
+ *    applicable).
+ * @property string context Optional additional context string.
  */
 class YamlError < Error {
   var line    = -1
@@ -113,10 +114,11 @@ class YamlError < Error {
   var context = nil
 
   /**
-   * @param string  message  Error description.
-   * @param number  line     Line number (1-based), or `nil`.
-   * @param number  column   Column number (1-based), or `nil`.
-   * @param string  context  Optional context (surrounding text), or `nil`.
+   * @param string message Error description.
+   * @param number line Line number (1-based), or `nil`.
+   * @param number column Column number (1-based), or `nil`.
+   * @param string context Optional context (surrounding text),
+   *    or `nil`.
    * @constructor
    */
   @new(message, line, column, context) {
@@ -298,9 +300,10 @@ def _apply_tag(tag, raw) {
 # ---------------------------------------------------------------------------
 
 /**
- * Tokenises a YAML character stream into a sequence of scanner positions.
- * Rather than producing a full token list upfront, the parser calls helper
- * methods on the scanner to consume characters on demand.
+ * Tokenises a YAML character stream into a sequence of scanner
+ * positions. Rather than producing a full token list upfront,
+ * the parser calls helper methods on the scanner to consume
+ * characters on demand.
  *
  * @internal
  */
@@ -452,9 +455,9 @@ class _Scanner {
 /**
  * Recursive-descent YAML parser.
  *
- * Parses a normalised YAML character stream (already converted to LF line
- * endings) into Zuri values.  Implements the Core Schema for implicit type
- * resolution.
+ * Parses a normalised YAML character stream (already converted
+ * to LF line endings) into Zuri values. Implements the Core
+ * Schema for implicit type resolution.
  *
  * @internal — use `parse()`, `parse_all()`, or `load_file()`.
  */
@@ -1528,8 +1531,9 @@ class _Parser {
 /**
  * Serialises Zuri values to YAML text.
  *
- * The emitter uses block style for collections by default and chooses
- * the minimal quoting strategy for scalars. Configure via `Options`.
+ * The emitter uses block style for collections by default and
+ * chooses the minimal quoting strategy for scalars. Configure
+ * via `Options`.
  *
  * @internal — use `dump()` or `dump_file()`.
  */
@@ -1784,9 +1788,11 @@ def _strip_bom_and_normalise(text) {
 # ---------------------------------------------------------------------------
 
 /**
- * Parses a YAML string and returns the value of the first (or only) document.
+ * Parses a YAML string and returns the value of the first (or
+ * only) document.
  *
- * Uses the Core Schema for implicit type resolution (see module description).
+ * Uses the Core Schema for implicit type resolution (see module
+ * description).
  *
  * ### Examples
  *
@@ -1815,9 +1821,9 @@ def _strip_bom_and_normalise(text) {
  * yaml.parse("msg: |\n  hello\n  world\n")  # { msg: "hello\nworld\n" }
  * ```
  *
- * @param  string  text  The YAML text to parse.
- * @return any           The parsed Zuri value.
- * @throws YamlError     On any YAML syntax or structural error.
+ * @param string text The YAML text to parse.
+ * @return any The parsed Zuri value.
+ * @throws YamlError On any YAML syntax or structural error.
  */
 def parse(text: string) {
   text = _strip_bom_and_normalise(text)
@@ -1826,11 +1832,12 @@ def parse(text: string) {
 }
 
 /**
- * Parses a YAML stream containing one or more documents and returns a list
- * of all document values.
+ * Parses a YAML stream containing one or more documents and
+ * returns a list of all document values.
  *
- * Documents are separated by `---` markers.  A stream with a single document
- * and no `---` marker returns a single-element list.
+ * Documents are separated by `---` markers. A stream with a
+ * single document and no `---` marker returns a single-element
+ * list.
  *
  * ```zuri
  * import yaml
@@ -1841,9 +1848,10 @@ def parse(text: string) {
  * echo docs[1]        # { b: 2 }
  * ```
  *
- * @param  string  text  The YAML stream text.
- * @return list          List of parsed document values (one per document).
- * @throws YamlError     On any YAML syntax or structural error.
+ * @param string text The YAML stream text.
+ * @return list List of parsed document values (one per
+ *    document).
+ * @throws YamlError On any YAML syntax or structural error.
  */
 def parse_all(text: string) {
   text = _strip_bom_and_normalise(text)
@@ -1861,10 +1869,10 @@ def parse_all(text: string) {
  * echo config['database']['host']
  * ```
  *
- * @param  string  path  Filesystem path to the YAML file.
- * @return any           The parsed value of the first document.
- * @throws YamlError     On parse error.
- * @throws Error     On file I/O error.
+ * @param string path Filesystem path to the YAML file.
+ * @return any The parsed value of the first document.
+ * @throws YamlError On parse error.
+ * @throws Error On file I/O error.
  */
 def load_single_file(path: string) {
   var text = file(path).read()
@@ -1872,12 +1880,13 @@ def load_single_file(path: string) {
 }
 
 /**
- * Reads a YAML file from `path` and parses all documents in the stream.
+ * Reads a YAML file from `path` and parses all documents in the
+ * stream.
  *
- * @param  string  path  Filesystem path to the YAML file.
- * @return list          List of parsed document values.
- * @throws YamlError     On parse error.
- * @throws Error     On file I/O error.
+ * @param string path Filesystem path to the YAML file.
+ * @return list List of parsed document values.
+ * @throws YamlError On parse error.
+ * @throws Error On file I/O error.
  */
 def load_file(path: string) {
   var text = file(path).read()
@@ -1887,9 +1896,10 @@ def load_file(path: string) {
 /**
  * Serialises a Zuri value to a YAML string.
  *
- * The output is a valid YAML 1.2 document terminated by a newline.
- * Collections use block style by default; small flat sequences may be
- * emitted in flow style when they fit within the line width.
+ * The output is a valid YAML 1.2 document terminated by a
+ * newline. Collections use block style by default; small flat
+ * sequences may be emitted in flow style when they fit within
+ * the line width.
  *
  * ### Examples
  *
@@ -1922,11 +1932,14 @@ def load_file(path: string) {
  * #     port: 443
  * ```
  *
- * @param  any     value   The Zuri value to serialise.
- * @param  ?int  indent  Spaces per indentation level (default: `2`).
- * @param  ?int  width   Target line width for flow-style decisions (default: `80`).
- * @return string          The YAML text (always ends with `\n`).
- * @throws YamlError       On emission error (e.g. unserializable value).
+ * @param any value The Zuri value to serialise.
+ * @param ?int indent Spaces per indentation level (default:
+ *    `2`).
+ * @param ?int width Target line width for flow-style decisions
+ *    (default: `80`).
+ * @return string The YAML text (always ends with `\n`).
+ * @throws YamlError On emission error (e.g. unserializable
+ *    value).
  */
 def dump(value: any, indent: ?int, width: ?int) {
   var e = _Emitter(indent, width)
@@ -1936,7 +1949,8 @@ def dump(value: any, indent: ?int, width: ?int) {
 /**
  * Serialises a list of values as a multi-document YAML stream.
  *
- * Each value is emitted as a separate YAML document, separated by `---`.
+ * Each value is emitted as a separate YAML document, separated
+ * by `---`.
  *
  * ```zuri
  * import yaml
@@ -1948,11 +1962,12 @@ def dump(value: any, indent: ?int, width: ?int) {
  * # b: 2
  * ```
  *
- * @param  list    values  List of Zuri values to serialise.
- * @param  ?int  indent  Spaces per indentation level (default: `2`).
- * @param  ?int  width   Target line width (default: `80`).
- * @return string          The YAML stream text.
- * @throws YamlError       On emission error.
+ * @param list values List of Zuri values to serialise.
+ * @param ?int indent Spaces per indentation level (default:
+ *    `2`).
+ * @param ?int width Target line width (default: `80`).
+ * @return string The YAML stream text.
+ * @throws YamlError On emission error.
  */
 def dump_all(values: list, indent: ?int, width: ?int) {
   var e      = _Emitter(indent, width)
@@ -1964,7 +1979,8 @@ def dump_all(values: list, indent: ?int, width: ?int) {
 }
 
 /**
- * Serialises `value` to YAML and writes it to the file at `path`.
+ * Serialises `value` to YAML and writes it to the file at
+ * `path`.
  *
  * Creates or overwrites the file.
  *
@@ -1978,12 +1994,12 @@ def dump_all(values: list, indent: ?int, width: ?int) {
  * })
  * ```
  *
- * @param  string  path    Filesystem path to write to.
- * @param  any     value   The value to serialise.
- * @param  ?int  indent  Indentation level (default: `2`).
- * @param  ?int  width   Line width (default: `80`).
- * @throws YamlError       On emission error.
- * @throws Error       On file I/O error.
+ * @param string path Filesystem path to write to.
+ * @param any value The value to serialise.
+ * @param ?int indent Indentation level (default: `2`).
+ * @param ?int width Line width (default: `80`).
+ * @throws YamlError On emission error.
+ * @throws Error On file I/O error.
  */
 def dump_file(path: string, value: any, indent: ?int, width: ?int) {
   var f = file(path, 'w')

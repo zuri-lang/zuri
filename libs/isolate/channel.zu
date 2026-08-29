@@ -1,49 +1,55 @@
 /**
  * @module channel
  *
- * Thread-safe, multi-producer multi-consumer (MPMC) communication queues for
- * passing values and messages across isolate isolates.
+ * Thread-safe, multi-producer multi-consumer (MPMC)
+ * communication queues for passing values and messages across
+ * isolate isolates.
  *
  * ## Overview
  *
- * Channels provide synchronized, data-race-free message passing between
- * concurrent isolate isolates. Because Zuri isolates execute within isolated heaps,
- * sending a value over a `Channel` deep-copies the object graph across the
- * boundary barrier, preserving internal references and graph topologies without
- * sharing mutable memory.
+ * Channels provide synchronized, data-race-free message passing
+ * between concurrent isolate isolates. Because Zuri isolates
+ * execute within isolated heaps, sending a value over a
+ * `Channel` deep-copies the object graph across the boundary
+ * barrier, preserving internal references and graph topologies
+ * without sharing mutable memory.
  *
- * `Channel` handles are re-exported by the `isolate` module, making them accessible
- * directly via `isolate.Channel` or `isolate.channel()`.
+ * `Channel` handles are re-exported by the `isolate` module,
+ * making them accessible directly via `isolate.Channel` or
+ * `isolate.channel()`.
  *
  * ## Channel Types & Backpressure
  *
- * - **Unbounded Channels (`capacity: 0` or `nil`)**:
- *   Messages are enqueued without blocking `send()`. The queue dynamically grows
- *   as needed.
- * - **Bounded Channels (`capacity: n > 0`)**:
- *   The channel holds at most `n` unread messages. Calling `send()` when the
- *   queue is full blocks the sending isolate until a consumer calls `recv()`,
- *   providing automatic backpressure to prevent producer tasks from exhausting
- *   system memory.
+ * - **Unbounded Channels (`capacity: 0` or `nil`)**: Messages
+ * are enqueued without blocking `send()`. The queue dynamically
+ * grows as needed. - **Bounded Channels (`capacity: n > 0`)**:
+ * The channel holds at most `n` unread messages. Calling
+ * `send()` when the queue is full blocks the sending isolate
+ * until a consumer calls `recv()`, providing automatic
+ * backpressure to prevent producer tasks from exhausting system
+ * memory.
  *
  * ## Channel Lifecycle
  *
- * - **Sending**: `Channel.send(val, timeout)` pushes a value into the channel.
- *   If the channel is bounded and full, the call blocks until capacity is available
- *   or `timeout` elapses.
- * - **Receiving**: `Channel.recv(timeout)` blocks until a value arrives. If the
- *   channel is closed and all queued items have been drained, `recv()` returns `nil`.
- * - **Non-blocking Peek**: `Channel.try_recv()` retrieves the next value immediately
- *   without blocking, returning `nil` if the channel is currently empty.
- * - **Closing**: `Channel.close()` shuts down the channel for subsequent sends.
- *   Messages already in the queue remain readable until drained. Subsequent calls
- *   to `send()` on a closed channel raise a `IsolateError`.
+ * - **Sending**: `Channel.send(val, timeout)` pushes a value
+ * into the channel. If the channel is bounded and full, the call
+ * blocks until capacity is available or `timeout` elapses. -
+ * **Receiving**: `Channel.recv(timeout)` blocks until a value
+ * arrives. If the channel is closed and all queued items have
+ * been drained, `recv()` returns `nil`. - **Non-blocking Peek**:
+ * `Channel.try_recv()` retrieves the next value immediately
+ * without blocking, returning `nil` if the channel is currently
+ * empty. - **Closing**: `Channel.close()` shuts down the channel
+ * for subsequent sends. Messages already in the queue remain
+ * readable until drained. Subsequent calls to `send()` on a
+ * closed channel raise a `IsolateError`.
  *
  * ## Multiplexing with `select()`
  *
- * The `select()` function allows a isolate to wait on multiple channels
- * simultaneously. It blocks until at least one channel is ready to deliver a value
- * (or is closed), returning a pair `[ready_channel, value]`.
+ * The `select()` function allows a isolate to wait on multiple
+ * channels simultaneously. It blocks until at least one channel
+ * is ready to deliver a value (or is closed), returning a pair
+ * `[ready_channel, value]`.
  *
  * ## Examples
  *
@@ -122,16 +128,19 @@ import _isolate
 import .error { IsolateError, IsolateTimeoutError, IsolateCancelledError }
 
 /**
- * A thread-safe, multi-producer multi-consumer (MPMC) message queue.
+ * A thread-safe, multi-producer multi-consumer (MPMC) message
+ * queue.
  */
 class Channel {
   var _ptr
 
   /**
-   * Constructs a new `Channel` with the specified capacity limit.
+   * Constructs a new `Channel` with the specified capacity
+   * limit.
    *
-   * @param ?int capacity: Maximum number of buffered items before `send()`
-   *   blocks for backpressure. `nil` or `0` creates an unbounded channel.
+   * @param ?int capacity: Maximum number of buffered items
+   *    before `send()` blocks for backpressure. `nil` or `0`
+   *    creates an unbounded channel.
    * @raises ValueError if `capacity` is negative.
    *
    * ```zuri
@@ -153,16 +162,18 @@ class Channel {
   /**
    * Sends `value` into the channel.
    *
-   * If the channel is bounded and currently full, this call blocks the calling
-   * isolate until space becomes available, the timeout elapses, or the caller
-   * is cancelled.
+   * If the channel is bounded and currently full, this call
+   * blocks the calling isolate until space becomes available,
+   * the timeout elapses, or the caller is cancelled.
    *
    * @param any value: The value or object graph to send.
-   * @param ?number timeout: Maximum seconds to wait before timing out. Waits
-   *   indefinitely if omitted or `nil`.
+   * @param ?number timeout: Maximum seconds to wait before
+   *    timing out. Waits indefinitely if omitted or `nil`.
    * @raises IsolateError if the channel has been closed.
-   * @raises IsolateTimeoutError if `timeout` seconds elapse before space is available.
-   * @raises IsolateCancelledError if the calling isolate is cancelled while blocked.
+   * @raises IsolateTimeoutError if `timeout` seconds elapse
+   *    before space is available.
+   * @raises IsolateCancelledError if the calling isolate is
+   *    cancelled while blocked.
    *
    * ```zuri
    * ch.send("data payload")
@@ -185,14 +196,17 @@ class Channel {
   /**
    * Blocks until a message is available and retrieves it.
    *
-   * If the channel is closed and all buffered messages have been received,
-   * `recv()` returns `nil`.
+   * If the channel is closed and all buffered messages have been
+   * received, `recv()` returns `nil`.
    *
-   * @param ?number timeout: Maximum seconds to wait for a message. Waits
-   *   indefinitely if omitted or `nil`.
-   * @returns any: The received value, or `nil` if the channel is closed and empty.
-   * @raises IsolateTimeoutError if `timeout` seconds elapse before a value is received.
-   * @raises IsolateCancelledError if the calling isolate is cancelled while blocked.
+   * @param ?number timeout: Maximum seconds to wait for a
+   *    message. Waits indefinitely if omitted or `nil`.
+   * @returns any: The received value, or `nil` if the channel is
+   *    closed and empty.
+   * @raises IsolateTimeoutError if `timeout` seconds elapse
+   *    before a value is received.
+   * @raises IsolateCancelledError if the calling isolate is
+   *    cancelled while blocked.
    *
    * ```zuri
    * var item = ch.recv()
@@ -216,8 +230,8 @@ class Channel {
   /**
    * Attempts to receive a value without blocking.
    *
-   * @returns any: The next available message, or `nil` if the channel is currently
-   *   empty or closed.
+   * @returns any: The next available message, or `nil` if the
+   *    channel is currently empty or closed.
    *
    * ```zuri
    * var item = ch.try_recv()
@@ -237,8 +251,9 @@ class Channel {
   /**
    * Closes the channel.
    *
-   * Buffered messages remain available for consumers to read via `recv()` or
-   * `try_recv()`. Calling `send()` after closing raises `IsolateError`.
+   * Buffered messages remain available for consumers to read via
+   * `recv()` or `try_recv()`. Calling `send()` after closing
+   * raises `IsolateError`.
    *
    * ```zuri
    * ch.close()
@@ -251,7 +266,8 @@ class Channel {
   /**
    * Checks whether the channel has been closed.
    *
-   * @returns bool: `true` if the channel is closed, `false` otherwise.
+   * @returns bool: `true` if the channel is closed, `false`
+   *    otherwise.
    *
    * ```zuri
    * if !ch.is_closed() {
@@ -264,7 +280,8 @@ class Channel {
   }
 
   /**
-   * Returns the current number of buffered, unread messages in the channel.
+   * Returns the current number of buffered, unread messages in
+   * the channel.
    *
    * @returns int: Number of queued items.
    *
@@ -279,7 +296,8 @@ class Channel {
   /**
    * Returns the underlying native channel pointer.
    *
-   * Used internally by `select()`. Not intended for direct application usage.
+   * Used internally by `select()`. Not intended for direct
+   * application usage.
    */
   handle() {
     return self._ptr
@@ -289,7 +307,8 @@ class Channel {
 /**
  * Creates a new thread-safe `Channel`.
  *
- * @param ?int capacity: Maximum buffered messages. `nil` or `0` means unbounded.
+ * @param ?int capacity: Maximum buffered messages. `nil` or `0`
+ *    means unbounded.
  * @returns Channel
  *
  * ```zuri
@@ -303,23 +322,27 @@ def channel(capacity: ?int) {
 }
 
 /**
- * Multiplexes across multiple channels, blocking until at least one channel is
- * ready to deliver a value or is closed.
+ * Multiplexes across multiple channels, blocking until at least
+ * one channel is ready to deliver a value or is closed.
  *
- * The ready value is consumed from the selected channel exactly as if `recv()`
- * were called on it directly.
+ * The ready value is consumed from the selected channel exactly
+ * as if `recv()` were called on it directly.
  *
- * If multiple channels are ready simultaneously, ties are resolved in favor
- * of the channel with the lower index in `channels`.
+ * If multiple channels are ready simultaneously, ties are
+ * resolved in favor of the channel with the lower index in
+ * `channels`.
  *
  * @param list channels: A non-empty list of `Channel` instances.
- * @param ?number timeout: Maximum seconds to wait before timing out. Waits
- *   indefinitely if omitted or `nil`.
- * @returns list: A two-element list `[ready_channel, value]`, where `value` is
- *   the message received (`nil` if the channel was closed and drained).
+ * @param ?number timeout: Maximum seconds to wait before timing
+ *    out. Waits indefinitely if omitted or `nil`.
+ * @returns list: A two-element list `[ready_channel, value]`,
+ *    where `value` is the message received (`nil` if the channel
+ *    was closed and drained).
  * @raises ValueError if `channels` is empty.
- * @raises IsolateTimeoutError if `timeout` seconds elapse before any channel is ready.
- * @raises IsolateCancelledError if the calling isolate is cancelled while blocked.
+ * @raises IsolateTimeoutError if `timeout` seconds elapse before
+ *    any channel is ready.
+ * @raises IsolateCancelledError if the calling isolate is
+ *    cancelled while blocked.
  *
  * ```zuri
  * import isolate

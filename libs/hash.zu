@@ -1,7 +1,8 @@
 /**
  * @module hash
  *
- * This module provides a framework for cryptographic and non-cryptographic encryption.
+ * This module provides a framework for cryptographic and
+ * non-cryptographic encryption.
  *
  * Examples,
  *
@@ -28,11 +29,11 @@ import _hash
 import convert
 
 /**
- * Returns the identification hash of a value as used in the underlying dictionary
- * implementation.
+ * Returns the identification hash of a value as used in the
+ * underlying dictionary implementation.
  *
- * A class may override the result of this function by implementing the
- * `to_hash` decorator.
+ * A class may override the result of this function by
+ * implementing the `to_hash` decorator.
  *
  * @param any value
  * @returns number
@@ -42,23 +43,26 @@ def id(value) {
 }
 
 /**
- * Returns the hash digest for the given data using the given algorithm.
+ * Returns the hash digest for the given data using the given
+ * algorithm.
  *
  * Supported algorithms includes:
  *
- * - **FNV1 family**: `fnv1`, `fnv1a`, `fnv164`, `fnv1a64`.
- * - **MD family**: `md2`, `md4`, `md5`.
- * - **SHA family**: `sha`, `sha1`, `sha224`, `sha256`, `sha384`, `sha512`, `sha512-224`, `sha512-256`, `md5-sha1`.
- * - **SHA3 family**: `sha3-224`, `sha3-256`, `sha3-384`, `sha3-512`.
- * - **SHAKE family (XOF)**: `shake128`, `shake256`.
- * - **RIPEMD family**: `ripemd160`.
- * - **WHIRLPOOL family**: `whirlpool`.
- * - **Blake family**: `blake2s256`, `blake2b512`.
- * - **SM family**: `sm3`.
+ * - **FNV1 family**: `fnv1`, `fnv1a`, `fnv164`, `fnv1a64`. -
+ * **MD family**: `md2`, `md4`, `md5`. - **SHA family**: `sha`,
+ * `sha1`, `sha224`, `sha256`, `sha384`, `sha512`, `sha512-224`,
+ * `sha512-256`, `md5-sha1`. - **SHA3 family**: `sha3-224`,
+ * `sha3-256`, `sha3-384`, `sha3-512`. - **SHAKE family (XOF)**:
+ * `shake128`, `shake256`. - **RIPEMD family**: `ripemd160`. -
+ * **WHIRLPOOL family**: `whirlpool`. - **Blake family**:
+ * `blake2s256`, `blake2b512`. - **SM family**: `sm3`.
  *
- * By default, this function returns the hexadecimal string representing the hash (since this is the
- * most common application level usage). The function accepts a third boolean argument `as_bytes`
- * which allows callers to specify if the result should be returned in the raw digest byte stream or not.
+ * By default, this function returns the hexadecimal string
+ * representing the hash (since this is the most common
+ * application level usage). The function accepts a third boolean
+ * argument `as_bytes` which allows callers to specify if the
+ * result should be returned in the raw digest byte stream or
+ * not.
  *
  * @note Algorithm names are not case-sensitive.
  * @param string algorithm
@@ -315,7 +319,7 @@ def fnv1a_64(data, as_bytes) {
  *
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def whirlpool(str, as_bytes) {
   return hash('whirlpool', str, as_bytes)
@@ -326,11 +330,12 @@ def whirlpool(str, as_bytes) {
 #################################################################################
 
 /**
- * Returns the Gost cryptographic hash of the given string or bytes.
+ * Returns the Gost cryptographic hash of the given string or
+ * bytes.
  *
  * @param {string|bytes} data
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def gost(data, as_bytes) {
   if !is_string(data) and !is_bytes(data) {
@@ -355,44 +360,48 @@ def gost(data, as_bytes) {
 #################################################################################
 
 /**
- * Returns the SHA3-224 cryptographic hash of the given string or bytes.
- * 
+ * Returns the SHA3-224 cryptographic hash of the given string or
+ * bytes.
+ *
  * @param {string|bytes} data
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def sha3_224(data, as_bytes)  {
   return hash('sha3-224', data, as_bytes)
 }
 
 /**
- * Returns the SHA3-256 cryptographic hash of the given string or bytes.
- * 
+ * Returns the SHA3-256 cryptographic hash of the given string or
+ * bytes.
+ *
  * @param {string|bytes} data
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def sha3_256(data, as_bytes)  {
   return hash('sha3-256', data, as_bytes)
 }
 
 /**
- * Returns the SHA3-384 cryptographic hash of the given string or bytes.
- * 
+ * Returns the SHA3-384 cryptographic hash of the given string or
+ * bytes.
+ *
  * @param {string|bytes} data
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def sha3_384(data, as_bytes)  {
   return hash('sha3-384', data, as_bytes)
 }
 
 /**
- * Returns the SHA3-512 cryptographic hash of the given string or bytes.
- * 
+ * Returns the SHA3-512 cryptographic hash of the given string or
+ * bytes.
+ *
  * @param {string|bytes} data
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def sha3_512(data, as_bytes)  {
   return hash('sha3-512', data, as_bytes)
@@ -403,22 +412,24 @@ def sha3_512(data, as_bytes)  {
 #################################################################################
 
 /**
- * Returns the SHAKE-128 cryptographic hash of the given string or bytes.
- * 
+ * Returns the SHAKE-128 cryptographic hash of the given string
+ * or bytes.
+ *
  * @param {string|bytes} data
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def shake128(data, as_bytes) {
   return hash('shake128', data, as_bytes)
 }
 
 /**
- * Returns the SHAKE-256 cryptographic hash of the given string or bytes.
- * 
+ * Returns the SHAKE-256 cryptographic hash of the given string
+ * or bytes.
+ *
  * @param {string|bytes} data
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def shake256(data, as_bytes) {
   return hash('shake256', data, as_bytes)
@@ -429,7 +440,8 @@ def shake256(data, as_bytes) {
 #################################################################################
 
 /**
- * Returns the BLAKE2B-512 cryptographic hash of the given string or bytes.
+ * Returns the BLAKE2B-512 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} data
  * @param ?bool as_bytes
@@ -440,7 +452,8 @@ def blake2b512(data, as_bytes) {
 }
 
 /**
- * Returns the BLAKE2S-256 cryptographic hash of the given string or bytes.
+ * Returns the BLAKE2S-256 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} data
  * @param ?bool as_bytes
@@ -455,7 +468,8 @@ def blake2s256(data, as_bytes) {
 #################################################################################
 
 /**
- * Returns the RIPEMD-160 cryptographic hash of the given string or bytes.
+ * Returns the RIPEMD-160 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} data
  * @param ?bool as_bytes
@@ -484,7 +498,7 @@ var _hmac_allowed = [
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac(method, key, str, as_bytes) {
   if !_hmac_allowed.contains(method)
@@ -555,107 +569,116 @@ def hmac(method, key, str, as_bytes) {
 }
 
 /**
- * Returns the HMAC-MD4 cryptographic hash of the given string or bytes.
+ * Returns the HMAC-MD4 cryptographic hash of the given string or
+ * bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_md4(key, str, as_bytes) {
   return hmac(md4, key, str, as_bytes)
 }
 
 /**
- * Returns the HMAC-MD5 cryptographic hash of the given string or bytes.
+ * Returns the HMAC-MD5 cryptographic hash of the given string or
+ * bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_md5(key, str, as_bytes) {
   return hmac(md5, key, str, as_bytes)
 }
 /**
- * Returns the HMAC-SHA1 cryptographic hash of the given string or bytes.
+ * Returns the HMAC-SHA1 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_sha1(key, str, as_bytes) {
   return hmac(sha1, key, str, as_bytes)
 }
 
 /**
- * Returns the HMAC-SHA224 cryptographic hash of the given string or bytes.
+ * Returns the HMAC-SHA224 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_sha224(key, str, as_bytes) {
   return hmac(sha224, key, str, as_bytes)
 }
 
 /**
- * Returns the HMAC-SHA256 cryptographic hash of the given string or bytes.
+ * Returns the HMAC-SHA256 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_sha256(key, str, as_bytes) {
   return hmac(sha256, key, str, as_bytes)
 }
 
 /**
- * Returns the HMAC-SHA384 cryptographic hash of the given string or bytes.
+ * Returns the HMAC-SHA384 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_sha384(key, str, as_bytes) {
   return hmac(sha384, key, str, as_bytes)
 }
 
 /**
- * Returns the HMAC-SHA512 cryptographic hash of the given string or bytes.
+ * Returns the HMAC-SHA512 cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_sha512(key, str, as_bytes) {
   return hmac(sha512, key, str, as_bytes)
 }
 
 /**
- * Returns the HMAC-WHIRLPOOL cryptographic hash of the given string or bytes.
+ * Returns the HMAC-WHIRLPOOL cryptographic hash of the given
+ * string or bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_whirlpool(key, str, as_bytes) {
   return hmac(whirlpool, key, str, as_bytes)
 }
 
 /**
- * Returns the HMAC-GOST cryptographic hash of the given string or bytes.
+ * Returns the HMAC-GOST cryptographic hash of the given string
+ * or bytes.
  *
  * @param {string|bytes} key
  * @param {string|bytes} str
  * @param ?bool as_bytes
- * @returns {string|bytes} 
+ * @returns {string|bytes}
  */
 def hmac_gost(key, str, as_bytes) {
   return hmac(gost, key, str, as_bytes)
@@ -666,9 +689,9 @@ def hmac_gost(key, str, as_bytes) {
 #################################################################################
 
 /**
- * Derives a cryptographic key from a password using the PBKDF2 key
- * derivation function defined in RFC 2898 §5.2 (PKCS #5 v2.0), as
- * updated by RFC 8018.
+ * Derives a cryptographic key from a password using the PBKDF2
+ * key derivation function defined in RFC 2898 §5.2 (PKCS #5
+ * v2.0), as updated by RFC 8018.
  *
  * ## Examples
  *
@@ -718,38 +741,37 @@ def hmac_gost(key, str, as_bytes) {
  *
  * > ## Security notes
  * >
- * > - Always use a **unique, randomly generated salt** for every password.
- * >   Never derive the salt from the username, email, or any other
- * >   predictable input.
- * > - Tune `iterations` so that derivation takes ~100 ms on your target
- * >   hardware. Re-benchmark as server capacity increases over time.
- * > - For pure password storage where output size is not a concern,
- * >   consider `bcrypt` (built into Zuri's `hash` module). PBKDF2 is
- * >   most appropriate when you need an arbitrarily long output — symmetric
- * >   keys, key wrapping, or protocol key schedules.
- * > - When comparing derived keys, use a constant-time equality function
- * >   to prevent timing side-channel attacks.
+ * > - Always use a **unique, randomly generated salt** for every
+ * > password. Never derive the salt from the username, email, or
+ * > any other predictable input. - Tune `iterations` so that
+ * > derivation takes ~100 ms on your target hardware.
+ * > Re-benchmark as server capacity increases over time. - For
+ * > pure password storage where output size is not a concern,
+ * > consider `bcrypt` (built into Zuri's `hash` module). PBKDF2
+ * > is most appropriate when you need an arbitrarily long output
+ * > — symmetric keys, key wrapping, or protocol key schedules. -
+ * > When comparing derived keys, use a constant-time equality
+ * > function to prevent timing side-channel attacks.
  *
- * @param  {string}         algorithm   HMAC variant used as the PRF. One of:
- *    `'sha1'`, `'sha224'`, `'sha256'`, `'sha384'`, `'sha512'`, `'md5'`.
- *    Prefer `'sha256'` or `'sha512'` for new designs.
- * @param  {string|bytes} password    The password (HMAC key). Any string
- *    or bytes value is accepted.
- * @param  {string|bytes} salt        The cryptographic salt. Use at least
- *    16 bytes of random data per password.
- *    Never reuse a salt across different passwords.
- * @param  {number}         iterations  Iteration count `c` (must be >= 1).
- *    OWASP 2023 minimums:
- *    'sha1'   → 1 300 000
- *    'sha256' →   600 000
- *    'sha512' →   210 000
- * @param  {number}         dk_len      Derived key length in bytes.
- *    Defaults to the PRF output length (hLen) when nil or omitted.
+ * @param {string} algorithm HMAC variant used as the PRF. One
+ *    of: `'sha1'`, `'sha224'`, `'sha256'`, `'sha384'`,
+ *    `'sha512'`, `'md5'`. Prefer `'sha256'` or `'sha512'` for
+ *    new designs.
+ * @param {string|bytes} password The password (HMAC key). Any
+ *    string or bytes value is accepted.
+ * @param {string|bytes} salt The cryptographic salt. Use at
+ *    least 16 bytes of random data per password. Never reuse a
+ *    salt across different passwords.
+ * @param {number} iterations Iteration count `c` (must be >= 1).
+ *    OWASP 2023 minimums: 'sha1' → 1 300 000 'sha256' → 600 000
+ *    'sha512' → 210 000
+ * @param {number} dk_len Derived key length in bytes. Defaults
+ *    to the PRF output length (hLen) when nil or omitted.
  *    Maximum: (2^32 - 1) * hLen.
- * @param  {bool}           as_bytes  true  → return a bytes object.
- *    false → return a lowercase hex string (default).
+ * @param {bool} as_bytes true → return a bytes object. false →
+ *    return a lowercase hex string (default).
  *
- * @return string | bytes  The derived key.
+ * @return string | bytes The derived key.
  *
  * @throws Error
  */

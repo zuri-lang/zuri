@@ -1,34 +1,36 @@
 /**
- * If x is a number, this function returns the absolute value of the number x. This is 
- * equivalent to `x >= 0 ? x : -x`. However, if x is an instance of a class y and y defines 
- * `@to_abs()`, then this functions returns `x.@to_abs()`.
- * 
- * @param {number|instance} x The number to get the absolute value of.
- * @returns {number|any}
+ * Returns the current epoch time to the seconds resolution.
+ *
+ * @returns {number}
  */
-def abs(x: number|instance) {}
+def time() {}
+
+/**
+ * Calculates the sum of all the elements passed as arguments.
+ * Returns `0` when no argument is passed in.
+ *
+ * Example:
+ *
+ * ```zuri-repl
+ * %> math.sum([1, 2, [3, 4, [5, 6]]])
+ * 21
+ * ```
+ *
+ * @param ...number values
+ * @returns number
+ */
+def sum(...values) {}
 
 
 /**
- * If x is a number, this function converts number x to it's binary string and returns the 
- * value. However, if x is an instance of a class y and y defines `@to_bin()`, then this 
- * functions returns `x.@to_bin()`.
- * 
- * @param {number|instance} x The number to convert to binary string.
- * @returns {string|any}
- */
-def bin(x: number|instance) {}
-
-
-/**
- * If x is a number, this function returns a new `bytes` object with length x having all its 
- * bytes set to `0x0`. 
- * 
- * If x is a list, it returns a new `bytes` object whose contents are the bytes specified in 
- * the list.
- * 
- * @note If x is a list, then the list must only contain valid bytes which can be any number 
- *    between 0 and 255.
+ * If x is a number, this function returns a new `bytes` object
+ * with length x having all its bytes set to `0x0`.
+ *
+ * If x is a list, it returns a new `bytes` object whose contents
+ * are the bytes specified in the list.
+ *
+ * @note If x is a list, then the list must only contain valid
+ *    bytes which can be any number between 0 and 255.
  * @param {number|list} x The number or list to convert to bytes.
  * @returns {bytes|any}
  */
@@ -36,28 +38,10 @@ def bytes(x: number|list) {}
 
 
 /**
- * Returns the Unicode character whose code point is equal to the number x.
- * 
- * @param {number} x The number to convert to character.
- * @returns {string}
- */
-def chr(x: number) {}
-
-
-/**
- * Deletes the property name from the given instance of object.
- * 
- * @param {instance} object The instance to delete the property from.
- * @param {string} name The name of the property to delete.
- * @returns {void}
- */
-def delprop(object: instance, name: string) {}
-
-
-/**
- * Returns an open file handle to the file specified in the path in the specified mode. If the 
- * mode is not specified, the file will be opened in the read only mode.
- * 
+ * Returns an open file handle to the file specified in the path
+ * in the specified mode. If the mode is not specified, the file
+ * will be opened in the read only mode.
+ *
  * @param {string} path The path to the file to open.
  * @param {?string} mode The mode to open the file in.
  * @returns {file}
@@ -66,191 +50,9 @@ def file(path: string, mode: ?string) {}
 
 
 /**
- * Returns the value of the property name from the given instance of object. If the object has no 
- * such property, `nil` is returned.
- * 
- * @param {instance} object The instance to get the property from.
- * @param {string} name The name of the property to get.
- * @returns {any|nil}
- */
-def getprop(object: instance, name: string) {}
-
-
-/**
- * Returns true if the property name exists in the given instance of object. If the object has no 
- * such property, `false` is returned.
- * 
- * @param {instance} object The instance to check for the property.
- * @param {string} name The name of the property to check.
- * @returns {boolean}
- */
-def hasprop(object: instance, name: string) {}
-
-
-/**
- * If x is a number, this function converts number x to its hexadecimal string and returns the value. 
- * However, if x is an instance of a class y and y defines `@to_hex()`, then this functions returns 
- * `x.@to_hex()`. 
- * 
- * @param {number|instance} x The number to convert to hexadecimal.
- * @returns {string|any}
- */
-def hex(x: number|instance) {}
-
-
-/**
- * Returns the unique identifier of value x within the system. This value is also equivalent to the 
- * current address of object x in memory.
- * 
- * @param {any} x The value to get the identifier of.
- * @returns {number}
- */
-def id(x: any) {}
-
-
-/**
- * If x is not given, returns `0`. If x is a number, converts the number to an integer and returns the 
- * integer. However, if x is an instance of a class y and y defines `@to_int()`, then this functions 
- * returns `x.@to_int()`.
- * 
- * @param {number|instance} x The number to convert to integer.
- * @returns {number|any}
- */
-def int(x: number|instance) {}
-
-
-/**
- * Returns `true` if x is a boolean or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_bool(x: any) {}
-
-
-/**
- * Returns `true` if x is a callable or `false` otherwise. Callables includes classes, functions, 
- * methods and closures.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_callable(x: any) {}
-
-
-/**
- * Returns `true` if x is a class or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_class(x: any) {}
-
-
-/**
- * Returns `true` if x is a dictionary or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_dict(x: any) {}
-
-
-/**
- * Returns `true` if x is a function or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_function(x: any) {}
-
-
-/**
- * Returns `true` if x is an instance of any class or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_instance(x: any) {}
-
-
-/**
- * Returns `true` if x is an integer or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_int(x: any) {}
-
-
-/**
- * Returns `true` if x is a list or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_list(x: any) {}
-
-
-/**
- * Returns `true` if x is a number or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_number(x: any) {}
-
-
-/**
- * Returns `true` if x is an object or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_object(x: any) {}
-
-
-/**
- * Returns `true` if x is a string or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_string(x: any) {}
-
-
-/**
- * Returns `true` if x is bytes or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_bytes(x: any) {}
-
-
-/**
- * Returns `true` if x is a file or `false` otherwise.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_file(x: any) {}
-
-
-/**
- * Returns `true` if x is an iterable object or `false` otherwise. Iterables includes lists, 
- * dictionaries, strings, bytes, and instances of any class that defines both `@iter()` and `@itern()` 
- * decorator functions.
- * 
- * @param {any} x The value to check.
- * @returns {boolean}
- */
-def is_iterable(x: any) {}
-
-
-/**
- * Returns `true` if x is an instance of the given class y or `false` otherwise.
- * 
+ * Returns `true` if x is an instance of the given class y or
+ * `false` otherwise.
+ *
  * @param {any} x The value to check.
  * @param {class} y The class to check for.
  * @returns {boolean}
@@ -259,48 +61,57 @@ def instance_of(x: any, y) {}
 
 
 /**
- * Returns the current epoch time to the microseconds resolution.
- * 
- * @returns {number}
+ * Returns the type of the given value as a string.
+ *
+ * @param {any} x The value to check.
+ * @returns {string}
  */
-def microtime() {}
+def typeof(x: any) {}
 
 
 /**
- * If x is a number, this function converts number x to it's octal string and returns the value. 
- * However, if x is an instance of a class y and y defines `@to_oct()`, then this functions returns 
- * `x.@to_oct()`.
- * 
- * @param {number|instance} x The number to convert to octal.
- * @returns {string|any}
+ * Deletes the property name from the given instance of object.
+ *
+ * @param {instance} object The instance to delete the property
+ *    from.
+ * @param {string} name The name of the property to delete.
+ * @returns {void}
  */
-def oct(x: number|instance) {}
+def delprop(object: instance, name: string) {}
 
 
 /**
- * Returns the Unicode code point of the first Unicode character in the string x.
- * 
- * @param {string} x The string to get the Unicode code point of.
- * @returns {number}
+ * Returns the value of the property name from the given instance
+ * of object. If the object has no such property, `nil` is
+ * returned.
+ *
+ * @param {instance} object The instance to get the property
+ *    from.
+ * @param {string} name The name of the property to get.
+ * @returns {any|nil}
  */
-def ord(x: string) {}
+def getprop(object: instance, name: string) {}
 
 
 /**
- * If no argument is given, returns a random number between 0 and 1. If x is given, returns a 
- * random number between 0 and x. If y is given, returns a random number between x and y.
- * 
- * @param {?number} x The lower bound of the random number.
- * @param {?number} y The upper bound of the random number.
- * @returns {number}
+ * Returns true if the property name exists in the given instance
+ * of object. If the object has no such property, `false` is
+ * returned.
+ *
+ * @param {instance} object The instance to check for the
+ *    property.
+ * @param {string} name The name of the property to check.
+ * @returns {boolean}
  */
-def rand(x: ?number, y: ?number) {}
+def hasprop(object: instance, name: string) {}
 
 
 /**
- * Sets the value of the object's property with the matching name to the given value. If the property 
- * already exists, it overwrites it and returns `true`, otherwise it returns `false`.
- * 
+ * Sets the value of the object's property with the matching name
+ * to the given value. If the property already exists, it
+ * overwrites it and returns `true`, otherwise it returns
+ * `false`.
+ *
  * @param {instance} obj The object to set the property of.
  * @param {string} prop The property to set.
  * @param {any} value The value to set the property to.
@@ -310,77 +121,172 @@ def setprop(obj: instance, prop: string, value: any) {}
 
 
 /**
- * Returns the current epoch time to the seconds resolution.
- * 
+ * Returns the unique identifier of value x within the system.
+ * This value is also equivalent to the current address of object
+ * x in memory.
+ *
+ * @param {any} x The value to get the identifier of.
  * @returns {number}
  */
-def time() {}
+def id(x: any) {}
 
 
 /**
- * Converts the given value into a boolean. If x is an instance of class y and y defines `@to_bool()` 
- * decorator, returns `x.@to_bool()`.
- * 
- * @param {any} x The value to convert to boolean.
+ * Prints the given arguments to standard output.
+ *
+ * Unlike `echo` (which always appends a newline and only ever
+ * prints one value), `print()` writes every argument
+ * back-to-back with no separator and no trailing newline. It
+ * also critically writes a `bytes` object as RAW bytes rather
+ * than its `Display` text. That raw-byte path is what lets a
+ * script stream binary output (e.g. a PBM/PNG image body one
+ * scanline at a time).
+ *
+ * @note In the REPL, it also appends a newline at the end.
+ * @param ...vany values: Any number of arguments to print
+ * @return void
+ */
+def print(...values) {}
+
+
+/**
+ * If no argument is given, returns a random number between 0 and
+ * 1. If x is given, returns a random number between 0 and x. If
+ *    y is given, returns a random number between x and y.
+ *
+ * @param {?number} x The lower bound of the random number.
+ * @param {?number} y The upper bound of the random number.
+ * @returns {number}
+ */
+def rand(x: ?number, y: ?number) {}
+
+
+/**
+ * Returns `true` if x is a boolean or `false` otherwise.
+ *
+ * @param {any} x The value to check.
  * @returns {boolean}
  */
-def to_bool(x: any) {}
+def is_bool(x: any) {}
 
 
 /**
- * Converts the given value into a dictionary. If x is an instance of class y and y defines `@to_dict()` 
- * decorator, returns `x.@to_dict()`.
- * 
- * @param {any} x The value to convert to dictionary.
- * @returns {dict}
- */
-def to_dict(x: any) {}
-
-
-/**
- * Converts the given value into an integer. If x is an instance of class y and y defines `@to_int()` 
- * decorator, returns `x.@to_int()`.
- * 
- * @param {any} x The value to convert to integer.
- * @returns {number}
- */
-def to_int(x: any) {}
-
-
-/**
- * Converts the given value into a list. If x is an instance of class y and y defines `@to_list()` 
- * decorator, returns `x.@to_list()`.
- * 
- * @param {any} x The value to convert to list.
- * @returns {list}
- */
-def to_list(x: any) {}
-
-
-/**
- * Converts the given value into a number. If x is an instance of class y and y defines `@to_number()` 
- * decorator, returns `x.@to_number()`.
- * 
- * @param {any} x The value to convert to number.
- * @returns {number}
- */
-def to_number(x: any) {}
-
-
-/**
- * Converts the given value into a string. If x is an instance of class y and y defines `@to_string()` 
- * decorator, returns `x.@to_string()`.
- * 
- * @param {any} x The value to convert to string.
- * @returns {string}
- */
-def to_string(x: any) {}
-
-
-/**
- * Returns the type of the given value as a string.
- * 
+ * Returns `true` if x is a callable or `false` otherwise.
+ * Callables includes classes, functions, methods and closures.
+ *
  * @param {any} x The value to check.
- * @returns {string}
+ * @returns {boolean}
  */
-def typeof(x: any) {}
+def is_callable(x: any) {}
+
+
+/**
+ * Returns `true` if x is a class or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_class(x: any) {}
+
+
+/**
+ * Returns `true` if x is a dictionary or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_dict(x: any) {}
+
+
+/**
+ * Returns `true` if x is a function or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_function(x: any) {}
+
+
+/**
+ * Returns `true` if x is an instance of any class or `false`
+ * otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_instance(x: any) {}
+
+
+/**
+ * Returns `true` if x is an integer or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_int(x: any) {}
+
+
+/**
+ * Returns `true` if x is a list or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_list(x: any) {}
+
+
+/**
+ * Returns `true` if x is a number or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_number(x: any) {}
+
+
+/**
+ * Returns `true` if x is an object or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_object(x: any) {}
+
+
+/**
+ * Returns `true` if x is a string or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_string(x: any) {}
+
+
+/**
+ * Returns `true` if x is bytes or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_bytes(x: any) {}
+
+
+/**
+ * Returns `true` if x is a file or `false` otherwise.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_file(x: any) {}
+
+
+/**
+ * Returns `true` if x is an iterable object or `false`
+ * otherwise. Iterables includes lists, dictionaries, strings,
+ * bytes, and instances of any class that defines both `@key()`
+ * and `@value()` decorator functions.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_iterable(x: any) {}

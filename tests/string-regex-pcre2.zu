@@ -1,0 +1,58 @@
+echo 'named groups:'
+echo 'John Doe'.match('/(?<first>\w+) (?<last>\w+)/')
+
+echo 'backreference:'
+echo 'hello hello'.match('/(\w+) \1/')
+echo 'hello world'.match('/(\w+) \1/')
+
+echo 'lookahead:'
+echo '100USD 200EUR'.matches('/\d+(?=USD)/')
+
+echo 'lookbehind:'
+echo 'price: $100'.match('/(?<=\$)\d+/')
+
+echo 'ungreedy modifier (U):'
+echo '<a><b>'.match('/<.+>/')
+echo '<a><b>'.match('/<.+>/U')
+
+echo 'anchored modifier (A):'
+echo '  hello'.match('/hello/A')
+echo 'hello world'.match('/hello/A')
+echo 'xhello'.match('/hello/A')
+
+echo 'duplicate subpattern names modifier (J):'
+echo 'ab'.match('/(?J)(?<x>a)|(?<x>b)/')
+
+echo 'case insensitive modifier (i):'
+echo 'HELLO'.match('/hello/i')
+
+echo 'multiline modifier (m):'
+echo "line1\nline2".matches('/^line\d$/m')
+
+echo 'dot-all modifier (s):'
+echo "a\nb".match('/a.b/')
+echo "a\nb".match('/a.b/s')
+
+echo 'extended modifier (x), ignores whitespace and # comments:'
+echo '123-456'.match('/
+  \d+  # first number
+  -
+  \d+  # second number
+/x')
+
+echo 'unicode property modifier (u):'
+echo 'café'.match('/\w+/u')
+
+echo 'replace with group references:'
+echo '2024-01-15'.replace('/(\d+)-(\d+)-(\d+)/', '$3/$2/$1')
+
+echo 'replace_with callback:'
+echo '2024-01-15'.replace_with('/(\d+)-(\d+)-(\d+)/', @(whole, y, m, d, offset, str) {
+  return '${d}/${m}/${y}'
+})
+
+echo 'split on a regex delimiter:'
+echo 'one,  two,three'.split('/,\s*/')
+
+echo 'multiple matches with replace:'
+echo 'cat bat rat'.replace('/[cbr]at/', 'dog')

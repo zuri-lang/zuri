@@ -310,11 +310,9 @@ pub fn echo_value(v: Value) {
 /// Unlike `echo` (which always appends a newline and only ever prints
 /// one value), `print()` writes every argument back-to-back with no
 /// separator and no trailing newline; and, critically, writes a
-/// `bytes` object or an all-numeric `list` as RAW bytes rather than
-/// their `Display` text. That raw-byte path is what lets a script
-/// stream binary output (e.g. a PBM/PNG image body one scanline at a
-/// time, as `benchmarks/mandlebrot.zu` and `mandlebrot-fast.zu` both
-/// do) directly to stdout.
+/// `bytes` object as RAW bytes rather than its `Display` text. That
+/// raw-byte path is what lets a script stream binary output (e.g. a
+/// PBM/PNG image body one scanline at a time).
 fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   STDOUT_BUFFER.with(|buf_cell| -> Result<Value, String> {
     let mut stdout = buf_cell.borrow_mut();
@@ -326,19 +324,11 @@ fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       } else if v.is_string() {
         let s = v.as_str();
         stdout.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
-      } else if v.is_list() {
-        let items = v.as_list();
-        let is_byte_list = !items.is_empty() && items.iter().all(|x| x.is_number());
-        if is_byte_list {
-          let raw: Vec<u8> = items.iter().map(|x| x.as_number() as u8).collect();
-          stdout.write_all(&raw).map_err(|e| e.to_string())?;
-        } else {
-          write!(stdout, "{}", v).map_err(|e| e.to_string())?;
-        }
       } else {
         write!(stdout, "{}", v).map_err(|e| e.to_string())?;
       }
     }
+
     Ok(Value::nil())
   })
 }
@@ -459,9 +449,8 @@ fn is_int(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::bool(v.is_number() && v.as_number().fract() == 0.0))
 }
 
-/// Matches this VM's actual iteration protocol; `@key`/`@value`;
-/// rather than an `@iter`/`@itern` pair that was never implemented
-/// here (see `for`-loop desugaring in the parser, and
+/// Matches this VM's actual iteration protocol; `@key`/`@value`
+/// (see `for`-loop desugaring in the parser, and
 /// `range.rs`/`list.rs`/etc.'s own `@key`/`@value` natives).
 fn is_iterable(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);

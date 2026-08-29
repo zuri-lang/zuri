@@ -1,17 +1,20 @@
 /**
  * @module date
- * 
+ *
  * This modules provides Zuri's implementation of date and time
- * manipulation methods. This module implements civil dates as well as julian dates.
- * 
+ * manipulation methods. This module implements civil dates as
+ * well as julian dates.
+ *
  * ### Definitions
- * 
- * - The calendar date (`class Date`) is a particular day of a calendar year, 
- * identified by its ordinal number within a calendar month within that year.
- * 
- * - The Julian date number (`jd`) is in elapsed days and time since noon 
- * (Greenwich Mean Time) on January 1, 4713 BCE (in the Julian calendar).
- * 
+ *
+ * - The calendar date (`class Date`) is a particular day of a
+ * calendar year, identified by its ordinal number within a
+ * calendar month within that year.
+ *
+ * - The Julian date number (`jd`) is in elapsed days and time
+ * since noon (Greenwich Mean Time) on January 1, 4713 BCE (in
+ * the Julian calendar).
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
@@ -196,15 +199,15 @@ def _dim(year, month) {
 /**
  * Returns a dictionary representing the current time without
  * timezone adjustment.
- * 
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> echo date.gmtime()
  * {year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 17, minute: 30, 
  * seconds: 55, microseconds: 620290, is_dst: false, zone: UTC, gmt_offset: 0}
  * ```
- * 
+ *
  * @returns dictionary
  */
 def gmtime() {
@@ -214,15 +217,15 @@ def gmtime() {
 /**
  * Returns a dictionary representing the current time after
  * adjusting for the current timezone
- * 
+ *
  * Example:
- * 
+ *
  * ```zuri-repl
  * %> echo date.localtime()
  * {year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 18, minute: 18, 
  * seconds: 35, microseconds: 598166, is_dst: false, zone: WAT, gmt_offset: 3600}
  * ```
- * 
+ *
  * @returns dictionary
  */
 def localtime() {
@@ -230,19 +233,19 @@ def localtime() {
 }
 
 /**
- * Convert the broken-out time into a time value with the same encoding as 
- * that of the values returned by the time() function (that is, seconds
- *  from the Epoch, UTC) according to the timezone settings.
- * 
- * <br>
- * Example:
- * 
+ * Convert the broken-out time into a time value with the same
+ * encoding as that of the values returned by the time() function
+ * (that is, seconds from the Epoch, UTC) according to the
+ * timezone settings.
+ *
+ * <br> Example:
+ *
  * ```zuri-repl
  * %> import date
  * %> echo date.mktime(2021, 2, 12, 13, 43, 11, false)
  * 1613133791
  * ```
- * 
+ *
  * @param number year
  * @param number month
  * @param number day
@@ -258,16 +261,16 @@ def mktime(year, month, day, hour, minute, seconds, is_dst) {
 
 /**
  * Date and Time manipulation class
- * 
- * A date here refers to a calendar datetime consisting of year, month, day, hour, 
- * minute and seconds. 
- * 
- * The `Date` class manages both Date and DateTime and this 
- * module does not make any distinction between the two as Date is a subset of 
- * DateTime.
- * 
+ *
+ * A date here refers to a calendar datetime consisting of year,
+ * month, day, hour, minute and seconds.
+ *
+ * The `Date` class manages both Date and DateTime and this
+ * module does not make any distinction between the two as Date
+ * is a subset of DateTime.
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> import date
  * %> var d = date(2021)
@@ -277,7 +280,7 @@ def mktime(year, month, day, hour, minute, seconds, is_dst) {
  * %> d.to_string()
  * '<Date year: 2022, month: 3, day: 5, hour: 19, minute: 25, seconds: 58>'
  * ```
- * 
+ *
  * @serializable
  * @printable
  * @number
@@ -286,9 +289,11 @@ class Date {
 
   /**
    * @note All arguments are optional
-   * @note When no argument is given, the date will be set to the current system date.
-   * @note when the date fields are given, the timezone is always in UTC irrespective of the 
-   *    system timezone or if a gmt_offset is given or not.
+   * @note When no argument is given, the date will be set to the
+   *    current system date.
+   * @note when the date fields are given, the timezone is always
+   *    in UTC irrespective of the system timezone or if a
+   *    gmt_offset is given or not.
    * @param ?number year
    * @param ?number month
    * @param ?number day
@@ -371,16 +376,16 @@ class Date {
 
   /** 
    * Returns true if the year is a leap year or false otherwise.
-   * 
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date(2018).is_leap()
    * false
    * %> date(2020).is_leap()
    * true
    * ```
-   * 
+   *
    * @returns bool
    */
   is_leap() {
@@ -390,14 +395,14 @@ class Date {
   /** 
    * Returns the number of days in the year preceding the first
    * day of the month.
-   * 
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date(2021, 5, 11).days_before_month(7)
    * 142
    * ```
-   * 
+   *
    * @returns number
    */
   days_before_month(month) {
@@ -429,14 +434,14 @@ class Date {
 
   /** 
    * Returns the number of days before January 1st of year.
-   * 
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date(2021, 5, 11).days_before_year(2024)
    * 811
    * ```
-   * 
+   *
    * @param int year
    * @returns number
    */
@@ -464,14 +469,14 @@ class Date {
 
   /** 
    * Returns the number of days in month for the specified year.
-   * 
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date(2021, 6).days_in_month()
    * 30
    * ```
-   * 
+   *
    * @returns number
    */
   days_in_month() {
@@ -480,14 +485,14 @@ class Date {
 
   /** 
    * Returns the numbered day of the week.
-   * 
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date(2021, 5, 11).weekday()
    * 2
    * ```
-   * 
+   *
    * @returns number
    */
   weekday() {
@@ -504,14 +509,14 @@ class Date {
 
   /**
    * Returns the number of the current week in the year.
-   * 
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date(2021, 5, 11).week_number()
    * 19
    * ```
-   * 
+   *
    * @returns number
    */
   week_number() {
@@ -534,9 +539,9 @@ class Date {
 
   /**
    * Formats the current date based on the specified string
-   * 
+   *
    * Zuri's Date formatting table
-   * 
+   *
    * Character | Description                                               | Example
    * ----------|-----------------------------------------------------------|-----------------------------------
    * A         | uppercase Ante meridian and Post meridian                 | AM or PM
@@ -573,26 +578,27 @@ class Date {
    * Z         | timezone offset in seconds                                | -43200 - 50400
    * c         | ISO 8601 date                                             | e.g. 2020-03-04T15:19:21+00:00
    * r         | RFC 2822 formatted date                                   | e.g. Thu, 21 Dec 2000 16:01:07 +0200
-   * 
-   * 
+   *
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date().format('F d, Y g:i A')
    * 'March 05, 2022 6:24 PM'
    * ```
-   * 
-   * You can prevent a format character in the format string from being expanded by escaping it with a 
-   * preceding backslash. If the character with a backslash is already a special sequence, you may need 
-   * to also escape the backslash.
-   * 
+   *
+   * You can prevent a format character in the format string from
+   * being expanded by escaping it with a preceding backslash. If
+   * the character with a backslash is already a special
+   * sequence, you may need to also escape the backslash.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> date().format('l jS \o\\f F Y h:i:s A')
    * 'Wednesday 17th of May 2021 01:39:08 PM'
    * ```
-   * 
+   *
    * @param string format
    * @returns string
    */
@@ -756,14 +762,14 @@ class Date {
 
   /**
    * Returns the HTTP date representation of the current date.
-   * 
+   *
    * For example,
-   * 
+   *
    * ```zuri-repl
    * %> date().http()
    * 'Sat, 05 Mar 2022 06:23:32 GMT'
    * ```
-   * 
+   *
    * @returns string
    */
   http() {
@@ -772,14 +778,14 @@ class Date {
 
   /**
    * Converts the current date to a julian day and time.
-   * 
+   *
    * Example,
-   * 
+   *
    * ```zuri-repl
    * %> date(2021, 5, 11).jd()
    * 2459345
    * ```
-   * 
+   *
    * @returns number
    */
   jd() {
@@ -799,9 +805,10 @@ class Date {
 
   /**
    * Returns unix `mktime` equivalent of the current date.
-   * 
+   *
    * @returns number
-   * @deprecated - Use `to_time()` instead as it offers more precision.
+   * @deprecated - Use `to_time()` instead as it offers more
+   *    precision.
    */
   unix_time() {
     return _date.mktime(self.year, self.month, self.day, self.hour, 
@@ -810,7 +817,7 @@ class Date {
 
   /**
    * Returns the Epoch timestamp in seconds for the given date.
-   * 
+   *
    * @returns number
    */
   to_time() {
@@ -839,7 +846,7 @@ class Date {
 
   /**
    * Returns a string representation of the date
-   * 
+   *
    * @returns string
    */
   to_string() {
@@ -849,7 +856,7 @@ class Date {
 
   /**
    * Returns the date object as a dictionary.
-   * 
+   *
    * @returns dict
    */
   to_dict() {
@@ -891,14 +898,14 @@ class Date {
 
 /** 
  * Returns a date object from a unix timestamp.
- * 
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> date.from_time(time()).to_string()
  * '<Date year: 2022, month: 3, day: 5, hour: 18, minute: 34, seconds: 1>'
  * ```
- * 
+ *
  * @note Time must be in seconds.
  * @param number time
  * @returns Date
@@ -939,61 +946,74 @@ def from_time(time) {
 
   # Algorithm: Gregorian Epoch shift method
   # 
-  # The algorithm uses an optimization trick formalized by computer scientist Peter Baum. 
-  # It temporarily shifts the entire calendar baseline back to March 1, Year 0. By starting 
-  # the calendar year in March instead of January, February 29th (the leap day) becomes the 
-  # absolute last day of the year cycle, making the mathematical patterns incredibly clean.
+  # The algorithm uses an optimization trick formalized by computer 
+  # scientist Peter Baum.
   # 
-  # Shift origin to Year 0, March 1st (makes leap days fall at the end)
+  # It temporarily shifts the entire calendar baseline back to March 
+  # 1, Year 0. By starting the calendar year in March instead of 
+  # January, February 29th (the leap day) becomes the absolute last 
+  # day of the year cycle, making the mathematical patterns 
+  # incredibly clean.
+  # 
+  # Shift origin to Year 0, March 1st (makes leap days fall at the 
+  # end)
   # 
   # Constants Definition:
-  # ---------------------------------------------------------------------------------
-  # 1. `719468` (The Day-Shift Anchor): The exact number of days between March 1, Year 0 and 
-  #     January 1, 1970 (the Unix Epoch).
+  # -------------------------------------------------------------
+  # 1. `719468` (The Day-Shift Anchor): The exact number of days 
+  #     between March 1, Year 0 and January 1, 1970 (the Unix Epoch).
   # 
-  #     Adding this to our Unix day count instantly transforms a standard timestamp into an 
-  #     absolute day count starting from Year 0, anchored smoothly to a March-first cycle.
+  #     Adding this to our Unix day count instantly transforms a 
+  #     standard timestamp into an absolute day count starting from
+  #     Year 0, anchored smoothly to a March-first cycle.
   # 
-  # 2. `146097` (The Gregorian Cycle Block):  The total number of days in a full 400-year 
-  #     Gregorian calendar cycle.
+  # 2. `146097` (The Gregorian Cycle Block):  The total number of 
+  #     days in a full 400-year Gregorian calendar cycle.
   # 
   #     365 days * 400 years + 97 leap days = 146,097 days
   # 
-  #     Because the Gregorian leap year pattern repeats perfectly every 400 years, dividing our 
-  #     total days by 146097 splits the timeline into predictable chunks called "eras" (era).
+  #     Because the Gregorian leap year pattern repeats perfectly 
+  #     every 400 years, dividing our total days by 146097 splits the 
+  #     timeline into predictable chunks called "eras" (era).
   # 
   # The Leap Year correction matrix:
   # 
   # 3. `1460`: The number of days in a standard 4-year cycle (365 * 4).
-  # 4. `36524`: The number of days in a standard 100-year century cycle (365 * 100 + 24 
-  #     leap days).
-  # 5. `146096`: The maximum day index of a 400-year cycle (0 to 146096 equals 146,097 total 
-  #     days).
-  # 6. `365`: Standard days in a non-leap year, used to divide the remaining day pool down into 
-  #     the final individual calendar year.
+  # 4. `36524`: The number of days in a standard 100-year century cycle 
+  #     (365 * 100 + 24 leap days).
+  # 5. `146096`: The maximum day index of a 400-year cycle (0 to 146096 
+  #     equals 146,097 total days).
+  # 6. `365`: Standard days in a non-leap year, used to divide the 
+  #     remaining day pool down into the final individual calendar year.
   # 
   # The Magic Month Scalars (`153` and `5`):
   # 
-  # If we plot out the number of days in each month starting from March, the pattern is 
-  # remarkably stable:
+  # If we plot out the number of days in each month starting from March, 
+  # the pattern is remarkably stable:
   # 
   #         March (31), April (30), May (31), June (30), July (31) 
   #                       — repeats as -
-  #     August (31), September (30), October (31), November (30), December (31).
+  # August (31), September (30), October (31), November (30), December 
+  # (31).
   # 
-  # This specific sequence averages out perfectly to exactly 30.6 days per month.
+  # This specific sequence averages out perfectly to exactly 30.6 days 
+  # per month.
   # 
-  # Because computers handle integers better than decimals, the fraction \(30.6\) is rewritten as the 
-  # integer fraction 153 / 5. The math expression (5 * doy + 2) / 153 treats months as consecutive 
-  # linear steps, letting us extract the correct month instantly.
+  # Because computers handle integers better than decimals, the fraction 
+  # \(30.6\) is rewritten as the integer fraction 153 / 5. The math 
+  # expression (5 * doy + 2) / 153 treats months as consecutive linear 
+  # steps, letting us extract the correct month instantly.
   # 
   # The Month Displacement Offset (`3` and `-9`):
   # 
-  # This is used for the final structural correction for the March alignment.
+  # This is used for the final structural correction for the March 
+  # alignment.
   # 
-  # Because the mathematical cycle treated March as month 0, the output variable mp returns a 0 for March, 
-  # 1 for April... and 11 for February. The conditional step (mp < 10 ? 3 : -9) shifts the sequence back to 
-  # our standard calendar format, turning March back into 3 and February back into 2.
+  # Because the mathematical cycle treated March as month 0, the output 
+  # variable mp returns a 0 for March, 1 for April... and 11 for 
+  # February. The conditional step (mp < 10 ? 3 : -9) shifts the sequence 
+  # back to our standard calendar format, turning March back into 3 and 
+  # February back into 2.
   # 
   var g = total_days + 719468
   var era = (g >= 0 ? g : g - 146096) // 146097
@@ -1019,14 +1039,14 @@ def from_time(time) {
 
 /**
  * Returns a date instance representing the julian date.
- * 
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> date.from_jd(22063).to_string()
  * '<Date year: 2022, month: 3, day: 5, hour: 18, minute: 35, seconds: 0>'
  * ```
- * 
+ *
  * @param number jdate
  * @returns number
  */
@@ -1293,15 +1313,24 @@ def _fields_to_date(f) {
 #     HH:MM[:SS][.ffffff] [AM|PM] [tz]
 #
 # Ambiguity policy for MM/DD vs DD/MM:
-#   When the first numeric field is > 12 it must be a day.
-#   When the first numeric field is <= 12 and the second is > 12 it is a month.
-#   When both are <= 12 the format is treated as MM/DD/YYYY (US convention).
-#   Callers who require DD/MM should use parse_format() with '%d/%m/%Y'.
+#   - When the first numeric field is > 12 it must be a day.
+#   - When the first numeric field is <= 12 and the second is > 12 it 
+#     is a month.
+#   - When both are <= 12 the format is treated as MM/DD/YYYY (US 
+#     convention).
+#   - Callers who require DD/MM should use parse_format() with 
+#     '%d/%m/%Y'.
 
 def _auto_parse(s) {
-  if !is_string(s) raise TypeError('string expected, ${typeof(s)} given')
+  if !is_string(s) {
+    raise TypeError('string expected, ${typeof(s)} given')
+  }
+
   s = s.trim()
-  if s.length() == 0 raise ValueError('cannot parse empty date string')
+
+  if s.length() == 0 {
+    raise ValueError('cannot parse empty date string')
+  }
 
   var f = _default_fields()
 
@@ -1533,6 +1562,7 @@ def _auto_parse(s) {
       ff.gmt_offset = tz[0]
       ff.zone       = tz[2]
     }
+
     return _fields_to_date(ff)
   }
 
@@ -1542,12 +1572,15 @@ def _auto_parse(s) {
   var _try_numeric_separated = @(str) {
     var pos  = 0
     var a_r  = _scan_int(str, pos, 4)
-    if a_r[0] < 0 return nil
+    if a_r[0] < 0 
+      return nil
     pos = a_r[1]
 
-    if pos >= str.length() return nil
+    if pos >= str.length() 
+      return nil
     var sep  = str[pos]
-    if sep != '/' and sep != '.' and sep != '-' return nil
+    if sep != '/' and sep != '.' and sep != '-' 
+      return nil
     pos++
 
     var b_r = _scan_int(str, pos, 4)
@@ -1555,7 +1588,8 @@ def _auto_parse(s) {
     pos = _skip_char(str, b_r[1], sep)
 
     var c_r = _scan_int(str, pos, 4)
-    if c_r[0] < 0 return nil
+    if c_r[0] < 0 
+      return nil
     pos = c_r[1]
 
     var a = a_r[0], b = b_r[0], c = c_r[0]
@@ -1622,27 +1656,34 @@ def _auto_parse(s) {
   var _try_time_only = @(str) {
     var pos  = 0
     var hh_r = _scan_int(str, pos, 2)
-    if hh_r[0] < 0 or hh_r[0] > 23 return nil
+    if hh_r[0] < 0 or hh_r[0] > 23 
+      return nil
     pos = hh_r[1]
-    if pos >= str.length() or str[pos] != ':' return nil
+    if pos >= str.length() or str[pos] != ':' 
+      return nil
     pos++
 
     var mm_r = _scan_int(str, pos, 2)
-    if mm_r[0] < 0 return nil
+    if mm_r[0] < 0 
+      return nil
     pos = mm_r[1]
 
     var ss = 0
     if pos < str.length() and str[pos] == ':' {
       pos++
       var ss_r = _scan_int(str, pos, 2)
-      if ss_r[0] >= 0 { ss = ss_r[0]; pos = ss_r[1] }
+      if ss_r[0] >= 0 { 
+        ss = ss_r[0]; pos = ss_r[1] 
+      }
     }
 
     var us = 0
     if pos < str.length() and str[pos] == '.' {
       pos++
       var us_r = _scan_int(str, pos, 6)
-      if us_r[0] >= 0 { us = us_r[0]; pos = us_r[1] }
+      if us_r[0] >= 0 { 
+        us = us_r[0]; pos = us_r[1] 
+      }
     }
 
     pos = _skip_space(str, pos)
@@ -1675,19 +1716,24 @@ def _auto_parse(s) {
   # RFC 2822 heuristic: starts with alpha
   if _is_alpha_ch(s[0]) {
     r = _try_alpha_month_first(s)
-    if r != nil return r
+    if r != nil 
+      return r
     r = _try_rfc2822(s)
-    if r != nil return r
+    if r != nil 
+      return r
   }
 
   # Numeric — starts with digit
   if _is_digit(s[0]) {
     r = _try_rfc2822(s)
-    if r != nil return r
+    if r != nil 
+      return r
     r = _try_numeric_separated(s)
-    if r != nil return r
+    if r != nil 
+      return r
     r = _try_time_only(s)
-    if r != nil return r
+    if r != nil 
+      return r
   }
 
   raise ValueError('unable to parse date string: "${s}"')
@@ -1737,7 +1783,9 @@ def _format_parse(s, fmt) {
   if !is_string(fmt) raise TypeError('format must be a string')
 
   # Shorthand passthrough for composite format directives
-  if fmt == 'c' or fmt == 'r' return _auto_parse(s)
+  if fmt == 'c' or fmt == 'r' {
+    return _auto_parse(s)
+  }
 
   var f    = _default_fields()
   var spos = 0
@@ -1752,7 +1800,12 @@ def _format_parse(s, fmt) {
       fi++
       if fi >= flen break
       var lit = fmt[fi]
-      if spos < slen and s[spos] == lit { spos++; continue }
+
+      if spos < slen and s[spos] == lit { 
+        spos++
+        continue 
+      }
+
       raise ValueError('parse_format: expected literal "${lit}" at position ${spos} in "${s}"')
     }
 
@@ -1761,13 +1814,19 @@ def _format_parse(s, fmt) {
       # ---- Year ----
       when 'Y' {
         var r = _scan_int(s, spos, 4)
-        if r[0] < 0 raise ValueError('parse_format: expected 4-digit year at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected 4-digit year at position ${spos}')
+        }
+
         f.year = r[0]
         spos   = r[1]
       }
       when 'y' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected 2-digit year at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected 2-digit year at position ${spos}')
+        }
+
         f.year = r[0] < 70 ? 2000 + r[0] : 1900 + r[0]
         spos   = r[1]
       }
@@ -1775,27 +1834,37 @@ def _format_parse(s, fmt) {
       # ---- Month ----
       when 'm' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected month at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected month at position ${spos}')
+        }
+
         f.month = r[0]
         spos    = r[1]
       }
       when 'n' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected month at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected month at position ${spos}')
+        }
+
         f.month = r[0]
         spos    = r[1]
       }
       when 'M' {
         var r = _scan_alpha(s, spos)
-        if !_month_name_map.contains(r[0])
+        if !_month_name_map.contains(r[0]) {
           raise ValueError('parse_format: expected abbreviated month name at position ${spos}')
+        }
+
         f.month = _month_name_map[r[0]]
         spos    = r[1]
       }
       when 'F' {
         var r = _scan_alpha(s, spos)
-        if !_month_name_map.contains(r[0])
+        if !_month_name_map.contains(r[0]) {
           raise ValueError('parse_format: expected full month name at position ${spos}')
+        }
+
         f.month = _month_name_map[r[0]]
         spos    = r[1]
       }
@@ -1803,13 +1872,19 @@ def _format_parse(s, fmt) {
       # ---- Day ----
       when 'd' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected day at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected day at position ${spos}')
+        }
+
         f.day = r[0]
         spos  = r[1]
       }
       when 'j' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected day at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected day at position ${spos}')
+        }
+
         f.day = r[0]
         spos  = r[1]
       }
@@ -1827,25 +1902,37 @@ def _format_parse(s, fmt) {
       # ---- Hour ----
       when 'H' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected hour at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected hour at position ${spos}')
+        }
+
         f.hour = r[0]
         spos   = r[1]
       }
       when 'G' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected hour at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected hour at position ${spos}')
+        }
+
         f.hour = r[0]
         spos   = r[1]
       }
       when 'h' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected 12h hour at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected 12h hour at position ${spos}')
+        }
+
         f.hour = r[0]
         spos   = r[1]
       }
       when 'g' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected 12h hour at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected 12h hour at position ${spos}')
+        }
+
         f.hour = r[0]
         spos   = r[1]
       }
@@ -1853,7 +1940,10 @@ def _format_parse(s, fmt) {
       # ---- Minute ----
       when 'i' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected minute at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected minute at position ${spos}')
+        }
+
         f.minute = r[0]
         spos     = r[1]
       }
@@ -1861,7 +1951,10 @@ def _format_parse(s, fmt) {
       # ---- Seconds ----
       when 's' {
         var r = _scan_int(s, spos, 2)
-        if r[0] < 0 raise ValueError('parse_format: expected seconds at position ${spos}')
+        if r[0] < 0 {
+          raise ValueError('parse_format: expected seconds at position ${spos}')
+        }
+
         f.seconds = r[0]
         spos      = r[1]
       }
@@ -1880,16 +1973,20 @@ def _format_parse(s, fmt) {
       when 'A' {
         var r = _scan_alpha(s, spos)
         var v = r[0].lower()
-        if v != 'am' and v != 'pm'
+        if v != 'am' and v != 'pm' {
           raise ValueError('parse_format: expected AM or PM at position ${spos}')
+        }
+
         f.am_pm = v
         spos    = r[1]
       }
       when 'a' {
         var r = _scan_alpha(s, spos)
         var v = r[0].lower()
-        if v != 'am' and v != 'pm'
+        if v != 'am' and v != 'pm' {
           raise ValueError('parse_format: expected am or pm at position ${spos}')
+        }
+
         f.am_pm = v
         spos    = r[1]
       }
@@ -1897,7 +1994,9 @@ def _format_parse(s, fmt) {
       # ---- Timezone ----
       when 'e' {
         var r = _scan_alpha(s, spos)
-        if r[0].length() > 0 { f.zone = r[0].upper(); spos = r[1] }
+        if r[0].length() > 0 { 
+          f.zone = r[0].upper(); spos = r[1] 
+        }
       }
       when 'O' {
         var tz = _parse_tz(s, spos)
@@ -1980,11 +2079,12 @@ def _format_parse(s, fmt) {
 
 
 /**
- * Parses a date string into a `Date` instance, automatically detecting the
- * format.
+ * Parses a date string into a `Date` instance, automatically
+ * detecting the format.
  *
- * `parse` recognises a broad set of standard date and datetime formats
- * without requiring the caller to specify the format string:
+ * `parse` recognises a broad set of standard date and datetime
+ * formats without requiring the caller to specify the format
+ * string:
  *
  * ### Recognised formats
  *
@@ -2006,16 +2106,17 @@ def _format_parse(s, fmt) {
  *
  * ### Timezone handling
  *
- * When a timezone offset is present in the string it is stored in
- * `gmt_offset` (seconds) and `zone` (name string).  When absent, `zone`
- * defaults to `"UTC"` and `gmt_offset` to `0`.
+ * When a timezone offset is present in the string it is stored
+ * in `gmt_offset` (seconds) and `zone` (name string). When
+ * absent, `zone` defaults to `"UTC"` and `gmt_offset` to `0`.
  *
  * ### Ambiguity policy
  *
- * For slash-separated numeric dates where both the first and second fields
- * are ≤ 12 (e.g. `06/05/2024`), the US convention is assumed: month first
- * (`MM/DD/YYYY`).  When the input is known to be `DD/MM/YYYY`, use
- * `parse_format` with `'%d/%m/%Y'` instead.
+ * For slash-separated numeric dates where both the first and
+ * second fields are ≤ 12 (e.g. `06/05/2024`), the US convention
+ * is assumed: month first (`MM/DD/YYYY`). When the input is
+ * known to be `DD/MM/YYYY`, use `parse_format` with `'%d/%m/%Y'`
+ * instead.
  *
  * ### Example
  *
@@ -2037,10 +2138,10 @@ def _format_parse(s, fmt) {
  * echo d3.gmt_offset  # 7200
  * ```
  *
- * @param  string date_string  The date string to parse.
+ * @param string date_string The date string to parse.
  * @returns Date
- * @throws TypeError   When `date_string` is not a string.
- * @throws ValueError  When the string cannot be parsed as a date.
+ * @throws TypeError When `date_string` is not a string.
+ * @throws ValueError When the string cannot be parsed as a date.
  */
 def parse(date_string) {
   return _auto_parse(date_string)
@@ -2048,19 +2149,21 @@ def parse(date_string) {
 
 
 /**
- * Parses a date string using an explicit format pattern and returns a
- * `Date` instance.
+ * Parses a date string using an explicit format pattern and
+ * returns a `Date` instance.
  *
- * The format pattern uses the same character codes as the `Date.format()`
- * method, making it straightforward to round-trip a date through
- * `format()` and back through `parse_format()`.
+ * The format pattern uses the same character codes as the
+ * `Date.format()` method, making it straightforward to
+ * round-trip a date through `format()` and back through
+ * `parse_format()`.
  *
  * ### Format character reference
  *
- * The following characters are interpreted as directives in the format
- * string.  All other characters are treated as literals and must appear
- * verbatim in the input.  Prefix a character with a backslash (`\`) to
- * force literal treatment even for directive characters.
+ * The following characters are interpreted as directives in the
+ * format string. All other characters are treated as literals
+ * and must appear verbatim in the input. Prefix a character with
+ * a backslash (`\`) to force literal treatment even for
+ * directive characters.
  *
  * Character | Consumes                                                | Example input
  * ----------|---------------------------------------------------------|---------------
@@ -2125,11 +2228,13 @@ def parse(date_string) {
  * echo tz.gmt_offset  # 19800 (5.5 hours in seconds)
  * ```
  *
- * @param  string date_string   The input string to parse.
- * @param  string format        The format pattern describing `date_string`.
+ * @param string date_string The input string to parse.
+ * @param string format The format pattern describing
+ *    `date_string`.
  * @returns Date
- * @throws TypeError   When either argument is not a string.
- * @throws ValueError  When the string does not match the expected format.
+ * @throws TypeError When either argument is not a string.
+ * @throws ValueError When the string does not match the expected
+ *    format.
  */
 def parse_format(date_string, format) {
   return _format_parse(date_string, format)
@@ -2137,8 +2242,9 @@ def parse_format(date_string, format) {
 
 
 /**
- * Returns a new `Date` instance representing the given system date or the current date if no argument is specified.
- * 
+ * Returns a new `Date` instance representing the given system
+ * date or the current date if no argument is specified.
+ *
  * @param ?number year
  * @param ?number month
  * @param ?number day

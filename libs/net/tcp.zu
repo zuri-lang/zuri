@@ -1,17 +1,18 @@
 /**
  * @module tcp
- * 
- * This module provides a complete implementation of the Transmission 
- * Control Protocol as specified in IETF RFC 793. It provides an 
- * interface for working with connected socket and listening socket 
- * alike.
- * 
- * It is meant to be used to provide more controlled and specific 
- * TCP-based operating system features and for implementing various 
- * standard and custom network protocols and specifications.
  *
- * The example below shows how to use this module to create a basic 
- * HTTP client.
+ * This module provides a complete implementation of the
+ * Transmission Control Protocol as specified in IETF RFC 793. It
+ * provides an interface for working with connected socket and
+ * listening socket alike.
+ *
+ * It is meant to be used to provide more controlled and specific
+ * TCP-based operating system features and for implementing
+ * various standard and custom network protocols and
+ * specifications.
+ *
+ * The example below shows how to use this module to create a
+ * basic HTTP client.
  *
  * ```zuri
  * import net
@@ -24,11 +25,12 @@
  * stream.close()
  * ```
  *
- * Like earlier said, this module provides functionally for both connected 
- * sockets and listening sockets. A simple demonstration of a listening 
- * socket is given below which implements a basic and foundational HTTP 
- * server that recieves requests on port 8080 and returns a message containig 
- * the address of the client to the said client.
+ * Like earlier said, this module provides functionally for both
+ * connected sockets and listening sockets. A simple
+ * demonstration of a listening socket is given below which
+ * implements a basic and foundational HTTP server that recieves
+ * requests on port 8080 and returns a message containig the
+ * address of the client to the said client.
  *
  * ```zuri
  * import net
@@ -43,7 +45,7 @@
  *   client.close()
  * }
  * ```
- * 
+ *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
@@ -51,60 +53,66 @@ import _net_tcp
 import .addr { SocketAddr }
 
 /**
- * Accepts either a plain `'ip:port'` string or a `SocketAddr` (as
- * `local_address()`/`peer_address()` hand back) anywhere an address is
- * expected, so the natural "connect to what another socket is
- * listening on" round-trip doesn't force a manual `.to_string()`.
+ * Accepts either a plain `'ip:port'` string or a `SocketAddr`
+ * (as `local_address()`/`peer_address()` hand back) anywhere an
+ * address is expected, so the natural "connect to what another
+ * socket is listening on" round-trip doesn't force a manual
+ * `.to_string()`.
  */
 def _addr_string(address) {
   return instance_of(address, SocketAddr) ? address.to_string() : address
 }
 
 /**
- * Used with `TcpStream.shutdown()` to select which half (or both halves)
- * of a full-duplex TCP connection to shut down. Shutting down a stream
- * only affects the local socket as it is a local operation and does not
- * send anything resembling a FIN/EOF marker to the peer beyond what the
- * underlying platform's `shutdown(2)` implementation does.
+ * Used with `TcpStream.shutdown()` to select which half (or both
+ * halves) of a full-duplex TCP connection to shut down. Shutting
+ * down a stream only affects the local socket as it is a local
+ * operation and does not send anything resembling a FIN/EOF
+ * marker to the peer beyond what the underlying platform's
+ * `shutdown(2)` implementation does.
  */
 class Shutdown {
 
   /**
-   * Shut down both the read and write halves of the connection. This is
-   * the default used by `TcpStream.shutdown()` when no argument is given.
-   * 
+   * Shut down both the read and write halves of the connection.
+   * This is the default used by `TcpStream.shutdown()` when no
+   * argument is given.
+   *
    * @type number
    */
   static var BOTH = 0
 
   /**
-   * Shut down the read half of the connection. Any further reads will
-   * return zero bytes (EOF), and any data currently in the socket's
-   * receive buffer is discarded. The write half is left untouched.
-   * 
+   * Shut down the read half of the connection. Any further reads
+   * will return zero bytes (EOF), and any data currently in the
+   * socket's receive buffer is discarded. The write half is left
+   * untouched.
+   *
    * @type number
    */
   static var READ = 1
 
   /**
-   * Shut down the write half of the connection. Any further writes will
-   * fail. The read half is left untouched.
-   * 
+   * Shut down the write half of the connection. Any further
+   * writes will fail. The read half is left untouched.
+   *
    * @type number
    */
   static var WRITE = 2
 }
 
 /**
- * A TCP socket, in either its connected-stream or listening-server role.
- * 
- * @note On Unix systems, writes to the underlying socket in `SOCK_STREAM` 
- *    mode are made with `MSG_NOSIGNAL` flag. This suppresses the emission 
- *    of the `SIGPIPE` signal when writing to disconnected socket.
+ * A TCP socket, in either its connected-stream or
+ * listening-server role.
  *
- * @note It's a good practice to call `close()` explicitly once you are 
- *    done with an instance instead of relying on Zuri to release the 
- *    socket for you.
+ * @note On Unix systems, writes to the underlying socket in
+ *    `SOCK_STREAM` mode are made with `MSG_NOSIGNAL` flag. This
+ *    suppresses the emission of the `SIGPIPE` signal when
+ *    writing to disconnected socket.
+ *
+ * @note It's a good practice to call `close()` explicitly once
+ *    you are done with an instance instead of relying on Zuri to
+ *    release the socket for you.
  *
  * @printable
  */
@@ -120,11 +128,12 @@ class TcpStream {
   }
 
   /**
-   * Hands out this stream's underlying native socket handle. `_ptr` is
-   * private the way every field prefixed with `_` is, so a sibling
-   * module like `tls` - which needs to take an already-connected
-   * `TcpStream` and wrap it, without belonging to this class or
-   * inheriting from it - has no other way to reach it.
+   * Hands out this stream's underlying native socket handle.
+   * `_ptr` is private the way every field prefixed with `_` is,
+   * so a sibling module like `tls` - which needs to take an
+   * already-connected `TcpStream` and wrap it, without belonging
+   * to this class or inheriting from it - has no other way to
+   * reach it.
    *
    * @returns Ptr
    */
@@ -133,64 +142,71 @@ class TcpStream {
   }
 
   /**
-   * Opens a TCP connection to a remote host, turning this instance into
-   * a connected stream.
+   * Opens a TCP connection to a remote host, turning this
+   * instance into a connected stream.
    *
-   * `address` may be a hostname or an IP literal, combined with a port,
-   * e.g. `'example.com:80'` or `'127.0.0.1:8080'`. A hostname may resolve 
-   * to several addresses; they are tried in turn and the first one that 
-   * succeeds is used, meaning this call can succeed even though some of 
-   * the resolved addresses were unreachable.
+   * `address` may be a hostname or an IP literal, combined with
+   * a port, e.g. `'example.com:80'` or `'127.0.0.1:8080'`. A
+   * hostname may resolve to several addresses; they are tried in
+   * turn and the first one that succeeds is used, meaning this
+   * call can succeed even though some of the resolved addresses
+   * were unreachable.
    *
-   * Pass `timeout` to bound how long the connection attempt may take
-   * before giving up. When a timeout is given, `address` must already be a 
-   * concrete `ip:port` literal rather than a hostname, as no DNS resolution 
-   * would be performed and no multi-address fallback is guaranteed.
+   * Pass `timeout` to bound how long the connection attempt may
+   * take before giving up. When a timeout is given, `address`
+   * must already be a concrete `ip:port` literal rather than a
+   * hostname, as no DNS resolution would be performed and no
+   * multi-address fallback is guaranteed.
    *
    * @note a timeout of `0` is the same as specifying no timeout.
-   * @param {string|SocketAddr} address: The host:port to connect to
-   * @param ?int timeout: Optional milliseconds to wait before giving up;
-   *    omit for an untimed connection attempt
+   * @param {string|SocketAddr} address: The host:port to connect
+   *    to
+   * @param ?int timeout: Optional milliseconds to wait before
+   *    giving up; omit for an untimed connection attempt
    * @throws Error if resolution fails, if every resolved address
-   *    refuses the connection, or (when `timeout` is given) if `address`
-   *    cannot be parsed as an `ip:port` literal or the timeout elapses
-   *    first.
+   *    refuses the connection, or (when `timeout` is given) if
+   *    `address` cannot be parsed as an `ip:port` literal or the
+   *    timeout elapses first.
    */
   connect(address, timeout) {
       _net_tcp.tcp_connect(self._ptr, _addr_string(address), timeout)
   }
 
   /**
-   * Binds this instance to `address` and starts listening for incoming
-   * connections, turning it into a listening server.
+   * Binds this instance to `address` and starts listening for
+   * incoming connections, turning it into a listening server.
    *
-   * `address` may be a hostname or an IP literal combined with a port,
-   * e.g. `'0.0.0.0:8080'` or `'[::]:8080'`; port `0` asks the OS to
-   * assign an available ephemeral port, which can then be discovered 
-   * via `local_address()`. If `address` resolves to multiple addresses, 
-   * binding is attempted against each in turn until one succeeds.
+   * `address` may be a hostname or an IP literal combined with a
+   * port, e.g. `'0.0.0.0:8080'` or `'[::]:8080'`; port `0` asks
+   * the OS to assign an available ephemeral port, which can then
+   * be discovered via `local_address()`. If `address` resolves
+   * to multiple addresses, binding is attempted against each in
+   * turn until one succeeds.
    *
-   * @param {string|SocketAddr} address: The host:port to bind and listen on
+   * @param {string|SocketAddr} address: The host:port to bind
+   *    and listen on
    * @throws Error if resolution fails or every resolved address
-   *   fails to bind (e.g. because it is already in use)
+   *    fails to bind (e.g. because it is already in use)
    */
   bind(address) {
     _net_tcp.tcp_bind(self._ptr, _addr_string(address))
   }
 
   /**
-   * Accepts a new incoming connection, blocking until one arrives
-   * (subject to non-blocking mode, if enabled via `set_non_blocking()`).
-   * Only valid once this instance has been `bind()`-ed.
+   * Accepts a new incoming connection, blocking until one
+   * arrives (subject to non-blocking mode, if enabled via
+   * `set_non_blocking()`). Only valid once this instance has
+   * been `bind()`-ed.
    *
    * Returns a fully connected `TcpStream` for the new client.
-   * 
-   * To find out who connected, call `peer_address()` on the returned 
-   * stream.
    *
-   * @returns TcpStream a stream connected to the newly accepted client
-   * @throws Error on an underlying I/O error, or if this instance
-   *   has not been bound
+   * To find out who connected, call `peer_address()` on the
+   * returned stream.
+   *
+   * @returns TcpStream a stream connected to the newly accepted
+   *    client
+   * @throws Error on an underlying I/O error, or if this
+   *    instance has not been bound
    */
   accept() {
     return TcpStream(_net_tcp.tcp_accept(self._ptr))
@@ -208,50 +224,53 @@ class TcpStream {
   }
 
   /**
-   * Returns the local socket address of this instance, i.e. the address
-   * it connected from if it is a stream, or the address it is listening
-   * on if it is a listener.
+   * Returns the local socket address of this instance, i.e. the
+   * address it connected from if it is a stream, or the address
+   * it is listening on if it is a listener.
    *
-   * This is particularly useful for discovering the actual port chosen
-   * by the OS after binding to port `0`.
+   * This is particularly useful for discovering the actual port
+   * chosen by the OS after binding to port `0`.
    *
    * @returns SocketAddr the local address
-   * @throws Error if this instance is neither connected nor bound
+   * @throws Error if this instance is neither connected nor
+   *    bound
    */
   local_address() {
     return SocketAddr.parse(_net_tcp.tcp_local_address(self._ptr))
   }
 
   /**
-   * Shuts down the read, write, or both halves of this connection. See
-   * `Shutdown` for the meaning of each value; defaults to
-   * `Shutdown.BOTH` when `how` is omitted. Only valid on a connected
-   * stream. Calling this more than once may return an error on some
-   * platforms.
+   * Shuts down the read, write, or both halves of this
+   * connection. See `Shutdown` for the meaning of each value;
+   * defaults to `Shutdown.BOTH` when `how` is omitted. Only
+   * valid on a connected stream. Calling this more than once may
+   * return an error on some platforms.
    *
    * @param ?int how: One of the `Shutdown` constants
-   * @throws Error if the underlying `shutdown(2)` call fails, or if
-   *   this instance is not a connected stream
+   * @throws Error if the underlying `shutdown(2)` call fails, or
+   *    if this instance is not a connected stream
    */
   shutdown(how) {
     _net_tcp.tcp_shutdown(self._ptr, how)
   }
 
   /**
-   * Sets the timeout for future `read()`/`read_exact()`/`read_all()`/
-   * `read_as_string()` calls.
+   * Sets the timeout for future
+   * `read()`/`read_exact()`/`read_all()`/ `read_as_string()`
+   * calls.
    *
-   * Pass a number of milliseconds greater than `0` to bound how long a 
-   * read may block before raising a timeout error, or pass `0` (or any 
-   * negative number) to remove the timeout entirely and block indefinitely.
+   * Pass a number of milliseconds greater than `0` to bound how
+   * long a read may block before raising a timeout error, or
+   * pass `0` (or any negative number) to remove the timeout
+   * entirely and block indefinitely.
    *
-   * @note A set timeout is an upper bound: a future read may still return 
-   *    before that bound is reached, and system timers mean the actual time 
-   *    elapsed before a timeout error can be slightly longer than what was 
-   *    requested.
+   * @note A set timeout is an upper bound: a future read may
+   *    still return before that bound is reached, and system
+   *    timers mean the actual time elapsed before a timeout
+   *    error can be slightly longer than what was requested.
    *
    * @param number timeout: Milliseconds, or a negative number to
-   *   disable the timeout
+   *    disable the timeout
    * @throws Error if the platform rejects the value
    */
   set_read_timeout(timeout) {
@@ -259,10 +278,12 @@ class TcpStream {
   }
 
   /**
-   * Returns the currently configured read timeout in milliseconds, or
-   * `-1` if no timeout is set (i.e. reads block indefinitely).
+   * Returns the currently configured read timeout in
+   * milliseconds, or `-1` if no timeout is set (i.e. reads block
+   * indefinitely).
    *
-   * @note Some platforms do not provide access to the current timeout.
+   * @note Some platforms do not provide access to the current
+   *    timeout.
    * @returns number milliseconds, or `-1` if unset
    */
   get_read_timeout() {
@@ -270,13 +291,13 @@ class TcpStream {
   }
 
   /**
-   * Sets the timeout for future `write()`/`write_all()` calls. Same
-   * rules as `set_read_timeout()`: a number of milliseconds greater than 
-   * `0` bounds how long a write may block, `0` (or any negative number)
-   * disables the timeout.
+   * Sets the timeout for future `write()`/`write_all()` calls.
+   * Same rules as `set_read_timeout()`: a number of milliseconds
+   * greater than `0` bounds how long a write may block, `0` (or
+   * any negative number) disables the timeout.
    *
    * @param number timeout: Milliseconds, or a negative number to
-   *   disable the timeout
+   *    disable the timeout
    * @throws Error if the platform rejects the value
    */
   set_write_timeout(timeout) {
@@ -284,10 +305,12 @@ class TcpStream {
   }
 
   /**
-   * Returns the currently configured write timeout in milliseconds, or
-   * `-1` if no timeout is set (i.e. writes block indefinitely).
+   * Returns the currently configured write timeout in
+   * milliseconds, or `-1` if no timeout is set (i.e. writes
+   * block indefinitely).
    *
-   * @note Some platforms do not provide access to the current timeout.
+   * @note Some platforms do not provide access to the current
+   *    timeout.
    * @returns number milliseconds, or `-1` if unset
    */
   get_write_timeout() {
@@ -295,17 +318,17 @@ class TcpStream {
   }
 
   /**
-   * Peeks at up to `length` bytes of incoming data without consuming it
-   * such that a subsequent `read()`/`read_exact()` call will still see 
-   * the peeked bytes. Defaults to peeking a single byte when `length` is
-   * omitted.
+   * Peeks at up to `length` bytes of incoming data without
+   * consuming it such that a subsequent `read()`/`read_exact()`
+   * call will still see the peeked bytes. Defaults to peeking a
+   * single byte when `length` is omitted.
    *
    * Successful peeks can, and often do, return fewer bytes than
    * `length`.
    *
    * @param number length: The maximum number of bytes to peek
-   * @returns bytes up to `length` bytes currently in the receive buffer
-   *   (`nil` if none are available yet)
+   * @returns bytes up to `length` bytes currently in the receive
+   *    buffer (`nil` if none are available yet)
    * @throws Error on an underlying I/O error
    */
   peek(length) {
@@ -313,10 +336,11 @@ class TcpStream {
   }
 
   /**
-   * Enables or disables `TCP_NODELAY` (i.e. disables or enables Nagle's
-   * algorithm). When nodelay is enabled, small writes are sent
-   * immediately instead of being buffered in the hope of coalescing
-   * them with subsequent writes, trading throughput for lower latency.
+   * Enables or disables `TCP_NODELAY` (i.e. disables or enables
+   * Nagle's algorithm). When nodelay is enabled, small writes
+   * are sent immediately instead of being buffered in the hope
+   * of coalescing them with subsequent writes, trading
+   * throughput for lower latency.
    *
    * @param bool nodelay: `true` to disable Nagle's algorithm
    * @throws Error on an underlying I/O error
@@ -326,7 +350,8 @@ class TcpStream {
   }
 
   /**
-   * Returns whether `TCP_NODELAY` is currently enabled on this stream.
+   * Returns whether `TCP_NODELAY` is currently enabled on this
+   * stream.
    *
    * @returns bool
    */
@@ -335,9 +360,9 @@ class TcpStream {
   }
 
   /**
-   * Sets `IP_TTL` (the IPv4 time-to-live / IPv6 hop limit) for packets
-   * sent on this socket. For a listener, this is the TTL that will be
-   * used by sockets it accepts.
+   * Sets `IP_TTL` (the IPv4 time-to-live / IPv6 hop limit) for
+   * packets sent on this socket. For a listener, this is the TTL
+   * that will be used by sockets it accepts.
    *
    * @param number ttl: The time-to-live value, `0`-`255`
    * @throws Error on an underlying I/O error
@@ -347,7 +372,8 @@ class TcpStream {
   }
 
   /**
-   * Returns the currently configured `IP_TTL` value for this socket.
+   * Returns the currently configured `IP_TTL` value for this
+   * socket.
    *
    * @returns number
    * @throws Error on an underlying I/O error
@@ -357,24 +383,25 @@ class TcpStream {
   }
 
   /**
-   * Retrieves and clears the value of the socket's `SO_ERROR` option -
-   * i.e. any pending error the OS has recorded for this socket without
-   * yet surfacing through a failed read, write, or `accept()`.
+   * Retrieves and clears the value of the socket's `SO_ERROR`
+   * option - i.e. any pending error the OS has recorded for this
+   * socket without yet surfacing through a failed read, write,
+   * or `accept()`.
    *
-   * @returns ?string a description of the pending error, or `nil` if
-   *   there is none
+   * @returns ?string a description of the pending error, or
+   *    `nil` if there is none
    * @throws Error on an underlying I/O error while querying the
-   *   socket
+   *    socket
    */
   get_error() {
     return _net_tcp.tcp_get_error(self._ptr)
   }
 
   /**
-   * Puts the socket into or out of non-blocking mode. In non-blocking
-   * mode, `read()`/`write()`/`accept()` and friends return immediately
-   * with an error instead of blocking when the operation would
-   * otherwise wait on I/O.
+   * Puts the socket into or out of non-blocking mode. In
+   * non-blocking mode, `read()`/`write()`/`accept()` and friends
+   * return immediately with an error instead of blocking when
+   * the operation would otherwise wait on I/O.
    *
    * @param bool nonblocking: `true` to enable non-blocking mode
    * @throws Error on an underlying I/O error
@@ -384,48 +411,52 @@ class TcpStream {
   }
 
   /**
-   * Reads up to `length` bytes from the stream into a newly allocated
-   * byte buffer, without necessarily filling it and returns the buffer. 
-   * It is entirely normal for this to return fewer bytes than `length`; 
-   * even when more data will eventually be available. So, callers that 
-   * need an exact amount of data should call this in a loop or use 
+   * Reads up to `length` bytes from the stream into a newly
+   * allocated byte buffer, without necessarily filling it and
+   * returns the buffer. It is entirely normal for this to return
+   * fewer bytes than `length`; even when more data will
+   * eventually be available. So, callers that need an exact
+   * amount of data should call this in a loop or use
    * `read_exact()` instead.
    *
-   * An empty result means the peer has closed its write half (EOF).
+   * An empty result means the peer has closed its write half
+   * (EOF).
    *
    * @param number length: The maximum number of bytes to read
-   * @returns bytes up to `length` bytes read from the stream (may be
-   *   empty on EOF)
-   * @throws Error on an underlying I/O error, or if the configured
-   *   read timeout elapses first
+   * @returns bytes up to `length` bytes read from the stream
+   *    (may be empty on EOF)
+   * @throws Error on an underlying I/O error, or if the
+   *    configured read timeout elapses first
    */
   read(length) {
     return _net_tcp.tcp_read(self._ptr, length)
   }
 
   /**
-   * Reads exactly `length` bytes from the stream, blocking (subject to
-   * the read timeout) until that many bytes have arrived.
+   * Reads exactly `length` bytes from the stream, blocking
+   * (subject to the read timeout) until that many bytes have
+   * arrived.
    *
-   * If the stream reaches EOF before `length` bytes have been read, this
-   * raises an error; the contents of any bytes already read are
-   * lost.
+   * If the stream reaches EOF before `length` bytes have been
+   * read, this raises an error; the contents of any bytes
+   * already read are lost.
    *
    * @param number length: The exact number of bytes to read
    * @returns bytes exactly `length` bytes
    * @throws Error if EOF is reached early, or on any other
-   *   underlying I/O error
+   *    underlying I/O error
    */
   read_exact(length) {
     return _net_tcp.tcp_read_exact(self._ptr, length)
   }
 
   /**
-   * Reads from the stream until EOF, returning everything received as a
-   * single byte stream. Since a stream is only closed by the peer (or by
-   * calling `shutdown()`/`close()`), this will block until the connection 
-   * is closed. Therefore, do not call this on a stream you expect to stay 
-   * open, or set a read timeout first.
+   * Reads from the stream until EOF, returning everything
+   * received as a single byte stream. Since a stream is only
+   * closed by the peer (or by calling `shutdown()`/`close()`),
+   * this will block until the connection is closed. Therefore,
+   * do not call this on a stream you expect to stay open, or set
+   * a read timeout first.
    *
    * @returns bytes every byte read up to EOF
    * @throws Error on an underlying I/O error
@@ -435,52 +466,56 @@ class TcpStream {
   }
 
   /**
-   * Reads from the stream until EOF, decoding everything received as
-   * UTF-8 text. Like `read_all()`, this blocks until the peer closes the
-   * connection. Fails if the received bytes are not valid UTF-8, in
-   * which case the data already read is discarded.
+   * Reads from the stream until EOF, decoding everything
+   * received as UTF-8 text. Like `read_all()`, this blocks until
+   * the peer closes the connection. Fails if the received bytes
+   * are not valid UTF-8, in which case the data already read is
+   * discarded.
    *
    * @returns string every byte read up to EOF, decoded as UTF-8
-   * @throws Error on an underlying I/O error, or if the data is not
-   *   valid UTF-8
+   * @throws Error on an underlying I/O error, or if the data is
+   *    not valid UTF-8
    */
   read_as_string() {
     return _net_tcp.tcp_read_as_string(self._ptr)
   }
 
   /**
-   * Writes `data` to the stream, returning the number of bytes actually
-   * written. A successful call may write fewer bytes than `data` contains. 
-   * Use `write_all()` if you need every byte written before continuing.
+   * Writes `data` to the stream, returning the number of bytes
+   * actually written. A successful call may write fewer bytes
+   * than `data` contains. Use `write_all()` if you need every
+   * byte written before continuing.
    *
-   * @param {bytes|string} data: The bytes (or UTF-8 text) to write
+   * @param {bytes|string} data: The bytes (or UTF-8 text) to
+   *    write
    * @returns number the number of bytes actually written
-   * @throws Error on an underlying I/O error, or if the configured
-   *   write timeout elapses first
+   * @throws Error on an underlying I/O error, or if the
+   *    configured write timeout elapses first
    */
   write(data) {
     return _net_tcp.tcp_write(self._ptr, data)
   }
 
   /**
-   * Writes the entirety of `data` to the stream, blocking (subject to
-   * the write timeout) and retrying internally until every byte has
-   * been written.
+   * Writes the entirety of `data` to the stream, blocking
+   * (subject to the write timeout) and retrying internally until
+   * every byte has been written.
    *
-   * @param {bytes|string} data: The bytes (or UTF-8 text) to write
-   * @throws Error on an underlying I/O error, or if the configured
-   *   write timeout elapses first
+   * @param {bytes|string} data: The bytes (or UTF-8 text) to
+   *    write
+   * @throws Error on an underlying I/O error, or if the
+   *    configured write timeout elapses first
    */
   write_all(data) {
     _net_tcp.tcp_write_all(self._ptr, data)
   }
 
   /**
-   * Flushes any buffered output. TCP streams are unbuffered at this
-   * layer, so this is a no-op and doesn't currently do anything for 
-   * `TcpStream`. This is a no-op provided purely so this class
-   * satisfies the same interface as other writable streams in the
-   * standard library.
+   * Flushes any buffered output. TCP streams are unbuffered at
+   * this layer, so this is a no-op and doesn't currently do
+   * anything for `TcpStream`. This is a no-op provided purely so
+   * this class satisfies the same interface as other writable
+   * streams in the standard library.
    *
    * @throws Error on an underlying I/O error
    */
@@ -489,8 +524,9 @@ class TcpStream {
   }
 
   /**
-   * Whether this instance currently wraps a connected stream (i.e.
-   * `connect()` has succeeded and `close()` has not been called since).
+   * Whether this instance currently wraps a connected stream
+   * (i.e. `connect()` has succeeded and `close()` has not been
+   * called since).
    *
    * @returns bool
    */
@@ -500,7 +536,8 @@ class TcpStream {
 
   /**
    * Whether this instance currently wraps a bound listener (i.e.
-   * `bind()` has succeeded and `close()` has not been called since).
+   * `bind()` has succeeded and `close()` has not been called
+   * since).
    *
    * @returns bool
    */
@@ -509,21 +546,23 @@ class TcpStream {
   }
 
   /**
-   * Flushes, shuts down, and releases the underlying socket, whether it
-   * is a connected stream or a bound listener. It is advised to call this 
-   * explicitly once you are done with the socket rather than relying on 
-   * the Zuri garbage collector to do it for you eventually. Safe to call 
-   * more than once, and safe to call on an instance that was never 
-   * connected or bound.
+   * Flushes, shuts down, and releases the underlying socket,
+   * whether it is a connected stream or a bound listener. It is
+   * advised to call this explicitly once you are done with the
+   * socket rather than relying on the Zuri garbage collector to
+   * do it for you eventually. Safe to call more than once, and
+   * safe to call on an instance that was never connected or
+   * bound.
    */
   close() {
     _net_tcp.tcp_close(self._ptr)
   }
 
   /**
-   * A human readable representation of this socket, showing whichever
-   * of the connected-stream or bound-listener addresses apply.
-   * 
+   * A human readable representation of this socket, showing
+   * whichever of the connected-stream or bound-listener
+   * addresses apply.
+   *
    * @returns string
    */
   to_string() {

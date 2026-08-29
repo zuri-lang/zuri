@@ -1,35 +1,38 @@
 /**
  * @module _tree
  *
- * Internal only: the recursive walk `zuri.ast`'s `walk_nodes()` and
- * `zuri.compile`'s `walk_instrs()` are both built on. `Node` and
- * `Instr` are separate classes on purpose (their callers care which
- * one they're holding), but the actual tree shape underneath is
- * identical either way: one wrapped value tagged by a string
- * (`kind`/`op`), carrying a `fields` dict whose own values are more
- * wrapped values, plain lists, plain dicts, or scalars. Written once
- * here instead of twice, since duplicating a recursive-descent walk
- * across two files is exactly the kind of drift risk that "same bug,
- * fixed in only one of two copies" comes from.
+ * Internal only: the recursive walk `zuri.ast`'s `walk_nodes()`
+ * and `zuri.compile`'s `walk_instrs()` are both built on. `Node`
+ * and `Instr` are separate classes on purpose (their callers
+ * care which one they're holding), but the actual tree shape
+ * underneath is identical either way: one wrapped value tagged
+ * by a string (`kind`/`op`), carrying a `fields` dict whose own
+ * values are more wrapped values, plain lists, plain dicts, or
+ * scalars. Written once here instead of twice, since duplicating
+ * a recursive-descent walk across two files is exactly the kind
+ * of drift risk that "same bug, fixed in only one of two copies"
+ * comes from.
  *
  * Not part of `zuri`'s own public surface: `ast.zu`/`compile.zu`
- * import this file WITHOUT `@`, so nothing here becomes one of their
- * own exports, and `index.zu` never imports it at all.
+ * import this file WITHOUT `@`, so nothing here becomes one of
+ * their own exports, and `index.zu` never imports it at all.
  */
 
 /**
- * Recursively visits `value`. `describe(value)` decides what counts
- * as a "node" here: it returns the node's own dispatch-key string
- * (`kind` for a `Node`, `op` for an `Instr`) when `value` is one, or
- * `nil` when it's just a plain list/dict/scalar to recurse through
- * without visiting. See `walk_nodes()`/`walk_instrs()` for what
- * `describe` actually looks like.
+ * Recursively visits `value`. `describe(value)` decides what
+ * counts as a "node" here: it returns the node's own
+ * dispatch-key string (`kind` for a `Node`, `op` for an `Instr`)
+ * when `value` is one, or `nil` when it's just a plain
+ * list/dict/scalar to recurse through without visiting. See
+ * `walk_nodes()`/`walk_instrs()` for what `describe` actually
+ * looks like.
  *
  * `visitor` is either a plain function, called for every node
- * (`visitor(node)`), or a dict from dispatch-key to function, where
- * only a matching node gets called (`visitor[describe(node)](node)`);
- * `is_dict_visitor` says which. Always visits the whole tree; a
- * visitor has no way to skip descending into a node's children.
+ * (`visitor(node)`), or a dict from dispatch-key to function,
+ * where only a matching node gets called
+ * (`visitor[describe(node)](node)`); `is_dict_visitor` says
+ * which. Always visits the whole tree; a visitor has no way to
+ * skip descending into a node's children.
  */
 def walk(value, describe, visitor, is_dict_visitor) {
   var key = describe(value)
@@ -65,8 +68,8 @@ def walk(value, describe, visitor, is_dict_visitor) {
 }
 
 /**
- * Every node reachable from `value` whose `describe(node)` equals
- * `key`, in the order they appear. Built on `walk()`.
+ * Every node reachable from `value` whose `describe(node)`
+ * equals `key`, in the order they appear. Built on `walk()`.
  */
 def find(value, describe, key) {
   var matches = []

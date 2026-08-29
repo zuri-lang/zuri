@@ -1,33 +1,37 @@
 /**
  * @module struct
- * 
- * This module provides functions for converting between Zuri values and C/C++/Rust
- * structs and vice-versa in the binary format.
- * 
- * The `pack` and `unpack` functions behave similarly as the pack and unpack 
- * functions from Perl and PHP (more similar to the PHP version) with few 
- * major extensions to their format language.
- * 
+ *
+ * This module provides functions for converting between Zuri
+ * values and C/C++/Rust structs and vice-versa in the binary
+ * format.
+ *
+ * The `pack` and `unpack` functions behave similarly as the pack
+ * and unpack functions from Perl and PHP (more similar to the
+ * PHP version) with few major extensions to their format
+ * language.
+ *
  * ## Format language
  *
- * A format string is a sequence of `/`-separated segments. Each segment
- * is one or more `CODE[COUNT]` groups, optionally followed by `:NAME` to
- * label the field(s) that group produces when unpacking:
+ * A format string is a sequence of `/`-separated segments. Each
+ * segment is one or more `CODE[COUNT]` groups, optionally
+ * followed by `:NAME` to label the field(s) that group produces
+ * when unpacking:
  *
  * ```text
  *   "Nsize:len/A16:name/C4"
  * ```
  *
- * - `CODE` is one of the format characters in the table below.
- * - `COUNT` is a decimal integer, or `*` to mean "the rest" (the whole
- *   remaining argument for a string-like code, or every remaining
- *   argument/byte for a numeric code). Omitted means `1`.
- * - `:NAME` names the field(s) produced by that ONE group when
- *   unpacking. A count > 1 numbers the keys `NAME1`, `NAME2`, ... A
- *   segment carrying a `:NAME` may only contain a single group.
- * - A group with no `:NAME` gets a purely numeric key that runs once, 
- *   globally, for the whole format string; it never resets and so never 
- *   silently overwrites an earlier unnamed field.
+ * - `CODE` is one of the format characters in the table below. -
+ * `COUNT` is a decimal integer, or `*` to mean "the rest" (the
+ * whole remaining argument for a string-like code, or every
+ * remaining argument/byte for a numeric code). Omitted means
+ * `1`. - `:NAME` names the field(s) produced by that ONE group
+ * when unpacking. A count > 1 numbers the keys `NAME1`, `NAME2`,
+ * ... A segment carrying a `:NAME` may only contain a single
+ * group. - A group with no `:NAME` gets a purely numeric key
+ * that runs once, globally, for the whole format string; it
+ * never resets and so never silently overwrites an earlier
+ * unnamed field.
  *
  * ## Format codes
  *
@@ -72,19 +76,21 @@
  *
  * ## Integer precision
  *
- * Zuri numbers are IEEE-754 doubles, which can only represent integers
- * exactly up to 2^53. Every integer-producing code here (`q`/`Q`/`J`/`P`,
- * and the new `u`/`U`) automatically promotes its result to a `bigint`
- * Value instead of a `number` whenever the unpacked value falls outside
- * that safe range, rather than silently losing precision. Packing
- * accepts either a `number` or a `bigint` for every integer code.
- * 
+ * Zuri numbers are IEEE-754 doubles, which can only represent
+ * integers exactly up to 2^53. Every integer-producing code here
+ * (`q`/`Q`/`J`/`P`, and the new `u`/`U`) automatically promotes
+ * its result to a `bigint` Value instead of a `number` whenever
+ * the unpacked value falls outside that safe range, rather than
+ * silently losing precision. Packing accepts either a `number`
+ * or a `bigint` for every integer code.
+ *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
 /**
- * Packs the given arguments into a bytes object according to the specified format.
- * 
+ * Packs the given arguments into a bytes object according to the
+ * specified format.
+ *
  * @param string format
  * @param any... args
  * @returns bytes
@@ -92,20 +98,23 @@
 def pack(format: string, ...values) {}
 
 /**
- * Unpacks from bytes or a string into a dictionary based on the given format.
- * 
- * -  You may have to name the different format codes and separate them by a slash `/` 
- *    to return a string indexed dictionary for easy reference of the destructed parts. 
- *    If a repeater argument is present, then each of the dictionary keys will have a 
- *    sequence number behind the given name.
- * 
- * -  `offset` is the index of the bytes/string to begin unpacking from
- * 
- * > **Important**
- * > If you do not name an element, numeric indices starting from 1 are used. Be aware 
- * > that if you have more than one unnamed element, some data is overwritten because the 
- * > numbering restarts from 1 for each element.
- * 
+ * Unpacks from bytes or a string into a dictionary based on the
+ * given format.
+ *
+ * - You may have to name the different format codes and separate
+ * them by a slash `/` to return a string indexed dictionary for
+ * easy reference of the destructed parts. If a repeater argument
+ * is present, then each of the dictionary keys will have a
+ * sequence number behind the given name.
+ *
+ * - `offset` is the index of the bytes/string to begin unpacking
+ * from
+ *
+ * > **Important** If you do not name an element, numeric indices
+ * > starting from 1 are used. Be aware that if you have more
+ * > than one unnamed element, some data is overwritten because
+ * > the numbering restarts from 1 for each element.
+ *
  * @param string format
  * @param bytes|string data
  * @param ?number offset: Default value is `0`
@@ -114,9 +123,9 @@ def pack(format: string, ...values) {}
 def unpack(format: string, data: bytes|string, offset: ?number) {}
 
 /**
- * Same as `pack()` except that instead of accepting arbitrary values after 
- * format, it expects the values to be in a list.
- * 
+ * Same as `pack()` except that instead of accepting arbitrary
+ * values after format, it expects the values to be in a list.
+ *
  * @param string format
  * @param list args
  * @returns bytes
@@ -124,9 +133,10 @@ def unpack(format: string, data: bytes|string, offset: ?number) {}
 def pack_from(format: string, args: list) {}
 
 /**
- * The `pack_from()` equivalent of `unpack()`. This function is essentially 
- * the same as `unpack()` and was kept for symmetry with `pack_from()`.
- * 
+ * The `pack_from()` equivalent of `unpack()`. This function is
+ * essentially the same as `unpack()` and was kept for symmetry
+ * with `pack_from()`.
+ *
  * @see unpack()
  * @param string format
  * @param bytes|string data
@@ -136,13 +146,13 @@ def pack_from(format: string, args: list) {}
 def unpack_from(format: string, data: bytes|string, offset: ?number) {}
 
 /**
- * Packs directly into an existing bytes object at `offset`, growing it 
- * (zero-padded) if it isn't long enough and returns the number of elements 
- * written. 
- * 
- * This function avoids an allocate-then-copy round trip when assembling a 
- * larger buffer field by field.
- * 
+ * Packs directly into an existing bytes object at `offset`,
+ * growing it (zero-padded) if it isn't long enough and returns
+ * the number of elements written.
+ *
+ * This function avoids an allocate-then-copy round trip when
+ * assembling a larger buffer field by field.
+ *
  * @param string format
  * @param bytes buffer
  * @param number offset
@@ -152,11 +162,12 @@ def unpack_from(format: string, data: bytes|string, offset: ?number) {}
 def pack_into(format: string, buffer: bytes, offset: number, ...values) {}
 
 /**
- * Calculates the size of the buffer needed to pack the given values according 
- * to the specified format. It raises an error if the format is invalid or if 
- * the values cannot be packed according to the format or if it contains a `*` 
- * repeat anywhere, since that has no size independent of actual data.
- * 
+ * Calculates the size of the buffer needed to pack the given
+ * values according to the specified format. It raises an error
+ * if the format is invalid or if the values cannot be packed
+ * according to the format or if it contains a `*` repeat
+ * anywhere, since that has no size independent of actual data.
+ *
  * @param string format
  * @returns number
  * @raises Error
@@ -164,10 +175,11 @@ def pack_into(format: string, buffer: bytes, offset: number, ...values) {}
 def calcsize(format: string) {}
 
 /**
- * Unpacks a buffer as a repeated sequence of fixed-size records until exhausted,
- * returning a list of dictionaries. The format string must not contain any `*`
- * repeaters, since that would make the record size variable.
- * 
+ * Unpacks a buffer as a repeated sequence of fixed-size records
+ * until exhausted, returning a list of dictionaries. The format
+ * string must not contain any `*` repeaters, since that would
+ * make the record size variable.
+ *
  * @param string format
  * @param bytes|string data
  * @returns list

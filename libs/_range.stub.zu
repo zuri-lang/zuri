@@ -1,23 +1,27 @@
 /**
  * # Ranges
- * 
- * Ranges are simple numeric iterables. i.e. They are structures that can be iterated/looped through. 
- * Ranges are in the format `start..end`. They include a starting number (inclusive) and an ending 
- * number (non-inclusive) separated by a operator (`..`).
- * 
+ *
+ * Ranges are simple numeric iterables. i.e. They are structures
+ * that can be iterated/looped through. Ranges are in the format
+ * `start..end`. They include a starting number (inclusive) and
+ * an ending number (non-inclusive) separated by a operator
+ * (`..`).
+ *
  * For example:
- * 
+ *
  * ```zuri-repl
  * %> 0..10
  * <range 0..10, step=1>
  * %> 10..5
  * <range 10..5, step=1>
  * ```
- * 
- * Ranges are valid in any direction. That is, they can either ascend (end greater than start) or 
- * descend (start greater than end). They are also evaluated in order. They can also be constructed 
- * from variables or a mixture of constant number and variables as desired.
- * 
+ *
+ * Ranges are valid in any direction. That is, they can either
+ * ascend (end greater than start) or descend (start greater than
+ * end). They are also evaluated in order. They can also be
+ * constructed from variables or a mixture of constant number and
+ * variables as desired.
+ *
  * ```zuri-repl
  * %> var a = 20
  * %> 5..a
@@ -28,41 +32,42 @@
  * %> a..zu
  * <range 20..16, step=1>
  * ```
- * 
- * > **NOTE:** 
- * > 
- * > Somtimes, parenthesis (`()`) should be used around a to make sure that the upper limit of 
- * > the is not interpreted as a number since the was not assigned to a variable.
+ *
+ * > **NOTE:**
+ * >
+ * > Somtimes, parenthesis (`()`) should be used around a to make
+ * > sure that the upper limit of the is not interpreted as a
+ * > number since the was not assigned to a variable.
  */
 
 
-class {
+class range {
 
   /**
-   * Returns the lower limit of the range. 
-   * 
+   * Returns the lower limit of the range.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> (10..100).lower()
    * 10
    * ```
-   * 
+   *
    * @returns {number}
    */
   lower() {}
 
 
   /**
-   * Returns the upper limit of the range. 
-   * 
+   * Returns the upper limit of the range.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> (20..30).upper()
    * 30
    * ```
-   * 
+   *
    * @returns {number}
    */
   upper() {}
@@ -70,32 +75,34 @@ class {
 
   /**
    * Returns a number equal to the numbers between the range.
-   * 
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> (21..93).range()
    * 72
    * ```
-   * 
-   * The result of stays the same irrespective of the direction of the range. 
-   * For example, swapping the upper and lower limit of our previous still returns the same result.
-   * 
+   *
+   * The result of stays the same irrespective of the direction
+   * of the range. For example, swapping the upper and lower
+   * limit of our previous still returns the same result.
+   *
    * ```zuri-repl
    * %> (21..93).range()
    * 72
    * ```
-   * 
+   *
    * @returns {number}
    */
   range() {}
 
 
   /**
-   * Returns true if the given number falls somewhere within the or false otherwise.
-   * 
+   * Returns true if the given number falls somewhere within the
+   * or false otherwise.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> (93..21).within(103)
    * false
@@ -111,9 +118,9 @@ class {
 
   /**
    * Sets the step size of the range.
-   * 
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = (10..100).step(20)
    * %> a
@@ -127,7 +134,7 @@ class {
    * 70
    * 90
    * ```
-   * 
+   *
    * @param {int} size - The step size of the range.
    * @returns {range}
    */
@@ -136,11 +143,67 @@ class {
 
   /**
    * Returns the step size of the range.
-   * 
+   *
    * @returns {number}
    */
   get_step() {}
 
-  @iter(n) {}
-  @itern(n) {}
+  /**
+   * Iterates over each number in the range, calling the provided
+   * callback function with the number, its index.
+   *
+   * @param {function} callback A function that takes two
+   *    arguments: the number, its index.
+   * @throws {Error} if the callback is not a function.
+   * @return void
+   *
+   * Example:
+   *
+   * ```zuri
+   * var r = 0..5 # 0, 1, 2, 3, 4
+   * r.loop(@(num, index) {
+   *   echo 'Number at index ${index}: ${num}'
+   * })
+   * 
+   * # Output:
+   * # Number at index 0: 0
+   * # Number at index 1: 1
+   * # Number at index 2: 2
+   * # Number at index 3: 3
+   * # Number at index 4: 4
+   * ```
+   */
+  loop(callback: function) {}
+
+  /**
+   * Returns the range as a list of its individual numbers,
+   * stepping from the lower limit to the upper limit
+   * (exclusive), or in reverse when the range descends.
+   *
+   * ```zuri-repl
+   * %> (1..5).to_list()
+   * [1, 2, 3, 4]
+   * %> (5..1).to_list()
+   * [5, 4, 3, 2]
+   * ```
+   *
+   * @returns {list}
+   */
+  to_list() {}
+
+
+  /**
+   * Returns the string representation of the range.
+   *
+   * ```zuri-repl
+   * %> (1..5).to_string()
+   * '1..5'
+   * ```
+   *
+   * @returns {string}
+   */
+  to_string() {}
+
+  @value(n) {}
+  @key(n) {}
 }

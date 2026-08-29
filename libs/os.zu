@@ -1,8 +1,9 @@
 /**
  * @module os
- * 
- * This module provides functions for interfacing with the underlying operating system and directories.
- * 
+ *
+ * This module provides functions for interfacing with the
+ * underlying operating system and directories.
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
@@ -22,12 +23,12 @@ var version = _os.version
 var vm_version = _os.vm_version
 
 /**
- * The name of the current platform in string or `unknown` if 
- * the platform name could not be determined.
+ * The name of the current platform in string or `unknown` if the
+ * platform name could not be determined.
  * @type string
- * 
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> import os
  * %> os.platform
@@ -37,7 +38,8 @@ var vm_version = _os.vm_version
 var platform = _os.platform
 
 /**
- * A list containing the command line arguments passed to the startup script.
+ * A list containing the command line arguments passed to the
+ * startup script.
  * @type list
  */
 var args = _os.args
@@ -104,7 +106,8 @@ var DT_REG = _os.DT_REG  # regular file
 var DT_SOCK = _os.DT_SOCK  # local-domain socket
 
 /**
- * Whiteout file type (only meaningful on UNIX and some unofficial Linux versions).
+ * Whiteout file type (only meaningful on UNIX and some
+ * unofficial Linux versions).
  * @type number
  * @note value is `-1` on systems where it is not supported.
  */
@@ -112,27 +115,28 @@ var DT_WHT = _os.DT_WHT
 
 
 /**
- * Executes the given shell (or command prompt for Windows) commands and 
- * returns a dictionary containing the exit code and the output as string.
- * 
- * `exec()` accepts multiple string arguments and concatenates them together with a 
- * space in between before executing.
+ * Executes the given shell (or command prompt for Windows)
+ * commands and returns a dictionary containing the exit code and
+ * the output as string.
+ *
+ * `exec()` accepts multiple string arguments and concatenates
+ * them together with a space in between before executing.
  *
  * The returned dictionary contains the following:
  *
- * - `exit_code`: number - The exit code of the program. Any number other
- *    than zero (0) should be treated as a failure.
- * - `output`: string - The output of the program.
- * 
+ * - `exit_code`: number - The exit code of the program. Any
+ * number other than zero (0) should be treated as a failure. -
+ * `output`: string - The output of the program.
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> os.exec('ls', '-l')
  * {exit_code: 1, output: 'total 48
  * -rw-r--r--@ 1 username  staff  705 Aug 27  2021 buggy.zu
  * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.zu'}
  * ```
- * 
+ *
  * @param {...string} cmd
  * @returns string
  */
@@ -146,24 +150,23 @@ def exec(...args) {
 }
 
 /**
- * Returns information about the current operation system and machine as a dictionary.
- * The returned dictionary will contain:
- * 
- * - `sysname`: The name of the operating system
- * - `nodename` The name of the current machine
- * - `version`: The operating system version
- * - `release`: The release level/version
- * - `machine`: The hardware/processor type.
- * 
+ * Returns information about the current operation system and
+ * machine as a dictionary. The returned dictionary will contain:
+ *
+ * - `sysname`: The name of the operating system - `nodename` The
+ * name of the current machine - `version`: The operating system
+ * version - `release`: The release level/version - `machine`:
+ * The hardware/processor type.
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> os.info()
  * {sysname: Darwin, nodename: MacBook-Pro.local, version: Darwin Kernel Version 
  * 21.1.0: Wed Oct 13 17:33:24 PDT 2021; root:xnu-8019.41.5~1/RELEASE_ARM64_T8101, 
  * release: 21.1.0, machine: arm64}
  * ```
- * 
+ *
  * @returns dict
  */
 def info() {
@@ -171,8 +174,9 @@ def info() {
 }
 
 /**
- * Causes the current thread to sleep for the specified number of seconds.
- * 
+ * Causes the current thread to sleep for the specified number of
+ * seconds.
+ *
  * @param number duration
  */
 def sleep(duration: number) {
@@ -180,17 +184,18 @@ def sleep(duration: number) {
 }
 
 /**
- * Returns the given environment variable if exists or nil otherwise
+ * Returns the given environment variable if exists or nil
+ * otherwise
  * @returns string
- * 
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> import os
  * %> os.get_env('ENV1')
  * '20'
  * ```
- * 
+ *
  * @param string name
  * @param ?any default_value
  * @returns ?string
@@ -202,31 +207,34 @@ def get_env(name: string, default_value: ?any) {
 
 /**
  * Sets the named environment variable to the given value.
- * 
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> os.set_env('ENV1', 'New value')
  * true
  * %> os.get_env('ENV1')
  * 'New value'
  * ```
- * 
- * If you are in the REPL and have tried the last example in `get_env()`, 
- * you may notice that the value of `ENV1` doesn't change. This is because 
- * unless you specify, `set_env()` will not overwrite existing environment variables. 
- * For that, you will need to specify `true` as the third parameter to `set_env()`.
- * 
+ *
+ * If you are in the REPL and have tried the last example in
+ * `get_env()`, you may notice that the value of `ENV1` doesn't
+ * change. This is because unless you specify, `set_env()` will
+ * not overwrite existing environment variables. For that, you
+ * will need to specify `true` as the third parameter to
+ * `set_env()`.
+ *
  * For example,
- * 
+ *
  * ```zuri-repl
  * %> os.set_env('ENV1', 'New value again', true)
  * true
  * %> os.get_env('ENV1')
  * 'New value again'
  * ```
- * 
- * @note Environment variables set will not persist after application exists.
+ *
+ * @note Environment variables set will not persist after
+ *    application exists.
  * @param string name
  * @param string value
  * @param ?bool overwrite: Default value is `false`.
@@ -238,10 +246,11 @@ def set_env(name: string, value: string, overwrite: ?bool) {
 }
 
 /**
- * Creates the given directory with the specified permission and optionally
- * add new files into it if any is given.
- * 
- * @note if the directory already exists, it returns `false` otherwise, it returns `true`.
+ * Creates the given directory with the specified permission and
+ * optionally add new files into it if any is given.
+ *
+ * @note if the directory already exists, it returns `false`
+ *    otherwise, it returns `true`.
  * @note permission should be given as octal number.
  * @param string path
  * @param ?int permission: Default value is `0c777`
@@ -268,21 +277,25 @@ def create_dir(path: string, permission: ?int, recursive: ?bool) {
 }
 
 /**
- * Scans the given directory and returns a list of all matched files.
- * 
+ * Scans the given directory and returns a list of all matched
+ * files.
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> os.read_dir('./tests')
  * [., .., myprogram.zu, single_thread.zu, test.zu, buggy.zu]
  * ```
- * 
- * When the recursive argument is set to `true`, the function returns all matched files as well 
- * files in sub-directories within the path.
- * 
- * @note `.` indicates current directory and can be used as argument to _os.read_dir_ as well.
- * @note `..` indicates parent directory and can be used as argument to _os.read_dir_ as well.
- * 
+ *
+ * When the recursive argument is set to `true`, the function
+ * returns all matched files as well files in sub-directories
+ * within the path.
+ *
+ * @note `.` indicates current directory and can be used as
+ *    argument to _os.read_dir_ as well.
+ * @note `..` indicates parent directory and can be used as
+ *    argument to _os.read_dir_ as well.
+ *
  * @param string path
  * @param ?bool recursive
  * @returns list[string]
@@ -295,10 +308,10 @@ def read_dir(path: string, recursive: ?bool) {
 }
 
 /**
- * Changes the permission set on a directory to the given mode. It is advisable 
- * to set the mode with an octal number (e.g. 0c777) as this is consistent with 
- * operating system values.
- * 
+ * Changes the permission set on a directory to the given mode.
+ * It is advisable to set the mode with an octal number (e.g.
+ * 0c777) as this is consistent with operating system values.
+ *
  * @param string path
  * @param int mode
  * @returns boolean
@@ -308,8 +321,9 @@ def chmod(path: string, mode: int) {
 }
 
 /**
- * Returns `true` if the path is a directory or `false` otherwise.
- * 
+ * Returns `true` if the path is a directory or `false`
+ * otherwise.
+ *
  * @param string path
  * @returns bool
  */
@@ -318,9 +332,9 @@ def is_dir(path: string) {
 }
 
 /**
- * Deletes a non-empty directory. If recursive is `true`, non-empty directories 
- * will have their contents deleted first.
- * 
+ * Deletes a non-empty directory. If recursive is `true`,
+ * non-empty directories will have their contents deleted first.
+ *
  * @param string path
  * @param ?bool recursive: Default value is `false`.
  * @returns bool
@@ -334,7 +348,7 @@ def remove_dir(path: string, recursive: ?bool) {
 
 /**
  * Returns the current working directory.
- * 
+ *
  * @returns string
  */
 def cwd() {
@@ -343,7 +357,7 @@ def cwd() {
 
 /**
  * Navigates the working directory into the specified path.
- * 
+ *
  * @param string path
  * @returns bool
  */
@@ -353,7 +367,7 @@ def change_dir(path: string) {
 
 /**
  * Returns `true` if the directory exists or `false` otherwise.
- * 
+ *
  * @param string path
  * @returns bool
  */
@@ -363,7 +377,7 @@ def dir_exists(path: string) {
 
 /**
  * Exit the current process and quits the Zuri runtime.
- * 
+ *
  * @param number code
  * @returns
  */
@@ -372,16 +386,16 @@ def exit(code: number) {
 }
 
 /**
- * Concatenates the given paths together into a format that is valid on the
- * current operating system.
- * 
+ * Concatenates the given paths together into a format that is
+ * valid on the current operating system.
+ *
  * Example,
- * 
+ *
  * ```zuri-repl
  * %> os.join_paths('/home/user', 'path/to/myfile.ext')
  * '/home/user/path/to/myfile.ext'
  * ```
- * 
+ *
  * @param string... paths
  * @returns string
  */
@@ -412,7 +426,7 @@ def join_paths(...paths) {
 
 /**
  * Returns the original path to a relative path.
- * 
+ *
  * @note if the path is a file, see `abs_path()`.
  * @param string path
  * @returns string
@@ -423,8 +437,9 @@ def real_path(path: string) {
 
 /**
  * Returns the original path to a relative path.
- * 
- * @note unlike real_path(), this function returns full path for a file.
+ *
+ * @note unlike real_path(), this function returns full path for
+ *    a file.
  * @param string path
  * @returns string
  */
@@ -448,11 +463,12 @@ def abs_path(path: string) {
 }
 
 /**
- * Returns the parent directory of the pathname pointed to by `path`.  Any trailing
- * `/` characters are not counted as part of the directory name.  If `path` is an
- * empty string, or contains no `/` characters, dir_name() returns the string ".", 
+ * Returns the parent directory of the pathname pointed to by
+ * `path`. Any trailing `/` characters are not counted as part of
+ * the directory name. If `path` is an empty string, or contains
+ * no `/` characters, dir_name() returns the string ".",
  * signifying the current directory.
- * 
+ *
  * @param string path
  * @returns string
  */
@@ -461,11 +477,12 @@ def dir_name(path: string) {
 } 
 
 /**
- * The base_name() function returns the last component from the pathname pointed to by 
- * `path`, deleting any trailing `/` characters.  If path consists entirely of `/` 
- * characters, the string '/' is returned.  If path is an empty string, the string '.' 
- * is returned.
- * 
+ * The base_name() function returns the last component from the
+ * pathname pointed to by `path`, deleting any trailing `/`
+ * characters. If path consists entirely of `/` characters, the
+ * string '/' is returned. If path is an empty string, the string
+ * '.' is returned.
+ *
  * @param string path
  * @returns string
  */
@@ -474,17 +491,20 @@ def base_name(path: string) {
 }
 
 /**
- * Renames the file or directory specified by `old_name` to the name given by `new_name`.
- * 
- * If `old_name` and `new_name` are existing hard links referring to the same file, then 
- * it does nothing, and returns a success status.
- * 
- * If `old_name` specifies a directory, `new_name` must either not exist, or it must 
- * specify an empty directory.
- * 
- * If `old_name` refers to a symbolic link, the link is renamed; if `new_name` refers to 
- * a symbolic link, the link will be overwritten.
- * 
+ * Renames the file or directory specified by `old_name` to the
+ * name given by `new_name`.
+ *
+ * If `old_name` and `new_name` are existing hard links referring
+ * to the same file, then it does nothing, and returns a success
+ * status.
+ *
+ * If `old_name` specifies a directory, `new_name` must either
+ * not exist, or it must specify an empty directory.
+ *
+ * If `old_name` refers to a symbolic link, the link is renamed;
+ * if `new_name` refers to a symbolic link, the link will be
+ * overwritten.
+ *
  * @param string old_name
  * @param string new_name
  * @returns bool
@@ -496,9 +516,9 @@ def rename(old_name: string, new_name: string) {
 
 
 /**
- * Returns the current machine user's home directory. If the home directory cannot be detected, 
- * it returns `nil`.
- * 
+ * Returns the current machine user's home directory. If the home
+ * directory cannot be detected, it returns `nil`.
+ *
  * @returns string
  */
 def home_dir() {

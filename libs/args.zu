@@ -1,12 +1,13 @@
 /**
  * @module args
  *
- * This module provides a complete, batteries-included framework for building
- * command-line interfaces. It supports options (flags), positional arguments,
- * sub-commands with their own option sets, automatic help generation, type
- * coercion, required arguments, deprecation warnings, choice validation,
- * abbreviated long-option matching, `--` end-of-options, and `@file`
- * argument expansion.
+ * This module provides a complete, batteries-included framework
+ * for building command-line interfaces. It supports options
+ * (flags), positional arguments, sub-commands with their own
+ * option sets, automatic help generation, type coercion,
+ * required arguments, deprecation warnings, choice validation,
+ * abbreviated long-option matching, `--` end-of-options, and
+ * `@file` argument expansion.
  *
  * ### Quick start
  *
@@ -24,15 +25,15 @@
  * 
  * parser.parse()
  * ```
- * 
+ *
  * Running the following command:
- * 
+ *
  * ```zuri
  * zuri myprogram.zu -h
  * ```
- * 
+ *
  * Prints the following help output:
- * 
+ *
  * ```sh
  * Usage: myprogram [-n <VALUE>] [-c <INT>] [-h] [COMMAND]
  * 
@@ -57,10 +58,11 @@
  * $ zuri myprogram.zu call --verbose
  * $ zuri myprogram.zu call --help
  * ```
- * 
- * If we change the last line of the program to `echo parser.parse()` so that we can see the result 
- * of the parsing, the following CLI call will yield the given result.
- * 
+ *
+ * If we change the last line of the program to `echo
+ * parser.parse()` so that we can see the result of the parsing,
+ * the following CLI call will yield the given result.
+ *
  * ```sh
  * $ zuri myprogram.zu --name "Kirk"
  * {options: {name: Kirk, count: 1}, command: nil, indexes: []}
@@ -71,16 +73,17 @@
  * $ zuri myprogram.zu call -v
  * {options: {verbose: true, count: 1}, command: {name: call, value: nil}, indexes: []}
  * ```
- * 
- * Calling name without an option will yield the following result/error:
- * 
+ *
+ * Calling name without an option will yield the following
+ * result/error:
+ *
  * ```sh
  * $ zuri myprogram.zu --name
  * error: option --name expects a <VALUE>
  * ```
- * 
+ *
  * You may even get help on a command directly like below:
- *  
+ *
  * ```sh
  * $ zuri myprogram.zu --help call
  * Usage: myprogram call [OPTIONS]
@@ -127,8 +130,8 @@ var INT = 1
 var NUMBER = 2
 
 /**
- * value type boolean (accepts `1`/`0`, `true`/`false`, `yes`/`no`,
- * `on`/`off`).
+ * value type boolean (accepts `1`/`0`, `true`/`false`,
+ * `yes`/`no`, `on`/`off`).
  */
 var BOOL = 3
 
@@ -323,14 +326,14 @@ class _Optionable {
   /**
    * Adds an option (flag) to this parser or command.
    *
-   * `opts` keys:
-   * - `short_name` {string}  — single-character alias (`-x`)
-   * - `type`       {int}     — one of the type constants; default `NONE`
-   * - `value`      {any}     — default value when the option is absent
-   * - `choices`    {list|dict} — restrict allowed values
-   * - `required`   {bool}    — error if option is absent
-   * - `metavar`    {string}  — placeholder shown in help (default: type name)
-   * - `deprecated` {bool}    — print a warning when the option is used
+   * `opts` keys: - `short_name` {string} — single-character
+   * alias (`-x`) - `type` {int} — one of the type constants;
+   * default `NONE` - `value` {any} — default value when the
+   * option is absent - `choices` {list|dict} — restrict allowed
+   * values - `required` {bool} — error if option is absent -
+   * `metavar` {string} — placeholder shown in help (default:
+   * type name) - `deprecated` {bool} — print a warning when the
+   * option is used
    *
    * @param string name
    * @param ?string help
@@ -425,12 +428,12 @@ class _Positional < _Optionable {
  *
  * ### Properties you can set after construction
  *
- * - `description` {string} — paragraph shown between USAGE and OPTIONS.
- * - `epilog`      {string} — paragraph shown after all sections.
- * - `allow_abbrev` {bool}  — allow unambiguous long-option prefix matching
- *                            (default `true`, like Python argparse).
- * - `allow_atfile` {bool}  — expand `@filename` tokens by reading arguments
- *                            from that file (default `true`).
+ * - `description` {string} — paragraph shown between USAGE and
+ * OPTIONS. - `epilog` {string} — paragraph shown after all
+ * sections. - `allow_abbrev` {bool} — allow unambiguous
+ * long-option prefix matching (default `true`, like Python
+ * argparse). - `allow_atfile` {bool} — expand `@filename` tokens
+ * by reading arguments from that file (default `true`).
  */
 class Parser < _Optionable {
 
@@ -454,10 +457,10 @@ class Parser < _Optionable {
 
   /**
    * Creates a new parser instance.
-   * 
-   * @param string name         The program name shown in usage lines.
-   * @param ?bool  default_help Show help when invoked with no arguments.
-   *                            Defaults to `true`.
+   *
+   * @param string name The program name shown in usage lines.
+   * @param ?bool default_help Show help when invoked with no
+   *    arguments. Defaults to `true`.
    * @constructor
    */
   @new(name, default_help) {
@@ -482,14 +485,14 @@ class Parser < _Optionable {
   /**
    * Adds an option (flag) to the top-level parser.
    *
-   * `opts` keys can include any of:
-   * - `short_name` {string}  — single-character alias (`-x`)
-   * - `type`       {int}     — one of the type constants; default `NONE`
-   * - `value`      {any}     — default value when the option is absent
-   * - `choices`    {list|dict} — restrict allowed values
-   * - `required`   {bool}    — error if option is absent
-   * - `metavar`    {string}  — placeholder shown in help (default: type name)
-   * - `deprecated` {bool}    — print a warning when the option is used
+   * `opts` keys can include any of: - `short_name` {string} —
+   * single-character alias (`-x`) - `type` {int} — one of the
+   * type constants; default `NONE` - `value` {any} — default
+   * value when the option is absent - `choices` {list|dict} —
+   * restrict allowed values - `required` {bool} — error if
+   * option is absent - `metavar` {string} — placeholder shown in
+   * help (default: type name) - `deprecated` {bool} — print a
+   * warning when the option is used
    *
    * @param string name
    * @param ?string help
@@ -502,12 +505,13 @@ class Parser < _Optionable {
   /**
    * Adds a sub-command.
    *
-   * `opts` keys:
-   * - `type`    {int}      — expected type for the command's value argument
-   * - `action`  {function} — called with `(options [, value])` after parsing
-   * - `choices` {list|dict}— restrict allowed values when `type` is `CHOICE`
+   * `opts` keys: - `type` {int} — expected type for the
+   * command's value argument - `action` {function} — called with
+   * `(options [, value])` after parsing - `choices` {list|dict}—
+   * restrict allowed values when `type` is `CHOICE`
    *
-   * Returns the `_Command` object so you can chain `add_option` calls:
+   * Returns the `_Command` object so you can chain `add_option`
+   * calls:
    *
    * ```zuri
    * parser.add_command('push', 'Push changes').
@@ -545,12 +549,11 @@ class Parser < _Optionable {
   /**
    * Adds a positional (index-based) argument.
    *
-   * `opts` keys:
-   * - `type`     {int}       — coercion type; default `STRING`
-   * - `value`    {any}       — default when argument is absent
-   * - `choices`  {list|dict} — restrict allowed values
-   * - `required` {bool}      — error if argument is absent (default `false`)
-   * - `metavar`  {string}    — display name in help
+   * `opts` keys: - `type` {int} — coercion type; default
+   * `STRING` - `value` {any} — default when argument is absent -
+   * `choices` {list|dict} — restrict allowed values - `required`
+   * {bool} — error if argument is absent (default `false`) -
+   * `metavar` {string} — display name in help
    *
    * @param string name
    * @param ?string help
@@ -575,7 +578,8 @@ class Parser < _Optionable {
   }
 
   /**
-   * Parses the commandline arguments and returns a dictionary of command, options, and indexes
+   * Parses the commandline arguments and returns a dictionary of
+   * command, options, and indexes
    *
    * Result shape:
    * ```

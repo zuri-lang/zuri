@@ -1,16 +1,17 @@
 /**
  * @module reflect
  *
- * Runtime introspection: metadata about a live function, class, or
- * module, and property/method access on an instance or module by
- * name, without needing to already know that name at compile time.
+ * Runtime introspection: metadata about a live function, class,
+ * or module, and property/method access on an instance or module
+ * by name, without needing to already know that name at compile
+ * time.
  *
  * This is deliberately a RUNTIME-only view. It does not know a
- * function/class's declaration line or its doc block; those live in
- * source, not in the running object, and are a `zuri.parse()`/`zuri`
- * AST concern instead (walk the parsed source and read a
- * `Function`/`Class` node's own `line`/`col`, and any `DocBlock` node
- * sitting right before it).
+ * function/class's declaration line or its doc block; those live
+ * in source, not in the running object, and are a
+ * `zuri.parse()`/`zuri` AST concern instead (walk the parsed
+ * source and read a `Function`/`Class` node's own `line`/`col`,
+ * and any `DocBlock` node sitting right before it).
  *
  * ```zuri
  * import zuri
@@ -30,12 +31,12 @@ import _zuri_reflect
 
 /**
  * This value's runtime type tag: `'nil'`, `'bool'`, `'number'`,
- * `'string'`, `'bytes'`, `'bigint'`, `'list'`, `'dict'`, `'function'`,
- * `'class'`, `'instance'`, `'module'`, `'range'`, `'file'`, or a
- * pointer's own registered resource tag (see `pointer_type`). A
- * closure, a native function, and a bound method are all reported as
- * `'function'`, since from Zuri's own point of view they're
- * interchangeably callable.
+ * `'string'`, `'bytes'`, `'bigint'`, `'list'`, `'dict'`,
+ * `'function'`, `'class'`, `'instance'`, `'module'`, `'range'`,
+ * `'file'`, or a pointer's own registered resource tag (see
+ * `pointer_type`). A closure, a native function, and a bound
+ * method are all reported as `'function'`, since from Zuri's own
+ * point of view they're interchangeably callable.
  *
  * @param any value
  * @returns string
@@ -46,10 +47,11 @@ def kind(value) {
 
 /**
  * The registered resource tag a pointer value was allocated with
- * (e.g. a native socket handle's own internal type name), or `nil` if
- * `value` isn't a pointer at all. Pointers wrap an opaque native
- * resource that Zuri code can't otherwise inspect; this names what
- * kind of resource one is without exposing its contents.
+ * (e.g. a native socket handle's own internal type name), or
+ * `nil` if `value` isn't a pointer at all. Pointers wrap an
+ * opaque native resource that Zuri code can't otherwise inspect;
+ * this names what kind of resource one is without exposing its
+ * contents.
  *
  * @param any value
  * @returns ?string
@@ -60,31 +62,33 @@ def pointer_type(value) {
 
 /**
  * Metadata for a function-like value: `{ name, arity, variadic,
- * is_method, owning_class_name, source_path }`. `owning_class_name`
- * is the class it was declared a method of, or `nil` for an ordinary
- * function/closure. `source_path` is `nil` for a native (built-in)
- * function, which has no Zuri source file behind it.
+ * is_method, owning_class_name, source_path }`.
+ * `owning_class_name` is the class it was declared a method of,
+ * or `nil` for an ordinary function/closure. `source_path` is
+ * `nil` for a native (built-in) function, which has no Zuri
+ * source file behind it.
  *
- * @param callable f: A closure, a native function, or a bound method
+ * @param callable f: A closure, a native function, or a bound
+ *    method
  * @returns dict
- * @throws Error if `f` isn't callable as a function (a class, though
- *   itself callable to construct an instance, is a `class_info`
- *   subject instead)
+ * @throws Error if `f` isn't callable as a function (a class,
+ *    though itself callable to construct an instance, is a
+ *    `class_info` subject instead)
  */
 def function_info(f) {
   return _zuri_reflect.function_info(f)
 }
 
 /**
- * Metadata for a class: `{ name, superclass_name, methods, fields,
- * statics }`. `superclass_name` is `nil` for a class with no
- * superclass. `methods` is a dict from method name to that method's
- * own `function_info`-shaped entry, own and inherited pre-merged (an
- * override shadows the inherited entry of the same name, matching how
- * method dispatch itself works). `fields` and `statics` are plain
- * lists of names, ordered by declaration; `fields` includes
- * inherited fields, `statics` is own-only (statics are never
- * inherited in this runtime).
+ * Metadata for a class: `{ name, superclass_name, methods,
+ * fields, statics }`. `superclass_name` is `nil` for a class
+ * with no superclass. `methods` is a dict from method name to
+ * that method's own `function_info`-shaped entry, own and
+ * inherited pre-merged (an override shadows the inherited entry
+ * of the same name, matching how method dispatch itself works).
+ * `fields` and `statics` are plain lists of names, ordered by
+ * declaration; `fields` includes inherited fields, `statics` is
+ * own-only (statics are never inherited in this runtime).
  *
  * @param class c
  * @returns dict
@@ -95,12 +99,12 @@ def class_info(c) {
 }
 
 /**
- * Metadata for a module: `{ name, path, loaded, members }`. `members`
- * is a dict from every top-level name the module declares to that
- * binding's own `kind` (see `kind` above), e.g. `{ add: 'function',
- * VERSION: 'string' }`. Accepts either a raw module value or a
- * promoted `import PATH` binding; both describe the same underlying
- * module.
+ * Metadata for a module: `{ name, path, loaded, members }`.
+ * `members` is a dict from every top-level name the module
+ * declares to that binding's own `kind` (see `kind` above), e.g.
+ * `{ add: 'function', VERSION: 'string' }`. Accepts either a raw
+ * module value or a promoted `import PATH` binding; both
+ * describe the same underlying module.
  *
  * @param module m
  * @returns dict
@@ -111,14 +115,14 @@ def module_info(m) {
 }
 
 /**
- * Dispatches to `function_info`/`class_info`/`module_info` based on
- * `kind(value)`.
+ * Dispatches to `function_info`/`class_info`/`module_info` based
+ * on `kind(value)`.
  *
  * @param any value
  * @returns dict
  * @throws Error if `value` has no reflectable shape (a number, a
- *   list, an instance, ...); reflect describes callables, classes,
- *   and modules only
+ *    list, an instance, ...); reflect describes callables,
+ *    classes, and modules only
  */
 def info(value) {
   return _zuri_reflect.info(value)
@@ -138,12 +142,14 @@ def has_prop(object, name) {
 
 /**
  * The current value of `object`'s (an instance or a module)
- * property/member named `name`, or `nil` if it has none by that name.
+ * property/member named `name`, or `nil` if it has none by that
+ * name.
  *
  * @param instance|module object
  * @param string name
  * @returns any
- * @throws TypeError if `object` is neither an instance nor a module
+ * @throws TypeError if `object` is neither an instance nor a
+ *    module
  */
 def get_prop(object, name) {
   if !is_instance(object) and typeof(object) != 'module' {
@@ -154,14 +160,15 @@ def get_prop(object, name) {
 }
 
 /**
- * Every property/member name `object` (an instance or a module) has,
- * as a list of strings, or an empty list if it has none. Instance
- * fields are ordered by declaration; module members have no such
- * inherent order.
+ * Every property/member name `object` (an instance or a module)
+ * has, as a list of strings, or an empty list if it has none.
+ * Instance fields are ordered by declaration; module members
+ * have no such inherent order.
  *
  * @param instance|module object
  * @returns list[string]
- * @throws TypeError if `object` is neither an instance nor a module
+ * @throws TypeError if `object` is neither an instance nor a
+ *    module
  */
 def get_props(object) {
   if !is_instance(object) and typeof(object) != 'module' {
@@ -174,17 +181,17 @@ def get_props(object) {
 /**
  * Overwrites `object`'s existing property `name` with `value`.
  *
- * @note instances in this runtime have a fixed set of fields, sized
- *   once when their class is declared. Unlike a dict, a property
- *   can never be added to or removed from an instance at runtime.
- *   This only ever updates a field the instance's class already
- *   declares; it can't create a new one.
+ * @note instances in this runtime have a fixed set of fields,
+ *    sized once when their class is declared. Unlike a dict, a
+ *    property can never be added to or removed from an instance
+ *    at runtime. This only ever updates a field the instance's
+ *    class already declares; it can't create a new one.
  *
  * @param instance object
  * @param string name
  * @returns bool: `true` if the property was updated, `false` if
- *   `name` isn't a field `object`'s class declares (nothing is
- *   changed in that case; this never creates a new field)
+ *    `name` isn't a field `object`'s class declares (nothing is
+ *    changed in that case; this never creates a new field)
  * @throws TypeError if `object` isn't an instance
  */
 def set_prop(object, name, value) {
@@ -198,13 +205,13 @@ def set_prop(object, name, value) {
 /**
  * Resets `object`'s existing property `name` back to `nil`.
  *
- * @note as with `set_prop`, this can't remove the field itself, only
- *   clear its value; see `set_prop`'s own note.
+ * @note as with `set_prop`, this can't remove the field itself,
+ *    only clear its value; see `set_prop`'s own note.
  *
  * @param instance object
  * @param string name
- * @returns bool: `true` if the property was reset, `false` if `name`
- *   isn't a field `object`'s class declares
+ * @returns bool: `true` if the property was reset, `false` if
+ *    `name` isn't a field `object`'s class declares
  * @throws TypeError if `object` isn't an instance
  */
 def del_prop(object, name) {
@@ -229,12 +236,13 @@ def has_method(object, name) {
 
 /**
  * Does the class behind `object` implement the decorator named
- * `name`? A decorator is just a method whose own name starts with
- * `@` (`@to_string`, `@new`, `@iter`, ...); `name` here excludes that
- * leading `@`.
+ * `name`? A decorator is just a method whose own name starts
+ * with `@` (`@to_string`, `@new`, `@value`, ...); `name` here
+ * excludes that leading `@`.
  *
  * @param instance|class object
- * @param string name: The decorator's name, without the leading `@`
+ * @param string name: The decorator's name, without the leading
+ *    `@`
  * @returns bool
  */
 def has_decorator(object, name) {
@@ -242,10 +250,10 @@ def has_decorator(object, name) {
 }
 
 /**
- * The raw (unbound) closure for method `name` on the class behind
- * `object`, or `nil` if it declares no such method. Calling the
- * result directly does NOT supply a receiver; see `bind_method` for
- * a version that does.
+ * The raw (unbound) closure for method `name` on the class
+ * behind `object`, or `nil` if it declares no such method.
+ * Calling the result directly does NOT supply a receiver; see
+ * `bind_method` for a version that does.
  *
  * @param instance|class object
  * @param string name
@@ -256,9 +264,9 @@ def get_method(object, name) {
 }
 
 /**
- * Method `name` on `object`'s class, bound to `object` itself as the
- * receiver; the result can be called directly with no receiver
- * argument, unlike `get_method`'s raw closure.
+ * Method `name` on `object`'s class, bound to `object` itself as
+ * the receiver; the result can be called directly with no
+ * receiver argument, unlike `get_method`'s raw closure.
  *
  * @param instance object
  * @param string name
@@ -269,15 +277,16 @@ def bind_method(object, name) {
 }
 
 /**
- * The decorator function named `name` (excluding the leading `@`) on
- * the class behind `object`, bound to `object` as its receiver and
- * ready to call directly.
+ * The decorator function named `name` (excluding the leading
+ * `@`) on the class behind `object`, bound to `object` as its
+ * receiver and ready to call directly.
  *
  * @param instance object
- * @param string name: The decorator's name, without the leading `@`
+ * @param string name: The decorator's name, without the leading
+ *    `@`
  * @returns function
- * @throws NotImplementedError if the class behind `object` implements
- *   no such decorator
+ * @throws NotImplementedError if the class behind `object`
+ *    implements no such decorator
  */
 def get_decorator(object, name) {
   if has_decorator(object, name) {

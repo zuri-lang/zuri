@@ -1,15 +1,17 @@
 /**
  * @module ip
  *
- * This module provides types for parsing, formatting, comparing and
- * classifying IP addresses in both their IPv4 and IPv6 forms.
+ * This module provides types for parsing, formatting, comparing
+ * and classifying IP addresses in both their IPv4 and IPv6
+ * forms.
  *
  * `Ipv4` and `Ipv6` each represent an address of their
- * respective family, while `Ip` is a small wrapper around either one
- * for code that needs to accept and work with both interchangeably.
+ * respective family, while `Ip` is a small wrapper around either
+ * one for code that needs to accept and work with both
+ * interchangeably.
  *
- * The example below parses an address of unknown family and reports a
- * few things about it.
+ * The example below parses an address of unknown family and
+ * reports a few things about it.
  *
  * ```zuri
  * import net
@@ -123,17 +125,18 @@ def _hex_digit(c, original) {
 }
 
 /**
- * An IPv4 address, stored internally as four octets in network (i.e.
- * big-endian, most significant octet first) order.
+ * An IPv4 address, stored internally as four octets in network
+ * (i.e. big-endian, most significant octet first) order.
  *
  * @printable
  */
 class Ipv4 {
 
   /**
-   * Returns a new instance of an {Ipv4} from its four octets, given
-   * in the same left-to-right order they'd be written in dotted-decimal
-   * notation, e.g. `Ipv4(192, 168, 1, 10)` for `192.168.1.10`.
+   * Returns a new instance of an {Ipv4} from its four octets,
+   * given in the same left-to-right order they'd be written in
+   * dotted-decimal notation, e.g. `Ipv4(192, 168, 1, 10)` for
+   * `192.168.1.10`.
    *
    * @param number a: The 1st octet, `0`-`255`
    * @param number b: The 2nd octet, `0`-`255`
@@ -179,20 +182,21 @@ class Ipv4 {
   }
 
   /**
-   * Parses an address given in standard dotted-decimal notation, e.g.
-   * `'192.168.1.10'`.
+   * Parses an address given in standard dotted-decimal notation,
+   * e.g. `'192.168.1.10'`.
    *
-   * @note Each octet must be written without a leading zero (other than
-   *    the literal digit `0` itself) - `'192.168.001.10'` is rejected
-   *    rather than guessed at, since a leading zero is read as an octal
-   *    prefix by some other tools and silently accepting it here could
-   *    make an address mean two different things depending on what
-   *    reads it.
+   * @note Each octet must be written without a leading zero
+   *    (other than the literal digit `0` itself) -
+   *    `'192.168.001.10'` is rejected rather than guessed at,
+   *    since a leading zero is read as an octal prefix by some
+   *    other tools and silently accepting it here could make an
+   *    address mean two different things depending on what reads
+   *    it.
    *
    * @param string address: The address to parse
    * @returns Ipv4
    * @throws Error if `address` is not four dot-separated octets,
-   *   each a decimal number from `0` to `255`
+   *    each a decimal number from `0` to `255`
    */
   static parse(address) {
     if address == nil {
@@ -213,10 +217,10 @@ class Ipv4 {
   }
 
   /**
-   * Returns the four octets making up this address as a list, in the
-   * same left-to-right order they'd be written in dotted-decimal
-   * notation. Each call returns a fresh list, so mutating it does not
-   * affect this instance.
+   * Returns the four octets making up this address as a list, in
+   * the same left-to-right order they'd be written in
+   * dotted-decimal notation. Each call returns a fresh list, so
+   * mutating it does not affect this instance.
    *
    * @returns number[] `[a, b, c, d]`
    */
@@ -242,8 +246,9 @@ class Ipv4 {
   }
 
   /**
-   * Whether this address is in one of the private-use ranges reserved
-   * by RFC 1918: `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`.
+   * Whether this address is in one of the private-use ranges
+   * reserved by RFC 1918: `10.0.0.0/8`, `172.16.0.0/12`, or
+   * `192.168.0.0/16`.
    * @returns bool
    */
   is_private() {
@@ -263,9 +268,9 @@ class Ipv4 {
   }
 
   /**
-   * Whether this address is in the `169.254.0.0/16` link-local range,
-   * used for address autoconfiguration when no other address is
-   * available.
+   * Whether this address is in the `169.254.0.0/16` link-local
+   * range, used for address autoconfiguration when no other
+   * address is available.
    * @returns bool
    */
   is_link_local() {
@@ -273,7 +278,8 @@ class Ipv4 {
   }
 
   /**
-   * Whether this address is in the `224.0.0.0/4` multicast range.
+   * Whether this address is in the `224.0.0.0/4` multicast
+   * range.
    * @returns bool
    */
   is_multicast() {
@@ -281,7 +287,8 @@ class Ipv4 {
   }
 
   /**
-   * Whether this is the `255.255.255.255` limited broadcast address.
+   * Whether this is the `255.255.255.255` limited broadcast
+   * address.
    * @returns bool
    */
   is_broadcast() {
@@ -312,8 +319,8 @@ class Ipv4 {
   }
 
   /**
-   * Returns this address re-expressed as an IPv4-mapped IPv6 address,
-   * e.g. `192.168.1.10` becomes `::ffff:192.168.1.10`.
+   * Returns this address re-expressed as an IPv4-mapped IPv6
+   * address, e.g. `192.168.1.10` becomes `::ffff:192.168.1.10`.
    *
    * @returns Ipv6
    */
@@ -345,7 +352,7 @@ class Ipv4 {
   /**
    * This address in standard dotted-decimal notation, e.g.
    * `'192.168.1.10'`.
-   * 
+   *
    * @returns string
    */
   to_string() {
@@ -354,7 +361,7 @@ class Ipv4 {
 
   /**
    * Returns the octets of the Ipv4 address as a list
-   * 
+   *
    * @returns list
    */
   to_list() {
@@ -368,7 +375,8 @@ class Ipv4 {
 
 /**
  * An IPv6 address, stored internally as eight 16-bit segments in
- * network (i.e. big-endian, most significant segment first) order.
+ * network (i.e. big-endian, most significant segment first)
+ * order.
  *
  * @printable
  */
@@ -377,8 +385,8 @@ class Ipv6 {
   /**
    * Returns a new instance of an {Ipv6} from its eight segments,
    * given in the same left-to-right order they'd be written in
-   * colon-hex notation, e.g. `Ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)`
-   * for `2001:db8::1`.
+   * colon-hex notation, e.g. `Ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0,
+   * 1)` for `2001:db8::1`.
    *
    * @param number a: The 1st segment, `0`-`65535`
    * @param number b: The 2nd segment, `0`-`65535`
@@ -388,7 +396,8 @@ class Ipv6 {
    * @param number f: The 6th segment, `0`-`65535`
    * @param number g: The 7th segment, `0`-`65535`
    * @param number h: The 8th segment, `0`-`65535`
-   * @throws Error if any segment is missing or outside `0`-`65535`
+   * @throws Error if any segment is missing or outside
+   *    `0`-`65535`
    */
   @new(a, b, c, d, e, f, g, h) {
     self._segments = [
@@ -404,8 +413,8 @@ class Ipv6 {
   }
 
   /**
-   * The `::` unspecified address, used to mean "any local address" when
-   * binding a socket.
+   * The `::` unspecified address, used to mean "any local
+   * address" when binding a socket.
    *
    * @returns Ipv6
    */
@@ -423,14 +432,16 @@ class Ipv6 {
   }
 
   /**
-   * Parses an address given in standard colon-hex notation, including
-   * the `::` shorthand for a run of zero segments (at most one `::` is
-   * allowed per address) and the embedded dotted-decimal form used for
-   * IPv4-mapped/-compatible addresses, e.g. `'::ffff:192.168.1.10'`.
+   * Parses an address given in standard colon-hex notation,
+   * including the `::` shorthand for a run of zero segments (at
+   * most one `::` is allowed per address) and the embedded
+   * dotted-decimal form used for IPv4-mapped/-compatible
+   * addresses, e.g. `'::ffff:192.168.1.10'`.
    *
-   * @note Zone identifiers (e.g. the `%eth0` suffix used to disambiguate
-   *    link-local addresses on a particular interface) are not
-   *    supported and will cause parsing to fail.
+   * @note Zone identifiers (e.g. the `%eth0` suffix used to
+   *    disambiguate link-local addresses on a particular
+   *    interface) are not supported and will cause parsing to
+   *    fail.
    *
    * @param string address: The address to parse
    * @returns Ipv6
@@ -528,10 +539,10 @@ class Ipv6 {
   }
 
   /**
-   * Returns the eight segments making up this address as a list, in
-   * the same left-to-right order they'd be written in colon-hex
-   * notation. Each call returns a fresh list, so mutating it does not
-   * affect this instance.
+   * Returns the eight segments making up this address as a list,
+   * in the same left-to-right order they'd be written in
+   * colon-hex notation. Each call returns a fresh list, so
+   * mutating it does not affect this instance.
    *
    * @returns number[] `[a, b, c, d, e, f, g, h]`
    */
@@ -581,8 +592,8 @@ class Ipv6 {
   }
 
   /**
-   * Whether this address is in the `fe80::/10` unicast link-local
-   * range.
+   * Whether this address is in the `fe80::/10` unicast
+   * link-local range.
    * @returns bool
    */
   is_unicast_link_local() {
@@ -591,7 +602,8 @@ class Ipv6 {
 
   /**
    * If this address is an IPv4-mapped address (`::ffff:0:0/96`),
-   * returns the IPv4 address it maps to; otherwise returns `nil`.
+   * returns the IPv4 address it maps to; otherwise returns
+   * `nil`.
    *
    * @returns ?Ipv4
    */
@@ -636,10 +648,10 @@ class Ipv6 {
   }
 
   /**
-   * This address in its canonical, most-compressed colon-hex notation -
-   * the longest run of consecutive zero segments (if any run is at
-   * least two segments long) is collapsed to `::`; if more than one
-   * such run exists, the leftmost is preferred.
+   * This address in its canonical, most-compressed colon-hex
+   * notation - the longest run of consecutive zero segments (if
+   * any run is at least two segments long) is collapsed to `::`;
+   * if more than one such run exists, the leftmost is preferred.
    *
    * @returns string
    */
@@ -707,7 +719,7 @@ class Ipv6 {
 
   /**
    * Returns the segments of the Ipv6 address as a list
-   * 
+   *
    * @returns list
    */
   to_list() {
@@ -721,8 +733,8 @@ class Ipv6 {
 
 /**
  * Either an {Ipv4} or an {Ipv6}, for code that needs to accept
- * and work with addresses of either family without committing to one
- * upfront.
+ * and work with addresses of either family without committing to
+ * one upfront.
  *
  * @printable
  */
@@ -760,13 +772,14 @@ class Ip {
   }
 
   /**
-   * Parses `address` as either an IPv4 or IPv6 address, choosing the
-   * family based on whether `address` contains a `:` character.
+   * Parses `address` as either an IPv4 or IPv6 address, choosing
+   * the family based on whether `address` contains a `:`
+   * character.
    *
    * @param string address: The address to parse
    * @returns Ip
    * @throws Error if `address` is not a well-formed IPv4 or IPv6
-   *   address
+   *    address
    */
   static parse(address) {
     if address == nil {
@@ -820,8 +833,8 @@ class Ip {
   }
 
   /**
-   * Whether this is the unspecified address for its family (`0.0.0.0`
-   * or `::`).
+   * Whether this is the unspecified address for its family
+   * (`0.0.0.0` or `::`).
    * @returns bool
    */
   is_unspecified() {
@@ -829,8 +842,8 @@ class Ip {
   }
 
   /**
-   * Whether this is the loopback address for its family (`127.0.0.0/8`
-   * or `::1`).
+   * Whether this is the loopback address for its family
+   * (`127.0.0.0/8` or `::1`).
    * @returns bool
    */
   is_loopback() {
@@ -847,9 +860,10 @@ class Ip {
 
   /**
    * Whether `other` refers to the same address as this one. Two
-   * addresses of different families are never equal, even if one is
-   * the IPv4-mapped form of the other - compare their canonical forms
-   * explicitly if that's the comparison you want.
+   * addresses of different families are never equal, even if one
+   * is the IPv4-mapped form of the other - compare their
+   * canonical forms explicitly if that's the comparison you
+   * want.
    *
    * @param Ip other: The address to compare against
    * @returns bool
@@ -873,10 +887,10 @@ class Ip {
   }
 
   /**
-   * Returns the address in this IP as a list. If the address is an Ipv4 
-   * address, the list will contain four (4) elements. Otherwise, it will 
-   * contain eight (8) elements.
-   * 
+   * Returns the address in this IP as a list. If the address is
+   * an Ipv4 address, the list will contain four (4) elements.
+   * Otherwise, it will contain eight (8) elements.
+   *
    * @returns list
    */
   to_list() {

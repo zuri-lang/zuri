@@ -1,47 +1,53 @@
 /**
  * @module log
- * 
- * This module implements a simple and flexible event logging system for all 
- * Zuri applications and modules. With support for multiple transport systems
- * as well as custom transports, this module allows easy application logging 
- * and log shipping.
- * 
- * The module selects defaults that is familiar for most end use-cases in order 
- * to allow for a minimal need for configurations so that you can start logging 
- * right out of the box.
- * 
- * Below is a very simple but powerful and complete usage of this module:
- * 
+ *
+ * This module implements a simple and flexible event logging
+ * system for all Zuri applications and modules. With support for
+ * multiple transport systems as well as custom transports, this
+ * module allows easy application logging and log shipping.
+ *
+ * The module selects defaults that is familiar for most end
+ * use-cases in order to allow for a minimal need for
+ * configurations so that you can start logging right out of the
+ * box.
+ *
+ * Below is a very simple but powerful and complete usage of this
+ * module:
+ *
  * ```zuri-repl
  * %> import log
  * %> log.info('Starting my application...')
  * '2025-03-07T08:00:33+01:00 INFO [.]: Starting my application...'
  * ```
- * 
+ *
  * > **IMPORTANT!**
  * >
- * > Did you notice that `[.]`? That's because we are running in a REPL. By default, 
- * > the `log` module provides information regarding the source of the log i.e. the 
- * > application from which the log came from thereby allowing multiple applications 
- * > log into the same transport pool without ambiguity.
+ * > Did you notice that `[.]`? That's because we are running in
+ * > a REPL. By default, the `log` module provides information
+ * > regarding the source of the log i.e. the application from
+ * > which the log came from thereby allowing multiple
+ * > applications log into the same transport pool without
+ * > ambiguity.
  * >
- * > You can customize this name by setting the name on the transport via 
- * > [[log.Transport.set_name]].
- * 
- * This module provides all functionalities at the module level, allowing 
- * configurations to be carried across all files and modules in the lifetime of an 
- * application.
- * 
- * While allowing creation of custom transports for logs, the module provides 
- * transports for logging to the console ([[log.ConsoleTransport]]) and files 
- * ([[log.FileTransport]]) out of the box. This covers the most simple use-cases for most 
- * applications. 
- * 
- * The default transport enabled is the [[log.ConsoleTransport]] known as the 
- * [[log.default_transport()]] and need no extra work to enable unless you have previously 
- * disabled it. The example below shows how to enable the file transport to log to a 
- * file on disk.
- * 
+ * > You can customize this name by setting the name on the
+ * > transport via [[log.Transport.set_name]].
+ *
+ * This module provides all functionalities at the module level,
+ * allowing configurations to be carried across all files and
+ * modules in the lifetime of an application.
+ *
+ * While allowing creation of custom transports for logs, the
+ * module provides transports for logging to the console
+ * ([[log.ConsoleTransport]]) and files ([[log.FileTransport]])
+ * out of the box. This covers the most simple use-cases for most
+ * applications.
+ *
+ * The default transport enabled is the [[log.ConsoleTransport]]
+ * known as the [[log.default_transport()]] and need no extra
+ * work to enable unless you have previously disabled it. The
+ * example below shows how to enable the file transport to log to
+ * a file on disk.
+ *
  * ```zuri
  * import log
  * 
@@ -50,51 +56,57 @@
  * 
  * log.info('Finished setting up file log...')
  * ```
- * 
- * If you check the file `mylog.log` now, you should see something like this:
- * 
+ *
+ * If you check the file `mylog.log` now, you should see
+ * something like this:
+ *
  * ```sh
  * 2025-03-01T12:00:00+01:00 INFO [tmp]: Finished setting up file log...
  * ```
- * 
- * In addition to the log appearing on the console, you can now see the log in a 
- * persistent file. There are many ways to turn off the console output and log to file 
- * alone. 
- * 
+ *
+ * In addition to the log appearing on the console, you can now
+ * see the log in a persistent file. There are many ways to turn
+ * off the console output and log to file alone.
+ *
  * Firstly, you can simple disable the default transport.
- * 
+ *
  * ```zuri
  * log.default_transport().disable()
  * ```
- * 
- * The advantage to this approach is that while it disables the default transport, the 
- * transport is still registered and you can simple enable it at any time during the 
- * lifetime of the application by doing the reverse:
- * 
+ *
+ * The advantage to this approach is that while it disables the
+ * default transport, the transport is still registered and you
+ * can simple enable it at any time during the lifetime of the
+ * application by doing the reverse:
+ *
  * ```zuri
  * log.default_transport().enable()
  * ```
- * 
- * The same strategy applies to all transports as the `enable()` and `disable()` method 
- * will be inherited from the [[log.Transport]] class.
- * 
- * The second approach is to completely remove the transport from the list of registered 
- * transports.
- * 
+ *
+ * The same strategy applies to all transports as the `enable()`
+ * and `disable()` method will be inherited from the
+ * [[log.Transport]] class.
+ *
+ * The second approach is to completely remove the transport from
+ * the list of registered transports.
+ *
  * ```zuri
  * log.remove_transport(log.default_transport())
  * ```
- * 
- * With this second approach, you'll need to register the transport again should you 
- * want to continue logging to the console. The same applies to all transport types.
- * 
- * For more complex uses, the process of creating a custom transport is really simple. 
- * To create a custom transport, you'll need to create a class that inherits from 
- * [[log.Transport]] and implement the `write()` method at a minimum.
- * 
- * The example below shows the creation of a custom transport that outputs structured 
- * JSON data to the console.
- * 
+ *
+ * With this second approach, you'll need to register the
+ * transport again should you want to continue logging to the
+ * console. The same applies to all transport types.
+ *
+ * For more complex uses, the process of creating a custom
+ * transport is really simple. To create a custom transport,
+ * you'll need to create a class that inherits from
+ * [[log.Transport]] and implement the `write()` method at a
+ * minimum.
+ *
+ * The example below shows the creation of a custom transport
+ * that outputs structured JSON data to the console.
+ *
  * ```zuri
  * # my_custom_transport.zu
  * 
@@ -120,7 +132,7 @@
  *   }
  * }
  * ```
- * 
+ *
  * ```zuri
  * import log
  * import .my_custom_transport { JsonConsoleTransport }
@@ -129,20 +141,23 @@
  * 
  * log.info('Finished setting up json console log transport...')
  * ```
- * 
- * You should be seeing something similar to the below if you run the code:
- * 
+ *
+ * You should be seeing something similar to the below if you run
+ * the code:
+ *
  * ```sh
  * {"logtime":1741376459,"records":["Finished setting up json console log transport..."],"name":"tmp","level":"Info"}
  * ```
- * 
- * You can set multiple transports at the same time as well as set them to only work at 
- * different log levels. Every transport inherits the method [[log.Transport.set_level]] 
- * which allows us set the minimum level at which a transport is available.
- * 
- * There is also a global [[log.set_level]] function that allows us to set the
- * minimum log level at which all transports can start logging.
- * 
+ *
+ * You can set multiple transports at the same time as well as
+ * set them to only work at different log levels. Every transport
+ * inherits the method [[log.Transport.set_level]] which allows
+ * us set the minimum level at which a transport is available.
+ *
+ * There is also a global [[log.set_level]] function that allows
+ * us to set the minimum log level at which all transports can
+ * start logging.
+ *
  * ```zuri
  * import log
  * 
@@ -150,19 +165,23 @@
  * 
  * log.info('Finished setting up json console log transport...')
  * ```
- * 
- * If you try the above code, you won't be seeing anything in the console. This is 
- * because level [[log.Info]] is lower than the minium required [[log.Warning]].
- * 
- * While every `Transport` implements the `format()` method, users can override the 
- * format method by providing a format function via the [[log.Transport.set_formatter]] 
- * method. This allows using the same formatter across different transports. 
- * 
- * For example, in the previous example, if we had wanted to serialize all logging 
- * irrespective of the transport into the JSON format, a more appropriate solution would 
- * have been to create a log format function and reuse it in all transports instead of
- * implementing a `JsonConsoleTransport`. The next example shows one such implementation.
- * 
+ *
+ * If you try the above code, you won't be seeing anything in the
+ * console. This is because level [[log.Info]] is lower than the
+ * minium required [[log.Warning]].
+ *
+ * While every `Transport` implements the `format()` method,
+ * users can override the format method by providing a format
+ * function via the [[log.Transport.set_formatter]] method. This
+ * allows using the same formatter across different transports.
+ *
+ * For example, in the previous example, if we had wanted to
+ * serialize all logging irrespective of the transport into the
+ * JSON format, a more appropriate solution would have been to
+ * create a log format function and reuse it in all transports
+ * instead of implementing a `JsonConsoleTransport`. The next
+ * example shows one such implementation.
+ *
  * ```zuri
  * import log
  * import json
@@ -185,22 +204,24 @@
  * 
  * log.debug('This is a debug information')
  * ```
- * 
- * Transport implementations should take note of this critical information.
- * 
+ *
+ * Transport implementations should take note of this critical
+ * information.
+ *
  * > **IMPORTANT!**
- * > 
- * > Because the `log` module exports the a function, if you are not interested in all 
- * > the shenanigans of logging level and simply want to do some quick logging, you can
- * > ignore the whole logging levels altogether and log at level [[log.None]] by simply 
- * > calling the log module itself.
- * > 
+ * >
+ * > Because the `log` module exports the a function, if you are
+ * > not interested in all the shenanigans of logging level and
+ * > simply want to do some quick logging, you can ignore the
+ * > whole logging levels altogether and log at level
+ * > [[log.None]] by simply calling the log module itself.
+ * >
  * > ```zuri
  * > import log
  * > 
  * > log('An anonymous log!')
  * > ```
- * 
+ *
  * @copyright 2025, Richard Ore and The Zuri Contributors
  */
 import enum
@@ -212,14 +233,9 @@ import json as js
 
 /**
  * The Log levels in order
- * 
- * - None
- * - Debug
- * - Info
- * - Warning
- * - Error
- * - Critical
- * 
+ *
+ * - None - Debug - Info - Warning - Error - Critical
+ *
  * @type enum
  */
 var LogLevel = enum([
@@ -269,7 +285,7 @@ var Critical = LogLevel.Critical
 
 /**
  * Returns the name of a log level as a string.
- * 
+ *
  * @param {log.LogLevel} level
  * @returns string
  */
@@ -284,8 +300,8 @@ def get_level_name(level) {
 
 
 /**
- * The Transport class acts as the base class for log transports and handle the actual 
- * logging of the specified log records.
+ * The Transport class acts as the base class for log transports
+ * and handle the actual logging of the specified log records.
  */
 class Transport {
   var _level = LogLevel.None
@@ -304,11 +320,12 @@ class Transport {
   var _show_level = true
 
   /**
-   * Sets the threshold level for this transport to handle. Logging messages which are 
-   * less severe than level will be ignored. Unless overridden by the transport
-   * implementation, when a handler is created, the level is set to [[log.None]] (which 
-   * causes all messages to be processed).
-   * 
+   * Sets the threshold level for this transport to handle.
+   * Logging messages which are less severe than level will be
+   * ignored. Unless overridden by the transport implementation,
+   * when a handler is created, the level is set to [[log.None]]
+   * (which causes all messages to be processed).
+   *
    * @param {log.LogLevel} level
    * @returns self
    */
@@ -322,8 +339,9 @@ class Transport {
   }
 
   /**
-   * The threshold level of this transport. The default level is [[log.LogLevel.None]].
-   * 
+   * The threshold level of this transport. The default level is
+   * [[log.LogLevel.None]].
+   *
    * @returns [[log.LogLevel]]
    */
   get_level() {
@@ -331,12 +349,13 @@ class Transport {
   }
 
   /**
-   * Sets the maximum threshold level for this transport to handle. Logging 
-   * messages which are more severe than level will be ignored. Unless 
-   * overridden by the transport implementation, when a handler is created, the
-   * maximum level is set to [[log.Critical]] (which causes all messages to be 
+   * Sets the maximum threshold level for this transport to
+   * handle. Logging messages which are more severe than level
+   * will be ignored. Unless overridden by the transport
+   * implementation, when a handler is created, the maximum level
+   * is set to [[log.Critical]] (which causes all messages to be
    * processed).
-   * 
+   *
    * @param {log.LogLevel} level
    * @returns self
    */
@@ -350,9 +369,9 @@ class Transport {
   }
 
   /**
-   * The maximum threshold level of this transport. The default maximum level is 
-   * [[log.Critical]].
-   * 
+   * The maximum threshold level of this transport. The default
+   * maximum level is [[log.Critical]].
+   *
    * @returns [[log.LogLevel]]
    */
   get_max_level() {
@@ -361,7 +380,7 @@ class Transport {
 
   /**
    * Sets the name of the current transport.
-   * 
+   *
    * @param string name
    * @returns self
    */
@@ -375,9 +394,10 @@ class Transport {
   }
 
   /**
-   * Returns the name of the current transport. By default, name will be equal to the
-   * name of the directory containing the root file.
-   * 
+   * Returns the name of the current transport. By default, name
+   * will be equal to the name of the directory containing the
+   * root file.
+   *
    * @returns string
    */
   get_name() {
@@ -385,9 +405,9 @@ class Transport {
   }
 
   /**
-   * Sets the time formatting string used by the transport when 
+   * Sets the time formatting string used by the transport when
    * [[log.Transport.show_time]] is set to true.
-   * 
+   *
    * @param string format
    * @returns self
    */
@@ -401,9 +421,9 @@ class Transport {
   }
 
   /**
-   * Returns the time formatting string used by the current transport. The default 
-   * value is `c`.
-   * 
+   * Returns the time formatting string used by the current
+   * transport. The default value is `c`.
+   *
    * @returns string
    */
   get_time_format() {
@@ -411,9 +431,9 @@ class Transport {
   }
 
   /**
-   * Enable or disable showing transport names in the logs based on the passed 
-   * boolean value.
-   * 
+   * Enable or disable showing transport names in the logs based
+   * on the passed boolean value.
+   *
    * @param bool show
    * @returns self
    */
@@ -429,9 +449,9 @@ class Transport {
   }
 
   /**
-   * Enables or disables showing logging time in the logs based on the passed boolean 
-   * value.
-   * 
+   * Enables or disables showing logging time in the logs based
+   * on the passed boolean value.
+   *
    * @param bool show
    * @returns self
    */
@@ -447,9 +467,9 @@ class Transport {
   }
 
   /**
-   * Enable or disable showing transport log level in the logs based on the passed 
-   * boolean value.
-   * 
+   * Enable or disable showing transport log level in the logs
+   * based on the passed boolean value.
+   *
    * @param bool show
    * @returns self
    */
@@ -465,14 +485,16 @@ class Transport {
   }
 
   /**
-   * Sets a formatter function that overrides a transports `format()` function. 
-   * 
-   * The formatter function is a function that when it is set overrides the transports 
-   * default format method and must MUST have the contract 
-   * `def my_function(records, level, transport)`. The `transport` parameter here is 
-   * the instance of the current transport. See [[log.Transport.format]] for what 
-   * `records`, and `level` means.
-   * 
+   * Sets a formatter function that overrides a transports
+   * `format()` function.
+   *
+   * The formatter function is a function that when it is set
+   * overrides the transports default format method and must MUST
+   * have the contract `def my_function(records, level,
+   * transport)`. The `transport` parameter here is the instance
+   * of the current transport. See [[log.Transport.format]] for
+   * what `records`, and `level` means.
+   *
    * @param function formatter
    * @returns self
    */
@@ -486,9 +508,9 @@ class Transport {
   }
 
   /**
-   * Returns the format method override that has been set for the current transport or 
-   * `nil` if none has been set.
-   * 
+   * Returns the format method override that has been set for the
+   * current transport or `nil` if none has been set.
+   *
    * @returns ?function
    */
   get_formatter() {
@@ -496,9 +518,9 @@ class Transport {
   }
 
   /**
-   * Returns a boolean value which indicates if a message of severity *level* can be 
-   * processed by this transport.
-   * 
+   * Returns a boolean value which indicates if a message of
+   * severity *level* can be processed by this transport.
+   *
    * @param {log.LogLeven} level
    * @returns bool
    */
@@ -513,8 +535,9 @@ class Transport {
   }
 
   /**
-   * Enables and starts processing of logs by the current transport.
-   * 
+   * Enables and starts processing of logs by the current
+   * transport.
+   *
    * @returns self
    */
   enable() {
@@ -523,8 +546,9 @@ class Transport {
   }
 
   /**
-   * Disables and stops the current transport from processing further logs.
-   * 
+   * Disables and stops the current transport from processing
+   * further logs.
+   *
    * @returns self
    */
   disable() {
@@ -533,27 +557,28 @@ class Transport {
   }
 
   /**
-   * Formats the log records for the current level for writing to the transport's 
-   * stream. The default implementation of this method is exactly as seen when using 
-   * the [[log.default_transport]] which logs to the console. The method 
-   * should be overridden by subclasses to get a custom formatting.
-   * 
+   * Formats the log records for the current level for writing to
+   * the transport's stream. The default implementation of this
+   * method is exactly as seen when using the
+   * [[log.default_transport]] which logs to the console. The
+   * method should be overridden by subclasses to get a custom
+   * formatting.
+   *
    * > __IMPORTANT!__
    * >
-   * > The result of this function will be passed into the [[log.Transport.write()]] 
-   * > function so transport implementations *MUST* ensure to expect the same type as 
-   * > is returned from this function in the [[log.Transport.write()]] function message 
-   * > parameter.
-   * 
-   * Transport implementations should be aware of the following available private 
-   * fields in the transport class:
-   * 
-   * - _[[log.LogLevel]]_ `self._level`
-   * - _string_ `self._log_name`
-   * - _bool_ `self._show_name`
-   * - _bool_ `self._show_time`
-   * - _bool_ `self._show_level`
-   * 
+   * > The result of this function will be passed into the
+   * > [[log.Transport.write()]] function so transport
+   * > implementations *MUST* ensure to expect the same type as
+   * > is returned from this function in the
+   * > [[log.Transport.write()]] function message parameter.
+   *
+   * Transport implementations should be aware of the following
+   * available private fields in the transport class:
+   *
+   * - _[[log.LogLevel]]_ `self._level` - _string_
+   * `self._log_name` - _bool_ `self._show_name` - _bool_
+   * `self._show_time` - _bool_ `self._show_level`
+   *
    * @params {list[any]} records
    * @param {log.LogLevel} level
    * @returns any
@@ -583,10 +608,11 @@ class Transport {
   }
 
   /**
-   * Do whatever it takes to actually log the specified logging record. This method is 
-   * intended to be implemented by subclasses and so raises an *Error* if called 
-   * directly from `Transport`.
-   * 
+   * Do whatever it takes to actually log the specified logging
+   * record. This method is intended to be implemented by
+   * subclasses and so raises an *Error* if called directly from
+   * `Transport`.
+   *
    * @param any message
    * @param {log.LogLevel} level
    * @raises Error
@@ -596,14 +622,16 @@ class Transport {
   }
 
   /**
-   * Ensure all logging output has been flushed to the target stream. This default version 
-   * does nothing and is intended to be implemented by subclasses.
+   * Ensure all logging output has been flushed to the target
+   * stream. This default version does nothing and is intended to
+   * be implemented by subclasses.
    */
   flush() {}
 
   /**
-   * Tidy up any resources used by the transport. This default version does no output but 
-   * removes the handler from an internal list of handlers. Subclasses should ensure that 
+   * Tidy up any resources used by the transport. This default
+   * version does no output but removes the handler from an
+   * internal list of handlers. Subclasses should ensure that
    * this gets called from overridden close() methods.
    */
   close() {
@@ -624,7 +652,8 @@ def _assert_transport(obj) {
 
 
 /**
- * ConsoleTransport is a log transport that facilitates sending log streams to the console.
+ * ConsoleTransport is a log transport that facilitates sending
+ * log streams to the console.
  */
 class ConsoleTransport < Transport {
   write(message, level) {
@@ -642,14 +671,15 @@ class ConsoleTransport < Transport {
 
 
 /**
- * FileTransport is a log transport that facilitates sending log streams to an on-disk file.
+ * FileTransport is a log transport that facilitates sending log
+ * streams to an on-disk file.
  */
 class FileTransport < Transport {
   
   /**
-   * Returns a new instance of FileTransport and opens a file handle to the the file 
-   * specified in the path.
-   * 
+   * Returns a new instance of FileTransport and opens a file
+   * handle to the the file specified in the path.
+   *
    * @param string path
    * @constructor
    */
@@ -704,7 +734,7 @@ var _default_transport = ConsoleTransport()
 
 /**
  * Sets the threshold level for the default transport to handle.
- * 
+ *
  * @param {log.LogLevel} level
  * @returns default_transport
  */
@@ -722,7 +752,7 @@ def set_level(level) {
 
 /**
  * Sets the name of the default transport.
- * 
+ *
  * @param string name
  * @returns default_transport
  */
@@ -740,9 +770,10 @@ def set_name(name) {
 var _transports = [ _default_transport ]
 
 /**
- * Adds a new transport service to the list of registered transports. If the transport 
- * has been previously added, this function will do nothing.
- * 
+ * Adds a new transport service to the list of registered
+ * transports. If the transport has been previously added, this
+ * function will do nothing.
+ *
  * @param {log.Transport} transport
  */
 def add_transport(transport) {
@@ -755,8 +786,9 @@ def add_transport(transport) {
 }
 
 /**
- * Removes the given transport service from the list of registered transports.
- * 
+ * Removes the given transport service from the list of
+ * registered transports.
+ *
  * @param {log.Transport} transport
  */
 def remove_transport(transport) {
@@ -764,9 +796,9 @@ def remove_transport(transport) {
 }
 
 /**
- * Returns the instance [[log.ConsoleTransport]] which is used as the default transport 
- * by the module.
- * 
+ * Returns the instance [[log.ConsoleTransport]] which is used as
+ * the default transport by the module.
+ *
  * @returns [[log.ConsoleTransport]]
  */
 def default_transport() {
@@ -790,11 +822,13 @@ def _write(level, args) {
 
 
 /**
- * Logs a message with level [[log.None]] on all registered transports.
- * 
- * The format of the output log is dependent on the specific transport service as well 
- * as limitations on the nature and type of arguments that is passed to the function.
- * 
+ * Logs a message with level [[log.None]] on all registered
+ * transports.
+ *
+ * The format of the output log is dependent on the specific
+ * transport service as well as limitations on the nature and
+ * type of arguments that is passed to the function.
+ *
  * @params any...
  * @default
  */
@@ -803,9 +837,10 @@ def log(...args) {
 }
 
 /**
- * Logs a message with level [[log.Info]] on all registered transports. The arguments and 
- * limitations as same as in [[log.log()]].
- * 
+ * Logs a message with level [[log.Info]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
  * @params any...
  */
 def info(...args) {
@@ -813,9 +848,10 @@ def info(...args) {
 }
 
 /**
- * Logs a message with level [[log.Debug]] on all registered transports. The arguments and 
- * limitations as same as in [[log.log()]].
- * 
+ * Logs a message with level [[log.Debug]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
  * @params any...
  */
 def debug(...args) {
@@ -823,9 +859,10 @@ def debug(...args) {
 }
 
 /**
- * Logs a message with level [[log.Warning]] on all registered transports. The arguments and 
- * limitations as same as in [[log.log()]].
- * 
+ * Logs a message with level [[log.Warning]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
  * @params any...
  */
 def warn(...args) {
@@ -833,9 +870,10 @@ def warn(...args) {
 }
 
 /**
- * Logs a message with level [[log.Error]] on all registered transports. The arguments and 
- * limitations as same as in [[log.log()]].
- * 
+ * Logs a message with level [[log.Error]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
  * @params any...
  */
 def error(...args) {
@@ -843,9 +881,10 @@ def error(...args) {
 }
 
 /**
- * Logs a message with level [[log.Critical]] on all registered transports. The arguments and 
- * limitations as same as in [[log.log()]].
- * 
+ * Logs a message with level [[log.Critical]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
  * @params any...
  */
 def critical(...args) {
@@ -853,9 +892,10 @@ def critical(...args) {
 }
 
 /**
- * Logs a message with level [[log.Error]] on all registered transports along with an error 
- * message and stacktrace. The arguments and limitations as same as in [[log.log()]].
- * 
+ * Logs a message with level [[log.Error]] on all registered
+ * transports along with an error message and stacktrace. The
+ * arguments and limitations as same as in [[log.log()]].
+ *
  * @param Error ex
  * @param ?any message
  */

@@ -1,0 +1,37 @@
+var nums = [1, 2, 3, 4, 5, 6]
+
+echo 'find:'
+echo nums.find(@(x) { return x % 2 == 0 })
+echo nums.find(@(x) { return x > 100 })
+
+echo 'find_index:'
+echo nums.find_index(@(x) { return x % 2 == 0 })
+echo nums.find_index(@(x) { return x > 100 })
+
+echo 'find_last:'
+echo nums.find_last(@(x) { return x % 2 == 0 })
+echo nums.find_last(@(x) { return x > 100 })
+
+echo 'find_last_index:'
+echo nums.find_last_index(@(x) { return x % 2 == 0 })
+echo nums.find_last_index(@(x) { return x > 100 })
+
+echo 'find_all:'
+echo nums.find_all(@(x) { return x % 2 == 0 })
+echo nums.find_all(@(x) { return x > 100 })
+
+echo 'partition:'
+echo nums.partition(@(x) { return x % 2 == 0 })
+
+echo 'callbacks receive index:'
+echo nums.find(@(x, i) { return i == 3 })
+echo nums.find_last(@(x, i) { return i == 3 })
+
+echo 'empty list:'
+var empty = []
+echo empty.find(@(x) { return true })
+echo empty.find_index(@(x) { return true })
+echo empty.find_last(@(x) { return true })
+echo empty.find_last_index(@(x) { return true })
+echo empty.find_all(@(x) { return true })
+echo empty.partition(@(x) { return true })

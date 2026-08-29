@@ -1,0 +1,29 @@
+case_fold:
+hello world
+strasse
+strasse
+ascii byte view:
+HELLO
+5
+4
+5
+compare:
+-1
+1
+0
+capitalize:
+Hello
+World
+
+title:
+The Quick Brown Fox
+It'S A Mad, Mad-World
+
+lines:
+[one, two, three]
+[single line]
+[trailing newline]
+each_line:
+0: first
+1: second
+2: third

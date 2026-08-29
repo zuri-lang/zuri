@@ -1,18 +1,19 @@
 /** 
  * @module math
  *
- * This module contains functions and constants to make trigonometric and 
- * non-trigonometric mathematics a breeze. The module also defines a couple
- * of commonly used scientific and mathematical constants such as `PI`.
- * 
+ * This module contains functions and constants to make
+ * trigonometric and non-trigonometric mathematics a breeze. The
+ * module also defines a couple of commonly used scientific and
+ * mathematical constants such as `PI`.
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
 import _math
 
 /**
- * represents the ratio of the circumference of a circle 
- * to its diameter
+ * represents the ratio of the circumference of a circle to its
+ * diameter
  */
 var PI = 3.141592653589793
 

@@ -1,31 +1,33 @@
 /**
  * @module url
- *  
- * This module provides classes and functions for parsing and processing URLs.
- * This module supports username and passwords in URLs in order to support an 
- * arbitrary number of RFC combinations but this does not strictly conform to 
- * RFC1738.
- * 
- * The scope of URL in this module have not been limited to HTTP or any protocol 
- * for that matter. However, where deductible, the module tries to conform to the
- * most appropriate URL for the specified scheme.
- * 
+ *
+ * This module provides classes and functions for parsing and
+ * processing URLs. This module supports username and passwords
+ * in URLs in order to support an arbitrary number of RFC
+ * combinations but this does not strictly conform to RFC1738.
+ *
+ * The scope of URL in this module have not been limited to HTTP
+ * or any protocol for that matter. However, where deductible,
+ * the module tries to conform to the most appropriate URL for
+ * the specified scheme.
+ *
  * Constructing a URL is vey simple. Here is an example.
- * 
+ *
  * ### Example
- * 
+ *
  * ```zuri-repl
  * %> import url
  * %> var link = url.Url('https', 'example.com', 9000)
  * %> link.absolute_url()
  * 'https://example.com:9000'
  * ```
- * 
- * What each function and class method does are easy to deduce from their names.
- * 
- * For example, we can use the `parse()` function to convert a URL string into a URL 
- * instance like below.
- * 
+ *
+ * What each function and class method does are easy to deduce
+ * from their names.
+ *
+ * For example, we can use the `parse()` function to convert a
+ * URL string into a URL instance like below.
+ *
  * ```zuri-repl
  * %> link = url.parse('https://example.com:9000')
  * %> link.scheme
@@ -33,7 +35,7 @@
  * %> link.port
  * '9000'
  * ```
- * 
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
@@ -76,7 +78,8 @@ var _url_punctuations_re = '/^[\-._~:\/?#\[\]@!$&\'()*+,;%=]/'
 
 
 /**
- * The Url class provides functionalities for parsing and processing URLs.
+ * The Url class provides functionalities for parsing and
+ * processing URLs.
  *
  * @serializable
  * @printable
@@ -94,8 +97,9 @@ class Url {
   var host
 
   /**
-   * The port information contained in the url whenever the url doesn't 
-   * indicate, we try to make a best guess based on the scheme.
+   * The port information contained in the url whenever the url
+   * doesn't indicate, we try to make a best guess based on the
+   * scheme.
    */
   var port
 
@@ -106,40 +110,46 @@ class Url {
   var path = '/'
 
   /**
-   * Hash information contained in the url and it's beginning is indicated by the 
-   * hash (#) sign. This value is especially relevant to some http/https urls 
-   * and are usually references to the content of the document 
-   * at the given url
+   * Hash information contained in the url and it's beginning is
+   * indicated by the hash (#) sign. This value is especially
+   * relevant to some http/https urls and are usually references
+   * to the content of the document at the given url
    */
   var hash
 
   /**
-   * Query/Search information contained in the url and it's beginning is indicated by the 
-   * question (?) sign. This value is especially relevant to some http/https urls and are 
-   * usually used to convey data to endpoint based on the GET method.
+   * Query/Search information contained in the url and it's
+   * beginning is indicated by the question (?) sign. This value
+   * is especially relevant to some http/https urls and are
+   * usually used to convey data to endpoint based on the GET
+   * method.
    */
   var query
 
   /**
-   * Username information for authentication are sometimes embedded in urls. When such information
-   * exist, this property holds the information
+   * Username information for authentication are sometimes
+   * embedded in urls. When such information exist, this property
+   * holds the information
    */
   var username
 
   /**
-   * Password information for authentication are sometimes embedded in urls. When such information
-   * exist, this property holds the information
+   * Password information for authentication are sometimes
+   * embedded in urls. When such information exist, this property
+   * holds the information
    */
   var password
 
   /**
-   * `true` if the url contains the :// section. `false` otherwise.
+   * `true` if the url contains the :// section. `false`
+   * otherwise.
    */
   var has_slash = false
 
   /**
-   * `true` if the original url contains a path segment even if its just an `/` and false if the
-   * path value of `/` was implied.
+   * `true` if the original url contains a path segment even if
+   * its just an `/` and false if the path value of `/` was
+   * implied.
    * @type bool
    */
   var empty_path = false
@@ -155,7 +165,7 @@ class Url {
    * @param ?string password
    * @param ?bool has_slash
    * @param ?bool empty_path
-   * @constructor 
+   * @constructor
    */
   @new(
     scheme: ?string, host: ?string, port: ?string, path: ?int|string, query: ?string,
@@ -189,12 +199,15 @@ class Url {
 
   /**
    * Returns the url authority.
-   * 
-   * The authority component is preceded by a double slash ("//") and is
-   * terminated by the next slash ("/"), question mark ("?"), or number
-   * sign ("#") character, or by the end of the URI.
    *
-   * @note mailto scheme does not have an authority. For this reason, mailto schemes return an empty string as authority.
+   * The authority component is preceded by a double slash ("//")
+   * and is terminated by the next slash ("/"), question mark
+   * ("?"), or number sign ("#") character, or by the end of the
+   * URI.
+   *
+   * @note mailto scheme does not have an authority. For this
+   *    reason, mailto schemes return an empty string as
+   *    authority.
    * @returns string
    */
   authority() {
@@ -291,10 +304,10 @@ class Url {
   }
 
   /**
-   * Returns a string representation of the url object. This will 
-   * only be the same as the absolute url if the original string is 
-   * an absolute url.
-   * 
+   * Returns a string representation of the url object. This will
+   * only be the same as the absolute url if the original string
+   * is an absolute url.
+   *
    * @returns string
    */
   to_string() {
@@ -355,12 +368,12 @@ class Url {
 
 /**
  * URL-encodes a string
- * 
- * This function is convenient when encoding a string to be used in 
- * a query part of a URL, as a convenient way to pass variables to 
- * the next page.
  *
- * If strict mode is enabled, space character is encoded with the 
+ * This function is convenient when encoding a string to be used
+ * in a query part of a URL, as a convenient way to pass
+ * variables to the next page.
+ *
+ * If strict mode is enabled, space character is encoded with the
  * percent (%) sign in order to conform with RFC 3986. Otherwise,
  * is is encoded with the plus (+) sign in order to align with
  * the default encoding used by modern browsers.
@@ -392,9 +405,10 @@ def encode(url: string, strict: ?bool) {
 }
 
 /**
- * Decodes URL-encoded string. This function decodes any %## encoding in the given
- * string and plus symbols ('+') to a space character.
- * 
+ * Decodes URL-encoded string. This function decodes any %##
+ * encoding in the given string and plus symbols ('+') to a space
+ * character.
+ *
  * @param string url
  * @returns string
  */
@@ -429,10 +443,10 @@ def decode(url: string) {
 }
 
 /**
- * Parses given url string into a Url object. If the strict argument is 
- * set to `true`, the parser will raise an Error when it encounters 
- * a malformed url.
- * 
+ * Parses given url string into a Url object. If the strict
+ * argument is set to `true`, the parser will raise an Error when
+ * it encounters a malformed url.
+ *
  * @param string url
  * @param ?bool strict: Default value is `false`
  * @returns Url

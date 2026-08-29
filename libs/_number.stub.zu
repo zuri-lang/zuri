@@ -1,0 +1,579 @@
+/**
+ * # Numbers
+ *
+ * Every number in Zuri, whole or fractional, is a single
+ * `number` type backed by an IEEE-754 double precision float.
+ * There is no separate `int` or `float` type to keep track of:
+ * `5` and `5.0` are the exact same value.
+ *
+ * Like every other value in Zuri, numbers are objects with their
+ * own methods. This is what lets you write `n.abs()` or
+ * `(2).factorial()` directly instead of reaching for a free
+ * `abs(n)` function.
+ *
+ * For example:
+ *
+ * ```zuri-repl
+ * %> (-5).abs()
+ * 5
+ * %> 16.sqrt()
+ * 4
+ * %> 5.factorial()
+ * 120
+ * ```
+ *
+ * > A literal number followed directly by `.` reads as a decimal
+ * > point, not a method call, so a negative or plain integer
+ * > literal needs parentheses before calling a method on it
+ * > directly, e.g. `(-5).abs()` rather than `-5.abs()`, and
+ * > `(5).abs()` rather than `5.abs()` when `5` isn't already
+ * > preceded by other syntax. `5.5.round()` works as written
+ * > since `5.5` is unambiguous.
+ *
+ * ## Precision
+ *
+ * Because every number is an IEEE-754 double, Zuri numbers can
+ * represent integers exactly only up to 2^53. Arithmetic that
+ * would overflow that range (very large integer literals, or an
+ * operation whose result exceeds it) automatically promotes to
+ * an arbitrary-precision `bigint` instead of silently losing
+ * precision.
+ */
+
+
+class number {
+
+  /**
+   * Returns the string representation of the number.
+   *
+   * ```zuri-repl
+   * %> 5.to_string()
+   * '5'
+   * ```
+   *
+   * @returns {string}
+   */
+  to_string() {}
+
+
+  /**
+   * Converts the number to a boolean. A number is considered
+   * truthy (`true`) when it is greater than or equal to zero,
+   * and falsy (`false`) when it is negative.
+   *
+   * ```zuri-repl
+   * %> 5.to_bool()
+   * true
+   * %> 0.to_bool()
+   * true
+   * %> (-5).to_bool()
+   * false
+   * ```
+   *
+   * @returns {boolean}
+   */
+  to_bool() {}
+
+
+  /**
+   * Returns the absolute value of the number.
+   *
+   * ```zuri-repl
+   * %> (-5).abs()
+   * 5
+   * %> 5.abs()
+   * 5
+   * ```
+   *
+   * @returns {number}
+   */
+  abs() {}
+
+
+  /**
+   * Returns the Unicode character whose code point is equal to
+   * the number.
+   *
+   * ```zuri-repl
+   * %> 65.chr()
+   * 'A'
+   * ```
+   *
+   * @returns {string}
+   */
+  chr() {}
+
+
+  /**
+   * Converts the number to its binary string representation. The
+   * number is truncated to an integer first.
+   *
+   * ```zuri-repl
+   * %> 10.bin()
+   * '1010'
+   * ```
+   *
+   * @note A negative number always returns `'0'`; there is no
+   *    signed or two's-complement form.
+   * @returns {string}
+   */
+  bin() {}
+
+
+  /**
+   * Converts the number to its hexadecimal string
+   * representation. The number is truncated to an integer first.
+   *
+   * ```zuri-repl
+   * %> 255.hex()
+   * 'ff'
+   * ```
+   *
+   * @note A negative number always returns `'0'`; there is no
+   *    signed or two's-complement form.
+   * @returns {string}
+   */
+  hex() {}
+
+
+  /**
+   * Converts the number to its octal string representation. The
+   * number is truncated to an integer first.
+   *
+   * ```zuri-repl
+   * %> 8.oct()
+   * '10'
+   * ```
+   *
+   * @note A negative number always returns `'0'`; there is no
+   *    signed or two's-complement form.
+   * @returns {string}
+   */
+  oct() {}
+
+
+  /**
+   * Truncates the number down to its integer part, discarding
+   * anything after the decimal point. Unlike `floor()`, this
+   * rounds towards zero rather than towards negative infinity,
+   * so the result for a negative number differs from `floor()`.
+   *
+   * ```zuri-repl
+   * %> 3.9.int()
+   * 3
+   * %> (-3.9).int()
+   * -3
+   * ```
+   *
+   * @returns {number}
+   */
+  int() {}
+
+
+  /**
+   * Returns the larger of the number and _other_.
+   *
+   * ```zuri-repl
+   * %> 5.max(9)
+   * 9
+   * %> 9.max(5)
+   * 9
+   * ```
+   *
+   * @param {number} other The number to compare against.
+   * @returns {number}
+   */
+  max(other: number) {}
+
+
+  /**
+   * Returns the smaller of the number and _other_.
+   *
+   * ```zuri-repl
+   * %> 5.min(9)
+   * 5
+   * %> 9.min(5)
+   * 5
+   * ```
+   *
+   * @param {number} other The number to compare against.
+   * @returns {number}
+   */
+  min(other: number) {}
+
+
+  /**
+   * Returns the factorial of the number, i.e. the product of
+   * every positive integer less than or equal to it.
+   * `0.factorial()` is `1`, matching the standard mathematical
+   * definition.
+   *
+   * ```zuri-repl
+   * %> 5.factorial()
+   * 120
+   * %> 0.factorial()
+   * 1
+   * ```
+   *
+   * @throws {Error} if the number is negative or not a whole
+   *    number.
+   * @returns {number}
+   */
+  factorial() {}
+
+
+  /**
+   * Returns the sine of the number, taken to be in radians.
+   *
+   * @returns {number}
+   */
+  sin() {}
+
+
+  /**
+   * Returns the cosine of the number, taken to be in radians.
+   *
+   * @returns {number}
+   */
+  cos() {}
+
+
+  /**
+   * Returns the tangent of the number, taken to be in radians.
+   *
+   * @returns {number}
+   */
+  tan() {}
+
+
+  /**
+   * Returns the hyperbolic sine of the number.
+   *
+   * @returns {number}
+   */
+  sinh() {}
+
+
+  /**
+   * Returns the hyperbolic cosine of the number.
+   *
+   * @returns {number}
+   */
+  cosh() {}
+
+
+  /**
+   * Returns the hyperbolic tangent of the number.
+   *
+   * @returns {number}
+   */
+  tanh() {}
+
+
+  /**
+   * Returns the arcsine (inverse sine) of the number, in
+   * radians.
+   *
+   * @note Only defined for a receiver between `-1` and `1`
+   *    inclusive; outside that range, this returns `NaN` rather
+   *    than raising an error.
+   * @returns {number}
+   */
+  asin() {}
+
+
+  /**
+   * Returns the arccosine (inverse cosine) of the number, in
+   * radians.
+   *
+   * @note Only defined for a receiver between `-1` and `1`
+   *    inclusive; outside that range, this returns `NaN` rather
+   *    than raising an error.
+   * @returns {number}
+   */
+  acos() {}
+
+
+  /**
+   * Returns the arctangent (inverse tangent) of the number, in
+   * radians.
+   *
+   * @returns {number}
+   */
+  atan() {}
+
+
+  /**
+   * Returns the four-quadrant arctangent of the number and _x_,
+   * in radians. The receiver is treated as the y-coordinate and
+   * _x_ as the x-coordinate, matching the conventional `atan2(y,
+   * x)` signature: `y.atan2(x)`.
+   *
+   * ```zuri-repl
+   * %> 1.0.atan2(1.0)
+   * 0.7853981633974483
+   * ```
+   *
+   * @param {number} x The x-coordinate.
+   * @returns {number}
+   */
+  atan2(x: number) {}
+
+
+  /**
+   * Returns the inverse hyperbolic sine of the number.
+   *
+   * @returns {number}
+   */
+  asinh() {}
+
+
+  /**
+   * Returns the inverse hyperbolic cosine of the number.
+   *
+   * @note Only defined for a receiver greater than or equal to
+   *    `1`; below that, this returns `NaN` rather than raising
+   *    an error.
+   * @returns {number}
+   */
+  acosh() {}
+
+
+  /**
+   * Returns the inverse hyperbolic tangent of the number.
+   *
+   * @note Only defined for a receiver between `-1` and `1`
+   *    exclusive; outside that range, this returns `NaN` rather
+   *    than raising an error.
+   * @returns {number}
+   */
+  atanh() {}
+
+
+  /**
+   * Returns _e_ (Euler's number) raised to the power of the
+   * number.
+   *
+   * @returns {number}
+   */
+  exp() {}
+
+
+  /**
+   * Returns _e_ raised to the power of the number, minus `1`.
+   * For a number close to zero, this is more numerically
+   * accurate than computing `n.exp() - 1` directly.
+   *
+   * @returns {number}
+   */
+  expm1() {}
+
+
+  /**
+   * Returns the natural logarithm (base _e_) of the number.
+   *
+   * ```zuri-repl
+   * %> 1.0.log()
+   * 0
+   * ```
+   *
+   * @returns {number}
+   */
+  log() {}
+
+
+  /**
+   * Returns the base-2 logarithm of the number.
+   *
+   * ```zuri-repl
+   * %> 8.0.log2()
+   * 3
+   * ```
+   *
+   * @returns {number}
+   */
+  log2() {}
+
+
+  /**
+   * Returns the base-10 logarithm of the number.
+   *
+   * ```zuri-repl
+   * %> 100.0.log10()
+   * 2
+   * ```
+   *
+   * @returns {number}
+   */
+  log10() {}
+
+
+  /**
+   * Returns the natural logarithm of `1` plus the number. For a
+   * number close to zero, this is more numerically accurate than
+   * computing `(1 + n).log()` directly.
+   *
+   * @returns {number}
+   */
+  log1p() {}
+
+
+  /**
+   * Returns the cube root of the number.
+   *
+   * ```zuri-repl
+   * %> 27.0.cbrt()
+   * 3
+   * ```
+   *
+   * @returns {number}
+   */
+  cbrt() {}
+
+
+  /**
+   * Returns the square root of the number.
+   *
+   * ```zuri-repl
+   * %> 16.sqrt()
+   * 4
+   * ```
+   *
+   * @note For a negative number this returns `NaN` rather than
+   *    raising an error; there is no `bigint`-style promotion
+   *    into complex numbers. Check `is_nan()` on the result, or
+   *    the sign of the receiver beforehand, if that distinction
+   *    matters to the caller.
+   * @returns {number}
+   */
+  sqrt() {}
+
+
+  /**
+   * Returns the sign of the number: `1` if it is positive, `-1`
+   * if it is negative, and `0` (with its own original sign
+   * preserved) if it is zero.
+   *
+   * ```zuri-repl
+   * %> 7.sign()
+   * 1
+   * %> (-7).sign()
+   * -1
+   * %> 0.sign()
+   * 0
+   * ```
+   *
+   * @returns {number}
+   */
+  sign() {}
+
+
+  /**
+   * Returns the smallest whole number greater than or equal to
+   * the number.
+   *
+   * ```zuri-repl
+   * %> 3.14159.ceil()
+   * 4
+   * ```
+   *
+   * @returns {number}
+   */
+  ceil() {}
+
+
+  /**
+   * Rounds the number to the nearest whole number. A value
+   * exactly halfway between two whole numbers rounds away from
+   * zero.
+   *
+   * ```zuri-repl
+   * %> 3.14159.round()
+   * 3
+   * %> 3.6.round()
+   * 4
+   * ```
+   *
+   * @returns {number}
+   */
+  round() {}
+
+
+  /**
+   * Returns the largest whole number less than or equal to the
+   * number.
+   *
+   * ```zuri-repl
+   * %> 3.14159.floor()
+   * 3
+   * ```
+   *
+   * @returns {number}
+   */
+  floor() {}
+
+
+  /**
+   * Returns `true` if the number is NaN (not a number, e.g. the
+   * result of `0/0`), `false` otherwise.
+   *
+   * @returns {boolean}
+   */
+  is_nan() {}
+
+
+  /**
+   * Returns `true` if the number is positive or negative
+   * infinity, `false` otherwise.
+   *
+   * @returns {boolean}
+   */
+  is_inf() {}
+
+
+  /**
+   * Returns `true` if the number is neither infinite nor NaN,
+   * `false` otherwise.
+   *
+   * @returns {boolean}
+   */
+  is_finite() {}
+
+
+  /**
+   * Truncates the number towards zero, discarding anything after
+   * the decimal point. For values that fit in a 64-bit integer
+   * this matches `int()`; unlike `int()`, `trunc()` stays a
+   * floating-point result rather than going through an integer
+   * cast, so it does not overflow for numbers larger than a
+   * 64-bit integer can hold.
+   *
+   * ```zuri-repl
+   * %> (-3.9).trunc()
+   * -3
+   * ```
+   *
+   * @returns {number}
+   */
+  trunc() {}
+
+
+  /**
+   * Returns the digits after the number's decimal point, read as
+   * a whole number rather than a fraction. Note that this is NOT
+   * the same as `(n - n.int())`: `1.92.fraction()` is `92`, not
+   * `0.92`.
+   *
+   * ```zuri-repl
+   * %> 1.92.fraction()
+   * 92
+   * %> 1.5.fraction()
+   * 5
+   * %> 5.fraction()
+   * 0
+   * ```
+   *
+   * @returns {number}
+   */
+  fraction() {}
+}

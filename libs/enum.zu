@@ -1,14 +1,14 @@
 /**
  * @module enum
  *
- * This module provides Zuri's implementation of enumerations as described
- * in the language documentation: a set of unique values bound to symbolic
- * names via an alias.
+ * This module provides Zuri's implementation of enumerations as
+ * described in the language documentation: a set of unique
+ * values bound to symbolic names via an alias.
  *
  * ### Creating an enumeration
  *
- * Initialize from a list of symbolic names; each is automatically
- * assigned an ordinal value starting from zero:
+ * Initialize from a list of symbolic names; each is
+ * automatically assigned an ordinal value starting from zero:
  *
  * ```zuri
  * import enum
@@ -18,8 +18,8 @@
  * echo Gender.Female   # 1
  * ```
  *
- * Initialize from a dictionary to bind specific values (numbers or
- * strings) instead of automatic ordinals:
+ * Initialize from a dictionary to bind specific values (numbers
+ * or strings) instead of automatic ordinals:
  *
  * ```zuri
  * var Color = enum({
@@ -30,8 +30,9 @@
  * echo enum.to_string(Color)   # <Enum Red=r Green=g Blue=b>
  * ```
  *
- * By default, duplicate values in a dictionary-initialized enumeration
- * raise an error. Pass `true` as the second argument to allow them:
+ * By default, duplicate values in a dictionary-initialized
+ * enumeration raise an error. Pass `true` as the second argument
+ * to allow them:
  *
  * ```zuri
  * var Speed = enum({
@@ -45,27 +46,28 @@
  */
 
 /**
- * Creates a new enumeration from either a list of symbolic names or a
- * dictionary of symbolic-name to value pairs.
+ * Creates a new enumeration from either a list of symbolic names
+ * or a dictionary of symbolic-name to value pairs.
  *
- * When `source` is a list, every item must be a string; each is bound,
- * in order, to an automatically assigned ordinal value starting at zero.
+ * When `source` is a list, every item must be a string; each is
+ * bound, in order, to an automatically assigned ordinal value
+ * starting at zero.
  *
- * When `source` is a dictionary, its keys must be strings and its values
- * must be numbers or strings. Duplicate values are rejected unless
- * `allow_duplicates` is `true`.
+ * When `source` is a dictionary, its keys must be strings and
+ * its values must be numbers or strings. Duplicate values are
+ * rejected unless `allow_duplicates` is `true`.
  *
- * Enumeration keys are always unique; since the source is itself a
- * dictionary or list, a duplicated symbolic name is never possible to
- * express in the first place.
+ * Enumeration keys are always unique; since the source is itself
+ * a dictionary or list, a duplicated symbolic name is never
+ * possible to express in the first place.
  *
  * @param {list[string]|dict} source
  * @param ?bool allow_duplicates: Default value is `false`.
  * @returns dict
- * @raises TypeError: If `source` is not a list or dictionary, or its
- *   entries are of the wrong type.
- * @raises Error: If a duplicate value is found and `allow_duplicates`
- *   is not `true`.
+ * @raises TypeError: If `source` is not a list or dictionary, or
+ *    its entries are of the wrong type.
+ * @raises Error: If a duplicate value is found and
+ *    `allow_duplicates` is not `true`.
  */
 def enum(source, allow_duplicates) {
   if allow_duplicates == nil {
@@ -126,11 +128,11 @@ def _check(e) {
 }
 
 /**
- * Returns the symbolic keys of an enumeration, in the order they were
- * declared.
+ * Returns the symbolic keys of an enumeration, in the order they
+ * were declared.
  *
- * @note Equivalent to calling `.keys()` directly on the enum object,
- *   since an enumeration is itself a dictionary.
+ * @note Equivalent to calling `.keys()` directly on the enum
+ *    object, since an enumeration is itself a dictionary.
  * @param dict e
  * @returns list[string]
  */
@@ -140,10 +142,11 @@ def keys(e) {
 }
 
 /**
- * Returns the possible values of an enumeration, in the order their
- * corresponding keys were declared.
+ * Returns the possible values of an enumeration, in the order
+ * their corresponding keys were declared.
  *
- * @note Equivalent to calling `.values()` directly on the enum object.
+ * @note Equivalent to calling `.values()` directly on the enum
+ *    object.
  * @param dict e
  * @returns list[number|string]
  */
@@ -167,9 +170,9 @@ def to_dict(e) {
  * Returns the enumeration as a value/key dictionary.
  *
  * Since dictionaries cannot contain duplicate keys, if multiple
- * enumeration keys share the same value, only the LAST declared key for
- * that value is represented in the result; matching the documented
- * behavior.
+ * enumeration keys share the same value, only the LAST declared
+ * key for that value is represented in the result; matching the
+ * documented behavior.
  *
  * @param dict e
  * @returns dict
@@ -185,11 +188,11 @@ def to_value_dict(e) {
 }
 
 /**
- * Returns `true` if the enumeration contains the given symbolic key, or
- * `false` otherwise.
+ * Returns `true` if the enumeration contains the given symbolic
+ * key, or `false` otherwise.
  *
- * @note Equivalent to calling `.contains(key)` directly on the enum
- *   object.
+ * @note Equivalent to calling `.contains(key)` directly on the
+ *    enum object.
  * @param dict e
  * @param string key
  * @returns bool
@@ -203,13 +206,14 @@ def has(e, key) {
 }
 
 /**
- * Returns `value` unchanged if it is a valid value for the enumeration,
- * or raises an `Error` if it is not.
+ * Returns `value` unchanged if it is a valid value for the
+ * enumeration, or raises an `Error` if it is not.
  *
  * @param dict e
  * @param any value
  * @returns any
- * @raises Error: If `value` is not one of the enumeration's values.
+ * @raises Error: If `value` is not one of the enumeration's
+ *    values.
  */
 def ensure(e, value) {
   _check(e)

@@ -36,3 +36,15 @@ Upper:
 Range:
 40
 40
+Loop respects step:
+0: 10
+1: 30
+2: 50
+3: 70
+4: 90
+Loop respects step, descending:
+0: 100
+1: 80
+2: 60
+3: 40
+4: 20

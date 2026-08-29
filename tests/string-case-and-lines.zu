@@ -1,0 +1,35 @@
+echo 'case_fold:'
+echo 'HELLO World'.case_fold()
+echo 'STRASSE'.case_fold()
+echo 'Straße'.case_fold()
+
+echo 'ascii byte view:'
+echo 'HELLO'.ascii()
+echo 'HELLO'.ascii().length()
+echo 'café'.length()
+echo 'café'.ascii().length()
+
+echo 'compare:'
+echo 'apple'.compare('banana')
+echo 'banana'.compare('apple')
+echo 'apple'.compare('apple')
+
+echo 'capitalize:'
+echo 'hELLO'.capitalize()
+echo 'world'.capitalize()
+echo ''.capitalize()
+
+echo 'title:'
+echo 'the quick brown fox'.title()
+echo "it's a MAD, mad-world".title()
+echo ''.title()
+
+echo 'lines:'
+echo "one\ntwo\nthree".lines()
+echo "single line".lines()
+echo "trailing newline\n".lines()
+
+echo 'each_line:'
+"first\nsecond\nthird".each_line(@(line, index) {
+  echo '${index}: ${line}'
+})

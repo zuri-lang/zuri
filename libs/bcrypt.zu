@@ -1,23 +1,24 @@
 /** 
  * @module bcrypt
  *
- * This module provides functions for generating and verifying bcrypt 
- * hashes as well as functions for getting information from a bcrypt hash.
- * 
+ * This module provides functions for generating and verifying
+ * bcrypt hashes as well as functions for getting information
+ * from a bcrypt hash.
+ *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
 /**
  * Default log2 rounds (default: 10).
- * 
+ *
  * @type number
  */
 var DEFAULT_LOG2_ROUNDS = 10
 
 /**
- * Maximum execution time for each cipher iteration in 
+ * Maximum execution time for each cipher iteration in
  * milliseconds (default: 100).
- * 
+ *
  * @type number
  */
 var MAX_EXECUTION_TIME = 0.000100
@@ -658,12 +659,13 @@ def _generate_salt(rounds) {
 }
 
 /**
- * Generates a hash for the given string. If _salt_length_ is not given, 
- * the length of the salt will be equal to `DEFAULT_LOG2_ROUNDS`.
- * 
+ * Generates a hash for the given string. If _salt_length_ is not
+ * given, the length of the salt will be equal to
+ * `DEFAULT_LOG2_ROUNDS`.
+ *
  * @param string str
  * @param ?number salt_length
- * @raises  Error
+ * @raises Error
  * @returns string
  */
 def hash(str: string, salt_length: ?number) {
@@ -678,10 +680,10 @@ def hash(str: string, salt_length: ?number) {
 
 /**
  * Tests a string against a known hash.
- * 
+ *
  * @param string str
  * @param string known_hash
- * @raises  Error
+ * @raises Error
  * @returns bool
  */
 def compare(str: string, known_hash: string) {
@@ -705,9 +707,9 @@ def compare(str: string, known_hash: string) {
 
 /**
  * Gets the number of rounds used to encrypt the specified hash.
- * 
+ *
  * @param string hash
- * @raises  Error
+ * @raises Error
  * @returns number
  */
 def get_rounds(hash: string) {
@@ -716,10 +718,10 @@ def get_rounds(hash: string) {
 
 /**
  * Gets the salt portion from a hash.
- * 
+ *
  * @note This function does not validate the hash.
  * @param string hash
- * @raises  Error
+ * @raises Error
  * @returns string
  */
 def get_salt(hash: string) {

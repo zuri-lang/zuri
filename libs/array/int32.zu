@@ -3,24 +3,26 @@ import ._base { Array }
 
 
 /**
- * Maximum value that "should" exist in a list passed to Int32Array.
+ * Maximum value that "should" exist in a list passed to
+ * Int32Array.
  * @type number
  */
 var INT32_MAX = 2147483647
 
 /**
- * Minimum value that "should" exist in a list passed to Int32Array.
+ * Minimum value that "should" exist in a list passed to
+ * Int32Array.
  * @type number
  */
 var INT32_MIN = -INT32_MAX - 1
 
 
 /**
- * class Int32Array represents an array of twos-complement 16-bit signed 
- * integers in the platform byte order.
- * 
+ * class Int32Array represents an array of twos-complement 16-bit
+ * signed integers in the platform byte order.
+ *
  * @printable
- * @iterable
+ * @valueable
  * @serializable
  */
 class Int32Array < Array {
@@ -30,11 +32,11 @@ class Int32Array < Array {
   var _data_type = 'l'
 
   /**
-   * - If n is a number, it creates a new Int32Array that can hold up to n 
-   * number of elements, but with all the elements set to 0. 
-   * - If n is a list, it creates a new Int32Array with its elements set to 
-   * the values in the list.
-   * 
+   * - If n is a number, it creates a new Int32Array that can
+   * hold up to n number of elements, but with all the elements
+   * set to 0. - If n is a list, it creates a new Int32Array with
+   * its elements set to the values in the list.
+   *
    * @param {number|list} n
    * @constructor
    */
@@ -57,7 +59,7 @@ class Int32Array < Array {
 
   /**
    * Adds the given _value_ to the end of the array.
-   * 
+   *
    * @param int value
    */
   append(value) {
@@ -80,7 +82,7 @@ class Int32Array < Array {
 
   /**
    * Sets the value at the given index.
-   * 
+   *
    * @param number index
    * @param number value
    * @returns number
@@ -109,9 +111,10 @@ class Int32Array < Array {
   }
 
   /**
-   * Updates the content of the current array by appending all the contents 
-   * of _array_ to the end of the array in exact order.
-   * 
+   * Updates the content of the current array by appending all
+   * the contents of _array_ to the end of the array in exact
+   * order.
+   *
    * @param Int32Array array
    */
   extend(array) {
@@ -121,9 +124,9 @@ class Int32Array < Array {
   }
 
   /**
-   * Returns a new array containing the elements in the original array 
-   * in reverse order.
-   * 
+   * Returns a new array containing the elements in the original
+   * array in reverse order.
+   *
    * @returns [[array.Int32Array]]
    */
   reverse() {
@@ -132,9 +135,10 @@ class Int32Array < Array {
   }
 
   /**
-   * Returns a new Int32Array containing all items from the current array. 
-   * The new array is a shallow copy of the original array.
-   * 
+   * Returns a new Int32Array containing all items from the
+   * current array. The new array is a shallow copy of the
+   * original array.
+   *
    * @returns Int32Array
    */
   clone() {

@@ -1,8 +1,8 @@
 /**
  * @module deflate
- * 
+ *
  * This is the Deflate submodule for the compress module.
- * 
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
@@ -10,7 +10,7 @@ import _compress
 
 /**
  * Compress data using the default options for Deflate.
- * 
+ *
  * @param {bytes|string} data
  * @returns bytes
  */
@@ -20,7 +20,7 @@ def compress(data) {
 
 /**
  * Decompress a deflated data using default options.
- * 
+ *
  * @param {bytes|string} data
  * @returns bytes
  */
@@ -34,9 +34,9 @@ import .gzip { GzipDecoder, GzipEncoder }
 
 /**
  * A streaming Deflate encoder.
- * 
+ *
  * Example:
- * 
+ *
  * ```zuri-repl
  * %> import compress.deflate
  * %> var encoder = deflate.DeflateEncoder()
@@ -49,8 +49,9 @@ import .gzip { GzipDecoder, GzipEncoder }
 class DeflateEncoder < GzipEncoder {
 
   /**
-   * Creates a new streaming Deflate encoder at the given level (0..=9).
-   * 
+   * Creates a new streaming Deflate encoder at the given level
+   * (0..=9).
+   *
    * @param ?number level - Default 1
    */
   @new(level) {
@@ -60,13 +61,15 @@ class DeflateEncoder < GzipEncoder {
 
 
 /**
- * Streaming deflate decompressor implemention. This decoder reads standard 
- * deflate blocks and frames produced at any deflate compression level.
- * 
- * Wraps a byte stream of compressed data and yields decompressed bytes.
- * 
+ * Streaming deflate decompressor implemention. This decoder
+ * reads standard deflate blocks and frames produced at any
+ * deflate compression level.
+ *
+ * Wraps a byte stream of compressed data and yields decompressed
+ * bytes.
+ *
  * Example:
- * 
+ *
  * ```zuri-repl
  * %> import compress.deflate
  * %> var data = deflate.compress('hello world')
@@ -77,15 +80,15 @@ class DeflateEncoder < GzipEncoder {
  * %> decoder.read_as_string()
  * hello world
  * ```
- * 
- * This decoder is level-independent and supports standard deflate frames 
- * produced by all deflate compression levels.
+ *
+ * This decoder is level-independent and supports standard
+ * deflate frames produced by all deflate compression levels.
  */
 class DeflateDecoder < GzipDecoder {
 
   /**
    * Creates a Gzip decoder
-   * 
+   *
    * @param bytes source
    */
   @new(source) {

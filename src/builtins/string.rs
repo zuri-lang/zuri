@@ -2,7 +2,7 @@
 
 use std::sync::LazyLock;
 
-use regex::Regex;
+use pcre2::bytes::{CaptureLocations, Match, Regex, RegexBuilder};
 
 use crate::{
   builtins::{
@@ -52,6 +52,13 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_opt("replace", 2, replace),
     method_n("replace_with", 2, replace_with),
     method_n("each", 1, each),
+    method("case_fold", case_fold),
+    method_n("compare", 1, compare),
+    method("lines", lines),
+    method_n("each_line", 1, each_line),
+    method("capitalize", capitalize),
+    method("title", title),
+    method("ascii", ascii),
   ])
 });
 
@@ -76,22 +83,146 @@ fn parse_regex(s: &str) -> Option<(&str, &str)> {
   Some((&rest[..close], &rest[close + delim.len_utf8()..]))
 }
 
-/// Compile a Zuri regex's pattern/modifiers into a `regex::Regex`. See
-/// this file's module-level caveat: the `regex` crate is NOT PCRE2;
-/// no backreferences, no lookaround, no named groups; and only
-/// `i`/`m`/`s`/`x`/`U`/`u` of Zuri's documented modifiers have a direct
-/// equivalent here; `A`/`D`/`J` are accepted but ignored.
-fn compile_regex(pattern: &str, modifiers: &str) -> Result<Regex, String> {
-  let flags: String = modifiers
-    .chars()
-    .filter(|c| matches!(c, 'i' | 'm' | 's' | 'x' | 'u' | 'U'))
-    .collect();
-  let full = if flags.is_empty() {
+/// Compiles a Zuri regex's pattern/modifiers into a genuine PCRE2
+/// `Regex`, matching the spec's claim that Zuri regex is built on top
+/// of (and compatible with) PCRE2: named groups, backreferences, and
+/// lookaround all just work, since this is the real engine rather
+/// than a lookalike.
+///
+/// Returns the compiled regex together with whether the `A` (force
+/// pattern anchoring) modifier was given. `PCRE2_ANCHORED` isn't
+/// exposed by this crate's safe wrapper, so anchoring is instead
+/// enforced by every caller via `find_at_anchored`/`find_all_captures`,
+/// which discard a match unless it begins exactly where the search
+/// started -- the same observable behavior as the real compile option.
+///
+/// `U` (ungreedy) and `J` (duplicate subpattern names) aren't exposed
+/// as builder options either, but PCRE2's own pattern syntax accepts
+/// them as inline `(?U)`/`(?J)` option-setting groups, so they're
+/// prepended to the pattern instead. `D` (dollar-endonly) has no such
+/// inline equivalent and, like any unrecognized modifier letter, is
+/// simply accepted and has no effect.
+fn compile_regex(pattern: &str, modifiers: &str) -> Result<(Regex, bool), String> {
+  let mut builder = RegexBuilder::new();
+  // Zuri strings are always valid UTF-8; matching per-codepoint
+  // (rather than per-byte) is what keeps `.` and every byte offset
+  // this file hands back to Zuri correct on multi-byte characters,
+  // independent of the `u` modifier -- which, per the spec's own
+  // modifier table, only controls whether \d/\w/\s become Unicode-
+  // property-aware instead of ASCII-only.
+  builder.utf(true);
+
+  let mut inline_flags = String::new();
+  let mut anchored = false;
+
+  for c in modifiers.chars() {
+    match c {
+      'i' => {
+        builder.caseless(true);
+      },
+      'm' => {
+        builder.multi_line(true);
+      },
+      's' => {
+        builder.dotall(true);
+      },
+      'x' => {
+        builder.extended(true);
+      },
+      'u' => {
+        builder.ucp(true);
+      },
+      'U' => inline_flags.push('U'),
+      'J' => inline_flags.push('J'),
+      'A' => anchored = true,
+      _ => {}, // 'D' and any unrecognized letter: accepted, no-op.
+    }
+  }
+
+  let full_pattern = if inline_flags.is_empty() {
     pattern.to_string()
   } else {
-    format!("(?{}){}", flags, pattern)
+    format!("(?{}){}", inline_flags, pattern)
   };
-  Regex::new(&full).map_err(|e| format!("invalid regular expression '{}': {}", pattern, e))
+
+  let re = builder
+    .build(&full_pattern)
+    .map_err(|e| format!("invalid regular expression '{}': {}", pattern, e))?;
+  Ok((re, anchored))
+}
+
+/// `Regex::find_at`, honoring the `A` modifier: when `anchored` is
+/// set, a match found anywhere past `start` is discarded unless it
+/// begins exactly at `start`.
+fn find_at_anchored<'s>(
+  re: &Regex,
+  anchored: bool,
+  subject: &'s [u8],
+  start: usize,
+) -> Result<Option<Match<'s>>, String> {
+  let found = re.find_at(subject, start).map_err(|e| e.to_string())?;
+  Ok(match found {
+    Some(m) if !anchored || m.start() == start => Some(m),
+    _ => None,
+  })
+}
+
+/// Collects every non-overlapping match starting at `search_start` as
+/// populated `CaptureLocations`, mirroring `Regex::captures_iter`'s own
+/// empty-match handling (advance by one byte, and never accept an
+/// empty match immediately following a real one) so unanchored
+/// behavior matches the crate's own iterator exactly. When `anchored`
+/// is set (the `A` modifier), collection stops at the first match that
+/// doesn't begin exactly where the previous one ended (or, for the
+/// first match, at `search_start`) -- see `compile_regex`'s own docs
+/// on why anchoring is enforced here rather than via a PCRE2 compile
+/// option.
+fn find_all_captures(
+  re: &Regex,
+  anchored: bool,
+  subject: &[u8],
+  search_start: usize,
+) -> Result<Vec<CaptureLocations>, String> {
+  let mut out = Vec::new();
+  let mut pos = search_start;
+  let mut last_match_end: Option<usize> = None;
+
+  while pos <= subject.len() {
+    let mut locs = re.capture_locations();
+    let found = re
+      .captures_read_at(&mut locs, subject, pos)
+      .map_err(|e| e.to_string())?;
+    let m = match found {
+      Some(m) => m,
+      None => break,
+    };
+
+    if anchored && m.start() != pos {
+      break;
+    }
+    if m.start() == m.end() && Some(m.end()) == last_match_end {
+      pos = m.end() + 1;
+      continue;
+    }
+
+    last_match_end = Some(m.end());
+    pos = if m.end() == m.start() {
+      m.end() + 1
+    } else {
+      m.end()
+    };
+    out.push(locs);
+  }
+
+  Ok(out)
+}
+
+/// Safe: every offset handed out by this file's regex helpers comes
+/// from PCRE2 running in UTF mode (`compile_regex` always sets
+/// `.utf(true)`), so it's always aligned to a UTF-8 codepoint
+/// boundary.
+fn bytes_to_string(b: &[u8]) -> String {
+  std::str::from_utf8(b).unwrap().to_string()
 }
 
 /// Reads `ctx.args[idx]` as an optional single-character string
@@ -316,8 +447,19 @@ fn split(ctx: &mut ZuriContext) -> Result<Value, String> {
   let parts: Vec<String> = if delim.is_empty() {
     s.chars().map(|c| c.to_string()).collect()
   } else if let Some((pattern, modifiers)) = parse_regex(&delim) {
-    let re = compile_regex(pattern, modifiers)?;
-    re.split(&s).map(|p| p.to_string()).collect()
+    let (re, anchored) = compile_regex(pattern, modifiers)?;
+    let bytes = s.as_bytes();
+    let matches = find_all_captures(&re, anchored, bytes, 0)?;
+
+    let mut parts = Vec::with_capacity(matches.len() + 1);
+    let mut last_end = 0usize;
+    for locs in &matches {
+      let (mstart, mend) = locs.get(0).unwrap();
+      parts.push(bytes_to_string(&bytes[last_end..mstart]));
+      last_end = mend;
+    }
+    parts.push(bytes_to_string(&bytes[last_end..]));
+    parts
   } else {
     s.split(delim.as_str()).map(|p| p.to_string()).collect()
   };
@@ -476,10 +618,10 @@ fn string_match(ctx: &mut ZuriContext) -> Result<Value, String> {
   let start = char_offset_to_byte(&s, optional_offset(ctx, 2)?);
 
   if let Some((pattern, modifiers)) = parse_regex(&pattern_str) {
-    let re = compile_regex(pattern, modifiers)?;
-    match re.find_at(&s, start) {
+    let (re, anchored) = compile_regex(pattern, modifiers)?;
+    match find_at_anchored(&re, anchored, s.as_bytes(), start)? {
       Some(m) => {
-        let matched = ctx.vm.heap_mut().alloc_string(m.as_str().to_string());
+        let matched = ctx.vm.heap_mut().alloc_string(bytes_to_string(m.as_bytes()));
         Ok(
           ctx
             .vm
@@ -511,15 +653,20 @@ fn string_matches(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (pattern, modifiers) = parse_regex(&pattern_str)
     .ok_or_else(|| "matches() expects a regular expression".to_string())?;
-  let re = compile_regex(pattern, modifiers)?;
+  let (re, anchored) = compile_regex(pattern, modifiers)?;
 
-  let num_groups = re.captures_len();
+  let bytes = s.as_bytes();
+  let all_matches = find_all_captures(&re, anchored, bytes, start)?;
+  let num_groups = re.capture_locations().len();
   let mut columns: Vec<Vec<Value>> = vec![Vec::new(); num_groups];
 
-  for caps in re.captures_iter(&s[start..]) {
+  for locs in &all_matches {
     for g in 0..num_groups {
-      let text = caps.get(g).map(|m| m.as_str()).unwrap_or("");
-      columns[g].push(ctx.vm.heap_mut().alloc_string(text.to_string()));
+      let text = match locs.get(g) {
+        Some((gs, ge)) => bytes_to_string(&bytes[gs..ge]),
+        None => String::new(),
+      };
+      columns[g].push(ctx.vm.heap_mut().alloc_string(text));
     }
   }
 
@@ -547,15 +694,83 @@ fn replace(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let result = match (use_regex, parse_regex(&pattern_str)) {
     (true, Some((pattern, modifiers))) => {
-      let re = compile_regex(pattern, modifiers)?;
-      // Zuri's `$index` capture-group syntax matches the `regex`
-      // crate's own `$N` replacement syntax directly.
-      re.replace_all(&s, replacement.as_str()).into_owned()
+      let (re, anchored) = compile_regex(pattern, modifiers)?;
+      let bytes = s.as_bytes();
+      let all_matches = find_all_captures(&re, anchored, bytes, 0)?;
+
+      let mut result = String::new();
+      let mut last_end = 0usize;
+      for locs in &all_matches {
+        let (mstart, mend) = locs.get(0).unwrap();
+        result.push_str(&bytes_to_string(&bytes[last_end..mstart]));
+        result.push_str(&expand_replacement(&replacement, locs, bytes));
+        last_end = mend;
+      }
+      result.push_str(&bytes_to_string(&bytes[last_end..]));
+      result
     },
     _ => s.replace(pattern_str.as_str(), &replacement),
   };
 
   Ok(ctx.vm.heap_mut().alloc_string(result))
+}
+
+/// Expands `$N`/`${N}` capture-group references in a `replace()`
+/// replacement string, matching the spec's own `$index` syntax: `$$`
+/// is a literal `$`, `$N` (one or more digits) or `${N}` substitutes
+/// group `N`'s matched text (empty if that group didn't participate),
+/// and a `$` followed by anything else is passed through literally.
+fn expand_replacement(replacement: &str, locs: &CaptureLocations, subject: &[u8]) -> String {
+  let mut out = String::new();
+  let mut chars = replacement.chars().peekable();
+
+  while let Some(c) = chars.next() {
+    if c != '$' {
+      out.push(c);
+      continue;
+    }
+    match chars.peek() {
+      Some('$') => {
+        chars.next();
+        out.push('$');
+      },
+      Some('{') => {
+        chars.next();
+        let mut digits = String::new();
+        while let Some(&d) = chars.peek() {
+          if d == '}' {
+            chars.next();
+            break;
+          }
+          digits.push(d);
+          chars.next();
+        }
+        push_capture_group(&mut out, &digits, locs, subject);
+      },
+      Some(d) if d.is_ascii_digit() => {
+        let mut digits = String::new();
+        while let Some(&d) = chars.peek() {
+          if !d.is_ascii_digit() {
+            break;
+          }
+          digits.push(d);
+          chars.next();
+        }
+        push_capture_group(&mut out, &digits, locs, subject);
+      },
+      _ => out.push('$'),
+    }
+  }
+
+  out
+}
+
+fn push_capture_group(out: &mut String, digits: &str, locs: &CaptureLocations, subject: &[u8]) {
+  if let Ok(n) = digits.parse::<usize>() {
+    if let Some((s, e)) = locs.get(n) {
+      out.push_str(&bytes_to_string(&subject[s..e]));
+    }
+  }
 }
 
 /// Calls back into Zuri code once per match; `call_value` already
@@ -574,7 +789,11 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (pattern, modifiers) = parse_regex(&pattern_str)
     .ok_or_else(|| "replace_with() expects a regular expression".to_string())?;
-  let re = compile_regex(pattern, modifiers)?;
+  let (re, anchored) = compile_regex(pattern, modifiers)?;
+
+  let bytes = s.as_bytes();
+  let all_matches = find_all_captures(&re, anchored, bytes, 0)?;
+  let num_groups = re.capture_locations().len();
 
   let whole = ctx.vm.heap_mut().alloc_string(s.clone());
   // `callback` and `whole` are both reused across EVERY match below --
@@ -583,20 +802,20 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
   // go stale from that point on. See `VM::pin_values`'s own docs.
   let mark = ctx.vm.pin_values([callback, whole]);
   let mut result = String::new();
-  let mut last_end = 0;
+  let mut last_end = 0usize;
 
-  for caps in re.captures_iter(&s) {
-    let m = caps.get(0).unwrap();
-    result.push_str(&s[last_end..m.start()]);
+  for locs in &all_matches {
+    let (mstart, mend) = locs.get(0).unwrap();
+    result.push_str(&bytes_to_string(&bytes[last_end..mstart]));
 
-    let mut call_args = vec![ctx.vm.heap_mut().alloc_string(m.as_str().to_string())];
-    for g in 1..caps.len() {
-      call_args.push(match caps.get(g) {
-        Some(gm) => ctx.vm.heap_mut().alloc_string(gm.as_str().to_string()),
+    let mut call_args = Vec::with_capacity(num_groups + 1);
+    for g in 0..num_groups {
+      call_args.push(match locs.get(g) {
+        Some((gs, ge)) => ctx.vm.heap_mut().alloc_string(bytes_to_string(&bytes[gs..ge])),
         None => Value::nil(),
       });
     }
-    call_args.push(Value::number(m.start() as f64));
+    call_args.push(Value::number(mstart as f64));
     call_args.push(ctx.vm.pinned(mark + 1));
 
     let callback = ctx.vm.pinned(mark);
@@ -606,9 +825,9 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
       .map_err(|e| ctx.vm.describe_error(e))?;
     result.push_str(&format!("{}", replaced));
 
-    last_end = m.end();
+    last_end = mend;
   }
-  result.push_str(&s[last_end..]);
+  result.push_str(&bytes_to_string(&bytes[last_end..]));
   ctx.vm.unpin(mark);
 
   Ok(ctx.vm.heap_mut().alloc_string(result))
@@ -638,6 +857,133 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   let str_val = ctx.vm.pinned(mark);
   ctx.vm.unpin(mark);
   Ok(str_val)
+}
+
+/// Full Unicode case folding (per the `CaseFolding.txt` C+F mappings),
+/// not just lowercasing: e.g. German `ß` folds to `ss`, matching how
+/// two strings should be compared for case-insensitive equality
+/// regardless of script.
+fn case_fold(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let folded = caseless::default_case_fold_str(ctx.args[0].as_str());
+  Ok(ctx.vm.heap_mut().alloc_string(folded))
+}
+
+fn compare(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::String);
+
+  let ordering = ctx.args[0].as_str().cmp(ctx.args[1].as_str());
+  let n = match ordering {
+    std::cmp::Ordering::Less => -1.0,
+    std::cmp::Ordering::Equal => 0.0,
+    std::cmp::Ordering::Greater => 1.0,
+  };
+  Ok(Value::number(n))
+}
+
+/// Splits on `\n`, also stripping a trailing `\r` from each line (so
+/// both Unix and Windows line endings behave the same), matching
+/// Rust's own `str::lines()` semantics.
+fn lines(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let s = ctx.args[0].as_str().to_string();
+  let items: Vec<Value> = s
+    .lines()
+    .map(|line| ctx.vm.heap_mut().alloc_string(line.to_string()))
+    .collect();
+  Ok(ctx.vm.heap_mut().alloc_list(items))
+}
+
+fn each_line(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Function);
+
+  let s = ctx.args[0].as_str().to_string();
+  let lines: Vec<String> = s.lines().map(|l| l.to_string()).collect();
+  // See `each`'s own docs on why both the receiver and the callback
+  // need to be pinned here, not just read once up front.
+  let mark = ctx.vm.pin_values([ctx.args[0], ctx.args[1]]);
+
+  for (i, line) in lines.into_iter().enumerate() {
+    let line_val = ctx.vm.heap_mut().alloc_string(line);
+    let callback = ctx.vm.pinned(mark + 1);
+    ctx
+      .vm
+      .call_value(callback, &[line_val, Value::number(i as f64)])
+      .map_err(|e| ctx.vm.describe_error(e))?;
+  }
+
+  let str_val = ctx.vm.pinned(mark);
+  ctx.vm.unpin(mark);
+  Ok(str_val)
+}
+
+fn capitalize(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let s = ctx.args[0].as_str();
+  let mut chars = s.chars();
+  let result = match chars.next() {
+    Some(first) => {
+      first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+    },
+    None => String::new(),
+  };
+  Ok(ctx.vm.heap_mut().alloc_string(result))
+}
+
+/// Capitalizes the first letter of every word (a maximal run of
+/// alphanumeric characters) and lowercases the rest of that word's
+/// letters, leaving whitespace and punctuation between words exactly
+/// as they were.
+fn title(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let s = ctx.args[0].as_str();
+  let mut result = String::with_capacity(s.len());
+  let mut at_word_start = true;
+
+  for c in s.chars() {
+    if c.is_alphanumeric() {
+      if at_word_start {
+        result.extend(c.to_uppercase());
+      } else {
+        result.extend(c.to_lowercase());
+      }
+      at_word_start = false;
+    } else {
+      result.push(c);
+      at_word_start = true;
+    }
+  }
+
+  Ok(ctx.vm.heap_mut().alloc_string(result))
+}
+
+/// Reinterprets the string as a raw byte view: each byte of its UTF-8
+/// encoding becomes its own character (codepoints `0..=255`, i.e. a
+/// Latin-1-style one-byte-per-char mapping), rather than the decoded
+/// sequence of Unicode scalar values `length()`/`each()`/indexing
+/// otherwise operate on. Every result is still valid UTF-8 (every
+/// codepoint in `0..=255` is), so the return value is an ordinary
+/// string; it just may no longer round-trip through the original
+/// multi-byte characters if any were present, and its `length()` now
+/// reports the original BYTE count rather than the original CHARACTER
+/// count. Meant for the rare case where code needs to walk a string
+/// byte-for-byte, e.g. one that originated from a byte stream where
+/// the "characters" were never meant to be decoded as Unicode at all.
+fn ascii(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let result: String = ctx.args[0]
+    .as_str()
+    .bytes()
+    .map(|b| b as char)
+    .collect();
+  Ok(ctx.vm.heap_mut().alloc_string(result))
 }
 
 // @key / @value: iterable protocol decorators.

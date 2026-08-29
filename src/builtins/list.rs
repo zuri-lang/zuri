@@ -56,6 +56,12 @@ pub static LIST_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("some", 1, some_fn),
     method_n("every", 1, every),
     method_opt("reduce", 1, reduce),
+    method_n("find", 1, find),
+    method_n("find_index", 1, find_index),
+    method_n("find_last", 1, find_last),
+    method_n("find_last_index", 1, find_last_index),
+    method_n("find_all", 1, find_all),
+    method_n("partition", 1, partition),
   ])
 });
 
@@ -665,6 +671,136 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   ctx.vm.unpin(mark);
   Ok(acc)
+}
+
+fn find(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Function);
+
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
+
+  for i in 0..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let item = ctx.vm.pinned(mark + 2 + i);
+    let matched = ctx
+      .vm
+      .call_value(callback, &[item, Value::number(i as f64)])
+      .map_err(|e| ctx.vm.describe_error(e))?;
+    if !matched.is_falsey() {
+      // Re-read: `call_value` above may have relocated it since the
+      // `item` copy taken just before the call.
+      let found = ctx.vm.pinned(mark + 2 + i);
+      ctx.vm.unpin(mark);
+      return Ok(found);
+    }
+  }
+  ctx.vm.unpin(mark);
+  Ok(Value::nil())
+}
+
+fn find_index(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Function);
+
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
+
+  for i in 0..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let item = ctx.vm.pinned(mark + 2 + i);
+    let matched = ctx
+      .vm
+      .call_value(callback, &[item, Value::number(i as f64)])
+      .map_err(|e| ctx.vm.describe_error(e))?;
+    if !matched.is_falsey() {
+      ctx.vm.unpin(mark);
+      return Ok(Value::number(i as f64));
+    }
+  }
+  ctx.vm.unpin(mark);
+  Ok(Value::number(-1.0))
+}
+
+fn find_last(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Function);
+
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
+
+  for i in (0..count).rev() {
+    let callback = ctx.vm.pinned(mark + 1);
+    let item = ctx.vm.pinned(mark + 2 + i);
+    let matched = ctx
+      .vm
+      .call_value(callback, &[item, Value::number(i as f64)])
+      .map_err(|e| ctx.vm.describe_error(e))?;
+    if !matched.is_falsey() {
+      let found = ctx.vm.pinned(mark + 2 + i);
+      ctx.vm.unpin(mark);
+      return Ok(found);
+    }
+  }
+  ctx.vm.unpin(mark);
+  Ok(Value::nil())
+}
+
+fn find_last_index(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Function);
+
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
+
+  for i in (0..count).rev() {
+    let callback = ctx.vm.pinned(mark + 1);
+    let item = ctx.vm.pinned(mark + 2 + i);
+    let matched = ctx
+      .vm
+      .call_value(callback, &[item, Value::number(i as f64)])
+      .map_err(|e| ctx.vm.describe_error(e))?;
+    if !matched.is_falsey() {
+      ctx.vm.unpin(mark);
+      return Ok(Value::number(i as f64));
+    }
+  }
+  ctx.vm.unpin(mark);
+  Ok(Value::number(-1.0))
+}
+
+/// Same behavior as `filter`, kept as its own named method to match
+/// the documented API surface (mirrors `filter`/`find_all` both
+/// existing side by side in the spec).
+fn find_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  filter(ctx)
+}
+
+fn partition(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Function);
+
+  let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
+
+  let mut matched = Vec::new();
+  let mut unmatched = Vec::new();
+  for i in 0..count {
+    let callback = ctx.vm.pinned(mark + 1);
+    let item = ctx.vm.pinned(mark + 2 + i);
+    let keep = ctx
+      .vm
+      .call_value(callback, &[item, Value::number(i as f64)])
+      .map_err(|e| ctx.vm.describe_error(e))?;
+    // Re-read again: `call_value` above may have relocated it since
+    // the `item` copy taken just before the call.
+    let item = ctx.vm.pinned(mark + 2 + i);
+    if !keep.is_falsey() {
+      matched.push(item);
+    } else {
+      unmatched.push(item);
+    }
+  }
+  ctx.vm.unpin(mark);
+
+  let matched = ctx.vm.heap_mut().alloc_list(matched);
+  let unmatched = ctx.vm.heap_mut().alloc_list(unmatched);
+  Ok(ctx.vm.heap_mut().alloc_list(vec![matched, unmatched]))
 }
 
 // @key / @value: iterable protocol decorators.

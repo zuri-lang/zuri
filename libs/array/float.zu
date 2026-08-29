@@ -3,24 +3,26 @@ import ._base { Array }
 
 
 /**
- * Maximum value that "should" exist in a list passed to FloatArray.
+ * Maximum value that "should" exist in a list passed to
+ * FloatArray.
  * @type number
  */
 var FLOAT_MAX = 3.402823466E+38
 
 /**
- * Minimum value that "should" exist in a list passed to FloatArray.
+ * Minimum value that "should" exist in a list passed to
+ * FloatArray.
  * @type number
  */
 var FLOAT_MIN = 1.175494351E-38
 
 
 /**
- * class FloatArray represents an array of twos-complement 16-bit signed 
- * integers in the platform byte order.
- * 
+ * class FloatArray represents an array of twos-complement 16-bit
+ * signed integers in the platform byte order.
+ *
  * @printable
- * @iterable
+ * @valueable
  * @serializable
  */
 class FloatArray < Array {
@@ -30,11 +32,11 @@ class FloatArray < Array {
   var _data_type = 'f'
 
   /**
-   * - If n is a number, it creates a new FloatArray that can hold up to n 
-   * number of elements, but with all the elements set to 0. 
-   * - If n is a list, it creates a new FloatArray with its elements set to 
-   * the values in the list.
-   * 
+   * - If n is a number, it creates a new FloatArray that can
+   * hold up to n number of elements, but with all the elements
+   * set to 0. - If n is a list, it creates a new FloatArray with
+   * its elements set to the values in the list.
+   *
    * @param {number|list} n
    * @constructor
    */
@@ -57,7 +59,7 @@ class FloatArray < Array {
 
   /**
    * Adds the given _value_ to the end of the array.
-   * 
+   *
    * @param int value
    */
   append(value) {
@@ -80,7 +82,7 @@ class FloatArray < Array {
 
   /**
    * Sets the value at the given index.
-   * 
+   *
    * @param number index
    * @param number value
    * @returns number
@@ -109,9 +111,10 @@ class FloatArray < Array {
   }
 
   /**
-   * Updates the content of the current array by appending all the contents 
-   * of _array_ to the end of the array in exact order.
-   * 
+   * Updates the content of the current array by appending all
+   * the contents of _array_ to the end of the array in exact
+   * order.
+   *
    * @param FloatArray array
    */
   extend(array) {
@@ -121,9 +124,9 @@ class FloatArray < Array {
   }
 
   /**
-   * Returns a new array containing the elements in the original array 
-   * in reverse order.
-   * 
+   * Returns a new array containing the elements in the original
+   * array in reverse order.
+   *
    * @returns [[array.FloatArray]]
    */
   reverse() {
@@ -132,9 +135,10 @@ class FloatArray < Array {
   }
 
   /**
-   * Returns a new FloatArray containing all items from the current array. 
-   * The new array is a shallow copy of the original array.
-   * 
+   * Returns a new FloatArray containing all items from the
+   * current array. The new array is a shallow copy of the
+   * original array.
+   *
    * @returns FloatArray
    */
   clone() {

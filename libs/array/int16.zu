@@ -3,24 +3,26 @@ import ._base { Array }
 
 
 /**
- * Maximum value that "should" exist in a list passed to Int16Array.
+ * Maximum value that "should" exist in a list passed to
+ * Int16Array.
  * @type number
  */
 var INT16_MAX = 32767
 
 /**
- * Minimum value that "should" exist in a list passed to Int16Array.
+ * Minimum value that "should" exist in a list passed to
+ * Int16Array.
  * @type number
  */
 var INT16_MIN = -INT16_MAX - 1
 
 
 /**
- * class Int16Array represents an array of twos-complement 16-bit signed 
- * integers in the platform byte order.
- * 
+ * class Int16Array represents an array of twos-complement 16-bit
+ * signed integers in the platform byte order.
+ *
  * @printable
- * @iterable
+ * @valueable
  * @serializable
  */
 class Int16Array < Array {
@@ -30,11 +32,11 @@ class Int16Array < Array {
   var _data_type = 's'
 
   /**
-   * - If n is a number, it creates a new Int16Array that can hold up to n 
-   * number of elements, but with all the elements set to 0. 
-   * - If n is a list, it creates a new Int16Array with its elements set to 
-   * the values in the list.
-   * 
+   * - If n is a number, it creates a new Int16Array that can
+   * hold up to n number of elements, but with all the elements
+   * set to 0. - If n is a list, it creates a new Int16Array with
+   * its elements set to the values in the list.
+   *
    * @param {number|list} n
    * @constructor
    */
@@ -57,7 +59,7 @@ class Int16Array < Array {
 
   /**
    * Adds the given _value_ to the end of the array.
-   * 
+   *
    * @param int value
    */
   append(value) {
@@ -78,7 +80,7 @@ class Int16Array < Array {
 
   /**
    * Sets the value at the given index.
-   * 
+   *
    * @param number index
    * @param number value
    * @returns number
@@ -107,9 +109,10 @@ class Int16Array < Array {
   }
 
   /**
-   * Updates the content of the current array by appending all the contents 
-   * of _array_ to the end of the array in exact order.
-   * 
+   * Updates the content of the current array by appending all
+   * the contents of _array_ to the end of the array in exact
+   * order.
+   *
    * @param Int16Array array
    */
   extend(array) {
@@ -119,9 +122,9 @@ class Int16Array < Array {
   }
 
   /**
-   * Returns a new array containing the elements in the original array 
-   * in reverse order.
-   * 
+   * Returns a new array containing the elements in the original
+   * array in reverse order.
+   *
    * @returns [[array.Int16Array]]
    */
   reverse() {
@@ -130,9 +133,10 @@ class Int16Array < Array {
   }
 
   /**
-   * Returns a new Int16Array containing all items from the current array. 
-   * The new array is a shallow copy of the original array.
-   * 
+   * Returns a new Int16Array containing all items from the
+   * current array. The new array is a shallow copy of the
+   * original array.
+   *
    * @returns Int16Array
    */
   clone() {

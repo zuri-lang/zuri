@@ -1,19 +1,23 @@
 /**
  * # Lists
- * 
- * Lists in Zuri are sequence types that is used to hold zero or more values in a single storage.
- * Each item in a list is assigned a number (index) starting from zero (`0`) for the first item. 
- * Zuri Lists are comma (`,`) separated list of different values of different or same type. For example,
- * a list can contain only number, another can contain a mixture of numbers and strings and yet another 
- * can contain lists as well.
- * 
+ *
+ * Lists in Zuri are sequence types that is used to hold zero or
+ * more values in a single storage. Each item in a list is
+ * assigned a number (index) starting from zero (`0`) for the
+ * first item. Zuri Lists are comma (`,`) separated list of
+ * different values of different or same type. For example, a
+ * list can contain only number, another can contain a mixture of
+ * numbers and strings and yet another can contain lists as well.
+ *
  * ## Creating a list
- * 
- * Creating a list is very simple. Simply type a left square bracket (`[`), followed by the values in 
- * the list if any, all separated by commas and close it all with a right square bracket (`]`). 
- * 
+ *
+ * Creating a list is very simple. Simply type a left square
+ * bracket (`[`), followed by the values in the list if any, all
+ * separated by commas and close it all with a right square
+ * bracket (`]`).
+ *
  * For example:
- * 
+ *
  * ```zuri-repl
  * %> [1, 2, 3]
  * [1, 2, 3]
@@ -22,28 +26,32 @@
  * %> [['Lois', 36], ['Clark', 27]]
  * [[Lois, 36], [Clark, 27]]
  * ```
- * 
+ *
  * A list can contain any mixture of data types.
- * 
+ *
  * ## List Operations
- * 
- * Like Strings, Lists support lots of operations too, but Lists generally support fewer _operators_. 
- * List supports additions, slicing, iteration and methods too.
- * 
- * Working with Lists is a breeze. For example, adding two lists together looks like this:
- * 
+ *
+ * Like Strings, Lists support lots of operations too, but Lists
+ * generally support fewer _operators_. List supports additions,
+ * slicing, iteration and methods too.
+ *
+ * Working with Lists is a breeze. For example, adding two lists
+ * together looks like this:
+ *
  * ```zuri-repl
  * %> [1, 2] + [3, 4]
  * [1, 2, 3, 4]
  * %> ['Hello'] + ['World']
  * [Hello, World]
  * ```
- * 
- * Lists follow the same indexing and slicing rules as [Strings](./strings) so for brevity, we'll
- * not go into the whole academic stuffs anymore.
- * 
- * Just for a quick run-through, accessing indexes in _Lists_ will look like this:
- * 
+ *
+ * Lists follow the same indexing and slicing rules as
+ * [Strings](./strings) so for brevity, we'll not go into the
+ * whole academic stuffs anymore.
+ *
+ * Just for a quick run-through, accessing indexes in _Lists_
+ * will look like this:
+ *
  * ```zuri-repl
  * %> var names = ['John', 'Wick', 'III']
  * %> names[1]
@@ -51,9 +59,10 @@
  * %> names[-1]
  * 'III'
  * ```
- * 
- * And slicing _Lists_ just like [Strings](./strings#string-operations) will look like this:
- * 
+ *
+ * And slicing _Lists_ just like
+ * [Strings](./strings#string-operations) will look like this:
+ *
  * ```zuri-repl
  * %> var numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]
  * %> numbers[,]
@@ -69,15 +78,16 @@
  * %> numbers[4,-2]
  * [5, 6, 7]
  * ```
- * 
+ *
  * ## Looping through Lists
- * 
- * Lists can be iterated using any of the looping techniques available in Zuri. However, the `iter`
- * and the `for` loop are the recommended as they will require fewer moving parts, and Lists are 
- * optimized for those looping techniques.
- * 
+ *
+ * Lists can be iterated using any of the looping techniques
+ * available in Zuri. However, the `iter` and the `for` loop are
+ * the recommended as they will require fewer moving parts, and
+ * Lists are optimized for those looping techniques.
+ *
  * For example, you can use the `iter` loop like this:
- * 
+ *
  * ```zuri-repl
  * %> var users = ['Gabriel', 'Anna', 'Cinderella']
  * %> iter var i = 0; i < users.length(); i++ {
@@ -87,13 +97,15 @@
  * 'Anna'
  * 'Cinderella'
  * ```
- * 
- * The above example uses the `iter` loop to iterate through the list. Notice how the condition uses 
- * the `length()` method of the list and how we accessed the current list item using the iteration 
- * variable.
- * 
- * We can do the same with the `for` loop using even fewer code schematics. For example,
- * 
+ *
+ * The above example uses the `iter` loop to iterate through the
+ * list. Notice how the condition uses the `length()` method of
+ * the list and how we accessed the current list item using the
+ * iteration variable.
+ *
+ * We can do the same with the `for` loop using even fewer code
+ * schematics. For example,
+ *
  * ```zuri-repl
  * %> users = ['James', 'Lucy', 'Estonia']
  * %> for user in users {
@@ -103,9 +115,10 @@
  * 'Lucy'
  * 'Estonia'
  * ```
- * 
- * We can also use the `while` loop to iterate through a list. For example,
- * 
+ *
+ * We can also use the `while` loop to iterate through a list.
+ * For example,
+ *
  * ```zuri-repl
  * %> users = ['Odin', 'Parker', 'Kent']
  * %> var i = 0
@@ -124,14 +137,14 @@ class list {
 
   /**
    * Returns the number of items in the list. <br>
-   *   
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> ['A', 'B', 'C'].length()
    * 3
    * ```
-   * 
+   *
    * @return {number}
    */
   length() {}
@@ -139,16 +152,16 @@ class list {
 
   /**
    * Adds the given value _x_ to the end of the list.
-   *   
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [1,2,3]
    * %> a.append(4)
    * %> a
    * [1, 2, 3, 4]
    * ```
-   * 
+   *
    * @param {any} value
    * @return {list}
    */
@@ -157,9 +170,9 @@ class list {
 
   /**
    * Removes all items from the list.<br>
-   *   
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [1,2,3,4,5]
    * %> a
@@ -173,11 +186,12 @@ class list {
 
 
   /**
-   * Returns a new list containing all items from the _list_. The new list is a shallow copy of the 
-   * original list. This is equivalent to `list[,]`.
-   * 
+   * Returns a new list containing all items from the _list_. The
+   * new list is a shallow copy of the original list. This is
+   * equivalent to `list[,]`.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [1, 2, 3]
    * %> var b = a.clone()
@@ -187,7 +201,7 @@ class list {
    * %> b
    * [1, 2, 3]
    * ```
-   * 
+   *
    * @return {list}
    */
   clone() {}
@@ -195,14 +209,14 @@ class list {
 
   /**
    * Returns the number of times item _x_ occurs in the list.
-   *   
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> [1, 2, 1, 3, 2, 1, 1].count(1)
    * 4
    * ```
-   * 
+   *
    * @param {any} value
    * @return {number}
    */
@@ -210,11 +224,12 @@ class list {
 
 
   /**
-   * Updates the content of the _list_ by appending all the contents of list _x_ to the end of the 
-   * original list in exact order. This is equivalent to `list + x`.
-   * 
+   * Updates the content of the _list_ by appending all the
+   * contents of list _x_ to the end of the original list in
+   * exact order. This is equivalent to `list + x`.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [1, 2, 3]
    * %> var b = [4, 5, 6]
@@ -224,7 +239,7 @@ class list {
    * %> b
    * [4, 5, 6]
    * ```
-   * 
+   *
    * @param {list} list
    * @return {list}
    */
@@ -232,11 +247,12 @@ class list {
 
 
   /**
-   * Returns the zero-based index of the first occurrence of the value _x_ in the list starting from the 
-   * given _start_index_ or `-1` if the list does not contain the value _x_.
-   * 
+   * Returns the zero-based index of the first occurrence of the
+   * value _x_ in the list starting from the given _start_index_
+   * or `-1` if the list does not contain the value _x_.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> [1,2].index_of(3)
    * -1
@@ -247,7 +263,7 @@ class list {
    * %> ['a', 'b', 'r', 'a', 'h', 'a', 'm'].index_of('a', 1)
    * 3
    * ```
-   * 
+   *
    * @param {any} value
    * @param {?int} start_index
    * @return {number}
@@ -256,13 +272,15 @@ class list {
 
 
   /**
-   * Inserts the item _x_ into the list at the specified _index_. By specifying an index of zero 
-   * (`list.insert(x, 0)`), one can prepend the list and `list.insert(x, list.length())` is equivalent 
-   * to `list.append(x)`. If the _index_ specified is greater than `list.length()`, the list will be 
-   * padded with `nil` up till the index preceding the specified index.
-   * 
+   * Inserts the item _x_ into the list at the specified _index_.
+   * By specifying an index of zero (`list.insert(x, 0)`), one
+   * can prepend the list and `list.insert(x, list.length())` is
+   * equivalent to `list.append(x)`. If the _index_ specified is
+   * greater than `list.length()`, the list will be padded with
+   * `nil` up till the index preceding the specified index.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [1,2,3]
    * %> a.insert(4, 0)
@@ -278,7 +296,7 @@ class list {
    * %> a
    * [4, 1, 2, 6, 3, 5, nil, nil, nil, nil, nil, 7]
    * ```
-   * 
+   *
    * @param {any} value
    * @param {int} index
    * @return {list}
@@ -287,10 +305,11 @@ class list {
 
 
   /**
-   * Removes the last item in a list and returns the value of that item.<br>
-   *   
+   * Removes the last item in a list and returns the value of
+   * that item.<br>
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [4, 5, 6]
    * %> a.pop()
@@ -298,25 +317,29 @@ class list {
    * %> a
    * [4, 5]
    * ```
-   * 
+   *
    * @return {any}
    */
   pop() {}
 
 
   /**
-   * Removed the specified count of items from the beginning of the list and returns it. If _count_ 
-   * is not specified, _count_ defaults to 1. If one item is shifted, the method returns that item. 
-   * If more than one item is shifted, the method returns a list containing the shifted items.
-   * 
-   * > The square brackets (`[]`) around the _`count: number`_ in the method definition indicates that 
-   * > the parameter is optional and does not mean you have to type the square brackets.
-   * 
-   * If the number of items required to be shifted exceeds the size of the list, the list is cleared
-   * and `nil` is returned.
-   * 
+   * Removed the specified count of items from the beginning of
+   * the list and returns it. If _count_ is not specified,
+   * _count_ defaults to 1. If one item is shifted, the method
+   * returns that item. If more than one item is shifted, the
+   * method returns a list containing the shifted items.
+   *
+   * > The square brackets (`[]`) around the _`count: number`_ in
+   * > the method definition indicates that the parameter is
+   * > optional and does not mean you have to type the square
+   * > brackets.
+   *
+   * If the number of items required to be shifted exceeds the
+   * size of the list, the list is cleared and `nil` is returned.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
    * %> a.shift()
@@ -331,7 +354,7 @@ class list {
    * %> a
    * []
    * ```
-   * 
+   *
    * @param {?int} count
    * @return {any}
    */
@@ -339,11 +362,12 @@ class list {
 
 
   /**
-   * Removes the item at the specified index in the list and returns it. If the index is less than 
-   * `0` or greater than `list.length() - 1`, an Error is raised.
-   * 
+   * Removes the item at the specified index in the list and
+   * returns it. If the index is less than `0` or greater than
+   * `list.length() - 1`, an Error is raised.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [1, 2, 3, 4, 5]
    * %> a.remove_at(3)
@@ -359,7 +383,7 @@ class list {
    *   StackTrace:
    *     <repl>:1 -> @.script()
    * ```
-   * 
+   *
    * @param {int} index
    * @return {any}
    */
@@ -368,18 +392,18 @@ class list {
 
   /**
    * Removes the first occurrence of item _x_ from the list.
-   * 
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = ['Kirk', 'Tasha', 'Emily', 'Kirk']
    * %> a.remove('Kirk')
    * %> a
    * [Tasha, Emily, Kirk]
    * ```
-   * 
+   *
    * Notice that only the first occurrence of `Kirk` was removed.
-   * 
+   *
    * @param {any} value
    * @return {any}
    */
@@ -387,63 +411,68 @@ class list {
 
 
   /**
-   * Returns a new list containing the items in the original list in reverse order.
-   * 
+   * Returns a new list containing the items in the original list
+   * in reverse order.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = ['apple', 'mango', 'banana', 'orange', 'peach']
    * %> a.reverse()
    * [peach, orange, banana, mango, apple]
    * ```
-   * 
+   *
    * @return {list}
    */
   reverse() {}
 
 
   /**
-   * Sorts the items in the list in-place and returns the sorted list. Sorting in Lists 
-   * follows are strict set of precedence based on the object type. The order for sorting 
-   * is as follows in ascending orders:<br>
-   * 
-   * `nil`, boolean, numbers, strings, ranges, lists, dictionaries, file, bytes, functions, classes 
-   * and modules.
-   * 
-   * When the corresponding items in the list are of the same type, they are sorted based on their
-   * respective values according to the type. For example, the number `5` is less than `8` and as such
-   * will appear first in the sort.
-   * 
+   * Sorts the items in the list in-place and returns the sorted
+   * list. Sorting in Lists follows are strict set of precedence
+   * based on the object type. The order for sorting is as
+   * follows in ascending orders:<br>
+   *
+   * `nil`, boolean, numbers, strings, ranges, lists,
+   * dictionaries, file, bytes, functions, classes and modules.
+   *
+   * When the corresponding items in the list are of the same
+   * type, they are sorted based on their respective values
+   * according to the type. For example, the number `5` is less
+   * than `8` and as such will appear first in the sort.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a  = ['A', 5, false, nil, [21, 13, 46]]
    * %> a.sort()
    * %> a
    * [nil, false, 5, A, [13, 21, 46]]
    * ```
-   * 
-   * > Notice how the boolean value precedes the number and how the number in turn precedes the string
-   * > and the strings in turn, precedes the list in the result. Also, note that the items of the inner
-   * > list is sorted.
-   * 
+   *
+   * > Notice how the boolean value precedes the number and how
+   * > the number in turn precedes the string and the strings in
+   * > turn, precedes the list in the result. Also, note that the
+   * > items of the inner list is sorted.
+   *
    * @return {list}
    */
   sort() {}
 
 
   /**
-   * Returns `true` if the list contains the item _x_ or `false` otherwise.
-   * 
+   * Returns `true` if the list contains the item _x_ or `false`
+   * otherwise.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %>  ['dog', 'cat', 'wolf', 'tiger'].contains('cat')
    * true
    * %>  ['dog', 'cat', 'wolf', 'tiger'].contains('giraffe')
    * false
    * ```
-   * 
+   *
    * @param {any} value
    * @return {boolean}
    */
@@ -451,12 +480,13 @@ class list {
 
 
   /**
-   * Deletes a range of items from the list starting from the start to the end limit and returns 
-   * the number of items removed. If the start and end are the same, this will be equivalent to 
-   * `list.remove_at(start)`.
-   * 
+   * Deletes a range of items from the list starting from the
+   * start to the end limit and returns the number of items
+   * removed. If the start and end are the same, this will be
+   * equivalent to `list.remove_at(start)`.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [1, 2, 3, 4, 5, 6, 7, 8, 9]
    * %> a.delete(3, 6)
@@ -468,7 +498,7 @@ class list {
    * %> a
    * [1, 3, 8, 9]
    * ```
-   * 
+   *
    * @param {int} start
    * @param {int} end
    * @return {number}
@@ -477,30 +507,32 @@ class list {
 
 
   /**
-   * Returns the first item in the list or `nil` if the list is empty.
-   * 
+   * Returns the first item in the list or `nil` if the list is
+   * empty.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> ['c', 'd', 'a', 'b'].first()
    * 'c'
    * ```
-   * 
+   *
    * @return {any}
    */
   first() {}
 
 
   /**
-   * Returns the last item in the list or `nil` if the list is empty.
-   * 
+   * Returns the last item in the list or `nil` if the list is
+   * empty.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> ['c', 'd', 'a', 'b'].last()
    * 'b'
    * ```
-   * 
+   *
    * @return {any}
    */
   last() {}
@@ -508,27 +540,29 @@ class list {
 
   /**
    * Returns `true` if the list is empty or `false` otherwise.
-   * 
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> [1, 2].is_empty()
    * false
    * %> [].is_empty()
    * true
    * ```
-   * 
+   *
    * @return {boolean}
    */
   is_empty() {}
 
 
   /**
-   * Returns a new list containing the first _n_ items in the list or a new copy of the list if _n_ 
-   * greater than or equals to the `list.length()`. If `n < 0`, returns `list.take(list.length() - n)`.
-   * 
+   * Returns a new list containing the first _n_ items in the
+   * list or a new copy of the list if _n_ greater than or equals
+   * to the `list.length()`. If `n < 0`, returns
+   * `list.take(list.length() - n)`.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
    * %> a.take(4)
@@ -538,7 +572,7 @@ class list {
    * %> a.take(-5)   # taking n < 0
    * [10, 11, 12, 13, 14, 15]
    * ```
-   * 
+   *
    * @param {int} n
    * @return {list}
    */
@@ -546,12 +580,13 @@ class list {
 
 
   /**
-   * Returns the value at the specified index in the list. If _index_ is outside the boundary of 
-   * the list indexes (`0..(list.length() - 1)`), an Error is thrown. This method is equivalent 
-   * to `list[index]`.
-   * 
+   * Returns the value at the specified index in the list. If
+   * _index_ is outside the boundary of the list indexes
+   * (`0..(list.length() - 1)`), an Error is thrown. This method
+   * is equivalent to `list[index]`.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> [13, 14, 15, 16].get(1)
    * 14
@@ -560,7 +595,7 @@ class list {
    *   StackTrace:
    *     <repl>:1 -> @.script()
    * ```
-   * 
+   *
    * @param {int} index
    * @return {any}
    */
@@ -568,45 +603,48 @@ class list {
 
 
   /**
-   * Returns a new list containing the items in the original list but with all `nil` values removed.
-   * 
+   * Returns a new list containing the items in the original list
+   * but with all `nil` values removed.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> [21, nil, 14, 'age', nil, nil, [], 11].compact()
    * [21, 14, age, [], 11]
    * ```
-   * 
+   *
    * @return {list}
    */
   compact() {}
 
 
   /**
-   * Returns a new list containing the unique values from the original list.
-   * 
+   * Returns a new list containing the unique values from the
+   * original list.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> [1, 1, 3, 5].unique()
    * [1, 3, 5]
    * ```
-   * 
+   *
    * @return {list}
    */
   unique() {}
 
 
   /**
-   * Returns a list that contains the items in the original list merged with corresponding items 
-   * from the individual arguments. This generates a list of length equal to the length of the 
-   * original argument.
-   * 
-   * If the size of any of the arguments is less than the size of the original list, it's corresponding 
-   * entry will be `nil`.
-   * 
+   * Returns a list that contains the items in the original list
+   * merged with corresponding items from the individual
+   * arguments. This generates a list of length equal to the
+   * length of the original argument.
+   *
+   * If the size of any of the arguments is less than the size of
+   * the original list, it's corresponding entry will be `nil`.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> var a = [4, 5, 6]
    * %> var b = [7, 8, 9]
@@ -623,7 +661,7 @@ class list {
    * %> [[1, 2], [3]].zip(a, b)
    * [[[1, 2], 4, 7], [[3], 5, 8]]
    * ```
-   * 
+   *
    * @param {...list} lists
    * @return {list}
    */
@@ -631,16 +669,17 @@ class list {
 
 
   /**
-   * The same as `list.zip()` except that instead of accepting an arbitrary list or arguments, it 
-   * accepts a single list that should contain other lists.
-   * 
+   * The same as `list.zip()` except that instead of accepting an
+   * arbitrary list or arguments, it accepts a single list that
+   * should contain other lists.
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> [1, 2].zip_from([[3, 4]])
    * [[1, 3], [2, 4]]
    * ```
-   * 
+   *
    * @param {list} list
    * @return {list}
    */
@@ -649,18 +688,326 @@ class list {
 
   /**
    * Returns a number indexed dictionary representing the list.
-   * 
+   *
    * For example:
-   * 
+   *
    * ```zuri-repl
    * %> ['English', 'French', 'Spanish'].to_dict()
    * {0: English, 1: French, 2: Spanish}
    * ```
-   * 
+   *
    * @return {dict}
    */
   to_dict() {}
 
-  @iter(n) {}
-  @itern(n) {}
+  /**
+   * Iterates over each element in the list, calling the provided
+   * callback function with the current element as an argument.
+   *
+   * @param {function} callback The function to execute for each
+   *    element in the list.
+   * @throws {Error} if the callback is not a function.
+   *
+   * Example:
+   *
+   * ```zuri
+   * ['A', 'B', 'C'].each(@(r) {
+   *   echo r
+   * })
+   *
+   * # Output: A B C
+   * ```
+   *
+   * > The `each` method does not return a new list; it simply
+   * > executes the callback for each element. If you want to
+   * > create a new list based on the original, consider using
+   * > the `map` method instead.
+   */
+  each(callback: function) {}
+
+  /**
+   * Creates a new list populated with the results of calling a
+   * provided function on every element in the calling list.
+   *
+   * @param {function} callback The function to execute on each
+   *    element in the list. It receives the current element and
+   *    its index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].map(@(x) {
+   *   return x * 2
+   * })
+   *
+   * # Output: [2, 4, 6]
+    * ```
+   */
+  map(callback: function) {}
+
+  /**
+   * Creates a new list with all elements that pass the test
+   * implemented by the provided function.
+   *
+   * It returns a new list with the elements that pass the test.
+   * If no elements pass the test, an empty list will be
+   * returned.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].filter(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: [2]
+   * ```
+   */
+  filter(callback: function) {}
+
+  /**
+   * Applies a function against an accumulator and each element
+   * in the list (from left to right) to reduce it to a single
+   * value and returns the accumulated result of the callback
+   * function.
+   *
+   * @param {function} callback The function to execute on each
+   *    element in the list. It receives the current element and
+   *    its index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @param initial The initial value to use as the accumulator.
+   *    If no initial value is provided, the first element of the
+   *    list will be used as the initial accumulator, and the
+   *    iteration will start from the second element.
+   * @returns {any}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].reduce(@(acc, x) {
+   *   return acc + x
+   * })
+   *
+   * # Output: 6
+   * ```
+   */
+  reduce(callback: function, initial: any) {}
+
+  /**
+   * Tests whether at least one element in the list passes the
+   * test implemented by the provided function.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {boolean}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].some(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: true
+   * ```
+   *
+   * The `some` method returns `true` if the callback function
+   * returns a truthy value for at least one element in the list.
+   * If the callback function returns a falsy value for all
+   * elements, `some` will return `false`. If the list is empty,
+   * `some` will return `false` by default.
+   */
+  some(callback: function) {}
+
+  /**
+   * Tests whether all elements in the list pass the test
+   * implemented by the provided function.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {boolean}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].every(@(x) {
+   *   return x > 0
+   * })
+   *
+   * # Output: true
+   * ```
+   *
+   * The `every` method returns `true` if the callback function
+   * returns a truthy value for every element in the list. If the
+   * callback function returns a falsy value for any element,
+   * `every` will return `false`. If the list is empty, `every`
+   * will return `true` by default.
+   */
+  every(callback: function) {}
+
+  /**
+   * Returns the value of the first element in the list that
+   * satisfies the provided testing function. If no elements
+   * satisfy the testing function, `find` returns `nil`.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].find(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: 2
+   * ```
+   */
+  find(callback: function) {}
+
+  /**
+   * Returns the index of the first element in the list that
+   * satisfies the provided testing function. If no elements
+   * satisfy the testing function, `find_index` returns `-1`.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].find_index(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: 1
+   * ```
+   */
+  find_index(callback: function) {}
+
+  /**
+   * Returns the value of the last element in the list that
+   * satisfies the provided testing function. If no elements
+   * satisfy the testing function, `find_last` returns `nil`.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].find_last(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: 2
+   * ```
+   */
+  find_last(callback: function) {}
+
+  /**
+   * Returns the index of the last element in the list that
+   * satisfies the provided testing function. If no elements
+   * satisfy the testing function, `find_last_index` returns
+   * `-1`.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].find_last_index(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: 1
+   * ```
+   */
+  find_last_index(callback: function) {}
+
+  /**
+   * Returns a new list containing all elements of the calling
+   * list that satisfy the provided testing function.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].find_all(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: [2]
+   * ```
+   */
+  find_all(callback: function) {}
+
+  /**
+   * Returns an list containing two lists: the first with
+   * elements that satisfy the provided testing function, and the
+   * second with elements that do not satisfy the testing
+   * function.
+   *
+   * @param {function} callback The function to test each element
+   *    of the list. It receives the current element and its
+   *    index as arguments.
+   * @throws {Error} if the callback is not a function.
+   * @returns {list}
+   *
+   * Example:
+   *
+   * ```zuri
+   * echo [1, 2, 3].partition(@(x) {
+   *   return x % 2 == 0
+   * })
+   *
+   * # Output: [[2], [1, 3]]
+   * ```
+   */
+  partition(callback: function) {}
+
+  /**
+   * Returns the string representation of the list.
+   *
+   * ```zuri-repl
+   * %> [1, 'two', 3].to_string()
+   * '[1, two, 3]'
+   * ```
+   *
+   * @returns {string}
+   */
+  to_string() {}
+
+  @value(n) {}
+  @key(n) {}
 }

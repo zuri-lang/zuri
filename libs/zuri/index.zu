@@ -1,50 +1,54 @@
 /**
  * @module zuri
  *
- * Exposes Zuri's own compiler pipeline as a library: lexing, parsing,
- * and compiling a Zuri source file, plus a `reflect` submodule for
- * inspecting live functions, classes, and modules at runtime.
+ * Exposes Zuri's own compiler pipeline as a library: lexing,
+ * parsing, and compiling a Zuri source file, plus a `reflect`
+ * submodule for inspecting live functions, classes, and modules
+ * at runtime.
  *
- * - `tokenize(source)` returns every lexical token in `source`, in
- *   order; see {zuri.token}.
- * - `parse(source)` returns `source`'s AST as a list of nodes, with
- *   every comment and doc block preserved in place; see {zuri.ast}.
- * - `compile(source)` returns `source`'s compiled VM instructions;
- *   see {zuri.compile}.
- * - `zuri.reflect` inspects live functions/classes/modules, and reads
- *   or updates an instance's own properties; see {zuri.reflect}.
+ * - `tokenize(source)` returns every lexical token in `source`,
+ * in order; see {zuri.token}. - `parse(source)` returns
+ * `source`'s AST as a list of nodes, with every comment and doc
+ * block preserved in place; see {zuri.ast}. - `compile(source)`
+ * returns `source`'s compiled VM instructions; see
+ * {zuri.compile}. - `zuri.reflect` inspects live
+ * functions/classes/modules, and reads or updates an instance's
+ * own properties; see {zuri.reflect}.
  *
- * The ordinary starting point in practice is a real file on disk, not
- * a source string already sitting in a variable, so each of the three
- * above also has a `_file` counterpart that reads `path` first:
- * `tokenize_file(path)`, `parse_file(path)`, `compile_file(path)`.
- * There's a fourth, `dump_file(path)`, with no bare-`source`
- * equivalent of its own; it reads and parses `path`, then returns the
- * `dump()` of every top-level node, which is usually the single
- * fastest way to answer "what's actually in this file".
+ * The ordinary starting point in practice is a real file on
+ * disk, not a source string already sitting in a variable, so
+ * each of the three above also has a `_file` counterpart that
+ * reads `path` first: `tokenize_file(path)`, `parse_file(path)`,
+ * `compile_file(path)`. There's a fourth, `dump_file(path)`,
+ * with no bare-`source` equivalent of its own; it reads and
+ * parses `path`, then returns the `dump()` of every top-level
+ * node, which is usually the single fastest way to answer
+ * "what's actually in this file".
  *
  * ## The mental model
  *
- * `tokenize()`/`parse()`/`compile()` all return the same SHAPE of
- * thing: a list of small, uniformly-tagged records. A token has a
- * `kind`; an AST node has a `kind`; an instruction has an `op`.
- * Whichever one it is, everything specific to that particular kind
- * lives in one place: `token.value`, `node.fields`, `instr.fields`.
- * There's a `Token` class, a `Node` class, and an `Instr` class, not
- * one class per token kind / grammar rule / opcode. Zuri's grammar
- * alone has around fifty expression/statement/declaration shapes, and
- * the instruction set has roughly sixty opcodes; a dedicated class
- * for each would be well over a hundred near-identical classes to
- * keep in sync with the compiler forever after, for what would
- * ultimately still be a `name` + a handful of fields each. This is
- * the same tradeoff tools like Python's `ast` module or Babel's
- * ESTree make, for the same reason.
+ * `tokenize()`/`parse()`/`compile()` all return the same SHAPE
+ * of thing: a list of small, uniformly-tagged records. A token
+ * has a `kind`; an AST node has a `kind`; an instruction has an
+ * `op`. Whichever one it is, everything specific to that
+ * particular kind lives in one place: `token.value`,
+ * `node.fields`, `instr.fields`. There's a `Token` class, a
+ * `Node` class, and an `Instr` class, not one class per token
+ * kind / grammar rule / opcode. Zuri's grammar alone has around
+ * fifty expression/statement/declaration shapes, and the
+ * instruction set has roughly sixty opcodes; a dedicated class
+ * for each would be well over a hundred near-identical classes
+ * to keep in sync with the compiler forever after, for what
+ * would ultimately still be a `name` + a handful of fields each.
+ * This is the same tradeoff tools like Python's `ast` module or
+ * Babel's ESTree make, for the same reason.
  *
- * The real cost of that choice: nothing points you at what fields a
- * given `kind`/`op` carries the way a typed class would. You can't
- * autocomplete your way to a `Binary` node's `left`/`op`/`right`. So
- * this module leans hard on a different way of finding out: run
- * something and look, rather than read a spec first.
+ * The real cost of that choice: nothing points you at what
+ * fields a given `kind`/`op` carries the way a typed class
+ * would. You can't autocomplete your way to a `Binary` node's
+ * `left`/`op`/`right`. So this module leans hard on a different
+ * way of finding out: run something and look, rather than read a
+ * spec first.
  *
  * ```zuri
  * import zuri
@@ -80,23 +84,24 @@
  *                   name: 'b'
  *   is_variadic: false
  * ```
- * That single `dump()` call answers "what does a `Function` node look
- * like" far more completely than a paragraph of prose would, and it
- * answers it for whatever kind you're actually holding, not just the
- * ones someone thought to write up. {zuri.ast.Node.dump} and
- * {zuri.compile.Instr.dump} both work this way; {zuri.token.Token}
- * doesn't need the same treatment, since a token's own fields
- * (`kind`, `line`, `column`, `start`, `end`, `text`, `value`) are
- * always the same seven, spelled out in {zuri.token}'s own docs.
+ * That single `dump()` call answers "what does a `Function` node
+ * look like" far more completely than a paragraph of prose
+ * would, and it answers it for whatever kind you're actually
+ * holding, not just the ones someone thought to write up.
+ * {zuri.ast.Node.dump} and {zuri.compile.Instr.dump} both work
+ * this way; {zuri.token.Token} doesn't need the same treatment,
+ * since a token's own fields (`kind`, `line`, `column`, `start`,
+ * `end`, `text`, `value`) are always the same seven, spelled out
+ * in {zuri.token}'s own docs.
  *
  * Once you know the `kind`/`op` you're after, `walk_nodes()`/
  * `walk_instrs()` (and their shorthand, `find_nodes()`/
- * `find_instrs()`) do the actual work. Almost nothing real gets done
- * by manually indexing into `fields` node by node; the normal shape
- * of a task is "for every node/instruction of kind X, do Y",
- * regardless of how deep in the tree it sits (inside a nested
- * function, inside an `if`, wherever), which is exactly what these
- * two functions are for, so reach for them first.
+ * `find_instrs()`) do the actual work. Almost nothing real gets
+ * done by manually indexing into `fields` node by node; the
+ * normal shape of a task is "for every node/instruction of kind
+ * X, do Y", regardless of how deep in the tree it sits (inside a
+ * nested function, inside an `if`, wherever), which is exactly
+ * what these two functions are for, so reach for them first.
  *
  * ```zuri
  * import zuri
@@ -118,23 +123,25 @@
  *
  * 1. Call `parse_file()`/`compile_file()` on something real (or
  *    `parse()`/`compile()`, if you already have the source as a
- *    string). `echo zuri.dump_file(path)` first, if you just want to
- *    look before writing any real code against it.
- * 2. `dump()` the specific node/instruction you care about, to see
- *    its actual shape.
+ *    string). `echo zuri.dump_file(path)` first, if you just
+ *    want to look before writing any real code against it.
+ * 2. `dump()` the specific node/instruction you care about, to
+ *    see its actual shape.
  * 3. `walk_nodes()`/`walk_instrs()` (or `find_nodes()`/
- *    `find_instrs()`) to do something with every one of that kind,
- *    wherever it appears.
- * 4. Reach for {zuri.ast}'s or {zuri.compile}'s own doc comments only
- *    for the parts exploration doesn't answer on its own: exactly
- *    which shapes carry a `line`/`col` (most do, a handful of purely
- *    structural ones don't), how a `Closure` instruction's resolved
- *    value nests a whole other instruction list inside it, and so on.
+ *    `find_instrs()`) to do something with every one of that
+ *    kind, wherever it appears.
+ * 4. Reach for {zuri.ast}'s or {zuri.compile}'s own doc comments
+ *    only for the parts exploration doesn't answer on its own:
+ *    exactly which shapes carry a `line`/`col` (most do, a
+ *    handful of purely structural ones don't), how a `Closure`
+ *    instruction's resolved value nests a whole other
+ *    instruction list inside it, and so on.
  *
  * `zuri.reflect` doesn't need any of this: it's ordinary named
- * functions (`function_info(f)`, `has_method(object, name)`, ...)
- * with ordinary parameters, not a generic tagged-record system, so
- * its own doc comments are the whole story; see {zuri.reflect}.
+ * functions (`function_info(f)`, `has_method(object, name)`,
+ * ...) with ordinary parameters, not a generic tagged-record
+ * system, so its own doc comments are the whole story; see
+ * {zuri.reflect}.
  *
  * ```zuri
  * import zuri

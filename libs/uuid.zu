@@ -1,13 +1,15 @@
 /**
  * @module uuid
  *
- * Provides RFC 9562 (and RFC 4122) compliant Universally Unique Identifier
- * (UUID) generation, parsing, validation, and inspection.
+ * Provides RFC 9562 (and RFC 4122) compliant Universally Unique
+ * Identifier (UUID) generation, parsing, validation, and
+ * inspection.
  *
- * A UUID is a 128-bit label represented as 32 lowercase hexadecimal digits,
- * displayed in five groups separated by hyphens in the form:
+ * A UUID is a 128-bit label represented as 32 lowercase
+ * hexadecimal digits, displayed in five groups separated by
+ * hyphens in the form:
  *
- *   `xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx`
+ * `xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx`
  *
  * where `M` encodes the version and `N` encodes the variant.
  *
@@ -23,12 +25,14 @@
  * | v7      | Unix-time ordered + random         | RFC 9562 |
  * | v8      | Custom / application-defined       | RFC 9562 |
  *
- * The Nil UUID (`00000000-0000-0000-0000-000000000000`) and the Max UUID
- * (`ffffffff-ffff-ffff-ffff-ffffffffffff`) are also defined as per RFC 9562.
+ * The Nil UUID (`00000000-0000-0000-0000-000000000000`) and the
+ * Max UUID (`ffffffff-ffff-ffff-ffff-ffffffffffff`) are also
+ * defined as per RFC 9562.
  *
- * > **Note:** UUID v2 (DCE Security) is intentionally omitted. RFC 9562
- * > declares v2 "out of scope", and its specification lives in a separate
- * > DCE document rather than in the IETF UUID standard.
+ * > **Note:** UUID v2 (DCE Security) is intentionally omitted.
+ * > RFC 9562 declares v2 "out of scope", and its specification
+ * > lives in a separate DCE document rather than in the IETF
+ * > UUID standard.
  *
  * ## Quick start
  *
@@ -49,13 +53,13 @@
  *
  * RFC 9562 §Appendix C pre-defines four namespace UUIDs:
  *
- * - `uuid.NAMESPACE_DNS`  — for fully-qualified domain names
- * - `uuid.NAMESPACE_URL`  — for URLs
- * - `uuid.NAMESPACE_OID`  — for ISO OIDs
- * - `uuid.NAMESPACE_X500` — for X.500 distinguished names
+ * - `uuid.NAMESPACE_DNS` — for fully-qualified domain names -
+ * `uuid.NAMESPACE_URL` — for URLs - `uuid.NAMESPACE_OID` — for
+ * ISO OIDs - `uuid.NAMESPACE_X500` — for X.500 distinguished
+ * names
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
- * @license   MIT
+ * @license MIT
  */
 
 import hash
@@ -161,16 +165,17 @@ var _v1_last_ts   = 0
 # ---------------------------------------------------------------------------
 
 /**
- * Pre-defined namespace UUID for fully-qualified domain names (FQDN).
- * Use with `uuid.v3()` or `uuid.v5()` when the name is a DNS hostname.
+ * Pre-defined namespace UUID for fully-qualified domain names
+ * (FQDN). Use with `uuid.v3()` or `uuid.v5()` when the name is a
+ * DNS hostname.
  *
  * Value: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`
  */
 var NAMESPACE_DNS  = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'
 
 /**
- * Pre-defined namespace UUID for URLs.
- * Use with `uuid.v3()` or `uuid.v5()` when the name is a URL.
+ * Pre-defined namespace UUID for URLs. Use with `uuid.v3()` or
+ * `uuid.v5()` when the name is a URL.
  *
  * Value: `6ba7b811-9dad-11d1-80b4-00c04fd430c8`
  */
@@ -178,32 +183,33 @@ var NAMESPACE_URL  = '6ba7b811-9dad-11d1-80b4-00c04fd430c8'
 
 /**
  * Pre-defined namespace UUID for ISO Object Identifiers (OID).
- * Use with `uuid.v3()` or `uuid.v5()` when the name is an ISO OID.
+ * Use with `uuid.v3()` or `uuid.v5()` when the name is an ISO
+ * OID.
  *
  * Value: `6ba7b812-9dad-11d1-80b4-00c04fd430c8`
  */
 var NAMESPACE_OID  = '6ba7b812-9dad-11d1-80b4-00c04fd430c8'
 
 /**
- * Pre-defined namespace UUID for X.500 Distinguished Names.
- * Use with `uuid.v3()` or `uuid.v5()` when the name is an X.500 DN.
+ * Pre-defined namespace UUID for X.500 Distinguished Names. Use
+ * with `uuid.v3()` or `uuid.v5()` when the name is an X.500 DN.
  *
  * Value: `6ba7b814-9dad-11d1-80b4-00c04fd430c8`
  */
 var NAMESPACE_X500 = '6ba7b814-9dad-11d1-80b4-00c04fd430c8'
 
 /**
- * The Nil UUID — all 128 bits are zero.
- * Defined in RFC 9562 §5.9 as a special UUID that signifies "no value".
+ * The Nil UUID — all 128 bits are zero. Defined in RFC 9562 §5.9
+ * as a special UUID that signifies "no value".
  *
  * Value: `00000000-0000-0000-0000-000000000000`
  */
 var NIL = '00000000-0000-0000-0000-000000000000'
 
 /**
- * The Max UUID — all 128 bits are one.
- * Defined in RFC 9562 §5.10 as a special UUID often used as a sentinel
- * upper-bound in range queries.
+ * The Max UUID — all 128 bits are one. Defined in RFC 9562 §5.10
+ * as a special UUID often used as a sentinel upper-bound in
+ * range queries.
  *
  * Value: `ffffffff-ffff-ffff-ffff-ffffffffffff`
  */
@@ -217,8 +223,8 @@ var MAX = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 /**
  * Represents a parsed, immutable UUID value.
  *
- * Instances expose the canonical string form plus convenience properties
- * and methods for inspecting and converting the UUID.
+ * Instances expose the canonical string form plus convenience
+ * properties and methods for inspecting and converting the UUID.
  *
  * ### Example
  *
@@ -246,16 +252,18 @@ class UUID {
   /**
    * Creates a new UUID object from a canonical UUID string.
    *
-   * The constructor normalises the input to lowercase and accepts any of the
-   * following common forms:
+   * The constructor normalises the input to lowercase and
+   * accepts any of the following common forms:
    *
-   * - `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (canonical, with hyphens)
-   * - `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`      (raw hex, no hyphens)
-   * - `urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (URN form)
-   * - `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}` (brace-wrapped GUID form)
+   * - `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (canonical, with
+   * hyphens) - `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` (raw hex, no
+   * hyphens) - `urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+   * (URN form) - `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`
+   * (brace-wrapped GUID form)
    *
-   * @param string uuid_str  The UUID to parse.
-   * @throws Error       If `uuid_str` is not a valid UUID in any accepted form.
+   * @param string uuid_str The UUID to parse.
+   * @throws Error If `uuid_str` is not a valid UUID in any
+   *    accepted form.
    */
   @new(uuid_str: string) {
     var s = uuid_str.lower().trim()
@@ -283,11 +291,12 @@ class UUID {
   }
 
   /**
-   * Returns the UUID version number (1–8), or `nil` for the Nil and Max
-   * special-form UUIDs which carry no version.
+   * Returns the UUID version number (1–8), or `nil` for the Nil
+   * and Max special-form UUIDs which carry no version.
    *
-   * The version is encoded in the high nibble of byte 6 (the `M` position in
-   * the canonical format `xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx`).
+   * The version is encoded in the high nibble of byte 6 (the `M`
+   * position in the canonical format
+   * `xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx`).
    *
    * @type number | nil
    */
@@ -301,9 +310,11 @@ class UUID {
   }
 
   /**
-   * Returns a human-readable string describing the UUID variant field.
+   * Returns a human-readable string describing the UUID variant
+   * field.
    *
-   * The variant occupies the high bits of byte 8 (the `N` position):
+   * The variant occupies the high bits of byte 8 (the `N`
+   * position):
    *
    * | High bits | Variant string         |
    * |-----------|------------------------|
@@ -325,8 +336,9 @@ class UUID {
   }
 
   /**
-   * Returns the string representation of the UUID in canonical lowercase
-   * hyphenated form: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
+   * Returns the string representation of the UUID in canonical
+   * lowercase hyphenated form:
+   * `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
    *
    * @return string
    */
@@ -345,8 +357,8 @@ class UUID {
   }
 
   /**
-   * Returns the raw 32-character lowercase hex representation of the UUID
-   * with all hyphens removed.
+   * Returns the raw 32-character lowercase hex representation of
+   * the UUID with all hyphens removed.
    *
    * @return string
    */
@@ -355,9 +367,10 @@ class UUID {
   }
 
   /**
-   * Returns the UUID as an integer (the numeric value of its 128 bits).
-   * Large values will be returned as a Zuri number; for values exceeding
-   * safe integer precision use `hex()` and the `bigint` module.
+   * Returns the UUID as an integer (the numeric value of its 128
+   * bits). Large values will be returned as a Zuri number; for
+   * values exceeding safe integer precision use `hex()` and the
+   * `bigint` module.
    *
    * @return number
    */
@@ -371,8 +384,8 @@ class UUID {
   }
 
   /**
-   * Returns the UUID as a 16-element list of byte values (integers 0–255),
-   * in big-endian (network) byte order.
+   * Returns the UUID as a 16-element list of byte values
+   * (integers 0–255), in big-endian (network) byte order.
    *
    * @return list
    */
@@ -401,10 +414,11 @@ class UUID {
   }
 
   /**
-   * Compares this UUID with another UUID or canonical UUID string.
-   * Returns `true` if both UUIDs represent the same 128-bit value.
+   * Compares this UUID with another UUID or canonical UUID
+   * string. Returns `true` if both UUIDs represent the same
+   * 128-bit value.
    *
-   * @param  UUID | string  other  The UUID to compare against.
+   * @param UUID | string other The UUID to compare against.
    * @return bool
    */
   equals(other: UUID) {
@@ -421,12 +435,14 @@ class UUID {
 # ---------------------------------------------------------------------------
 
 /**
- * Returns `true` if `str` is a syntactically valid UUID in canonical form
- * (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), case-insensitive.
+ * Returns `true` if `str` is a syntactically valid UUID in
+ * canonical form (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`),
+ * case-insensitive.
  *
- * This function checks only the structure and character set; it does **not**
- * verify that the version and variant bits are set to any particular value,
- * so the Nil and Max UUIDs are considered valid.
+ * This function checks only the structure and character set; it
+ * does **not** verify that the version and variant bits are set
+ * to any particular value, so the Nil and Max UUIDs are
+ * considered valid.
  *
  * ### Example
  *
@@ -438,7 +454,7 @@ class UUID {
  * uuid.is_valid(uuid.NIL)                               # true
  * ```
  *
- * @param  string  str  The string to test.
+ * @param string str The string to test.
  * @return bool
  */
 def is_valid(str: any) {
@@ -448,10 +464,11 @@ def is_valid(str: any) {
 }
 
 /**
- * Returns the version number (1–8) of a UUID string, or `nil` if the UUID
- * is the Nil or Max special form, or if `str` is not a valid UUID.
+ * Returns the version number (1–8) of a UUID string, or `nil` if
+ * the UUID is the Nil or Max special form, or if `str` is not a
+ * valid UUID.
  *
- * @param  string       str  A canonical UUID string.
+ * @param string str A canonical UUID string.
  * @return number | nil
  */
 def version(str: string) {
@@ -467,15 +484,17 @@ def version(str: string) {
 # ---------------------------------------------------------------------------
 
 /**
- * Generates a UUID Version 1 (time-based) as defined in RFC 4122 §4.1 /
- * RFC 9562 §5.1.
+ * Generates a UUID Version 1 (time-based) as defined in RFC 4122
+ * §4.1 / RFC 9562 §5.1.
  *
- * A v1 UUID encodes a 60-bit timestamp counted in 100-nanosecond intervals
- * since the Gregorian epoch (1582-10-15 00:00:00 UTC), a 14-bit clock
- * sequence, and a 48-bit node identifier (MAC address or random).
+ * A v1 UUID encodes a 60-bit timestamp counted in 100-nanosecond
+ * intervals since the Gregorian epoch (1582-10-15 00:00:00 UTC),
+ * a 14-bit clock sequence, and a 48-bit node identifier (MAC
+ * address or random).
  *
- * > **Privacy note:** v1 UUIDs embed timing and node information. For
- * > privacy-sensitive contexts prefer `v4()` or `v7()`.
+ * > **Privacy note:** v1 UUIDs embed timing and node
+ * > information. For privacy-sensitive contexts prefer `v4()` or
+ * > `v7()`.
  *
  * ### Example
  *
@@ -484,13 +503,13 @@ def version(str: string) {
  * echo uuid.v1()  # e.g. '6ba7b810-9dad-11d1-80b4-00c04fd430c8'
  * ```
  *
- * @param  string | nil  node   Optional 12-char hex string for the node field
- *                               (48-bit MAC address). If `nil`, a random
- *                               multicast node value is used (RFC 4122 §4.5).
- * @param  number | nil  clock_seq  Optional 14-bit clock sequence (0–16383).
- *                               If `nil`, the internal monotonic sequence is
- *                               used.
- * @return string  Canonical UUID string.
+ * @param string | nil node Optional 12-char hex string for the
+ *    node field (48-bit MAC address). If `nil`, a random
+ *    multicast node value is used (RFC 4122 §4.5).
+ * @param number | nil clock_seq Optional 14-bit clock sequence
+ *    (0–16383). If `nil`, the internal monotonic sequence is
+ *    used.
+ * @return string Canonical UUID string.
  */
 def v1(node: ?string, clock_seq: ?number) {
   var ts = _gregorian_timestamp()
@@ -541,16 +560,16 @@ def v1(node: ?string, clock_seq: ?number) {
 }
 
 /**
- * Generates a UUID Version 3 (name-based, MD5) as defined in RFC 4122 §4.3 /
- * RFC 9562 §5.3.
+ * Generates a UUID Version 3 (name-based, MD5) as defined in RFC
+ * 4122 §4.3 / RFC 9562 §5.3.
  *
- * Given the same `namespace` and `name`, `v3()` always returns the same UUID.
- * The UUID is derived by computing the MD5 hash of the namespace UUID bytes
- * concatenated with the UTF-8 encoded name bytes, then setting the version
- * and variant bits.
+ * Given the same `namespace` and `name`, `v3()` always returns
+ * the same UUID. The UUID is derived by computing the MD5 hash
+ * of the namespace UUID bytes concatenated with the UTF-8
+ * encoded name bytes, then setting the version and variant bits.
  *
- * > **Note:** MD5 is cryptographically broken. For new designs, prefer
- * > `v5()` (SHA-1) or generate random UUIDs with `v4()`.
+ * > **Note:** MD5 is cryptographically broken. For new designs,
+ * > prefer `v5()` (SHA-1) or generate random UUIDs with `v4()`.
  *
  * ### Example
  *
@@ -561,12 +580,12 @@ def v1(node: ?string, clock_seq: ?number) {
  * # always: '5df41881-3aed-3515-88a7-2f4a814cf09e'
  * ```
  *
- * @param  string  namespace  A UUID string to use as the namespace.
- *                            Use the pre-defined `NAMESPACE_*` constants or
- *                            any other valid UUID.
- * @param  string  name       The name within the namespace.
- * @return string  Canonical UUID string.
- * @throws Error  If `namespace` is not a valid UUID.
+ * @param string namespace A UUID string to use as the namespace.
+ *    Use the pre-defined `NAMESPACE_*` constants or any other
+ *    valid UUID.
+ * @param string name The name within the namespace.
+ * @return string Canonical UUID string.
+ * @throws Error If `namespace` is not a valid UUID.
  */
 def v3(namespace: string, name: string) {
   if !is_valid(namespace) {
@@ -589,14 +608,15 @@ def v3(namespace: string, name: string) {
 }
 
 /**
- * Generates a UUID Version 4 (random) as defined in RFC 4122 §4.4 /
- * RFC 9562 §5.4.
+ * Generates a UUID Version 4 (random) as defined in RFC 4122
+ * §4.4 / RFC 9562 §5.4.
  *
- * 122 bits are filled with pseudo-random data; the remaining 6 bits encode
- * the version (`0100`) and variant (`10`).
+ * 122 bits are filled with pseudo-random data; the remaining 6
+ * bits encode the version (`0100`) and variant (`10`).
  *
- * This is the most commonly used UUID version for general-purpose unique
- * identifiers where time-ordering is not required.
+ * This is the most commonly used UUID version for
+ * general-purpose unique identifiers where time-ordering is not
+ * required.
  *
  * ### Example
  *
@@ -606,7 +626,7 @@ def v3(namespace: string, name: string) {
  * echo uuid.v4()  # e.g. 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
  * ```
  *
- * @return string  Canonical UUID string.
+ * @return string Canonical UUID string.
  */
 def v4() {
   var raw = _random_hex(32)
@@ -619,11 +639,12 @@ def v4() {
  * Generates a UUID Version 5 (name-based, SHA-1) as defined in
  * RFC 4122 §4.3 / RFC 9562 §5.5.
  *
- * Identical in structure to `v3()` but uses SHA-1 instead of MD5.  SHA-1 is
- * preferred over MD5 for new name-based UUIDs.  Only the first 128 bits of
- * the 160-bit SHA-1 digest are used.
+ * Identical in structure to `v3()` but uses SHA-1 instead of
+ * MD5. SHA-1 is preferred over MD5 for new name-based UUIDs.
+ * Only the first 128 bits of the 160-bit SHA-1 digest are used.
  *
- * Given the same `namespace` and `name`, `v5()` always returns the same UUID.
+ * Given the same `namespace` and `name`, `v5()` always returns
+ * the same UUID.
  *
  * ### Example
  *
@@ -634,12 +655,12 @@ def v4() {
  * # always: 'c106a26a-21bb-5538-8bf2-57095d1976c1'
  * ```
  *
- * @param  string  namespace  A UUID string to use as the namespace.
- *                            Use the pre-defined `NAMESPACE_*` constants or
- *                            any other valid UUID.
- * @param  string  name       The name within the namespace.
- * @return string  Canonical UUID string.
- * @throws Error  If `namespace` is not a valid UUID.
+ * @param string namespace A UUID string to use as the namespace.
+ *    Use the pre-defined `NAMESPACE_*` constants or any other
+ *    valid UUID.
+ * @param string name The name within the namespace.
+ * @return string Canonical UUID string.
+ * @throws Error If `namespace` is not a valid UUID.
  */
 def v5(namespace: string, name: string) {
   if !is_valid(namespace) {
@@ -661,16 +682,19 @@ def v5(namespace: string, name: string) {
 }
 
 /**
- * Generates a UUID Version 6 (time-ordered) as defined in RFC 9562 §5.6.
+ * Generates a UUID Version 6 (time-ordered) as defined in RFC
+ * 9562 §5.6.
  *
- * v6 is a reordered variant of v1 that places the most significant timestamp
- * bits first, making v6 UUIDs naturally sortable lexicographically by
- * generation time.  It retains the same 60-bit Gregorian timestamp, 14-bit
- * clock sequence, and 48-bit node as v1.
+ * v6 is a reordered variant of v1 that places the most
+ * significant timestamp bits first, making v6 UUIDs naturally
+ * sortable lexicographically by generation time. It retains the
+ * same 60-bit Gregorian timestamp, 14-bit clock sequence, and
+ * 48-bit node as v1.
  *
- * v6 is the recommended replacement for v1 when time-ordered, monotonic IDs
- * derived from a Gregorian clock are required.  For most new designs, `v7()`
- * (Unix-time based) is simpler and equally sortable.
+ * v6 is the recommended replacement for v1 when time-ordered,
+ * monotonic IDs derived from a Gregorian clock are required. For
+ * most new designs, `v7()` (Unix-time based) is simpler and
+ * equally sortable.
  *
  * ### Example
  *
@@ -680,9 +704,11 @@ def v5(namespace: string, name: string) {
  * echo uuid.v6()  # e.g. '1ef9e292-a7a4-6000-80b4-00c04fd430c8'
  * ```
  *
- * @param  string | nil  node      Optional 12-char hex node (see `v1()`).
- * @param  number | nil  clock_seq Optional 14-bit clock sequence (see `v1()`).
- * @return string  Canonical UUID string.
+ * @param string | nil node Optional 12-char hex node (see
+ *    `v1()`).
+ * @param number | nil clock_seq Optional 14-bit clock sequence
+ *    (see `v1()`).
+ * @return string Canonical UUID string.
  */
 def v6(node: ?string, clock_seq: ?number) {
   var ts  = _gregorian_timestamp()
@@ -736,18 +762,19 @@ def v6(node: ?string, clock_seq: ?number) {
 }
 
 /**
- * Generates a UUID Version 7 (Unix-time ordered) as defined in RFC 9562 §5.7.
+ * Generates a UUID Version 7 (Unix-time ordered) as defined in
+ * RFC 9562 §5.7.
  *
- * v7 UUIDs embed a 48-bit Unix millisecond timestamp in the most significant
- * bits, followed by a 12-bit sub-millisecond sequence counter (for
- * monotonicity within the same millisecond) and 62 random bits for
- * uniqueness.
+ * v7 UUIDs embed a 48-bit Unix millisecond timestamp in the most
+ * significant bits, followed by a 12-bit sub-millisecond
+ * sequence counter (for monotonicity within the same
+ * millisecond) and 62 random bits for uniqueness.
  *
  * v7 is the **recommended version for new systems** that need:
  *
- * - Time-ordered, lexicographically sortable identifiers.
- * - Good database index locality (avoids B-tree fragmentation).
- * - No MAC address leakage (unlike v1 / v6).
+ * - Time-ordered, lexicographically sortable identifiers. - Good
+ * database index locality (avoids B-tree fragmentation). - No
+ * MAC address leakage (unlike v1 / v6).
  *
  * ### Example
  *
@@ -773,7 +800,7 @@ def v6(node: ?string, clock_seq: ?number) {
  * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  * ```
  *
- * @return string  Canonical UUID string.
+ * @return string Canonical UUID string.
  */
 def v7() {
   var unix_ms = (date.Date().to_time() * 1000).floor()
@@ -797,16 +824,17 @@ def v7() {
 }
 
 /**
- * Generates a UUID Version 8 (custom / application-defined) as defined in
- * RFC 9562 §5.8.
+ * Generates a UUID Version 8 (custom / application-defined) as
+ * defined in RFC 9562 §5.8.
  *
- * v8 is intended for **vendor-specific or experimental** use cases where the
- * caller needs to embed application-defined data into a UUID while retaining
- * the standard format, version, and variant bits.  RFC 9562 does not prescribe
- * the meaning of any field beyond the version and variant.
+ * v8 is intended for **vendor-specific or experimental** use
+ * cases where the caller needs to embed application-defined data
+ * into a UUID while retaining the standard format, version, and
+ * variant bits. RFC 9562 does not prescribe the meaning of any
+ * field beyond the version and variant.
  *
- * The three parameters together provide 48 + 12 + 62 = 122 bits of
- * application-controlled data.
+ * The three parameters together provide 48 + 12 + 62 = 122 bits
+ * of application-controlled data.
  *
  * ### Example
  *
@@ -817,13 +845,13 @@ def v7() {
  * echo uuid.v8(0x0123456789ab, 0x0cd, 0x0123456789abcdef01234567890abcd)
  * ```
  *
- * @param  number  a  48-bit application-defined field (bits 0–47).  Values
- *                    exceeding 48 bits are silently truncated.
- * @param  number  b  12-bit application-defined field (bits 48–59).  Values
- *                    exceeding 12 bits are silently truncated.
- * @param  number  c  62-bit application-defined field (bits 64–125).  Values
- *                    exceeding 62 bits are silently truncated.
- * @return string  Canonical UUID string.
+ * @param number a 48-bit application-defined field (bits 0–47).
+ *    Values exceeding 48 bits are silently truncated.
+ * @param number b 12-bit application-defined field (bits 48–59).
+ *    Values exceeding 12 bits are silently truncated.
+ * @param number c 62-bit application-defined field (bits
+ *    64–125). Values exceeding 62 bits are silently truncated.
+ * @return string Canonical UUID string.
  */
 def v8(a: number, b: number, c: number) {
 
@@ -845,10 +873,10 @@ def v8(a: number, b: number, c: number) {
 /**
  * Returns the pre-defined Nil UUID string.
  *
- * Equivalent to the module-level constant `uuid.NIL`.
- * Provided as a function for symmetry with the other generators.
+ * Equivalent to the module-level constant `uuid.NIL`. Provided
+ * as a function for symmetry with the other generators.
  *
- * @return string  `'00000000-0000-0000-0000-000000000000'`
+ * @return string `'00000000-0000-0000-0000-000000000000'`
  */
 def nil_uuid() {
   return NIL
@@ -857,10 +885,10 @@ def nil_uuid() {
 /**
  * Returns the pre-defined Max UUID string.
  *
- * Equivalent to the module-level constant `uuid.MAX`.
- * Provided as a function for symmetry with the other generators.
+ * Equivalent to the module-level constant `uuid.MAX`. Provided
+ * as a function for symmetry with the other generators.
  *
- * @return string  `'ffffffff-ffff-ffff-ffff-ffffffffffff'`
+ * @return string `'ffffffff-ffff-ffff-ffff-ffffffffffff'`
  */
 def max_uuid() {
   return MAX
@@ -872,8 +900,8 @@ def max_uuid() {
 # ---------------------------------------------------------------------------
 
 /**
- * Parses a UUID string (in canonical, raw hex, URN, or brace-wrapped form)
- * and returns a `UUID` object.
+ * Parses a UUID string (in canonical, raw hex, URN, or
+ * brace-wrapped form) and returns a `UUID` object.
  *
  * This is equivalent to calling `UUID(str)` directly.
  *
@@ -886,21 +914,23 @@ def max_uuid() {
  * echo id.version()   # 4
  * ```
  *
- * @param  string  str  The UUID string to parse.
+ * @param string str The UUID string to parse.
  * @return UUID
- * @throws Error  If `str` is not a recognisable UUID form.
+ * @throws Error If `str` is not a recognisable UUID form.
  */
 def parse(str: string) {
   return UUID(str)
 }
 
 /**
- * Converts a list of 16 byte integers (0–255) in big-endian order into a
- * canonical UUID string.
+ * Converts a list of 16 byte integers (0–255) in big-endian
+ * order into a canonical UUID string.
  *
- * @param  list  bytes_list  A list of exactly 16 integers in [0, 255].
- * @return string  Canonical UUID string.
- * @throws Error  If `bytes_list` does not contain exactly 16 bytes.
+ * @param list bytes_list A list of exactly 16 integers in [0,
+ *    255].
+ * @return string Canonical UUID string.
+ * @throws Error If `bytes_list` does not contain exactly 16
+ *    bytes.
  */
 def from_bytes(bytes_list: list|bytes) {
   if !is_list(bytes_list) and !is_bytes(bytes_list) {
@@ -919,14 +949,15 @@ def from_bytes(bytes_list: list|bytes) {
 }
 
 /**
- * Converts an integer value (the numeric representation of a 128-bit UUID)
- * into a canonical UUID string.
+ * Converts an integer value (the numeric representation of a
+ * 128-bit UUID) into a canonical UUID string.
  *
- * For very large integers (> 2^53) the result may lose precision due to
- * Zuri's floating-point number type.  In that case, prefer `from_bytes()`.
+ * For very large integers (> 2^53) the result may lose precision
+ * due to Zuri's floating-point number type. In that case, prefer
+ * `from_bytes()`.
  *
- * @param  int  int_val  The integer value of the UUID.
- * @return string  Canonical UUID string.
+ * @param int int_val The integer value of the UUID.
+ * @return string Canonical UUID string.
  */
 def from_int(int_val: int) {
   var hex32 = _int_to_hex(int_val, 32)

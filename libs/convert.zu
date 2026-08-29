@@ -1,9 +1,9 @@
 /**
  * @module convert
  *
- * This module provides extra data conversion features between non-standard 
- * object types as well as different number bases.
- * 
+ * This module provides extra data conversion features between
+ * non-standard object types as well as different number bases.
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
@@ -12,7 +12,7 @@ var _hex_table = '0123456789abcdef'
 
 /**
  * Converts hexadecimal string of any length to bytes.
- * 
+ *
  * @param string str
  * @returns bytes
  */
@@ -37,9 +37,9 @@ def hex_to_bytes(str) {
 }
 
 /**
- * Converts binary data (byes) of any length to hexadecimal string 
- * representation.
- * 
+ * Converts binary data (byes) of any length to hexadecimal
+ * string representation.
+ *
  * @param bytes data
  * @returns string
  */
@@ -57,11 +57,12 @@ def bytes_to_hex(data) {
 }
 
 /**
- * Converts the given decimal based number to an hexadecimal string. If digits is 
- * provided and the length of the result is less than digits, the result will be 
- * padded with zeros on the left. If the length of the result is greater than
- * digits, the result will be truncated to the least significant digits.
- * 
+ * Converts the given decimal based number to an hexadecimal
+ * string. If digits is provided and the length of the result is
+ * less than digits, the result will be padded with zeros on the
+ * left. If the length of the result is greater than digits, the
+ * result will be truncated to the least significant digits.
+ *
  * @param number n
  * @param ?number digits
  * @returns string
@@ -105,9 +106,11 @@ def decimal_to_hex(n, digits) {
 }
 
 /**
- * Converts the given hexadecimal string to a decimal base 10 number.
- * 
- * @note string must either contain the plain hexadecimal string or be in the format 0x[hex string].
+ * Converts the given hexadecimal string to a decimal base 10
+ * number.
+ *
+ * @note string must either contain the plain hexadecimal string
+ *    or be in the format 0x[hex string].
  * @param string str
  * @returns number
  */
@@ -130,8 +133,9 @@ def hex_to_decimal(str) {
 }
 
 /**
- * Converts a unicode character to it's equivalent hexadecimal string.
- * 
+ * Converts a unicode character to it's equivalent hexadecimal
+ * string.
+ *
  * @param char chr
  * @returns string
  */

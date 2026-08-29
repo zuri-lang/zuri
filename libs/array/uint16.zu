@@ -3,18 +3,19 @@ import ._base { Array }
 
 
 /**
- * Maximum value that "should" exist in a list passed to UUInt16Array.
+ * Maximum value that "should" exist in a list passed to
+ * UUInt16Array.
  * @type number
  */
 var UINT16_MAX = 65535
 
 
 /**
- * class UInt16Array represents an array of twos-complement 16-bit signed 
- * integers in the platform byte order.
- * 
+ * class UInt16Array represents an array of twos-complement
+ * 16-bit signed integers in the platform byte order.
+ *
  * @printable
- * @iterable
+ * @valueable
  * @serializable
  */
 class UInt16Array < Array {
@@ -24,11 +25,11 @@ class UInt16Array < Array {
   var _data_type = 'S'
 
   /**
-   * - If n is a number, it creates a new UInt16Array that can hold up to n 
-   * number of elements, but with all the elements set to 0. 
-   * - If n is a list, it creates a new UInt16Array with its elements set to 
-   * the values in the list.
-   * 
+   * - If n is a number, it creates a new UInt16Array that can
+   * hold up to n number of elements, but with all the elements
+   * set to 0. - If n is a list, it creates a new UInt16Array
+   * with its elements set to the values in the list.
+   *
    * @param {number|list} n
    * @constructor
    */
@@ -51,7 +52,7 @@ class UInt16Array < Array {
 
   /**
    * Adds the given _value_ to the end of the array.
-   * 
+   *
    * @param int value
    */
   append(value) {
@@ -72,7 +73,7 @@ class UInt16Array < Array {
 
   /**
    * Sets the value at the given index.
-   * 
+   *
    * @param number index
    * @param number value
    * @returns number
@@ -101,9 +102,10 @@ class UInt16Array < Array {
   }
 
   /**
-   * Updates the content of the current array by appending all the contents 
-   * of _array_ to the end of the array in exact order.
-   * 
+   * Updates the content of the current array by appending all
+   * the contents of _array_ to the end of the array in exact
+   * order.
+   *
    * @param UInt16Array array
    */
   extend(array) {
@@ -113,9 +115,9 @@ class UInt16Array < Array {
   }
 
   /**
-   * Returns a new array containing the elements in the original array 
-   * in reverse order.
-   * 
+   * Returns a new array containing the elements in the original
+   * array in reverse order.
+   *
    * @returns [[array.UInt16Array]]
    */
   reverse() {
@@ -124,9 +126,10 @@ class UInt16Array < Array {
   }
 
   /**
-   * Returns a new UInt16Array containing all items from the current array. 
-   * The new array is a shallow copy of the original array.
-   * 
+   * Returns a new UInt16Array containing all items from the
+   * current array. The new array is a shallow copy of the
+   * original array.
+   *
    * @returns UInt16Array
    */
   clone() {

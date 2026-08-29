@@ -1,8 +1,9 @@
 /**
  * @module stat
- * 
- * The module provides constants and functions for interpreting results of file.stat().
- * 
+ *
+ * The module provides constants and functions for interpreting
+ * results of file.stat().
+ *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
@@ -22,8 +23,9 @@ var ST_CTIME = 9
 # Extract bits from the mode
 
 /**
- * Return the portion of the file's mode that can be set by file.chmod().
- * 
+ * Return the portion of the file's mode that can be set by
+ * file.chmod().
+ *
  * @param number mode
  * @returns number
  */
@@ -32,8 +34,9 @@ def S_IMODE(mode: number) {
 }
 
 /**
- * Return the portion of the file's mode that describes the file type.
- * 
+ * Return the portion of the file's mode that describes the file
+ * type.
+ *
  * @param number mode
  * @returns number
  */
@@ -60,7 +63,7 @@ var S_IFWHT = 0
 
 /**
  * Return `true` if mode is from a directory.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -70,7 +73,7 @@ def S_ISDIR(mode: number) {
 
 /**
  * Return `true` if mode is from a character special device file.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -80,7 +83,7 @@ def S_ISCHR(mode: number) {
 
 /**
  * Return `true` if mode is from a block special device file.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -90,7 +93,7 @@ def S_ISBLK(mode: number) {
 
 /**
  * Return `true` if mode is from a regular file.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -100,7 +103,7 @@ def S_ISREG(mode: number) {
 
 /**
  * Return `true` if mode is from a FIFO (named pipe).
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -110,7 +113,7 @@ def S_ISFIFO(mode: number) {
 
 /**
  * Return `true` if mode is from a symbolic link.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -120,7 +123,7 @@ def S_ISLNK(mode: number) {
 
 /**
  * Return `true` if mode is from a socket.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -130,7 +133,7 @@ def S_ISSOCK(mode: number) {
 
 /**
  * Return `true` if mode is from a door.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -140,7 +143,7 @@ def S_ISDOOR(mode: number) {
 
 /**
  * Return `true` if mode is from an event port.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -150,7 +153,7 @@ def S_ISPORT(mode: number) {
 
 /**
  * Return `true` if mode is from a whiteout.
- * 
+ *
  * @param number mode
  * @returns number
  */
@@ -226,7 +229,7 @@ var _filemode_table = [
 
 /**
  * Convert a file's mode to a string of the form '-rwxrwxrwx'.
- * 
+ *
  * @param number mode
  * @returns string
  */

@@ -35,3 +35,13 @@ echo (10..1).upper()
 echo 'Range:'
 echo (10..50).range()
 echo (50..10).range()
+
+echo 'Loop respects step:'
+(10..100).step(20).loop(@(n, i) {
+  echo '${i}: ${n}'
+})
+
+echo 'Loop respects step, descending:'
+(100..10).step(20).loop(@(n, i) {
+  echo '${i}: ${n}'
+})

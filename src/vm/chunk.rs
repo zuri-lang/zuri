@@ -607,7 +607,7 @@ pub enum ParamType {
   /// exactly.
   Callable,
   /// A list, dict, string, bytes, or an instance whose class declares
-  /// both `@iter` and `@itern`.
+  /// both `@value` and `@key`.
   Iterable,
   /// A specific user class, by name. `u16` indexes `Chunk::constants`
   /// for the class's name (a string); resolved through the SAME

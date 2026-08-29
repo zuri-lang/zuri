@@ -1,15 +1,18 @@
 /**
  * @module set
- * 
- * This module provides functionalities for working with mathematical sets. 
- * 
- * Sets are collections of unique values. You can iterate through sets in the 
- * same order in which they were initialized or set by {set.Set.add()}. 
- * This module assumes that all Sets containing exactly the same elements 
- * irrespective of their order are equal.
- * 
- * The example below shows a brief introduction to working with sets.
- * 
+ *
+ * This module provides functionalities for working with
+ * mathematical sets.
+ *
+ * Sets are collections of unique values. You can iterate through
+ * sets in the same order in which they were initialized or set
+ * by {set.Set.add()}. This module assumes that all Sets
+ * containing exactly the same elements irrespective of their
+ * order are equal.
+ *
+ * The example below shows a brief introduction to working with
+ * sets.
+ *
  * ```zuri
  * import set
  * 
@@ -33,13 +36,14 @@
  * my_set.contains('Some Text'.lower()) # true
  * my_set.contains(o) # true
  * ```
- * 
- * Sets objects can also be created with initial values (or their actual values) 
- * by passing a list or a dictionary to the constructor. If a list is passed, all 
- * unique elements in the list will be added to the Set object. 
- * 
+ *
+ * Sets objects can also be created with initial values (or their
+ * actual values) by passing a list or a dictionary to the
+ * constructor. If a list is passed, all unique elements in the
+ * list will be added to the Set object.
+ *
  * For example,
- * 
+ *
  * ```zuri
  * import set
  * 
@@ -48,12 +52,13 @@
  * 
  * echo set_a.intersect(set_b) # <Set(2) {4, 5}>
  * ```
- * 
- * When a dictionary is passed to the Set constructor, the dictionary keys which are 
- * unique themselves will be added to the Set object.
- * 
+ *
+ * When a dictionary is passed to the Set constructor, the
+ * dictionary keys which are unique themselves will be added to
+ * the Set object.
+ *
  * For example:
- * 
+ *
  * ```zuri
  * import set
  * 
@@ -64,18 +69,18 @@
  * 
  * echo set_a # <Set(2) {a, b}>
  * ```
- * 
+ *
  * @copyright Richard Ore, 2025
  */
 
 
 /**
- * The Set class provides some methods that allow you to compose sets like 
- * you would with mathematical operations.
- * 
+ * The Set class provides some methods that allow you to compose
+ * sets like you would with mathematical operations.
+ *
  * @printable
  * @serializable
- * @iterable
+ * @valueable
  * @numeric
  */
 class Set {
@@ -83,9 +88,9 @@ class Set {
   var _items = []
 
   /**
-   * Creates a new Set object from a list or dictionary or an empty Set object 
-   * when no argument is passed.
-   * 
+   * Creates a new Set object from a list or dictionary or an
+   * empty Set object when no argument is passed.
+   *
    * @param {?list|dict} items
    * @constructor
    */
@@ -101,9 +106,9 @@ class Set {
   }
 
   /**
-   * Returns a new set containing elements which are in either or both of this 
-   * set and the given set.
-   * 
+   * Returns a new set containing elements which are in either or
+   * both of this set and the given set.
+   *
    * @param {set.Set} other
    * @returns {set.Set}
    */
@@ -115,8 +120,9 @@ class Set {
   }
 
   /**
-   * Returns a new set containing elements in both this set and the given set.
-   * 
+   * Returns a new set containing elements in both this set and
+   * the given set.
+   *
    * @param {set.Set} other
    * @returns {set.Set}
    */
@@ -135,8 +141,9 @@ class Set {
   }
 
   /**
-   * Returns a new set containing elements in this set but not in the given set.
-   * 
+   * Returns a new set containing elements in this set but not in
+   * the given set.
+   *
    * @param {set.Set} other
    * @returns {set.Set}
    */
@@ -157,9 +164,9 @@ class Set {
   }
 
   /**
-   * Returns a new set containing elements which are in either this set or 
-   * the given set, but not in both.
-   * 
+   * Returns a new set containing elements which are in either
+   * this set or the given set, but not in both.
+   *
    * @param {set.Set} other
    * @returns {set.Set}
    */
@@ -188,9 +195,9 @@ class Set {
   }
 
   /**
-   * Returns a boolean indicating if this set has no elements in common with 
-   * the given set.
-   * 
+   * Returns a boolean indicating if this set has no elements in
+   * common with the given set.
+   *
    * @param {set.Set} other
    * @returns bool
    */
@@ -205,8 +212,9 @@ class Set {
   }
 
   /**
-   * Returns a boolean indicating if all elements of this set are in the given set.
-   * 
+   * Returns a boolean indicating if all elements of this set are
+   * in the given set.
+   *
    * @param {set.Set} other
    * @returns bool
    */
@@ -226,8 +234,9 @@ class Set {
   }
 
   /**
-   * Returns a boolean indicating if all elements of the given set are in this set.
-   * 
+   * Returns a boolean indicating if all elements of the given
+   * set are in this set.
+   *
    * @param {set.Set} other
    * @returns bool
    */
@@ -247,8 +256,9 @@ class Set {
   }
 
   /**
-   * Returns a boolean value indicating whether this set is an empty set or not.
-   * 
+   * Returns a boolean value indicating whether this set is an
+   * empty set or not.
+   *
    * @returns bool
    */
   is_empty() {
@@ -256,9 +266,9 @@ class Set {
   }
 
   /**
-   * Returns a boolean asserting whether an element is present with the 
-   * given value in the Set or not.
-   * 
+   * Returns a boolean asserting whether an element is present
+   * with the given value in the Set or not.
+   *
    * @param any value
    * @returns bool
    */
@@ -268,7 +278,7 @@ class Set {
 
   /**
    * Returns the number of values in the Set object.
-   * 
+   *
    * @returns number
    */
   length() {
@@ -277,7 +287,7 @@ class Set {
 
   /**
    * Removes all elements from the Set object.
-   * 
+   *
    * @returns bool
    */
   clear() {
@@ -285,11 +295,11 @@ class Set {
   }
 
   /**
-   * Removes the element associated to the `value` and returns a boolean 
-   * asserting whether an element was successfully removed or not. Once an 
-   * element is removed, calling `set.contains(value)` will return false 
-   * afterwards.
-   * 
+   * Removes the element associated to the `value` and returns a
+   * boolean asserting whether an element was successfully
+   * removed or not. Once an element is removed, calling
+   * `set.contains(value)` will return false afterwards.
+   *
    * @param any value
    * @returns any
    */
@@ -298,9 +308,10 @@ class Set {
   }
 
   /**
-   * Inserts a new element with the specified value in to the Set object, if 
-   * there isn't an element with the same value already in the Set.
-   * 
+   * Inserts a new element with the specified value in to the Set
+   * object, if there isn't an element with the same value
+   * already in the Set.
+   *
    * @param any value
    * @returns bool
    */
@@ -314,8 +325,9 @@ class Set {
   }
 
   /**
-   * Returns a new Set which is an exact replica of the current Set.
-   * 
+   * Returns a new Set which is an exact replica of the current
+   * Set.
+   *
    * @returns {set.Set}
    */
   clone() {
@@ -323,9 +335,9 @@ class Set {
   }
 
   /**
-   * Calls function `callback` once for each value present in the Set, in 
-   * insertion order.
-   * 
+   * Calls function `callback` once for each value present in the
+   * Set, in insertion order.
+   *
    * @param function callback
    */
   each(callback: function) {
@@ -336,7 +348,7 @@ class Set {
 
   /**
    * Returns a string that represents the current Set.
-   * 
+   *
    * @returns string
    */
   to_string() {
@@ -347,7 +359,7 @@ class Set {
 
   /**
    * Returns the current Set as a list of elements.
-   * 
+   *
    * @returns list
    */
   to_list() {
@@ -390,7 +402,7 @@ class Set {
 
 /**
  * Default export function for the {set.Set} class.
- * 
+ *
  * @param {?list|dict} items
  * @returns {set.Set}
  * @default

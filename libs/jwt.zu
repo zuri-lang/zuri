@@ -1,19 +1,18 @@
 /**
  * @module jwt
  *
- * The jwt module provides a complete implementation of JSON Web Tokens (JWT)
- * as defined in RFC 7519, with support for signing, verification, and
- * inspection of tokens using HMAC and RSA algorithm families.
+ * The jwt module provides a complete implementation of JSON Web
+ * Tokens (JWT) as defined in RFC 7519, with support for signing,
+ * verification, and inspection of tokens using HMAC and RSA
+ * algorithm families.
  *
  * Supported algorithms:
  *
- * - HS256 — HMAC with SHA-256
- * - HS384 — HMAC with SHA-384
- * - HS512 — HMAC with SHA-512
- * - RS256 — RSA signature with SHA-256
- * - RS384 — RSA signature with SHA-384
- * - RS512 — RSA signature with SHA-512
- * - none  — Unsecured token (no signature, explicit opt-in required)
+ * - HS256 — HMAC with SHA-256 - HS384 — HMAC with SHA-384 -
+ * HS512 — HMAC with SHA-512 - RS256 — RSA signature with SHA-256
+ * - RS384 — RSA signature with SHA-384 - RS512 — RSA signature
+ * with SHA-512 - none — Unsecured token (no signature, explicit
+ * opt-in required)
  *
  * ### Quick start
  *
@@ -72,10 +71,11 @@ var RS384 = 'RS384'
 var RS512 = 'RS512'
 
 /**
- * Unsecured algorithm identifier. Tokens signed with this algorithm carry
- * no signature and must never be used to protect sensitive resources.
- * Passing this value to sign() requires setting allow_none: true in options
- * or an error will be raised.
+ * Unsecured algorithm identifier. Tokens signed with this
+ * algorithm carry no signature and must never be used to protect
+ * sensitive resources. Passing this value to sign() requires
+ * setting allow_none: true in options or an error will be
+ * raised.
  */
 var NONE = 'none'
 
@@ -154,9 +154,10 @@ class JwtError < Error {
 }
 
 /**
- * Raised when a token cannot be decoded because its structure is not valid.
- * This includes tokens that are not three dot-separated segments or that
- * contain malformed base64url or JSON.
+ * Raised when a token cannot be decoded because its structure is
+ * not valid. This includes tokens that are not three
+ * dot-separated segments or that contain malformed base64url or
+ * JSON.
  */
 class MalformedTokenError < JwtError {
   @new(message) {
@@ -165,9 +166,9 @@ class MalformedTokenError < JwtError {
 }
 
 /**
- * Raised when a token's signature does not match its header and payload.
- * This indicates the token has been tampered with or was signed with a
- * different key.
+ * Raised when a token's signature does not match its header and
+ * payload. This indicates the token has been tampered with or
+ * was signed with a different key.
  */
 class SignatureError < JwtError {
   @new(message) {
@@ -178,9 +179,9 @@ class SignatureError < JwtError {
 /**
  * Raised when a token's temporal claims fail validation:
  *
- * - `exp` (expiry) — token has expired
- * - `nbf` (not before) — token is not yet valid
- * - `iat` (issued at) — token was issued in the future
+ * - `exp` (expiry) — token has expired - `nbf` (not before) —
+ * token is not yet valid - `iat` (issued at) — token was issued
+ * in the future
  */
 class TokenExpiredError < JwtError {
   @new(message) {
@@ -189,8 +190,9 @@ class TokenExpiredError < JwtError {
 }
 
 /**
- * Raised when a required claim is absent from the token payload, or when a
- * registered claim (iss, aud, sub) does not match the expected value.
+ * Raised when a required claim is absent from the token payload,
+ * or when a registered claim (iss, aud, sub) does not match the
+ * expected value.
  */
 class ClaimError < JwtError {
   @new(message) {
@@ -199,9 +201,9 @@ class ClaimError < JwtError {
 }
 
 /**
- * Raised when an algorithm specified in a token header is not supported by
- * this module, or when the caller attempts to use the none algorithm without
- * explicitly enabling it.
+ * Raised when an algorithm specified in a token header is not
+ * supported by this module, or when the caller attempts to use
+ * the none algorithm without explicitly enabling it.
  */
 class AlgorithmError < JwtError {
   @new(message) {
@@ -215,10 +217,10 @@ class AlgorithmError < JwtError {
 # ---------------------------------------------------------------------------
 
 /**
- * Represents a decoded JWT. Instances of this class are returned by
- * decode() and verify(). The raw header and payload dictionaries are
- * available as properties, and individual claims are accessible directly
- * through the index operator.
+ * Represents a decoded JWT. Instances of this class are returned
+ * by decode() and verify(). The raw header and payload
+ * dictionaries are available as properties, and individual
+ * claims are accessible directly through the index operator.
  *
  * ### Example
  *
@@ -234,31 +236,32 @@ class AlgorithmError < JwtError {
 class Token {
 
   /**
-   * The decoded header dictionary. Contains at minimum the `alg` and
-   * `typ` fields.
+   * The decoded header dictionary. Contains at minimum the `alg`
+   * and `typ` fields.
    */
   var header = {}
 
   /**
-   * The decoded payload dictionary. Contains all registered and custom
-   * claims present in the token.
+   * The decoded payload dictionary. Contains all registered and
+   * custom claims present in the token.
    */
   var payload = {}
 
   /**
-   * The raw base64url-encoded signature segment as it appeared in the
-   * original token string. Empty for unsecured tokens.
+   * The raw base64url-encoded signature segment as it appeared
+   * in the original token string. Empty for unsecured tokens.
    */
   var signature = ''
 
   /**
-   * The original token string from which this instance was decoded.
+   * The original token string from which this instance was
+   * decoded.
    */
   var raw = ''
 
   /**
-   * @param dict   header
-   * @param dict   payload
+   * @param dict header
+   * @param dict payload
    * @param string signature
    * @param string raw
    */
@@ -270,10 +273,10 @@ class Token {
   }
 
   /**
-   * Returns the value of the named claim from the payload, or nil if the
-   * claim is not present.
+   * Returns the value of the named claim from the payload, or
+   * nil if the claim is not present.
    *
-   * @param  string name
+   * @param string name
    * @return any
    */
   get(name) {
@@ -284,10 +287,10 @@ class Token {
   }
 
   /**
-   * Returns the value of the named claim from the payload. This allows
-   * bracket-access syntax on a Token instance.
+   * Returns the value of the named claim from the payload. This
+   * allows bracket-access syntax on a Token instance.
    *
-   * @param  string name
+   * @param string name
    * @return any
    */
   @to_index(name) {
@@ -298,12 +301,13 @@ class Token {
   }
 
   /**
-   * Returns true when the token carries an `exp` claim and the current
-   * time is past that value, honoring the leeway configured on the
-   * Verifier that produced this token when applicable.
+   * Returns true when the token carries an `exp` claim and the
+   * current time is past that value, honoring the leeway
+   * configured on the Verifier that produced this token when
+   * applicable.
    *
-   * When called directly on a Token not produced by a Verifier, no leeway
-   * is applied.
+   * When called directly on a Token not produced by a Verifier,
+   * no leeway is applied.
    *
    * @return bool
    */
@@ -315,8 +319,9 @@ class Token {
   }
 
   /**
-   * Returns a string representation of the token for debugging purposes.
-   * The output is not the encoded token; use the raw property for that.
+   * Returns a string representation of the token for debugging
+   * purposes. The output is not the encoded token; use the raw
+   * property for that.
    *
    * @return string
    */
@@ -332,19 +337,21 @@ class Token {
 # ---------------------------------------------------------------------------
 
 /**
- * Encodes a header dictionary and payload dictionary into a signed JWT string.
+ * Encodes a header dictionary and payload dictionary into a
+ * signed JWT string.
  *
- * This is the low-level encoding function. For most use cases, sign() is
- * more convenient. Use encode() when you need full control over the header,
- * such as when adding custom header parameters (kid, x5t, etc.).
+ * This is the low-level encoding function. For most use cases,
+ * sign() is more convenient. Use encode() when you need full
+ * control over the header, such as when adding custom header
+ * parameters (kid, x5t, etc.).
  *
- * The secret must be a string for HMAC algorithms and a PEM-encoded private
- * key string for RSA algorithms.
+ * The secret must be a string for HMAC algorithms and a
+ * PEM-encoded private key string for RSA algorithms.
  *
- * @param  dict   header   — must contain at minimum an 'alg' key
- * @param  dict   payload
- * @param  string secret
- * @param  ?dict   options  — see `sign()` for supported option keys
+ * @param dict header — must contain at minimum an 'alg' key
+ * @param dict payload
+ * @param string secret
+ * @param ?dict options — see `sign()` for supported option keys
  * @return string
  * @throws AlgorithmError
  * @throws JwtError
@@ -390,15 +397,16 @@ def encode(header, payload, secret, options) {
 }
 
 /**
- * Decodes a JWT string into a Token instance without performing signature
- * verification or claim validation.
+ * Decodes a JWT string into a Token instance without performing
+ * signature verification or claim validation.
  *
- * This function is useful for inspecting a token's header or payload before
- * deciding how to verify it (for example, to read the `kid` header parameter
- * and look up the appropriate public key). It must not be used as the sole
- * step when authenticating a request.
+ * This function is useful for inspecting a token's header or
+ * payload before deciding how to verify it (for example, to read
+ * the `kid` header parameter and look up the appropriate public
+ * key). It must not be used as the sole step when authenticating
+ * a request.
  *
- * @param  string token
+ * @param string token
  * @return Token
  * @throws MalformedTokenError
  */
@@ -490,9 +498,9 @@ def decode(token) {
 /**
  * Creates and signs a new JWT from the given payload.
  *
- * The payload is merged with any registered claims derived from options
- * before signing. Caller-supplied claims in payload always take precedence
- * over option-derived claims.
+ * The payload is merged with any registered claims derived from
+ * options before signing. Caller-supplied claims in payload
+ * always take precedence over option-derived claims.
  *
  * ### Options
  *
@@ -526,9 +534,9 @@ def decode(token) {
  * )
  * ```
  *
- * @param  dict   payload
- * @param  string secret
- * @param  ?dict   options
+ * @param dict payload
+ * @param string secret
+ * @param ?dict options
  * @return string
  * @throws AlgorithmError
  * @throws JwtError
@@ -605,19 +613,22 @@ def sign(payload, secret, options) {
 # ---------------------------------------------------------------------------
 
 /**
- * Verifies a JWT string and returns its payload (or the full Token when
- * options.complete is true).
+ * Verifies a JWT string and returns its payload (or the full
+ * Token when options.complete is true).
  *
  * Verification performs the following steps in order:
  *
  * 1. Structural decode — ensures the token is well-formed.
- * 2. Algorithm check — rejects algorithms not in the options.algorithms list.
- * 3. Signature verification — recomputes and compares the signature using
- *    a constant-time comparison to prevent timing attacks.
- * 4. Temporal claim validation — checks exp, nbf, and iat against the
- *    current clock, applying clock_tolerance leeway where configured.
- * 5. Registered claim validation — checks iss, aud, and sub when the
- *    corresponding options are set.
+ * 2. Algorithm check — rejects algorithms not in the
+ *    options.algorithms list.
+ * 3. Signature verification — recomputes and compares the
+ *    signature using a constant-time comparison to prevent
+ *    timing attacks.
+ * 4. Temporal claim validation — checks exp, nbf, and iat
+ *    against the current clock, applying clock_tolerance leeway
+ *    where configured.
+ * 5. Registered claim validation — checks iss, aud, and sub when
+ *    the corresponding options are set.
  *
  * An error is raised at the first failure; verification does not
  * accumulate errors.
@@ -656,9 +667,9 @@ def sign(payload, secret, options) {
  * }
  * ```
  *
- * @param  string token
- * @param  string secret
- * @param  dict   options
+ * @param string token
+ * @param string secret
+ * @param dict options
  * @return dict|Token
  * @throws MalformedTokenError
  * @throws AlgorithmError
@@ -831,12 +842,14 @@ def _finish_verify(tok, options) {
 # ---------------------------------------------------------------------------
 
 /**
- * A reusable token verifier that holds a fixed secret and set of options.
+ * A reusable token verifier that holds a fixed secret and set of
+ * options.
  *
- * Using a Verifier instance is the recommended approach for applications
- * that verify many tokens with the same configuration, as it avoids
- * passing options on every call and makes the intent of the verification
- * parameters explicit and auditable.
+ * Using a Verifier instance is the recommended approach for
+ * applications that verify many tokens with the same
+ * configuration, as it avoids passing options on every call and
+ * makes the intent of the verification parameters explicit and
+ * auditable.
  *
  * ### Example
  *
@@ -861,8 +874,10 @@ class Verifier {
   var _options = {}
 
   /**
-   * @param string secret   The secret or PEM public key used for verification.
-   * @param dict   options  Verification options (see verify() for reference).
+   * @param string secret The secret or PEM public key used for
+   *    verification.
+   * @param dict options Verification options (see verify() for
+   *    reference).
    */
   @new(secret, options) {
     if !_is_string(secret) and !options.get('allow_none', false) {
@@ -873,16 +888,16 @@ class Verifier {
   }
 
   /**
-   * Verifies the given token string using the secret and options bound to
-   * this Verifier.
+   * Verifies the given token string using the secret and options
+   * bound to this Verifier.
    *
-   * Additional options passed here are merged with the instance options,
-   * with per-call options taking precedence. This allows overriding
-   * individual parameters (such as auraisence) on a per-request basis without
-   * constructing a new Verifier.
+   * Additional options passed here are merged with the instance
+   * options, with per-call options taking precedence. This
+   * allows overriding individual parameters (such as auraisence)
+   * on a per-request basis without constructing a new Verifier.
    *
-   * @param  string token
-   * @param  dict   options  Optional per-call option overrides.
+   * @param string token
+   * @param dict options Optional per-call option overrides.
    * @return dict|Token
    * @throws MalformedTokenError
    * @throws AlgorithmError
@@ -904,9 +919,10 @@ class Verifier {
   }
 
   /**
-   * Decodes the given token without verification. Delegates to decode().
+   * Decodes the given token without verification. Delegates to
+   * decode().
    *
-   * @param  string token
+   * @param string token
    * @return Token
    * @throws MalformedTokenError
    */
@@ -921,12 +937,12 @@ class Verifier {
 # ---------------------------------------------------------------------------
 
 /**
- * A reusable token signer that holds a fixed secret and set of default
- * signing options.
+ * A reusable token signer that holds a fixed secret and set of
+ * default signing options.
  *
- * Using a Signer instance is recommended when the same signing configuration
- * is used throughout an application. Default options can be overridden on
- * individual sign() calls.
+ * Using a Signer instance is recommended when the same signing
+ * configuration is used throughout an application. Default
+ * options can be overridden on individual sign() calls.
  *
  * ### Example
  *
@@ -949,8 +965,10 @@ class Signer {
   var _options = {}
 
   /**
-   * @param string secret   The secret or PEM private key used for signing.
-   * @param dict   options  Default signing options (see sign() for reference).
+   * @param string secret The secret or PEM private key used for
+   *    signing.
+   * @param dict options Default signing options (see sign() for
+   *    reference).
    */
   @new(secret, options) {
     if !_is_string(secret) and !options.get('allow_none', false) {
@@ -961,14 +979,14 @@ class Signer {
   }
 
   /**
-   * Signs the given payload using the secret and default options bound to
-   * this Signer, returning a token string.
+   * Signs the given payload using the secret and default options
+   * bound to this Signer, returning a token string.
    *
-   * Options passed here are merged with the instance defaults, with
-   * per-call options taking precedence.
+   * Options passed here are merged with the instance defaults,
+   * with per-call options taking precedence.
    *
-   * @param  dict payload
-   * @param  dict options  Optional per-call option overrides.
+   * @param dict payload
+   * @param dict options Optional per-call option overrides.
    * @return string
    * @throws AlgorithmError
    * @throws JwtError
@@ -991,13 +1009,14 @@ class Signer {
 # ---------------------------------------------------------------------------
 
 /**
- * Returns the decoded header dictionary of a token without verifying its
- * signature.
+ * Returns the decoded header dictionary of a token without
+ * verifying its signature.
  *
- * This is useful for reading the `kid` or `alg` header parameters before
- * selecting the appropriate key or algorithm for full verification.
+ * This is useful for reading the `kid` or `alg` header
+ * parameters before selecting the appropriate key or algorithm
+ * for full verification.
  *
- * @param  string token
+ * @param string token
  * @return dict
  * @throws MalformedTokenError
  */
@@ -1006,12 +1025,13 @@ def header(token) {
 }
 
 /**
- * Returns the decoded payload dictionary of a token without verifying its
- * signature.
+ * Returns the decoded payload dictionary of a token without
+ * verifying its signature.
  *
- * Do not use this to make authorization decisions. Use verify() instead.
+ * Do not use this to make authorization decisions. Use verify()
+ * instead.
  *
- * @param  string token
+ * @param string token
  * @return dict
  * @throws MalformedTokenError
  */
@@ -1020,13 +1040,15 @@ def payload(token) {
 }
 
 /**
- * Returns true when the token's exp claim is in the past, without verifying
- * the signature.
+ * Returns true when the token's exp claim is in the past,
+ * without verifying the signature.
  *
- * A token without an exp claim is never considered expired by this function.
+ * A token without an exp claim is never considered expired by
+ * this function.
  *
- * @param  string token
- * @param  number leeway  Optional seconds of tolerance. Default: 0.
+ * @param string token
+ * @param number leeway Optional seconds of tolerance. Default:
+ *    0.
  * @return bool
  * @throws MalformedTokenError
  */
@@ -1040,11 +1062,12 @@ def is_expired(token, leeway) {
 }
 
 /**
- * Returns the number of seconds until the token expires, based on its exp
- * claim and the current clock. Returns nil when the token has no exp claim.
- * Returns a negative number when the token has already expired.
+ * Returns the number of seconds until the token expires, based
+ * on its exp claim and the current clock. Returns nil when the
+ * token has no exp claim. Returns a negative number when the
+ * token has already expired.
  *
- * @param  string token
+ * @param string token
  * @return number|nil
  * @throws MalformedTokenError
  */

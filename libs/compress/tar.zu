@@ -1,58 +1,64 @@
 /**
  * @module tar
- * 
- * This module adds support for creating and extracting TAR archives.
- * 
+ *
+ * This module adds support for creating and extracting TAR
+ * archives.
+ *
  * ## Important
- * 
- * The library exports two helper function `compress()` and `extract()` by that allows 
- * you to create and/or extract TAR archives. Note that this library does not yet 
- * support TAR archives compressed with the bzip2 algorithm (typically files ending 
- * in `.bz2` and `.tbz`).
- * 
- * This library supports the most popular extensions such as `.tar.gz`, `.tar`, `.gz`, 
- * and `.tgz`.
- * 
- * 
+ *
+ * The library exports two helper function `compress()` and
+ * `extract()` by that allows you to create and/or extract TAR
+ * archives. Note that this library does not yet support TAR
+ * archives compressed with the bzip2 algorithm (typically files
+ * ending in `.bz2` and `.tbz`).
+ *
+ * This library supports the most popular extensions such as
+ * `.tar.gz`, `.tar`, `.gz`, and `.tgz`.
+ *
+ *
  * ## Extracting TAR archives
  * ---
- * 
- * Use the helper function `extract()` for a quick way to extract TAR archives.
- * 
+ *
+ * Use the helper function `extract()` for a quick way to extract
+ * TAR archives.
+ *
  * ```zuri
  * import tar
  * 
  * tar.extract('/path/to/archive.tar.gz', '/destination')
  * ```
- * 
- * The destination can be omitted in which case the archive will be extracted into the 
- * same directory as the source with same name without the last extension. e.g. for 
- * `/path/to/file.tar.gz` will extract to `/path/to/file.tar` directory is the destination 
- * is not given.
- * 
+ *
+ * The destination can be omitted in which case the archive will
+ * be extracted into the same directory as the source with same
+ * name without the last extension. e.g. for
+ * `/path/to/file.tar.gz` will extract to `/path/to/file.tar`
+ * directory is the destination is not given.
+ *
  * _See below for learn more about the `extract()` method_
- * 
- * 
+ *
+ *
  * ## Creating a new TAR ball
  * ---
- * 
- * To quickly create a new tarball, you can use the `compress()` helper function in the 
- * library like this,
- * 
+ *
+ * To quickly create a new tarball, you can use the `compress()`
+ * helper function in the library like this,
+ *
  * ```zuri
  * import tar
  * 
  * tar.compress('/path/to/file/or/directory', '/destination.tar.gz')
  * ```
- * 
- * The compress function can be used to compress a single file or an entire directory. Like 
- * the `extract()` function, you can choose to omit the destination parameter in which case 
- * compress will save the file to the current working directory with the same name as the 
- * file/directory with the extension `.tar.gz`.
- * 
+ *
+ * The compress function can be used to compress a single file or
+ * an entire directory. Like the `extract()` function, you can
+ * choose to omit the destination parameter in which case
+ * compress will save the file to the current working directory
+ * with the same name as the file/directory with the extension
+ * `.tar.gz`.
+ *
  * _See below for learn more about the `compress()` method_
- * 
- * 
+ *
+ *
  * @copyright 2024, Richard Ore and The Zuri Contributors
  */
 
@@ -83,7 +89,8 @@ var COMPRESS_NONE = 0
 var COMPRESS_GZIP = 1
 
 /**
- * Create and read archives with the BZip2 compression method (Not yet supported).
+ * Create and read archives with the BZip2 compression method
+ * (Not yet supported).
  */
 var COMPRESS_BZIP = 2
 
@@ -127,12 +134,13 @@ def _octdec(v) {
 #--------------------------------------------------------------------------------
 
 /**
- * Creates or extracts TAR archives with a long pathname (> 100 characters)
- * support in POSIX ustar and GNU longlink formats.
- * 
- * For a more fine grained control and to create TAR archives from scratch while adding 
- * file and data as you wish or to get the list of files in a TAR archive, you need to 
- * make use of the class API.
+ * Creates or extracts TAR archives with a long pathname (> 100
+ * characters) support in POSIX ustar and GNU longlink formats.
+ *
+ * For a more fine grained control and to create TAR archives
+ * from scratch while adding file and data as you wish or to get
+ * the list of files in a TAR archive, you need to make use of
+ * the class API.
  */
 class Tar {
 
@@ -150,8 +158,8 @@ class Tar {
    * Set the compression level and type.
    *
    * @param {int} level Compression level (0 to 9) - Default = 9
-   * @param {int} type  Type of compression to use (use COMPRESS_* constants) - Default = 
-   *    COMPRESS_AUTO
+   * @param {int} type Type of compression to use (use COMPRESS_*
+   *    constants) - Default = COMPRESS_AUTO
    * @throws {TarIllegalCompressionError}
    */
   set_compression(level: ?int, type: ?int) {
@@ -209,10 +217,12 @@ class Tar {
   /**
    * Read the contents of a Tar archive
    *
-   * This function lists the files stored in the Tar, and returns an indexed array of FileInfo objects
+   * This function lists the files stored in the Tar, and returns
+   * an indexed array of FileInfo objects
    *
-   * The Tar is closed afer reading the contents, because rewinding is not possible in bzip2 streams.
-   * Reopen the file with open() again if you want to do additional operations
+   * The Tar is closed afer reading the contents, because
+   * rewinding is not possible in bzip2 streams. Reopen the file
+   * with open() again if you want to do additional operations
    *
    * @return {list[dict]}
    */
@@ -239,25 +249,34 @@ class Tar {
   /**
    * Extract an existing Tar archive
    *
-   * The strip parameter allows you to strip a certain number of path components from the filenames
-   * found in the Tar file, similar to the --strip-components feature of GNU tar. This is triggered 
-   * when an integer is passed as strip.
-   * Alternatively a fixed string prefix may be passed in strip. If the filename matches this prefix,
-   * the prefix will be stripped. It is recommended to give prefixes with a trailing slash.
+   * The strip parameter allows you to strip a certain number of
+   * path components from the filenames found in the Tar file,
+   * similar to the --strip-components feature of GNU tar. This
+   * is triggered when an integer is passed as strip.
+   * Alternatively a fixed string prefix may be passed in strip.
+   * If the filename matches this prefix, the prefix will be
+   * stripped. It is recommended to give prefixes with a trailing
+   * slash.
    *
-   * By default this will extract all files found in the Tar. You can restrict the output using the 
-   * include and exclude parameter. Both expect a full regular expression (including delimiters and 
-   * modifiers). If include is set, only files that match this expression will be extracted. Files 
-   * that match the exclude expression will never be extracted. Both parameters can be used in 
-   * combination. Expressions are matched against stripped filenames as described above.
+   * By default this will extract all files found in the Tar. You
+   * can restrict the output using the include and exclude
+   * parameter. Both expect a full regular expression (including
+   * delimiters and modifiers). If include is set, only files
+   * that match this expression will be extracted. Files that
+   * match the exclude expression will never be extracted. Both
+   * parameters can be used in combination. Expressions are
+   * matched against stripped filenames as described above.
    *
-   * The Tar is closed afterwards. Reopen the file with open() again if you want to do additional 
-   * operations.
+   * The Tar is closed afterwards. Reopen the file with open()
+   * again if you want to do additional operations.
    *
-   * @param {string} outdir  the target directory for extracting
-   * @param {?int|string} strip   either the number of path components or a fixed prefix to strip
-   * @param {?string} exclude a regular expression of files to exclude
-   * @param {?string} include a regular expression of files to include
+   * @param {string} outdir the target directory for extracting
+   * @param {?int|string} strip either the number of path
+   *    components or a fixed prefix to strip
+   * @param {?string} exclude a regular expression of files to
+   *    exclude
+   * @param {?string} include a regular expression of files to
+   *    include
    * @throws {TarIOError}
    * @return {list[string]}
    */
@@ -368,11 +387,13 @@ class Tar {
   }
 
   /**
-   * Add a file to the current Tar using an existing file in the filesystem.
+   * Add a file to the current Tar using an existing file in the
+   * filesystem.
    *
-   * @param {string} path         path to the original file
-   * @param {string|dict} header  either the name to use in Tar (string) or a dictionary oject 
-   *     with all meta data, empty to take from original.
+   * @param {string} path path to the original file
+   * @param {string|dict} header either the name to use in Tar
+   *    (string) or a dictionary oject with all meta data, empty
+   *    to take from original.
    * @throws {TarIOError}
    */
   add_file(path: string, header: string|dict) {
@@ -414,14 +435,15 @@ class Tar {
   }
 
   /**
-   * Add a file to the current Tar using the given data as content.
-   * 
-   * If the header is set to nil or empty string, a file called `Untitled-{CURRENT_TIMESTAMP}` 
-   * will be created.
+   * Add a file to the current Tar using the given data as
+   * content.
    *
-   * @param {bytes} data     binary content of the file to add
-   * @param {string|dict} header  either the name to use in Tar (string) or a dictionary oject 
-   *     with all meta data
+   * If the header is set to nil or empty string, a file called
+   * `Untitled-{CURRENT_TIMESTAMP}` will be created.
+   *
+   * @param {bytes} data binary content of the file to add
+   * @param {string|dict} header either the name to use in Tar
+   *    (string) or a dictionary oject with all meta data
    * @throws {TarIOError}
    */
   add_data(data: bytes, header: string|dict) {
@@ -458,15 +480,18 @@ class Tar {
   }
 
   /**
-   * Add the closing footer to the archive if in write mode, close all file handles
+   * Add the closing footer to the archive if in write mode,
+   * close all file handles
    *
-   * After a call to this function no more data can be added to the archive, for
-   * read access no reading is allowed anymore
+   * After a call to this function no more data can be added to
+   * the archive, for read access no reading is allowed anymore
    *
-   * "Physically, an archive consists of a series of file entries terminated by an 
-   * end-of-archive entry, which consists of two 512 blocks of zero bytes"
+   * "Physically, an archive consists of a series of file entries
+   * terminated by an end-of-archive entry, which consists of two
+   * 512 blocks of zero bytes"
    *
-   * @link http://www.gnu.org/software/tar/manual/html_chapter/tar_8.html#SEC134
+   * @link
+   *    http://www.gnu.org/software/tar/manual/html_chapter/tar_8.html#SEC134
    * @throws {TarIOError}
    */
   close() {
@@ -498,7 +523,7 @@ class Tar {
    * Returns the created in-memory Tar data.
    *
    * This implicitly calls close() on the Tar.
-   * 
+   *
    * @throws {TarIOError}
    * @throws {TarIllegalCompressionError}
    * @returns {bytes}
@@ -522,8 +547,9 @@ class Tar {
   /**
    * Save the created in-memory Tar data
    *
-   * Note: It is more memory effective to specify the filename in the create() function and
-   * let the library work on the new file directly.
+   * Note: It is more memory effective to specify the filename in
+   * the create() function and let the library work on the new
+   * file directly.
    *
    * @param {string} path
    * @returns {bool}
@@ -537,14 +563,14 @@ class Tar {
   }
 
   /**
-   * Adds the specified `directory` recursively to the archive and set's it path in the 
-   * archive to `dir`.
-   * 
+   * Adds the specified `directory` recursively to the archive
+   * and set's it path in the archive to `dir`.
+   *
    * @param {string} directory
-   * @param {list} file_blacklist if not empty, this function will ignore every file with a
-   *    matching path.
-   * @param {list} ext_blacklist if not empty, this function will ignore every file with a 
-   *    matching extension.
+   * @param {list} file_blacklist if not empty, this function
+   *    will ignore every file with a matching path.
+   * @param {list} ext_blacklist if not empty, this function will
+   *    ignore every file with a matching extension.
    * @throws {TarIOError|Error}
    */
   add_directory(directory: string, file_blacklist: ?list, ext_blacklist: ?list) {
@@ -614,12 +640,15 @@ class Tar {
   /**
    * Guesses the wanted compression from the given file.
    *
-   * Uses magic bytes for existing files, the file extension otherwise.
+   * Uses magic bytes for existing files, the file extension
+   * otherwise.
    *
-   * You don't need to call this yourself. It's used when you pass `COMPRESS_AUTO` somewhere.
+   * You don't need to call this yourself. It's used when you
+   * pass `COMPRESS_AUTO` somewhere.
    *
    * @param {string} file
-   * @returns {int} (one of COMPRESS_BZIP, COMPRESS_GZIP or COMPRESS_NONE)
+   * @returns {int} (one of COMPRESS_BZIP, COMPRESS_GZIP or
+   *    COMPRESS_NONE)
    */
   file_type(f: string) {
     var ff = file(f, 'rb')
@@ -860,11 +889,15 @@ class Tar {
 #--------------------------------------------------------------------------------
 
 /**
- * Create a new TAR ball from the file or directory in the given path and saves it to the destination
- *  path or ${NAME_OF_FILE}.tar.gz in the current directory if the destination is not given.
- * 
- * @param {string} path the file or directory that will be compressed.
- * @param {string} destination the destination of the compressed TAR ball.
+ * Create a new TAR ball from the file or directory in the given
+ * path and saves it to the destination path or
+ * ${NAME_OF_FILE}.tar.gz in the current directory if the
+ * destination is not given.
+ *
+ * @param {string} path the file or directory that will be
+ *    compressed.
+ * @param {string} destination the destination of the compressed
+ *    TAR ball.
  */
 def compress(path: string, destination: string) {
   if !destination {
@@ -891,9 +924,10 @@ def compress(path: string, destination: string) {
 }
 
 /**
- * Extracts a TAR file to the given destination or to the same directory as the source file with the 
- * same name as the TAR file (without the last extension) if destination is not given.
- * 
+ * Extracts a TAR file to the given destination or to the same
+ * directory as the source file with the same name as the TAR
+ * file (without the last extension) if destination is not given.
+ *
  * @param {string} file the file to be extracted
  * @param {string} destination the path to extract to (Optional).
  * @returns {list} list of extracted items

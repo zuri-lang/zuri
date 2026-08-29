@@ -1,0 +1,38 @@
+named groups:
+{0: John Doe}
+backreference:
+{0: hello hello}
+false
+lookahead:
+{0: [100]}
+lookbehind:
+{0: 100}
+ungreedy modifier (U):
+{0: <a><b>}
+{0: <a>}
+anchored modifier (A):
+false
+{0: hello}
+false
+duplicate subpattern names modifier (J):
+{0: a}
+case insensitive modifier (i):
+{0: HELLO}
+multiline modifier (m):
+{0: [line1, line2]}
+dot-all modifier (s):
+false
+{0: a
+b}
+extended modifier (x), ignores whitespace and # comments:
+{0: 123-456}
+unicode property modifier (u):
+{0: café}
+replace with group references:
+15/01/2024
+replace_with callback:
+15/01/2024
+split on a regex delimiter:
+[one, two, three]
+multiple matches with replace:
+dog dog dog

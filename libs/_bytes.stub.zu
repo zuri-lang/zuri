@@ -1,52 +1,61 @@
 /**
  * # Working with Binary data
- * 
- * Working with binary data in Zuri is a simple as working with _lists_ and this can be
- * done using `bytes`. A `bytes` (meaning Byte stream) is an iterable in-memory contiguous 
- * list of numbers. Zuri allows easily creating _bytes_ from strings and vice-versa and
- * they are the primary medium of reading and writing binary data into and from the OS.
- * 
+ *
+ * Working with binary data in Zuri is a simple as working with
+ * _lists_ and this can be done using `bytes`. A `bytes` (meaning
+ * Byte stream) is an iterable in-memory contiguous list of
+ * numbers. Zuri allows easily creating _bytes_ from strings and
+ * vice-versa and they are the primary medium of reading and
+ * writing binary data into and from the OS.
+ *
  * ## Creating a Byte stream
- * 
- * The built-in `bytes()` function can be used to create a byte stream. For example,
- * 
+ *
+ * The built-in `bytes()` function can be used to create a byte
+ * stream. For example,
+ *
  * ```zuri-repl
  * %> bytes(5)
  * (0 0 0 0 0)
  * ```
- * 
- * The above code creates a byte stream containing five bytes all initialized to zero (0).
- * You can also create byte stream from a list of numbers as well. For example,
- * 
+ *
+ * The above code creates a byte stream containing five bytes all
+ * initialized to zero (0). You can also create byte stream from
+ * a list of numbers as well. For example,
+ *
  * ```zuri-repl
  * %> bytes([72, 69, 76, 76, 79])
  * (48 45 4c 4c 4f)
  * ```
- * 
- * The above code creates a byte stream sequence corresponding to `HELLO` in memory.
- * 
- * Byte streams are like lists and they can be extended, concatenated and more. They allow
- * us operate on binary data. 
- * 
- * One very important use-case for bytes are to create a file containing binary data, 
- * the `file.write()` API expects to write byte streams to file when the file is opened in 
- * the binary mode and the most basic way of providing it with such data is by using `bytes`.
- * 
+ *
+ * The above code creates a byte stream sequence corresponding to
+ * `HELLO` in memory.
+ *
+ * Byte streams are like lists and they can be extended,
+ * concatenated and more. They allow us operate on binary data.
+ *
+ * One very important use-case for bytes are to create a file
+ * containing binary data, the `file.write()` API expects to
+ * write byte streams to file when the file is opened in the
+ * binary mode and the most basic way of providing it with such
+ * data is by using `bytes`.
+ *
  * For example,
- * 
+ *
  * ```zuri-repl
  * %> file('dummy.txt', 'wb').write(bytes([72, 69, 76, 76, 79]))
  * true
  * %> file('dummy.txt').read()
  * 'HELLO'
  * ```
- * 
- * In the above sample, we wrote the bytes we created earlier into a file and read its contents.
- * 
- * > When a byte stream is created using a list of numbers, the maximum number 
- * > that will be interpreted as is is 255. All numbers exceeding that amount 
- * > will be equal to `(number % 255) - 1`.
- * > 
+ *
+ * In the above sample, we wrote the bytes we created earlier
+ * into a file and read its contents.
+ *
+ * > When a byte stream is created using a list of numbers, the
+ * > maximum number that will be interpreted as is is 255. All
+ * > numbers exceeding that amount will be equal to `(number %
+ * > 255) - 1`.
+ * >
  * > E.g.
  * > ```zuri-repl
  * > %> bytes([256])
@@ -58,15 +67,16 @@
  * > %> (386 % 255) - 1
  * > 130
  * > ```
- * 
+ *
  * ## Byte stream indexing
- * 
- * Like _Lists_, _Strings_ and _Dictionaries_, Byte streams can also be indexed in Zuri. We can
- * retrieve an index in a byte stream using the same operators as others (`[]`) and we can use this 
- * to access or modify the contents of a byte stream.
- * 
+ *
+ * Like _Lists_, _Strings_ and _Dictionaries_, Byte streams can
+ * also be indexed in Zuri. We can retrieve an index in a byte
+ * stream using the same operators as others (`[]`) and we can
+ * use this to access or modify the contents of a byte stream.
+ *
  * For example,
- * 
+ *
  * ```zuri-repl
  * %> var g = bytes([31, 47, 83, 105, 72])
  * %> g
@@ -79,7 +89,7 @@
  * %> g
  * (1f 2f 60 69 48)
  * ```
- * 
+ *
  * @note Byte streams are printed as hexadecimal lists.
  */
 
@@ -87,17 +97,19 @@
 class bytes {
 
   /**
-   * Creates a new byte stream. 
-   * 
+   * Creates a new byte stream.
+   *
    * @note If a number is given, creates an array of size number
-   * @note If a list is given, converts the bytes list into an array of bytes.
-   * 
-   * @param {number|list} n The number of bytes or the list of bytes to create.
+   * @note If a list is given, converts the bytes list into an
+   *    array of bytes.
+   *
+   * @param {number|list} n The number of bytes or the list of
+   *    bytes to create.
    * @returns {bytes}
    * @constructor
-   * 
+   *
    * For example,
-   *  
+   *
    * ```zuri-repl
    * %> bytes(5)
    * (0 0 0 0 0)
@@ -109,12 +121,12 @@ class bytes {
 
    /**
    * Returns the number of bytes in the byte stream.
-   * 
+   *
    * ```zuri-repl
    * %> bytes([25, 57]).length()
    * 2
    * ```
-   * 
+   *
    * @returns {number}
    */
   length() {}
@@ -122,16 +134,16 @@ class bytes {
 
   /**
    * Adds an item to the top of a byte stream.
-   *  
+   *
    * For example,
-   *  
+   *
    * ```zuri-repl
    * %> var a = bytes([0x40, 0x75])
    * %> a.append(0x16)
    * %> echo a
    * (40 75 16)
    * ```
-   * 
+   *
    * @param {int} n The byte to add.
    * @returns {bytes}
    */
@@ -140,24 +152,25 @@ class bytes {
 
   /**
    * Returns a deep clone of the byte stream.
-   *  
+   *
    * For example,
-   *  
+   *
    * ```zuri-repl
    * %> bytes([19, 11]).clone()
    * (13 b)
    * ```
-   * 
+   *
    * @returns {bytes}
    */
   clone() {}
 
 
   /**
-   * Extends the byte stream with the bytes from the given byte stream.
-   * 
+   * Extends the byte stream with the bytes from the given byte
+   * stream.
+   *
    * For example,
-   *  
+   *
    * ```zuri-repl
    * %> var a = bytes([33, 91, 126])
    * %> var b = bytes([119, 42])
@@ -170,9 +183,10 @@ class bytes {
    * %> a
    * (21 5b 7e 77 2a)
    * ```
-   * 
-   * @note `extend()` is an in-place action so the original byte stream will be modified.
-   * 
+   *
+   * @note `extend()` is an in-place action so the original byte
+   *    stream will be modified.
+   *
    * @param {bytes} n The byte stream to extend with.
    * @returns {bytes}
    */
@@ -180,17 +194,19 @@ class bytes {
 
 
   /**
-   * Returns the index of the first occurrence of the given byte in the byte stream.
-   * 
+   * Returns the index of the first occurrence of the given byte
+   * in the byte stream.
+   *
    * ```zuri-repl
    * %> bytes([25, 57, 25]).index_of(57)
    * 1
    * %> bytes([25, 57, 25]).index_of(25, 1)
    * 2
    * ```
-   * 
+   *
    * @param {int} byte The byte to search for.
-   * @param {?number} start_index The index to start the search from. Defaults to 0.
+   * @param {?number} start_index The index to start the search
+   *    from. Defaults to 0.
    * @returns {number}
    */
   index_of(byte: int, start_index: ?number) {}
@@ -198,7 +214,7 @@ class bytes {
 
   /**
    * Removes the last item in a byte stream and returns it.
-   * 
+   *
    * ```zuri-repl
    * %> var a = bytes([79, 43, 9])
    * %> a.pop()
@@ -206,15 +222,16 @@ class bytes {
    * %> a
    * (4f 2b)
    * ```
-   * 
+   *
    * @returns {number}
    */
   pop() {}
 
 
   /**
-   * Removes the item at the specified index in the byte stream and return the previous value at the specified index.
-   * 
+   * Removes the item at the specified index in the byte stream
+   * and return the previous value at the specified index.
+   *
    * ```zuri-repl
    * %> var a = bytes([25, 57, 25])
    * %> a.remove(1)
@@ -222,7 +239,7 @@ class bytes {
    * %> a
    * (25 25)
    * ```
-   * 
+   *
    * @param {number} index The index to remove.
    * @returns {bytes}
    */
@@ -231,37 +248,39 @@ class bytes {
 
   /**
    * Reverses the items in the byte stream.
-   * 
+   *
    * ```zuri-repl
    * %> bytes([5, 4, 3, 2, 1]).reverse()
    * (1 2 3 4 5)
    * ```
-   * 
+   *
    * @returns {bytes}
    */
   reverse() {}
 
 
   /**
-   * Returns the first item in the byte stream or `nil` if the byte stream is empty.
-   * 
+   * Returns the first item in the byte stream or `nil` if the
+   * byte stream is empty.
+   *
    * ```zuri-repl
    * %> bytes([25, 57, 42]).first()
    * 25
    * ```
-   * 
+   *
    * @returns {number}
    */
   first() {}
 
   /**
-   * Returns the last item in the byte stream or `nil` if the byte stream is empty.
-   * 
+   * Returns the last item in the byte stream or `nil` if the
+   * byte stream is empty.
+   *
    * ```zuri-repl
    * %> bytes([25, 57, 42]).last()
    * 42
    * ```
-   * 
+   *
    * @returns {number}
    */
   last() {}
@@ -269,7 +288,7 @@ class bytes {
 
   /**
    * Returns the item at the specified index in the byte stream.
-   * 
+   *
    * @param {number} index The index to get the item from.
    * @returns {number}
    */
@@ -277,17 +296,18 @@ class bytes {
 
 
   /**
-   * Splits the content of a byte stream based on the specified delimiter.
-   *  
+   * Splits the content of a byte stream based on the specified
+   * delimiter.
+   *
    * For example,
-   *  
+   *
    * ```zuri-repl
    * %> bytes(0).split(bytes(0))
    * []
    * %> echo 'test'.to_bytes().split(bytes(0))
    * [(74), (65), (73), (74)]
    * ```
-   * 
+   *
    * @param {bytes} delimiter The delimiter to split on.
    * @returns {list}
    */
@@ -295,14 +315,16 @@ class bytes {
 
 
   /**
-   * Due to the nature of byte stream and their use-case (especially streaming data),
-   * it is easy for the system memory to get filled up with data in the byte stream.
-   * The method allows users to reset a byte stream and empty it.
-   *  
-   * > This method allows a fine-grained control on manual memory management of byte stream.
-   *  
+   * Due to the nature of byte stream and their use-case
+   * (especially streaming data), it is easy for the system
+   * memory to get filled up with data in the byte stream. The
+   * method allows users to reset a byte stream and empty it.
+   *
+   * > This method allows a fine-grained control on manual memory
+   * > management of byte stream.
+   *
    * For example,
-   *  
+   *
    * ```zuri-repl
    * %> var a = bytes([13, 36])
    * %> a.dispose()
@@ -314,90 +336,96 @@ class bytes {
 
 
   /**
-   * Returns `true` if the byte stream only contains alpha characters, `false` otherwise.
-   *  
+   * Returns `true` if the byte stream only contains alpha
+   * characters, `false` otherwise.
+   *
    * ```zuri-repl
    * %> bytes([65, 66, 67]).is_alpha()
    * true
    * %> bytes([65, 66, 67, 128]).is_alpha()
    * false
    * ```
-   * 
+   *
    * @returns {boolean}
    */
   is_alpha() {}
 
 
   /**
-   * Returns `true` if the byte stream only contains alpha characters and numbers, `false` otherwise.
-   *  
+   * Returns `true` if the byte stream only contains alpha
+   * characters and numbers, `false` otherwise.
+   *
    * ```zuri-repl
    * %> bytes([65, 66, 67, 48, 49, 50]).is_alnum()
    * true
    * %> bytes([65, 66, 67, 48, 49, 50, 8]).is_alnum()
    * false
    * ```
-   * 
+   *
    * @returns {boolean}
    */
   is_alnum() {}
 
 
   /**
-   * Returns `true` if the byte stream only contains numbers, `false` otherwise.
-   *  
+   * Returns `true` if the byte stream only contains numbers,
+   * `false` otherwise.
+   *
    * ```zuri-repl
    * %> bytes([48, 49, 50]).is_number()
    * true
    * %> bytes([48, 49, 50, 68]).is_number()
    * false
    * ```
-   * 
+   *
    * @returns {boolean}
    */
   is_number() {}
 
 
   /**
-   * Returns `true` if the byte stream only contains lower case characters, `false` otherwise.
-   *  
+   * Returns `true` if the byte stream only contains lower case
+   * characters, `false` otherwise.
+   *
    * ```zuri-repl
    * %> bytes([97, 98, 99]).is_lower()
    * true
    * %> bytes([97, 98, 99, 68]).is_lower()
    * false
    * ```
-   * 
+   *
    * @returns {boolean}
    */
   is_lower(n) {}
 
 
   /**
-   * Returns `true` if the byte stream only contains upper case characters, `false` otherwise.
-   *  
+   * Returns `true` if the byte stream only contains upper case
+   * characters, `false` otherwise.
+   *
    * ```zuri-repl
    * %> bytes([65, 66, 67]).is_upper()
    * true
    * %> bytes([65, 66, 67, 98]).is_upper()
    * false
    * ```
-   * 
+   *
    * @returns {boolean}
    */
   is_upper() {}
 
 
   /**
-   * Returns `true` if the byte stream only contains space characters, `false` otherwise.
-   *  
+   * Returns `true` if the byte stream only contains space
+   * characters, `false` otherwise.
+   *
    * ```zuri-repl
    * %> bytes([32, 32, 32]).is_space()
    * true
    * %> bytes([32, 32, 32, 68]).is_space()
    * false
    * ```
-   * 
+   *
    * @returns {boolean}
    */
   is_space() {}
@@ -405,12 +433,12 @@ class bytes {
 
   /**
    * Returns the byte stream as a list of bytes.
-   * 
+   *
    * ```zuri-repl
    * %> bytes([0x31, 0x55, 0x149, 0x215]).to_list()
    * [49, 85, 233, 33]
    * ```
-   * 
+   *
    * @returns {list}
    */
   to_list() {}
@@ -418,17 +446,44 @@ class bytes {
 
   /**
    * Returns the byte stream as a string.
-   * 
+   *
    * ```zuri-repl
    * %> bytes([65, 66, 67, 68, 69]).to_string()
    * 'ABCDE'
    * ```
-   * 
+   *
    * @returns {string}
    */
   to_string() {}
 
+  /**
+   * Iterates over each byte of the bytes object, calling the
+   * provided callback function with the byte and its index.
+   *
+   * @param {function} callback A function that takes two
+   *    arguments: the byte and its index.
+   * @throws {Error} if the callback is not a function.
+   * @return void
+   *
+   * Example:
+   *
+   * ```zuri
+   * var data = bytes([0x48, 0x65, 0x6C, 0x6C, 0x6F]) # "Hello" in bytes
+   * data.each(def(byte, index) {
+   *   echo 'Byte at index ${index}: ${byte}'
+   * })
+   * 
+   * # Output:
+   * # Byte at index 0: 72
+   * # Byte at index 1: 101
+   * # Byte at index 2: 108
+   * # Byte at index 3: 108
+   * # Byte at index 4: 111
+   * ```
+   */
+  each(callback: function) {}
 
-  @iter(n) {}
-  @itern(n) {}
+
+  @value(n) {}
+  @key(n) {}
 }

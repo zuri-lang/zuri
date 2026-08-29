@@ -2,14 +2,15 @@
  * @module addr
  *
  * Socket addresses: an IP address and a port. `SocketAddrV4` and
- * `SocketAddrV6` each represent an address of their respective family,
- * while `SocketAddr` is a small wrapper around either one for code
- * that needs to accept and work with both interchangeably just like 
- * the same relationship `Ip` has to `Ipv4`/`Ipv6`.
+ * `SocketAddrV6` each represent an address of their respective
+ * family, while `SocketAddr` is a small wrapper around either
+ * one for code that needs to accept and work with both
+ * interchangeably just like the same relationship `Ip` has to
+ * `Ipv4`/`Ipv6`.
  *
- * An IPv6 address may also carry a zone/scope identifier (RFC 4007),
- * used to disambiguate a link-local address between network
- * interfaces, e.g. `fe80::1%3`.
+ * An IPv6 address may also carry a zone/scope identifier (RFC
+ * 4007), used to disambiguate a link-local address between
+ * network interfaces, e.g. `fe80::1%3`.
  *
  * `TcpStream`, `UdpSocket`, and `DtlsSocket` return these from
  * `local_address()`/`peer_address()`.
@@ -100,8 +101,8 @@ class SocketAddrV4 {
    *
    * @param Ipv4 address: The IP address
    * @param number port: The port, `0`-`65535`
-   * @throws Error if `address` is not an {Ipv4}, or `port` is missing
-   *   or outside `0`-`65535`
+   * @throws Error if `address` is not an {Ipv4}, or `port` is
+   *    missing or outside `0`-`65535`
    */
   @new(address, port) {
     if address == nil or !instance_of(address, Ipv4) {
@@ -112,12 +113,13 @@ class SocketAddrV4 {
   }
 
   /**
-   * Parses an address given as `ip:port`, e.g. `'192.168.1.10:8080'`.
+   * Parses an address given as `ip:port`, e.g.
+   * `'192.168.1.10:8080'`.
    *
    * @param string address: The address to parse
    * @returns SocketAddrV4
    * @throws Error if `address` isn't a well-formed IPv4 address
-   *   followed by `:` and a port from `0` to `65535`
+   *    followed by `:` and a port from `0` to `65535`
    */
   static parse(address) {
     if address == nil {
@@ -152,7 +154,8 @@ class SocketAddrV4 {
   }
 
   /**
-   * Whether `other` refers to the same address and port as this one.
+   * Whether `other` refers to the same address and port as this
+   * one.
    *
    * @param SocketAddrV4 other: The address to compare against
    * @returns bool
@@ -178,10 +181,10 @@ class SocketAddrV4 {
 }
 
 /**
- * An IPv6 address and port, e.g. `[2001:db8::1]:8080`, optionally
- * carrying a zone/scope identifier (RFC 4007) that disambiguates a
- * link-local address between network interfaces, e.g.
- * `[fe80::1%3]:8080`.
+ * An IPv6 address and port, e.g. `[2001:db8::1]:8080`,
+ * optionally carrying a zone/scope identifier (RFC 4007) that
+ * disambiguates a link-local address between network interfaces,
+ * e.g. `[fe80::1%3]:8080`.
  *
  * @printable
  */
@@ -193,10 +196,10 @@ class SocketAddrV6 {
    * @param Ipv6 address: The IP address
    * @param number port: The port, `0`-`65535`
    * @param ?number scope_id: The zone/scope identifier, or `0`
-   *   (the default) if this address isn't scoped to a particular
-   *   interface
-   * @throws Error if `address` is not an {Ipv6}, `port` is missing or
-   *   outside `0`-`65535`, or `scope_id` is negative
+   *    (the default) if this address isn't scoped to a
+   *    particular interface
+   * @throws Error if `address` is not an {Ipv6}, `port` is
+   *    missing or outside `0`-`65535`, or `scope_id` is negative
    */
   @new(address, port, scope_id) {
     if address == nil or !instance_of(address, Ipv6) {
@@ -213,13 +216,15 @@ class SocketAddrV6 {
   }
 
   /**
-   * Parses an address given as `[ip]:port` or, for a scoped address,
-   * `[ip%scope_id]:port`, e.g. `'[::1]:8080'` or `'[fe80::1%3]:8080'`.
+   * Parses an address given as `[ip]:port` or, for a scoped
+   * address, `[ip%scope_id]:port`, e.g. `'[::1]:8080'` or
+   * `'[fe80::1%3]:8080'`.
    *
    * @param string address: The address to parse
    * @returns SocketAddrV6
-   * @throws Error if `address` isn't a well-formed bracketed IPv6
-   *   address followed by `:` and a port from `0` to `65535`
+   * @throws Error if `address` isn't a well-formed bracketed
+   *    IPv6 address followed by `:` and a port from `0` to
+   *    `65535`
    */
   static parse(address) {
     if address == nil or address.length() == 0 or address[0] != '[' {
@@ -269,8 +274,8 @@ class SocketAddrV6 {
   }
 
   /**
-   * The zone/scope identifier, or `0` if this address isn't scoped to
-   * a particular network interface.
+   * The zone/scope identifier, or `0` if this address isn't
+   * scoped to a particular network interface.
    * @returns number
    */
   scope_id() {
@@ -278,8 +283,8 @@ class SocketAddrV6 {
   }
 
   /**
-   * Whether `other` refers to the same address, port, and scope as
-   * this one.
+   * Whether `other` refers to the same address, port, and scope
+   * as this one.
    *
    * @param SocketAddrV6 other: The address to compare against
    * @returns bool
@@ -294,8 +299,8 @@ class SocketAddrV6 {
   }
 
   /**
-   * This address as `[ip]:port`, or `[ip%scope_id]:port` if it carries
-   * a non-zero scope id.
+   * This address as `[ip]:port`, or `[ip%scope_id]:port` if it
+   * carries a non-zero scope id.
    * @returns string
    */
   to_string() {
@@ -311,21 +316,22 @@ class SocketAddrV6 {
 }
 
 /**
- * Either a {SocketAddrV4} or a {SocketAddrV6}, for code that needs to
- * accept and work with socket addresses of either family without
- * committing to one upfront.
+ * Either a {SocketAddrV4} or a {SocketAddrV6}, for code that
+ * needs to accept and work with socket addresses of either
+ * family without committing to one upfront.
  *
  * @printable
  */
 class SocketAddr {
 
   /**
-   * Wraps an already-constructed {SocketAddrV4} or {SocketAddrV6}.
-   * Application code should generally prefer `SocketAddr.parse()`,
-   * `SocketAddr.v4()`, or `SocketAddr.v6()` over calling this
-   * directly.
+   * Wraps an already-constructed {SocketAddrV4} or
+   * {SocketAddrV6}. Application code should generally prefer
+   * `SocketAddr.parse()`, `SocketAddr.v4()`, or
+   * `SocketAddr.v6()` over calling this directly.
    *
-   * @param {SocketAddrV4|SocketAddrV6} inner: The address to wrap
+   * @param {SocketAddrV4|SocketAddrV6} inner: The address to
+   *    wrap
    */
   @new(inner) {
     self._inner = inner
@@ -359,10 +365,10 @@ class SocketAddr {
    * choosing the family based on whether it starts with `[`.
    *
    * @param string address: The address to parse, e.g.
-   *   `'192.168.1.10:8080'` or `'[::1]:8080'`
+   *    `'192.168.1.10:8080'` or `'[::1]:8080'`
    * @returns SocketAddr
    * @throws Error if `address` is not a well-formed IPv4 or IPv6
-   *   socket address
+   *    socket address
    */
   static parse(address) {
     if address == nil {
@@ -392,8 +398,8 @@ class SocketAddr {
   }
 
   /**
-   * Returns the wrapped {SocketAddrV4}, or `nil` if this is an IPv6
-   * address.
+   * Returns the wrapped {SocketAddrV4}, or `nil` if this is an
+   * IPv6 address.
    * @returns ?SocketAddrV4
    */
   as_v4() {
@@ -404,8 +410,8 @@ class SocketAddr {
   }
 
   /**
-   * Returns the wrapped {SocketAddrV6}, or `nil` if this is an IPv4
-   * address.
+   * Returns the wrapped {SocketAddrV6}, or `nil` if this is an
+   * IPv4 address.
    * @returns ?SocketAddrV6
    */
   as_v6() {
@@ -433,9 +439,9 @@ class SocketAddr {
   }
 
   /**
-   * Whether `other` refers to the same address as this one. An IPv4
-   * address and an IPv6 address are never equal, even if one is the
-   * IPv4-mapped form of the other.
+   * Whether `other` refers to the same address as this one. An
+   * IPv4 address and an IPv6 address are never equal, even if
+   * one is the IPv4-mapped form of the other.
    *
    * @param SocketAddr other: The address to compare against
    * @returns bool
