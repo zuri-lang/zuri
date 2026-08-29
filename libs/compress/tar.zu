@@ -8,12 +8,12 @@
  *
  * The library exports two helper function `compress()` and
  * `extract()` by that allows you to create and/or extract TAR
- * archives. Note that this library does not yet support TAR
- * archives compressed with the bzip2 algorithm (typically files
- * ending in `.bz2` and `.tbz`).
+ * archives.
  *
  * This library supports the most popular extensions such as
- * `.tar.gz`, `.tar`, `.gz`, and `.tgz`.
+ * `.tar.gz`, `.tar`, `.gz`, `.tgz`, `.tar.bz2`, `.bz2`, and
+ * `.tbz` — the three archive shapes: uncompressed, gzip-compressed,
+ * and bzip2-compressed.
  *
  *
  * ## Extracting TAR archives
@@ -67,6 +67,7 @@ import os
 import io
 import .zlib
 import .gzip
+import .bzip2
 
 
 #--------------------------------------------------------------------------------
@@ -89,8 +90,7 @@ var COMPRESS_NONE = 0
 var COMPRESS_GZIP = 1
 
 /**
- * Create and read archives with the BZip2 compression method
- * (Not yet supported).
+ * Create and read archives with the BZip2 compression method.
  */
 var COMPRESS_BZIP = 2
 
@@ -124,8 +124,25 @@ var _header_unpack = 'a100:filename/a8:perm/a8:uid/a8:gid/a12:size/a12:mtime/a8:
 # Helpers
 #--------------------------------------------------------------------------------
 
+# Strips both the space padding and the NUL padding tar headers use
+# for string fields (filename, link, uname, gname, prefix) — .trim()
+# alone only strips spaces, and a raw trailing NUL left in place
+# breaks any later exact-match comparison against the field.
+def _field(v) {
+  return v.trim('\0').trim()
+}
+
 def _octdec(v) {
-  return v.to_string().to_number(8)
+  # Numeric header fields are padded with a mix of NUL bytes and
+  # spaces depending on the field (the checksum field in particular
+  # is "NNNNNN\0 " per POSIX), and .trim() alone only strips spaces
+  # off the ends, not embedded NULs. Normalize both away before
+  # parsing, or a real, non-corrupt field silently reads back as 0.
+  v = v.to_string().replace('\0', ' ').trim()
+  if v == '' {
+    return 0
+  }
+  return v.to_number(8)
 }
 
 
@@ -192,19 +209,20 @@ class Tar {
    * @throws {TarIOError}
    * @throws {TarIllegalCompressionError}
    */
-  open(file: string) {
-    self._file = file
+  open(path: string) {
+    self._file = path
 
     if self._comp_type == COMPRESS_AUTO {
-      self.set_compression(self._comp_level, self.file_type(file))
+      self.set_compression(self._comp_level, self.file_type(path))
     }
 
     if self._comp_type == COMPRESS_GZIP {
       self._handle = gzip.GzFile(self._file, 'rb')
     } else if self._comp_type == COMPRESS_BZIP {
-      raise TarIllegalCompressionError('bzip2 is not supported')
+      self._handle = bzip2.BzFile(self._file, 'rb')
     } else {
       self._handle = file(self._file, 'rb')
+      self._handle.open()
     }
 
     if !self._handle {
@@ -297,9 +315,9 @@ class Tar {
       var header = self._parse_header(data)
       if !header or !is_dict(header) continue
 
-      var is_dir = header.typeflag > 0
+      var is_dir = header.typeflag == 5
       if strip {
-        header.filename == self._strip(header.filename, is_dir, strip)
+        header.filename = self._strip(header.filename, is_dir, strip)
       }
 
       header.filename = header.filename.trim('\0')
@@ -318,7 +336,6 @@ class Tar {
 
       # extract data
       if !is_dir {
-        echo output
         var fp = file(output, 'wb')
         fp.open()
 
@@ -333,11 +350,10 @@ class Tar {
 
         fp.close()
 
-        fp = file(output)
-
-        # set times
-        # fp.chmod(header.perm)
-        # fp.set_times(-1, header.mtime)
+        if header.perm != nil
+          fp.chmod(header.perm)
+        if header.mtime != nil
+          fp.set_times(-1, header.mtime)
       } else {
         self._skip_bytes((header.size / 512).ceil() * 512)  # the size is usually 0 for directories
       }
@@ -361,22 +377,25 @@ class Tar {
    *
    * If file is empty, the Tar file will be created in memory.
    *
-   * @param {string} file
+   * @param {?string} path
    */
-  create(file: string) {
-    self._file = file
+  create(path: ?string) {
+    self._file = path
     self._handle = nil
     self._memory = bytes(0)
 
     if self._file {
       if self._comp_type == COMPRESS_AUTO
-        self.set_compression(self._comp_level, self.file_type(file))
+        self.set_compression(self._comp_level, self.file_type(path))
 
       if self._comp_type == COMPRESS_GZIP
-        self._handle = zlib.gzopen(self._file, 'wb')
+        self._handle = gzip.GzFile(self._file, 'wb')
       else if self._comp_type == COMPRESS_BZIP
-        raise TarIllegalCompressionError('bzip2 is not supported')
-      else self._handle = file(self._file, 'wb')
+        self._handle = bzip2.BzFile(self._file, 'wb')
+      else {
+        self._handle = file(self._file, 'wb')
+        self._handle.open()
+      }
 
       if !self._handle
         raise TarIOError('could not open file "${self._file}" for writing')
@@ -391,12 +410,12 @@ class Tar {
    * filesystem.
    *
    * @param {string} path path to the original file
-   * @param {string|dict} header either the name to use in Tar
+   * @param {?string|dict} header either the name to use in Tar
    *    (string) or a dictionary oject with all meta data, empty
    *    to take from original.
    * @throws {TarIOError}
    */
-  add_file(path: string, header: string|dict) {
+  add_file(path: string, header: ?string|dict) {
     if self._closed
       raise TarIOError('archive has been closed and files can no longer be added')
 
@@ -409,20 +428,20 @@ class Tar {
 
     if !is_dir and header.size > 0 {
       var fp = file(path, 'rb')
+      fp.open()
       var read = 0, total = fp.stats().size
 
       while read < total {
         var data = fp.gets(512)
-        read += data.length()
-
         if !data break
-        self._write_bytes(struct.pack('a512', data.to_string().ascii()))
+        read += data.length()
+        self._write_bytes(struct.pack('a512', data))
       }
       fp.close()
 
       if read != total {
         self.close()
-        raise TarCorruptedError('The size of ${file} changed while reading, archive corrupted. read ${read} expected ${total}')
+        raise TarCorruptedError('The size of ${path} changed while reading, archive corrupted. read ${read} expected ${total}')
       }
     }
 
@@ -442,11 +461,11 @@ class Tar {
    * `Untitled-{CURRENT_TIMESTAMP}` will be created.
    *
    * @param {bytes} data binary content of the file to add
-   * @param {string|dict} header either the name to use in Tar
+   * @param {?string|dict} header either the name to use in Tar
    *    (string) or a dictionary oject with all meta data
    * @throws {TarIOError}
    */
-  add_data(data: bytes, header: string|dict) {
+  add_data(data: bytes, header: ?string|dict) {
     if self._closed
       raise TarIOError('archive has been closed and files can no longer be added')
 
@@ -468,7 +487,11 @@ class Tar {
     self._write_file_header(header)
 
     iter var i = 0; i < data.length(); i += 512 {
-      self._write_bytes(struct.pack('a512', data[i,i+512].to_string().ascii()))
+      var end = i + 512
+      if end > data.length() {
+        end = data.length()
+      }
+      self._write_bytes(struct.pack('a512', data[i,end]))
     }
 
     # handle callbacks
@@ -505,12 +528,7 @@ class Tar {
     }
 
     if self._file {
-      if self._comp_type == COMPRESS_BZIP {
-        raise TarIllegalCompressionError('bzip2 is not supported')
-      } else {
-        self._handle.close()
-      }
-
+      self._handle.close()
       self._file = nil
       self._handle = nil
     }
@@ -538,7 +556,7 @@ class Tar {
     if self._comp_type == COMPRESS_GZIP {
       return zlib.compress(self._memory, self._comp_level, zlib.DEFAULT_STRATEGY, zlib.MAX_WBITS | 16)
     } else if self._comp_type == COMPRESS_BZIP {
-      raise TarIllegalCompressionError('bzip2 is not supported')
+      return bzip2.compress(self._memory, self._comp_level)
     }
 
     return self._memory
@@ -559,7 +577,7 @@ class Tar {
       self.set_compression(self._comp_level, self.file_type(path))
     }
 
-    return file(path, 'wb').write(self._memory)
+    return file(path, 'wb').write(self.get_archive())
   }
 
   /**
@@ -598,11 +616,10 @@ class Tar {
 			var sources = os.read_dir(gpath)
       for source in sources {
 
-        # check ext blacklist here...
-        for ext in ext_blacklist {
-          if source.ends_with('.${ext}')
-          return
-        }
+        # check ext blacklist here... (continue, not return: one
+        # blacklisted file must skip only itself, not abandon the
+        # rest of this directory)
+        if ext_blacklist.some(@(ext) { return source.ends_with('.${ext}') }) continue
 
         if source != '.' and source != '..' {
           var npath = os.join_paths(gpath, source)
@@ -617,9 +634,7 @@ class Tar {
           }
 
           # check file blacklist here...
-          if file_blacklist.contains(npath) {
-            return
-          }
+          if file_blacklist.contains(npath) continue
 
           if os.is_dir(npath) {
             self._add_files(gpath, source, file_blacklist, ext_blacklist)
@@ -632,8 +647,8 @@ class Tar {
 	}
 
   _compression_check(type) {
-    if type == COMPRESS_BZIP {
-      raise TarIllegalCompressionError('bzip2 is not supported')
+    if type < COMPRESS_AUTO or type > COMPRESS_BZIP {
+      raise TarIllegalCompressionError('unknown compression type ${type}')
     }
   }
 
@@ -664,7 +679,7 @@ class Tar {
         if magic.to_string().starts_with('\x42\x5a') {
           return COMPRESS_BZIP
         }
-        if magic.to_string().starts_with('\x1f\x86') {
+        if magic.to_string().starts_with('\x1f\x8b') {
           return COMPRESS_GZIP
         }
       }
@@ -680,14 +695,11 @@ class Tar {
     return COMPRESS_NONE
   }
 
+  # gets(), not read(): the plain-file and GzFile/BzFile handles all
+  # support both, but only gets() leaves the stream open for the next
+  # 512-byte block read.
   _read_bytes(length) {
-    if self._comp_type == COMPRESS_GZIP {
-      return self._handle.read(length)
-    } else if self._comp_type == COMPRESS_BZIP {
-      raise TarIllegalCompressionError('bzip2 is not supported')
-    } else {
-      return self._handle.gets(length)
-    }
+    return self._handle.gets(length)
   }
 
   _write_bytes(data) {
@@ -695,12 +707,8 @@ class Tar {
     if !self._file {
       self._memory += data
       written = data.length()
-    } else if self._comp_type == COMPRESS_GZIP {
-      written = self._handle.read(length)
-    } else if self._comp_type == COMPRESS_BZIP {
-      raise TarIllegalCompressionError('bzip2 is not supported')
     } else {
-      written = self._handle.gets(length)
+      written = self._handle.puts(data)
     }
 
     if !written {
@@ -711,11 +719,7 @@ class Tar {
   }
 
   _skip_bytes(bytes) {
-    if self._comp_type == COMPRESS_BZIP {
-      raise TarIllegalCompressionError('bzip2 is not supported')
-    } else {
-      self._handle.seek(bytes, io.SEEK_CUR)
-    }
+    self._handle.seek(bytes, io.SEEK_CUR)
   }
 
   _parse_header(block) {
@@ -724,7 +728,10 @@ class Tar {
     }
 
     block = block.to_string()
-    if !block.trim() {
+    if !_field(block) {
+      # the end-of-archive marker is two all-NUL blocks; .trim() alone
+      # (space-only) leaves an all-NUL block non-empty, so this has to
+      # strip NUL too, same as every other field in this header.
       return false
     }
 
@@ -747,42 +754,46 @@ class Tar {
       checksum: _octdec(header.checksum.trim())
     }
 
-    # if result.checksum != chks
-    #   raise TarCorruptedError('header does not match its checksum')
+    if result.checksum != chks {
+      raise TarCorruptedError('header for "${_field(header.filename)}" does not match its checksum')
+    }
 
-    # if result.checksum == chks {
-    if header.checksum.match('/^\d+/') {
-      result.filename = header.filename.trim()
-      result.perm = _octdec(header.perm.trim())
-      result.uid = _octdec(header.uid.trim())
-      result.gid = _octdec(header.gid.trim())
-      result.size = _octdec(header.size.trim())
-      result.mtime = _octdec(header.mtime.trim())
-      result.typeflag = header.typeflag.to_number()
-      result.link = header.link.trim()
-      result.uname = header.uname.trim()
-      result.gname = header.gname.trim()
+    result.filename = _field(header.filename)
+    result.perm = _octdec(header.perm)
+    result.uid = _octdec(header.uid)
+    result.gid = _octdec(header.gid)
+    result.size = _octdec(header.size)
+    result.mtime = _octdec(header.mtime)
+    result.link = _field(header.link)
+    result.uname = _field(header.uname)
+    result.gname = _field(header.gname)
 
-      # handle ustar Posix compliant path prefixes
-      if header.prefix.trim() {
-        result.filename = header.prefix.trim() + '/' + result.filename
+    # handle ustar Posix compliant path prefixes
+    var prefix = _field(header.prefix)
+    if prefix {
+      result.filename = prefix + '/' + result.filename
+    }
+
+    # handle Long-link entries from GNU Tar: the typeflag check has to
+    # happen against the RAW header field (a single character, 'L' for
+    # a longlink), before any numeric conversion — result.typeflag
+    # below is a plain digit-turned-number for every other entry type,
+    # so 'L' can never survive that conversion to be checked against.
+    if header.typeflag == 'L' {
+      # the following data block(s) hold the real filename
+      var filename = self._read_bytes((result.size / 512).ceil() * 512)
+      # the next block after that is the real header for this entry
+      var next_block = self._read_bytes(512)
+      result = self._parse_header(next_block)
+      if !result or !is_dict(result) {
+        raise TarCorruptedError('GNU longlink entry is missing its real header')
       }
-
-      # handle Long-link entries from GNU Tar
-      if result.typeflag == 'L' {
-        # the following data block(s) is the filename
-        var filename = self._read_bytes((result.size / 512).ceil() * 512)
-        # next block is the real header
-        var block = self._read_bytes(512)
-        result = self._parse_header(block)
-        # overwrite the filename
-        result.filename = filename
-      }
-
+      result.filename = filename.to_string().trim('\0')
       return result
     }
-    
-    return false
+
+    result.typeflag = header.typeflag.to_number()
+    return result
   }
 
   _strip(filename, is_dir, strip) {
@@ -835,6 +846,14 @@ class Tar {
   }
 
   _write_raw_file_header(name, uid, gid, perm, size, mtime, typeflag) {
+    # typeflag is a single tar-format character ('0', '5', 'L', ...);
+    # callers pass either that character directly (the GNU longlink
+    # case) or the numeric typeflag a header dict carries everywhere
+    # else, so normalize to a string before it hits struct.pack().
+    if !is_string(typeflag) {
+      typeflag = typeflag.to_string()
+    }
+
     var prefix = ''
     if name.length() > 100 {
       var file = os.base_name(name)
@@ -845,7 +864,11 @@ class Tar {
         self._write_raw_file_header('././@LongLink', 0, 0, 0, name.length(), 0, 'L')
 
         iter var i = 0; i < name.length(); i += 512 {
-          self._write_bytes(struct.pack('a512', name[i,i+512]))
+          var end = i + 512
+          if end > name.length() {
+            end = name.length()
+          }
+          self._write_bytes(struct.pack('a512', name[i,end]))
         }
         name = name[,100] # cut off name
       } else {

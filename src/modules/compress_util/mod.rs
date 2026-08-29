@@ -298,6 +298,19 @@ impl From<Utf8Error> for DeflateDecoderError {
 pub struct DeflateDecoder {
   inflate: Inflate,
 
+  // Remembered so reset() can reconstruct an Inflate with the same
+  // framing the decoder was originally built with. This has to
+  // rebuild a whole new Inflate rather than calling zlib-rs's own
+  // Inflate::reset(bool): that method only takes a zlib_header flag
+  // and falls back to InflateConfig::default()'s window_bits (a
+  // plain 15) for everything else, silently losing a custom
+  // window_bits like gzip's 31 (the "expect a gzip header"
+  // configuration) — reset() on a gzip-mode decoder would otherwise
+  // come back parsing raw/zlib framing and fail on the very next read
+  // against a stream that's still gzip-wrapped.
+  zlib_header: bool,
+  window_bits: u8,
+
   input: Vec<u8>,
   input_pos: usize,
 
@@ -310,6 +323,8 @@ impl DeflateDecoder {
   pub fn new(data: Vec<u8>, zlib_header: bool, window_bits: u8) -> Self {
     Self {
       inflate: Inflate::new(zlib_header, window_bits),
+      zlib_header,
+      window_bits,
 
       input: data,
       input_pos: 0,
@@ -328,7 +343,7 @@ impl DeflateDecoder {
   ///
   /// `data` is moved into the decoder; no copy is performed.
   pub fn reset(&mut self, data: Vec<u8>) {
-    self.inflate.reset(false);
+    self.inflate = Inflate::new(self.zlib_header, self.window_bits);
 
     self.input = data;
     self.input_pos = 0;
@@ -552,5 +567,485 @@ impl fmt::Debug for DeflateDecoder {
       .field("total_out", &self.total_out())
       .field("finished", &self.finished)
       .finish()
+  }
+}
+
+// bzip2 streaming wrappers. Structurally identical to DeflateEncoder/
+// DeflateDecoder above (same buffering strategy, same call shape), just
+// riding libbz2-rs-sys's Compress/Decompress instead of zlib-rs's
+// Deflate/Inflate — kept as a near-mirror on purpose so the two are easy
+// to compare and the native bindings in compress.rs can register bzip2's
+// methods under the exact same names as gzip's.
+use bzip2::{Action, Compress, Compression as BzCompression, Decompress, Error as BzError, Status as BzStatus};
+
+#[derive(Debug)]
+pub struct Bzip2Error(pub BzError);
+
+impl From<BzError> for Bzip2Error {
+  fn from(error: BzError) -> Self {
+    Self(error)
+  }
+}
+
+pub struct Bzip2Encoder {
+  compress: Compress,
+
+  input: Vec<u8>,
+
+  output: Vec<u8>,
+  output_pos: usize,
+
+  scratch: Vec<u8>,
+
+  level: u32,
+  work_factor: u32,
+
+  finished: bool,
+}
+
+impl Bzip2Encoder {
+  /// `level`: 1 (fastest) through 9 (best compression). `work_factor`:
+  /// 0..=250, see `Compress::new`'s own docs — 0 means "use bzip2's
+  /// own default of 30".
+  pub fn new(level: u32, work_factor: u32) -> Self {
+    let level = level.clamp(1, 9);
+    Self {
+      compress: Compress::new(BzCompression::new(level), work_factor),
+      input: Vec::new(),
+      output: Vec::new(),
+      output_pos: 0,
+      scratch: vec![0; SCRATCH_SIZE],
+      level,
+      work_factor,
+      finished: false,
+    }
+  }
+
+  pub fn write(&mut self, input: &[u8]) -> Result<usize, Bzip2Error> {
+    if self.finished {
+      return Err(BzError::Sequence.into());
+    }
+
+    if input.is_empty() {
+      return Ok(0);
+    }
+
+    self.input.extend_from_slice(input);
+    self.process(Action::Run)?;
+
+    Ok(input.len())
+  }
+
+  pub fn flush(&mut self) -> Result<Vec<u8>, Bzip2Error> {
+    if self.finished {
+      return Err(BzError::Sequence.into());
+    }
+
+    self.process(Action::Run)?;
+    self.process(Action::Flush)?;
+
+    Ok(self.take_output())
+  }
+
+  pub fn finish(&mut self) -> Result<Vec<u8>, Bzip2Error> {
+    if self.finished {
+      return Err(BzError::Sequence.into());
+    }
+
+    self.process(Action::Run)?;
+
+    debug_assert!(
+      self.input.is_empty(),
+      "Action::Run must consume all pending input"
+    );
+
+    loop {
+      let before_out = self.compress.total_out();
+
+      let status = self.compress.compress(&[], &mut self.scratch, Action::Finish)?;
+
+      let produced = (self.compress.total_out() - before_out) as usize;
+      self.append_scratch(produced);
+
+      match status {
+        BzStatus::StreamEnd => {
+          self.finished = true;
+          return Ok(self.take_output());
+        },
+        _ => {},
+      }
+    }
+  }
+
+  /// Finishes the current stream and starts a fresh one (bzip2 has no
+  /// native in-place reset, unlike zlib-rs, so this just rebuilds the
+  /// underlying `Compress` state with the same level/work_factor).
+  pub fn reset(&mut self) -> Result<Vec<u8>, Bzip2Error> {
+    let output = self.finish()?;
+    self.compress = Compress::new(BzCompression::new(self.level), self.work_factor);
+    self.finished = false;
+    Ok(output)
+  }
+
+  pub fn take_output(&mut self) -> Vec<u8> {
+    if self.output_pos == 0 {
+      return std::mem::take(&mut self.output);
+    }
+
+    if self.output_pos == self.output.len() {
+      self.output.clear();
+      self.output_pos = 0;
+      return Vec::new();
+    }
+
+    let result = self.output[self.output_pos..].to_vec();
+    self.output.clear();
+    self.output_pos = 0;
+    result
+  }
+
+  pub fn available(&self) -> usize {
+    self.output.len() - self.output_pos
+  }
+
+  pub fn is_finished(&self) -> bool {
+    self.finished
+  }
+
+  pub fn total_in(&self) -> u64 {
+    self.compress.total_in()
+  }
+
+  pub fn total_out(&self) -> u64 {
+    self.compress.total_out()
+  }
+
+  fn process(&mut self, action: Action) -> Result<(), Bzip2Error> {
+    loop {
+      let before_in = self.compress.total_in();
+      let before_out = self.compress.total_out();
+
+      self.compress.compress(&self.input, &mut self.scratch, action)?;
+
+      let consumed = (self.compress.total_in() - before_in) as usize;
+      let produced = (self.compress.total_out() - before_out) as usize;
+
+      self.append_scratch(produced);
+
+      if consumed != 0 {
+        self.input.drain(..consumed);
+      }
+
+      if self.input.is_empty() {
+        return Ok(());
+      }
+
+      if consumed == 0 && produced == 0 {
+        // Scratch buffer is 32 KiB, replenished every call — this
+        // should never happen with non-empty input remaining.
+        return Err(BzError::Sequence.into());
+      }
+    }
+  }
+
+  #[inline]
+  fn append_scratch(&mut self, produced: usize) {
+    if produced == 0 {
+      return;
+    }
+    self.output.extend_from_slice(&self.scratch[..produced]);
+  }
+}
+
+pub struct Bzip2Decoder {
+  decompress: Decompress,
+
+  input: Vec<u8>,
+  input_pos: usize,
+
+  scratch: Vec<u8>,
+
+  finished: bool,
+}
+
+impl Bzip2Decoder {
+  pub fn new(data: Vec<u8>) -> Self {
+    Self {
+      decompress: Decompress::new(false),
+      input: data,
+      input_pos: 0,
+      scratch: vec![0; SCRATCH_SIZE],
+      finished: false,
+    }
+  }
+
+  pub fn reset(&mut self, data: Vec<u8>) {
+    self.decompress = Decompress::new(false);
+    self.input = data;
+    self.input_pos = 0;
+    self.finished = false;
+  }
+
+  pub fn read(&mut self, output: &mut Vec<u8>, len: usize) -> Result<usize, Bzip2Error> {
+    if len == 0 || self.finished {
+      return Ok(0);
+    }
+
+    let output_len = len.min(SCRATCH_SIZE);
+
+    let before_in = self.decompress.total_in();
+    let before_out = self.decompress.total_out();
+
+    let status = self
+      .decompress
+      .decompress(&self.input[self.input_pos..], &mut self.scratch[..output_len])?;
+
+    let consumed = (self.decompress.total_in() - before_in) as usize;
+    let produced = (self.decompress.total_out() - before_out) as usize;
+
+    self.input_pos += consumed;
+    output.extend_from_slice(&self.scratch[..produced]);
+
+    if status == BzStatus::StreamEnd {
+      self.finished = true;
+    }
+
+    if consumed == 0 && produced == 0 && !self.finished {
+      return Err(BzError::Sequence.into());
+    }
+
+    Ok(produced)
+  }
+
+  pub fn read_exact(&mut self, output: &mut Vec<u8>, len: usize) -> Result<(), Bzip2Error> {
+    if len == 0 {
+      return Ok(());
+    }
+
+    let target = output
+      .len()
+      .checked_add(len)
+      .ok_or(Bzip2Error(BzError::Param))?;
+
+    while output.len() < target {
+      let remaining = target - output.len();
+      let produced = self.read(output, remaining)?;
+
+      if produced == 0 {
+        return Err(BzError::Sequence.into());
+      }
+    }
+
+    Ok(())
+  }
+
+  pub fn read_all(&mut self, output: &mut Vec<u8>) -> Result<usize, Bzip2Error> {
+    let before = output.len();
+
+    while !self.finished {
+      self.read(output, SCRATCH_SIZE)?;
+    }
+
+    Ok(output.len() - before)
+  }
+
+  pub fn is_finished(&self) -> bool {
+    self.finished
+  }
+
+  pub fn total_in(&self) -> u64 {
+    self.decompress.total_in()
+  }
+
+  pub fn total_out(&self) -> u64 {
+    self.decompress.total_out()
+  }
+
+  pub fn available(&self) -> usize {
+    self.input.len().saturating_sub(self.input_pos)
+  }
+}
+
+// Brotli streaming wrappers. The decoder rides the crate's own
+// Decompressor<Cursor<Vec<u8>>>, which genuinely streams (each read()
+// call decodes only as much as asked for), the same shape as
+// Bzip2Decoder/DeflateDecoder above.
+//
+// The encoder is a real exception to that pattern: the `brotli` crate's
+// only public streaming primitive is CompressorWriter<W: Write>, which
+// drives compression by pushing bytes at an output sink as you feed it
+// input — there's no exposed lower-level state machine here for "hand
+// me back partial compressed output as I feed you partial input"
+// without reaching into brotli's internal encoder plumbing, which is
+// out of proportion for what this module needs. So BrotliEncoder simply
+// buffers everything written to it and does the real compression once,
+// in finish() — a real behavioral difference from the other encoders
+// here (documented on the Zuri-level class), not an oversight.
+use std::io::{Cursor, Read, Write};
+
+pub struct BrotliEncoder {
+  input: Vec<u8>,
+  quality: u32,
+  lgwin: u32,
+  total_in: u64,
+  total_out: u64,
+  finished: bool,
+}
+
+impl BrotliEncoder {
+  /// `quality`: 0 (fastest) through 11 (best compression). `lgwin`: the
+  /// base-2 log of the sliding window size, 10..=24.
+  pub fn new(quality: u32, lgwin: u32) -> Self {
+    Self {
+      input: Vec::new(),
+      quality: quality.min(11),
+      lgwin: lgwin.clamp(10, 24),
+      total_in: 0,
+      total_out: 0,
+      finished: false,
+    }
+  }
+
+  pub fn write(&mut self, input: &[u8]) -> usize {
+    self.input.extend_from_slice(input);
+    input.len()
+  }
+
+  /// Compresses everything written so far and returns it. See the
+  /// module-level note above: unlike the other encoders here, this
+  /// does the actual compression work here rather than incrementally
+  /// as `write()` is called.
+  pub fn finish(&mut self) -> Vec<u8> {
+    let mut output = Vec::new();
+    {
+      let mut writer = brotli::CompressorWriter::new(&mut output, 4096, self.quality, self.lgwin);
+      writer
+        .write_all(&self.input)
+        .expect("compressing into an in-memory Vec<u8> cannot fail");
+      writer
+        .flush()
+        .expect("compressing into an in-memory Vec<u8> cannot fail");
+    }
+
+    self.total_in += self.input.len() as u64;
+    self.total_out += output.len() as u64;
+    self.input.clear();
+    self.finished = true;
+
+    output
+  }
+
+  pub fn reset(&mut self) -> Vec<u8> {
+    let output = self.finish();
+    self.finished = false;
+    output
+  }
+
+  pub fn is_finished(&self) -> bool {
+    self.finished
+  }
+
+  pub fn total_in(&self) -> u64 {
+    self.total_in
+  }
+
+  pub fn total_out(&self) -> u64 {
+    self.total_out
+  }
+}
+
+pub struct BrotliDecoder {
+  inner: brotli::Decompressor<Cursor<Vec<u8>>>,
+  total_in: u64,
+  total_out: u64,
+  finished: bool,
+}
+
+impl BrotliDecoder {
+  pub fn new(data: Vec<u8>) -> Self {
+    Self {
+      total_in: data.len() as u64,
+      inner: brotli::Decompressor::new(Cursor::new(data), 4096),
+      total_out: 0,
+      finished: false,
+    }
+  }
+
+  pub fn reset(&mut self, data: Vec<u8>) {
+    self.total_in = data.len() as u64;
+    self.inner = brotli::Decompressor::new(Cursor::new(data), 4096);
+    self.total_out = 0;
+    self.finished = false;
+  }
+
+  pub fn read(&mut self, output: &mut Vec<u8>, len: usize) -> std::io::Result<usize> {
+    if len == 0 || self.finished {
+      return Ok(0);
+    }
+
+    let start = output.len();
+    output.resize(start + len, 0);
+
+    let mut produced = 0;
+    // A single Read::read() call is allowed to return fewer bytes than
+    // asked for without that meaning EOF, so loop until either the
+    // request is filled or a genuine EOF (Ok(0)) is hit.
+    while produced < len {
+      let n = self.inner.read(&mut output[start + produced..])?;
+      if n == 0 {
+        self.finished = true;
+        break;
+      }
+      produced += n;
+    }
+
+    output.truncate(start + produced);
+    self.total_out += produced as u64;
+
+    Ok(produced)
+  }
+
+  pub fn read_exact(&mut self, output: &mut Vec<u8>, len: usize) -> std::io::Result<()> {
+    if len == 0 {
+      return Ok(());
+    }
+
+    let target = output
+      .len()
+      .checked_add(len)
+      .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+
+    while output.len() < target {
+      let remaining = target - output.len();
+      let produced = self.read(output, remaining)?;
+
+      if produced == 0 {
+        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+      }
+    }
+
+    Ok(())
+  }
+
+  pub fn read_all(&mut self, output: &mut Vec<u8>) -> std::io::Result<usize> {
+    let before = output.len();
+
+    while !self.finished {
+      self.read(output, 65536)?;
+    }
+
+    Ok(output.len() - before)
+  }
+
+  pub fn is_finished(&self) -> bool {
+    self.finished
+  }
+
+  pub fn total_in(&self) -> u64 {
+    self.total_in
+  }
+
+  pub fn total_out(&self) -> u64 {
+    self.total_out
   }
 }

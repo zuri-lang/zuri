@@ -1,0 +1,124 @@
+/**
+ * test_zstd.zu
+ *
+ * Test suite for the `compress.zstd` standard library module:
+ * one-shot compress()/decompress() and the streaming ZstdEncoder/
+ * ZstdDecoder pair.
+ */
+
+import compress.zstd
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  compress.zstd module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# One-shot compress()/decompress()
+# ---------------------------------------------------------------------------
+var text = 'The quick brown fox jumps over the lazy dog. ' * 30
+var compressed = zstd.compress(text)
+assert typeof(compressed) == 'bytes', 'compress() must return bytes'
+assert compressed.length() < text.length(), 'compressing 30x repeated text must actually shrink it'
+# Real zstd frame magic number, little-endian: 0xFD2FB528.
+assert compressed[0] == 0x28 and compressed[1] == 0xb5 and compressed[2] == 0x2f and compressed[3] == 0xfd,
+  'compressed output must start with the real zstd frame magic number'
+ok('compress() produces a real, smaller-than-input zstd frame')
+
+assert zstd.decompress(compressed).to_string() == text, 'decompress() must recover the exact original text'
+ok('decompress() recovers the exact original content')
+
+assert zstd.decompress(zstd.compress('')).to_string() == '', 'an empty string must round-trip to itself'
+ok('empty input round-trips correctly')
+
+# ---------------------------------------------------------------------------
+# Compression level
+# ---------------------------------------------------------------------------
+var fast = zstd.compress(text, 1)
+var best = zstd.compress(text, 4)
+assert zstd.decompress(fast).to_string() == text, 'level 1 output must still decompress correctly'
+assert zstd.decompress(best).to_string() == text, 'level 4 output must still decompress correctly'
+ok('compress() honors an explicit compression level and still round-trips')
+
+# ---------------------------------------------------------------------------
+# Binary content
+# ---------------------------------------------------------------------------
+var binary_data = bytes(256)
+iter var i = 0; i < 256; i++ {
+  binary_data[i] = i
+}
+assert zstd.decompress(zstd.compress(binary_data)) == binary_data,
+  'every byte value 0..255 must survive compress()/decompress() unchanged'
+ok('binary content (all 256 byte values) survives compress/decompress unchanged')
+
+# ---------------------------------------------------------------------------
+# Streaming encoder/decoder
+# ---------------------------------------------------------------------------
+var enc = zstd.ZstdEncoder()
+enc.write('hello ')
+enc.write('streaming ')
+enc.write('zstd world')
+var stream_compressed = enc.finish()
+# Note: unlike every other encoder in this module (Gzip/Bzip2/Brotli/
+# Deflate), ZstdEncoder has no finished()/total_in()/total_out()/
+# available() — the class wraps zrip::FrameEncoder<Vec<u8>> directly
+# with no Zuri-side state tracking, and zrip's own finish() consumes
+# the encoder by value (a real, and non-trivial, retrofit to add
+# those the way the others expose them). A known, pre-existing gap;
+# not something this test suite works around silently.
+ok('ZstdEncoder accumulates multiple write() calls before finish()')
+
+var dec = zstd.ZstdDecoder(stream_compressed)
+var first_chunk = dec.read(5)
+assert first_chunk.to_string() == 'hello', 'read(length) must return exactly that many decompressed bytes'
+var rest = dec.read_all()
+assert rest.to_string() == ' streaming zstd world', 'read_all() must return everything remaining after the partial read'
+ok('ZstdDecoder supports a partial read() followed by read_all()')
+
+var dec2 = zstd.ZstdDecoder(stream_compressed)
+assert dec2.read_as_string() == 'hello streaming zstd world', 'read_as_string() must decode the whole stream as a string in one call'
+ok('ZstdDecoder.read_as_string()')
+
+# ---------------------------------------------------------------------------
+# reset() reuses the encoder/decoder for another frame
+# ---------------------------------------------------------------------------
+var enc2 = zstd.ZstdEncoder()
+enc2.write('first frame')
+var frame1 = enc2.reset()
+assert zstd.decompress(frame1).to_string() == 'first frame', 'reset() must return the completed first frame'
+enc2.write('second frame')
+var frame2 = enc2.finish()
+assert zstd.decompress(frame2).to_string() == 'second frame', 'the encoder must be fully usable again after reset()'
+ok('ZstdEncoder.reset() finishes the current frame and starts a fresh one')
+
+var dec3 = zstd.ZstdDecoder(frame1)
+dec3.read_all()
+dec3.reset(frame2)
+assert dec3.read_as_string() == 'second frame', 'reset() must make the decoder read from the new source, not the old one'
+ok('ZstdDecoder.reset() installs a new source correctly')
+
+assert raises(@() { zstd.decompress('not a zstd frame at all'.to_bytes()) }),
+  'decompressing data without a valid zstd frame magic number must raise, not silently return garbage'
+ok('decompress() rejects malformed input')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

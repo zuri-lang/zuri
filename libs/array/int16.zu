@@ -40,7 +40,7 @@ class Int16Array < Array {
    * @param {number|list} n
    * @constructor
    */
-  Int16Array(n) {
+  @new(n) {
     if is_number(n) {
       self._data = bytes(n * self._bit_size)
     } else if is_list(n) {

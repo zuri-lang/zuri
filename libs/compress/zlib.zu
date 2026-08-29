@@ -227,11 +227,11 @@ import .gzip { GzipDecoder, GzipEncoder }
  *
  * ```zuri-repl
  * %> import compress.zlib
- * %> var encoder = zlib.DeflateEncoder()
+ * %> var encoder = zlib.ZlibEncoder()
  * %> encoder.write('hello world')
  * 11
  * %> encoder.finish()
- * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
+ * (78 01 cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00 1a 0b 04 5d)
  * ```
  */
 class ZlibEncoder < GzipEncoder {
@@ -262,9 +262,9 @@ class ZlibEncoder < GzipEncoder {
  * %> import compress.zlib
  * %> var data = zlib.compress('hello world')
  * %> data
- * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
- * %> 
- * %> var decoder = zlib.DeflateDecoder(data)
+ * (78 9c cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00 1a 0b 04 5d)
+ * %>
+ * %> var decoder = zlib.ZlibDecoder(data)
  * %> decoder.read_as_string()
  * hello world
  * ```

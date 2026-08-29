@@ -15,7 +15,10 @@ import _compress
  * @note An Adler-32 checksum is almost as reliable as a CRC-32
  *    but can be computed much faster.
  * @param {bytes|string} data
- * @param ?number initial
+ * @param ?number initial: Default `1` — the algorithm's own defined
+ *    identity/seed value (RFC 1950). Pass the previously returned
+ *    checksum here to continue an incremental computation across
+ *    multiple calls.
  * @returns number
  */
 def adler32(data, initial) {
@@ -27,7 +30,9 @@ def adler32(data, initial) {
  * and return the updated CRC-32 checksum.
  *
  * @param {bytes|string} data
- * @param ?number intial
+ * @param ?number initial: Default `0` — the algorithm's own defined
+ *    identity/seed value. Pass the previously returned checksum here
+ *    to continue an incremental computation across multiple calls.
  * @returns number
  */
 def crc32(data, initial) {

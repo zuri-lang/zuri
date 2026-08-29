@@ -1,0 +1,145 @@
+/**
+ * test_gzip.zu
+ *
+ * Test suite for the `compress.gzip` standard library module:
+ * one-shot compress()/decompress(), the streaming GzipEncoder/
+ * GzipDecoder pair, and the GzFile file-like wrapper.
+ */
+
+import compress.gzip
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+var _root = 'tmp/test_gzip_scratch'
+
+def fresh_dir(path) {
+  if os.dir_exists(path) {
+    os.remove_dir(path, true)
+  }
+  os.create_dir(path, nil, true)
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  compress.gzip module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+fresh_dir(_root)
+
+# ---------------------------------------------------------------------------
+# One-shot compress()/decompress()
+# ---------------------------------------------------------------------------
+var text = 'The quick brown fox jumps over the lazy dog. ' * 30
+var compressed = gzip.compress(text)
+assert typeof(compressed) == 'bytes', 'compress() must return bytes'
+assert compressed.length() < text.length(), 'compressing 30x repeated text must actually shrink it'
+assert compressed[0] == 0x1f and compressed[1] == 0x8b, 'compressed output must start with the real gzip magic bytes 1F 8B'
+ok('compress() produces real, smaller-than-input gzip output')
+
+assert gzip.decompress(compressed).to_string() == text, 'decompress() must recover the exact original text'
+ok('decompress() recovers the exact original content')
+
+assert gzip.decompress(gzip.compress('')).to_string() == '', 'an empty string must round-trip to itself'
+ok('empty input round-trips correctly')
+
+# ---------------------------------------------------------------------------
+# Binary content
+# ---------------------------------------------------------------------------
+var binary_data = bytes(256)
+iter var i = 0; i < 256; i++ {
+  binary_data[i] = i
+}
+assert gzip.decompress(gzip.compress(binary_data)) == binary_data,
+  'every byte value 0..255 must survive compress()/decompress() unchanged'
+ok('binary content (all 256 byte values) survives compress/decompress unchanged')
+
+# ---------------------------------------------------------------------------
+# Streaming encoder/decoder
+# ---------------------------------------------------------------------------
+var enc = gzip.GzipEncoder()
+enc.write('hello ')
+enc.write('streaming ')
+enc.write('gzip world')
+var stream_compressed = enc.finish()
+assert enc.finished(), 'finished() must be true once finish() has completed the stream'
+assert enc.total_in() == 'hello streaming gzip world'.length(), 'total_in() must count every byte written across all write() calls'
+ok('GzipEncoder accumulates multiple write() calls before finish()')
+
+var dec = gzip.GzipDecoder(stream_compressed)
+var first_chunk = dec.read(5)
+assert first_chunk.to_string() == 'hello', 'read(length) must return exactly that many decompressed bytes'
+var rest = dec.read_all()
+assert rest.to_string() == ' streaming gzip world', 'read_all() must return everything remaining after the partial read'
+ok('GzipDecoder supports a partial read() followed by read_all()')
+
+var dec2 = gzip.GzipDecoder(stream_compressed)
+assert dec2.read_as_string() == 'hello streaming gzip world', 'read_as_string() must decode the whole stream as a string in one call'
+ok('GzipDecoder.read_as_string()')
+
+# ---------------------------------------------------------------------------
+# GzFile: treating a .gz file like a regular file
+# ---------------------------------------------------------------------------
+var gz_path = os.join_paths(_root, 'file.gz')
+var w = gzip.GzFile(gz_path, 'wb')
+w.puts('hello ')
+w.puts('gzfile ')
+w.puts('world')
+w.close()
+
+assert file(gz_path, 'rb').exists(), 'GzFile must actually create the underlying file on disk'
+
+var r = gzip.GzFile(gz_path, 'rb')
+assert r.gets(5).to_string() == 'hello', 'GzFile.gets(length) must return exactly that many decompressed bytes'
+assert r.gets().to_string() == ' gzfile world', 'GzFile.gets() with no length must read to the end'
+r.close()
+ok('GzFile write-then-read round trip through a real file on disk')
+
+# Regression: close() used to call finish() explicitly, then also call
+# close() on the same already-finished encoder, which raised. This is
+# the exact scenario that surfaced it (never exercised by the one-shot
+# compress()/decompress() path above).
+assert !raises(@() {
+  var w2 = gzip.GzFile(os.join_paths(_root, 'close_test.gz'), 'wb')
+  w2.puts('content')
+  w2.close()
+}), 'closing a write-mode GzFile must not raise (finish() must not be called twice)'
+ok('GzFile.close() in write mode does not double-finish the encoder')
+
+var r3 = gzip.GzFile(gz_path, 'rb')
+r3.seek(6, 0)
+assert r3.gets().to_string() == 'gzfile world', 'GzFile.seek(6, SEEK_SET) must position the reader at decompressed offset 6'
+r3.seek(-5, 1)
+assert r3.tell() == 'hello gzfile '.length(), 'a relative SEEK_CUR seek must be relative to the current decompressed position'
+r3.close()
+ok('GzFile.seek()/tell() operate on the decompressed byte stream')
+
+var copy = gzip.GzFile(gz_path, 'rb')
+var original_copy = copy.copy()
+assert original_copy.gets(5).to_string() == 'hello', 'copy() must produce an independently readable GzFile from the same path'
+assert copy.gets(5).to_string() == 'hello', 'reading from the copy must not have advanced the original\'s own position'
+copy.close()
+original_copy.close()
+ok('GzFile.copy() is independent of the original, not aliased')
+
+os.remove_dir(_root, true)
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

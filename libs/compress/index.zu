@@ -1,42 +1,60 @@
 /**
  * @module compress
  *
- * The 'compress' compression library provides in-memory
- * compression and decompression functions, including integrity
- * checks of the uncompressed data. This version of the library
- * supports only one compression method (deflation) but other
- * algorithms will be added later and will have the same stream
- * interface.
+ * The `compress` library provides in-memory and streaming
+ * compression and decompression across several algorithms, plus
+ * archive-format support for TAR and ZIP.
  *
- * Compression can be done in a single step if the buffers are
- * large enough, or can be done by repeated calls of the
- * compression function. In the latter case, the application must
- * provide more input and/or consume the output (providing more
- * output space) before each call.
+ * ## Compression methods
  *
- * The compressed data format used by default by the in-memory
- * functions is the zlib format, which is a zlib wrapper
- * documented in RFC 1950, wrapped around a compress stream,
- * which is itself documented in RFC 1951.
+ * | Method    | Submodule            | Encode | Decode | Streaming | Notes |
+ * |-----------|----------------------|--------|--------|-----------|-------|
+ * | Deflate   | `compress.deflate`   | yes    | yes    | yes       | RFC 1951 raw compress stream. |
+ * | Zlib      | `compress.zlib`      | yes    | yes    | yes       | RFC 1950 wrapper around Deflate; also re-exports Deflate's `GzipDecoder`/`GzipEncoder` as `DeflateDecoder`/`DeflateEncoder`. |
+ * | Gzip      | `compress.gzip`      | yes    | yes    | yes       | RFC 1952 wrapper around Deflate. `GzFile` treats a `.gz` file like a regular file. |
+ * | Zstandard | `compress.zstd`      | yes    | yes    | yes       | Pure-Rust implementation (`zrip`). |
+ * | LZ4       | `compress.lz4`       | yes    | yes    | yes       | Frame format, via `lz4_flex`. |
+ * | Bzip2     | `compress.bzip2`     | yes    | yes    | yes       | Pure-Rust implementation (`libbz2-rs-sys`). `BzFile` treats a `.bz2` file like a regular file. Only decodes the first stream in a bzip2 "multistream" (see the submodule's own docs). |
+ * | Brotli    | `compress.brotli`    | yes    | yes    | decode only | Pure-Rust implementation. The streaming encoder buffers all input and compresses once in `finish()` rather than incrementally — see `BrotliEncoder`'s own docs. |
  *
- * The library also supports reading and writing files in gzip
- * (.gz) format with an interface similar to that of stdio using
- * the functions that start with "gz". The gzip format is
- * different from the zlib format. GZip is a gzip wrapper,
- * documented in RFC 1952, wrapped around a compress stream.
+ * Every streaming submodule follows the same shape: a `compress()`/
+ * `decompress()` one-shot pair for when the whole buffer is already
+ * in memory, plus an `Encoder`/`Decoder` class pair
+ * (`write()`/`flush()`/`finish()`/`reset()` and
+ * `read()`/`read_exact()`/`read_all()`/`read_as_string()`
+ * respectively) for when the input arrives incrementally or the
+ * output needs to be consumed as it's produced. `total_in()`/
+ * `total_out()`/`available()`/`finished()` are available on both
+ * sides of every streaming class for introspection.
  *
- * This library can optionally read and write gzip and raw
- * compress streams in memory as well.
+ * `compress.checksum` provides CRC-32 and Adler-32, independent of
+ * any particular compression method — used internally by `zip` to
+ * validate extracted entries, but also usable standalone.
  *
- * The zlib format was designed to be compact and fast for use in
- * memory and on communications channels. The gzip format was
- * designed for single- file compression on file systems, has a
- * larger header than zlib to maintain directory information, and
- * uses a different, slower check method than zlib.
+ * ## Archive formats
  *
- * The library does not install any signal handler. The decoder
- * checks the consistency of the compressed data, so the library
- * should never crash even in the case of corrupted input.
+ * | Format | Submodule        | Read | Write | Compression methods |
+ * |--------|------------------|------|-------|----------------------|
+ * | TAR    | `compress.tar`   | yes  | yes   | none, gzip, bzip2 (`COMPRESS_NONE`/`COMPRESS_GZIP`/`COMPRESS_BZIP`) |
+ * | ZIP    | `compress.zip`   | yes  | yes   | stored, deflate, bzip2 (`ZIP_STORED`/`ZIP_DEFLATE`/`ZIP_BZIP2`); zip64 supported for archives/files exceeding the classic 4 GiB limit |
+ *
+ * Both `tar` and `zip` expose a low-level class (`tar.Tar`, `zip.ZipArchive`)
+ * for building an archive entry by entry or inspecting one in detail, and a
+ * pair of one-shot free functions (`compress()`/`extract()`) for the common
+ * case of "archive this whole file or directory" / "extract this whole
+ * archive". `zip.extract()` refuses to write outside the destination
+ * directory even if the archive contains `../`-style path-traversal entry
+ * names (a "Zip Slip" attack); a ZIP entry that fails to decode cleanly
+ * (an unsupported or encrypted entry, or one whose CRC-32 doesn't match
+ * what the archive claims) is reported per-entry via `ZipItem.error`
+ * rather than silently skipped or allowed to abort the whole read.
+ *
+ * TAR does not currently support the LZMA/xz compression method some
+ * `.tar.xz` archives use, nor Brotli (no established TAR convention
+ * exists for it). ZIP does not currently support LZMA (method 14),
+ * PPMd (method 98), or any of the ZIP encryption schemes (traditional
+ * PKWARE or AES) — an encrypted entry is reported via `ZipItem.error`
+ * rather than attempted.
  *
  * @copyright 1995-2017 Jean-loup Gailly and Mark Adler
  * @copyright 2021, Richard Ore and Zuri contributors
@@ -47,5 +65,8 @@ import @.gzip
 import @.checksum
 import @.zstd
 import @.lz4
+import @.bzip2
+import @.brotli
+import @.tar
 import @.zip
 import @.zlib { * }

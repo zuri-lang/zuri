@@ -1,71 +1,79 @@
 /**
- * @module gzip
+ * @module bzip2
  *
- * The is the GZip submodule for the compress module.
+ * The Bzip2 submodule for the compress module.
  *
- * @copyright 2021, Richard Ore and Zuri contributors
+ * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import _compress
 
 /**
- * Compress data using the default options for GZip.
+ * Compress data using the default options for Bzip2.
  *
  * @param {bytes|string} data
+ * @param ?number level: Compression level (1..=9) — Default 9.
  * @returns bytes
  */
-def compress(data) {
-  return _compress.gzip_compress(data)
+def compress(data, level) {
+  return _compress.bzip2_compress(data, level)
 }
 
 /**
- * Decompress a GZipped data using default options.
+ * Decompress Bzip2-compressed data.
  *
+ * @note This only decodes the first bzip2 stream in `data`. Some
+ *    tools (`pbzip2`, Wikipedia data dumps, ...) concatenate several
+ *    independent bzip2 streams back to back ("multistreams"); use
+ *    `Bzip2Decoder` in a loop with `reset()` to decode all of them.
  * @param {bytes|string} data
  * @returns bytes
  */
 def decompress(data) {
-  return _compress.gzip_decompress(data)
+  return _compress.bzip2_decompress(data)
 }
 
 
 /**
- * A streaming GZip encoder.
+ * A streaming Bzip2 encoder.
  *
  * Example:
  *
  * ```zuri-repl
- * %> import compress.gzip
- * %> var encoder = gzip.GzipEncoder()
+ * %> import compress.bzip2
+ * %> var encoder = bzip2.Bzip2Encoder()
  * %> encoder.write('hello world')
  * 11
  * %> encoder.finish()
- * (1f 8b 08 00 00 00 00 00 04 03 cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00 85 11 4a 0d 0b 00 00 00)
+ * (42 5a 68 39 31 41 59 26 53 59 ...)
  * ```
  */
-class GzipEncoder {
+class Bzip2Encoder {
   var _ptr
 
   /**
-   * Creates a new streaming GZip encoder at the given level
-   * (0..=9).
+   * Creates a new streaming Bzip2 encoder.
    *
-   * @param ?number level - Default 1
+   * @param ?number level: Compression level (1..=9) — Default 9.
+   * @param ?number work_factor: Controls when the compressor falls
+   *    back from its standard sorting algorithm to a slower but
+   *    more robust one on highly repetitive input. 0..=250 — 0
+   *    (the default) means "use bzip2's own default of 30".
    */
-  @new(level) {
-    self._ptr = _compress.gzip_new_encoder(true, level, 31)
+  @new(level, work_factor) {
+    self._ptr = _compress.bzip2_new_encoder(level, work_factor)
   }
 
   /**
-   * Flushes remaining data, writes the content checksum, and
-   * returns the inner byte stream.
+   * Flushes remaining data, writes the stream footer, and returns
+   * the inner byte stream.
    *
    * @note Once finish is called, the encoder can no longer be
    *    reused.
    * @returns bytes
    */
   finish() {
-    return _compress.gzip_encoder_finish(self._ptr)
+    return _compress.bzip2_encoder_finish(self._ptr)
   }
 
   /**
@@ -80,17 +88,16 @@ class GzipEncoder {
   }
 
   /**
-   * Finishes the current frame and installs byte stream for the
-   * next one.
+   * Finishes the current stream and installs a fresh one for
+   * the next frame.
    *
    * Returns the previous byte stream containing the completed
-   * frame. All internal buffers (hash tables, workspace, block
-   * scratch) stay allocated and are reused for the next frame.
+   * frame.
    *
    * @returns bytes
    */
   reset() {
-    return _compress.gzip_encoder_reset(self._ptr)
+    return _compress.bzip2_encoder_reset(self._ptr)
   }
 
   /**
@@ -101,18 +108,17 @@ class GzipEncoder {
    * @returns number
    */
   write(data) {
-    return _compress.gzip_encoder_write(self._ptr, data)
+    return _compress.bzip2_encoder_write(self._ptr, data)
   }
 
   /**
-   * Flushes this output stream and returns the remaining
-   * compressed data in the stream, ensuring that all
-   * intermediately buffered contents reach their destination.
+   * Flushes this output stream and returns the compressed data
+   * produced so far, without terminating the bzip2 stream.
    *
    * @returns bytes
    */
   flush() {
-    return _compress.gzip_encoder_flush(self._ptr)
+    return _compress.bzip2_encoder_flush(self._ptr)
   }
 
   /**
@@ -122,7 +128,7 @@ class GzipEncoder {
    * @returns number
    */
   available() {
-    return _compress.gzip_encoder_available(self._ptr)
+    return _compress.bzip2_encoder_available(self._ptr)
   }
 
   /**
@@ -131,7 +137,7 @@ class GzipEncoder {
    * @returns bool
    */
   finished() {
-    return _compress.gzip_encoder_finished(self._ptr)
+    return _compress.bzip2_encoder_finished(self._ptr)
   }
 
   /**
@@ -140,7 +146,7 @@ class GzipEncoder {
    * @returns number
    */
   total_in() {
-    return _compress.gzip_encoder_total_in(self._ptr)
+    return _compress.bzip2_encoder_total_in(self._ptr)
   }
 
   /**
@@ -149,15 +155,13 @@ class GzipEncoder {
    * @returns number
    */
   total_out() {
-    return _compress.gzip_encoder_total_out(self._ptr)
+    return _compress.bzip2_encoder_total_out(self._ptr)
   }
 }
 
 
 /**
- * Streaming gzip decompressor implemention. This decoder reads
- * standard gzip blocks and frames produced at any gzip
- * compression level.
+ * Streaming bzip2 decompressor implementation.
  *
  * Wraps a byte stream of compressed data and yields decompressed
  * bytes.
@@ -165,38 +169,35 @@ class GzipEncoder {
  * Example:
  *
  * ```zuri-repl
- * %> import compress.gzip
- * %> var data = gzip.compress('hello world')
- * %> data
- * (1f 8b 08 00 00 00 00 00 00 03 cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00 85 11 4a 0d 0b 00 00 00)
- * %>
- * %> var decoder = gzip.GzipDecoder(data)
+ * %> import compress.bzip2
+ * %> var data = bzip2.compress('hello world')
+ * %> var decoder = bzip2.Bzip2Decoder(data)
  * %> decoder.read_as_string()
  * hello world
  * ```
  *
- * This decoder is level-independent and supports standard gzip
- * frames produced by all gzip compression levels.
+ * @note only decodes a single bzip2 stream — see `decompress()`'s
+ *    note about "multistreams".
  */
-class GzipDecoder {
+class Bzip2Decoder {
 
   /**
-   * Creates a Gzip decoder
+   * Creates a Bzip2 decoder
    *
    * @param bytes source
    */
   @new(source) {
-    self._ptr = _compress.gzip_new_decoder(true, source, 31)
+    self._ptr = _compress.bzip2_new_decoder(source)
   }
 
   /**
-   * Installs a new data source for the next frame, keeping all
-   * internal buffers allocated.
+   * Installs a new data source, discarding whatever remained of
+   * the previous one.
    *
    * @param bytes new_source
    */
   reset(new_source) {
-    _compress.gzip_decoder_reset(self._ptr, new_source)
+    _compress.bzip2_decoder_reset(self._ptr, new_source)
   }
 
   /**
@@ -211,14 +212,11 @@ class GzipDecoder {
    * length from the current source. Returns an empty byte stream
    * when there is no more data to read.
    *
-   * This function does not block or wait waiting for data, but
-   * reads as much data as is available to read when it runs.
-   *
    * @param number length
    * @returns bytes
    */
   read(length) {
-    return _compress.gzip_decoder_read(self._ptr, length)
+    return _compress.bzip2_decoder_read(self._ptr, length)
   }
 
   /**
@@ -231,7 +229,7 @@ class GzipDecoder {
    * @returns bytes
    */
   read_exact(length) {
-    return _compress.gzip_decoder_read_exact(self._ptr, length)
+    return _compress.bzip2_decoder_read_exact(self._ptr, length)
   }
 
   /**
@@ -241,7 +239,7 @@ class GzipDecoder {
    * @returns bytes
    */
   read_all() {
-    return _compress.gzip_decoder_read_all(self._ptr)
+    return _compress.bzip2_decoder_read_all(self._ptr)
   }
 
   /**
@@ -252,26 +250,27 @@ class GzipDecoder {
    * @returns string
    */
   read_as_string() {
-    return _compress.gzip_decoder_read_as_string(self._ptr)
+    return _compress.bzip2_decoder_read_as_string(self._ptr)
   }
 
   /**
-   * Returns the number of compressed bytes currently waiting in
-   * the decoder's output buffer.
+   * Returns the number of compressed bytes still unread in the
+   * decoder's source.
    *
    * @returns number
    */
   available() {
-    return _compress.gzip_decoder_available(self._ptr)
+    return _compress.bzip2_decoder_available(self._ptr)
   }
 
   /**
-   * Returns whether `finish()` has completed the stream.
+   * Returns whether the decoder has reached the end of the
+   * stream.
    *
    * @returns bool
    */
   finished() {
-    return _compress.gzip_decoder_finished(self._ptr)
+    return _compress.bzip2_decoder_finished(self._ptr)
   }
 
   /**
@@ -280,7 +279,7 @@ class GzipDecoder {
    * @returns number
    */
   total_in() {
-    return _compress.gzip_decoder_total_in(self._ptr)
+    return _compress.bzip2_decoder_total_in(self._ptr)
   }
 
   /**
@@ -289,14 +288,14 @@ class GzipDecoder {
    * @returns number
    */
   total_out() {
-    return _compress.gzip_decoder_total_out(self._ptr)
+    return _compress.bzip2_decoder_total_out(self._ptr)
   }
 }
 
 
 /**
- * The GzFile class implements a GZip based I/O system that
- * allows you use treat Gzip streams (bytes) as if they were a
+ * The BzFile class implements a Bzip2 based I/O system that
+ * allows you to treat Bzip2 streams (bytes) as if they were a
  * file.
  *
  * The class implements the essentials of a file except those
@@ -306,18 +305,18 @@ class GzipDecoder {
  * See the tutorial on [working with
  * files](/tutorial/working-with-files) for more information.
  */
-class GzFile {
+class BzFile {
   var _is_encoder
   var _inner
 
   /**
-   * Returns a new GzFile object bounded to a physical file at
+   * Returns a new BzFile object bounded to a physical file at
    * the given path and opened in the given mode. See [[file]]
    * for a description of the supported file modes.
    *
    * @param string path
    * @param ?string mode
-   * @returns GzFile
+   * @returns BzFile
    */
   @new(path: string, mode: ?string, _inner) {
     if mode == nil {
@@ -331,17 +330,17 @@ class GzFile {
     if _inner {
       self._inner = _inner
     } else if self._is_encoder {
-      self._inner = GzipEncoder()
+      self._inner = Bzip2Encoder()
     } else {
       # gets(), not read(): read() auto-closes self._file once it hits
       # EOF, and later operations here (seek(), close(), stats(), ...)
       # still need it open.
-      self._inner = GzipDecoder(self._file.gets())
+      self._inner = Bzip2Decoder(self._file.gets())
     }
   }
 
   /**
-   * Returns `true` if the underlying file bounded to GzFile
+   * Returns `true` if the underlying file bounded to BzFile
    * actually exists or `false` otherwise.
    *
    * @returns bool
@@ -351,7 +350,7 @@ class GzFile {
   }
 
   /**
-   * Closes the stream to an opened GzFile. You'll rarely ever
+   * Closes the stream to an opened BzFile. You'll rarely ever
    * need to call this method yourself in most use cases.
    */
   close() {
@@ -369,7 +368,7 @@ class GzFile {
   }
 
   /**
-   * Flushes the remaning data into the GzFile underlying file
+   * Flushes the remaning data into the BzFile underlying file
    * and returns the byte stream returned.
    *
    * @returns bytes
@@ -383,12 +382,12 @@ class GzFile {
   }
 
   /**
-   * Opens the stream to a GzFile for the operation originally
-   * specified on the GzFile object during creation.
+   * Opens the stream to a BzFile for the operation originally
+   * specified on the BzFile object during creation.
    *
    * You may need to call this method after a call to `read()` if
    * the length isn't specified or `write()` if you wish to read
-   * or write again as the GzFile will already be closed.
+   * or write again as the BzFile will already be closed.
    *
    * @returns bool
    */
@@ -397,15 +396,15 @@ class GzFile {
   }
 
   /**
-   * Reads the content of an opened GzFile up to the specified
-   * length and returns it as string or bytes if the GzFile was
+   * Reads the content of an opened BzFile up to the specified
+   * length and returns it as string or bytes if the BzFile was
    * opened in the binary mode. If the length is not specified,
-   * the GzFile will be read to the end.
+   * the BzFile will be read to the end.
    *
-   * This method requires that the GzFile be opened in the read
+   * This method requires that the BzFile be opened in the read
    * mode (default mode) or a mode that supports reading. If you
-   * aren't reading the full length of the GzFile, you'll need to
-   * call the close() method to free the GzFile for further
+   * aren't reading the full length of the BzFile, you'll need to
+   * call the close() method to free the BzFile for further
    * reading, otherwise, the close() method will be automatically
    * called for you.
    *
@@ -420,7 +419,7 @@ class GzFile {
   }
 
   /**
-   * Same as `read()`, but doesn't close the GzFile automatically.
+   * Same as `read()`, but doesn't close the BzFile automatically.
    *
    * @param ?number length: Default = -1, meaning read to the end.
    * @returns bytes
@@ -429,8 +428,7 @@ class GzFile {
   gets(length: ?number) {
     # Checking is_open(), not finished(): finished() just means the
     # decoder has naturally run out of decompressed bytes to give
-    # (a normal, expected EOF — read() returns empty bytes for it,
-    # same as any other stream), not that this GzFile was closed.
+    # (a normal, expected EOF), not that this BzFile was closed.
     if self._is_encoder or !self._file.is_open() {
       raise Error('Invalid stream state')
     }
@@ -443,13 +441,13 @@ class GzFile {
   }
 
   /**
-   * Writes a string or bytes to an opened GzFile at the current
-   * insertion point. When the GzFile is opened with the a mode
-   * enabled, write will always start from the end of the GzFile.
+   * Writes a string or bytes to an opened BzFile at the current
+   * insertion point. When the BzFile is opened with the a mode
+   * enabled, write will always start from the end of the BzFile.
    *
    * If the seek() method has been previously called, write will
    * begin from the seeked position, otherwise it will start at
-   * the beginning of the GzFile.
+   * the beginning of the BzFile.
    *
    * @param bytes|string
    * @returns number
@@ -463,7 +461,7 @@ class GzFile {
   }
 
   /**
-   * Same as `write()`, but doesn't open or close the GzFile
+   * Same as `write()`, but doesn't open or close the BzFile
    * automatically.
    *
    * @param bytes|string
@@ -481,7 +479,7 @@ class GzFile {
    * Returns the integer file descriptor number that is used by
    * the underlying implementation to request I/O operations from
    * the operating system. This can be very useful for low-level
-   * interfaces that uses or act as GzFile descriptors.
+   * interfaces that uses or act as BzFile descriptors.
    *
    * @returns number
    */
@@ -490,7 +488,7 @@ class GzFile {
   }
 
   /**
-   * Returns `true` if the underlying file of GzFile is a TTY
+   * Returns `true` if the underlying file of BzFile is a TTY
    * device or `false` otherwise.
    *
    * @returns bool
@@ -500,22 +498,22 @@ class GzFile {
   }
 
   /**
-   * Returns `true` if the GzFile is open for reading or writing
+   * Returns `true` if the BzFile is open for reading or writing
    * and `false` otherwise.
    *
    * @returns bool
    */
   is_open() {
-    return self._file.is_open() 
+    return self._file.is_open()
       and !self._inner.finished()
   }
 
   /**
-   * Returns `true` if the GzFile is closed for reading or
+   * Returns `true` if the BzFile is closed for reading or
    * writing and `false` otherwise.
    */
   is_closed() {
-    return self._file.is_closed() 
+    return self._file.is_closed()
       or self._inner.finished()
   }
 
@@ -529,7 +527,7 @@ class GzFile {
   }
 
   /**
-   * Returns the statistics or details of the GzFile.
+   * Returns the statistics or details of the BzFile.
    *
    * See the working with files documentation for more
    * information about the `stats()` method.
@@ -541,9 +539,9 @@ class GzFile {
   }
 
   /**
-   * Deletes the underlying file pointed to by GzFile
+   * Deletes the underlying file pointed to by BzFile
    *
-   * Any further attempt to perform most operations on the GzFile
+   * Any further attempt to perform most operations on the BzFile
    * after calling `delete()` will raise an error.
    *
    * @returns bool
@@ -554,7 +552,7 @@ class GzFile {
   }
 
   /**
-   * Renames the underlying file pointed to by GzFile to the new
+   * Renames the underlying file pointed to by BzFile to the new
    * name and returns `true` if it succeeds or `false` otherwise.
    *
    * @returns bool
@@ -564,18 +562,18 @@ class GzFile {
   }
 
   /**
-   * Returns a new GzFile reading (or writing) the same underlying
+   * Returns a new BzFile reading (or writing) the same underlying
    * path independently of this one, with its own decoder/encoder
    * state and its own position.
    *
-   * @returns [[io.GzFile]]
+   * @returns [[compress.bzip2.BzFile]]
    */
   copy() {
-    return GzFile(self._file.path(), self._file.mode())
+    return BzFile(self._file.path(), self._file.mode())
   }
 
   /**
-   * Returns the physical path of the file pointed to by GzFile.
+   * Returns the physical path of the file pointed to by BzFile.
    *
    * @returns string
    */
@@ -585,7 +583,7 @@ class GzFile {
 
   /**
    * Returns the absolute path of the physical file pointed to by
-   * GzFile.
+   * BzFile.
    *
    * @returns string
    */
@@ -594,8 +592,8 @@ class GzFile {
   }
 
   /**
-   * Truncates the entire GzFile if length is not given or
-   * truncates the GzFile such that only length number of bytes
+   * Truncates the entire BzFile if length is not given or
+   * truncates the BzFile such that only length number of bytes
    * is left in it.
    *
    * @returns bool
@@ -603,9 +601,9 @@ class GzFile {
   truncate(length: ?int) {
     return self._file.truncate(length)
   }
-  
+
   /**
-   * Updates the permission for the file bounded by GzFile.
+   * Updates the permission for the file bounded by BzFile.
    *
    * @returns bool
    */
@@ -615,7 +613,7 @@ class GzFile {
 
   /**
    * Sets the last access time and last modified time of the
-   * GzFile.
+   * BzFile.
    *
    * @return bool
    */
@@ -624,7 +622,7 @@ class GzFile {
   }
 
   /**
-   * Sets the position of a GzFile reader in the *decompressed*
+   * Sets the position of a BzFile reader in the *decompressed*
    * byte stream (not the raw, still-compressed bytes on disk,
    * which have no useful correspondence to a decompressed offset).
    * The `seek_type` argument must be one of [[io.SEEK_SET]],
@@ -639,13 +637,13 @@ class GzFile {
    * inherently expensive operation for a compressed stream, same
    * as with any other streaming (de)compressor.
    *
-   * Not supported on a GzFile opened for writing.
+   * Not supported on a BzFile opened for writing.
    *
    * @returns bool
    */
   seek(position: int, seek_type: int) {
     if self._is_encoder {
-      raise Error('cannot seek a GzFile opened for writing')
+      raise Error('cannot seek a BzFile opened for writing')
     }
     if !is_number(position) {
       raise TypeError('position must be a number')
@@ -688,7 +686,7 @@ class GzFile {
    * *decompressed* byte stream (bytes already consumed via
    * `read()`/`gets()`/`seek()`), or of the writer in the
    * *uncompressed* input already fed to `write()`/`puts()` for a
-   * GzFile opened for writing.
+   * BzFile opened for writing.
    *
    * @return number
    */
@@ -700,7 +698,7 @@ class GzFile {
   }
 
   /**
-   * Returns the mode in which the current GzFile was opened.
+   * Returns the mode in which the current BzFile was opened.
    *
    * @return string
    */
@@ -709,7 +707,7 @@ class GzFile {
   }
 
   /**
-   * Returns the name of the file pointed to by GzFile.
+   * Returns the name of the file pointed to by BzFile.
    *
    * @returns string
    */

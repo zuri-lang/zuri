@@ -716,18 +716,22 @@ fn check_bounds(data: &[u8], pos: usize, need: usize) -> Result<(), String> {
   Ok(())
 }
 
-/// Flattens `pack()`'s variadic argument tail the same way the old Zuri
-/// wrapper did: a list is spread element-by-element, a bytes object is
-/// spread as individual byte numbers, anything else is taken as a
-/// single item; so `pack('CCC', 1, 2, 3)` and `pack('CCC', [1, 2, 3])`
-/// both work.
+/// Flattens `pack()`'s variadic argument tail: a list is spread
+/// element-by-element, anything else (including a bytes object) is
+/// taken as a single item; so `pack('CCC', 1, 2, 3)` and
+/// `pack('CCC', [1, 2, 3])` both work.
+///
+/// A bytes object is deliberately NOT spread into individual byte
+/// numbers here, unlike a list: the 'a'/'A'/'Z' blob codes need the
+/// whole bytes value intact (value_as_string_bytes() accepts bytes
+/// directly), and there's no format code whose per-item consumption
+/// actually wants a bytes argument pre-shredded into scalars — a
+/// caller after that can already pass `.to_list()` explicitly.
 fn flatten_pack_args(args: &[Value]) -> Vec<Value> {
   let mut items = Vec::with_capacity(args.len());
   for &arg in args {
     if arg.is_list() {
       items.extend(arg.as_list());
-    } else if arg.is_bytes() {
-      items.extend(arg.as_bytes().into_iter().map(|b| Value::number(b as f64)));
     } else {
       items.push(arg);
     }

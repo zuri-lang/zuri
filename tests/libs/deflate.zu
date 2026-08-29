@@ -1,0 +1,92 @@
+/**
+ * test_deflate.zu
+ *
+ * Test suite for the `compress.deflate` standard library module:
+ * one-shot compress()/decompress() and the streaming DeflateEncoder/
+ * DeflateDecoder pair — raw (headerless) DEFLATE, distinct from both
+ * gzip's and zlib's wrapped formats.
+ */
+
+import compress.deflate
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  compress.deflate module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# One-shot compress()/decompress() — headerless, unlike gzip/zlib
+# ---------------------------------------------------------------------------
+var text = 'The quick brown fox jumps over the lazy dog. ' * 30
+var compressed = deflate.compress(text)
+assert typeof(compressed) == 'bytes', 'compress() must return bytes'
+assert compressed.length() < text.length(), 'compressing 30x repeated text must actually shrink it'
+assert compressed[0] != 0x1f and (compressed[0] & 0x0f) != 8,
+  'raw deflate output must have neither a gzip magic byte nor a zlib CMF byte — it is headerless by design'
+ok('compress() produces headerless (raw) DEFLATE output, unlike gzip/zlib')
+
+assert deflate.decompress(compressed).to_string() == text, 'decompress() must recover the exact original text'
+ok('decompress() recovers the exact original content')
+
+assert deflate.decompress(deflate.compress('')).to_string() == '', 'an empty string must round-trip to itself'
+ok('empty input round-trips correctly')
+
+# ---------------------------------------------------------------------------
+# Binary content
+# ---------------------------------------------------------------------------
+var binary_data = bytes(256)
+iter var i = 0; i < 256; i++ {
+  binary_data[i] = i
+}
+assert deflate.decompress(deflate.compress(binary_data)) == binary_data,
+  'every byte value 0..255 must survive compress()/decompress() unchanged'
+ok('binary content (all 256 byte values) survives compress/decompress unchanged')
+
+# ---------------------------------------------------------------------------
+# Streaming DeflateEncoder/DeflateDecoder
+# ---------------------------------------------------------------------------
+var enc = deflate.DeflateEncoder()
+enc.write('hello ')
+enc.write('streaming ')
+enc.write('deflate world')
+var stream_compressed = enc.finish()
+assert enc.finished(), 'finished() must be true once finish() has completed the stream'
+ok('DeflateEncoder accumulates multiple write() calls before finish()')
+
+var dec = deflate.DeflateDecoder(stream_compressed)
+assert dec.read_as_string() == 'hello streaming deflate world', 'read_as_string() must decode the whole stream correctly'
+ok('DeflateDecoder decodes a stream produced by DeflateEncoder')
+
+var dec2 = deflate.DeflateDecoder(stream_compressed)
+dec2.read(5)
+dec2.reset(stream_compressed)
+assert dec2.read_as_string() == 'hello streaming deflate world',
+  'reset() with a fresh copy of the same stream must decode correctly at deflate\'s own (headerless) configuration'
+ok('DeflateDecoder.reset() correctly reinitializes and can decode again')
+
+# ---------------------------------------------------------------------------
+# Cross-check against gzip/zlib: raw deflate output must not be
+# interchangeable with either wrapped format
+# ---------------------------------------------------------------------------
+import compress.gzip
+import compress.zlib
+
+assert deflate.compress('hello') != gzip.compress('hello'),
+  'raw deflate and gzip-wrapped output for the same input must differ (gzip adds a header/trailer)'
+assert deflate.compress('hello') != zlib.compress('hello'),
+  'raw deflate and zlib-wrapped output for the same input must differ (zlib adds a header)'
+ok('raw deflate output is distinct from both gzip- and zlib-wrapped output')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

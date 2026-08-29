@@ -1,0 +1,88 @@
+/**
+ * test_checksum.zu
+ *
+ * Test suite for the `compress.checksum` standard library module:
+ * crc32() and adler32(), including running/incremental checksums via
+ * the `initial` parameter.
+ */
+
+import compress.checksum
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  compress.checksum module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# CRC-32 — known-answer tests against well-known reference values
+# ---------------------------------------------------------------------------
+assert checksum.crc32('') == 0, 'CRC-32 of an empty input must be 0'
+assert checksum.crc32('123456789') == 0xcbf43926,
+  'CRC-32 of the standard "123456789" check string must match the well-known reference value'
+assert checksum.crc32('The quick brown fox jumps over the lazy dog') == 0x414fa339,
+  'CRC-32 of a second well-known reference string must also match'
+ok('crc32() matches known-answer reference values')
+
+assert checksum.crc32('hello') == checksum.crc32('hello'), 'crc32() must be deterministic for the same input'
+assert checksum.crc32('hello') != checksum.crc32('hellp'), 'a single differing byte must change the checksum'
+ok('crc32() is deterministic and sensitive to single-byte changes')
+
+# ---------------------------------------------------------------------------
+# CRC-32 — running/incremental checksums
+# ---------------------------------------------------------------------------
+var whole = checksum.crc32('hello world')
+var running = checksum.crc32('hello ')
+running = checksum.crc32('world', running)
+assert running == whole, 'feeding "hello " then "world" with the running checksum as `initial` must equal computing the whole string at once'
+ok('crc32() supports incremental computation via the initial parameter')
+
+# ---------------------------------------------------------------------------
+# CRC-32 — binary content
+# ---------------------------------------------------------------------------
+var binary_data = bytes(256)
+iter var i = 0; i < 256; i++ {
+  binary_data[i] = i
+}
+assert checksum.crc32(binary_data) == checksum.crc32(binary_data), 'crc32() on binary data must be deterministic'
+ok('crc32() works on binary (non-UTF-8) data')
+
+# ---------------------------------------------------------------------------
+# Adler-32 — known-answer tests
+# ---------------------------------------------------------------------------
+assert checksum.adler32('') == 1, 'Adler-32 of an empty input must be 1 (the algorithm\'s defined identity value)'
+assert checksum.adler32('Wikipedia') == 0x11e60398,
+  'Adler-32 of the well-known "Wikipedia" reference string must match the documented reference value'
+ok('adler32() matches a known-answer reference value')
+
+assert checksum.adler32('hello') == checksum.adler32('hello'), 'adler32() must be deterministic for the same input'
+assert checksum.adler32('hello') != checksum.adler32('hellp'), 'a single differing byte must change the checksum'
+ok('adler32() is deterministic and sensitive to single-byte changes')
+
+# ---------------------------------------------------------------------------
+# Adler-32 — running/incremental checksums
+# ---------------------------------------------------------------------------
+var a_whole = checksum.adler32('hello world')
+var a_running = checksum.adler32('hello ')
+a_running = checksum.adler32('world', a_running)
+assert a_running == a_whole, 'feeding "hello " then "world" with the running checksum as `initial` must equal computing the whole string at once'
+ok('adler32() supports incremental computation via the initial parameter')
+
+# ---------------------------------------------------------------------------
+# adler32() and crc32() are genuinely different algorithms
+# ---------------------------------------------------------------------------
+assert checksum.crc32('hello') != checksum.adler32('hello'), 'CRC-32 and Adler-32 of the same input must (overwhelmingly likely) differ'
+ok('crc32() and adler32() are distinct algorithms, not aliases of each other')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

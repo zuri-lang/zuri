@@ -40,7 +40,7 @@ class FloatArray < Array {
    * @param {number|list} n
    * @constructor
    */
-  FloatArray(n) {
+  @new(n) {
     if is_number(n) {
       self._data = bytes(n * self._bit_size)
     } else if is_list(n) {

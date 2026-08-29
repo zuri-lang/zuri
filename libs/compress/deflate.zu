@@ -43,7 +43,7 @@ import .gzip { GzipDecoder, GzipEncoder }
  * %> encoder.write('hello world')
  * 11
  * %> encoder.finish()
- * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
+ * (cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00)
  * ```
  */
 class DeflateEncoder < GzipEncoder {
@@ -74,7 +74,7 @@ class DeflateEncoder < GzipEncoder {
  * %> import compress.deflate
  * %> var data = deflate.compress('hello world')
  * %> data
- * (78 01 02 2c 23 35 27 27 5f a1 3c bf 28 27 05 00 1a 0b 04 5d)
+ * (cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00)
  * %> 
  * %> var decoder = deflate.DeflateDecoder(data)
  * %> decoder.read_as_string()

@@ -1,5 +1,6 @@
 use std::io::{Cursor, Read, Write};
 
+use bzip2::{Error as BzError};
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use zlib_rs::{
   DeflateConfig, DeflateError, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode,
@@ -22,7 +23,10 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   build,
 };
 
-use super::compress_util::{DeflateDecoder, DeflateEncoder};
+use super::compress_util::{
+  Bzip2Decoder, Bzip2Encoder, Bzip2Error, BrotliDecoder, BrotliEncoder, DeflateDecoder,
+  DeflateEncoder,
+};
 
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
@@ -91,7 +95,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     (
       "gzip_decoder_reset",
-      native(vm, "reset", 1, false, gzip_decoder_reset),
+      native(vm, "reset", 2, false, gzip_decoder_reset),
     ),
     (
       "gzip_decoder_read",
@@ -124,6 +128,182 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     (
       "gzip_decoder_total_out",
       native(vm, "total_out", 1, false, gzip_decoder_total_out),
+    ),
+    (
+      "bzip2_compress",
+      native(vm, "compress", 1, true, bzip2_compress),
+    ),
+    (
+      "bzip2_decompress",
+      native(vm, "decompress", 1, false, bzip2_decompress),
+    ),
+    (
+      "bzip2_new_encoder",
+      native(vm, "@new", 0, true, bzip2_new_encoder),
+    ),
+    (
+      "bzip2_encoder_finish",
+      native(vm, "finish", 1, false, bzip2_encoder_finish),
+    ),
+    (
+      "bzip2_encoder_reset",
+      native(vm, "reset", 1, false, bzip2_encoder_reset),
+    ),
+    (
+      "bzip2_encoder_write",
+      native(vm, "write", 2, false, bzip2_encoder_write),
+    ),
+    (
+      "bzip2_encoder_flush",
+      native(vm, "flush", 1, false, bzip2_encoder_flush),
+    ),
+    (
+      "bzip2_encoder_available",
+      native(vm, "available", 1, false, bzip2_encoder_available),
+    ),
+    (
+      "bzip2_encoder_finished",
+      native(vm, "finished", 1, false, bzip2_encoder_finished),
+    ),
+    (
+      "bzip2_encoder_total_in",
+      native(vm, "total_in", 1, false, bzip2_encoder_total_in),
+    ),
+    (
+      "bzip2_encoder_total_out",
+      native(vm, "total_out", 1, false, bzip2_encoder_total_out),
+    ),
+    (
+      "bzip2_new_decoder",
+      native(vm, "@new", 1, true, bzip2_new_decoder),
+    ),
+    (
+      "bzip2_decoder_reset",
+      native(vm, "reset", 2, false, bzip2_decoder_reset),
+    ),
+    (
+      "bzip2_decoder_read",
+      native(vm, "read", 2, false, bzip2_decoder_read),
+    ),
+    (
+      "bzip2_decoder_read_exact",
+      native(vm, "read_exact", 2, false, bzip2_decoder_read_exact),
+    ),
+    (
+      "bzip2_decoder_read_all",
+      native(vm, "read_all", 1, false, bzip2_decoder_read_all),
+    ),
+    (
+      "bzip2_decoder_read_as_string",
+      native(
+        vm,
+        "read_as_string",
+        1,
+        false,
+        bzip2_decoder_read_as_string,
+      ),
+    ),
+    (
+      "bzip2_decoder_available",
+      native(vm, "available", 1, false, bzip2_decoder_available),
+    ),
+    (
+      "bzip2_decoder_finished",
+      native(vm, "finished", 1, false, bzip2_decoder_finished),
+    ),
+    (
+      "bzip2_decoder_total_in",
+      native(vm, "total_in", 1, false, bzip2_decoder_total_in),
+    ),
+    (
+      "bzip2_decoder_total_out",
+      native(vm, "total_out", 1, false, bzip2_decoder_total_out),
+    ),
+    (
+      "brotli_compress",
+      native(vm, "compress", 1, true, brotli_compress),
+    ),
+    (
+      "brotli_decompress",
+      native(vm, "decompress", 1, false, brotli_decompress),
+    ),
+    (
+      "brotli_new_encoder",
+      native(vm, "@new", 0, true, brotli_new_encoder),
+    ),
+    (
+      "brotli_encoder_finish",
+      native(vm, "finish", 1, false, brotli_encoder_finish),
+    ),
+    (
+      "brotli_encoder_reset",
+      native(vm, "reset", 1, false, brotli_encoder_reset),
+    ),
+    (
+      "brotli_encoder_write",
+      native(vm, "write", 2, false, brotli_encoder_write),
+    ),
+    (
+      "brotli_encoder_available",
+      native(vm, "available", 1, false, brotli_encoder_available),
+    ),
+    (
+      "brotli_encoder_finished",
+      native(vm, "finished", 1, false, brotli_encoder_finished),
+    ),
+    (
+      "brotli_encoder_total_in",
+      native(vm, "total_in", 1, false, brotli_encoder_total_in),
+    ),
+    (
+      "brotli_encoder_total_out",
+      native(vm, "total_out", 1, false, brotli_encoder_total_out),
+    ),
+    (
+      "brotli_new_decoder",
+      native(vm, "@new", 1, true, brotli_new_decoder),
+    ),
+    (
+      "brotli_decoder_reset",
+      native(vm, "reset", 2, false, brotli_decoder_reset),
+    ),
+    (
+      "brotli_decoder_read",
+      native(vm, "read", 2, false, brotli_decoder_read),
+    ),
+    (
+      "brotli_decoder_read_exact",
+      native(vm, "read_exact", 2, false, brotli_decoder_read_exact),
+    ),
+    (
+      "brotli_decoder_read_all",
+      native(vm, "read_all", 1, false, brotli_decoder_read_all),
+    ),
+    (
+      "brotli_decoder_read_as_string",
+      native(
+        vm,
+        "read_as_string",
+        1,
+        false,
+        brotli_decoder_read_as_string,
+      ),
+    ),
+    (
+      "brotli_decoder_available",
+      native(vm, "available", 1, false, brotli_decoder_available),
+    ),
+    (
+      "brotli_decoder_finished",
+      native(vm, "finished", 1, false, brotli_decoder_finished),
+    ),
+    (
+      "brotli_decoder_total_in",
+      native(vm, "total_in", 1, false, brotli_decoder_total_in),
+    ),
+    (
+      "brotli_decoder_total_out",
+      native(vm, "total_out", 1, false, brotli_decoder_total_out),
     ),
     (
       "zstd_compress",
@@ -163,7 +343,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     (
       "zstd_decoder_reset",
-      native(vm, "reset", 1, false, zstd_decoder_reset),
+      native(vm, "reset", 2, false, zstd_decoder_reset),
     ),
     (
       "zstd_decoder_read",
@@ -744,6 +924,271 @@ fn gzip_decoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(encoder.total_out() as f64))
 }
 
+// BZIP2
+
+const BZIP2_ENCODER_NAME: &str = "zuri::compress::bzip2::encoder";
+const BZIP2_DECODER_NAME: &str = "zuri::compress::bzip2::decoder";
+
+fn parse_bzip2_error(error: Bzip2Error) -> &'static str {
+  match error.0 {
+    BzError::Sequence => {
+      "Bzip2 stream methods were called in an invalid order (e.g. writing after finish())."
+    },
+    BzError::Data => "The input is not a valid bzip2 stream, or the stream is corrupted.",
+    BzError::DataMagic => "The input is missing the bzip2 magic header (\"BZh\").",
+    BzError::Param => "Invalid parameters were passed to the bzip2 stream.",
+  }
+}
+
+fn bzip2_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 1, 2);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
+
+  let data = get_data(ctx.args);
+  let level = optional_number(ctx, 1, 9.0)? as u32;
+
+  let mut encoder = Bzip2Encoder::new(level, 0);
+  encoder.write(&data).map_err(parse_bzip2_error)?;
+  let output = encoder.finish().map_err(parse_bzip2_error)?;
+
+  Ok(ctx.heap().alloc_bytes(output))
+}
+
+fn bzip2_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
+
+  let data = get_data(ctx.args);
+  let mut decoder = Bzip2Decoder::new(data);
+
+  let mut buffer = Vec::new();
+  decoder
+    .read_all(&mut buffer)
+    .map_err(parse_bzip2_error)?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn bzip2_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 0, 2);
+
+  let level = optional_number(ctx, 0, 9.0)? as u32;
+  let work_factor = optional_number(ctx, 1, 0.0)? as u32;
+
+  let encoder = Bzip2Encoder::new(level, work_factor);
+  Ok(ctx.heap().alloc_ptr(BZIP2_ENCODER_NAME, encoder))
+}
+
+fn bzip2_encoder_finish(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  let output = encoder.finish().map_err(parse_bzip2_error)?;
+  Ok(ctx.heap().alloc_bytes(output))
+}
+
+fn bzip2_encoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  let output = encoder.reset().map_err(parse_bzip2_error)?;
+  Ok(ctx.heap().alloc_bytes(output))
+}
+
+fn bzip2_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  let data = get_data(&ctx.args[1..]);
+
+  Ok(Value::number(
+    encoder.write(data.as_slice()).map_err(parse_bzip2_error)? as f64,
+  ))
+}
+
+fn bzip2_encoder_flush(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  let data = encoder.flush().map_err(parse_bzip2_error)?;
+  Ok(ctx.heap().alloc_bytes(data))
+}
+
+fn bzip2_encoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  Ok(Value::number(encoder.available() as f64))
+}
+
+fn bzip2_encoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  Ok(Value::bool(encoder.is_finished()))
+}
+
+fn bzip2_encoder_total_in(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  Ok(Value::number(encoder.total_in() as f64))
+}
+
+fn bzip2_encoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<Bzip2Encoder>().unwrap();
+
+  Ok(Value::number(encoder.total_out() as f64))
+}
+
+fn bzip2_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::Bytes);
+
+  let data = ctx.args[0].as_bytes();
+  let decoder = Bzip2Decoder::new(data);
+  Ok(ctx.heap().alloc_ptr(BZIP2_DECODER_NAME, decoder))
+}
+
+fn bzip2_decoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Bytes);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  decoder.reset(ctx.args[1].as_bytes());
+  Ok(Value::nil())
+}
+
+fn bzip2_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = Vec::new();
+  decoder.read(&mut buffer, length).map_err(parse_bzip2_error)?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn bzip2_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = Vec::new();
+  decoder
+    .read_exact(&mut buffer, length)
+    .map_err(parse_bzip2_error)?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn bzip2_decoder_read_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  let mut buffer = Vec::new();
+  decoder.read_all(&mut buffer).map_err(parse_bzip2_error)?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn bzip2_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  let mut buffer = Vec::new();
+  decoder.read_all(&mut buffer).map_err(parse_bzip2_error)?;
+
+  let text = String::from_utf8(buffer).map_err(|e| e.to_string())?;
+  Ok(ctx.heap().alloc_string(text))
+}
+
+fn bzip2_decoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  Ok(Value::number(decoder.available() as f64))
+}
+
+fn bzip2_decoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  Ok(Value::bool(decoder.is_finished()))
+}
+
+fn bzip2_decoder_total_in(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  Ok(Value::number(decoder.total_in() as f64))
+}
+
+fn bzip2_decoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BZIP2_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<Bzip2Decoder>().unwrap();
+
+  Ok(Value::number(decoder.total_out() as f64))
+}
+
 // Checksum
 
 fn adler32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -751,7 +1196,13 @@ fn adler32_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
 
   let data = get_data(ctx.args);
-  let checksum = adler32(optional_number(ctx, 1, 0.0)? as u32, &data);
+  // The algorithm's defined identity/seed value is 1 (A=1, B=0 per RFC
+  // 1950), not 0 — an omitted `initial` must start a fresh checksum
+  // the same way calling adler32(data, 1) explicitly would, or every
+  // checksum computed without passing `initial` comes out wrong (not
+  // just the empty-input edge case: it's off by a fixed amount that
+  // compounds with input length for any real data too).
+  let checksum = adler32(optional_number(ctx, 1, 1.0)? as u32, &data);
 
   Ok(Value::number(checksum as f64))
 }
@@ -1174,4 +1625,246 @@ fn lz4_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
     .map_err(|x| x.to_string())?;
 
   Ok(ctx.heap().alloc_string(buffer))
+}
+
+// BROTLI
+
+const BROTLI_ENCODER_NAME: &str = "zuri::compress::brotli::encoder";
+const BROTLI_DECODER_NAME: &str = "zuri::compress::brotli::decoder";
+
+fn brotli_compress(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 1, 3);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
+
+  let data = get_data(ctx.args);
+  let quality = optional_number(ctx, 1, 11.0)? as u32;
+  let lgwin = optional_number(ctx, 2, 22.0)? as u32;
+
+  let mut encoder = BrotliEncoder::new(quality, lgwin);
+  encoder.write(&data);
+  let output = encoder.finish();
+
+  Ok(ctx.heap().alloc_bytes(output))
+}
+
+fn brotli_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type_any_of!(ctx, 0, [ArgType::String, ArgType::Bytes]);
+
+  let data = get_data(ctx.args);
+  let mut decoder = BrotliDecoder::new(data);
+
+  let mut buffer = Vec::new();
+  decoder.read_all(&mut buffer).map_err(|e| e.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn brotli_new_encoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_range!(ctx, 0, 2);
+
+  let quality = optional_number(ctx, 0, 11.0)? as u32;
+  let lgwin = optional_number(ctx, 1, 22.0)? as u32;
+
+  let encoder = BrotliEncoder::new(quality, lgwin);
+  Ok(ctx.heap().alloc_ptr(BROTLI_ENCODER_NAME, encoder))
+}
+
+fn brotli_encoder_finish(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<BrotliEncoder>().unwrap();
+
+  Ok(ctx.heap().alloc_bytes(encoder.finish()))
+}
+
+fn brotli_encoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<BrotliEncoder>().unwrap();
+
+  Ok(ctx.heap().alloc_bytes(encoder.reset()))
+}
+
+fn brotli_encoder_write(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_ENCODER_NAME));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<BrotliEncoder>().unwrap();
+
+  let data = get_data(&ctx.args[1..]);
+
+  Ok(Value::number(encoder.write(data.as_slice()) as f64))
+}
+
+fn brotli_encoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let _encoder = ptr.downcast_mut::<BrotliEncoder>().unwrap();
+
+  // The current design compresses everything on finish()/reset(), so
+  // there's never partial output waiting outside of those calls.
+  Ok(Value::number(0.0))
+}
+
+fn brotli_encoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<BrotliEncoder>().unwrap();
+
+  Ok(Value::bool(encoder.is_finished()))
+}
+
+fn brotli_encoder_total_in(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<BrotliEncoder>().unwrap();
+
+  Ok(Value::number(encoder.total_in() as f64))
+}
+
+fn brotli_encoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_ENCODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let encoder = ptr.downcast_mut::<BrotliEncoder>().unwrap();
+
+  Ok(Value::number(encoder.total_out() as f64))
+}
+
+fn brotli_new_decoder(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::Bytes);
+
+  let data = ctx.args[0].as_bytes();
+  let decoder = BrotliDecoder::new(data);
+  Ok(ctx.heap().alloc_ptr(BROTLI_DECODER_NAME, decoder))
+}
+
+fn brotli_decoder_reset(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Bytes);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  decoder.reset(ctx.args[1].as_bytes());
+  Ok(Value::nil())
+}
+
+fn brotli_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = Vec::new();
+  decoder.read(&mut buffer, length).map_err(|e| e.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn brotli_decoder_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  let mut buffer = Vec::new();
+  decoder
+    .read_exact(&mut buffer, length)
+    .map_err(|e| e.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn brotli_decoder_read_all(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  let mut buffer = Vec::new();
+  decoder.read_all(&mut buffer).map_err(|e| e.to_string())?;
+
+  Ok(ctx.heap().alloc_bytes(buffer))
+}
+
+fn brotli_decoder_read_as_string(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  let mut buffer = Vec::new();
+  decoder.read_all(&mut buffer).map_err(|e| e.to_string())?;
+
+  let text = String::from_utf8(buffer).map_err(|e| e.to_string())?;
+  Ok(ctx.heap().alloc_string(text))
+}
+
+fn brotli_decoder_available(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let _decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  // Each read() call decodes on demand rather than buffering ahead,
+  // so there's never more "waiting" than what hasn't been asked for.
+  Ok(Value::number(0.0))
+}
+
+fn brotli_decoder_finished(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  Ok(Value::bool(decoder.is_finished()))
+}
+
+fn brotli_decoder_total_in(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  Ok(Value::number(decoder.total_in() as f64))
+}
+
+fn brotli_decoder_total_out(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BROTLI_DECODER_NAME));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let decoder = ptr.downcast_mut::<BrotliDecoder>().unwrap();
+
+  Ok(Value::number(decoder.total_out() as f64))
 }

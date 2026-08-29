@@ -1,0 +1,135 @@
+/**
+ * test_brotli.zu
+ *
+ * Test suite for the `compress.brotli` standard library module:
+ * one-shot compress()/decompress() and the streaming BrotliEncoder/
+ * BrotliDecoder pair.
+ */
+
+import compress.brotli
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  compress.brotli module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# One-shot compress()/decompress()
+# ---------------------------------------------------------------------------
+var text = 'The quick brown fox jumps over the lazy dog. ' * 30
+var compressed = brotli.compress(text)
+assert typeof(compressed) == 'bytes', 'compress() must return bytes'
+assert compressed.length() < text.length(), 'compressing 30x repeated text must actually shrink it'
+ok('compress() produces smaller-than-input output')
+
+assert brotli.decompress(compressed).to_string() == text, 'decompress() must recover the exact original text'
+ok('decompress() recovers the exact original content')
+
+assert brotli.decompress(brotli.compress('')).to_string() == '', 'an empty string must round-trip to itself'
+ok('empty input round-trips correctly')
+
+# ---------------------------------------------------------------------------
+# Quality and window parameters
+# ---------------------------------------------------------------------------
+var fast = brotli.compress(text, 1, 18)
+var best = brotli.compress(text, 11, 24)
+assert brotli.decompress(fast).to_string() == text, 'quality 1 output must still decompress correctly'
+assert brotli.decompress(best).to_string() == text, 'quality 11 output must still decompress correctly'
+assert best.length() <= fast.length(),
+  'quality 11 must compress at least as well as quality 1 for this highly repetitive input'
+ok('compress() honors explicit quality/window parameters and still round-trips')
+
+# ---------------------------------------------------------------------------
+# Binary content
+# ---------------------------------------------------------------------------
+var binary_data = bytes(256)
+iter var i = 0; i < 256; i++ {
+  binary_data[i] = i
+}
+assert brotli.decompress(brotli.compress(binary_data)) == binary_data,
+  'every byte value 0..255 must survive compress()/decompress() unchanged'
+ok('binary content (all 256 byte values) survives compress/decompress unchanged')
+
+# ---------------------------------------------------------------------------
+# Streaming encoder — buffers until finish(), documented behavior
+# ---------------------------------------------------------------------------
+var enc = brotli.BrotliEncoder()
+enc.write('hello ')
+enc.write('streaming ')
+enc.write('brotli world')
+assert enc.available() == 0, 'available() must read 0 before finish() — this encoder compresses on finish(), not incrementally'
+var stream_compressed = enc.finish()
+assert enc.finished(), 'finished() must be true once finish() has completed'
+assert enc.total_in() == 'hello streaming brotli world'.length(), 'total_in() must count every byte written across all write() calls'
+ok('BrotliEncoder accumulates multiple write() calls and compresses them all in finish()')
+
+assert brotli.decompress(stream_compressed).to_string() == 'hello streaming brotli world',
+  'the finish()ed stream must decompress back to exactly what was written'
+ok('BrotliEncoder.finish() output decompresses correctly')
+
+# ---------------------------------------------------------------------------
+# Streaming decoder
+# ---------------------------------------------------------------------------
+var dec = brotli.BrotliDecoder(stream_compressed)
+var first_chunk = dec.read(5)
+assert first_chunk.to_string() == 'hello', 'read(length) must return exactly that many decompressed bytes'
+assert !dec.finished(), 'the decoder must not report finished after only a partial read'
+var rest = dec.read_all()
+assert rest.to_string() == ' streaming brotli world', 'read_all() must return everything remaining after the partial read'
+assert dec.finished(), 'finished() must be true once the stream is fully consumed'
+ok('BrotliDecoder supports a partial read() followed by read_all()')
+
+var dec2 = brotli.BrotliDecoder(stream_compressed)
+assert dec2.read_as_string() == 'hello streaming brotli world', 'read_as_string() must decode the whole stream as a string in one call'
+ok('BrotliDecoder.read_as_string()')
+
+var dec3 = brotli.BrotliDecoder(stream_compressed)
+dec3.read_exact(11)  # "hello strea"
+assert dec3.read_exact(6).to_string() == 'ming b', 'read_exact() calls must continue from where the previous one left off'
+ok('BrotliDecoder.read_exact()')
+
+assert raises(@() { brotli.BrotliDecoder('not brotli data at all, just plain text'.to_bytes()).read_as_string() }),
+  'a decoder given non-brotli data must raise, not silently return garbage'
+ok('BrotliDecoder rejects malformed input')
+
+# ---------------------------------------------------------------------------
+# reset() reuses the encoder/decoder for another frame
+# ---------------------------------------------------------------------------
+var enc2 = brotli.BrotliEncoder()
+enc2.write('first frame')
+var frame1 = enc2.reset()
+assert brotli.decompress(frame1).to_string() == 'first frame', 'reset() must return the completed first frame'
+enc2.write('second frame')
+var frame2 = enc2.finish()
+assert brotli.decompress(frame2).to_string() == 'second frame', 'the encoder must be fully usable again after reset()'
+ok('BrotliEncoder.reset() finishes the current frame and starts a fresh one')
+
+var dec4 = brotli.BrotliDecoder(frame1)
+dec4.read_all()
+assert dec4.finished(), 'the first decoder must be finished after reading its whole frame'
+dec4.reset(frame2)
+assert !dec4.finished(), 'reset() with a new source must clear the finished flag'
+assert dec4.read_as_string() == 'second frame', 'reset() must make the decoder read from the new source, not the old one'
+ok('BrotliDecoder.reset() installs a new source and clears finished state')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

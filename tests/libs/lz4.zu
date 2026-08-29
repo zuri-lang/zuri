@@ -1,0 +1,116 @@
+/**
+ * test_lz4.zu
+ *
+ * Test suite for the `compress.lz4` standard library module:
+ * one-shot compress()/decompress() and the streaming Lz4Encoder/
+ * Lz4Decoder pair (LZ4 frame format).
+ */
+
+import compress.lz4
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  compress.lz4 module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# One-shot compress()/decompress()
+# ---------------------------------------------------------------------------
+var text = 'The quick brown fox jumps over the lazy dog. ' * 30
+var compressed = lz4.compress(text)
+assert typeof(compressed) == 'bytes', 'compress() must return bytes'
+assert compressed.length() < text.length(), 'compressing 30x repeated text must actually shrink it'
+ok('compress() produces smaller-than-input LZ4 output')
+
+assert lz4.decompress(compressed).to_string() == text, 'decompress() must recover the exact original text'
+ok('decompress() recovers the exact original content')
+
+assert lz4.decompress(lz4.compress('')).to_string() == '', 'an empty string must round-trip to itself'
+ok('empty input round-trips correctly')
+
+# ---------------------------------------------------------------------------
+# Binary content
+# ---------------------------------------------------------------------------
+var binary_data = bytes(256)
+iter var i = 0; i < 256; i++ {
+  binary_data[i] = i
+}
+assert lz4.decompress(lz4.compress(binary_data)) == binary_data,
+  'every byte value 0..255 must survive compress()/decompress() unchanged'
+ok('binary content (all 256 byte values) survives compress/decompress unchanged')
+
+# ---------------------------------------------------------------------------
+# Streaming encoder/decoder
+# ---------------------------------------------------------------------------
+# Note: Lz4Encoder/Lz4Decoder speak the real LZ4 *frame* format
+# (frame header/magic + blocks), while the one-shot compress()/
+# decompress() below speak a totally different, non-standard format
+# (a single raw block with the uncompressed size prepended). The two
+# are NOT interchangeable — see the module docs. Streaming output must
+# be read back with Lz4Decoder, never the one-shot decompress().
+var enc = lz4.Lz4Encoder()
+enc.write('hello ')
+enc.write('streaming ')
+enc.write('lz4 world')
+var stream_compressed = enc.finish()
+assert lz4.Lz4Decoder(stream_compressed).read_as_string() == 'hello streaming lz4 world',
+  'output accumulated across multiple write() calls must decompress to exactly what was written'
+ok('Lz4Encoder accumulates multiple write() calls before finish()')
+
+var enc2 = lz4.Lz4Encoder()
+enc2.write_all('all at once')
+var stream2 = enc2.finish()
+assert lz4.Lz4Decoder(stream2).read_as_string() == 'all at once', 'write_all() must behave like write() for a single call'
+ok('Lz4Encoder.write_all()')
+
+assert raises(@() { lz4.decompress(stream_compressed) }),
+  'the one-shot decompress() must not be able to parse Lz4Encoder frame-format output — the two formats are genuinely incompatible, not just differently-tested'
+ok('one-shot decompress() and the streaming frame format are confirmed mutually incompatible')
+
+var dec = lz4.Lz4Decoder(stream_compressed)
+var first_chunk = dec.read(5)
+assert first_chunk.to_string() == 'hello', 'read(length) must return exactly that many decompressed bytes'
+var rest = dec.read_all()
+assert rest.to_string() == ' streaming lz4 world', 'read_all() must return everything remaining after the partial read'
+ok('Lz4Decoder supports a partial read() followed by read_all()')
+
+var dec2 = lz4.Lz4Decoder(stream_compressed)
+assert dec2.read_as_string() == 'hello streaming lz4 world', 'read_as_string() must decode the whole stream as a string in one call'
+ok('Lz4Decoder.read_as_string()')
+
+var dec3 = lz4.Lz4Decoder(stream_compressed)
+dec3.read_exact(11)  # "hello strea"
+assert dec3.read_exact(6).to_string() == 'ming l', 'read_exact() calls must continue from where the previous one left off'
+ok('Lz4Decoder.read_exact()')
+
+assert raises(@() { lz4.Lz4Decoder('not an lz4 frame at all'.to_bytes()).read_as_string() }),
+  'a decoder given non-LZ4-frame data must raise, not silently return garbage'
+ok('Lz4Decoder rejects malformed input')
+
+# Note: unlike Gzip/Bzip2/Brotli/Deflate, Lz4Encoder/Lz4Decoder have no
+# reset()/finished()/total_in()/total_out()/available() — this class
+# wraps lz4_flex's frame types directly with no Zuri-side state
+# tracking. A known, pre-existing gap; not something this test suite
+# works around silently.
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

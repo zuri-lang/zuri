@@ -40,7 +40,7 @@ class DoubleArray < Array {
    * @param {number|list} n
    * @constructor
    */
-  DoubleArray(n) {
+  @new(n) {
     if is_number(n) {
       self._data = bytes(n * self._bit_size)
     } else if is_list(n) {

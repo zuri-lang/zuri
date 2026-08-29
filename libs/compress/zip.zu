@@ -9,6 +9,7 @@
 
 import struct { pack, unpack }
 import compress.deflate
+import compress.bzip2
 import compress.checksum
 import os
 import io
@@ -19,7 +20,13 @@ import date
  * is not used
  * @type number
  */
-var ZIP_FILE_MAX = 2_147_483_649   # = 2 ** 31 + 1
+# The classic (non-zip64) format's size fields are unsigned 32-bit, so
+# the real ceiling is 0xFFFFFFFF (4 GiB - 1), not 2^31 — that was a
+# signed-vs-unsigned mixup that rejected perfectly valid 2-4 GiB files
+# and forced zip64 on them unnecessarily. Strict "<" against this value
+# in _is_within_bound() naturally reserves 0xFFFFFFFF itself, which
+# some tools treat as a "look in the zip64 extra field" sentinel.
+var ZIP_FILE_MAX = 4_294_967_295   # = 2 ** 32 - 1
 
 /**
  * The maximum number of files in a zip archive when zip64 is not
@@ -56,6 +63,12 @@ var ZIP_STORED = 0 # stored/no compression version
  */
 var ZIP_DEFLATE = 8 # deflate compression version
 
+/**
+ * Compression method that indicates Bzip2 compression
+ * @type number
+ */
+var ZIP_BZIP2 = 12 # bzip2 compression version
+
 # Versions...
 var _Z_DEFAULT_VERSION = 20
 var _Z_64_VERSION = 45
@@ -87,7 +100,13 @@ var _local_file_head_unpack = 'v1:version/v1:general_purpose/v1:compress_method/
     # Note: local file headers have NO comment_length field — that only exists in
     # central directory headers. Including it here would read 2 garbage bytes.
 
-var _file_size_unpack64 = 'P1:crc/P1:size_compressed/P1:size_uncompressed'
+# CRC-32 stays a 4-byte field even in zip64 — only the two size fields
+# grow to 8 bytes. Using 'P' (8-byte) for crc here was reading 4 bytes
+# of the real crc plus the first 4 bytes of size_compressed as if they
+# were one 64-bit crc value, corrupting all three fields for any zip64
+# archive that hits this path (a streamed entry with a trailing data
+# descriptor — see the general_purpose bit 0x0008 handling in read()).
+var _file_size_unpack64 = 'V1:crc/P1:size_compressed/P1:size_uncompressed'
 
 # Error messages...
 var _64_required = 'Zip64 compression required'
@@ -215,14 +234,32 @@ class ZipItem {
     if base_dir != nil and !is_string(base_dir)
       raise TypeError('string expected in argument 1 (base_dir)')
 
+    # An entry read() couldn't decode cleanly (encryption, an
+    # unsupported compression method, or a CRC32 mismatch) has no data
+    # to write — fail loudly rather than silently reporting success
+    # for a file that was never actually extracted.
+    if self.error
+      return false
+
     if !base_dir base_dir = ''
 
     var final_dir = os.join_paths(base_dir, self.directory)
+    var path = final_dir ? os.join_paths(final_dir, self.name) : self.name
+
+    # Zip Slip guard: an archive entry name containing ".." segments
+    # (e.g. "../../../etc/cron.d/evil") would otherwise resolve outside
+    # base_dir entirely once joined and opened for writing, letting a
+    # malicious archive overwrite arbitrary files on the extracting
+    # machine. Refuse anything that doesn't stay under base_dir once
+    # actually resolved.
+    var abs_base = os.abs_path(base_dir != '' ? base_dir : os.cwd())
+    var abs_target = os.abs_path(path)
+    if abs_target != abs_base and !abs_target.starts_with(abs_base + os.path_separator) {
+      return false
+    }
 
     if !os.dir_exists(final_dir)
       os.create_dir(final_dir)
-
-    var path = final_dir ? os.join_paths(final_dir, self.name) : self.name
 
     if self.data {
       if !file(path, 'wb').write(self.data) {
@@ -531,6 +568,14 @@ class ZipArchive {
    * @returns bool
    */
   create_file(path: string, data: bytes|string, stat: ?dict) {
+    # Only a string argument gets converted here, and only that
+    # conversion's result gets disposed further down — a bytes
+    # argument belongs to the caller, and this method must never
+    # dispose an object it didn't allocate itself.
+    var owns_data = is_string(data)
+    if owns_data {
+      data = data.to_bytes()
+    }
 
     # Ensure file is within Zip format limit bound.
     if !self._is_within_bound(data)
@@ -574,8 +619,13 @@ class ZipArchive {
 		var crc = checksum.crc32(data)
 
     var uzdata = data
+    var was_compressed = false
     if self._compression_method == ZIP_DEFLATE {
       uzdata = deflate.compress(data)
+      was_compressed = true
+    } else if self._compression_method == ZIP_BZIP2 {
+      uzdata = bzip2.compress(data)
+      was_compressed = true
     }
 
 		var c_len = uzdata.length()
@@ -594,8 +644,18 @@ class ZipArchive {
 
 		# 'file data' segment
 		fr.extend(uzdata)
-    uzdata.dispose()
-    data.dispose()
+    # uzdata is a genuinely new buffer only when compression actually
+    # ran; for ZIP_STORED it's the very same object as data, so
+    # disposing both would be a double-dispose of one buffer.
+    if was_compressed {
+      uzdata.dispose()
+    }
+    # Only dispose data if this method allocated it itself (a string
+    # argument converted to bytes above) — a bytes argument belongs
+    # to the caller and must never be disposed out from under them.
+    if owns_data {
+      data.dispose()
+    }
 
 		# 'data descriptor' segment (optional but necessary if archive is not served as file)
 		# The signature PK\x07\x08 is required by the spec for strict parsers.
@@ -685,7 +745,10 @@ class ZipArchive {
 
     var content = f.read()
     var r = self.create_file(destination, content, f.stats())
-    # Note: content is disposed inside create_file — do not dispose again here.
+    # content is ours (read from a file we opened here), so we dispose
+    # it ourselves — create_file() never disposes a bytes argument it
+    # was handed, only a string one it converted internally.
+    content.dispose()
 
     return r
   }
@@ -759,11 +822,11 @@ class ZipArchive {
    * matching.
    *
    * @param string directory
-   * @param list file_blacklist: Default value is `[]`
-   * @param list ext_blacklist: Default value is `[]`
+   * @param ?list file_blacklist: Default value is `[]`
+   * @param ?list ext_blacklist: Default value is `[]`
    * @returns bool
    */
-  add_directory(directory: string, file_blacklist: list, ext_blacklist: list) {
+  add_directory(directory: string, file_blacklist: ?list, ext_blacklist: ?list) {
     directory = directory.replace(_path_replace_regex, '/')
 
     if !os.dir_exists(directory)
@@ -849,18 +912,18 @@ class ZipArchive {
 			var isencrypted = (unpackeda['general_purpose'] & 0x0001) > 0 ? true : false
 
 			# Check for value block after compressed data.
-			# The data descriptor is either 12 bytes (no signature) or 16 bytes
-			# (with the optional PK\x07\x08 signature). Detect which is present.
+			# The data descriptor is either 12 bytes (no signature, crc+sizes
+      # only) or 16 bytes (an optional PK\x07\x08 signature followed by
+      # the same values) — 20 bytes instead of 12 in zip64, since the
+      # two size fields grow from 4 to 8 bytes each. Either way, the
+      # value block itself is always the LAST `value_size` bytes of
+      # filedata regardless of whether the signature precedes it, so
+      # there's no need to locate the signature just to unpack the values.
 			if unpackeda['general_purpose'] & 0x0008 > 0 {
-        var dd_offset = filedata.length() - 12
-        # If the 4 bytes before the 12-byte block are the data descriptor signature,
-        # the block is actually 16 bytes — skip past the signature.
-        if filedata.length() >= 16 and filedata[dd_offset - 4, dd_offset].to_string() == 'PK\x07\x08' {
-          dd_offset -= 4
-          dd_offset += 4  # move past signature to the actual data
-        }
+        var value_size = self._is_64 ? 20 : 12
+        var dd_offset = filedata.length() - value_size
 				var unpackeda2 = unpack(
-          self._is_64 ? _file_size_unpack64 : _file_size_unpack, 
+          self._is_64 ? _file_size_unpack64 : _file_size_unpack,
           filedata[dd_offset,]
         )
 
@@ -888,17 +951,28 @@ class ZipArchive {
 
 			filedata = filedata[26 + unpackeda['filename_length'] + unpackeda['extra_field_length'],]
 
+      # Bound filedata to exactly the compressed payload. It was sliced
+      # out by searching for the NEXT entry's PK\x03\x04 signature (or,
+      # for the last entry in the archive, by nothing at all — the raw
+      # bytes ran straight into the central directory that follows),
+      # neither of which reliably lands on the true end of this entry's
+      # data. size_compressed is already known at this point (from the
+      # central header, corrected above from the data descriptor when
+      # present), so trust it instead: this is what stopped the last
+      # entry in an archive coming out with the whole central directory
+      # appended to its content.
+      filedata = filedata[0, unpackeda['size_compressed']]
+
+      var decoded = false
+
 			if isencrypted {
 				entrya['error'] = 'Encryption is not supported.'
 			} else {
-
         var method = unpackeda['compress_method']
 
-        var decoded
 				using method {
 					when 0 {
-            # Stored
-						# Not compressed, continue as is
+            # Stored — not compressed, continue as is
             decoded = filedata.clone()
           }
 					when 8 { # Deflated
@@ -909,49 +983,52 @@ class ZipArchive {
             }
           }
 					when 12 { # BZIP2
-            entrya['error'] = 'bzip2 encoded data is not yet supported.'
+            catch {
+              decoded = bzip2.decompress(filedata)
+            } as e {
+              entrya['error'] = e.message
+            }
 					}
 					default {
 						entrya['error'] = 'Compression method (${method}) not supported.'
           }
 				}
 
-        # # The error below is usually irrelevant as the uncompressed output size 
-        # # indicated in the zip archive is not always dependable.
-        # 
-        # if entrya['error'] and filedata.length() + compression_header_length != unpackeda['size_compressed'] {
-        #   entrya['error'] = 'Compressed size is not equal to the value given in header.'
-        # }
-
 				if !entrya['error'] {
-					if filedata == false {
+					if decoded == false {
 						entrya['error'] = 'Decompression failed.'
-					} /* else if filedata.length() != unpackeda['size_uncompressed'] {
-						entrya['error'] = 'File size is not equal to the value given in header.'
-					} else if checksum.crc32(filedata) != unpackeda['crc'] {
-						entrya['error'] = 'CRC32 checksum is not equal to the value given in header.'
-					} */
+					} else if checksum.crc32(decoded) != unpackeda['crc'] {
+            # A CRC32 mismatch means the extracted bytes don't match what
+            # the archive claims they should be — corruption or tampering.
+            # Flagged per-entry (see ZipItem.error) rather than aborting
+            # the whole read(), so the rest of a large archive can still
+            # come through; a caller wanting stricter behavior can check
+            # .error across zip_file.files and refuse to use any of it.
+            #
+            # The declared uncompressed size isn't checked here — unlike
+            # CRC32 it's genuinely unreliable across different zip writers
+            # — but CRC32 is a real, standard integrity control and
+            # skipping it entirely (as this used to) means a corrupted or
+            # deliberately tampered entry would extract silently.
+						entrya['error'] = 'CRC32 checksum does not match the value given in the header — the entry may be corrupted or tampered with.'
+					}
 				}
-
-        if entrya['error'] {
-          raise Error(entrya['error'])
-        }
-
-        var file_date = unpackeda['file_date']
-        var file_time = unpackeda['file_time']
-
-				entrya['filemtime'] = date(
-          ((file_date & 0xfe00) >>  9) + 1980, # year
-          (file_date  & 0x01e0) >>  5,         # month
-          (file_date  & 0x001f),               # day — DOS stores 1-31 directly, no adjustment needed
-          (file_time  & 0xf800) >> 11,         # hour — 0-23 direct, no adjustment needed
-          (file_time  & 0x07e0) >>  5,         # minute
-          (file_time  & 0x001f) <<  1          # second
-        )
-
-				entrya['data'] = decoded
-        filedata.dispose()
 			}
+
+      var file_date = unpackeda['file_date']
+      var file_time = unpackeda['file_time']
+
+      entrya['filemtime'] = date(
+        ((file_date & 0xfe00) >>  9) + 1980, # year
+        (file_date  & 0x01e0) >>  5,         # month
+        (file_date  & 0x001f),               # day — DOS stores 1-31 directly, no adjustment needed
+        (file_time  & 0xf800) >> 11,         # hour — 0-23 direct, no adjustment needed
+        (file_time  & 0x07e0) >>  5,         # minute
+        (file_time  & 0x001f) <<  1          # second
+      )
+
+      entrya['data'] = entrya['error'] ? nil : decoded
+      filedata.dispose()
 
       entrya.extend(unpackeda)
       entrya.set('encrypted', isencrypted)

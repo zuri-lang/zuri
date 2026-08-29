@@ -367,13 +367,15 @@ def change_dir(path: string) {
 }
 
 /**
- * Returns `true` if the directory exists or `false` otherwise.
+ * Returns `true` if `path` exists and is a directory, `false`
+ * otherwise (including when `path` exists but is a regular file
+ * or some other non-directory entry).
  *
  * @param string path
  * @returns bool
  */
 def dir_exists(path: string) {
-  return _os.exists(path)
+  return _os.isdir(path)
 }
 
 /**
@@ -437,30 +439,71 @@ def real_path(path: string) {
 }
 
 /**
- * Returns the original path to a relative path.
+ * Returns the absolute form of `path`: relative paths are resolved
+ * against the current working directory, and "." / ".." segments
+ * are collapsed — purely as string manipulation, with no filesystem
+ * access at all by default. Unlike `real_path()`, this works even
+ * when `path` (or any part of it) doesn't exist on disk, and it
+ * never resolves symbolic links; use `real_path()` when you need the
+ * true canonical path of something that already exists.
  *
- * @note unlike real_path(), this function returns full path for
- *    a file.
  * @param string path
+ * @param ?bool strict: Default `false`. When `true`, the resolved
+ *    path is checked against the filesystem and an `Error` is raised
+ *    if nothing exists there.
  * @returns string
  */
-def abs_path(path: string) {
+def abs_path(path: string, strict: ?bool) {
+  if strict == nil {
+    strict = false
+  }
+  
+  var is_windows = platform == 'windows'
+  var regex = is_windows ? '~^[a-zA-Z]\\:~' : '~^\\/~'
+  var is_absolute = path.match(regex)
 
-  # Return early if we already have an absolute path.
-  var regex = platform == 'windows' ? '~^[a-zA-Z]\\:~' : '~^\\/~'
-  if path.match(regex)
-    return path
+  var root = ''
+  var raw
 
-  var p = _os.realpath(path)
-  if p == path {
-    var np = _os.realpath('.')
-
-    if np != path {
-      p = join_paths(np, p)
+  if is_absolute {
+    if is_windows {
+      root = path[,2]
+      raw = path[2,]
+    } else {
+      raw = path
+    }
+  } else {
+    var base = cwd()
+    if is_windows {
+      root = base[,2]
+      raw = base[2,] + '\\' + path
+    } else {
+      raw = base + '/' + path
     }
   }
 
-  return p
+  raw = raw.replace('\\', '/')
+
+  var resolved = []
+  for seg in raw.split('/') {
+    if seg == '' or seg == '.' {
+      continue
+    } else if seg == '..' {
+      if !resolved.is_empty() {
+        resolved.pop()
+      }
+    } else {
+      resolved.append(seg)
+    }
+  }
+
+  var result = root + path_separator + path_separator.join(resolved)
+
+  if strict and !_os.exists(result) {
+    raise Error('path "${result}" does not exist')
+  }
+
+  return result
 }
 
 /**

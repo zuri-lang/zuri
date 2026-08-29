@@ -1,0 +1,244 @@
+/**
+ * test_zip.zu
+ *
+ * Test suite for the `compress.zip` standard library module: archive
+ * creation (stored/deflate/bzip2), reading, CRC-32 integrity
+ * verification, the Zip Slip path-traversal guard, per-entry error
+ * reporting, and the free `compress()`/`extract()` helpers.
+ *
+ * Builds and tears down its own fixtures under tmp/ rather than
+ * depending on any external archive file or system zip tool.
+ */
+
+import compress.zip as zip
+import os
+import date
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+var _root = 'tmp/test_zip_scratch'
+
+def fresh_dir(path) {
+  if os.dir_exists(path) {
+    os.remove_dir(path, true)
+  }
+  os.create_dir(path, nil, true)
+}
+
+def a_stat() {
+  return {mtime: time().int(), mode: 0c644}
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  compress.zip module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+fresh_dir(_root)
+
+# ---------------------------------------------------------------------------
+# Basic create + read round trip, one entry per compression method
+# ---------------------------------------------------------------------------
+def build_and_read(method, label) {
+  var path = os.join_paths(_root, '${label}.zip')
+  var z = zip.ZipArchive(path, method)
+  z.create_file('hello.txt', 'hello ${label} world', a_stat())
+  z.save()
+
+  var reader = zip.ZipArchive(path)
+  var zip_file = reader.read()
+  assert zip_file.files.length() == 1, '${label}: read() must find exactly one entry'
+  var item = zip_file.files[0]
+  assert item.name == 'hello.txt', '${label}: entry name must round-trip'
+  assert !item.error, '${label}: a freshly-created entry must decode with no error'
+  assert item.data.to_string() == 'hello ${label} world', '${label}: entry content must match exactly'
+  return item
+}
+
+build_and_read(zip.ZIP_STORED, 'stored')
+ok('ZIP_STORED: create_file() + save() then read() round-trips correctly')
+
+build_and_read(zip.ZIP_DEFLATE, 'deflate')
+ok('ZIP_DEFLATE: create_file() + save() then read() round-trips correctly')
+
+build_and_read(zip.ZIP_BZIP2, 'bzip2')
+ok('ZIP_BZIP2: create_file() + save() then read() round-trips correctly')
+
+# ---------------------------------------------------------------------------
+# Multiple entries, including a nested directory path
+# ---------------------------------------------------------------------------
+var multi_path = os.join_paths(_root, 'multi.zip')
+var zm = zip.ZipArchive(multi_path, zip.ZIP_DEFLATE)
+zm.create_file('a.txt', 'file a', a_stat())
+zm.create_file('sub/b.txt', 'file b', a_stat())
+zm.create_file('sub/deeper/c.txt', 'file c', a_stat())
+zm.save()
+
+var multi_reader = zip.ZipArchive(multi_path)
+var multi_zf = multi_reader.read()
+assert multi_zf.files.length() == 3, 'all three entries (one top-level, two nested) must be read back'
+
+var names = []
+for item in multi_zf.files {
+  names.append(item.directory != '' ? item.directory + '/' + item.name : item.name)
+}
+assert names.contains('a.txt'), 'top-level entry name must be present'
+assert names.contains('sub/b.txt'), 'one-level-nested entry path must be present'
+assert names.contains('sub/deeper/c.txt'), 'two-level-nested entry path must be present'
+ok('multiple entries, including nested directory paths, all read back correctly')
+
+# Regression: this exact scenario (an entry with no successor to bound its
+# byte range) used to corrupt the LAST entry's content by reading straight
+# into the trailing central directory.
+var last_item = multi_zf.files[multi_zf.files.length() - 1]
+assert last_item.data.to_string() == 'file c', 'the last entry in the archive must not include trailing central-directory bytes'
+ok('the last entry in a multi-entry archive is bounded correctly (no central-directory bleed-through)')
+
+# ---------------------------------------------------------------------------
+# CRC-32 integrity verification
+# ---------------------------------------------------------------------------
+var crc_path = os.join_paths(_root, 'crc.zip')
+var zc = zip.ZipArchive(crc_path, zip.ZIP_STORED)
+zc.create_file('data.txt', 'this content will be corrupted after writing', a_stat())
+zc.save()
+
+var raw = file(crc_path, 'rb').read()
+# Flip a byte inside the file's stored content region specifically: the
+# local file header is a fixed 30 bytes, followed by the filename
+# ('data.txt', 8 bytes), so content starts at byte 38 — well clear of
+# any header/signature bytes, and clear of the central directory /
+# EOCD that follow the (short) content too.
+var flip_offset = 40
+raw[flip_offset] = raw[flip_offset] ^ 0xFF
+file(crc_path, 'wb').write(raw)
+
+var crc_reader = zip.ZipArchive(crc_path)
+var crc_zf = crc_reader.read()
+assert crc_zf.files.length() == 1, 'the corrupted archive must still enumerate its one entry'
+assert crc_zf.files[0].error != nil and crc_zf.files[0].error != '',
+  'a CRC-32 mismatch must be reported via ZipItem.error, not silently accepted'
+assert crc_zf.files[0].data == nil, 'an entry that failed CRC verification must not expose its (unverified) data'
+ok('a CRC-32 mismatch on a corrupted entry is detected and reported, not silently passed through')
+
+# ---------------------------------------------------------------------------
+# read() does not abort the whole archive on one bad entry
+# ---------------------------------------------------------------------------
+var mixed_path = os.join_paths(_root, 'mixed.zip')
+var zx = zip.ZipArchive(mixed_path, zip.ZIP_STORED)
+zx.create_file('good.txt', 'this one is fine', a_stat())
+zx.save()
+
+var mixed_raw = file(mixed_path, 'rb').read()
+# Same reasoning as the CRC test above: byte 40 sits inside the content
+# region (30-byte header + 8-byte "good.txt" filename = offset 38).
+var mixed_flip = 40
+mixed_raw[mixed_flip] = mixed_raw[mixed_flip] ^ 0xFF
+file(mixed_path, 'wb').write(mixed_raw)
+
+assert !raises(@() { zip.ZipArchive(mixed_path).read() }),
+  'read() must not raise just because one entry fails to decode cleanly — errors surface per-entry'
+ok('a single bad entry is reported via .error, not an exception that aborts reading the whole archive')
+
+# ---------------------------------------------------------------------------
+# Zip Slip: a path-traversal entry name must never escape the destination
+# ---------------------------------------------------------------------------
+var escape_target = os.join_paths(os.cwd(), 'tmp/test_zip_slip_escaped.txt')
+catch {
+  file(escape_target, 'rb').delete()
+} as e
+assert !file(escape_target).exists(), 'the escape target must not exist before the test runs'
+
+var slip_dict = {}
+slip_dict.set('name', '../../../../../../${escape_target}')
+slip_dict.set('dir', '')
+slip_dict.set('compress_method', zip.ZIP_STORED)
+slip_dict.set('crc', 0)
+slip_dict.set('filemtime', date.localtime())
+slip_dict.set('size_compressed', 5)
+slip_dict.set('size_uncompressed', 5)
+slip_dict.set('encrypted', false)
+slip_dict.set('error', nil)
+slip_dict.set('data', 'pwned'.to_bytes())
+slip_dict.set('permission', 0)
+
+var slip_item = zip.ZipItem.from_dict(slip_dict)
+var slip_out = os.join_paths(_root, 'slip_out')
+fresh_dir(slip_out)
+var slip_result = slip_item.export(slip_out)
+
+assert slip_result == false, 'export() must refuse a path-traversal entry name rather than silently writing it'
+assert !file(escape_target).exists(), 'a path-traversal entry must never actually reach a path outside the destination directory'
+ok('Zip Slip: a ".." path-traversal entry name is refused and cannot escape the destination directory')
+
+# ---------------------------------------------------------------------------
+# Binary content round trip
+# ---------------------------------------------------------------------------
+var binary_data = bytes(256)
+iter var i = 0; i < 256; i++ {
+  binary_data[i] = i
+}
+var bin_path = os.join_paths(_root, 'binary.zip')
+var zb = zip.ZipArchive(bin_path, zip.ZIP_DEFLATE)
+zb.create_file('binary.dat', binary_data, a_stat())
+zb.save()
+
+# create_file() must never dispose a bytes argument the caller passed
+# in — only a string argument it converted internally — so binary_data
+# must still be perfectly usable here.
+assert binary_data.length() == 256, 'create_file() must not dispose a bytes argument the caller owns'
+
+var bin_reader = zip.ZipArchive(bin_path)
+var bin_item = bin_reader.read().files[0]
+assert bin_item.data == binary_data, 'every byte value 0..255 must survive create_file()/read() unchanged through Deflate'
+ok('binary content (all 256 byte values) survives compress/extract unchanged, and the caller\'s own buffer is left intact')
+
+# ---------------------------------------------------------------------------
+# The free compress()/extract() helpers
+# ---------------------------------------------------------------------------
+var src_dir = os.join_paths(_root, 'free_fn_src')
+fresh_dir(src_dir)
+file(os.join_paths(src_dir, 'one.txt'), 'wb').write('first file'.to_bytes())
+os.create_dir(os.join_paths(src_dir, 'nested'), nil, true)
+file(os.join_paths(src_dir, 'nested/two.txt'), 'wb').write('second file'.to_bytes())
+
+var free_dest = os.join_paths(_root, 'free_fn.zip')
+zip.compress(src_dir, free_dest)
+assert file(free_dest, 'rb').exists(), 'compress() must produce the requested destination archive'
+
+var free_out = os.join_paths(_root, 'free_fn_out')
+var free_ok = zip.extract(free_dest, free_out)
+assert free_ok, 'extract() via the free function must succeed'
+assert file(os.join_paths(free_out, 'one.txt'), 'rb').read().to_string() == 'first file',
+  'extracted top-level file content must match'
+assert file(os.join_paths(free_out, 'nested/two.txt'), 'rb').read().to_string() == 'second file',
+  'extracted nested file content must match'
+ok('free compress()/extract() helpers round-trip a directory tree')
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+assert zip.ZIP_STORED == 0 and zip.ZIP_DEFLATE == 8 and zip.ZIP_BZIP2 == 12,
+  'compression method constants must match their real ZIP-spec values'
+ok('compression method constants match the ZIP specification')
+
+os.remove_dir(_root, true)
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -58,6 +58,12 @@ argon2 = "0.5"
 zlib-rs = "0.6.7"
 zrip = "0.8.5"
 lz4_flex = "0.14.0"
+# bzip2 defaults to the libbz2-rs-sys backend (a pure-Rust bzip2
+# reimplementation), same story as zlib-rs above — no C toolchain
+# dependency.
+bzip2 = "0.6.1"
+# brotli is pure Rust top to bottom, no backend choice needed.
+brotli = "8.0.4"
 cranelift-jit = "0.134"
 cranelift-codegen = "0.134"
 cranelift-frontend = "0.134"
