@@ -17,7 +17,17 @@ smallvec = "1.15.2"
 mimalloc = { version = "0.1.52", default-features = false }
 minus = { version = "5.7.2", features = ["static_output"] }
 
+# --- JIT -------------------------------------------------------------------
+
+cranelift-jit = "0.134"
+cranelift-codegen = "0.134"
+cranelift-frontend = "0.134"
+cranelift-module = "0.134"
+cranelift-native = "0.134"
+target-lexicon = "0.13"
+
 # --- hash module (src/modules/hash.rs) -------------------------------------
+
 digest = "0.10"
 md-5 = "0.10"
 md4 = "0.10"
@@ -32,6 +42,7 @@ gost94 = "0.10"
 sm3 = "0.4"
 
 # --- crypto module (src/modules/crypto.rs) ---------------------------------
+
 rand = "0.8"
 rand_core = "0.6"
 base64 = "0.22"
@@ -55,6 +66,7 @@ hkdf = "0.12"
 argon2 = "0.5"
 
 # --- compress module (src/modules/compress.rs) ---------------------------------
+
 zlib-rs = "0.6.7"
 zrip = "0.8.5"
 lz4_flex = "0.14.0"
@@ -64,14 +76,9 @@ lz4_flex = "0.14.0"
 bzip2 = "0.6.1"
 # brotli is pure Rust top to bottom, no backend choice needed.
 brotli = "8.0.4"
-cranelift-jit = "0.134"
-cranelift-codegen = "0.134"
-cranelift-frontend = "0.134"
-cranelift-module = "0.134"
-cranelift-native = "0.134"
-target-lexicon = "0.13"
 
 # --- net::tls / net::dtls (src/modules/net_tls.rs, src/modules/net_dtls.rs) ----
+
 # rustls picks aws-lc-rs as its crypto provider by default (the "aws_lc_rs"
 # feature below); rtc-dtls is told to use the same provider via its own
 # "aws-lc-rs" feature so we only ever link one crypto backend, not two.
@@ -81,7 +88,10 @@ rustls-pemfile = "2"
 webpki-roots = "1"
 rustls-native-certs = "0.8"
 x509-cert = { version = "0.3", features = ["std", "pem"] }
-rtc-dtls = { version = "0.20", default-features = false, features = ["aws-lc-rs", "pem"] }
+rtc-dtls = { version = "0.20", default-features = false, features = [
+    "aws-lc-rs",
+    "pem",
+] }
 # rtc-shared is a transitive dependency of rtc-dtls already, but rtc-dtls's
 # public API (Endpoint::connect/read/write) returns its Result/Error type
 # directly, so it needs to be named here too rather than just along for
@@ -94,15 +104,22 @@ bytes = "1"
 # against the literal "PRIVATE_KEY", which no real key ever has), so
 # certificates are built through rcgen::KeyPair directly instead. Matched
 # to aws_lc_rs so it isn't pulling in ring on top of everything else.
-rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+rcgen = { version = "0.14", default-features = false, features = [
+    "aws_lc_rs",
+    "pem",
+] }
 
 # --- io::TTY.getsize (src/modules/io.rs) -----------------------------------
+
 # The rest of io::TTY (raw mode, tcgetattr/tcsetattr) is genuinely termios-
 # only and has no Windows equivalent, but console size IS available there
 # via the Win32 console API, so that one function gets its own real
 # implementation instead of the same "not supported" stub as the others.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_System_Console",
+    "Win32_Foundation",
+] }
 
 
 [build-dependencies]
