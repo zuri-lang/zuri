@@ -1,0 +1,133 @@
+/**
+ * @module jwt.token
+ *
+ * The `Token` class returned by `decode()` and `verify()` (when
+ * `options.complete` is set).
+ */
+
+/**
+ * Represents a decoded JWT. Instances of this class are returned
+ * by decode() and verify(). The raw header and payload
+ * dictionaries are available as properties, and individual
+ * claims are accessible directly through the index operator.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * var tok = jwt.decode('ey_j...')
+ * echo tok.header['alg']     # HS256
+ * echo tok.payload['sub']    # '1234567890'
+ * echo tok['sub']            # '1234567890'  (shorthand)
+ * ```
+ */
+class Token {
+
+  /**
+   * The decoded header dictionary. Contains at minimum the `alg`
+   * and `typ` fields.
+   */
+  var header = {}
+
+  /**
+   * The decoded payload dictionary. Contains all registered and
+   * custom claims present in the token.
+   */
+  var payload = {}
+
+  /**
+   * The raw base64url-encoded signature segment as it appeared
+   * in the original token string. Empty for unsecured tokens.
+   */
+  var signature = ''
+
+  /**
+   * The original token string from which this instance was
+   * decoded.
+   */
+  var raw = ''
+
+  # Clock-skew leeway (seconds) this Token was verified with, set by
+  # `_finish_verify()` from `options.clock_tolerance` when this Token
+  # came from `verify()`. Zero for a Token from a bare `decode()`, since
+  # there's no verification context to carry leeway from.
+  var _leeway = 0
+
+  /**
+   * @param dict header
+   * @param dict payload
+   * @param string signature
+   * @param string raw
+   */
+  @new(header, payload, signature, raw) {
+    self.header    = header
+    self.payload   = payload
+    self.signature = signature
+    self.raw       = raw
+  }
+
+  # Records the clock-skew leeway this Token was verified with. Called
+  # by `core.zu`'s `_finish_verify()` right after a successful
+  # verification; never meant to be called by application code, but
+  # can't be named with a leading underscore since Zuri's private-member
+  # access check would then also block this exact cross-file call.
+  set_leeway(seconds: number) {
+    self._leeway = seconds
+    return self
+  }
+
+  /**
+   * Returns the value of the named claim from the payload, or
+   * nil if the claim is not present.
+   *
+   * @param string name
+   * @return any
+   */
+  get(name: string) {
+    return self.payload.get(name, nil)
+  }
+
+  /**
+   * Returns the value of the named claim from the payload. This
+   * allows bracket-access syntax on a Token instance.
+   *
+   * @param string name
+   * @return any
+   */
+  @to_index(name: string) {
+    return self.payload.get(name, nil)
+  }
+
+  /**
+   * Returns true when the token carries an `exp` claim and the
+   * current time is past that value, honoring the leeway this
+   * Token was verified with when it came from `verify()`.
+   *
+   * A Token produced by a bare `decode()` (no verification) always
+   * has zero leeway.
+   *
+   * @return bool
+   */
+  is_expired() {
+    if self.payload.contains('exp') {
+      if !is_number(self.payload['exp']) {
+        return false
+      }
+      return time() > self.payload['exp'] + self._leeway
+    }
+    return false
+  }
+
+  /**
+   * Returns a string representation of the token for debugging
+   * purposes. The output is not the encoded token; use the raw
+   * property for that.
+   *
+   * @return string
+   */
+  @to_string() {
+    return '<Token alg=${self.header.get("alg", "?")} ' +
+           'sub=${self.payload.get("sub", "(none)")}>'
+  }
+}

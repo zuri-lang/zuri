@@ -1,0 +1,145 @@
+/**
+ * @module jwt.jwks
+ *
+ * `Jwks`, plus `verify_with_jwks()` — resolving a token's signing key
+ * from a JSON Web Key Set (RFC 7517) by its `kid` header, rather than
+ * a single fixed secret/key.
+ */
+
+import .core { verify, header }
+import .codec { * }
+import .errors { AlgorithmError }
+
+import crypto
+
+/**
+ * Parses a JSON Web Key Set document (a dict shaped like
+ * `{ keys: [...] }`, exactly what `json.decode()` on a fetched JWKS
+ * document produces) and resolves individual keys by their `kid`.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ * import json
+ *
+ * var jwks = jwt.Jwks(json.decode(fetch_jwks_document()))
+ * var payload = jwt.verify_with_jwks(token, jwks, { issuer: 'auth.example.com' })
+ * ```
+ */
+class Jwks {
+
+  var _keys = {}
+
+  /**
+   * @param dict jwks A decoded JWKS document: `{ keys: [...] }`.
+   *    Keys without a `kid` field are ignored, since there is no
+   *    way to resolve them by kid.
+   * @constructor
+   */
+  @new(jwks: dict) {
+    var keys = jwks.get('keys', [])
+    for key in keys {
+      var kid = key.get('kid', nil)
+      if kid != nil {
+        self._keys[kid] = key
+      }
+    }
+  }
+
+  /**
+   * Returns the raw JWK dictionary for the given `kid`.
+   *
+   * @param string kid
+   * @return dict
+   * @throws AlgorithmError When no key with this `kid` is present.
+   */
+  find(kid: string) {
+    if !self._keys.contains(kid) {
+      raise AlgorithmError('no key found in JWKS for kid "${kid}"')
+    }
+    return self._keys[kid]
+  }
+
+  /**
+   * Resolves the given `kid` and converts it to a PEM public key
+   * via `crypto.jwk.to_pem()`.
+   *
+   * @param string kid
+   * @return string PEM-encoded public key.
+   * @throws AlgorithmError
+   * @throws CryptoError
+   */
+  to_pem(kid: string) {
+    return _jwk_to_pem(self.find(kid))
+  }
+}
+
+# Base64url-decodes a JWK's own text fields into the raw bytes
+# crypto.jwk.to_pem() expects, dispatching by kty the same way
+# crypto.jwk.to_pem() itself does.
+def _jwk_to_pem(jwk) {
+  var kty = jwk.get('kty', nil)
+
+  if kty == 'RSA' {
+    return crypto.jwk.to_pem({
+      kty: 'RSA',
+      n: _b64_decode_bytes(jwk['n']),
+      e: _b64_decode_bytes(jwk['e']),
+    })
+  }
+
+  if kty == 'EC' {
+    return crypto.jwk.to_pem({
+      kty: 'EC',
+      crv: jwk['crv'],
+      x: _b64_decode_bytes(jwk['x']),
+      y: _b64_decode_bytes(jwk['y']),
+    })
+  }
+
+  if kty == 'OKP' {
+    return crypto.jwk.to_pem({
+      kty: 'OKP',
+      crv: jwk['crv'],
+      x: _b64_decode_bytes(jwk['x']),
+    })
+  }
+
+  raise AlgorithmError('unsupported JWK kty "${kty}"')
+}
+
+/**
+ * Verifies a token by resolving its signing key from a JWKS
+ * document rather than a single fixed secret.
+ *
+ * Reads the token's `kid` header parameter, resolves the matching
+ * key in `jwks`, converts it to a PEM, and verifies the token with
+ * it exactly as `verify()` would with that PEM passed directly.
+ *
+ * @param string token
+ * @param Jwks jwks
+ * @param ?dict options See `verify()` for the full reference; note
+ *    that `algorithms` should still be set explicitly here, the same
+ *    as with any other `verify()` call — resolving a key by `kid`
+ *    says nothing about which algorithm is safe to trust it with.
+ * @return dict|Token
+ * @throws AlgorithmError When the token has no `kid`, or no key in
+ *    `jwks` matches it.
+ * @throws MalformedTokenError
+ * @throws SignatureError
+ * @throws TokenExpiredError
+ * @throws ClaimError
+ * @throws CryptoError
+ */
+def verify_with_jwks(token, jwks: Jwks, options) {
+  var tok_header = header(token)
+  var kid = tok_header.get('kid', nil)
+
+  if kid == nil {
+    raise AlgorithmError('token has no kid header parameter; cannot resolve a JWKS key')
+  }
+
+  var pem = jwks.to_pem(kid)
+  return verify(token, pem, options)
+}

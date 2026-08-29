@@ -1,0 +1,95 @@
+/**
+ * @module log.level
+ *
+ * The `LogLevel` enum, its module-level constant exports, and the
+ * single shared "default level" that every registered transport is
+ * filtered against unless it has its own level configured.
+ */
+
+import enum
+
+
+/**
+ * The Log levels in order
+ *
+ * - None - Debug - Info - Warning - Error - Critical
+ *
+ * @type enum
+ */
+var LogLevel = enum([
+  'None',
+  'Debug',
+  'Info',
+  'Warning',
+  'Error',
+  'Critical',
+])
+
+var _level_lookup_table = enum.to_value_dict(LogLevel)
+var _default_log_level = LogLevel.None
+
+# LogLevel Exports
+
+/**
+ * Module level declaration of `LogLevel.None`
+ */
+var None = LogLevel.None
+
+/**
+ * Module level declaration of `LogLevel.Debug`
+ */
+var Debug = LogLevel.Debug
+
+/**
+ * Module level declaration of `LogLevel.Info`
+ */
+var Info = LogLevel.Info
+
+/**
+ * Module level declaration of `LogLevel.Warning`
+ */
+var Warning = LogLevel.Warning
+
+/**
+ * Module level declaration of `LogLevel.Error`
+ */
+var Error = LogLevel.Error
+
+/**
+ * Module level declaration of `LogLevel.Critical`
+ */
+var Critical = LogLevel.Critical
+
+
+# The default level is genuinely shared, cross-file, mutable state
+# (every Transport's `can_log()` reads it, and the module-level
+# `set_level()` in dispatch.zu writes it) -- it's only ever touched
+# through these two accessors, never a raw imported variable, since an
+# imported binding is a value snapshot taken at import time, not a
+# live reference (verified directly: a second file importing a bare
+# variable name never observes a later mutation made through a setter
+# function in the owning file).
+
+def _get_default_level() {
+  return _default_log_level
+}
+
+def _set_default_level(level) {
+  _default_log_level = level
+}
+
+
+/**
+ * Returns the name of a log level as a string.
+ *
+ * @param {log.LogLevel} level
+ * @returns string
+ */
+def get_level_name(level) {
+  if !is_number(level) {
+    raise ValueError('invalid log level')
+  }
+
+  level = enum.ensure(LogLevel, level)
+  return _level_lookup_table[level].upper()
+}

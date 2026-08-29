@@ -16,11 +16,12 @@
  * |--------------|------------------------------------------|
  * | Symmetric    | AES-128/192/256-GCM, AES-128/192/256-CBC |
  * | Stream AEAD  | ChaCha20-Poly1305                        |
- * | Asymmetric   | RSA-2048/4096 (OAEP + PSS)               |
+ * | Asymmetric   | RSA-2048/4096 (OAEP + PSS-SHA256/384/512)|
  * | Signatures   | ECDSA P-256/P-384, Ed25519               |
  * | Key exchange | X25519 (Diffie-Hellman)                  |
  * | Password KDF | Argon2id                                 |
  * | Key stretch  | HKDF-SHA256                              |
+ * | Key import   | `jwk.to_pem()` — RSA/EC/OKP JWK → PEM     |
  * | Randomness   | OS CSPRNG                                |
  *
  * ---
@@ -478,15 +479,17 @@ class _Rsa {
   }
 
   /**
-   * Signs message with RSA-PSS (SHA-256 / MGF1-SHA-256).
+   * Signs message with RSA-PSS.
    *
    * @param string private_pem PEM-encoded private key.
    * @param bytes message The raw bytes to sign.
+   * @param ?string hash The digest to use under PSS/MGF1: one of
+   *    `"sha256"`, `"sha384"`, `"sha512"`. Default: `"sha256"`.
    * @return bytes DER-encoded signature.
    * @throws CryptoError
    */
-  sign(private_pem, message) {
-    return _crypto.rsa_sign(private_pem, message)
+  sign(private_pem, message, hash) {
+    return _crypto.rsa_sign(private_pem, message, hash)
   }
 
   /**
@@ -500,11 +503,15 @@ class _Rsa {
    * @param string public_pem PEM-encoded public key.
    * @param bytes message The message that was signed.
    * @param bytes signature DER-encoded signature from `sign`.
+   * @param ?string hash The digest `sign()` used: one of
+   *    `"sha256"`, `"sha384"`, `"sha512"`. Default: `"sha256"`.
+   *    Must match whatever `sign()` was actually called with, or
+   *    verification will fail.
    * @return bool
    * @throws CryptoError
    */
-  verify(public_pem, message, signature) {
-    return _crypto.rsa_verify(public_pem, message, signature)
+  verify(public_pem, message, signature, hash) {
+    return _crypto.rsa_verify(public_pem, message, signature, hash)
   }
 }
 
@@ -754,6 +761,76 @@ class _X25519 {
  * @see _X25519
  */
 var x25519 = _X25519()
+
+
+# ---------------------------------------------------------------------------
+# jwk — build a usable public key PEM from raw JWK key material
+# ---------------------------------------------------------------------------
+
+/**
+ * Converts raw JSON Web Key (RFC 7517) component bytes into a
+ * SubjectPublicKeyInfo PEM this module's `rsa`/`ecdsa`/`ed25519`
+ * namespaces can verify signatures with.
+ *
+ * This class deliberately works in raw `bytes`, not JWK's own
+ * base64url-text field encoding — callers parsing a real JWKS
+ * document (e.g. `jwt.Jwks`) are responsible for base64url-decoding
+ * `n`/`e`/`x`/`y` themselves before calling `to_pem()`, the same way
+ * every other signature/verification function in this module takes
+ * `bytes`, never a text encoding of them.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import crypto
+ *
+ * # n/e/x/y here are already raw bytes, decoded from a JWK's own
+ * # base64url text fields by the caller.
+ * var pem = crypto.jwk.to_pem({ kty: 'RSA', n, e })
+ * echo crypto.rsa.verify(pem, message, signature)
+ * ```
+ */
+class _Jwk {
+
+  /**
+   * Builds a public key PEM from a decoded JWK dictionary.
+   *
+   * @param dict jwk A dictionary with a `kty` field of `'RSA'`,
+   *    `'EC'`, or `'OKP'`, plus the raw-bytes key components that
+   *    key type requires:
+   *    - `RSA`: `n` (modulus), `e` (exponent)
+   *    - `EC`: `crv` (`'P-256'` or `'P-384'`), `x`, `y`
+   *    - `OKP`: `crv` (must be `'Ed25519'`), `x`
+   * @return string PEM-encoded SubjectPublicKeyInfo public key.
+   * @throws CryptoError
+   */
+  to_pem(jwk: dict) {
+    var kty = jwk.get('kty', nil)
+
+    if kty == 'RSA' {
+      return _crypto.rsa_public_key_from_jwk(jwk['n'], jwk['e'])
+    }
+
+    if kty == 'EC' {
+      return _crypto.ec_public_key_from_jwk(jwk['crv'], jwk['x'], jwk['y'])
+    }
+
+    if kty == 'OKP' {
+      if jwk.get('crv', nil) != 'Ed25519' {
+        raise CryptoError('jwk.to_pem(): unsupported OKP curve "${jwk.get("crv", "?")}", only Ed25519 is supported')
+      }
+      return _crypto.ed25519_public_key_from_jwk(jwk['x'])
+    }
+
+    raise CryptoError('jwk.to_pem(): unsupported kty "${kty}", expected RSA, EC, or OKP')
+  }
+}
+
+/**
+ * JWK-to-PEM conversion namespace.
+ * @see _Jwk
+ */
+var jwk = _Jwk()
 
 
 # ---------------------------------------------------------------------------

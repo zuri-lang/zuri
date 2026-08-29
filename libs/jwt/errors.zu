@@ -1,0 +1,87 @@
+/**
+ * @module jwt.errors
+ *
+ * The full error hierarchy raised by the `jwt` module. All of them
+ * inherit from `JwtError`, so a caller who just wants to catch
+ * "something went wrong with this token" only needs to catch that
+ * one class.
+ */
+
+/**
+ * Base error class for all errors raised by the jwt module.
+ * Catching this class will intercept any jwt-specific error.
+ */
+class JwtError < Error {
+  /**
+   * @param string message
+   * @constructor
+   */
+  @new(message) {
+    parent(message)
+    self.type = 'JwtError'
+  }
+}
+
+/**
+ * Raised when a token cannot be decoded because its structure is
+ * not valid. This includes tokens that are not three
+ * dot-separated segments or that contain malformed base64url or
+ * JSON.
+ */
+class MalformedTokenError < JwtError {
+  @new(message) {
+    parent(message)
+    self.type = 'MalformedTokenError'
+  }
+}
+
+/**
+ * Raised when a token's signature does not match its header and
+ * payload. This indicates the token has been tampered with or
+ * was signed with a different key.
+ */
+class SignatureError < JwtError {
+  @new(message) {
+    parent(message)
+    self.type = 'SignatureError'
+  }
+}
+
+/**
+ * Raised when a token's temporal claims fail validation:
+ *
+ * - `exp` (expiry) — token has expired - `nbf` (not before) —
+ * token is not yet valid - `iat` (issued at) — token was issued
+ * in the future
+ */
+class TokenExpiredError < JwtError {
+  @new(message) {
+    parent(message)
+    self.type = 'TokenExpiredError'
+  }
+}
+
+/**
+ * Raised when a required claim is absent from the token payload,
+ * or when a registered claim (iss, aud, sub) does not match the
+ * expected value.
+ */
+class ClaimError < JwtError {
+  @new(message) {
+    parent(message)
+    self.type = 'ClaimError'
+  }
+}
+
+/**
+ * Raised when an algorithm specified in a token header is not
+ * supported by this module, when the caller attempts to use the
+ * none algorithm without explicitly enabling it, or when a JWKS
+ * document has no key matching a token's `kid`.
+ */
+class AlgorithmError < JwtError {
+  @new(message) {
+    parent(message)
+    self.type = 'AlgorithmError'
+  }
+}

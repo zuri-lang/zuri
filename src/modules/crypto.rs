@@ -34,7 +34,7 @@ use p256::pkcs8::LineEnding;
 use rand::rngs::OsRng;
 use rand_core::RngCore;
 use rsa::signature::{RandomizedSigner, SignatureEncoding, Verifier as RsaVerifierTrait};
-use sha2::Sha256;
+use sha2::{Sha256, Sha384, Sha512};
 
 use crate::builtins::enforce::ArgType;
 use crate::modules::{BuiltinModuleDef, native};
@@ -94,10 +94,43 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "rsa_decrypt",
       native(vm, "rsa_decrypt", 2, false, rsa_decrypt_fn),
     ),
-    ("rsa_sign", native(vm, "rsa_sign", 2, false, rsa_sign_fn)),
+    // min_arity is a floor, not an exact count, once `variadic` is set --
+    // the trailing hash-algorithm arg is optional (defaults to sha256 in
+    // the function body), so both take one more than their old fixed count.
+    ("rsa_sign", native(vm, "rsa_sign", 2, true, rsa_sign_fn)),
     (
       "rsa_verify",
-      native(vm, "rsa_verify", 3, false, rsa_verify_fn),
+      native(vm, "rsa_verify", 3, true, rsa_verify_fn),
+    ),
+    (
+      "rsa_public_key_from_jwk",
+      native(
+        vm,
+        "rsa_public_key_from_jwk",
+        2,
+        false,
+        rsa_public_key_from_jwk_fn,
+      ),
+    ),
+    (
+      "ec_public_key_from_jwk",
+      native(
+        vm,
+        "ec_public_key_from_jwk",
+        3,
+        false,
+        ec_public_key_from_jwk_fn,
+      ),
+    ),
+    (
+      "ed25519_public_key_from_jwk",
+      native(
+        vm,
+        "ed25519_public_key_from_jwk",
+        1,
+        false,
+        ed25519_public_key_from_jwk_fn,
+      ),
     ),
     // ECDSA
     (
@@ -555,21 +588,58 @@ fn rsa_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(pt))
 }
 
+/// Reads an optional trailing hash-algorithm-name argument
+/// (`"sha256"`/`"sha384"`/`"sha512"`, case-sensitive, matching every
+/// other lowercase algorithm-name string this module already accepts
+/// elsewhere), defaulting to `"sha256"` when the caller omits it --
+/// existing callers written before PS384/PS512 existed keep signing
+/// with the same digest they always did.
+fn rsa_hash_arg(ctx: &ZuriContext, idx: usize) -> Result<&'static str, String> {
+  match ctx.args.get(idx) {
+    // Both a truly omitted argument AND one explicitly passed as `nil`
+    // mean "use the default" -- `crypto.zu`'s own `sign(secret, message,
+    // hash)` wrapper always passes a real (possibly-nil) positional value
+    // through to this native, it never actually omits the argument, even
+    // when ITS OWN caller left `hash` out.
+    None => Ok("sha256"),
+    Some(v) if v.is_nil() => Ok("sha256"),
+    Some(v) if !v.is_string() => Err(format!(
+      "{}() expects argument {} to be a string, got {}",
+      ctx.name,
+      idx + 1,
+      v.type_name()
+    )),
+    Some(v) => match v.as_str() {
+      "sha256" => Ok("sha256"),
+      "sha384" => Ok("sha384"),
+      "sha512" => Ok("sha512"),
+      other => Err(format!(
+        "{}(): hash must be \"sha256\", \"sha384\", or \"sha512\", got \"{}\"",
+        ctx.name, other
+      )),
+    },
+  }
+}
+
 fn rsa_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::RsaPrivateKey;
   use rsa::pkcs8::DecodePrivateKey;
   use rsa::pss::SigningKey;
 
-  enforce_arg_count!(ctx, 2);
+  enforce_arg_range!(ctx, 2, 3);
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
+  let hash = rsa_hash_arg(ctx, 2)?;
 
   let priv_key = RsaPrivateKey::from_pkcs8_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid private key", e))?;
   let message = ctx.args[1].as_bytes();
 
-  let signing_key = SigningKey::<Sha256>::new(priv_key);
-  let sig = signing_key.sign_with_rng(&mut OsRng, &message);
+  let sig = match hash {
+    "sha384" => SigningKey::<Sha384>::new(priv_key).sign_with_rng(&mut OsRng, &message),
+    "sha512" => SigningKey::<Sha512>::new(priv_key).sign_with_rng(&mut OsRng, &message),
+    _ => SigningKey::<Sha256>::new(priv_key).sign_with_rng(&mut OsRng, &message),
+  };
   Ok(ctx.heap().alloc_bytes(sig.to_vec()))
 }
 
@@ -578,22 +648,138 @@ fn rsa_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::pkcs8::DecodePublicKey;
   use rsa::pss::{Signature as PssSignature, VerifyingKey};
 
-  enforce_arg_count!(ctx, 3);
+  enforce_arg_range!(ctx, 3, 4);
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
   enforce_arg_type!(ctx, 2, ArgType::Bytes);
+  let hash = rsa_hash_arg(ctx, 3)?;
 
   let pub_key = RsaPublicKey::from_public_key_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid public key", e))?;
   let message = ctx.args[1].as_bytes();
   let sig_bytes = ctx.args[2].as_bytes();
 
-  let verifying_key = VerifyingKey::<Sha256>::new(pub_key);
   let ok = match PssSignature::try_from(sig_bytes.as_slice()) {
-    Ok(sig) => RsaVerifierTrait::verify(&verifying_key, &message, &sig).is_ok(),
+    Ok(sig) => match hash {
+      "sha384" => {
+        RsaVerifierTrait::verify(&VerifyingKey::<Sha384>::new(pub_key), &message, &sig).is_ok()
+      },
+      "sha512" => {
+        RsaVerifierTrait::verify(&VerifyingKey::<Sha512>::new(pub_key), &message, &sig).is_ok()
+      },
+      _ => RsaVerifierTrait::verify(&VerifyingKey::<Sha256>::new(pub_key), &message, &sig).is_ok(),
+    },
     Err(_) => false,
   };
   Ok(Value::bool(ok))
+}
+
+// JWK -> PEM conversion; backs jwt.zu's JWKS/`kid` key resolution. Each
+// function takes the JWK's own raw component bytes (already base64url-
+// decoded on the Zuri side, since this module otherwise deals in bytes,
+// not JWK's base64url-text fields) and builds a real key object via the
+// same crates used everywhere else in this file, so the resulting PEM
+// round-trips through `rsa_verify`/`ecdsa_verify`/`ed25519_verify`
+// exactly like a key generated by `rsa.generate()`/`ecdsa.generate()`.
+
+fn rsa_public_key_from_jwk_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  use rsa::BigUint;
+  use rsa::pkcs8::EncodePublicKey;
+
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 0, ArgType::Bytes);
+  enforce_arg_type!(ctx, 1, ArgType::Bytes);
+
+  let n = BigUint::from_bytes_be(&ctx.args[0].as_bytes());
+  let e = BigUint::from_bytes_be(&ctx.args[1].as_bytes());
+
+  let pub_key = rsa::RsaPublicKey::new(n, e).map_err(|e| crypto_err("invalid RSA JWK", e))?;
+  let pem = pub_key
+    .to_public_key_pem(LineEnding::LF)
+    .map_err(|e| crypto_err("could not encode public key", e))?;
+  Ok(ctx.heap().alloc_string(pem))
+}
+
+fn ec_public_key_from_jwk_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 3);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+  enforce_arg_type!(ctx, 1, ArgType::Bytes);
+  enforce_arg_type!(ctx, 2, ArgType::Bytes);
+
+  let curve = ctx.args[0].as_str();
+  let x = ctx.args[1].as_bytes();
+  let y = ctx.args[2].as_bytes();
+
+  let pem = match curve {
+    "P-256" => {
+      use p256::EncodedPoint;
+      use p256::FieldBytes;
+      use p256::elliptic_curve::sec1::FromEncodedPoint;
+      use p256::pkcs8::EncodePublicKey;
+
+      if x.len() != 32 || y.len() != 32 {
+        return Err("ec_public_key_from_jwk(): P-256 x/y must each be 32 bytes".to_string());
+      }
+      let point = EncodedPoint::from_affine_coordinates(
+        FieldBytes::from_slice(&x),
+        FieldBytes::from_slice(&y),
+        false,
+      );
+      let pub_key = Option::<p256::PublicKey>::from(p256::PublicKey::from_encoded_point(&point))
+        .ok_or_else(|| "ec_public_key_from_jwk(): invalid P-256 point".to_string())?;
+      pub_key
+        .to_public_key_pem(LineEnding::LF)
+        .map_err(|e| crypto_err("could not encode public key", e))?
+    },
+    "P-384" => {
+      use p384::EncodedPoint;
+      use p384::FieldBytes;
+      use p384::elliptic_curve::sec1::FromEncodedPoint;
+      use p384::pkcs8::EncodePublicKey;
+
+      if x.len() != 48 || y.len() != 48 {
+        return Err("ec_public_key_from_jwk(): P-384 x/y must each be 48 bytes".to_string());
+      }
+      let point = EncodedPoint::from_affine_coordinates(
+        FieldBytes::from_slice(&x),
+        FieldBytes::from_slice(&y),
+        false,
+      );
+      let pub_key = Option::<p384::PublicKey>::from(p384::PublicKey::from_encoded_point(&point))
+        .ok_or_else(|| "ec_public_key_from_jwk(): invalid P-384 point".to_string())?;
+      pub_key
+        .to_public_key_pem(LineEnding::LF)
+        .map_err(|e| crypto_err("could not encode public key", e))?
+    },
+    other => {
+      return Err(format!(
+        "ec_public_key_from_jwk(): curve must be \"P-256\" or \"P-384\", got \"{}\"",
+        other
+      ));
+    },
+  };
+
+  Ok(ctx.heap().alloc_string(pem))
+}
+
+fn ed25519_public_key_from_jwk_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  use ed25519_dalek::VerifyingKey;
+
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::Bytes);
+
+  let x = ctx.args[0].as_bytes();
+  let x: [u8; 32] = x
+    .as_slice()
+    .try_into()
+    .map_err(|_| "ed25519_public_key_from_jwk(): x must be exactly 32 bytes".to_string())?;
+
+  let verifying_key =
+    VerifyingKey::from_bytes(&x).map_err(|e| crypto_err("invalid Ed25519 JWK", e))?;
+  let pem = verifying_key
+    .to_public_key_pem(LineEnding::LF)
+    .map_err(|e| crypto_err("could not encode public key", e))?;
+  Ok(ctx.heap().alloc_string(pem))
 }
 
 // ECDSA (P-256 / P-384)

@@ -1,0 +1,101 @@
+/**
+ * @module jwt.verifier
+ *
+ * `Verifier`, a reusable configured wrapper around `core.verify()`.
+ */
+
+import .core { verify, decode }
+import .codec { * }
+import .errors { JwtError }
+
+/**
+ * A reusable token verifier that holds a fixed secret and set of
+ * options.
+ *
+ * Using a Verifier instance is the recommended approach for
+ * applications that verify many tokens with the same
+ * configuration, as it avoids passing options on every call and
+ * makes the intent of the verification parameters explicit and
+ * auditable.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * var verifier = jwt.Verifier('my-secret', {
+ *   algorithms: [jwt.HS256],
+ *   issuer: 'auth.example.com',
+ *   audience: 'api.example.com',
+ *   clock_tolerance: 10,
+ * })
+ *
+ * # In a request handler:
+ * var payload = verifier.verify(req.headers['Authorization'].ltrim('Bearer '))
+ * echo payload['role']
+ * ```
+ */
+class Verifier {
+
+  var _secret  = ''
+  var _options = {}
+
+  /**
+   * @param string secret The secret or PEM public key used for
+   *    verification.
+   * @param dict options Verification options (see verify() for
+   *    reference).
+   */
+  @new(secret, options) {
+    options = options ? options : {}
+
+    if !_is_string(secret) and !options.get('allow_none', false) {
+      raise JwtError('Verifier secret must be a non-empty string')
+    }
+    self._secret  = secret
+    self._options = options
+  }
+
+  /**
+   * Verifies the given token string using the secret and options
+   * bound to this Verifier.
+   *
+   * Additional options passed here are merged with the instance
+   * options, with per-call options taking precedence. This
+   * allows overriding individual parameters (such as audience)
+   * on a per-request basis without constructing a new Verifier.
+   *
+   * @param string token
+   * @param dict options Optional per-call option overrides.
+   * @return dict|Token
+   * @throws MalformedTokenError
+   * @throws AlgorithmError
+   * @throws SignatureError
+   * @throws TokenExpiredError
+   * @throws ClaimError
+   */
+  verify(token, options) {
+    var merged = {}
+    for k, v in self._options {
+      merged[k] = v
+    }
+    if options {
+      for k, v in options {
+        merged[k] = v
+      }
+    }
+    return verify(token, self._secret, merged)
+  }
+
+  /**
+   * Decodes the given token without verification. Delegates to
+   * decode().
+   *
+   * @param string token
+   * @return Token
+   * @throws MalformedTokenError
+   */
+  decode(token) {
+    return decode(token)
+  }
+}

@@ -1,0 +1,259 @@
+/**
+ * @module log
+ *
+ * This module implements a simple and flexible event logging
+ * system for all Zuri applications and modules. With support for
+ * multiple transport systems as well as custom transports, this
+ * module allows easy application logging and log shipping.
+ *
+ * The module selects defaults that is familiar for most end
+ * use-cases in order to allow for a minimal need for
+ * configurations so that you can start logging right out of the
+ * box.
+ *
+ * Below is a very simple but powerful and complete usage of this
+ * module:
+ *
+ * ```zuri-repl
+ * %> import log
+ * %> log.info('Starting my application...')
+ * '2025-03-07T08:00:33+01:00 INFO [.]: Starting my application...'
+ * ```
+ *
+ * > **IMPORTANT!**
+ * >
+ * > Did you notice that `[.]`? That's because we are running in
+ * > a REPL. By default, the `log` module provides information
+ * > regarding the source of the log i.e. the application from
+ * > which the log came from thereby allowing multiple
+ * > applications log into the same transport pool without
+ * > ambiguity.
+ * >
+ * > You can customize this name by setting the name on the
+ * > transport via [[log.Transport.set_name]].
+ *
+ * This module provides all functionalities at the module level,
+ * allowing configurations to be carried across all files and
+ * modules in the lifetime of an application.
+ *
+ * While allowing creation of custom transports for logs, the
+ * module provides transports for logging to the console
+ * ([[log.ConsoleTransport]]) and files ([[log.FileTransport]])
+ * out of the box. This covers the most simple use-cases for most
+ * applications.
+ *
+ * The default transport enabled is the [[log.ConsoleTransport]]
+ * known as the [[log.default_transport()]] and need no extra
+ * work to enable unless you have previously disabled it. The
+ * example below shows how to enable the file transport to log to
+ * a file on disk.
+ *
+ * ```zuri
+ * import log
+ *
+ * var transport = log.FileTransport('mylog.log')
+ * log.add_transport(transport)
+ *
+ * log.info('Finished setting up file log...')
+ * ```
+ *
+ * If you check the file `mylog.log` now, you should see
+ * something like this:
+ *
+ * ```sh
+ * 2025-03-01T12:00:00+01:00 INFO [tmp]: Finished setting up file log...
+ * ```
+ *
+ * In addition to the log appearing on the console, you can now
+ * see the log in a persistent file. There are many ways to turn
+ * off the console output and log to file alone.
+ *
+ * Firstly, you can simple disable the default transport.
+ *
+ * ```zuri
+ * log.default_transport().disable()
+ * ```
+ *
+ * The advantage to this approach is that while it disables the
+ * default transport, the transport is still registered and you
+ * can simple enable it at any time during the lifetime of the
+ * application by doing the reverse:
+ *
+ * ```zuri
+ * log.default_transport().enable()
+ * ```
+ *
+ * The same strategy applies to all transports as the `enable()`
+ * and `disable()` method will be inherited from the
+ * [[log.Transport]] class.
+ *
+ * The second approach is to completely remove the transport from
+ * the list of registered transports.
+ *
+ * ```zuri
+ * log.remove_transport(log.default_transport())
+ * ```
+ *
+ * With this second approach, you'll need to register the
+ * transport again should you want to continue logging to the
+ * console. The same applies to all transport types.
+ *
+ * For more complex uses, the process of creating a custom
+ * transport is really simple. To create a custom transport,
+ * you'll need to create a class that inherits from
+ * [[log.Transport]] and implement the `write()` method at a
+ * minimum.
+ *
+ * The example below shows the creation of a custom transport
+ * that outputs structured JSON data to the console.
+ *
+ * ```zuri
+ * # my_custom_transport.zu
+ *
+ * import log { Transport }
+ * import json
+ * import enum
+ *
+ * class JsonConsoleTransport < Transport {
+ *   format(records, level, context) {
+ *     return {
+ *       records,
+ *       level,
+ *     }
+ *   }
+ *
+ *   write(message, level) {
+ *     echo json.encode({
+ *       logtime: time(),
+ *       records: message.records,
+ *       name: self.get_name(),
+ *       level: enum.to_value_dict(log.LogLevel)[message.level]
+ *     })
+ *   }
+ * }
+ * ```
+ *
+ * ```zuri
+ * import log
+ * import .my_custom_transport { JsonConsoleTransport }
+ *
+ * log.add_transport(JsonConsoleTransport())
+ *
+ * log.info('Finished setting up json console log transport...')
+ * ```
+ *
+ * You should be seeing something similar to the below if you run
+ * the code:
+ *
+ * ```sh
+ * {"logtime":1741376459,"records":["Finished setting up json console log transport..."],"name":"tmp","level":"Info"}
+ * ```
+ *
+ * You can set multiple transports at the same time as well as
+ * set them to only work at different log levels. Every transport
+ * inherits the method [[log.Transport.set_level]] which allows
+ * us set the minimum level at which a transport is available.
+ *
+ * There is also a global [[log.set_level]] function that allows
+ * us to set the minimum log level at which all transports can
+ * start logging.
+ *
+ * ```zuri
+ * import log
+ *
+ * log.set_level(log.Warning)
+ *
+ * log.info('Finished setting up json console log transport...')
+ * ```
+ *
+ * If you try the above code, you won't be seeing anything in the
+ * console. This is because level [[log.Info]] is lower than the
+ * minium required [[log.Warning]].
+ *
+ * While every `Transport` implements the `format()` method,
+ * users can override the format method by providing a format
+ * function via the [[log.Transport.set_formatter]] method. This
+ * allows using the same formatter across different transports.
+ *
+ * For example, in the previous example, if we had wanted to
+ * serialize all logging irrespective of the transport into the
+ * JSON format, a more appropriate solution would have been to
+ * create a log format function and reuse it in all transports
+ * instead of implementing a `JsonConsoleTransport`. The next
+ * example shows one such implementation.
+ *
+ * ```zuri
+ * import log
+ * import json
+ * import date
+ *
+ * def json_format(records, level, transport) {
+ *   return json.encode({
+ *     time: date().format(transport.get_time_format()),
+ *     level: log.get_level_name(level),
+ *     name: transport.get_name(),
+ *     records,
+ *   })
+ * }
+ *
+ * var file_transport = log.FileTransport('mylog.log')
+ * log.add_transport(file_transport)
+ *
+ * log.default_transport().set_formatter(json_format)
+ * file_transport.set_formatter(json_format)
+ *
+ * log.debug('This is a debug information')
+ * ```
+ *
+ * Transport implementations should take note of this critical
+ * information.
+ *
+ * > **IMPORTANT!**
+ * >
+ * > Because the `log` module exports the a function, if you are
+ * > not interested in all the shenanigans of logging level and
+ * > simply want to do some quick logging, you can ignore the
+ * > whole logging levels altogether and log at level
+ * > [[log.None]] by simply calling the log module itself.
+ * >
+ * > ```zuri
+ * > import log
+ * >
+ * > log('An anonymous log!')
+ * > ```
+ * >
+ * > This bypasses every level filter (including the global
+ * > [[log.set_level]] threshold) on every enabled transport;
+ * > only [[log.Transport.disable]] can still silence it.
+ *
+ * ## Structured and namespaced logging
+ *
+ * A trailing dict argument on any log call is treated as
+ * structured fields rather than a plain message, rendered as
+ * `key=value` pairs after the message:
+ *
+ * ```zuri
+ * log.info('user signed in', { user_id: 42 })
+ * # ... INFO [.]: user signed in user_id=42
+ * ```
+ *
+ * For a whole subsystem that should tag every one of its own log
+ * lines with a name (and, optionally, a fixed set of fields),
+ * use [[log.get_logger]] instead of the flat module-level
+ * functions:
+ *
+ * ```zuri
+ * var db_log = log.get_logger('db').bind({ pool: 'primary' })
+ * db_log.warn('slow query', { duration_ms: 850 })
+ * # ... WARNING [db]: slow query pool=primary duration_ms=850
+ * ```
+ *
+ * @copyright 2025, Richard Ore and The Zuri Contributors
+ */
+
+import @.level { * }
+import @.transport { * }
+import @.console { * }
+import @.file { * }
+import @.dispatch { * }
+import @.logger { * }

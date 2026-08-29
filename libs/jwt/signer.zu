@@ -1,0 +1,78 @@
+/**
+ * @module jwt.signer
+ *
+ * `Signer`, a reusable configured wrapper around `core.sign()`.
+ */
+
+import .core { sign }
+import .codec { * }
+import .errors { JwtError }
+
+/**
+ * A reusable token signer that holds a fixed secret and set of
+ * default signing options.
+ *
+ * Using a Signer instance is recommended when the same signing
+ * configuration is used throughout an application. Default
+ * options can be overridden on individual sign() calls.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import jwt
+ *
+ * var signer = jwt.Signer('my-secret', {
+ *   algorithm: jwt.HS256,
+ *   expires_in: 900,
+ *   issuer: 'auth.example.com',
+ *   audience: 'api.example.com',
+ * })
+ *
+ * var token = signer.sign({ user_id: 7, role: 'admin' })
+ * ```
+ */
+class Signer {
+
+  var _secret  = ''
+  var _options = {}
+
+  /**
+   * @param string secret The secret or PEM private key used for
+   *    signing.
+   * @param dict options Default signing options (see sign() for
+   *    reference).
+   */
+  @new(secret, options) {
+    options = options ? options : {}
+
+    if !_is_string(secret) and !options.get('allow_none', false) {
+      raise JwtError('Signer secret must be a non-empty string')
+    }
+    self._secret  = secret
+    self._options = options
+  }
+
+  /**
+   * Signs the given payload using the secret and default options
+   * bound to this Signer, returning a token string.
+   *
+   * Options passed here are merged with the instance defaults,
+   * with per-call options taking precedence.
+   *
+   * @param dict payload
+   * @param dict options Optional per-call option overrides.
+   * @return string
+   * @throws AlgorithmError
+   * @throws JwtError
+   */
+  sign(payload, options) {
+    var merged = {}
+    for k, v in self._options { merged[k] = v }
+    if options {
+      for k, v in options {
+        merged[k] = v
+      }
+    }
+    return sign(payload, self._secret, merged)
+  }
+}

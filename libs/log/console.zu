@@ -1,0 +1,75 @@
+/**
+ * @module log.console
+ *
+ * `ConsoleTransport` — the default transport, printing to stdout
+ * (or stderr for Error/Critical) with optional ANSI coloring by
+ * level.
+ */
+
+import .transport { Transport }
+import .level { * }
+
+import os
+import io
+import colors
+
+
+/**
+ * ConsoleTransport is a log transport that facilitates sending
+ * log streams to the console.
+ */
+class ConsoleTransport < Transport {
+
+  # Whether write() colors the message by level. Defaults to
+  # respecting the NO_COLOR convention (https://no-color.org) --
+  # evaluated per-instance from an environment read at construction
+  # time, the same pattern `Transport._log_name`'s own field default
+  # already uses.
+  var _use_colors = !os.get_env('NO_COLOR', nil)
+
+  /**
+   * Enables or disables ANSI coloring of messages by level.
+   * Enabled by default unless the `NO_COLOR` environment variable
+   * is set.
+   *
+   * @param bool enabled
+   * @returns self
+   */
+  set_colors(enabled: bool) {
+    self._use_colors = enabled
+    return self
+  }
+
+  _color_for(level) {
+    using level {
+      when LogLevel.Debug return colors.text_color.dark_grey
+      when LogLevel.Info return colors.text_color.cyan
+      when LogLevel.Warning return colors.text_color.orange
+      when LogLevel.Error return colors.text_color.red
+      when LogLevel.Critical return colors.text_color.light_red
+      default return nil
+    }
+  }
+
+  write(message, level) {
+    if self._use_colors {
+      var color = self._color_for(level)
+      if color != nil {
+        message = level == LogLevel.Critical ?
+          colors.text(colors.text(message, colors.style.bold), color) :
+          colors.text(message, color)
+      }
+    }
+
+    if level >= LogLevel.Error {
+      io.stderr.write(message + '\n')
+    } else {
+      echo message
+    }
+  }
+
+  flush() {
+    io.flush(io.stdout)
+    io.flush(io.stderr)
+  }
+}

@@ -1,0 +1,66 @@
+/**
+ * @module log.dispatch
+ *
+ * The default transport instance and the module-level functions
+ * that configure it.
+ */
+
+import .console { ConsoleTransport }
+import .transport { * }
+import .level { * }
+
+import enum
+
+
+# This is the default transport that will be added to a transport.
+# we have it here as a module variable so we can use it to remove
+# the transport should the user decide to (if they prefer not to)
+# simply disable it.
+var _default_transport = ConsoleTransport()
+
+add_transport(_default_transport)
+
+
+/**
+ * Sets the threshold level for the default transport to handle.
+ *
+ * @param {log.LogLevel} level
+ * @returns default_transport
+ */
+def set_level(level) {
+  if !is_number(level) {
+    raise ValueError('invalid log level')
+  }
+
+  _set_default_level(enum.ensure(LogLevel, level))
+  _default_transport.set_level(_get_default_level())
+
+  return _default_transport
+}
+
+
+/**
+ * Sets the name of the default transport.
+ *
+ * @param string name
+ * @returns default_transport
+ */
+def set_name(name) {
+  if !is_string(name) {
+    raise TypeError('string expected, ${typeof(name)} given')
+  }
+
+  _default_transport.set_name(name)
+  return _default_transport
+}
+
+
+/**
+ * Returns the instance [[log.ConsoleTransport]] which is used as
+ * the default transport by the module.
+ *
+ * @returns [[log.ConsoleTransport]]
+ */
+def default_transport() {
+  return _default_transport
+}

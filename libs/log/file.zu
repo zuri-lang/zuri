@@ -1,0 +1,138 @@
+/**
+ * @module log.file
+ *
+ * `FileTransport` — sends log streams to a file on disk, with
+ * optional size-based rotation.
+ */
+
+import .transport { Transport }
+
+import os
+
+
+/**
+ * FileTransport is a log transport that facilitates sending log
+ * streams to an on-disk file.
+ */
+class FileTransport < Transport {
+
+  # Rotation disabled by default -- existing users see no behavior
+  # change unless they opt in via set_max_bytes().
+  var _max_bytes = nil
+  var _backup_count = 5
+
+  # Field slots are fixed at class-declaration time, so both of these
+  # need a real declaration even though they're only ever assigned
+  # from _init() -- an implicit `self.x = ...` only declares a new
+  # field when it's written directly inside @new()'s own body, not a
+  # helper method @new() calls.
+  var _path = ''
+  var file
+
+  /**
+   * Returns a new instance of FileTransport and opens a file
+   * handle to the the file specified in the path.
+   *
+   * @param string path
+   * @constructor
+   */
+  @new(path: string) {
+    self._init(path)
+  }
+
+  _init(path) {
+    # For error recovery...
+    self._path = path
+
+    # Create the parent log directory if it does not exist.
+    var dir_name = os.dir_name(path)
+    if !os.dir_exists(dir_name) {
+      os.create_dir(dir_name, 0c777, true)
+    }
+
+    self.file = file(path, 'a')
+  }
+
+  /**
+   * Sets the size, in bytes, past which the log file is rotated to
+   * `<path>.1` (shifting any existing numbered backups up by one)
+   * and a fresh file is opened at `path`. Rotation is disabled
+   * (`nil`) by default.
+   *
+   * @param ?number n
+   * @returns self
+   */
+  set_max_bytes(n: ?number) {
+    self._max_bytes = n
+    return self
+  }
+
+  /**
+   * Sets how many rotated backups (`<path>.1` through
+   * `<path>.<n>`) are kept. The oldest backup beyond this count is
+   * deleted on the next rotation. Default: 5.
+   *
+   * @param number n
+   * @returns self
+   */
+  set_backup_count(n: number) {
+    self._backup_count = n
+    return self
+  }
+
+  write(message, level) {
+    catch {
+      self.file.write('${message}\n')
+    } as error
+    if error {
+      self._init(self._path)
+      self.file.write('${message}\n')
+    }
+
+    self._maybe_rotate()
+  }
+
+  # Rotates the log file once it crosses _max_bytes, following the
+  # same scheme Python's RotatingFileHandler uses: the oldest backup
+  # is dropped, every remaining backup shifts up by one, and the file
+  # that was just being written to becomes the new `.1`.
+  _maybe_rotate() {
+    if !self._max_bytes {
+      return
+    }
+    if self.file.stats()['size'] < self._max_bytes {
+      return
+    }
+
+    self.file.close()
+
+    if self._backup_count > 0 {
+      var oldest = file('${self._path}.${self._backup_count}')
+      if oldest.exists() {
+        oldest.delete()
+      }
+
+      iter var i = self._backup_count - 1; i >= 1; i-- {
+        var src = file('${self._path}.${i}')
+        if src.exists() {
+          src.rename('${self._path}.${i + 1}')
+        }
+      }
+
+      file(self._path).rename('${self._path}.1')
+    } else {
+      file(self._path).delete()
+    }
+
+    self.file = file(self._path, 'a')
+  }
+
+  flush() {
+    self.file.flush()
+  }
+
+  close() {
+    parent.close()
+    self.file.close()
+  }
+}

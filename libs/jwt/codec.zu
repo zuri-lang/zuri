@@ -1,0 +1,280 @@
+/**
+ * @module jwt.codec
+ *
+ * Algorithm identifiers and the low-level encoding helpers `core.zu`
+ * builds `encode()`/`verify()` out of: base64url, HMAC dispatch, a
+ * constant-time comparison, and the DER <-> raw-`R‖S` conversion
+ * ECDSA signatures need to become JOSE-shaped.
+ */
+
+import .errors { JwtError, MalformedTokenError }
+
+import hash
+import base64
+
+
+# ---------------------------------------------------------------------------
+# Algorithm identifiers
+# ---------------------------------------------------------------------------
+
+/**
+ * HMAC-SHA256 signing algorithm identifier.
+ */
+var HS256 = 'HS256'
+
+/**
+ * HMAC-SHA384 signing algorithm identifier.
+ */
+var HS384 = 'HS384'
+
+/**
+ * HMAC-SHA512 signing algorithm identifier.
+ */
+var HS512 = 'HS512'
+
+/**
+ * RSA-PSS-SHA256 signing algorithm identifier.
+ *
+ * This is deliberately `PS256`, not `RS256`: this module's RSA
+ * backing (`crypto.rsa`) is RSASSA-PSS, not RSASSA-PKCS1-v1_5, and
+ * `PS256`/`PS384`/`PS512` are the JOSE-registered names (RFC 7518
+ * §3.5) for exactly that scheme.
+ */
+var PS256 = 'PS256'
+
+/**
+ * RSA-PSS-SHA384 signing algorithm identifier.
+ */
+var PS384 = 'PS384'
+
+/**
+ * RSA-PSS-SHA512 signing algorithm identifier.
+ */
+var PS512 = 'PS512'
+
+/**
+ * ECDSA P-256 with SHA-256 signing algorithm identifier.
+ */
+var ES256 = 'ES256'
+
+/**
+ * ECDSA P-384 with SHA-384 signing algorithm identifier.
+ */
+var ES384 = 'ES384'
+
+/**
+ * Ed25519 (EdDSA, RFC 8037) signing algorithm identifier.
+ */
+var EDDSA = 'EdDSA'
+
+/**
+ * Unsecured algorithm identifier. Tokens signed with this
+ * algorithm carry no signature and must never be used to protect
+ * sensitive resources. Passing this value to sign() requires
+ * setting allow_none: true in options or an error will be
+ * raised.
+ */
+var NONE = 'none'
+
+
+# ---------------------------------------------------------------------------
+# base64url
+# ---------------------------------------------------------------------------
+
+/**
+ * Encodes bytes or a string to URL-safe base64 with no padding
+ * characters.
+ */
+def _b64_encode(data) {
+  if is_string(data)
+    data = data.to_bytes()
+
+  var encoded = base64.encode(data)
+  # URL-safe alphabet and strip padding
+  encoded = encoded.replace('+', '-').replace('/', '_')
+  while encoded.ends_with('=') {
+    encoded = encoded[0, encoded.length() - 1]
+  }
+  return encoded
+}
+
+# Restores standard base64 alphabet and padding from a base64url string.
+def _b64_pad(data: string) {
+  var s = data.replace('-', '+').replace('_', '/')
+  var pad = s.length() % 4
+  if pad == 2 { s += '==' }
+  else if pad == 3 { s += '=' }
+  return s
+}
+
+/**
+ * Decodes a URL-safe base64 string as UTF-8 text. Use this for the
+ * header/payload segments, which are always JSON text.
+ */
+def _b64_decode(data: string) {
+  return base64.decode(_b64_pad(data)).to_string()
+}
+
+/**
+ * Decodes a URL-safe base64 string to raw bytes, with no UTF-8
+ * interpretation. Use this for the signature segment, which is
+ * arbitrary binary and would be corrupted by `.to_string()`.
+ */
+def _b64_decode_bytes(data: string) {
+  return base64.decode(_b64_pad(data))
+}
+
+# Returns true when the given value is a non-empty string.
+def _is_string(v) {
+  return is_string(v) and v.length() > 0
+}
+
+
+# ---------------------------------------------------------------------------
+# HMAC
+# ---------------------------------------------------------------------------
+
+# Selects the correct HMAC function for the given algorithm string.
+# Always returns a function that, given (secret, signing_input), yields
+# the raw MAC bytes -- callers never need to remember the `as_bytes`
+# argument themselves.
+def _hmac_fn(alg) {
+  if alg == HS256 return @(key, str) => hash.hmac_sha256(key, str, true)
+  if alg == HS384 return @(key, str) => hash.hmac_sha384(key, str, true)
+  if alg == HS512 return @(key, str) => hash.hmac_sha512(key, str, true)
+  raise JwtError('unsupported HMAC algorithm: ' + alg)
+}
+
+# Performs a constant-time string comparison to prevent timing attacks.
+def _safe_equals(a: string, b: string) {
+  if a.length() != b.length() {
+    return false
+  }
+
+  var result = 0
+  iter var i = 0; i < a.length(); i++ {
+    result = result | (a[i].ord() ^ b[i].ord())
+  }
+
+  return result == 0
+}
+
+
+# ---------------------------------------------------------------------------
+# ECDSA DER <-> raw R‖S
+# ---------------------------------------------------------------------------
+#
+# `crypto.ecdsa` speaks DER (`SEQUENCE { INTEGER r, INTEGER s }`), the
+# format every general-purpose ECDSA library defaults to. JOSE's
+# ES256/ES384 instead require the raw, fixed-length concatenation of r
+# and s (RFC 7518 §3.4) -- 64 bytes for P-256, 96 for P-384. Both
+# curves' DER signatures are always well under 128 bytes, so parsing
+# only ever needs to handle DER's short-form length encoding; a
+# genuine P-256/P-384 signature can never hit the long-form case,
+# which is rejected below with a clear error rather than silently
+# mishandled.
+
+def _strip_leading_zeros(b: bytes) {
+  var i = 0
+  while i < b.length() - 1 and b[i] == 0 {
+    i += 1
+  }
+  return b[i,]
+}
+
+def _left_pad(b: bytes, size: number) {
+  if b.length() >= size {
+    return b[b.length() - size,]
+  }
+  var padded = bytes(size - b.length())
+  padded.extend(b)
+  return padded
+}
+
+# Encodes one ECDSA integer component (r or s) as a minimal,
+# non-negative DER INTEGER body -- strips redundant leading zero
+# bytes, then re-adds exactly one if the high bit of the first
+# remaining byte is set (otherwise it would read as a negative
+# number in DER's two's-complement convention).
+def _to_der_integer(component: bytes) {
+  var trimmed = _strip_leading_zeros(component)
+  if trimmed[0] & 0x80 != 0 {
+    var padded = bytes(1)
+    padded.extend(trimmed)
+    return padded
+  }
+  return trimmed
+}
+
+/**
+ * Converts a DER-encoded ECDSA signature (what `crypto.ecdsa.sign()`
+ * returns) into the raw, fixed-length `R‖S` concatenation JOSE
+ * requires.
+ *
+ * @param bytes der
+ * @param number coord_len 32 for P-256 (ES256), 48 for P-384 (ES384).
+ * @return bytes Exactly `coord_len * 2` bytes.
+ * @throws MalformedTokenError
+ */
+def _der_to_raw_ec(der: bytes, coord_len: number) {
+  if der.length() < 8 or der[0] != 0x30 {
+    raise MalformedTokenError('invalid ECDSA signature: not a DER sequence')
+  }
+
+  if der[1] >= 0x80 {
+    raise MalformedTokenError('invalid ECDSA signature: unsupported long-form DER length')
+  }
+
+  var offset = 2
+
+  if der[offset] != 0x02 {
+    raise MalformedTokenError('invalid ECDSA signature: expected INTEGER r')
+  }
+  var r_len = der[offset + 1]
+  var r_bytes = der[offset + 2, offset + 2 + r_len]
+  offset += 2 + r_len
+
+  if der[offset] != 0x02 {
+    raise MalformedTokenError('invalid ECDSA signature: expected INTEGER s')
+  }
+  var s_len = der[offset + 1]
+  var s_bytes = der[offset + 2, offset + 2 + s_len]
+
+  var raw = _left_pad(_strip_leading_zeros(r_bytes), coord_len)
+  raw.extend(_left_pad(_strip_leading_zeros(s_bytes), coord_len))
+  return raw
+}
+
+/**
+ * Converts a raw, fixed-length `R‖S` ECDSA signature (JOSE's format)
+ * into the DER encoding `crypto.ecdsa.verify()` expects.
+ *
+ * @param bytes raw Exactly `coord_len * 2` bytes.
+ * @param number coord_len 32 for P-256 (ES256), 48 for P-384 (ES384).
+ * @return bytes DER-encoded `SEQUENCE { INTEGER r, INTEGER s }`.
+ * @throws MalformedTokenError
+ */
+def _raw_to_der_ec(raw: bytes, coord_len: number) {
+  if raw.length() != coord_len * 2 {
+    raise MalformedTokenError(
+      'invalid ECDSA signature: expected ${coord_len * 2} raw bytes, got ${raw.length()}'
+    )
+  }
+
+  var r = _to_der_integer(raw[0, coord_len])
+  var s = _to_der_integer(raw[coord_len, coord_len * 2])
+
+  var body = bytes(0)
+  body.append(0x02)
+  body.append(r.length())
+  body.extend(r)
+  body.append(0x02)
+  body.append(s.length())
+  body.extend(s)
+
+  var der = bytes(0)
+  der.append(0x30)
+  der.append(body.length())
+  der.extend(body)
+  return der
+}

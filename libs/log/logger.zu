@@ -1,0 +1,244 @@
+/**
+ * @module log.logger
+ *
+ * The flat, module-level logging functions (`log()`, `info()`,
+ * `debug()`, `warn()`, `error()`, `critical()`, `exception()`), and
+ * `Logger` — namespaced, structured-field-bound loggers built on top
+ * of the exact same dispatch path.
+ */
+
+import .transport { * }
+import .level { * }
+
+
+/**
+ * Logs a message with level [[log.None]] on all registered
+ * transports.
+ *
+ * The format of the output log is dependent on the specific
+ * transport service as well as limitations on the nature and
+ * type of arguments that is passed to the function.
+ *
+ * @params any...
+ * @default
+ */
+def log(...args) {
+  _write(LogLevel.None, args, nil)
+}
+
+/**
+ * Logs a message with level [[log.Info]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
+ * @params any...
+ */
+def info(...args) {
+  _write(LogLevel.Info, args, nil)
+}
+
+/**
+ * Logs a message with level [[log.Debug]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
+ * @params any...
+ */
+def debug(...args) {
+  _write(LogLevel.Debug, args, nil)
+}
+
+/**
+ * Logs a message with level [[log.Warning]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
+ * @params any...
+ */
+def warn(...args) {
+  _write(LogLevel.Warning, args, nil)
+}
+
+/**
+ * Logs a message with level [[log.Error]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
+ * @params any...
+ */
+def error(...args) {
+  _write(LogLevel.Error, args, nil)
+}
+
+/**
+ * Logs a message with level [[log.Critical]] on all registered
+ * transports. The arguments and limitations as same as in
+ * [[log.log()]].
+ *
+ * @params any...
+ */
+def critical(...args) {
+  _write(LogLevel.Critical, args, nil)
+}
+
+# Returns true when ex genuinely looks like an Error instance --
+# checked structurally (is_instance() plus the two fields every real
+# Error subclass has) rather than via instance_of(ex, Error), since
+# nothing in this module can reference the real builtin Error class
+# by name: LogLevel.Error is exported at module scope under the same
+# bare identifier, and Zuri has no way to reach a shadowed global from
+# within the module that shadows it -- confirmed to affect even
+# `param: Type` annotations, not just plain expressions.
+def _looks_like_error(ex) {
+  return is_instance(ex) and hasprop(ex, 'message') and hasprop(ex, 'stacktrace')
+}
+
+/**
+ * Logs an exception with level [[log.Error]] on all registered
+ * transports, including its message and stacktrace.
+ *
+ * @param any ex Expected to be an Error instance (from a `catch`
+ *    block); anything else is logged via its string form instead.
+ * @param ?any message Optional additional context to log alongside
+ *    the exception.
+ */
+def exception(ex, message) {
+  if _looks_like_error(ex) {
+    if message {
+      _write(LogLevel.Error, [
+        '${message}\n',
+        'Unhandled ${typeof(ex)}: ${ex.message}',
+        '\n${ex.stacktrace}',
+      ], nil)
+    } else {
+      _write(LogLevel.Error, [
+        'Unhandled ${typeof(ex)}: ${ex.message}',
+        '\n${ex.stacktrace}'
+      ], nil)
+    }
+  } else if message {
+    _write(LogLevel.Error, [
+      'Unhandled ${typeof(ex)}: ${message}'
+    ], nil)
+  } else {
+    _write(LogLevel.Error, [ ex ], nil)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Logger — namespaced, structured-field-bound loggers
+# ---------------------------------------------------------------------------
+
+/**
+ * A namespaced logger that tags every record it writes with a name
+ * and, optionally, a set of bound structured fields. Get one via
+ * [[log.get_logger]] rather than constructing directly.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import log
+ *
+ * var db_log = log.get_logger('db')
+ * db_log.info('connection established')
+ * # ... [db]: connection established
+ *
+ * var pool_log = db_log.child('pool').bind({ pool_size: 10 })
+ * pool_log.warn('pool exhausted')
+ * # ... [db.pool]: pool exhausted pool_size=10
+ * ```
+ */
+class Logger {
+
+  var name = ''
+  var _fields = {}
+
+  @new(name: string, fields) {
+    self.name = name
+    self._fields = fields ? fields : {}
+  }
+
+  # Returns a new Logger with the given fields merged into this
+  # logger's own bound fields. Does not mutate self, so a Logger can
+  # be freely shared once bound.
+  bind(fields: dict) {
+    var merged = {}
+    for k, v in self._fields { merged[k] = v }
+    for k, v in fields { merged[k] = v }
+    return Logger(self.name, merged)
+  }
+
+  # Returns a new Logger namespaced under this one, e.g.
+  # get_logger('db').child('pool') has the name 'db.pool'. Inherits
+  # this logger's own bound fields.
+  child(sub_name: string) {
+    return Logger('${self.name}.${sub_name}', self._fields)
+  }
+
+  _context() {
+    return { name: self.name, fields: self._fields }
+  }
+
+  info(...args) {
+    _write(LogLevel.Info, args, self._context())
+  }
+
+  debug(...args) {
+    _write(LogLevel.Debug, args, self._context())
+  }
+
+  warn(...args) {
+    _write(LogLevel.Warning, args, self._context())
+  }
+
+  error(...args) {
+    _write(LogLevel.Error, args, self._context())
+  }
+
+  critical(...args) {
+    _write(LogLevel.Critical, args, self._context())
+  }
+
+  exception(ex, message) {
+    var context = self._context()
+
+    if _looks_like_error(ex) {
+      if message {
+        _write(LogLevel.Error, [
+          '${message}\n',
+          'Unhandled ${typeof(ex)}: ${ex.message}',
+          '\n${ex.stacktrace}',
+        ], context)
+      } else {
+        _write(LogLevel.Error, [
+          'Unhandled ${typeof(ex)}: ${ex.message}',
+          '\n${ex.stacktrace}'
+        ], context)
+      }
+    } else if message {
+      _write(LogLevel.Error, [ 'Unhandled ${typeof(ex)}: ${message}' ], context)
+    } else {
+      _write(LogLevel.Error, [ ex ], context)
+    }
+  }
+}
+
+var _loggers = {}
+
+/**
+ * Returns a [[log.Logger]] namespaced under the given name.
+ * Repeated calls with the same name return the same instance,
+ * matching Python's `logging.getLogger()` — so binding fields on a
+ * logger obtained one place is visible everywhere else that same
+ * name is requested.
+ *
+ * @param string name
+ * @returns [[log.Logger]]
+ */
+def get_logger(name: string) {
+  if !_loggers.contains(name) {
+    _loggers[name] = Logger(name, nil)
+  }
+  return _loggers[name]
+}

@@ -1,0 +1,466 @@
+/**
+ * @module log.transport
+ *
+ * The `Transport` base class every log sink (console, file, or a
+ * custom subclass) is built on, plus the registry of active
+ * transports and the shared dispatch loop every level function
+ * writes through. These live in the same file as `Transport` itself
+ * (rather than off in `dispatch.zu` alongside `default_transport()`)
+ * specifically so `Transport.close()` can remove itself from the
+ * registry without a cross-file call back into a file that in turn
+ * depends on this one — `console.zu`/`file.zu` need `Transport` from
+ * here, and `dispatch.zu` needs `ConsoleTransport` from `console.zu`,
+ * so a `Transport` depending on `dispatch.zu` for `remove_transport()`
+ * would be a genuine import cycle. Keeping the registry here instead
+ * keeps every dependency pointing one direction.
+ */
+
+import .level { * }
+
+import enum
+import os
+import date
+
+
+/**
+ * The Transport class acts as the base class for log transports
+ * and handle the actual logging of the specified log records.
+ */
+class Transport {
+  var _level = LogLevel.None
+
+  var _log_name = os.base_name(os.dir_name(__root__))
+
+  # hidden at one more level to avoid accidental overrides.
+  # should this be overridden, it should be deliberate.
+  var __enabled = true
+  var __time_format = 'c'
+  var __max_level = LogLevel.Critical
+  var __formatter
+
+  var _show_name = true
+  var _show_time = true
+  var _show_level = true
+
+  /**
+   * Sets the threshold level for this transport to handle.
+   * Logging messages which are less severe than level will be
+   * ignored. Unless overridden by the transport implementation,
+   * when a handler is created, the level is set to [[log.None]]
+   * (which causes all messages to be processed).
+   *
+   * @param {log.LogLevel} level
+   * @returns self
+   */
+  set_level(level) {
+    if !is_number(level) {
+      raise ValueError('invalid log level')
+    }
+
+    self._level = enum.ensure(LogLevel, level)
+    return self
+  }
+
+  /**
+   * The threshold level of this transport. The default level is
+   * [[log.LogLevel.None]].
+   *
+   * @returns [[log.LogLevel]]
+   */
+  get_level() {
+    return self._level
+  }
+
+  /**
+   * Sets the maximum threshold level for this transport to
+   * handle. Logging messages which are more severe than level
+   * will be ignored. Unless overridden by the transport
+   * implementation, when a handler is created, the maximum level
+   * is set to [[log.Critical]] (which causes all messages to be
+   * processed).
+   *
+   * @param {log.LogLevel} level
+   * @returns self
+   */
+  set_max_level(level) {
+    if !is_number(level) {
+      raise ValueError('invalid log level')
+    }
+
+    self.__max_level = enum.ensure(LogLevel, level)
+    return self
+  }
+
+  /**
+   * The maximum threshold level of this transport. The default
+   * maximum level is [[log.Critical]].
+   *
+   * @returns [[log.LogLevel]]
+   */
+  get_max_level() {
+    return self.__max_level
+  }
+
+  /**
+   * Sets the name of the current transport.
+   *
+   * @param string name
+   * @returns self
+   */
+  set_name(name) {
+    if !is_string(name) {
+      raise TypeError('string expected, ${typeof(name)} given')
+    }
+
+    self._log_name = name
+    return self
+  }
+
+  /**
+   * Returns the name of the current transport. By default, name
+   * will be equal to the name of the directory containing the
+   * root file.
+   *
+   * @returns string
+   */
+  get_name() {
+    return self._log_name
+  }
+
+  /**
+   * Sets the time formatting string used by the transport when
+   * [[log.Transport.show_time]] is set to true.
+   *
+   * @param string format
+   * @returns self
+   */
+  set_time_format(format) {
+    if !is_string(format) {
+      raise TypeError('string expected, ${typeof(format)} given')
+    }
+
+    self.__time_format = format
+    return self
+  }
+
+  /**
+   * Returns the time formatting string used by the current
+   * transport. The default value is `c`.
+   *
+   * @returns string
+   */
+  get_time_format() {
+    return self.__time_format
+  }
+
+  /**
+   * Enable or disable showing transport names in the logs based
+   * on the passed boolean value.
+   *
+   * @param bool show
+   * @returns self
+   */
+  show_name(show) {
+    if show == nil show = true
+
+    if !is_bool(show) {
+      raise TypeError('boolean expected, ${typeof(show)} given')
+    }
+
+    self._show_name = show
+    return self
+  }
+
+  /**
+   * Enables or disables showing logging time in the logs based
+   * on the passed boolean value.
+   *
+   * @param bool show
+   * @returns self
+   */
+  show_time(show) {
+    if show == nil show = true
+
+    if !is_bool(show) {
+      raise TypeError('boolean expected, ${typeof(show)} given')
+    }
+
+    self._show_time = show
+    return self
+  }
+
+  /**
+   * Enable or disable showing transport log level in the logs
+   * based on the passed boolean value.
+   *
+   * @param bool show
+   * @returns self
+   */
+  show_level(show) {
+    if show == nil show = true
+
+    if !is_bool(show) {
+      raise TypeError('boolean expected, ${typeof(show)} given')
+    }
+
+    self._show_level = show
+    return self
+  }
+
+  /**
+   * Sets a formatter function that overrides a transports
+   * `format()` function.
+   *
+   * The formatter function is a function that when it is set
+   * overrides the transports default format method and must MUST
+   * have the contract `def my_function(records, level,
+   * transport)`. The `transport` parameter here is the instance
+   * of the current transport. See [[log.Transport.format]] for
+   * what `records`, and `level` means.
+   *
+   * @param function formatter
+   * @returns self
+   */
+  set_formatter(formatter) {
+    if !is_function(formatter) {
+      raise TypeError('function expected, ${typeof(formatter)} given')
+    }
+
+    self.__formatter = formatter
+    return self
+  }
+
+  /**
+   * Returns the format method override that has been set for the
+   * current transport or `nil` if none has been set.
+   *
+   * @returns ?function
+   */
+  get_formatter() {
+    return self.__formatter
+  }
+
+  /**
+   * Returns a boolean value which indicates if a message of
+   * severity *level* can be processed by this transport.
+   *
+   * [[log.LogLevel.None]] is a documented escape hatch that
+   * bypasses level filtering entirely (only `enable()`/`disable()`
+   * still applies to it) — see the module doc's "quick logging"
+   * section.
+   *
+   * @param {log.LogLevel} level
+   * @returns bool
+   */
+  can_log(level) {
+    if !is_number(level) {
+      raise ValueError('invalid log level')
+    }
+
+    if level == LogLevel.None {
+      return self.__enabled
+    }
+
+    return self.__enabled and self._level <= level and
+      level >= _get_default_level() and
+      level <= self.__max_level
+  }
+
+  /**
+   * Enables and starts processing of logs by the current
+   * transport.
+   *
+   * @returns self
+   */
+  enable() {
+    self.__enabled = true
+    return self
+  }
+
+  /**
+   * Disables and stops the current transport from processing
+   * further logs.
+   *
+   * @returns self
+   */
+  disable() {
+    self.__enabled = false
+    return self
+  }
+
+  /**
+   * Formats the log records for the current level for writing to
+   * the transport's stream. The default implementation of this
+   * method is exactly as seen when using the
+   * [[log.default_transport]] which logs to the console. The
+   * method should be overridden by subclasses to get a custom
+   * formatting.
+   *
+   * When the last element of `records` is a dict, it's treated as
+   * structured fields rather than a plain message argument and
+   * rendered as trailing `key=value` pairs — `log.info('processing',
+   * { user_id: 5 })` renders as `... processing user_id=5`. Fields
+   * bound via a [[log.Logger]] (through `context`) are merged in the
+   * same way.
+   *
+   * > __IMPORTANT!__
+   * >
+   * > The result of this function will be passed into the
+   * > [[log.Transport.write()]] function so transport
+   * > implementations *MUST* ensure to expect the same type as
+   * > is returned from this function in the
+   * > [[log.Transport.write()]] function message parameter.
+   *
+   * Transport implementations should be aware of the following
+   * available private fields in the transport class:
+   *
+   * - _[[log.LogLevel]]_ `self._level` - _string_
+   * `self._log_name` - _bool_ `self._show_name` - _bool_
+   * `self._show_time` - _bool_ `self._show_level`
+   *
+   * @params {list[any]} records
+   * @param {log.LogLevel} level
+   * @param {?dict} context Optional `{name: ?string, fields: dict}`,
+   *    supplied by a [[log.Logger]] call; absent for the flat
+   *    module-level `log.info()`-style calls.
+   * @returns any
+   */
+  format(records, level, context) {
+    var name = self._log_name
+    var fields = {}
+
+    if context {
+      if context.get('name', nil) != nil {
+        name = context['name']
+      }
+      for k, v in context.get('fields', {}) {
+        fields[k] = v
+      }
+    }
+
+    var msg_args = records
+    if records.length() > 0 and is_dict(records[records.length() - 1]) {
+      msg_args = records[0, records.length() - 1]
+      for k, v in records[records.length() - 1] {
+        fields[k] = v
+      }
+    }
+
+    var message = ''
+
+    if self._show_time {
+      message += date().format(self.__time_format)
+    }
+
+    if self._show_level {
+      message += ' ${_level_lookup_table[level].upper()}'
+    }
+
+    if self._show_name {
+      message += ' [${name}]'
+    }
+
+    message += ':'
+
+    for arg in msg_args {
+      message += ' ' + arg.to_string()
+    }
+
+    for k, v in fields {
+      message += ' ${k}=${v.to_string()}'
+    }
+
+    return message.trim()
+  }
+
+  /**
+   * Do whatever it takes to actually log the specified logging
+   * record. This method is intended to be implemented by
+   * subclasses and so raises an *Error* if called directly from
+   * `Transport`.
+   *
+   * @param any message
+   * @param {log.LogLevel} level
+   * @raises NotImplementedError
+   */
+  write(message, level) {
+    raise NotImplementedError()
+  }
+
+  /**
+   * Ensure all logging output has been flushed to the target
+   * stream. This default version does nothing and is intended to
+   * be implemented by subclasses.
+   */
+  flush() {}
+
+  /**
+   * Tidy up any resources used by the transport. This default
+   * version does no output but removes the handler from an
+   * internal list of handlers. Subclasses should ensure that
+   * this gets called from overridden close() methods.
+   */
+  close() {
+    remove_transport(self)
+  }
+}
+
+
+# Verifies that obj is a valid Transport and returns obj as is if true
+# or raises an Error if not.
+def _assert_transport(obj) {
+  if !instance_of(obj, Transport) {
+    raise ValueError('invalid Transport')
+  }
+
+  return obj
+}
+
+
+# A list of registered transports. Starts empty here -- the default
+# ConsoleTransport is registered by dispatch.zu at its own load time,
+# since constructing one needs console.zu, which this file can't
+# depend on (see the module doc above).
+var _transports = []
+
+/**
+ * Adds a new transport service to the list of registered
+ * transports. If the transport has been previously added, this
+ * function will do nothing.
+ *
+ * @param {log.Transport} transport
+ */
+def add_transport(transport) {
+  _assert_transport(transport)
+
+  # ensure we are not adding the same transport again
+  if _transports.contains(transport) {
+    return
+  }
+
+  _transports.append(transport)
+}
+
+/**
+ * Removes the given transport service from the list of
+ * registered transports.
+ *
+ * @param {log.Transport} transport
+ */
+def remove_transport(transport) {
+  _transports.remove(transport)
+}
+
+# Reusable write function for the log level helpers and Logger.
+def _write(level, args, context) {
+  for trans in _transports {
+    if trans.can_log(level) {
+      var formatter = trans.get_formatter()
+
+      trans.write(
+        formatter ? formatter(args, level, trans) : trans.format(args, level, context),
+        level
+      )
+    }
+  }
+}

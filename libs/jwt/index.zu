@@ -1,0 +1,58 @@
+/**
+ * @module jwt
+ *
+ * The jwt module provides a complete implementation of JSON Web
+ * Tokens (JWT) as defined in RFC 7519, with support for signing,
+ * verification, and inspection of tokens using HMAC, RSA-PSS, ECDSA,
+ * and Ed25519 algorithm families.
+ *
+ * Supported algorithms:
+ *
+ * - HS256/HS384/HS512 — HMAC with SHA-256/384/512
+ * - PS256/PS384/PS512 — RSASSA-PSS with SHA-256/384/512. This module
+ *   deliberately supports PS-family, not RS-family (RSASSA-PKCS1-v1_5)
+ *   algorithms, because its RSA backing (`crypto.rsa`) is a PSS
+ *   implementation — PS256/384/512 are what it can actually and
+ *   correctly produce.
+ * - ES256 — ECDSA P-256 with SHA-256
+ * - ES384 — ECDSA P-384 with SHA-384
+ * - EdDSA — Ed25519 (RFC 8037)
+ * - none — Unsecured token (no signature, explicit opt-in required)
+ *
+ * Signature verification uses a constant-time comparison for the
+ * HMAC algorithms (to prevent timing attacks against the shared
+ * secret) and the underlying public-key verification routine for
+ * every asymmetric algorithm.
+ *
+ * ### Quick start
+ *
+ * ```zuri
+ * import jwt
+ *
+ * # sign a token
+ * var token = jwt.sign({ user_id: 42, role: 'admin' }, 'secret')
+ *
+ * # verify and decode the token
+ * var payload = jwt.verify(token, 'secret')
+ * echo payload.user_id   # 42
+ * ```
+ *
+ * For applications verifying many tokens with the same
+ * configuration, prefer a `Verifier` (see [[jwt.Verifier]]) over
+ * repeating options on every `verify()` call. Likewise, prefer a
+ * `Signer` (see [[jwt.Signer]]) for repeated signing.
+ *
+ * When keys are resolved by `kid` from a JSON Web Key Set rather
+ * than fixed ahead of time, see [[jwt.Jwks]] and
+ * [[jwt.verify_with_jwks]].
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import @.errors { * }
+import @.codec { * }
+import @.token { * }
+import @.core { * }
+import @.verifier { * }
+import @.signer { * }
+import @.jwks { * }

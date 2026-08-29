@@ -1,0 +1,187 @@
+/**
+ * test_log.zu
+ *
+ * Test suite for the `log` standard library module: level filtering,
+ * the None bypass, error()/exception(), transport validation,
+ * structured fields, namespaced Loggers, and FileTransport rotation.
+ */
+
+import log
+import log { Transport }
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  log module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# A capturing transport lets assertions inspect exactly what would
+# have been written, without depending on stdout/stderr capture.
+class CapturingTransport < Transport {
+  var records = []
+
+  write(message, level) {
+    self.records.append({ message, level })
+  }
+}
+
+log.default_transport().disable()
+
+# ---------------------------------------------------------------------------
+# Level filtering
+# ---------------------------------------------------------------------------
+var cap = CapturingTransport()
+log.add_transport(cap)
+
+cap.set_level(log.Warning)
+log.warn('should appear')
+log.info('should not appear')
+assert cap.records.length() == 1 and cap.records[0].level == log.Warning,
+  'a transport set to Warning must drop Info but keep Warning'
+ok('per-transport level filtering works')
+
+log.remove_transport(cap)
+
+# ---------------------------------------------------------------------------
+# log.None bypass (2026-08-29 fix: previously filtered like any other level)
+# ---------------------------------------------------------------------------
+var cap2 = CapturingTransport()
+cap2.set_level(log.Critical)
+log.add_transport(cap2)
+
+log('anonymous message')
+assert cap2.records.length() == 1, 'log.None must bypass a transport''s own level threshold entirely'
+
+cap2.disable()
+log('should not appear while disabled')
+assert cap2.records.length() == 1, 'log.None must still respect enable()/disable()'
+cap2.enable()
+
+log.remove_transport(cap2)
+ok('log.None bypasses level filtering but still honors enable()/disable()')
+
+# ---------------------------------------------------------------------------
+# error() / exception() (2026-08-29 fix: error() was unreachable and
+# crashed via the Error/LogLevel.Error name collision)
+# ---------------------------------------------------------------------------
+var cap3 = CapturingTransport()
+log.add_transport(cap3)
+
+log.error('plain error message')
+assert cap3.records.length() == 1 and cap3.records[0].level == log.Error,
+  'error() must behave like the other flat level functions (info/debug/warn/critical)'
+
+catch {
+  raise ValueError('boom')
+} as e
+log.exception(e, 'extra context')
+assert cap3.records.length() == 2, 'exception() with a real Error and a message must log without crashing'
+
+log.exception(e)
+assert cap3.records.length() == 3, 'exception() with a real Error and no message must log without crashing'
+
+log.exception('not an error', 'context only')
+assert cap3.records.length() == 4, 'exception() with a non-Error first argument must not crash (duck-typed check, not instance_of)'
+
+log.remove_transport(cap3)
+ok('error() and exception() both work; the Error/LogLevel.Error shadow no longer crashes exception()')
+
+# ---------------------------------------------------------------------------
+# add_transport() validation (2026-08-29 fix: _assert_transport existed
+# but was never called)
+# ---------------------------------------------------------------------------
+assert raises(@() => log.add_transport('not a transport')), 'add_transport() must reject a non-Transport value'
+ok('add_transport() now actually validates its argument')
+
+# ---------------------------------------------------------------------------
+# Structured fields
+# ---------------------------------------------------------------------------
+class FormatCapture < Transport {
+  var last = ''
+  format(records, level, context) {
+    self.last = parent.format(records, level, context)
+    return self.last
+  }
+  write(message, level) {}
+}
+
+var fc = FormatCapture()
+log.add_transport(fc)
+fc.show_time(false)
+
+log.info('processing', { user_id: 5 })
+assert fc.last.contains('processing') and fc.last.contains('user_id=5'),
+  'a trailing dict argument must render as key=value fields, not a dumped dict'
+
+log.remove_transport(fc)
+ok('a trailing dict argument on a flat log call renders as structured fields')
+
+# ---------------------------------------------------------------------------
+# Logger — namespacing, identity caching, bind(), child()
+# ---------------------------------------------------------------------------
+var fc2 = FormatCapture()
+log.add_transport(fc2)
+fc2.show_time(false)
+
+var db_log = log.get_logger('db')
+assert log.get_logger('db') == db_log, 'get_logger() must return the same instance for the same name'
+ok('get_logger() caches by name')
+
+db_log.info('connected')
+assert fc2.last.contains('[db]') and fc2.last.contains('connected'),
+  'a Logger must tag its records with its own name'
+ok('Logger.info() tags records with the logger name')
+
+var pool_log = db_log.child('pool').bind({ pool: 'primary' })
+pool_log.warn('exhausted', { duration_ms: 12 })
+assert fc2.last.contains('[db.pool]') and fc2.last.contains('pool=primary') and fc2.last.contains('duration_ms=12'),
+  'child() must extend the parent name and bind() must merge fields with per-call fields'
+ok('Logger.child()/bind() combine namespacing with structured fields')
+
+log.remove_transport(fc2)
+
+# ---------------------------------------------------------------------------
+# FileTransport rotation
+# ---------------------------------------------------------------------------
+var log_dir = os.create_temp_dir('log-test-')
+var log_path = log_dir + '/app.log'
+
+var ft = log.FileTransport(log_path)
+ft.set_max_bytes(200)
+ft.set_backup_count(2)
+log.add_transport(ft)
+
+iter var i = 0; i < 40; i++ {
+  log.info('line number ${i} with enough padding to grow the file quickly')
+}
+ft.flush()
+log.remove_transport(ft)
+ft.close()
+
+assert file(log_path).exists(), 'the current log file must still exist after rotation'
+assert file('${log_path}.1').exists(), 'a first backup must exist after crossing max_bytes'
+assert file('${log_path}.2').exists(), 'a second backup must exist given backup_count=2'
+assert !file('${log_path}.3').exists(), 'no third backup should exist beyond backup_count'
+ok('FileTransport rotates by size and caps the number of backups')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

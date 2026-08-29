@@ -37,7 +37,7 @@
  * ```zuri-repl
  * %> import colors
  * %> colors.rgb_to_cmyk(103, 13, 69)
- * [0, 87.37864077669903, 33.00970873786409, 59.6078431372549]
+ * [0, 87.37864077669903, 33.009708737864095, 59.6078431372549]
  * ```
  *
  * The terminal colors also have simple wrappers that allow
@@ -201,28 +201,38 @@ def ansi256_to_ansi(code) {
   var value = r.max(g).max(b) * 2
   if value == 0 return 30
 
-  var result = 30 + ((r.round() << 2) | (g.round() << 1) | r.round())
-  if result == 2 result += 60
+  var result = 30 + (r.round() | (g.round() << 1) | (b.round() << 2))
+  if value == 2 result += 60
 
   return result
 }
 
 /**
- * Converts the hexadecimal string _h_ to its RGBA component
+ * Converts the hexadecimal string _h_ to its RGBA component.
+ *
+ * Accepts an optional leading `#`, is case-insensitive, and
+ * accepts the 3/4/6/8-digit forms (`#f0c`, `#f0c8`, `#ff00cc`,
+ * `#ff00ccbb`). Following the CSS Color 4 convention, alpha is the
+ * *last* component when present (`RRGGBBAA`/`RGBA`, not
+ * `AARRGGBB`/`ARGB`) — an omitted alpha means fully opaque (`1`).
  *
  * @param string h
- * @returns list
+ * @returns list `[r, g, b, a]`
+ * @throws ValueError When _h_ is not a valid hexadecimal color.
  */
 def hex_to_rgb(h) {
   if !is_string(h)
     raise TypeError('string expected')
 
-  var value = h.match('/^([a-f0-9]{8}|[a-f0-9]{6}|[a-f0-9]{4}|[a-f0-9]{3})$/')
+  var s = h
+  if s.length() > 0 and s[0] == '#' s = s[1,]
+
+  var value = s.match('/^([a-fA-F0-9]{8}|[a-fA-F0-9]{6}|[a-fA-F0-9]{4}|[a-fA-F0-9]{3})$/')
   if !value {
-    return [0, 0, 0, 0]
+    raise ValueError('invalid hexadecimal color: ${h}')
   }
 
-  var v = value[0], rem
+  var v = value[0]
 
   # if we have four characters or less, duplicate every digit.
   if v.length() <= 4 {
@@ -233,15 +243,15 @@ def hex_to_rgb(h) {
     v = tmp
   }
 
-  # if we are still less than 8 digits, add two 'f's.
-  v = v.lpad(8, 'f')
+  # RRGGBB with no alpha given: fully opaque.
+  if v.length() == 6 v += 'ff'
 
   var number = v.to_number(16)
 
-  var b = number & 0xFF,
-      g = (number & 0xFF00) >> 8,
-      r = (number & 0xFF0000) >> 16,
-      a = ((number & 0xFF000000) >> 24) / 255
+  var a = (number & 0xFF) / 255,
+      b = (number & 0xFF00) >> 8,
+      g = (number & 0xFF0000) >> 16,
+      r = (number & 0xFF000000) >> 24
 
   return [r, g, b, a]
 }
@@ -398,6 +408,10 @@ def xyz(x, y, z) {
  * Converts a RGB components into its corresponding hexadecimal
  * color.
  *
+ * Following the CSS Color 4 convention, alpha (when given) is
+ * appended as the *last* component (`RRGGBBAA`), and every
+ * channel is zero-padded to two digits.
+ *
  * @param int r
  * @param int g
  * @param int b
@@ -408,7 +422,12 @@ def rgb_to_hex(r, g, b, a) {
   if !is_int(r) or !is_int(g) or !is_int(b) or (a != nil and !is_int(a))
     raise TypeError('integer expected')
 
-  return '${a ? a.hex() : nil}${r.hex()}${g.hex()}${b.hex()}'
+  var r_str = r.hex().lpad(2, '0')
+  var g_str = g.hex().lpad(2, '0')
+  var b_str = b.hex().lpad(2, '0')
+  var a_str = a != nil ? a.hex().lpad(2, '0') : ''
+
+  return '${r_str}${g_str}${b_str}${a_str}'
 }
 
 /**
@@ -442,11 +461,8 @@ def rgb_to_hsl(r, g, b) {
   var l = (_min + _max) / 2
 
   if delta == 0 s = 0
-  # Selected implementation
-  else s = delta / (1 - ((2 * l) - 1))
-  # # Alternative implementation
-  # else if l <= 0.5 s = delta / (_max + _min)
-  # else s = delta / (2 - _max - _min)
+  else if l <= 0.5 s = delta / (_max + _min)
+  else s = delta / (2 - _max - _min)
 
   return [h, s * 100, l * 100]
 }
@@ -540,18 +556,18 @@ def rgb_to_xyz(r, g, b) {
     raise TypeError('integer expected')
 
   r /= 255
-	g /= 255
-	b /= 255
+  g /= 255
+  b /= 255
 
-	r = r > 0.04045 ? (((r + 0.055) / 1.055) ** 2.4) : (r / 12.92)
-	g = g > 0.04045 ? (((g + 0.055) / 1.055) ** 2.4) : (g / 12.92)
-	b = b > 0.04045 ? (((b + 0.055) / 1.055) ** 2.4) : (b / 12.92)
+  r = r > 0.04045 ? (((r + 0.055) / 1.055) ** 2.4) : (r / 12.92)
+  g = g > 0.04045 ? (((g + 0.055) / 1.055) ** 2.4) : (g / 12.92)
+  b = b > 0.04045 ? (((b + 0.055) / 1.055) ** 2.4) : (b / 12.92)
 
-	var x = (r * 0.4124564) + (g * 0.3575761) + (b * 0.1804375),
-	    y = (r * 0.2126729) + (g * 0.7151522) + (b * 0.072175),
-	    z = (r * 0.0193339) + (g * 0.119192) + (b * 0.9503041)
+  var x = (r * 0.4124564) + (g * 0.3575761) + (b * 0.1804375),
+      y = (r * 0.2126729) + (g * 0.7151522) + (b * 0.072175),
+      z = (r * 0.0193339) + (g * 0.119192) + (b * 0.9503041)
 
-	return [x * 100, y * 100, z * 100]
+  return [x * 100, y * 100, z * 100]
 }
 
 /**
@@ -572,18 +588,18 @@ def rgb_to_lab(r, g, b) {
   var x = xyz[0], y = xyz[1], z = xyz[2]
 
   x /= 95.047
-	y /= 100
-	z /= 108.883
+  y /= 100
+  z /= 108.883
 
-	x = x > 0.008856 ? (x ** (1 / 3)) : (7.787 * x) + (16 / 116)
-	y = y > 0.008856 ? (y ** (1 / 3)) : (7.787 * y) + (16 / 116)
-	z = z > 0.008856 ? (z ** (1 / 3)) : (7.787 * z) + (16 / 116)
+  x = x > 0.008856 ? (x ** (1 / 3)) : (7.787 * x) + (16 / 116)
+  y = y > 0.008856 ? (y ** (1 / 3)) : (7.787 * y) + (16 / 116)
+  z = z > 0.008856 ? (z ** (1 / 3)) : (7.787 * z) + (16 / 116)
 
-	var l = (116 * y) - 16,
+  var l = (116 * y) - 16,
       a = 500 * (x - y)
   b = 200 * (y - z)
 
-	return [l, a, b]
+  return [l, a, b]
 }
 
 /**
@@ -599,47 +615,60 @@ def hsl_to_rgb(h, s, l) {
   if !is_number(h) or !is_number(s) or !is_number(l)
     raise TypeError('number expected')
 
-  # For HSL, 0 <= H < 360, 0 <= S <= 1 and 0 <= L <= 1
-  if h < 0 or h > 360 or s < 0 or l < 0 or s > 100 or l > 100
+  # Hue is circular, so it wraps rather than being rejected -- s/l
+  # (each 0-100) aren't, so those still raise on an out-of-range value.
+  if s < 0 or s > 100 or l < 0 or l > 100
     raise ValueError('invalid color components')
+
+  h = h % 360
+  if h < 0 h += 360
 
   # Based on https://github.com/Qix-/color-convert/blob/3f0e0d4e92e235796ccb17f6e85c72094a651f49/conversions.js#L244
 
   h /= 360
-	s /= 100
-	l /= 100
+  s /= 100
+  l /= 100
 
-	var t2, t3, val
+  var t2, t3, val
 
-	if s == 0 {
-		val = (l * 255).round()
-		return [val, val, val]
-	}
+  if s == 0 {
+    val = (l * 255).round()
+    return [val, val, val]
+  }
 
-	if l < 0.5 t2 = l * (1 + s)
-  else t2 = l + s - l * s
+  if l < 0.5 {
+    t2 = l * (1 + s)
+  } else {
+    t2 = l + s - l * s
+  }
 
-	var t1 = 2 * l - t2, 
+  var t1 = 2 * l - t2,
       rgb = [0, 0, 0]
 
-	iter var i = 0; i < 3; i++ {
-		t3 = h + 1 / 3 * -(i - 1)
+  iter var i = 0; i < 3; i++ {
+    t3 = h + 1 / 3 * -(i - 1)
 
-		if t3 < 0 t3++
-		if t3 > 1 t3--
+    if t3 < 0 {
+      t3++
+    }
+    if t3 > 1 {
+      t3--
+    }
 
-		if 6 * t3 < 1 
+    if 6 * t3 < 1 {
       val = t1 + (t2 - t1) * 6 * t3
-    else if 2 * t3 < 1 
+    } else if 2 * t3 < 1 {
       val = t2
-    else if 3 * t3 < 2 
+    } else if 3 * t3 < 2 {
       val = t1 + (t2 - t1) * (2 / 3 - t3) * 6
-    else val = t1
+    } else {
+      val = t1
+    }
 
-		rgb[i] = (val * 255).min(255).round()
-	}
+    rgb[i] = (val * 255).min(255).round()
+  }
 
-	return rgb
+  return rgb
 }
 
 /**
@@ -674,6 +703,9 @@ def hsl_to_hsv(h, s, l) {
 def hsv_to_rgb(h, s, v) {
   if !is_number(h) or !is_number(s) or !is_number(v)
     raise TypeError('number expected')
+
+  h = h % 360
+  if h < 0 h += 360
 
   h /= 60
   s /= 100
@@ -750,7 +782,7 @@ def hwb_to_rgb(h, w, b) {
     h /= ratio
   }
 
-  var i = h.floor() * 6,
+  var i = (6 * h).floor(),
       v = 1 - b
   var f = 6 * h - i
 
@@ -816,21 +848,21 @@ def xyz_to_rgb(x, y, z) {
 
   var r, g, b
 
-  r = (x * 3.2404542) + (y * -1.5371385) + (z * -0.4985314);
-	g = (x * -0.969266) + (y * 1.8760108) + (z * 0.041556);
-	b = (x * 0.0556434) + (y * -0.2040259) + (z * 1.0572252);
+  r = (x * 3.2404542) + (y * -1.5371385) + (z * -0.4985314)
+  g = (x * -0.969266) + (y * 1.8760108) + (z * 0.041556)
+  b = (x * 0.0556434) + (y * -0.2040259) + (z * 1.0572252)
 
-	#  Assume sRGB
-	r = r > 0.0031308 ? 
-      ((1.055 * (r ** (1.0 / 2.4))) - 0.055) : 
+  # Assume sRGB
+  r = r > 0.0031308 ?
+      ((1.055 * (r ** (1.0 / 2.4))) - 0.055) :
       r * 12.92
 
-	g = g > 0.0031308 ? 
-      ((1.055 * (g ** (1.0 / 2.4))) - 0.055) : 
+  g = g > 0.0031308 ?
+      ((1.055 * (g ** (1.0 / 2.4))) - 0.055) :
       g * 12.92
 
-	b = b > 0.0031308 ? 
-      ((1.055 * (b ** (1.0 / 2.4))) - 0.055) : 
+  b = b > 0.0031308 ?
+      ((1.055 * (b ** (1.0 / 2.4))) - 0.055) :
       b * 12.92
 
   r = 0.max(r).min(1)
@@ -838,5 +870,215 @@ def xyz_to_rgb(x, y, z) {
   b = 0.max(b).min(1)
 
   return [(r * 255).round(), (g * 255).round(), (b * 255).round()]
+}
+
+/**
+ * Converts a LAB color into its corresponding RGB color
+ * components. The inverse of `rgb_to_lab`.
+ *
+ * @param number l
+ * @param number a
+ * @param number b
+ * @returns list[float]
+ */
+def lab_to_rgb(l, a, b) {
+  if !is_number(l) or !is_number(a) or !is_number(b)
+    raise TypeError('number expected')
+
+  var y = (l + 16) / 116
+  var x = a / 500 + y
+  var z = y - b / 200
+
+  x = x ** 3 > 0.008856 ? x ** 3 : (x - 16 / 116) / 7.787
+  y = y ** 3 > 0.008856 ? y ** 3 : (y - 16 / 116) / 7.787
+  z = z ** 3 > 0.008856 ? z ** 3 : (z - 16 / 116) / 7.787
+
+  x *= 95.047
+  y *= 100
+  z *= 108.883
+
+  return xyz_to_rgb(x, y, z)
+}
+
+
+# ---------------------------------------------------------------------------
+# Color manipulation
+# ---------------------------------------------------------------------------
+#
+# These all take and return hex color strings, carrying alpha through
+# when the input has any transparency (omitted from the returned hex
+# string entirely for a fully-opaque input, so a caller round-tripping
+# an ordinary 6-digit color never picks up an unwanted `ff` alpha
+# suffix).
+
+def _alpha_byte(a) {
+  return a < 1 ? (a * 255).round() : nil
+}
+
+/**
+ * Returns _hex_ lightened by _amount_ percentage points in HSL
+ * space (clamped to 0-100).
+ *
+ * @param string hex
+ * @param number amount
+ * @returns string
+ */
+def lighten(hex, amount) {
+  if !is_string(hex) raise TypeError('string expected')
+  if !is_number(amount) raise TypeError('number expected')
+
+  var rgb = hex_to_rgb(hex)
+  var hsl = rgb_to_hsl(rgb[0], rgb[1], rgb[2])
+  var out = hsl_to_rgb(hsl[0], hsl[1], (hsl[2] + amount).max(0).min(100))
+
+  return rgb_to_hex(out[0].round(), out[1].round(), out[2].round(), _alpha_byte(rgb[3]))
+}
+
+/**
+ * Returns _hex_ darkened by _amount_ percentage points in HSL
+ * space (clamped to 0-100). The inverse of `lighten`.
+ *
+ * @param string hex
+ * @param number amount
+ * @returns string
+ */
+def darken(hex, amount) {
+  if !is_number(amount) raise TypeError('number expected')
+  return lighten(hex, -amount)
+}
+
+/**
+ * Returns _hex_ with its saturation increased by _amount_
+ * percentage points in HSL space (clamped to 0-100).
+ *
+ * @param string hex
+ * @param number amount
+ * @returns string
+ */
+def saturate(hex, amount) {
+  if !is_string(hex) raise TypeError('string expected')
+  if !is_number(amount) raise TypeError('number expected')
+
+  var rgb = hex_to_rgb(hex)
+  var hsl = rgb_to_hsl(rgb[0], rgb[1], rgb[2])
+  var out = hsl_to_rgb(hsl[0], (hsl[1] + amount).max(0).min(100), hsl[2])
+
+  return rgb_to_hex(out[0].round(), out[1].round(), out[2].round(), _alpha_byte(rgb[3]))
+}
+
+/**
+ * Returns _hex_ with its saturation decreased by _amount_
+ * percentage points in HSL space (clamped to 0-100). The inverse
+ * of `saturate`.
+ *
+ * @param string hex
+ * @param number amount
+ * @returns string
+ */
+def desaturate(hex, amount) {
+  if !is_number(amount) raise TypeError('number expected')
+  return saturate(hex, -amount)
+}
+
+/**
+ * Returns _hex_ fully desaturated (HSL saturation set to 0), the
+ * same hue and lightness otherwise preserved. This is an HSL
+ * desaturation, not a perceptual-luminance-weighted grayscale.
+ *
+ * @param string hex
+ * @returns string
+ */
+def grayscale(hex) {
+  return desaturate(hex, 100)
+}
+
+/**
+ * Returns _hex_ with each RGB channel inverted (`255 - channel`).
+ * Alpha, if present, is left unchanged.
+ *
+ * @param string hex
+ * @returns string
+ */
+def invert(hex) {
+  if !is_string(hex) raise TypeError('string expected')
+
+  var rgb = hex_to_rgb(hex)
+  return rgb_to_hex(255 - rgb[0], 255 - rgb[1], 255 - rgb[2], _alpha_byte(rgb[3]))
+}
+
+/**
+ * Linearly interpolates between two colors, including their
+ * alpha channels.
+ *
+ * @param string hex_a
+ * @param string hex_b
+ * @param ?number weight How far from _hex_a_ (0) to _hex_b_ (1).
+ *    Default: 0.5 (the midpoint).
+ * @returns string
+ */
+def mix(hex_a, hex_b, weight) {
+  if !is_string(hex_a) or !is_string(hex_b) raise TypeError('string expected')
+  if weight == nil weight = 0.5
+  if !is_number(weight) raise TypeError('number expected')
+
+  var c1 = hex_to_rgb(hex_a)
+  var c2 = hex_to_rgb(hex_b)
+
+  var r = (c1[0] + (c2[0] - c1[0]) * weight).round()
+  var g = (c1[1] + (c2[1] - c1[1]) * weight).round()
+  var b = (c1[2] + (c2[2] - c1[2]) * weight).round()
+  var a = c1[3] + (c2[3] - c1[3]) * weight
+
+  return rgb_to_hex(r, g, b, _alpha_byte(a))
+}
+
+
+# ---------------------------------------------------------------------------
+# Accessibility
+# ---------------------------------------------------------------------------
+
+# WCAG 2.x relative luminance (https://www.w3.org/TR/WCAG21/#dfn-relative-luminance).
+# Deliberately uses the exact constants and 0.03928 linearization
+# threshold the spec itself defines, rather than reusing rgb_to_xyz's
+# more precise CIE Y-row constants -- the two are extremely close but
+# not identical, and a function claiming WCAG compliance should match
+# the spec's own formula exactly.
+def _relative_luminance(r, g, b) {
+  r /= 255
+  g /= 255
+  b /= 255
+
+  r = r <= 0.03928 ? r / 12.92 : ((r + 0.055) / 1.055) ** 2.4
+  g = g <= 0.03928 ? g / 12.92 : ((g + 0.055) / 1.055) ** 2.4
+  b = b <= 0.03928 ? b / 12.92 : ((b + 0.055) / 1.055) ** 2.4
+
+  return (0.2126 * r) + (0.7152 * g) + (0.0722 * b)
+}
+
+/**
+ * Returns the WCAG 2.x contrast ratio between two colors, from 1
+ * (no contrast) to 21 (black on white).
+ *
+ * A ratio of at least 4.5 meets WCAG AA for normal text (3 for
+ * large text); 7 meets AAA (4.5 for large text).
+ *
+ * @param string hex_a
+ * @param string hex_b
+ * @returns number
+ */
+def contrast_ratio(hex_a, hex_b) {
+  if !is_string(hex_a) or !is_string(hex_b)
+    raise TypeError('string expected')
+
+  var c1 = hex_to_rgb(hex_a)
+  var c2 = hex_to_rgb(hex_b)
+
+  var l1 = _relative_luminance(c1[0], c1[1], c1[2])
+  var l2 = _relative_luminance(c2[0], c2[1], c2[2])
+
+  var lighter = l1.max(l2)
+  var darker = l1.min(l2)
+
+  return (lighter + 0.05) / (darker + 0.05)
 }
 
