@@ -342,17 +342,17 @@ def sign(payload, secret, options) {
  *
  * ### Options
  *
- * | Key               | Type          | Default          | Description                                    |
- * |-------------------|---------------|------------------|------------------------------------------------|
- * | algorithms        | list          | [HS256,HS384,HS512] | Accepted algorithm whitelist                |
- * | issuer            | string        | —                | Required `iss` claim value                     |
- * | subject           | string        | —                | Required `sub` claim value                     |
- * | audience          | string\|list  | —                | Required `aud` claim value                     |
- * | clock_tolerance   | number        | 0                | Leeway in seconds for exp, nbf, and iat         |
- * | ignore_expiration | bool          | false            | Skip `exp` validation                          |
- * | ignore_not_before | bool          | false            | Skip `nbf` validation                          |
- * | complete          | bool          | false            | Return full Token instead of payload dict      |
- * | allow_none        | bool          | false            | Permit the `none` algorithm                    |
+ * | Key               | Type          | Default             | Description                                    |
+ * |-------------------|---------------|---------------------|------------------------------------------------|
+ * | algorithms        | list          | [HS256,HS384,HS512] | Accepted algorithm whitelist                   |
+ * | issuer            | string        | —                   | Required `iss` claim value                     |
+ * | subject           | string        | —                   | Required `sub` claim value                     |
+ * | audience          | string\|list  | —                   | Required `aud` claim value                     |
+ * | clock_tolerance   | number        | 0                   | Leeway in seconds for exp, nbf, and iat        |
+ * | ignore_expiration | bool          | false               | Skip `exp` validation                          |
+ * | ignore_not_before | bool          | false               | Skip `nbf` validation                          |
+ * | complete          | bool          | false               | Return full Token instead of payload dict      |
+ * | allow_none        | bool          | false               | Permit the `none` algorithm                    |
  *
  * ### Example
  *
