@@ -1,4 +1,4 @@
-import _struct
+import struct
 
 /**
  * This is the base array class from which all other array types
@@ -65,7 +65,7 @@ class Array {
    */
   first() {
     if self.length() > 0 {
-      return _struct.unpack(
+      return struct.unpack(
         self._data_type, 
         self._data[,self._bit_size], 
         0
@@ -83,7 +83,7 @@ class Array {
    */
   last() {
     if self.length() > 0 {
-      return _struct.unpack(
+      return struct.unpack(
         self._data_type, 
         self._data[self._data.length() - self._bit_size,], 
         0
@@ -107,7 +107,7 @@ class Array {
 
     if self.length() > index {
       var start = index * self._bit_size
-      return _struct.unpack(
+      return struct.unpack(
         self._data_type, 
         self._data[start, start + self._bit_size], 
         0
@@ -147,7 +147,7 @@ class Array {
    * @returns list
    */
   to_list() {
-    return _struct.unpack(
+    return struct.unpack(
       '${self._data_type}${self.length()}', 
       self._data, 
       0

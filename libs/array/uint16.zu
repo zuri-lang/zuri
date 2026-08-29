@@ -1,4 +1,4 @@
-import _struct
+import struct
 import ._base { Array }
 
 
@@ -44,7 +44,7 @@ class UInt16Array < Array {
         }
       }
 
-      self._data = _struct.pack('${self._data_type}${n.length()}', n)
+      self._data = struct.pack('${self._data_type}${n.length()}', n)
     } else {
       raise TypeError('number or list expected, ${typeof(n)} given')
     }
@@ -61,7 +61,7 @@ class UInt16Array < Array {
     if value < 0 or value > UINT16_MAX
       raise ValueError('value out of uint16 range')
 
-    var as_bytes = _struct.pack(self._data_type, [value])
+    var as_bytes = struct.pack(self._data_type, [value])
     self._data.extend(as_bytes)
     as_bytes.dispose()
   }
@@ -84,7 +84,7 @@ class UInt16Array < Array {
     if !is_number(value) and !is_int(value)
       raise ArgumentError('UInt16Array stores integer values')
 
-    var as_bytes = _struct.pack(self._data_type, [value])
+    var as_bytes = struct.pack(self._data_type, [value])
     var start = index * self._bit_size
     
     if self.length() <= index {
