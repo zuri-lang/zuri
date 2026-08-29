@@ -17,14 +17,20 @@
  * Mime format representation class.
  */
 class MimeFormat {
-  
+
   /**
    * @param string mimetype
-   * @param ?list|bytes header
-   * @note only the first 16 bytes of a file header will be used.
+   * @param ?list header: A list of one or more candidate magic-byte
+   *    signatures, each itself a list of numbers (`0`-`255`) or
+   *    `nil` for a byte position to skip (a size field embedded in
+   *    the middle of a signature, say — see the `.webp` entry in
+   *    this module's own table for an example). `nil` when name-only
+   *    detection is all that's available for this format.
+   * @note only the first 16 bytes of a file's header will ever be
+   *    used; a signature longer than that can never match.
    * @constructor
    */
-  @new(mimetype: string, header: ?list|bytes) {
+  @new(mimetype: string, header: ?list) {
     self.mimetype = mimetype
     self.header = header
   }
@@ -46,6 +52,9 @@ var _mimes = {
   '.atom': MimeFormat('application/atom+xml', nil),
   '.au': MimeFormat('audio/basic', nil),
   '.avi': MimeFormat('video/x-msvideo', [[0x52, 0x49, 0x46, 0x46]]),
+  '.avif': MimeFormat('image/avif', [
+    [nil, nil, nil, nil, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66] # ISOBMFF ftyp box, 'avif' brand
+  ]),
   '.azw': MimeFormat('application/vnd.amazon.ebook', nil),
   '.bcpio': MimeFormat('application/x-bcpio', nil),
   '.bin': MimeFormat('application/octet-stream', [[0x42, 0x4C, 0x49, 0x32, 0x32, 0x33, 0x51]]),
@@ -337,6 +346,7 @@ var _mimes = {
   '.vrml': MimeFormat('model/vrml', nil),
   '.vsd': MimeFormat('application/vnd.visio', nil),
   '.vxml': MimeFormat('application/voicexml+xml', nil),
+  '.wasm': MimeFormat('application/wasm', [[0x00, 0x61, 0x73, 0x6D]]),
   '.wav': MimeFormat('audio/x-wav', [[0x52, 0x49, 0x46, 0x46]]),
   '.wbmp': MimeFormat('image/vnd.wap.wbmp', nil),
   '.wbmxl': MimeFormat('application/vnd.wap.wbxml', nil),
@@ -351,7 +361,7 @@ var _mimes = {
   '.wmls': MimeFormat('text/vnd.wap.wmlscript', nil),
   '.wmlsc': MimeFormat('application/vnd.wap.wmlscriptc', nil),
   '.wmv': MimeFormat('video/x-ms-wmv', [[0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11]]),
-  '.wma': MimeFormat('audio/x-ms-wmv', [[0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11]]),
+  '.wma': MimeFormat('audio/x-ms-wma', [[0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11]]),
   '.wrl': MimeFormat('model/vrml', nil),
   '.xbm': MimeFormat('image/x-xbitmap', nil),
   '.xht': MimeFormat('application/xhtml+xml', nil),
@@ -389,6 +399,11 @@ var _mimes = {
  * Detects the mimetype of a file based on the extension defined
  * in it's path.
  *
+ * When `name` has more than one dot-separated suffix (`archive.
+ * tar.gz`), the longest registered extension wins — `.tar.gz` if
+ * it's registered, falling back to `.gz` otherwise — rather than
+ * whichever single-suffix entry happens to match first.
+ *
  * Example,
  *
  * ```zuri
@@ -396,16 +411,22 @@ var _mimes = {
  * echo mime.detect_from_name('myimage.png')
  * ```
  *
- * @note For popular files such as Jpeg and Pngs, calling this
- *    method directly is more efficient and provides a faster
- *    lookup.
+ * @note Unrecognized extensions (including a name with no
+ *    extension at all) return `'application/octet-stream'` rather
+ *    than raising.
  * @param string name
  * @returns string
  */
 def detect_from_name(name: string) {
-  for ext, mime in _mimes {
-    if name.ends_with(ext) return mime.mimetype
+  var parts = name.lower().split('.')
+
+  iter var i = 0; i < parts.length() - 1; i++ {
+    var candidate = '.' + '.'.join(parts[i + 1,])
+    if _mimes.contains(candidate) {
+      return _mimes[candidate].mimetype
+    }
   }
+
   return 'application/octet-stream'
 }
 
@@ -440,6 +461,7 @@ def detect_from_header(file: file) {
   }
 
   var top_16 = file.read(16)
+  var top_16_len = top_16.length()
   var last_mime_found = nil
 
   for ext, mime in _mimes {
@@ -449,24 +471,36 @@ def detect_from_header(file: file) {
         var header = mime.header[i]
 
         iter var j = 0; j < header.length(); j++ {
-          # we use nil value to skip extra data in header signatures
-          # such as webp filesize part...
-          # ie. RIFF ... WEBP where ... is represented as nil
-          if header[j] != top_16[j] and header[j] != nil {
+          # nil skips a byte position in the signature (a size field
+          # embedded in the middle of it, e.g. RIFF....WEBP where
+          # .... is the file size). A short file that doesn't even
+          # have `j` bytes can't match a signature that requires one,
+          # regardless of whether that particular position is a nil
+          # wildcard or not.
+          if j >= top_16_len {
+            mime_match = false
+            break
+          }
+          if header[j] != nil and header[j] != top_16[j] {
             mime_match = false
             break
           }
         }
 
         if mime_match {
-          if file.name().ends_with(ext) return mime.mimetype
-          else last_mime_found = mime.mimetype
+          if file.name().ends_with(ext) {
+            return mime.mimetype
+          } else {
+            last_mime_found = mime.mimetype
+          }
         }
       }
     }
   }
 
-  if last_mime_found return last_mime_found
+  if last_mime_found {
+    return last_mime_found
+  }
   return 'application/octet-stream'
 }
 
@@ -529,16 +563,60 @@ def detect(file: file) {
  * @note the extension MUST start with `.`
  * @param string extension
  * @param MimeFormat format
+ * @param ?bool overwrite: Default `false`. When an entry for
+ *    `extension` already exists (including one of this module's own
+ *    built-in mappings) and `overwrite` is `false`, the existing
+ *    entry is left untouched and this returns `false`; pass `true`
+ *    to replace it.
  * @returns bool
  */
-def extend(extension: string, format: MimeFormat) {
-  if extension[0] != '.'
+def extend(extension: string, format: MimeFormat, overwrite: ?bool) {
+  if extension[0] != '.' {
     raise ValueError('invalid file extension')
-  
+  }
+
+  if overwrite == nil {
+    overwrite = false
+  }
+
   extension = extension.lower()
-  
-  if _mimes.contains(extension) return false
-  _mimes.add(extension, format)
+
+  if _mimes.contains(extension) and !overwrite {
+    return false
+  }
+
+  _mimes[extension] = format
   return true
+}
+
+/**
+ * Looks up the typical file extension (including the leading `.`)
+ * registered for a given mime type — the reverse of
+ * `detect_from_name()`.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> import mime
+ * %> mime.mime_to_extension('image/png')
+ * '.png'
+ * ```
+ *
+ * @note Several extensions can share one mime type (`.jpg`/`.jpeg`,
+ *    `.htm`/`.html`); whichever is registered first (in this
+ *    module's own declaration order for a built-in type, or
+ *    whichever `extend()` call added it for a custom one) is
+ *    returned.
+ * @param string mimetype
+ * @returns ?string: `nil` if no extension is registered for
+ *    `mimetype`.
+ */
+def mime_to_extension(mimetype: string) {
+  for ext, mime in _mimes {
+    if mime.mimetype == mimetype {
+      return ext
+    }
+  }
+  return nil
 }
 

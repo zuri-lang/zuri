@@ -65,26 +65,20 @@
 import hash
 import date
 import convert
+import crypto
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-# Returns a cryptographically-random hex string of `n` hex characters (n must
-# be even).
+# Returns a cryptographically-random hex string of exactly `n` hex
+# characters (n may be odd — the underlying byte count is rounded up
+# and the extra nibble, if any, is trimmed off the end).
 def _random_hex(n) {
-  var result = ''
-  var i = 0
-  while i < n {
-    var byte = rand(256).floor()
-    var hi   = (byte / 16).floor()
-    var lo   = (byte % 16)
-    result  += '0123456789abcdef'[hi]
-    result  += '0123456789abcdef'[lo]
-    i += 2
-  }
-  return result
+  var byte_count = (n / 2.0).ceil()
+  var raw = convert.bytes_to_hex(crypto.random_bytes(byte_count))
+  return raw[,n]
 }
 
 # Returns the byte value at `index` within a canonical UUID string, treating
@@ -103,7 +97,7 @@ def _uuid_byte(uuid_str, index) {
   else if index < 8  { char_pos = 14 + (index - 6) * 2 }
   else if index < 10 { char_pos = 19 + (index - 8) * 2 }
   else               { char_pos = 24 + (index - 10) * 2 }
-  return ('0x' + uuid_str[char_pos, char_pos + 2]).to_number()
+  return uuid_str[char_pos, char_pos + 2].to_number(16)
 }
 
 # Strips hyphens and returns the raw 32-character hex representation.
@@ -121,7 +115,7 @@ def _format(hex32) {
 # hex string.
 def _set_variant(hex32) {
   # Byte 8 (chars 16-17): top two bits must be '10'
-  var byte8  = ('0x' + hex32[16,18]).to_number()
+  var byte8  = hex32[16,18].to_number(16)
   byte8 = (byte8 & 0x3f) | 0x80   # clear top 2, set '10'
   var hi = (byte8 / 16).floor()
   var lo = byte8 % 16
@@ -131,7 +125,7 @@ def _set_variant(hex32) {
 # Applies a version nibble (1-8) to byte 6 of a raw 32-char hex string.
 def _set_version(hex32, version) {
   # Byte 6 (chars 12-13): top nibble is the version.
-  var byte6 = ('0x' + hex32[12,14]).to_number()
+  var byte6 = hex32[12,14].to_number(16)
   byte6 = (byte6 & 0x0f) | (version * 16)
   var hi = (byte6 / 16).floor()
   var lo = byte6 % 16
@@ -156,7 +150,7 @@ def _gregorian_timestamp() {
 var _int_to_hex = convert.decimal_to_hex
 
 # Shared clock-sequence state for v1/v6 (module-level, reset per process).
-var _v1_clock_seq = rand(16384)  # 14-bit random seed
+var _v1_clock_seq = convert.bytes_to_decimal(crypto.random_bytes(2)) % 16384  # 14-bit random seed
 var _v1_last_ts   = 0
 
 
@@ -306,7 +300,7 @@ class UUID {
     }
     # Byte 6 occupies chars 14-15 in the canonical form (after the two hyphens
     # at positions 8 and 13).  The high nibble is the version.
-    return ('0x' + self.value[14]).to_number()
+    return self.value[14].to_number(16)
   }
 
   /**
@@ -390,7 +384,7 @@ class UUID {
    * @return list
    */
   bytes() {
-    return _convert.hex_to_bytes(_strip_hyphens(self.value))
+    return convert.hex_to_bytes(_strip_hyphens(self.value))
   }
 
   /**
@@ -420,12 +414,29 @@ class UUID {
    *
    * @param UUID | string other The UUID to compare against.
    * @return bool
+   * @raises TypeError if `other` is neither a `UUID` nor a string.
    */
-  equals(other: UUID) {
-    if isinstance(other, UUID) {
+  equals(other) {
+    if instance_of(other, UUID) {
       return self.value == other.value
     }
-    return self.value == other.lower()
+    if is_string(other) {
+      return self.value == other.lower()
+    }
+    raise TypeError('UUID or string expected, ${typeof(other)} given')
+  }
+
+  /**
+   * Compares this UUID with another UUID lexicographically by
+   * canonical string form. For time-ordered versions (v1, v6, v7)
+   * this is also a comparison by generation time.
+   *
+   * @param UUID other
+   * @return number A negative number if this UUID sorts before
+   *    `other`, a positive number if after, `0` if they're equal.
+   */
+  compare(other: UUID) {
+    return self.value.compare(other.value)
   }
 }
 
@@ -460,7 +471,12 @@ class UUID {
 def is_valid(str: any) {
   if !is_string(str) { return false }
   # Canonical form: 8-4-4-4-12 lowercase or uppercase hex digits.
-  return str.matches('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i')
+  # .match() (singular) returns false for no match or a dict of
+  # capture groups for a match -- never a plain boolean -- so this
+  # needs an explicit coercion to give is_valid() the real bool its
+  # own contract promises. .matches() (plural) would be the wrong
+  # choice here: it always returns a dict, empty or not, never false.
+  return str.match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i') != false
 }
 
 /**
@@ -475,7 +491,7 @@ def version(str: string) {
   if !is_valid(str) { return nil }
   var s = str.lower()
   if s == NIL or s == MAX { return nil }
-  return ('0x' + s[14]).to_number()
+  return s[14].to_number(16)
 }
 
 
@@ -552,7 +568,7 @@ def v1(node: ?string, clock_seq: ?number) {
   } else {
     # Set multicast bit on the first octet per RFC 4122 §4.5.
     var rand_node = _random_hex(12)
-    var first_byte = ('0x' + rand_node[0,2]).to_number() | 0x01
+    var first_byte = rand_node[0,2].to_number(16) | 0x01
     nd = _int_to_hex(first_byte, 2) + rand_node[2,12]
   }
 
@@ -592,15 +608,14 @@ def v3(namespace: string, name: string) {
     raise Error('uuid.v3: namespace must be a valid UUID string')
   }
 
-  # Concatenate namespace bytes + name bytes, then MD5.
-  var ns_hex   = _strip_hyphens(namespace.lower())
+  # RFC 4122 §4.3: MD5 of the namespace UUID's raw 16 bytes followed
+  # by the name's raw UTF-8 bytes — NOT a hash of their hex-digit
+  # text representation, which is a different (and non-conformant)
+  # input entirely.
+  var payload = convert.hex_to_bytes(_strip_hyphens(namespace.lower()))
+  payload.extend(name.to_bytes())
 
-  var name_hex = ''
-  for ch in name {
-    name_hex += _int_to_hex(ch.ord(), 2)
-  }
-
-  var digest = hash.md5(ns_hex + name_hex)
+  var digest = hash.md5(payload)
 
   # Set version (3) and variant bits.
   var raw = _set_variant(_set_version(digest, 3))
@@ -652,7 +667,7 @@ def v4() {
  * import uuid
  *
  * echo uuid.v5(uuid.NAMESPACE_URL, 'https://www.example.com')
- * # always: 'c106a26a-21bb-5538-8bf2-57095d1976c1'
+ * # always: 'a0787afd-c170-5773-8d60-02739168de9f'
  * ```
  *
  * @param string namespace A UUID string to use as the namespace.
@@ -667,15 +682,14 @@ def v5(namespace: string, name: string) {
     raise Error('uuid.v5: namespace must be a valid UUID string')
   }
 
-  var ns_hex   = _strip_hyphens(namespace.lower())
-
-  var name_hex = ''
-  for ch in name {
-    name_hex += _int_to_hex(ch.ord(), 2)
-  }
+  # RFC 4122 §4.3: SHA-1 of the namespace UUID's raw 16 bytes
+  # followed by the name's raw UTF-8 bytes — same requirement as
+  # v3()'s own MD5 input, see the note there.
+  var payload = convert.hex_to_bytes(_strip_hyphens(namespace.lower()))
+  payload.extend(name.to_bytes())
 
   # SHA-1 produces 40 hex chars (160 bits); we take the first 32 (128 bits).
-  var digest = hash.sha1(ns_hex + name_hex)[0, 32]
+  var digest = hash.sha1(payload)[0, 32]
 
   var raw = _set_variant(_set_version(digest, 5))
   return _format(raw)
@@ -748,7 +762,7 @@ def v6(node: ?string, clock_seq: ?number) {
     nd = node.lower()
   } else {
     var rand_node = _random_hex(12)
-    var first_byte = ('0x' + rand_node[0,2]).to_number() | 0x01
+    var first_byte = rand_node[0,2].to_number(16) | 0x01
     nd = _int_to_hex(first_byte, 2) + rand_node[2,12]
   }
 
@@ -814,7 +828,7 @@ def v7() {
   # 62-bit random (rand_b) — we generate 16 hex chars (64 bits) and set the
   # top 2 bits for the variant (10xx xxxx) in the first byte.
   var rand_b_raw = _random_hex(16)
-  var rand_b_byte0 = ('0x' + rand_b_raw[0,2]).to_number()
+  var rand_b_byte0 = rand_b_raw[0,2].to_number(16)
   rand_b_byte0 = (rand_b_byte0 & 0x3f) | 0x80
   var rand_b = _int_to_hex(rand_b_byte0, 2) + rand_b_raw[2,16]
 
@@ -842,7 +856,7 @@ def v7() {
  * import uuid
  *
  * # Embed a shard ID (a), a type tag (b), and a sequence number (c).
- * echo uuid.v8(0x0123456789ab, 0x0cd, 0x0123456789abcdef01234567890abcd)
+ * echo uuid.v8(0x0123456789ab, 0x0cd, 0x0123456789abcdef)
  * ```
  *
  * @param number a 48-bit application-defined field (bits 0–47).

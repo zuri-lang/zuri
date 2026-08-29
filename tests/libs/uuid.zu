@@ -1,0 +1,219 @@
+/**
+ * test_uuid.zu
+ *
+ * Test suite for the `uuid` standard library module: generators
+ * (v1/v3/v4/v5/v6/v7/v8), the `UUID` class, validation, and the
+ * bytes/int conversion helpers.
+ */
+
+import uuid
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  uuid module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# is_valid() / version()
+# ---------------------------------------------------------------------------
+assert uuid.is_valid('f47ac10b-58cc-4372-a567-0e02b2c3d479') == true,
+  'is_valid() must accept a well-formed canonical UUID'
+assert uuid.is_valid('not-a-uuid') == false, 'is_valid() must reject garbage'
+assert uuid.is_valid('f47ac10b-58cc-4372-a567') == false, 'is_valid() must reject a truncated UUID'
+assert uuid.is_valid('g47ac10b-58cc-4372-a567-0e02b2c3d479') == false,
+  'is_valid() must reject a non-hex character'
+assert uuid.is_valid(123) == false, 'is_valid() must reject a non-string argument rather than raise'
+assert uuid.is_valid(uuid.NIL) == true, 'is_valid() must accept the Nil UUID'
+ok('is_valid() correctly distinguishes well-formed UUIDs from garbage')
+
+assert uuid.version('f47ac10b-58cc-4372-a567-0e02b2c3d479') == 4, 'version() must read the correct version nibble'
+assert uuid.version(uuid.NIL) == nil, 'version() must be nil for the Nil UUID'
+ok('the module-level version() function reads the version nibble correctly')
+
+# ---------------------------------------------------------------------------
+# v4() — random
+# ---------------------------------------------------------------------------
+var v4a = uuid.v4()
+var v4b = uuid.v4()
+assert uuid.is_valid(v4a) and uuid.is_valid(v4b), 'v4() must always produce a valid UUID'
+assert v4a != v4b, 'two v4() calls must (overwhelmingly likely) produce different values'
+assert uuid.UUID(v4a).version() == 4, 'v4() must set the version nibble to 4'
+assert uuid.UUID(v4a).variant() == 'RFC 9562', 'v4() must set the RFC 9562 variant bits'
+ok('v4() produces distinct, correctly-versioned random UUIDs')
+
+# ---------------------------------------------------------------------------
+# v7() — Unix-time ordered; this exercises both the odd-length
+# _random_hex() bug and the '0x'-prefix .to_number() bug, since both
+# corrupted v7's variant bits before being fixed.
+# ---------------------------------------------------------------------------
+var bad_variant_count = 0
+iter var i = 0; i < 25; i++ {
+  var v = uuid.v7()
+  assert uuid.is_valid(v), 'every v7() output must be a well-formed UUID'
+  assert uuid.UUID(v).version() == 7, 'every v7() output must report version 7'
+  if uuid.UUID(v).variant() != 'RFC 9562' {
+    bad_variant_count++
+  }
+}
+assert bad_variant_count == 0, 'every v7() output must carry valid RFC 9562 variant bits, not just most of them'
+ok('v7() reliably produces well-formed, correctly-versioned and -varianted UUIDs')
+
+# Only the timestamp prefix (the first 48 bits) is actually
+# guaranteed non-decreasing -- two v7() calls landing in the same
+# millisecond legitimately differ only in their random tail bits,
+# which aren't ordered at all, so comparing the whole UUID here
+# would be a flaky test rather than a meaningful one.
+var v7a_ts = uuid.UUID(uuid.v7()).hex()[,12]
+var v7b_ts = uuid.UUID(uuid.v7()).hex()[,12]
+assert v7a_ts.compare(v7b_ts) <= 0,
+  'two v7() calls in quick succession must not have a decreasing millisecond timestamp'
+ok('v7() timestamps are non-decreasing across calls')
+
+# ---------------------------------------------------------------------------
+# v3() / v5() — name-based, deterministic; cross-checked against
+# Python's independent uuid module for the exact same inputs.
+# ---------------------------------------------------------------------------
+assert uuid.v3(uuid.NAMESPACE_DNS, 'www.example.com') == '5df41881-3aed-3515-88a7-2f4a814cf09e',
+  'v3() must match the RFC 4122 reference value for this namespace/name pair'
+assert uuid.v5(uuid.NAMESPACE_URL, 'https://www.example.com') == 'a0787afd-c170-5773-8d60-02739168de9f',
+  'v5() must match the RFC 4122 reference value for this namespace/name pair'
+ok('v3()/v5() match known-answer reference values (cross-checked against Python\'s uuid module)')
+
+assert uuid.v3(uuid.NAMESPACE_DNS, 'example.com') == uuid.v3(uuid.NAMESPACE_DNS, 'example.com'),
+  'v3() must be deterministic for the same namespace and name'
+assert uuid.v3(uuid.NAMESPACE_DNS, 'a.com') != uuid.v3(uuid.NAMESPACE_DNS, 'b.com'),
+  'v3() must produce different UUIDs for different names'
+assert uuid.v5(uuid.NAMESPACE_DNS, 'example.com') == uuid.v5(uuid.NAMESPACE_DNS, 'example.com'),
+  'v5() must be deterministic for the same namespace and name'
+assert uuid.v3(uuid.NAMESPACE_DNS, 'example.com') != uuid.v5(uuid.NAMESPACE_DNS, 'example.com'),
+  'v3() and v5() must produce different UUIDs for the same input (different hash algorithms)'
+ok('v3()/v5() are deterministic and sensitive to their inputs')
+
+assert uuid.UUID(uuid.v3(uuid.NAMESPACE_DNS, 'x')).version() == 3, 'v3() must set the version nibble to 3'
+assert uuid.UUID(uuid.v5(uuid.NAMESPACE_DNS, 'x')).version() == 5, 'v5() must set the version nibble to 5'
+ok('v3()/v5() set the correct version nibble')
+
+assert raises(@() { uuid.v3('not-a-uuid', 'x') }), 'v3() must raise for an invalid namespace'
+assert raises(@() { uuid.v5('not-a-uuid', 'x') }), 'v5() must raise for an invalid namespace'
+ok('v3()/v5() reject an invalid namespace UUID')
+
+# ---------------------------------------------------------------------------
+# v1() / v6() — time-based
+# ---------------------------------------------------------------------------
+var v1a = uuid.v1()
+assert uuid.is_valid(v1a), 'v1() must produce a valid UUID'
+assert uuid.UUID(v1a).version() == 1, 'v1() must set the version nibble to 1'
+assert uuid.UUID(v1a).variant() == 'RFC 9562', 'v1() must set the RFC 9562 variant bits'
+
+var v6a = uuid.v6()
+assert uuid.is_valid(v6a), 'v6() must produce a valid UUID'
+assert uuid.UUID(v6a).version() == 6, 'v6() must set the version nibble to 6'
+assert uuid.UUID(v6a).variant() == 'RFC 9562', 'v6() must set the RFC 9562 variant bits'
+ok('v1()/v6() produce valid, correctly-versioned and -varianted UUIDs')
+
+var fixed_node = '0123456789ab'
+assert uuid.v1(fixed_node).ends_with(fixed_node), 'v1() must honor an explicit node argument'
+assert uuid.v6(fixed_node).ends_with(fixed_node), 'v6() must honor an explicit node argument'
+ok('v1()/v6() honor an explicit node argument')
+
+# ---------------------------------------------------------------------------
+# v8() — custom/application-defined
+# ---------------------------------------------------------------------------
+var v8a = uuid.v8(0x0123456789ab, 0x0cd, 0x0123456789abcdef)
+assert uuid.is_valid(v8a), 'v8() must produce a valid UUID'
+assert uuid.UUID(v8a).version() == 8, 'v8() must set the version nibble to 8'
+assert uuid.UUID(v8a).variant() == 'RFC 9562', 'v8() must set the RFC 9562 variant bits'
+ok('v8() produces a valid, correctly-versioned and -varianted UUID from custom fields')
+
+# ---------------------------------------------------------------------------
+# UUID class — parsing multiple accepted forms
+# ---------------------------------------------------------------------------
+var canonical = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+assert uuid.UUID(canonical).to_string() == canonical, 'the constructor must accept canonical form'
+assert uuid.UUID(canonical.replace('-', '')).to_string() == canonical,
+  'the constructor must accept raw 32-hex-character form'
+assert uuid.UUID('urn:uuid:' + canonical).to_string() == canonical, 'the constructor must accept URN form'
+assert uuid.UUID('{' + canonical.upper() + '}').to_string() == canonical,
+  'the constructor must accept brace-wrapped GUID form, normalized to lowercase'
+ok('UUID() parses canonical, raw-hex, URN, and brace-wrapped forms identically')
+
+assert raises(@() { uuid.UUID('garbage') }), 'the constructor must raise for a malformed string'
+ok('UUID() rejects a malformed string')
+
+# ---------------------------------------------------------------------------
+# UUID class — accessors
+# ---------------------------------------------------------------------------
+var id = uuid.UUID(canonical)
+assert id.version() == 4, 'version() must read the correct nibble'
+assert id.variant() == 'RFC 9562', 'variant() must read the correct bits'
+assert id.urn() == 'urn:uuid:' + canonical, 'urn() must prefix the canonical form correctly'
+assert id.hex() == canonical.replace('-', ''), 'hex() must strip every hyphen'
+assert id.is_nil() == false and id.is_max() == false, 'a normal UUID must be neither Nil nor Max'
+assert uuid.UUID(uuid.NIL).is_nil() == true, 'the Nil UUID must report is_nil()'
+assert uuid.UUID(uuid.MAX).is_max() == true, 'the Max UUID must report is_max()'
+ok('UUID accessors (version/variant/urn/hex/is_nil/is_max) are all correct')
+
+var id_bytes = id.bytes()
+assert is_bytes(id_bytes), 'bytes() must return a real bytes value'
+assert id_bytes.length() == 16, 'bytes() must return exactly 16 bytes'
+assert uuid.from_bytes(id_bytes) == canonical, 'bytes() must round-trip through from_bytes()'
+ok('bytes() returns the correct 16-byte representation and round-trips through from_bytes()')
+
+# ---------------------------------------------------------------------------
+# equals() — must accept both a UUID and a string, per its own doc
+# ---------------------------------------------------------------------------
+assert id.equals(uuid.UUID(canonical)) == true, 'equals() must accept another UUID instance'
+assert id.equals(canonical) == true, 'equals() must accept a plain canonical string'
+assert id.equals(canonical.upper()) == true, 'equals() must be case-insensitive for a string argument'
+assert id.equals(uuid.NIL) == false, 'equals() must be false for a genuinely different UUID'
+assert raises(@() { id.equals(123) }), 'equals() must raise for something that is neither a UUID nor a string'
+ok('equals() accepts both a UUID and a string, exactly as documented')
+
+# ---------------------------------------------------------------------------
+# compare() — ordering
+# ---------------------------------------------------------------------------
+var nil_id = uuid.UUID(uuid.NIL)
+var max_id = uuid.UUID(uuid.MAX)
+assert nil_id.compare(max_id) < 0, 'the Nil UUID must sort before the Max UUID'
+assert max_id.compare(nil_id) > 0, 'the Max UUID must sort after the Nil UUID'
+assert nil_id.compare(nil_id) == 0, 'a UUID must compare equal to itself'
+ok('compare() gives a correct, consistent ordering')
+
+# ---------------------------------------------------------------------------
+# from_bytes() / from_int()
+# ---------------------------------------------------------------------------
+assert raises(@() { uuid.from_bytes([1, 2, 3]) }), 'from_bytes() must raise for anything other than 16 bytes'
+assert uuid.from_bytes(bytes([0] * 16)) == uuid.NIL, 'from_bytes() of 16 zero bytes must be the Nil UUID'
+ok('from_bytes() validates its length and round-trips the Nil UUID correctly')
+
+assert uuid.from_int(0) == uuid.NIL, 'from_int(0) must be the Nil UUID'
+ok('from_int() produces the Nil UUID for 0')
+
+# ---------------------------------------------------------------------------
+# nil_uuid() / max_uuid()
+# ---------------------------------------------------------------------------
+assert uuid.nil_uuid() == uuid.NIL, 'nil_uuid() must match the NIL constant'
+assert uuid.max_uuid() == uuid.MAX, 'max_uuid() must match the MAX constant'
+ok('nil_uuid()/max_uuid() match their corresponding constants')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

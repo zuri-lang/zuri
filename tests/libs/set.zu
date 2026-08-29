@@ -1,0 +1,173 @@
+/**
+ * test_set.zu
+ *
+ * Test suite for the `set` standard library module: set-relation
+ * predicates, the mutating and non-mutating operation families,
+ * iteration, and equality.
+ */
+
+import set
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  set module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Construction, contains, length, is_empty
+# ---------------------------------------------------------------------------
+var s = set([1, 2, 2, 3, 1])
+assert s.length() == 3, 'constructing from a list must deduplicate elements'
+assert s.contains(2) == true and s.contains(99) == false, 'contains() must reflect actual membership'
+assert set().is_empty() == true, 'an empty set must report is_empty()'
+assert s.is_empty() == false, 'a non-empty set must not report is_empty()'
+ok('construction deduplicates, and contains()/length()/is_empty() agree with it')
+
+var from_dict = set({ a: 1, b: 2 })
+assert from_dict.contains('a') and from_dict.contains('b'), 'constructing from a dict must use its keys as elements'
+ok('construction from a dict uses its keys')
+
+# ---------------------------------------------------------------------------
+# union / intersect / difference / symmetric_difference
+# ---------------------------------------------------------------------------
+var a = set([1, 2, 3])
+var b = set([2, 3, 4])
+
+assert a.union(b).equals(set([1, 2, 3, 4])), 'union() must combine both sets'
+assert a.intersect(b).equals(set([2, 3])), 'intersect() must keep only shared elements'
+assert a.difference(b).equals(set([1])), 'difference() must keep only elements unique to self'
+assert a.symmetric_difference(b).equals(set([1, 4])), 'symmetric_difference() must keep elements in exactly one set'
+ok('union()/intersect()/difference()/symmetric_difference() compute the correct new sets')
+
+assert (a + b).equals(a.union(b)), '+ must be equivalent to union()'
+assert (a - b).equals(a.difference(b)), '- must be equivalent to difference(), not intersect()'
+ok('+ and - operators match union() and difference() respectively')
+
+# ---------------------------------------------------------------------------
+# is_subset() / is_superset() / is_disjoint()
+# ---------------------------------------------------------------------------
+var small = set([1, 2])
+var big = set([1, 2, 3])
+
+assert small.is_subset(big) == true, 'a strictly smaller, fully-contained set must be a subset'
+assert big.is_subset(small) == false, 'a strictly larger set can never be a subset of a smaller one'
+assert big.is_superset(small) == true, 'a strictly larger set containing the other must be a superset'
+assert small.is_superset(big) == false, 'a strictly smaller set can never be a superset of a larger one'
+assert big.is_subset(big) == true, 'a set must be a subset of itself'
+assert big.is_superset(big) == true, 'a set must be a superset of itself'
+ok('is_subset()/is_superset() give the mathematically correct answer, including equal sets')
+
+assert set([1, 2]).is_disjoint(set([3, 4])) == true, 'two sets with no shared elements must be disjoint'
+assert set([1, 2]).is_disjoint(set([2, 3])) == false, 'two sets with a shared element must not be disjoint'
+ok('is_disjoint() correctly detects shared elements')
+
+# ---------------------------------------------------------------------------
+# equals() vs. == (reference identity)
+# ---------------------------------------------------------------------------
+assert set([1, 2, 3]).equals(set([3, 2, 1])) == true, 'equals() must ignore element order'
+assert set([1, 2]).equals(set([1, 2, 3])) == false, 'equals() must be false for sets of different size'
+assert (set([1, 2]) == set([1, 2])) == false,
+  '== must still compare by reference identity, not use equals() automatically'
+ok('equals() compares contents; == still compares identity')
+
+# ---------------------------------------------------------------------------
+# add() / remove() / pop() / clear()
+# ---------------------------------------------------------------------------
+var m = set()
+assert m.add(1) == true, 'add() of a genuinely new element must return true'
+assert m.add(1) == false, 'add() of an already-present element must return false and not duplicate it'
+assert m.length() == 1, 'a duplicate add() must not grow the set'
+ok('add() reports whether the element was actually new')
+
+assert m.remove(1) == true, 'remove() of a present element must return true'
+assert m.remove(1) == false, 'remove() of an already-absent element must return false, not raise'
+ok('remove() reports whether the element was actually present')
+
+var p = set([42])
+assert p.pop() == 42, 'pop() on a single-element set must return that element'
+assert p.is_empty(), 'pop() must actually remove the element'
+assert raises(@() { set().pop() }), 'pop() on an empty set must raise'
+ok('pop() removes and returns an element, and raises when the set is empty')
+
+var c = set([1, 2, 3])
+c.clear()
+assert c.is_empty(), 'clear() must remove every element'
+ok('clear() empties the set')
+
+# ---------------------------------------------------------------------------
+# In-place update family
+# ---------------------------------------------------------------------------
+var u1 = set([1, 2])
+assert u1.update(set([2, 3, 4])) == u1, 'update() must return self for chaining'
+assert u1.equals(set([1, 2, 3, 4])), 'update() must merge the other set in place'
+ok('update() mutates in place and matches union()')
+
+var u2 = set([1, 2, 3])
+u2.intersection_update(set([2, 3, 4]))
+assert u2.equals(set([2, 3])), 'intersection_update() must keep only shared elements, in place'
+ok('intersection_update() mutates in place and matches intersect()')
+
+var u3 = set([1, 2, 3])
+u3.difference_update(set([2, 3]))
+assert u3.equals(set([1])), 'difference_update() must remove shared elements, in place'
+ok('difference_update() mutates in place and matches difference()')
+
+var u4 = set([1, 2, 3])
+u4.symmetric_difference_update(set([2, 3, 4]))
+assert u4.equals(set([1, 4])), 'symmetric_difference_update() must keep elements in exactly one set, in place'
+ok('symmetric_difference_update() mutates in place and matches symmetric_difference()')
+
+# ---------------------------------------------------------------------------
+# Iteration, including the empty-set edge case
+# ---------------------------------------------------------------------------
+var seen = []
+for item in set([10, 20, 30]) {
+  seen.append(item)
+}
+assert seen == [10, 20, 30], 'iteration must visit every element in insertion order'
+ok('iterating a non-empty set visits every element in order')
+
+var empty_seen = []
+for item in set() {
+  empty_seen.append(item)
+}
+assert empty_seen.is_empty(), 'iterating an empty set must terminate immediately rather than crash'
+ok('iterating an empty set terminates cleanly instead of indexing out of bounds')
+
+# ---------------------------------------------------------------------------
+# clone() / to_list() / each()
+# ---------------------------------------------------------------------------
+var original = set([1, 2, 3])
+var copy = original.clone()
+copy.add(4)
+assert original.length() == 3 and copy.length() == 4, 'clone() must be an independent copy, not a shared reference'
+ok('clone() produces an independent copy')
+
+var each_seen = []
+set([1, 2, 3]).each(@(item, index) {
+  each_seen.append(item)
+})
+assert each_seen == [1, 2, 3], 'each() must visit every element in insertion order'
+ok('each() visits every element')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

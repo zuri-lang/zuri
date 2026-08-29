@@ -642,17 +642,20 @@ _ok('empty sequence',
     yaml.dump([]),
     '[]\n')
 
+# Short, all-scalar sequences now emit in flow style — see the
+# "Emitter — flow style" section below for the block-style fallback
+# once a sequence stops being short/flat enough for that.
 _ok('simple sequence',
     yaml.dump(['a', 'b', 'c']),
-    "- a\n- b\n- c\n")
+    "[a, b, c]\n")
 
 _ok('number sequence',
     yaml.dump([1, 2, 3]),
-    "- 1\n- 2\n- 3\n")
+    "[1, 2, 3]\n")
 
 _ok('mixed type sequence',
     yaml.dump([1, true, nil, 'x']),
-    "- 1\n- true\n- null\n- x\n")
+    "[1, true, null, x]\n")
 
 
 _begin('Emitter — mappings')
@@ -661,43 +664,48 @@ _ok('empty mapping',
     yaml.dump({}),
     '{}\n')
 
+# Short, all-scalar mappings now emit in flow style too, same as
+# sequences above.
 _ok('simple mapping',
     yaml.dump({a: 1, b: 2}),
-    "a: 1\nb: 2\n")
+    "{a: 1, b: 2}\n")
 
 _ok('mapping with null value',
     yaml.dump({k: nil}),
-    "k: null\n")
+    "{k: null}\n")
 
 _ok('mapping with bool value',
     yaml.dump({ok: true, err: false}),
-    "ok: true\nerr: false\n")
+    "{ok: true, err: false}\n")
 
 
 _begin('Emitter — nested structures')
 
 _ok('mapping with sequence value',
     yaml.dump({list: [1, 2, 3]}),
-    "list:\n  - 1\n  - 2\n  - 3\n")
+    "list: [1, 2, 3]\n")
 
 _ok('mapping with nested mapping',
     yaml.dump({outer: {inner: 'val'}}),
-    "outer:\n  inner: val\n")
+    "outer: {inner: val}\n")
 
 _ok('sequence of mappings',
     yaml.dump([{a: 1}, {b: 2}]),
-    "-\n  a: 1\n-\n  b: 2\n")
+    "- {a: 1}\n- {b: 2}\n")
 
+# A list of dicts isn't all-scalar, so it still forces block style —
+# this is what actually exercises the custom indent option now that
+# a short all-scalar list collapses to flow style regardless of it.
 _ok('custom indent of 4',
-    yaml.dump({x: [1, 2]}, 4),
-    "x:\n    - 1\n    - 2\n")
+    yaml.dump({x: [{a: 1}, {b: 2}]}, 4),
+    "x:\n    - {a: 1}\n    - {b: 2}\n")
 
 
 _begin('Emitter — dump_all')
 
 _ok('two documents',
     yaml.dump_all([{a: 1}, {b: 2}]),
-    "---\na: 1\n---\nb: 2\n")
+    "---\n{a: 1}\n---\n{b: 2}\n")
 
 _ok('three documents',
     yaml.dump_all([1, 'hello', nil]),
@@ -875,6 +883,139 @@ _ok('worker has its own image',
 
 _ok('env list merged into api',
     deploy['services']['api']['env'][0]['name'], 'LOG_LEVEL')
+
+
+# ===========================================================================
+# Regression coverage for the 2026-08-29 bug-fix pass
+# ===========================================================================
+
+_begin('Bug fix — block scalar indent auto-detection')
+
+_ok('empty block scalar does not swallow the next sibling key',
+    yaml.parse("a:\n  b: |\n  c: 3\n")['a']['c'],
+    3)
+
+_ok('non-empty block scalar under a nested key still works',
+    yaml.parse("a:\n  b: |\n    hello\n    world\n  c: 3\n"),
+    { a: { b: "hello\nworld\n", c: 3 } })
+
+
+_begin('Bug fix — multi-line scalar round-trip chomping')
+
+_ok_true('a multi-line string with no trailing newline round-trips exactly',
+    yaml.parse(yaml.dump({ msg: "line1\nline2\nline3" }))['msg'] == "line1\nline2\nline3")
+
+_ok_true('a multi-line string with exactly one trailing newline round-trips exactly',
+    yaml.parse(yaml.dump({ msg: "line1\nline2\nline3\n" }))['msg'] == "line1\nline2\nline3\n")
+
+
+_begin('Bug fix — comment containing a colon')
+
+_ok('a colon inside a trailing comment is not mistaken for a mapping separator',
+    yaml.parse("note: this is a value # see: docs\n"),
+    { note: 'this is a value' })
+
+
+_begin('Bug fix — !!int / !!float tag validation')
+
+_ok('!!int accepts a hex literal',
+    yaml.parse('v: !!int 0x1A')['v'],
+    26)
+
+_ok('!!int accepts an octal literal',
+    yaml.parse('v: !!int 0o17')['v'],
+    15)
+
+_ok_raises('!!int raises on non-numeric text instead of silently returning 0',
+    @() { yaml.parse('v: !!int hello') })
+
+_ok_raises('!!float raises on non-numeric text',
+    @() { yaml.parse('v: !!float hello') })
+
+_ok('!!float still accepts .inf',
+    yaml.parse('v: !!float .inf')['v'],
+    math.Infinity)
+
+
+_begin('Bug fix — flow-style emission')
+
+_ok('a short all-scalar list emits in flow style',
+    yaml.dump([1, 2, 3]),
+    "[1, 2, 3]\n")
+
+_ok('a short all-scalar dict emits in flow style',
+    yaml.dump({a: 1, b: 2}),
+    "{a: 1, b: 2}\n")
+
+_ok_true('a list too wide for flow style still falls back to block style', @() {
+  var wide = []
+  iter var i = 0; i < 20; i++ {
+    wide.append('item-number-' + i.to_string())
+  }
+  return yaml.dump(wide).starts_with('- item-number-0\n')
+}())
+
+_ok_true('flow-style output round-trips correctly',
+    yaml.parse(yaml.dump([1, 2, 3])) == [1, 2, 3])
+
+
+_begin('Bug fix — alias as a mapping key')
+
+_ok('an alias used as a mapping key dereferences to its anchored value',
+    yaml.parse("x: &a hello\n*a: value\n"),
+    { x: 'hello', hello: 'value' })
+
+_ok_raises('an undefined alias used as a mapping key still raises',
+    @() { yaml.parse("*undefined: value\n") })
+
+
+_begin('Bug fix — %YAML directive validation')
+
+_ok('a %YAML 1.x directive is accepted regardless of minor version',
+    yaml.parse("%YAML 1.1\n---\na: 1\n"),
+    { a: 1 })
+
+_ok_raises('a %YAML directive with an unsupported major version raises',
+    @() { yaml.parse("%YAML 999.999\n---\na: 1\n") })
+
+_ok_raises('a malformed %YAML version string raises',
+    @() { yaml.parse("%YAML garbage\n---\na: 1\n") })
+
+
+_begin('New feature — anchor/alias re-emission for shared references')
+
+_ok_true('a value referenced from two places is emitted once and aliased the second time', @() {
+  var shared = [1, 2, 3]
+  var data = { a: shared, b: shared }
+  var out = yaml.dump(data)
+  return out.contains('&') and out.contains('*')
+}())
+
+_ok_true('a shared reference round-trips back to two equal (though no longer identical) copies', @() {
+  var shared = [1, 2, 3]
+  var data = { a: shared, b: shared }
+  var back = yaml.parse(yaml.dump(data))
+  return back['a'] == back['b']
+}())
+
+_ok_true('a shared reference inside a sequence round-trips correctly', @() {
+  var shared = [1, 2, 3]
+  var back = yaml.parse(yaml.dump([shared, shared, [9]]))
+  return back[0] == back[1] and back[2] == [9]
+}())
+
+_ok_true('two structurally-identical but distinct lists are NOT wrongly merged into one alias', @() {
+  var data = { a: [1, 2, 3], b: [1, 2, 3] }
+  var out = yaml.dump(data)
+  # Genuinely distinct objects that just happen to look the same must
+  # each be emitted in full -- no anchor/alias pair at all here.
+  return !out.contains('&') and !out.contains('*')
+}())
+
+var _cyclic = { name: 'root' }
+_cyclic['self'] = _cyclic
+_ok_raises('a genuinely cyclic structure raises instead of recursing until the stack overflows',
+    @() { yaml.dump(_cyclic) })
 
 
 # ===========================================================================

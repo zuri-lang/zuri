@@ -29,9 +29,14 @@
  *
  * ### Document structure
  * - Multi-document streams separated by `---` - Document end
- * markers `...` - `%YAML` directives (parsed, validated) -
- * `%TAG` directives (parsed) - UTF-8, UTF-16 LE/BE, UTF-32 LE/BE
- * with BOM detection
+ * markers `...` - `%YAML` directives (parsed; the major version
+ * must be `1`, and the version string must be well-formed, or
+ * parsing raises — the minor version isn't otherwise checked) -
+ * `%TAG` directives (parsed and consumed; custom tag handles
+ * registered this way are not yet substituted into
+ * `!handle!suffix` tags) - UTF-8
+ * input only, with BOM detection/stripping for that encoding.
+ * UTF-16/UTF-32 input is not supported.
  *
  * ### Node properties
  * - Anchors (`&name`) and aliases (`*name`) with full reference
@@ -76,9 +81,7 @@
  * echo yaml.dump({ name: 'Bob', active: true, tags: ['x', 'y'] })
  * # name: Bob
  * # active: true
- * # tags:
- * #   - x
- * #   - y
+ * # tags: [x, y]
  *
  * # Parse a YAML file.
  * var config = yaml.load_file('config.yaml')
@@ -282,8 +285,42 @@ def _resolve_scalar(s) {
 # Applies an explicit tag to a raw string value, converting as required.
 def _apply_tag(tag, raw) {
   if tag == '!!str'   or tag == 'tag:yaml.org,2002:str'   { return raw.to_string() }
-  if tag == '!!int'   or tag == 'tag:yaml.org,2002:int'   { return raw.to_number().floor() }
-  if tag == '!!float' or tag == 'tag:yaml.org,2002:float' { return raw.to_number() }
+
+  if tag == '!!int'   or tag == 'tag:yaml.org,2002:int'   {
+    # Same three forms Core Schema implicit resolution accepts
+    # (_resolve_scalar, above) — decimal, octal, and hex — rather
+    # than the bare `.to_number()` this used to call, which neither
+    # understands the 0o/0x prefixes nor raises on non-numeric text
+    # (silently returning 0 for something like `!!int hello`).
+    if raw.match('/^[-+]?[0-9]+$/') {
+      return raw.to_number()
+    }
+    if raw.match('/^0o[0-7]+$/') {
+      return raw[2,].to_number(8)
+    }
+    if raw.match('/^0x[0-9A-Fa-f]+$/') {
+      return raw[2,].to_number(16)
+    }
+    raise YamlError('invalid !!int value: ' + raw, nil, nil, nil)
+  }
+
+  if tag == '!!float' or tag == 'tag:yaml.org,2002:float' {
+    if raw.match('/^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/') {
+      return raw.to_number()
+    }
+    if raw == '.inf' or raw == '.Inf' or raw == '.INF' or
+       raw == '+.inf' or raw == '+.Inf' or raw == '+.INF' {
+      return math.Infinity
+    }
+    if raw == '-.inf' or raw == '-.Inf' or raw == '-.INF' {
+      return -math.Infinity
+    }
+    if raw == '.nan' or raw == '.NaN' or raw == '.NAN' {
+      return 0/0
+    }
+    raise YamlError('invalid !!float value: ' + raw, nil, nil, nil)
+  }
+
   if tag == '!!bool'  or tag == 'tag:yaml.org,2002:bool'  {
     if _TRUE_VALUES.contains(raw)  { return true  }
     if _FALSE_VALUES.contains(raw) { return false }
@@ -575,6 +612,26 @@ class _Parser {
     self._sc.advance()  # consume '%'
     var name = self._read_plain_to_ws()
     self._sc.skip_spaces()
+
+    if name == 'YAML' {
+      var version = ''
+      while !self._sc.at_end() and !_is_ws(self._sc.peek()) and self._sc.peek() != '\n' {
+        version += self._sc.advance()
+      }
+      if !version.match('/^[0-9]+\.[0-9]+$/') {
+        self._error('malformed %YAML directive version: ' + version)
+      }
+      # Only the major version actually determines whether this
+      # parser can make sense of the document at all; a later minor
+      # version (1.3, say) is still readable by a 1.2 processor the
+      # same way real-world YAML tooling treats it, so it isn't
+      # rejected the way an entirely different major version is.
+      var major = version.split('.')[0].to_number()
+      if major != 1 {
+        self._error('unsupported YAML version ' + version + ' (this parser implements 1.2.2)')
+      }
+    }
+
     # Read the rest of the line as directive arguments (ignored beyond validation).
     while !self._sc.at_end() and self._sc.peek() != '\n' {
       self._sc.advance()
@@ -670,10 +727,10 @@ class _Parser {
     if ch == '{' { return self._parse_flow_mapping(tag) }
 
     # Block scalar: literal.
-    if ch == '|' { return self._parse_block_scalar(true, tag) }
+    if ch == '|' { return self._parse_block_scalar(indent, true, tag) }
 
     # Block scalar: folded.
-    if ch == '>' { return self._parse_block_scalar(false, tag) }
+    if ch == '>' { return self._parse_block_scalar(indent, false, tag) }
 
     # Block sequence.
     if ch == '-' and _is_ws(self._sc.peek(1)) {
@@ -741,6 +798,13 @@ class _Parser {
           }
         } else if ch == '\n' {
           return false
+        } else if ch == '#' and (i == self._sc.pos() or src[i - 1] == ' ' or src[i - 1] == '\t') {
+          # A '#' preceded by whitespace (or right at the start of
+          # this scan) starts a comment, the same rule
+          # _parse_plain_scalar() itself uses — nothing past this
+          # point is real content, so a colon inside the comment text
+          # must not be mistaken for a mapping key/value separator.
+          return false
         }
       }
       i++
@@ -757,7 +821,14 @@ class _Parser {
     var name = ''
     while !self._sc.at_end() {
       var ch = self._sc.peek()
-      if _is_ws(ch) or _is_lb(ch) or _is_flow_indicator(ch) { break }
+      # ':' isn't a valid anchor-name character either way, but it
+      # specifically needs to be an explicit stop condition (not just
+      # relying on it never coming up) for an anchored node used as a
+      # mapping key, where it's immediately followed by ':' with no
+      # separating whitespace at all.
+      if _is_ws(ch) or _is_lb(ch) or _is_flow_indicator(ch) or ch == ':' {
+        break
+      }
       name += self._sc.advance()
     }
     if name.length() == 0 { self._error('empty anchor name') }
@@ -769,7 +840,12 @@ class _Parser {
     var name = ''
     while !self._sc.at_end() {
       var ch = self._sc.peek()
-      if _is_ws(ch) or _is_lb(ch) or _is_flow_indicator(ch) { break }
+      # See _parse_anchor()'s own note on why ':' is an explicit stop
+      # condition here too — this is exactly what makes *alias work
+      # in mapping-key position.
+      if _is_ws(ch) or _is_lb(ch) or _is_flow_indicator(ch) or ch == ':' {
+        break
+      }
       name += self._sc.advance()
     }
     if name.length() == 0 { self._error('empty alias name') }
@@ -1066,7 +1142,7 @@ class _Parser {
   # Block scalar parsers (literal '|' and folded '>')
   # ---------------------------------------------------------------------------
 
-  _parse_block_scalar(literal, tag) {
+  _parse_block_scalar(indent, literal, tag) {
     self._sc.advance()  # '|' or '>'
 
     # Parse the block scalar header: [indent indicator][chomping indicator]
@@ -1099,7 +1175,13 @@ class _Parser {
     var block_indent = explicit_indent
 
     if block_indent == -1 {
-      # Auto-detect from first non-empty content line.
+      # Auto-detect from the first non-empty content line — but only
+      # a line indented at least as far as this node's own minimum
+      # (`indent`, the same threshold every other block-content call
+      # in this parser gets handed down) actually belongs to this
+      # scalar. A line at or above the enclosing mapping/sequence's
+      # own indentation is the NEXT sibling, not content, and the
+      # block scalar is empty.
       var scan_pos = self._sc.pos()
       while scan_pos < self._sc.len {
         var line_indent = 0
@@ -1108,7 +1190,9 @@ class _Parser {
           line_indent++; idx++
         }
         if idx < self._sc.len and self._sc.src[idx] != '\n' {
-          block_indent = line_indent
+          if line_indent >= indent {
+            block_indent = line_indent
+          }
           break
         }
         # Blank line — skip it.
@@ -1117,7 +1201,7 @@ class _Parser {
         }
         if scan_pos < self._sc.len { scan_pos++ }
       }
-      if block_indent == -1 { block_indent = 0 }
+      if block_indent == -1 { block_indent = indent }
     }
 
     # Collect lines.
@@ -1360,6 +1444,12 @@ class _Parser {
     var ch = self._sc.peek()
     if ch == '"'  { return self._parse_double_quoted(nil) }
     if ch == '\'' { return self._parse_single_quoted(nil) }
+    # An alias in key position dereferences to whatever value its
+    # anchor pointed at, the same as it would anywhere else a node is
+    # expected — it must not fall through to the plain-scalar loop
+    # below, which would otherwise just take it literally as the
+    # two-or-so-character text "*name".
+    if ch == '*'  { return self._parse_alias() }
     # Plain key: stop at ': ' or ':\n'.
     var key = ''
     while !self._sc.at_end() {
@@ -1531,16 +1621,21 @@ class _Parser {
 /**
  * Serialises Zuri values to YAML text.
  *
- * The emitter uses block style for collections by default and
- * chooses the minimal quoting strategy for scalars. Configure
- * via `Options`.
+ * The emitter uses block style for collections by default, falling
+ * back to flow style for a short, all-scalar collection that fits
+ * within `width`, and chooses the minimal quoting strategy for
+ * scalars. Configure indentation and line width via the two
+ * constructor arguments (`indent`, `width`), which `dump()`/
+ * `dump_all()`/`dump_file()` all expose under the same names.
  *
  * @internal — use `dump()` or `dump_file()`.
  */
 class _Emitter {
   var _indent    = 2
   var _width     = 80
-  var _seen      = {}   # id → anchor name, for detecting cycles/shared refs
+  var _counts    = {}   # id(node) → how many times it's reached (pass 1)
+  var _anchors   = {}   # id(node) → assigned anchor name (pass 2, lazy)
+  var _rendering = {}   # id(node) → true while actively being rendered
   var _anchor_id = 0
 
   @new(indent, width) {
@@ -1550,9 +1645,111 @@ class _Emitter {
 
   # Entry point: emit any Zuri value as a YAML document string.
   emit(value) {
-    self._seen      = {}
+    self._counts    = {}
+    self._anchors   = {}
+    self._rendering = {}
     self._anchor_id = 0
+    self._count_refs(value)
+
+    if is_list(value) or is_dict(value) {
+      var root_id = id(value).to_string()
+      self._rendering[root_id] = true
+      var out = self._emit_node(value, 0, false)
+      self._rendering.remove(root_id)
+      return out + '\n'
+    }
+
     return self._emit_node(value, 0, false) + '\n'
+  }
+
+  # Pass 1: counts how many times each compound (list/dict) node is
+  # reached while walking the value tree, using heap identity
+  # (id()) rather than value equality — two structurally identical
+  # but distinct lists must never be treated as the same shared
+  # reference. A node's own children are only walked the first time
+  # it's reached; if the same node is reached again, whatever it
+  # contains has already been counted, and re-walking it would
+  # recurse forever for a genuinely cyclic structure.
+  _count_refs(value) {
+    if !(is_list(value) or is_dict(value)) {
+      return
+    }
+
+    var node_id = id(value).to_string()
+    var count = self._counts.get(node_id, 0) + 1
+    self._counts[node_id] = count
+
+    if count == 1 {
+      if is_list(value) {
+        for item in value {
+          self._count_refs(item)
+        }
+      } else {
+        for val in value.values() {
+          self._count_refs(val)
+        }
+      }
+    }
+  }
+
+  # Pass 2 helper used only by the two block-style loops below
+  # (sequence items, mapping values) — the only positions able to
+  # put an anchor marker on the same line as the thing introducing
+  # the value ('- ' or 'key: '), followed by the value's own content
+  # on subsequent indented lines, which is the only form of anchored
+  # block content this parser actually round-trips correctly
+  # (verified directly against it — a bare anchor on its own
+  # separate, unindented line does not parse the way it looks like
+  # it should).
+  #
+  # Returns `{ prefix, body, is_flow }`. `prefix` is `''` or
+  # `'&name'`; the caller decides whether that's followed by `' '`
+  # or `'\n'` based on `is_flow` — NOT based on whether `body` itself
+  # happens to contain a newline, which is ambiguous: a block-style
+  # mapping or sequence with only one entry still needs its own line
+  # (its single line of content already carries the indentation that
+  # positioning demands), even though the resulting string has no
+  # embedded `\n` to detect. A node already fully rendered once
+  # elsewhere in the tree comes back as a plain `'*name'` body with
+  # an empty prefix and `is_flow: true` — the normal way a repeated
+  # shared reference becomes an alias, always a single inline token
+  # regardless of what it refers to. A node that's still actively
+  # being rendered (found via `_rendering`) means a descendant
+  # refers back to one of its own ancestors — a genuine cycle, which
+  # raises here instead of recursing until the stack overflows.
+  _emit_keyed_child(value, depth) {
+    if !(is_list(value) or is_dict(value)) {
+      return { prefix: '', body: self._emit_node(value, depth, false), is_flow: true }
+    }
+
+    var node_id = id(value).to_string()
+
+    if self._rendering.contains(node_id) {
+      raise YamlError(
+        'cannot dump a cyclic structure (a value refers back to one of its own ancestors)',
+        nil, nil, nil
+      )
+    }
+
+    if self._anchors.contains(node_id) {
+      return { prefix: '', body: '*' + self._anchors[node_id], is_flow: true }
+    }
+
+    var prefix = ''
+    if self._counts.get(node_id, 0) > 1 {
+      self._anchor_id++
+      var name = 'a' + self._anchor_id.to_string()
+      self._anchors[node_id] = name
+      prefix = '&' + name
+    }
+
+    self._rendering[node_id] = true
+    var result = is_list(value) ?
+      self._emit_sequence(value, depth, false) :
+      self._emit_mapping(value, depth, false)
+    self._rendering.remove(node_id)
+
+    return { prefix: prefix, body: result.body, is_flow: result.is_flow }
   }
 
   _emit_node(value, depth, in_flow) {
@@ -1580,11 +1777,11 @@ class _Emitter {
     }
 
     if is_list(value) {
-      return self._emit_sequence(value, depth, in_flow)
+      return self._emit_sequence(value, depth, in_flow).body
     }
 
     if is_dict(value) {
-      return self._emit_mapping(value, depth, in_flow)
+      return self._emit_mapping(value, depth, in_flow).body
     }
 
     # Fallback for other types: emit as double-quoted string.
@@ -1606,10 +1803,23 @@ class _Emitter {
 
     # If the string contains multiple lines, prefer block style (literal or folded).
     if lines.length() > 2 {
-      var pad    = self._spaces(depth * self._indent)
+      var pad = self._spaces(depth * self._indent)
 
-      # block style: newlines preserved as-is
-      return '|\n' + pad + ('\n' + pad).join(lines) 
+      # Clip chomping (the default, plain '|') always keeps exactly
+      # one trailing newline on reparse. A string that doesn't end in
+      # one at all needs the strip indicator ('|-') instead, or that
+      # newline would come back on the next parse that wasn't there
+      # to begin with.
+      var chomp_indicator = ''
+      var content = s
+      if s.ends_with('\n') {
+        content = s[,s.length() - 1]
+      } else {
+        chomp_indicator = '-'
+      }
+
+      var content_lines = content.split('\n')
+      return '|' + chomp_indicator + '\n' + pad + ('\n' + pad).join(content_lines)
     }
 
     # Prefer single-quoted when no backslashes or control chars are present.
@@ -1680,58 +1890,134 @@ class _Emitter {
     return false
   }
 
-  # Emit a list as a YAML block sequence.
+  # Emit a list, in flow style ([a, b, c]) when it's short and flat
+  # enough to fit on one line, otherwise as a YAML block sequence.
+  # Returns `{ is_flow, body }` — see _emit_keyed_child()'s own docs
+  # for why `is_flow` is a real field here rather than something a
+  # caller infers from `body`'s shape.
   _emit_sequence(items, depth, in_flow) {
     var pad = self._spaces(depth * self._indent)
 
+    # Note: neither branch below self-prefixes `pad` — a compound
+    # value returned here is always about to be embedded right after
+    # something the caller already padded ('- ' or 'key: '), or (at
+    # the true top level) depth is 0 and pad is empty anyway. Only
+    # the block-style loop further down needs to pad each line of
+    # its own multi-line output itself.
     if items.length() == 0 {
-      if in_flow return '[]'
-      return pad + '[]'
+      return { is_flow: true, body: '[]' }
+    }
+
+    if self._all_scalars(items) {
+      var flow = '[' + self._flow_items(items) + ']'
+      if pad.length() + flow.length() <= self._width {
+        return { is_flow: true, body: flow }
+      }
     }
 
     var lines = ''
     for item in items {
-      var child_str = self._emit_node(item, depth + 1, false)
-      if is_list(item) or is_dict(item) {
-        lines += pad + '-\n' + child_str + '\n'
+      var child      = self._emit_keyed_child(item, depth + 1)
+      var child_str  = child.body
+      var has_anchor = child.prefix != ''
+
+      # A block-style child needs its own indented line; a flow-style
+      # child (or a plain scalar, including a multi-line '|' one,
+      # which already carries its own indicator right after '- ')
+      # renders as a single line and belongs right after the dash.
+      if (is_list(item) or is_dict(item)) and !child.is_flow {
+        if has_anchor {
+          lines += pad + '- ' + child.prefix + '\n' + child_str + '\n'
+        } else {
+          lines += pad + '-\n' + child_str + '\n'
+        }
       } else {
-        lines += pad + '- ' + child_str + '\n'
+        if has_anchor {
+          lines += pad + '- ' + child.prefix + ' ' + child_str + '\n'
+        } else {
+          lines += pad + '- ' + child_str + '\n'
+        }
       }
     }
 
-    return lines[,-1]
+    return { is_flow: false, body: lines[,-1] }
   }
 
-  # Emit a dict as a YAML block mapping.
+  # Emit a dict, in flow style ({a: 1, b: 2}) when its values are all
+  # scalar and it's short enough to fit on one line, otherwise as a
+  # YAML block mapping. Returns `{ is_flow, body }` — see
+  # _emit_keyed_child()'s own docs for why `is_flow` is a real field
+  # here rather than something a caller infers from `body`'s shape.
   _emit_mapping(map, depth, in_flow) {
     var keys = map.keys()
 
     var pad   = self._spaces(depth * self._indent)
     var lines = ''
 
+    # See _emit_sequence's own note: nothing returned here
+    # self-prefixes `pad`, since it's always about to be embedded
+    # right after something the caller already padded.
     if keys.length() == 0 {
-      if in_flow return '{}'
-      return pad + '{}'
+      return { is_flow: true, body: '{}' }
+    }
+
+    if self._all_scalars(map.values()) {
+      var parts = []
+      for key in keys {
+        var key_str = self._emit_scalar(key.to_string(), 0, true)
+        var val_str = self._emit_node(map[key], 0, true)
+        parts.append(key_str + ': ' + val_str)
+      }
+      var flow = '{' + ', '.join(parts) + '}'
+      if pad.length() + flow.length() <= self._width {
+        return { is_flow: true, body: flow }
+      }
     }
 
     for key in keys {
       var val        = map[key]
       var key_str    = self._emit_scalar(key.to_string(), depth, false)
-      var val_str    = self._emit_node(val, depth + 1, false)
+      var child      = self._emit_keyed_child(val, depth + 1)
+      var val_str    = child.body
+      var has_anchor = child.prefix != ''
 
-      if is_list(val) or is_dict(val) {
-        lines += pad + key_str + ':\n' + val_str + '\n'
+      # Same reasoning as _emit_sequence's own loop: only a genuinely
+      # block-style value needs to move to its own line under the
+      # key — `is_flow` reflects that directly, rather than being
+      # inferred from whether val_str happens to contain a newline
+      # (ambiguous: a one-entry block mapping/sequence has no
+      # embedded newline of its own, but its single line of content
+      # still carries block-style indentation, not inline placement).
+      if (is_list(val) or is_dict(val)) and !child.is_flow {
+        if has_anchor {
+          lines += pad + key_str + ': ' + child.prefix + '\n' + val_str + '\n'
+        } else {
+          lines += pad + key_str + ':\n' + val_str + '\n'
+        }
       } else {
-        lines += pad + key_str + ': ' + val_str + '\n'
+        if has_anchor {
+          lines += pad + key_str + ': ' + child.prefix + ' ' + val_str + '\n'
+        } else {
+          lines += pad + key_str + ': ' + val_str + '\n'
+        }
       }
     }
 
-    return lines[,-1]
+    return { is_flow: false, body: lines[,-1] }
   }
 
+  # Whether every item is safe to embed in flow style: not a
+  # compound (list/dict) value, and not a string that would itself
+  # need multi-line block-scalar rendering (a '|' block scalar
+  # cannot be embedded inside flow syntax at all — it needs a real
+  # line break, which flow style's single-line, comma-separated
+  # shape has no room for).
   _all_scalars(items) {
     for item in items {
       if is_list(item) or is_dict(item) { return false }
+      if is_string(item) and item.contains('\n') {
+        return false
+      }
     }
     return true
   }

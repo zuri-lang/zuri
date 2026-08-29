@@ -1,0 +1,136 @@
+/**
+ * test_mime.zu
+ *
+ * Test suite for the `mime` standard library module: detect_from_name(),
+ * detect_from_header(), detect(), extend(), and mime_to_extension().
+ */
+
+import mime
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  mime module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# detect_from_name()
+# ---------------------------------------------------------------------------
+assert mime.detect_from_name('photo.png') == 'image/png', 'detect_from_name() must resolve a plain extension'
+assert mime.detect_from_name('photo.PNG') == 'image/png', 'detect_from_name() must be case-insensitive'
+assert mime.detect_from_name('noextension') == 'application/octet-stream',
+  'detect_from_name() must fall back for a name with no extension'
+ok('detect_from_name() resolves a plain extension case-insensitively, with a sane fallback')
+
+assert mime.detect_from_name('archive.gz') == 'application/gzip',
+  'detect_from_name() must resolve a single-suffix extension'
+assert mime.detect_from_name('archive.tar.gz') == mime.detect_from_name('archive.gz'),
+  'detect_from_name() must fall back to the shorter registered suffix when the longer one is unregistered'
+ok('detect_from_name() picks the most specific registered suffix for a multi-dot name')
+
+# ---------------------------------------------------------------------------
+# The .wma bug: was previously mapped to video/x-ms-wmv (copy-pasted from
+# .wmv), must now be its own distinct audio type.
+# ---------------------------------------------------------------------------
+assert mime.detect_from_name('song.wma') == 'audio/x-ms-wma',
+  '.wma must resolve to its own audio mime type, not the .wmv video type'
+assert mime.detect_from_name('song.wma') != mime.detect_from_name('video.wmv'),
+  '.wma and .wmv must resolve to different mime types'
+ok('.wma resolves to audio/x-ms-wma, distinct from .wmv')
+
+# ---------------------------------------------------------------------------
+# New table entries
+# ---------------------------------------------------------------------------
+assert mime.detect_from_name('photo.avif') == 'image/avif', '.avif must be a recognized extension'
+assert mime.detect_from_name('module.wasm') == 'application/wasm', '.wasm must be a recognized extension'
+ok('.avif and .wasm are recognized')
+
+# ---------------------------------------------------------------------------
+# mime_to_extension()
+# ---------------------------------------------------------------------------
+assert mime.mime_to_extension('image/png') == '.png', 'mime_to_extension() must reverse a known mime type'
+assert mime.mime_to_extension('audio/x-ms-wma') == '.wma',
+  'mime_to_extension() must agree with the fixed .wma mapping'
+assert mime.mime_to_extension('does/not-exist') == nil,
+  'mime_to_extension() must return nil for an unregistered mime type'
+ok('mime_to_extension() correctly reverses detect_from_name()')
+
+# ---------------------------------------------------------------------------
+# extend()
+# ---------------------------------------------------------------------------
+assert mime.detect_from_name('key.ppk') == 'application/octet-stream',
+  '.ppk must not be registered before extend() is called'
+assert mime.extend('.ppk', mime.MimeFormat('file/ppk')) == true,
+  'extend() must succeed the first time an extension is registered'
+assert mime.detect_from_name('key.ppk') == 'file/ppk', 'a freshly extended extension must resolve immediately'
+ok('extend() registers a brand new extension')
+
+assert mime.extend('.ppk', mime.MimeFormat('file/ppk-v2')) == false,
+  'extend() without overwrite must refuse to replace an existing entry'
+assert mime.detect_from_name('key.ppk') == 'file/ppk', 'a refused extend() must leave the existing mapping untouched'
+ok('extend() defaults to not overwriting an existing entry')
+
+assert mime.extend('.ppk', mime.MimeFormat('file/ppk-v3'), true) == true,
+  'extend() with overwrite: true must succeed on an existing entry'
+assert mime.detect_from_name('key.ppk') == 'file/ppk-v3', 'the overwritten mapping must take effect'
+ok('extend() overwrites an existing entry when explicitly told to')
+
+assert raises(@() { mime.extend('ppk-no-dot', mime.MimeFormat('file/x')) }),
+  'extend() must raise for an extension that does not start with "."'
+ok('extend() rejects a malformed extension')
+
+# ---------------------------------------------------------------------------
+# detect_from_header() / detect()
+# ---------------------------------------------------------------------------
+var png_path = 'tmp/mime_test_sample.png'
+file(png_path, 'wb').write(bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0]))
+
+var f = file(png_path, 'rb')
+assert mime.detect_from_header(f) == 'image/png', 'detect_from_header() must match a real PNG signature'
+f.close()
+
+var f2 = file(png_path, 'rb')
+assert mime.detect(f2) == 'image/png', 'detect() must agree with detect_from_header() for a binary-mode file'
+f2.close()
+
+file(png_path).delete()
+ok('detect_from_header()/detect() correctly sniff a real file signature')
+
+# A file shorter than a signature's own length must degrade gracefully
+# rather than crash with an index-out-of-bounds error.
+var short_path = 'tmp/mime_test_short.bin'
+file(short_path, 'wb').write(bytes([0x89, 0x50]))
+var f3 = file(short_path, 'rb')
+assert mime.detect_from_header(f3) == 'application/octet-stream',
+  'detect_from_header() on a file shorter than any matching signature must fall back, not crash'
+f3.close()
+file(short_path).delete()
+ok('detect_from_header() degrades gracefully on a file too short to match any signature')
+
+var text_path = 'tmp/mime_test_text.txt'
+file(text_path, 'w').write('just plain text')
+assert raises(@() { mime.detect_from_header(file(text_path, 'r')) }),
+  'detect_from_header() must raise when given a file not opened in binary mode'
+file(text_path).delete()
+ok('detect_from_header() rejects a non-binary-mode file')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

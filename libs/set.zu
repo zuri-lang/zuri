@@ -6,9 +6,11 @@
  *
  * Sets are collections of unique values. You can iterate through
  * sets in the same order in which they were initialized or set
- * by {set.Set.add()}. This module assumes that all Sets
- * containing exactly the same elements irrespective of their
- * order are equal.
+ * by {set.Set.add()}. Two Sets containing exactly the same
+ * elements, irrespective of order, are considered equal by
+ * {set.Set.equals()} — note that this is a method call, not `==`,
+ * which still compares by reference identity the way any other
+ * class instance does.
  *
  * The example below shows a brief introduction to working with
  * sets.
@@ -219,13 +221,13 @@ class Set {
    * @returns bool
    */
   is_subset(other: Set) {
-    # important early exit
-    if self.length() <= other.length() {
+    # a set larger than other can't possibly fit inside it
+    if self.length() > other.length() {
       return false
     }
 
-    for item in other {
-      if !self.contains(item) {
+    for item in self._items {
+      if !other.contains(item) {
         return false
       }
     }
@@ -241,13 +243,13 @@ class Set {
    * @returns bool
    */
   is_superset(other: Set) {
-    # important early exit
-    if self.length() >= other.length() {
+    # a set smaller than other can't possibly contain all of it
+    if self.length() < other.length() {
       return false
     }
 
-    for item in self {
-      if !other.contains(item) {
+    for item in other {
+      if !self.contains(item) {
         return false
       }
     }
@@ -301,10 +303,31 @@ class Set {
    * `set.contains(value)` will return false afterwards.
    *
    * @param any value
-   * @returns any
+   * @returns bool
    */
   remove(value: any) {
-    return self._items.remove(value)
+    if self._items.contains(value) {
+      self._items.remove(value)
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * Removes and returns an arbitrary element from the Set.
+   *
+   * @returns any
+   * @raises Error if the Set is empty.
+   */
+  pop() {
+    if self.is_empty() {
+      raise Error('pop from an empty set')
+    }
+
+    var value = self._items[0]
+    self._items.remove(value)
+    return value
   }
 
   /**
@@ -332,6 +355,86 @@ class Set {
    */
   clone() {
     return Set(self.to_list())
+  }
+
+  /**
+   * Returns a boolean indicating whether this Set and `other`
+   * contain exactly the same elements, irrespective of order.
+   * `==` does not do this comparison — it still compares by
+   * reference identity, like any other class instance — so use
+   * this method whenever you mean "same contents" rather than
+   * "same object".
+   *
+   * @param {set.Set} other
+   * @returns bool
+   */
+  equals(other: Set) {
+    if self.length() != other.length() {
+      return false
+    }
+
+    for item in self._items {
+      if !other.contains(item) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  /**
+   * Adds every element of `other` to this Set in place, and
+   * returns this Set (so calls can chain). Unlike `union()`, this
+   * mutates `self` instead of returning a new Set.
+   *
+   * @param {set.Set} other
+   * @returns {set.Set}
+   */
+  update(other: Set) {
+    for item in other {
+      self.add(item)
+    }
+
+    return self
+  }
+
+  /**
+   * Keeps only the elements this Set has in common with `other`,
+   * in place, and returns this Set. Unlike `intersect()`, this
+   * mutates `self` instead of returning a new Set.
+   *
+   * @param {set.Set} other
+   * @returns {set.Set}
+   */
+  intersection_update(other: Set) {
+    self._items = self.intersect(other).to_list()
+    return self
+  }
+
+  /**
+   * Removes every element `other` also contains from this Set, in
+   * place, and returns this Set. Unlike `difference()`, this
+   * mutates `self` instead of returning a new Set.
+   *
+   * @param {set.Set} other
+   * @returns {set.Set}
+   */
+  difference_update(other: Set) {
+    self._items = self.difference(other).to_list()
+    return self
+  }
+
+  /**
+   * Keeps only the elements in exactly one of this Set or `other`,
+   * in place, and returns this Set. Unlike `symmetric_difference()`,
+   * this mutates `self` instead of returning a new Set.
+   *
+   * @param {set.Set} other
+   * @returns {set.Set}
+   */
+  symmetric_difference_update(other: Set) {
+    self._items = self.symmetric_difference(other).to_list()
+    return self
   }
 
   /**
@@ -370,11 +473,13 @@ class Set {
     return self.to_list()
   }
 
-  @key(index) {
-    if index == nil return 0
-    if !is_number(index)
-      raise ArgumentError('sets are numerically indexed')
-    if index < self._items.length() - 1 return index + 1
+  @key(index: ?number) {
+    if index == nil {
+      return self._items.is_empty() ? nil : 0
+    }
+    if index < self._items.length() - 1 {
+      return index + 1
+    }
     return nil
   }
 
@@ -382,20 +487,12 @@ class Set {
     return self._items[index]
   }
 
-  @add(other) {
-    if !instance_of(other, Set) {
-      raise NumericError('operation + not defined for Set and ${typeof(other)}')
-    }
-
+  @add(other: Set) {
     return self.union(other)
   }
 
-  @sub(other) {
-    if !instance_of(other, Set) {
-      raise NumericError('operation - not defined for Set and ${typeof(other)}')
-    }
-
-    return self.intersect(other)
+  @sub(other: Set) {
+    return self.difference(other)
   }
 }
 
