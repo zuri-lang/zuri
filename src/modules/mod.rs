@@ -25,6 +25,7 @@ mod net_tcp;
 mod net_tls;
 mod net_udp;
 mod os;
+pub(crate) mod os_util;
 mod r#struct;
 mod zuri_compile;
 mod zuri_lex;

@@ -1,0 +1,305 @@
+/**
+ * @module os.process
+ *
+ * Process identity, subprocess execution, and signal handling.
+ *
+ * `exec()` is the simple, blocking one-shot convenience: run a
+ * command, wait for it, get back its exit code and combined output.
+ * `spawn()` is for everything `exec()` doesn't cover: streaming a
+ * child's stdout/stderr as it's produced, writing to its stdin,
+ * overriding its working directory or environment, or checking on
+ * it without blocking.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _os
+
+/**
+ * Executes the given shell (or command prompt for Windows)
+ * commands and returns a dictionary containing the exit code and
+ * the output as string.
+ *
+ * `exec()` accepts multiple string arguments and concatenates
+ * them together with a space in between before executing.
+ *
+ * The returned dictionary contains the following:
+ *
+ * - `exit_code`: number - The exit code of the program. Any
+ * number other than zero (0) should be treated as a failure. -
+ * `output`: string - The output of the program.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.exec('ls', '-l')
+ * {exit_code: 1, output: 'total 48
+ * -rw-r--r--@ 1 username  staff  705 Aug 27  2021 buggy.zu
+ * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.zu'}
+ * ```
+ *
+ * @note this blocks until the command finishes and buffers its
+ *    entire output in memory; for a long-running command, one you
+ *    need to feed input to, or one whose output you want to
+ *    process as it arrives, use `spawn()` instead.
+ * @param {...string} cmd
+ * @returns string
+ */
+def exec(...args) {
+  for arg in args {
+    if !is_string(arg)
+      raise TypeError('string expected, ${typeof(arg)} given')
+  }
+
+  var result = _os.exec(' '.join(args))
+  return { exit_code: result[0], output: result[1] }
+}
+
+/**
+ * Exit the current process and quits the Zuri runtime.
+ *
+ * @param number code
+ * @returns
+ */
+def exit(code: number) {
+  _os.exit(code)
+}
+
+/**
+ * The current process's id.
+ *
+ * @returns int
+ */
+def pid() {
+  return _os.pid()
+}
+
+/**
+ * The current process's parent's id.
+ *
+ * @note on platforms without a direct way to ask for this
+ *    (currently none Zuri targets, but see the Windows
+ *    implementation notes in the native layer), this returns `0`
+ *    rather than raising.
+ * @returns int
+ */
+def ppid() {
+  return _os.ppid()
+}
+
+/**
+ * Sends `signal` to the process identified by `pid`.
+ *
+ * @note on Windows, which has no concept of selectively signaling
+ *    a process, `signal` is ignored and the process is simply
+ *    terminated outright.
+ * @param int pid
+ * @param ?int signal: Default `15` (`SIGTERM`), matching the
+ *    `kill(1)` command's own default.
+ * @returns bool
+ * @raises Error if `pid` doesn't name a process this one has
+ *    permission to signal.
+ */
+def kill(pid: int, signal: ?int) {
+  if signal == nil {
+    signal = 15
+  }
+  return _os.kill(pid, signal)
+}
+
+/**
+ * Registers `callback` to run when this process receives the named
+ * signal, for handling things like Ctrl+C gracefully instead of
+ * being torn down immediately.
+ *
+ * `callback` takes no arguments. It runs on the main thread,
+ * between bytecode instructions — never from a background thread —
+ * so it's safe for it to do anything ordinary Zuri code can do,
+ * including raising, which propagates the same way an uncaught
+ * error from any other code would.
+ *
+ * Supported signal names are `'INT'` (Ctrl+C), `'TERM'`, `'HUP'`
+ * (Unix only), and `'BREAK'` (Windows only); names are matched
+ * case-insensitively. Registering a new callback for a name that
+ * already has one replaces it — there's no stacking of multiple
+ * handlers for the same signal.
+ *
+ * @note only takes effect for the main thread's own execution;
+ *    code running inside an `isolate` worker isn't affected by a
+ *    handler registered here.
+ * @note a signal delivered during a blocking native call (`sleep()`,
+ *    a blocking `Process.wait()`, blocking file/network I/O, ...)
+ *    isn't seen until that call returns and bytecode execution
+ *    resumes, the same limitation every cooperative signal-handling
+ *    system has.
+ * @param string name
+ * @param function callback
+ * @returns bool
+ * @raises Error if `name` isn't a recognized signal name, or isn't
+ *    supported on the current platform.
+ */
+def on_signal(name: string, callback: function) {
+  return _os.on_signal(name.upper(), callback)
+}
+
+/**
+ * A running (or finished) child process created by `spawn()`.
+ *
+ * @note constructed only by `spawn()` itself — there's no
+ *    meaningful way to build one by hand the way `net.TcpStream()`
+ *    can be built empty and connected later, since there's no
+ *    "spawn it later" step to defer.
+ */
+class Process {
+
+  @new(_ptr) {
+    self._ptr = _ptr
+  }
+
+  /**
+   * Writes `data` to the child's stdin.
+   *
+   * @param {string|bytes} data
+   * @returns bool
+   * @raises Error if this process's stdin wasn't opened with
+   *    `stdin: 'pipe'`, or has already been closed via
+   *    `close_stdin()`.
+   */
+  write_stdin(data) {
+    return _os.process_write_stdin(self._ptr, data)
+  }
+
+  /**
+   * Closes the write half of this process's stdin, so the child
+   * sees EOF on it. Needed for any child that reads its own stdin
+   * until EOF — the pipe only actually closes once this is called
+   * (or the `Process` itself is garbage collected).
+   *
+   * @returns
+   */
+  close_stdin() {
+    _os.process_close_stdin(self._ptr)
+  }
+
+  /**
+   * Reads from the child's stdout. Blocks until at least one byte
+   * has been produced or the child has exited and its stdout has
+   * hit EOF, whichever comes first.
+   *
+   * @param ?int length: The maximum number of bytes to return; all
+   *    currently buffered output if not given.
+   * @returns bytes
+   * @raises Error if this process's stdout wasn't opened with
+   *    `stdout: 'pipe'`.
+   */
+  read_stdout(length: ?int) {
+    return _os.process_read_stdout(self._ptr, length)
+  }
+
+  /**
+   * Same as `read_stdout()`, for the child's stderr instead.
+   *
+   * @param ?int length
+   * @returns bytes
+   * @raises Error if this process's stderr wasn't opened with
+   *    `stderr: 'pipe'`.
+   */
+  read_stderr(length: ?int) {
+    return _os.process_read_stderr(self._ptr, length)
+  }
+
+  /**
+   * Blocks until the child exits (or `timeout_ms` elapses,
+   * whichever comes first) and returns its exit code.
+   *
+   * @param ?int timeout_ms: Wait indefinitely if not given.
+   * @returns ?int: The exit code, or `nil` if `timeout_ms` elapsed
+   *    before the child exited.
+   */
+  wait(timeout_ms: ?int) {
+    return _os.process_wait(self._ptr, timeout_ms)
+  }
+
+  /**
+   * Checks whether the child has exited yet, without blocking.
+   *
+   * @returns ?int: The exit code if it has already exited, `nil`
+   *    if it's still running.
+   */
+  try_wait() {
+    return _os.process_try_wait(self._ptr)
+  }
+
+  /**
+   * Sends `signal` to this child process.
+   *
+   * @note on Windows, `signal` is ignored and the process is
+   *    simply terminated outright, the same as the free `kill()`
+   *    function.
+   * @param ?int signal: Default `15` (`SIGTERM`).
+   * @returns bool
+   */
+  kill(signal: ?int) {
+    if signal == nil {
+      signal = 15
+    }
+    return _os.process_kill(self._ptr, signal)
+  }
+
+  /**
+   * This child process's id.
+   *
+   * @returns int
+   */
+  pid() {
+    return _os.process_pid(self._ptr)
+  }
+}
+
+/**
+ * Spawns `cmd` as a new subprocess and returns a `Process` handle
+ * to it immediately, without waiting for it to finish.
+ *
+ * `options` may include:
+ *
+ * - `cwd`: `?string` — the child's working directory. Defaults to
+ *   this process's own current working directory.
+ * - `env`: `?dict` — extra environment variables for the child,
+ *   merged into a copy of this process's own environment by
+ *   default (set `env_replace: true` for the child to receive
+ *   *only* what's in `env`, nothing inherited).
+ * - `env_replace`: `?bool` — see `env` above. Default `false`.
+ * - `stdin`, `stdout`, `stderr`: `?string`, one of `'pipe'`
+ *   (readable/writable through the returned `Process`), `'inherit'`
+ *   (shares this process's own stream), or `'null'` (discarded).
+ *   `stdin` defaults to `'inherit'`; `stdout` and `stderr` default
+ *   to `'pipe'`.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> var p = os.spawn('grep', ['zuri'], { stdin: 'pipe' })
+ * %> p.write_stdin('hello zuri\nhello world\n')
+ * true
+ * %> p.close_stdin()
+ * %> p.read_stdout()
+ * b'hello zuri\n'
+ * %> p.wait()
+ * 0
+ * ```
+ *
+ * @param string cmd
+ * @param ?list args: The command's own arguments (not shell-
+ *    interpreted the way `exec()`'s combined string is — each
+ *    element is passed to the child as one literal argument).
+ * @param ?dict options
+ * @returns Process
+ * @raises Error if `cmd` couldn't be spawned at all (not found, no
+ *    permission, ...).
+ */
+def spawn(cmd: string, args: ?list, options: ?dict) {
+  if args == nil {
+    args = []
+  }
+  return Process(_os.spawn_process(cmd, args, options))
+}

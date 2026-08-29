@@ -1,0 +1,95 @@
+/**
+ * test_os_env.zu
+ *
+ * Test suite for the `os` module's environment-variable functions:
+ * get_env(), set_env(), unset_env(), environ(), and expand_vars().
+ */
+
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os module — environment variable test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# get_env() / set_env()
+# ---------------------------------------------------------------------------
+assert os.get_env('ZURI_TEST_ENV_DOES_NOT_EXIST') == nil,
+  'get_env() of an unset variable must return nil'
+assert os.get_env('ZURI_TEST_ENV_DOES_NOT_EXIST', 'fallback') == 'fallback',
+  'get_env() must return the given default when the variable is unset'
+ok('get_env() returns nil, or a given default, for an unset variable')
+
+assert os.set_env('ZURI_TEST_ENV_1', 'first') == true, 'set_env() on a fresh variable must succeed'
+assert os.get_env('ZURI_TEST_ENV_1') == 'first', 'get_env() must see what set_env() just wrote'
+ok('set_env() writes a variable that get_env() reads back')
+
+assert os.set_env('ZURI_TEST_ENV_1', 'second') == false,
+  'set_env() without overwrite must refuse to change an existing variable'
+assert os.get_env('ZURI_TEST_ENV_1') == 'first',
+  'a refused set_env() must leave the existing value untouched'
+ok('set_env() defaults to not overwriting an existing variable')
+
+assert os.set_env('ZURI_TEST_ENV_1', 'second', true) == true,
+  'set_env() with overwrite: true must succeed on an existing variable'
+assert os.get_env('ZURI_TEST_ENV_1') == 'second', 'get_env() must see the overwritten value'
+ok('set_env() overwrites when explicitly told to')
+
+# ---------------------------------------------------------------------------
+# unset_env()
+# ---------------------------------------------------------------------------
+assert os.unset_env('ZURI_TEST_ENV_1') == true,
+  'unset_env() of a variable that exists must return true'
+assert os.get_env('ZURI_TEST_ENV_1') == nil, 'the variable must be gone after unset_env()'
+assert os.unset_env('ZURI_TEST_ENV_1') == false,
+  'unset_env() of a variable that no longer exists must return false'
+ok('unset_env() removes a variable and reports whether it existed')
+
+# ---------------------------------------------------------------------------
+# environ()
+# ---------------------------------------------------------------------------
+os.set_env('ZURI_TEST_ENV_2', 'present')
+var snapshot = os.environ()
+assert snapshot['ZURI_TEST_ENV_2'] == 'present',
+  'environ() must include every variable set_env() has written'
+os.unset_env('ZURI_TEST_ENV_2')
+ok('environ() returns a dict containing currently set variables')
+
+# ---------------------------------------------------------------------------
+# expand_vars()
+# ---------------------------------------------------------------------------
+os.set_env('ZURI_TEST_NAME', 'zuri')
+assert os.expand_vars('hello, $ZURI_TEST_NAME!') == 'hello, zuri!',
+  'expand_vars() must substitute a bare $NAME reference'
+# Built via concatenation, not a literal '${...}' in source, since
+# that would be interpolated by Zuri's own string syntax before
+# expand_vars() ever saw it.
+var braced = 'hello, $' + '{ZURI_TEST_NAME}!'
+assert os.expand_vars(braced) == 'hello, zuri!',
+  'expand_vars() must substitute a braced variable reference'
+ok('expand_vars() substitutes both bare and braced variable references')
+
+assert os.expand_vars('value: $ZURI_TEST_ENV_DOES_NOT_EXIST') == 'value: ',
+  'expand_vars() must expand a reference to an unset variable to an empty string'
+ok('expand_vars() expands an unset variable reference to an empty string')
+
+assert os.expand_vars('no variables here') == 'no variables here',
+  'expand_vars() must leave text with no $ references unchanged'
+ok('expand_vars() is a no-op on text with no variable references')
+
+os.unset_env('ZURI_TEST_NAME')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

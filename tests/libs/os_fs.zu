@@ -1,0 +1,136 @@
+/**
+ * test_os_fs.zu
+ *
+ * Test suite for the `os` module's filesystem functions: create_dir(),
+ * read_dir(), remove_dir(), dir_exists(), is_dir(), rename(),
+ * is_symlink(), readlink(), which(), and glob(). chmod()/chown()/
+ * umask() are exercised only as far as a non-root CI-style
+ * environment reasonably allows.
+ */
+
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os module — filesystem test suite'
+echo '═══════════════════════════════════════════════════════'
+
+var root = os.create_temp_dir('zuri-os-fs-')
+
+# ---------------------------------------------------------------------------
+# create_dir() / dir_exists() / is_dir() / remove_dir()
+# ---------------------------------------------------------------------------
+var sub = os.join_paths(root, 'sub')
+assert os.create_dir(sub) == true, 'create_dir() on a fresh path must return true'
+assert os.dir_exists(sub) == true, 'dir_exists() must be true right after create_dir()'
+assert os.is_dir(sub) == true, 'is_dir() must be true for a directory'
+assert os.create_dir(sub) == false, 'create_dir() on an already-existing directory must return false'
+ok('create_dir()/dir_exists()/is_dir() agree with each other')
+
+var a_file = os.join_paths(sub, 'a.txt')
+file(a_file, 'w').write('hello')
+assert os.dir_exists(a_file) == false,
+  'dir_exists() must be false for a path that exists but is a regular file'
+assert os.is_dir(a_file) == false, 'is_dir() must be false for a regular file'
+ok('dir_exists()/is_dir() distinguish a file from a directory')
+
+# ---------------------------------------------------------------------------
+# read_dir()
+# ---------------------------------------------------------------------------
+var flat = os.read_dir(sub, false)
+assert flat.contains('a.txt'), 'read_dir() must list a.txt inside sub'
+ok('read_dir() lists entries in a directory')
+
+var nested_dir = os.join_paths(sub, 'nested')
+os.create_dir(nested_dir)
+file(os.join_paths(nested_dir, 'b.txt'), 'w').write('world')
+var recursive = os.read_dir(sub, true)
+assert recursive.contains('nested') and recursive.contains(os.join_paths('nested', 'b.txt')),
+  'read_dir(recursive: true) must also list nested entries'
+ok('read_dir() with recursive: true descends into subdirectories')
+
+# ---------------------------------------------------------------------------
+# rename()
+# ---------------------------------------------------------------------------
+var renamed = os.join_paths(sub, 'renamed.txt')
+assert os.rename(a_file, renamed) == true, 'rename() must succeed on an existing file'
+assert !file(a_file).exists(), 'the old name must no longer exist after rename()'
+assert file(renamed).exists(), 'the new name must exist after rename()'
+ok('rename() moves a file to its new name')
+
+# ---------------------------------------------------------------------------
+# is_symlink() / readlink()
+# ---------------------------------------------------------------------------
+assert os.is_symlink(renamed) == false, 'is_symlink() must be false for a regular file'
+assert os.is_symlink(os.join_paths(sub, 'does-not-exist')) == false,
+  'is_symlink() must be false (not raise) for a path that does not exist at all'
+
+var link = os.join_paths(sub, 'link.txt')
+file(renamed).symlink(link)
+assert os.is_symlink(link) == true, 'is_symlink() must be true for a freshly created symlink'
+assert os.readlink(link) == renamed, 'readlink() must return the link\'s target'
+assert raises(@() { os.readlink(renamed) }),
+  'readlink() on a non-symlink path must raise'
+ok('is_symlink()/readlink() correctly identify and resolve a symbolic link')
+
+# ---------------------------------------------------------------------------
+# which()
+# ---------------------------------------------------------------------------
+var sh = os.which('sh')
+assert sh != nil and file(sh).exists(), 'which("sh") must find a real executable on PATH'
+assert os.which('zuri-definitely-not-a-real-command-xyz') == nil,
+  'which() of a nonexistent command must return nil'
+ok('which() finds a real executable on PATH and returns nil for one that does not exist')
+
+# ---------------------------------------------------------------------------
+# glob()
+# ---------------------------------------------------------------------------
+var matches = os.glob('*.txt', sub)
+assert matches.contains('renamed.txt') and matches.contains('link.txt'),
+  'glob("*.txt") must match every top-level .txt file'
+assert !matches.contains(os.join_paths('nested', 'b.txt')),
+  'glob("*.txt") (single star) must not match a nested path'
+ok('glob() with a single-star pattern matches only top-level entries')
+
+var deep_matches = os.glob('**', sub)
+assert deep_matches.contains(os.join_paths('nested', 'b.txt')),
+  'glob() with a double-star pattern must match nested paths too'
+ok('glob() with a double-star pattern matches across nested directories')
+
+var q_matches = os.glob('link.???', sub)
+assert q_matches.contains('link.txt'), 'glob() "?" must match exactly one character'
+ok('glob() "?" matches a single character')
+
+# ---------------------------------------------------------------------------
+# umask() — query-only mode must round-trip without side effects
+# ---------------------------------------------------------------------------
+var before = os.umask()
+var after = os.umask()
+assert before == after, 'umask() called twice with no argument must report the same value both times'
+ok('umask() with no argument queries without changing anything')
+
+os.remove_dir(root, true)
+assert !os.dir_exists(root), 'remove_dir(recursive: true) must remove the directory and everything in it'
+ok('remove_dir() with recursive: true removes a non-empty directory tree')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

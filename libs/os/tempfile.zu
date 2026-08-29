@@ -1,0 +1,70 @@
+/**
+ * @module os.tempfile
+ *
+ * Locating the platform's temporary-file directory and creating
+ * uniquely named scratch files/directories inside it without a
+ * check-then-create race: `create_temp_file()`/`create_temp_dir()`
+ * reserve the path atomically (the same guarantee the Unix
+ * `mkstemp()` family gives), so two concurrent callers can never
+ * be handed the same path.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _os
+
+/**
+ * The platform's directory for temporary files (e.g. `/tmp` on
+ * Unix, whatever `%TEMP%` points to on Windows).
+ *
+ * @returns string
+ */
+def temp_dir() {
+  return _os.tempdir()
+}
+
+/**
+ * Atomically creates a new, empty, uniquely named file inside
+ * `temp_dir()` and returns its path. The file is created (and left
+ * open-then-closed) purely to reserve the name without a race
+ * between checking whether it exists and creating it — this
+ * function only hands back the path; open it yourself with
+ * `file()` to actually read or write it.
+ *
+ * @note the caller is responsible for deleting the file (via
+ *    `file(path).delete()`) once it's no longer needed; nothing
+ *    cleans temp files up automatically.
+ * @param ?string prefix: Default `''`.
+ * @param ?string suffix: Default `''`.
+ * @returns string
+ * @raises Error if a unique name couldn't be found, or the file
+ *    couldn't be created.
+ */
+def create_temp_file(prefix: ?string, suffix: ?string) {
+  if prefix == nil {
+    prefix = ''
+  }
+  if suffix == nil {
+    suffix = ''
+  }
+  return _os.create_temp_file(prefix, suffix)
+}
+
+/**
+ * Atomically creates a new, empty, uniquely named directory inside
+ * `temp_dir()` and returns its path.
+ *
+ * @note the caller is responsible for removing the directory (via
+ *    `os.remove_dir(path, true)`) once it's no longer needed;
+ *    nothing cleans temp directories up automatically.
+ * @param ?string prefix: Default `''`.
+ * @returns string
+ * @raises Error if a unique name couldn't be found, or the
+ *    directory couldn't be created.
+ */
+def create_temp_dir(prefix: ?string) {
+  if prefix == nil {
+    prefix = ''
+  }
+  return _os.create_temp_dir(prefix)
+}

@@ -649,6 +649,21 @@ pub struct VM {
   /// invisible to the normal root scan; push it here for as long as it
   /// needs to survive, then truncate back off.
   gc_pins: Vec<Value>,
+  /// This VM's `os.on_signal()` callbacks, indexed by position in
+  /// `modules::os_util::signal::NAMES`; `Value::nil()` where no
+  /// callback is registered for that signal. Empty until the first
+  /// `on_signal()` call on this VM, since most VMs (every isolate
+  /// worker, ordinarily) never touch signals at all.
+  ///
+  /// A real GC root of its own (see the mark/forward loops in
+  /// `collect_garbage`/`collect_minor`), deliberately NOT stored in
+  /// `gc_pins`: `call_native` unconditionally truncates `gc_pins`
+  /// back to its pre-call length the moment the native that pinned
+  /// something returns (its own doc comment explains why), which is
+  /// exactly wrong for a callback that needs to survive for the rest
+  /// of the VM's life, not just for the one `on_signal()` call that
+  /// registered it.
+  signal_callbacks: Vec<Value>,
   /// `(base pointer, element count)` for every scalar-replaced allocation a
   /// JIT-compiled function currently has live in its own Cranelift stack
   /// frame. Retired in lockstep with the owning frame via
@@ -847,6 +862,7 @@ impl VM {
       open_upvalues: Vec::new(),
       has_open_upvalues: Cell::new(false),
       gc_pins: Vec::new(),
+      signal_callbacks: Vec::new(),
       jit_scalar_roots: Vec::new(),
       jit_scalar_roots_len: Cell::new(0),
       catch_stack: Vec::new(),
@@ -2165,6 +2181,36 @@ impl VM {
     self.gc_pins[idx]
   }
 
+  /// Registers `value` as the callback for signal index `idx` (a
+  /// position in `modules::os_util::signal::NAMES`), replacing
+  /// whatever was registered before. Grows `signal_callbacks` (filling
+  /// any new slots with `nil`) the first time this VM ever registers
+  /// one.
+  pub(crate) fn set_signal_callback(&mut self, idx: usize, value: Value) {
+    let count = crate::modules::os_util::signal::NAMES.len();
+    if self.signal_callbacks.len() < count {
+      self.signal_callbacks.resize(count, Value::nil());
+    }
+    self.signal_callbacks[idx] = value;
+  }
+
+  /// Reads back the callback registered for signal index `idx`, or
+  /// `nil` if this VM has never registered one for it (including the
+  /// common case of never having called `on_signal()` at all).
+  #[inline]
+  pub(crate) fn signal_callback(&self, idx: usize) -> Value {
+    self.signal_callbacks.get(idx).copied().unwrap_or(Value::nil())
+  }
+
+  /// Whether this VM has ever registered a signal callback at all;
+  /// the per-instruction safepoint's cheap guard for skipping the
+  /// rest of the signal-delivery check entirely on every VM that
+  /// never touches `on_signal()` (every isolate worker, ordinarily).
+  #[inline]
+  pub(crate) fn has_signal_callbacks(&self) -> bool {
+    !self.signal_callbacks.is_empty()
+  }
+
   /// Guarantees `closure_val` isn't `Young` before handing it to compiled
   /// code, relocating it now if it is. Codegen's `closure_param` is a
   /// Cranelift SSA value loaded once at entry and reused for the whole
@@ -3363,6 +3409,31 @@ impl VM {
         // invocation; cheap, and collect_minor already relocated it via
         // the per-frame loop that keeps self.frames[..].closure in sync.
         closure_ptr = self.frames[frame_idx].closure;
+      }
+
+      // Same safepoint the GC checks above use, for the same reason:
+      // this is the one place that's always safe to call back into
+      // Zuri code from, on the VM's own owning thread, between
+      // instructions. The common case (nothing pending) costs four
+      // relaxed atomic loads inside `any_pending()` -- see
+      // `modules::os_util::signal` for why the real OS signal handler
+      // never does more than flip a flag, and why delivery is
+      // deliberately deferred all the way to here instead.
+      if self.has_signal_callbacks() {
+        if crate::modules::os_util::signal::any_pending() {
+          while let Some(idx) = crate::modules::os_util::signal::take_pending() {
+            let callback = self.signal_callback(idx);
+            if !callback.is_nil() {
+              // A callback raising is reported the same way an
+              // uncaught error from ordinary script code would be;
+              // it unwinds this run_until the normal way rather than
+              // being swallowed, so a broken handler is visible
+              // instead of silently doing nothing.
+              self.call_value(callback, &[])?;
+            }
+          }
+          closure_ptr = self.frames[frame_idx].closure;
+        }
       }
 
       let func = unsafe { &*func_ptr };
@@ -5021,6 +5092,9 @@ impl VM {
     for v in &self.gc_pins {
       Self::mark_root(*v, &mut worklist);
     }
+    for v in &self.signal_callbacks {
+      Self::mark_root(*v, &mut worklist);
+    }
     // Each jit_scalar_roots entry is count ordinary Value slots with no
     // Obj/GcBox layer, so this is the same treatment as gc_pins just
     // above, reading through a raw pointer/count pair instead of a Vec.
@@ -5132,6 +5206,9 @@ impl VM {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
     for v in &mut self.gc_pins {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
+    }
+    for v in &mut self.signal_callbacks {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
     // Same treatment as the gc_pins loop above: each entry is count live

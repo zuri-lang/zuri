@@ -115,10 +115,20 @@ rcgen = { version = "0.14", default-features = false, features = [
 # only and has no Windows equivalent, but console size IS available there
 # via the Win32 console API, so that one function gets its own real
 # implementation instead of the same "not supported" stub as the others.
+#
+# The os module (src/modules/os.rs, src/modules/os_util/) adds three
+# more features on top: SystemInformation for GlobalMemoryStatusEx/
+# GetTickCount64/hostname (os.total_memory/free_memory/uptime/hostname),
+# ToolHelp for the process-snapshot walk os.ppid() needs (Windows has
+# no direct getppid syscall), and Threading for OpenProcess/
+# TerminateProcess behind os.kill()/Process.kill().
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_System_Console",
     "Win32_Foundation",
+    "Win32_System_SystemInformation",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Threading",
 ] }
 
 

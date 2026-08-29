@@ -1,0 +1,143 @@
+/**
+ * test_os_process.zu
+ *
+ * Test suite for the `os` module's process functions: exec(), pid(),
+ * ppid(), kill(), on_signal(), and spawn()/Process. These tests spawn
+ * real Unix shell utilities (sh, echo, cat, grep) since that's the
+ * only meaningful way to exercise a real subprocess boundary.
+ */
+
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os module — process test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# pid() / ppid()
+# ---------------------------------------------------------------------------
+assert os.pid() > 0, 'pid() must return a positive process id'
+assert os.pid() == os.pid(), 'pid() must be stable across calls within the same process'
+ok('pid() returns a stable, positive process id')
+
+assert os.ppid() >= 0, 'ppid() must return a non-negative value'
+ok('ppid() returns a non-negative value')
+
+# ---------------------------------------------------------------------------
+# exec()
+# ---------------------------------------------------------------------------
+var result = os.exec('echo', 'hello from exec')
+assert result.exit_code == 0, 'exec() of a successful command must report exit_code 0'
+assert result.output.trim('\n') == 'hello from exec', 'exec() must capture the command\'s stdout'
+ok('exec() runs a command and captures its exit code and output')
+
+var failed = os.exec('exit', '7')
+assert failed.exit_code == 7, 'exec() must report a non-zero exit code accurately'
+ok('exec() reports a non-zero exit code for a failing command')
+
+# ---------------------------------------------------------------------------
+# spawn() — basic run to completion
+# ---------------------------------------------------------------------------
+var p1 = os.spawn('echo', ['spawned', 'output'])
+assert p1.read_stdout().to_string().trim('\n') == 'spawned output',
+  'Process.read_stdout() must return what the child wrote to stdout'
+assert p1.wait() == 0, 'Process.wait() must return the child\'s exit code'
+ok('spawn() runs a command and read_stdout()/wait() report its output and exit code')
+
+# ---------------------------------------------------------------------------
+# spawn() — piped stdin
+# ---------------------------------------------------------------------------
+var p2 = os.spawn('cat', [], { stdin: 'pipe' })
+p2.write_stdin('line one\nline two\n')
+p2.close_stdin()
+assert p2.read_stdout().to_string() == 'line one\nline two\n',
+  'a piped child must echo back exactly what was written to its stdin'
+assert p2.wait() == 0
+ok('spawn() with stdin: \'pipe\' lets the caller write to the child and read its output')
+
+# ---------------------------------------------------------------------------
+# spawn() — separate stdout/stderr streams
+# ---------------------------------------------------------------------------
+var p3 = os.spawn('sh', ['-c', 'echo to-stdout; echo to-stderr 1>&2'])
+var out3 = p3.read_stdout().to_string().trim('\n')
+var err3 = p3.read_stderr().to_string().trim('\n')
+p3.wait()
+assert out3 == 'to-stdout', 'read_stdout() must not include anything written to stderr'
+assert err3 == 'to-stderr', 'read_stderr() must not include anything written to stdout'
+ok('spawn() keeps stdout and stderr as independent streams')
+
+# ---------------------------------------------------------------------------
+# spawn() — options: cwd and env
+# ---------------------------------------------------------------------------
+var scratch = os.create_temp_dir('zuri-os-process-')
+var p4 = os.spawn('sh', ['-c', 'pwd'], { cwd: scratch })
+var cwd_out = p4.read_stdout().to_string().trim('\n')
+p4.wait()
+assert cwd_out == scratch, 'spawn() with a cwd option must run the child in that directory'
+ok('spawn() options.cwd changes the child\'s working directory')
+
+var p5 = os.spawn('sh', ['-c', 'echo $ZURI_TEST_SPAWN_VAR'], { env: { ZURI_TEST_SPAWN_VAR: 'from-env-option' } })
+var env_out = p5.read_stdout().to_string().trim('\n')
+p5.wait()
+assert env_out == 'from-env-option', 'spawn() with an env option must set that variable in the child'
+ok('spawn() options.env sets an extra environment variable for the child')
+
+os.remove_dir(scratch, true)
+
+# ---------------------------------------------------------------------------
+# spawn() — try_wait() and exit code for a still-running vs finished child
+# ---------------------------------------------------------------------------
+var p6 = os.spawn('sh', ['-c', 'sleep 0.2; exit 3'])
+assert p6.try_wait() == nil, 'try_wait() must return nil for a child that has not exited yet'
+assert p6.wait() == 3, 'wait() must block until the child exits and report its real exit code'
+assert p6.try_wait() == 3, 'try_wait() after the child has exited must report the same exit code'
+ok('try_wait() distinguishes a still-running child from a finished one')
+
+# ---------------------------------------------------------------------------
+# spawn() — kill()
+# ---------------------------------------------------------------------------
+var p7 = os.spawn('sh', ['-c', 'sleep 30'])
+assert p7.try_wait() == nil, 'the sleep child must still be running right after spawn()'
+p7.kill()
+var killed_code = p7.wait()
+assert killed_code != 0, 'a killed child must not report a clean (0) exit code'
+ok('Process.kill() terminates a still-running child')
+
+# ---------------------------------------------------------------------------
+# kill() — free function against this process's own pid, with a
+# harmless signal
+# ---------------------------------------------------------------------------
+assert os.kill(os.pid(), 0) == true,
+  'kill() with signal 0 must succeed against this process\'s own pid without actually sending anything'
+ok('kill() with signal 0 can probe that a process exists without disturbing it')
+
+# ---------------------------------------------------------------------------
+# on_signal()
+# ---------------------------------------------------------------------------
+var signaled = false
+os.on_signal('INT', @() {
+  signaled = true
+})
+os.kill(os.pid(), 2)
+
+var spins = 0
+while !signaled and spins < 50000000 {
+  spins++
+}
+assert signaled, 'a registered on_signal() callback must run once the signal actually arrives'
+ok('on_signal() delivers a callback when the process receives the signal')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -1,0 +1,305 @@
+/**
+ * @module os.path
+ *
+ * Path string manipulation: joining, resolving, and comparing
+ * paths. Nothing in this file touches the filesystem except where
+ * explicitly documented (`real_path()`, and `abs_path()`'s optional
+ * `strict` mode) — everything else here is pure string handling, so
+ * it works the same whether or not the path in question actually
+ * exists.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _os
+
+# Private alias so every function below can just say `_sep` instead
+# of `_os.path_separator`; not exported (leading underscore), so it
+# can't collide with `system.zu`'s own public `path_separator`.
+var _sep = _os.path_separator
+
+/**
+ * Concatenates the given paths together into a format that is
+ * valid on the current operating system.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.join_paths('/home/user', 'path/to/myfile.ext')
+ * '/home/user/path/to/myfile.ext'
+ * ```
+ *
+ * @param string... paths
+ * @returns string
+ */
+def join_paths(...paths) {
+  var result = ''
+  for arg in paths {
+    if !is_string(arg)
+      raise TypeError('string expected, ${typeof(arg)} given')
+
+    arg = arg.trim()
+
+    if arg {
+      result = result.rtrim(_sep)
+      if result != '' {
+        arg = arg.ltrim(_sep)
+      }
+
+      result += '${_sep}${arg}'
+    }
+  }
+
+  if result {
+    result = result[1,]
+  }
+
+  return result
+}
+
+/**
+ * Returns the original path to a relative path.
+ *
+ * @note if the path is a file, see `abs_path()`.
+ * @param string path
+ * @returns string
+ */
+def real_path(path: string) {
+  return _os.realpath(path)
+}
+
+/**
+ * Returns the absolute form of `path`: relative paths are resolved
+ * against the current working directory, and "." / ".." segments
+ * are collapsed — purely as string manipulation, with no filesystem
+ * access at all by default. Unlike `real_path()`, this works even
+ * when `path` (or any part of it) doesn't exist on disk, and it
+ * never resolves symbolic links; use `real_path()` when you need the
+ * true canonical path of something that already exists.
+ *
+ * @param string path
+ * @param ?bool strict: Default `false`. When `true`, the resolved
+ *    path is checked against the filesystem and an `Error` is raised
+ *    if nothing exists there.
+ * @returns string
+ */
+def abs_path(path: string, strict: ?bool) {
+  if strict == nil {
+    strict = false
+  }
+
+  var is_windows = _os.platform == 'windows'
+  var regex = is_windows ? '~^[a-zA-Z]\\:~' : '~^\\/~'
+  var is_absolute = path.match(regex)
+
+  var root = ''
+  var raw
+
+  if is_absolute {
+    if is_windows {
+      root = path[,2]
+      raw = path[2,]
+    } else {
+      raw = path
+    }
+  } else {
+    var base = cwd()
+    if is_windows {
+      root = base[,2]
+      raw = base[2,] + '\\' + path
+    } else {
+      raw = base + '/' + path
+    }
+  }
+
+  raw = raw.replace('\\', '/')
+
+  var resolved = []
+  for seg in raw.split('/') {
+    if seg == '' or seg == '.' {
+      continue
+    } else if seg == '..' {
+      if !resolved.is_empty() {
+        resolved.pop()
+      }
+    } else {
+      resolved.append(seg)
+    }
+  }
+
+  var result = root + _sep + _sep.join(resolved)
+
+  if strict and !_os.exists(result) {
+    raise Error('path "${result}" does not exist')
+  }
+
+  return result
+}
+
+/**
+ * Returns the parent directory of the pathname pointed to by
+ * `path`. Any trailing `/` characters are not counted as part of
+ * the directory name. If `path` is an empty string, or contains
+ * no `/` characters, dir_name() returns the string ".",
+ * signifying the current directory.
+ *
+ * @param string path
+ * @returns string
+ */
+def dir_name(path: string) {
+  return _os.dirname(path)
+}
+
+/**
+ * The base_name() function returns the last component from the
+ * pathname pointed to by `path`, deleting any trailing `/`
+ * characters. If path consists entirely of `/` characters, the
+ * string '/' is returned. If path is an empty string, the string
+ * '.' is returned.
+ *
+ * @param string path
+ * @returns string
+ */
+def base_name(path: string) {
+  return _os.basename(path)
+}
+
+/**
+ * Returns the relative path from `base` to `target`: the shortest
+ * `.`/`..`-based path such that, starting inside `base`, following
+ * it lands on `target`. Both arguments are first resolved with
+ * `abs_path()`, so neither has to already be absolute or exist on
+ * disk.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.relative_path('/home/user/project', '/home/user/project/src/main.zu')
+ * 'src/main.zu'
+ * %> os.relative_path('/home/user/project/src', '/home/user/other/lib.zu')
+ * '../../other/lib.zu'
+ * %> os.relative_path('/home/user/project', '/home/user/project')
+ * '.'
+ * ```
+ *
+ * @param string base
+ * @param string target
+ * @returns string
+ */
+def relative_path(base: string, target: string) {
+  var base_segments = abs_path(base).split(_sep).filter(@(s) { return s != '' })
+  var target_segments = abs_path(target).split(_sep).filter(@(s) { return s != '' })
+
+  var common = 0
+  while common < base_segments.length() and
+        common < target_segments.length() and
+        base_segments[common] == target_segments[common] {
+    common++
+  }
+
+  var base_len = base_segments.length()
+  var target_len = target_segments.length()
+
+  var parts = []
+  for i in common..base_len {
+    parts.append('..')
+  }
+  for i in common..target_len {
+    parts.append(target_segments[i])
+  }
+
+  return parts.is_empty() ? '.' : '/'.join(parts)
+}
+
+/**
+ * Expands a leading `~` in `path` into the current user's home
+ * directory, the same way a shell would before running a command.
+ * A bare `~` and a `~/...`-prefixed path are both expanded; a path
+ * that doesn't start with `~` is returned unchanged.
+ *
+ * @note expanding another user's home directory (`~other_user/...`)
+ *    isn't supported; a path in that form is returned unchanged,
+ *    the same fallback Python's `os.path.expanduser` uses when it
+ *    can't resolve one either.
+ * @param string path
+ * @returns string
+ */
+def expand_user(path: string) {
+  if path != '~' and !path.starts_with('~/') and !path.starts_with('~\\') {
+    return path
+  }
+
+  var home = home_dir()
+  if home == nil {
+    return path
+  }
+
+  if path == '~' {
+    return home
+  }
+
+  return join_paths(home, path[2,])
+}
+
+/**
+ * Returns `true` if the resolved form of `candidate` is `base`
+ * itself or lies somewhere underneath it, and `false` otherwise —
+ * including when `candidate` escapes `base` via `..` segments.
+ * Both paths are resolved with `abs_path()` first, so relative
+ * paths and mixed separators are handled the same way `abs_path()`
+ * itself handles them.
+ *
+ * This is the general form of the "does this archive entry try to
+ * write outside the extraction directory" (Zip Slip) check every
+ * archive/upload/sandboxing feature eventually needs; reach for
+ * this instead of writing that containment logic again.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.path_contains('/home/user/project', '/home/user/project/src/main.zu')
+ * true
+ * %> os.path_contains('/home/user/project', '/home/user/project/../../etc/passwd')
+ * false
+ * ```
+ *
+ * @param string base
+ * @param string candidate
+ * @returns bool
+ */
+def path_contains(base: string, candidate: string) {
+  var resolved_base = abs_path(base)
+  var resolved_candidate = abs_path(candidate)
+
+  return resolved_candidate == resolved_base or
+    resolved_candidate.starts_with(resolved_base + _sep)
+}
+
+/**
+ * The current machine user's home directory. If the home directory
+ * cannot be detected, it returns `nil`.
+ *
+ * @returns ?string
+ */
+def home_dir() {
+  return _os.homedir()
+}
+
+/**
+ * The current working directory.
+ *
+ * @returns string
+ */
+def cwd() {
+  return _os.cwd()
+}
+
+/**
+ * Navigates the working directory into the specified path.
+ *
+ * @param string path
+ * @returns bool
+ */
+def change_dir(path: string) {
+  return _os.chdir(path)
+}

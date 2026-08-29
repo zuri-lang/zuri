@@ -1,0 +1,406 @@
+/**
+ * @module os.fs
+ *
+ * Directory and filesystem-entry operations: creating, listing, and
+ * removing directories, permissions and ownership, symbolic links,
+ * searching `PATH` for an executable, and glob-style pattern
+ * matching. Per-file operations (reading, writing, deleting, or
+ * copying a single file, or getting its size/mtime/etc.) live on
+ * the `file` class instead — see `file.stats()`, `file.delete()`,
+ * `file.copy()`, and friends.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _os
+import stat
+import .env { get_env }
+import .path { join_paths }
+
+# File types (dirent d_type values; see `read_dir()`'s returned
+# entries and `_os.readdir()`'s own d_type interpretation).
+
+/**
+ * Unknown file type
+ * @type number
+ */
+var DT_UNKNOWN = _os.DT_UNKNOWN
+
+/**
+ * Block device file type
+ * @type number
+ */
+var DT_BLK = _os.DT_BLK
+
+/**
+ * Character device file type
+ * @type number
+ */
+var DT_CHR = _os.DT_CHR
+
+/**
+ * Directory file type
+ * @type number
+ */
+var DT_DIR = _os.DT_DIR
+
+/**
+ * Named pipe file type
+ * @type number
+ */
+var DT_FIFO = _os.DT_FIFO
+
+/**
+ * Symbolic link file type
+ * @type number
+ */
+var DT_LNK = _os.DT_LNK
+
+/**
+ * Regular file type
+ * @type number
+ */
+var DT_REG = _os.DT_REG
+
+/**
+ * Local-domain socket file type
+ * @type number
+ */
+var DT_SOCK = _os.DT_SOCK
+
+/**
+ * Whiteout file type (only meaningful on UNIX and some
+ * unofficial Linux versions).
+ * @type number
+ * @note value is `-1` on systems where it is not supported.
+ */
+var DT_WHT = _os.DT_WHT
+
+/**
+ * Creates the given directory with the specified permission and
+ * optionally add new files into it if any is given.
+ *
+ * @note if the directory already exists, it returns `false`
+ *    otherwise, it returns `true`.
+ * @note permission should be given as octal number.
+ * @param string path
+ * @param ?int permission: Default value is `0c777`
+ * @param ?bool recursive: Default value is `true`.
+ * @returns boolean
+ */
+def create_dir(path: string, permission: ?int, recursive: ?bool) {
+  if _os.platform == 'windows' {
+    path = path.replace('@\/@', '\\')
+  }
+
+  if permission == nil {
+    permission = 0c777
+  }
+
+  if recursive == nil {
+    recursive = true
+  }
+
+  return _os.createdir(path, permission, recursive)
+}
+
+/**
+ * Scans the given directory and returns a list of all matched
+ * files.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.read_dir('./tests')
+ * [., .., myprogram.zu, single_thread.zu, test.zu, buggy.zu]
+ * ```
+ *
+ * When the recursive argument is set to `true`, the function
+ * returns all matched files as well files in sub-directories
+ * within the path.
+ *
+ * @note `.` indicates current directory and can be used as
+ *    argument to _os.read_dir_ as well.
+ * @note `..` indicates parent directory and can be used as
+ *    argument to _os.read_dir_ as well.
+ *
+ * @param string path
+ * @param ?bool recursive
+ * @returns list[string]
+ */
+def read_dir(path: string, recursive: ?bool) {
+  if recursive == nil
+    recursive = false
+
+  return _os.readdir(path, recursive)
+}
+
+/**
+ * Changes the permission set on a directory to the given mode.
+ * It is advisable to set the mode with an octal number (e.g.
+ * 0c777) as this is consistent with operating system values.
+ *
+ * @param string path
+ * @param int mode
+ * @returns boolean
+ */
+def chmod(path: string, mode: int) {
+  return _os.chmod(path, mode)
+}
+
+/**
+ * Returns `true` if the path is a directory or `false`
+ * otherwise.
+ *
+ * @param string path
+ * @returns bool
+ */
+def is_dir(path: string) {
+  return _os.isdir(path)
+}
+
+/**
+ * Deletes a non-empty directory. If recursive is `true`,
+ * non-empty directories will have their contents deleted first.
+ *
+ * @param string path
+ * @param ?bool recursive: Default value is `false`.
+ * @returns bool
+ */
+def remove_dir(path: string, recursive: ?bool) {
+  if recursive == nil {
+    recursive = false
+  }
+  return _os.removedir(path, recursive)
+}
+
+/**
+ * Returns `true` if `path` exists and is a directory, `false`
+ * otherwise (including when `path` exists but is a regular file
+ * or some other non-directory entry).
+ *
+ * @param string path
+ * @returns bool
+ */
+def dir_exists(path: string) {
+  return _os.isdir(path)
+}
+
+/**
+ * Renames the file or directory specified by `old_name` to the
+ * name given by `new_name`.
+ *
+ * If `old_name` and `new_name` are existing hard links referring
+ * to the same file, then it does nothing, and returns a success
+ * status.
+ *
+ * If `old_name` specifies a directory, `new_name` must either
+ * not exist, or it must specify an empty directory.
+ *
+ * If `old_name` refers to a symbolic link, the link is renamed;
+ * if `new_name` refers to a symbolic link, the link will be
+ * overwritten.
+ *
+ * @param string old_name
+ * @param string new_name
+ * @returns bool
+ * @raises Error
+ */
+def rename(old_name: string, new_name: string) {
+  return _os.rename(old_name, new_name)
+}
+
+/**
+ * Changes the owning user and group of `path` to `uid` and `gid`.
+ *
+ * @note this is a Unix-only operation; ownership isn't a concept
+ *    Windows has a direct equivalent for, so this raises there.
+ * @param string path
+ * @param int uid
+ * @param int gid
+ * @returns bool
+ * @raises Error
+ */
+def chown(path: string, uid: int, gid: int) {
+  return _os.chown(path, uid, gid)
+}
+
+/**
+ * Gets or sets the process's file-creation mask: the set of
+ * permission bits stripped from every file/directory this process
+ * creates from now on.
+ *
+ * Called with no argument (or `nil`), returns the current mask
+ * without changing it. Called with a mask, sets it and returns
+ * whatever the previous mask was.
+ *
+ * @note this is a Unix-only operation; Windows has no umask
+ *    concept, and this raises there.
+ * @param ?int mask
+ * @returns int
+ * @raises Error
+ */
+def umask(mask: ?int) {
+  return _os.umask(mask)
+}
+
+/**
+ * Returns `true` if `path` exists and is a symbolic link, `false`
+ * otherwise (including when `path` doesn't exist at all).
+ *
+ * @param string path
+ * @returns bool
+ */
+def is_symlink(path: string) {
+  return _os.is_symlink(path)
+}
+
+/**
+ * Returns the target `path` points to, if `path` is a symbolic
+ * link. Unlike `os.real_path()`, this reads exactly one link level
+ * and doesn't recursively resolve further — if the target is
+ * itself a symlink, its own target is what gets returned, not the
+ * final destination.
+ *
+ * @param string path
+ * @returns string
+ * @raises Error if `path` doesn't exist or isn't a symbolic link.
+ */
+def readlink(path: string) {
+  return _os.readlink(path)
+}
+
+# Default executable extensions to check on Windows when `PATHEXT`
+# isn't set in the environment, matching cmd.exe's own built-in
+# default.
+var _default_pathext = '.COM;.EXE;.BAT;.CMD'
+
+def _is_executable(candidate) {
+  if !file(candidate).exists() {
+    return false
+  }
+
+  if _os.platform == 'windows' {
+    var pathext = get_env('PATHEXT', _default_pathext).upper().split(';')
+    var upper = candidate.upper()
+    for ext in pathext {
+      if upper.ends_with(ext) {
+        return true
+      }
+    }
+    return false
+  }
+
+  var mode = file(candidate).stats()['mode']
+  return mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) != 0
+}
+
+/**
+ * Searches every directory in the `PATH` environment variable, in
+ * order, for an executable file named `name`, the same way a shell
+ * decides what running a bare command name actually runs. Returns
+ * the full path to the first match, or `nil` if none of them have
+ * a matching executable.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.which('git')
+ * '/usr/bin/git'
+ * %> os.which('does-not-exist')
+ * nil
+ * ```
+ *
+ * @param string name
+ * @returns ?string
+ */
+def which(name: string) {
+  var path_list_sep = _os.platform == 'windows' ? ';' : ':'
+  var directories = get_env('PATH', '').split(path_list_sep)
+
+  for dir in directories {
+    if dir == '' {
+      continue
+    }
+
+    var candidate = join_paths(dir, name)
+    if _is_executable(candidate) {
+      return candidate
+    }
+  }
+
+  return nil
+}
+
+def _glob_to_regex(pattern) {
+  var out = '~^'
+  var length = pattern.length()
+  var i = 0
+
+  while i < length {
+    var ch = pattern[i]
+
+    if ch == '*' {
+      if i + 1 < length and pattern[i + 1] == '*' {
+        out += '.*'
+        i++
+      } else {
+        out += '[^/]*'
+      }
+    } else if ch == '?' {
+      out += '[^/]'
+    } else if '.+()[]{}^$|\\'.contains(ch) {
+      out += '\\' + ch
+    } else {
+      out += ch
+    }
+
+    i++
+  }
+
+  out += '$~'
+  return out
+}
+
+/**
+ * Returns every entry under `base_path` (the current working
+ * directory if not given) whose path matches the glob `pattern`.
+ *
+ * `pattern` supports `*` (anything except a path separator), `?`
+ * (exactly one character, except a path separator), and a doubled
+ * star (anything, including path separators, for matching across
+ * nested directories).
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.glob('*.zu')
+ * ['main.zu', 'helper.zu']
+ * %> os.glob('lib?.zu')
+ * ['libc.zu', 'libz.zu']
+ * ```
+ *
+ * @param string pattern
+ * @param ?string base_path: Default is the current working
+ *    directory.
+ * @returns list[string]
+ */
+def glob(pattern: string, base_path: ?string) {
+  if base_path == nil {
+    base_path = '.'
+  }
+
+  var regex = _glob_to_regex(pattern)
+  var matches = []
+
+  for entry in read_dir(base_path, true) {
+    if entry == '.' or entry == '..' {
+      continue
+    }
+    if entry.match(regex) {
+      matches.append(entry)
+    }
+  }
+
+  return matches
+}

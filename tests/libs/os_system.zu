@@ -1,0 +1,88 @@
+/**
+ * test_os_system.zu
+ *
+ * Test suite for the `os` module's system/machine introspection:
+ * num_cpus(), hostname(), total_memory(), free_memory(), uptime(),
+ * info(), and the version/platform constants.
+ */
+
+import os
+import isolate
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os module — system introspection test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# num_cpus()
+# ---------------------------------------------------------------------------
+assert os.num_cpus() > 0, 'num_cpus() must report at least one CPU'
+assert os.num_cpus() == isolate.cpu_count(),
+  'os.num_cpus() and isolate.cpu_count() must report the exact same value, since they share one underlying fact'
+ok('num_cpus() reports a positive count that agrees with isolate.cpu_count()')
+
+# ---------------------------------------------------------------------------
+# hostname()
+# ---------------------------------------------------------------------------
+var host = os.hostname()
+assert is_string(host) and host != '', 'hostname() must return a non-empty string'
+ok('hostname() returns a non-empty string')
+
+# ---------------------------------------------------------------------------
+# total_memory() / free_memory()
+# ---------------------------------------------------------------------------
+var total = os.total_memory()
+var free = os.free_memory()
+assert total > 0, 'total_memory() must be positive on any real machine'
+assert free > 0, 'free_memory() must be positive on any real machine'
+assert free <= total, 'free_memory() can never exceed total_memory()'
+ok('total_memory()/free_memory() report sane, consistent positive byte counts')
+
+# ---------------------------------------------------------------------------
+# uptime()
+# ---------------------------------------------------------------------------
+var up = os.uptime()
+assert up > 0, 'uptime() must be positive on any machine that has been running for any time at all'
+ok('uptime() reports a positive number of seconds')
+
+# ---------------------------------------------------------------------------
+# info()
+# ---------------------------------------------------------------------------
+var info = os.info()
+assert is_string(info['sysname']) and info['sysname'] != '', 'info().sysname must be a non-empty string'
+assert is_string(info['nodename']) and info['nodename'] != '', 'info().nodename must be a non-empty string'
+assert info['nodename'] == os.hostname(),
+  'info().nodename must agree with hostname(), since they describe the same fact'
+ok('info() returns sysname/nodename consistent with hostname()')
+
+# ---------------------------------------------------------------------------
+# version / platform constants
+# ---------------------------------------------------------------------------
+assert is_string(os.version) and os.version != '', 'os.version must be a non-empty string'
+assert is_string(os.vm_version) and os.vm_version != '', 'os.vm_version must be a non-empty string'
+assert is_string(os.platform) and os.platform != '', 'os.platform must be a non-empty string'
+ok('version/vm_version/platform constants are all populated')
+
+# ---------------------------------------------------------------------------
+# sleep()
+# ---------------------------------------------------------------------------
+var before = os.uptime()
+os.sleep(0.05)
+var after = os.uptime()
+assert after >= before, 'uptime() must not go backwards across a sleep()'
+ok('sleep() does not break the machine\'s notion of time moving forward')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

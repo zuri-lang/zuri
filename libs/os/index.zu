@@ -1,0 +1,114 @@
+/**
+ * @module os
+ *
+ * The `os` module is Zuri's interface to the underlying operating
+ * system: environment variables, the filesystem, other processes,
+ * and the machine itself. Per-file operations — reading, writing,
+ * deleting, or copying one particular file, or inspecting its
+ * size/permissions/timestamps — live on the `file` class instead;
+ * see `file.stats()`, `file.delete()`, and `file.copy()`. Everything
+ * that isn't about one specific already-open file lives here.
+ *
+ * ## Environment variables
+ *
+ * ```zuri
+ * import os
+ *
+ * var port = os.get_env('PORT', '8080')
+ * os.set_env('APP_ENV', 'production')
+ *
+ * for name in os.environ() {
+ *   echo '${name} = ${os.environ()[name]}'
+ * }
+ * ```
+ *
+ * ## Paths
+ *
+ * Paths are resolved and compared purely as strings, without
+ * touching the filesystem, so they work the same whether or not
+ * anything actually exists at the path yet.
+ *
+ * ```zuri
+ * var config = os.join_paths(os.home_dir(), '.config', 'zuri')
+ * var absolute = os.abs_path('../lib/main.zu')
+ * var rel = os.relative_path('/srv/app', '/srv/app/logs/out.log')
+ * # rel == 'logs/out.log'
+ * ```
+ *
+ * ## The filesystem
+ *
+ * ```zuri
+ * os.create_dir('build')
+ *
+ * for entry in os.read_dir('.', false) {
+ *   if os.is_dir(entry) continue
+ *   echo entry
+ * }
+ *
+ * var git = os.which('git')  # full path, or nil if not on PATH
+ * var sources = os.glob('*.zu')
+ * ```
+ *
+ * ## Running other programs
+ *
+ * `exec()` is the simple case: run a command, block until it
+ * finishes, get back its exit code and output.
+ *
+ * ```zuri
+ * var result = os.exec('git', 'rev-parse', 'HEAD')
+ * if result.exit_code == 0 {
+ *   echo 'HEAD is at ${result.output.trim()}'
+ * }
+ * ```
+ *
+ * `spawn()` is for everything `exec()` doesn't cover: a long-running
+ * command, one that needs input written to it, or one whose output
+ * needs to be read as it arrives rather than all at once at the end.
+ *
+ * ```zuri
+ * var proc = os.spawn('grep', ['error'], { stdin: 'pipe' })
+ * proc.write_stdin('startup ok\nerror: disk full\n')
+ * proc.close_stdin()
+ * echo proc.read_stdout().to_string()  # 'error: disk full\n'
+ * proc.wait()
+ * ```
+ *
+ * `on_signal()` traps `SIGINT`/`SIGTERM`/etc. so a long-running
+ * script can shut down cleanly instead of being torn down mid-work:
+ *
+ * ```zuri
+ * os.on_signal('INT', @() {
+ *   echo 'shutting down...'
+ *   exit(0)
+ * })
+ * ```
+ *
+ * ## The machine
+ *
+ * ```zuri
+ * echo 'running on ${os.num_cpus()} cores'
+ * echo '${os.free_memory() / 1_000_000} MB free of ${os.total_memory() / 1_000_000} MB'
+ * ```
+ *
+ * ## Scratch space
+ *
+ * `create_temp_file()`/`create_temp_dir()` reserve a uniquely named
+ * path under `temp_dir()` atomically, so two processes racing to
+ * create scratch space can never collide on the same name:
+ *
+ * ```zuri
+ * var path = os.create_temp_file('upload-', '.tmp')
+ * file(path, 'w').write(incoming_data)
+ * # ... use it, then clean up when done
+ * file(path).delete()
+ * ```
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import @.env { * }
+import @.path { * }
+import @.fs { * }
+import @.process { * }
+import @.system { * }
+import @.tempfile { * }

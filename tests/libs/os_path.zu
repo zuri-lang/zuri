@@ -1,0 +1,112 @@
+/**
+ * test_os_path.zu
+ *
+ * Test suite for the `os` module's path-manipulation functions:
+ * join_paths(), abs_path(), relative_path(), expand_user(), and
+ * path_contains(). Nothing here depends on the filesystem except
+ * `abs_path()`'s own `strict` mode.
+ */
+
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os module — path manipulation test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# join_paths()
+# ---------------------------------------------------------------------------
+assert os.join_paths('a', 'b', 'c') == 'a' + os.path_separator + 'b' + os.path_separator + 'c',
+  'join_paths() must join plain segments with the platform separator'
+assert os.join_paths('a/', '/b') == 'a' + os.path_separator + 'b',
+  'join_paths() must not double up separators between segments that already have one'
+ok('join_paths() joins segments with exactly one separator between them')
+
+# ---------------------------------------------------------------------------
+# abs_path()
+# ---------------------------------------------------------------------------
+assert os.abs_path('.') == os.cwd(), 'abs_path(".") must equal the current working directory'
+ok('abs_path(".") resolves to the current working directory')
+
+assert os.abs_path('a/../b') == os.join_paths(os.cwd(), 'b'),
+  'abs_path() must collapse ".." segments'
+assert os.abs_path('./a/./b') == os.join_paths(os.cwd(), 'a', 'b'),
+  'abs_path() must drop "." segments'
+ok('abs_path() collapses "." and ".." segments purely lexically')
+
+assert os.abs_path(os.cwd()) == os.cwd(), 'abs_path() of an already-absolute path must be a no-op'
+ok('abs_path() leaves an already-absolute path unchanged')
+
+assert os.abs_path('.', true) == os.cwd(),
+  'abs_path(strict: true) on a path that exists must resolve normally'
+assert raises(@() { os.abs_path('this/does/not/exist/anywhere', true) }),
+  'abs_path(strict: true) on a path that does not exist must raise'
+ok('abs_path() strict mode raises only when the resolved path is missing')
+
+# ---------------------------------------------------------------------------
+# dir_name() / base_name()
+# ---------------------------------------------------------------------------
+assert os.dir_name('/a/b/c.zu') == '/a/b', 'dir_name() must return the parent directory'
+assert os.base_name('/a/b/c.zu') == 'c.zu', 'base_name() must return the last path component'
+ok('dir_name() and base_name() split a path into parent and leaf')
+
+# ---------------------------------------------------------------------------
+# relative_path()
+# ---------------------------------------------------------------------------
+assert os.relative_path('/a/b', '/a/b/c/d') == 'c/d',
+  'relative_path() must express a descendant path without leading ".."'
+assert os.relative_path('/a/b/c', '/a/x') == '../../x',
+  'relative_path() must walk back up with ".." for a divergent path'
+assert os.relative_path('/a/b', '/a/b') == '.',
+  'relative_path() from a path to itself must be "."'
+ok('relative_path() computes the shortest path between two locations')
+
+# ---------------------------------------------------------------------------
+# expand_user()
+# ---------------------------------------------------------------------------
+if os.home_dir() != nil {
+  assert os.expand_user('~') == os.home_dir(), 'expand_user("~") must resolve to the home directory'
+  assert os.expand_user('~/docs') == os.join_paths(os.home_dir(), 'docs'),
+    'expand_user("~/...") must resolve the "~" prefix and keep the rest of the path'
+  ok('expand_user() resolves a leading "~" to the home directory')
+}
+
+assert os.expand_user('relative/path') == 'relative/path',
+  'expand_user() must leave a path with no leading "~" unchanged'
+ok('expand_user() is a no-op on a path with no leading "~"')
+
+# ---------------------------------------------------------------------------
+# path_contains()
+# ---------------------------------------------------------------------------
+assert os.path_contains('/srv/app', '/srv/app/logs/out.log') == true,
+  'path_contains() must be true for a genuine descendant path'
+assert os.path_contains('/srv/app', '/srv/app') == true,
+  'path_contains() must be true for the base path itself'
+assert os.path_contains('/srv/app', '/srv/other') == false,
+  'path_contains() must be false for a sibling directory'
+assert os.path_contains('/srv/app', '/srv/app/../../etc/passwd') == false,
+  'path_contains() must be false for a path that escapes the base via ".." segments'
+ok('path_contains() correctly detects containment, including a Zip-Slip-style escape attempt')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

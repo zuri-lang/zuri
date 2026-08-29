@@ -252,9 +252,7 @@ class ZipItem {
     # malicious archive overwrite arbitrary files on the extracting
     # machine. Refuse anything that doesn't stay under base_dir once
     # actually resolved.
-    var abs_base = os.abs_path(base_dir != '' ? base_dir : os.cwd())
-    var abs_target = os.abs_path(path)
-    if abs_target != abs_base and !abs_target.starts_with(abs_base + os.path_separator) {
+    if !os.path_contains(base_dir != '' ? base_dir : os.cwd(), path) {
       return false
     }
 

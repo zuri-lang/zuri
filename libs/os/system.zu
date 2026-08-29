@@ -1,0 +1,148 @@
+/**
+ * @module os.system
+ *
+ * Facts about the current process, the Zuri runtime, and the
+ * machine it's running on.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import _os
+
+/**
+ * The current Zuri version.
+ * @type string
+ */
+var version = _os.version
+
+/**
+ * The current Zuri VM version.
+ * @type string
+ */
+var vm_version = _os.vm_version
+
+/**
+ * The name of the current platform in string or `unknown` if the
+ * platform name could not be determined.
+ * @type string
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> import os
+ * %> os.platform
+ * 'osx'
+ * ```
+ */
+var platform = _os.platform
+
+/**
+ * A list containing the command line arguments passed to the
+ * startup script.
+ * @type list
+ */
+var args = _os.args
+
+/**
+ * The standard path separator for the current operating system.
+ * @type string
+ */
+var path_separator = _os.path_separator
+
+/**
+ * The full path to the running Zuri executable.
+ * @type string
+ */
+var exe_path = _os.exe_path
+
+/**
+ * Causes the current thread to sleep for the specified number of
+ * seconds.
+ *
+ * @param number duration
+ */
+def sleep(duration: number) {
+  _os.sleep(duration)
+}
+
+/**
+ * Returns information about the current operation system and
+ * machine as a dictionary. The returned dictionary will contain:
+ *
+ * - `sysname`: The name of the operating system - `nodename` The
+ * name of the current machine - `version`: The operating system
+ * version - `release`: The release level/version - `machine`:
+ * The hardware/processor type.
+ *
+ * Example,
+ *
+ * ```zuri-repl
+ * %> os.info()
+ * {sysname: Darwin, nodename: MacBook-Pro.local, version: Darwin Kernel Version
+ * 21.1.0: Wed Oct 13 17:33:24 PDT 2021; root:xnu-8019.41.5~1/RELEASE_ARM64_T8101,
+ * release: 21.1.0, machine: arm64}
+ * ```
+ *
+ * @returns dict
+ */
+def info() {
+  return _os.info()
+}
+
+/**
+ * The number of logical CPUs available to this process. Useful for
+ * sizing a worker pool — `isolate.cpu_count()` is the exact same
+ * underlying value, exposed here too so code that only needs this
+ * one fact doesn't have to import the whole `isolate` module for
+ * it.
+ *
+ * @returns int
+ */
+def num_cpus() {
+  return _os.cpu_count()
+}
+
+/**
+ * The current machine's hostname.
+ *
+ * @returns string
+ * @raises Error if the hostname couldn't be determined.
+ */
+def hostname() {
+  return _os.hostname()
+}
+
+/**
+ * The total physical memory installed on this machine, in bytes.
+ *
+ * @returns number
+ * @raises Error if this isn't supported on the current platform.
+ */
+def total_memory() {
+  return _os.total_memory()
+}
+
+/**
+ * An estimate of how much physical memory is available for new
+ * allocations right now, in bytes — free memory plus easily
+ * reclaimable caches/buffers, the same figure a tool like `free`
+ * reports as "available" rather than the smaller, less useful
+ * "free" figure alone.
+ *
+ * @returns number
+ * @raises Error if this isn't supported on the current platform.
+ */
+def free_memory() {
+  return _os.free_memory()
+}
+
+/**
+ * How long the machine has been running since it last booted, in
+ * seconds.
+ *
+ * @returns number
+ * @raises Error if this isn't supported on the current platform.
+ */
+def uptime() {
+  return _os.uptime()
+}

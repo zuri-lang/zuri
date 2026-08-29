@@ -1,0 +1,80 @@
+/**
+ * test_os_tempfile.zu
+ *
+ * Test suite for the `os` module's temp-file functions: temp_dir(),
+ * create_temp_file(), and create_temp_dir().
+ */
+
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os module — temp file test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# temp_dir()
+# ---------------------------------------------------------------------------
+var dir = os.temp_dir()
+assert is_string(dir) and dir != '', 'temp_dir() must return a non-empty path'
+assert os.dir_exists(dir), 'temp_dir() must point at a directory that actually exists'
+ok('temp_dir() returns a real, existing directory')
+
+# ---------------------------------------------------------------------------
+# create_temp_file()
+# ---------------------------------------------------------------------------
+var f1 = os.create_temp_file('zuri-test-', '.txt')
+assert file(f1).exists(), 'create_temp_file() must leave behind a file that actually exists'
+assert f1.starts_with(os.join_paths(dir, 'zuri-test-')), 'the created file must carry the given prefix'
+assert f1.ends_with('.txt'), 'the created file must carry the given suffix'
+ok('create_temp_file() creates a real file with the given prefix/suffix')
+
+var f2 = os.create_temp_file('zuri-test-', '.txt')
+assert f1 != f2, 'two separate create_temp_file() calls must never collide on the same path'
+ok('create_temp_file() always produces a fresh, unique path')
+
+file(f1, 'w').write('scratch data')
+assert file(f1).read() == 'scratch data', 'a created temp file must be usable like any ordinary file'
+ok('a temp file created by create_temp_file() can be opened, written to, and read back')
+
+file(f1).delete()
+file(f2).delete()
+
+var f3 = os.create_temp_file()
+assert file(f3).exists(), 'create_temp_file() with no prefix/suffix given must still create a real file'
+ok('create_temp_file() works with no prefix or suffix at all')
+file(f3).delete()
+
+# ---------------------------------------------------------------------------
+# create_temp_dir()
+# ---------------------------------------------------------------------------
+var d1 = os.create_temp_dir('zuri-test-dir-')
+assert os.dir_exists(d1), 'create_temp_dir() must leave behind a directory that actually exists'
+assert d1.starts_with(os.join_paths(dir, 'zuri-test-dir-')), 'the created directory must carry the given prefix'
+ok('create_temp_dir() creates a real directory with the given prefix')
+
+var d2 = os.create_temp_dir('zuri-test-dir-')
+assert d1 != d2, 'two separate create_temp_dir() calls must never collide on the same path'
+ok('create_temp_dir() always produces a fresh, unique path')
+
+var inner = os.join_paths(d1, 'inner.txt')
+file(inner, 'w').write('hi')
+assert file(inner).exists(), 'a temp directory created by create_temp_dir() must be a genuinely usable directory'
+ok('a temp directory created by create_temp_dir() can hold real files')
+
+os.remove_dir(d1, true)
+os.remove_dir(d2, true)
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'
