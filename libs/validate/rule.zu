@@ -1,0 +1,154 @@
+/**
+ * # validate.rule
+ *
+ * Defines the base `Rule` class that all built-in and custom validation
+ * rules extend.  To create a custom rule, subclass `Rule` and implement
+ * `validate(value)` and `error()`.
+ *
+ * ### Custom rule example
+ *
+ * ```zuri
+ * import validate { Rule, Validator }
+ *
+ * class Palindrome < Rule {
+ *   validate(value) {
+ *     if !is_string(value) return false
+ *     var s = value.lower()
+ *     return s == s.reverse()
+ *   }
+ *
+ *   error() {
+ *     return '${self.name} must be a palindrome'
+ *   }
+ * }
+ *
+ * # Use directly on a Validator:
+ * var v = Validator().use(Palindrome)
+ * ```
+ */
+
+/**
+ * Abstract base class for all validation rules.
+ *
+ * Subclass this to create custom rules.  The `name` property is injected
+ * by the `Schema` before validation runs, so error messages can reference
+ * the field name without the rule needing to know it at construction time.
+ *
+ * Only `validate` and `error` need to be overridden.  Rules that require
+ * constructor parameters should define their own constructor and call
+ * `parent(name)` — or accept parameters before `name` and forward it.
+ *
+ * The `_data` property is injected by the `Schema` before each field is
+ * validated when `needs_data` returns `true`.  Rules that must compare
+ * against sibling fields (e.g. `same`, `different`, `confirmed`) should
+ * override `needs_data()` to return `true` and read `self._data` inside
+ * `validate`.
+ */
+class Rule {
+
+  /**
+   * The name of the field being validated.  Injected by Schema before
+   * `validate` is called.
+   */
+  var name = ''
+
+  /**
+   * The full data dictionary being validated.  Only populated when
+   * `needs_data()` returns `true`.
+   */
+  var _data = {}
+
+  /**
+   * @param string name  Field name — injected automatically by Schema.
+   */
+  @new(name) {
+    self.name = name
+  }
+
+  /**
+   * Sets the full data dictionary this rule can read from `validate()`.
+   * Called by `Schema` right after construction, only for rules whose
+   * `needs_data()` returns `true` — a real public setter so `Schema`
+   * never needs private-field access into a `Rule` it doesn't own.
+   *
+   * @param dict data
+   */
+  set_data(data) {
+    self._data = data
+  }
+
+  /**
+   * Returns `true` when the value satisfies this rule, `false` otherwise.
+   *
+   * @param  any  value  The value of the field being validated.
+   * @returns bool
+   */
+  validate(value) {
+    return false
+  }
+
+  /**
+   * Returns the human-readable error message for this rule when validation
+   * fails.  The message should reference `self.name` for the field label.
+   *
+   * @returns string
+   */
+  error() {
+    return '${self.name} is invalid'
+  }
+
+  /**
+   * Override and return `true` when this rule needs access to the full
+   * data dictionary (e.g. to compare against another field).  When `true`,
+   * the Schema injects the data dictionary into `self._data` before calling
+   * `validate`.
+   *
+   * @returns bool
+   */
+  needs_data() {
+    return false
+  }
+
+  /**
+   * Override and return `true` when this rule should bail out of all validation
+   * chains whether it fails or not, instead of continuing to the next rule.
+   * When `true`, the Schema will stop validating the field but will not raise a
+   * `ValidationError`.
+   *
+   * @returns bool
+   */
+  bails_all() {
+    return false
+  }
+}
+
+
+/**
+ * Builds one `Rule` instance from a `[rule_class, ...args]` entry — the
+ * shape `Validator._rules` stores each chained rule as — with
+ * `field_name` prepended as the rule's first constructor argument.
+ *
+ * Shared by `Schema` (running a field's whole chain) and `Each` (running
+ * a nested chain once per list item), which is why this lives here
+ * rather than as a private helper duplicated in both: `schema.zu` and
+ * `rules.zu` both already depend on this file, and neither depends on
+ * the other, so this is the one shared place both can reach without a
+ * circular import. Not re-exported from `index.zu` — this is internal
+ * machinery for the module itself, not part of its public API.
+ *
+ * @param list entry `[rule_class, ...constructor_args]`.
+ * @param string field_name
+ * @returns Rule
+ * @throws Error When `entry` has more than 3 extra constructor arguments.
+ */
+def instantiate_rule(entry, field_name) {
+  var rule_class = entry[0]
+  var args = entry.length() > 1 ? entry[1,] : []
+
+  if args.length() == 0 return rule_class(field_name)
+  if args.length() == 1 return rule_class(field_name, args[0])
+  if args.length() == 2 return rule_class(field_name, args[0], args[1])
+  if args.length() == 3 return rule_class(field_name, args[0], args[1], args[2])
+
+  raise Error('validate: rule constructor with more than 3 extra arguments is not supported')
+}

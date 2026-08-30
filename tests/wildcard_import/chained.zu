@@ -1,0 +1,9 @@
+# Support file: an @-exported wildcard re-import of a file that itself
+# only plain-imported leaf.zu, matching the real stdlib pattern of
+# e.g. log/index.zu's `import @.console { * }`, where console.zu does
+# its own plain `import .level { * }`. public_fn() must not leak
+# through this chain: plain_importer.zu never made it part of ITS OWN
+# public surface, so @.plain_importer { * } here has nothing of leaf's
+# own to re-export.
+
+import @.plain_importer { * }

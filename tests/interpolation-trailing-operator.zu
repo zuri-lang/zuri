@@ -7,8 +7,8 @@
 # text segment, not just for the `${...}` expressions themselves. Since
 # a plain `Literal` token (the static text up to the string's closing
 # quote) was fed through that same full-precedence call, anything
-# immediately following the string's closing quote -- `== y`, `!= y`,
-# `and y`, `or y` -- got parsed as PART OF the interpolated string's own
+# immediately following the string's closing quote (`== y`, `!= y`,
+# `and y`, `or y`) got parsed as PART OF the interpolated string's own
 # expression chain instead of being left for the outer expression to
 # consume. `'--${x}' == y` silently became the STRING `'--' + x + ('' ==
 # y)`, i.e. string-concatenated with the stringified boolean, rather

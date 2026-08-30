@@ -3,7 +3,7 @@
 import _io
 
 # The current platform's real termios bit/index values, read once from
-# native code rather than a per-flag native call each -- see the note
+# native code rather than a per-flag native call each; see the note
 # above the flag constants below for why these have to come from native
 # code at all instead of being written as literals here.
 const _flag_table = _io.TTY.flags()
@@ -75,13 +75,13 @@ class TTY {
 
   # ---------------------------------------------------------------------
   # Every constant below this point is a real termios bit or c_cc index,
-  # and those genuinely differ across platform families -- BSD/macOS and
+  # and those genuinely differ across platform families: BSD/macOS and
   # Linux/glibc disagree with each other on most of the control-flag and
   # local-flag bits outright, and PowerPC-Linux differs from x86_64-Linux
   # on a few of its own. Zuri has no conditional compilation to pick the
   # right literal per platform the way Rust does, so these are read once
   # from the native `_io` module at class-load time instead of being
-  # hand-typed here -- the native side already knows, correctly, which
+  # hand-typed here; the native side already knows, correctly, which
   # platform it was actually built for.
   # ---------------------------------------------------------------------
 
@@ -185,7 +185,7 @@ class TTY {
 
   /**
    * Maintain state for UTF-8 VERASE. Only meaningful on Linux/Android/
-   * macOS -- reads as `0` (a no-op bit) on platforms without it, such
+   * macOS; reads as `0` (a no-op bit) on platforms without it, such
    * as the BSDs.
    *
    * @type int
@@ -404,7 +404,7 @@ class TTY {
    */
   static var TCSAFLUSH  = _flag_table.TCSAFLUSH
 
-  # Special Control Characters -- indices into the TTY_CC table (see
+  # Special Control Characters: indices into the TTY_CC table (see
   # TTY_CC above) rather than bit flags. Only meaningful in ICANON mode
   # unless noted otherwise.
 

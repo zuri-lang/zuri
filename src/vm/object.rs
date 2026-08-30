@@ -697,6 +697,18 @@ pub struct ObjClosure {
 /// `ObjFunction::globals_module` says so (see `vm.rs`).
 pub struct ModuleNamespace {
   pub slots: Vec<Cell<Value>>,
+  /// Index-aligned with `slots`. `true` (the default for every newly
+  /// created slot) means this name is part of the module's own public
+  /// surface, reachable via `GetField`/`Invoke` from outside; `false`
+  /// means it only exists for this module's OWN code to resolve by
+  /// name (see `Instr::GetGlobal`), e.g. a name pulled in by a plain
+  /// (non-`@`) wildcard import. Per spec (`NOTES.md`), imports are
+  /// local by default and `@` is what actually re-exports them, and a
+  /// wildcard import has no compile-time-known name list to turn into
+  /// genuine lexical locals the way a plain named import can, so this
+  /// bit is the runtime stand-in for that same "not re-exported"
+  /// contract.
+  pub public: Vec<Cell<bool>>,
   pub names: FxHashMap<String, u32>,
 }
 
@@ -704,25 +716,49 @@ impl ModuleNamespace {
   pub fn new() -> Self {
     ModuleNamespace {
       slots: Vec::new(),
+      public: Vec::new(),
       names: FxHashMap::default(),
     }
   }
 
   /// Find-or-create `name`'s slot, growing the table with a fresh
-  /// nil-initialized slot the first time this specific module sees
-  /// that name; mirrors `VM::get_or_create_global_slot` exactly.
+  /// nil-initialized, public-by-default slot the first time this
+  /// specific module sees that name; mirrors `VM::get_or_create_global_slot`
+  /// exactly.
   pub fn get_or_create_slot(&mut self, name: &str) -> u32 {
     if let Some(&s) = self.names.get(name) {
       return s;
     }
     let s = self.slots.len() as u32;
     self.slots.push(Cell::new(Value::nil()));
+    self.public.push(Cell::new(true));
     self.names.insert(name.to_string(), s);
     s
   }
 
   pub fn get(&self, name: &str) -> Option<Value> {
     self.names.get(name).map(|&s| self.slots[s as usize].get())
+  }
+
+  /// Like `get`, but returns `None` for a slot that exists but isn't
+  /// part of this module's public surface (see `public` above);
+  /// what `GetField`/`Invoke` on a module value from OUTSIDE this
+  /// module's own code must use instead of `get`, so a plain wildcard
+  /// import's names stay invisible to external dot-access exactly like
+  /// a plain named import's already-local bindings are.
+  pub fn get_public(&self, name: &str) -> Option<Value> {
+    let &s = self.names.get(name)?;
+    if !self.public[s as usize].get() {
+      return None;
+    }
+    Some(self.slots[s as usize].get())
+  }
+
+  /// Marks an existing slot as not part of this module's public
+  /// surface. Called only when a plain (non-`@`) wildcard import
+  /// writes an entry; see `public`'s own docs.
+  pub fn mark_private(&self, slot: u32) {
+    self.public[slot as usize].set(false);
   }
 
   pub fn set(&mut self, name: &str, v: Value) {

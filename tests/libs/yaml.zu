@@ -1008,7 +1008,7 @@ _ok_true('two structurally-identical but distinct lists are NOT wrongly merged i
   var data = { a: [1, 2, 3], b: [1, 2, 3] }
   var out = yaml.dump(data)
   # Genuinely distinct objects that just happen to look the same must
-  # each be emitted in full -- no anchor/alias pair at all here.
+  # each be emitted in full: no anchor/alias pair at all here.
   return !out.contains('&') and !out.contains('*')
 }())
 

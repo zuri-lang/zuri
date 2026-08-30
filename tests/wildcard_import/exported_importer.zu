@@ -1,0 +1,4 @@
+# Support file: an @-exported wildcard import, matching the real
+# stdlib pattern of e.g. array/index.zu's `import @.int8 { * }`.
+
+import @.leaf { * }

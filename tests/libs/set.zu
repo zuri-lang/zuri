@@ -172,9 +172,9 @@ assert each_indexes == [0, 1, 2], 'each() must also pass the correct positional 
 ok('each() visits every element in order and passes the correct index')
 
 # ---------------------------------------------------------------------------
-# to_string() / to_list() / to_json() -- 2026-08-30: to_json() had no test,
+# to_string() / to_list() / to_json() (2026-08-30): to_json() had no test,
 # which is exactly how a real bug (missing the `@` prefix, so json.encode()
-# could never find it at all -- confirmed `json.encode(set([1]))` raised
+# could never find it at all; confirmed `json.encode(set([1]))` raised
 # "the class does not implement '@to_json'") went unnoticed.
 # ---------------------------------------------------------------------------
 assert set([1, 2, 3]).to_list() == [1, 2, 3], 'to_list() must return every element in insertion order'
@@ -195,7 +195,7 @@ assert json.encode(set([1, 2, 3])) == json.encode([1, 2, 3]),
 ok('to_string()/to_list()/to_json() are all correct, including json.encode() integration')
 
 # ---------------------------------------------------------------------------
-# Non-mutation -- union()/intersect()/difference()/symmetric_difference()
+# Non-mutation: union()/intersect()/difference()/symmetric_difference()
 # must never modify either input set, only the *_update() family should
 # ---------------------------------------------------------------------------
 var nm_a = set([1, 2, 3])
@@ -209,7 +209,7 @@ assert nm_a.equals(set([1, 2, 3])) and nm_b.equals(set([2, 3, 4])),
 ok('the non-mutating set operations genuinely leave both inputs untouched')
 
 # ---------------------------------------------------------------------------
-# Type-gate rejection -- every method typed `other: Set` (or `items:
+# Type-gate rejection: every method typed `other: Set` (or `items:
 # ?list|dict` for the constructor) must reject a non-Set/non-list/non-dict
 # argument, now that this class was modernized from manual is_X() checks
 # to real parameter type gates.

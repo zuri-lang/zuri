@@ -35,7 +35,7 @@ def raises_type(fn, type_name) {
 }
 
 # base64url-encodes bytes or a string, matching the module's own
-# internal convention -- used here to build a forged token by hand.
+# internal convention; used here to build a forged token by hand.
 def b64u(data) {
   if is_string(data) data = data.to_bytes()
   var e = base64.encode(data)
@@ -164,7 +164,7 @@ ok('nbf validation rejects a token that is not yet valid')
 
 var future_iat_tok = jwt.encode({ alg: 'HS256', typ: 'JWT' }, { iat: time() + 100000 }, 'secret')
 assert raises_type(@() => jwt.verify(future_iat_tok, 'secret'), 'TokenExpiredError'),
-  'verify() must reject a token whose iat is in the future -- 2026-08-29 fix, documented but never implemented before'
+  'verify() must reject a token whose iat is in the future (2026-08-29 fix, documented but never implemented before)'
 ok('iat-in-the-future validation is implemented and rejects such a token')
 
 var tolerant_tok = jwt.sign({ a: 1 }, 'secret', { algorithm: jwt.HS256, expires_in: -2 })
@@ -217,7 +217,7 @@ assert raises_type(@() => jwt.expires_in(bad_exp_tok), 'ClaimError'),
   'expires_in() must not crash on a non-numeric exp claim'
 ok('is_expired()/expires_in() reject a non-numeric exp claim cleanly instead of crashing')
 
-# Token.get()/@to_index() -- 2026-08-29 fix: raised the nonexistent
+# Token.get()/@to_index() (2026-08-29 fix): raised the nonexistent
 # "Argument_error" class, found independently while splitting the file
 var tok_for_index = jwt.decode(jwt.sign({ a: 1 }, 'secret'))
 assert raises_type(@() => tok_for_index.get(42), 'TypeError'),

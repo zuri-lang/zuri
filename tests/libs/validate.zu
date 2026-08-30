@@ -1,0 +1,441 @@
+/**
+ * test_validate.zu
+ *
+ * Test suite for the `validate` module: schema construction, every
+ * built-in rule, bail/sometimes/nullable/label chain behavior, wildcard
+ * and dot-notation fields, cross-field rules, custom rules, Rule
+ * subclassing, error helpers, and Schema composition.
+ */
+
+import validate
+import validate { Rule, Validator, ValidationError }
+import json
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  validate module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Schema construction
+# ---------------------------------------------------------------------------
+assert raises(@() { validate.schema('not a dict') }), 'schema() must reject a non-dict ruleset'
+assert raises(@() { validate.schema({ 5: validate.string() }) }), 'schema() must reject a non-string key'
+assert raises(@() { validate.schema({ name: 'not a validator' }) }), 'schema() must reject a non-Validator value'
+assert typeof(validate.schema({})) == 'Schema', 'schema() must return a Schema instance'
+ok('schema() validates its ruleset before constructing')
+
+# ---------------------------------------------------------------------------
+# check() basic flow
+# ---------------------------------------------------------------------------
+var basic = validate.schema({
+  name:  validate.required().string().max_length(100),
+  email: validate.required().string().email(),
+  age:   validate.required().integer().between(18, 120),
+})
+var good = basic.check({ name: 'Ada Lovelace', email: 'ada@example.com', age: 36 })
+assert good.valid and good.errors.is_empty(), 'a fully valid dict must pass with no errors'
+
+var bad = basic.check({ name: '', email: 'not-an-email', age: 200 })
+assert !bad.valid and bad.errors.length() == 3, 'every failing field must report exactly one error (bail defaults true)'
+assert raises(@() { basic.check('not a dict') }), 'check() must reject a non-dict data argument'
+ok('check() validates a flat dict and reports one error per failing field by default')
+
+# ---------------------------------------------------------------------------
+# bail(false) collects every error for a field instead of stopping
+# ---------------------------------------------------------------------------
+var collect_all = validate.schema({
+  password: validate.required().string().min_length(8).regex('/[A-Z]/').bail(false),
+})
+var collected = collect_all.check({ password: 'abc' })
+assert collected.errors.length() == 2, 'bail(false) must collect both the min_length and regex failures, not stop at the first'
+ok('bail(false) collects every failing rule for a field')
+
+# ---------------------------------------------------------------------------
+# sometimes() / nullable() / label()
+# ---------------------------------------------------------------------------
+var optional_schema = validate.schema({
+  bio: validate.string().max_length(10).sometimes(),
+})
+assert optional_schema.check({}).valid, 'sometimes() must skip the whole chain when the field is absent'
+assert optional_schema.check({ bio: 'short' }).valid, 'sometimes() must still validate a present value'
+assert !optional_schema.check({ bio: 'this is way too long' }).valid, 'sometimes() must not exempt an invalid present value'
+
+var nullable_schema = validate.schema({
+  nickname: validate.nullable().string().max_length(5),
+})
+assert nullable_schema.check({ nickname: nil }).valid, 'nullable() must let a nil value pass every subsequent rule'
+assert !nullable_schema.check({ nickname: 'way too long' }).valid, 'nullable() must not exempt a non-nil invalid value'
+
+var labeled_schema = validate.schema({
+  email: validate.required().label('Email address'),
+})
+var labeled_errors = labeled_schema.check({}).errors
+assert labeled_errors[0].message.contains('Email address'), 'label() must substitute the human-readable label into error messages'
+ok('sometimes()/nullable()/label() all shape the chain and error output correctly')
+
+# ---------------------------------------------------------------------------
+# Wildcard (list) fields
+# ---------------------------------------------------------------------------
+var wildcard_schema = validate.schema({
+  'tags.*': validate.required().string().max_length(3),
+})
+assert wildcard_schema.check({ tags: ['ab', 'cd'] }).valid, 'a wildcard field must pass when every item satisfies the chain'
+var wildcard_bad = wildcard_schema.check({ tags: ['ab', 'toolong', 'cd'] })
+assert !wildcard_bad.valid and wildcard_bad.errors.length() == 1, 'a wildcard field must report an error keyed by the failing item, not the whole list'
+assert wildcard_bad.errors[0].field == 'tags.1', 'a wildcard error must be keyed "base.index"'
+assert wildcard_schema.check({}).valid == false, 'a wildcard field entirely absent must still be caught by required()'
+ok('wildcard ("field.*") keys validate every list item independently')
+
+# ---------------------------------------------------------------------------
+# Dot-notation nested fields
+# ---------------------------------------------------------------------------
+var nested_schema = validate.schema({
+  'address.city':    validate.required().string(),
+  'address.country': validate.required().string().length(2).uppercase(),
+})
+assert nested_schema.check({ address: { city: 'Lagos', country: 'NG' } }).valid, 'a correctly nested dict must pass'
+assert !nested_schema.check({ address: {} }).valid, 'a nested dict missing required keys must fail'
+assert !nested_schema.check({}).valid, 'a completely absent nested dict must fail, not crash'
+ok('dot-notation keys resolve nested dictionaries')
+
+# ---------------------------------------------------------------------------
+# Presence / type rules
+# ---------------------------------------------------------------------------
+assert validate.schema({ f: validate.required() }).check({}).valid == false, 'required() must fail on an absent field'
+assert validate.schema({ f: validate.required() }).check({ f: '' }).valid == false, 'required() must fail on an empty string'
+assert validate.schema({ f: validate.required() }).check({ f: 'x' }).valid == true, 'required() must pass a real value'
+
+def type_check(builder, good_value, bad_value, label) {
+  var s = validate.schema({ f: builder })
+  assert s.check({ f: good_value }).valid, '${label} must accept a valid value'
+  assert !s.check({ f: bad_value }).valid, '${label} must reject an invalid value'
+}
+
+type_check(validate.string(), 'hi', 5, 'string()')
+type_check(validate.number(), 5, 'hi', 'number()')
+type_check(validate.integer(), 5, 5.5, 'integer()')
+assert validate.schema({ f: validate.integer() }).check({ f: '5' }).valid, 'integer() must accept an integer-valued string'
+assert !validate.schema({ f: validate.integer() }).check({ f: 'abc' }).valid, 'integer() must reject a non-numeric string'
+type_check(validate.boolean(), true, 'not-bool', 'boolean()')
+assert validate.schema({ f: validate.boolean() }).check({ f: '1' }).valid, 'boolean() must accept "1"'
+type_check(validate.list(), [1, 2], 'not-list', 'list()')
+type_check(validate.dict(), { a: 1 }, 'not-dict', 'dict()')
+type_check(validate.numeric(), '3.5', 'abc', 'numeric()')
+assert validate.schema({ f: validate.numeric() }).check({ f: '0' }).valid,
+  'numeric() must accept the genuinely numeric string "0" (a false/NaN-truthy footgun regression)'
+ok('presence and type rules (required/string/number/integer/boolean/list/dict/numeric) all validate correctly')
+
+# ---------------------------------------------------------------------------
+# Size / length rules
+# ---------------------------------------------------------------------------
+type_check(validate.size(3), 3, 4, 'size()')
+type_check(validate.min(3), 5, 1, 'min()')
+type_check(validate.max(3), 1, 5, 'max()')
+type_check(validate.between(1, 5), 3, 10, 'between()')
+type_check(validate.length(3), 'abc', 'ab', 'length()')
+type_check(validate.min_length(3), 'abcd', 'ab', 'min_length()')
+type_check(validate.max_length(3), 'ab', 'abcd', 'max_length()')
+type_check(validate.length_between(2, 4), 'abc', 'a', 'length_between()')
+ok('size and length rules all validate correctly')
+
+# ---------------------------------------------------------------------------
+# Numeric comparison rules, including numeric-string coercion: the
+# area that was completely broken before this pass (bare to_number()/
+# int() calls didn't exist in this runtime at all)
+# ---------------------------------------------------------------------------
+type_check(validate.gt(5), 6, 5, 'gt()')
+type_check(validate.gte(5), 5, 4, 'gte()')
+type_check(validate.lt(5), 4, 5, 'lt()')
+type_check(validate.lte(5), 5, 6, 'lte()')
+type_check(validate.positive(), 1, -1, 'positive()')
+type_check(validate.negative(), -1, 1, 'negative()')
+type_check(validate.positive_or_zero(), 0, -1, 'positive_or_zero()')
+type_check(validate.negative_or_zero(), 0, 1, 'negative_or_zero()')
+type_check(validate.multiple_of(3), 9, 10, 'multiple_of()')
+
+# Numeric-string coercion: a real number and a numeric string must both
+# work, and a non-numeric string must be rejected outright (not silently
+# coerced to 0 and compared, which used to make "abc" pass gt(-1)).
+var gt_schema = validate.schema({ f: validate.gt(5) })
+assert gt_schema.check({ f: '10' }).valid, 'gt() must accept a numeric string'
+assert !gt_schema.check({ f: 'abc' }).valid, 'gt() must reject a non-numeric string outright, not silently coerce it to 0'
+ok('numeric comparison rules validate real numbers and numeric strings, and reject non-numeric strings outright')
+
+# ---------------------------------------------------------------------------
+# String content rules
+# ---------------------------------------------------------------------------
+type_check(validate.alpha(), 'abc', 'abc123', 'alpha()')
+assert !validate.schema({ f: validate.alpha() }).check({ f: 'café' }).valid,
+  'alpha() must be ASCII-only per its own docs, not accept a Unicode letter'
+type_check(validate.alpha_num(), 'abc123', 'abc-123', 'alpha_num()')
+type_check(validate.alpha_dash(), 'abc-123_x', 'abc 123', 'alpha_dash()')
+type_check(validate.starts_with('foo'), 'foobar', 'barfoo', 'starts_with()')
+type_check(validate.doesnt_start_with('foo'), 'barfoo', 'foobar', 'doesnt_start_with()')
+type_check(validate.ends_with('bar'), 'foobar', 'barfoo', 'ends_with()')
+type_check(validate.doesnt_end_with('bar'), 'barfoo', 'foobar', 'doesnt_end_with()')
+type_check(validate.contains('oo'), 'foobar', 'xyz', 'contains()')
+type_check(validate.doesnt_contain('oo'), 'xyz', 'foobar', 'doesnt_contain()')
+type_check(validate.regex('/^[0-9]+$/'), '123', 'abc', 'regex()')
+type_check(validate.not_regex('/^[0-9]+$/'), 'abc', '123', 'not_regex()')
+type_check(validate.lowercase(), 'abc', 'ABC', 'lowercase()')
+type_check(validate.uppercase(), 'ABC', 'abc', 'uppercase()')
+type_check(validate.not_blank(), 'x', '   ', 'not_blank()')
+ok('string content rules all validate correctly, including regex() (a real regression: match() returns false, not nil, on no match)')
+
+# ---------------------------------------------------------------------------
+# Format / pattern rules
+# ---------------------------------------------------------------------------
+type_check(validate.email(), 'a@b.com', 'not-an-email', 'email()')
+type_check(validate.url(), 'https://example.com', 'not-a-url', 'url()')
+type_check(validate.ipv4(), '192.168.1.1', '999.1.1.1', 'ipv4()')
+assert !validate.schema({ f: validate.ipv4() }).check({ f: '192.168.01.1' }).valid,
+  'ipv4() must reject a leading-zero octet'
+type_check(validate.ipv6(), '::1', 'not-ipv6', 'ipv6()')
+type_check(validate.ip(), '10.0.0.1', 'not-an-ip', 'ip()')
+type_check(validate.uuid(), '550e8400-e29b-41d4-a716-446655440000', 'not-a-uuid', 'uuid()')
+type_check(validate.json(), '{"a": 1}', '{not json', 'json()')
+type_check(validate.date(), '2024-06-15', 'not-a-date', 'date()')
+type_check(validate.after('2024-01-01'), '2024-06-15', '2023-01-01', 'after()')
+type_check(validate.after_or_equal('2024-01-01'), '2024-01-01', '2023-01-01', 'after_or_equal()')
+type_check(validate.before('2024-01-01'), '2023-01-01', '2024-06-15', 'before()')
+type_check(validate.before_or_equal('2024-01-01'), '2024-01-01', '2024-06-15', 'before_or_equal()')
+ok('format/pattern rules (email/url/ip*/uuid/json/date/after*/before*) all validate correctly')
+
+var tz_schema = validate.schema({ zone: validate.required_if('always', true).timezone() })
+assert tz_schema.check({ zone: 'Africa/Lagos', always: true }).valid, 'timezone() must accept a real IANA identifier'
+assert !tz_schema.check({ zone: 'Neverland/Nowhere', always: true }).valid, 'timezone() must reject a made-up identifier'
+ok('timezone() validates against the real IANA database (date.is_valid_timezone())')
+
+# ---------------------------------------------------------------------------
+# Inclusion / exclusion rules
+# ---------------------------------------------------------------------------
+type_check(validate.is_in(['a', 'b']), 'a', 'c', 'is_in()')
+type_check(validate.not_in(['a', 'b']), 'c', 'a', 'not_in()')
+type_check(validate.in_list(['a', 'b', 'c']), ['a', 'b'], ['a', 'x'], 'in_list()')
+type_check(validate.accepted(), 'yes', 'nope', 'accepted()')
+type_check(validate.declined(), 'no', 'yep', 'declined()')
+type_check(validate.equals('x'), 'x', 'y', 'equals()')
+type_check(validate.not_equals('x'), 'y', 'x', 'not_equals()')
+ok('inclusion/exclusion rules all validate correctly')
+
+# ---------------------------------------------------------------------------
+# Cross-field rules
+# ---------------------------------------------------------------------------
+var same_schema = validate.schema({
+  password: validate.string(),
+  password_confirmation: validate.same('password'),
+})
+assert same_schema.check({ password: 'x', password_confirmation: 'x' }).valid, 'same() must pass when both fields match'
+assert !same_schema.check({ password: 'x', password_confirmation: 'y' }).valid, 'same() must fail when the fields differ'
+
+var different_schema = validate.schema({
+  old_password: validate.string(),
+  new_password: validate.different('old_password'),
+})
+assert different_schema.check({ old_password: 'x', new_password: 'y' }).valid, 'different() must pass when the fields differ'
+assert !different_schema.check({ old_password: 'x', new_password: 'x' }).valid, 'different() must fail when the fields match'
+
+var confirmed_schema = validate.schema({
+  password: validate.string().min_length(4).confirmed(),
+})
+assert confirmed_schema.check({ password: 'abcd', password_confirmation: 'abcd' }).valid, 'confirmed() must pass when {field}_confirmation matches'
+assert !confirmed_schema.check({ password: 'abcd', password_confirmation: 'xxxx' }).valid, 'confirmed() must fail when {field}_confirmation differs'
+ok('same()/different()/confirmed() correctly compare against sibling fields')
+
+var required_if_schema = validate.schema({
+  role:       validate.required().string().is_in(['user', 'admin']),
+  admin_code: validate.required_if('role', 'admin').string(),
+})
+assert required_if_schema.check({ role: 'user' }).valid, 'required_if() must not require the field when the condition is unmet'
+assert !required_if_schema.check({ role: 'admin' }).valid, 'required_if() must require the field when the condition is met'
+assert required_if_schema.check({ role: 'admin', admin_code: 'x' }).valid, 'required_if() must pass once the required field is present'
+
+var required_unless_schema = validate.schema({
+  role:    validate.required().string(),
+  consent: validate.required_unless('role', 'bot').string(),
+})
+assert required_unless_schema.check({ role: 'bot' }).valid, 'required_unless() must not require the field when the exempting condition is met'
+assert !required_unless_schema.check({ role: 'human' }).valid, 'required_unless() must require the field otherwise'
+ok('required_if()/required_unless() correctly gate on a sibling field\'s value')
+
+var required_with_schema = validate.schema({
+  shipping_address: validate.string().sometimes(),
+  city: validate.required_with('shipping_address').string(),
+})
+assert required_with_schema.check({}).valid, 'required_with() must not require the field when the trigger sibling is absent'
+assert !required_with_schema.check({ shipping_address: '123 Main St' }).valid, 'required_with() must require the field when the trigger sibling is present'
+
+var required_without_schema = validate.schema({
+  email: validate.string().sometimes(),
+  phone: validate.required_without('email').string(),
+})
+assert required_without_schema.check({ email: 'a@b.com' }).valid, 'required_without() must not require the field when the fallback sibling is present'
+assert !required_without_schema.check({}).valid, 'required_without() must require the field when the fallback sibling is absent'
+ok('required_with()/required_without() correctly gate on sibling presence')
+
+var prohibits_schema = validate.schema({
+  use_default: validate.string().sometimes().prohibits(['custom_config']),
+})
+assert prohibits_schema.check({ use_default: 'yes' }).valid, 'prohibits() must pass when no prohibited sibling is present'
+assert !prohibits_schema.check({ use_default: 'yes', custom_config: 'x' }).valid, 'prohibits() must fail when a prohibited sibling is present'
+
+var prohibited_schema = validate.schema({ legacy_field: validate.prohibited() })
+assert prohibited_schema.check({}).valid, 'prohibited() must pass when the field is absent'
+assert !prohibited_schema.check({ legacy_field: 'x' }).valid, 'prohibited() must fail when the field is present'
+ok('prohibits()/prohibited() correctly forbid field combinations')
+
+var prohibited_if_schema = validate.schema({
+  role: validate.string(),
+  admin_code: validate.prohibited_if('role', 'guest'),
+})
+assert prohibited_if_schema.check({ role: 'guest' }).valid, 'prohibited_if() must pass when the field is absent under the condition'
+assert !prohibited_if_schema.check({ role: 'guest', admin_code: 'x' }).valid, 'prohibited_if() must fail when the field is present under the condition'
+
+var prohibited_unless_schema = validate.schema({
+  role: validate.string(),
+  admin_code: validate.prohibited_unless('role', 'admin'),
+})
+assert prohibited_unless_schema.check({ role: 'admin', admin_code: 'x' }).valid, 'prohibited_unless() must pass when the exempting condition is met'
+assert !prohibited_unless_schema.check({ role: 'guest', admin_code: 'x' }).valid, 'prohibited_unless() must fail otherwise'
+ok('prohibited_if()/prohibited_unless() correctly gate prohibition on a sibling field')
+
+# ---------------------------------------------------------------------------
+# List / dict content rules. Each in particular was completely broken
+# (double-iteration bug meant a parameterized nested rule could never
+# actually run correctly)
+# ---------------------------------------------------------------------------
+type_check(validate.distinct(), [1, 2, 3], [1, 2, 2], 'distinct()')
+type_check(validate.min_items(2), [1, 2], [1], 'min_items()')
+type_check(validate.max_items(2), [1], [1, 2, 3], 'max_items()')
+
+var each_schema = validate.schema({
+  emails: validate.list().each(validate.string().min_length(5).email()),
+})
+assert each_schema.check({ emails: ['a@b.com', 'ok@example.com'] }).valid,
+  'each() with a parameterized nested rule must pass every valid item'
+assert !each_schema.check({ emails: ['a@b.com', 'x'] }).valid,
+  'each() must fail when any item fails its nested chain (the min_length(5) here, the exact case that was broken)'
+assert !each_schema.check({ emails: ['a@b.com', 5] }).valid,
+  'each() must fail when an item fails the nested type check'
+ok('list content rules (distinct/min_items/max_items/each) all validate correctly')
+
+# ---------------------------------------------------------------------------
+# Miscellaneous rules
+# ---------------------------------------------------------------------------
+type_check(validate.is_nil(), nil, 'x', 'is_nil()')
+type_check(validate.not_nil(), 'x', nil, 'not_nil()')
+ok('is_nil()/not_nil() validate correctly')
+
+# ---------------------------------------------------------------------------
+# Custom rules
+# ---------------------------------------------------------------------------
+var custom_schema = validate.schema({
+  code: validate.required().string().custom(@(value) {
+    return value.starts_with('ZURI-') and value.length() == 12
+  }, 'Must be a valid Zuri code.'),
+})
+assert custom_schema.check({ code: 'ZURI-1234567' }).valid, 'custom() must pass when the function returns true'
+var custom_bad = custom_schema.check({ code: 'bad' })
+assert !custom_bad.valid and custom_bad.errors[0].message == 'Must be a valid Zuri code.',
+  'custom() must fail and use the given message when the function returns false'
+
+var custom_data_schema = validate.schema({
+  max_price: validate.number(),
+  price: validate.number().custom_with_data(@(value, data) {
+    return value < data.get('max_price', 0)
+  }, 'Must be less than max_price.'),
+})
+assert custom_data_schema.check({ max_price: 100, price: 50 }).valid, 'custom_with_data() must pass when the predicate holds against the full data dict'
+assert !custom_data_schema.check({ max_price: 100, price: 150 }).valid, 'custom_with_data() must fail when the predicate does not hold'
+ok('custom()/custom_with_data() run caller-supplied predicates correctly')
+
+# ---------------------------------------------------------------------------
+# Subclassing Rule directly
+# ---------------------------------------------------------------------------
+class Slug < Rule {
+  validate(value) {
+    if !is_string(value) return false
+    return !!value.match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/')
+  }
+  error() { return 'The ${self.name} field must be a valid slug.' }
+}
+var slug_schema = validate.schema({ slug: Validator().required().use(Slug) })
+assert slug_schema.check({ slug: 'hello-world' }).valid, 'a subclassed Rule via use() must pass a valid value'
+assert !slug_schema.check({ slug: 'Not Valid!' }).valid, 'a subclassed Rule via use() must fail an invalid value'
+ok('subclassing Rule directly and attaching it via Validator.use() works end to end')
+
+# ---------------------------------------------------------------------------
+# check_or_raise() / ValidationError
+# ---------------------------------------------------------------------------
+assert !raises(@() { basic.check_or_raise({ name: 'Ada', email: 'ada@example.com', age: 30 }) }),
+  'check_or_raise() must not raise for valid data'
+assert raises(@() { basic.check_or_raise({}) }), 'check_or_raise() must raise for invalid data'
+
+catch {
+  basic.check_or_raise({})
+} as e
+assert typeof(e) == 'ValidationError', 'check_or_raise() must raise a real ValidationError instance'
+assert e.message == 'Validation failed.', 'ValidationError.message must be the fixed summary text'
+assert e.errors.length() == 3, 'ValidationError.errors must carry the same errors check() would have returned'
+ok('check_or_raise() raises a real ValidationError carrying the full errors list')
+
+# ---------------------------------------------------------------------------
+# group_errors() / first_error() / field_errors() / has_error()
+# ---------------------------------------------------------------------------
+var multi = basic.check({})
+var grouped = basic.group_errors(multi.errors)
+assert grouped.contains('name') and grouped.contains('email') and grouped.contains('age'),
+  'group_errors() must key the grouped dict by every failing field'
+assert grouped.name.length() == 1, 'group_errors() must list every message for a field'
+
+assert basic.first_error(multi.errors, 'name') != nil, 'first_error() must return a message for a field with errors'
+assert basic.first_error(multi.errors, 'nonexistent') == nil, 'first_error() must return nil for a field with no errors'
+assert basic.field_errors(multi.errors, 'name').length() == 1, 'field_errors() must return every message for a field'
+assert basic.field_errors(multi.errors, 'nonexistent').is_empty(), 'field_errors() must return an empty list for a field with no errors'
+assert basic.has_error(multi.errors, 'name'), 'has_error() must be true for a field with errors'
+assert !basic.has_error(multi.errors, 'nonexistent'), 'has_error() must be false for a field with no errors'
+ok('group_errors()/first_error()/field_errors()/has_error() all read the errors list correctly')
+
+# ---------------------------------------------------------------------------
+# Schema composition: extend()/only()/except()
+# ---------------------------------------------------------------------------
+var base_schema = validate.schema({ name: validate.required().string() })
+var extended_schema = base_schema.extend({ email: validate.required().string().email() })
+assert extended_schema.ruleset().keys().length() == 2, 'extend() must merge in the new field alongside the existing ones'
+assert extended_schema.check({ name: 'x', email: 'a@b.com' }).valid, 'extend() must produce a schema that validates both the original and new fields'
+assert raises(@() { base_schema.extend('not a schema or dict') }), 'extend() must reject an argument that is neither a Schema nor a dict'
+
+var extended_from_schema = base_schema.extend(validate.schema({ email: validate.required().string().email() }))
+assert extended_from_schema.ruleset().keys().length() == 2, 'extend() must also accept another Schema instance, not just a plain dict'
+
+var partial_schema = extended_schema.only(['name'])
+assert partial_schema.ruleset().keys() == ['name'], 'only() must keep exactly the given field keys'
+assert partial_schema.check({}).valid == false, 'only() must still enforce required() on the fields it kept'
+
+var without_schema = extended_schema.except(['email'])
+assert without_schema.ruleset().keys() == ['name'], 'except() must remove exactly the given field keys'
+assert without_schema.check({ name: 'x' }).valid, 'except() must produce a schema that no longer checks the removed field'
+ok('Schema.extend()/only()/except() all compose rulesets correctly')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

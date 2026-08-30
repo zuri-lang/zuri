@@ -152,13 +152,13 @@ var _int_to_hex = convert.decimal_to_hex
 # There's no number->bigint conversion in Zuri (only a bigint literal or an
 # operation between two bigints ever produces one), so accumulating a value
 # in bigint arithmetic one hex digit at a time needs every digit to already
-# be a bigint -- this table is exactly that, indexed by digit value 0-15.
+# be a bigint; this table is exactly that, indexed by digit value 0-15.
 var _HEX_DIGIT_BIGINTS = [
   0n, 1n, 2n, 3n, 4n, 5n, 6n, 7n, 8n, 9n, 10n, 11n, 12n, 13n, 14n, 15n,
 ]
 
 # Converts a non-negative bigint into exactly 32 lowercase hex characters,
-# zero-padded on the left -- the bigint-safe counterpart to _int_to_hex,
+# zero-padded on the left; the bigint-safe counterpart to _int_to_hex,
 # needed because convert.decimal_to_hex()/to_base() only accept a plain
 # `number` and a 128-bit UUID value is always far beyond what one of those
 # can hold exactly.
@@ -500,7 +500,7 @@ def is_valid(str: any) {
   if !is_string(str) { return false }
   # Canonical form: 8-4-4-4-12 lowercase or uppercase hex digits.
   # .match() (singular) returns false for no match or a dict of
-  # capture groups for a match -- never a plain boolean -- so this
+  # capture groups for a match (never a plain boolean), so this
   # needs an explicit coercion to give is_valid() the real bool its
   # own contract promises. .matches() (plural) would be the wrong
   # choice here: it always returns a dict, empty or not, never false.
@@ -1005,7 +1005,7 @@ def from_bytes(bytes_list: list|bytes) {
  */
 def from_int(int_val) {
   if is_bigint(int_val) {
-    # 2^128 - 1, the largest value 128 bits can hold -- verified by
+    # 2^128 - 1, the largest value 128 bits can hold; verified by
     # actually computing 2n repeatedly squared in this VM rather than
     # trusting a hand-typed 39-digit literal (an earlier draft of this
     # constant was off by a factor of 2 from mis-remembering it).

@@ -49,6 +49,9 @@ use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 use crate::{enforce_arg_count, enforce_arg_type};
+use chrono::{Duration, NaiveDate, Offset, TimeZone, Utc};
+use chrono_tz::{OffsetComponents, OffsetName, TZ_VARIANTS, Tz};
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
@@ -61,6 +64,19 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("gmtime", native(vm, "gmtime", 0, false, gmtime_fn)),
     ("localtime", native(vm, "localtime", 0, false, localtime_fn)),
     ("mktime", native(vm, "mktime", 7, false, mktime_fn)),
+    (
+      "is_valid_timezone",
+      native(vm, "is_valid_timezone", 1, false, is_valid_timezone_fn),
+    ),
+    (
+      "list_timezones",
+      native(vm, "list_timezones", 0, false, list_timezones_fn),
+    ),
+    ("tz_offset", native(vm, "tz_offset", 2, false, tz_offset_fn)),
+    (
+      "tz_from_local",
+      native(vm, "tz_from_local", 8, false, tz_from_local_fn),
+    ),
   ]
 }
 
@@ -342,4 +358,132 @@ fn mktime_impl(
   let days = days_from_civil(year, month as u32, day as u32);
   let secs = days * 86400 + hour * 3600 + minute * 60 + seconds;
   Ok(Value::number(secs as f64))
+}
+
+// IANA timezone database (chrono-tz)
+//
+// `localtime()` above only ever reports the process's own system
+// timezone; these four give `libs/date.zu` a way to reason about an
+// arbitrary NAMED zone (e.g. "Africa/Lagos") instead, backed by
+// `chrono-tz`'s embedded copy of the IANA database rather than
+// anything read from the host system, so this works identically on
+// every platform regardless of whether it has its own zoneinfo
+// installed.
+
+fn is_valid_timezone_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+  let name = ctx.args[0].as_str();
+  Ok(Value::bool(Tz::from_str(name).is_ok()))
+}
+
+fn list_timezones_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  let items: Vec<Value> = TZ_VARIANTS
+    .iter()
+    .map(|tz| ctx.heap().alloc_string(tz.name()))
+    .collect();
+  Ok(ctx.heap().alloc_list(items))
+}
+
+/// The real UTC offset / DST state / abbreviation for timezone `name`
+/// at the UTC instant `unix_time`, e.g. `Africa/Lagos` around a known
+/// DST transition. Returns `{gmt_offset, is_dst, abbreviation, zone}`.
+fn tz_offset_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 2);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+  enforce_arg_type!(ctx, 1, ArgType::Number);
+
+  let name = ctx.args[0].as_str();
+  let tz = Tz::from_str(name).map_err(|_| format!("unknown timezone '{name}'"))?;
+
+  let unix_time = ctx.args[1].as_number() as i64;
+  let utc = chrono::DateTime::<Utc>::from_timestamp(unix_time, 0)
+    .ok_or_else(|| format!("tz_offset(): unix_time {unix_time} is out of range"))?
+    .naive_utc();
+
+  let offset = tz.offset_from_utc_datetime(&utc);
+  let gmt_offset = offset.fix().local_minus_utc() as i64;
+  let is_dst = offset.dst_offset() != Duration::zero();
+  let abbreviation = offset.abbreviation().unwrap_or_else(|| tz.name());
+
+  let k_gmt_offset = ctx.heap().alloc_string("gmt_offset");
+  let k_is_dst = ctx.heap().alloc_string("is_dst");
+  let k_abbreviation = ctx.heap().alloc_string("abbreviation");
+  let k_zone = ctx.heap().alloc_string("zone");
+  let v_abbreviation = ctx.heap().alloc_string(abbreviation);
+  let v_zone = ctx.heap().alloc_string(tz.name());
+
+  Ok(ctx.heap().alloc_dict(vec![
+    (k_gmt_offset, Value::number(gmt_offset as f64)),
+    (k_is_dst, Value::bool(is_dst)),
+    (k_abbreviation, v_abbreviation),
+    (k_zone, v_zone),
+  ]))
+}
+
+/// The UTC unix timestamp that wall-clock fields `year..seconds`
+/// correspond to when read as a local time IN timezone `name`. Two
+/// instants a DST transition apart can share the same wall-clock
+/// reading (an "ambiguous" local time, e.g. 1:30am on a fall-back
+/// night); `is_dst` picks which one, same convention as `mktime`'s own
+/// `is_dst` argument. A wall-clock reading that a spring-forward
+/// transition skips over entirely (a "gap") has no valid answer at
+/// all, and raises rather than silently picking a nearby instant.
+fn tz_from_local_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 8);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+  enforce_arg_type!(ctx, 1, ArgType::Number);
+  enforce_arg_type!(ctx, 2, ArgType::Number);
+  enforce_arg_type!(ctx, 3, ArgType::Number);
+  enforce_arg_type!(ctx, 4, ArgType::Number);
+  enforce_arg_type!(ctx, 5, ArgType::Number);
+  enforce_arg_type!(ctx, 6, ArgType::Number);
+
+  let name = ctx.args[0].as_str();
+  let tz = Tz::from_str(name).map_err(|_| format!("unknown timezone '{name}'"))?;
+
+  let year = ctx.args[1].as_number() as i32;
+  let month = ctx.args[2].as_number() as u32;
+  let day = ctx.args[3].as_number() as u32;
+  let hour = ctx.args[4].as_number() as u32;
+  let minute = ctx.args[5].as_number() as u32;
+  let seconds = ctx.args[6].as_number() as u32;
+
+  let is_dst = match ctx.args.get(7) {
+    None => None,
+    Some(v) if v.is_nil() => None,
+    Some(v) if v.is_bool() => Some(v.as_bool()),
+    Some(v) => {
+      return Err(format!(
+        "tz_from_local(): is_dst must be a bool or nil, got {}",
+        v.type_name()
+      ));
+    },
+  };
+
+  let naive = NaiveDate::from_ymd_opt(year, month, day)
+    .and_then(|d| d.and_hms_opt(hour, minute, seconds))
+    .ok_or_else(|| "tz_from_local(): the given date/time fields are out of range".to_string())?;
+
+  let resolved = match tz.offset_from_local_datetime(&naive) {
+    chrono::LocalResult::Single(offset) => offset,
+    chrono::LocalResult::None => {
+      return Err(format!(
+        "tz_from_local(): {naive} does not exist in {name} (it falls in a DST gap)"
+      ));
+    },
+    chrono::LocalResult::Ambiguous(earlier, later) => {
+      let earlier_is_dst = earlier.dst_offset() != Duration::zero();
+      match is_dst {
+        Some(want_dst) if want_dst == earlier_is_dst => earlier,
+        Some(_) => later,
+        None => earlier,
+      }
+    },
+  };
+
+  let gmt_offset = resolved.fix().local_minus_utc() as i64;
+  let unix_time = naive.and_utc().timestamp() - gmt_offset;
+  Ok(Value::number(unix_time as f64))
 }

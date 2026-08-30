@@ -2459,8 +2459,8 @@ impl VM {
   /// they remove more than one frame at once.
   ///
   /// Also discards any `catch_stack` entry left behind by the frame
-  /// that's going away without ever reaching its own `Instr::PopCatch`
-  /// -- a `return` (or any other early exit) straight out of a `catch {
+  /// that's going away without ever reaching its own `Instr::PopCatch`:
+  /// a `return` (or any other early exit) straight out of a `catch {
   /// ... }` body compiles no such cleanup of its own (see
   /// `Compiler::compile_catch`/`compile_statement`'s `Stmt::Return`
   /// arm), so without this, the handler's `CatchHandler::frame_depth`
@@ -3415,7 +3415,7 @@ impl VM {
       // this is the one place that's always safe to call back into
       // Zuri code from, on the VM's own owning thread, between
       // instructions. The common case (nothing pending) costs four
-      // relaxed atomic loads inside `any_pending()` -- see
+      // relaxed atomic loads inside `any_pending()`; see
       // `modules::os_util::signal` for why the real OS signal handler
       // never does more than flip a flag, and why delivery is
       // deliberately deferred all the way to here instead.
@@ -4146,7 +4146,7 @@ impl VM {
               }
             } else if receiver.is_module() {
               let m = receiver.as_module();
-              match m.namespace.get(name_val.as_str()) {
+              match m.namespace.get_public(name_val.as_str()) {
                 Some(v) => v,
                 None => {
                   let msg = format!("module '{}' has no member '{}'", m.name, name_val.as_str());
@@ -4156,7 +4156,7 @@ impl VM {
             } else if receiver.is_module_binding() {
               let module_val = receiver.as_module_binding().module;
               let m = module_val.as_module();
-              match m.namespace.get(name_val.as_str()) {
+              match m.namespace.get_public(name_val.as_str()) {
                 Some(v) => v,
                 None => {
                   let msg = format!("module '{}' has no member '{}'", m.name, name_val.as_str());
@@ -4320,7 +4320,7 @@ impl VM {
               };
               let member = {
                 let m = module_val.as_module();
-                m.namespace.get(method_name_val.as_str())
+                m.namespace.get_public(method_name_val.as_str())
               };
               match member {
                 Some(v) => {
@@ -4568,23 +4568,51 @@ impl VM {
             self.set_reg(base, dst, module_val);
           },
 
-          Instr::ImportAll { module } => {
+          Instr::ImportAll { module, exported } => {
             let mv = self.get_reg(base, module);
             if !mv.is_module() {
               break 'step Err(self.raise("TypeError", "expected a module for 'import ... { * }'"));
             }
+            // Only PUBLIC entries carry over: a name this source module
+            // itself only has local-only (e.g. from its own plain
+            // wildcard import) doesn't transitively leak through this
+            // one. Unlike the named-import path, this deliberately does
+            // NOT also filter by `_`-prefix: `import .path { _name }`
+            // rejects explicitly NAMING a private item, but a wildcard
+            // import never names anything; it's exactly how sibling
+            // files in the same package share an underscore-prefixed
+            // internal helper today (e.g. jwt/core.zu picking up
+            // codec.zu's `_is_string` via `.codec { * }`), and that's
+            // legitimate same-package internal use, not an external
+            // leak; the public bit above already draws the line that
+            // actually matters (does this wildcard import re-export or
+            // stay local), independent of naming convention.
             let entries: Vec<(String, Value)> = {
               let m = mv.as_module();
               m.namespace
                 .names
                 .iter()
-                .map(|(k, &idx)| (k.clone(), m.namespace.slots[idx as usize].get()))
+                .filter_map(|(k, &idx)| {
+                  if !m.namespace.public[idx as usize].get() {
+                    return None;
+                  }
+                  Some((k.clone(), m.namespace.slots[idx as usize].get()))
+                })
                 .collect()
             };
             let target = func.globals_module;
             for (name, val) in entries {
+              // An underscore-prefixed name never becomes part of the
+              // importing file's own public surface, no matter what
+              // `exported` says: `@` re-exports what a module makes
+              // public, it doesn't launder something private into
+              // public. Only non-underscore names track `exported`.
+              let stays_private = !exported || name.starts_with('_');
               let slot = self.get_or_create_slot_in(target, name);
               self.write_slot_in(target, slot, val);
+              if stays_private && let Some(t) = target {
+                t.as_module().namespace.mark_private(slot);
+              }
             }
           },
 

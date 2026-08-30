@@ -63,7 +63,7 @@ var Critical = LogLevel.Critical
 
 # The default level is genuinely shared, cross-file, mutable state
 # (every Transport's `can_log()` reads it, and the module-level
-# `set_level()` in dispatch.zu writes it) -- it's only ever touched
+# `set_level()` in dispatch.zu writes it); it's only ever touched
 # through these two accessors, never a raw imported variable, since an
 # imported binding is a value snapshot taken at import time, not a
 # live reference (verified directly: a second file importing a bare

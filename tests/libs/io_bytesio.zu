@@ -137,7 +137,7 @@ assert truncated_default.read().to_string() == '', 'truncate() with no length mu
 ok('BytesIO.truncate() with no argument defaults to length 0')
 
 # ---------------------------------------------------------------------------
-# flush() / number() / set_times() -- 2026-08-30: none of these had a test
+# flush() / number() / set_times() (2026-08-30): none of these had a test
 # ---------------------------------------------------------------------------
 var flushable = io.BytesIO('x'.to_bytes(), 'r')
 assert !raises(@() { flushable.flush() }), 'flush() must be a safe no-op for BytesIO, never raise'

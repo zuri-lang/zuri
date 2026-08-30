@@ -280,7 +280,7 @@ assert ft3.format(['hi'], log.Info, nil) == 'INFO [svc]: hi', 'format() must inc
 ok('format() honors every show_time/show_name/show_level combination')
 
 # ---------------------------------------------------------------------------
-# The remaining flat level functions -- debug()/critical() (info/warn/error
+# The remaining flat level functions: debug()/critical() (info/warn/error
 # already covered above)
 # ---------------------------------------------------------------------------
 var cap4 = CapturingTransport()

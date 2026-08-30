@@ -597,7 +597,7 @@ fn rsa_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn rsa_hash_arg(ctx: &ZuriContext, idx: usize) -> Result<&'static str, String> {
   match ctx.args.get(idx) {
     // Both a truly omitted argument AND one explicitly passed as `nil`
-    // mean "use the default" -- `crypto.zu`'s own `sign(secret, message,
+    // mean "use the default": `crypto.zu`'s own `sign(secret, message,
     // hash)` wrapper always passes a real (possibly-nil) positional value
     // through to this native, it never actually omits the argument, even
     // when ITS OWN caller left `hash` out.

@@ -23,7 +23,7 @@ check('bytes', bytes(4))
 check('instance', Foo())
 
 # is_number()/is_int() must both be false for a bigint even though it
-# holds an integer value -- the whole reason is_bigint() needed to exist
+# holds an integer value; the whole reason is_bigint() needed to exist
 # as its own distinct check.
 var big = 5n
 echo 'is_number(bigint): ${is_number(big)}'

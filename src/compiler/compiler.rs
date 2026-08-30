@@ -2344,7 +2344,10 @@ impl<'a> Compiler<'a> {
     });
 
     if imports_all {
-      self.emit(Instr::ImportAll { module: mod_reg });
+      self.emit(Instr::ImportAll {
+        module: mod_reg,
+        exported,
+      });
       // Nothing persists past this statement; safe to reclaim.
       self.free_regs_to(mod_reg);
       return;

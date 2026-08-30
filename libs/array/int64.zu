@@ -21,7 +21,7 @@ var INT64_MAX = 9223372036854775807n
 var INT64_MIN = -9223372036854775808n
 
 # Plain-`number`-typed counterparts of INT64_MAX/INT64_MIN, used only
-# when validating a plain-number value -- Zuri has no comparison
+# when validating a plain-number value: Zuri has no comparison
 # operator between a `number` and a `bigint` at all (confirmed: even
 # `3 < 5n` raises "operator '<' not defined for number and bigint"),
 # so a value's bounds check has to compare against a same-typed pair.

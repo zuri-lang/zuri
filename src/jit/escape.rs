@@ -618,7 +618,7 @@ fn escaping_reads(instr: &Instr) -> Vec<u8> {
     Instr::SetField { obj: _, src, .. } => vec![src],
 
     Instr::Import { .. } => vec![],
-    Instr::ImportAll { module } => vec![module],
+    Instr::ImportAll { module, .. } => vec![module],
     Instr::MakePromoted { module, .. } => vec![module],
 
     // `obj` (container) and `idx` (compared via `Value::equals`, same

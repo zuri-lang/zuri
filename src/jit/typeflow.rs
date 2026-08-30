@@ -2251,7 +2251,7 @@ fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
     } => set.set_range(superclass, num_args as usize + 2),
 
     Instr::Import { .. } => {},
-    Instr::ImportAll { module } => set.set(module, true),
+    Instr::ImportAll { module, .. } => set.set(module, true),
     Instr::MakePromoted { module, .. } => set.set(module, true),
 
     Instr::GetIndex { obj, idx, .. } => {

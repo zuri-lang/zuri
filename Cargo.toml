@@ -114,6 +114,11 @@ rcgen = { version = "0.14", default-features = false, features = [
     "pem",
 ] }
 
+# --- date (src/modules/date.rs) --------------------------------------------
+
+chrono = "0.4.45"
+chrono-tz = "0.10.4"
+
 # --- io::TTY.getsize (src/modules/io.rs) -----------------------------------
 
 # The rest of io::TTY (raw mode, tcgetattr/tcsetattr) is genuinely termios-

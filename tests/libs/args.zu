@@ -267,7 +267,7 @@ assert required_missing.output.contains('required option --name is missing'),
 ok('a missing required option prints a clear error and exits 1')
 
 # ---------------------------------------------------------------------------
-# Declare-time errors -- these raise ArgsError directly (not via
+# Declare-time errors: these raise ArgsError directly (not via
 # os.exit()), since they happen at add_option()/add_command() call time,
 # before parse() is ever invoked, so they're testable in-process.
 # ---------------------------------------------------------------------------

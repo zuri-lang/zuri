@@ -269,7 +269,7 @@ fn read_secure_line(_obscure_text: &str) -> io::Result<String> {
 /// size, and a TTY-level flush, all keyed off a real file descriptor
 /// (`stdin`/`stdout`/`stderr`, or any other file the caller opened
 /// against a terminal device). Unix-only, matching this file's own
-/// `read_secure_line` split -- there's no portable termios/ioctl
+/// `read_secure_line` split: there's no portable termios/ioctl
 /// equivalent to fall back to on other platforms, so every function
 /// here just reports "not supported" there instead of pretending to
 /// work.
@@ -399,8 +399,8 @@ mod tty {
       }
       let key = key.as_number() as i64;
 
-      // key 6 (c_cc) is the one group that isn't a plain flag word --
-      // it's the array of special control characters -- so it takes a
+      // key 6 (c_cc) is the one group that isn't a plain flag word:
+      // it's the array of special control characters, so it takes a
       // list rather than a number.
       if key == 6 {
         if !value.is_list() {
@@ -498,8 +498,8 @@ mod tty {
   /// glibc target module in this crate version happens to omit it too,
   /// even though real glibc headers do define it). Its value is the
   /// same `0x4000` everywhere it does exist, so this fills the gap by
-  /// hand rather than leaving Linux -- the one platform we actually
-  /// run this codebase on -- without it.
+  /// hand rather than leaving Linux (the one platform we actually
+  /// run this codebase on) without it.
   #[cfg(unix)]
   fn iutf8_value() -> libc::tcflag_t {
     if cfg!(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios")) {
@@ -513,9 +513,9 @@ mod tty {
   /// `TTY.NAME` class constant, read straight out of this build's own
   /// `libc` crate rather than hand-typed in Zuri. The bit layout of
   /// `c_iflag`/`c_oflag`/`c_cflag`/`c_lflag` (and the `c_cc` control-
-  /// character index table) genuinely differs across platform families
-  /// -- BSD/macOS and Linux/glibc disagree on most of `c_cflag`/
-  /// `c_lflag` outright -- and Zuri itself has no conditional
+  /// character index table) genuinely differs across platform families:
+  /// BSD/macOS and Linux/glibc disagree on most of `c_cflag`/
+  /// `c_lflag` outright, and Zuri itself has no conditional
   /// compilation to express "pick the right literal for whoever's
   /// running this." Only native code, via `libc`'s own per-target cfg
   /// gates, actually knows which platform it was compiled for, so the
@@ -630,7 +630,7 @@ mod tty {
 
   /// Unlike the other TTY natives, this one can't just return an
   /// error: `libs/io/tty.zu`'s `TTY.NAME` constants call this once,
-  /// unconditionally, while the class itself is being defined -- and
+  /// unconditionally, while the class itself is being defined, and
   /// that has to succeed on every platform (Windows included) simply
   /// to let `import io` finish loading, even though none of these
   /// values do anything real there (`tcgetattr`/`tcsetattr` above
@@ -646,7 +646,7 @@ mod tty {
       ("TTY_IFLAG", 0i64), ("TTY_OFLAG", 1), ("TTY_CFLAG", 2), ("TTY_LFLAG", 3),
       ("TTY_ISPEED", 4), ("TTY_OSPEED", 5), ("TTY_CC", 6),
       // everything below is a real termios value with no non-unix
-      // equivalent -- tcgetattr/tcsetattr above already refuse to run
+      // equivalent: tcgetattr/tcsetattr above already refuse to run
       // at all here, so these never do anything real either way
       ("TCSANOW", 0), ("TCSADRAIN", 0), ("TCSAFLUSH", 0),
       ("IGNBRK", 0), ("BRKINT", 0), ("IGNPAR", 0), ("PARMRK", 0), ("INPCK", 0),

@@ -218,7 +218,7 @@ assert raises(@() { colors.hex(123) }), 'hex() must reject a non-string argument
 ok('hex() strips an optional # and matches hex_to_ansi()')
 
 # ---------------------------------------------------------------------------
-# rgb() / hsl() / hsv() / hwb() / cmyk() / xyz() -- the terminal-color
+# rgb() / hsl() / hsv() / hwb() / cmyk() / xyz(): the terminal-color
 # wrapper family, previously untested at every link. Each must be
 # exactly its own conversion chain down to ansi256_to_ansi/rgb_to_ansi256.
 # ---------------------------------------------------------------------------
@@ -247,7 +247,7 @@ assert raises(@() { colors.xyz('x', 0, 0) }), 'xyz() must reject a non-numeric a
 ok('xyz() validates its argument before converting')
 
 # ---------------------------------------------------------------------------
-# rgb_to_hsv / rgb_to_hwb / rgb_to_cmyk / rgb_to_xyz -- previously
+# rgb_to_hsv / rgb_to_hwb / rgb_to_cmyk / rgb_to_xyz: previously
 # untested reverse conversions, plus the two real NaN bugs this pass
 # found (both from the same root cause: a `x / y or 0` guard against
 # division-by-zero silently fails because NaN is truthy in Zuri, unlike
@@ -285,7 +285,7 @@ assert raises(@() { colors.rgb_to_lab(1.5, 0, 0) }), 'rgb_to_lab() must reject a
 ok('rgb_to_lab() validates its arguments')
 
 # ---------------------------------------------------------------------------
-# hsl_to_hsv / hsv_to_hsl -- previously untested, and hsv_to_hsl() carries
+# hsl_to_hsv / hsv_to_hsl: previously untested, and hsv_to_hsl() carries
 # the same NaN-from-truthy-`or 0` bug as rgb_to_cmyk() above, triggered
 # by any fully-desaturated, fully-bright color (e.g. pure white)
 # ---------------------------------------------------------------------------
@@ -301,7 +301,7 @@ assert raises(@() { colors.hsv_to_hsl('x', 0, 0) }), 'hsv_to_hsl() must reject a
 ok('hsv_to_hsl() matches known reference points (including the white NaN regression) and validates its arguments')
 
 # ---------------------------------------------------------------------------
-# cmyk_to_rgb / xyz_to_rgb / hwb_to_rgb -- reference values, previously
+# cmyk_to_rgb / xyz_to_rgb / hwb_to_rgb: reference values, previously
 # only sanity-bounds-checked (hwb_to_rgb) or untested entirely
 # ---------------------------------------------------------------------------
 assert colors.cmyk_to_rgb(0, 100, 100, 0) == [255, 0, 0], 'cmyk_to_rgb() of pure red must round-trip exactly'
@@ -324,7 +324,7 @@ ok('lab_to_rgb() validates its arguments')
 
 # ---------------------------------------------------------------------------
 # Argument validation sweep for the color-manipulation and accessibility
-# functions -- their success paths are already covered above, this fills
+# functions; their success paths are already covered above, this fills
 # in the previously-untested TypeError paths
 # ---------------------------------------------------------------------------
 assert raises(@() { colors.lighten(123, 5) }), 'lighten() must reject a non-string hex argument'

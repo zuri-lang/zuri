@@ -1,0 +1,13 @@
+# Support file for tests/wildcard_import/visibility.zu. Not a fixture
+# itself (no matching .out), just something for the real fixture's
+# helper modules to wildcard-import.
+
+def public_fn() {
+  return 'pub'
+}
+
+def _private_fn() {
+  return 'priv'
+}
+
+class PublicClass {}

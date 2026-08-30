@@ -344,14 +344,21 @@ pub enum Instr {
     path_const: u16,
     importer_const: u16,
   },
-  /// `import PATH { * }`; merges every name currently in `module`'s
-  /// namespace into whichever globals table the CURRENTLY EXECUTING
-  /// function's own top-level bindings belong to (the running module's
-  /// namespace, or the VM's root table for the main script/REPL: see
-  /// `ObjFunction::globals_module`). No local/module-binding variable
-  /// is created, matching the documented behavior.
+  /// `import PATH { * }` (`exported: false`) or `import @PATH { * }`
+  /// (`exported: true`); merges every PUBLIC name currently in
+  /// `module`'s namespace into whichever globals table the CURRENTLY
+  /// EXECUTING function's own top-level bindings belong to (the
+  /// running module's namespace, or the VM's root table for the main
+  /// script/REPL: see `ObjFunction::globals_module`). No local/
+  /// module-binding variable is created, matching the documented
+  /// behavior. Each merged entry lands public (externally visible via
+  /// `GetField`/`Invoke`) when `exported` is `true`, or local-only
+  /// (usable within this module's own code, invisible from outside)
+  /// when it's `false`, per spec: imports are local by default, and
+  /// `@` is what actually re-exports them, wildcards included.
   ImportAll {
     module: u8,
+    exported: bool,
   },
   /// `import PATH [as NAME]` (default, non-selective, non-`{*}` form)
   ///; wraps `module` together with whichever of its members is named

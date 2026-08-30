@@ -35,13 +35,13 @@
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
-import .int8 { * }
-import .uint8 { * }
-import .int16 { * }
-import .uint16 { * }
-import .int32 { * }
-import .uint32 { * }
-import .int64 { * }
-import .uint64 { * }
-import .float { * }
-import .double { * }
+import @.int8 { * }
+import @.uint8 { * }
+import @.int16 { * }
+import @.uint16 { * }
+import @.int32 { * }
+import @.uint32 { * }
+import @.int64 { * }
+import @.uint64 { * }
+import @.float { * }
+import @.double { * }

@@ -16,14 +16,14 @@ import os
  */
 class FileTransport < Transport {
 
-  # Rotation disabled by default -- existing users see no behavior
+  # Rotation disabled by default; existing users see no behavior
   # change unless they opt in via set_max_bytes().
   var _max_bytes = nil
   var _backup_count = 5
 
   # Field slots are fixed at class-declaration time, so both of these
   # need a real declaration even though they're only ever assigned
-  # from _init() -- an implicit `self.x = ...` only declares a new
+  # from _init(): an implicit `self.x = ...` only declares a new
   # field when it's written directly inside @new()'s own body, not a
   # helper method @new() calls.
   var _path = ''

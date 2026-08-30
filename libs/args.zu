@@ -253,7 +253,7 @@ def _italic(text) {
 # Prefers a real query of the terminal stdout is attached to
 # (`io.TTY.get_size()`); falls back to the `COLUMNS` environment
 # variable (set by most interactive shells, and the only option when
-# stdout isn't actually a terminal -- piped output, a non-Unix/
+# stdout isn't actually a terminal (piped output, a non-Unix/
 # non-Windows platform, ...) and then to a conventional 80-column
 # default. Clamped to a sane range so a stray `COLUMNS=1` or a
 # `get_size()` returning `0` (a pty nobody ever sized, for instance)

@@ -292,7 +292,7 @@ check('2019-12-30 plausible',  date.Date(2019, 12, 30).week_number() >= 1, true)
 # ===========================================================================
 # 9. days_before_month()
 # ===========================================================================
-# 2026-08-30: redesigned on top of to_ordinal() -- the old implementation
+# 2026-08-30: redesigned on top of to_ordinal(). The old implementation
 # used a fragile negative-array-index wraparound hack and its own doc
 # example (142) turns out to have been read straight off that buggy
 # output rather than a real reference computation. The correct value for
@@ -326,7 +326,7 @@ raises('days_before_month needs valid month', @() {
 # 10. days_before_year()
 # ===========================================================================
 # 2026-08-30: redesigned on top of to_ordinal() for the same reason as
-# days_before_month() above -- the old doc example (811) was wrong; a
+# days_before_month() above: the old doc example (811) was wrong; a
 # direct reference count (235 days to 2022-01-01 + 365 + 365) gives 965,
 # cross-checked independently via (b.to_time() - a.to_time()) / 86400.
 section('10. days_before_year()')

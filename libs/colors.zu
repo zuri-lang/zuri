@@ -143,7 +143,7 @@ def _get_sequence(v, bg) {
  */
 def text(value, color, bg) {
   # _get_sequence() returns real nil, not '', when neither color nor bg
-  # is given -- string-concatenating that directly would stringify to
+  # is given: string-concatenating that directly would stringify to
   # the literal text "nil" glued onto value, not an empty prefix.
   var prefix = _get_sequence(color, bg)
   return (prefix != nil ? prefix : '') + value + _get_sequence(0)
@@ -541,7 +541,7 @@ def rgb_to_cmyk(r, g, b) {
   var k = (1 - r).min(1 - g).min(1 - b), c, m, y
 
   # k == 1 means pure black (no red, green, or blue content at all), so
-  # the c/m/y formulas below all divide by zero -- their result is NaN,
+  # the c/m/y formulas below all divide by zero; their result is NaN,
   # not the 0 the `or` pattern elsewhere in this module would normally
   # catch, since NaN is truthy in Zuri. Pure black has no color content
   # to speak of, so 0% is the correct C/M/Y reading here regardless.
@@ -631,7 +631,7 @@ def hsl_to_rgb(h, s, l) {
   if !is_number(h) or !is_number(s) or !is_number(l)
     raise TypeError('number expected')
 
-  # Hue is circular, so it wraps rather than being rejected -- s/l
+  # Hue is circular, so it wraps rather than being rejected; s/l
   # (each 0-100) aren't, so those still raise on an out-of-range value.
   if s < 0 or s > 100 or l < 0 or l > 100
     raise ValueError('invalid color components')
@@ -768,7 +768,7 @@ def hsv_to_hsl(h, s, v) {
 
   # The divisor can be exactly 0 (e.g. s=0, v=1, where lmax works out to
   # 2), which would divide sl's already-zero numerator into NaN rather
-  # than 0 -- and NaN is truthy in Zuri, so the `or 0` idiom used
+  # than 0, and NaN is truthy in Zuri, so the `or 0` idiom used
   # elsewhere in this module can't catch it the way it normally would.
   var divisor = lmax <= 1 ? lmax : 2 - lmax
   sl = divisor == 0 ? 0 : sl / divisor
@@ -1060,7 +1060,7 @@ def mix(hex_a, hex_b, weight) {
 # WCAG 2.x relative luminance (https://www.w3.org/TR/WCAG21/#dfn-relative-luminance).
 # Deliberately uses the exact constants and 0.03928 linearization
 # threshold the spec itself defines, rather than reusing rgb_to_xyz's
-# more precise CIE Y-row constants -- the two are extremely close but
+# more precise CIE Y-row constants; the two are extremely close but
 # not identical, and a function claiming WCAG compliance should match
 # the spec's own formula exactly.
 def _relative_luminance(r, g, b) {

@@ -1,0 +1,17 @@
+# Support file: a plain (non-@) wildcard import, matching the real
+# stdlib pattern of e.g. jwt/core.zu's `import .codec { * }`.
+
+import .leaf { * }
+
+def use_internally() {
+  return public_fn()
+}
+
+# Mirrors the real stdlib pattern this fix had to preserve: jwt/core.zu
+# calling codec.zu's `_is_string` after picking it up via its own plain
+# `import .codec { * }`; an underscore-prefixed name from a sibling
+# file, used internally, never meant to be part of THIS file's own
+# public surface either way.
+def use_private_internally() {
+  return _private_fn()
+}

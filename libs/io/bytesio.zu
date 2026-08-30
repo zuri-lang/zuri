@@ -475,7 +475,7 @@ class BytesIO {
 
     # Cap to whichever is smaller: what the caller asked for, or what's
     # actually left in the readable window (self.source itself may well
-    # extend further than that -- see truncate(), which shrinks the
+    # extend further than that; see truncate(), which shrinks the
     # readable window without touching the underlying source at all).
     var take = length.min(max_readable)
     var result = self.source[self._position, self._position + take]

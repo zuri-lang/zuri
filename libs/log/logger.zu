@@ -87,7 +87,7 @@ def critical(...args) {
 # nothing in this module can reference the real builtin Error class
 # by name: LogLevel.Error is exported at module scope under the same
 # bare identifier, and Zuri has no way to reach a shadowed global from
-# within the module that shadows it -- confirmed to affect even
+# within the module that shadows it; confirmed to affect even
 # `param: Type` annotations, not just plain expressions.
 def _looks_like_error(ex) {
   return is_instance(ex) and hasprop(ex, 'message') and hasprop(ex, 'stacktrace')

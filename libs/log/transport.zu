@@ -417,7 +417,7 @@ def _assert_transport(obj) {
 }
 
 
-# A list of registered transports. Starts empty here -- the default
+# A list of registered transports. Starts empty here; the default
 # ConsoleTransport is registered by dispatch.zu at its own load time,
 # since constructing one needs console.zu, which this file can't
 # depend on (see the module doc above).

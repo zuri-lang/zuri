@@ -8434,13 +8434,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.resync_dst_from_memory(dst);
         false
       },
-      Instr::ImportAll { module } => {
+      Instr::ImportAll { module, exported } => {
         let base = self.base_param;
         let module_i = self.idx(module);
         let func_ptr = self.func_ptr_const();
+        let exported_i = self.i64c(exported as i64);
         self.call_checked(
           "zuri_jit_import_all",
-          &[self.vm_param, base, module_i, func_ptr],
+          &[self.vm_param, base, module_i, func_ptr, exported_i],
         );
         false
       },

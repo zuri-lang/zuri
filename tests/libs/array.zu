@@ -28,7 +28,7 @@ echo '════════════════════════�
 echo '  array module — test suite'
 echo '═══════════════════════════════════════════════════════'
 
-# Every class, run through the exact same battery below -- [1,2,3,4,5]
+# Every class, run through the exact same battery below: [1,2,3,4,5]
 # is a legal element value for all ten (float/double included: struct
 # round-trips an integer-valued float back as e.g. 1.0, which compares
 # == 1). Type-specific range/rejection and negative/bigint values are
@@ -267,8 +267,8 @@ for Ctor in all_ctors {
   # text (self._data.to_string()), which is unreadable garbage for a
   # numeric array; it now shows the decoded element list instead.
   # (@to_string() just delegates to to_string() with no logic of its
-  # own, and Zuri has no syntax to invoke a magic method directly --
-  # confirmed `a.@to_string()` is a SyntaxError -- so this is the only
+  # own, and Zuri has no syntax to invoke a magic method directly
+  # (confirmed `a.@to_string()` is a SyntaxError), so this is the only
   # externally-observable way to exercise that delegation.)
   assert a.to_string() == '[1, 2, 3]', 'to_string() must show the decoded elements, not raw bytes'
 
@@ -293,7 +293,7 @@ ok('to_bytes()/to_list()/to_string()/@to_string()/@to_json()/iteration are all c
 # ---------------------------------------------------------------------------
 # Per-class range validation (2026-08-30 fix: the "and" in `!is_number(value)
 # and !is_int(value)` was backwards and could never actually fire for a real
-# number -- masked for floats by struct.pack()'s own validation, but real)
+# number, masked for floats by struct.pack()'s own validation, but real)
 # ---------------------------------------------------------------------------
 assert raises(@() => array.Int8Array(0).append(128)),    'Int8Array must reject a value above 127'
 assert raises(@() => array.Int8Array(0).append(-129)),   'Int8Array must reject a value below -128'
@@ -318,7 +318,7 @@ for Ctor in [array.Int8Array, array.UInt8Array, array.Int16Array, array.UInt16Ar
 ok('range and type validation correctly rejects bad input for every fixed-width integer class')
 
 # ---------------------------------------------------------------------------
-# FloatArray / DoubleArray -- 2026-08-30 fix: FLOAT_MIN/DOUBLE_MIN were the
+# FloatArray / DoubleArray (2026-08-30 fix): FLOAT_MIN/DOUBLE_MIN were the
 # smallest POSITIVE normal value, not -MAX, so no negative number could ever
 # be stored at all.
 # ---------------------------------------------------------------------------
@@ -338,7 +338,7 @@ assert raises(@() => array.FloatArray(0).append(1.0E+39)), 'FloatArray must reje
 ok('FloatArray/DoubleArray accept negative values and reject non-numbers')
 
 # ---------------------------------------------------------------------------
-# Int64Array / UInt64Array -- 2026-08-30 fix: values needing Zuri's bigint
+# Int64Array / UInt64Array (2026-08-30 fix): values needing Zuri's bigint
 # type (most of the real 64-bit range) failed is_number()/is_int() and were
 # always rejected, and INT64_MAX itself was a silently-imprecise literal.
 # ---------------------------------------------------------------------------
@@ -377,7 +377,7 @@ assert raises(@() => array.Int64Array(0).append(3.5)), 'Int64Array.append() must
 ok('Int64Array/UInt64Array store and validate the full bigint-range boundary values')
 
 # ---------------------------------------------------------------------------
-# is_bigint() -- the new builtin this fix needed, added alongside is_number()/
+# is_bigint(): the new builtin this fix needed, added alongside is_number()/
 # is_int()/etc. Confirms the distinction the array validation logic depends on.
 # ---------------------------------------------------------------------------
 assert is_bigint(5n) == true, 'is_bigint() must be true for a bigint literal'

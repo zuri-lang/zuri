@@ -136,7 +136,7 @@ def _is_string(v) {
 
 # Selects the correct HMAC function for the given algorithm string.
 # Always returns a function that, given (secret, signing_input), yields
-# the raw MAC bytes -- callers never need to remember the `as_bytes`
+# the raw MAC bytes; callers never need to remember the `as_bytes`
 # argument themselves.
 def _hmac_fn(alg) {
   if alg == HS256 return @(key, str) => hash.hmac_sha256(key, str, true)
@@ -167,7 +167,7 @@ def _safe_equals(a: string, b: string) {
 # `crypto.ecdsa` speaks DER (`SEQUENCE { INTEGER r, INTEGER s }`), the
 # format every general-purpose ECDSA library defaults to. JOSE's
 # ES256/ES384 instead require the raw, fixed-length concatenation of r
-# and s (RFC 7518 §3.4) -- 64 bytes for P-256, 96 for P-384. Both
+# and s (RFC 7518 §3.4): 64 bytes for P-256, 96 for P-384. Both
 # curves' DER signatures are always well under 128 bytes, so parsing
 # only ever needs to handle DER's short-form length encoding; a
 # genuine P-256/P-384 signature can never hit the long-form case,
@@ -192,7 +192,7 @@ def _left_pad(b: bytes, size: number) {
 }
 
 # Encodes one ECDSA integer component (r or s) as a minimal,
-# non-negative DER INTEGER body -- strips redundant leading zero
+# non-negative DER INTEGER body: strips redundant leading zero
 # bytes, then re-adds exactly one if the high bit of the first
 # remaining byte is set (otherwise it would read as a negative
 # number in DER's two's-complement convention).

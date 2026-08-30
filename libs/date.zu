@@ -160,7 +160,7 @@ var _weekdays_long = [
 
 # Days in the year preceding month `g`, counting from month `m` (i.e.
 # summing _days_in_month[m..g-1]). `leap` makes February contribute 29
-# days instead of 28 -- every call site that's computing a day-of-year
+# days instead of 28; every call site that's computing a day-of-year
 # or ordinal-day value needs this, since a leap year's extra day only
 # ever falls inside that one month's contribution to the running total.
 def _days_before_month(m, g, leap) {
@@ -194,7 +194,7 @@ def _dim(year, month) {
 # Splits a gmt_offset (whole seconds, positive or negative) into its
 # sign, zero-padded hour, and zero-padded minute components for the
 # 'O'/'P' format directives. Works from the offset's absolute
-# magnitude throughout -- computing hour and minute independently from
+# magnitude throughout; computing hour and minute independently from
 # the raw (possibly negative) offset, as the old code did, mixes up
 # which part carries the sign and garbles anything past a whole hour.
 def _format_offset(gmt_offset) {
@@ -284,6 +284,46 @@ def localtime() {
  */
 def mktime(year, month, day, hour, minute, seconds, is_dst) {
   return _date.mktime(year, month, day, hour, minute, seconds, is_dst)
+}
+
+/**
+ * Returns `true` when `name` is a real IANA timezone identifier (e.g.
+ * `'Africa/Lagos'`, `'America/New_York'`, `'UTC'`), backed by the
+ * timezone database embedded in this build. This is a real, complete
+ * IANA database — unlike `parse()`'s own timezone handling, which only
+ * recognizes `UTC`/`GMT`/`Z`/numeric offsets and treats every other
+ * name as an unvalidated label — so this is the function to reach for
+ * whenever a timezone name actually needs checking.
+ *
+ * ```zuri-repl
+ * %> date.is_valid_timezone('Africa/Lagos')
+ * true
+ * %> date.is_valid_timezone('Neverland/Nowhere')
+ * false
+ * ```
+ *
+ * @param string name
+ * @returns bool
+ * @throws TypeError When `name` is not a string.
+ */
+def is_valid_timezone(name) {
+  if !is_string(name) {
+    raise TypeError('string expected, ${typeof(name)} given')
+  }
+  return _date.is_valid_timezone(name)
+}
+
+/**
+ * Returns every IANA timezone identifier this build's timezone
+ * database recognizes, e.g. `'Africa/Lagos'`, `'America/New_York'`,
+ * `'UTC'`. There are several hundred of these; this is mainly useful
+ * for populating a picker or validating against the full set at once
+ * rather than one name at a time.
+ *
+ * @returns list[string]
+ */
+def list_timezones() {
+  return _date.list_timezones()
 }
 
 /**
@@ -819,7 +859,7 @@ class Date {
    */
   to_time() {
     # _days_before_year(1970) + 1 is the ordinal of 1970-01-01 itself
-    # (year_day 1 of that year) -- subtracting it from this date's own
+    # (year_day 1 of that year); subtracting it from this date's own
     # ordinal gives the exact day count since the Epoch, leap years
     # included correctly by construction since to_ordinal() already is.
     var epoch_ordinal = _days_before_year(1970) + 1
@@ -1015,6 +1055,41 @@ class Date {
   }
 
   /**
+   * Returns a new `Date` representing the exact same instant as this
+   * one, re-expressed under the real IANA timezone `name` (e.g.
+   * `'America/New_York'`, `'Africa/Lagos'`). Unlike `to_offset()`,
+   * which takes the numeric offset to shift to and leaves it to the
+   * caller to already know it, this looks up `name`'s actual offset —
+   * correctly accounting for daylight saving — at this date's own
+   * instant, so `gmt_offset`, `zone`, and `is_dst` all come out right
+   * without the caller needing to work any of that out first.
+   *
+   * ```zuri
+   * var d = date.parse('2024-07-01T00:00:00Z')
+   * var ny = d.to_timezone('America/New_York')
+   * echo ny.hour        # 20 (the previous day, EDT is UTC-4)
+   * echo ny.zone        # EDT
+   * echo ny.is_dst      # true
+   * ```
+   *
+   * @param string name An IANA timezone identifier.
+   * @returns Date
+   * @throws TypeError When `name` is not a string.
+   * @throws Error When `name` is not a recognized timezone
+   *    (see `is_valid_timezone()`).
+   */
+  to_timezone(name) {
+    if !is_string(name) {
+      raise TypeError('string expected, ${typeof(name)} given')
+    }
+
+    var offset = _date.tz_offset(name, self.unix_time())
+    var shifted = self.to_offset(offset.gmt_offset, offset.abbreviation)
+    shifted.is_dst = offset.is_dst
+    return shifted
+  }
+
+  /**
    * Returns a string representation of the date
    *
    * @returns string
@@ -1099,7 +1174,7 @@ class Date {
 
 
 # The real maximum valid seconds-since-Epoch value this module can
-# represent (Date(MAX_YEAR, 12, 31, 23, 59, 59).to_time()) -- the
+# represent (Date(MAX_YEAR, 12, 31, 23, 59, 59).to_time()); the
 # boundary from_time() uses to tell a genuine large seconds value
 # apart from a millisecond-scale one. Computed once here rather than
 # hardcoded a second time, since it must always match to_time()'s own
@@ -1129,7 +1204,7 @@ def from_time(time) {
   var microseconds = 0
   if time > _MAX_TIME_SECONDS {
     # Above the largest seconds value this module can ever produce
-    # itself (year MAX_YEAR) -- so this can only be a millisecond- or
+    # itself (year MAX_YEAR), so this can only be a millisecond- or
     # microsecond-scale timestamp, never a genuine large-but-valid
     # seconds one.
     if time <= 9999999999999 {
@@ -1250,6 +1325,64 @@ def from_time(time) {
   return Date(y, m, d, hour, minute, second, microseconds)
 }
 
+
+/**
+ * Returns a `Date` from wall-clock fields understood as a local time
+ * IN the real IANA timezone `name`, rather than in UTC (the plain
+ * `Date(...)` constructor) or the process's own system zone
+ * (`mktime()`). The offset, zone abbreviation, and DST state are all
+ * worked out from `name`'s real rules at that wall-clock moment.
+ *
+ * A wall-clock reading can be ambiguous once a year — the hour a
+ * clock falls back repeats, e.g. 1:30am happens twice on the day
+ * `America/New_York` leaves daylight saving — `is_dst` picks which
+ * occurrence is meant, the same way it does for `mktime()`. A reading
+ * a clock skips entirely (the hour a clock springs forward) has no
+ * valid answer at all and raises, rather than silently returning a
+ * nearby instant.
+ *
+ * ```zuri
+ * var d = date.from_timezone('America/New_York', 2024, 7, 1, 0, 0, 0)
+ * echo d.to_time()   # the UTC instant of 2024-07-01 00:00:00 EDT
+ * echo d.zone        # EDT
+ * echo d.gmt_offset  # -14400
+ * ```
+ *
+ * @param string name An IANA timezone identifier.
+ * @param number year
+ * @param number month
+ * @param number day
+ * @param number hour
+ * @param number minute
+ * @param number seconds
+ * @param ?bool is_dst Disambiguates a wall-clock reading that occurs
+ *    twice; ignored otherwise. Defaults to the earlier occurrence
+ *    when omitted.
+ * @returns Date
+ * @throws TypeError When `name` is not a string, or a date/time field
+ *    is not a number.
+ * @throws Error When `name` is not a recognized timezone, the fields
+ *    are out of range, or the wall-clock reading falls in a DST gap.
+ */
+def from_timezone(name, year, month, day, hour, minute, seconds, is_dst) {
+  if !is_string(name) {
+    raise TypeError('string expected, ${typeof(name)} given')
+  }
+
+  # tz_from_local() validates the reading actually exists in `name`
+  # (raises on a DST gap) and resolves is_dst on an ambiguous one; its
+  # own unix-time result is only used here to look up the real offset
+  # for that resolved moment, not as the source of the returned Date's
+  # own fields; those come straight from the caller's own arguments,
+  # so the Date this returns shows exactly the wall-clock reading asked
+  # for, not a UTC-rebased approximation of it.
+  var unix_time = _date.tz_from_local(name, year, month, day, hour, minute, seconds, is_dst)
+  var offset = _date.tz_offset(name, unix_time)
+
+  var result = Date(year, month, day, hour, minute, seconds, 0, offset.gmt_offset, offset.is_dst)
+  result.zone = offset.abbreviation
+  return result
+}
 
 
 /**

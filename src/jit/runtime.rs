@@ -1262,7 +1262,7 @@ pub unsafe extern "C" fn zuri_jit_invoke(
       } else {
         receiver.as_module_binding().module
       };
-      let member = { module_val.as_module().namespace.get(method_name.as_str()) };
+      let member = { module_val.as_module().namespace.get_public(method_name.as_str()) };
       match member {
         Some(v) => {
           vm.set_reg(base, obj + 1, v);
@@ -2198,7 +2198,7 @@ pub unsafe extern "C" fn zuri_jit_get_field(
     }
   } else if receiver.is_module() {
     let m = receiver.as_module();
-    match m.namespace.get(name_val.as_str()) {
+    match m.namespace.get_public(name_val.as_str()) {
       Some(v) => Ok(v),
       None => {
         let msg = format!("module '{}' has no member '{}'", m.name, name_val.as_str());
@@ -2209,7 +2209,7 @@ pub unsafe extern "C" fn zuri_jit_get_field(
   } else if receiver.is_module_binding() {
     let module_val = receiver.as_module_binding().module;
     let m = module_val.as_module();
-    match m.namespace.get(name_val.as_str()) {
+    match m.namespace.get_public(name_val.as_str()) {
       Some(v) => Ok(v),
       None => {
         let msg = format!("module '{}' has no member '{}'", m.name, name_val.as_str());
@@ -2438,6 +2438,7 @@ pub unsafe extern "C" fn zuri_jit_import_all(
   base: u64,
   module_reg: u64,
   func_ptr_bits: u64,
+  exported: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
@@ -2446,19 +2447,36 @@ pub unsafe extern "C" fn zuri_jit_import_all(
     let e = vm.raise("TypeError", "expected a module for 'import ... { * }'");
     return fail(vm, e);
   }
+  // Only PUBLIC entries carry over; see the interpreter's
+  // Instr::ImportAll handler (src/vm/vm.rs) for the full rationale
+  // (including why this deliberately does NOT also filter by
+  // `_`-prefix); both implementations must stay in lockstep.
   let entries: Vec<(String, Value)> = {
     let m = mv.as_module();
     m.namespace
       .names
       .iter()
-      .map(|(k, &idx)| (k.clone(), m.namespace.slots[idx as usize].get()))
+      .filter_map(|(k, &idx)| {
+        if !m.namespace.public[idx as usize].get() {
+          return None;
+        }
+        Some((k.clone(), m.namespace.slots[idx as usize].get()))
+      })
       .collect()
   };
   let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
   let target = func.globals_module;
+  let exported = exported != 0;
   for (name, val) in entries {
+    // See the interpreter's Instr::ImportAll handler (src/vm/vm.rs)
+    // for why an underscore-prefixed name always stays private
+    // regardless of `exported`.
+    let stays_private = !exported || name.starts_with('_');
     let slot = vm.get_or_create_slot_in(target, name);
     vm.write_slot_in(target, slot, val);
+    if stays_private && let Some(t) = target {
+      t.as_module().namespace.mark_private(slot);
+    }
   }
   OK
 }
@@ -2776,7 +2794,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec4!(zuri_jit_declare_field),
     spec4!(zuri_jit_set_field_init),
     spec4!(zuri_jit_finalize_class),
-    spec4!(zuri_jit_import_all),
+    spec5!(zuri_jit_import_all),
     spec5!(zuri_jit_sub_slow),
     spec5!(zuri_jit_div_slow),
     spec5!(zuri_jit_pow),

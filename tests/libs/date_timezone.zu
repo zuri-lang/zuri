@@ -1,0 +1,119 @@
+/**
+ * test_date_timezone.zu
+ *
+ * Test suite for the `date` module's real IANA timezone database
+ * support: `is_valid_timezone()`, `list_timezones()`,
+ * `Date.to_timezone()`, and `from_timezone()`. See `date.zu`'s own
+ * test suite (`date.zu` in this directory) for everything else.
+ */
+
+import date
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  date module — timezone database test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# is_valid_timezone() / list_timezones()
+# ---------------------------------------------------------------------------
+assert date.is_valid_timezone('UTC'), 'UTC must be a recognized timezone'
+assert date.is_valid_timezone('Africa/Lagos'), 'a real IANA identifier must be recognized'
+assert date.is_valid_timezone('America/New_York'), 'a real IANA identifier with an underscore must be recognized'
+assert !date.is_valid_timezone('Neverland/Nowhere'), 'a made-up identifier must not be recognized'
+assert !date.is_valid_timezone('lagos'), 'a lowercase, non-canonical spelling must not be recognized'
+assert raises(@() { date.is_valid_timezone(5) }), 'is_valid_timezone() must reject a non-string argument'
+ok('is_valid_timezone() distinguishes real IANA identifiers from made-up ones')
+
+var zones = date.list_timezones()
+assert is_list(zones) and zones.length() > 400, 'list_timezones() must return the full IANA database, not a small subset'
+assert zones.contains('Africa/Lagos') and zones.contains('UTC'), 'list_timezones() must include the identifiers is_valid_timezone() itself recognizes'
+for zone in zones {
+  assert date.is_valid_timezone(zone), 'every zone list_timezones() returns must itself pass is_valid_timezone()'
+}
+ok('list_timezones() and is_valid_timezone() agree on the full database')
+
+# ---------------------------------------------------------------------------
+# Date.to_timezone() — real, DST-aware offset lookup, unlike to_offset()
+# which requires the caller to already know the numeric offset
+# ---------------------------------------------------------------------------
+var summer_utc = date.parse('2024-07-01T00:00:00Z')
+var summer_ny  = summer_utc.to_timezone('America/New_York')
+assert summer_ny.zone == 'EDT', 'to_timezone() must resolve to EDT during New York summer (DST active)'
+assert summer_ny.is_dst == true, 'to_timezone() must correctly report is_dst during DST'
+assert summer_ny.gmt_offset == -14400, 'to_timezone() must resolve the real EDT offset (UTC-4)'
+assert summer_ny.hour == 20 and summer_ny.day == 30 and summer_ny.month == 6,
+  'to_timezone() must shift the wall-clock fields to the previous day at 20:00, 4 hours behind UTC midnight'
+assert summer_ny.to_time() == summer_utc.to_time(),
+  'to_timezone() must represent the exact same instant, only re-expressed under a different zone'
+
+var winter_utc = date.parse('2024-01-01T00:00:00Z')
+var winter_ny  = winter_utc.to_timezone('America/New_York')
+assert winter_ny.zone == 'EST', 'to_timezone() must resolve to EST during New York winter (no DST)'
+assert winter_ny.is_dst == false, 'to_timezone() must correctly report is_dst outside DST'
+assert winter_ny.gmt_offset == -18000, 'to_timezone() must resolve the real EST offset (UTC-5)'
+
+assert raises(@() { summer_utc.to_timezone(5) }), 'to_timezone() must reject a non-string argument'
+assert raises(@() { summer_utc.to_timezone('Neverland/Nowhere') }), 'to_timezone() must raise for an unrecognized zone'
+ok('Date.to_timezone() resolves the real DST-aware offset/zone/is_dst for a named zone')
+
+# ---------------------------------------------------------------------------
+# from_timezone() — the reverse: wall-clock fields understood as being
+# in a named zone, not UTC or the system's own local zone
+# ---------------------------------------------------------------------------
+var d1 = date.from_timezone('America/New_York', 2024, 7, 1, 0, 0, 0)
+assert d1.year == 2024 and d1.month == 7 and d1.day == 1 and d1.hour == 0 and d1.minute == 0 and d1.seconds == 0,
+  'from_timezone() must preserve the exact wall-clock fields given, not rebase them through UTC'
+assert d1.zone == 'EDT' and d1.gmt_offset == -14400 and d1.is_dst == true,
+  'from_timezone() must resolve the real zone/offset/DST state for the given wall-clock moment'
+ok('from_timezone() preserves the given wall-clock fields and resolves the real zone/offset')
+
+# Cross-check: from_timezone() and to_timezone() must round-trip to the
+# same instant.
+var roundtrip = date.from_timezone('America/New_York', 2024, 7, 1, 0, 0, 0)
+var back_to_utc = roundtrip.to_timezone('UTC')
+assert back_to_utc.year == 2024 and back_to_utc.month == 7 and back_to_utc.day == 1 and back_to_utc.hour == 4,
+  'from_timezone(NY, 00:00) must be the same instant as UTC 04:00 (EDT is UTC-4)'
+ok('from_timezone()/to_timezone() round-trip to the same instant')
+
+# Ambiguous wall-clock reading: 1:30am happens twice on the day
+# America/New_York falls back from EDT to EST (2024-11-03).
+var ambiguous_dst = date.from_timezone('America/New_York', 2024, 11, 3, 1, 30, 0, true)
+var ambiguous_std = date.from_timezone('America/New_York', 2024, 11, 3, 1, 30, 0, false)
+assert ambiguous_dst.gmt_offset == -14400, 'is_dst=true must resolve the ambiguous reading to the earlier (EDT) occurrence'
+assert ambiguous_std.gmt_offset == -18000, 'is_dst=false must resolve the ambiguous reading to the later (EST) occurrence'
+assert ambiguous_dst.to_time() < ambiguous_std.to_time(),
+  'the EDT occurrence of an ambiguous reading must be the earlier instant'
+ok('from_timezone() disambiguates a repeated wall-clock reading via is_dst')
+
+# Gap: 2:30am does not exist in America/New_York on 2024-03-10 (clocks
+# spring forward from 2am straight to 3am).
+assert raises(@() { date.from_timezone('America/New_York', 2024, 3, 10, 2, 30, 0) }),
+  'from_timezone() must raise for a wall-clock reading that falls in a DST gap'
+ok('from_timezone() raises for a reading a DST transition skips entirely')
+
+assert raises(@() { date.from_timezone(5, 2024, 1, 1, 0, 0, 0) }), 'from_timezone() must reject a non-string zone name'
+assert raises(@() { date.from_timezone('Neverland/Nowhere', 2024, 1, 1, 0, 0, 0) }), 'from_timezone() must raise for an unrecognized zone'
+ok('from_timezone() validates its zone argument')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

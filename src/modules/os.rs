@@ -999,7 +999,7 @@ fn tempdir_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.vm.heap_mut().alloc_string(dir))
 }
 
-/// Not cryptographically random -- it doesn't need to be. Uniqueness
+/// Not cryptographically random; it doesn't need to be. Uniqueness
 /// against a collision comes from the atomic `create_new`/
 /// `create_dir` call below, never from this name; entropy here only
 /// exists to make an actual collision (and thus a retry) unlikely in

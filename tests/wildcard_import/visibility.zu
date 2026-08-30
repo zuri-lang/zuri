@@ -1,0 +1,99 @@
+/**
+ * test_wildcard_import_visibility.zu
+ *
+ * Language-level test for `import path { * }` visibility: per spec
+ * (NOTES.md), imports are local by default and `@` is what actually
+ * re-exports them, wildcard imports included. This covers the real
+ * bug found and fixed while working on the `validate` module: `@` used
+ * to have zero effect on a wildcard import (both forms exported
+ * unconditionally), which is why most of the stdlib's own wildcard
+ * imports (array/index.zu's 10 class re-exports, among others) were
+ * silently depending on that bug to work at all.
+ */
+
+import zuri { reflect }
+import .plain_importer
+import .exported_importer
+import .chained
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  wildcard import visibility — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# A plain (non-@) wildcard import: usable within the importing file
+# itself, but never externally visible.
+# ---------------------------------------------------------------------------
+assert plain_importer.use_internally() == 'pub',
+  'a plain wildcard import must still be usable by the importing file\'s own code'
+assert raises(@() { echo plain_importer.public_fn }),
+  'a name pulled in by a plain wildcard import must not be externally visible via GetField'
+assert raises(@() { plain_importer.public_fn() }),
+  'a name pulled in by a plain wildcard import must not be externally callable via Invoke'
+ok('a plain wildcard import stays local to the importing file')
+
+# ---------------------------------------------------------------------------
+# An @-exported wildcard import: visible externally, exactly as before
+# this fix.
+# ---------------------------------------------------------------------------
+assert exported_importer.public_fn() == 'pub',
+  'an @-exported wildcard import must remain externally callable'
+assert typeof(exported_importer.PublicClass) == 'class',
+  'an @-exported wildcard import must re-export every public member, not just functions'
+ok('an @-exported wildcard import is visible externally')
+
+# ---------------------------------------------------------------------------
+# A wildcard import DOES legitimately pick up a sibling file's
+# underscore-prefixed helpers for the importing file's own internal use
+# (the real jwt/core.zu + codec.zu pattern: core.zu calls codec.zu's
+# `_is_string` after `import .codec { * }`); a wildcard import can't
+# "explicitly name" a private item the way `import .path { _name }`
+# does (that's a compile error, unaffected by this fix), so the
+# underscore convention isn't a reason to block a wildcard import from
+# working internally the way it always has.
+#
+# Whether that name becomes externally visible is a SEPARATE question,
+# already answered unconditionally by the compiler's own privacy check
+# (any literal `receiver._name` is a compile error for every receiver
+# kind, module or otherwise), not something this test can additionally
+# exercise at the Zuri level, since `zuri.reflect` deliberately bypasses
+# that check entirely (same precedent as instance fields) and so can't
+# distinguish "present and public" from "present and private" either.
+# ---------------------------------------------------------------------------
+assert plain_importer.use_private_internally() == 'priv',
+  'a plain wildcard import must still let the importing file use a sibling\'s underscore-prefixed helper internally'
+assert reflect.has_prop(plain_importer, '_private_fn'),
+  'an underscore-prefixed name from a wildcard import must still actually be present for internal use, not silently dropped'
+ok('a wildcard import still picks up a sibling file\'s underscore-prefixed helpers for internal use')
+
+# ---------------------------------------------------------------------------
+# Chained re-export: a name a file only has via its OWN plain wildcard
+# import must not leak through a later @-exported wildcard re-import of
+# that file.
+# ---------------------------------------------------------------------------
+assert raises(@() { echo chained.public_fn }),
+  'a private wildcard-imported name must not transitively leak through a further @-exported wildcard re-import'
+ok('a private wildcard import does not transitively leak through a chained re-export')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

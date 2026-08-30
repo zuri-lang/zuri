@@ -530,8 +530,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "Import", line, f)
     },
-    Instr::ImportAll { module } => {
-      let f = vec![kv(ctx, "module", Value::number(module as f64))];
+    Instr::ImportAll { module, exported } => {
+      let f = vec![
+        kv(ctx, "module", Value::number(module as f64)),
+        kv(ctx, "exported", Value::bool(exported)),
+      ];
       instr_node(ctx, "ImportAll", line, f)
     },
     Instr::MakePromoted { dst, module, name_const } => {
