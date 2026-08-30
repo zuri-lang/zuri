@@ -15,6 +15,15 @@
  * since noon (Greenwich Mean Time) on January 1, 4713 BCE (in
  * the Julian calendar).
  *
+ * `Date` instances support ordering (`<`, `<=`, `>`, `>=`) and
+ * `equals()` by comparing the underlying instant in time — see
+ * [[date.Date.equals]] for how that interacts with `gmt_offset`.
+ * Arithmetic is done through named methods rather than `+`/`-`
+ * (`add_seconds`, `add_days`, `add_months`, ...; see
+ * [[date.Date.add_seconds]] and [[date.Date.add_months]]) since a
+ * plain number added to a date is otherwise ambiguous about its
+ * unit.
+ *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
 
@@ -101,11 +110,8 @@ def _check_date_fields(year, month, day, hour, minute, seconds) {
     raise ValueError('month must be in 1..12')
   }
 
-  var dim = _dim(year, month)   
-  if 1 > month or month > 12
-    raise ValueError('month must be in 1..12')
-
-  if 1 > day or day > dim  
+  var dim = _dim(year, month)
+  if 1 > day or day > dim
     raise ValueError('day must be in 1..${dim}')
 
   _check_int_field(hour, 'hour')
@@ -152,14 +158,19 @@ var _weekdays_long = [
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
 ]
 
-# internal declaration to get the
-# days before month
-def _days_before_month(m, g) {
+# Days in the year preceding month `g`, counting from month `m` (i.e.
+# summing _days_in_month[m..g-1]). `leap` makes February contribute 29
+# days instead of 28 -- every call site that's computing a day-of-year
+# or ordinal-day value needs this, since a leap year's extra day only
+# ever falls inside that one month's contribution to the running total.
+def _days_before_month(m, g, leap) {
   var days_before_month = []
   var days = 0
+  var i = m
   for f in _days_in_month[m,MAX_MONTH+1] {
     days_before_month.append(days)
-    days += f 
+    days += (leap and i == 2) ? 29 : f
+    i++
   }
   return days_before_month[g - m]
 }
@@ -169,31 +180,47 @@ def _days_before_year(year) {
   return y*365 + y//4 - y//100 + y//400
 }
 
-def _leap_days_before_year(y) {
-    y -= 1  # Do not include the current year itself
-    return (y // 4) - (y // 100) + (y // 400)
-  }
-
 def _is_leap(year) {
-  return year % 4 == 0 and 
+  return year % 4 == 0 and
     (year % 100 != 0 or year % 400 == 0)
-}
-
-def _ymd_to_ordinal(year, month, day) {
-  assert month >= 1 and month <= 12, 'month must be in 1..12'
-
-  var dim = month == 2 and _is_leap(year) ? 29 : _days_in_month[month]
-  
-  assert day >= 1 and day <= dim, 'day must be in 1..${dim}'
-  return (_days_before_year(year) +
-          _days_before_month(0, month) +
-          day)
 }
 
 def _dim(year, month) {
   if month == 2 and _is_leap(year)
     return 29
   return _days_in_month[month]
+}
+
+# Splits a gmt_offset (whole seconds, positive or negative) into its
+# sign, zero-padded hour, and zero-padded minute components for the
+# 'O'/'P' format directives. Works from the offset's absolute
+# magnitude throughout -- computing hour and minute independently from
+# the raw (possibly negative) offset, as the old code did, mixes up
+# which part carries the sign and garbles anything past a whole hour.
+def _format_offset(gmt_offset) {
+  var sign        = gmt_offset < 0 ? '-' : '+'
+  var abs_offset  = gmt_offset.abs()
+  var hour        = (abs_offset / 3600).int()
+  var minute      = ((abs_offset % 3600) / 60).int()
+
+  return [
+    sign,
+    hour <= 9 ? '0${hour}' : hour.to_string(),
+    minute <= 9 ? '0${minute}' : minute.to_string(),
+  ]
+}
+
+# Copies the timezone-labeling fields (gmt_offset/zone/is_dst) from
+# `source` onto `target`, returning `target`. Used by every Date method
+# that derives a new instance from an existing one (add_seconds(),
+# add_months(), clone(), ...), since the Date constructor always
+# defaults those three fields to UTC/0/false and has no way to accept
+# them directly for a date built from already-computed y/m/d/h/m/s.
+def _copy_zone(target, source) {
+  target.gmt_offset = source.gmt_offset
+  target.zone       = source.zone
+  target.is_dst     = source.is_dst
+  return target
 }
 
 /**
@@ -336,11 +363,7 @@ class Date {
           raise TypeError('number expected at gmt_offset, ${typeof(gmt_offset)} given')
         }
 
-        # If gmt_offset is a whole number, then we use it directly. Otherwise, if it is a fraction,
-        # we take it as fractional representation of the offset
-        self.gmt_offset = gmt_offset > 0 and gmt_offset < 1 ? 
-          (gmt_offset * 1000) : 
-          gmt_offset
+        self.gmt_offset = gmt_offset
       } else {
         self.gmt_offset = 0
       }
@@ -353,7 +376,7 @@ class Date {
 
 
       self.week_day = self.weekday()
-      self.year_day = _days_before_month(1, self.month) + self.day
+      self.year_day = _days_before_month(1, self.month, _is_leap(self.year)) + self.day
       self.zone = 'UTC'
 
     } else {
@@ -392,15 +415,38 @@ class Date {
     return _is_leap(self.year)
   }
 
-  /** 
-   * Returns the number of days in the year preceding the first
-   * day of the month.
+  /**
+   * Returns this date's ordinal day number in the proleptic
+   * Gregorian calendar, where day 1 is `0001-01-01`. Two dates can
+   * be compared or subtracted via their ordinals to get an exact
+   * day count between them, regardless of leap years.
+   *
+   * Example,
+   *
+   * ```zuri-repl
+   * %> date(1, 1, 1).to_ordinal()
+   * 1
+   * %> date(2021, 5, 11).to_ordinal()
+   * 737921
+   * ```
+   *
+   * @returns number
+   */
+  to_ordinal() {
+    return _days_before_year(self.year) + self.year_day
+  }
+
+  /**
+   * Returns the number of days between the first day of `month`
+   * (in this date's own year) and this date. Positive when `month`
+   * is later in the year than this date, negative when earlier,
+   * zero when `month` is this date's own month and `day` is 1.
    *
    * Example,
    *
    * ```zuri-repl
    * %> date(2021, 5, 11).days_before_month(7)
-   * 142
+   * 51
    * ```
    *
    * @returns number
@@ -412,34 +458,19 @@ class Date {
 
     assert month >= 1 and month <= 12, 'month must be in 1..12'
 
-    var start = self.month, end = month, day = self.day, comparator = end < 2
-    if self.month > month {
-      start = month
-      end = self.month 
-      day = -(self.day)
-      comparator = start <= 2
-    }
-
-    var days_before = _days_before_month(start, end - start)
-    if comparator and self.is_leap() {
-      return days_before + 1 - day
-    }
-
-    # when going back in time, we must remember not to count today
-    if self.month > month
-      return -(days_before - day - 1)
-
-    return days_before - day
+    return Date(self.year, month, 1).to_ordinal() - self.to_ordinal()
   }
 
-  /** 
-   * Returns the number of days before January 1st of year.
+  /**
+   * Returns the number of days between January 1st of `year` and
+   * this date. Positive when `year` is after this date's own year,
+   * negative when before (or the same year but earlier in it).
    *
    * Example,
    *
    * ```zuri-repl
    * %> date(2021, 5, 11).days_before_year(2024)
-   * 811
+   * 965
    * ```
    *
    * @param int year
@@ -449,22 +480,8 @@ class Date {
     assert is_int(year), 'integer expected'
     assert year >= MIN_YEAR and year <= MAX_YEAR,
       'year must be in 1..' + MAX_YEAR
-    assert year > self.year, 'year must be greater than current year'
 
-    var days_left_in_year
-    if self.month < MAX_MONTH {
-      days_left_in_year = self.days_before_month(MAX_MONTH) + 
-          _days_in_month[MAX_MONTH]
-    } else {
-      days_left_in_year = _days_in_month[MAX_MONTH] - self.day
-    }
-
-    var days_in_year = (self.is_leap() ? 366 : 365) - days_left_in_year
-      
-    var days_till_today = _days_before_year(self.year) + days_in_year
-    var days_before_year = _days_before_year(year)
-
-    return days_before_year - days_till_today
+    return Date(year, 1, 1).to_ordinal() - self.to_ordinal()
   }
 
   /** 
@@ -642,7 +659,7 @@ class Date {
           result += self.week_day - 1
         }
         when 'z' {
-          result += _days_before_month(1, self.month) + self.day
+          result += self.year_day
         }
         when 'W' {
           result += self.week_number()
@@ -703,7 +720,7 @@ class Date {
           }
         }
         when 'y' {
-          result += self.year.to_string()[2,]
+          result += self.year.to_string().lpad(4, '0')[2,]
         }
         when 'Y' {
           result += self.year
@@ -715,32 +732,12 @@ class Date {
           result += self.is_dst ? 1 : 0
         }
         when 'O' {
-          var hour = (self.gmt_offset / 3600).int()
-          var minute = self.gmt_offset % 60
-
-          if hour > 0 {
-            result += hour <= 9 ? '+0${hour}' : '+${hour}'
-          } else if hour == 0 {
-            result += minute < 0 ? '-00' : '+00'
-          } else {
-            result +=  hour >= -9 ? '-0${hour}' : '-${hour}'
-          }
-
-          result += minute <= 9 ? '0${minute}' : minute
+          var parts = _format_offset(self.gmt_offset)
+          result += '${parts[0]}${parts[1]}${parts[2]}'
         }
         when 'P' {
-          var hour = (self.gmt_offset / 3600).int()
-          var minute = self.gmt_offset % 60
-
-          if hour > 0 {
-            result += hour <= 9 ? '+0${hour}' : '+${hour}'
-          } else if hour == 0 {
-            result += minute < 0 ? '-00' : '+00'
-          } else {
-            result += hour >= -9 ? '-0${hour}' : '-${hour}'
-          }
-
-          result += minute <= 9 ? ':0${minute}' : ':${minute}'
+          var parts = _format_offset(self.gmt_offset)
+          result += '${parts[0]}${parts[1]}:${parts[2]}'
         }
         when 'Z' {
           result += self.gmt_offset
@@ -821,27 +818,200 @@ class Date {
    * @returns number
    */
   to_time() {
-    var years = self.year - 1970
+    # _days_before_year(1970) + 1 is the ordinal of 1970-01-01 itself
+    # (year_day 1 of that year) -- subtracting it from this date's own
+    # ordinal gives the exact day count since the Epoch, leap years
+    # included correctly by construction since to_ordinal() already is.
+    var epoch_ordinal = _days_before_year(1970) + 1
+    var total_days    = self.to_ordinal() - epoch_ordinal
 
-    var leap_years = _leap_days_before_year(self.year) - _leap_days_before_year(1970)
-
-    var total_days = (years * 365) + leap_years
-    total_days += _days_before_month(1, self.month) + self.day
-
-    if !_is_leap(self.year) or self.month <= 2 {
-      # Minus today
-      total_days -= 1
-    }
-    
     var tm = total_days * 86400
-        tm += self.hour * 3600
-        tm += self.minute * 60
-        tm += self.seconds
-    
+    tm += self.hour * 3600
+    tm += self.minute * 60
+    tm += self.seconds
+
     tm -= self.gmt_offset
     tm += self.microseconds == 0 ? 0 : (self.microseconds / 1000000)
-  
+
     return tm
+  }
+
+  /**
+   * Returns an independent copy of this date.
+   *
+   * @returns Date
+   */
+  clone() {
+    return _copy_zone(
+      Date(self.year, self.month, self.day, self.hour, self.minute, self.seconds, self.microseconds),
+      self
+    )
+  }
+
+  /**
+   * Returns true when `other` is a `Date` representing the exact
+   * same instant in time as this one. Two dates with different
+   * `gmt_offset`/`zone` labels but the same underlying UTC instant
+   * are considered equal — the same convention Python's
+   * timezone-aware `datetime` equality uses.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, Date) {
+      return false
+    }
+    return self.to_time() == other.to_time()
+  }
+
+  /**
+   * Returns the signed difference, in seconds, between this date
+   * and `other` (`self.to_time() - other.to_time()`). Positive when
+   * this date is later than `other`, negative when earlier.
+   *
+   * @param Date other
+   * @returns number
+   */
+  diff(other) {
+    return self.to_time() - other.to_time()
+  }
+
+  /**
+   * Returns a new `Date`, `n` seconds after this one (or before, if
+   * `n` is negative). The result keeps this date's own
+   * `gmt_offset`/`zone`/`is_dst`. `self` is not modified.
+   *
+   * @param number n
+   * @returns Date
+   */
+  add_seconds(n) {
+    if !is_number(n) {
+      raise TypeError('number expected, ${typeof(n)} given')
+    }
+
+    # self.to_time() is a true UTC instant (gmt_offset already
+    # subtracted out); adding gmt_offset back before handing it to
+    # from_time() recovers the wall-clock reading, which is what
+    # actually needs to shift by n seconds.
+    var shifted = from_time(self.to_time() + self.gmt_offset + n)
+    return _copy_zone(shifted, self)
+  }
+
+  /**
+   * Returns a new `Date`, `n` minutes after this one. See
+   * `add_seconds()`.
+   *
+   * @param number n
+   * @returns Date
+   */
+  add_minutes(n) {
+    if !is_number(n) {
+      raise TypeError('number expected, ${typeof(n)} given')
+    }
+    return self.add_seconds(n * 60)
+  }
+
+  /**
+   * Returns a new `Date`, `n` hours after this one. See
+   * `add_seconds()`.
+   *
+   * @param number n
+   * @returns Date
+   */
+  add_hours(n) {
+    if !is_number(n) {
+      raise TypeError('number expected, ${typeof(n)} given')
+    }
+    return self.add_seconds(n * 3600)
+  }
+
+  /**
+   * Returns a new `Date`, `n` days after this one. See
+   * `add_seconds()`.
+   *
+   * @param number n
+   * @returns Date
+   */
+  add_days(n) {
+    if !is_number(n) {
+      raise TypeError('number expected, ${typeof(n)} given')
+    }
+    return self.add_seconds(n * 86400)
+  }
+
+  /**
+   * Returns a new `Date`, `n` months after this one (or before, if
+   * `n` is negative), keeping the same time-of-day and
+   * `gmt_offset`/`zone`/`is_dst`. `self` is not modified.
+   *
+   * When the resulting month doesn't have this date's own day
+   * number (e.g. Jan 31 plus one month), the result is **clamped**
+   * to the last valid day of that month (Jan 31 + 1 month → Feb 28
+   * or 29, never an overflow into March) — the convention to know
+   * about, since date libraries genuinely differ on this.
+   *
+   * @param number n
+   * @returns Date
+   */
+  add_months(n) {
+    if !is_number(n) {
+      raise TypeError('number expected, ${typeof(n)} given')
+    }
+
+    var total = (self.month - 1) + n
+    var year  = self.year + (total / 12).floor()
+    var month = total % 12
+    if month < 0 {
+      month += 12
+    }
+    month += 1
+
+    var day = self.day.min(_dim(year, month))
+
+    var result = Date(year, month, day, self.hour, self.minute, self.seconds, self.microseconds)
+    return _copy_zone(result, self)
+  }
+
+  /**
+   * Returns a new `Date`, `n` years after this one. See
+   * `add_months()` for the day-clamping rule this also follows
+   * (relevant for Feb 29 plus a non-leap number of years).
+   *
+   * @param number n
+   * @returns Date
+   */
+  add_years(n) {
+    if !is_number(n) {
+      raise TypeError('number expected, ${typeof(n)} given')
+    }
+    return self.add_months(n * 12)
+  }
+
+  /**
+   * Returns a new `Date` representing the exact same instant as
+   * this one, re-expressed under a different `gmt_offset`. This is
+   * the way to convert a date from one timezone's wall-clock
+   * reading to another's — unlike `add_seconds()` and friends,
+   * which shift the underlying instant, this keeps the instant
+   * fixed and only changes how it's displayed.
+   *
+   * @param number gmt_offset Seconds east of UTC.
+   * @param ?string zone Optional label for the new offset (e.g.
+   *    `'EST'`); when omitted, this date's own `zone` is kept as-is.
+   * @returns Date
+   */
+  to_offset(gmt_offset, zone) {
+    if !is_number(gmt_offset) {
+      raise TypeError('number expected, ${typeof(gmt_offset)} given')
+    }
+
+    var shifted = self.add_seconds(gmt_offset - self.gmt_offset)
+    shifted.gmt_offset = gmt_offset
+    if zone != nil {
+      shifted.zone = zone
+    }
+    return shifted
   }
 
   /**
@@ -878,6 +1048,38 @@ class Date {
     return self.to_time()
   }
 
+  /**
+   * @param Date other
+   * @returns bool
+   */
+  @lt(other) {
+    return self.to_time() < other.to_time()
+  }
+
+  /**
+   * @param Date other
+   * @returns bool
+   */
+  @lte(other) {
+    return self.to_time() <= other.to_time()
+  }
+
+  /**
+   * @param Date other
+   * @returns bool
+   */
+  @gt(other) {
+    return self.to_time() > other.to_time()
+  }
+
+  /**
+   * @param Date other
+   * @returns bool
+   */
+  @gte(other) {
+    return self.to_time() >= other.to_time()
+  }
+
   @to_string() {
     return self.to_string()
   }
@@ -896,7 +1098,16 @@ class Date {
 }
 
 
-/** 
+# The real maximum valid seconds-since-Epoch value this module can
+# represent (Date(MAX_YEAR, 12, 31, 23, 59, 59).to_time()) -- the
+# boundary from_time() uses to tell a genuine large seconds value
+# apart from a millisecond-scale one. Computed once here rather than
+# hardcoded a second time, since it must always match to_time()'s own
+# definition of the module's supported range.
+var _MAX_TIME_SECONDS = Date(MAX_YEAR, 12, 31, 23, 59, 59).to_time()
+
+
+/**
  * Returns a date object from a unix timestamp.
  *
  * Example,
@@ -916,7 +1127,11 @@ def from_time(time) {
   }
 
   var microseconds = 0
-  if time > 9999999999 { 
+  if time > _MAX_TIME_SECONDS {
+    # Above the largest seconds value this module can ever produce
+    # itself (year MAX_YEAR) -- so this can only be a millisecond- or
+    # microsecond-scale timestamp, never a genuine large-but-valid
+    # seconds one.
     if time <= 9999999999999 {
       # its in milliseconds
       microseconds = (time % 1000) * 1000

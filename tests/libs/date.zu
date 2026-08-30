@@ -47,6 +47,14 @@
  *   38. parse_format() — round-trip with format()
  *   39. parse_format() — error cases
  *   40. Integration — arithmetic via to_time()
+ *   41. Regressions — leap-year year_day/format(y,O,P)/gmt_offset/from_time()
+ *   42. to_ordinal()
+ *   43. Comparison operators and equals()
+ *   44. clone()
+ *   45. diff()
+ *   46. add_seconds() / add_minutes() / add_hours() / add_days()
+ *   47. add_months() / add_years() — including day-of-month clamping
+ *   48. to_offset()
  */
 
 import date
@@ -284,19 +292,31 @@ check('2019-12-30 plausible',  date.Date(2019, 12, 30).week_number() >= 1, true)
 # ===========================================================================
 # 9. days_before_month()
 # ===========================================================================
+# 2026-08-30: redesigned on top of to_ordinal() -- the old implementation
+# used a fragile negative-array-index wraparound hack and its own doc
+# example (142) turns out to have been read straight off that buggy
+# output rather than a real reference computation. The correct value for
+# 2021-05-11 -> July 1 is 51 (20 remaining May days + 30 June + 1).
 section('9. days_before_month()')
 
 var d_may = date.Date(2021, 5, 11)
-# From May 11 to July should be positive and meaningful
-var dbm = d_may.days_before_month(7)
-check('days_before_month(7) is positive from May', dbm > 0, true)
+check('days_before_month(7) from May 11 to Jul 1 is 51', d_may.days_before_month(7), 51)
 
 # Going backward — from May to March should be negative
 var dbm_back = d_may.days_before_month(3)
 check('days_before_month(3) is negative from May', dbm_back < 0, true)
+check('days_before_month(3) from May 11 to Mar 1 is -71', dbm_back, -71)
 
-# Same month — should still return something deterministic
-# The method documents "days preceding first day of the month"
+# Same month, day 1 — zero
+check('days_before_month(self.month) with day 1 is 0',
+  date.Date(2021, 5, 1).days_before_month(5), 0)
+
+# Leap year — crossing February must count 29 days, not 28
+check('days_before_month across Feb in a leap year',
+  date.Date(2024, 1, 1).days_before_month(3), 60)   # Jan(31) + Feb(29)
+check('days_before_month across Feb in a non-leap year',
+  date.Date(2023, 1, 1).days_before_month(3), 59)   # Jan(31) + Feb(28)
+
 raises('days_before_month needs valid month', @() {
   d_may.days_before_month(13)
 })
@@ -305,19 +325,26 @@ raises('days_before_month needs valid month', @() {
 # ===========================================================================
 # 10. days_before_year()
 # ===========================================================================
+# 2026-08-30: redesigned on top of to_ordinal() for the same reason as
+# days_before_month() above -- the old doc example (811) was wrong; a
+# direct reference count (235 days to 2022-01-01 + 365 + 365) gives 965,
+# cross-checked independently via (b.to_time() - a.to_time()) / 86400.
 section('10. days_before_year()')
 
 var d_2021 = date.Date(2021, 5, 11)
-check('days_before_year(2024) is positive', d_2021.days_before_year(2024) > 0, true)
+check('days_before_year(2024) from 2021-05-11 is 965', d_2021.days_before_year(2024), 965)
 check('days_before_year(2022) < days_before_year(2024)',
   d_2021.days_before_year(2022) < d_2021.days_before_year(2024), true)
 
-raises('days_before_year rejects past year', @() {
-  d_2021.days_before_year(2020)
-})
-raises('days_before_year rejects same year', @() {
-  d_2021.days_before_year(2021)
-})
+# A past or the same year now returns a signed count instead of raising --
+# the ordinal-subtraction formula handles it correctly with no special case.
+check('days_before_year rejects nothing for a past year, returns negative',
+  d_2021.days_before_year(2020) < 0, true)
+check('days_before_year(self.year) is negative (this date is not Jan 1)',
+  d_2021.days_before_year(2021) < 0, true)
+check('days_before_year(2021) for a Jan-1 date is 0',
+  date.Date(2021, 1, 1).days_before_year(2021), 0)
+
 raises('days_before_year rejects out-of-range', @() {
   d_2021.days_before_year(10000)
 })
@@ -1280,6 +1307,220 @@ var jd_pback = date.from_jd(jd_prt)
 check('parse → jd → from_jd year',  jd_pback.year,  2021)
 check('parse → jd → from_jd month', jd_pback.month, 5)
 check('parse → jd → from_jd day',   jd_pback.day,   11)
+
+
+# ===========================================================================
+# 41. Regression coverage — 2026-08-30 bug-fix pass
+# ===========================================================================
+section('41. Regressions — leap-year year_day / format(y, O, P) / gmt_offset')
+
+# year_day and format('z') must count the leap day once the date is past
+# February in a leap year (previously silently used the fixed 28-day table).
+check('year_day 2024-03-01 (leap, after Feb) accounts for Feb 29',
+  date.Date(2024, 3, 1).year_day, 61)
+check('year_day 2023-03-01 (non-leap) unaffected',
+  date.Date(2023, 3, 1).year_day, 60)
+check('format(z) 2024-03-01 matches year_day',
+  date.Date(2024, 3, 1).format('z'), '61')
+check('week_number() after Feb in a leap year no longer drifts',
+  date.Date(2024, 3, 1).week_number() >= 1, true)
+
+# format('y') must not crash for a year under 1000, and must still
+# zero-pad correctly.
+check('format(y) year 999',  date.Date(999, 1, 1).format('y'), '99')
+check('format(y) year 5',    date.Date(5, 1, 1).format('y'),   '05')
+check('format(y) year 2021', date.Date(2021, 1, 1).format('y'), '21')
+
+# format('O')/format('P') must compute minutes-within-the-hour, not
+# seconds-within-a-minute, and must handle a negative offset without
+# garbling the sign.
+var plus530 = date.Date(2021, 5, 11, 0, 0, 0, 0, 19800)
+check('format(O) +05:30', plus530.format('O'), '+0530')
+check('format(P) +05:30', plus530.format('P'), '+05:30')
+
+var minus530 = date.Date(2021, 5, 11, 0, 0, 0, 0, -19800)
+check('format(O) -05:30', minus530.format('O'), '-0530')
+check('format(P) -05:30', minus530.format('P'), '-05:30')
+
+var plus000 = date.Date(2021, 5, 11)
+check('format(O) +00:00 unaffected', plus000.format('O'), '+0000')
+check('format(P) +00:00 unaffected', plus000.format('P'), '+00:00')
+
+# The dead "fractional gmt_offset means hours" special case is gone --
+# gmt_offset is always taken directly, in seconds, like every other field.
+check('gmt_offset stored as given, no fractional reinterpretation',
+  date.Date(2021, 1, 1, 0, 0, 0, 0, 5.5).gmt_offset, 5.5)
+
+
+section('41b. Regressions — from_time() far-future round-trip')
+
+# The old scale-detection threshold (~10 billion, ≈ year 2286) was far
+# below the module's own real maximum valid seconds value
+# (Date(MAX_YEAR, 12, 31, 23, 59, 59).to_time() ≈ 253 billion), so any
+# legitimate far-future timestamp was misread as milliseconds.
+def roundtrip_ok(y, m, d) {
+  var orig = date.Date(y, m, d, 0, 0, 0)
+  var back = date.from_time(orig.to_time())
+  return back.year == y and back.month == m and back.day == d
+}
+
+check('roundtrip 2100-02-28 (century, non-leap)', roundtrip_ok(2100, 2, 28), true)
+check('roundtrip 2100-03-01 (century, non-leap)', roundtrip_ok(2100, 3, 1), true)
+check('roundtrip 2400-02-29 (century, leap)',      roundtrip_ok(2400, 2, 29), true)
+check('roundtrip 2400-03-01 (past a far-future leap day)', roundtrip_ok(2400, 3, 1), true)
+check('roundtrip 9999-12-31 (MAX_YEAR boundary)',  roundtrip_ok(9999, 12, 31), true)
+check('roundtrip 1-1-1 (MIN_YEAR boundary)',       roundtrip_ok(1, 1, 1), true)
+
+# A real millisecond-scale timestamp must still be auto-detected correctly.
+var ms_ts = 1620740591000   # 2021-05-11 13:43:11 in ms
+var from_ms = date.from_time(ms_ts)
+check('millisecond-scale input still auto-detected', from_ms.year, 2021)
+
+
+# ===========================================================================
+# 42. to_ordinal()
+# ===========================================================================
+section('42. to_ordinal()')
+
+check('to_ordinal 0001-01-01 is day 1', date.Date(1, 1, 1).to_ordinal(), 1)
+check('to_ordinal 2021-05-11', date.Date(2021, 5, 11).to_ordinal(), 737921)
+check('to_ordinal increases by 1 per day',
+  date.Date(2024, 3, 1).to_ordinal() - date.Date(2024, 2, 29).to_ordinal(), 1)
+check('to_ordinal across a leap day counts it',
+  date.Date(2024, 3, 1).to_ordinal() - date.Date(2024, 1, 1).to_ordinal(), 60)
+
+
+# ===========================================================================
+# 43. Comparison operators and equals()
+# ===========================================================================
+section('43. Comparison operators and equals()')
+
+var early = date.Date(2020, 1, 1)
+var late  = date.Date(2021, 1, 1)
+
+check('early < late',   early < late,   true)
+check('late > early',   late > early,   true)
+check('not late < early', late < early, false)
+check('early <= early.clone()', early <= early.clone(), true)
+check('early >= early.clone()', early >= early.clone(), true)
+check('early <= late',  early <= late,  true)
+check('late >= early',  late >= early,  true)
+
+check('equals() true for the same instant',
+  early.equals(date.Date(2020, 1, 1)), true)
+check('equals() false for a different instant', early.equals(late), false)
+check('equals() false for a non-Date value', early.equals(42), false)
+check('equals() true across different gmt_offset but same instant',
+  date.Date(2024, 1, 1, 10, 0, 0, 0, 0).equals(
+    date.Date(2024, 1, 1, 15, 30, 0, 0, 19800)), true)
+
+
+# ===========================================================================
+# 44. clone()
+# ===========================================================================
+section('44. clone()')
+
+var original_for_clone = date.Date(2021, 5, 11, 13, 43, 11)
+var cloned = original_for_clone.clone()
+check('clone() equals the original', cloned.equals(original_for_clone), true)
+
+cloned.year = 1999
+check('clone() is independent of the original', original_for_clone.year, 2021)
+
+
+# ===========================================================================
+# 45. diff()
+# ===========================================================================
+section('45. diff()')
+
+var diff_a = date.Date(2020, 1, 1)
+var diff_b = date.Date(2021, 1, 1)   # 2020 is a leap year — 366 days later
+check('diff() later - earlier is positive', diff_b.diff(diff_a), 366 * 86400)
+check('diff() earlier - later is negative', diff_a.diff(diff_b), -366 * 86400)
+check('diff() of a date with itself is 0', diff_a.diff(diff_a.clone()), 0)
+
+
+# ===========================================================================
+# 46. add_seconds() / add_minutes() / add_hours() / add_days()
+# ===========================================================================
+section('46. add_seconds()/add_minutes()/add_hours()/add_days()')
+
+var base_dt = date.Date(2024, 1, 1, 0, 0, 0)
+
+check('add_seconds(90)', base_dt.add_seconds(90).format('H:i:s'), '00:01:30')
+check('add_minutes(90)', base_dt.add_minutes(90).format('H:i:s'), '01:30:00')
+check('add_hours(25) rolls into the next day',
+  base_dt.add_hours(25).format('Y-m-d H:i:s'), '2024-01-02 01:00:00')
+check('add_days(1)',  base_dt.add_days(1).format('Y-m-d'),  '2024-01-02')
+check('add_days(-1) rolls back a year boundary correctly',
+  base_dt.add_days(-1).format('Y-m-d'), '2023-12-31')
+check('add_days(60) crosses Feb 29 in a leap year',
+  date.Date(2024, 1, 1).add_days(60).format('Y-m-d'), '2024-03-01')
+
+# Immutability — self is never modified.
+check('add_seconds() does not mutate self', base_dt.format('Y-m-d'), '2024-01-01')
+
+# gmt_offset/zone are preserved across the shift.
+var tz_dt = date.Date(2024, 1, 1, 23, 0, 0, 0, 19800)
+tz_dt.zone = 'IST'
+var tz_shifted = tz_dt.add_hours(2)
+check('add_hours() preserves gmt_offset', tz_shifted.gmt_offset, 19800)
+check('add_hours() preserves zone',       tz_shifted.zone,       'IST')
+
+raises('add_seconds() rejects a non-number', @() { base_dt.add_seconds('x') })
+
+
+# ===========================================================================
+# 47. add_months() / add_years() — including day-of-month clamping
+# ===========================================================================
+section('47. add_months()/add_years()')
+
+check('add_months(1) simple', date.Date(2024, 3, 15).add_months(1).format('Y-m-d'), '2024-04-15')
+check('add_months(-1) simple', date.Date(2024, 3, 15).add_months(-1).format('Y-m-d'), '2024-02-15')
+
+# Clamping: Jan 31 + 1 month has no Feb 31, so it clamps to the last
+# valid day of February for that year.
+check('add_months(1) clamps Jan 31 to Feb 29 in a leap year',
+  date.Date(2024, 1, 31).add_months(1).format('Y-m-d'), '2024-02-29')
+check('add_months(1) clamps Jan 31 to Feb 28 in a non-leap year',
+  date.Date(2023, 1, 31).add_months(1).format('Y-m-d'), '2023-02-28')
+
+# Year rollover, both directions.
+check('add_months(12) rolls the year forward',
+  date.Date(2024, 6, 15).add_months(12).format('Y-m-d'), '2025-06-15')
+check('add_months(-1) from January rolls the year back',
+  date.Date(2024, 1, 1).add_months(-1).format('Y-m-d'), '2023-12-01')
+check('add_months(13) rolls over and still clamps',
+  date.Date(2024, 1, 31).add_months(13).format('Y-m-d'), '2025-02-28')
+
+check('add_years(1) simple', date.Date(2023, 6, 15).add_years(1).format('Y-m-d'), '2024-06-15')
+check('add_years(1) clamps Feb 29 to Feb 28 in a non-leap target year',
+  date.Date(2024, 2, 29).add_years(1).format('Y-m-d'), '2025-02-28')
+check('add_years(4) keeps Feb 29 when the target year is also leap',
+  date.Date(2024, 2, 29).add_years(4).format('Y-m-d'), '2028-02-29')
+
+raises('add_months() rejects a non-number', @() { date.Date(2024,1,1).add_months('x') })
+
+
+# ===========================================================================
+# 48. to_offset()
+# ===========================================================================
+section('48. to_offset()')
+
+var utc_dt = date.Date(2024, 1, 1, 10, 0, 0, 0, 0)
+var ist_dt = utc_dt.to_offset(19800, 'IST')
+
+check('to_offset() shifts the wall clock', ist_dt.format('H:i:s'), '15:30:00')
+check('to_offset() sets the new gmt_offset', ist_dt.gmt_offset, 19800)
+check('to_offset() sets the zone label', ist_dt.zone, 'IST')
+check('to_offset() preserves the absolute instant', utc_dt.equals(ist_dt), true)
+check('to_offset() does not mutate self', utc_dt.gmt_offset, 0)
+
+var no_zone_change = utc_dt.to_offset(3600)
+check('to_offset() without a zone arg keeps the original zone label',
+  no_zone_change.zone, utc_dt.zone)
+
+raises('to_offset() rejects a non-number', @() { utc_dt.to_offset('x') })
 
 
 # ===========================================================================
