@@ -3,71 +3,71 @@ import ._base { Array }
 
 /**
  * Maximum value that "should" exist in a list passed to
- * Int32Array.
+ * Int8Array.
  * @type number
  */
-var INT32_MAX = 2147483647
+var INT8_MAX = 127
 
 /**
  * Minimum value that "should" exist in a list passed to
- * Int32Array.
+ * Int8Array.
  * @type number
  */
-var INT32_MIN = -INT32_MAX - 1
+var INT8_MIN = -INT8_MAX - 1
 
 
 /**
- * class Int32Array represents an array of twos-complement 32-bit
- * signed integers in the platform byte order.
+ * class Int8Array represents an array of twos-complement 8-bit
+ * signed integers.
  *
  * @printable
  * @valueable
  * @serializable
  */
-class Int32Array < Array {
+class Int8Array < Array {
 
   var _data
-  var _item_size = 4
-  var _data_type = 'l'
+  var _item_size = 1
+  var _data_type = 'c'
 
   _validate_value(value) {
     if !is_int(value)
       raise TypeError('integer expected')
-    if value < INT32_MIN or value > INT32_MAX
-      raise ValueError('value out of int32 range')
+    if value < INT8_MIN or value > INT8_MAX
+      raise ValueError('value out of int8 range')
   }
 
   /**
    * Returns a new array containing the elements in the original
    * array in reverse order.
    *
-   * @returns Int32Array
+   * @returns Int8Array
    */
   reverse() {
-    return Int32Array(self.to_list().reverse())
+    return Int8Array(self.to_list().reverse())
   }
 
   /**
-   * Returns a new Int32Array containing all items from the
+   * Returns a new Int8Array containing all items from the
    * current array. The new array is a shallow copy of the
    * original array.
    *
-   * @returns Int32Array
+   * @returns Int8Array
    */
   clone() {
-    return Int32Array(self.to_list())
+    return Int8Array(self.to_list())
   }
 
   /**
-   * Returns a new Int32Array over `[start, end)` of this array
+   * Returns a new Int8Array over `[start, end)` of this array
    * (both default to the whole array; negative bounds count from
    * the end).
    *
    * @param ?number start
    * @param ?number end
-   * @returns Int32Array
+   * @returns Int8Array
    */
   slice(start, end) {
-    return Int32Array(self._sliced_list(start, end))
+    return Int8Array(self._sliced_list(start, end))
   }
 }

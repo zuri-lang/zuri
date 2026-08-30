@@ -3,6 +3,14 @@ import struct
 /**
  * This is the base array class from which all other array types
  * inherit. It is not meant to be used directly.
+ *
+ * Every concrete subclass (`Int16Array`, `UInt64Array`, `FloatArray`,
+ * ...) only needs to declare three things: `_item_size` (bytes per
+ * element), `_data_type` (the `struct` format code for one element),
+ * and `_validate_value()` (what values are acceptable, and their
+ * range). Everything else — construction from a number/list/bytes,
+ * indexing, growth, insertion, removal, iteration, and conversion —
+ * lives here once.
  */
 class Array {
 
@@ -14,28 +22,89 @@ class Array {
   var _data
 
   /**
-   * This is the number of bits used to store each item in the
-   * array. It is not meant to be accessed directly.
+   * The number of bytes used to store each item in the array. It
+   * is not meant to be accessed directly.
    *
    * @should_override
    */
-  var _bit_size = 1
+  var _item_size = 1
 
   /**
-   * This is the struct data type used to store each item in the
-   * array. It is not meant to be accessed directly.
+   * The struct data type used to store each item in the array. It
+   * is not meant to be accessed directly.
    *
    * @should_override
    */
   var _data_type = 'c'
 
   /**
-   * The method that sets the value at the given index.
+   * - If n is a number, creates a new array that can hold up to n
+   * elements, all initialized to 0.
+   * - If n is a list, creates a new array with its elements set
+   * to the values in the list.
+   * - If n is a `bytes` object, wraps a clone of it directly —
+   * its length must be a whole multiple of the element size.
+   *
+   * @param {number|list|bytes} n
+   * @constructor
+   */
+  @new(n) {
+    if is_number(n) {
+      self._data = bytes(n * self._item_size)
+    } else if is_list(n) {
+      for item in n {
+        self._validate_value(item)
+      }
+      self._data = struct.pack('${self._data_type}${n.length()}', n)
+    } else if is_bytes(n) {
+      if n.length() % self._item_size != 0 {
+        raise ValueError(
+          'bytes length (${n.length()}) must be a multiple of the element size (${self._item_size})'
+        )
+      }
+      self._data = n.clone()
+    } else {
+      raise TypeError('number, list, or bytes expected, ${typeof(n)} given')
+    }
+  }
+
+  /**
+   * Validates a single element value before it is stored, raising
+   * when it isn't acceptable for this array's element type/range.
+   * The base implementation accepts anything `struct.pack` itself
+   * can encode; subclasses override this to enforce a real type and
+   * range check (e.g. "integer, and within int16 bounds").
    *
    * @should_override
+   * @param any value
+   */
+  _validate_value(value) {}
+
+  /**
+   * The method that sets the value at the given byte offset,
+   * copying every byte of the already-packed `as_bytes` into
+   * `self._data` starting at `start`.
+   *
+   * @param number start
+   * @param bytes as_bytes
    */
   _do_set(start, as_bytes) {
-    self._data[start] = as_bytes[0]
+    iter var i = 0; i < as_bytes.length(); i++ {
+      self._data[start + i] = as_bytes[i]
+    }
+  }
+
+  # Resolves a possibly-negative logical index against `len` the same
+  # way `list` indexing does (`-1` is the last element). Returns nil
+  # when the result is still out of `[0, len)` after normalizing.
+  _normalize_index(index, len) {
+    if index < 0 {
+      index += len
+    }
+    if index < 0 or index >= len {
+      return nil
+    }
+    return index
   }
 
   /**
@@ -44,7 +113,7 @@ class Array {
    * @returns number
    */
   length() {
-    return self._data.length() // self._bit_size
+    return self._data.length() // self._item_size
   }
 
   /**
@@ -66,8 +135,8 @@ class Array {
   first() {
     if self.length() > 0 {
       return struct.unpack(
-        self._data_type, 
-        self._data[,self._bit_size], 
+        self._data_type,
+        self._data[,self._item_size],
         0
       ).values().first()
     }
@@ -84,8 +153,8 @@ class Array {
   last() {
     if self.length() > 0 {
       return struct.unpack(
-        self._data_type, 
-        self._data[self._data.length() - self._bit_size,], 
+        self._data_type,
+        self._data[self._data.length() - self._item_size,],
         0
       ).values().first()
     }
@@ -94,27 +163,143 @@ class Array {
   }
 
   /**
-   * Returns the number at the specified index in the array. If
-   * index is outside the boundary of the array indexes
-   * (0..(array.length() - 1)), an exception is thrown.
+   * Returns the number at the specified index in the array. A
+   * negative index counts from the end, the same as `list`
+   * indexing (`-1` is the last element). If index is outside the
+   * array's bounds after that adjustment, `nil` is returned.
    *
    * @param number index
-   * @returns number
+   * @returns ?number
    */
   get(index) {
     if !is_number(index)
       raise ArgumentError('Arrays are numerically indexed')
 
-    if self.length() > index {
-      var start = index * self._bit_size
-      return struct.unpack(
-        self._data_type, 
-        self._data[start, start + self._bit_size], 
-        0
-      ).values().first()
+    var idx = self._normalize_index(index, self.length())
+    if idx == nil {
+      return nil
     }
 
-    return nil
+    var start = idx * self._item_size
+    return struct.unpack(
+      self._data_type,
+      self._data[start, start + self._item_size],
+      0
+    ).values().first()
+  }
+
+  /**
+   * Sets the value at the given index, growing the array with
+   * zero-filled elements first if `index` is past the current end.
+   * A negative index counts from the end and must already be
+   * in-bounds (it can never grow the array, the same way negative
+   * `list` assignment doesn't).
+   *
+   * @param number index
+   * @param number value
+   * @returns number
+   */
+  set(index, value) {
+    if !is_number(index)
+      raise ArgumentError('Arrays are numerically indexed')
+    self._validate_value(value)
+
+    var len = self.length()
+    var idx = index
+    if idx < 0 {
+      idx += len
+      if idx < 0 {
+        raise RangeError('array assignment index out of range')
+      }
+    }
+
+    var as_bytes = struct.pack(self._data_type, [value])
+    var start = idx * self._item_size
+
+    if len <= idx {
+      var diff = idx - len + 1 # +1 for the new data
+      var extension = bytes(diff * self._item_size)
+      self._data.extend(extension)
+      extension.dispose()
+    }
+
+    self._do_set(start, as_bytes)
+    as_bytes.dispose()
+
+    return value
+  }
+
+  /**
+   * Adds the given _value_ to the end of the array.
+   *
+   * @param number value
+   */
+  append(value) {
+    self._validate_value(value)
+
+    var as_bytes = struct.pack(self._data_type, [value])
+    self._data.extend(as_bytes)
+    as_bytes.dispose()
+  }
+
+  /**
+   * Inserts _value_ at _index_, shifting every element from
+   * _index_ onward one position later. A negative index counts
+   * from the end. `index == length()` appends.
+   *
+   * @param number index
+   * @param number value
+   */
+  insert(index, value) {
+    if !is_number(index)
+      raise ArgumentError('Arrays are numerically indexed')
+    self._validate_value(value)
+
+    var len = self.length()
+    var idx = index < 0 ? index + len : index
+    if idx < 0 or idx > len {
+      raise RangeError('insert index out of range')
+    }
+
+    var pos      = idx * self._item_size
+    var as_bytes = struct.pack(self._data_type, [value])
+
+    var new_data = self._data[,pos]
+    new_data.extend(as_bytes)
+    new_data.extend(self._data[pos,])
+
+    self._data = new_data
+    as_bytes.dispose()
+  }
+
+  /**
+   * Removes and returns the element at _index_, shifting every
+   * later element one position earlier. A negative index counts
+   * from the end.
+   *
+   * @param number index
+   * @returns number
+   */
+  remove_at(index) {
+    if !is_number(index)
+      raise ArgumentError('Arrays are numerically indexed')
+
+    var len = self.length()
+    var idx = index < 0 ? index + len : index
+    if idx < 0 or idx >= len {
+      raise RangeError('remove_at index out of range')
+    }
+
+    var pos     = idx * self._item_size
+    var removed = struct.unpack(
+      self._data_type, self._data[pos, pos + self._item_size], 0
+    ).values().first()
+
+    var new_data = self._data[,pos]
+    new_data.extend(self._data[pos + self._item_size,])
+    self._data = new_data
+
+    return removed
   }
 
   /**
@@ -126,10 +311,85 @@ class Array {
   pop() {
     var last = self.last()
     if last != nil {
-      self._data = self._data[,-self._bit_size]
+      self._data = self._data[,-self._item_size]
     }
 
     return last
+  }
+
+  /**
+   * Sets every element in `[start, end)` to _value_ (both default
+   * to the whole array; negative bounds count from the end, the
+   * same as `_normalize_index`). Returns `self`.
+   *
+   * @param number value
+   * @param ?number start
+   * @param ?number end
+   * @returns self
+   */
+  fill(value, start, end) {
+    self._validate_value(value)
+
+    var len = self.length()
+    if start == nil { start = 0 }
+    if end == nil { end = len }
+    if start < 0 { start += len }
+    if end < 0 { end += len }
+    start = 0.max(start).min(len)
+    end   = 0.max(end).min(len)
+
+    var as_bytes = struct.pack(self._data_type, [value])
+    iter var i = start; i < end; i++ {
+      self._do_set(i * self._item_size, as_bytes)
+    }
+    as_bytes.dispose()
+
+    return self
+  }
+
+  # Shared by every subclass's own slice()/reverse()/clone() one-liner
+  # (which each need to construct a new instance of their own concrete
+  # class, something this base class has no way to do dynamically) --
+  # this does the actual range math and value extraction once.
+  _sliced_list(start, end) {
+    var len = self.length()
+    if start == nil { start = 0 }
+    if end == nil { end = len }
+    if start < 0 { start += len }
+    if end < 0 { end += len }
+    start = 0.max(start).min(len)
+    end   = 0.max(end).min(len)
+
+    return self.to_list()[start, end]
+  }
+
+  /**
+   * Updates the content of the current array by appending all
+   * the contents of _array_ to the end of the array in exact
+   * order. _array_ must be the same concrete array type as self.
+   *
+   * @param Array array
+   */
+  extend(array) {
+    if typeof(self) != typeof(array) {
+      raise TypeError('instance of ${typeof(self)} expected')
+    }
+    self._data.extend(array.to_bytes())
+  }
+
+  /**
+   * Returns true when _other_ is an array of the same concrete
+   * type as self, with the same length and elements in the same
+   * order.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if typeof(self) != typeof(other) {
+      return false
+    }
+    return self.to_list() == other.to_list()
   }
 
   /**
@@ -147,20 +407,25 @@ class Array {
    * @returns list
    */
   to_list() {
+    if self.length() == 0 {
+      return []
+    }
     return struct.unpack(
-      '${self._data_type}${self.length()}', 
-      self._data, 
+      '${self._data_type}${self.length()}',
+      self._data,
       0
     ).values()
   }
 
   /**
-   * Returns a string representation of the array.
+   * Returns a string representation of the array, showing its
+   * decoded elements (e.g. `[1, 2, 3]`) rather than the raw
+   * underlying bytes.
    *
    * @returns string
    */
   to_string() {
-    return self._data.to_string()
+    return self.to_list().to_string()
   }
 
   @to_string() {
@@ -182,10 +447,13 @@ class Array {
   }
 
   @key(n) {
-    if index == nil return 0
-    if !is_number(index)
+    if n == nil {
+      if self.length() == 0 return nil
+      return 0
+    }
+    if !is_number(n)
       raise ArgumentError('Arrays are numerically indexed')
-    if index < self.length() - 1 return index + 1
+    if n < self.length() - 1 return n + 1
     return nil
   }
 }

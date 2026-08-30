@@ -3,64 +3,64 @@ import ._base { Array }
 
 /**
  * Maximum value that "should" exist in a list passed to
- * UInt32Array.
+ * UInt8Array.
  * @type number
  */
-var UINT32_MAX = 4294967295
+var UINT8_MAX = 255
 
 
 /**
- * class UInt32Array represents an array of twos-complement 32-bit
- * unsigned integers in the platform byte order.
+ * class UInt8Array represents an array of twos-complement 8-bit
+ * unsigned integers.
  *
  * @printable
  * @valueable
  * @serializable
  */
-class UInt32Array < Array {
+class UInt8Array < Array {
 
   var _data
-  var _item_size = 4
-  var _data_type = 'L'
+  var _item_size = 1
+  var _data_type = 'C'
 
   _validate_value(value) {
     if !is_int(value)
       raise TypeError('integer expected')
-    if value < 0 or value > UINT32_MAX
-      raise ValueError('value out of uint32 range')
+    if value < 0 or value > UINT8_MAX
+      raise ValueError('value out of uint8 range')
   }
 
   /**
    * Returns a new array containing the elements in the original
    * array in reverse order.
    *
-   * @returns UInt32Array
+   * @returns UInt8Array
    */
   reverse() {
-    return UInt32Array(self.to_list().reverse())
+    return UInt8Array(self.to_list().reverse())
   }
 
   /**
-   * Returns a new UInt32Array containing all items from the
+   * Returns a new UInt8Array containing all items from the
    * current array. The new array is a shallow copy of the
    * original array.
    *
-   * @returns UInt32Array
+   * @returns UInt8Array
    */
   clone() {
-    return UInt32Array(self.to_list())
+    return UInt8Array(self.to_list())
   }
 
   /**
-   * Returns a new UInt32Array over `[start, end)` of this array
+   * Returns a new UInt8Array over `[start, end)` of this array
    * (both default to the whole array; negative bounds count from
    * the end).
    *
    * @param ?number start
    * @param ?number end
-   * @returns UInt32Array
+   * @returns UInt8Array
    */
   slice(start, end) {
-    return UInt32Array(self._sliced_list(start, end))
+    return UInt8Array(self._sliced_list(start, end))
   }
 }

@@ -1,18 +1,28 @@
-import struct
 import ._base { Array }
 
 
 /**
  * Maximum value that "should" exist in a list passed to
- * UUInt64Array.
- * @type number
+ * UInt64Array.
+ * @type bigint
  */
-var UINT64_MAX = 18446744073709551615
+var UINT64_MAX = 18446744073709551615n
+
+# Plain-number-typed counterpart, used only when validating a plain
+# number value -- see Int64Array's own _INT64_MAX_NUM for why this
+# needs to exist separately (no number/bigint comparison operator).
+var _UINT64_MAX_NUM = UINT64_MAX.to_number()
 
 
 /**
- * class UInt64Array represents an array of twos-complement
- * 16-bit signed integers in the platform byte order.
+ * class UInt64Array represents an array of twos-complement 64-bit
+ * unsigned integers in the platform byte order.
+ *
+ * Values at or beyond 2^53 need Zuri's `bigint` type to be
+ * represented exactly (a regular `number` is an IEEE-754 double,
+ * and loses precision past that point) — `append()`/`set()` accept
+ * either a plain integer or a bigint (`is_bigint()`) for that
+ * reason.
  *
  * @printable
  * @valueable
@@ -21,114 +31,29 @@ var UINT64_MAX = 18446744073709551615
 class UInt64Array < Array {
 
   var _data
-  var _bit_size = 8
+  var _item_size = 8
   var _data_type = 'Q'
 
-  /**
-   * - If n is a number, it creates a new UInt64Array that can
-   * hold up to n number of elements, but with all the elements
-   * set to 0. - If n is a list, it creates a new UInt64Array
-   * with its elements set to the values in the list.
-   *
-   * @param {number|list} n
-   * @constructor
-   */
-  @new(n) {
-    if is_number(n) {
-      self._data = bytes(n * self._bit_size)
-    } else if is_list(n) {
-      # validate
-      for item in n {
-        if !is_number(item) {
-          raise ValueError('invalid UInt64Array value')
-        }
-      }
-
-      self._data = struct.pack('${self._data_type}${n.length()}', n)
-    } else {
-      raise TypeError('number or list expected, ${typeof(n)} given')
+  _validate_value(value) {
+    if is_bigint(value) {
+      if value < 0n or value > UINT64_MAX
+        raise ValueError('value out of uint64 range')
+      return
     }
-  }
-
-  /**
-   * Adds the given _value_ to the end of the array.
-   *
-   * @param int value
-   */
-  append(value) {
-    if !is_number(value) or !is_int(value)
+    if !is_int(value)
       raise TypeError('integer expected')
-    if value < 0 or value > UINT64_MAX
+    if value < 0 or value > _UINT64_MAX_NUM
       raise ValueError('value out of uint64 range')
-
-    var as_bytes = struct.pack(self._data_type, [value])
-    self._data.extend(as_bytes)
-    as_bytes.dispose()
-  }
-
-  _do_set(start, as_bytes) {
-    self._data[start] = as_bytes[0]
-    self._data[start + 1] = as_bytes[1]
-    self._data[start + 2] = as_bytes[2]
-    self._data[start + 3] = as_bytes[3]
-    self._data[start + 4] = as_bytes[4]
-    self._data[start + 5] = as_bytes[5]
-    self._data[start + 6] = as_bytes[6]
-    self._data[start + 7] = as_bytes[7]
-  }
-
-  /**
-   * Sets the value at the given index.
-   *
-   * @param number index
-   * @param number value
-   * @returns number
-   */
-  set(index, value) {
-    if !is_number(index)
-      raise ArgumentError('Arrays are numerically indexed')
-    if !is_number(value) and !is_int(value)
-      raise ArgumentError('UInt64Array stores integer values')
-
-    var as_bytes = struct.pack(self._data_type, [value])
-    var start = index * self._bit_size
-    
-    if self.length() <= index {
-      var diff = index - self.length() + 1 # +1 for the new data
-
-      var extension = bytes(diff * self._bit_size)
-      self._data.extend(extension)
-      extension.dispose()
-    }
-
-    self._do_set(start, as_bytes)
-    as_bytes.dispose()
-
-    return value
-  }
-
-  /**
-   * Updates the content of the current array by appending all
-   * the contents of _array_ to the end of the array in exact
-   * order.
-   *
-   * @param UInt64Array array
-   */
-  extend(array) {
-    if !instance_of(array, UInt64Array)
-      raise TypeError('instance of UInt64Array expected')
-    self._data.extend(array.to_bytes())
   }
 
   /**
    * Returns a new array containing the elements in the original
    * array in reverse order.
    *
-   * @returns [[array.UInt64Array]]
+   * @returns UInt64Array
    */
   reverse() {
-    var data = self.to_list().reverse()
-    return UInt64Array(data)
+    return UInt64Array(self.to_list().reverse())
   }
 
   /**
@@ -140,5 +65,18 @@ class UInt64Array < Array {
    */
   clone() {
     return UInt64Array(self.to_list())
+  }
+
+  /**
+   * Returns a new UInt64Array over `[start, end)` of this array
+   * (both default to the whole array; negative bounds count from
+   * the end).
+   *
+   * @param ?number start
+   * @param ?number end
+   * @returns UInt64Array
+   */
+  slice(start, end) {
+    return UInt64Array(self._sliced_list(start, end))
   }
 }

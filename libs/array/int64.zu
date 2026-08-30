@@ -1,25 +1,45 @@
-import struct
 import ._base { Array }
 
 
 /**
  * Maximum value that "should" exist in a list passed to
- * Int64Array.
- * @type number
+ * Int64Array. Written with the explicit `n` bigint suffix since
+ * the bare literal `9223372036854775807` parses as a lossy
+ * `number` (a known, pre-existing limitation of plain integer
+ * literals at exactly `i64::MAX` — see
+ * `tests/big-integer-literal-overflow.zu`), 193 away from the true
+ * value.
+ * @type bigint
  */
-var INT64_MAX = 9223372036854775807
+var INT64_MAX = 9223372036854775807n
 
 /**
  * Minimum value that "should" exist in a list passed to
  * Int64Array.
- * @type number
+ * @type bigint
  */
-var INT64_MIN = -INT64_MAX - 1
+var INT64_MIN = -9223372036854775808n
+
+# Plain-`number`-typed counterparts of INT64_MAX/INT64_MIN, used only
+# when validating a plain-number value -- Zuri has no comparison
+# operator between a `number` and a `bigint` at all (confirmed: even
+# `3 < 5n` raises "operator '<' not defined for number and bigint"),
+# so a value's bounds check has to compare against a same-typed pair.
+# Derived via .to_number() rather than a second hand-typed literal, so
+# there's exactly one place either constant's true value comes from.
+var _INT64_MAX_NUM = INT64_MAX.to_number()
+var _INT64_MIN_NUM = INT64_MIN.to_number()
 
 
 /**
- * class Int64Array represents an array of twos-complement 16-bit
+ * class Int64Array represents an array of twos-complement 64-bit
  * signed integers in the platform byte order.
+ *
+ * Values at or beyond ±2^53 need Zuri's `bigint` type to be
+ * represented exactly (a regular `number` is an IEEE-754 double,
+ * and loses precision past that point) — `append()`/`set()` accept
+ * either a plain integer or a bigint (`is_bigint()`) for that
+ * reason.
  *
  * @printable
  * @valueable
@@ -28,114 +48,29 @@ var INT64_MIN = -INT64_MAX - 1
 class Int64Array < Array {
 
   var _data
-  var _bit_size = 8
+  var _item_size = 8
   var _data_type = 'q'
 
-  /**
-   * - If n is a number, it creates a new Int64Array that can
-   * hold up to n number of elements, but with all the elements
-   * set to 0. - If n is a list, it creates a new Int64Array with
-   * its elements set to the values in the list.
-   *
-   * @param {number|list} n
-   * @constructor
-   */
-  @new(n) {
-    if is_number(n) {
-      self._data = bytes(n * self._bit_size)
-    } else if is_list(n) {
-      # validate
-      for item in n {
-        if !is_number(item) {
-          raise ValueError('invalid Int64Array value')
-        }
-      }
-
-      self._data = struct.pack('${self._data_type}${n.length()}', n)
-    } else {
-      raise TypeError('number or list expected, ${typeof(n)} given')
+  _validate_value(value) {
+    if is_bigint(value) {
+      if value < INT64_MIN or value > INT64_MAX
+        raise ValueError('value out of int64 range')
+      return
     }
-  }
-
-  /**
-   * Adds the given _value_ to the end of the array.
-   *
-   * @param int value
-   */
-  append(value) {
-    if !is_number(value) or !is_int(value)
+    if !is_int(value)
       raise TypeError('integer expected')
-    if value < INT64_MIN or value > INT64_MAX
+    if value < _INT64_MIN_NUM or value > _INT64_MAX_NUM
       raise ValueError('value out of int64 range')
-
-    var as_bytes = struct.pack(self._data_type, [value])
-    self._data.extend(as_bytes)
-    as_bytes.dispose()
-  }
-
-  _do_set(start, as_bytes) {
-    self._data[start] = as_bytes[0]
-    self._data[start + 1] = as_bytes[1]
-    self._data[start + 2] = as_bytes[2]
-    self._data[start + 3] = as_bytes[3]
-    self._data[start + 4] = as_bytes[4]
-    self._data[start + 5] = as_bytes[5]
-    self._data[start + 6] = as_bytes[6]
-    self._data[start + 7] = as_bytes[7]
-  }
-
-  /**
-   * Sets the value at the given index.
-   *
-   * @param number index
-   * @param number value
-   * @returns number
-   */
-  set(index, value) {
-    if !is_number(index)
-      raise ArgumentError('Arrays are numerically indexed')
-    if !is_number(value) and !is_int(value)
-      raise ArgumentError('Int64Array stores integer values')
-
-    var as_bytes = struct.pack(self._data_type, [value])
-    var start = index * self._bit_size
-    
-    if self.length() <= index {
-      var diff = index - self.length() + 1 # +1 for the new data
-
-      var extension = bytes(diff * self._bit_size)
-      self._data.extend(extension)
-      extension.dispose()
-    }
-
-    self._do_set(start, as_bytes)
-    as_bytes.dispose()
-
-    return value
-  }
-
-  /**
-   * Updates the content of the current array by appending all
-   * the contents of _array_ to the end of the array in exact
-   * order.
-   *
-   * @param Int64Array array
-   */
-  extend(array) {
-    if !instance_of(array, Int64Array)
-      raise TypeError('instance of Int64Array expected')
-    self._data.extend(array.to_bytes())
   }
 
   /**
    * Returns a new array containing the elements in the original
    * array in reverse order.
    *
-   * @returns [[array.Int64Array]]
+   * @returns Int64Array
    */
   reverse() {
-    var data = self.to_list().reverse()
-    return Int64Array(data)
+    return Int64Array(self.to_list().reverse())
   }
 
   /**
@@ -147,5 +82,18 @@ class Int64Array < Array {
    */
   clone() {
     return Int64Array(self.to_list())
+  }
+
+  /**
+   * Returns a new Int64Array over `[start, end)` of this array
+   * (both default to the whole array; negative bounds count from
+   * the end).
+   *
+   * @param ?number start
+   * @param ?number end
+   * @returns Int64Array
+   */
+  slice(start, end) {
+    return Int64Array(self._sliced_list(start, end))
   }
 }

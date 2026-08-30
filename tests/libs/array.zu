@@ -1,0 +1,395 @@
+/**
+ * test_array.zu
+ *
+ * Test suite for the `array` standard library module: construction,
+ * every public method on every one of the ten typed array classes,
+ * and every fix from the 2026-08-30 overhaul.
+ */
+
+import array
+import json
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  array module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# Every class, run through the exact same battery below -- [1,2,3,4,5]
+# is a legal element value for all ten (float/double included: struct
+# round-trips an integer-valued float back as e.g. 1.0, which compares
+# == 1). Type-specific range/rejection and negative/bigint values are
+# covered in their own dedicated sections further down.
+var all_ctors = [
+  array.Int8Array, array.UInt8Array,
+  array.Int16Array, array.UInt16Array,
+  array.Int32Array, array.UInt32Array,
+  array.Int64Array, array.UInt64Array,
+  array.FloatArray, array.DoubleArray,
+]
+
+# ---------------------------------------------------------------------------
+# Construction — number (zero-filled), list, bytes
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var from_n = Ctor(4)
+  assert from_n.length() == 4, 'Ctor(n) must create an array of length n'
+  assert from_n.to_list() == [0, 0, 0, 0], 'Ctor(n) must zero-fill every element'
+
+  var from_list = Ctor([1, 2, 3, 4, 5])
+  assert from_list.to_list() == [1, 2, 3, 4, 5], 'Ctor(list) must round-trip the given values'
+
+  var from_bytes = Ctor(from_list.to_bytes())
+  assert from_bytes.to_list() == [1, 2, 3, 4, 5], 'Ctor(bytes) must round-trip through to_bytes()'
+
+  assert raises(@() => Ctor('not valid')), 'Ctor() must reject a string'
+  assert raises(@() => Ctor(nil)), 'Ctor() must reject nil'
+}
+ok('Ctor(number)/Ctor(list)/Ctor(bytes) all construct correctly, Ctor() rejects invalid input, across every class')
+
+var uneven = array.Int16Array([1, 2, 3]).to_bytes()
+assert raises(@() => array.Int32Array(uneven[,5])),
+  'Ctor(bytes) must reject a byte length that is not a multiple of the element size'
+ok('Ctor(bytes) validates length is a multiple of the element size')
+
+# ---------------------------------------------------------------------------
+# length() / bytes_length()
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2, 3])
+  assert a.length() == 3, 'length() must report the element count'
+  assert a.bytes_length() == a.to_bytes().length(), 'bytes_length() must match the underlying byte count'
+  assert Ctor(0).length() == 0, 'length() of an empty array must be 0'
+}
+ok('length()/bytes_length() are correct across every class')
+
+# ---------------------------------------------------------------------------
+# first() / last()
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2, 3])
+  assert a.first() == 1, 'first() must return the first element'
+  assert a.last() == 3, 'last() must return the last element'
+  assert Ctor(0).first() == nil, 'first() on an empty array must return nil'
+  assert Ctor(0).last() == nil, 'last() on an empty array must return nil'
+}
+ok('first()/last() are correct, including on an empty array')
+
+# ---------------------------------------------------------------------------
+# get() — positive/negative, in range and out of range, bad index type
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2, 3, 4, 5])
+
+  assert a.get(0) == 1, 'get(0) must return the first element'
+  assert a.get(4) == 5, 'get(length-1) must return the last element'
+  assert a.get(5) == nil, 'get(length) must return nil, not crash'
+  assert a.get(999) == nil, 'a far out-of-range positive index must return nil'
+
+  assert a.get(-1) == 5, 'get(-1) must return the last element'
+  assert a.get(-5) == 1, 'get(-5) must return the first element'
+  assert a.get(-6) == nil, 'get() one past the negative bound must return nil'
+  assert a.get(-99) == nil, 'a far out-of-range negative index must return nil'
+
+  assert raises(@() => a.get('x')), 'get() must reject a non-number index'
+}
+ok('get() handles in-range, out-of-range, and negative indices correctly, and rejects a bad index type')
+
+# ---------------------------------------------------------------------------
+# set() — overwrite, auto-extend growth, negative index, bad index type
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2, 3])
+  assert a.set(1, 9) == 9, 'set() must return the value it stored'
+  assert a.to_list() == [1, 9, 3], 'set() must overwrite the element at that index'
+
+  var grow = Ctor([1, 2])
+  grow.set(4, 7)
+  assert grow.length() == 5, 'set() past the current length must grow the array'
+  assert grow.to_list() == [1, 2, 0, 0, 7], 'set() must zero-fill the gap it grew through'
+
+  var neg = Ctor([1, 2, 3])
+  neg.set(-1, 8)
+  assert neg.to_list() == [1, 2, 8], 'set() with a negative in-bounds index must overwrite from the end'
+
+  assert raises(@() => Ctor([1]).set(-5, 1)), 'set() with a negative out-of-bounds index must raise, not grow backward'
+  assert raises(@() => a.set('x', 1)), 'set() must reject a non-number index'
+}
+ok('set() overwrites, grows the array when needed, and supports negative indices')
+
+# ---------------------------------------------------------------------------
+# append() — growth
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2])
+  a.append(3)
+  assert a.length() == 3 and a.to_list() == [1, 2, 3], 'append() must grow the array by exactly one element'
+}
+ok('append() grows the array correctly across every class')
+
+# ---------------------------------------------------------------------------
+# insert() / remove_at() — including negative indices and bad input
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var ins = Ctor([1, 2, 4, 5])
+  ins.insert(2, 3)
+  assert ins.to_list() == [1, 2, 3, 4, 5], 'insert() must shift later elements forward'
+  ins.insert(0, 0)
+  assert ins.to_list() == [0, 1, 2, 3, 4, 5], 'insert(0, ...) must prepend'
+  ins.insert(ins.length(), 99)
+  assert ins.to_list() == [0, 1, 2, 3, 4, 5, 99], 'insert() at length() must behave like append'
+  ins.insert(-1, 50)
+  assert ins.to_list() == [0, 1, 2, 3, 4, 5, 50, 99], 'insert() with a negative index must insert before that many from the end'
+
+  assert raises(@() => Ctor([1, 2]).insert(99, 1)), 'insert() must reject an index past the end'
+  assert raises(@() => Ctor([1, 2]).insert('x', 1)), 'insert() must reject a non-number index'
+
+  var rm = Ctor([1, 2, 3, 4, 5])
+  assert rm.remove_at(0) == 1, 'remove_at(0) must return the removed value'
+  assert rm.to_list() == [2, 3, 4, 5], 'remove_at() must shift later elements back'
+  assert rm.remove_at(-1) == 5, 'remove_at(-1) must remove and return the last element'
+  assert rm.to_list() == [2, 3, 4], 'remove_at(-1) must shift nothing after it (it was last)'
+
+  assert raises(@() => Ctor([1]).remove_at(99)), 'remove_at() must reject an out-of-range index'
+  assert raises(@() => Ctor([1]).remove_at('x')), 'remove_at() must reject a non-number index'
+}
+ok('insert()/remove_at() handle forward, prepend, append, and negative-index cases, and reject bad input')
+
+# ---------------------------------------------------------------------------
+# pop()
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2, 3])
+  assert a.pop() == 3, 'pop() must return the last element'
+  assert a.to_list() == [1, 2], 'pop() must remove the last element'
+  assert Ctor(0).pop() == nil, 'pop() on an empty array must return nil, not crash'
+}
+ok('pop() removes and returns the last element, and is safe on an empty array')
+
+# ---------------------------------------------------------------------------
+# fill() — explicit range, defaults, negative bounds, return value
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2, 3, 4, 5])
+  a.fill(0, 1, 4)
+  assert a.to_list() == [1, 0, 0, 0, 5], 'fill(value, start, end) must set only that range'
+
+  var whole = Ctor([1, 2, 3])
+  whole.fill(9)
+  assert whole.to_list() == [9, 9, 9], 'fill(value) with no start/end must fill the whole array'
+
+  var neg = Ctor([1, 2, 3, 4, 5])
+  neg.fill(0, -2)
+  assert neg.to_list() == [1, 2, 3, 0, 0], 'fill() must support a negative start bound'
+
+  var returned = Ctor([1, 2, 3]).fill(0)
+  assert typeof(returned) == typeof(Ctor(0)), 'fill() must return self for chaining'
+}
+ok('fill() fills explicit and default ranges, supports negative bounds, and returns self')
+
+# ---------------------------------------------------------------------------
+# slice()
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var sl = Ctor([10, 20, 30, 40, 50])
+  assert sl.slice(1, 3).to_list() == [20, 30], 'slice(start, end) must return the correct sub-range'
+  assert sl.slice(-2,).to_list() == [40, 50], 'slice() must support negative bounds'
+  assert sl.slice().to_list() == [10, 20, 30, 40, 50], 'slice() with no arguments must return the whole array'
+  assert typeof(sl.slice(0, 1)) == typeof(sl), 'slice() must return the same concrete array type'
+}
+ok('slice() handles explicit ranges, negative bounds, and defaults, across every class')
+
+# ---------------------------------------------------------------------------
+# equals()
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  assert Ctor([1, 2, 3]).equals(Ctor([1, 2, 3])), 'equals() must be true for same type and content'
+  assert !Ctor([1, 2, 3]).equals(Ctor([1, 2, 4])), 'equals() must be false for different content'
+  assert !Ctor([1, 2, 3]).equals(Ctor([1, 2])), 'equals() must be false for different lengths'
+  assert !Ctor([1, 2, 3]).equals([1, 2, 3]), 'equals() must be false against a plain list'
+  assert !Ctor([1, 2, 3]).equals(nil), 'equals() must be false against nil, not crash'
+}
+ok('equals() compares type, length, and content correctly across every class')
+
+# ---------------------------------------------------------------------------
+# clone() / reverse()
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var cl = Ctor([1, 2, 3])
+  var cl2 = cl.clone()
+  assert cl.equals(cl2), 'clone() must produce an equal array'
+  cl2.set(0, 9)
+  assert cl.to_list() == [1, 2, 3], 'clone() must be independent of the original'
+
+  assert Ctor([1, 2, 3]).reverse().to_list() == [3, 2, 1], 'reverse() must reverse element order'
+  assert Ctor(0).reverse().to_list() == [], 'reverse() on an empty array must return an empty array'
+}
+ok('clone() is independent, reverse() reverses order, across every class')
+
+# ---------------------------------------------------------------------------
+# extend()
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2])
+  a.extend(Ctor([3, 4]))
+  assert a.to_list() == [1, 2, 3, 4], 'extend() must append the other array''s contents in order'
+}
+assert raises(@() => array.Int16Array([1]).extend(array.UInt16Array([2]))),
+  'extend() must reject a different concrete array type'
+assert raises(@() => array.Int16Array([1]).extend([2, 3])),
+  'extend() must reject a plain list'
+ok('extend() appends same-type arrays and rejects any other type, across every class')
+
+# ---------------------------------------------------------------------------
+# to_bytes() / to_list() / to_string() / @to_string() / @to_json() / iteration
+# ---------------------------------------------------------------------------
+for Ctor in all_ctors {
+  var a = Ctor([1, 2, 3])
+
+  assert a.to_bytes().length() == a.bytes_length(), 'to_bytes() must match bytes_length()'
+  assert a.to_list() == [1, 2, 3], 'to_list() must return every element in order'
+  assert Ctor(0).to_list() == [], 'to_list() on an empty array must return an empty list'
+
+  # 2026-08-30 fix: to_string() used to dump the raw packed bytes as
+  # text (self._data.to_string()), which is unreadable garbage for a
+  # numeric array; it now shows the decoded element list instead.
+  # (@to_string() just delegates to to_string() with no logic of its
+  # own, and Zuri has no syntax to invoke a magic method directly --
+  # confirmed `a.@to_string()` is a SyntaxError -- so this is the only
+  # externally-observable way to exercise that delegation.)
+  assert a.to_string() == '[1, 2, 3]', 'to_string() must show the decoded elements, not raw bytes'
+
+  var encoded = json.encode(a)
+  assert encoded.contains('1') and encoded.contains('2') and encoded.contains('3'),
+    '@to_json() must let json.encode() serialize the array as its element list'
+
+  var seen = []
+  for x in a {
+    seen.append(x)
+  }
+  assert seen == [1, 2, 3], 'for-in iteration must visit every element in order (2026-08-30 fix: was completely broken)'
+
+  var seen_empty = []
+  for x in Ctor(0) {
+    seen_empty.append(x)
+  }
+  assert seen_empty == [], 'for-in iteration over an empty array must visit nothing, not crash'
+}
+ok('to_bytes()/to_list()/to_string()/@to_string()/@to_json()/iteration are all correct across every class')
+
+# ---------------------------------------------------------------------------
+# Per-class range validation (2026-08-30 fix: the "and" in `!is_number(value)
+# and !is_int(value)` was backwards and could never actually fire for a real
+# number -- masked for floats by struct.pack()'s own validation, but real)
+# ---------------------------------------------------------------------------
+assert raises(@() => array.Int8Array(0).append(128)),    'Int8Array must reject a value above 127'
+assert raises(@() => array.Int8Array(0).append(-129)),   'Int8Array must reject a value below -128'
+assert array.Int8Array(0).append(127) == nil,  'Int8Array must accept its own maximum'
+assert array.Int8Array(0).append(-128) == nil, 'Int8Array must accept its own minimum'
+
+assert raises(@() => array.UInt8Array(0).append(-1)),  'UInt8Array must reject a negative value'
+assert raises(@() => array.UInt8Array(0).append(256)), 'UInt8Array must reject a value above 255'
+
+assert raises(@() => array.Int16Array(0).append(40000)),  'Int16Array must reject an out-of-range value'
+assert raises(@() => array.UInt16Array(0).append(-1)),    'UInt16Array must reject a negative value'
+assert raises(@() => array.UInt16Array(0).append(70000)), 'UInt16Array must reject a value above 65535'
+
+assert raises(@() => array.Int32Array(0).append(3000000000)), 'Int32Array must reject a value above its signed max'
+assert raises(@() => array.UInt32Array(0).append(-1)),        'UInt32Array must reject a negative value'
+
+for Ctor in [array.Int8Array, array.UInt8Array, array.Int16Array, array.UInt16Array, array.Int32Array, array.UInt32Array] {
+  assert raises(@() => Ctor(0).append('x')), 'append() must reject a non-numeric string'
+  assert raises(@() => Ctor(0).append(3.5)), 'append() must reject a non-integer number'
+  assert raises(@() => Ctor(0).append(nil)), 'append() must reject nil'
+}
+ok('range and type validation correctly rejects bad input for every fixed-width integer class')
+
+# ---------------------------------------------------------------------------
+# FloatArray / DoubleArray -- 2026-08-30 fix: FLOAT_MIN/DOUBLE_MIN were the
+# smallest POSITIVE normal value, not -MAX, so no negative number could ever
+# be stored at all.
+# ---------------------------------------------------------------------------
+var fa = array.FloatArray(0)
+fa.append(-5.5)
+fa.append(3.25)
+fa.append(0.0)
+assert fa.to_list() == [-5.5, 3.25, 0.0], 'FloatArray must accept negative values (was completely broken)'
+
+var da = array.DoubleArray(0)
+da.append(-123.456)
+assert da.get(0) == -123.456, 'DoubleArray must accept negative values (was completely broken)'
+
+assert raises(@() => array.FloatArray(0).append('x')),  'FloatArray.append() must reject a non-number'
+assert raises(@() => array.DoubleArray(0).append('x')), 'DoubleArray.append() must reject a non-number'
+assert raises(@() => array.FloatArray(0).append(1.0E+39)), 'FloatArray must reject a value beyond float32 range'
+ok('FloatArray/DoubleArray accept negative values and reject non-numbers')
+
+# ---------------------------------------------------------------------------
+# Int64Array / UInt64Array -- 2026-08-30 fix: values needing Zuri's bigint
+# type (most of the real 64-bit range) failed is_number()/is_int() and were
+# always rejected, and INT64_MAX itself was a silently-imprecise literal.
+# ---------------------------------------------------------------------------
+assert is_bigint(array.INT64_MAX), 'INT64_MAX must be an exact bigint, not a lossy number'
+assert array.INT64_MAX == 9223372036854775807n, 'INT64_MAX must hold the exact int64 maximum'
+assert array.INT64_MIN == -9223372036854775808n, 'INT64_MIN must hold the exact int64 minimum'
+assert array.UINT64_MAX == 18446744073709551615n, 'UINT64_MAX must hold the exact uint64 maximum'
+
+var i64 = array.Int64Array(0)
+i64.append(array.INT64_MAX)
+i64.append(array.INT64_MIN)
+i64.append(100)
+assert i64.get(0) == array.INT64_MAX, 'Int64Array must store and retrieve the exact bigint maximum (was completely broken)'
+assert i64.get(1) == array.INT64_MIN, 'Int64Array must store and retrieve the exact bigint minimum'
+assert i64.get(2) == 100, 'Int64Array must still accept a plain, small integer'
+assert raises(@() => i64.append(array.INT64_MAX + 1n)), 'Int64Array must reject a bigint one past the maximum'
+assert raises(@() => i64.append(array.INT64_MIN - 1n)), 'Int64Array must reject a bigint one past the minimum'
+
+var i64_set = array.Int64Array([1, 2, 3])
+i64_set.set(1, array.INT64_MAX)
+assert i64_set.get(1) == array.INT64_MAX, 'set() must also accept a bigint boundary value'
+
+var i64_ins = array.Int64Array([1, 2])
+i64_ins.insert(1, array.INT64_MIN)
+assert i64_ins.get(1) == array.INT64_MIN, 'insert() must also accept a bigint boundary value'
+
+var u64 = array.UInt64Array(0)
+u64.append(array.UINT64_MAX)
+assert u64.get(0) == array.UINT64_MAX, 'UInt64Array must store and retrieve the exact bigint maximum (was completely broken)'
+assert raises(@() => u64.append(-1)), 'UInt64Array must reject a negative plain number'
+assert raises(@() => u64.append(-1n)), 'UInt64Array must reject a negative bigint'
+assert raises(@() => u64.append(array.UINT64_MAX + 1n)), 'UInt64Array must reject a bigint one past the maximum'
+assert raises(@() => array.Int64Array(0).append('x')), 'Int64Array.append() must still reject a non-numeric value'
+assert raises(@() => array.Int64Array(0).append(3.5)), 'Int64Array.append() must still reject a non-integer float'
+
+ok('Int64Array/UInt64Array store and validate the full bigint-range boundary values')
+
+# ---------------------------------------------------------------------------
+# is_bigint() -- the new builtin this fix needed, added alongside is_number()/
+# is_int()/etc. Confirms the distinction the array validation logic depends on.
+# ---------------------------------------------------------------------------
+assert is_bigint(5n) == true, 'is_bigint() must be true for a bigint literal'
+assert is_bigint(5) == false, 'is_bigint() must be false for a plain number'
+assert is_number(5n) == false, 'is_number() must be false for a bigint'
+assert is_int(5n) == false, 'is_int() must be false for a bigint'
+ok('is_bigint() correctly distinguishes bigint from number')
+
+# ===========================================================================
+# Final summary
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

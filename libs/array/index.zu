@@ -1,14 +1,42 @@
 /**
  * @module array
  *
- * This module provides multiple classes for working with arrays
- * of twos-complement integers in the platform byte order. The
- * classes provided in this module complement the _bytes()_
- * object and allow higher other binary data manipulation.
+ * This module provides fixed-width typed array classes: twos-
+ * complement integers (`Int8Array`/`UInt8Array` through
+ * `Int64Array`/`UInt64Array`) and IEEE-754 floating-point numbers
+ * (`FloatArray`, `DoubleArray`), each storing its elements packed
+ * in the platform byte order. They complement the `bytes` object
+ * and allow higher-level binary data manipulation without giving
+ * up direct access to the underlying bytes (`to_bytes()`).
+ *
+ * All ten classes share the same interface (indexing, `append()`/
+ * `insert()`/`remove_at()`/`set()`/`pop()`, `slice()`, `fill()`,
+ * `equals()`, iteration via `for x in arr`, and conversion via
+ * `to_list()`/`to_bytes()`) — see [[array.Int16Array]] for the
+ * fully documented shape every other class in this module follows.
+ *
+ * `Int64Array`/`UInt64Array` accept and return `bigint` values (in
+ * addition to plain integers) for anything past what a regular
+ * `number` can hold exactly — see `is_bigint()`.
+ *
+ * ### Example
+ *
+ * ```zuri
+ * import array
+ *
+ * var a = array.Int32Array([1, 2, 3])
+ * a.append(4)
+ * for x in a {
+ *   echo x
+ * }
+ * echo a.slice(1, 3).to_list()   # [2, 3]
+ * ```
  *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */
 
+import .int8 { * }
+import .uint8 { * }
 import .int16 { * }
 import .uint16 { * }
 import .int32 { * }
