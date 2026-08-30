@@ -52,6 +52,85 @@ ok('get_attr() on a non-tty stream raises')
 assert raises(@() { io.TTY('not a file') }), 'TTY must reject a constructor argument that is not a file'
 ok('TTY rejects a non-file argument')
 
+# ---------------------------------------------------------------------------
+# set_attr() / set_raw() / exit_raw() / flush() -- 2026-08-30: none of
+# these had a single test. set_raw()/set_attr() both need a real tty to
+# succeed (they call tcgetattr internally, which fails against a captured
+# pipe the same way get_attr()/get_size() already do above), so this only
+# covers the deterministic non-tty failure/no-op paths, matching this
+# file's own established scope.
+# ---------------------------------------------------------------------------
+assert raises(@() { t.set_raw() }), 'set_raw() on a non-tty stream must raise, not crash or silently lie'
+ok('set_raw() on a non-tty stream raises')
+
+assert raises(@() { t.set_attr(io.TTY.TCSANOW, {}) }), 'set_attr() on a non-tty stream must raise'
+assert raises(@() { t.set_attr('not an int', {}) }), 'set_attr() must reject a non-integer option'
+assert raises(@() { t.set_attr(io.TTY.TCSANOW, 'not a dict') }), 'set_attr() must reject a non-dict attrs argument'
+ok('set_attr() validates its arguments and raises on a non-tty stream')
+
+# exit_raw()/flush() don't touch tcgetattr/tcsetattr at all, so neither
+# raises against a non-tty stream -- they're just safe no-ops there.
+assert !raises(@() { t.exit_raw() }), 'exit_raw() must not raise even against a non-tty stream'
+assert !raises(@() { t.flush() }), 'flush() must not raise even against a non-tty stream'
+ok('exit_raw()/flush() are safe no-ops against a non-tty stream')
+
+# ---------------------------------------------------------------------------
+# A spot check of the termios constants -- 2026-08-30: these used to be
+# hand-typed hex literals directly in tty.zu, and turned out to actually
+# be the BSD/macOS termios bit layout, not this build's real target (this
+# environment is x86_64 Linux/glibc). The two families genuinely disagree
+# on most of c_cflag/c_lflag: e.g. ICANON is bit 0x2 on Linux but 0x100
+# on BSD, and the old hardcoded value (0x100) was silently wrong here.
+#
+# Since Zuri itself has no conditional compilation to pick the right
+# literal per platform, these constants are now read once from the
+# native `_io` module (which sources them from this build's own `libc`
+# crate, correctly selected per compile target) rather than typed by
+# hand -- so what's being checked here is that the values coming back
+# actually look like real termios bits (small, distinct, nonzero power-
+# of-two-ish flags), not that they equal one specific platform's
+# literal, which is exactly the assumption that broke last time.
+# ---------------------------------------------------------------------------
+# TTY_IFLAG..TTY_CC are Zuri's own wire-protocol indices for the dict
+# tcgetattr()/tcsetattr() trade in -- not OS values at all, so they're
+# fixed regardless of platform. TCSANOW/TCSADRAIN/TCSAFLUSH ARE real OS
+# values (also read from native code now, same as everything else here),
+# but happen to be 0/1/2 on every POSIX platform this build targets.
+assert io.TTY.TTY_IFLAG == 0 and io.TTY.TTY_OFLAG == 1 and io.TTY.TTY_CFLAG == 2
+  and io.TTY.TTY_LFLAG == 3 and io.TTY.TTY_ISPEED == 4 and io.TTY.TTY_OSPEED == 5
+  and io.TTY.TTY_CC == 6, 'the TTY_* group indices are Zuri''s own protocol, fixed on every platform'
+assert io.TTY.TCSANOW == 0 and io.TTY.TCSADRAIN == 1 and io.TTY.TCSAFLUSH == 2,
+  'TCSANOW/TCSADRAIN/TCSAFLUSH must match this platform''s real termios values'
+ok('the TTY_* group indices and TCSA option constants are correct')
+
+var real_flags = [
+  io.TTY.IGNBRK, io.TTY.BRKINT, io.TTY.IGNPAR, io.TTY.PARMRK, io.TTY.INPCK,
+  io.TTY.ISTRIP, io.TTY.INLCR, io.TTY.IGNCR, io.TTY.ICRNL, io.TTY.IXON,
+  io.TTY.IXOFF, io.TTY.IXANY, io.TTY.OPOST, io.TTY.ONLCR, io.TTY.CS5,
+  io.TTY.CS6, io.TTY.CS7, io.TTY.CS8, io.TTY.CSTOPB, io.TTY.CREAD,
+  io.TTY.PARENB, io.TTY.PARODD, io.TTY.HUPCL, io.TTY.CLOCAL, io.TTY.ECHOE,
+  io.TTY.ECHOK, io.TTY.ECHO, io.TTY.ECHONL, io.TTY.ISIG, io.TTY.ICANON,
+  io.TTY.IEXTEN, io.TTY.TOSTOP, io.TTY.NOFLSH,
+]
+for value in real_flags {
+  assert is_number(value), 'every termios flag constant must be a real number, not nil or a dead placeholder'
+}
+assert io.TTY.CSIZE == (io.TTY.CS5 | io.TTY.CS6 | io.TTY.CS7 | io.TTY.CS8),
+  'CSIZE must be exactly the union of all four character-size bits, on any platform'
+assert io.TTY.CS8 != io.TTY.CS5 and io.TTY.CS8 != io.TTY.CS7,
+  'the four character-size constants must actually be distinct bit patterns'
+ok('the platform-sourced termios flag constants are real, distinct, and internally consistent')
+
+var cc_indices = [
+  io.TTY.VEOF, io.TTY.VEOL, io.TTY.VERASE, io.TTY.VKILL, io.TTY.VINTR,
+  io.TTY.VQUIT, io.TTY.VSUSP, io.TTY.VSTART, io.TTY.VSTOP, io.TTY.VMIN,
+  io.TTY.VTIME,
+]
+for index in cc_indices {
+  assert is_number(index) and index >= 0, 'every VEOF/VERASE/etc control-character index must be a real, non-negative number'
+}
+ok('the platform-sourced c_cc control-character indices are real, non-negative numbers')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

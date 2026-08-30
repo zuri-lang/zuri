@@ -7,6 +7,7 @@
  */
 
 import set
+import json
 
 var _passed = 0
 
@@ -162,7 +163,69 @@ set([1, 2, 3]).each(@(item, index) {
   each_seen.append(item)
 })
 assert each_seen == [1, 2, 3], 'each() must visit every element in insertion order'
-ok('each() visits every element')
+
+var each_indexes = []
+set([10, 20, 30]).each(@(item, index) {
+  each_indexes.append(index)
+})
+assert each_indexes == [0, 1, 2], 'each() must also pass the correct positional index'
+ok('each() visits every element in order and passes the correct index')
+
+# ---------------------------------------------------------------------------
+# to_string() / to_list() / to_json() -- 2026-08-30: to_json() had no test,
+# which is exactly how a real bug (missing the `@` prefix, so json.encode()
+# could never find it at all -- confirmed `json.encode(set([1]))` raised
+# "the class does not implement '@to_json'") went unnoticed.
+# ---------------------------------------------------------------------------
+assert set([1, 2, 3]).to_list() == [1, 2, 3], 'to_list() must return every element in insertion order'
+assert set().to_list() == [], 'to_list() on an empty set must return an empty list'
+
+var tl = set([1, 2, 3])
+var tl_copy = tl.to_list()
+tl_copy.append(99)
+assert tl.to_list() == [1, 2, 3], 'to_list() must return an independent copy, not a live reference'
+
+assert is_string(set([1, 2]).to_string()), 'to_string() must return a string'
+assert set([1, 2]).to_string().contains('1') and set([1, 2]).to_string().contains('2'),
+  'to_string() must include every element'
+assert set().to_string().contains('0'), 'to_string() must reflect an empty set''s length correctly'
+
+assert json.encode(set([1, 2, 3])) == json.encode([1, 2, 3]),
+  '@to_json() must let json.encode() serialize a Set as its element list (was completely broken)'
+ok('to_string()/to_list()/to_json() are all correct, including json.encode() integration')
+
+# ---------------------------------------------------------------------------
+# Non-mutation -- union()/intersect()/difference()/symmetric_difference()
+# must never modify either input set, only the *_update() family should
+# ---------------------------------------------------------------------------
+var nm_a = set([1, 2, 3])
+var nm_b = set([2, 3, 4])
+nm_a.union(nm_b)
+nm_a.intersect(nm_b)
+nm_a.difference(nm_b)
+nm_a.symmetric_difference(nm_b)
+assert nm_a.equals(set([1, 2, 3])) and nm_b.equals(set([2, 3, 4])),
+  'union()/intersect()/difference()/symmetric_difference() must never mutate either input set'
+ok('the non-mutating set operations genuinely leave both inputs untouched')
+
+# ---------------------------------------------------------------------------
+# Type-gate rejection -- every method typed `other: Set` (or `items:
+# ?list|dict` for the constructor) must reject a non-Set/non-list/non-dict
+# argument, now that this class was modernized from manual is_X() checks
+# to real parameter type gates.
+# ---------------------------------------------------------------------------
+assert raises(@() { set('not a list or dict') }), 'set() constructor must reject a string'
+assert raises(@() { set(42) }), 'set() constructor must reject a number'
+
+for method_name in ['union', 'intersect', 'difference', 'symmetric_difference',
+                     'is_disjoint', 'is_subset', 'is_superset', 'equals',
+                     'update', 'intersection_update', 'difference_update',
+                     'symmetric_difference_update'] {
+  var s1 = set([1, 2])
+  assert raises(@() { s1[method_name]([1, 2]) }),
+    '${method_name}() must reject a plain list instead of a Set'
+}
+ok('every Set-typed method rejects a non-Set argument via its real type gate')
 
 # ===========================================================================
 # Final summary

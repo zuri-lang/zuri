@@ -204,6 +204,54 @@ assert uuid.from_int(0) == uuid.NIL, 'from_int(0) must be the Nil UUID'
 ok('from_int() produces the Nil UUID for 0')
 
 # ---------------------------------------------------------------------------
+# UUID.int() -- 2026-08-30: had no test at all
+# ---------------------------------------------------------------------------
+# int() always returns a bigint now (2026-08-30 fix: it used to accumulate
+# in plain-number arithmetic, silently losing almost all precision for any
+# non-Nil UUID -- confirmed the old from_int(int()) round-trip produced
+# 'f47ac10b-58cc-4000-0000-000000000000' from
+# 'f47ac10b-58cc-4372-a567-0e02b2c3d479', garbage past the first ~15 digits).
+assert is_bigint(nil_id.int()), 'int() must return an exact bigint, not a lossy number'
+assert nil_id.int() == 0n, 'int() of the Nil UUID must be 0'
+assert uuid.from_int(nil_id.int()) == uuid.NIL, 'from_int(int()) must round-trip the Nil UUID'
+assert uuid.from_int(0) == uuid.NIL, 'from_int() must still accept a plain small number too'
+
+var int_rt = uuid.UUID(canonical)
+assert uuid.from_int(int_rt.int()) == canonical, 'int()/from_int() must round-trip an arbitrary UUID exactly (was completely broken)'
+
+var max_int_rt = uuid.UUID(uuid.MAX)
+assert uuid.from_int(max_int_rt.int()) == uuid.MAX, 'int()/from_int() must round-trip the Max UUID exactly'
+assert raises(@() { uuid.from_int(-1n) }), 'from_int() must reject a negative bigint'
+assert raises(@() { uuid.from_int('x') }), 'from_int() must reject a non-numeric value'
+ok('int() returns an exact bigint and round-trips correctly through from_int()')
+
+# ---------------------------------------------------------------------------
+# parse() -- the module-level convenience wrapper around UUID()
+# ---------------------------------------------------------------------------
+assert uuid.parse(canonical).equals(canonical), 'parse() must produce an equivalent UUID to the constructor'
+assert typeof(uuid.parse(canonical)) == 'UUID', 'parse() must return a real UUID instance'
+assert raises(@() { uuid.parse('garbage') }), 'parse() must raise for a malformed string, same as the constructor'
+ok('parse() is a working alias for the UUID constructor')
+
+# ---------------------------------------------------------------------------
+# v1()/v6() -- explicit clock_seq argument
+# ---------------------------------------------------------------------------
+var v1_seq_a = uuid.UUID(uuid.v1(nil, 0x1234))
+var v1_seq_b = uuid.UUID(uuid.v1(nil, 0x1234))
+assert v1_seq_a.hex()[16, 20] == v1_seq_b.hex()[16, 20],
+  'v1() with the same explicit clock_seq must encode the same clock_seq bits both times'
+ok('v1()/v6() honor an explicit clock_seq argument')
+
+# ---------------------------------------------------------------------------
+# The remaining namespace constants (only DNS/URL are exercised above)
+# ---------------------------------------------------------------------------
+assert uuid.is_valid(uuid.NAMESPACE_OID), 'NAMESPACE_OID must itself be a valid UUID'
+assert uuid.is_valid(uuid.NAMESPACE_X500), 'NAMESPACE_X500 must itself be a valid UUID'
+assert uuid.v5(uuid.NAMESPACE_OID, 'x') != uuid.v5(uuid.NAMESPACE_X500, 'x'),
+  'different namespace constants must produce different v5() output for the same name'
+ok('NAMESPACE_OID/NAMESPACE_X500 are valid and usable')
+
+# ---------------------------------------------------------------------------
 # nil_uuid() / max_uuid()
 # ---------------------------------------------------------------------------
 assert uuid.nil_uuid() == uuid.NIL, 'nil_uuid() must match the NIL constant'

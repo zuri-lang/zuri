@@ -255,6 +255,45 @@ assert missing_value.output.contains('error: option --name expects <name>'),
   'the error message must name the value placeholder rather than a generic type label'
 ok('a missing option value prints a clear error and exits 1')
 
+var unknown_opt = run_helper('args_unknown_option_error.zu')
+assert unknown_opt.exit_code == 1, 'an unknown option must exit non-zero'
+assert unknown_opt.output.contains('unknown option: --bogus'), 'the error message must name the unrecognized option'
+ok('an unknown option prints a clear error and exits 1')
+
+var required_missing = run_helper('args_required_missing_error.zu')
+assert required_missing.exit_code == 1, 'a missing required option must exit non-zero'
+assert required_missing.output.contains('required option --name is missing'),
+  'the error message must name the missing required option'
+ok('a missing required option prints a clear error and exits 1')
+
+# ---------------------------------------------------------------------------
+# Declare-time errors -- these raise ArgsError directly (not via
+# os.exit()), since they happen at add_option()/add_command() call time,
+# before parse() is ever invoked, so they're testable in-process.
+# ---------------------------------------------------------------------------
+assert raises(@() {
+  var p = args.Parser('dup')
+  p.add_option('name', 'Name', {})
+  p.add_option('name', 'Name again', {})
+}), 'add_option() must reject a duplicate long option name'
+
+assert raises(@() {
+  var p = args.Parser('dupshort')
+  p.add_option('name', 'Name', {short_name: 'n'})
+  p.add_option('nickname', 'Nickname', {short_name: 'n'})
+}), 'add_option() must reject a short_name already claimed by another option'
+
+assert raises(@() {
+  var p = args.Parser('dupcmd')
+  p.add_command('run', 'Run it')
+  p.add_command('run', 'Run it again')
+}), 'add_command() must reject a duplicate command name'
+
+assert raises(@() { args.Parser(42) }), 'Parser() must reject a non-string program name'
+assert raises(@() { args.Parser('x', 'not a bool') }), 'Parser() must reject a non-bool default_help'
+
+ok('declare-time duplicate-name and constructor validation errors all raise in-process')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

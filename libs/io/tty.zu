@@ -2,6 +2,12 @@
 
 import _io
 
+# The current platform's real termios bit/index values, read once from
+# native code rather than a per-flag native call each -- see the note
+# above the flag constants below for why these have to come from native
+# code at all instead of being written as literals here.
+const _flag_table = _io.TTY.flags()
+
 /**
  * class TTY is an interface to TTY terminals this class contains
  * definitions to control TTY terminals
@@ -16,7 +22,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TTY_IFLAG = 0
+  static var TTY_IFLAG = _flag_table.TTY_IFLAG
 
   /**
    * TTY attribute for output flags.
@@ -24,7 +30,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TTY_OFLAG = 1
+  static var TTY_OFLAG = _flag_table.TTY_OFLAG
 
   /**
    * TTY attribute for control flags.
@@ -32,7 +38,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TTY_CFLAG = 2
+  static var TTY_CFLAG = _flag_table.TTY_CFLAG
 
   /**
    * TTY attribute for local flags.
@@ -40,7 +46,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TTY_LFLAG = 3
+  static var TTY_LFLAG = _flag_table.TTY_LFLAG
 
   /**
    * TTY attribute for input speed.
@@ -48,7 +54,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TTY_ISPEED = 4
+  static var TTY_ISPEED = _flag_table.TTY_ISPEED
 
   /**
    * TTY attribute for output speed.
@@ -56,7 +62,28 @@ class TTY {
    * @type int
    * @static
    */
-  static var TTY_OSPEED = 5
+  static var TTY_OSPEED = _flag_table.TTY_OSPEED
+
+  /**
+   * TTY attribute for the special control-character table
+   * (`VEOF`, `VERASE`, etc. below are indices into it).
+   *
+   * @type int
+   * @static
+   */
+  static var TTY_CC = _flag_table.TTY_CC
+
+  # ---------------------------------------------------------------------
+  # Every constant below this point is a real termios bit or c_cc index,
+  # and those genuinely differ across platform families -- BSD/macOS and
+  # Linux/glibc disagree with each other on most of the control-flag and
+  # local-flag bits outright, and PowerPC-Linux differs from x86_64-Linux
+  # on a few of its own. Zuri has no conditional compilation to pick the
+  # right literal per platform the way Rust does, so these are read once
+  # from the native `_io` module at class-load time instead of being
+  # hand-typed here -- the native side already knows, correctly, which
+  # platform it was actually built for.
+  # ---------------------------------------------------------------------
 
   # input flags for input processing
 
@@ -66,7 +93,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var IGNBRK   = 0x00000001
+  static var IGNBRK   = _flag_table.IGNBRK
 
   /**
    * Map BREAK to SIGINTR.
@@ -74,7 +101,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var BRKINT   = 0x00000002
+  static var BRKINT   = _flag_table.BRKINT
 
   /**
    * Ignore (discard) parity errors.
@@ -82,7 +109,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var IGNPAR   = 0x00000004
+  static var IGNPAR   = _flag_table.IGNPAR
 
   /**
    * Mark parity and framing errors.
@@ -90,7 +117,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var PARMRK   = 0x00000008
+  static var PARMRK   = _flag_table.PARMRK
 
   /**
    * Enable checking of parity errors.
@@ -98,7 +125,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var INPCK    = 0x00000010
+  static var INPCK    = _flag_table.INPCK
 
   /**
    * Strip 8th bit off chars.
@@ -106,7 +133,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var ISTRIP   = 0x00000020
+  static var ISTRIP   = _flag_table.ISTRIP
 
   /**
    * Map NL into CR.
@@ -114,7 +141,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var INLCR    = 0x00000040
+  static var INLCR    = _flag_table.INLCR
 
   /**
    * Ignore CR.
@@ -122,7 +149,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var IGNCR    = 0x00000080
+  static var IGNCR    = _flag_table.IGNCR
 
   /**
    * Map CR to NL (ala CRMOD).
@@ -130,7 +157,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var ICRNL    = 0x00000100
+  static var ICRNL    = _flag_table.ICRNL
 
   /**
    * Enable output flow control.
@@ -138,7 +165,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var IXON     = 0x00000200
+  static var IXON     = _flag_table.IXON
 
   /**
    * Enable input flow control.
@@ -146,7 +173,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var IXOFF    = 0x00000400
+  static var IXOFF    = _flag_table.IXOFF
 
   /**
    * Any char will restart after stop.
@@ -154,15 +181,17 @@ class TTY {
    * @type int
    * @static
    */
-  static var IXANY    = 0x00000800
+  static var IXANY    = _flag_table.IXANY
 
   /**
-   * Maintain state for UTF-8 VERASE.
+   * Maintain state for UTF-8 VERASE. Only meaningful on Linux/Android/
+   * macOS -- reads as `0` (a no-op bit) on platforms without it, such
+   * as the BSDs.
    *
    * @type int
    * @static
    */
-  static var IUTF8    = 0x00004000
+  static var IUTF8    = _flag_table.IUTF8
 
   # output flags
 
@@ -172,7 +201,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var OPOST    = 0x00000001
+  static var OPOST    = _flag_table.OPOST
 
   /**
    * Map NL to CR-NL (ala CRMOD).
@@ -180,7 +209,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var ONLCR    = 0x00000002
+  static var ONLCR    = _flag_table.ONLCR
 
   # control flags
 
@@ -190,7 +219,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CSIZE    = 0x00000300
+  static var CSIZE    = _flag_table.CSIZE
 
   /**
    * 5 bits (pseudo).
@@ -198,7 +227,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CS5      = 0x00000000
+  static var CS5      = _flag_table.CS5
 
   /**
    * 6 bits.
@@ -206,7 +235,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CS6      = 0x00000100
+  static var CS6      = _flag_table.CS6
 
   /**
    * 7 bits.
@@ -214,7 +243,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CS7      = 0x00000200
+  static var CS7      = _flag_table.CS7
 
   /**
    * 8 bits.
@@ -222,7 +251,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CS8      = 0x00000300
+  static var CS8      = _flag_table.CS8
 
   /**
    * Send 2 stop bits.
@@ -230,7 +259,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CSTOPB   = 0x00000400
+  static var CSTOPB   = _flag_table.CSTOPB
 
   /**
    * Enable receiver.
@@ -238,7 +267,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CREAD    = 0x00000800
+  static var CREAD    = _flag_table.CREAD
 
   /**
    * Parity enable.
@@ -246,7 +275,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var PARENB   = 0x00001000
+  static var PARENB   = _flag_table.PARENB
 
   /**
    * Odd parity, else even.
@@ -254,7 +283,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var PARODD   = 0x00002000
+  static var PARODD   = _flag_table.PARODD
 
   /**
    * Hang up on last close.
@@ -262,7 +291,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var HUPCL    = 0x00004000
+  static var HUPCL    = _flag_table.HUPCL
 
   /**
    * Ignore modem status lines.
@@ -270,7 +299,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var CLOCAL   = 0x00008000
+  static var CLOCAL   = _flag_table.CLOCAL
 
   # "Local" flags - dumping ground for other state
   # Warning: some flags in this structure begin with
@@ -283,13 +312,13 @@ class TTY {
    * @type int
    * @static
    */
-  static var ECHOE    = 0x00000002
+  static var ECHOE    = _flag_table.ECHOE
 
   /**
    * Echo NL after line kill
    * @static
    */
-  static var ECHOK    = 0x00000004
+  static var ECHOK    = _flag_table.ECHOK
 
   /**
    * Enable echoing.
@@ -297,7 +326,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var ECHO     = 0x00000008
+  static var ECHO     = _flag_table.ECHO
 
   /**
    * Echo NL even if ECHO is off.
@@ -305,7 +334,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var ECHONL   = 0x00000010
+  static var ECHONL   = _flag_table.ECHONL
 
   /**
    * Enable signals INTR, QUIT, [D]SUSP.
@@ -313,7 +342,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var ISIG     = 0x00000080
+  static var ISIG     = _flag_table.ISIG
 
   /**
    * Canonicalize input lines.
@@ -321,7 +350,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var ICANON   = 0x00000100
+  static var ICANON   = _flag_table.ICANON
 
   /**
    * Enable DISCARD and LNEXT.
@@ -329,7 +358,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var IEXTEN   = 0x00000400
+  static var IEXTEN   = _flag_table.IEXTEN
 
   /**
    * Stop background jobs from output.
@@ -337,7 +366,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TOSTOP   = 0x00400000
+  static var TOSTOP   = _flag_table.TOSTOP
 
   /**
    * Don't flush after interrupt.
@@ -345,7 +374,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var NOFLSH   = 0x80000000
+  static var NOFLSH   = _flag_table.NOFLSH
 
   #-----------------------------------------------------------------------
 
@@ -357,7 +386,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TCSANOW    = 0
+  static var TCSANOW    = _flag_table.TCSANOW
 
   /**
    * Drain output, then change.
@@ -365,7 +394,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var TCSADRAIN  = 1
+  static var TCSADRAIN  = _flag_table.TCSADRAIN
 
   /**
    * Drain output, flush input.
@@ -373,17 +402,11 @@ class TTY {
    * @type int
    * @static
    */
-  static var TCSAFLUSH  = 2
+  static var TCSAFLUSH  = _flag_table.TCSAFLUSH
 
-  # Special Control Characters
-
-  /**
-   * ICANON.
-   *
-   * @type int
-   * @static
-   */
-  static var VEOF       = 0
+  # Special Control Characters -- indices into the TTY_CC table (see
+  # TTY_CC above) rather than bit flags. Only meaningful in ICANON mode
+  # unless noted otherwise.
 
   /**
    * ICANON.
@@ -391,7 +414,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VEOL       = 1
+  static var VEOF       = _flag_table.VEOF
 
   /**
    * ICANON.
@@ -399,7 +422,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VERASE     = 3
+  static var VEOL       = _flag_table.VEOL
 
   /**
    * ICANON.
@@ -407,7 +430,15 @@ class TTY {
    * @type int
    * @static
    */
-  static var VKILL      = 5
+  static var VERASE     = _flag_table.VERASE
+
+  /**
+   * ICANON.
+   *
+   * @type int
+   * @static
+   */
+  static var VKILL      = _flag_table.VKILL
 
   /**
    * ISIG.
@@ -415,7 +446,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VINTR      = 8
+  static var VINTR      = _flag_table.VINTR
 
   /**
    * ISIG.
@@ -423,7 +454,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VQUIT      = 9
+  static var VQUIT      = _flag_table.VQUIT
 
   /**
    * ISIG.
@@ -431,7 +462,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VSUSP      = 10
+  static var VSUSP      = _flag_table.VSUSP
 
   /**
    * IXON, IXOFF.
@@ -439,7 +470,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VSTART     = 12
+  static var VSTART     = _flag_table.VSTART
 
   /**
    * IXON, IXOFF.
@@ -447,7 +478,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VSTOP      = 13
+  static var VSTOP      = _flag_table.VSTOP
 
   /**
    * !ICANON.
@@ -455,7 +486,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VMIN       = 16
+  static var VMIN       = _flag_table.VMIN
 
   /**
    * !ICANON.
@@ -463,7 +494,7 @@ class TTY {
    * @type int
    * @static
    */
-  static var VTIME      = 17
+  static var VTIME      = _flag_table.VTIME
 
   /**
    * @note _file_ must be one of stdout and stderr
@@ -493,10 +524,13 @@ class TTY {
    *
    * > __NOTE__: - _option_ must be one ot the TCSA options above
    * > (see their description above) - _attrs_ must be a
-   * > dictionary of the TTY_ flags listed above - one can safely
-   * > omit any of the TTY_ flags listed above and Zuri will fill
-   * > in the default values as it exists. - This flags will be
-   * > merged and not overwritten
+   * > dictionary keyed by the TTY_ group constants above (TTY_IFLAG,
+   * > TTY_OFLAG, TTY_CFLAG, TTY_LFLAG, TTY_ISPEED, TTY_OSPEED hold a
+   * > single bit-flag number each; TTY_CC holds a list of control
+   * > character values, indexed by the VEOF/VERASE/etc constants
+   * > above) - one can safely omit any of the TTY_ groups listed
+   * > above and Zuri will fill in the default values as it exists.
+   * > - This flags will be merged and not overwritten
    * @param number option
    * @param dict attr
    * @returns bool

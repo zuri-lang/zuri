@@ -156,6 +156,188 @@ assert colors.contrast_ratio('#000000', '#ffffff') == colors.contrast_ratio('#ff
   'contrast_ratio() must be symmetric regardless of argument order'
 ok('contrast_ratio() matches the WCAG formula at its known extremes')
 
+# ---------------------------------------------------------------------------
+# style / text_color / background — 2026-08-30: none of these three
+# lookup tables, nor text() itself, had ever been touched by a test.
+# ---------------------------------------------------------------------------
+assert colors.style.reset == 0 and colors.style.bold == 1, 'style table must expose the standard ANSI SGR codes'
+assert colors.text_color.black == 30 and colors.text_color.white == 97,
+  'text_color table must expose the standard ANSI 16-color foreground codes'
+assert colors.background.black == 40 and colors.background.white == 107,
+  'background table must expose the standard ANSI 16-color background codes (foreground code + 10)'
+ok('style/text_color/background tables expose the standard ANSI codes')
+
+var styled = colors.text('hi', colors.text_color.green)
+assert styled == '\x1b[32mhi\x1b[00m', 'text() with a color must wrap value in the color escape and a trailing reset'
+ok('text() applies a foreground color and always resets afterward')
+
+var styled_bg = colors.text('hi', colors.text_color.red, colors.background.blue)
+assert styled_bg == '\x1b[31;44mhi\x1b[00m', 'text() with both color and bg must join them with a semicolon in one escape'
+ok('text() combines a foreground color and a background into one escape sequence')
+
+assert colors.text('hi') == 'hi\x1b[00m',
+  'text() with neither color nor bg must not embed the literal text "nil" (was concatenating nil + value)'
+ok('text() with no color or background never leaks a literal "nil" prefix')
+
+var nested = colors.text(colors.text('hi', colors.style.bold), colors.text_color.green)
+assert nested == '\x1b[32m\x1b[01mhi\x1b[00m\x1b[00m', 'text() must nest cleanly, each call adding its own wrap/reset pair'
+ok('text() nests correctly')
+
+# ---------------------------------------------------------------------------
+# rgb_to_ansi256 — direct assertions (previously only exercised
+# indirectly through other functions' own tests)
+# ---------------------------------------------------------------------------
+assert colors.rgb_to_ansi256(0, 0, 0) == 16, 'rgb_to_ansi256() of black must be the ANSI-256 black cube entry'
+assert colors.rgb_to_ansi256(255, 255, 255) == 231, 'rgb_to_ansi256() of white must be the ANSI-256 white cube entry'
+assert colors.rgb_to_ansi256(255, 0, 0) == 196, 'rgb_to_ansi256() of pure red must map to its known cube code'
+assert colors.rgb_to_ansi256(1, 1, 1) == 16, 'rgb_to_ansi256() of a near-black gray must still floor into the black grayscale ramp entry'
+assert raises(@() { colors.rgb_to_ansi256(1.5, 0, 0) }), 'rgb_to_ansi256() must reject a non-integer channel'
+ok('rgb_to_ansi256() matches known reference codes and validates its arguments')
+
+assert raises(@() { colors.ansi256_to_ansi('x') }), 'ansi256_to_ansi() must reject a non-integer argument'
+ok('ansi256_to_ansi() validates its argument')
+
+# ---------------------------------------------------------------------------
+# hex_to_ansi256 / hex_to_ansi / hex — the ANSI-256 -> ANSI-16 -> "pick
+# the best terminal-compatible representation" chain, previously
+# untested at every link
+# ---------------------------------------------------------------------------
+assert colors.hex_to_ansi256('#ff0000') == colors.rgb_to_ansi256(255, 0, 0),
+  'hex_to_ansi256() must agree with rgb_to_ansi256() on the same color'
+assert raises(@() { colors.hex_to_ansi256(123) }), 'hex_to_ansi256() must reject a non-string argument'
+ok('hex_to_ansi256() matches rgb_to_ansi256() and validates its argument')
+
+assert colors.hex_to_ansi('#ff0000') == colors.ansi256_to_ansi(colors.hex_to_ansi256('#ff0000')),
+  'hex_to_ansi() must be exactly ansi256_to_ansi(hex_to_ansi256(color))'
+assert raises(@() { colors.hex_to_ansi(123) }), 'hex_to_ansi() must reject a non-string argument'
+ok('hex_to_ansi() chains hex_to_ansi256() and ansi256_to_ansi() correctly')
+
+assert colors.hex('#ff0000') == colors.hex_to_ansi('ff0000'), 'hex() must be equivalent to hex_to_ansi(), leading # stripped or not'
+assert colors.hex('ff0000') == colors.hex('#ff0000'), 'hex() must accept the color with or without a leading #'
+assert raises(@() { colors.hex(123) }), 'hex() must reject a non-string argument'
+ok('hex() strips an optional # and matches hex_to_ansi()')
+
+# ---------------------------------------------------------------------------
+# rgb() / hsl() / hsv() / hwb() / cmyk() / xyz() -- the terminal-color
+# wrapper family, previously untested at every link. Each must be
+# exactly its own conversion chain down to ansi256_to_ansi/rgb_to_ansi256.
+# ---------------------------------------------------------------------------
+assert colors.rgb(255, 0, 0) == colors.ansi256_to_ansi(colors.rgb_to_ansi256(255, 0, 0)),
+  'rgb() must be ansi256_to_ansi(rgb_to_ansi256(r, g, b))'
+assert raises(@() { colors.rgb(1.5, 0, 0) }), 'rgb() must reject a non-integer channel'
+ok('rgb() chains rgb_to_ansi256() and ansi256_to_ansi() correctly')
+
+assert colors.hsl(0, 100, 50) == colors.rgb(255, 0, 0), 'hsl() of pure red in HSL must match rgb() of pure red'
+assert raises(@() { colors.hsl('x', 0, 0) }), 'hsl() must reject a non-numeric argument'
+ok('hsl() converts through hsl_to_rgb() to the same terminal color as rgb()')
+
+assert colors.hsv(0, 100, 100) == colors.rgb(255, 0, 0), 'hsv() of pure red in HSV must match rgb() of pure red'
+assert raises(@() { colors.hsv('x', 0, 0) }), 'hsv() must reject a non-numeric argument'
+ok('hsv() converts through hsv_to_rgb() to the same terminal color as rgb()')
+
+assert colors.hwb(0, 0, 0) == colors.rgb(255, 0, 0), 'hwb() of pure red (0 whiteness, 0 blackness) must match rgb() of pure red'
+assert raises(@() { colors.hwb('x', 0, 0) }), 'hwb() must reject a non-numeric argument'
+ok('hwb() converts through hwb_to_rgb() to the same terminal color as rgb()')
+
+assert colors.cmyk(0, 100, 100, 0) == colors.rgb(255, 0, 0), 'cmyk() of pure red must match rgb() of pure red'
+assert raises(@() { colors.cmyk('x', 0, 0, 0) }), 'cmyk() must reject a non-numeric argument'
+ok('cmyk() converts through cmyk_to_rgb() to the same terminal color as rgb()')
+
+assert raises(@() { colors.xyz('x', 0, 0) }), 'xyz() must reject a non-numeric argument'
+ok('xyz() validates its argument before converting')
+
+# ---------------------------------------------------------------------------
+# rgb_to_hsv / rgb_to_hwb / rgb_to_cmyk / rgb_to_xyz -- previously
+# untested reverse conversions, plus the two real NaN bugs this pass
+# found (both from the same root cause: a `x / y or 0` guard against
+# division-by-zero silently fails because NaN is truthy in Zuri, unlike
+# most languages this idiom is borrowed from)
+# ---------------------------------------------------------------------------
+assert colors.rgb_to_hsv(255, 0, 0) == [0, 100, 100], 'rgb_to_hsv() of pure red must be full saturation/value at hue 0'
+assert colors.rgb_to_hsv(0, 0, 0) == [0, 0, 0], 'rgb_to_hsv() of black must be zero value'
+assert raises(@() { colors.rgb_to_hsv(1.5, 0, 0) }), 'rgb_to_hsv() must reject a non-integer channel'
+ok('rgb_to_hsv() matches known reference points and validates its arguments')
+
+assert colors.rgb_to_hwb(255, 0, 0) == [0, 0, 0], 'rgb_to_hwb() of pure red must be zero whiteness and zero blackness'
+assert colors.rgb_to_hwb(0, 0, 0) == [0, 0, 100], 'rgb_to_hwb() of black must be full blackness'
+assert colors.rgb_to_hwb(255, 255, 255) == [0, 100, 0], 'rgb_to_hwb() of white must be full whiteness'
+assert raises(@() { colors.rgb_to_hwb(1.5, 0, 0) }), 'rgb_to_hwb() must reject a non-integer channel'
+ok('rgb_to_hwb() matches known reference points and validates its arguments')
+
+assert colors.rgb_to_cmyk(255, 0, 0) == [0, 100, 100, 0], 'rgb_to_cmyk() of pure red must be full magenta and yellow, zero black'
+assert colors.rgb_to_cmyk(0, 0, 0) == [0, 0, 0, 100],
+  'rgb_to_cmyk() of pure black must be [0, 0, 0, 100], not NaN in the c/m/y channels (division-by-zero when k=1 was unguarded)'
+var doc_example = colors.rgb_to_cmyk(103, 13, 69)
+assert close(doc_example[0], 0, 0.001) and close(doc_example[1], 87.37864077669903, 0.001)
+  and close(doc_example[2], 33.009708737864095, 0.001) and close(doc_example[3], 59.6078431372549, 0.001),
+  'rgb_to_cmyk() must match the module doc''s own worked example'
+assert raises(@() { colors.rgb_to_cmyk(1.5, 0, 0) }), 'rgb_to_cmyk() must reject a non-integer channel'
+ok('rgb_to_cmyk() matches known reference points (including the pure-black NaN regression) and validates its arguments')
+
+assert colors.rgb_to_xyz(0, 0, 0) == [0, 0, 0], 'rgb_to_xyz() of black must be the origin'
+var white_xyz = colors.rgb_to_xyz(255, 255, 255)
+assert close(white_xyz[0], 95.047, 0.01) and close(white_xyz[1], 100, 0.01) and close(white_xyz[2], 108.883, 0.01),
+  'rgb_to_xyz() of white must match the standard D65 white point'
+assert raises(@() { colors.rgb_to_xyz(1.5, 0, 0) }), 'rgb_to_xyz() must reject a non-integer channel'
+ok('rgb_to_xyz() matches the D65 white point and validates its arguments')
+
+assert raises(@() { colors.rgb_to_lab(1.5, 0, 0) }), 'rgb_to_lab() must reject a non-integer channel'
+ok('rgb_to_lab() validates its arguments')
+
+# ---------------------------------------------------------------------------
+# hsl_to_hsv / hsv_to_hsl -- previously untested, and hsv_to_hsl() carries
+# the same NaN-from-truthy-`or 0` bug as rgb_to_cmyk() above, triggered
+# by any fully-desaturated, fully-bright color (e.g. pure white)
+# ---------------------------------------------------------------------------
+assert colors.hsl_to_hsv(0, 0, 0) == [0, 0, 0], 'hsl_to_hsv() of black must be zero value'
+assert colors.hsl_to_hsv(0, 100, 50) == [0, 100, 100], 'hsl_to_hsv() of pure red in HSL must be full saturation/value in HSV'
+assert raises(@() { colors.hsl_to_hsv('x', 0, 0) }), 'hsl_to_hsv() must reject a non-numeric argument'
+ok('hsl_to_hsv() matches known reference points and validates its arguments')
+
+assert colors.hsv_to_hsl(0, 100, 100) == [0, 100, 50], 'hsv_to_hsl() of pure red in HSV must be full saturation, mid lightness in HSL'
+assert colors.hsv_to_hsl(0, 0, 100) == [0, 0, 100],
+  'hsv_to_hsl() of white (s=0, v=100) must be [0, 0, 100], not NaN saturation (divisor lmax=2 was unguarded)'
+assert raises(@() { colors.hsv_to_hsl('x', 0, 0) }), 'hsv_to_hsl() must reject a non-numeric argument'
+ok('hsv_to_hsl() matches known reference points (including the white NaN regression) and validates its arguments')
+
+# ---------------------------------------------------------------------------
+# cmyk_to_rgb / xyz_to_rgb / hwb_to_rgb -- reference values, previously
+# only sanity-bounds-checked (hwb_to_rgb) or untested entirely
+# ---------------------------------------------------------------------------
+assert colors.cmyk_to_rgb(0, 100, 100, 0) == [255, 0, 0], 'cmyk_to_rgb() of pure red must round-trip exactly'
+assert colors.cmyk_to_rgb(0, 0, 0, 0) == [255, 255, 255], 'cmyk_to_rgb() with zero ink must be white'
+assert colors.cmyk_to_rgb(0, 0, 0, 100) == [0, 0, 0], 'cmyk_to_rgb() with full black must be black regardless of c/m/y'
+assert raises(@() { colors.cmyk_to_rgb('x', 0, 0, 0) }), 'cmyk_to_rgb() must reject a non-numeric argument'
+ok('cmyk_to_rgb() matches known reference points and validates its arguments')
+
+assert colors.xyz_to_rgb(0, 0, 0) == [0, 0, 0], 'xyz_to_rgb() of the origin must be black'
+assert colors.xyz_to_rgb(95.047, 100, 108.883) == [255, 255, 255], 'xyz_to_rgb() of the D65 white point must be white'
+assert raises(@() { colors.xyz_to_rgb('x', 0, 0) }), 'xyz_to_rgb() must reject a non-numeric argument'
+ok('xyz_to_rgb() matches the D65 white point and validates its arguments')
+
+assert colors.hwb_to_rgb(0, 0, 100) == [0, 0, 0], 'hwb_to_rgb() with full blackness must be black'
+assert colors.hwb_to_rgb(0, 100, 0) == [255, 255, 255], 'hwb_to_rgb() with full whiteness must be white'
+ok('hwb_to_rgb() matches known reference points')
+
+assert raises(@() { colors.lab_to_rgb('x', 0, 0) }), 'lab_to_rgb() must reject a non-numeric argument'
+ok('lab_to_rgb() validates its arguments')
+
+# ---------------------------------------------------------------------------
+# Argument validation sweep for the color-manipulation and accessibility
+# functions -- their success paths are already covered above, this fills
+# in the previously-untested TypeError paths
+# ---------------------------------------------------------------------------
+assert raises(@() { colors.lighten(123, 5) }), 'lighten() must reject a non-string hex argument'
+assert raises(@() { colors.lighten('#fff', 'x') }), 'lighten() must reject a non-numeric amount'
+assert raises(@() { colors.darken('#fff', 'x') }), 'darken() must reject a non-numeric amount'
+assert raises(@() { colors.saturate(123, 5) }), 'saturate() must reject a non-string hex argument'
+assert raises(@() { colors.desaturate('#fff', 'x') }), 'desaturate() must reject a non-numeric amount'
+assert raises(@() { colors.invert(123) }), 'invert() must reject a non-string argument'
+assert raises(@() { colors.mix(123, '#fff') }), 'mix() must reject a non-string first argument'
+assert raises(@() { colors.mix('#fff', '#000', 'x') }), 'mix() must reject a non-numeric weight'
+assert raises(@() { colors.contrast_ratio(123, '#fff') }), 'contrast_ratio() must reject a non-string argument'
+ok('color manipulation and accessibility functions all validate their arguments')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

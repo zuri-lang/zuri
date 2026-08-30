@@ -142,7 +142,11 @@ def _get_sequence(v, bg) {
  * @returns string
  */
 def text(value, color, bg) {
-  return _get_sequence(color, bg) + value + _get_sequence(0)
+  # _get_sequence() returns real nil, not '', when neither color nor bg
+  # is given -- string-concatenating that directly would stringify to
+  # the literal text "nil" glued onto value, not an empty prefix.
+  var prefix = _get_sequence(color, bg)
+  return (prefix != nil ? prefix : '') + value + _get_sequence(0)
 }
 
 /**
@@ -534,10 +538,22 @@ def rgb_to_cmyk(r, g, b) {
   g /= 255
   b /= 255
 
-  var k = (1 - r).min(1 - g).min(1 - b),
-      c = (1 - r - k) / (1 - k) or 0,
-      m = (1 - g - k) / (1 - k) or 0,
-      y = (1 - b - k) / (1 - k) or 0
+  var k = (1 - r).min(1 - g).min(1 - b), c, m, y
+
+  # k == 1 means pure black (no red, green, or blue content at all), so
+  # the c/m/y formulas below all divide by zero -- their result is NaN,
+  # not the 0 the `or` pattern elsewhere in this module would normally
+  # catch, since NaN is truthy in Zuri. Pure black has no color content
+  # to speak of, so 0% is the correct C/M/Y reading here regardless.
+  if k == 1 {
+    c = 0
+    m = 0
+    y = 0
+  } else {
+    c = (1 - r - k) / (1 - k)
+    m = (1 - g - k) / (1 - k)
+    y = (1 - b - k) / (1 - k)
+  }
 
   return [c * 100, m * 100, y * 100, k * 100]
 }
@@ -749,9 +765,13 @@ def hsv_to_hsl(h, s, v) {
       l = (2 - s) * v,
       lmax = (2 - s) * vmax,
       sl = s * vmax
-  
-  sl /= lmax <= 1 ? lmax : 2 - lmax
-  sl = sl  or 0
+
+  # The divisor can be exactly 0 (e.g. s=0, v=1, where lmax works out to
+  # 2), which would divide sl's already-zero numerator into NaN rather
+  # than 0 -- and NaN is truthy in Zuri, so the `or 0` idiom used
+  # elsewhere in this module can't catch it the way it normally would.
+  var divisor = lmax <= 1 ? lmax : 2 - lmax
+  sl = divisor == 0 ? 0 : sl / divisor
   l /= 2
 
   return [h, sl * 100, l * 100]

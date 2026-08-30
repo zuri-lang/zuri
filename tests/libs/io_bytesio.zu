@@ -128,7 +128,34 @@ ok('BytesIO filesystem-oriented methods are correctly stubbed out')
 var truncated = io.BytesIO('0123456789'.to_bytes(), 'r+')
 truncated.truncate(3)
 assert truncated.stats().size == 10, 'truncate() only affects the readable window, not the underlying source itself'
-ok('BytesIO.truncate()')
+assert truncated.read().to_string() == '012', 'truncate() must actually cap what read() can return, even though the source itself is unchanged'
+ok('BytesIO.truncate() shrinks the readable window without touching the underlying source')
+
+var truncated_default = io.BytesIO('abcde'.to_bytes(), 'r+')
+truncated_default.truncate()
+assert truncated_default.read().to_string() == '', 'truncate() with no length must default to 0, making the stream unreadable'
+ok('BytesIO.truncate() with no argument defaults to length 0')
+
+# ---------------------------------------------------------------------------
+# flush() / number() / set_times() -- 2026-08-30: none of these had a test
+# ---------------------------------------------------------------------------
+var flushable = io.BytesIO('x'.to_bytes(), 'r')
+assert !raises(@() { flushable.flush() }), 'flush() must be a safe no-op for BytesIO, never raise'
+ok('BytesIO.flush() is a safe no-op')
+
+assert is_number(io.BytesIO(bytes(0), 'r').number()), 'number() must return a numeric file-descriptor-like value'
+ok('BytesIO.number() returns a numeric value')
+
+var timed = io.BytesIO('x'.to_bytes(), 'r')
+assert timed.set_times(111, 222) == true, 'set_times() must return true on success'
+assert timed.stats().atime == 111, 'set_times() must actually update atime'
+assert timed.stats().mtime == 222, 'set_times() must actually update mtime'
+assert timed.set_times(-1, 999) == true, 'set_times() must accept -1 to mean "leave this one unchanged"'
+assert timed.stats().atime == 111, 'set_times(-1, ...) must leave atime untouched'
+assert timed.stats().mtime == 999, 'set_times(..., x) must still update mtime when atime is -1'
+assert raises(@() { timed.set_times('x', 0) }), 'set_times() must reject a non-numeric atime'
+assert raises(@() { timed.set_times(0, 'x') }), 'set_times() must reject a non-numeric mtime'
+ok('BytesIO.set_times() updates atime/mtime, honoring -1 as "leave unchanged"')
 
 var deleted = io.BytesIO('x'.to_bytes(), 'r')
 deleted.delete()

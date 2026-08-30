@@ -473,14 +473,14 @@ class BytesIO {
       return bytes(0)
     }
 
-    var result
-    if length >= max_readable {
-      result = self.source[self._position,]
-    } else {
-      result = self.source[self._position, self._position + length]
-    }
+    # Cap to whichever is smaller: what the caller asked for, or what's
+    # actually left in the readable window (self.source itself may well
+    # extend further than that -- see truncate(), which shrinks the
+    # readable window without touching the underlying source at all).
+    var take = length.min(max_readable)
+    var result = self.source[self._position, self._position + take]
 
-    self._position += length
+    self._position += take
     return result
   }
 

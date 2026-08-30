@@ -7,7 +7,7 @@
  */
 
 import log
-import log { Transport }
+import log { Transport, ConsoleTransport }
 import os
 
 var _passed = 0
@@ -177,6 +177,154 @@ assert file('${log_path}.1').exists(), 'a first backup must exist after crossing
 assert file('${log_path}.2').exists(), 'a second backup must exist given backup_count=2'
 assert !file('${log_path}.3').exists(), 'no third backup should exist beyond backup_count'
 ok('FileTransport rotates by size and caps the number of backups')
+
+var close_probe = CapturingTransport()
+close_probe.set_level(log.None)
+log.add_transport(close_probe)
+close_probe.close()
+log('should not reach a closed transport')
+assert close_probe.records.length() == 0, 'close() must deregister the transport so it stops receiving log calls'
+ok('Transport.close() deregisters itself')
+
+# ---------------------------------------------------------------------------
+# LogLevel constants and get_level_name()
+# ---------------------------------------------------------------------------
+assert log.None < log.Debug and log.Debug < log.Info and log.Info < log.Warning and
+       log.Warning < log.Error and log.Error < log.Critical,
+  'the LogLevel constants must be strictly ordered None < Debug < Info < Warning < Error < Critical'
+
+assert log.get_level_name(log.Info) == 'INFO', 'get_level_name() must return the uppercased level name'
+assert log.get_level_name(log.Critical) == 'CRITICAL', 'get_level_name() must work for every level'
+assert raises(@() => log.get_level_name('x')), 'get_level_name() must reject a non-number'
+assert raises(@() => log.get_level_name(999)), 'get_level_name() must reject an out-of-range level'
+ok('LogLevel constants are ordered correctly and get_level_name() works')
+
+# ---------------------------------------------------------------------------
+# Transport getters/setters (2026-08-30: none of these had a single test)
+# ---------------------------------------------------------------------------
+var t = CapturingTransport()
+
+assert t.set_level(log.Warning) == t, 'set_level() must return self for chaining'
+assert t.get_level() == log.Warning, 'get_level() must return what set_level() set'
+
+assert t.set_max_level(log.Error) == t, 'set_max_level() must return self for chaining'
+assert t.get_max_level() == log.Error, 'get_max_level() must return what set_max_level() set'
+
+assert t.set_name('svc') == t, 'set_name() must return self for chaining'
+assert t.get_name() == 'svc', 'get_name() must return what set_name() set'
+assert raises(@() => t.set_name(42)), 'set_name() must reject a non-string'
+
+assert t.set_time_format('Y-m-d') == t, 'set_time_format() must return self for chaining'
+assert t.get_time_format() == 'Y-m-d', 'get_time_format() must return what set_time_format() set'
+assert raises(@() => t.set_time_format(42)), 'set_time_format() must reject a non-string'
+
+assert t.show_name(false) == t, 'show_name() must return self for chaining'
+assert t.show_time(false) == t, 'show_time() must return self for chaining'
+assert t.show_level(false) == t, 'show_level() must return self for chaining'
+assert raises(@() => t.show_name('x')), 'show_name() must reject a non-boolean'
+
+var custom_fmt = @(records, level, context) => 'CUSTOM'
+assert t.set_formatter(custom_fmt) == t, 'set_formatter() must return self for chaining'
+assert t.get_formatter() == custom_fmt, 'get_formatter() must return what set_formatter() set'
+assert raises(@() => t.set_formatter('not a function')), 'set_formatter() must reject a non-function'
+
+ok('Transport getters/setters all work and chain correctly')
+
+# ---------------------------------------------------------------------------
+# can_log() — level floor, level ceiling, enable/disable, None bypass
+# ---------------------------------------------------------------------------
+var cl = CapturingTransport()
+cl.set_level(log.Warning)
+cl.set_max_level(log.Error)
+
+assert cl.can_log(log.Info) == false, 'can_log() must reject below the configured minimum level'
+assert cl.can_log(log.Warning) == true, 'can_log() must accept exactly the minimum level'
+assert cl.can_log(log.Error) == true, 'can_log() must accept exactly the maximum level'
+assert cl.can_log(log.Critical) == false, 'can_log() must reject above the configured maximum level'
+assert cl.can_log(log.None) == true, 'can_log() must always accept None regardless of min/max level'
+
+cl.disable()
+assert cl.can_log(log.Error) == false, 'can_log() must reject everything while disabled'
+assert cl.can_log(log.None) == false, 'can_log() must reject even None while disabled'
+cl.enable()
+assert cl.can_log(log.Error) == true, 'can_log() must accept again after enable()'
+
+# can_log() must also respect the module-wide floor from log.set_level(),
+# independent of a transport's own (lower) minimum.
+log.set_level(log.None)
+var cl2 = CapturingTransport()
+cl2.set_level(log.None)
+log.set_level(log.Error)
+assert cl2.can_log(log.Warning) == false,
+  'can_log() must respect the global floor set by log.set_level(), even below the transport''s own minimum'
+log.set_level(log.None)
+
+ok('can_log() enforces the level floor, ceiling, enable/disable, the global floor, and the None bypass')
+
+# ---------------------------------------------------------------------------
+# format() — every show_time/show_name/show_level combination
+# ---------------------------------------------------------------------------
+var ft3 = CapturingTransport()
+ft3.show_time(false)
+ft3.show_name(false)
+ft3.show_level(false)
+assert ft3.format(['hi'], log.Info, nil) == ': hi', 'format() with everything hidden must show just the message after the separator'
+
+ft3.show_level(true)
+assert ft3.format(['hi'], log.Info, nil) == 'INFO: hi', 'format() must include the level when show_level is true'
+
+ft3.show_name(true)
+ft3.set_name('svc')
+assert ft3.format(['hi'], log.Info, nil) == 'INFO [svc]: hi', 'format() must include the name when show_name is true'
+
+ok('format() honors every show_time/show_name/show_level combination')
+
+# ---------------------------------------------------------------------------
+# The remaining flat level functions -- debug()/critical() (info/warn/error
+# already covered above)
+# ---------------------------------------------------------------------------
+var cap4 = CapturingTransport()
+cap4.set_level(log.None)
+log.add_transport(cap4)
+
+log.debug('a debug line')
+assert cap4.records.length() == 1 and cap4.records[0].level == log.Debug,
+  'debug() must log at LogLevel.Debug'
+
+log.critical('a critical line')
+assert cap4.records.length() == 2 and cap4.records[1].level == log.Critical,
+  'critical() must log at LogLevel.Critical'
+
+log.remove_transport(cap4)
+ok('debug() and critical() log at their respective levels')
+
+# ---------------------------------------------------------------------------
+# Module-level set_name() / default_transport() / remove_transport()
+# ---------------------------------------------------------------------------
+assert log.default_transport() != nil, 'default_transport() must return an instance'
+assert log.set_name('my-app') == log.default_transport(), 'set_name() must configure and return the default transport'
+assert log.default_transport().get_name() == 'my-app', 'the module-level set_name() must actually rename the default transport'
+assert raises(@() => log.set_name(42)), 'the module-level set_name() must reject a non-string'
+
+var throwaway = CapturingTransport()
+throwaway.set_level(log.None)
+log.add_transport(throwaway)
+log.add_transport(throwaway)   # adding the same transport twice must be a no-op
+log('one message')
+assert throwaway.records.length() == 1,
+  'add_transport() must not register the same transport twice (one log call must reach it exactly once)'
+
+log.remove_transport(throwaway)
+log('should not reach it now')
+assert throwaway.records.length() == 1, 'remove_transport() must actually deregister the transport'
+ok('module-level set_name()/default_transport()/remove_transport() all work correctly')
+
+# ---------------------------------------------------------------------------
+# ConsoleTransport — set_colors()
+# ---------------------------------------------------------------------------
+var console_probe = ConsoleTransport()
+assert console_probe.set_colors(false) == console_probe, 'set_colors() must return self for chaining'
+ok('ConsoleTransport.set_colors() chains correctly')
 
 # ===========================================================================
 # Final summary

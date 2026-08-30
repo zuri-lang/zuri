@@ -1,0 +1,10 @@
+# A required option that's missing from the command line calls
+# os.exit(1) via _option_error, so this is spawned as a real
+# subprocess from tests/libs/args.zu the same way
+# args_missing_value_error.zu is. No .out file on purpose -- it's a
+# helper, not a fixture in its own right.
+import args
+
+var p = args.Parser('reqmissing', false)
+p.add_option('name', 'Name', {short_name: 'n', type: args.STRING, required: true})
+p.parse([])

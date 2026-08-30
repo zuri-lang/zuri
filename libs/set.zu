@@ -469,7 +469,7 @@ class Set {
     return self._items.clone()
   }
 
-  to_json() {
+  @to_json() {
     return self.to_list()
   }
 

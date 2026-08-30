@@ -67,6 +67,10 @@ assert raises(@() { io.putc('ab') }), 'putc() must reject a multi-character stri
 assert raises(@() { io.putc([]) }), 'putc() must reject a non-string, non-number argument'
 ok('putc() validates its argument before writing anything')
 
+assert !raises(@() { io.putc('x') }), 'putc() must accept a single-character string'
+assert !raises(@() { io.putc(65) }), 'putc() must accept a character code and write it as that character'
+ok('putc() succeeds for a valid character or character code')
+
 assert raises(@() { io.getc(-1) }), 'getc() must reject a negative length before touching stdin'
 assert raises(@() { io.getc('x') }), 'getc() must reject a non-numeric length before touching stdin'
 ok('getc() validates its argument before touching stdin')

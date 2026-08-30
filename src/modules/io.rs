@@ -54,6 +54,7 @@ fn build_tty_submodule(vm: &mut VM) -> Value {
     ("exit_raw", native(vm, "exit_raw", 1, false, tty::exit_raw)),
     ("getsize", native(vm, "getsize", 1, false, tty::getsize)),
     ("flush", native(vm, "flush", 1, false, tty::flush)),
+    ("flags", native(vm, "flags", 0, false, tty::flags)),
   ];
   for (name, value) in members {
     module_val.as_module_mut().namespace.set(name, value);
@@ -334,6 +335,12 @@ mod tty {
 
     let ispeed = unsafe { libc::cfgetispeed(&termios) };
     let ospeed = unsafe { libc::cfgetospeed(&termios) };
+    let cc_items: Vec<Value> = termios
+      .c_cc
+      .iter()
+      .map(|&b| Value::number(b as f64))
+      .collect();
+    let cc_list = ctx.heap().alloc_list(cc_items);
     let pairs = vec![
       (Value::number(0.0), Value::number(termios.c_iflag as f64)),
       (Value::number(1.0), Value::number(termios.c_oflag as f64)),
@@ -341,6 +348,7 @@ mod tty {
       (Value::number(3.0), Value::number(termios.c_lflag as f64)),
       (Value::number(4.0), Value::number(ispeed as f64)),
       (Value::number(5.0), Value::number(ospeed as f64)),
+      (Value::number(6.0), cc_list),
     ];
     Ok(ctx.heap().alloc_dict(pairs))
   }
@@ -362,9 +370,9 @@ mod tty {
       return Err("tcsetattr() expects a numeric option".to_string());
     }
     let opt = match option.as_number() as i64 {
-      0 => libc::TCSANOW,
-      1 => libc::TCSADRAIN,
-      2 => libc::TCSAFLUSH,
+      x if x == libc::TCSANOW as i64 => libc::TCSANOW,
+      x if x == libc::TCSADRAIN as i64 => libc::TCSADRAIN,
+      x if x == libc::TCSAFLUSH as i64 => libc::TCSAFLUSH,
       other => return Err(format!("invalid tcsetattr() option {other}")),
     };
 
@@ -386,11 +394,34 @@ mod tty {
 
     let mut next = current;
     for (key, value) in attrs.as_dict() {
-      if !key.is_number() || !value.is_number() {
+      if !key.is_number() {
+        continue;
+      }
+      let key = key.as_number() as i64;
+
+      // key 6 (c_cc) is the one group that isn't a plain flag word --
+      // it's the array of special control characters -- so it takes a
+      // list rather than a number.
+      if key == 6 {
+        if !value.is_list() {
+          continue;
+        }
+        for (i, item) in value.as_list().iter().enumerate() {
+          if i >= next.c_cc.len() {
+            break;
+          }
+          if item.is_number() {
+            next.c_cc[i] = item.as_number() as libc::cc_t;
+          }
+        }
+        continue;
+      }
+
+      if !value.is_number() {
         continue;
       }
       let raw = value.as_number() as u32;
-      match key.as_number() as i64 {
+      match key {
         0 => next.c_iflag = raw as libc::tcflag_t,
         1 => next.c_oflag = raw as libc::tcflag_t,
         2 => next.c_cflag = raw as libc::tcflag_t,
@@ -462,6 +493,121 @@ mod tty {
     Ok(Value::bool(ok))
   }
 
+  /// `IUTF8` isn't exported by every `libc` target this crate covers
+  /// (FreeBSD/NetBSD/OpenBSD genuinely don't have the flag at all; the
+  /// glibc target module in this crate version happens to omit it too,
+  /// even though real glibc headers do define it). Its value is the
+  /// same `0x4000` everywhere it does exist, so this fills the gap by
+  /// hand rather than leaving Linux -- the one platform we actually
+  /// run this codebase on -- without it.
+  #[cfg(unix)]
+  fn iutf8_value() -> libc::tcflag_t {
+    if cfg!(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios")) {
+      0x00004000
+    } else {
+      0
+    }
+  }
+
+  /// Every termios bit/index constant `libs/io/tty.zu` exposes as a
+  /// `TTY.NAME` class constant, read straight out of this build's own
+  /// `libc` crate rather than hand-typed in Zuri. The bit layout of
+  /// `c_iflag`/`c_oflag`/`c_cflag`/`c_lflag` (and the `c_cc` control-
+  /// character index table) genuinely differs across platform families
+  /// -- BSD/macOS and Linux/glibc disagree on most of `c_cflag`/
+  /// `c_lflag` outright -- and Zuri itself has no conditional
+  /// compilation to express "pick the right literal for whoever's
+  /// running this." Only native code, via `libc`'s own per-target cfg
+  /// gates, actually knows which platform it was compiled for, so the
+  /// constants have to originate here and get read into Zuri once at
+  /// `TTY` class-load time instead.
+  #[cfg(unix)]
+  pub fn flags(ctx: &mut ZuriContext) -> Result<Value, String> {
+    enforce_arg_count!(ctx, 0);
+
+    let pairs: Vec<(&str, i64)> = vec![
+      // Wire-protocol group indices `tcgetattr`/`tcsetattr` use for
+      // their own dict keys, immediately above. These aren't OS
+      // values at all (they're internal to Zuri `io` module), but
+      // they're handed out from here too rather than duplicated as
+      // separate literals on the Zuri side, so the two ends of that
+      // protocol can never quietly drift apart.
+      ("TTY_IFLAG", 0),
+      ("TTY_OFLAG", 1),
+      ("TTY_CFLAG", 2),
+      ("TTY_LFLAG", 3),
+      ("TTY_ISPEED", 4),
+      ("TTY_OSPEED", 5),
+      ("TTY_CC", 6),
+      // set_attr()'s option argument
+      ("TCSANOW", libc::TCSANOW as i64),
+      ("TCSADRAIN", libc::TCSADRAIN as i64),
+      ("TCSAFLUSH", libc::TCSAFLUSH as i64),
+      // input flags
+      ("IGNBRK", libc::IGNBRK as i64),
+      ("BRKINT", libc::BRKINT as i64),
+      ("IGNPAR", libc::IGNPAR as i64),
+      ("PARMRK", libc::PARMRK as i64),
+      ("INPCK", libc::INPCK as i64),
+      ("ISTRIP", libc::ISTRIP as i64),
+      ("INLCR", libc::INLCR as i64),
+      ("IGNCR", libc::IGNCR as i64),
+      ("ICRNL", libc::ICRNL as i64),
+      ("IXON", libc::IXON as i64),
+      ("IXOFF", libc::IXOFF as i64),
+      ("IXANY", libc::IXANY as i64),
+      ("IUTF8", iutf8_value() as i64),
+      // output flags
+      ("OPOST", libc::OPOST as i64),
+      ("ONLCR", libc::ONLCR as i64),
+      // control flags
+      ("CSIZE", libc::CSIZE as i64),
+      ("CS5", libc::CS5 as i64),
+      ("CS6", libc::CS6 as i64),
+      ("CS7", libc::CS7 as i64),
+      ("CS8", libc::CS8 as i64),
+      ("CSTOPB", libc::CSTOPB as i64),
+      ("CREAD", libc::CREAD as i64),
+      ("PARENB", libc::PARENB as i64),
+      ("PARODD", libc::PARODD as i64),
+      ("HUPCL", libc::HUPCL as i64),
+      ("CLOCAL", libc::CLOCAL as i64),
+      // local flags
+      ("ECHOE", libc::ECHOE as i64),
+      ("ECHOK", libc::ECHOK as i64),
+      ("ECHO", libc::ECHO as i64),
+      ("ECHONL", libc::ECHONL as i64),
+      ("ISIG", libc::ISIG as i64),
+      ("ICANON", libc::ICANON as i64),
+      ("IEXTEN", libc::IEXTEN as i64),
+      ("TOSTOP", libc::TOSTOP as i64),
+      ("NOFLSH", libc::NOFLSH as i64),
+      // c_cc indices
+      ("VEOF", libc::VEOF as i64),
+      ("VEOL", libc::VEOL as i64),
+      ("VERASE", libc::VERASE as i64),
+      ("VKILL", libc::VKILL as i64),
+      ("VINTR", libc::VINTR as i64),
+      ("VQUIT", libc::VQUIT as i64),
+      ("VSUSP", libc::VSUSP as i64),
+      ("VSTART", libc::VSTART as i64),
+      ("VSTOP", libc::VSTOP as i64),
+      ("VMIN", libc::VMIN as i64),
+      ("VTIME", libc::VTIME as i64),
+    ];
+
+    let dict_pairs = pairs
+      .into_iter()
+      .map(|(name, value)| {
+        (
+          ctx.heap().alloc_string(name),
+          Value::number(value as f64),
+        )
+      })
+      .collect();
+    Ok(ctx.heap().alloc_dict(dict_pairs))
+  }
+
   #[cfg(not(unix))]
   pub fn tcgetattr(_ctx: &mut ZuriContext) -> Result<Value, String> {
     Err("TTY control is not supported on this platform".to_string())
@@ -480,6 +626,42 @@ mod tty {
   #[cfg(not(unix))]
   pub fn flush(_ctx: &mut ZuriContext) -> Result<Value, String> {
     Err("TTY control is not supported on this platform".to_string())
+  }
+
+  /// Unlike the other TTY natives, this one can't just return an
+  /// error: `libs/io/tty.zu`'s `TTY.NAME` constants call this once,
+  /// unconditionally, while the class itself is being defined -- and
+  /// that has to succeed on every platform (Windows included) simply
+  /// to let `import io` finish loading, even though none of these
+  /// values do anything real there (`tcgetattr`/`tcsetattr` above
+  /// already refuse to run at all on non-unix, before `set_raw()`
+  /// ever gets far enough to use them).
+  #[cfg(not(unix))]
+  pub fn flags(ctx: &mut ZuriContext) -> Result<Value, String> {
+    enforce_arg_count!(ctx, 0);
+
+    let dict_pairs = [
+      // the wire-protocol group indices are real and meaningful even
+      // here, so they carry their true value rather than 0
+      ("TTY_IFLAG", 0i64), ("TTY_OFLAG", 1), ("TTY_CFLAG", 2), ("TTY_LFLAG", 3),
+      ("TTY_ISPEED", 4), ("TTY_OSPEED", 5), ("TTY_CC", 6),
+      // everything below is a real termios value with no non-unix
+      // equivalent -- tcgetattr/tcsetattr above already refuse to run
+      // at all here, so these never do anything real either way
+      ("TCSANOW", 0), ("TCSADRAIN", 0), ("TCSAFLUSH", 0),
+      ("IGNBRK", 0), ("BRKINT", 0), ("IGNPAR", 0), ("PARMRK", 0), ("INPCK", 0),
+      ("ISTRIP", 0), ("INLCR", 0), ("IGNCR", 0), ("ICRNL", 0), ("IXON", 0), ("IXOFF", 0),
+      ("IXANY", 0), ("IUTF8", 0), ("OPOST", 0), ("ONLCR", 0), ("CSIZE", 0), ("CS5", 0),
+      ("CS6", 0), ("CS7", 0), ("CS8", 0), ("CSTOPB", 0), ("CREAD", 0), ("PARENB", 0),
+      ("PARODD", 0), ("HUPCL", 0), ("CLOCAL", 0), ("ECHOE", 0), ("ECHOK", 0), ("ECHO", 0),
+      ("ECHONL", 0), ("ISIG", 0), ("ICANON", 0), ("IEXTEN", 0), ("TOSTOP", 0), ("NOFLSH", 0),
+      ("VEOF", 0), ("VEOL", 0), ("VERASE", 0), ("VKILL", 0), ("VINTR", 0), ("VQUIT", 0),
+      ("VSUSP", 0), ("VSTART", 0), ("VSTOP", 0), ("VMIN", 0), ("VTIME", 0),
+    ]
+    .into_iter()
+    .map(|(name, value)| (ctx.heap().alloc_string(name), Value::number(value as f64)))
+    .collect();
+    Ok(ctx.heap().alloc_dict(dict_pairs))
   }
 
   /// `[columns, rows]` of the console `file` is attached to, via the

@@ -149,6 +149,33 @@ def _gregorian_timestamp() {
 # characters, zero-padded on the left.
 var _int_to_hex = convert.decimal_to_hex
 
+# There's no number->bigint conversion in Zuri (only a bigint literal or an
+# operation between two bigints ever produces one), so accumulating a value
+# in bigint arithmetic one hex digit at a time needs every digit to already
+# be a bigint -- this table is exactly that, indexed by digit value 0-15.
+var _HEX_DIGIT_BIGINTS = [
+  0n, 1n, 2n, 3n, 4n, 5n, 6n, 7n, 8n, 9n, 10n, 11n, 12n, 13n, 14n, 15n,
+]
+
+# Converts a non-negative bigint into exactly 32 lowercase hex characters,
+# zero-padded on the left -- the bigint-safe counterpart to _int_to_hex,
+# needed because convert.decimal_to_hex()/to_base() only accept a plain
+# `number` and a 128-bit UUID value is always far beyond what one of those
+# can hold exactly.
+def _bigint_to_hex32(n) {
+  var hex_chars = '0123456789abcdef'
+  var result = ''
+  var remaining = n
+
+  iter var i = 0; i < 32; i++ {
+    var digit = (remaining % 16n).to_number()
+    result = hex_chars[digit] + result
+    remaining = remaining / 16n
+  }
+
+  return result
+}
+
 # Shared clock-sequence state for v1/v6 (module-level, reset per process).
 var _v1_clock_seq = convert.bytes_to_decimal(crypto.random_bytes(2)) % 16384  # 14-bit random seed
 var _v1_last_ts   = 0
@@ -362,17 +389,18 @@ class UUID {
 
   /**
    * Returns the UUID as an integer (the numeric value of its 128
-   * bits). Large values will be returned as a Zuri number; for
-   * values exceeding safe integer precision use `hex()` and the
-   * `bigint` module.
+   * bits), as an exact `bigint` — a 128-bit value is always far
+   * beyond what a regular `number` can represent exactly, so this
+   * never uses one. Pass the result straight to `from_int()` to
+   * convert back.
    *
-   * @return number
+   * @return bigint
    */
   int() {
     var raw = _strip_hyphens(self.value)
-    var result = 0
+    var result = 0n
     for ch in raw {
-      result = result * 16 + ('0123456789abcdef').index_of(ch)
+      result = result * 16n + _HEX_DIGIT_BIGINTS[('0123456789abcdef').index_of(ch)]
     }
     return result
   }
@@ -964,16 +992,35 @@ def from_bytes(bytes_list: list|bytes) {
 
 /**
  * Converts an integer value (the numeric representation of a
- * 128-bit UUID) into a canonical UUID string.
+ * 128-bit UUID, as returned by `UUID.int()`) into a canonical UUID
+ * string.
  *
- * For very large integers (> 2^53) the result may lose precision
- * due to Zuri's floating-point number type. In that case, prefer
- * `from_bytes()`.
+ * Accepts either a `bigint` (the exact way to represent a full
+ * 128-bit value, and what `UUID.int()` itself returns) or a plain
+ * `number` for a small value that's within safe integer precision
+ * (e.g. `from_int(0)`).
  *
- * @param int int_val The integer value of the UUID.
+ * @param {number|bigint} int_val The integer value of the UUID.
  * @return string Canonical UUID string.
  */
-def from_int(int_val: int) {
-  var hex32 = _int_to_hex(int_val, 32)
-  return _format(hex32)
+def from_int(int_val) {
+  if is_bigint(int_val) {
+    # 2^128 - 1, the largest value 128 bits can hold -- verified by
+    # actually computing 2n repeatedly squared in this VM rather than
+    # trusting a hand-typed 39-digit literal (an earlier draft of this
+    # constant was off by a factor of 2 from mis-remembering it).
+    if int_val < 0n or int_val > 680564733841876926926749214863536422911n {
+      raise ValueError('uuid.from_int: value out of range for a 128-bit UUID')
+    }
+    return _format(_bigint_to_hex32(int_val))
+  }
+
+  if !is_int(int_val) {
+    raise TypeError('integer or bigint expected, ${typeof(int_val)} given')
+  }
+  if int_val < 0 {
+    raise ValueError('uuid.from_int: value out of range for a 128-bit UUID')
+  }
+
+  return _format(_int_to_hex(int_val, 32))
 }
