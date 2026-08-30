@@ -28,6 +28,7 @@ pub fn install(vm: &mut VM) {
   register(vm, "print", 0, true, print_fn);
   register(vm, "rand", 0, true, rand_fn);
 
+  register(vm, "is_bigint", 1, false, is_bigint);
   register(vm, "is_bool", 1, false, is_bool);
   register(vm, "is_bytes", 1, false, is_bytes);
   register(vm, "is_callable", 1, false, is_callable);
@@ -394,6 +395,11 @@ fn rand_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 // is_* type predicates
+
+fn is_bigint(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  Ok(Value::bool(ctx.args[0].is_bigint()))
+}
 
 fn is_bool(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);

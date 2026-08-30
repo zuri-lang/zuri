@@ -1,0 +1,19 @@
+bigint_literal: true
+zero_bigint: true
+negative_bigint: true
+bigint_arithmetic_result: true
+overflowed_literal: true
+regular_int: false
+regular_float: false
+lossy_i64_max_literal: false
+string: false
+bool: false
+nil: false
+list: false
+dict: false
+bytes: false
+instance: false
+is_number(bigint): false
+is_int(bigint): false
+typeof(bigint): bigint
+is_bigint(regular number): false

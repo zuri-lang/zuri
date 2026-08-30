@@ -162,6 +162,21 @@ def rand(x: ?number, y: ?number) {}
 
 
 /**
+ * Returns `true` if x is a bigint or `false` otherwise. A bigint is
+ * a distinct type from `number` created either with the `n`
+ * literal suffix (`123n`) or by an operation whose result overflows
+ * what a regular `number` can represent exactly. `is_number(x)` and
+ * `is_int(x)` are both `false` for a bigint even though it holds an
+ * integer value; check `is_bigint(x)` separately when a value might
+ * be either.
+ *
+ * @param {any} x The value to check.
+ * @returns {boolean}
+ */
+def is_bigint(x: any) {}
+
+
+/**
  * Returns `true` if x is a boolean or `false` otherwise.
  *
  * @param {any} x The value to check.

@@ -1,0 +1,35 @@
+class Foo {
+  @new() {}
+}
+
+def check(label, v) {
+  echo '${label}: ${is_bigint(v)}'
+}
+
+check('bigint_literal', 5n)
+check('zero_bigint', 0n)
+check('negative_bigint', -5n)
+check('bigint_arithmetic_result', 2n * 3n)
+check('overflowed_literal', 18446744073709551615)   # promotes past i64::MAX
+check('regular_int', 42)
+check('regular_float', 3.5)
+check('lossy_i64_max_literal', 9223372036854775807)  # known pre-existing limitation: still a lossy number, not bigint
+check('string', 'hello')
+check('bool', true)
+check('nil', nil)
+check('list', [1, 2, 3])
+check('dict', {a: 1})
+check('bytes', bytes(4))
+check('instance', Foo())
+
+# is_number()/is_int() must both be false for a bigint even though it
+# holds an integer value -- the whole reason is_bigint() needed to exist
+# as its own distinct check.
+var big = 5n
+echo 'is_number(bigint): ${is_number(big)}'
+echo 'is_int(bigint): ${is_int(big)}'
+echo 'typeof(bigint): ${typeof(big)}'
+
+# and the reverse: is_bigint() must be false for a plain number, even a
+# very large one that still fits as a float.
+echo 'is_bigint(regular number): ${is_bigint(42)}'
