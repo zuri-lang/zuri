@@ -96,7 +96,7 @@ def compute(size)
   var chunks = isolate.map(m.computeRows, jobs)
   for rows in chunks {
     for row in rows {
-      print(row)
+      print(bytes(row))
     }
   }
 }

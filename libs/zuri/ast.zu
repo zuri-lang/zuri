@@ -200,7 +200,9 @@ class Node {
    * var nodes = zuri.parse('def add(a, b) { return a + b }')
    * echo nodes[0].dump()
    * ```
+   * 
    * prints
+   * 
    * ```
    * Function@1:5
    *   name: 'add'
