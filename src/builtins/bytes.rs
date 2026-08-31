@@ -39,6 +39,7 @@ pub static BYTES_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("first", first),
     method("last", last),
     method_n("get", 1, get),
+    method_n("take", 1, take),
     method_n("split", 1, split),
     method("is_alpha", is_alpha),
     method("is_alnum", is_alnum),
@@ -211,6 +212,23 @@ fn get(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(
     ctx.args[0].bytes_get(idx as usize).unwrap() as f64
   ))
+}
+
+/// `take(n)`; first `n` items, or the whole bytes (copied) if
+/// `n >= length()`. For `n < 0`, per spec this is `length() + n`
+/// items from the front.
+fn take(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let items = ctx.args[0].as_bytes();
+  let len = items.len() as i64;
+  let n = ctx.args[1].as_number() as i64;
+
+  let take_count = if n < 0 { (len + n).max(0) } else { n.min(len) };
+
+  let result: Vec<u8> = items.into_iter().take(take_count as usize).collect();
+  Ok(ctx.vm.heap_mut().alloc_bytes(result))
 }
 
 /// Splits on a delimiter byte sequence, returning a list of new bytes

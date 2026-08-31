@@ -296,6 +296,30 @@ class bytes {
 
 
   /**
+   * Returns a new byte stream containing the first _n_ items in the
+   * bytes or a new copy of the bytes if _n_ greater than or equals
+   * to the `bytes.length()`. If `n < 0`, returns
+   * `bytes.take(bytes.length() - n)`.
+   *
+   * For example:
+   *
+   * ```zuri-repl
+   * %> var a = bytes([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+   * %> a.take(4)
+   * (0a 0b 0c 0d)
+   * %> a.take(11) # taking more than the size of the bytes
+   * (0a 0b 0c 0d 0e 0f 10 11 12 13 14)
+   * %> a.take(-5)   # taking n < 0
+   * (0a 0b 0c 0d 0e 0f)
+   * ```
+   *
+   * @param {int} n
+   * @return {bytes}
+   */
+  take(n: int) {}
+
+
+  /**
    * Splits the content of a byte stream based on the specified
    * delimiter.
    *

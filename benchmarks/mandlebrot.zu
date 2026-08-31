@@ -10,7 +10,7 @@ const BUFFER_SIZE = 8_192
 
 class Mandelbrot {
   var size
-  var buf = [0] * BUFFER_SIZE
+  var buf = bytes(BUFFER_SIZE)
   var bufLen = 0
   var fac
   var shift
