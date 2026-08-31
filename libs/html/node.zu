@@ -1,0 +1,2076 @@
+/**
+ * @module html.node
+ *
+ * The document tree that `html.parse()` produces, and everything you
+ * can do with it: walking it, querying it, reading and changing
+ * attributes and content, and serializing any part of it back to
+ * markup.
+ *
+ * The shape follows the DOM closely enough that the names are
+ * familiar, without pretending to be a browser. Where this module
+ * departs from the DOM it does so deliberately and says why in the
+ * relevant doc block; the two differences worth knowing up front are:
+ *
+ * - `children` holds **every** child node (elements, text and
+ *   comments alike), which is what the DOM calls `childNodes`. Use
+ *   `child_elements()` when you only want elements.
+ * - There are no property setters in Zuri, so every DOM property that
+ *   can be written is a pair of methods: `text_content()` reads and
+ *   `set_text_content()` writes.
+ *
+ * ```zuri
+ * import html
+ *
+ * var doc = html.parse('<ul><li class="a">One<li class="a">Two</ul>')
+ *
+ * for item in doc.query_selector_all('li.a') {
+ *   echo item.text_content()
+ * }
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import @.namespaces { * }
+
+import .entities
+import .selector
+import .parser
+
+
+/**
+ * Node type of an `Element`.
+ */
+var NODE_ELEMENT = 1
+
+/**
+ * Node type of a `Text` node.
+ */
+var NODE_TEXT = 3
+
+/**
+ * Node type of a `Comment`.
+ */
+var NODE_COMMENT = 8
+
+/**
+ * Node type of a `Document`.
+ */
+var NODE_DOCUMENT = 9
+
+/**
+ * Node type of a `DocumentType` (the `<!DOCTYPE ...>` node).
+ */
+var NODE_DOCUMENT_TYPE = 10
+
+/**
+ * Node type of a `DocumentFragment`, including the fragment that
+ * holds a `<template>` element's content.
+ */
+var NODE_DOCUMENT_FRAGMENT = 11
+
+
+/**
+ * The HTML elements that are written without a closing tag and can
+ * hold no content. Serializing one of these emits `<br>` and nothing
+ * else, and any child it somehow acquired is not written out, because
+ * markup that cannot be read back is worse than markup that loses it.
+ *
+ * This is the list the fragment serialization algorithm uses, which
+ * is wider than the standard's modern "void elements" list: it also
+ * covers `basefont`, `bgsound`, `frame`, `keygen` and `param`, five
+ * legacy elements that were dropped from the authoring list but still
+ * take no end tag and still turn up in real documents.
+ */
+var VOID_ELEMENTS = [
+  'area', 'base', 'basefont', 'bgsound', 'br', 'col', 'embed',
+  'frame', 'hr', 'img', 'input', 'keygen', 'link', 'meta', 'param',
+  'source', 'track', 'wbr',
+]
+
+/**
+ * Elements whose text children are markup, not content: their text is
+ * written out byte for byte and never escaped, because escaping it
+ * would change what a stylesheet or a script means.
+ */
+var RAW_TEXT_ELEMENTS = [
+  'style', 'script', 'xmp', 'iframe', 'noembed', 'noframes',
+  'plaintext', 'noscript',
+]
+
+
+/**
+ * Raised when a tree mutation would produce a structure that cannot
+ * exist, such as inserting a node before something that is not a
+ * child of the target, or making a node its own ancestor.
+ */
+class HierarchyError < Error {
+  /**
+   * @param string message
+   * @constructor
+   */
+  @new(message) {
+    parent(message)
+  }
+}
+
+
+/**
+ * The base class every node in a parsed document inherits from.
+ *
+ * You never construct a `Node` directly; parsing produces `Document`,
+ * `Element`, `Text`, `Comment` and `DocumentType` instances, and this
+ * class is where the behaviour they share lives.
+ *
+ * @printable
+ */
+class Node {
+
+  /**
+   * One of the `NODE_*` constants in this module, identifying which
+   * subclass this node actually is. Comparing this is cheaper and
+   * clearer than an `instance_of()` chain.
+   */
+  var node_type = 0
+
+  /**
+   * The node this one hangs off, or `nil` for a `Document` and for
+   * any node that has been detached.
+   */
+  var parent_node = nil
+
+  /**
+   * Every child of this node in document order: elements, text nodes
+   * and comments together. This is the DOM's `childNodes`, not its
+   * `children`; `child_elements()` gives you the element-only view.
+   *
+   * Treat this list as read-only. Mutating it directly leaves the
+   * children's `parent_node` pointing at the wrong place; use
+   * `append_child()` and friends instead.
+   */
+  var children = []
+
+  /**
+   * @param number node_type
+   * @constructor
+   */
+  @new(node_type: number) {
+    self.node_type = node_type
+    self.children = []
+  }
+
+  /**
+   * True when this node is an `Element`.
+   *
+   * @returns bool
+   */
+  is_element() {
+    return self.node_type == NODE_ELEMENT
+  }
+
+  /**
+   * True when this node is a `Text` node.
+   *
+   * @returns bool
+   */
+  is_text() {
+    return self.node_type == NODE_TEXT
+  }
+
+  /**
+   * True when this node is a `Comment`.
+   *
+   * @returns bool
+   */
+  is_comment() {
+    return self.node_type == NODE_COMMENT
+  }
+
+  /**
+   * True when this node is a `Document`.
+   *
+   * @returns bool
+   */
+  is_document() {
+    return self.node_type == NODE_DOCUMENT
+  }
+
+  /**
+   * True when this node is a `DocumentType`.
+   *
+   * @returns bool
+   */
+  is_doctype() {
+    return self.node_type == NODE_DOCUMENT_TYPE
+  }
+
+  /**
+   * True when this node is a `DocumentFragment`.
+   *
+   * @returns bool
+   */
+  is_fragment() {
+    return self.node_type == NODE_DOCUMENT_FRAGMENT
+  }
+
+  /**
+   * The first child of this node, or `nil` when it has none.
+   *
+   * @returns ?Node
+   */
+  first_child() {
+    if self.children.is_empty() {
+      return nil
+    }
+
+    return self.children[0]
+  }
+
+  /**
+   * The last child of this node, or `nil` when it has none.
+   *
+   * @returns ?Node
+   */
+  last_child() {
+    if self.children.is_empty() {
+      return nil
+    }
+
+    return self.children[-1]
+  }
+
+  /**
+   * Position of this node among its parent's children, or `-1` when
+   * it has no parent.
+   *
+   * @returns number
+   */
+  index_in_parent() {
+    if self.parent_node == nil {
+      return -1
+    }
+
+    var siblings = self.parent_node.children
+
+    iter var i = 0; i < siblings.length(); i++ {
+      if id(siblings[i]) == id(self) {
+        return i
+      }
+    }
+
+    return -1
+  }
+
+  /**
+   * The node immediately after this one under the same parent, or
+   * `nil` when this is the last child or has no parent.
+   *
+   * @returns ?Node
+   */
+  next_sibling() {
+    var i = self.index_in_parent()
+
+    if i < 0 or i + 1 >= self.parent_node.children.length() {
+      return nil
+    }
+
+    return self.parent_node.children[i + 1]
+  }
+
+  /**
+   * The node immediately before this one under the same parent, or
+   * `nil` when this is the first child or has no parent.
+   *
+   * @returns ?Node
+   */
+  previous_sibling() {
+    var i = self.index_in_parent()
+
+    if i <= 0 {
+      return nil
+    }
+
+    return self.parent_node.children[i - 1]
+  }
+
+  /**
+   * The next sibling that is an element, skipping over text and
+   * comments, or `nil` when there is none.
+   *
+   * @returns ?Element
+   */
+  next_element_sibling() {
+    var i = self.index_in_parent()
+
+    if i < 0 {
+      return nil
+    }
+
+    var siblings = self.parent_node.children
+
+    iter var n = i + 1; n < siblings.length(); n++ {
+      if siblings[n].is_element() {
+        return siblings[n]
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The previous sibling that is an element, skipping over text and
+   * comments, or `nil` when there is none.
+   *
+   * @returns ?Element
+   */
+  previous_element_sibling() {
+    var i = self.index_in_parent()
+
+    if i < 0 {
+      return nil
+    }
+
+    iter var n = i - 1; n >= 0; n-- {
+      if self.parent_node.children[n].is_element() {
+        return self.parent_node.children[n]
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * This node's children that are elements, in document order.
+   *
+   * A fresh list is returned on every call, so changing it does not
+   * change the tree.
+   *
+   * @returns list
+   */
+  child_elements() {
+    var out = []
+
+    for child in self.children {
+      if child.is_element() {
+        out.append(child)
+      }
+    }
+
+    return out
+  }
+
+  /**
+   * The first child that is an element, or `nil`.
+   *
+   * @returns ?Element
+   */
+  first_element_child() {
+    for child in self.children {
+      if child.is_element() {
+        return child
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The last child that is an element, or `nil`.
+   *
+   * @returns ?Element
+   */
+  last_element_child() {
+    iter var i = self.children.length() - 1; i >= 0; i-- {
+      if self.children[i].is_element() {
+        return self.children[i]
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The topmost node reachable by following `parent_node`, which for
+   * a parsed document is the `Document` itself and for a detached
+   * subtree is that subtree's own root.
+   *
+   * @returns Node
+   */
+  root() {
+    var node = self
+
+    while node.parent_node != nil {
+      node = node.parent_node
+    }
+
+    return node
+  }
+
+  /**
+   * True when _other_ is this node or one of its ancestors.
+   *
+   * @param Node other
+   * @returns bool
+   */
+  has_ancestor(other: Node) {
+    var node = self
+
+    while node != nil {
+      if id(node) == id(other) {
+        return true
+      }
+
+      node = node.parent_node
+    }
+
+    return false
+  }
+
+  /**
+   * Every node beneath this one, in document order, not including
+   * this node itself.
+   *
+   * @returns list
+   */
+  descendants() {
+    var out = []
+    _collect_descendants(self, out)
+    return out
+  }
+
+  /**
+   * Calls _callback_ once for every node beneath this one, in
+   * document order. The node is passed as the only argument.
+   *
+   * Returning `false` from the callback prunes that node's subtree;
+   * any other return value (including `nil`) keeps walking. The walk
+   * reads `children` as it goes, so do not restructure the tree from
+   * inside the callback.
+   *
+   * @param function callback
+   */
+  walk(callback: function) {
+    for child in self.children {
+      if callback(child) == false {
+        continue
+      }
+
+      child.walk(callback)
+    }
+  }
+
+  /**
+   * Adds _node_ as this node's last child, detaching it from wherever
+   * it currently lives first. Returns _node_.
+   *
+   * @param Node node
+   * @returns Node
+   * @throws HierarchyError when _node_ is this node or one of its
+   *   ancestors, which would make the tree cyclic.
+   */
+  append_child(node: Node) {
+    self._check_insertable(node)
+    node.detach()
+
+    self.children.append(node)
+    node.parent_node = self
+
+    return node
+  }
+
+  /**
+   * Inserts _node_ immediately before _reference_, which must be a
+   * child of this node. Passing `nil` for _reference_ appends.
+   * Returns _node_.
+   *
+   * @param Node node
+   * @param ?Node reference
+   * @returns Node
+   * @throws HierarchyError when _reference_ is not a child of this
+   *   node, or when the insertion would make the tree cyclic.
+   */
+  insert_before(node: Node, reference: ?Node) {
+    if reference == nil {
+      return self.append_child(node)
+    }
+
+    self._check_insertable(node)
+
+    # Resolved before the detach, because detaching `node` can shift
+    # the reference's index when the two share a parent.
+    node.detach()
+
+    var at = reference.index_in_parent()
+
+    if at < 0 or id(reference.parent_node) != id(self) {
+      raise HierarchyError(
+        'the reference node is not a child of this node'
+      )
+    }
+
+    self.children.insert(node, at)
+    node.parent_node = self
+
+    return node
+  }
+
+  /**
+   * Removes _node_ from this node's children and returns it. The
+   * removed node keeps its own children; only its link to this parent
+   * is broken.
+   *
+   * @param Node node
+   * @returns Node
+   * @throws HierarchyError when _node_ is not a child of this node.
+   */
+  remove_child(node: Node) {
+    if id(node.parent_node) != id(self) {
+      raise HierarchyError('the node is not a child of this node')
+    }
+
+    var at = node.index_in_parent()
+    self.children.remove_at(at)
+    node.parent_node = nil
+
+    return node
+  }
+
+  /**
+   * Puts _replacement_ where _existing_ currently sits and returns
+   * _existing_, now detached.
+   *
+   * @param Node replacement
+   * @param Node existing
+   * @returns Node
+   * @throws HierarchyError when _existing_ is not a child of this
+   *   node, or when the replacement would make the tree cyclic.
+   */
+  replace_child(replacement: Node, existing: Node) {
+    if id(existing.parent_node) != id(self) {
+      raise HierarchyError('the node being replaced is not a child of this node')
+    }
+
+    self._check_insertable(replacement)
+    replacement.detach()
+
+    var at = existing.index_in_parent()
+
+    self.children[at] = replacement
+    replacement.parent_node = self
+    existing.parent_node = nil
+
+    return existing
+  }
+
+  /**
+   * Removes this node from its parent, if it has one. Returns this
+   * node so calls can be chained.
+   *
+   * @returns Node
+   */
+  detach() {
+    if self.parent_node != nil {
+      self.parent_node.remove_child(self)
+    }
+
+    return self
+  }
+
+  /**
+   * Removes every child of this node. The children are detached but
+   * otherwise untouched.
+   *
+   * @returns Node
+   */
+  clear_children() {
+    for child in self.children {
+      child.parent_node = nil
+    }
+
+    self.children = []
+    return self
+  }
+
+  /**
+   * Guards the mutation methods against the one structure that cannot
+   * be represented: a node contained in itself.
+   *
+   * @param Node node
+   * @throws HierarchyError
+   */
+  _check_insertable(node: Node) {
+    if self.has_ancestor(node) {
+      raise HierarchyError('a node cannot be made a descendant of itself')
+    }
+  }
+
+  /**
+   * The concatenated text of every `Text` node beneath this one, in
+   * document order. Comments and doctypes contribute nothing.
+   *
+   * `Text` and `Comment` override this to return their own data.
+   *
+   * Unlike the browser DOM, a `Document` answers this the same way an
+   * element does rather than returning nothing; being told the text of
+   * a document you just parsed is far more useful than being told
+   * `nil`.
+   *
+   * @returns string
+   */
+  text_content() {
+    var parts = []
+
+    for node in self.descendants() {
+      if node.is_text() {
+        parts.append(node.data)
+      }
+    }
+
+    return ''.join(parts)
+  }
+
+  /**
+   * Replaces every child of this node with a single `Text` node
+   * holding _value_. Passing an empty string just empties the node,
+   * matching the DOM.
+   *
+   * @param string value
+   * @returns Node
+   */
+  set_text_content(value: string) {
+    self.clear_children()
+
+    if !value.is_empty() {
+      self.append_child(Text(value))
+    }
+
+    return self
+  }
+
+  /**
+   * The markup of this node's children, serialized the way the HTML
+   * fragment serialization algorithm specifies.
+   *
+   * @returns string
+   */
+  inner_html() {
+    var out = []
+
+    for child in self.children {
+      child.serialize_into(out)
+    }
+
+    return ''.join(out)
+  }
+
+  /**
+   * Parses _source_ as HTML in the context of this node and replaces
+   * all of its children with the result.
+   *
+   * The parse runs the fragment parsing algorithm with this node as
+   * the context element, so `source` is interpreted exactly as it
+   * would be had it appeared inside this element in the original
+   * document. That matters: `'<td>x'` keeps its cell inside a `<tr>`
+   * and loses it anywhere else, which is what a browser does too.
+   *
+   * Nothing is executed and nothing is fetched; `<script>` content
+   * becomes an inert text node.
+   *
+   * @param string source
+   * @returns Node
+   */
+  set_inner_html(source: string) {
+    var fragment = parser.parse_fragment(source, self)
+    self.clear_children()
+
+    # Copied out first: appending re-parents each child, which mutates
+    # the very list being walked.
+    for child in fragment.children.clone() {
+      self.append_child(child)
+    }
+
+    return self
+  }
+
+  /**
+   * The markup of this node including its own tags.
+   *
+   * For a `Document` this is the whole document; for a `Text` node it
+   * is the escaped text; for a `Comment` it is `<!--...-->`.
+   *
+   * @returns string
+   */
+  outer_html() {
+    var out = []
+    self.serialize_into(out)
+    return ''.join(out)
+  }
+
+  /**
+   * Parses _source_ as HTML in the context of this node's parent and
+   * puts the result where this node currently sits.
+   *
+   * Returns the list of nodes that replaced this one, which may be
+   * empty when _source_ produces nothing. This node is detached
+   * either way.
+   *
+   * @param string source
+   * @returns list
+   * @throws HierarchyError when this node has no parent, since there
+   *   would be nowhere to put the result.
+   */
+  set_outer_html(source: string) {
+    var host = self.parent_node
+
+    if host == nil {
+      raise HierarchyError('cannot set outer_html on a node with no parent')
+    }
+
+    # A document has no meaningful context element, so a fragment
+    # replacing one of its children parses against `<html>` instead.
+    var context = host
+    if host.is_document() {
+      context = Element('html')
+    }
+
+    var fragment = parser.parse_fragment(source, context)
+    var inserted = fragment.children.clone()
+
+    for node in inserted {
+      host.insert_before(node, self)
+    }
+
+    host.remove_child(self)
+    return inserted
+  }
+
+  /**
+   * Appends this node's markup to _out_, a list of string pieces the
+   * caller is expected to `join()`.
+   *
+   * `outer_html()` is the friendly form of this and is what you
+   * normally want. Reach for this one when you are writing a large
+   * document out in pieces and would rather not build the whole string
+   * in memory first.
+   *
+   * Every node class overrides it; the base implementation writes
+   * nothing.
+   *
+   * @param list out
+   */
+  serialize_into(out: list) {}
+
+  /**
+   * A deep or shallow copy of this node, detached from any parent.
+   *
+   * The copy is shallow by default, matching the DOM: you get the node
+   * itself with its attributes but with no children. Pass `true` for
+   * _deep_ to copy the whole subtree.
+   *
+   * @param ?bool deep
+   * @returns Node
+   */
+  clone_node(deep: ?bool) {
+    var copy = self._clone_self()
+
+    if deep == true {
+      for child in self.children {
+        copy.append_child(child.clone_node(true))
+      }
+    }
+
+    return copy
+  }
+
+  /**
+   * Builds the childless copy `clone_node()` starts from. Every
+   * subclass overrides this to carry across its own state.
+   *
+   * @returns Node
+   */
+  _clone_self() {
+    return Node(self.node_type)
+  }
+
+  /**
+   * The first element beneath this node whose `id` attribute is
+   * _value_, or `nil` when there is none.
+   *
+   * Ids are compared exactly, including case: HTML does not fold the
+   * case of id values even though it folds tag names.
+   *
+   * A document with duplicate ids is malformed but perfectly
+   * parseable, and this returns the first one in document order,
+   * which is what browsers settled on.
+   *
+   * @param string value
+   * @returns ?Element
+   */
+  get_element_by_id(value: string) {
+    for node in self.descendants() {
+      if node.is_element() and node.get_attribute('id') == value {
+        return node
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * Every element beneath this node carrying all of the classes in
+   * _names_, in document order.
+   *
+   * _names_ may be a single class name, several separated by
+   * whitespace, or a list of names; in every form an element must
+   * carry *all* of them to match. Class names are compared exactly,
+   * including case. An empty _names_ matches nothing.
+   *
+   * ```zuri-repl
+   * %> doc.get_elements_by_class_name('warning')
+   * %> doc.get_elements_by_class_name('warning sticky')
+   * %> doc.get_elements_by_class_name(['warning', 'sticky'])
+   * ```
+   *
+   * @param {string|list} names
+   * @returns list
+   */
+  get_elements_by_class_name(names) {
+    var wanted = names
+
+    if is_string(names) {
+      wanted = names.split('/\\s+/').filter(@(n) { return !n.is_empty() })
+    }
+
+    var out = []
+
+    if wanted.is_empty() {
+      return out
+    }
+
+    for node in self.descendants() {
+      if !node.is_element() {
+        continue
+      }
+
+      var classes = node.class_names()
+      var all = true
+
+      for want in wanted {
+        if !classes.contains(want) {
+          all = false
+          break
+        }
+      }
+
+      if all {
+        out.append(node)
+      }
+    }
+
+    return out
+  }
+
+  /**
+   * Every element beneath this node whose tag name is _name_, in
+   * document order.
+   *
+   * The comparison folds ASCII case, so `'DIV'` and `'div'` find the
+   * same elements. Passing `'*'` returns every element.
+   *
+   * @param string name
+   * @returns list
+   */
+  get_elements_by_tag_name(name: string) {
+    var wanted = name.lower()
+    var out = []
+
+    for node in self.descendants() {
+      if !node.is_element() {
+        continue
+      }
+
+      if wanted == '*' or node.tag_name == wanted {
+        out.append(node)
+      }
+    }
+
+    return out
+  }
+
+  /**
+   * The first element beneath this node matching the CSS selector
+   * _query_, in document order, or `nil` when nothing matches.
+   *
+   * The supported selector syntax is described in `html.selector`.
+   *
+   * @param string query
+   * @returns ?Element
+   * @throws SelectorError when _query_ is not valid.
+   */
+  query_selector(query: string) {
+    var compiled = selector.compile(query)
+
+    for node in self.descendants() {
+      if node.is_element() and compiled.matches(node) {
+        return node
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * Every element beneath this node matching the CSS selector
+   * _query_, in document order.
+   *
+   * @param string query
+   * @returns list
+   * @throws SelectorError when _query_ is not valid.
+   */
+  query_selector_all(query: string) {
+    var compiled = selector.compile(query)
+    var out = []
+
+    for node in self.descendants() {
+      if node.is_element() and compiled.matches(node) {
+        out.append(node)
+      }
+    }
+
+    return out
+  }
+
+  /**
+   * Renders this node as markup, the same as `outer_html()`.
+   *
+   * @returns string
+   */
+  to_string() {
+    return self.outer_html()
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * A run of character data in the tree.
+ *
+ * The parser merges adjacent characters into as few `Text` nodes as
+ * the tree construction algorithm allows, so a paragraph of prose is
+ * normally one node rather than one per character.
+ *
+ * @printable
+ */
+class Text < Node {
+
+  /**
+   * The characters this node holds, already decoded: character
+   * references were resolved during parsing, so `data` is the real
+   * text and never contains `&amp;` unless the document genuinely
+   * had a literal `&amp;amp;`.
+   */
+  var data = ''
+
+  /**
+   * @param string data
+   * @constructor
+   */
+  @new(data: string) {
+    parent(NODE_TEXT)
+    self.data = data
+  }
+
+  /**
+   * The characters this node holds.
+   *
+   * @returns string
+   */
+  text_content() {
+    return self.data
+  }
+
+  /**
+   * Replaces this node's characters with _value_.
+   *
+   * @param string value
+   * @returns Text
+   */
+  set_text_content(value: string) {
+    self.data = value
+    return self
+  }
+
+  /**
+   * Appends _value_ to this node's characters.
+   *
+   * @param string value
+   * @returns Text
+   */
+  append_data(value: string) {
+    self.data += value
+    return self
+  }
+
+  /**
+   * @param list out
+   */
+  serialize_into(out: list) {
+    var host = self.parent_node
+
+    # Inside a script or a stylesheet the text *is* the markup, so
+    # escaping it would corrupt it. Everywhere else it has to be
+    # escaped or the document cannot be read back.
+    if host != nil and host.is_element() and
+      host.namespace == HTML_NAMESPACE and
+      RAW_TEXT_ELEMENTS.contains(host.tag_name) {
+      out.append(self.data)
+      return
+    }
+
+    out.append(entities.escape_text(self.data))
+  }
+
+  /**
+   * @returns Text
+   */
+  _clone_self() {
+    return Text(self.data)
+  }
+}
+
+
+/**
+ * An HTML comment.
+ *
+ * @printable
+ */
+class Comment < Node {
+
+  /**
+   * The text between `<!--` and `-->`, exactly as it appeared. No
+   * character references are resolved inside a comment, so this is
+   * the literal source text.
+   */
+  var data = ''
+
+  /**
+   * @param string data
+   * @constructor
+   */
+  @new(data: string) {
+    parent(NODE_COMMENT)
+    self.data = data
+  }
+
+  /**
+   * The comment's text.
+   *
+   * @returns string
+   */
+  text_content() {
+    return self.data
+  }
+
+  /**
+   * Replaces the comment's text with _value_.
+   *
+   * @param string value
+   * @returns Comment
+   */
+  set_text_content(value: string) {
+    self.data = value
+    return self
+  }
+
+  /**
+   * @param list out
+   */
+  serialize_into(out: list) {
+    out.append('<!--')
+    out.append(self.data)
+    out.append('-->')
+  }
+
+  /**
+   * @returns Comment
+   */
+  _clone_self() {
+    return Comment(self.data)
+  }
+}
+
+
+/**
+ * The `<!DOCTYPE ...>` node at the top of a document.
+ *
+ * @printable
+ */
+class DocumentType < Node {
+
+  /**
+   * The doctype's name, lowercased by the tokenizer. For any modern
+   * document this is `'html'`.
+   */
+  var name = ''
+
+  /**
+   * The public identifier, or an empty string when the doctype has
+   * none. Legacy doctypes use this; `<!DOCTYPE html>` does not.
+   */
+  var public_id = ''
+
+  /**
+   * The system identifier, or an empty string when the doctype has
+   * none.
+   */
+  var system_id = ''
+
+  /**
+   * @param string name
+   * @param ?string public_id
+   * @param ?string system_id
+   * @constructor
+   */
+  @new(name: string, public_id: ?string, system_id: ?string) {
+    parent(NODE_DOCUMENT_TYPE)
+
+    self.name = name
+    self.public_id = ''
+    if public_id != nil {
+      self.public_id = public_id
+    }
+
+    self.system_id = ''
+    if system_id != nil {
+      self.system_id = system_id
+    }
+  }
+
+  /**
+   * A doctype contains no text, so this is always an empty string.
+   *
+   * @returns string
+   */
+  text_content() {
+    return ''
+  }
+
+  /**
+   * @param list out
+   */
+  serialize_into(out: list) {
+    out.append('<!DOCTYPE ')
+    out.append(self.name)
+
+    # The serialization algorithm writes only the name, but dropping a
+    # legacy doctype's identifiers would silently change a document
+    # from limited-quirks to no-quirks on the next parse, so they are
+    # kept when they are there.
+    if !self.public_id.is_empty() {
+      out.append(' PUBLIC "')
+      out.append(self.public_id)
+      out.append('"')
+
+      if !self.system_id.is_empty() {
+        out.append(' "')
+        out.append(self.system_id)
+        out.append('"')
+      }
+    } else if !self.system_id.is_empty() {
+      out.append(' SYSTEM "')
+      out.append(self.system_id)
+      out.append('"')
+    }
+
+    out.append('>')
+  }
+
+  /**
+   * @returns DocumentType
+   */
+  _clone_self() {
+    return DocumentType(self.name, self.public_id, self.system_id)
+  }
+}
+
+
+/**
+ * A parentless container for a run of nodes.
+ *
+ * Fragment parsing produces one of these, and every `<template>`
+ * element owns one holding its content.
+ *
+ * @printable
+ */
+class DocumentFragment < Node {
+
+  /**
+   * @constructor
+   */
+  @new() {
+    parent(NODE_DOCUMENT_FRAGMENT)
+  }
+
+  /**
+   * @param list out
+   */
+  serialize_into(out: list) {
+    for child in self.children {
+      child.serialize_into(out)
+    }
+  }
+
+  /**
+   * @returns DocumentFragment
+   */
+  _clone_self() {
+    return DocumentFragment()
+  }
+}
+
+
+/**
+ * A whole parsed document.
+ *
+ * @printable
+ */
+class Document < Node {
+
+  /**
+   * Which quirks mode the doctype (or the lack of one) put this
+   * document in: `'no-quirks'`, `'limited-quirks'` or `'quirks'`.
+   *
+   * The value is decided by the tree construction algorithm from the
+   * doctype's name and identifiers. Nothing in this module changes
+   * behaviour based on it, but it is the answer to "would a browser
+   * have rendered this in quirks mode", which is worth knowing when
+   * you are auditing markup.
+   */
+  var mode = 'no-quirks'
+
+  /**
+   * Every parse error the tokenizer and tree builder raised, in the
+   * order they happened. Each entry is a dictionary with `code` (the
+   * standard's error name), `line` and `column`.
+   *
+   * A non-empty list does not mean the parse failed: HTML has no
+   * fatal errors, and the tree is always usable. It means the source
+   * was not conformant.
+   */
+  var errors = []
+
+  /**
+   * @constructor
+   */
+  @new() {
+    parent(NODE_DOCUMENT)
+    self.errors = []
+  }
+
+  /**
+   * The document's root element, normally `<html>`, or `nil` for an
+   * empty document.
+   *
+   * @returns ?Element
+   */
+  document_element() {
+    return self.first_element_child()
+  }
+
+  /**
+   * The document's `<!DOCTYPE>` node, or `nil` when it has none.
+   *
+   * @returns ?DocumentType
+   */
+  doctype() {
+    for child in self.children {
+      if child.is_doctype() {
+        return child
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The document's `<head>` element, or `nil`.
+   *
+   * The tree construction algorithm always creates one when parsing a
+   * whole document, even for input with no `<head>` tag in it, so
+   * this only returns `nil` for a document that was built by hand.
+   *
+   * @returns ?Element
+   */
+  head() {
+    return self._root_child('head')
+  }
+
+  /**
+   * The document's `<body>` element, or the `<frameset>` that stands
+   * in for it in a frameset document, or `nil` when there is neither.
+   *
+   * @returns ?Element
+   */
+  body() {
+    var found = self._root_child('body')
+
+    if found != nil {
+      return found
+    }
+
+    return self._root_child('frameset')
+  }
+
+  /**
+   * The first child of `<html>` with the given tag name.
+   *
+   * @param string tag_name
+   * @returns ?Element
+   */
+  _root_child(tag_name: string) {
+    var root = self.document_element()
+
+    if root == nil {
+      return nil
+    }
+
+    for child in root.children {
+      if child.is_element() and child.tag_name == tag_name and
+        child.namespace == HTML_NAMESPACE {
+        return child
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The text of the document's `<title>` element, with leading and
+   * trailing whitespace removed, or an empty string when there is no
+   * title.
+   *
+   * @returns string
+   */
+  title() {
+    var element = self.query_selector('title')
+
+    if element == nil {
+      return ''
+    }
+
+    return element.text_content().trim()
+  }
+
+  /**
+   * @param list out
+   */
+  serialize_into(out: list) {
+    for child in self.children {
+      child.serialize_into(out)
+    }
+  }
+
+  /**
+   * A copy of the document, carrying its quirks mode and parse errors
+   * across. As with any node the copy is shallow unless _deep_ is
+   * `true`.
+   *
+   * @returns Document
+   */
+  _clone_self() {
+    var copy = Document()
+
+    copy.mode = self.mode
+    copy.errors = self.errors.clone()
+
+    return copy
+  }
+}
+
+
+/**
+ * A live view of one element's `class` attribute.
+ *
+ * Every method reads and writes the attribute itself, so a
+ * `class_list` never goes stale and two of them taken from the same
+ * element always agree.
+ *
+ * ```zuri-repl
+ * %> var el = doc.query_selector('div')
+ * %> el.class_list().add('active')
+ * %> el.class_list().contains('active')
+ * true
+ * %> el.get_attribute('class')
+ * 'active'
+ * ```
+ *
+ * @printable
+ */
+class ClassList {
+
+  /**
+   * The element this list reads from and writes to.
+   */
+  var element = nil
+
+  /**
+   * @param Element element
+   * @constructor
+   */
+  @new(element) {
+    self.element = element
+  }
+
+  /**
+   * The class names currently on the element, in source order, with
+   * duplicates removed.
+   *
+   * @returns list
+   */
+  to_list() {
+    return self.element.class_names()
+  }
+
+  /**
+   * How many distinct classes the element carries.
+   *
+   * @returns number
+   */
+  length() {
+    return self.to_list().length()
+  }
+
+  /**
+   * True when the element carries _name_. The comparison is exact:
+   * HTML class names are case-sensitive in standards mode.
+   *
+   * @param string name
+   * @returns bool
+   */
+  contains(name: string) {
+    return self.to_list().contains(name)
+  }
+
+  /**
+   * Adds every name given to the element's class attribute, ignoring
+   * any it already has. Returns the list so calls can be chained.
+   *
+   * An empty name, or one containing whitespace, is rejected: those
+   * cannot be written to a class attribute without changing what it
+   * means.
+   *
+   * @param ...string names
+   * @returns ClassList
+   * @throws ArgumentError
+   */
+  add(...names) {
+    var classes = self.to_list()
+
+    for name in names {
+      _check_class_name(name)
+
+      if !classes.contains(name) {
+        classes.append(name)
+      }
+    }
+
+    return self._write(classes)
+  }
+
+  /**
+   * Removes every name given from the element's class attribute,
+   * ignoring any it does not have. Returns the list.
+   *
+   * @param ...string names
+   * @returns ClassList
+   * @throws ArgumentError
+   */
+  remove(...names) {
+    var classes = self.to_list()
+
+    for name in names {
+      _check_class_name(name)
+
+      var at = classes.index_of(name)
+      if at >= 0 {
+        classes.remove_at(at)
+      }
+    }
+
+    return self._write(classes)
+  }
+
+  /**
+   * Adds _name_ when the element does not have it and removes it when
+   * it does, then returns `true` when the class is present afterwards.
+   *
+   * Passing _force_ turns this into an unconditional add (`true`) or
+   * remove (`false`), which is handy when the desired state is
+   * already in a variable.
+   *
+   * @param string name
+   * @param ?bool force
+   * @returns bool
+   * @throws ArgumentError
+   */
+  toggle(name: string, force: ?bool) {
+    _check_class_name(name)
+
+    var present = self.contains(name)
+
+    if force == true or (force == nil and !present) {
+      self.add(name)
+      return true
+    }
+
+    self.remove(name)
+    return false
+  }
+
+  /**
+   * Writes _classes_ back to the element. An empty list removes the
+   * attribute outright rather than leaving `class=""` behind.
+   *
+   * @param list classes
+   * @returns ClassList
+   */
+  _write(classes: list) {
+    if classes.is_empty() {
+      self.element.remove_attribute('class')
+    } else {
+      self.element.set_attribute('class', ' '.join(classes))
+    }
+
+    return self
+  }
+
+  /**
+   * The class attribute's value as it would be written out.
+   *
+   * @returns string
+   */
+  to_string() {
+    return ' '.join(self.to_list())
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Appends every node beneath _node_ to _out_, in document order.
+ *
+ * A module function rather than a method because a node has to call it
+ * on its children, and Zuri keeps `_`-prefixed methods reachable only
+ * through `self`.
+ *
+ * @param Node node
+ * @param list out
+ */
+def _collect_descendants(node, out: list) {
+  for child in node.children {
+    out.append(child)
+    _collect_descendants(child, out)
+  }
+}
+
+
+/**
+ * Rejects a class name that cannot be written into a `class`
+ * attribute without changing its meaning.
+ *
+ * @param string name
+ * @throws ArgumentError
+ */
+def _check_class_name(name: string) {
+  if name.is_empty() {
+    raise ArgumentError('a class name cannot be empty')
+  }
+
+  if name.match('/\\s/') != false {
+    raise ArgumentError('a class name cannot contain whitespace: "${name}"')
+  }
+}
+
+
+/**
+ * An element in the tree.
+ *
+ * @printable
+ */
+class Element < Node {
+
+  /**
+   * The element's tag name.
+   *
+   * HTML tag names are lowercased by the parser, so this is always
+   * lowercase for an HTML element no matter how the source was
+   * written. SVG and MathML tag names keep the case the standard
+   * gives them, which is why `foreignObject` reads back with its
+   * capital `O`.
+   */
+  var tag_name = ''
+
+  /**
+   * The namespace this element lives in: one of `HTML_NAMESPACE`,
+   * `SVG_NAMESPACE` or `MATHML_NAMESPACE`.
+   *
+   * Tag names are only unique within a namespace. `<a>` means a link
+   * in HTML and an anchor in SVG, and matching on `tag_name` alone
+   * cannot tell them apart.
+   */
+  var namespace = HTML_NAMESPACE
+
+  /**
+   * The element's attributes, in source order, as a dictionary of
+   * name to value.
+   *
+   * Names are lowercased for HTML elements. Foreign elements keep the
+   * adjusted names the standard defines, so an SVG element can carry
+   * `viewBox` and `xlink:href` with their capitals and prefixes
+   * intact.
+   *
+   * A valueless attribute such as `<input disabled>` has an empty
+   * string as its value, never `nil`. Use `has_attribute()` to tell
+   * "absent" from "present but empty".
+   *
+   * Prefer the accessor methods over writing to this dictionary
+   * directly; they are what keep name folding consistent.
+   */
+  var attributes = {}
+
+  /**
+   * Namespace URIs for the few attributes that have one, keyed by the
+   * same qualified name used in `attributes`. `nil` until a
+   * namespaced attribute is actually seen, which for ordinary HTML is
+   * never.
+   */
+  var attribute_namespaces = nil
+
+  /**
+   * For a `<template>` element, the `DocumentFragment` holding its
+   * content. `nil` for every other element.
+   *
+   * Template content is deliberately not part of the element's
+   * children: the standard keeps it in a separate document fragment
+   * so it stays inert, and querying an element never walks into a
+   * template by accident.
+   */
+  var content = nil
+
+  /**
+   * @param string tag_name
+   * @param ?string namespace
+   * @param ?dict attributes
+   * @constructor
+   */
+  @new(tag_name: string, namespace: ?string, attributes: ?dict) {
+    parent(NODE_ELEMENT)
+
+    self.tag_name = tag_name
+    self.namespace = HTML_NAMESPACE
+    if namespace != nil {
+      self.namespace = namespace
+    }
+
+    self.attributes = {}
+    if attributes != nil {
+      self.attributes = attributes
+    }
+
+    if self.namespace == HTML_NAMESPACE and tag_name == 'template' {
+      self.content = DocumentFragment()
+    }
+  }
+
+  /**
+   * True when this is an HTML element, as opposed to one inside an
+   * `<svg>` or `<math>` subtree.
+   *
+   * @returns bool
+   */
+  is_html() {
+    return self.namespace == HTML_NAMESPACE
+  }
+
+  /**
+   * True when this element is one of the HTML void elements, which
+   * have no closing tag and can hold no content.
+   *
+   * @returns bool
+   */
+  is_void() {
+    return self.is_html() and VOID_ELEMENTS.contains(self.tag_name)
+  }
+
+  /**
+   * The value of the attribute _name_, or `nil` when the element does
+   * not carry it.
+   *
+   * The lookup folds ASCII case for HTML elements, so
+   * `get_attribute('HREF')` and `get_attribute('href')` are the same
+   * question. For foreign elements the name is matched exactly,
+   * because SVG really does distinguish `viewBox` from `viewbox`.
+   *
+   * @param string name
+   * @returns ?string
+   */
+  get_attribute(name: string) {
+    return self.attributes.get(self._attribute_key(name), nil)
+  }
+
+  /**
+   * True when the element carries the attribute _name_, whatever its
+   * value.
+   *
+   * @param string name
+   * @returns bool
+   */
+  has_attribute(name: string) {
+    return self.attributes.contains(self._attribute_key(name))
+  }
+
+  /**
+   * Sets the attribute _name_ to _value_, replacing any existing
+   * value and leaving the attribute's position among the others
+   * unchanged. A new attribute is appended after the existing ones.
+   *
+   * Pass an empty string for a valueless attribute such as
+   * `disabled`; there is no separate "no value" state.
+   *
+   * @param string name
+   * @param string value
+   * @returns Element
+   * @throws ArgumentError when _name_ is empty or contains a
+   *   character that cannot appear in an attribute name.
+   */
+  set_attribute(name: string, value: string) {
+    var key = self._attribute_key(name)
+    _check_attribute_name(key)
+
+    self.attributes[key] = value
+    return self
+  }
+
+  /**
+   * Removes the attribute _name_ and returns `true` when it was
+   * actually there.
+   *
+   * @param string name
+   * @returns bool
+   */
+  remove_attribute(name: string) {
+    var key = self._attribute_key(name)
+
+    if !self.attributes.contains(key) {
+      return false
+    }
+
+    self.attributes.remove(key)
+
+    if self.attribute_namespaces != nil {
+      self.attribute_namespaces.remove(key)
+    }
+
+    return true
+  }
+
+  /**
+   * The attribute names this element carries, in source order.
+   *
+   * @returns list
+   */
+  attribute_names() {
+    return self.attributes.keys()
+  }
+
+  /**
+   * The namespace URI of the attribute _name_, or `nil` when it has
+   * none. Only foreign content produces namespaced attributes.
+   *
+   * @param string name
+   * @returns ?string
+   */
+  attribute_namespace(name: string) {
+    if self.attribute_namespaces == nil {
+      return nil
+    }
+
+    return self.attribute_namespaces.get(self._attribute_key(name), nil)
+  }
+
+  /**
+   * Records that the attribute _name_ belongs to _uri_. Called by the
+   * parser while adjusting foreign attributes; there is no reason to
+   * call it by hand.
+   *
+   * @param string name
+   * @param string uri
+   * @returns Element
+   */
+  set_attribute_namespace(name: string, uri: string) {
+    if self.attribute_namespaces == nil {
+      self.attribute_namespaces = {}
+    }
+
+    self.attribute_namespaces[self._attribute_key(name)] = uri
+    return self
+  }
+
+  /**
+   * Folds _name_ to the form used as a key in `attributes`.
+   *
+   * @param string name
+   * @returns string
+   */
+  _attribute_key(name: string) {
+    if self.is_html() {
+      return name.lower()
+    }
+
+    return name
+  }
+
+  /**
+   * The element's `id`, or an empty string when it has none.
+   *
+   * @returns string
+   */
+  id() {
+    var value = self.get_attribute('id')
+
+    if value == nil {
+      return ''
+    }
+
+    return value
+  }
+
+  /**
+   * The element's `class` attribute verbatim, or an empty string.
+   *
+   * @returns string
+   */
+  class_name() {
+    var value = self.get_attribute('class')
+
+    if value == nil {
+      return ''
+    }
+
+    return value
+  }
+
+  /**
+   * The element's classes as a list, in source order and without
+   * duplicates. An element with no `class` attribute gives an empty
+   * list.
+   *
+   * @returns list
+   */
+  class_names() {
+    var raw = self.get_attribute('class')
+
+    if raw == nil or raw.trim().is_empty() {
+      return []
+    }
+
+    return raw.split('/\\s+/').filter(@(n) {
+      return !n.is_empty()
+    }).unique()
+  }
+
+  /**
+   * A `ClassList` view of this element's `class` attribute, for
+   * adding, removing and toggling classes.
+   *
+   * A fresh view is returned on every call; because it reads and
+   * writes the attribute directly there is no state to keep, and two
+   * views of the same element behave identically.
+   *
+   * @returns ClassList
+   */
+  class_list() {
+    return ClassList(self)
+  }
+
+  /**
+   * True when this element matches the CSS selector _query_.
+   *
+   * @param string query
+   * @returns bool
+   * @throws SelectorError when _query_ is not valid.
+   */
+  matches(query: string) {
+    return selector.compile(query).matches(self)
+  }
+
+  /**
+   * This element, or its nearest ancestor, matching the CSS selector
+   * _query_ — or `nil` when neither this element nor any ancestor
+   * does.
+   *
+   * The search starts at the element itself, which is what makes
+   * `el.closest('div')` return `el` when `el` is a `div`.
+   *
+   * @param string query
+   * @returns ?Element
+   * @throws SelectorError when _query_ is not valid.
+   */
+  closest(query: string) {
+    var compiled = selector.compile(query)
+    var node = self
+
+    while node != nil and node.is_element() {
+      if compiled.matches(node) {
+        return node
+      }
+
+      node = node.parent_node
+    }
+
+    return nil
+  }
+
+  /**
+   * @param list out
+   */
+  serialize_into(out: list) {
+    out.append('<')
+    out.append(self.tag_name)
+
+    for name, value in self.attributes {
+      out.append(' ')
+      out.append(name)
+      out.append('="')
+      out.append(entities.escape_attribute(value))
+      out.append('"')
+    }
+
+    out.append('>')
+
+    if self.is_void() {
+      return
+    }
+
+    # A template's children live in its content fragment, so that is
+    # what has to be written out between the tags.
+    var source = self
+    if self.content != nil {
+      source = self.content
+    }
+
+    for child in source.children {
+      child.serialize_into(out)
+    }
+
+    out.append('</')
+    out.append(self.tag_name)
+    out.append('>')
+  }
+
+  /**
+   * The markup of this element's children.
+   *
+   * A `<template>` answers with its content fragment rather than with
+   * its own children, which are always empty. That matches the DOM,
+   * and it is the only way the question has a useful answer for a
+   * template.
+   *
+   * @returns string
+   */
+  inner_html() {
+    if self.content != nil {
+      return self.content.inner_html()
+    }
+
+    return parent.inner_html()
+  }
+
+  /**
+   * Parses _source_ and replaces this element's children with the
+   * result.
+   *
+   * For a `<template>` the result goes into the content fragment,
+   * matching where `inner_html()` reads from.
+   *
+   * @param string source
+   * @returns Element
+   */
+  set_inner_html(source: string) {
+    if self.content == nil {
+      return parent.set_inner_html(source)
+    }
+
+    var fragment = parser.parse_fragment(source, self)
+    self.content.clear_children()
+
+    for child in fragment.children.clone() {
+      self.content.append_child(child)
+    }
+
+    return self
+  }
+
+  /**
+   * A copy of this element carrying its tag name, namespace and
+   * attributes. A `<template>`'s content fragment is copied too when
+   * the clone is deep.
+   *
+   * @returns Element
+   */
+  _clone_self() {
+    var copy = Element(self.tag_name, self.namespace, self.attributes.clone())
+
+    if self.attribute_namespaces != nil {
+      copy.attribute_namespaces = self.attribute_namespaces.clone()
+    }
+
+    return copy
+  }
+
+  /**
+   * A deep or shallow copy of this element. Deep-cloning a
+   * `<template>` also copies its content fragment, which is otherwise
+   * not part of the element's children.
+   *
+   * @param ?bool deep
+   * @returns Element
+   */
+  clone_node(deep: ?bool) {
+    var copy = parent.clone_node(deep)
+
+    if deep == true and self.content != nil {
+      for child in self.content.children {
+        copy.content.append_child(child.clone_node(true))
+      }
+    }
+
+    return copy
+  }
+}
+
+
+/**
+ * Rejects an attribute name that could not be written back out as
+ * markup.
+ *
+ * @param string name
+ * @throws ArgumentError
+ */
+def _check_attribute_name(name: string) {
+  if name.is_empty() {
+    raise ArgumentError('an attribute name cannot be empty')
+  }
+
+  if name.match('/[\\s"\'>\\/=]/') != false {
+    raise ArgumentError(
+      'an attribute name cannot contain whitespace or any of ` " \' > / = `: "${name}"'
+    )
+  }
+}

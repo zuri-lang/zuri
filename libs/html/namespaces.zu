@@ -1,0 +1,47 @@
+/**
+ * @module html.namespaces
+ *
+ * The five namespace URIs the HTML parser deals in.
+ *
+ * They live in a module of their own, importing nothing, because
+ * almost every other module in `html` needs them at load time and a
+ * shared leaf is the only arrangement that has no load order to get
+ * wrong.
+ *
+ * `html.node` re-exports all of these, so `node.HTML_NAMESPACE` and
+ * `html.HTML_NAMESPACE` both work and you rarely need to name this
+ * module directly.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+
+/**
+ * Namespace URI of ordinary HTML elements.
+ */
+var HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml'
+
+/**
+ * Namespace URI of elements inside an `<svg>` subtree.
+ */
+var SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+
+/**
+ * Namespace URI of elements inside a `<math>` subtree.
+ */
+var MATHML_NAMESPACE = 'http://www.w3.org/1998/Math/MathML'
+
+/**
+ * Namespace URI used by the `xlink:` attribute prefix in SVG.
+ */
+var XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink'
+
+/**
+ * Namespace URI used by the `xml:` attribute prefix.
+ */
+var XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace'
+
+/**
+ * Namespace URI used by the `xmlns` and `xmlns:xlink` attributes.
+ */
+var XMLNS_NAMESPACE = 'http://www.w3.org/2000/xmlns/'

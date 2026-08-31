@@ -1,0 +1,476 @@
+/**
+ * html_parse.zu
+ *
+ * Test suite for the `html.parser` module: the WHATWG tree
+ * construction algorithm. Covers doctypes and quirks mode, comments,
+ * CDATA, templates, SVG and MathML foreign content, the defined
+ * recovery behaviour for mismatched tags and implied end tags, the
+ * adoption agency algorithm, foster parenting, fragment parsing, and
+ * parse error reporting.
+ */
+
+import html
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  var raised = false
+
+  catch {
+    fn()
+  } as e {
+    raised = true
+  }
+
+  return raised
+}
+
+# The body's markup, which is where almost every tree construction
+# rule shows its effect.
+def body(source) {
+  return html.parse(source).body().inner_html()
+}
+
+def codes(source) {
+  var out = []
+
+  for error in html.parse(source).errors {
+    out.append(error.code)
+  }
+
+  return out
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  html.parser — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# The implied document structure
+# ---------------------------------------------------------------------------
+assert html.parse('').outer_html() == '<html><head></head><body></body></html>',
+  'an empty document must still get a root, a head and a body'
+assert html.parse('x').outer_html() ==
+  '<html><head></head><body>x</body></html>',
+  'bare text must land in an implied body'
+assert html.parse('<title>T</title>x').head().inner_html() == '<title>T</title>',
+  'metadata must land in the implied head'
+assert body('<title>T</title>x') == 'x',
+  'and the text that follows it in the body'
+ok('the tree construction algorithm creates the elements the source omits')
+
+# ---------------------------------------------------------------------------
+# Doctypes and quirks mode
+# ---------------------------------------------------------------------------
+assert html.parse('<!DOCTYPE html>').mode == 'no-quirks',
+  'the HTML5 doctype must give no-quirks mode'
+assert html.parse('').mode == 'quirks', 'a missing doctype must give quirks mode'
+assert html.parse('<!DOCTYPE xml>').mode == 'quirks',
+  'a doctype named anything but html must give quirks mode'
+assert html.parse(
+  '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">'
+).mode == 'quirks',
+  'HTML 4.01 Transitional with no system identifier must give quirks mode'
+assert html.parse(
+  '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://x">'
+).mode == 'limited-quirks',
+  'the same doctype with a system identifier must give limited-quirks mode'
+assert html.parse(
+  '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN">'
+).mode == 'limited-quirks',
+  'XHTML 1.0 Transitional must give limited-quirks mode either way'
+assert html.parse('<!DOCTYPE html PUBLIC "-//IETF//DTD HTML 3.0//EN">').mode == 'quirks',
+  'a legacy public identifier must give quirks mode'
+ok('quirks mode is decided from the doctype exactly as the standard says')
+
+var typed = html.parse(
+  '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://x/y.dtd">'
+).doctype()
+
+assert typed.name == 'html', 'the doctype node must carry its name'
+assert typed.public_id == '-//W3C//DTD HTML 4.01//EN',
+  'the doctype node must carry its public identifier'
+assert typed.system_id == 'http://x/y.dtd',
+  'the doctype node must carry its system identifier'
+assert typed.outer_html() ==
+  '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://x/y.dtd">',
+  'a legacy doctype must serialize with its identifiers, so it round-trips its own mode'
+assert html.parse('<!DOCTYPE html>').doctype().outer_html() == '<!DOCTYPE html>',
+  'a modern doctype must serialize as just its name'
+ok('doctype nodes keep and round-trip their identifiers')
+
+# ---------------------------------------------------------------------------
+# Comments
+# ---------------------------------------------------------------------------
+var commented = html.parse('<!--before--><html><body><!--inside--></body></html>')
+
+assert commented.children[0].is_comment(),
+  'a comment before the root must be a child of the document'
+assert commented.children[0].data == 'before', 'its data must be intact'
+assert commented.body().first_child().data == 'inside',
+  'a comment inside the body must land there'
+assert body('<p><!--in a paragraph--></p>') == '<p><!--in a paragraph--></p>',
+  'a comment must serialize back exactly'
+ok('comments are placed where they were written')
+
+# ---------------------------------------------------------------------------
+# CDATA
+# ---------------------------------------------------------------------------
+assert body('<div><![CDATA[x]]></div>') == '<div><!--[CDATA[x]]--></div>',
+  'a CDATA section in HTML content becomes a bogus comment'
+assert body('<svg><![CDATA[x]]></svg>') == '<svg>x</svg>',
+  'a CDATA section in foreign content becomes character data, as the standard requires'
+assert body('<svg><![CDATA[a<b>c]]></svg>') == '<svg>a&lt;b&gt;c</svg>',
+  'CDATA content is never markup'
+ok('CDATA sections: bogus comment in HTML, characters in foreign content')
+
+# ---------------------------------------------------------------------------
+# Templates
+# ---------------------------------------------------------------------------
+var templated = html.parse('<template><p>in</p></template>')
+var template = templated.query_selector('template')
+
+assert template != nil, 'a template must be parsed'
+assert template.parent_node.tag_name == 'head',
+  'a template with no body context belongs to the head'
+assert template.children.is_empty(),
+  'a template holds no children of its own'
+assert template.content.children.length() == 1,
+  'its content lives in the content fragment'
+assert template.content.first_element_child().tag_name == 'p',
+  'and the parsed element is in there'
+assert template.inner_html() == '<p>in</p>',
+  'inner_html() must read from the content fragment'
+assert template.outer_html() == '<template><p>in</p></template>',
+  'a template must serialize with its content'
+assert templated.query_selector('template p') == nil,
+  'querying must not descend into template content'
+ok('<template> content is parsed into a separate fragment')
+
+assert body('<body><template><td>cell</td></template>') ==
+  '<template><td>cell</td></template>',
+  'a template gives table content its own insertion mode, so a bare cell survives'
+assert body('<body><div><td>cell</td></div>') == '<div>cell</div>',
+  'the same markup outside a template loses the cell, as a browser would'
+
+var cloned_template = template.clone_node(true)
+assert cloned_template.content.children.length() == 1,
+  'a deep clone must copy the content fragment too'
+assert id(cloned_template.content.first_child()) !=
+  id(template.content.first_child()),
+  'the cloned content must be a copy, not a shared reference'
+ok('templates give their content its own insertion mode and clone correctly')
+
+# ---------------------------------------------------------------------------
+# Foreign content: SVG
+# ---------------------------------------------------------------------------
+var svg_doc = html.parse('<svg viewBox="0 0 1 1"><foreignObject><div>x</div></foreignObject></svg>')
+var svg = svg_doc.query_selector('svg')
+
+assert svg.namespace == html.SVG_NAMESPACE, 'an <svg> element must be in the SVG namespace'
+assert svg.get_attribute('viewBox') == '0 0 1 1',
+  'an SVG attribute must have its case repaired'
+assert !svg.has_attribute('viewbox'),
+  'the lowercased form the tokenizer produced must not survive'
+assert svg.first_element_child().tag_name == 'foreignObject',
+  'an SVG tag name must have its case repaired'
+assert svg.first_element_child().namespace == html.SVG_NAMESPACE,
+  'the repaired element is still SVG'
+assert svg_doc.query_selector('foreignObject div').namespace == html.HTML_NAMESPACE,
+  'content inside a foreignObject is HTML again'
+assert svg.outer_html() ==
+  '<svg viewBox="0 0 1 1"><foreignObject><div>x</div></foreignObject></svg>',
+  'foreign content must round-trip with its case intact'
+ok('SVG: namespace, tag name and attribute case repair, and integration points')
+
+var xlinked = html.parse('<svg><a xlink:href="/x"></a></svg>').query_selector('svg a')
+
+assert xlinked.get_attribute('xlink:href') == '/x',
+  'a namespaced foreign attribute must keep its prefix'
+assert xlinked.attribute_namespace('xlink:href') == html.XLINK_NAMESPACE,
+  'and must record the namespace it belongs to'
+assert html.Element('div').attribute_namespace('id') == nil,
+  'an ordinary HTML attribute has no namespace'
+ok('foreign attributes keep their prefix and namespace')
+
+assert body('<svg><circle/></svg>') == '<svg><circle></circle></svg>',
+  'a self-closing foreign element must close immediately and serialize with an end tag'
+assert body('<svg><g><circle/></g></svg>') == '<svg><g><circle></circle></g></svg>',
+  'nesting inside foreign content must work'
+ok('self-closing foreign elements')
+
+# ---------------------------------------------------------------------------
+# Foreign content: MathML
+# ---------------------------------------------------------------------------
+var math = html.parse('<math><mi>x</mi><mo>+</mo></math>').query_selector('math')
+
+assert math.namespace == html.MATHML_NAMESPACE, 'a <math> element must be in the MathML namespace'
+assert math.first_element_child().namespace == html.MATHML_NAMESPACE,
+  'its children must be too'
+assert body('<math><mi>x</mi></math>') == '<math><mi>x</mi></math>',
+  'MathML must round-trip'
+
+var annotated = html.parse(
+  '<math><annotation-xml encoding="text/html"><b>x</b></annotation-xml></math>'
+)
+assert annotated.query_selector('b').namespace == html.HTML_NAMESPACE,
+  'an annotation-xml with an HTML encoding is an integration point'
+
+var unannotated = html.parse(
+  '<math><annotation-xml encoding="other"><b>x</b></annotation-xml></math>'
+)
+assert unannotated.query_selector('b').namespace == html.MATHML_NAMESPACE,
+  'without an HTML encoding it is not'
+ok('MathML: namespace, and the annotation-xml integration point')
+
+assert html.parse('<math><mi><b>x</b></mi></math>').query_selector('b').namespace ==
+  html.HTML_NAMESPACE, 'a MathML text integration point parses its children as HTML'
+ok('MathML text integration points')
+
+assert body('<svg><p>x</p></svg>') == '<svg></svg><p>x</p>',
+  'an HTML block element inside foreign content must break out of it'
+assert body('<math><p>x</p></math>') == '<math></math><p>x</p>',
+  'the same holds for MathML'
+assert codes('<svg><p>x</p></svg>').contains('unexpected-html-element-in-foreign-content'),
+  'breaking out of foreign content must be reported'
+ok('misplaced HTML elements break out of foreign content')
+
+# ---------------------------------------------------------------------------
+# Recovery: implied end tags
+# ---------------------------------------------------------------------------
+assert body('<p>a<p>b') == '<p>a</p><p>b</p>', 'a paragraph is closed by the next one'
+assert body('<ul><li>a<li>b</ul>') == '<ul><li>a</li><li>b</li></ul>',
+  'a list item is closed by the next one'
+assert body('<dl><dt>a<dd>b<dt>c</dl>') == '<dl><dt>a</dt><dd>b</dd><dt>c</dt></dl>',
+  'definition terms and descriptions close each other'
+assert body('<table><tr><td>a<td>b') ==
+  '<table><tbody><tr><td>a</td><td>b</td></tr></tbody></table>',
+  'a table cell is closed by the next one, and tbody is implied'
+assert body('<select><option>a<option>b</select>') ==
+  '<select><option>a</option><option>b</option></select>',
+  'an option is closed by the next one'
+assert body('<h1>a<h2>b') == '<h1>a</h1><h2>b</h2>',
+  'a heading cannot nest directly inside another'
+ok('implied end tags close what the source leaves open')
+
+# ---------------------------------------------------------------------------
+# Recovery: mismatched and stray tags
+# ---------------------------------------------------------------------------
+assert body('<div><span>a</div>b') == '<div><span>a</span></div>b',
+  'an unclosed inline element is closed by its parent closing'
+assert body('<p>a</p></p>b') == '<p>a</p><p></p>b',
+  'a stray </p> opens and closes an empty paragraph, as the standard requires'
+assert body('</div>x') == 'x', 'an end tag with nothing to close is discarded'
+assert body('<div>a</span>b</div>') == '<div>ab</div>',
+  'an end tag for something that is not open is discarded'
+assert body('<b>a') == '<b>a</b>', 'an element left open at end of file is closed'
+assert body('<div><div><div>x') == '<div><div><div>x</div></div></div>',
+  'every element left open is closed, innermost first'
+ok('mismatched and stray end tags are recovered from')
+
+assert body('</br>x') == '<br>x', 'a </br> end tag is treated as a <br> start tag'
+assert body('<image src="a">') == '<img src="a">',
+  'the legacy <image> tag is renamed to <img>'
+assert codes('<image>').contains('unexpected-start-tag'),
+  'and the rename is reported as a parse error'
+ok('the two legacy tag rewrites the standard mandates')
+
+# ---------------------------------------------------------------------------
+# Recovery: the adoption agency algorithm
+# ---------------------------------------------------------------------------
+assert body('<b>a<p>b</b>c') == '<b>a</b><p><b>b</b>c</p>',
+  'formatting that spans a block boundary is reopened inside the block'
+assert body('<p>1<b>2<i>3</b>4</i>5</p>') == '<p>1<b>2<i>3</i></b><i>4</i>5</p>',
+  'misnested formatting elements are untangled'
+assert body('<a><p>X<a>Y</a>Z</p></a>') == '<a></a><p><a>X</a><a>Y</a>Z</p>',
+  'a nested anchor closes the outer one first'
+assert body('<span><b>a</span>b') == '<span><b>a</b></span><b>b</b>',
+  'formatting is reconstructed after the element it was inside closes'
+assert body('<nobr>a<nobr>b') == '<nobr>a</nobr><nobr>b</nobr>',
+  'a nobr cannot nest inside another'
+assert body('<b><table><td></b><i></table>') ==
+  '<b><table><tbody><tr><td><i></i></td></tr></tbody></table></b>',
+  'the adoption agency must respect the marker a table cell pushes'
+ok('the adoption agency algorithm untangles misnested formatting')
+
+assert body('<b>a<b>b<b>c<b>d<b>e') == '<b>a<b>b<b>c<b>d<b>e</b></b></b></b></b>',
+  'identical formatting elements nest until the Noah\'s Ark limit'
+ok('the Noah\'s Ark clause bounds identical formatting elements')
+
+# ---------------------------------------------------------------------------
+# Recovery: foster parenting
+# ---------------------------------------------------------------------------
+assert body('<table><b>bad</b><tr><td>ok') ==
+  '<b>bad</b><table><tbody><tr><td>ok</td></tr></tbody></table>',
+  'content that cannot live in a table is moved out in front of it'
+assert body('<table>text<tr><td>ok') ==
+  'text<table><tbody><tr><td>ok</td></tr></tbody></table>',
+  'stray text in a table is foster parented too'
+assert body('<table>   <tr><td>ok') ==
+  '<table>   <tbody><tr><td>ok</td></tr></tbody></table>',
+  'whitespace inside a table is left where it is, not foster parented'
+assert codes('<table>text</table>').contains('unexpected-token-in-table'),
+  'foster parenting must be reported'
+ok('foster parenting moves illegal table content out rather than dropping it')
+
+assert body('<table><tr><td>a<table><tr><td>b</table>c') ==
+  '<table><tbody><tr><td>a<table><tbody><tr><td>b</td></tr></tbody></table>c' +
+  '</td></tr></tbody></table>',
+  'nested tables must each keep their own content'
+ok('nested tables')
+
+# ---------------------------------------------------------------------------
+# Recovery: table structure
+# ---------------------------------------------------------------------------
+assert body('<table><td>x') ==
+  '<table><tbody><tr><td>x</td></tr></tbody></table>',
+  'a bare cell gets an implied row and body'
+assert body('<table><tr><th>h</th></tr></table>') ==
+  '<table><tbody><tr><th>h</th></tr></tbody></table>',
+  'a header cell works the same way'
+assert body('<table><caption>c</caption><tr><td>x') ==
+  '<table><caption>c</caption><tbody><tr><td>x</td></tr></tbody></table>',
+  'a caption stays before the rows'
+assert body('<table><colgroup><col></colgroup><tr><td>x') ==
+  '<table><colgroup><col></colgroup><tbody><tr><td>x</td></tr></tbody></table>',
+  'a column group is preserved'
+assert body('<table><thead><tr><td>h<tbody><tr><td>b') ==
+  '<table><thead><tr><td>h</td></tr></thead><tbody><tr><td>b</td></tr></tbody></table>',
+  'a thead is closed by the tbody that follows'
+ok('table structure is completed and sectioned correctly')
+
+# ---------------------------------------------------------------------------
+# Framesets
+# ---------------------------------------------------------------------------
+assert html.parse('<frameset><frame></frameset>').outer_html() ==
+  '<html><head></head><frameset><frame></frameset></html>',
+  'a frameset replaces the body'
+assert html.parse('<body><frameset>').outer_html() ==
+  '<html><head></head><body></body></html>',
+  'a frameset after real body content is ignored'
+assert html.parse('<frameset><frameset><frame></frameset></frameset>')
+  .query_selector_all('frameset').length() == 2, 'framesets can nest'
+ok('framesets')
+
+# ---------------------------------------------------------------------------
+# Raw text elements
+# ---------------------------------------------------------------------------
+assert body('<script>if (a<b) { x("</p>") }</script>') ==
+  '<script>if (a<b) { x("</p>") }</script>',
+  'script content must survive verbatim and never be escaped'
+assert body('<style>a > b { c: "d" }</style>') ==
+  '<style>a > b { c: "d" }</style>',
+  'stylesheet content must survive verbatim'
+assert html.parse('<script>x</script>').query_selector('script').children.length() == 1,
+  'script content becomes a single inert text node'
+assert html.parse('<script>x</script>').query_selector('script').first_child().is_text(),
+  'and it really is a text node, not something executable'
+assert body('<textarea>a &amp; b</textarea>') == '<textarea>a &amp; b</textarea>',
+  'textarea content decodes references and re-escapes on the way out'
+assert body('<pre>\nx</pre>') == '<pre>x</pre>',
+  'a pre swallows one leading newline'
+assert body('<pre>\n\nx</pre>') == '<pre>\nx</pre>',
+  'but only one'
+ok('raw text and escapable raw text elements')
+
+assert body('<noscript><b>x</b></noscript>') == '<noscript><b>x</b></noscript>',
+  'with scripting off, noscript content is real markup'
+assert html.parse('<noscript><b>x</b></noscript>').query_selector('noscript b') != nil,
+  'and the elements inside it are real elements'
+
+var scripted = html.parse('<noscript><b>x</b></noscript>', { scripting: true })
+assert scripted.query_selector('noscript b') == nil,
+  'with scripting on, noscript content is text'
+assert scripted.query_selector('noscript').text_content() == '<b>x</b>',
+  'and reads back as the markup it was written as'
+ok('the scripting option decides how <noscript> is parsed')
+
+# ---------------------------------------------------------------------------
+# Fragment parsing
+# ---------------------------------------------------------------------------
+assert html.parse_fragment('<td>x', 'tr', nil).inner_html() == '<td>x</td>',
+  'a fragment parsed in a row context keeps its cell'
+assert html.parse_fragment('<td>x', 'div', nil).inner_html() == 'x',
+  'the same fragment in a div context loses it'
+assert html.parse_fragment('a<b>c', nil, nil).inner_html() == 'a<b>c</b>',
+  'a nil context parses in a body context'
+assert html.parse_fragment('<p>a<p>b', 'div', nil).inner_html() == '<p>a</p><p>b</p>',
+  'the ordinary recovery rules apply inside a fragment'
+assert html.parse_fragment('a &amp; b', 'title', nil).inner_html() == 'a &amp; b',
+  'a fragment parsed in a title context is RCDATA'
+assert html.parse_fragment('<b>x</b>', 'style', nil).inner_html() == '<b>x</b>',
+  'a fragment parsed in a style context is raw text'
+assert html.parse_fragment('x', 'div', nil).is_fragment(),
+  'parse_fragment() must return a DocumentFragment'
+assert html.parse_fragment('', 'div', nil).children.is_empty(),
+  'an empty fragment must have no children'
+ok('parse_fragment() honours its context element')
+
+var context = html.parse('<table><tr></tr></table>').query_selector('tr')
+assert html.parse_fragment('<td>x', context, nil).inner_html() == '<td>x</td>',
+  'an Element context must work as well as a tag name'
+ok('parse_fragment() accepts an element as well as a tag name')
+
+# ---------------------------------------------------------------------------
+# parse_file()
+# ---------------------------------------------------------------------------
+var path = 'tmp/html_parse_fixture.html'
+var handle = file(path, 'w')
+handle.write('<!DOCTYPE html><title>From file</title><p>body text')
+handle.close()
+
+var from_file = html.parse_file(path, nil)
+assert from_file.title() == 'From file', 'parse_file() must read and parse the file'
+assert from_file.body().inner_html() == '<p>body text</p>',
+  'the tree must be built the same way as from a string'
+assert from_file.mode == 'no-quirks', 'the doctype in the file must be honoured'
+assert raises(@() { html.parse_file('tmp/definitely-not-here.html', nil) }),
+  'a missing file must raise'
+ok('parse_file()')
+
+# ---------------------------------------------------------------------------
+# Parse errors
+# ---------------------------------------------------------------------------
+assert html.parse('<!DOCTYPE html><html><head></head><body></body></html>').errors == [],
+  'a conformant document must raise no parse errors'
+assert codes('<p>x').contains('missing-doctype'),
+  'a missing doctype must be reported'
+assert codes('<!DOCTYPE html><p><b>x</p>').contains('unexpected-end-tag'),
+  'closing a paragraph over an open <b> must be reported'
+assert codes('<!DOCTYPE html><div a="1" a="2">').contains('duplicate-attribute'),
+  'tokenizer errors must be merged into the document\'s list'
+
+var located = html.parse('<!DOCTYPE html>\n<p><b>x</p>')
+assert located.errors.length() > 0, 'the error list must not be empty'
+assert located.errors[0].line == 2, 'an error must carry the line it happened on'
+ok('parse errors are collected from both stages, with positions')
+
+assert !raises(@() { html.parse('<<<>>><p</p><!--') }),
+  'even nonsense must parse without raising'
+assert !raises(@() { html.parse('<table><tr><td><svg><foreignObject><table>') }),
+  'deeply confused markup must parse without raising'
+ok('parsing never raises, whatever the input')
+
+# ---------------------------------------------------------------------------
+# Round-tripping
+# ---------------------------------------------------------------------------
+var canonical = '<!DOCTYPE html><html><head><title>T</title></head><body>' +
+  '<div class="a" id="b"><p>x &amp; y</p><ul><li>1</li><li>2</li></ul>' +
+  '<img src="i.png"><svg viewBox="0 0 1 1"><circle></circle></svg>' +
+  '</div></body></html>'
+
+assert html.parse(canonical).outer_html() == canonical,
+  'a canonical document must survive a parse and serialize unchanged'
+assert html.parse(html.parse(canonical).outer_html()).outer_html() == canonical,
+  'and must stay stable through a second pass'
+ok('canonical markup round-trips and is stable')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} parser checks passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -1,0 +1,188 @@
+/**
+ * html_entities.zu
+ *
+ * Test suite for the `html.entities` module: escaping text for
+ * embedding, decoding named, decimal and hexadecimal character
+ * references, the Windows-1252 remapping the standard mandates for
+ * the C1 range, and the serialization escapers.
+ */
+
+import html
+import html.entities as entities
+import html._entities_data as table
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  html.entities — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# The reference table itself
+# ---------------------------------------------------------------------------
+assert table.NAMED_REFERENCES.length() == 2231,
+  'the full HTML5 named character reference table has 2231 entries'
+assert table.MAX_NAME_LENGTH == 32,
+  'the longest reference name is CounterClockwiseContourIntegral; at 32 characters'
+assert table.NAMED_REFERENCES['amp;'] == '&', 'amp; must expand to an ampersand'
+assert table.NAMED_REFERENCES['CounterClockwiseContourIntegral;'] == '∳',
+  'the longest name must be present'
+assert table.NAMED_REFERENCES['NotEqualTilde;'].length() == 2,
+  'a reference that expands to two code points must keep both'
+
+var unterminated = 0
+
+for name, value in table.NAMED_REFERENCES {
+  if !name.ends_with(';') {
+    unterminated++
+  }
+}
+
+assert unterminated == 106,
+  'exactly 106 legacy references may be written without a semicolon'
+ok('the named reference table is complete, not a shortlist')
+
+# ---------------------------------------------------------------------------
+# decode(): named references
+# ---------------------------------------------------------------------------
+assert html.decode('&amp;') == '&', 'a basic named reference must decode'
+assert html.decode('&lt;b&gt;') == '<b>', 'several references in one string must all decode'
+assert html.decode('caf&eacute;') == 'café', 'a non-ASCII reference must decode'
+assert html.decode('&CounterClockwiseContourIntegral;') == '∳',
+  'the longest reference name must decode'
+assert html.decode('&NotEqualTilde;').length() == 2,
+  'a two code point reference must decode to both'
+ok('decode() resolves named references, including the extremes of the table')
+
+assert html.decode('a & b') == 'a & b', 'a bare ampersand must be left alone'
+assert html.decode('&nosuchthing;') == '&nosuchthing;',
+  'an unknown reference must be returned exactly as written'
+assert html.decode('&&amp;&') == '&&&', 'ampersands around a real reference must survive'
+assert html.decode('') == '', 'an empty string must decode to an empty string'
+assert html.decode('plain text') == 'plain text', 'text with no references must be untouched'
+ok('decode() leaves anything that is not a reference alone')
+
+# ---------------------------------------------------------------------------
+# decode(): longest match and the legacy semicolon rule
+# ---------------------------------------------------------------------------
+assert html.decode('&notin;') == '∉',
+  'matching must be greedy: notin; wins over the shorter not'
+assert html.decode('&notit;') == '¬it;',
+  'when the longer name does not exist, the legacy not (no semicolon) matches'
+assert html.decode('?a=1&copy=2') == '?a=1©=2',
+  'in content, a semicolon-less legacy reference decodes even before an "="'
+assert html.decode('?a=1&copy=2', true) == '?a=1&copy=2',
+  'in an attribute, the same text must be left alone'
+assert html.decode('&copy', true) == '©',
+  'in an attribute, a legacy reference not followed by "=" or an alphanumeric still decodes'
+ok('decode() implements longest match and the attribute-value legacy rule')
+
+# ---------------------------------------------------------------------------
+# decode(): numeric references
+# ---------------------------------------------------------------------------
+assert html.decode('&#169;') == '©', 'a decimal reference must decode'
+assert html.decode('&#xA9;') == '©', 'a lowercase hex reference must decode'
+assert html.decode('&#XA9;') == '©', 'an uppercase hex marker must decode'
+assert html.decode('&#x1D546;') == '𝕆', 'a reference beyond the basic plane must decode'
+assert html.decode('&#65') == 'A', 'a numeric reference without its semicolon still decodes'
+assert html.decode('&#') == '&#', 'a numeric reference with no digits is not a reference'
+assert html.decode('&#x') == '&#x', 'a hex marker with no digits is not a reference'
+ok('decode() resolves decimal and hexadecimal references')
+
+assert html.decode('&#0;') == '�', 'a null reference must become U+FFFD'
+assert html.decode('&#xD800;') == '�', 'a surrogate reference must become U+FFFD'
+assert html.decode('&#x110000;') == '�',
+  'a reference past the Unicode range must become U+FFFD'
+assert html.decode('&#99999999999;') == '�',
+  'an absurdly large reference must become U+FFFD rather than overflow'
+ok('decode() replaces null, surrogate and out-of-range references')
+
+assert html.decode('&#150;') == '–',
+  'a C1 reference must be remapped through Windows-1252, not taken literally'
+assert html.decode('&#128;') == '€', 'C1 0x80 must become a euro sign'
+assert html.decode('&#159;') == 'Ÿ', 'C1 0x9F must become a capital Y with diaeresis'
+assert html.decode('&#129;') == '',
+  'a C1 code point with no Windows-1252 character must be left alone'
+ok('decode() applies the mandatory Windows-1252 remapping')
+
+# ---------------------------------------------------------------------------
+# consume_reference(): the shared algorithm
+# ---------------------------------------------------------------------------
+var consumed = entities.consume_reference('&amp;x'.to_list(), 0, false)
+assert consumed.text == '&', 'consume_reference() must return the decoded text'
+assert consumed.next == 5, 'consume_reference() must report where it stopped'
+assert consumed.error == nil, 'a well-formed reference raises no error'
+
+var missing_semicolon = entities.consume_reference('&copy'.to_list(), 0, false)
+assert missing_semicolon.text == '©', 'a legacy reference must still decode'
+assert missing_semicolon.error == 'missing-semicolon-after-character-reference',
+  'a missing semicolon must be reported even though the text decodes'
+
+var ambiguous = entities.consume_reference('&nope;'.to_list(), 0, false)
+assert ambiguous.text == '&', 'an unknown reference returns a bare ampersand'
+assert ambiguous.next == 1, 'an unknown reference consumes only the ampersand'
+assert ambiguous.error == 'unknown-named-character-reference',
+  'an ampersand followed by a name and a semicolon must be reported'
+ok('consume_reference() reports position and parse errors')
+
+# ---------------------------------------------------------------------------
+# encode()
+# ---------------------------------------------------------------------------
+assert html.encode('<b>Tom & Jerry</b>') == '&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;',
+  'the syntax characters must all be escaped by default'
+assert html.encode('"quoted"') == '&quot;quoted&quot;', 'double quotes must be escaped'
+assert html.encode("it's") == 'it&#x27;s',
+  'a single quote must become &#x27;, which every parser understands'
+assert html.encode('') == '', 'an empty string must encode to an empty string'
+assert html.encode('plain') == 'plain', 'text with nothing to escape must be untouched'
+ok('encode() escapes the five syntax characters by default')
+
+assert html.encode("it's fine", { quotes: false }) == "it's fine",
+  'quotes: false must leave both quote characters alone'
+assert html.encode('<a>', { quotes: false }) == '&lt;a&gt;',
+  'quotes: false must not stop the other three being escaped'
+ok('encode() honours the quotes option')
+
+assert html.encode('café') == 'café', 'non-ASCII text is left alone by default'
+assert html.encode('café', { non_ascii: true }) == 'caf&eacute;',
+  'non_ascii: true must escape non-ASCII characters, preferring a named reference'
+assert html.encode('café', { non_ascii: true, named: false }) == 'caf&#xE9;',
+  'named: false must fall back to a hexadecimal reference'
+assert html.encode('a☃b', { non_ascii: true }) == 'a&#x2603;b',
+  'a character with no single-code-point name must use a numeric reference'
+ok('encode() honours non_ascii and named')
+
+assert html.decode(html.encode('<a href="x">Tom & Jerry\'s</a>')) ==
+  '<a href="x">Tom & Jerry\'s</a>',
+  'encode() then decode() must round-trip exactly'
+assert html.decode(html.encode('café — ☃', { non_ascii: true })) == 'café — ☃',
+  'the round trip must hold for non-ASCII text too'
+ok('encode() and decode() round-trip')
+
+# ---------------------------------------------------------------------------
+# The serialization escapers
+# ---------------------------------------------------------------------------
+assert html.escape_text('a<b>&c') == 'a&lt;b&gt;&amp;c',
+  'escape_text() must escape the three markup characters'
+assert html.escape_text('say "hi"') == 'say "hi"',
+  'escape_text() must leave quotes alone, since they mean nothing in content'
+assert html.escape_text('a b') == 'a&nbsp;b',
+  'escape_text() must escape a no-break space so it is visible in the source'
+
+assert html.escape_attribute('a&b"c') == 'a&amp;b&quot;c',
+  'escape_attribute() must escape ampersands and double quotes'
+assert html.escape_attribute('a<b>c') == 'a<b>c',
+  'escape_attribute() must leave angle brackets alone inside a quoted value'
+assert html.escape_attribute('a b') == 'a&nbsp;b',
+  'escape_attribute() must escape a no-break space'
+ok('escape_text() and escape_attribute() follow the serialization algorithm')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} entity checks passed.'
+echo '═══════════════════════════════════════════════════════'

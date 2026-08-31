@@ -1,0 +1,159 @@
+/**
+ * @module html
+ *
+ * A complete HTML5 parser, DOM and serializer, following the [WHATWG
+ * HTML Living Standard](https://html.spec.whatwg.org/multipage/).
+ *
+ * Parse a page, walk it, query it with CSS selectors, change it, and
+ * write it back out. Nothing here fetches anything over the network
+ * and nothing here executes a script; `<script>` content is inert
+ * text and always will be.
+ *
+ * ---
+ *
+ * ### Quick start
+ *
+ * ```zuri
+ * import html
+ *
+ * var doc = html.parse('''
+ *   <article>
+ *     <h1 id="title">Zuri</h1>
+ *     <ul class="links">
+ *       <li><a href="/docs">Docs</a>
+ *       <li><a href="/spec">Spec</a>
+ *     </ul>
+ *   </article>
+ * ''')
+ *
+ * echo doc.get_element_by_id('title').text_content()
+ *
+ * for link in doc.query_selector_all('ul.links a') {
+ *   echo '${link.text_content()} -> ${link.get_attribute("href")}'
+ * }
+ * ```
+ *
+ * Notice that neither `<li>` is closed and there is no `<html>`,
+ * `<head>` or `<body>` anywhere. That is fine: the standard defines a
+ * tree for every possible input, and this module builds it. Parsing
+ * never raises on malformed markup.
+ *
+ * ---
+ *
+ * ### Finding things
+ *
+ * | Method                          | Finds                        |
+ * | ------------------------------- | ---------------------------- |
+ * | `get_element_by_id(id)`         | the first element with that id |
+ * | `get_elements_by_class_name(c)` | every element with those classes |
+ * | `get_elements_by_tag_name(t)`   | every element with that tag  |
+ * | `query_selector(sel)`           | the first CSS match          |
+ * | `query_selector_all(sel)`       | every CSS match              |
+ * | `element.matches(sel)`          | whether this element matches |
+ * | `element.closest(sel)`          | this element or its nearest matching ancestor |
+ *
+ * The selector syntax is a deliberately bounded subset: type, `*`,
+ * `#id`, `.class`, `[attr]`, `[attr="value"]`, the combinators `>`,
+ * `+` and `~`, descendant combination by whitespace, `:first-child`,
+ * `:last-child`, `:nth-child()`, and comma-separated lists of all of
+ * those. Anything outside it raises a `SelectorError` rather than
+ * silently matching nothing.
+ *
+ * ---
+ *
+ * ### Changing things
+ *
+ * ```zuri
+ * import html
+ *
+ * var doc = html.parse('<div class="box"><p>old</p></div>')
+ * var box = doc.query_selector('.box')
+ *
+ * box.set_attribute('data-seen', 'yes')
+ * box.class_list().add('active')
+ * box.set_inner_html('<p>new</p>')
+ *
+ * echo box.outer_html()
+ * # <div class="box active" data-seen="yes"><p>new</p></div>
+ * ```
+ *
+ * Zuri has no property setters, so every writable DOM property is a
+ * pair of methods: `text_content()` reads and `set_text_content()`
+ * writes, and likewise for `inner_html` and `outer_html`.
+ *
+ * ---
+ *
+ * ### Writing it back out
+ *
+ * `outer_html()` round-trips a node exactly. When you want the output
+ * shaped for a particular audience, `minify()` strips what a browser
+ * does not need and `format()` indents for a human:
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.minify('<p>  a   b  </p>\\n<p>c</p>')
+ * '<p>a b</p><p>c</p>'
+ * %> echo html.format('<ul><li>a<li>b</ul>')
+ * <ul>
+ *   <li>a</li>
+ *   <li>b</li>
+ * </ul>
+ * ```
+ *
+ * ---
+ *
+ * ### Escaping
+ *
+ * `encode()` makes text safe to embed and `decode()` resolves
+ * character references. Decoding knows all 2231 named references, not
+ * a shortlist:
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.encode('<b>Tom & Jerry</b>')
+ * '&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;'
+ * %> html.decode('caf&eacute; &#8212; &#x2603;')
+ * 'café — ☃'
+ * ```
+ *
+ * ---
+ *
+ * ### Encoding
+ *
+ * Input is UTF-8 text that has already been decoded, which is what a
+ * Zuri string always is. There is no charset sniffing, no byte order
+ * mark handling and no `<meta charset>` processing: if you are
+ * reading bytes off a socket, decode them before they get here.
+ *
+ * ---
+ *
+ * ### Parse errors
+ *
+ * HTML has no fatal errors, so a parse always succeeds. Every
+ * conformance problem the standard defines is collected instead:
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> var doc = html.parse('<p><b>x</p>')
+ * %> for e in doc.errors { echo e.to_string() }
+ * unexpected-end-tag at 1:8
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import @.namespaces { * }
+import @.node { * }
+import @.selector { Selector, SelectorError, compile }
+import @.tokenizer { Token, ParseError, Tokenizer, tokenize }
+import @.parser { TreeBuilder, parse, parse_file, parse_fragment }
+import @.entities { encode, decode, escape_text, escape_attribute }
+import @.serialize { minify, format }
+
+import @.entities
+import @.selector
+import @.serialize
+import @.tokenizer
+import @.parser
+import @.elements
+import @.namespaces

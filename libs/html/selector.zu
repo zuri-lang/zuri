@@ -1,0 +1,1089 @@
+/**
+ * @module html.selector
+ *
+ * A small, deliberately bounded CSS selector engine: enough to find
+ * things in a parsed document, and no more.
+ *
+ * ### Supported syntax
+ *
+ * | Form                 | Example                    |
+ * | -------------------- | -------------------------- |
+ * | type                 | `div`                      |
+ * | universal            | `*`                        |
+ * | id                   | `#main`                    |
+ * | class                | `.warning`                 |
+ * | attribute presence   | `[disabled]`               |
+ * | attribute equality   | `[type="text"]`            |
+ * | descendant           | `article p`                |
+ * | child                | `ul > li`                  |
+ * | next sibling         | `h2 + p`                   |
+ * | subsequent sibling   | `h2 ~ p`                   |
+ * | first child          | `li:first-child`           |
+ * | last child           | `li:last-child`            |
+ * | nth child            | `li:nth-child(2n+1)`       |
+ * | selector list        | `h1, h2, h3`               |
+ *
+ * Compound selectors combine freely: `ul.menu > li[data-id]:first-child`
+ * is valid, as is any comma-separated list of those.
+ *
+ * ### Deliberately not supported
+ *
+ * Everything else, and the parser says so rather than quietly
+ * ignoring it. `:not()`, `:has()`, `:nth-of-type()`, `::before`,
+ * namespace prefixes, and the substring attribute operators (`^=`,
+ * `$=`, `*=`, `~=`, `|=`) all raise a `SelectorError`. A selector
+ * that silently matches nothing is far worse to debug than one that
+ * refuses to compile.
+ *
+ * ### Case sensitivity
+ *
+ * Type selectors and attribute *names* fold ASCII case, matching how
+ * HTML itself treats them. Ids, class names and attribute *values*
+ * are compared exactly, which is what standards-mode HTML does.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+
+/**
+ * Raised when a selector cannot be parsed, or uses syntax this
+ * module deliberately does not support. The message names the
+ * offending part of the selector.
+ */
+class SelectorError < Error {
+  /**
+   * @param string message
+   * @constructor
+   */
+  @new(message) {
+    parent(message)
+  }
+}
+
+
+# Compiled selectors keyed by their source text. Querying in a loop is
+# the normal case and re-parsing the same string every time is pure
+# waste, but an unbounded cache in a long-running process is a leak;
+# past the cap the whole cache is dropped rather than evicted one
+# entry at a time, which keeps the bookkeeping free in the common case
+# where the cap is never reached.
+var _cache = {}
+
+# How many compiled selectors to keep before dropping the lot.
+var _CACHE_LIMIT = 256
+
+# The pseudo-classes this engine implements. Anything else is an
+# error, not a silent non-match.
+var _SUPPORTED_PSEUDOS = ['first-child', 'last-child', 'nth-child']
+
+
+/**
+ * One `name`/`=value` test from a `[...]` block.
+ */
+class AttributeTest {
+
+  /**
+   * The attribute name, lowercased.
+   */
+  var name = ''
+
+  /**
+   * The value the attribute must equal, or `nil` when the test is a
+   * bare presence check.
+   */
+  var value = nil
+
+  /**
+   * @param string name
+   * @param ?string value
+   * @constructor
+   */
+  @new(name: string, value: ?string) {
+    self.name = name
+    self.value = value
+  }
+
+  /**
+   * True when _element_ satisfies this test.
+   *
+   * @param any element
+   * @returns bool
+   */
+  matches(element) {
+    if self.value == nil {
+      return element.has_attribute(self.name)
+    }
+
+    return element.get_attribute(self.name) == self.value
+  }
+}
+
+
+/**
+ * One `:pseudo` or `:pseudo(...)` test.
+ */
+class PseudoTest {
+
+  /**
+   * The pseudo-class name, lowercased and without its colon.
+   */
+  var name = ''
+
+  /**
+   * The `a` of the `an+b` argument, for `nth-child`. Unused
+   * otherwise.
+   */
+  var step = 0
+
+  /**
+   * The `b` of the `an+b` argument, for `nth-child`. Unused
+   * otherwise.
+   */
+  var offset = 0
+
+  /**
+   * @param string name
+   * @param ?number step
+   * @param ?number offset
+   * @constructor
+   */
+  @new(name: string, step: ?number, offset: ?number) {
+    self.name = name
+
+    # Spelled out rather than `step or 0`, because a negative number
+    # is falsy in Zuri and `:nth-child(-n+3)` needs its `-1` to
+    # survive.
+    self.step = 0
+    if step != nil {
+      self.step = step
+    }
+
+    self.offset = 0
+    if offset != nil {
+      self.offset = offset
+    }
+  }
+
+  /**
+   * True when _element_ satisfies this test.
+   *
+   * @param any element
+   * @returns bool
+   */
+  matches(element) {
+    var position = _child_position(element)
+
+    if self.name == 'first-child' {
+      return position.index == 1
+    }
+
+    if self.name == 'last-child' {
+      return position.index == position.count
+    }
+
+    return self._matches_nth(position.index)
+  }
+
+  /**
+   * The `an+b` test: true when _index_ can be written as
+   * `step * k + offset` for some whole number `k` that is zero or
+   * more.
+   *
+   * @param number index
+   * @returns bool
+   */
+  _matches_nth(index: number) {
+    if self.step == 0 {
+      return index == self.offset
+    }
+
+    var distance = index - self.offset
+
+    if distance % self.step != 0 {
+      return false
+    }
+
+    return distance // self.step >= 0
+  }
+}
+
+
+/**
+ * Where an element sits among its siblings: `index` is its 1-based
+ * position and `count` is how many element siblings there are in
+ * total, itself included.
+ *
+ * An element with no parent counts as an only child, so both
+ * `:first-child` and `:last-child` match it. That is what browsers do
+ * for the root element, and it keeps a detached subtree behaving the
+ * same as an attached one.
+ *
+ * @param any element
+ * @returns dict
+ */
+def _child_position(element) {
+  var host = element.parent_node
+
+  if host == nil {
+    return { index: 1, count: 1 }
+  }
+
+  var index = 0
+  var count = 0
+
+  for child in host.children {
+    if !child.is_element() {
+      continue
+    }
+
+    count++
+
+    if id(child) == id(element) {
+      index = count
+    }
+  }
+
+  return { index, count }
+}
+
+
+/**
+ * A run of simple selectors with nothing between them, such as
+ * `div#main.active[data-x]:first-child`. Every part has to match the
+ * same element.
+ */
+class CompoundSelector {
+
+  /**
+   * The type selector's tag name in lowercase, or `nil` when the
+   * compound has none or uses `*`.
+   */
+  var tag_name = nil
+
+  /**
+   * The id the element must carry, or `nil`.
+   */
+  var id = nil
+
+  /**
+   * Class names the element must all carry.
+   */
+  var classes = []
+
+  /**
+   * `AttributeTest` instances the element must all satisfy.
+   */
+  var attributes = []
+
+  /**
+   * `PseudoTest` instances the element must all satisfy.
+   */
+  var pseudos = []
+
+  /**
+   * @constructor
+   */
+  @new() {
+    self.classes = []
+    self.attributes = []
+    self.pseudos = []
+  }
+
+  /**
+   * True when _element_ satisfies every part of this compound.
+   *
+   * @param any element
+   * @returns bool
+   */
+  matches(element) {
+    if self.tag_name != nil and element.tag_name.lower() != self.tag_name {
+      return false
+    }
+
+    if self.id != nil and element.get_attribute('id') != self.id {
+      return false
+    }
+
+    if !self.classes.is_empty() {
+      var owned = element.class_names()
+
+      for name in self.classes {
+        if !owned.contains(name) {
+          return false
+        }
+      }
+    }
+
+    for test in self.attributes {
+      if !test.matches(element) {
+        return false
+      }
+    }
+
+    for test in self.pseudos {
+      if !test.matches(element) {
+        return false
+      }
+    }
+
+    return true
+  }
+}
+
+
+/**
+ * One selector from a comma-separated list: a chain of compounds
+ * joined by combinators, such as `ul > li + li`.
+ */
+class ComplexSelector {
+
+  /**
+   * The compounds, leftmost first.
+   */
+  var compounds = []
+
+  /**
+   * How each compound relates to the one before it. Entry `i` is the
+   * combinator between compound `i - 1` and compound `i`; entry `0`
+   * is always `nil`. One of `'descendant'`, `'child'`, `'adjacent'`
+   * or `'sibling'`.
+   */
+  var combinators = []
+
+  /**
+   * @constructor
+   */
+  @new() {
+    self.compounds = []
+    self.combinators = []
+  }
+
+  /**
+   * True when _element_ matches this selector.
+   *
+   * Matching runs right to left, which is what makes a selector like
+   * `body div span` cheap: the rightmost compound rejects almost
+   * every element outright, and only survivors pay for the walk up
+   * the tree.
+   *
+   * @param any element
+   * @returns bool
+   */
+  matches(element) {
+    return self._matches_from(self.compounds.length() - 1, element)
+  }
+
+  /**
+   * True when _element_ matches compound _at_ and the whole chain to
+   * its left is satisfied by _element_'s ancestors and siblings.
+   *
+   * @param number at
+   * @param any element
+   * @returns bool
+   */
+  _matches_from(at: number, element) {
+    if !self.compounds[at].matches(element) {
+      return false
+    }
+
+    if at == 0 {
+      return true
+    }
+
+    var combinator = self.combinators[at]
+
+    if combinator == 'child' {
+      var host = element.parent_node
+
+      if host == nil or !host.is_element() {
+        return false
+      }
+
+      return self._matches_from(at - 1, host)
+    }
+
+    if combinator == 'adjacent' {
+      var sibling = element.previous_element_sibling()
+
+      if sibling == nil {
+        return false
+      }
+
+      return self._matches_from(at - 1, sibling)
+    }
+
+    if combinator == 'sibling' {
+      var sibling = element.previous_element_sibling()
+
+      while sibling != nil {
+        if self._matches_from(at - 1, sibling) {
+          return true
+        }
+
+        sibling = sibling.previous_element_sibling()
+      }
+
+      return false
+    }
+
+    # Descendant: any ancestor will do.
+    var host = element.parent_node
+
+    while host != nil and host.is_element() {
+      if self._matches_from(at - 1, host) {
+        return true
+      }
+
+      host = host.parent_node
+    }
+
+    return false
+  }
+}
+
+
+/**
+ * A compiled selector list: `h1, h2` is one of these holding two
+ * `ComplexSelector` instances.
+ *
+ * Instances are immutable once compiled and safe to reuse, which is
+ * why `compile()` caches them.
+ */
+class Selector {
+
+  /**
+   * The selector text this was compiled from, kept for error messages
+   * and for `to_string()`.
+   */
+  var source = ''
+
+  /**
+   * The alternatives, in the order they were written. An element
+   * matches the selector when it matches any one of them.
+   */
+  var alternatives = []
+
+  /**
+   * @param string source
+   * @param list alternatives
+   * @constructor
+   */
+  @new(source: string, alternatives: list) {
+    self.source = source
+    self.alternatives = alternatives
+  }
+
+  /**
+   * True when _element_ matches any alternative in this selector.
+   *
+   * @param any element
+   * @returns bool
+   */
+  matches(element) {
+    for alternative in self.alternatives {
+      if alternative.matches(element) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * The selector text this was compiled from.
+   *
+   * @returns string
+   */
+  to_string() {
+    return self.source
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Compiles _source_ into a reusable `Selector`.
+ *
+ * Compiled selectors are cached by source text, so calling this with
+ * the same string repeatedly costs a dictionary lookup rather than a
+ * parse. The cache holds at most 256 selectors and is dropped
+ * wholesale when it fills, so a program that builds selector strings
+ * dynamically cannot grow it without bound.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> var s = html.selector.compile('ul.menu > li:first-child')
+ * %> s.matches(element)
+ * true
+ * ```
+ *
+ * @param string source
+ * @returns Selector
+ * @throws SelectorError when _source_ is empty, malformed, or uses
+ *   syntax outside the supported subset.
+ */
+def compile(source: string) {
+  var hit = _cache.get(source, nil)
+
+  if hit != nil {
+    return hit
+  }
+
+  var compiled = Selector(source, _parse_list(source))
+
+  if _cache.length() >= _CACHE_LIMIT {
+    _cache = {}
+  }
+
+  _cache[source] = compiled
+  return compiled
+}
+
+
+/**
+ * Parses a comma-separated selector list into `ComplexSelector`
+ * instances.
+ *
+ * @param string source
+ * @returns list
+ * @throws SelectorError
+ */
+def _parse_list(source: string) {
+  var chars = source.to_list()
+  var state = { chars, pos: 0, source }
+
+  var out = []
+
+  while true {
+    out.append(_parse_complex(state))
+
+    _skip_whitespace(state)
+
+    if _at_end(state) {
+      break
+    }
+
+    if _peek(state) != ',' {
+      _fail(state, 'unexpected "${_peek(state)}"')
+    }
+
+    state.pos++
+  }
+
+  return out
+}
+
+
+/**
+ * Parses one selector from the list: a chain of compounds joined by
+ * combinators.
+ *
+ * @param dict state
+ * @returns ComplexSelector
+ * @throws SelectorError
+ */
+def _parse_complex(state: dict) {
+  var complex = ComplexSelector()
+
+  _skip_whitespace(state)
+  complex.compounds.append(_parse_compound(state))
+  complex.combinators.append(nil)
+
+  while true {
+    var had_space = _skip_whitespace(state)
+
+    if _at_end(state) or _peek(state) == ',' {
+      break
+    }
+
+    var combinator = 'descendant'
+    var c = _peek(state)
+
+    if c == '>' {
+      combinator = 'child'
+      state.pos++
+    } else if c == '+' {
+      combinator = 'adjacent'
+      state.pos++
+    } else if c == '~' {
+      combinator = 'sibling'
+      state.pos++
+    } else if !had_space {
+      # No whitespace and no combinator character means the compound
+      # never ended, which only happens on input this parser cannot
+      # make sense of.
+      _fail(state, 'unexpected "${c}"')
+    }
+
+    _skip_whitespace(state)
+
+    complex.compounds.append(_parse_compound(state))
+    complex.combinators.append(combinator)
+  }
+
+  return complex
+}
+
+
+/**
+ * Parses a single compound selector.
+ *
+ * @param dict state
+ * @returns CompoundSelector
+ * @throws SelectorError
+ */
+def _parse_compound(state: dict) {
+  var compound = CompoundSelector()
+  var parts = 0
+
+  if !_at_end(state) {
+    var c = _peek(state)
+
+    if c == '*' {
+      state.pos++
+      parts++
+    } else if _is_name_start(c) {
+      compound.tag_name = _read_identifier(state).lower()
+      parts++
+    }
+  }
+
+  while !_at_end(state) {
+    var c = _peek(state)
+
+    if c == '#' {
+      state.pos++
+      compound.id = _read_identifier(state)
+    } else if c == '.' {
+      state.pos++
+      compound.classes.append(_read_identifier(state))
+    } else if c == '[' {
+      compound.attributes.append(_parse_attribute(state))
+    } else if c == ':' {
+      compound.pseudos.append(_parse_pseudo(state))
+    } else {
+      break
+    }
+
+    parts++
+  }
+
+  if parts == 0 {
+    if _at_end(state) {
+      _fail(state, 'the selector ends where a simple selector was expected')
+    }
+
+    _fail(state, 'unexpected "${_peek(state)}"')
+  }
+
+  return compound
+}
+
+
+/**
+ * Parses a `[...]` attribute test. The opening bracket is still
+ * unconsumed when this is called.
+ *
+ * @param dict state
+ * @returns AttributeTest
+ * @throws SelectorError
+ */
+def _parse_attribute(state: dict) {
+  state.pos++
+  _skip_whitespace(state)
+
+  var name = _read_identifier(state).lower()
+  _skip_whitespace(state)
+
+  if _at_end(state) {
+    _fail(state, 'unterminated attribute selector')
+  }
+
+  if _peek(state) == ']' {
+    state.pos++
+    return AttributeTest(name, nil)
+  }
+
+  var operator = _peek(state)
+
+  if operator != '=' {
+    if ['^', '$', '*', '~', '|'].contains(operator) {
+      _fail(state,
+        'the "${operator}=" attribute operator is not supported; ' +
+        'only [attr] and [attr="value"] are')
+    }
+
+    _fail(state, 'expected "=" or "]" in an attribute selector')
+  }
+
+  state.pos++
+  _skip_whitespace(state)
+
+  var value = _read_attribute_value(state)
+  _skip_whitespace(state)
+
+  if _at_end(state) or _peek(state) != ']' {
+    _fail(state, 'unterminated attribute selector')
+  }
+
+  state.pos++
+  return AttributeTest(name, value)
+}
+
+
+/**
+ * Reads the right-hand side of an `[attr=...]` test: a single-quoted
+ * string, a double-quoted string, or a bare identifier.
+ *
+ * @param dict state
+ * @returns string
+ * @throws SelectorError
+ */
+def _read_attribute_value(state: dict) {
+  if _at_end(state) {
+    _fail(state, 'an attribute selector is missing its value')
+  }
+
+  var quote = _peek(state)
+
+  if quote != '"' and quote != '\'' {
+    return _read_identifier(state)
+  }
+
+  state.pos++
+  var out = []
+
+  while !_at_end(state) and _peek(state) != quote {
+    var c = _peek(state)
+
+    # A backslash escapes the next character, which is the only way to
+    # put the closing quote inside the value.
+    if c == '\\' {
+      state.pos++
+
+      if _at_end(state) {
+        break
+      }
+
+      c = _peek(state)
+    }
+
+    out.append(c)
+    state.pos++
+  }
+
+  if _at_end(state) {
+    _fail(state, 'unterminated string in an attribute selector')
+  }
+
+  state.pos++
+  return ''.join(out)
+}
+
+
+/**
+ * Parses a `:pseudo` or `:pseudo(...)` test. The colon is still
+ * unconsumed when this is called.
+ *
+ * @param dict state
+ * @returns PseudoTest
+ * @throws SelectorError
+ */
+def _parse_pseudo(state: dict) {
+  state.pos++
+
+  if !_at_end(state) and _peek(state) == ':' {
+    _fail(state, 'pseudo-elements (::) are not supported')
+  }
+
+  var name = _read_identifier(state).lower()
+
+  if !_SUPPORTED_PSEUDOS.contains(name) {
+    _fail(state,
+      'the ":${name}" pseudo-class is not supported; ' +
+      'this engine implements :first-child, :last-child and :nth-child()')
+  }
+
+  if name != 'nth-child' {
+    if !_at_end(state) and _peek(state) == '(' {
+      _fail(state, '":${name}" does not take an argument')
+    }
+
+    return PseudoTest(name, 0, 0)
+  }
+
+  if _at_end(state) or _peek(state) != '(' {
+    _fail(state, '":nth-child" needs an argument, as in ":nth-child(2n+1)"')
+  }
+
+  state.pos++
+  var argument = []
+
+  while !_at_end(state) and _peek(state) != ')' {
+    argument.append(_peek(state))
+    state.pos++
+  }
+
+  if _at_end(state) {
+    _fail(state, 'unterminated ":nth-child(" argument')
+  }
+
+  state.pos++
+
+  var parsed = _parse_nth(''.join(argument), state)
+  return PseudoTest(name, parsed.step, parsed.offset)
+}
+
+
+/**
+ * Parses an `an+b` argument into its `step` (`a`) and `offset` (`b`).
+ *
+ * Accepts every form CSS allows here: `odd`, `even`, a bare integer,
+ * `n`, `-n`, `2n`, `2n+1`, `-2n + 3`, `n-1`, and the same with a
+ * leading sign. Whitespace is allowed around the sign that separates
+ * the two halves, as the standard requires.
+ *
+ * @param string text
+ * @param dict state
+ * @returns dict
+ * @throws SelectorError
+ */
+def _parse_nth(text: string, state: dict) {
+  var trimmed = text.trim().lower()
+
+  if trimmed == 'odd' {
+    return { step: 2, offset: 1 }
+  }
+
+  if trimmed == 'even' {
+    return { step: 2, offset: 0 }
+  }
+
+  if trimmed.is_empty() {
+    _fail(state, '":nth-child()" needs an argument')
+  }
+
+  var chars = trimmed.to_list()
+  var limit = chars.length()
+  var at = 0
+  var sign = 1
+
+  if chars[at] == '+' or chars[at] == '-' {
+    if chars[at] == '-' {
+      sign = -1
+    }
+
+    at++
+  }
+
+  var digits = []
+  while at < limit and _is_digit(chars[at]) {
+    digits.append(chars[at])
+    at++
+  }
+
+  # No `n` means the argument is a plain position, and the digits we
+  # just read are the whole of it.
+  if at >= limit or chars[at] != 'n' {
+    if digits.is_empty() or at != limit {
+      _fail(state, '":nth-child(${text})" is not a valid an+b argument')
+    }
+
+    return { step: 0, offset: sign * ''.join(digits).to_number() }
+  }
+
+  at++
+
+  var step = sign
+  if !digits.is_empty() {
+    step = sign * ''.join(digits).to_number()
+  }
+
+  while at < limit and _is_whitespace(chars[at]) {
+    at++
+  }
+
+  if at >= limit {
+    return { step, offset: 0 }
+  }
+
+  var offset_sign = 1
+
+  if chars[at] == '-' {
+    offset_sign = -1
+  } else if chars[at] != '+' {
+    _fail(state, '":nth-child(${text})" is not a valid an+b argument')
+  }
+
+  at++
+
+  while at < limit and _is_whitespace(chars[at]) {
+    at++
+  }
+
+  var offset_digits = []
+  while at < limit and _is_digit(chars[at]) {
+    offset_digits.append(chars[at])
+    at++
+  }
+
+  if offset_digits.is_empty() or at != limit {
+    _fail(state, '":nth-child(${text})" is not a valid an+b argument')
+  }
+
+  return { step, offset: offset_sign * ''.join(offset_digits).to_number() }
+}
+
+
+/**
+ * True when _c_ is an ASCII decimal digit.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_digit(c: string) {
+  var n = c.ord()
+  return n >= 48 and n <= 57
+}
+
+
+/**
+ * True when the parser has run out of input.
+ *
+ * @param dict state
+ * @returns bool
+ */
+def _at_end(state: dict) {
+  return state.pos >= state.chars.length()
+}
+
+
+/**
+ * The character at the cursor, without consuming it.
+ *
+ * @param dict state
+ * @returns string
+ */
+def _peek(state: dict) {
+  return state.chars[state.pos]
+}
+
+
+/**
+ * Advances past any whitespace and reports whether there was any.
+ * Callers need the answer because whitespace between two compounds
+ * *is* the descendant combinator.
+ *
+ * @param dict state
+ * @returns bool
+ */
+def _skip_whitespace(state: dict) {
+  var start = state.pos
+
+  while !_at_end(state) and _is_whitespace(_peek(state)) {
+    state.pos++
+  }
+
+  return state.pos > start
+}
+
+
+/**
+ * True when _c_ is one of the characters CSS treats as whitespace.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_whitespace(c: string) {
+  return c == ' ' or c == '\t' or c == '\n' or
+    c == '\r' or c == '\f'
+}
+
+
+/**
+ * True when _c_ can start an identifier: a letter, an underscore, a
+ * hyphen, a backslash escape, or any non-ASCII character.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_name_start(c: string) {
+  var n = c.ord()
+
+  return (n >= 65 and n <= 90) or (n >= 97 and n <= 122) or
+    n == 95 or n == 45 or n == 92 or n > 127
+}
+
+
+/**
+ * True when _c_ can appear after the first character of an
+ * identifier.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_name_char(c: string) {
+  var n = c.ord()
+
+  return _is_name_start(c) or (n >= 48 and n <= 57)
+}
+
+
+/**
+ * Reads an identifier at the cursor, resolving backslash escapes so
+ * that a class such as `.a\.b` matches an element whose class really
+ * is `a.b`.
+ *
+ * @param dict state
+ * @returns string
+ * @throws SelectorError when there is no identifier at the cursor.
+ */
+def _read_identifier(state: dict) {
+  if _at_end(state) or !_is_name_start(_peek(state)) {
+    _fail(state, 'expected a name')
+  }
+
+  var out = []
+
+  while !_at_end(state) {
+    var c = _peek(state)
+
+    if c == '\\' {
+      state.pos++
+
+      if _at_end(state) {
+        _fail(state, 'a selector cannot end with a backslash')
+      }
+
+      out.append(_peek(state))
+      state.pos++
+      continue
+    }
+
+    if !_is_name_char(c) {
+      break
+    }
+
+    out.append(c)
+    state.pos++
+  }
+
+  return ''.join(out)
+}
+
+
+/**
+ * Raises a `SelectorError` naming the position the parser gave up at.
+ *
+ * @param dict state
+ * @param string message
+ * @throws SelectorError
+ */
+def _fail(state: dict, message: string) {
+  raise SelectorError(
+    'invalid selector "${state.source}" at position ${state.pos}: ${message}'
+  )
+}

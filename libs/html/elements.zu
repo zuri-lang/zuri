@@ -1,0 +1,543 @@
+/**
+ * @module html.elements
+ *
+ * The element tables the tree construction algorithm consults on
+ * almost every token: which elements are "special", which are
+ * formatting elements, which close which, and how SVG and MathML tag
+ * and attribute names have to be repaired after the tokenizer has
+ * lowercased them.
+ *
+ * These are data, lifted from the WHATWG HTML Living Standard. They
+ * live apart from `html.parser` so the algorithm there reads as the
+ * algorithm and not as a wall of lists.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import .namespaces { HTML_NAMESPACE, SVG_NAMESPACE, MATHML_NAMESPACE }
+import .namespaces { XLINK_NAMESPACE, XML_NAMESPACE, XMLNS_NAMESPACE }
+
+
+/**
+ * The HTML elements the standard calls "special": the ones that end
+ * an open paragraph, that the adoption agency algorithm stops at, and
+ * that `:scope` checks treat as barriers.
+ */
+var SPECIAL_HTML = [
+  'address', 'applet', 'area', 'article', 'aside', 'base',
+  'basefont', 'bgsound', 'blockquote', 'body', 'br', 'button',
+  'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dir',
+  'div', 'dl', 'dt', 'embed', 'fieldset', 'figcaption', 'figure',
+  'footer', 'form', 'frame', 'frameset', 'h1', 'h2', 'h3', 'h4',
+  'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html', 'iframe',
+  'img', 'input', 'keygen', 'li', 'link', 'listing', 'main',
+  'marquee', 'menu', 'meta', 'nav', 'noembed', 'noframes',
+  'noscript', 'object', 'ol', 'p', 'param', 'plaintext', 'pre',
+  'script', 'search', 'section', 'select', 'source', 'style',
+  'summary', 'table', 'tbody', 'td', 'template', 'textarea',
+  'tfoot', 'th', 'thead', 'title', 'tr', 'track', 'ul', 'wbr',
+  'xmp',
+]
+
+/**
+ * The MathML elements that count as special.
+ */
+var SPECIAL_MATHML = ['mi', 'mo', 'mn', 'ms', 'mtext', 'annotation-xml']
+
+/**
+ * The SVG elements that count as special.
+ */
+var SPECIAL_SVG = ['foreignObject', 'desc', 'title']
+
+/**
+ * The formatting elements: the ones the adoption agency algorithm
+ * reopens across a badly nested boundary, so that `<b>a<p>b</b>c` puts
+ * a fresh `<b>` inside the paragraph.
+ */
+var FORMATTING_ELEMENTS = [
+  'a', 'b', 'big', 'code', 'em', 'font', 'i', 'nobr', 's',
+  'small', 'strike', 'strong', 'tt', 'u',
+]
+
+/**
+ * The HTML elements that make up the "in scope" barrier used by most
+ * scope checks.
+ */
+var SCOPE_HTML = [
+  'applet', 'caption', 'html', 'table', 'td', 'th', 'marquee',
+  'object', 'template',
+]
+
+/**
+ * Elements whose end tag is implied by the start of a sibling, so
+ * that `<li>a<li>b` produces two list items rather than nesting.
+ */
+var IMPLIED_END_TAGS = [
+  'dd', 'dt', 'li', 'optgroup', 'option', 'p', 'rb', 'rp', 'rt',
+  'rtc',
+]
+
+/**
+ * Everything in {IMPLIED_END_TAGS} plus the elements only closed when
+ * the standard says to generate implied end tags *thoroughly*, which
+ * is what `</template>` and the table sections do.
+ */
+var THOROUGH_IMPLIED_END_TAGS = [
+  'caption', 'colgroup', 'dd', 'dt', 'li', 'optgroup', 'option',
+  'p', 'rb', 'rp', 'rt', 'rtc', 'tbody', 'td', 'tfoot', 'th',
+  'thead', 'tr',
+]
+
+/**
+ * The MathML elements whose children are parsed as HTML rather than
+ * as MathML.
+ */
+var MATHML_TEXT_INTEGRATION_POINTS = ['mi', 'mo', 'mn', 'ms', 'mtext']
+
+/**
+ * The SVG elements whose children are parsed as HTML rather than as
+ * SVG.
+ */
+var SVG_HTML_INTEGRATION_POINTS = ['foreignObject', 'desc', 'title']
+
+/**
+ * Start tags that are always a mistake inside foreign content and
+ * that break out of it, closing SVG or MathML elements until an HTML
+ * insertion point is reached.
+ */
+var FOREIGN_BREAKOUT_TAGS = [
+  'b', 'big', 'blockquote', 'body', 'br', 'center', 'code', 'dd',
+  'div', 'dl', 'dt', 'em', 'embed', 'h1', 'h2', 'h3', 'h4', 'h5',
+  'h6', 'head', 'hr', 'i', 'img', 'li', 'listing', 'menu', 'meta',
+  'nobr', 'ol', 'p', 'pre', 'ruby', 's', 'small', 'span', 'strong',
+  'strike', 'sub', 'sup', 'table', 'tt', 'u', 'ul', 'var',
+]
+
+/**
+ * SVG tag names the tokenizer lowercased and that have to be put
+ * back, keyed by the lowercase form. SVG is case-sensitive and
+ * `<foreignobject>` is not the same element as `<foreignObject>`.
+ */
+var SVG_TAG_NAMES = {
+  altglyph: 'altGlyph',
+  altglyphdef: 'altGlyphDef',
+  altglyphitem: 'altGlyphItem',
+  animatecolor: 'animateColor',
+  animatemotion: 'animateMotion',
+  animatetransform: 'animateTransform',
+  clippath: 'clipPath',
+  feblend: 'feBlend',
+  fecolormatrix: 'feColorMatrix',
+  fecomponenttransfer: 'feComponentTransfer',
+  fecomposite: 'feComposite',
+  feconvolvematrix: 'feConvolveMatrix',
+  fediffuselighting: 'feDiffuseLighting',
+  fedisplacementmap: 'feDisplacementMap',
+  fedistantlight: 'feDistantLight',
+  fedropshadow: 'feDropShadow',
+  feflood: 'feFlood',
+  fefunca: 'feFuncA',
+  fefuncb: 'feFuncB',
+  fefuncg: 'feFuncG',
+  fefuncr: 'feFuncR',
+  fegaussianblur: 'feGaussianBlur',
+  feimage: 'feImage',
+  femerge: 'feMerge',
+  femergenode: 'feMergeNode',
+  femorphology: 'feMorphology',
+  feoffset: 'feOffset',
+  fepointlight: 'fePointLight',
+  fespecularlighting: 'feSpecularLighting',
+  fespotlight: 'feSpotLight',
+  fetile: 'feTile',
+  feturbulence: 'feTurbulence',
+  foreignobject: 'foreignObject',
+  glyphref: 'glyphRef',
+  lineargradient: 'linearGradient',
+  radialgradient: 'radialGradient',
+  textpath: 'textPath',
+}
+
+/**
+ * SVG attribute names the tokenizer lowercased and that have to be
+ * put back, keyed by the lowercase form.
+ */
+var SVG_ATTRIBUTES = {
+  attributename: 'attributeName',
+  attributetype: 'attributeType',
+  basefrequency: 'baseFrequency',
+  baseprofile: 'baseProfile',
+  calcmode: 'calcMode',
+  clippathunits: 'clipPathUnits',
+  diffuseconstant: 'diffuseConstant',
+  edgemode: 'edgeMode',
+  filterunits: 'filterUnits',
+  glyphref: 'glyphRef',
+  gradienttransform: 'gradientTransform',
+  gradientunits: 'gradientUnits',
+  kernelmatrix: 'kernelMatrix',
+  kernelunitlength: 'kernelUnitLength',
+  keypoints: 'keyPoints',
+  keysplines: 'keySplines',
+  keytimes: 'keyTimes',
+  lengthadjust: 'lengthAdjust',
+  limitingconeangle: 'limitingConeAngle',
+  markerheight: 'markerHeight',
+  markerunits: 'markerUnits',
+  markerwidth: 'markerWidth',
+  maskcontentunits: 'maskContentUnits',
+  maskunits: 'maskUnits',
+  numoctaves: 'numOctaves',
+  pathlength: 'pathLength',
+  patterncontentunits: 'patternContentUnits',
+  patterntransform: 'patternTransform',
+  patternunits: 'patternUnits',
+  pointsatx: 'pointsAtX',
+  pointsaty: 'pointsAtY',
+  pointsatz: 'pointsAtZ',
+  preservealpha: 'preserveAlpha',
+  preserveaspectratio: 'preserveAspectRatio',
+  primitiveunits: 'primitiveUnits',
+  refx: 'refX',
+  refy: 'refY',
+  repeatcount: 'repeatCount',
+  repeatdur: 'repeatDur',
+  requiredextensions: 'requiredExtensions',
+  requiredfeatures: 'requiredFeatures',
+  specularconstant: 'specularConstant',
+  specularexponent: 'specularExponent',
+  spreadmethod: 'spreadMethod',
+  startoffset: 'startOffset',
+  stddeviation: 'stdDeviation',
+  stitchtiles: 'stitchTiles',
+  surfacescale: 'surfaceScale',
+  systemlanguage: 'systemLanguage',
+  tablevalues: 'tableValues',
+  targetx: 'targetX',
+  targety: 'targetY',
+  textlength: 'textLength',
+  viewbox: 'viewBox',
+  viewtarget: 'viewTarget',
+  xchannelselector: 'xChannelSelector',
+  ychannelselector: 'yChannelSelector',
+  zoomandpan: 'zoomAndPan',
+}
+
+/**
+ * The one MathML attribute whose case the tokenizer destroys.
+ */
+var MATHML_ATTRIBUTES = {
+  definitionurl: 'definitionURL',
+}
+
+/**
+ * Attributes in foreign content that belong to a namespace, mapping
+ * the lowercase name the tokenizer produced to the qualified name and
+ * the namespace URI it should carry.
+ */
+var FOREIGN_ATTRIBUTES = {
+  'xlink:actuate': { name: 'xlink:actuate', uri: XLINK_NAMESPACE },
+  'xlink:arcrole': { name: 'xlink:arcrole', uri: XLINK_NAMESPACE },
+  'xlink:href': { name: 'xlink:href', uri: XLINK_NAMESPACE },
+  'xlink:role': { name: 'xlink:role', uri: XLINK_NAMESPACE },
+  'xlink:show': { name: 'xlink:show', uri: XLINK_NAMESPACE },
+  'xlink:title': { name: 'xlink:title', uri: XLINK_NAMESPACE },
+  'xlink:type': { name: 'xlink:type', uri: XLINK_NAMESPACE },
+  'xml:lang': { name: 'xml:lang', uri: XML_NAMESPACE },
+  'xml:space': { name: 'xml:space', uri: XML_NAMESPACE },
+  'xmlns': { name: 'xmlns', uri: XMLNS_NAMESPACE },
+  'xmlns:xlink': { name: 'xmlns:xlink', uri: XMLNS_NAMESPACE },
+}
+
+/**
+ * Public identifier prefixes that put a document in quirks mode, in
+ * lowercase for case-insensitive comparison.
+ */
+var QUIRKS_PUBLIC_PREFIXES = [
+  '+//silmaril//dtd html pro v0r11 19970101//',
+  '-//as//dtd html 3.0 aswedit + extensions//',
+  '-//advasoft ltd//dtd html 3.0 aswedit + extensions//',
+  '-//ietf//dtd html 2.0 level 1//',
+  '-//ietf//dtd html 2.0 level 2//',
+  '-//ietf//dtd html 2.0 strict level 1//',
+  '-//ietf//dtd html 2.0 strict level 2//',
+  '-//ietf//dtd html 2.0 strict//',
+  '-//ietf//dtd html 2.0//',
+  '-//ietf//dtd html 2.1e//',
+  '-//ietf//dtd html 3.0//',
+  '-//ietf//dtd html 3.2 final//',
+  '-//ietf//dtd html 3.2//',
+  '-//ietf//dtd html 3//',
+  '-//ietf//dtd html level 0//',
+  '-//ietf//dtd html level 1//',
+  '-//ietf//dtd html level 2//',
+  '-//ietf//dtd html level 3//',
+  '-//ietf//dtd html strict level 0//',
+  '-//ietf//dtd html strict level 1//',
+  '-//ietf//dtd html strict level 2//',
+  '-//ietf//dtd html strict level 3//',
+  '-//ietf//dtd html strict//',
+  '-//ietf//dtd html//',
+  '-//metrius//dtd metrius presentational//',
+  '-//microsoft//dtd internet explorer 2.0 html strict//',
+  '-//microsoft//dtd internet explorer 2.0 html//',
+  '-//microsoft//dtd internet explorer 2.0 tables//',
+  '-//microsoft//dtd internet explorer 3.0 html strict//',
+  '-//microsoft//dtd internet explorer 3.0 html//',
+  '-//microsoft//dtd internet explorer 3.0 tables//',
+  '-//netscape comm. corp.//dtd html//',
+  '-//netscape comm. corp.//dtd strict html//',
+  "-//o'reilly and associates//dtd html 2.0//",
+  "-//o'reilly and associates//dtd html extended 1.0//",
+  "-//o'reilly and associates//dtd html extended relaxed 1.0//",
+  '-//sq//dtd html 2.0 hotmetal + extensions//',
+  '-//softquad software//dtd hotmetal pro 6.0::19990601::extensions to html 4.0//',
+  '-//softquad//dtd hotmetal pro 4.0::19971010::extensions to html 4.0//',
+  '-//spyglass//dtd html 2.0 extended//',
+  '-//sun microsystems corp.//dtd hotjava html//',
+  '-//sun microsystems corp.//dtd hotjava strict html//',
+  '-//w3c//dtd html 3 1995-03-24//',
+  '-//w3c//dtd html 3.2 draft//',
+  '-//w3c//dtd html 3.2 final//',
+  '-//w3c//dtd html 3.2//',
+  '-//w3c//dtd html 3.2s draft//',
+  '-//w3c//dtd html 4.0 frameset//',
+  '-//w3c//dtd html 4.0 transitional//',
+  '-//w3c//dtd html experimental 19960712//',
+  '-//w3c//dtd html experimental 970421//',
+  '-//w3c//dtd w3 html//',
+  '-//w3o//dtd w3 html 3.0//',
+  '-//webtechs//dtd mozilla html 2.0//',
+  '-//webtechs//dtd mozilla html//',
+]
+
+/**
+ * The two public identifiers that put a document in quirks mode on
+ * an exact match rather than a prefix match, in lowercase.
+ */
+var QUIRKS_PUBLIC_EXACT = [
+  '-//w3o//dtd w3 html strict 3.0//en//',
+  '-/w3c/dtd html 4.0 transitional/en',
+  'html',
+]
+
+/**
+ * Public identifier prefixes that always mean limited-quirks mode.
+ */
+var LIMITED_QUIRKS_PUBLIC_PREFIXES = [
+  '-//w3c//dtd xhtml 1.0 frameset//',
+  '-//w3c//dtd xhtml 1.0 transitional//',
+]
+
+/**
+ * Public identifier prefixes whose mode depends on whether the
+ * doctype also carries a system identifier: quirks without one,
+ * limited-quirks with one.
+ */
+var HTML4_TRANSITIONAL_PREFIXES = [
+  '-//w3c//dtd html 4.01 frameset//',
+  '-//w3c//dtd html 4.01 transitional//',
+]
+
+/**
+ * The system identifier that alone puts a document in quirks mode,
+ * in lowercase.
+ */
+var QUIRKS_SYSTEM_ID = 'http://www.ibm.com/data/dtd/v11/' +
+  'ibmxhtml1-transitional.dtd'
+
+
+/**
+ * True when the element _name_ in namespace _namespace_ is one of the
+ * standard's special elements.
+ *
+ * @param string namespace
+ * @param string name
+ * @returns bool
+ */
+def is_special(namespace: string, name: string) {
+  if namespace == HTML_NAMESPACE {
+    return SPECIAL_HTML.contains(name)
+  }
+
+  if namespace == MATHML_NAMESPACE {
+    return SPECIAL_MATHML.contains(name)
+  }
+
+  if namespace == SVG_NAMESPACE {
+    return SPECIAL_SVG.contains(name)
+  }
+
+  return false
+}
+
+
+/**
+ * True when _element_ is a MathML text integration point, meaning its
+ * children are parsed as HTML.
+ *
+ * @param any element
+ * @returns bool
+ */
+def is_mathml_text_integration_point(element) {
+  return element.namespace == MATHML_NAMESPACE and
+    MATHML_TEXT_INTEGRATION_POINTS.contains(element.tag_name)
+}
+
+
+/**
+ * True when _element_ is an HTML integration point.
+ *
+ * An `<annotation-xml>` qualifies only when its `encoding` attribute
+ * names an HTML flavour, which is how MathML embeds real markup.
+ *
+ * @param any element
+ * @returns bool
+ */
+def is_html_integration_point(element) {
+  if element.namespace == MATHML_NAMESPACE {
+    if element.tag_name != 'annotation-xml' {
+      return false
+    }
+
+    var encoding = element.get_attribute('encoding')
+
+    if encoding == nil {
+      return false
+    }
+
+    encoding = encoding.lower()
+    return encoding == 'text/html' or encoding == 'application/xhtml+xml'
+  }
+
+  return element.namespace == SVG_NAMESPACE and
+    SVG_HTML_INTEGRATION_POINTS.contains(element.tag_name)
+}
+
+
+/**
+ * The correctly cased SVG tag name for the lowercase _name_ the
+ * tokenizer produced, or _name_ itself when it needs no repair.
+ *
+ * @param string name
+ * @returns string
+ */
+def adjust_svg_tag_name(name: string) {
+  return SVG_TAG_NAMES.get(name, name)
+}
+
+
+/**
+ * Repairs the case of SVG attribute names in _attributes_ and returns
+ * a new dictionary. Attributes that need no repair are copied across
+ * untouched, in their original order.
+ *
+ * @param dict attributes
+ * @returns dict
+ */
+def adjust_svg_attributes(attributes: dict) {
+  return _rename_attributes(attributes, SVG_ATTRIBUTES)
+}
+
+
+/**
+ * Repairs the case of MathML attribute names in _attributes_ and
+ * returns a new dictionary.
+ *
+ * @param dict attributes
+ * @returns dict
+ */
+def adjust_mathml_attributes(attributes: dict) {
+  return _rename_attributes(attributes, MATHML_ATTRIBUTES)
+}
+
+
+/**
+ * Applies a rename table to a dictionary's keys, preserving order.
+ *
+ * @param dict attributes
+ * @param dict renames
+ * @returns dict
+ */
+def _rename_attributes(attributes: dict, renames: dict) {
+  var out = {}
+
+  for name, value in attributes {
+    out[renames.get(name, name)] = value
+  }
+
+  return out
+}
+
+
+/**
+ * Which quirks mode a doctype puts a document in.
+ *
+ * _name_ may be `nil` for a doctype with no name at all, and the two
+ * identifiers may be `nil` when the doctype omits them; all three
+ * cases mean something different to the algorithm, which is why they
+ * are not folded into empty strings.
+ *
+ * Returns `'no-quirks'`, `'limited-quirks'` or `'quirks'`. Nothing in
+ * this module behaves differently between them, but knowing which one
+ * a browser would have picked is exactly the question you are asking
+ * when you audit a legacy document.
+ *
+ * @param ?string name
+ * @param ?string public_id
+ * @param ?string system_id
+ * @param bool force_quirks
+ * @returns string
+ */
+def doctype_mode(name: ?string, public_id: ?string, system_id: ?string,
+  force_quirks: bool) {
+  if force_quirks or name != 'html' {
+    return 'quirks'
+  }
+
+  var public_lower = nil
+  if public_id != nil {
+    public_lower = public_id.lower()
+  }
+
+  var system_lower = nil
+  if system_id != nil {
+    system_lower = system_id.lower()
+  }
+
+  if public_lower != nil and QUIRKS_PUBLIC_EXACT.contains(public_lower) {
+    return 'quirks'
+  }
+
+  if system_lower == QUIRKS_SYSTEM_ID {
+    return 'quirks'
+  }
+
+  if public_lower != nil {
+    for prefix in QUIRKS_PUBLIC_PREFIXES {
+      if public_lower.starts_with(prefix) {
+        return 'quirks'
+      }
+    }
+
+    # These two swing either way: quirks with no system identifier,
+    # limited-quirks with one.
+    for prefix in HTML4_TRANSITIONAL_PREFIXES {
+      if public_lower.starts_with(prefix) {
+        if system_id == nil {
+          return 'quirks'
+        }
+
+        return 'limited-quirks'
+      }
+    }
+
+    for prefix in LIMITED_QUIRKS_PUBLIC_PREFIXES {
+      if public_lower.starts_with(prefix) {
+        return 'limited-quirks'
+      }
+    }
+  }
+
+  return 'no-quirks'
+}

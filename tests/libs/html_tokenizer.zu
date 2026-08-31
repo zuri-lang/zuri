@@ -1,0 +1,318 @@
+/**
+ * html_tokenizer.zu
+ *
+ * Test suite for the `html.tokenizer` module: the WHATWG tokenizer's
+ * data, tag, attribute, comment, doctype, CDATA, RCDATA, RAWTEXT and
+ * script data states, character reference handling inside markup, and
+ * the parse errors each of those raises.
+ */
+
+import html
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def kinds(source) {
+  var out = []
+
+  for token in html.tokenize(source) {
+    out.append(token.type)
+  }
+
+  return out
+}
+
+def texts(source) {
+  var out = []
+
+  for token in html.tokenize(source) {
+    if token.type == 'character' {
+      out.append(token.data)
+    }
+  }
+
+  return ''.join(out)
+}
+
+def codes(source) {
+  var stream = html.Tokenizer(source, nil)
+
+  while stream.next_token() != nil {
+    continue
+  }
+
+  var out = []
+
+  for error in stream.errors {
+    out.append(error.code)
+  }
+
+  return out
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  html.tokenizer — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Data state and tag names
+# ---------------------------------------------------------------------------
+var basic = html.tokenize('<p class="x">hi</p>')
+
+assert basic.length() == 4, 'a tag, its text and its end tag are four tokens with EOF'
+assert basic[0].type == 'start-tag', 'the first token must be a start tag'
+assert basic[0].name == 'p', 'the tag name must be captured'
+assert basic[1].type == 'character', 'text between tags must be a character token'
+assert basic[1].data == 'hi', 'character data must be captured verbatim'
+assert basic[2].type == 'end-tag', 'the closing tag must be an end tag'
+assert basic[3].type == 'eof', 'the stream must always end with an eof token'
+ok('tokenize() splits a simple element into start, character, end and eof')
+
+assert html.tokenize('<DIV>')[0].name == 'div', 'tag names must be lowercased'
+assert html.tokenize('<dIv>')[0].name == 'div', 'mixed case tag names must be lowercased'
+ok('tag names fold ASCII case')
+
+assert texts('a<b>c</b>d') == 'acd', 'every run of text must survive tokenizing'
+ok('character runs are emitted around tags')
+
+# ---------------------------------------------------------------------------
+# Attributes
+# ---------------------------------------------------------------------------
+var attributed = html.tokenize('<a href="/x" TITLE=\'y\' data-n=3 disabled>')[0]
+
+assert attributed.attributes['href'] == '/x', 'a double quoted value must be read'
+assert attributed.attributes['title'] == 'y', 'a single quoted value must be read and its name lowercased'
+assert attributed.attributes['data-n'] == '3', 'an unquoted value must be read'
+assert attributed.attributes['disabled'] == '', 'a valueless attribute must have an empty string value'
+assert attributed.attributes.keys() == ['href', 'title', 'data-n', 'disabled'],
+  'attributes must keep their source order'
+ok('attributes in every quoting style, in source order')
+
+var duplicated = html.tokenize('<div a="1" A="2">')[0]
+assert duplicated.attributes['a'] == '1', 'the first of two duplicate attributes wins'
+assert duplicated.attributes.length() == 1, 'a duplicate attribute must be dropped, not renamed'
+assert codes('<div a="1" A="2">').contains('duplicate-attribute'),
+  'a duplicate attribute must be a parse error'
+ok('a duplicate attribute is dropped and reported')
+
+assert html.tokenize('<br/>')[0].self_closing, 'a trailing slash must set self_closing'
+assert !html.tokenize('<br>')[0].self_closing, 'no trailing slash must leave self_closing false'
+assert html.tokenize('<img src=a/>')[0].attributes['src'] == 'a/',
+  'a slash inside an unquoted value is part of the value, not a self-closing marker'
+ok('self-closing tags, including the unquoted-value trap')
+
+# ---------------------------------------------------------------------------
+# Character references
+# ---------------------------------------------------------------------------
+assert texts('a&amp;b') == 'a&b', 'a named reference in content must be decoded'
+assert texts('&#169;&#xA9;') == '©©', 'decimal and hex references must both be decoded'
+assert texts('&nosuch;') == '&nosuch;', 'an unknown reference must be left alone'
+
+var attr_ref = html.tokenize('<a href="?a=1&copy=2">')[0]
+assert attr_ref.attributes['href'] == '?a=1&copy=2',
+  'a semicolon-less legacy reference followed by "=" must not be decoded in an attribute'
+
+var content_ref = texts('?a=1&copy=2')
+assert content_ref == '?a=1©=2',
+  'the same text in element content must decode, since the attribute rule does not apply'
+ok('character references, including the attribute-value legacy rule')
+
+# ---------------------------------------------------------------------------
+# Comments
+# ---------------------------------------------------------------------------
+var comment = html.tokenize('<!-- a comment -->')[0]
+assert comment.type == 'comment', 'a comment must produce a comment token'
+assert comment.data == ' a comment ', 'comment data must be kept exactly, spaces and all'
+
+assert html.tokenize('<!-->')[0].type == 'comment', 'an abruptly closed comment is still a comment'
+assert codes('<!-->').contains('abrupt-closing-of-empty-comment'),
+  'an abruptly closed comment must be reported'
+
+var bogus = html.tokenize('<?php echo 1; ?>')[0]
+assert bogus.type == 'comment', 'a processing instruction becomes a bogus comment'
+assert bogus.data == '?php echo 1; ?', 'the bogus comment holds everything up to the ">"'
+assert codes('<?php ?>').contains('unexpected-question-mark-instead-of-tag-name'),
+  'a "<?" must be reported'
+ok('comments, abrupt closes and bogus comments')
+
+assert html.tokenize('<!--a<!--b-->')[0].data == 'a<!--b',
+  'a nested comment opener stays part of the comment data'
+assert codes('<!--a<!--b-->').contains('nested-comment'),
+  'a nested comment opener must be reported'
+ok('nested comment openers')
+
+# ---------------------------------------------------------------------------
+# Doctypes
+# ---------------------------------------------------------------------------
+var simple_doctype = html.tokenize('<!DOCTYPE html>')[0]
+assert simple_doctype.type == 'doctype', 'a doctype must produce a doctype token'
+assert simple_doctype.name == 'html', 'the doctype name must be lowercased'
+assert simple_doctype.public_id == nil, 'a doctype with no public identifier must report nil'
+assert !simple_doctype.force_quirks, 'a well-formed doctype must not force quirks'
+
+var legacy = html.tokenize(
+  '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://x/y.dtd">'
+)[0]
+assert legacy.public_id == '-//W3C//DTD HTML 4.01//EN',
+  'a public identifier must be captured with its case intact'
+assert legacy.system_id == 'http://x/y.dtd', 'a system identifier must be captured'
+
+var nameless = html.tokenize('<!DOCTYPE>')[0]
+assert nameless.name == nil, 'a doctype with no name must report nil, not an empty string'
+assert nameless.force_quirks, 'a nameless doctype must force quirks'
+assert codes('<!DOCTYPE>').contains('missing-doctype-name'),
+  'a nameless doctype must be reported'
+ok('doctypes: bare, legacy with identifiers, and nameless')
+
+# ---------------------------------------------------------------------------
+# RCDATA, RAWTEXT and script data
+# ---------------------------------------------------------------------------
+assert texts('<title>a &lt; b</title>') == 'a < b',
+  'RCDATA content must decode character references'
+assert texts('<textarea>a</b>c</textarea>') == 'a</b>c',
+  'RCDATA content must treat an unrelated end tag as text'
+ok('RCDATA elements decode references but not markup')
+
+assert texts('<style>a &lt; b</style>') == 'a &lt; b',
+  'RAWTEXT content must not decode character references'
+assert texts('<style>x{}</style>') == 'x{}', 'a stylesheet must survive unchanged'
+ok('RAWTEXT elements pass their content through untouched')
+
+var script = '<script>var a = "</b>"; if (a<b) {}</script>'
+assert texts(script) == 'var a = "</b>"; if (a<b) {}',
+  'script data must keep both an unrelated end tag and a bare "<"'
+assert kinds(script) == ['start-tag', 'character', 'end-tag', 'eof'],
+  'the script must be exactly one start tag, its text, its end tag and eof'
+ok('script data survives quoted markup and comparison operators')
+
+assert texts('<script><!--<script>x</script>--></script>') ==
+  '<!--<script>x</script>-->',
+  'a doubly escaped script block must not end at the inner "</script>"'
+ok('script data double-escape states')
+
+assert texts('<plaintext>a</b><p>') == 'a</b><p>',
+  'plaintext must swallow the rest of the document as text'
+ok('plaintext consumes everything that follows')
+
+# ---------------------------------------------------------------------------
+# CDATA
+# ---------------------------------------------------------------------------
+var cdata_bogus = html.tokenize('<![CDATA[x]]>')[0]
+assert cdata_bogus.type == 'comment',
+  'a CDATA section in HTML content is a bogus comment, since a standalone tokenizer is never in foreign content'
+assert cdata_bogus.data == '[CDATA[x]]', 'the bogus comment keeps the CDATA text'
+assert codes('<![CDATA[x]]>').contains('cdata-in-html-content'),
+  'a CDATA section in HTML content must be reported'
+
+var cdata_stream = html.Tokenizer('<![CDATA[a]]b]]>', nil)
+cdata_stream.cdata_ok = true
+var cdata_text = []
+
+while true {
+  var token = cdata_stream.next_token()
+
+  if token == nil {
+    break
+  }
+
+  if token.type == 'character' {
+    cdata_text.append(token.data)
+  }
+}
+
+assert ''.join(cdata_text) == 'a]]b',
+  'with cdata_ok set, the section content must come through as characters, "]]" included'
+ok('CDATA: bogus comment in HTML content, real characters in foreign content')
+
+# ---------------------------------------------------------------------------
+# Null characters and input preprocessing
+# ---------------------------------------------------------------------------
+assert codes('a b').contains('unexpected-null-character'),
+  'a null character in content must be reported'
+assert texts('<style>a b') == 'a�b',
+  'a null character in RAWTEXT must become U+FFFD'
+ok('null characters are reported and replaced where the standard says')
+
+var crlf = html.Tokenizer('a\r\nb\rc', nil)
+crlf.next_token()
+assert texts('a\r\nb\rc') == 'a\nb\nc',
+  'CRLF and a lone CR must both become a single LF'
+ok('input preprocessing normalizes newlines')
+
+# ---------------------------------------------------------------------------
+# End of file handling
+# ---------------------------------------------------------------------------
+assert codes('<div').contains('eof-in-tag'), 'end of file inside a tag must be reported'
+assert codes('<!-- x').contains('eof-in-comment'), 'end of file inside a comment must be reported'
+assert codes('<!DOCTYPE ').contains('eof-in-doctype'), 'end of file inside a doctype must be reported'
+assert codes('a<').contains('eof-before-tag-name'), 'a trailing "<" must be reported'
+assert texts('a<') == 'a<', 'a trailing "<" must still be emitted as text'
+ok('end of file in every partially-read construct')
+
+var drained = html.Tokenizer('x', nil)
+
+while drained.next_token() != nil {
+  continue
+}
+
+assert drained.next_token() == nil, 'next_token() must keep answering nil after the eof token'
+ok('next_token() is safe to call past the end')
+
+# ---------------------------------------------------------------------------
+# Token rendering
+# ---------------------------------------------------------------------------
+assert html.tokenize('<b class=x>')[0].to_string() == '<start-tag b class="x">',
+  'a start tag must render with its attributes'
+assert html.tokenize('</b>')[0].to_string() == '<end-tag b>', 'an end tag must render'
+assert html.tokenize('<br/>')[0].to_string() == '<start-tag br />',
+  'a self-closing tag must render its slash'
+assert html.tokenize('x')[0].to_string() == '<character x>', 'a character token must render its data'
+assert html.tokenize('')[0].to_string() == '<eof>', 'the eof token must render'
+ok('Token.to_string() renders every token type')
+
+assert html.tokenize('<b>')[0].is_start('b'), 'is_start() must match a start tag by name'
+assert !html.tokenize('<b>')[0].is_start('i'), 'is_start() must not match a different name'
+assert html.tokenize('</b>')[0].is_end('b'), 'is_end() must match an end tag by name'
+assert !html.tokenize('<b>')[0].is_end('b'), 'is_end() must not match a start tag'
+ok('Token.is_start() and Token.is_end()')
+
+# ---------------------------------------------------------------------------
+# Scripting option
+# ---------------------------------------------------------------------------
+assert texts('<noscript><b>x</b></noscript>') == 'x',
+  'with scripting off, noscript content is markup and its text comes through as text'
+var scripted = []
+
+for token in html.tokenize('<noscript><b>x</b></noscript>', { scripting: true }) {
+  if token.type == 'character' {
+    scripted.append(token.data)
+  }
+}
+
+assert ''.join(scripted) == '<b>x</b>',
+  'with scripting on, noscript content is raw text'
+ok('the scripting option decides whether noscript content is markup')
+
+# ---------------------------------------------------------------------------
+# Error positions
+# ---------------------------------------------------------------------------
+var positioned = html.Tokenizer('ok\n<div a="1" a="2">', nil)
+
+while positioned.next_token() != nil {
+  continue
+}
+
+assert positioned.errors.length() == 1, 'exactly one error was expected'
+assert positioned.errors[0].line == 2, 'the error must be reported on the second line'
+assert positioned.errors[0].to_string().contains('2:'),
+  'a rendered error must name its line'
+ok('parse errors carry a line and column')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} tokenizer checks passed.'
+echo '═══════════════════════════════════════════════════════'

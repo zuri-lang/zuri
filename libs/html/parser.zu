@@ -1,0 +1,4498 @@
+/**
+ * @module html.parser
+ *
+ * The HTML tree construction stage: the half of the parser that takes
+ * the tokenizer's stream and decides what the document actually means.
+ *
+ * This is where HTML's famous forgiveness lives. `<b>a<p>b</b>c`,
+ * `<table><td>x`, an unclosed `<li>`, a `</div>` with nothing to
+ * close: none of them are errors you have to handle, because the
+ * standard defines exactly what tree each one produces, and this
+ * module implements those rules rather than inventing its own.
+ *
+ * Most programs want `html.parse()` and never come here. `TreeBuilder`
+ * is public for the cases that need the machinery itself: reading
+ * `errors` to lint a document, or driving a parse whose tokenizer you
+ * control.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import .node
+import .tokenizer
+import .elements
+
+import .namespaces { HTML_NAMESPACE, SVG_NAMESPACE, MATHML_NAMESPACE }
+
+
+# Elements that end an open paragraph when they start. Kept as one
+# list because the "in body" rules treat every one of them
+# identically.
+var _BLOCK_TAGS = [
+  'address', 'article', 'aside', 'blockquote', 'center', 'details',
+  'dialog', 'dir', 'div', 'dl', 'fieldset', 'figcaption', 'figure',
+  'footer', 'header', 'hgroup', 'main', 'menu', 'nav', 'ol', 'p',
+  'search', 'section', 'summary', 'ul',
+]
+
+# The six heading elements, which cannot nest directly inside one
+# another.
+var _HEADING_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+
+# What "clear the stack back to a table context" stops at.
+var _TABLE_CONTEXT = ['table', 'template', 'html']
+
+# What "clear the stack back to a table body context" stops at.
+var _TABLE_BODY_CONTEXT = ['tbody', 'tfoot', 'thead', 'template', 'html']
+
+# What "clear the stack back to a table row context" stops at.
+var _TABLE_ROW_CONTEXT = ['tr', 'template', 'html']
+
+# Elements that foster parenting redirects insertions out of.
+var _FOSTER_PARENTS = ['table', 'tbody', 'tfoot', 'thead', 'tr']
+
+# The start tags "in head" handles by inserting and immediately
+# popping.
+var _HEAD_VOID_TAGS = ['base', 'basefont', 'bgsound', 'link']
+
+# Start tags that "in body" and "after head" hand straight to the
+# "in head" rules.
+var _HEAD_TAGS = [
+  'base', 'basefont', 'bgsound', 'link', 'meta', 'noframes',
+  'script', 'style', 'template', 'title',
+]
+
+# Elements inserted and immediately popped, with no content of their
+# own, in the "in body" rules.
+var _BODY_VOID_TAGS = ['area', 'br', 'embed', 'img', 'keygen', 'wbr']
+
+# The table-structure start tags that are simply wrong inside a body.
+var _MISPLACED_TABLE_TAGS = [
+  'caption', 'col', 'colgroup', 'frame', 'head', 'tbody', 'td',
+  'tfoot', 'th', 'thead', 'tr',
+]
+
+# End tags "in caption", "in table body" and friends discard outright.
+var _TABLE_STRAY_END_TAGS = [
+  'body', 'caption', 'col', 'colgroup', 'html', 'tbody', 'td',
+  'tfoot', 'th', 'thead', 'tr',
+]
+
+# How many times the adoption agency algorithm will retry before
+# giving up on a hopelessly tangled document. The number is the
+# standard's, not a guess: it is what stops pathological input from
+# making the parser run for ever.
+var _ADOPTION_OUTER_LIMIT = 8
+
+# How deep the adoption agency's inner loop goes before it stops
+# cloning formatting elements and starts discarding them.
+var _ADOPTION_INNER_LIMIT = 3
+
+# U+0000, which the tree builder either drops or replaces depending on
+# where it turns up. Named because it is invisible in source.
+var _NULL = '\u0000'
+
+# U+FFFD REPLACEMENT CHARACTER, what a stray U+0000 becomes in foreign
+# content.
+var _REPLACEMENT = '\uFFFD'
+
+# The maximum number of identically shaped formatting elements the
+# list keeps after a marker. The standard calls this the Noah's Ark
+# clause.
+var _NOAHS_ARK_LIMIT = 3
+
+
+/**
+ * One entry in the list of active formatting elements.
+ *
+ * The list holds the element *and* the token it was created from,
+ * because the adoption agency algorithm has to build fresh copies of
+ * an element from its original attributes long after the tag that
+ * opened it has gone.
+ */
+class FormattingEntry {
+
+  /**
+   * The element currently standing for this entry, or `nil` when the
+   * entry is a marker.
+   */
+  var element = nil
+
+  /**
+   * The start tag token the element was created from.
+   */
+  var token = nil
+
+  /**
+   * @param ?Element element `nil` makes this a marker.
+   * @param ?Token token
+   * @constructor
+   */
+  @new(element, token) {
+    self.element = element
+    self.token = token
+  }
+
+  /**
+   * True when this entry is a marker rather than an element.
+   *
+   * Markers are pushed when a `<table>`, `<template>`, `<caption>`,
+   * `<td>` or an applet-like element opens, and they stop formatting
+   * elements from leaking across that boundary.
+   *
+   * @returns bool
+   */
+  is_marker() {
+    return self.element == nil
+  }
+}
+
+
+/**
+ * Builds a document tree from a token stream.
+ *
+ * The usual way in is `parse()`, which wires a tokenizer to a builder
+ * and runs it. Construct one directly when you want to watch the
+ * process: `errors` accumulates every conformance problem, and the
+ * stack of open elements is readable at any point.
+ */
+class TreeBuilder {
+
+  /**
+   * The document being built.
+   */
+  var document = nil
+
+  /**
+   * The tokenizer feeding this builder.
+   */
+  var tokenizer = nil
+
+  /**
+   * Parse errors from both stages, in the order they happened. The
+   * tokenizer's are merged in as the parse runs.
+   */
+  var errors = []
+
+  /**
+   * The stack of open elements. Index 0 is the bottom of the stack
+   * (normally `<html>`) and the last entry is the current node, which
+   * is the reverse of how a stack usually reads but matches how the
+   * standard talks about it.
+   */
+  var open_elements = []
+
+  /**
+   * The list of active formatting elements, holding `FormattingEntry`
+   * instances. Marker entries separate the formatting context of
+   * nested tables, cells and templates.
+   */
+  var formatting = []
+
+  /**
+   * The current insertion mode, named as the standard names it:
+   * `'initial'`, `'in body'`, `'in table text'` and so on.
+   */
+  var mode = 'initial'
+
+  /**
+   * Where to return to after a RAWTEXT or RCDATA element finishes.
+   */
+  var original_mode = nil
+
+  /**
+   * The stack of template insertion modes, one per open
+   * `<template>`.
+   */
+  var template_modes = []
+
+  /**
+   * The `<head>` element, once it exists.
+   */
+  var head_element = nil
+
+  /**
+   * The innermost open `<form>`, which is what makes a stray
+   * `</form>` close the right thing.
+   */
+  var form_element = nil
+
+  /**
+   * Whether a `<frameset>` could still legally replace the body. It
+   * stops being possible the moment any real content is inserted.
+   */
+  var frameset_ok = true
+
+  /**
+   * Whether to parse as though scripting were enabled. Off by
+   * default, which is what makes `<noscript>` content real markup.
+   */
+  var scripting = false
+
+  /**
+   * The context element when this builder is parsing a fragment, or
+   * `nil` for a whole document.
+   */
+  var fragment_context = nil
+
+  /**
+   * Whether insertions are currently being foster parented out of a
+   * table.
+   */
+  var foster_parenting = false
+
+  /**
+   * Character tokens collected by the "in table text" insertion mode
+   * before it decides whether they are legal where they landed.
+   */
+  var pending_characters = []
+
+  /**
+   * Set once parsing has stopped, either at end of file or because a
+   * rule said to stop.
+   */
+  var done = false
+
+  # Set by `<pre>`, `<listing>` and `<textarea>`, whose content
+  # famously swallows one leading newline so that markup can put the
+  # content on its own line without changing it.
+  var _skip_leading_newline = false
+
+  # How many of the tokenizer's errors have already been merged into
+  # `errors`, so the merge stays O(new errors) rather than rescanning.
+  var _merged_errors = 0
+
+  /**
+   * @param Tokenizer source
+   * @param ?dict options `scripting` (default `false`).
+   * @constructor
+   */
+  @new(source, options: ?dict) {
+    if options == nil {
+      options = {}
+    }
+
+    self.tokenizer = source
+    self.document = node.Document()
+    self.errors = []
+    self.open_elements = []
+    self.formatting = []
+    self.template_modes = []
+    self.pending_characters = []
+    self.scripting = options.get('scripting', false)
+  }
+
+  # ==========================================================
+  # Driving the parse
+  # ==========================================================
+
+  /**
+   * Runs the parse to completion and returns the document.
+   *
+   * @returns Document
+   */
+  run() {
+    while !self.done {
+      # The tokenizer needs to know whether a `<![CDATA[` here would
+      # be real, and only the stack of open elements can answer that.
+      self.tokenizer.cdata_ok = self._in_foreign_content()
+
+      var token = self.tokenizer.next_token()
+
+      if token == nil {
+        break
+      }
+
+      self._merge_tokenizer_errors()
+      self._dispatch(token)
+    }
+
+    self._merge_tokenizer_errors()
+    self.document.errors = self.errors
+    return self.document
+  }
+
+  /**
+   * Copies any parse errors the tokenizer has raised since the last
+   * check into this builder's own list.
+   */
+  _merge_tokenizer_errors() {
+    var found = self.tokenizer.errors
+
+    while self._merged_errors < found.length() {
+      self.errors.append(found[self._merged_errors])
+      self._merged_errors++
+    }
+  }
+
+  /**
+   * Records a tree construction parse error at _token_'s position.
+   *
+   * @param string code
+   * @param ?Token token
+   */
+  _error(code: string, token) {
+    var line = 1
+    var column = 1
+
+    if token != nil {
+      line = token.line
+      column = token.column
+    }
+
+    self.errors.append(tokenizer.ParseError(code, line, column))
+  }
+
+  /**
+   * True when the insertion point is inside SVG or MathML content
+   * that is not an HTML integration point.
+   *
+   * @returns bool
+   */
+  _in_foreign_content() {
+    var current = self._adjusted_current_node()
+
+    if current == nil {
+      return false
+    }
+
+    return current.namespace != HTML_NAMESPACE and
+      !elements.is_html_integration_point(current)
+  }
+
+  /**
+   * Sends _token_ either to the current insertion mode or to the
+   * foreign content rules, following the standard's tree
+   * construction dispatcher.
+   *
+   * @param Token token
+   */
+  _dispatch(token) {
+    var current = self._adjusted_current_node()
+
+    if current == nil or current.namespace == HTML_NAMESPACE or
+      token.type == 'eof' or self._token_stays_html(current, token) {
+      self._process(token)
+      return
+    }
+
+    self._foreign_content(token)
+  }
+
+  /**
+   * The exceptions that keep a token in the HTML rules even though
+   * the insertion point is in foreign content: the integration
+   * points, where SVG and MathML deliberately hand back to HTML.
+   *
+   * @param Element current
+   * @param Token token
+   * @returns bool
+   */
+  _token_stays_html(current, token) {
+    if elements.is_mathml_text_integration_point(current) {
+      if token.type == 'character' {
+        return true
+      }
+
+      if token.type == 'start-tag' and token.name != 'mglyph' and
+        token.name != 'malignmark' {
+        return true
+      }
+    }
+
+    if current.namespace == MATHML_NAMESPACE and
+      current.tag_name == 'annotation-xml' and
+      token.is_start('svg') {
+      return true
+    }
+
+    if elements.is_html_integration_point(current) {
+      return token.type == 'character' or token.type == 'start-tag'
+    }
+
+    return false
+  }
+
+  /**
+   * Runs _token_ through the current insertion mode.
+   *
+   * @param Token token
+   */
+  _process(token) {
+    self._process_in(self.mode, token)
+  }
+
+  /**
+   * Runs _token_ through a named insertion mode, which is not always
+   * the current one: several rules are defined as "process the token
+   * using the rules for the X insertion mode" without switching to
+   * it.
+   *
+   * @param string mode
+   * @param Token token
+   */
+  _process_in(mode: string, token) {
+    using mode {
+      when 'initial' self._initial(token)
+      when 'before html' self._before_html(token)
+      when 'before head' self._before_head(token)
+      when 'in head' self._in_head(token)
+      when 'in head noscript' {
+        self._in_head_noscript(token)
+      }
+      when 'after head' self._after_head(token)
+      when 'in body' self._in_body(token)
+      when 'text' self._text(token)
+      when 'in table' self._in_table(token)
+      when 'in table text' self._in_table_text(token)
+      when 'in caption' self._in_caption(token)
+      when 'in column group' {
+        self._in_column_group(token)
+      }
+      when 'in table body' self._in_table_body(token)
+      when 'in row' self._in_row(token)
+      when 'in cell' self._in_cell(token)
+      when 'in select' self._in_select(token)
+      when 'in select in table' {
+        self._in_select_in_table(token)
+      }
+      when 'in template' self._in_template(token)
+      when 'after body' self._after_body(token)
+      when 'in frameset' self._in_frameset(token)
+      when 'after frameset' self._after_frameset(token)
+      when 'after after body' {
+        self._after_after_body(token)
+      }
+      when 'after after frameset' {
+        self._after_after_frameset(token)
+      }
+      default {
+        raise Error('the parser reached an unknown insertion mode "${mode}"')
+      }
+    }
+  }
+
+  # ==========================================================
+  # The stack of open elements
+  # ==========================================================
+
+  /**
+   * The element the parser is currently inside, or `nil` when the
+   * stack is empty.
+   *
+   * @returns ?Element
+   */
+  current_node() {
+    if self.open_elements.is_empty() {
+      return nil
+    }
+
+    return self.open_elements[-1]
+  }
+
+  /**
+   * The current node, except that in a fragment parse with only the
+   * root on the stack it is the context element instead. Every
+   * namespace decision uses this rather than the current node.
+   *
+   * @returns ?Element
+   */
+  _adjusted_current_node() {
+    if self.fragment_context != nil and self.open_elements.length() == 1 {
+      return self.fragment_context
+    }
+
+    return self.current_node()
+  }
+
+  /**
+   * Position of _element_ in the stack of open elements, or `-1`.
+   *
+   * @param Element element
+   * @returns number
+   */
+  _stack_index(element) {
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      if id(self.open_elements[i]) == id(element) {
+        return i
+      }
+    }
+
+    return -1
+  }
+
+  /**
+   * Removes the topmost element from the stack and returns it.
+   *
+   * @returns ?Element
+   */
+  _pop() {
+    return self.open_elements.pop()
+  }
+
+  /**
+   * Pops elements until one named _name_ in the HTML namespace has
+   * been popped.
+   *
+   * @param string name
+   */
+  _pop_until(name: string) {
+    while !self.open_elements.is_empty() {
+      var popped = self._pop()
+
+      if popped.is_html() and popped.tag_name == name {
+        return
+      }
+    }
+  }
+
+  /**
+   * Pops elements until one named by any entry in _names_ has been
+   * popped.
+   *
+   * @param list names
+   */
+  _pop_until_any(names: list) {
+    while !self.open_elements.is_empty() {
+      var popped = self._pop()
+
+      if popped.is_html() and names.contains(popped.tag_name) {
+        return
+      }
+    }
+  }
+
+  /**
+   * Pops elements until the current node is one of _names_, or the
+   * stack is down to its last element.
+   *
+   * @param list names
+   */
+  _clear_stack_back_to(names: list) {
+    while self.open_elements.length() > 1 {
+      var current = self.current_node()
+
+      if current.is_html() and names.contains(current.tag_name) {
+        return
+      }
+
+      self._pop()
+    }
+  }
+
+  /**
+   * True when the stack holds an HTML element named _name_ anywhere.
+   *
+   * @param string name
+   * @returns bool
+   */
+  _stack_has(name: string) {
+    for element in self.open_elements {
+      if element.is_html() and element.tag_name == name {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * The standard's "has an element in scope" check, generalised: true
+   * when one of _targets_ is found walking down from the current node
+   * before any element that acts as a barrier.
+   *
+   * _extra_ names widen the HTML half of the barrier, which is what
+   * separates list item scope and button scope from the default.
+   *
+   * @param list targets
+   * @param ?list extra
+   * @returns bool
+   */
+  _in_scope(targets: list, extra: ?list) {
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      var element = self.open_elements[i]
+
+      if element.is_html() and targets.contains(element.tag_name) {
+        return true
+      }
+
+      if self._is_scope_barrier(element, extra) {
+        return false
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * True when _element_ stops a scope search.
+   *
+   * @param Element element
+   * @param ?list extra
+   * @returns bool
+   */
+  _is_scope_barrier(element, extra: ?list) {
+    if element.namespace == HTML_NAMESPACE {
+      if elements.SCOPE_HTML.contains(element.tag_name) {
+        return true
+      }
+
+      return extra != nil and extra.contains(element.tag_name)
+    }
+
+    if element.namespace == MATHML_NAMESPACE {
+      return elements.SPECIAL_MATHML.contains(element.tag_name)
+    }
+
+    if element.namespace == SVG_NAMESPACE {
+      return elements.SPECIAL_SVG.contains(element.tag_name)
+    }
+
+    return false
+  }
+
+  /**
+   * The default "in scope" check.
+   *
+   * @param string name
+   * @returns bool
+   */
+  _has_in_scope(name: string) {
+    return self._in_scope([name], nil)
+  }
+
+  /**
+   * "In button scope", which additionally stops at a `<button>`. This
+   * is what makes `<p><button><p>` produce nested paragraphs.
+   *
+   * @param string name
+   * @returns bool
+   */
+  _has_in_button_scope(name: string) {
+    return self._in_scope([name], ['button'])
+  }
+
+  /**
+   * "In list item scope", which additionally stops at `<ol>` and
+   * `<ul>`.
+   *
+   * @param string name
+   * @returns bool
+   */
+  _has_in_list_item_scope(name: string) {
+    return self._in_scope([name], ['ol', 'ul'])
+  }
+
+  /**
+   * "In table scope", whose barrier is only `<html>`, `<table>` and
+   * `<template>`.
+   *
+   * @param string name
+   * @returns bool
+   */
+  _has_in_table_scope(name: string) {
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      var element = self.open_elements[i]
+
+      if !element.is_html() {
+        continue
+      }
+
+      if element.tag_name == name {
+        return true
+      }
+
+      if _TABLE_CONTEXT.contains(element.tag_name) {
+        return false
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * "In select scope", whose barrier is everything *except*
+   * `<optgroup>` and `<option>`. The inversion is the standard's, and
+   * it is what stops a stray `</select>` from escaping the element it
+   * belongs to.
+   *
+   * @param string name
+   * @returns bool
+   */
+  _has_in_select_scope(name: string) {
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      var element = self.open_elements[i]
+
+      if element.is_html() and element.tag_name == name {
+        return true
+      }
+
+      if !element.is_html() or
+        (element.tag_name != 'optgroup' and element.tag_name != 'option') {
+        return false
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * Pops the elements whose end tags the standard treats as implied
+   * by whatever comes next, leaving _except_name_ alone.
+   *
+   * @param ?string except_name
+   */
+  _generate_implied_end_tags(except_name: ?string) {
+    while true {
+      var current = self.current_node()
+
+      if current == nil or !current.is_html() {
+        return
+      }
+
+      if !elements.IMPLIED_END_TAGS.contains(current.tag_name) or
+        current.tag_name == except_name {
+        return
+      }
+
+      self._pop()
+    }
+  }
+
+  /**
+   * The thorough form, which also closes table sections and cells.
+   */
+  _generate_implied_end_tags_thoroughly() {
+    while true {
+      var current = self.current_node()
+
+      if current == nil or !current.is_html() or
+        !elements.THOROUGH_IMPLIED_END_TAGS.contains(current.tag_name) {
+        return
+      }
+
+      self._pop()
+    }
+  }
+
+  /**
+   * The standard's "close a p element": what `</p>` and every block
+   * level start tag do to an open paragraph.
+   *
+   * @param ?Token token
+   */
+  _close_p(token) {
+    self._generate_implied_end_tags('p')
+
+    var current = self.current_node()
+
+    if current == nil or !current.is_html() or current.tag_name != 'p' {
+      self._error('unexpected-end-tag', token)
+    }
+
+    self._pop_until('p')
+  }
+
+  /**
+   * Puts the parser back into whichever insertion mode the stack of
+   * open elements implies, which is how it recovers after closing a
+   * table, a cell or a template.
+   */
+  _reset_insertion_mode() {
+    var last = false
+
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      var element = self.open_elements[i]
+
+      if i == 0 {
+        last = true
+
+        if self.fragment_context != nil {
+          element = self.fragment_context
+        }
+      }
+
+      if !element.is_html() {
+        continue
+      }
+
+      var name = element.tag_name
+
+      if name == 'select' {
+        self.mode = self._select_reset_mode(i, last)
+        return
+      }
+
+      if (name == 'td' or name == 'th') and !last {
+        self.mode = 'in cell'
+        return
+      }
+
+      if name == 'tr' {
+        self.mode = 'in row'
+        return
+      }
+
+      if name == 'tbody' or name == 'thead' or name == 'tfoot' {
+        self.mode = 'in table body'
+        return
+      }
+
+      if name == 'caption' {
+        self.mode = 'in caption'
+        return
+      }
+
+      if name == 'colgroup' {
+        self.mode = 'in column group'
+        return
+      }
+
+      if name == 'table' {
+        self.mode = 'in table'
+        return
+      }
+
+      if name == 'template' {
+        self.mode = self.template_modes[-1]
+        return
+      }
+
+      if name == 'head' and !last {
+        self.mode = 'in head'
+        return
+      }
+
+      if name == 'body' {
+        self.mode = 'in body'
+        return
+      }
+
+      if name == 'frameset' {
+        self.mode = 'in frameset'
+        return
+      }
+
+      if name == 'html' {
+        if self.head_element == nil {
+          self.mode = 'before head'
+        } else {
+          self.mode = 'after head'
+        }
+
+        return
+      }
+
+      if last {
+        self.mode = 'in body'
+        return
+      }
+    }
+
+    self.mode = 'in body'
+  }
+
+  /**
+   * Which mode a `<select>` at stack position _at_ resets to: a
+   * select inside a table cell behaves differently from a free
+   * standing one.
+   *
+   * @param number at
+   * @param bool last
+   * @returns string
+   */
+  _select_reset_mode(at: number, last: bool) {
+    if last {
+      return 'in select'
+    }
+
+    iter var i = at - 1; i > 0; i-- {
+      var ancestor = self.open_elements[i]
+
+      if !ancestor.is_html() {
+        continue
+      }
+
+      if ancestor.tag_name == 'template' {
+        return 'in select'
+      }
+
+      if ancestor.tag_name == 'table' {
+        return 'in select in table'
+      }
+    }
+
+    return 'in select'
+  }
+
+  # ==========================================================
+  # Inserting nodes
+  # ==========================================================
+
+  /**
+   * Where the next node should go, as a dictionary with `host` (the
+   * node to insert into) and `before` (`nil` to append).
+   *
+   * Almost always this is "inside the current node, at the end". The
+   * exception is foster parenting: content that lands inside a table
+   * where it cannot legally live gets moved out in front of the
+   * table instead of being dropped, which is why a stray `<div>`
+   * inside a `<table>` still shows up in the tree.
+   *
+   * @param ?Element override_target
+   * @returns dict
+   */
+  _insertion_place(override_target) {
+    var target = override_target
+
+    if target == nil {
+      target = self.current_node()
+    }
+
+    var place = { host: target, before: nil }
+
+    if self.foster_parenting and target.is_html() and
+      _FOSTER_PARENTS.contains(target.tag_name) {
+      place = self._foster_place()
+    }
+
+    # A template never holds its own children; they live in the
+    # content fragment hanging off it.
+    if place.host.is_element() and place.host.is_html() and
+      place.host.tag_name == 'template' {
+      place = { host: place.host.content, before: nil }
+    }
+
+    return place
+  }
+
+  /**
+   * Works out where foster parenting should redirect an insertion to.
+   *
+   * @returns dict
+   */
+  _foster_place() {
+    var last_template = -1
+    var last_table = -1
+
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      var element = self.open_elements[i]
+
+      if !element.is_html() {
+        continue
+      }
+
+      if last_template < 0 and element.tag_name == 'template' {
+        last_template = i
+      }
+
+      if last_table < 0 and element.tag_name == 'table' {
+        last_table = i
+      }
+    }
+
+    if last_template >= 0 and (last_table < 0 or last_template > last_table) {
+      return { host: self.open_elements[last_template].content, before: nil }
+    }
+
+    if last_table < 0 {
+      # Only reachable in a fragment parse, where the root stands in
+      # for the document.
+      return { host: self.open_elements[0], before: nil }
+    }
+
+    var table = self.open_elements[last_table]
+
+    if table.parent_node != nil {
+      return { host: table.parent_node, before: table }
+    }
+
+    return { host: self.open_elements[last_table - 1], before: nil }
+  }
+
+  /**
+   * Puts _child_ at _place_.
+   *
+   * @param dict place
+   * @param Node child
+   * @returns Node
+   */
+  _insert_at(place: dict, child) {
+    if place.before == nil {
+      return place.host.append_child(child)
+    }
+
+    return place.host.insert_before(child, place.before)
+  }
+
+  /**
+   * Builds an element from a start tag token without inserting it.
+   *
+   * @param Token token
+   * @param string namespace
+   * @returns Element
+   */
+  _create_element(token, namespace: string) {
+    var name = token.name
+    var attributes = token.attributes.clone()
+
+    if namespace == SVG_NAMESPACE {
+      name = elements.adjust_svg_tag_name(name)
+      attributes = elements.adjust_svg_attributes(attributes)
+    } else if namespace == MATHML_NAMESPACE {
+      attributes = elements.adjust_mathml_attributes(attributes)
+    }
+
+    var element = node.Element(name, namespace, {})
+
+    for attribute_name, value in attributes {
+      var foreign = elements.FOREIGN_ATTRIBUTES.get(attribute_name, nil)
+
+      if foreign != nil and namespace != HTML_NAMESPACE {
+        element.attributes[foreign.name] = value
+        element.set_attribute_namespace(foreign.name, foreign.uri)
+        continue
+      }
+
+      element.attributes[attribute_name] = value
+    }
+
+    return element
+  }
+
+  /**
+   * Creates an element for _token_, inserts it and pushes it onto the
+   * stack of open elements.
+   *
+   * @param Token token
+   * @param ?string namespace
+   * @returns Element
+   */
+  _insert_element(token, namespace: ?string) {
+    if namespace == nil {
+      namespace = HTML_NAMESPACE
+    }
+
+    var element = self._create_element(token, namespace)
+
+    self._insert_at(self._insertion_place(nil), element)
+    self.open_elements.append(element)
+
+    return element
+  }
+
+  /**
+   * Inserts _data_ as character data at the current insertion point,
+   * merging it into the text node already there when there is one.
+   *
+   * Characters that would land directly inside the document node are
+   * dropped, as the standard requires; a document can hold only a
+   * doctype, comments and one root element.
+   *
+   * @param string data
+   */
+  _insert_characters(data: string) {
+    if data.is_empty() {
+      return
+    }
+
+    var place = self._insertion_place(nil)
+
+    if place.host.is_document() {
+      return
+    }
+
+    var previous = nil
+
+    if place.before == nil {
+      previous = place.host.last_child()
+    } else {
+      previous = place.before.previous_sibling()
+    }
+
+    if previous != nil and previous.is_text() {
+      previous.append_data(data)
+      return
+    }
+
+    self._insert_at(place, node.Text(data))
+  }
+
+  /**
+   * Inserts a comment node for _token_, at _place_ when one is given
+   * and at the current insertion point otherwise.
+   *
+   * @param Token token
+   * @param ?dict place
+   */
+  _insert_comment(token, place: ?dict) {
+    if place == nil {
+      place = self._insertion_place(nil)
+    }
+
+    self._insert_at(place, node.Comment(token.data))
+  }
+
+  /**
+   * Notes that a start tag's trailing slash has been taken into
+   * account. Only void and foreign elements may carry one; anywhere
+   * else it is a parse error, and calling this is how a rule says
+   * "here it was legitimate".
+   *
+   * @param Token token
+   */
+  _acknowledge_self_closing(token) {
+    # Nothing to record: the flag is only ever read to decide whether
+    # to raise `_unacknowledged_self_closing`, and every caller of
+    # this method is a site where the slash was meaningful. It exists
+    # so those sites read the way the standard describes them.
+  }
+
+  /**
+   * Raises the parse error a stray `/>` deserves on an element that
+   * is neither void nor foreign.
+   *
+   * @param Token token
+   */
+  _unacknowledged_self_closing(token) {
+    if token.self_closing {
+      self._error('non-void-html-element-start-tag-with-trailing-solidus', token)
+    }
+  }
+
+  /**
+   * Inserts an element whose content the tokenizer should read as
+   * text, and parks the parser in the "text" insertion mode until the
+   * matching end tag.
+   *
+   * @param Token token
+   * @param string state The tokenizer state, `'rawtext'` or
+   *   `'rcdata'`.
+   */
+  _parse_text_element(token, state: string) {
+    self._insert_element(token, nil)
+    self.tokenizer.set_state(state)
+
+    self.original_mode = self.mode
+    self.mode = 'text'
+  }
+
+  # ==========================================================
+  # Active formatting elements
+  # ==========================================================
+
+  /**
+   * Pushes a marker onto the list of active formatting elements.
+   */
+  _push_formatting_marker() {
+    self.formatting.append(FormattingEntry(nil, nil))
+  }
+
+  /**
+   * Adds _element_ to the list of active formatting elements,
+   * applying the Noah's Ark clause: at most three identically shaped
+   * entries survive after the last marker, and the oldest goes when a
+   * fourth arrives.
+   *
+   * @param Element element
+   * @param Token token
+   */
+  _push_formatting(element, token) {
+    var matches = []
+
+    iter var i = self.formatting.length() - 1; i >= 0; i-- {
+      var entry = self.formatting[i]
+
+      if entry.is_marker() {
+        break
+      }
+
+      if _same_formatting_shape(entry.element, element) {
+        matches.append(i)
+      }
+    }
+
+    if matches.length() >= _NOAHS_ARK_LIMIT {
+      self.formatting.remove_at(matches[-1])
+    }
+
+    self.formatting.append(FormattingEntry(element, token))
+  }
+
+  /**
+   * Position of _element_ in the list of active formatting elements,
+   * or `-1`.
+   *
+   * @param Element element
+   * @returns number
+   */
+  _formatting_index(element) {
+    iter var i = self.formatting.length() - 1; i >= 0; i-- {
+      var entry = self.formatting[i]
+
+      if !entry.is_marker() and id(entry.element) == id(element) {
+        return i
+      }
+    }
+
+    return -1
+  }
+
+  /**
+   * The last entry named _name_ after the last marker, or `-1`.
+   *
+   * @param string name
+   * @returns number
+   */
+  _formatting_index_by_name(name: string) {
+    iter var i = self.formatting.length() - 1; i >= 0; i-- {
+      var entry = self.formatting[i]
+
+      if entry.is_marker() {
+        return -1
+      }
+
+      if entry.element.is_html() and entry.element.tag_name == name {
+        return i
+      }
+    }
+
+    return -1
+  }
+
+  /**
+   * Drops everything back to and including the last marker.
+   */
+  _clear_formatting_to_marker() {
+    while !self.formatting.is_empty() {
+      var entry = self.formatting.pop()
+
+      if entry.is_marker() {
+        return
+      }
+    }
+  }
+
+  /**
+   * Reopens any formatting elements that are on the list but no
+   * longer on the stack, so that `<b>a<p>b` puts a fresh `<b>` inside
+   * the paragraph rather than losing the bold.
+   */
+  _reconstruct_formatting() {
+    if self.formatting.is_empty() {
+      return
+    }
+
+    var last = self.formatting[-1]
+
+    if last.is_marker() or self._stack_index(last.element) >= 0 {
+      return
+    }
+
+    var at = self.formatting.length() - 1
+
+    while at > 0 {
+      var previous = self.formatting[at - 1]
+
+      if previous.is_marker() or self._stack_index(previous.element) >= 0 {
+        break
+      }
+
+      at--
+    }
+
+    while at < self.formatting.length() {
+      var entry = self.formatting[at]
+      var element = self._insert_element(entry.token, nil)
+
+      self.formatting[at] = FormattingEntry(element, entry.token)
+      at++
+    }
+  }
+
+  # ==========================================================
+  # The adoption agency algorithm
+  # ==========================================================
+
+  /**
+   * The standard's adoption agency algorithm: what turns
+   * `<b>one<p>two</b>three` into a bold `one`, a paragraph holding a
+   * bold `two` and a plain `three`.
+   *
+   * Returns `true` when it handled the end tag, and `false` when the
+   * caller should fall back to the "any other end tag" rules.
+   *
+   * @param Token token
+   * @returns bool
+   */
+  _adoption_agency(token) {
+    var subject = token.name
+    var current = self.current_node()
+
+    if current != nil and current.is_html() and
+      current.tag_name == subject and
+      self._formatting_index(current) < 0 {
+      self._pop()
+      return true
+    }
+
+    iter var outer = 0; outer < _ADOPTION_OUTER_LIMIT; outer++ {
+      var formatting_at = self._formatting_index_by_name(subject)
+
+      if formatting_at < 0 {
+        return false
+      }
+
+      var formatting_element = self.formatting[formatting_at].element
+      var stack_at = self._stack_index(formatting_element)
+
+      if stack_at < 0 {
+        self._error('adoption-agency-1.2', token)
+        self.formatting.remove_at(formatting_at)
+        return true
+      }
+
+      if !self._in_scope([subject], nil) {
+        self._error('adoption-agency-4.4', token)
+        return true
+      }
+
+      if id(formatting_element) != id(self.current_node()) {
+        self._error('adoption-agency-1.3', token)
+      }
+
+      var furthest_at = self._furthest_block(stack_at)
+
+      if furthest_at < 0 {
+        # Nothing special is open inside the formatting element, so
+        # the simple close is correct.
+        while self.open_elements.length() > stack_at {
+          self._pop()
+        }
+
+        self.formatting.remove_at(self._formatting_index(formatting_element))
+        return true
+      }
+
+      self._run_adoption_step(formatting_at, stack_at, furthest_at, token)
+    }
+
+    return true
+  }
+
+  /**
+   * The topmost special element above _stack_at_ in the stack, or
+   * `-1` when there is none.
+   *
+   * @param number stack_at
+   * @returns number
+   */
+  _furthest_block(stack_at: number) {
+    iter var i = stack_at + 1; i < self.open_elements.length(); i++ {
+      var element = self.open_elements[i]
+
+      if elements.is_special(element.namespace, element.tag_name) {
+        return i
+      }
+    }
+
+    return -1
+  }
+
+  /**
+   * One pass of the adoption agency's rebuild: steps 13 through 19 of
+   * the standard's algorithm, which is where the tree actually gets
+   * rearranged.
+   *
+   * @param number formatting_at
+   * @param number stack_at
+   * @param number furthest_at
+   * @param Token token
+   */
+  _run_adoption_step(formatting_at: number, stack_at: number,
+    furthest_at: number, token) {
+    var formatting_entry = self.formatting[formatting_at]
+    var formatting_element = formatting_entry.element
+    var common_ancestor = self.open_elements[stack_at - 1]
+    var furthest_block = self.open_elements[furthest_at]
+
+    var bookmark = formatting_at
+    var last = furthest_block
+    var at = furthest_at
+    var inner = 0
+
+    while true {
+      inner++
+      at--
+
+      if at <= stack_at {
+        break
+      }
+
+      var current = self.open_elements[at]
+      var entry_at = self._formatting_index(current)
+
+      if inner > _ADOPTION_INNER_LIMIT and entry_at >= 0 {
+        self.formatting.remove_at(entry_at)
+
+        if entry_at < bookmark {
+          bookmark--
+        }
+
+        entry_at = -1
+      }
+
+      if entry_at < 0 {
+        self.open_elements.remove_at(at)
+        continue
+      }
+
+      # Still formatting, so it survives as a fresh copy wrapping
+      # whatever has been gathered so far.
+      var entry = self.formatting[entry_at]
+      var replacement = self._create_element(entry.token, HTML_NAMESPACE)
+
+      self.formatting[entry_at] = FormattingEntry(replacement, entry.token)
+      self.open_elements[at] = replacement
+
+      if id(last) == id(furthest_block) {
+        bookmark = entry_at + 1
+      }
+
+      replacement.append_child(last)
+      last = replacement
+    }
+
+    self._insert_at(self._insertion_place(common_ancestor), last)
+
+    var wrapper = self._create_element(formatting_entry.token, HTML_NAMESPACE)
+
+    for child in furthest_block.children.clone() {
+      wrapper.append_child(child)
+    }
+
+    furthest_block.append_child(wrapper)
+
+    var stale = self._formatting_index(formatting_element)
+
+    if stale >= 0 {
+      self.formatting.remove_at(stale)
+
+      if stale < bookmark {
+        bookmark--
+      }
+    }
+
+    if bookmark > self.formatting.length() {
+      bookmark = self.formatting.length()
+    }
+
+    self.formatting.insert(FormattingEntry(wrapper, formatting_entry.token),
+      bookmark)
+
+    var old_at = self._stack_index(formatting_element)
+
+    if old_at >= 0 {
+      self.open_elements.remove_at(old_at)
+    }
+
+    var block_at = self._stack_index(furthest_block)
+    self.open_elements.insert(wrapper, block_at + 1)
+  }
+
+  # ==========================================================
+  # Insertion modes
+  # ==========================================================
+
+  /**
+   * "Initial": before anything at all, where the doctype belongs.
+   *
+   * @param Token token
+   */
+  _initial(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      self._anything_but_doctype(token, split.rest)
+      return
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, { host: self.document, before: nil })
+      return
+    }
+
+    if token.type == 'doctype' {
+      var name = token.name
+
+      if name == nil {
+        name = ''
+      }
+
+      var doctype = node.DocumentType(name, token.public_id, token.system_id)
+
+      self.document.append_child(doctype)
+      self.document.mode = elements.doctype_mode(token.name, token.public_id,
+        token.system_id, token.force_quirks)
+
+      if self.document.mode != 'no-quirks' {
+        self._error('unexpected-doctype', token)
+      }
+
+      self.mode = 'before html'
+      return
+    }
+
+    self._anything_but_doctype(token, nil)
+  }
+
+  /**
+   * The "initial" mode's recovery path: no doctype means quirks mode
+   * and straight on to the document.
+   *
+   * @param Token token
+   * @param ?string rest
+   */
+  _anything_but_doctype(token, rest: ?string) {
+    self._error('missing-doctype', token)
+    self.document.mode = 'quirks'
+    self.mode = 'before html'
+
+    if rest != nil {
+      self._process(_character_token(token, rest))
+      return
+    }
+
+    self._process(token)
+  }
+
+  /**
+   * "Before html": waiting for the root element.
+   *
+   * @param Token token
+   */
+  _before_html(token) {
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, { host: self.document, before: nil })
+      return
+    }
+
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    }
+
+    if token.is_start('html') {
+      var element = self._create_element(token, HTML_NAMESPACE)
+
+      self.document.append_child(element)
+      self.open_elements.append(element)
+      self.mode = 'before head'
+      return
+    }
+
+    if token.type == 'end-tag' and
+      !['head', 'body', 'html', 'br'].contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    var element = node.Element('html', HTML_NAMESPACE, {})
+
+    self.document.append_child(element)
+    self.open_elements.append(element)
+    self.mode = 'before head'
+    self._process(token)
+  }
+
+  /**
+   * "Before head": inside `<html>`, waiting for `<head>`.
+   *
+   * @param Token token
+   */
+  _before_head(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.is_start('head') {
+      self.head_element = self._insert_element(token, nil)
+      self.mode = 'in head'
+      return
+    }
+
+    if token.type == 'end-tag' and
+      !['head', 'body', 'html', 'br'].contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self.head_element = self._insert_element(_synthetic_start('head', token), nil)
+    self.mode = 'in head'
+    self._process(token)
+  }
+
+  /**
+   * "In head": metadata content.
+   *
+   * @param Token token
+   */
+  _in_head(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+      self._insert_characters(split.whitespace)
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.type == 'start-tag' {
+      if token.name == 'html' {
+        self._process_in('in body', token)
+        return
+      }
+
+      if _HEAD_VOID_TAGS.contains(token.name) or token.name == 'meta' {
+        self._insert_element(token, nil)
+        self._pop()
+        self._acknowledge_self_closing(token)
+        return
+      }
+
+      if token.name == 'title' {
+        self._parse_text_element(token, 'rcdata')
+        return
+      }
+
+      if token.name == 'noframes' or token.name == 'style' or
+        (token.name == 'noscript' and self.scripting) {
+        self._parse_text_element(token, 'rawtext')
+        return
+      }
+
+      if token.name == 'noscript' {
+        self._insert_element(token, nil)
+        self.mode = 'in head noscript'
+        return
+      }
+
+      if token.name == 'script' {
+        self._parse_text_element(token, 'script_data')
+        return
+      }
+
+      if token.name == 'template' {
+        self._insert_element(token, nil)
+        self._push_formatting_marker()
+
+        self.frameset_ok = false
+        self.mode = 'in template'
+        self.template_modes.append('in template')
+        return
+      }
+
+      if token.name == 'head' {
+        self._error('unexpected-start-tag', token)
+        return
+      }
+    }
+
+    if token.is_end('head') {
+      self._pop()
+      self.mode = 'after head'
+      return
+    }
+
+    if token.is_end('template') {
+      self._end_template(token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      !['body', 'html', 'br'].contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._pop()
+    self.mode = 'after head'
+    self._process(token)
+  }
+
+  /**
+   * The shared `</template>` handling, which several modes defer to.
+   *
+   * @param Token token
+   */
+  _end_template(token) {
+    if !self._stack_has('template') {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._generate_implied_end_tags_thoroughly()
+
+    var current = self.current_node()
+
+    if current == nil or !current.is_html() or current.tag_name != 'template' {
+      self._error('unexpected-end-tag', token)
+    }
+
+    self._pop_until('template')
+    self._clear_formatting_to_marker()
+
+    if !self.template_modes.is_empty() {
+      self.template_modes.pop()
+    }
+
+    self._reset_insertion_mode()
+  }
+
+  /**
+   * "In head noscript", reached only with scripting disabled.
+   *
+   * @param Token token
+   */
+  _in_head_noscript(token) {
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.is_end('noscript') {
+      self._pop()
+      self.mode = 'in head'
+      return
+    }
+
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+      self._insert_characters(split.whitespace)
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    } else if token.type == 'comment' or
+      (token.type == 'start-tag' and
+       ['basefont', 'bgsound', 'link', 'meta', 'noframes', 'style']
+         .contains(token.name)) {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.type == 'start-tag' and
+      (token.name == 'head' or token.name == 'noscript') {
+      self._error('unexpected-start-tag', token)
+      return
+    }
+
+    if token.type == 'end-tag' and token.name != 'br' {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._error('unexpected-token-in-head-noscript', token)
+    self._pop()
+    self.mode = 'in head'
+    self._process(token)
+  }
+
+  /**
+   * "After head": between `</head>` and `<body>`.
+   *
+   * @param Token token
+   */
+  _after_head(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+      self._insert_characters(split.whitespace)
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.type == 'start-tag' {
+      if token.name == 'html' {
+        self._process_in('in body', token)
+        return
+      }
+
+      if token.name == 'body' {
+        self._insert_element(token, nil)
+        self.frameset_ok = false
+        self.mode = 'in body'
+        return
+      }
+
+      if token.name == 'frameset' {
+        self._insert_element(token, nil)
+        self.mode = 'in frameset'
+        return
+      }
+
+      if _HEAD_TAGS.contains(token.name) {
+        # The head is off the stack by now, so it goes back
+        # temporarily: these elements belong to it even though they
+        # were written after it closed.
+        self._error('unexpected-start-tag', token)
+        self.open_elements.append(self.head_element)
+        self._process_in('in head', token)
+
+        var at = self._stack_index(self.head_element)
+
+        if at >= 0 {
+          self.open_elements.remove_at(at)
+        }
+
+        return
+      }
+
+      if token.name == 'head' {
+        self._error('unexpected-start-tag', token)
+        return
+      }
+    }
+
+    if token.is_end('template') {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      !['body', 'html', 'br'].contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._insert_element(_synthetic_start('body', token), nil)
+    self.mode = 'in body'
+    self._process(token)
+  }
+
+  /**
+   * "In body": everything that is not metadata, a table or a frame
+   * set. By far the largest set of rules, and the one that does the
+   * work on a normal page.
+   *
+   * @param Token token
+   */
+  _in_body(token) {
+    using token.type {
+      when 'character' self._in_body_character(token)
+      when 'comment' self._insert_comment(token, nil)
+      when 'doctype' {
+        self._error('unexpected-doctype', token)
+      }
+      when 'start-tag' self._in_body_start(token)
+      when 'end-tag' self._in_body_end(token)
+      when 'eof' self._in_body_eof(token)
+    }
+  }
+
+  /**
+   * Character data inside a body.
+   *
+   * @param Token token
+   */
+  _in_body_character(token) {
+    var data = token.data
+
+    if self._skip_leading_newline {
+      self._skip_leading_newline = false
+
+      if data.starts_with('\n') {
+        data = data[1,]
+      }
+    }
+
+    if data.contains(_NULL) {
+      self._error('unexpected-null-character', token)
+      data = data.replace(_NULL, '', false)
+    }
+
+    if data.is_empty() {
+      return
+    }
+
+    self._reconstruct_formatting()
+    self._insert_characters(data)
+
+    if !_is_all_whitespace(data) {
+      self.frameset_ok = false
+    }
+  }
+
+  /**
+   * Start tags inside a body.
+   *
+   * @param Token token
+   */
+  _in_body_start(token) {
+    var name = token.name
+
+    if name == 'html' {
+      self._error('unexpected-start-tag', token)
+
+      if self._stack_has('template') {
+        return
+      }
+
+      _merge_attributes(self.open_elements[0], token)
+      return
+    }
+
+    if _HEAD_TAGS.contains(name) {
+      self._process_in('in head', token)
+      return
+    }
+
+    if name == 'body' {
+      self._error('unexpected-start-tag', token)
+
+      var body = self._body_element()
+
+      if body == nil or self._stack_has('template') {
+        return
+      }
+
+      self.frameset_ok = false
+      _merge_attributes(body, token)
+      return
+    }
+
+    if name == 'frameset' {
+      self._in_body_frameset(token)
+      return
+    }
+
+    if _BLOCK_TAGS.contains(name) {
+      if self._has_in_button_scope('p') {
+        self._close_p(token)
+      }
+
+      self._insert_element(token, nil)
+      return
+    }
+
+    if _HEADING_TAGS.contains(name) {
+      if self._has_in_button_scope('p') {
+        self._close_p(token)
+      }
+
+      var current = self.current_node()
+
+      if current != nil and current.is_html() and
+        _HEADING_TAGS.contains(current.tag_name) {
+        self._error('unexpected-start-tag', token)
+        self._pop()
+      }
+
+      self._insert_element(token, nil)
+      return
+    }
+
+    if name == 'pre' or name == 'listing' {
+      if self._has_in_button_scope('p') {
+        self._close_p(token)
+      }
+
+      self._insert_element(token, nil)
+      self._skip_leading_newline = true
+      self.frameset_ok = false
+      return
+    }
+
+    if name == 'form' {
+      self._in_body_form(token)
+      return
+    }
+
+    if name == 'li' {
+      self._in_body_list_item(token, ['li'])
+      return
+    }
+
+    if name == 'dd' or name == 'dt' {
+      self._in_body_list_item(token, ['dd', 'dt'])
+      return
+    }
+
+    if name == 'plaintext' {
+      if self._has_in_button_scope('p') {
+        self._close_p(token)
+      }
+
+      self._insert_element(token, nil)
+      self.tokenizer.set_state('plaintext')
+      return
+    }
+
+    if name == 'button' {
+      if self._has_in_scope('button') {
+        self._error('unexpected-start-tag', token)
+        self._generate_implied_end_tags(nil)
+        self._pop_until('button')
+      }
+
+      self._reconstruct_formatting()
+      self._insert_element(token, nil)
+      self.frameset_ok = false
+      return
+    }
+
+    if name == 'a' {
+      self._in_body_anchor(token)
+      return
+    }
+
+    if elements.FORMATTING_ELEMENTS.contains(name) {
+      if name == 'nobr' {
+        self._reconstruct_formatting()
+
+        if self._has_in_scope('nobr') {
+          self._error('unexpected-start-tag', token)
+          self._adoption_agency(_synthetic_end('nobr', token))
+        }
+      }
+
+      self._reconstruct_formatting()
+      self._push_formatting(self._insert_element(token, nil), token)
+      return
+    }
+
+    if name == 'applet' or name == 'marquee' or name == 'object' {
+      self._reconstruct_formatting()
+      self._insert_element(token, nil)
+      self._push_formatting_marker()
+      self.frameset_ok = false
+      return
+    }
+
+    if name == 'table' {
+      if self.document.mode != 'quirks' and self._has_in_button_scope('p') {
+        self._close_p(token)
+      }
+
+      self._insert_element(token, nil)
+      self.frameset_ok = false
+      self.mode = 'in table'
+      return
+    }
+
+    if _BODY_VOID_TAGS.contains(name) {
+      self._reconstruct_formatting()
+      self._insert_element(token, nil)
+      self._pop()
+      self._acknowledge_self_closing(token)
+      self.frameset_ok = false
+      return
+    }
+
+    if name == 'input' {
+      self._reconstruct_formatting()
+      self._insert_element(token, nil)
+      self._pop()
+      self._acknowledge_self_closing(token)
+
+      var type = token.attributes.get('type', nil)
+
+      if type == nil or type.lower() != 'hidden' {
+        self.frameset_ok = false
+      }
+
+      return
+    }
+
+    if name == 'param' or name == 'source' or name == 'track' {
+      self._insert_element(token, nil)
+      self._pop()
+      self._acknowledge_self_closing(token)
+      return
+    }
+
+    if name == 'hr' {
+      if self._has_in_button_scope('p') {
+        self._close_p(token)
+      }
+
+      self._insert_element(token, nil)
+      self._pop()
+      self._acknowledge_self_closing(token)
+      self.frameset_ok = false
+      return
+    }
+
+    if name == 'image' {
+      # A famous wart: the standard renames this rather than treating
+      # it as an unknown element, because that is what shipped.
+      self._error('unexpected-start-tag', token)
+      token.name = 'img'
+      self._in_body_start(token)
+      return
+    }
+
+    if name == 'textarea' {
+      self._insert_element(token, nil)
+      self._skip_leading_newline = true
+      self.tokenizer.set_state('rcdata')
+
+      self.original_mode = self.mode
+      self.frameset_ok = false
+      self.mode = 'text'
+      return
+    }
+
+    if name == 'xmp' {
+      if self._has_in_button_scope('p') {
+        self._close_p(token)
+      }
+
+      self._reconstruct_formatting()
+      self.frameset_ok = false
+      self._parse_text_element(token, 'rawtext')
+      return
+    }
+
+    if name == 'iframe' {
+      self.frameset_ok = false
+      self._parse_text_element(token, 'rawtext')
+      return
+    }
+
+    if name == 'noembed' or (name == 'noscript' and self.scripting) {
+      self._parse_text_element(token, 'rawtext')
+      return
+    }
+
+    if name == 'select' {
+      self._reconstruct_formatting()
+      self._insert_element(token, nil)
+      self.frameset_ok = false
+
+      if ['in table', 'in caption', 'in table body', 'in row', 'in cell']
+        .contains(self.mode) {
+        self.mode = 'in select in table'
+      } else {
+        self.mode = 'in select'
+      }
+
+      return
+    }
+
+    if name == 'optgroup' or name == 'option' {
+      var current = self.current_node()
+
+      if current != nil and current.is_html() and current.tag_name == 'option' {
+        self._pop()
+      }
+
+      self._reconstruct_formatting()
+      self._insert_element(token, nil)
+      return
+    }
+
+    if name == 'rb' or name == 'rtc' {
+      if self._has_in_scope('ruby') {
+        self._generate_implied_end_tags(nil)
+
+        var current = self.current_node()
+
+        if current == nil or !current.is_html() or current.tag_name != 'ruby' {
+          self._error('unexpected-start-tag', token)
+        }
+      }
+
+      self._insert_element(token, nil)
+      return
+    }
+
+    if name == 'rp' or name == 'rt' {
+      if self._has_in_scope('ruby') {
+        self._generate_implied_end_tags('rtc')
+
+        var current = self.current_node()
+
+        if current == nil or !current.is_html() or
+          (current.tag_name != 'rtc' and current.tag_name != 'ruby') {
+          self._error('unexpected-start-tag', token)
+        }
+      }
+
+      self._insert_element(token, nil)
+      return
+    }
+
+    if name == 'math' or name == 'svg' {
+      var namespace = MATHML_NAMESPACE
+
+      if name == 'svg' {
+        namespace = SVG_NAMESPACE
+      }
+
+      self._reconstruct_formatting()
+      self._insert_element(token, namespace)
+
+      if token.self_closing {
+        self._pop()
+        self._acknowledge_self_closing(token)
+      }
+
+      return
+    }
+
+    if _MISPLACED_TABLE_TAGS.contains(name) {
+      self._error('unexpected-start-tag', token)
+      return
+    }
+
+    self._reconstruct_formatting()
+    self._insert_element(token, nil)
+    self._unacknowledged_self_closing(token)
+  }
+
+  /**
+   * `<frameset>` arriving in a body, which is legal only when nothing
+   * of substance has been inserted yet.
+   *
+   * @param Token token
+   */
+  _in_body_frameset(token) {
+    self._error('unexpected-start-tag', token)
+
+    var body = self._body_element()
+
+    if body == nil or !self.frameset_ok {
+      return
+    }
+
+    body.detach()
+
+    while self.open_elements.length() > 1 {
+      self._pop()
+    }
+
+    self._insert_element(token, nil)
+    self.mode = 'in frameset'
+  }
+
+  /**
+   * `<form>` inside a body. Only one form can be open at a time
+   * outside a template, which is why this checks the form pointer.
+   *
+   * @param Token token
+   */
+  _in_body_form(token) {
+    var in_template = self._stack_has('template')
+
+    if self.form_element != nil and !in_template {
+      self._error('unexpected-start-tag', token)
+      return
+    }
+
+    if self._has_in_button_scope('p') {
+      self._close_p(token)
+    }
+
+    var element = self._insert_element(token, nil)
+
+    if !in_template {
+      self.form_element = element
+    }
+  }
+
+  /**
+   * `<li>`, `<dd>` and `<dt>`, which close the previous item of the
+   * same kind however deeply the markup has nested since.
+   *
+   * @param Token token
+   * @param list names
+   */
+  _in_body_list_item(token, names: list) {
+    self.frameset_ok = false
+
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      var element = self.open_elements[i]
+
+      if element.is_html() and names.contains(element.tag_name) {
+        self._generate_implied_end_tags(element.tag_name)
+
+        var current = self.current_node()
+
+        if current == nil or !current.is_html() or
+          current.tag_name != element.tag_name {
+          self._error('unexpected-start-tag', token)
+        }
+
+        self._pop_until(element.tag_name)
+        break
+      }
+
+      if elements.is_special(element.namespace, element.tag_name) and
+        !['address', 'div', 'p'].contains(element.tag_name) {
+        break
+      }
+    }
+
+    if self._has_in_button_scope('p') {
+      self._close_p(token)
+    }
+
+    self._insert_element(token, nil)
+  }
+
+  /**
+   * `<a>`, the one formatting element that must never nest, and the
+   * reason the adoption agency algorithm exists at all.
+   *
+   * @param Token token
+   */
+  _in_body_anchor(token) {
+    var existing_at = self._formatting_index_by_name('a')
+
+    if existing_at >= 0 {
+      var existing = self.formatting[existing_at].element
+
+      self._error('unexpected-start-tag', token)
+      self._adoption_agency(_synthetic_end('a', token))
+
+      var still_listed = self._formatting_index(existing)
+
+      if still_listed >= 0 {
+        self.formatting.remove_at(still_listed)
+      }
+
+      var still_open = self._stack_index(existing)
+
+      if still_open >= 0 {
+        self.open_elements.remove_at(still_open)
+      }
+    }
+
+    self._reconstruct_formatting()
+    self._push_formatting(self._insert_element(token, nil), token)
+  }
+
+  /**
+   * End tags inside a body.
+   *
+   * @param Token token
+   */
+  _in_body_end(token) {
+    var name = token.name
+
+    if name == 'template' {
+      self._process_in('in head', token)
+      return
+    }
+
+    if name == 'body' or name == 'html' {
+      if !self._has_in_scope('body') {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._check_body_close(token)
+      self.mode = 'after body'
+
+      if name == 'html' {
+        self._process(token)
+      }
+
+      return
+    }
+
+    if _BLOCK_TAGS.contains(name) and name != 'p' {
+      self._in_body_close_block(token, name)
+      return
+    }
+
+    if name == 'form' {
+      self._in_body_end_form(token)
+      return
+    }
+
+    if name == 'p' {
+      if !self._has_in_button_scope('p') {
+        self._error('unexpected-end-tag', token)
+        self._insert_element(_synthetic_start('p', token), nil)
+      }
+
+      self._close_p(token)
+      return
+    }
+
+    if name == 'li' {
+      if !self._has_in_list_item_scope('li') {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._generate_implied_end_tags('li')
+      self._expect_current(token, 'li')
+      self._pop_until('li')
+      return
+    }
+
+    if name == 'dd' or name == 'dt' {
+      if !self._has_in_scope(name) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._generate_implied_end_tags(name)
+      self._expect_current(token, name)
+      self._pop_until(name)
+      return
+    }
+
+    if _HEADING_TAGS.contains(name) {
+      if !self._in_scope(_HEADING_TAGS, nil) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._generate_implied_end_tags(nil)
+      self._expect_current(token, name)
+      self._pop_until_any(_HEADING_TAGS)
+      return
+    }
+
+    if elements.FORMATTING_ELEMENTS.contains(name) {
+      if self._adoption_agency(token) {
+        return
+      }
+
+      self._in_body_any_other_end(token)
+      return
+    }
+
+    if name == 'applet' or name == 'marquee' or name == 'object' {
+      if !self._has_in_scope(name) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._generate_implied_end_tags(nil)
+      self._expect_current(token, name)
+      self._pop_until(name)
+      self._clear_formatting_to_marker()
+      return
+    }
+
+    if name == 'br' {
+      # `</br>` is treated as `<br>`, attributes and all discarded.
+      self._error('unexpected-end-tag', token)
+      self._in_body_start(_synthetic_start('br', token))
+      return
+    }
+
+    self._in_body_any_other_end(token)
+  }
+
+  /**
+   * Closing one of the ordinary block elements.
+   *
+   * @param Token token
+   * @param string name
+   */
+  _in_body_close_block(token, name: string) {
+    if !self._has_in_scope(name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._generate_implied_end_tags(nil)
+    self._expect_current(token, name)
+    self._pop_until(name)
+  }
+
+  /**
+   * `</form>`, which closes the form the form pointer names rather
+   * than whatever happens to be open.
+   *
+   * @param Token token
+   */
+  _in_body_end_form(token) {
+    if self._stack_has('template') {
+      if !self._has_in_scope('form') {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._generate_implied_end_tags(nil)
+      self._expect_current(token, 'form')
+      self._pop_until('form')
+      return
+    }
+
+    var form = self.form_element
+    self.form_element = nil
+
+    if form == nil or !self._in_scope(['form'], nil) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._generate_implied_end_tags(nil)
+
+    if id(self.current_node()) != id(form) {
+      self._error('unexpected-end-tag', token)
+    }
+
+    var at = self._stack_index(form)
+
+    if at >= 0 {
+      self.open_elements.remove_at(at)
+    }
+  }
+
+  /**
+   * The "any other end tag" rules: walk down the stack looking for a
+   * match, and give up the moment something special is in the way.
+   *
+   * @param Token token
+   */
+  _in_body_any_other_end(token) {
+    iter var i = self.open_elements.length() - 1; i >= 0; i-- {
+      var element = self.open_elements[i]
+
+      if element.is_html() and element.tag_name == token.name {
+        self._generate_implied_end_tags(token.name)
+
+        if id(self.current_node()) != id(element) {
+          self._error('unexpected-end-tag', token)
+        }
+
+        while self.open_elements.length() > i {
+          self._pop()
+        }
+
+        return
+      }
+
+      if elements.is_special(element.namespace, element.tag_name) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+    }
+  }
+
+  /**
+   * End of file inside a body.
+   *
+   * @param Token token
+   */
+  _in_body_eof(token) {
+    if !self.template_modes.is_empty() {
+      self._process_in('in template', token)
+      return
+    }
+
+    self._check_body_close(token)
+    self.done = true
+  }
+
+  /**
+   * Reports anything still open that should not have been when the
+   * body closes.
+   *
+   * @param Token token
+   */
+  _check_body_close(token) {
+    var allowed = [
+      'dd', 'dt', 'li', 'optgroup', 'option', 'p', 'rb', 'rp', 'rt',
+      'rtc', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'body',
+      'html',
+    ]
+
+    for element in self.open_elements {
+      if !element.is_html() or !allowed.contains(element.tag_name) {
+        self._error('unexpected-open-element', token)
+        return
+      }
+    }
+  }
+
+  /**
+   * Raises a parse error unless the current node is named _name_.
+   *
+   * @param Token token
+   * @param string name
+   */
+  _expect_current(token, name: string) {
+    var current = self.current_node()
+
+    if current == nil or !current.is_html() or current.tag_name != name {
+      self._error('unexpected-end-tag', token)
+    }
+  }
+
+  /**
+   * The `<body>` element on the stack, or `nil`.
+   *
+   * @returns ?Element
+   */
+  _body_element() {
+    if self.open_elements.length() < 2 {
+      return nil
+    }
+
+    var second = self.open_elements[1]
+
+    if second.is_html() and second.tag_name == 'body' {
+      return second
+    }
+
+    return nil
+  }
+
+  /**
+   * "Text": inside a RAWTEXT, RCDATA or script element, where
+   * everything until the matching end tag is content.
+   *
+   * @param Token token
+   */
+  _text(token) {
+    if token.type == 'character' {
+      var data = token.data
+
+      if self._skip_leading_newline {
+        self._skip_leading_newline = false
+
+        if data.starts_with('\n') {
+          data = data[1,]
+        }
+      }
+
+      self._insert_characters(data)
+      return
+    }
+
+    if token.type == 'eof' {
+      self._error('eof-in-element-that-can-contain-only-text', token)
+      self._pop()
+      self.mode = self.original_mode
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' {
+      # Scripts are never executed here, so `</script>` needs no more
+      # ceremony than any other closing tag.
+      self._pop()
+      self.mode = self.original_mode
+    }
+  }
+
+  /**
+   * "In table".
+   *
+   * @param Token token
+   */
+  _in_table(token) {
+    if token.type == 'character' {
+      var current = self.current_node()
+
+      if current != nil and current.is_html() and
+        ['table', 'tbody', 'template', 'tfoot', 'thead', 'tr']
+          .contains(current.tag_name) {
+        self.pending_characters = []
+        self.original_mode = self.mode
+        self.mode = 'in table text'
+        self._process(token)
+        return
+      }
+
+      self._in_table_anything_else(token)
+      return
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.type == 'eof' {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.type == 'start-tag' {
+      if self._in_table_start(token) {
+        return
+      }
+    }
+
+    if token.type == 'end-tag' {
+      if token.name == 'table' {
+        if !self._has_in_table_scope('table') {
+          self._error('unexpected-end-tag', token)
+          return
+        }
+
+        self._pop_until('table')
+        self._reset_insertion_mode()
+        return
+      }
+
+      if _TABLE_STRAY_END_TAGS.contains(token.name) and token.name != 'table' {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      if token.name == 'template' {
+        self._process_in('in head', token)
+        return
+      }
+    }
+
+    self._in_table_anything_else(token)
+  }
+
+  /**
+   * The start tags "in table" knows about. Returns `true` when the
+   * token was handled.
+   *
+   * @param Token token
+   * @returns bool
+   */
+  _in_table_start(token) {
+    var name = token.name
+
+    if name == 'caption' {
+      self._clear_stack_back_to(_TABLE_CONTEXT)
+      self._push_formatting_marker()
+      self._insert_element(token, nil)
+      self.mode = 'in caption'
+      return true
+    }
+
+    if name == 'colgroup' {
+      self._clear_stack_back_to(_TABLE_CONTEXT)
+      self._insert_element(token, nil)
+      self.mode = 'in column group'
+      return true
+    }
+
+    if name == 'col' {
+      self._clear_stack_back_to(_TABLE_CONTEXT)
+      self._insert_element(_synthetic_start('colgroup', token), nil)
+      self.mode = 'in column group'
+      self._process(token)
+      return true
+    }
+
+    if ['tbody', 'tfoot', 'thead'].contains(name) {
+      self._clear_stack_back_to(_TABLE_CONTEXT)
+      self._insert_element(token, nil)
+      self.mode = 'in table body'
+      return true
+    }
+
+    if ['td', 'th', 'tr'].contains(name) {
+      self._clear_stack_back_to(_TABLE_CONTEXT)
+      self._insert_element(_synthetic_start('tbody', token), nil)
+      self.mode = 'in table body'
+      self._process(token)
+      return true
+    }
+
+    if name == 'table' {
+      self._error('unexpected-start-tag', token)
+
+      if !self._has_in_table_scope('table') {
+        return true
+      }
+
+      self._pop_until('table')
+      self._reset_insertion_mode()
+      self._process(token)
+      return true
+    }
+
+    if name == 'style' or name == 'script' or name == 'template' {
+      self._process_in('in head', token)
+      return true
+    }
+
+    if name == 'input' {
+      var type = token.attributes.get('type', nil)
+
+      if type != nil and type.lower() == 'hidden' {
+        self._error('unexpected-start-tag', token)
+        self._insert_element(token, nil)
+        self._pop()
+        self._acknowledge_self_closing(token)
+        return true
+      }
+
+      return false
+    }
+
+    if name == 'form' {
+      self._error('unexpected-start-tag', token)
+
+      if self._stack_has('template') or self.form_element != nil {
+        return true
+      }
+
+      self.form_element = self._insert_element(token, nil)
+      self._pop()
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * The "in table" recovery path: anything that cannot live in a
+   * table is foster parented out in front of it rather than dropped.
+   *
+   * @param Token token
+   */
+  _in_table_anything_else(token) {
+    self._error('unexpected-token-in-table', token)
+
+    self.foster_parenting = true
+    self._process_in('in body', token)
+    self.foster_parenting = false
+  }
+
+  /**
+   * "In table text": holds character data until it is clear whether
+   * it belongs inside the table or has to be foster parented.
+   *
+   * @param Token token
+   */
+  _in_table_text(token) {
+    if token.type == 'character' {
+      var data = token.data
+
+      if data.contains(_NULL) {
+        self._error('unexpected-null-character', token)
+        data = data.replace(_NULL, '', false)
+      }
+
+      if !data.is_empty() {
+        self.pending_characters.append(data)
+      }
+
+      return
+    }
+
+    var text = ''.join(self.pending_characters)
+    self.pending_characters = []
+    self.mode = self.original_mode
+
+    if !text.is_empty() {
+      if _is_all_whitespace(text) {
+        self._insert_characters(text)
+      } else {
+        self._in_table_anything_else(_character_token(token, text))
+      }
+    }
+
+    self._process(token)
+  }
+
+  /**
+   * "In caption".
+   *
+   * @param Token token
+   */
+  _in_caption(token) {
+    if token.is_end('caption') {
+      self._close_caption(token)
+      return
+    }
+
+    var closers = ['caption', 'col', 'colgroup', 'tbody', 'td', 'tfoot',
+      'th', 'thead', 'tr']
+
+    if (token.type == 'start-tag' and closers.contains(token.name)) or
+      token.is_end('table') {
+      if !self._has_in_table_scope('caption') {
+        self._error('unexpected-token-in-caption', token)
+        return
+      }
+
+      self._close_caption(token)
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      ['body', 'col', 'colgroup', 'html', 'tbody', 'td', 'tfoot', 'th',
+       'thead', 'tr'].contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._process_in('in body', token)
+  }
+
+  /**
+   * Closes an open `<caption>` and returns to the table.
+   *
+   * @param Token token
+   */
+  _close_caption(token) {
+    if !self._has_in_table_scope('caption') {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._generate_implied_end_tags(nil)
+    self._expect_current(token, 'caption')
+    self._pop_until('caption')
+    self._clear_formatting_to_marker()
+    self.mode = 'in table'
+  }
+
+  /**
+   * "In column group".
+   *
+   * @param Token token
+   */
+  _in_column_group(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+      self._insert_characters(split.whitespace)
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.is_start('col') {
+      self._insert_element(token, nil)
+      self._pop()
+      self._acknowledge_self_closing(token)
+      return
+    }
+
+    if token.is_end('colgroup') {
+      var current = self.current_node()
+
+      if current == nil or !current.is_html() or
+        current.tag_name != 'colgroup' {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._pop()
+      self.mode = 'in table'
+      return
+    }
+
+    if token.is_end('col') {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    if token.is_start('template') or token.is_end('template') {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.type == 'eof' {
+      self._process_in('in body', token)
+      return
+    }
+
+    var current = self.current_node()
+
+    if current == nil or !current.is_html() or current.tag_name != 'colgroup' {
+      self._error('unexpected-token-in-column-group', token)
+      return
+    }
+
+    self._pop()
+    self.mode = 'in table'
+    self._process(token)
+  }
+
+  /**
+   * "In table body": between the table and its rows.
+   *
+   * @param Token token
+   */
+  _in_table_body(token) {
+    if token.is_start('tr') {
+      self._clear_stack_back_to(_TABLE_BODY_CONTEXT)
+      self._insert_element(token, nil)
+      self.mode = 'in row'
+      return
+    }
+
+    if token.type == 'start-tag' and (token.name == 'th' or token.name == 'td') {
+      self._error('unexpected-start-tag', token)
+      self._clear_stack_back_to(_TABLE_BODY_CONTEXT)
+      self._insert_element(_synthetic_start('tr', token), nil)
+      self.mode = 'in row'
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      ['tbody', 'tfoot', 'thead'].contains(token.name) {
+      if !self._has_in_table_scope(token.name) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._clear_stack_back_to(_TABLE_BODY_CONTEXT)
+      self._pop()
+      self.mode = 'in table'
+      return
+    }
+
+    var closers = ['caption', 'col', 'colgroup', 'tbody', 'tfoot', 'thead']
+
+    if (token.type == 'start-tag' and closers.contains(token.name)) or
+      token.is_end('table') {
+      if !self._has_in_table_scope('tbody') and
+        !self._has_in_table_scope('thead') and
+        !self._has_in_table_scope('tfoot') {
+        self._error('unexpected-token-in-table-body', token)
+        return
+      }
+
+      self._clear_stack_back_to(_TABLE_BODY_CONTEXT)
+      self._pop()
+      self.mode = 'in table'
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      ['body', 'caption', 'col', 'colgroup', 'html', 'td', 'th', 'tr']
+        .contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._in_table(token)
+  }
+
+  /**
+   * "In row".
+   *
+   * @param Token token
+   */
+  _in_row(token) {
+    if token.type == 'start-tag' and (token.name == 'th' or token.name == 'td') {
+      self._clear_stack_back_to(_TABLE_ROW_CONTEXT)
+      self._insert_element(token, nil)
+      self.mode = 'in cell'
+      self._push_formatting_marker()
+      return
+    }
+
+    if token.is_end('tr') {
+      if !self._has_in_table_scope('tr') {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._clear_stack_back_to(_TABLE_ROW_CONTEXT)
+      self._pop()
+      self.mode = 'in table body'
+      return
+    }
+
+    var closers = ['caption', 'col', 'colgroup', 'tbody', 'tfoot', 'thead', 'tr']
+
+    if (token.type == 'start-tag' and closers.contains(token.name)) or
+      token.is_end('table') {
+      if !self._has_in_table_scope('tr') {
+        self._error('unexpected-token-in-row', token)
+        return
+      }
+
+      self._clear_stack_back_to(_TABLE_ROW_CONTEXT)
+      self._pop()
+      self.mode = 'in table body'
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      ['tbody', 'tfoot', 'thead'].contains(token.name) {
+      if !self._has_in_table_scope(token.name) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      if !self._has_in_table_scope('tr') {
+        return
+      }
+
+      self._clear_stack_back_to(_TABLE_ROW_CONTEXT)
+      self._pop()
+      self.mode = 'in table body'
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      ['body', 'caption', 'col', 'colgroup', 'html', 'td', 'th']
+        .contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    self._in_table(token)
+  }
+
+  /**
+   * "In cell".
+   *
+   * @param Token token
+   */
+  _in_cell(token) {
+    if token.type == 'end-tag' and (token.name == 'td' or token.name == 'th') {
+      if !self._has_in_table_scope(token.name) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._generate_implied_end_tags(nil)
+      self._expect_current(token, token.name)
+      self._pop_until(token.name)
+      self._clear_formatting_to_marker()
+      self.mode = 'in row'
+      return
+    }
+
+    var closers = ['caption', 'col', 'colgroup', 'tbody', 'td', 'tfoot',
+      'th', 'thead', 'tr']
+
+    if token.type == 'start-tag' and closers.contains(token.name) {
+      if !self._has_in_table_scope('td') and !self._has_in_table_scope('th') {
+        self._error('unexpected-start-tag', token)
+        return
+      }
+
+      self._close_cell(token)
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      ['body', 'caption', 'col', 'colgroup', 'html'].contains(token.name) {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    if token.type == 'end-tag' and
+      ['table', 'tbody', 'tfoot', 'thead', 'tr'].contains(token.name) {
+      if !self._has_in_table_scope(token.name) {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._close_cell(token)
+      self._process(token)
+      return
+    }
+
+    self._process_in('in body', token)
+  }
+
+  /**
+   * Closes whichever of `<td>` or `<th>` is open.
+   *
+   * @param Token token
+   */
+  _close_cell(token) {
+    var name = 'td'
+
+    if !self._has_in_table_scope('td') {
+      name = 'th'
+    }
+
+    self._generate_implied_end_tags(nil)
+    self._expect_current(token, name)
+    self._pop_until(name)
+    self._clear_formatting_to_marker()
+    self.mode = 'in row'
+  }
+
+  /**
+   * "In select".
+   *
+   * @param Token token
+   */
+  _in_select(token) {
+    if token.type == 'character' {
+      var data = token.data
+
+      if data.contains(_NULL) {
+        self._error('unexpected-null-character', token)
+        data = data.replace(_NULL, '', false)
+      }
+
+      self._insert_characters(data)
+      return
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.type == 'eof' {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.type == 'start-tag' {
+      self._in_select_start(token)
+      return
+    }
+
+    if token.type == 'end-tag' {
+      self._in_select_end(token)
+    }
+  }
+
+  /**
+   * Start tags inside a `<select>`.
+   *
+   * @param Token token
+   */
+  _in_select_start(token) {
+    var name = token.name
+
+    if name == 'html' {
+      self._process_in('in body', token)
+      return
+    }
+
+    if name == 'option' {
+      self._pop_if_current('option')
+      self._insert_element(token, nil)
+      return
+    }
+
+    if name == 'optgroup' {
+      self._pop_if_current('option')
+      self._pop_if_current('optgroup')
+      self._insert_element(token, nil)
+      return
+    }
+
+    if name == 'hr' {
+      self._pop_if_current('option')
+      self._pop_if_current('optgroup')
+      self._insert_element(token, nil)
+      self._pop()
+      self._acknowledge_self_closing(token)
+      return
+    }
+
+    if name == 'select' {
+      self._error('unexpected-start-tag', token)
+
+      if !self._has_in_select_scope('select') {
+        return
+      }
+
+      self._pop_until('select')
+      self._reset_insertion_mode()
+      return
+    }
+
+    if name == 'input' or name == 'keygen' or name == 'textarea' {
+      self._error('unexpected-start-tag', token)
+
+      if !self._has_in_select_scope('select') {
+        return
+      }
+
+      self._pop_until('select')
+      self._reset_insertion_mode()
+      self._process(token)
+      return
+    }
+
+    if name == 'script' or name == 'template' {
+      self._process_in('in head', token)
+      return
+    }
+
+    self._error('unexpected-start-tag', token)
+  }
+
+  /**
+   * End tags inside a `<select>`.
+   *
+   * @param Token token
+   */
+  _in_select_end(token) {
+    var name = token.name
+
+    if name == 'optgroup' {
+      var depth = self.open_elements.length()
+
+      if depth >= 2 {
+        var current = self.open_elements[depth - 1]
+        var below = self.open_elements[depth - 2]
+
+        if current.is_html() and current.tag_name == 'option' and
+          below.is_html() and below.tag_name == 'optgroup' {
+          self._pop()
+        }
+      }
+
+      if !self._pop_if_current('optgroup') {
+        self._error('unexpected-end-tag', token)
+      }
+
+      return
+    }
+
+    if name == 'option' {
+      if !self._pop_if_current('option') {
+        self._error('unexpected-end-tag', token)
+      }
+
+      return
+    }
+
+    if name == 'select' {
+      if !self._has_in_select_scope('select') {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._pop_until('select')
+      self._reset_insertion_mode()
+      return
+    }
+
+    if name == 'template' {
+      self._process_in('in head', token)
+      return
+    }
+
+    self._error('unexpected-end-tag', token)
+  }
+
+  /**
+   * Pops the current node when it is an HTML element named _name_,
+   * and reports whether it did.
+   *
+   * @param string name
+   * @returns bool
+   */
+  _pop_if_current(name: string) {
+    var current = self.current_node()
+
+    if current != nil and current.is_html() and current.tag_name == name {
+      self._pop()
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * "In select in table": a `<select>` inside a table, where the
+   * table's own structure tags close the select rather than being
+   * swallowed by it.
+   *
+   * @param Token token
+   */
+  _in_select_in_table(token) {
+    var breakers = ['caption', 'table', 'tbody', 'tfoot', 'thead', 'tr',
+      'td', 'th']
+
+    if token.type == 'start-tag' and breakers.contains(token.name) {
+      self._error('unexpected-start-tag', token)
+      self._pop_until('select')
+      self._reset_insertion_mode()
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' and breakers.contains(token.name) {
+      self._error('unexpected-end-tag', token)
+
+      if !self._has_in_table_scope(token.name) {
+        return
+      }
+
+      self._pop_until('select')
+      self._reset_insertion_mode()
+      self._process(token)
+      return
+    }
+
+    self._in_select(token)
+  }
+
+  /**
+   * "In template".
+   *
+   * @param Token token
+   */
+  _in_template(token) {
+    if token.type == 'character' or token.type == 'comment' or
+      token.type == 'doctype' {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.type == 'start-tag' and _HEAD_TAGS.contains(token.name) {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.is_end('template') {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.type == 'start-tag' {
+      var next_mode = self._template_mode_for(token.name)
+
+      self._switch_template_mode(next_mode)
+      self._process(token)
+      return
+    }
+
+    if token.type == 'end-tag' {
+      self._error('unexpected-end-tag', token)
+      return
+    }
+
+    if !self._stack_has('template') {
+      self.done = true
+      return
+    }
+
+    self._error('eof-in-template', token)
+    self._pop_until('template')
+    self._clear_formatting_to_marker()
+
+    if !self.template_modes.is_empty() {
+      self.template_modes.pop()
+    }
+
+    self._reset_insertion_mode()
+    self._process(token)
+  }
+
+  /**
+   * Which insertion mode a template switches to for a given start
+   * tag, so that a `<template>` holding table rows parses them as
+   * table rows.
+   *
+   * @param string name
+   * @returns string
+   */
+  _template_mode_for(name: string) {
+    if ['caption', 'colgroup', 'tbody', 'tfoot', 'thead'].contains(name) {
+      return 'in table'
+    }
+
+    if name == 'col' {
+      return 'in column group'
+    }
+
+    if name == 'tr' {
+      return 'in table body'
+    }
+
+    if name == 'td' or name == 'th' {
+      return 'in row'
+    }
+
+    return 'in body'
+  }
+
+  /**
+   * Replaces the innermost template insertion mode with _next_mode_.
+   *
+   * @param string next_mode
+   */
+  _switch_template_mode(next_mode: string) {
+    if !self.template_modes.is_empty() {
+      self.template_modes.pop()
+    }
+
+    self.template_modes.append(next_mode)
+    self.mode = next_mode
+  }
+
+  /**
+   * "After body".
+   *
+   * @param Token token
+   */
+  _after_body(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+
+      if !split.whitespace.is_empty() {
+        self._process_in('in body', _character_token(token, split.whitespace))
+      }
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, { host: self.open_elements[0], before: nil })
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.is_end('html') {
+      if self.fragment_context != nil {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self.mode = 'after after body'
+      return
+    }
+
+    if token.type == 'eof' {
+      self.done = true
+      return
+    }
+
+    self._error('unexpected-token-after-body', token)
+    self.mode = 'in body'
+    self._process(token)
+  }
+
+  /**
+   * "In frameset".
+   *
+   * @param Token token
+   */
+  _in_frameset(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+      self._insert_characters(split.whitespace)
+
+      if !split.rest.is_empty() {
+        self._error('unexpected-character-in-frameset', token)
+      }
+
+      return
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.is_start('frameset') {
+      self._insert_element(token, nil)
+      return
+    }
+
+    if token.is_end('frameset') {
+      var current = self.current_node()
+
+      if current != nil and current.is_html() and current.tag_name == 'html' {
+        self._error('unexpected-end-tag', token)
+        return
+      }
+
+      self._pop()
+
+      var now = self.current_node()
+
+      if self.fragment_context == nil and
+        (now == nil or !now.is_html() or now.tag_name != 'frameset') {
+        self.mode = 'after frameset'
+      }
+
+      return
+    }
+
+    if token.is_start('frame') {
+      self._insert_element(token, nil)
+      self._pop()
+      self._acknowledge_self_closing(token)
+      return
+    }
+
+    if token.is_start('noframes') {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.type == 'eof' {
+      var current = self.current_node()
+
+      if current != nil and current.is_html() and current.tag_name != 'html' {
+        self._error('eof-in-frameset', token)
+      }
+
+      self.done = true
+      return
+    }
+
+    self._error('unexpected-token-in-frameset', token)
+  }
+
+  /**
+   * "After frameset".
+   *
+   * @param Token token
+   */
+  _after_frameset(token) {
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+      self._insert_characters(split.whitespace)
+
+      if !split.rest.is_empty() {
+        self._error('unexpected-character-after-frameset', token)
+      }
+
+      return
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.is_end('html') {
+      self.mode = 'after after frameset'
+      return
+    }
+
+    if token.is_start('noframes') {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.type == 'eof' {
+      self.done = true
+      return
+    }
+
+    self._error('unexpected-token-after-frameset', token)
+  }
+
+  /**
+   * "After after body": past `</html>`, where only comments and
+   * whitespace are still welcome.
+   *
+   * @param Token token
+   */
+  _after_after_body(token) {
+    if token.type == 'comment' {
+      self._insert_comment(token, { host: self.document, before: nil })
+      return
+    }
+
+    if token.type == 'doctype' or token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+
+      if !split.whitespace.is_empty() {
+        self._process_in('in body', _character_token(token, split.whitespace))
+      }
+
+      if split.rest.is_empty() {
+        return
+      }
+
+      token = _character_token(token, split.rest)
+    }
+
+    if token.type == 'eof' {
+      self.done = true
+      return
+    }
+
+    self._error('unexpected-token-after-body', token)
+    self.mode = 'in body'
+    self._process(token)
+  }
+
+  /**
+   * "After after frameset".
+   *
+   * @param Token token
+   */
+  _after_after_frameset(token) {
+    if token.type == 'comment' {
+      self._insert_comment(token, { host: self.document, before: nil })
+      return
+    }
+
+    if token.type == 'doctype' or token.is_start('html') {
+      self._process_in('in body', token)
+      return
+    }
+
+    if token.type == 'character' {
+      var split = _split_leading_whitespace(token.data)
+
+      if !split.whitespace.is_empty() {
+        self._process_in('in body', _character_token(token, split.whitespace))
+      }
+
+      if split.rest.is_empty() {
+        return
+      }
+    }
+
+    if token.is_start('noframes') {
+      self._process_in('in head', token)
+      return
+    }
+
+    if token.type == 'eof' {
+      self.done = true
+      return
+    }
+
+    self._error('unexpected-token-after-frameset', token)
+  }
+
+  # ==========================================================
+  # Fragment parsing
+  # ==========================================================
+
+  /**
+   * Puts this builder into the state the fragment parsing algorithm
+   * starts from, with _context_ as the element the markup is being
+   * parsed inside, and returns the synthetic `<html>` root the parsed
+   * nodes will hang off.
+   *
+   * `parse_fragment()` is the friendly form of this and is what you
+   * normally want; this is public so a caller driving the tokenizer
+   * by hand can set the same state up.
+   *
+   * @param Element context
+   * @returns Element
+   */
+  prepare_fragment(context) {
+    self.fragment_context = context
+    self.document.mode = _context_document_mode(context)
+
+    if context.is_html() {
+      self.tokenizer.set_state(
+        _fragment_tokenizer_state(context.tag_name, self.scripting)
+      )
+    }
+
+    # Seeds the tokenizer's idea of what an end tag would be closing,
+    # which is what makes a fragment parsed inside a `<title>` treat
+    # `</title>` as the end of its content.
+    self.tokenizer.set_last_start_tag(context.tag_name)
+
+    var root = node.Element('html', HTML_NAMESPACE, {})
+
+    self.document.append_child(root)
+    self.open_elements.append(root)
+
+    if context.is_html() and context.tag_name == 'template' {
+      self.template_modes.append('in template')
+    }
+
+    self._reset_insertion_mode()
+    self.form_element = _nearest_form(context)
+
+    return root
+  }
+
+  # ==========================================================
+  # Foreign content
+  # ==========================================================
+
+  /**
+   * The rules for content inside `<svg>` and `<math>`, where tag
+   * names keep their case, attributes can carry namespaces, and a
+   * misplaced HTML tag breaks out of the subtree rather than nesting
+   * inside it.
+   *
+   * @param Token token
+   */
+  _foreign_content(token) {
+    if token.type == 'character' {
+      var data = token.data
+
+      if data.contains(_NULL) {
+        self._error('unexpected-null-character', token)
+        data = data.replace(_NULL, _REPLACEMENT, false)
+      }
+
+      self._insert_characters(data)
+
+      if !_is_all_whitespace(data) {
+        self.frameset_ok = false
+      }
+
+      return
+    }
+
+    if token.type == 'comment' {
+      self._insert_comment(token, nil)
+      return
+    }
+
+    if token.type == 'doctype' {
+      self._error('unexpected-doctype', token)
+      return
+    }
+
+    if token.type == 'start-tag' {
+      self._foreign_start(token)
+      return
+    }
+
+    if token.type == 'end-tag' {
+      self._foreign_end(token)
+      return
+    }
+
+    # End of file in foreign content is handled by the current
+    # insertion mode, exactly as the dispatcher already arranged.
+    self._process(token)
+  }
+
+  /**
+   * A start tag in foreign content.
+   *
+   * @param Token token
+   */
+  _foreign_start(token) {
+    var name = token.name
+
+    if elements.FOREIGN_BREAKOUT_TAGS.contains(name) or
+      (name == 'font' and _has_any_attribute(token,
+        ['color', 'face', 'size'])) {
+      self._error('unexpected-html-element-in-foreign-content', token)
+
+      if self.fragment_context != nil {
+        self._foreign_ordinary_start(token)
+        return
+      }
+
+      while !self.open_elements.is_empty() {
+        var current = self.current_node()
+
+        if current.namespace == HTML_NAMESPACE or
+          elements.is_mathml_text_integration_point(current) or
+          elements.is_html_integration_point(current) {
+          break
+        }
+
+        self._pop()
+      }
+
+      self._dispatch(token)
+      return
+    }
+
+    self._foreign_ordinary_start(token)
+  }
+
+  /**
+   * Inserts a foreign element, adjusting its name and attributes for
+   * whichever namespace it belongs to.
+   *
+   * @param Token token
+   */
+  _foreign_ordinary_start(token) {
+    var current = self._adjusted_current_node()
+    var namespace = SVG_NAMESPACE
+
+    if current != nil {
+      namespace = current.namespace
+    }
+
+    self._insert_element(token, namespace)
+
+    if token.self_closing {
+      self._pop()
+      self._acknowledge_self_closing(token)
+    }
+  }
+
+  /**
+   * An end tag in foreign content.
+   *
+   * @param Token token
+   */
+  _foreign_end(token) {
+    var at = self.open_elements.length() - 1
+    var current = self.open_elements[at]
+
+    if current.tag_name.lower() != token.name {
+      self._error('unexpected-end-tag', token)
+    }
+
+    while at > 0 {
+      var element = self.open_elements[at]
+
+      if element.tag_name.lower() == token.name {
+        while self.open_elements.length() > at {
+          self._pop()
+        }
+
+        return
+      }
+
+      at--
+
+      if self.open_elements[at].namespace == HTML_NAMESPACE {
+        break
+      }
+    }
+
+    # Nothing in the foreign subtree matched, so the HTML rules get a
+    # chance at it.
+    self._process(token)
+  }
+}
+
+
+/**
+ * True when _token_ carries any of the attributes in _names_.
+ *
+ * @param Token token
+ * @param list names
+ * @returns bool
+ */
+def _has_any_attribute(token, names: list) {
+  for name in names {
+    if token.attributes.contains(name) {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+/**
+ * Copies any attributes of _token_ that _element_ does not already
+ * carry onto it, which is how a second `<html>` or `<body>` tag adds
+ * to the one that already exists instead of creating another.
+ *
+ * @param Element element
+ * @param Token token
+ */
+def _merge_attributes(element, token) {
+  for name, value in token.attributes {
+    if !element.attributes.contains(name) {
+      element.attributes[name] = value
+    }
+  }
+}
+
+
+/**
+ * True when every character of _text_ is HTML whitespace. An empty
+ * string counts.
+ *
+ * @param string text
+ * @returns bool
+ */
+def _is_all_whitespace(text: string) {
+  for c in text {
+    if !_is_whitespace(c) {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+/**
+ * True when _c_ is one of the five characters HTML treats as
+ * whitespace.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_whitespace(c: string) {
+  return c == ' ' or c == '\n' or c == '\t' or
+    c == '\f' or c == '\r'
+}
+
+
+/**
+ * Splits _text_ into its leading whitespace and the rest.
+ *
+ * Several insertion modes treat leading whitespace as harmless and
+ * everything after it as a reason to change mode, and the tokenizer
+ * hands over whole runs rather than single characters, so the split
+ * has to happen here.
+ *
+ * @param string text
+ * @returns dict
+ */
+def _split_leading_whitespace(text: string) {
+  var chars = text.to_list()
+  var at = 0
+
+  while at < chars.length() and _is_whitespace(chars[at]) {
+    at++
+  }
+
+  return {
+    whitespace: ''.join(chars[0, at]),
+    rest: ''.join(chars[at,]),
+  }
+}
+
+
+/**
+ * A character token holding _data_, borrowing _source_'s position so
+ * that any error reported against it still points somewhere useful.
+ *
+ * @param Token source
+ * @param string data
+ * @returns Token
+ */
+def _character_token(source, data: string) {
+  var token = tokenizer.Token('character')
+
+  token.data = data
+  token.line = source.line
+  token.column = source.column
+
+  return token
+}
+
+
+/**
+ * A start tag token the parser invented, for the several rules that
+ * say "act as though a `<tbody>` start tag had been seen".
+ *
+ * @param string name
+ * @param ?Token source
+ * @returns Token
+ */
+def _synthetic_start(name: string, source) {
+  var token = tokenizer.Token('start-tag')
+  token.name = name
+
+  if source != nil {
+    token.line = source.line
+    token.column = source.column
+  }
+
+  return token
+}
+
+
+/**
+ * An end tag token the parser invented.
+ *
+ * @param string name
+ * @param ?Token source
+ * @returns Token
+ */
+def _synthetic_end(name: string, source) {
+  var token = tokenizer.Token('end-tag')
+  token.name = name
+
+  if source != nil {
+    token.line = source.line
+    token.column = source.column
+  }
+
+  return token
+}
+
+
+/**
+ * True when two elements are interchangeable for the Noah's Ark
+ * clause: same name, same namespace, same attributes.
+ *
+ * @param Element a
+ * @param Element b
+ * @returns bool
+ */
+def _same_formatting_shape(a, b) {
+  if a.tag_name != b.tag_name or a.namespace != b.namespace {
+    return false
+  }
+
+  if a.attributes.length() != b.attributes.length() {
+    return false
+  }
+
+  for name, value in a.attributes {
+    if b.attributes.get(name, nil) != value {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+/**
+ * Parses _source_ as a complete HTML document.
+ *
+ * The result is always a usable `Document`, however broken the input
+ * was: HTML defines a tree for every possible string, and this
+ * follows those rules rather than raising. Anything the standard
+ * calls a parse error is collected in `document.errors`, so a
+ * non-empty list there is how you find out the source was not
+ * conformant.
+ *
+ * The document always has an `<html>` root with a `<head>` and a
+ * `<body>`, even when the source contains none of those tags, because
+ * the tree construction algorithm creates them.
+ *
+ * _options_ takes:
+ *
+ * - `scripting` (bool, default `false`) — parse as though scripting
+ *   were enabled. With the default, `<noscript>` content is parsed as
+ *   real markup, which is what you want when reading a page rather
+ *   than rendering it. Nothing is ever executed either way.
+ *
+ * The source is treated as UTF-8 text that has already been decoded.
+ * No charset sniffing, byte order mark handling or `<meta charset>`
+ * processing happens; a Zuri string is already Unicode by the time it
+ * reaches here.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> var doc = html.parse('<p>Hello<p>World')
+ * %> doc.query_selector_all('p').length()
+ * 2
+ * %> doc.body().outer_html()
+ * '<body><p>Hello</p><p>World</p></body>'
+ * ```
+ *
+ * @param string source
+ * @param ?dict options
+ * @returns Document
+ */
+def parse(source: string, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var scripting = options.get('scripting', false)
+
+  var stream = tokenizer.Tokenizer(source, {
+    scripting,
+    auto_content_state: false,
+  })
+
+  return TreeBuilder(stream, { scripting }).run()
+}
+
+
+/**
+ * Reads the file at _path_ and parses it as HTML.
+ *
+ * The file is read as UTF-8. Bytes that are not valid UTF-8 are
+ * replaced with U+FFFD rather than raising, so a mislabelled file
+ * still parses into something you can inspect.
+ *
+ * ```zuri
+ * import html
+ *
+ * var doc = html.parse_file('page.html')
+ * echo doc.title()
+ * ```
+ *
+ * @param string path
+ * @param ?dict options The same options `parse()` takes.
+ * @returns Document
+ * @throws Error when the file cannot be read.
+ */
+def parse_file(path: string, options: ?dict) {
+  var handle = file(path)
+  var source = handle.read()
+
+  return parse(source, options)
+}
+
+
+/**
+ * Parses _source_ as a fragment, as though it had been written inside
+ * _context_.
+ *
+ * This is the algorithm behind `set_inner_html()`, and the context
+ * matters: `'<td>x'` keeps its cell when the context is a `<tr>` and
+ * loses it anywhere else, exactly as it would in a browser.
+ *
+ * _context_ may be an `Element` or a tag name. A tag name is treated
+ * as an HTML element with no attributes, which is the common case.
+ * Passing `nil` parses in a `<body>` context.
+ *
+ * The returned `DocumentFragment` holds the parsed nodes. Its
+ * children are detached from any document, ready to be inserted
+ * wherever you want them.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.parse_fragment('<td>x', 'tr').inner_html()
+ * '<td>x</td>'
+ * %> html.parse_fragment('<td>x', 'div').inner_html()
+ * 'x'
+ * ```
+ *
+ * @param string source
+ * @param {?Element|string} context
+ * @param ?dict options The same options `parse()` takes.
+ * @returns DocumentFragment
+ */
+def parse_fragment(source: string, context, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var scripting = options.get('scripting', false)
+  var element = _fragment_context_element(context)
+
+  var stream = tokenizer.Tokenizer(source, {
+    scripting,
+    auto_content_state: false,
+  })
+
+  var builder = TreeBuilder(stream, { scripting })
+  var root = builder.prepare_fragment(element)
+
+  builder.run()
+
+  var fragment = node.DocumentFragment()
+
+  for child in root.children.clone() {
+    fragment.append_child(child)
+  }
+
+  return fragment
+}
+
+
+/**
+ * Normalizes `parse_fragment()`'s _context_ argument into an element.
+ *
+ * @param {?Element|string} context
+ * @returns Element
+ */
+def _fragment_context_element(context) {
+  if context == nil {
+    return node.Element('body', HTML_NAMESPACE, {})
+  }
+
+  if is_string(context) {
+    return node.Element(context.lower(), HTML_NAMESPACE, {})
+  }
+
+  return context
+}
+
+
+/**
+ * The quirks mode a fragment inherits from its context element's
+ * document, defaulting to no-quirks for a detached context.
+ *
+ * @param Element element
+ * @returns string
+ */
+def _context_document_mode(element) {
+  var root = element.root()
+
+  if root.is_document() {
+    return root.mode
+  }
+
+  return 'no-quirks'
+}
+
+
+/**
+ * Which tokenizer state a fragment starts in, given its context
+ * element's tag name.
+ *
+ * @param string name
+ * @param bool scripting
+ * @returns string
+ */
+def _fragment_tokenizer_state(name: string, scripting: bool) {
+  if tokenizer.RCDATA_ELEMENTS.contains(name) {
+    return 'rcdata'
+  }
+
+  if tokenizer.RAWTEXT_ELEMENTS.contains(name) or
+    (scripting and name == 'noscript') {
+    return 'rawtext'
+  }
+
+  if name == 'script' {
+    return 'script_data'
+  }
+
+  if name == 'plaintext' {
+    return 'plaintext'
+  }
+
+  return 'data'
+}
+
+
+/**
+ * The nearest `<form>` at or above _element_, so that a fragment
+ * parsed inside a form still associates its controls with it.
+ *
+ * @param Element element
+ * @returns ?Element
+ */
+def _nearest_form(element) {
+  var current = element
+
+  while current != nil and current.is_element() {
+    if current.is_html() and current.tag_name == 'form' {
+      return current
+    }
+
+    current = current.parent_node
+  }
+
+  return nil
+}

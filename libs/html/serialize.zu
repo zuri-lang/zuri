@@ -1,0 +1,584 @@
+/**
+ * @module html.serialize
+ *
+ * Writing a document back out, shaped for whoever has to read it
+ * next: `minify()` for a browser, `format()` for a person.
+ *
+ * Neither of these is the same as `outer_html()`. That one is exact
+ * and round-trips a tree byte for byte; these two deliberately change
+ * whitespace, which is the whole point of both.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.minify('<p>  a   b  </p>\n<p>c</p>', { fragment: true })
+ * '<p>a b</p><p>c</p>'
+ * %> echo html.format('<ul><li>a<li>b</ul>', { fragment: true })
+ * <ul>
+ *   <li>a</li>
+ *   <li>b</li>
+ * </ul>
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import .node
+import .parser
+import .entities
+
+
+/**
+ * Elements that flow inside a line of text rather than starting a new
+ * block. Whitespace around these carries meaning, so neither
+ * serializer moves it.
+ *
+ * This is the *default* rendering of each element. CSS can turn any
+ * element into any box type, and neither serializer reads CSS, so a
+ * stylesheet that makes a `<div>` inline is a case where `format()`
+ * can change how the page looks. `minify()` is safe either way: it
+ * only ever collapses runs of whitespace to a single space, which
+ * both box types render identically.
+ */
+var INLINE_ELEMENTS = [
+  'a', 'abbr', 'b', 'bdi', 'bdo', 'br', 'button', 'cite', 'code',
+  'data', 'datalist', 'del', 'dfn', 'em', 'i', 'img', 'input',
+  'ins', 'kbd', 'label', 'map', 'mark', 'meter', 'noscript',
+  'object', 'output', 'picture', 'progress', 'q', 'ruby', 's',
+  'samp', 'select', 'slot', 'small', 'span', 'strong', 'sub',
+  'sup', 'svg', 'template', 'textarea', 'time', 'u', 'var', 'wbr',
+]
+
+/**
+ * Elements whose text content is significant to the last character.
+ * Nothing inside one of these is ever reflowed, re-indented or
+ * collapsed.
+ */
+var PRESERVE_WHITESPACE = [
+  'pre', 'textarea', 'script', 'style', 'xmp', 'listing',
+  'plaintext',
+]
+
+
+/**
+ * Turns _source_ into a tree, whatever form it arrived in.
+ *
+ * @param {Node|string} source
+ * @param bool fragment
+ * @returns Node
+ */
+def _to_tree(source, fragment: bool) {
+  if !is_string(source) {
+    return source
+  }
+
+  if fragment {
+    return parser.parse_fragment(source, 'body', nil)
+  }
+
+  return parser.parse(source, nil)
+}
+
+
+/**
+ * Removes the markup a browser does not need and returns the result.
+ *
+ * _source_ is either a node you already have or a string of HTML. A
+ * string is parsed as a **complete document**, so `<html>`, `<head>`
+ * and `<body>` appear in the output even when the input had none of
+ * them, exactly as a browser would produce them. Pass
+ * `{ fragment: true }` to parse and return just the markup you gave
+ * it instead.
+ *
+ * What this changes:
+ *
+ * - Runs of whitespace in text become a single space.
+ * - Whitespace-only text between two block level elements is removed
+ *   entirely, along with leading and trailing whitespace inside a
+ *   block level element.
+ * - Comments are removed.
+ *
+ * What this never touches:
+ *
+ * - The content of `<pre>`, `<textarea>`, `<script>`, `<style>`,
+ *   `<xmp>`, `<listing>` and `<plaintext>`.
+ * - Whitespace next to an inline element, which is a word separator
+ *   and cannot be removed without changing the text.
+ * - Attribute values, attribute order, tag names, or the doctype.
+ *
+ * _options_:
+ *
+ * - `fragment` (bool, default `false`) — parse a string source as a
+ *   fragment rather than a whole document. Ignored when _source_ is
+ *   already a node.
+ * - `comments` (bool, default `false`) — keep comments. Turn this on
+ *   when the markup carries conditional comments or a licence header
+ *   that has to survive.
+ * - `collapse_whitespace` (bool, default `true`) — do the whitespace
+ *   work at all. With `false` the only thing minifying does is drop
+ *   comments.
+ *
+ * The tree passed in is never modified; the work happens on a copy.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.minify('<div>  <p>a   b</p>  <!-- x --> </div>', { fragment: true })
+ * '<div><p>a b</p></div>'
+ * %> html.minify('<p>a <b> b </b> c</p>', { fragment: true })
+ * '<p>a <b> b </b> c</p>'
+ * ```
+ *
+ * @param {Node|string} source
+ * @param ?dict options
+ * @returns string
+ */
+def minify(source, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var keep_comments = options.get('comments', false)
+  var collapse = options.get('collapse_whitespace', true)
+
+  var tree = _to_tree(source, options.get('fragment', false))
+
+  # A node handed in belongs to the caller, and minifying is a
+  # rewrite; the copy is what keeps this from quietly destroying
+  # their document.
+  var working = tree.clone_node(true)
+
+  _strip(working, keep_comments, collapse)
+
+  return working.outer_html()
+}
+
+
+/**
+ * Rewrites _host_'s subtree in place according to the minify options.
+ *
+ * @param Node host
+ * @param bool keep_comments
+ * @param bool collapse
+ */
+def _strip(host, keep_comments: bool, collapse: bool) {
+  if _is_preserved(host) {
+    return
+  }
+
+  var block = !_is_inline(host)
+
+  for child in host.children.clone() {
+    if child.is_comment() and !keep_comments {
+      child.detach()
+      continue
+    }
+
+    if child.is_element() {
+      _strip(child, keep_comments, collapse)
+      continue
+    }
+
+    if !child.is_text() or !collapse {
+      continue
+    }
+
+    var collapsed = _collapse_whitespace(child.data)
+
+    # A whitespace-only run between block level neighbours is
+    # formatting, not content, and nothing renders it.
+    if collapsed == ' ' and block and
+      _has_no_inline_neighbour(child) {
+      child.detach()
+      continue
+    }
+
+    child.data = collapsed
+  }
+
+  if block and collapse {
+    _trim_edges(host)
+  }
+}
+
+
+/**
+ * True when nothing inside _node_ may be reflowed.
+ *
+ * @param Node node
+ * @returns bool
+ */
+def _is_preserved(host) {
+  return host.is_element() and host.is_html() and
+    PRESERVE_WHITESPACE.contains(host.tag_name)
+}
+
+
+/**
+ * True when _node_ renders inline by default. Text counts as inline;
+ * anything that is not an element (a comment, say) does not.
+ *
+ * @param ?Node host
+ * @returns bool
+ */
+def _is_inline(host) {
+  if host == nil {
+    return false
+  }
+
+  if host.is_text() {
+    return true
+  }
+
+  if !host.is_element() {
+    return false
+  }
+
+  if !host.is_html() {
+    # SVG and MathML roots sit in the text flow like an image does.
+    return true
+  }
+
+  return INLINE_ELEMENTS.contains(host.tag_name)
+}
+
+
+/**
+ * True when neither of _child_'s neighbours is inline, so whitespace
+ * between them separates nothing.
+ *
+ * A missing neighbour counts as not inline: the edge of a block level
+ * element is as good a boundary as another block.
+ *
+ * @param Node child
+ * @returns bool
+ */
+def _has_no_inline_neighbour(child) {
+  return !_is_inline(child.previous_sibling()) and
+    !_is_inline(child.next_sibling())
+}
+
+
+/**
+ * Removes whitespace at the very start and end of _host_'s content,
+ * where no text can sit next to it.
+ *
+ * @param Node host
+ */
+def _trim_edges(host) {
+  var first = host.first_child()
+
+  if first != nil and first.is_text() and !_is_inline(first.next_sibling()) {
+    first.data = first.data.ltrim()
+
+    if first.data.is_empty() {
+      first.detach()
+    }
+  }
+
+  var last = host.last_child()
+
+  if last != nil and last.is_text() and
+    !_is_inline(last.previous_sibling()) {
+    last.data = last.data.rtrim()
+
+    if last.data.is_empty() {
+      last.detach()
+    }
+  }
+}
+
+
+/**
+ * Collapses every run of whitespace in _text_ to a single space.
+ *
+ * A string that is nothing but whitespace becomes exactly one space,
+ * never an empty string: between two words that space is the only
+ * thing keeping them apart.
+ *
+ * @param string text
+ * @returns string
+ */
+def _collapse_whitespace(text: string) {
+  var out = []
+  var in_run = false
+
+  for c in text {
+    if _is_whitespace(c) {
+      if !in_run {
+        out.append(' ')
+        in_run = true
+      }
+
+      continue
+    }
+
+    out.append(c)
+    in_run = false
+  }
+
+  return ''.join(out)
+}
+
+
+/**
+ * True when _c_ is one of the five characters HTML treats as
+ * whitespace.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_whitespace(c: string) {
+  return c == ' ' or c == '\n' or c == '\t' or
+    c == '\f' or c == '\r'
+}
+
+
+/**
+ * Renders _source_ as indented, readable HTML.
+ *
+ * This is a pretty printer, not a round-trip. It moves whitespace
+ * between elements to make the structure visible, so the output is
+ * equivalent for reading and reviewing but is not byte-identical to
+ * the input. Use `outer_html()` when the exact markup matters.
+ *
+ * Whitespace inside inline content is left alone, because collapsing
+ * it would change the rendered text; only the gaps between block
+ * level elements are re-indented. The content of `<pre>`,
+ * `<textarea>`, `<script>`, `<style>`, `<xmp>`, `<listing>` and
+ * `<plaintext>` is copied through untouched.
+ *
+ * _options_:
+ *
+ * - `indent` (number or string, default `2`) — a number is that many
+ *   spaces per level; a string is used as the unit verbatim, so
+ *   `'\t'` gives tab indentation.
+ * - `fragment` (bool, default `false`) — parse a string source as a
+ *   fragment rather than a whole document.
+ * - `comments` (bool, default `true`) — keep comments.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> echo html.format('<div><p>Hi <b>there</b></p></div>', { fragment: true })
+ * <div>
+ *   <p>Hi <b>there</b></p>
+ * </div>
+ * %> echo html.format('<div><p>x</p></div>', { fragment: true, indent: '\t' })
+ * <div>
+ * 	<p>x</p>
+ * </div>
+ * ```
+ *
+ * @param {Node|string} source
+ * @param ?dict options
+ * @returns string
+ */
+def format(source, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var unit = _indent_unit(options.get('indent', 2))
+  var keep_comments = options.get('comments', true)
+
+  var tree = _to_tree(source, options.get('fragment', false))
+  var lines = []
+
+  if tree.is_element() {
+    _format_node(tree, 0, unit, keep_comments, lines)
+  } else {
+    for child in tree.children {
+      _format_node(child, 0, unit, keep_comments, lines)
+    }
+  }
+
+  return '\n'.join(lines)
+}
+
+
+/**
+ * Normalizes the `indent` option into the string used per level.
+ *
+ * @param {number|string} indent
+ * @returns string
+ * @throws ArgumentError when _indent_ is neither a number nor a
+ *   string, or is a negative number.
+ */
+def _indent_unit(indent) {
+  if is_string(indent) {
+    return indent
+  }
+
+  if !is_number(indent) {
+    raise ArgumentError(
+      'indent must be a number of spaces or an indent string'
+    )
+  }
+
+  if indent < 0 {
+    raise ArgumentError('indent cannot be negative')
+  }
+
+  return ' ' * indent.floor()
+}
+
+
+/**
+ * Appends the formatted rendering of _host_ to _lines_.
+ *
+ * @param Node host
+ * @param number depth
+ * @param string unit
+ * @param bool keep_comments
+ * @param list lines
+ */
+def _format_node(host, depth: number, unit: string, keep_comments: bool,
+  lines: list) {
+  var pad = unit * depth
+
+  if host.is_text() {
+    var text = _collapse_whitespace(host.data).trim()
+
+    if !text.is_empty() {
+      lines.append(pad + entities.escape_text(text))
+    }
+
+    return
+  }
+
+  if host.is_comment() {
+    if keep_comments {
+      lines.append('${pad}<!--${host.data}-->')
+    }
+
+    return
+  }
+
+  if host.is_doctype() or !host.is_element() {
+    var rendered = host.outer_html()
+
+    if !rendered.is_empty() {
+      lines.append(pad + rendered)
+    }
+
+    return
+  }
+
+  var open = _open_tag(host)
+
+  if host.is_void() {
+    lines.append(pad + open)
+    return
+  }
+
+  var close = '</${host.tag_name}>'
+  var content = host
+
+  if host.content != nil {
+    content = host.content
+  }
+
+  if content.children.is_empty() {
+    lines.append(pad + open + close)
+    return
+  }
+
+  # Anything whose whitespace is load-bearing goes out verbatim, on as
+  # many lines as it already occupies.
+  if _is_preserved(host) {
+    lines.append(pad + open + content.inner_html() + close)
+    return
+  }
+
+  if _all_inline(content) {
+    lines.append(pad + open + _inline_html(content) + close)
+    return
+  }
+
+  lines.append(pad + open)
+
+  for child in content.children {
+    _format_node(child, depth + 1, unit, keep_comments, lines)
+  }
+
+  lines.append(pad + close)
+}
+
+
+/**
+ * The opening tag of _element_, attributes and all.
+ *
+ * @param Element element
+ * @returns string
+ */
+def _open_tag(element) {
+  var out = ['<', element.tag_name]
+
+  for name, value in element.attributes {
+    out.append(' ${name}="${entities.escape_attribute(value)}"')
+  }
+
+  out.append('>')
+  return ''.join(out)
+}
+
+
+/**
+ * True when every child of _host_ renders inline, so the whole
+ * subtree can stay on one line.
+ *
+ * @param Node host
+ * @returns bool
+ */
+def _all_inline(host) {
+  for child in host.children {
+    if child.is_comment() or child.is_text() {
+      continue
+    }
+
+    if !child.is_element() or !_is_inline(child) {
+      return false
+    }
+
+    if !_all_inline(child) {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+/**
+ * The inline content of _host_ on one line, with runs of whitespace
+ * collapsed and the ends trimmed.
+ *
+ * @param Node host
+ * @returns string
+ */
+def _inline_html(host) {
+  var out = []
+
+  for child in host.children {
+    if child.is_text() {
+      out.append(entities.escape_text(_collapse_whitespace(child.data)))
+      continue
+    }
+
+    if child.is_comment() {
+      out.append('<!--${child.data}-->')
+      continue
+    }
+
+    var open = _open_tag(child)
+
+    if child.is_void() {
+      out.append(open)
+      continue
+    }
+
+    out.append(open)
+    out.append(_inline_html(child))
+    out.append('</${child.tag_name}>')
+  }
+
+  return ''.join(out).trim()
+}

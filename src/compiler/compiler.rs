@@ -1325,7 +1325,7 @@ impl<'a> Compiler<'a> {
       self.free_regs_to(chunk_mark);
     }
 
-    self.free_regs_to(result + 1);
+    self.free_regs_to(result.saturating_add(1));
     result
   }
 
@@ -1336,6 +1336,23 @@ impl<'a> Compiler<'a> {
   /// panicking if this function is somehow already almost out of
   /// registers: see `alloc_reg`'s own overflow handling).
   fn compile_list_chunk(&mut self, elements: &[Expr]) -> u8 {
+    // `dst` is reserved BEFORE the elements, so the elements sit above
+    // it and freeing back to `dst + 1` afterwards reclaims every one of
+    // them. Allocating `dst` after the elements instead (the obvious
+    // order, and what this used to do) leaves the whole run below it
+    // pinned for the rest of the function: nothing frees them, because
+    // the register this returns belongs to the caller and the caller
+    // has no idea how much scratch is stacked underneath it. A handful
+    // of literals in one function was enough to exhaust the register
+    // file that way.
+    //
+    // `dst` deliberately stays distinct from every element register.
+    // Overlapping it with the first element would be safe for the
+    // interpreter, which reads all the sources before writing, but the
+    // JIT's scalar-replacement path never writes `dst` at all and
+    // keys its stack slot on it, so an alias there silently changes
+    // what a later read of that register means.
+    let dst = self.alloc_reg();
     let start = self.cur().next_reg;
     let mut count: u8 = 0;
     for elem in elements {
@@ -1347,14 +1364,13 @@ impl<'a> Compiler<'a> {
           src: elem_reg,
         });
       }
-      self.free_regs_to(expected + 1);
+      self.free_regs_to(expected.saturating_add(1));
       // Safe: callers only ever pass a slice bounded by
       // LIST_LITERAL_CHUNK_SIZE (64), far under u8::MAX.
       count += 1;
     }
-    let dst = self.alloc_reg();
     self.emit(Instr::MakeList { dst, start, count });
-    self.free_regs_to(dst + 1);
+    self.free_regs_to(dst.saturating_add(1));
     dst
   }
 
@@ -1390,7 +1406,7 @@ impl<'a> Compiler<'a> {
       idx = end;
     }
 
-    self.free_regs_to(result + 1);
+    self.free_regs_to(result.saturating_add(1));
     result
   }
 
@@ -1399,6 +1415,11 @@ impl<'a> Compiler<'a> {
   /// back-to-back contiguous register runs (what `MakeDict` requires),
   /// just via `alloc_reg()` instead of raw arithmetic.
   fn compile_dict_chunk(&mut self, keys: &[Expr], values: &[Expr]) -> u8 {
+    // Reserved ahead of the pairs for the same reason
+    // `compile_list_chunk` reserves it ahead of the elements, and it
+    // matters twice as much here: every pair costs two registers, so a
+    // dict literal left allocated pins `2 * count` of them.
+    let dst = self.alloc_reg();
     let start = self.cur().next_reg;
     // Safe: callers only ever pass slices bounded by
     // DICT_LITERAL_CHUNK_SIZE (48), far under u8::MAX.
@@ -1413,7 +1434,7 @@ impl<'a> Compiler<'a> {
           src: key_reg,
         });
       }
-      self.free_regs_to(expected + 1);
+      self.free_regs_to(expected.saturating_add(1));
     }
     for val_expr in values {
       let expected = self.alloc_reg();
@@ -1424,12 +1445,11 @@ impl<'a> Compiler<'a> {
           src: val_reg,
         });
       }
-      self.free_regs_to(expected + 1);
+      self.free_regs_to(expected.saturating_add(1));
     }
 
-    let dst = self.alloc_reg();
     self.emit(Instr::MakeDict { dst, start, count });
-    self.free_regs_to(dst + 1);
+    self.free_regs_to(dst.saturating_add(1));
     dst
   }
 

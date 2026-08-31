@@ -1,0 +1,284 @@
+/**
+ * html_selector.zu
+ *
+ * Test suite for the `html.selector` module: the supported CSS subset
+ * (type, universal, id, class, attribute, the four combinators and the
+ * three child-indexed pseudo-classes), and the errors everything
+ * outside that subset raises.
+ */
+
+import html
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  var raised = false
+
+  catch {
+    fn()
+  } as e {
+    raised = true
+  }
+
+  return raised
+}
+
+def message(fn) {
+  var text = ''
+
+  catch {
+    fn()
+  } as e {
+    text = e.message
+  }
+
+  return text
+}
+
+var doc = html.parse(
+  '<section id="top" class="page wide" data-role="main">' +
+  '<h1>Title</h1>' +
+  '<ul class="menu">' +
+  '<li class="item first"><a href="/a" download>A</a></li>' +
+  '<li class="item"><a href="/b">B</a></li>' +
+  '<li class="item last"><a href="/c" hreflang="en">C</a></li>' +
+  '</ul>' +
+  '<p>One</p><p class="note">Two</p><p>Three</p>' +
+  '</section>'
+)
+
+def count(selector) {
+  return doc.query_selector_all(selector).length()
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  html.selector — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Simple selectors
+# ---------------------------------------------------------------------------
+assert count('li') == 3, 'a type selector must find every element with that tag'
+assert count('LI') == 3, 'a type selector must fold ASCII case'
+assert count('#top') == 1, 'an id selector must find exactly one element'
+assert count('.item') == 3, 'a class selector must find every element carrying the class'
+assert count('.first') == 1, 'a class selector must match one of several classes'
+assert count('.missing') == 0, 'a class nothing carries must find nothing'
+assert count('*') == 15, 'the universal selector must find every element, including the implied html, head and body'
+ok('type, universal, id and class selectors')
+
+assert count('li.item.first') == 1, 'a compound must require every part to match'
+assert count('li.item.missing') == 0, 'a compound fails when any part fails'
+assert count('section#top.page') == 1, 'tag, id and class can be combined'
+ok('compound selectors require every part')
+
+# ---------------------------------------------------------------------------
+# Attribute selectors
+# ---------------------------------------------------------------------------
+assert count('[href]') == 3, 'an attribute presence test must find every element carrying it'
+assert count('[download]') == 1, 'a valueless attribute is still present'
+assert count('[href="/b"]') == 1, 'an attribute equality test must match the value'
+assert count("[href='/b']") == 1, 'single quotes must work the same as double'
+assert count('[hreflang=en]') == 1, 'an unquoted identifier value must work'
+assert raises(@() { html.compile('[href=/b]') }),
+  'an unquoted value that is not an identifier must raise, since CSS requires quotes there'
+assert count('[href="/missing"]') == 0, 'a value nothing carries must find nothing'
+assert count('[HREF]') == 3, 'an attribute name must fold ASCII case'
+assert count('[data-role="main"]') == 1, 'a hyphenated attribute name must work'
+ok('attribute selectors, present and equal, in all three quoting styles')
+
+# ---------------------------------------------------------------------------
+# Combinators
+# ---------------------------------------------------------------------------
+assert count('ul a') == 3, 'the descendant combinator must reach through intermediate elements'
+assert count('section a') == 3, 'the descendant combinator must reach any depth'
+assert count('ul > a') == 0, 'the child combinator must not reach a grandchild'
+assert count('li > a') == 3, 'the child combinator must match a direct child'
+assert count('h1 + ul') == 1, 'the next-sibling combinator must match the immediate sibling'
+assert count('h1 + p') == 0, 'the next-sibling combinator must not skip over an element'
+assert count('h1 ~ p') == 3, 'the subsequent-sibling combinator must match any later sibling'
+assert count('ul ~ p') == 3, 'the subsequent-sibling combinator must not require adjacency'
+assert count('p ~ p') == 2, 'a sibling combinator must not match the first of the run'
+ok('the descendant, child, next-sibling and subsequent-sibling combinators')
+
+assert count('section > ul > li > a') == 3, 'a long child chain must resolve'
+assert count('section ul li a') == 3, 'a long descendant chain must resolve'
+assert count('section > ul li[href]') == 0,
+  'a chain must fail when one step does not hold'
+ok('long combinator chains')
+
+# ---------------------------------------------------------------------------
+# Pseudo-classes
+# ---------------------------------------------------------------------------
+assert count('li:first-child') == 1, ':first-child must match only the first'
+assert count('li:last-child') == 1, ':last-child must match only the last'
+assert doc.query_selector('li:first-child a').text_content() == 'A',
+  ':first-child must pick the right element'
+assert doc.query_selector('li:last-child a').text_content() == 'C',
+  ':last-child must pick the right element'
+ok(':first-child and :last-child')
+
+var ten = html.parse('<ul>' + '<li></li>' * 10 + '</ul>')
+
+def nth(argument) {
+  return ten.query_selector_all('li:nth-child(${argument})').length()
+}
+
+assert nth('1') == 1, 'a plain number must match one position'
+assert nth('11') == 0, 'a position past the end must match nothing'
+assert nth('+2') == 1, 'an explicitly positive number must work'
+assert nth('n') == 10, 'bare n must match everything'
+assert nth('2n') == 5, '2n must match the even positions'
+assert nth('2n+1') == 5, '2n+1 must match the odd positions'
+assert nth('odd') == 5, 'odd must be the same as 2n+1'
+assert nth('even') == 5, 'even must be the same as 2n'
+assert nth('-n+3') == 3, 'a negative step must count backwards from the offset'
+assert nth('-2n+5') == 3, 'a negative step with a stride must work'
+assert nth('3n-1') == 3, 'a negative offset must work'
+assert nth('3n - 1') == 3, 'whitespace around the offset sign must be allowed'
+assert nth('0n+4') == 1, 'a zero step must degrade to a plain position'
+ok(':nth-child() accepts every an+b form')
+
+# ---------------------------------------------------------------------------
+# Selector lists
+# ---------------------------------------------------------------------------
+assert count('h1, p') == 4, 'a selector list must match the union of its alternatives'
+assert count('h1,p') == 4, 'whitespace around the comma must be optional'
+assert count('h1 , p , ul') == 5, 'extra whitespace must be allowed'
+assert count('h1, h1') == 1, 'an element matching twice must still appear once'
+ok('comma-separated selector lists')
+
+# ---------------------------------------------------------------------------
+# matches() and closest()
+# ---------------------------------------------------------------------------
+var note = doc.query_selector('.note')
+
+assert note.matches('p'), 'matches() must accept a type selector'
+assert note.matches('p.note'), 'matches() must accept a compound'
+assert note.matches('section p'), 'matches() must accept a combinator'
+assert note.matches('h1 ~ p'), 'matches() must accept a sibling combinator'
+assert !note.matches('div'), 'matches() must reject a selector that does not hold'
+assert !note.matches('p.other'), 'matches() must require every part of a compound'
+ok('Element.matches()')
+
+var link = doc.query_selector('a[hreflang]')
+
+assert link.closest('a').tag_name == 'a',
+  'closest() must start at the element itself'
+assert link.closest('li').tag_name == 'li', 'closest() must find the nearest ancestor'
+assert link.closest('#top').id() == 'top', 'closest() must reach a distant ancestor'
+assert link.closest('table') == nil, 'closest() must return nil when nothing matches'
+assert link.closest('li.last').class_name() == 'item last',
+  'closest() must respect the whole selector, not just the tag'
+ok('Element.closest()')
+
+# ---------------------------------------------------------------------------
+# Scoping
+# ---------------------------------------------------------------------------
+var menu = doc.query_selector('ul.menu')
+
+assert menu.query_selector_all('li').length() == 3,
+  'querying from an element must search its descendants'
+assert menu.query_selector_all('h1').length() == 0,
+  'querying from an element must not escape upwards'
+assert menu.query_selector('a').text_content() == 'A',
+  'querying from an element must return the first match in document order'
+assert doc.query_selector('nothing') == nil,
+  'query_selector() must return nil when nothing matches'
+assert doc.query_selector_all('nothing') == [],
+  'query_selector_all() must return an empty list when nothing matches'
+ok('queries are scoped to the node they start from')
+
+# ---------------------------------------------------------------------------
+# Case sensitivity
+# ---------------------------------------------------------------------------
+var cased = html.parse('<div id="Top" class="Warn" data-x="Val"></div>')
+
+assert cased.query_selector_all('#Top').length() == 1, 'an id must match exactly'
+assert cased.query_selector_all('#top').length() == 0, 'an id must be case sensitive'
+assert cased.query_selector_all('.Warn').length() == 1, 'a class must match exactly'
+assert cased.query_selector_all('.warn').length() == 0, 'a class must be case sensitive'
+assert cased.query_selector_all('[data-x="Val"]').length() == 1,
+  'an attribute value must match exactly'
+assert cased.query_selector_all('[data-x="val"]').length() == 0,
+  'an attribute value must be case sensitive'
+assert cased.query_selector_all('DIV').length() == 1, 'a tag name must fold case'
+ok('ids, classes and attribute values are case sensitive; tags and attribute names are not')
+
+# ---------------------------------------------------------------------------
+# Compilation and reuse
+# ---------------------------------------------------------------------------
+var compiled = html.compile('li.item')
+
+assert compiled.to_string() == 'li.item', 'a compiled selector must remember its source'
+assert compiled.matches(doc.query_selector('li')), 'a compiled selector must be usable directly'
+assert id(html.compile('li.item')) == id(compiled),
+  'compiling the same text twice must return the cached selector'
+assert id(html.compile('li.other')) != id(compiled),
+  'a different selector must compile to a different object'
+ok('compile() caches by source text')
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+assert raises(@() { html.compile('') }), 'an empty selector must raise'
+assert raises(@() { html.compile('   ') }), 'a whitespace-only selector must raise'
+assert raises(@() { html.compile('p >') }), 'a trailing combinator must raise'
+assert raises(@() { html.compile('> p') }), 'a leading combinator must raise'
+assert raises(@() { html.compile('p,') }), 'a trailing comma must raise'
+assert raises(@() { html.compile('[a') }), 'an unterminated attribute selector must raise'
+assert raises(@() { html.compile('[a="b"') }), 'a missing closing bracket must raise'
+assert raises(@() { html.compile('[a="b]') }), 'an unterminated string must raise'
+assert raises(@() { html.compile('#') }), 'a bare hash must raise'
+assert raises(@() { html.compile('.') }), 'a bare dot must raise'
+ok('malformed selectors raise rather than matching nothing')
+
+assert message(@() { html.compile(':not(p)') }).contains('not supported'),
+  ':not() must be refused, not silently ignored'
+assert message(@() { html.compile(':has(p)') }).contains('not supported'),
+  ':has() must be refused'
+assert message(@() { html.compile('p:nth-of-type(1)') }).contains('not supported'),
+  ':nth-of-type() must be refused'
+assert message(@() { html.compile('p::before') }).contains('pseudo-elements'),
+  'a pseudo-element must be refused by name'
+assert message(@() { html.compile('[a^="b"]') }).contains('^='),
+  'an unsupported attribute operator must be named in the error'
+assert message(@() { html.compile('[a*="b"]') }).contains('*='),
+  'every unsupported attribute operator must be named'
+assert message(@() { html.compile('p:first-child(2)') }).contains('does not take an argument'),
+  'an argument on an argument-less pseudo-class must be refused'
+assert message(@() { html.compile('li:nth-child(q)') }).contains('an+b'),
+  'a malformed an+b argument must be refused'
+assert message(@() { html.compile('li:nth-child()') }).contains('argument'),
+  'an empty nth-child argument must be refused'
+ok('unsupported syntax is refused with an error that says what is wrong')
+
+assert message(@() { html.compile('p >') }).contains('position'),
+  'an error must report where the parser gave up'
+assert message(@() { html.compile('p >') }).contains('"p >"'),
+  'an error must quote the offending selector'
+ok('selector errors name the selector and the position')
+
+# ---------------------------------------------------------------------------
+# Detached elements
+# ---------------------------------------------------------------------------
+var loose = html.Element('div')
+loose.set_attribute('class', 'x')
+
+assert loose.matches('div.x'), 'a detached element must still match a simple selector'
+assert loose.matches(':first-child'),
+  'a detached element counts as an only child, so :first-child matches'
+assert loose.matches(':last-child'), 'and so does :last-child'
+assert !loose.matches('body div'), 'a detached element cannot match a descendant selector'
+assert loose.closest('div').tag_name == 'div', 'closest() must still find the element itself'
+ok('detached elements behave predictably')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} selector checks passed.'
+echo '═══════════════════════════════════════════════════════'

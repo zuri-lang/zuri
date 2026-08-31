@@ -1,0 +1,476 @@
+/**
+ * html_dom.zu
+ *
+ * Test suite for the `html.node` module: the document tree's lookup
+ * methods, traversal, attribute access, content access and setting,
+ * mutation, class lists, cloning, and the errors an impossible
+ * mutation raises.
+ */
+
+import html
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  var raised = false
+
+  catch {
+    fn()
+  } as e {
+    raised = true
+  }
+
+  return raised
+}
+
+def fresh() {
+  return html.parse(
+    '<!DOCTYPE html><html><head><title>Page</title></head><body>' +
+    '<article id="main" class="post featured">' +
+    '<h1>Heading</h1>' +
+    '<!-- a note -->' +
+    '<p class="body">First <b>bold</b> tail</p>' +
+    '<p class="body last">Second</p>' +
+    '</article></body></html>'
+  )
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  html.node — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Document structure
+# ---------------------------------------------------------------------------
+var doc = fresh()
+
+assert doc.is_document(), 'parse() must return a Document'
+assert doc.node_type == html.NODE_DOCUMENT, 'a document must carry the document node type'
+assert doc.doctype().name == 'html', 'the doctype must be reachable and named'
+assert doc.document_element().tag_name == 'html', 'the root element must be <html>'
+assert doc.head().tag_name == 'head', 'the head must be reachable'
+assert doc.body().tag_name == 'body', 'the body must be reachable'
+assert doc.title() == 'Page', 'title() must return the trimmed title text'
+assert doc.mode == 'no-quirks', 'a modern doctype must give no-quirks mode'
+ok('a parsed document exposes its doctype, root, head, body and title')
+
+var bare = html.parse('<p>x')
+assert bare.doctype() == nil, 'a document with no doctype must report nil'
+assert bare.head().tag_name == 'head', 'a head must be created even when the source has none'
+assert bare.body().tag_name == 'body', 'a body must be created even when the source has none'
+assert bare.title() == '', 'a document with no title must report an empty string'
+assert bare.mode == 'quirks', 'a document with no doctype must be in quirks mode'
+ok('the implied head, body and quirks mode of a doctype-less document')
+
+# ---------------------------------------------------------------------------
+# Lookup
+# ---------------------------------------------------------------------------
+assert doc.get_element_by_id('main').tag_name == 'article',
+  'get_element_by_id() must find the element'
+assert doc.get_element_by_id('missing') == nil,
+  'get_element_by_id() must return nil when nothing matches'
+assert doc.get_element_by_id('MAIN') == nil, 'ids are case sensitive'
+ok('get_element_by_id()')
+
+assert doc.get_elements_by_class_name('body').length() == 2,
+  'get_elements_by_class_name() must find every element with the class'
+assert doc.get_elements_by_class_name('body last').length() == 1,
+  'several class names must all be required'
+assert doc.get_elements_by_class_name(['body', 'last']).length() == 1,
+  'a list of class names must work the same as a whitespace-separated string'
+assert doc.get_elements_by_class_name('missing').length() == 0,
+  'a class nothing carries must find nothing'
+assert doc.get_elements_by_class_name('').length() == 0,
+  'an empty class name must find nothing rather than everything'
+ok('get_elements_by_class_name(), in both its argument forms')
+
+assert doc.get_elements_by_tag_name('p').length() == 2,
+  'get_elements_by_tag_name() must find every matching element'
+assert doc.get_elements_by_tag_name('P').length() == 2, 'tag names must fold case'
+assert doc.get_elements_by_tag_name('*').length() == 9,
+  '"*" must find every element in the document'
+assert doc.get_elements_by_tag_name('missing').length() == 0,
+  'an unused tag name must find nothing'
+ok('get_elements_by_tag_name(), including "*"')
+
+# ---------------------------------------------------------------------------
+# Traversal
+# ---------------------------------------------------------------------------
+var article = doc.get_element_by_id('main')
+
+assert article.parent_node.tag_name == 'body', 'parent_node must reach the parent'
+assert article.children.length() == 4,
+  'children must include the comment as well as the elements'
+assert article.child_elements().length() == 3,
+  'child_elements() must exclude the comment'
+assert article.first_child().tag_name == 'h1', 'first_child() must return the first node'
+assert article.last_child().class_name() == 'body last', 'last_child() must return the last node'
+assert article.first_element_child().tag_name == 'h1', 'first_element_child() must skip nothing here'
+assert article.last_element_child().class_name() == 'body last', 'last_element_child()'
+ok('parent, children and the first and last child accessors')
+
+var heading = article.first_element_child()
+
+assert heading.next_sibling().is_comment(),
+  'next_sibling() must return the comment that follows the heading'
+assert heading.next_element_sibling().tag_name == 'p',
+  'next_element_sibling() must skip over the comment'
+assert heading.previous_sibling() == nil, 'the first child has no previous sibling'
+assert heading.index_in_parent() == 0, 'index_in_parent() must report the position'
+
+var last = article.last_element_child()
+
+assert last.previous_element_sibling().class_name() == 'body',
+  'previous_element_sibling() must walk backwards'
+assert last.next_sibling() == nil, 'the last child has no next sibling'
+assert last.index_in_parent() == 3, 'index_in_parent() must count every node, comment included'
+ok('sibling traversal, with and without skipping non-elements')
+
+assert article.root().is_document(), 'root() must reach the document'
+assert article.has_ancestor(doc.body()), 'has_ancestor() must see a real ancestor'
+assert article.has_ancestor(article), 'has_ancestor() is inclusive of the node itself'
+assert !doc.body().has_ancestor(article), 'has_ancestor() must not look downwards'
+assert article.descendants().length() == 10,
+  'descendants() must reach every node beneath, text and comments included'
+ok('root(), has_ancestor() and descendants()')
+
+var visited = []
+
+article.walk(@(n) {
+  if n.is_element() {
+    visited.append(n.tag_name)
+  }
+})
+
+assert visited == ['h1', 'p', 'b', 'p'], 'walk() must visit in document order'
+
+var pruned = []
+
+article.walk(@(n) {
+  if n.is_element() {
+    pruned.append(n.tag_name)
+  }
+
+  return !n.is_element() or n.tag_name != 'p'
+})
+
+assert pruned == ['h1', 'p', 'p'], 'returning false from walk() must prune that subtree'
+ok('walk() visits in document order and honours pruning')
+
+# ---------------------------------------------------------------------------
+# Node type predicates
+# ---------------------------------------------------------------------------
+assert article.is_element() and !article.is_text(), 'an element must report itself as one'
+assert heading.first_child().is_text(), 'a text node must report itself as one'
+assert article.children[1].is_comment(), 'a comment must report itself as one'
+assert doc.doctype().is_doctype(), 'a doctype must report itself as one'
+assert doc.is_document(), 'a document must report itself as one'
+assert html.DocumentFragment().is_fragment(), 'a fragment must report itself as one'
+assert article.is_html(), 'an HTML element must report its namespace'
+assert !article.is_void(), 'an article is not void'
+assert html.Element('br').is_void(), 'a br is void'
+assert html.Element('param').is_void(),
+  'the legacy childless elements count as void for serialization'
+ok('node type and element predicates')
+
+# ---------------------------------------------------------------------------
+# Attributes
+# ---------------------------------------------------------------------------
+var attributed = html.parse('<div id="x" data-n="1" hidden></div>').query_selector('div')
+
+assert attributed.get_attribute('id') == 'x', 'get_attribute() must read a value'
+assert attributed.get_attribute('ID') == 'x', 'attribute names fold ASCII case'
+assert attributed.get_attribute('hidden') == '',
+  'a valueless attribute reads back as an empty string'
+assert attributed.get_attribute('missing') == nil,
+  'an absent attribute must read back as nil, not an empty string'
+assert attributed.has_attribute('hidden'), 'has_attribute() must see a valueless attribute'
+assert !attributed.has_attribute('missing'), 'has_attribute() must be false for an absent one'
+assert attributed.attribute_names() == ['id', 'data-n', 'hidden'],
+  'attribute_names() must preserve source order'
+assert attributed.id() == 'x', 'id() must be a shorthand for the id attribute'
+ok('get_attribute(), has_attribute() and attribute_names()')
+
+attributed.set_attribute('data-n', '2')
+assert attributed.get_attribute('data-n') == '2', 'set_attribute() must replace a value'
+assert attributed.attribute_names() == ['id', 'data-n', 'hidden'],
+  'replacing a value must not move the attribute'
+
+attributed.set_attribute('LANG', 'en')
+assert attributed.get_attribute('lang') == 'en', 'set_attribute() must fold the name'
+assert attributed.attribute_names()[3] == 'lang', 'a new attribute must be appended'
+
+assert attributed.remove_attribute('hidden'), 'remove_attribute() must report a real removal'
+assert !attributed.has_attribute('hidden'), 'the attribute must actually be gone'
+assert !attributed.remove_attribute('hidden'), 'removing it twice must report false'
+assert attributed.id() == 'x', 'removing one attribute must not disturb the others'
+ok('set_attribute() and remove_attribute()')
+
+assert raises(@() { attributed.set_attribute('', 'v') }),
+  'an empty attribute name must be refused'
+assert raises(@() { attributed.set_attribute('a b', 'v') }),
+  'an attribute name with whitespace must be refused'
+assert raises(@() { attributed.set_attribute('a=b', 'v') }),
+  'an attribute name with "=" must be refused'
+assert raises(@() { attributed.set_attribute('a>b', 'v') }),
+  'an attribute name with ">" must be refused'
+ok('set_attribute() refuses names that could not be written back out')
+
+# ---------------------------------------------------------------------------
+# class_list
+# ---------------------------------------------------------------------------
+var classed = html.parse('<div class="a b"></div>').query_selector('div')
+var classes = classed.class_list()
+
+assert classes.to_list() == ['a', 'b'], 'class_list() must read the classes in order'
+assert classes.length() == 2, 'length() must count them'
+assert classes.contains('a'), 'contains() must see a class that is there'
+assert !classes.contains('A'), 'class names are case sensitive'
+assert !classes.contains('c'), 'contains() must be false for a class that is not'
+assert classes.to_string() == 'a b', 'to_string() must render the attribute value'
+
+classes.add('c')
+assert classed.get_attribute('class') == 'a b c', 'add() must append and write through'
+classes.add('c')
+assert classed.get_attribute('class') == 'a b c', 'adding a class twice must change nothing'
+classes.add('d', 'e')
+assert classed.get_attribute('class') == 'a b c d e', 'add() must accept several names'
+
+classes.remove('b', 'd')
+assert classed.get_attribute('class') == 'a c e', 'remove() must accept several names'
+classes.remove('missing')
+assert classed.get_attribute('class') == 'a c e', 'removing an absent class must change nothing'
+
+assert !classes.toggle('a'), 'toggle() must remove a class that is present and report false'
+assert classed.get_attribute('class') == 'c e', 'the toggled class must be gone'
+assert classes.toggle('a'), 'toggle() must add a class that is absent and report true'
+assert classes.toggle('z', true), 'toggle() with force true must add'
+assert !classes.toggle('z', false), 'toggle() with force false must remove'
+assert !classes.contains('z'), 'the forced removal must have happened'
+
+classed.class_list().remove('c', 'e', 'a')
+assert classed.get_attribute('class') == nil,
+  'emptying the class list must remove the attribute rather than leave class=""'
+ok('class_list(): add, remove, toggle, contains and write-through')
+
+assert raises(@() { classed.class_list().add('') }), 'an empty class name must be refused'
+assert raises(@() { classed.class_list().add('a b') }),
+  'a class name with whitespace must be refused'
+assert raises(@() { classed.class_list().toggle('a b') }),
+  'toggle() must apply the same check'
+ok('class_list() refuses names that could not be written back out')
+
+var live = html.parse('<div class="x"></div>').query_selector('div')
+live.class_list().add('y')
+assert live.class_list().contains('y'),
+  'a second class_list() view must see what the first wrote'
+assert live.class_names() == ['x', 'y'], 'class_names() must agree'
+assert live.class_name() == 'x y', 'class_name() must return the raw attribute'
+ok('class lists are a live view, not a snapshot')
+
+# ---------------------------------------------------------------------------
+# Content access
+# ---------------------------------------------------------------------------
+doc = fresh()
+article = doc.get_element_by_id('main')
+
+assert article.text_content() == 'HeadingFirst bold tailSecond',
+  'text_content() must concatenate every descendant text node and skip comments'
+assert doc.query_selector('b').text_content() == 'bold',
+  'text_content() of a leaf must be its own text'
+assert article.children[1].text_content() == ' a note ',
+  'a comment answers text_content() with its own data'
+assert doc.doctype().text_content() == '', 'a doctype has no text'
+assert doc.text_content() == 'PageHeadingFirst bold tailSecond',
+  'a document answers text_content() the same way an element does'
+ok('text_content()')
+
+var target = doc.query_selector('p.body')
+target.set_text_content('replaced')
+assert target.inner_html() == 'replaced', 'set_text_content() must replace every child'
+assert target.children.length() == 1, 'set_text_content() must leave exactly one text node'
+target.set_text_content('')
+assert target.children.is_empty(), 'setting empty text must leave no children at all'
+ok('set_text_content()')
+
+doc = fresh()
+target = doc.query_selector('p.body')
+
+assert target.inner_html() == 'First <b>bold</b> tail',
+  'inner_html() must serialize the children'
+assert target.outer_html() == '<p class="body">First <b>bold</b> tail</p>',
+  'outer_html() must include the element itself'
+assert doc.query_selector('h1').inner_html() == 'Heading', 'inner_html() of a simple element'
+assert html.Element('br').outer_html() == '<br>', 'a void element must serialize without a close tag'
+ok('inner_html() and outer_html()')
+
+target.set_inner_html('<i>new</i> content')
+assert target.inner_html() == '<i>new</i> content', 'set_inner_html() must parse and replace'
+assert target.query_selector('i').text_content() == 'new',
+  'the parsed children must be real nodes'
+assert target.first_child().parent_node.tag_name == 'p',
+  'the parsed children must be parented correctly'
+ok('set_inner_html()')
+
+var row = html.parse('<table><tr><td>x</td></tr></table>').query_selector('tr')
+row.set_inner_html('<td>y</td>')
+assert row.inner_html() == '<td>y</td>',
+  'set_inner_html() must parse in the context of the element, so a cell survives inside a row'
+
+var plain = html.Element('div')
+plain.set_inner_html('<td>y</td>')
+assert plain.inner_html() == 'y',
+  'the same markup in a div context must lose the cell, as a browser would'
+ok('set_inner_html() parses in the element\'s own context')
+
+doc = fresh()
+var replaced = doc.query_selector('h1').set_outer_html('<h2>New</h2><p>extra</p>')
+
+assert replaced.length() == 2, 'set_outer_html() must return the nodes it inserted'
+assert doc.query_selector('h1') == nil, 'the old element must be gone'
+assert doc.query_selector('h2').text_content() == 'New', 'the new element must be in place'
+assert doc.get_element_by_id('main').first_element_child().tag_name == 'h2',
+  'the replacement must sit where the old element was'
+assert raises(@() { html.Element('div').set_outer_html('<p></p>') }),
+  'set_outer_html() on a node with no parent must raise'
+ok('set_outer_html()')
+
+# ---------------------------------------------------------------------------
+# Mutation
+# ---------------------------------------------------------------------------
+var host = html.Element('div')
+var first = html.Element('span')
+var second = html.Element('em')
+
+assert id(host.append_child(first)) == id(first), 'append_child() must return the node'
+assert first.parent_node != nil and id(first.parent_node) == id(host),
+  'the appended node must be parented'
+host.append_child(second)
+assert host.inner_html() == '<span></span><em></em>', 'append order must be preserved'
+
+var middle = html.Element('b')
+host.insert_before(middle, second)
+assert host.inner_html() == '<span></span><b></b><em></em>',
+  'insert_before() must place the node in front of the reference'
+host.insert_before(html.Element('u'), nil)
+assert host.last_element_child().tag_name == 'u',
+  'insert_before() with a nil reference must append'
+
+assert id(host.remove_child(middle)) == id(middle), 'remove_child() must return the node'
+assert middle.parent_node == nil, 'the removed node must be detached'
+assert host.inner_html() == '<span></span><em></em><u></u>', 'the rest must close up'
+
+var swapped = host.replace_child(html.Element('i'), second)
+assert id(swapped) == id(second), 'replace_child() must return the node it replaced'
+assert swapped.parent_node == nil, 'the replaced node must be detached'
+assert host.inner_html() == '<span></span><i></i><u></u>', 'the replacement must sit in place'
+ok('append_child(), insert_before(), remove_child() and replace_child()')
+
+var moved = html.Element('p')
+var from = html.Element('div')
+var to = html.Element('section')
+
+from.append_child(moved)
+to.append_child(moved)
+assert from.children.is_empty(), 'appending a node elsewhere must detach it from its old parent'
+assert id(moved.parent_node) == id(to), 'and reparent it'
+ok('inserting a node moves it rather than sharing it')
+
+assert raises(@() { host.remove_child(html.Element('p')) }),
+  'removing a node that is not a child must raise'
+assert raises(@() { host.insert_before(html.Element('p'), html.Element('p')) }),
+  'inserting before a node that is not a child must raise'
+assert raises(@() { host.replace_child(html.Element('p'), html.Element('p')) }),
+  'replacing a node that is not a child must raise'
+assert raises(@() { host.append_child(host) }), 'a node cannot contain itself'
+assert raises(@() { host.first_child().append_child(host) }),
+  'a node cannot contain its own ancestor'
+ok('impossible mutations raise a HierarchyError')
+
+var clearable = html.parse('<div><p>a</p><p>b</p></div>', nil).query_selector('div')
+var kept = clearable.first_child()
+clearable.clear_children()
+assert clearable.children.is_empty(), 'clear_children() must empty the node'
+assert kept.parent_node == nil, 'the removed children must be detached'
+assert kept.outer_html() == '<p>a</p>', 'the removed children must otherwise be intact'
+
+var detachable = html.parse('<div><p>a</p></div>').query_selector('p')
+assert id(detachable.detach()) == id(detachable), 'detach() must return the node'
+assert detachable.parent_node == nil, 'detach() must unlink the node'
+assert html.Element('p').detach().parent_node == nil,
+  'detaching a node with no parent must be harmless'
+ok('clear_children() and detach()')
+
+# ---------------------------------------------------------------------------
+# clone_node()
+# ---------------------------------------------------------------------------
+var original = html.parse('<div id="d" class="c"><p>text<b>deep</b></p></div>')
+  .query_selector('div')
+
+var shallow = original.clone_node()
+assert shallow.tag_name == 'div', 'a shallow clone must keep the tag name'
+assert shallow.get_attribute('id') == 'd', 'a shallow clone must keep the attributes'
+assert shallow.children.is_empty(), 'a shallow clone must have no children'
+assert shallow.parent_node == nil, 'a clone must be detached'
+assert original.children.length() == 1, 'cloning must not disturb the original'
+
+var deep = original.clone_node(true)
+assert deep.outer_html() == original.outer_html(), 'a deep clone must serialize identically'
+assert id(deep.first_element_child()) != id(original.first_element_child()),
+  'a deep clone must copy the children, not share them'
+
+deep.set_attribute('id', 'other')
+deep.query_selector('b').set_text_content('changed')
+assert original.get_attribute('id') == 'd', 'changing a clone must not touch the original'
+assert original.query_selector('b').text_content() == 'deep',
+  'changing a clone deeply must not touch the original'
+ok('clone_node(), shallow by default and deep on request')
+
+var text_clone = html.Text('hi').clone_node()
+assert text_clone.is_text() and text_clone.data == 'hi', 'a text node must clone its data'
+
+var comment_clone = html.Comment('note').clone_node()
+assert comment_clone.is_comment() and comment_clone.data == 'note',
+  'a comment must clone its data'
+
+var doctype_clone = doc.doctype().clone_node()
+assert doctype_clone.is_doctype() and doctype_clone.name == 'html',
+  'a doctype must clone its name'
+
+var doc_clone = fresh().clone_node(true)
+assert doc_clone.is_document(), 'a document must clone as a document'
+assert doc_clone.mode == 'no-quirks', 'a document clone must carry its quirks mode'
+assert doc_clone.body().tag_name == 'body', 'a deep document clone must keep its structure'
+ok('every node class clones its own state')
+
+# ---------------------------------------------------------------------------
+# Serialization details
+# ---------------------------------------------------------------------------
+assert html.parse('<p>a &amp; b &lt; c</p>').query_selector('p').inner_html() ==
+  'a &amp; b &lt; c', 'text must be re-escaped on the way out'
+assert html.parse('<p title=\'a"b\'></p>').query_selector('p').outer_html() ==
+  '<p title="a&quot;b"></p>', 'a quote in an attribute value must be escaped'
+assert html.parse('<style>a > b { c: "d" }</style>').query_selector('style').inner_html() ==
+  'a > b { c: "d" }', 'the content of a raw text element must not be escaped'
+assert html.parse('<!--<b>-->').children[0].outer_html() == '<!--<b>-->',
+  'comment data must be written back exactly'
+ok('serialization escapes text and attributes but never raw text')
+
+var round_trip = '<!DOCTYPE html><html><head></head><body><p class="a">x &amp; y</p></body></html>'
+assert html.parse(round_trip).outer_html() == round_trip,
+  'a fully explicit document must round-trip exactly'
+ok('a complete document round-trips through parse() and outer_html()')
+
+assert html.parse('<p>x</p>').query_selector('p').to_string() == '<p>x</p>',
+  'to_string() must be the same as outer_html()'
+ok('Node.to_string()')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} DOM checks passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -1,0 +1,747 @@
+/**
+ * @module html.entities
+ *
+ * Character reference handling for HTML: turning text into something
+ * safe to drop into a document (`encode()`), and turning a document's
+ * `&amp;`-style references back into the characters they stand for
+ * (`decode()`).
+ *
+ * Both directions follow the WHATWG HTML Living Standard. Decoding
+ * understands all 2231 named references, decimal references
+ * (`&#169;`), hexadecimal references (`&#xA9;`), the Windows-1252
+ * substitutions the standard mandates for code points in the C1
+ * range, and the awkward legacy rule that lets a handful of names
+ * work without their trailing semicolon.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.decode('caf&eacute; &#8212; &#x2603;')
+ * 'café — ☃'
+ * %> html.encode('<a href="x">Tom & Jerry</a>')
+ * '&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;'
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import ._entities_data { NAMED_REFERENCES, MAX_NAME_LENGTH }
+
+
+# The five characters that carry syntactic meaning in HTML source.
+# These always escape to a fixed form regardless of the `named`
+# option, because the whole point of escaping them is that the result
+# must be understood by every parser, not just a conformant one.
+#
+# `'` deliberately becomes `&#x27;` rather than `&apos;`: `&apos;` is
+# an HTML5 addition and older parsers pass it through untouched, which
+# is exactly the case where a stray quote breaks out of an attribute.
+var _BASE_ESCAPES = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  '\'': '&#x27;',
+}
+
+# Code points 0x80 to 0x9F have no useful meaning in HTML, and a large
+# amount of real-world markup emits them intending the Windows-1252
+# character at that byte. The standard makes that reinterpretation
+# mandatory, so `&#150;` decodes to an en dash and not to a C1 control.
+# The gaps (0x81, 0x8D, 0x8F, 0x90, 0x9D) have no Windows-1252
+# character and are left alone.
+var _C1_REPLACEMENTS = {
+  128: '\u20AC', 130: '\u201A', 131: '\u0192',
+  132: '\u201E', 133: '\u2026', 134: '\u2020',
+  135: '\u2021', 136: '\u02C6', 137: '\u2030',
+  138: '\u0160', 139: '\u2039', 140: '\u0152',
+  142: '\u017D', 145: '\u2018', 146: '\u2019',
+  147: '\u201C', 148: '\u201D', 149: '\u2022',
+  150: '\u2013', 151: '\u2014', 152: '\u02DC',
+  153: '\u2122', 154: '\u0161', 155: '\u203A',
+  156: '\u0153', 158: '\u017E', 159: '\u0178',
+}
+
+# What every ill-formed numeric reference collapses to: U+FFFD
+# REPLACEMENT CHARACTER.
+var REPLACEMENT_CHARACTER = '\uFFFD'
+
+# U+00A0 NO-BREAK SPACE. Named here because it is invisible in
+# source and both serialization escapers have to single it out.
+var NO_BREAK_SPACE = '\u00A0'
+
+# Built on first use by `_reverse_table()`. Maps a single character to
+# the shortest named reference that produces it. Only entries whose
+# name ends in a semicolon and whose expansion is exactly one code
+# point are usable for encoding.
+var _reverse = nil
+
+
+/**
+ * Returns true when _c_ is one of `0-9`, `A-Z` or `a-z`.
+ *
+ * Named references are made up entirely of these, so this is the test
+ * that bounds how far reference matching will scan.
+ *
+ * @param string c
+ * @returns bool
+ */
+def is_ascii_alphanumeric(c: string) {
+  if c.is_empty() {
+    return false
+  }
+
+  var n = c.ord()
+  return (n >= 48 and n <= 57) or
+    (n >= 65 and n <= 90) or
+    (n >= 97 and n <= 122)
+}
+
+
+/**
+ * Returns true when _c_ is an ASCII decimal digit.
+ *
+ * @param string c
+ * @returns bool
+ */
+def is_ascii_digit(c: string) {
+  if c.is_empty() {
+    return false
+  }
+
+  var n = c.ord()
+  return n >= 48 and n <= 57
+}
+
+
+/**
+ * Returns true when _c_ is an ASCII hexadecimal digit, in either case.
+ *
+ * @param string c
+ * @returns bool
+ */
+def is_ascii_hex_digit(c: string) {
+  if c.is_empty() {
+    return false
+  }
+
+  var n = c.ord()
+  return (n >= 48 and n <= 57) or
+    (n >= 65 and n <= 70) or
+    (n >= 97 and n <= 102)
+}
+
+
+/**
+ * Numeric value of the hexadecimal digit _c_, or `-1` when _c_ is not
+ * a hexadecimal digit.
+ *
+ * @param string c
+ * @returns number
+ */
+def _hex_value(c: string) {
+  var n = c.ord()
+
+  if n >= 48 and n <= 57 {
+    return n - 48
+  }
+
+  if n >= 65 and n <= 70 {
+    return n - 55
+  }
+
+  if n >= 97 and n <= 102 {
+    return n - 87
+  }
+
+  return -1
+}
+
+
+/**
+ * Returns true when _code_ is a Unicode noncharacter: the 32 code
+ * points from U+FDD0 to U+FDEF, plus the last two code points of
+ * every plane.
+ *
+ * @param number code
+ * @returns bool
+ */
+def _is_noncharacter(code: number) {
+  if code >= 0xFDD0 and code <= 0xFDEF {
+    return true
+  }
+
+  var low = code & 0xFFFF
+  return low == 0xFFFE or low == 0xFFFF
+}
+
+
+/**
+ * Returns true when _code_ is a control character that HTML treats as
+ * a parse error inside a numeric reference. ASCII whitespace and the
+ * ASCII space are excluded because they are perfectly ordinary
+ * characters in a document.
+ *
+ * @param number code
+ * @returns bool
+ */
+def _is_control(code: number) {
+  if code >= 0x7F and code <= 0x9F {
+    return true
+  }
+
+  if code > 0x1F {
+    return false
+  }
+
+  # TAB, LF, FF, CR and SPACE are legal; the rest of C0 is not.
+  return !(code == 0x09 or code == 0x0A or
+    code == 0x0C or code == 0x0D or code == 0x20)
+}
+
+
+/**
+ * Applies the standard's "numeric character reference end state" rules
+ * to a raw code point and returns the string it should decode to.
+ *
+ * Null, out-of-range and surrogate code points become U+FFFD. Code
+ * points in the C1 range are remapped through Windows-1252.
+ * Noncharacters and control characters are parse errors but decode to
+ * themselves, which is what browsers do and what round-tripping
+ * malformed documents depends on.
+ *
+ * @param number code
+ * @returns string
+ */
+def code_point_to_string(code: number) {
+  if code == 0 or code > 0x10FFFF {
+    return REPLACEMENT_CHARACTER
+  }
+
+  if code >= 0xD800 and code <= 0xDFFF {
+    return REPLACEMENT_CHARACTER
+  }
+
+  var mapped = _C1_REPLACEMENTS.get(code, nil)
+  if mapped != nil {
+    return mapped
+  }
+
+  # Noncharacters and controls are conformance errors, not decoding
+  # failures; the character itself is still what the author wrote.
+  return code.chr()
+}
+
+
+/**
+ * The longest named reference that matches the characters of _chars_
+ * starting at _start_, or `nil` when none does.
+ *
+ * _chars_ is a list of single-character strings (what `to_list()`
+ * gives for a string) and _start_ is the index of the first character
+ * *after* the ampersand. The returned dictionary has `name` (the
+ * matched reference, semicolon included when it has one) and `text`
+ * (its expansion).
+ *
+ * @param list chars
+ * @param number start
+ * @returns ?dict
+ */
+def _longest_match(chars: list, start: number) {
+  var limit = chars.length()
+  var stop = start
+
+  # A reference name is a run of ASCII alphanumerics optionally closed
+  # by a semicolon, so there is no point looking any further than that.
+  while stop < limit and stop - start < MAX_NAME_LENGTH and
+    is_ascii_alphanumeric(chars[stop]) {
+    stop++
+  }
+
+  if stop < limit and stop - start < MAX_NAME_LENGTH and chars[stop] == ';' {
+    stop++
+  }
+
+  iter var end = stop; end > start; end-- {
+    var name = ''.join(chars[start, end])
+    var text = NAMED_REFERENCES.get(name, nil)
+
+    if text != nil {
+      return { name, text }
+    }
+  }
+
+  return nil
+}
+
+
+/**
+ * Consumes a character reference from _chars_ beginning at the
+ * ampersand at index _start_.
+ *
+ * This is the standard's "character reference state" as a single call,
+ * shared by `decode()` and by the tokenizer so both agree on every
+ * edge case. It always succeeds: when the text at _start_ is not a
+ * valid reference the ampersand is returned as an ordinary character
+ * and _next_ points just past it.
+ *
+ * _in_attribute_ selects the attribute-value flavour of the algorithm.
+ * Inside an attribute a semicolon-less legacy reference followed by
+ * `=` or by an alphanumeric is left alone, so that a query string like
+ * `?x=1&notit=2` keeps its literal `&not` rather than turning into
+ * `¬it`.
+ *
+ * The returned dictionary has:
+ *
+ * - `text` — the decoded text (never `nil`, never empty)
+ * - `next` — index of the first character not consumed
+ * - `error` — `nil`, or a short description of the parse error the
+ *   standard raises for this input; the text is still produced
+ *
+ * @param list chars
+ * @param number start
+ * @param bool in_attribute
+ * @returns dict
+ */
+def consume_reference(chars: list, start: number, in_attribute: bool) {
+  var limit = chars.length()
+  var pos = start + 1
+
+  if pos >= limit {
+    return { text: '&', next: pos, error: nil }
+  }
+
+  var c = chars[pos]
+
+  if c == '#' {
+    return _consume_numeric_reference(chars, start)
+  }
+
+  if !is_ascii_alphanumeric(c) {
+    return { text: '&', next: pos, error: nil }
+  }
+
+  var hit = _longest_match(chars, pos)
+
+  if hit == nil {
+    # "Ambiguous ampersand": the ampersand stands for itself. A
+    # semicolon closing the run makes it a parse error, but the text is
+    # unchanged either way.
+    var scan = pos
+    while scan < limit and is_ascii_alphanumeric(chars[scan]) {
+      scan++
+    }
+
+    var error = nil
+    if scan < limit and chars[scan] == ';' {
+      error = 'unknown-named-character-reference'
+    }
+
+    return { text: '&', next: pos, error }
+  }
+
+  var after = pos + hit.name.length()
+  var terminated = hit.name.ends_with(';')
+
+  if in_attribute and !terminated and after < limit {
+    var next_char = chars[after]
+
+    if next_char == '=' or is_ascii_alphanumeric(next_char) {
+      return { text: '&', next: pos, error: nil }
+    }
+  }
+
+  var error = nil
+  if !terminated {
+    error = 'missing-semicolon-after-character-reference'
+  }
+
+  return { text: hit.text, next: after, error }
+}
+
+
+/**
+ * The `&#...` half of `consume_reference()`. _start_ is the index of
+ * the ampersand and `chars[start + 1]` is known to be `#`.
+ *
+ * @param list chars
+ * @param number start
+ * @returns dict
+ */
+def _consume_numeric_reference(chars: list, start: number) {
+  var limit = chars.length()
+  var pos = start + 2
+  var is_hex = false
+
+  if pos < limit and (chars[pos] == 'x' or chars[pos] == 'X') {
+    is_hex = true
+    pos++
+  }
+
+  var digits_start = pos
+  var code = 0
+
+  if is_hex {
+    while pos < limit and is_ascii_hex_digit(chars[pos]) {
+      code = code * 16 + _hex_value(chars[pos])
+      pos++
+    }
+  } else {
+    while pos < limit and is_ascii_digit(chars[pos]) {
+      code = code * 10 + (chars[pos].ord() - 48)
+      pos++
+    }
+  }
+
+  if pos == digits_start {
+    # `&#` or `&#x` with nothing usable after it is not a reference at
+    # all; the ampersand and everything scanned so far stay literal.
+    return {
+      text: '&',
+      next: start + 1,
+      error: 'absence-of-digits-in-numeric-character-reference',
+    }
+  }
+
+  var error = nil
+
+  if pos < limit and chars[pos] == ';' {
+    pos++
+  } else {
+    error = 'missing-semicolon-after-character-reference'
+  }
+
+  # A code point far past the Unicode range would overflow into a
+  # float; clamping keeps `code_point_to_string()` on integer input.
+  if code > 0x10FFFF {
+    code = 0x110000
+  }
+
+  if error == nil {
+    error = _numeric_reference_error(code)
+  }
+
+  return { text: code_point_to_string(code), next: pos, error }
+}
+
+
+/**
+ * The parse error a numeric reference for _code_ raises, or `nil` when
+ * the code point is unremarkable.
+ *
+ * Only the error name differs between these cases; what the reference
+ * decodes to is decided by `code_point_to_string()`.
+ *
+ * @param number code
+ * @returns ?string
+ */
+def _numeric_reference_error(code: number) {
+  if code == 0 {
+    return 'null-character-reference'
+  }
+
+  if code > 0x10FFFF {
+    return 'character-reference-outside-unicode-range'
+  }
+
+  if code >= 0xD800 and code <= 0xDFFF {
+    return 'surrogate-character-reference'
+  }
+
+  if _C1_REPLACEMENTS.contains(code) or (code >= 0x80 and code <= 0x9F) {
+    return 'control-character-reference'
+  }
+
+  if _is_noncharacter(code) {
+    return 'noncharacter-character-reference'
+  }
+
+  if _is_control(code) {
+    return 'control-character-reference'
+  }
+
+  return nil
+}
+
+
+/**
+ * Builds (once) and returns the character to named-reference map used
+ * by `encode()`.
+ *
+ * Only semicolon-terminated names whose expansion is a single code
+ * point can be used, and where several names produce the same
+ * character the shortest wins, with ties broken alphabetically so the
+ * choice is stable across runs.
+ *
+ * @returns dict
+ */
+def _reverse_table() {
+  if _reverse != nil {
+    return _reverse
+  }
+
+  var table = {}
+
+  for name, text in NAMED_REFERENCES {
+    if !name.ends_with(';') or text.length() != 1 {
+      continue
+    }
+
+    var current = table.get(text, nil)
+
+    if current == nil or name.length() < current.length() or
+      (name.length() == current.length() and
+      name.compare(current) < 0) {
+      table[text] = name
+    }
+  }
+
+  _reverse = table
+  return _reverse
+}
+
+
+/**
+ * Escapes _text_ so that it can be embedded in an HTML document
+ * without being reinterpreted as markup.
+ *
+ * By default this escapes `&`, `<`, `>`, `"` and `'`, which is safe
+ * for both element content and quoted attribute values. Everything
+ * else is passed through unchanged, so the result stays readable and
+ * stays valid UTF-8.
+ *
+ * _options_ is an optional dictionary:
+ *
+ * - `quotes` (bool, default `true`) — escape `"` and `'`. Turn this
+ *   off only when the result is going into element content, never
+ *   into an attribute.
+ * - `non_ascii` (bool, default `false`) — also escape every character
+ *   above U+007F. Useful when the output has to survive a transport
+ *   that is not UTF-8 clean.
+ * - `named` (bool, default `true`) — when a character being escaped
+ *   has a named reference, use it. With `false`, non-syntactic
+ *   characters use hexadecimal numeric references instead. The five
+ *   syntax characters above always use their fixed forms.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.encode('5 > 3 & "quoted"')
+ * '5 &gt; 3 &amp; &quot;quoted&quot;'
+ * %> html.encode("it's fine", { quotes: false })
+ * "it's fine"
+ * %> html.encode('café', { non_ascii: true })
+ * 'caf&eacute;'
+ * %> html.encode('café', { non_ascii: true, named: false })
+ * 'caf&#xE9;'
+ * ```
+ *
+ * Surrogate code points cannot appear in a Zuri string, so no
+ * unpaired-surrogate handling is needed here.
+ *
+ * @param string text
+ * @param ?dict options
+ * @returns string
+ */
+def encode(text: string, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var quotes = options.get('quotes', true)
+  var non_ascii = options.get('non_ascii', false)
+  var named = options.get('named', true)
+
+  var reverse = nil
+  if named and non_ascii {
+    reverse = _reverse_table()
+  }
+
+  var out = []
+
+  for c in text {
+    var base = _BASE_ESCAPES.get(c, nil)
+
+    if base != nil {
+      if !quotes and (c == '"' or c == '\'') {
+        out.append(c)
+      } else {
+        out.append(base)
+      }
+
+      continue
+    }
+
+    if !non_ascii or c.ord() < 0x80 {
+      out.append(c)
+      continue
+    }
+
+    var name = nil
+    if reverse != nil {
+      name = reverse.get(c, nil)
+    }
+
+    if name != nil {
+      out.append('&' + name)
+    } else {
+      out.append('&#x${c.ord().hex().upper()};')
+    }
+  }
+
+  return ''.join(out)
+}
+
+
+/**
+ * Decodes every character reference in _text_ and returns the result.
+ *
+ * Named, decimal and hexadecimal references are all understood. Text
+ * that merely looks like a reference is left exactly as it was, so
+ * `decode()` is safe to run over arbitrary content: `'a & b'` stays
+ * `'a & b'` and `'&nosuchthing;'` stays `'&nosuchthing;'`.
+ *
+ * Pass `true` for _in_attribute_ when the text came from an attribute
+ * value. That switches on the standard's attribute rule, under which a
+ * legacy reference written without its semicolon is not decoded if the
+ * next character is `=` or alphanumeric. It is what keeps
+ * `?a=1&copy=2` from becoming `?a=1©=2`. The default is `false`, the
+ * element-content behaviour.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.decode('&lt;b&gt; &amp; &#169; &#xA9; &nbsp;')
+ * '<b> & © ©  '
+ * %> html.decode('?a=1&copy=2')
+ * '?a=1©=2'
+ * %> html.decode('?a=1&copy=2', true)
+ * '?a=1&copy=2'
+ * ```
+ *
+ * @param string text
+ * @param ?bool in_attribute
+ * @returns string
+ */
+def decode(text: string, in_attribute: ?bool) {
+  if in_attribute == nil {
+    in_attribute = false
+  }
+
+  # Nothing to do, and this is by far the common case for real
+  # documents, so it is worth the single scan to find out.
+  if !text.contains('&') {
+    return text
+  }
+
+  var chars = text.to_list()
+  var limit = chars.length()
+  var out = []
+  var i = 0
+
+  while i < limit {
+    var c = chars[i]
+
+    if c != '&' {
+      out.append(c)
+      i++
+      continue
+    }
+
+    var result = consume_reference(chars, i, in_attribute)
+    out.append(result.text)
+    i = result.next
+  }
+
+  return ''.join(out)
+}
+
+
+/**
+ * Escapes _text_ the way the HTML fragment serialization algorithm
+ * requires for element content.
+ *
+ * Exactly four characters change: `&` becomes `&amp;`, U+00A0 becomes
+ * `&nbsp;`, `<` becomes `&lt;` and `>` becomes `&gt;`. Quotes are left
+ * alone because they carry no meaning in element content, and the
+ * no-break space is escaped because it is otherwise indistinguishable
+ * from a plain space in a source listing.
+ *
+ * This is what `outer_html()` and the serializers use. For escaping
+ * text you are about to hand to something other than this module's own
+ * serializer, prefer `encode()`, which is stricter.
+ *
+ * @param string text
+ * @returns string
+ */
+def escape_text(text: string) {
+  if !_needs_escape(text) {
+    return text
+  }
+
+  var out = []
+
+  for c in text {
+    if c == '&' {
+      out.append('&amp;')
+    } else if c == '<' {
+      out.append('&lt;')
+    } else if c == '>' {
+      out.append('&gt;')
+    } else if c == NO_BREAK_SPACE {
+      out.append('&nbsp;')
+    } else {
+      out.append(c)
+    }
+  }
+
+  return ''.join(out)
+}
+
+
+/**
+ * Escapes _value_ the way the HTML fragment serialization algorithm
+ * requires for a double-quoted attribute value.
+ *
+ * Three characters change: `&` becomes `&amp;`, U+00A0 becomes
+ * `&nbsp;` and `"` becomes `&quot;`. `<` and `>` are deliberately left
+ * alone; they are ordinary characters inside a quoted attribute and
+ * escaping them would needlessly change the value's serialized form.
+ *
+ * @param string value
+ * @returns string
+ */
+def escape_attribute(value: string) {
+  if !_needs_escape(value) {
+    return value
+  }
+
+  var out = []
+
+  for c in value {
+    if c == '&' {
+      out.append('&amp;')
+    } else if c == '"' {
+      out.append('&quot;')
+    } else if c == NO_BREAK_SPACE {
+      out.append('&nbsp;')
+    } else {
+      out.append(c)
+    }
+  }
+
+  return ''.join(out)
+}
+
+
+/**
+ * Quick pre-check for the two escapers: most text in a real document
+ * contains none of the characters they care about, and answering that
+ * with a few `contains()` scans is far cheaper than walking every
+ * character to build an identical copy.
+ *
+ * @param string text
+ * @returns bool
+ */
+def _needs_escape(text: string) {
+  return text.contains('&') or text.contains('<') or
+    text.contains('>') or text.contains('"') or
+    text.contains(NO_BREAK_SPACE)
+}

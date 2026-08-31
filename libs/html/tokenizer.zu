@@ -1,0 +1,3150 @@
+/**
+ * @module html.tokenizer
+ *
+ * The HTML tokenizer from the WHATWG HTML Living Standard: the stage
+ * that turns a string of markup into a stream of doctype, tag,
+ * comment and character tokens.
+ *
+ * You rarely need this directly. `html.parse()` drives it to build a
+ * document tree, and that is what almost every program wants. Reach
+ * for the tokenizer when you care about the markup *as written*:
+ * linting a template, rewriting attributes in place, or checking
+ * which parse errors a document raises.
+ *
+ * ```zuri
+ * import html
+ *
+ * for token in html.tokenize('<p class="x">hi</p>') {
+ *   echo '${token.type} ${token.name}${token.data}'
+ * }
+ *
+ * # start-tag p
+ * # character hi
+ * # end-tag p
+ * # eof
+ * ```
+ *
+ * ### Two deliberate departures from a literal reading of the spec
+ *
+ * The standard emits one character token per character. This
+ * tokenizer emits one per contiguous run, so a paragraph of prose is
+ * a single token rather than a few hundred. Nothing observable
+ * changes: the tree builder splits runs back apart wherever the
+ * algorithm is defined per character.
+ *
+ * The standard also spells the "character reference" sub-machine as
+ * nine separate tokenizer states. Here that algorithm lives in
+ * `html.entities.consume_reference()` and is shared with
+ * `html.decode()`, so both agree on every edge case by construction
+ * rather than by careful duplication.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import .entities
+
+
+/**
+ * Tag names whose content is text with character references but no
+ * markup. A `<title>` may contain `&amp;` but never a nested element.
+ */
+var RCDATA_ELEMENTS = ['title', 'textarea']
+
+/**
+ * Tag names whose content is text with neither markup nor character
+ * references. `<noscript>` joins this list only when the tokenizer is
+ * created with scripting enabled.
+ */
+var RAWTEXT_ELEMENTS = ['style', 'xmp', 'iframe', 'noembed', 'noframes']
+
+# U+0000. Written as an escape because it is invisible in source and
+# more than a dozen states have to single it out.
+var _NULL = '\u0000'
+
+# U+FFFD, what a U+0000 in the source becomes.
+var _REPLACEMENT = '\uFFFD'
+
+
+/**
+ * One token from the tokenizer.
+ *
+ * A single class covers all five token types rather than five
+ * classes, because the tree builder dispatches on `type` on every
+ * token and an inheritance check would be the hottest thing in the
+ * parser. Which fields carry meaning depends on `type`:
+ *
+ * | `type`        | fields that matter                                |
+ * | ------------- | ------------------------------------------------- |
+ * | `doctype`     | `name`, `public_id`, `system_id`, `force_quirks`  |
+ * | `start-tag`   | `name`, `attributes`, `self_closing`              |
+ * | `end-tag`     | `name`, `attributes`, `self_closing`              |
+ * | `comment`     | `data`                                            |
+ * | `character`   | `data`                                            |
+ * | `eof`         | none                                              |
+ *
+ * @printable
+ */
+class Token {
+
+  /**
+   * One of `'doctype'`, `'start-tag'`, `'end-tag'`, `'comment'`,
+   * `'character'` or `'eof'`.
+   */
+  var type = ''
+
+  /**
+   * The tag or doctype name, lowercased. Empty for other types.
+   *
+   * A doctype with no name at all (`<!DOCTYPE>`) has `name` set to
+   * `nil` rather than an empty string, because the standard treats
+   * "missing" and "empty" differently when deciding quirks mode.
+   */
+  var name = ''
+
+  /**
+   * Character data for a `character` token, or the text between
+   * `<!--` and `-->` for a `comment`. Empty for other types.
+   *
+   * Character references have already been resolved, so this is the
+   * text the document means, not the text it spells.
+   */
+  var data = ''
+
+  /**
+   * A tag's attributes in source order, as a dictionary of lowercased
+   * name to value. A valueless attribute has an empty string as its
+   * value.
+   */
+  var attributes = {}
+
+  /**
+   * True when the tag was written with a trailing slash, as in
+   * `<br/>`. The tree builder decides whether that means anything;
+   * on an HTML element that is not void, it does not.
+   */
+  var self_closing = false
+
+  /**
+   * A doctype's public identifier, or `nil` when it has none.
+   */
+  var public_id = nil
+
+  /**
+   * A doctype's system identifier, or `nil` when it has none.
+   */
+  var system_id = nil
+
+  /**
+   * Set on a doctype the tokenizer could not read properly. The tree
+   * builder turns this straight into quirks mode.
+   */
+  var force_quirks = false
+
+  /**
+   * 1-based line the token started on.
+   */
+  var line = 1
+
+  /**
+   * 1-based column the token started at.
+   */
+  var column = 1
+
+  /**
+   * @param string type
+   * @constructor
+   */
+  @new(type: string) {
+    self.type = type
+    self.attributes = {}
+  }
+
+  /**
+   * True when this token is a start tag named _name_.
+   *
+   * @param string name
+   * @returns bool
+   */
+  is_start(name: string) {
+    return self.type == 'start-tag' and self.name == name
+  }
+
+  /**
+   * True when this token is an end tag named _name_.
+   *
+   * @param string name
+   * @returns bool
+   */
+  is_end(name: string) {
+    return self.type == 'end-tag' and self.name == name
+  }
+
+  /**
+   * A short, readable rendering of the token, meant for debugging and
+   * for test output rather than for round-tripping to markup.
+   *
+   * @returns string
+   */
+  to_string() {
+    if self.type == 'character' {
+      return '<character ${self.data.to_string()}>'
+    }
+
+    if self.type == 'comment' {
+      return '<comment ${self.data.to_string()}>'
+    }
+
+    if self.type == 'doctype' {
+      return '<doctype ${self.name}>'
+    }
+
+    if self.type == 'eof' {
+      return '<eof>'
+    }
+
+    var out = ['<', self.type, ' ', self.name]
+
+    for name, value in self.attributes {
+      out.append(' ${name}="${value}"')
+    }
+
+    if self.self_closing {
+      out.append(' /')
+    }
+
+    out.append('>')
+    return ''.join(out)
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * A parse error raised while tokenizing or building the tree.
+ *
+ * HTML has no fatal errors: every one of these is recoverable and the
+ * parse always produces a usable result. They are collected so that a
+ * linter, or anyone auditing markup, can see what a browser silently
+ * forgave.
+ *
+ * @printable
+ */
+class ParseError {
+
+  /**
+   * The standard's name for this error, such as
+   * `'unexpected-null-character'` or `'eof-in-tag'`. These are the
+   * exact identifiers the specification uses, so they can be looked
+   * up.
+   */
+  var code = ''
+
+  /**
+   * 1-based line the error was noticed on.
+   */
+  var line = 1
+
+  /**
+   * 1-based column the error was noticed at.
+   */
+  var column = 1
+
+  /**
+   * @param string code
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(code: string, line: number, column: number) {
+    self.code = code
+    self.line = line
+    self.column = column
+  }
+
+  /**
+   * @returns string
+   */
+  to_string() {
+    return '${self.code} at ${self.line}:${self.column}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Turns markup into tokens, one call to `next_token()` at a time.
+ *
+ * The tokenizer's state is not entirely its own: which state it
+ * should be in after a start tag depends on what the tree builder
+ * decided to do with that tag. Two ways to bridge that:
+ *
+ * - Driven by `html.parse()`, the tree builder calls `set_state()`
+ *   itself, exactly as the standard describes.
+ * - Used on its own (which is what `tokenize()` does), the tokenizer
+ *   switches itself on `<script>`, `<style>`, `<title>`,
+ *   `<textarea>`, `<plaintext>` and friends, which is what the tree
+ *   builder would have told it to do anyway.
+ *
+ * The second behaviour is controlled by the `auto_content_state`
+ * option and is on by default, so a tokenizer you create by hand does
+ * the useful thing without extra ceremony.
+ */
+class Tokenizer {
+
+  /**
+   * The source, split into characters, with newlines already
+   * normalized: CRLF and lone CR both become LF, as the standard's
+   * input stream preprocessing requires.
+   */
+  var input = []
+
+  /**
+   * How far into `input` the tokenizer has read.
+   */
+  var pos = 0
+
+  /**
+   * The state machine's current state, named exactly as the standard
+   * names it but in snake case: `'data'`, `'tag_open'`,
+   * `'attribute_value_double_quoted'` and so on.
+   */
+  var state = 'data'
+
+  /**
+   * Parse errors seen so far, as `ParseError` instances, in the order
+   * they happened.
+   */
+  var errors = []
+
+  /**
+   * Whether to enter RAWTEXT for `<noscript>`, and generally to
+   * behave as a browser with scripting turned on would. Off by
+   * default: a program reading HTML is not running its scripts, and
+   * with scripting off a `<noscript>` block's content is real markup
+   * that you almost certainly want parsed.
+   */
+  var scripting = false
+
+  /**
+   * Whether the tokenizer switches itself into RCDATA, RAWTEXT,
+   * script data or PLAINTEXT after the corresponding start tag. On
+   * for a standalone tokenizer; the tree builder turns it off and
+   * drives the state itself.
+   */
+  var auto_content_state = true
+
+  /**
+   * Set by the tree builder when the insertion point is inside
+   * foreign content, where `<![CDATA[` is meaningful. A standalone
+   * tokenizer leaves it `false`, since nothing outside the tree
+   * builder can know what namespace the cursor is in.
+   */
+  var cdata_ok = false
+
+  # Tokens produced but not yet handed out. A single step of the
+  # machine can produce two (a flushed character run plus the tag that
+  # ended it), so `next_token()` drains this before stepping again.
+  var _queue = []
+
+  # Characters seen since the last non-character token, waiting to be
+  # emitted as one `character` token.
+  var _pending = []
+
+  # Line and column the pending character run started at.
+  var _pending_line = 1
+  var _pending_column = 1
+
+  # The token currently being built by the tag, comment and doctype
+  # states.
+  var _token = nil
+
+  # The attribute name and value the attribute states are filling in.
+  var _attribute_name = []
+  var _attribute_value = []
+
+  # Name of the last start tag emitted. The RCDATA, RAWTEXT and script
+  # data states need it to decide whether an end tag is the one that
+  # closes them.
+  var _last_start_tag = nil
+
+  # Scratch space shared by the states that need to remember a few
+  # characters: the script data double-escape states and the
+  # `</` handling in every text state.
+  var _buffer = []
+
+  # Where the token being built started, so its `line` and `column`
+  # point at its `<` and not at whatever ended it.
+  var _token_line = 1
+  var _token_column = 1
+
+  # Current position in the source, tracked as characters are
+  # consumed so errors and tokens can be located.
+  var _line = 1
+  var _column = 1
+
+  # True once the EOF token has been produced, so `next_token()` can
+  # answer `nil` forever after instead of looping.
+  var _finished = false
+
+  # Whether the last `_consume()` actually returned a character.
+  # `_reconsume()` needs it: at end of input nothing was consumed, so
+  # there is nothing to step back over, and stepping back anyway would
+  # re-read the final character of the document.
+  var _consumed = false
+
+  /**
+   * @param string source
+   * @param ?dict options `scripting` (default `false`) and
+   *   `auto_content_state` (default `true`).
+   * @constructor
+   */
+  @new(source: string, options: ?dict) {
+    if options == nil {
+      options = {}
+    }
+
+    self.input = _preprocess(source)
+    self.pos = 0
+    self.state = 'data'
+    self.errors = []
+
+    self.scripting = options.get('scripting', false)
+    self.auto_content_state = options.get('auto_content_state', true)
+
+    self._queue = []
+    self._pending = []
+    self._attribute_name = []
+    self._attribute_value = []
+    self._buffer = []
+  }
+
+  /**
+   * The next token, or `nil` once the `eof` token has been returned.
+   *
+   * The `eof` token is returned exactly once and is always the last
+   * one, so a loop can stop on `nil` or on `token.type == 'eof'`
+   * interchangeably.
+   *
+   * @returns ?Token
+   */
+  next_token() {
+    while self._queue.is_empty() {
+      if self._finished {
+        return nil
+      }
+
+      self._step()
+    }
+
+    return self._queue.shift()
+  }
+
+  /**
+   * Puts the tokenizer into _name_, one of the state names listed on
+   * the `state` field.
+   *
+   * The tree builder calls this to enter RCDATA or RAWTEXT after a
+   * start tag, which is how the standard splits the work between the
+   * two stages.
+   *
+   * @param string name
+   * @returns Tokenizer
+   */
+  set_state(name: string) {
+    self.state = name
+    return self
+  }
+
+  /**
+   * Tells the tokenizer which start tag the tree builder most
+   * recently opened, so that RCDATA and RAWTEXT know which end tag
+   * closes them.
+   *
+   * @param ?string name
+   * @returns Tokenizer
+   */
+  set_last_start_tag(name: ?string) {
+    self._last_start_tag = name
+    return self
+  }
+
+  /**
+   * Runs one step of the state machine.
+   */
+  _step() {
+    using self.state {
+      when 'data' self._data_state()
+      when 'rcdata' self._rcdata_state()
+      when 'rawtext' self._rawtext_state()
+      when 'script_data' self._script_data_state()
+      when 'plaintext' self._plaintext_state()
+      when 'tag_open' self._tag_open_state()
+      when 'end_tag_open' self._end_tag_open_state()
+      when 'tag_name' self._tag_name_state()
+      when 'rcdata_less_than_sign' {
+        self._rcdata_less_than_sign_state()
+      }
+      when 'rcdata_end_tag_open' {
+        self._rcdata_end_tag_open_state()
+      }
+      when 'rcdata_end_tag_name' {
+        self._rcdata_end_tag_name_state()
+      }
+      when 'rawtext_less_than_sign' {
+        self._rawtext_less_than_sign_state()
+      }
+      when 'rawtext_end_tag_open' {
+        self._rawtext_end_tag_open_state()
+      }
+      when 'rawtext_end_tag_name' {
+        self._rawtext_end_tag_name_state()
+      }
+      when 'script_data_less_than_sign' {
+        self._script_data_less_than_sign_state()
+      }
+      when 'script_data_end_tag_open' {
+        self._script_data_end_tag_open_state()
+      }
+      when 'script_data_end_tag_name' {
+        self._script_data_end_tag_name_state()
+      }
+      when 'script_data_escape_start' {
+        self._script_data_escape_start_state()
+      }
+      when 'script_data_escape_start_dash' {
+        self._script_data_escape_start_dash_state()
+      }
+      when 'script_data_escaped' {
+        self._script_data_escaped_state()
+      }
+      when 'script_data_escaped_dash' {
+        self._script_data_escaped_dash_state()
+      }
+      when 'script_data_escaped_dash_dash' {
+        self._script_data_escaped_dash_dash_state()
+      }
+      when 'script_data_escaped_less_than_sign' {
+        self._script_data_escaped_less_than_sign_state()
+      }
+      when 'script_data_escaped_end_tag_open' {
+        self._script_data_escaped_end_tag_open_state()
+      }
+      when 'script_data_escaped_end_tag_name' {
+        self._script_data_escaped_end_tag_name_state()
+      }
+      when 'script_data_double_escape_start' {
+        self._script_data_double_escape_start_state()
+      }
+      when 'script_data_double_escaped' {
+        self._script_data_double_escaped_state()
+      }
+      when 'script_data_double_escaped_dash' {
+        self._script_data_double_escaped_dash_state()
+      }
+      when 'script_data_double_escaped_dash_dash' {
+        self._script_data_double_escaped_dash_dash_state()
+      }
+      when 'script_data_double_escaped_less_than_sign' {
+        self._script_data_double_escaped_less_than_sign_state()
+      }
+      when 'script_data_double_escape_end' {
+        self._script_data_double_escape_end_state()
+      }
+      when 'before_attribute_name' {
+        self._before_attribute_name_state()
+      }
+      when 'attribute_name' self._attribute_name_state()
+      when 'after_attribute_name' {
+        self._after_attribute_name_state()
+      }
+      when 'before_attribute_value' {
+        self._before_attribute_value_state()
+      }
+      when 'attribute_value_double_quoted' {
+        self._attribute_value_double_quoted_state()
+      }
+      when 'attribute_value_single_quoted' {
+        self._attribute_value_single_quoted_state()
+      }
+      when 'attribute_value_unquoted' {
+        self._attribute_value_unquoted_state()
+      }
+      when 'after_attribute_value_quoted' {
+        self._after_attribute_value_quoted_state()
+      }
+      when 'self_closing_start_tag' {
+        self._self_closing_start_tag_state()
+      }
+      when 'bogus_comment' self._bogus_comment_state()
+      when 'markup_declaration_open' {
+        self._markup_declaration_open_state()
+      }
+      when 'comment_start' self._comment_start_state()
+      when 'comment_start_dash' {
+        self._comment_start_dash_state()
+      }
+      when 'comment' self._comment_state()
+      when 'comment_less_than_sign' {
+        self._comment_less_than_sign_state()
+      }
+      when 'comment_less_than_sign_bang' {
+        self._comment_less_than_sign_bang_state()
+      }
+      when 'comment_less_than_sign_bang_dash' {
+        self._comment_less_than_sign_bang_dash_state()
+      }
+      when 'comment_less_than_sign_bang_dash_dash' {
+        self._comment_less_than_sign_bang_dash_dash_state()
+      }
+      when 'comment_end_dash' self._comment_end_dash_state()
+      when 'comment_end' self._comment_end_state()
+      when 'comment_end_bang' self._comment_end_bang_state()
+      when 'doctype' self._doctype_state()
+      when 'before_doctype_name' {
+        self._before_doctype_name_state()
+      }
+      when 'doctype_name' self._doctype_name_state()
+      when 'after_doctype_name' {
+        self._after_doctype_name_state()
+      }
+      when 'after_doctype_public_keyword' {
+        self._after_doctype_public_keyword_state()
+      }
+      when 'before_doctype_public_identifier' {
+        self._before_doctype_public_identifier_state()
+      }
+      when 'doctype_public_identifier_double_quoted' {
+        self._doctype_public_identifier_double_quoted_state()
+      }
+      when 'doctype_public_identifier_single_quoted' {
+        self._doctype_public_identifier_single_quoted_state()
+      }
+      when 'after_doctype_public_identifier' {
+        self._after_doctype_public_identifier_state()
+      }
+      when 'between_doctype_public_and_system_identifiers' {
+        self._between_doctype_public_and_system_identifiers_state()
+      }
+      when 'after_doctype_system_keyword' {
+        self._after_doctype_system_keyword_state()
+      }
+      when 'before_doctype_system_identifier' {
+        self._before_doctype_system_identifier_state()
+      }
+      when 'doctype_system_identifier_double_quoted' {
+        self._doctype_system_identifier_double_quoted_state()
+      }
+      when 'doctype_system_identifier_single_quoted' {
+        self._doctype_system_identifier_single_quoted_state()
+      }
+      when 'after_doctype_system_identifier' {
+        self._after_doctype_system_identifier_state()
+      }
+      when 'bogus_doctype' self._bogus_doctype_state()
+      when 'cdata_section' self._cdata_section_state()
+      when 'cdata_section_bracket' {
+        self._cdata_section_bracket_state()
+      }
+      when 'cdata_section_end' {
+        self._cdata_section_end_state()
+      }
+      default {
+        raise Error('the tokenizer reached an unknown state "${self.state}"')
+      }
+    }
+  }
+
+  # ==========================================================
+  # Reading the input stream
+  # ==========================================================
+
+  /**
+   * The next character without consuming it, or `nil` at end of
+   * input.
+   *
+   * @returns ?string
+   */
+  _peek() {
+    if self.pos >= self.input.length() {
+      return nil
+    }
+
+    return self.input[self.pos]
+  }
+
+  /**
+   * Consumes and returns the next character, or `nil` at end of
+   * input.
+   *
+   * @returns ?string
+   */
+  _consume() {
+    if self.pos >= self.input.length() {
+      self._consumed = false
+      return nil
+    }
+
+    var c = self.input[self.pos]
+    self.pos++
+    self._consumed = true
+
+    if c == '\n' {
+      self._line++
+      self._column = 1
+    } else {
+      self._column++
+    }
+
+    return c
+  }
+
+  /**
+   * Steps back over one character so the next state can consume it
+   * again, and switches to _state_. This is the standard's
+   * "reconsume in" instruction.
+   *
+   * @param string state
+   */
+  _reconsume(state: string) {
+    if self._consumed and self.pos > 0 {
+      self.pos--
+
+      if self.input[self.pos] == '\n' {
+        self._line--
+        # The column of a reconsumed newline is not recoverable
+        # without rescanning the line, and nothing reports a position
+        # on one, so leaving it is both cheap and harmless.
+      } else {
+        self._column--
+      }
+
+      self._consumed = false
+    }
+
+    self.state = state
+  }
+
+  /**
+   * True when the characters at the cursor spell _text_, comparing
+   * with ASCII case folding when _fold_case_ is true. Nothing is
+   * consumed.
+   *
+   * @param string text
+   * @param bool fold_case
+   * @returns bool
+   */
+  _lookahead(text: string, fold_case: bool) {
+    var wanted = text.to_list()
+
+    if self.pos + wanted.length() > self.input.length() {
+      return false
+    }
+
+    iter var i = 0; i < wanted.length(); i++ {
+      var got = self.input[self.pos + i]
+
+      if fold_case {
+        got = got.lower()
+
+        if got != wanted[i].lower() {
+          return false
+        }
+
+        continue
+      }
+
+      if got != wanted[i] {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  /**
+   * Consumes _count_ characters, keeping the line and column counters
+   * honest.
+   *
+   * @param number count
+   */
+  _advance(count: number) {
+    iter var i = 0; i < count; i++ {
+      self._consume()
+    }
+  }
+
+  # ==========================================================
+  # Producing tokens and errors
+  # ==========================================================
+
+  /**
+   * Records a parse error at the current position.
+   *
+   * @param string code
+   */
+  _error(code: string) {
+    self.errors.append(ParseError(code, self._line, self._column))
+  }
+
+  /**
+   * Adds _text_ to the run of characters waiting to be emitted.
+   *
+   * @param string text
+   */
+  _emit_character(text: string) {
+    if self._pending.is_empty() {
+      self._pending_line = self._line
+      self._pending_column = self._column
+    }
+
+    self._pending.append(text)
+  }
+
+  /**
+   * Turns any waiting characters into a single `character` token.
+   */
+  _flush_characters() {
+    if self._pending.is_empty() {
+      return
+    }
+
+    var token = Token('character')
+    token.data = ''.join(self._pending)
+    token.line = self._pending_line
+    token.column = self._pending_column
+
+    self._pending = []
+    self._queue.append(token)
+  }
+
+  /**
+   * Queues _token_, emitting any waiting characters ahead of it so
+   * the stream stays in document order.
+   *
+   * @param Token token
+   */
+  _emit(token: Token) {
+    self._flush_characters()
+    self._queue.append(token)
+  }
+
+  /**
+   * Emits the token currently being built.
+   */
+  _emit_current() {
+    var token = self._token
+    self._token = nil
+
+    if token.type == 'start-tag' {
+      self._last_start_tag = token.name
+
+      if self.auto_content_state and !token.self_closing {
+        self._enter_content_state(token.name)
+      }
+    }
+
+    if token.type == 'end-tag' and !token.attributes.is_empty() {
+      self._error('end-tag-with-attributes')
+    }
+
+    if token.type == 'end-tag' and token.self_closing {
+      self._error('end-tag-with-trailing-solidus')
+    }
+
+    self._emit(token)
+  }
+
+  /**
+   * Switches into the text state a start tag named _name_ calls for,
+   * when the tokenizer is running without a tree builder to tell it.
+   *
+   * @param string name
+   */
+  _enter_content_state(name: string) {
+    if name == 'script' {
+      self.state = 'script_data'
+      return
+    }
+
+    if name == 'plaintext' {
+      self.state = 'plaintext'
+      return
+    }
+
+    if RCDATA_ELEMENTS.contains(name) {
+      self.state = 'rcdata'
+      return
+    }
+
+    if RAWTEXT_ELEMENTS.contains(name) or
+      (self.scripting and name == 'noscript') {
+      self.state = 'rawtext'
+    }
+  }
+
+  /**
+   * Emits the end-of-file token and stops the machine.
+   */
+  _emit_eof() {
+    var token = Token('eof')
+    token.line = self._line
+    token.column = self._column
+
+    self._emit(token)
+    self._finished = true
+  }
+
+  /**
+   * Starts building a token of the given type, remembering where it
+   * began.
+   *
+   * @param string type
+   * @returns Token
+   */
+  _start_token(type: string) {
+    var token = Token(type)
+
+    token.line = self._token_line
+    token.column = self._token_column
+
+    self._token = token
+    return token
+  }
+
+  /**
+   * Remembers the current position as the start of the next token.
+   * Called when a `<` is consumed, so a tag reports the position of
+   * its opening bracket.
+   */
+  _mark_token_start() {
+    self._token_line = self._line
+    self._token_column = self._column - 1
+  }
+
+  # ==========================================================
+  # Attribute bookkeeping
+  # ==========================================================
+
+  /**
+   * Begins a new attribute on the token being built, finishing any
+   * attribute already in progress.
+   */
+  _start_attribute() {
+    self._finish_attribute()
+
+    self._attribute_name = []
+    self._attribute_value = []
+  }
+
+  /**
+   * Adds the attribute under construction to the current token.
+   *
+   * A duplicate name is a parse error and the later attribute is
+   * dropped, which is what the standard requires and what every
+   * browser does.
+   */
+  _finish_attribute() {
+    if self._attribute_name.is_empty() {
+      return
+    }
+
+    var name = ''.join(self._attribute_name)
+
+    if self._token.attributes.contains(name) {
+      self._error('duplicate-attribute')
+    } else {
+      self._token.attributes[name] = ''.join(self._attribute_value)
+    }
+
+    self._attribute_name = []
+    self._attribute_value = []
+  }
+
+  # ==========================================================
+  # Character reference handling
+  # ==========================================================
+
+  /**
+   * Consumes a character reference at the cursor and returns its
+   * text, having already recorded any parse error it raised.
+   *
+   * The `&` has not been consumed when this is called. Whether the
+   * attribute flavour of the algorithm applies is decided by
+   * _in_attribute_.
+   *
+   * @param bool in_attribute
+   * @returns string
+   */
+  _take_reference(in_attribute: bool) {
+    var result = entities.consume_reference(self.input, self.pos, in_attribute)
+
+    if result.error != nil {
+      self._error(result.error)
+    }
+
+    self._advance(result.next - self.pos)
+    return result.text
+  }
+
+  # ==========================================================
+  # The data states
+  # ==========================================================
+
+  /**
+   * Ordinary content, outside any tag.
+   */
+  _data_state() {
+    var c = self._peek()
+
+    if c == nil {
+      self._emit_eof()
+      return
+    }
+
+    if c == '&' {
+      self._emit_character(self._take_reference(false))
+      return
+    }
+
+    self._consume()
+
+    if c == '<' {
+      self._mark_token_start()
+      self.state = 'tag_open'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(c)
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  /**
+   * The content of a `<title>` or `<textarea>`: text with character
+   * references but no markup.
+   */
+  _rcdata_state() {
+    var c = self._peek()
+
+    if c == nil {
+      self._emit_eof()
+      return
+    }
+
+    if c == '&' {
+      self._emit_character(self._take_reference(false))
+      return
+    }
+
+    self._consume()
+
+    if c == '<' {
+      self._buffer = []
+      self.state = 'rcdata_less_than_sign'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  /**
+   * The content of a `<style>` and friends: text with no markup and
+   * no character references.
+   */
+  _rawtext_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._emit_eof()
+      return
+    }
+
+    if c == '<' {
+      self._buffer = []
+      self.state = 'rawtext_less_than_sign'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  /**
+   * The content of a `<script>`, which has its own escape handling on
+   * top of RAWTEXT so that `<!--` inside a script does not end it.
+   */
+  _script_data_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._emit_eof()
+      return
+    }
+
+    if c == '<' {
+      self._buffer = []
+      self.state = 'script_data_less_than_sign'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  /**
+   * Everything after a `<plaintext>` tag, which nothing can end.
+   */
+  _plaintext_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._emit_eof()
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  # ==========================================================
+  # Tags
+  # ==========================================================
+
+  /**
+   * Just after a `<` in the data state.
+   */
+  _tag_open_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-before-tag-name')
+      self._emit_character('<')
+      self._emit_eof()
+      return
+    }
+
+    if c == '!' {
+      self.state = 'markup_declaration_open'
+      return
+    }
+
+    if c == '/' {
+      self.state = 'end_tag_open'
+      return
+    }
+
+    if _is_ascii_alpha(c) {
+      self._start_token('start-tag')
+      self._token.name = ''
+      self._reconsume('tag_name')
+      return
+    }
+
+    if c == '?' {
+      self._error('unexpected-question-mark-instead-of-tag-name')
+      self._start_token('comment')
+      self._token.data = ''
+      self._reconsume('bogus_comment')
+      return
+    }
+
+    self._error('invalid-first-character-of-tag-name')
+    self._emit_character('<')
+    self._reconsume('data')
+  }
+
+  /**
+   * Just after a `</` in the data state.
+   */
+  _end_tag_open_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-before-tag-name')
+      self._emit_character('<')
+      self._emit_character('/')
+      self._emit_eof()
+      return
+    }
+
+    if _is_ascii_alpha(c) {
+      self._start_token('end-tag')
+      self._token.name = ''
+      self._reconsume('tag_name')
+      return
+    }
+
+    if c == '>' {
+      self._error('missing-end-tag-name')
+      self.state = 'data'
+      return
+    }
+
+    self._error('invalid-first-character-of-tag-name')
+    self._start_token('comment')
+    self._token.data = ''
+    self._reconsume('bogus_comment')
+  }
+
+  /**
+   * Reading a tag's name.
+   */
+  _tag_name_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-tag')
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self.state = 'before_attribute_name'
+      return
+    }
+
+    if c == '/' {
+      self.state = 'self_closing_start_tag'
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._token.name += _REPLACEMENT
+      return
+    }
+
+    self._token.name += c.lower()
+  }
+
+  # ==========================================================
+  # Ending an RCDATA, RAWTEXT or script data block
+  # ==========================================================
+
+  /**
+   * A `<` inside RCDATA.
+   */
+  _rcdata_less_than_sign_state() {
+    if self._peek() == '/' {
+      self._consume()
+      self._buffer = []
+      self.state = 'rcdata_end_tag_open'
+      return
+    }
+
+    self._emit_character('<')
+    self.state = 'rcdata'
+  }
+
+  /**
+   * A `</` inside RCDATA.
+   */
+  _rcdata_end_tag_open_state() {
+    var c = self._peek()
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._start_token('end-tag')
+      self._token.name = ''
+      self.state = 'rcdata_end_tag_name'
+      return
+    }
+
+    self._emit_character('<')
+    self._emit_character('/')
+    self.state = 'rcdata'
+  }
+
+  /**
+   * Reading the name of what might be the end tag closing an RCDATA
+   * block.
+   */
+  _rcdata_end_tag_name_state() {
+    self._end_tag_name_step('rcdata')
+  }
+
+  /**
+   * A `<` inside RAWTEXT.
+   */
+  _rawtext_less_than_sign_state() {
+    if self._peek() == '/' {
+      self._consume()
+      self._buffer = []
+      self.state = 'rawtext_end_tag_open'
+      return
+    }
+
+    self._emit_character('<')
+    self.state = 'rawtext'
+  }
+
+  /**
+   * A `</` inside RAWTEXT.
+   */
+  _rawtext_end_tag_open_state() {
+    var c = self._peek()
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._start_token('end-tag')
+      self._token.name = ''
+      self.state = 'rawtext_end_tag_name'
+      return
+    }
+
+    self._emit_character('<')
+    self._emit_character('/')
+    self.state = 'rawtext'
+  }
+
+  /**
+   * Reading the name of what might be the end tag closing a RAWTEXT
+   * block.
+   */
+  _rawtext_end_tag_name_state() {
+    self._end_tag_name_step('rawtext')
+  }
+
+  /**
+   * A `<` inside script data.
+   */
+  _script_data_less_than_sign_state() {
+    var c = self._peek()
+
+    if c == '/' {
+      self._consume()
+      self._buffer = []
+      self.state = 'script_data_end_tag_open'
+      return
+    }
+
+    if c == '!' {
+      self._consume()
+      self._emit_character('<')
+      self._emit_character('!')
+      self.state = 'script_data_escape_start'
+      return
+    }
+
+    self._emit_character('<')
+    self.state = 'script_data'
+  }
+
+  /**
+   * A `</` inside script data.
+   */
+  _script_data_end_tag_open_state() {
+    var c = self._peek()
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._start_token('end-tag')
+      self._token.name = ''
+      self.state = 'script_data_end_tag_name'
+      return
+    }
+
+    self._emit_character('<')
+    self._emit_character('/')
+    self.state = 'script_data'
+  }
+
+  /**
+   * Reading the name of what might be `</script>`.
+   */
+  _script_data_end_tag_name_state() {
+    self._end_tag_name_step('script_data')
+  }
+
+  /**
+   * The shared body of the three "end tag name" states.
+   *
+   * All three do the same thing: gather an ASCII name, and the moment
+   * it stops being the name of the tag that opened this block, throw
+   * the whole thing away and emit it as text. Only the state to fall
+   * back to differs.
+   *
+   * @param string fallback
+   */
+  _end_tag_name_step(fallback: string) {
+    var c = self._consume()
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._token.name += c.lower()
+      self._buffer.append(c)
+      return
+    }
+
+    var appropriate = self._token != nil and
+      self._last_start_tag != nil and
+      self._token.name == self._last_start_tag
+
+    if appropriate and c != nil {
+      if _is_whitespace(c) {
+        self.state = 'before_attribute_name'
+        return
+      }
+
+      if c == '/' {
+        self.state = 'self_closing_start_tag'
+        return
+      }
+
+      if c == '>' {
+        self.state = 'data'
+        self._emit_current()
+        return
+      }
+    }
+
+    # Not the tag that closes this block, so none of it was markup.
+    self._token = nil
+    self._emit_character('<')
+    self._emit_character('/')
+    self._emit_character(''.join(self._buffer))
+    self._buffer = []
+
+    if c == nil {
+      self.state = fallback
+      return
+    }
+
+    self._reconsume(fallback)
+  }
+
+  # ==========================================================
+  # Script data escapes
+  # ==========================================================
+
+  /**
+   * Just after `<!` inside script data.
+   */
+  _script_data_escape_start_state() {
+    if self._peek() == '-' {
+      self._consume()
+      self._emit_character('-')
+      self.state = 'script_data_escape_start_dash'
+      return
+    }
+
+    self.state = 'script_data'
+  }
+
+  /**
+   * Just after `<!-` inside script data.
+   */
+  _script_data_escape_start_dash_state() {
+    if self._peek() == '-' {
+      self._consume()
+      self._emit_character('-')
+      self.state = 'script_data_escaped_dash_dash'
+      return
+    }
+
+    self.state = 'script_data'
+  }
+
+  /**
+   * Inside a `<!-- ... -->` comment within script data.
+   */
+  _script_data_escaped_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-script-html-comment-like-text')
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self._emit_character('-')
+      self.state = 'script_data_escaped_dash'
+      return
+    }
+
+    if c == '<' {
+      self.state = 'script_data_escaped_less_than_sign'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  /**
+   * One dash into a possible `-->` within an escaped script.
+   */
+  _script_data_escaped_dash_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-script-html-comment-like-text')
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self._emit_character('-')
+      self.state = 'script_data_escaped_dash_dash'
+      return
+    }
+
+    if c == '<' {
+      self.state = 'script_data_escaped_less_than_sign'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      self.state = 'script_data_escaped'
+      return
+    }
+
+    self._emit_character(c)
+    self.state = 'script_data_escaped'
+  }
+
+  /**
+   * Two dashes into a possible `-->` within an escaped script.
+   */
+  _script_data_escaped_dash_dash_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-script-html-comment-like-text')
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self._emit_character('-')
+      return
+    }
+
+    if c == '<' {
+      self.state = 'script_data_escaped_less_than_sign'
+      return
+    }
+
+    if c == '>' {
+      self._emit_character('>')
+      self.state = 'script_data'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      self.state = 'script_data_escaped'
+      return
+    }
+
+    self._emit_character(c)
+    self.state = 'script_data_escaped'
+  }
+
+  /**
+   * A `<` inside an escaped script.
+   */
+  _script_data_escaped_less_than_sign_state() {
+    var c = self._peek()
+
+    if c == '/' {
+      self._consume()
+      self._buffer = []
+      self.state = 'script_data_escaped_end_tag_open'
+      return
+    }
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._buffer = []
+      self._emit_character('<')
+      self.state = 'script_data_double_escape_start'
+      return
+    }
+
+    self._emit_character('<')
+    self.state = 'script_data_escaped'
+  }
+
+  /**
+   * A `</` inside an escaped script.
+   */
+  _script_data_escaped_end_tag_open_state() {
+    var c = self._peek()
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._start_token('end-tag')
+      self._token.name = ''
+      self.state = 'script_data_escaped_end_tag_name'
+      return
+    }
+
+    self._emit_character('<')
+    self._emit_character('/')
+    self.state = 'script_data_escaped'
+  }
+
+  /**
+   * Reading a possible `</script>` inside an escaped script.
+   */
+  _script_data_escaped_end_tag_name_state() {
+    self._end_tag_name_step('script_data_escaped')
+  }
+
+  /**
+   * Deciding whether `<script` inside an escaped script starts a
+   * doubly escaped block.
+   */
+  _script_data_double_escape_start_state() {
+    var c = self._consume()
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._buffer.append(c.lower())
+      self._emit_character(c)
+      return
+    }
+
+    if c != nil and (_is_whitespace(c) or c == '/' or c == '>') {
+      self._emit_character(c)
+
+      if ''.join(self._buffer) == 'script' {
+        self.state = 'script_data_double_escaped'
+      } else {
+        self.state = 'script_data_escaped'
+      }
+
+      return
+    }
+
+    self._reconsume('script_data_escaped')
+  }
+
+  /**
+   * Inside a doubly escaped script block, where `</script>` is text
+   * rather than the end of the script.
+   */
+  _script_data_double_escaped_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-script-html-comment-like-text')
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self._emit_character('-')
+      self.state = 'script_data_double_escaped_dash'
+      return
+    }
+
+    if c == '<' {
+      self._emit_character('<')
+      self.state = 'script_data_double_escaped_less_than_sign'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  /**
+   * One dash into a possible `-->` in a doubly escaped script.
+   */
+  _script_data_double_escaped_dash_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-script-html-comment-like-text')
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self._emit_character('-')
+      self.state = 'script_data_double_escaped_dash_dash'
+      return
+    }
+
+    if c == '<' {
+      self._emit_character('<')
+      self.state = 'script_data_double_escaped_less_than_sign'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      self.state = 'script_data_double_escaped'
+      return
+    }
+
+    self._emit_character(c)
+    self.state = 'script_data_double_escaped'
+  }
+
+  /**
+   * Two dashes into a possible `-->` in a doubly escaped script.
+   */
+  _script_data_double_escaped_dash_dash_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-script-html-comment-like-text')
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self._emit_character('-')
+      return
+    }
+
+    if c == '<' {
+      self._emit_character('<')
+      self.state = 'script_data_double_escaped_less_than_sign'
+      return
+    }
+
+    if c == '>' {
+      self._emit_character('>')
+      self.state = 'script_data'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._emit_character(_REPLACEMENT)
+      self.state = 'script_data_double_escaped'
+      return
+    }
+
+    self._emit_character(c)
+    self.state = 'script_data_double_escaped'
+  }
+
+  /**
+   * A `<` in a doubly escaped script.
+   */
+  _script_data_double_escaped_less_than_sign_state() {
+    if self._peek() == '/' {
+      self._consume()
+      self._buffer = []
+      self._emit_character('/')
+      self.state = 'script_data_double_escape_end'
+      return
+    }
+
+    self.state = 'script_data_double_escaped'
+  }
+
+  /**
+   * Deciding whether `</script` ends the doubly escaped block.
+   */
+  _script_data_double_escape_end_state() {
+    var c = self._consume()
+
+    if c != nil and _is_ascii_alpha(c) {
+      self._buffer.append(c.lower())
+      self._emit_character(c)
+      return
+    }
+
+    if c != nil and (_is_whitespace(c) or c == '/' or c == '>') {
+      self._emit_character(c)
+
+      if ''.join(self._buffer) == 'script' {
+        self.state = 'script_data_escaped'
+      } else {
+        self.state = 'script_data_double_escaped'
+      }
+
+      return
+    }
+
+    self._reconsume('script_data_double_escaped')
+  }
+
+  # ==========================================================
+  # Attributes
+  # ==========================================================
+
+  /**
+   * Between a tag name and its first attribute, or between two
+   * attributes.
+   */
+  _before_attribute_name_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._reconsume('after_attribute_name')
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '/' or c == '>' {
+      self._reconsume('after_attribute_name')
+      return
+    }
+
+    if c == '=' {
+      self._error('unexpected-equals-sign-before-attribute-name')
+      self._start_attribute()
+      self._attribute_name.append(c)
+      self.state = 'attribute_name'
+      return
+    }
+
+    self._start_attribute()
+    self._reconsume('attribute_name')
+  }
+
+  /**
+   * Reading an attribute's name.
+   */
+  _attribute_name_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._reconsume('after_attribute_name')
+      return
+    }
+
+    if _is_whitespace(c) or c == '/' or c == '>' {
+      self._reconsume('after_attribute_name')
+      return
+    }
+
+    if c == '=' {
+      self.state = 'before_attribute_value'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._attribute_name.append(_REPLACEMENT)
+      return
+    }
+
+    if c == '"' or c == '\'' or c == '<' {
+      self._error('unexpected-character-in-attribute-name')
+    }
+
+    self._attribute_name.append(c.lower())
+  }
+
+  /**
+   * After an attribute name that was not followed by `=`.
+   */
+  _after_attribute_name_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-tag')
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '/' {
+      self._finish_attribute()
+      self.state = 'self_closing_start_tag'
+      return
+    }
+
+    if c == '=' {
+      self.state = 'before_attribute_value'
+      return
+    }
+
+    if c == '>' {
+      self._finish_attribute()
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._start_attribute()
+    self._reconsume('attribute_name')
+  }
+
+  /**
+   * Just after an attribute's `=`.
+   */
+  _before_attribute_value_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-tag')
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '"' {
+      self.state = 'attribute_value_double_quoted'
+      return
+    }
+
+    if c == '\'' {
+      self.state = 'attribute_value_single_quoted'
+      return
+    }
+
+    if c == '>' {
+      self._error('missing-attribute-value')
+      self._finish_attribute()
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._reconsume('attribute_value_unquoted')
+  }
+
+  /**
+   * Inside a `"..."` attribute value.
+   */
+  _attribute_value_double_quoted_state() {
+    self._quoted_attribute_value_step('"')
+  }
+
+  /**
+   * Inside a `'...'` attribute value.
+   */
+  _attribute_value_single_quoted_state() {
+    self._quoted_attribute_value_step('\'')
+  }
+
+  /**
+   * The shared body of the two quoted attribute value states; the
+   * only difference between them is which quote ends the value.
+   *
+   * @param string quote
+   */
+  _quoted_attribute_value_step(quote: string) {
+    var c = self._peek()
+
+    if c == nil {
+      self._error('eof-in-tag')
+      self._emit_eof()
+      return
+    }
+
+    if c == '&' {
+      self._attribute_value.append(self._take_reference(true))
+      return
+    }
+
+    self._consume()
+
+    if c == quote {
+      self._finish_attribute()
+      self.state = 'after_attribute_value_quoted'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._attribute_value.append(_REPLACEMENT)
+      return
+    }
+
+    self._attribute_value.append(c)
+  }
+
+  /**
+   * Inside an unquoted attribute value.
+   */
+  _attribute_value_unquoted_state() {
+    var c = self._peek()
+
+    if c == nil {
+      self._error('eof-in-tag')
+      self._emit_eof()
+      return
+    }
+
+    if c == '&' {
+      self._attribute_value.append(self._take_reference(true))
+      return
+    }
+
+    self._consume()
+
+    if _is_whitespace(c) {
+      self._finish_attribute()
+      self.state = 'before_attribute_name'
+      return
+    }
+
+    if c == '>' {
+      self._finish_attribute()
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._attribute_value.append(_REPLACEMENT)
+      return
+    }
+
+    if c == '"' or c == '\'' or c == '<' or c == '=' or c == '`' {
+      self._error('unexpected-character-in-unquoted-attribute-value')
+    }
+
+    self._attribute_value.append(c)
+  }
+
+  /**
+   * Just after the closing quote of an attribute value.
+   */
+  _after_attribute_value_quoted_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-tag')
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self.state = 'before_attribute_name'
+      return
+    }
+
+    if c == '/' {
+      self.state = 'self_closing_start_tag'
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._error('missing-whitespace-between-attributes')
+    self._reconsume('before_attribute_name')
+  }
+
+  /**
+   * Just after the `/` of a `<... />`.
+   */
+  _self_closing_start_tag_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-tag')
+      self._emit_eof()
+      return
+    }
+
+    if c == '>' {
+      self._finish_attribute()
+      self._token.self_closing = true
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._error('unexpected-solidus-in-tag')
+    self._reconsume('before_attribute_name')
+  }
+
+  # ==========================================================
+  # Comments and markup declarations
+  # ==========================================================
+
+  /**
+   * Everything up to the next `>` is a comment, however it was
+   * written. This is the recovery path for `<?foo>` and `</ >`.
+   */
+  _bogus_comment_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._token.data += _REPLACEMENT
+      return
+    }
+
+    self._token.data += c
+  }
+
+  /**
+   * Just after `<!`, deciding between a comment, a doctype and a
+   * CDATA section.
+   */
+  _markup_declaration_open_state() {
+    if self._lookahead('--', false) {
+      self._advance(2)
+      self._start_token('comment')
+      self._token.data = ''
+      self.state = 'comment_start'
+      return
+    }
+
+    if self._lookahead('DOCTYPE', true) {
+      self._advance(7)
+      self.state = 'doctype'
+      return
+    }
+
+    if self._lookahead('[CDATA[', false) {
+      self._advance(7)
+
+      # A real CDATA section only exists in foreign content. The tree
+      # builder is what knows whether we are there, so it hands that
+      # answer back by leaving the tokenizer in the CDATA state; when
+      # nothing has, this is a bogus comment.
+      if self._cdata_allowed() {
+        self.state = 'cdata_section'
+        return
+      }
+
+      self._error('cdata-in-html-content')
+      self._start_token('comment')
+      self._token.data = '[CDATA['
+      self.state = 'bogus_comment'
+      return
+    }
+
+    self._error('incorrectly-opened-comment')
+    self._start_token('comment')
+    self._token.data = ''
+    self.state = 'bogus_comment'
+  }
+
+  /**
+   * Whether a `<![CDATA[` at this point is a real CDATA section.
+   *
+   * The tree builder overrides this by setting `cdata_ok` before it
+   * asks for the next token; a standalone tokenizer has no way to
+   * know what namespace it is in, so it answers no and produces the
+   * bogus comment a browser would.
+   *
+   * @returns bool
+   */
+  _cdata_allowed() {
+    return self.cdata_ok
+  }
+
+  /**
+   * Just after `<!--`.
+   */
+  _comment_start_state() {
+    var c = self._peek()
+
+    if c == '-' {
+      self._consume()
+      self.state = 'comment_start_dash'
+      return
+    }
+
+    if c == '>' {
+      self._consume()
+      self._error('abrupt-closing-of-empty-comment')
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self.state = 'comment'
+  }
+
+  /**
+   * Just after `<!---`.
+   */
+  _comment_start_dash_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-comment')
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self.state = 'comment_end'
+      return
+    }
+
+    if c == '>' {
+      self._error('abrupt-closing-of-empty-comment')
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._token.data += '-'
+    self._reconsume('comment')
+  }
+
+  /**
+   * Inside a comment's text.
+   */
+  _comment_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-comment')
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == '<' {
+      self._token.data += c
+      self.state = 'comment_less_than_sign'
+      return
+    }
+
+    if c == '-' {
+      self.state = 'comment_end_dash'
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._token.data += _REPLACEMENT
+      return
+    }
+
+    self._token.data += c
+  }
+
+  /**
+   * A `<` inside a comment, which may be the start of a nested
+   * `<!-->` that the standard has to forgive.
+   */
+  _comment_less_than_sign_state() {
+    var c = self._peek()
+
+    if c == '!' {
+      self._consume()
+      self._token.data += c
+      self.state = 'comment_less_than_sign_bang'
+      return
+    }
+
+    if c == '<' {
+      self._consume()
+      self._token.data += c
+      return
+    }
+
+    self.state = 'comment'
+  }
+
+  /**
+   * A `<!` inside a comment.
+   */
+  _comment_less_than_sign_bang_state() {
+    if self._peek() == '-' {
+      self._consume()
+      self.state = 'comment_less_than_sign_bang_dash'
+      return
+    }
+
+    self.state = 'comment'
+  }
+
+  /**
+   * A `<!-` inside a comment.
+   */
+  _comment_less_than_sign_bang_dash_state() {
+    if self._peek() == '-' {
+      self._consume()
+      self.state = 'comment_less_than_sign_bang_dash_dash'
+      return
+    }
+
+    self.state = 'comment_end_dash'
+  }
+
+  /**
+   * A `<!--` inside a comment.
+   */
+  _comment_less_than_sign_bang_dash_dash_state() {
+    var c = self._peek()
+
+    if c != nil and c != '>' {
+      self._error('nested-comment')
+    }
+
+    self.state = 'comment_end'
+  }
+
+  /**
+   * One dash into a possible `-->`.
+   */
+  _comment_end_dash_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-comment')
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self.state = 'comment_end'
+      return
+    }
+
+    self._token.data += '-'
+    self._reconsume('comment')
+  }
+
+  /**
+   * Two dashes into a possible `-->`.
+   */
+  _comment_end_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-comment')
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == '!' {
+      self.state = 'comment_end_bang'
+      return
+    }
+
+    if c == '-' {
+      self._token.data += '-'
+      return
+    }
+
+    self._token.data += '--'
+    self._reconsume('comment')
+  }
+
+  /**
+   * A `--!` inside a comment.
+   */
+  _comment_end_bang_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-comment')
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == '-' {
+      self._token.data += '--!'
+      self.state = 'comment_end_dash'
+      return
+    }
+
+    if c == '>' {
+      self._error('incorrectly-closed-comment')
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._token.data += '--!'
+    self._reconsume('comment')
+  }
+
+  # ==========================================================
+  # Doctypes
+  # ==========================================================
+
+  /**
+   * Just after `<!DOCTYPE`.
+   */
+  _doctype_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._start_token('doctype')
+      self._token.name = nil
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self.state = 'before_doctype_name'
+      return
+    }
+
+    if c == '>' {
+      self._reconsume('before_doctype_name')
+      return
+    }
+
+    self._error('missing-whitespace-before-doctype-name')
+    self._reconsume('before_doctype_name')
+  }
+
+  /**
+   * Skipping the whitespace before a doctype's name.
+   */
+  _before_doctype_name_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._start_token('doctype')
+      self._token.name = nil
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '>' {
+      self._error('missing-doctype-name')
+      self._start_token('doctype')
+      self._token.name = nil
+      self._token.force_quirks = true
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._start_token('doctype')
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._token.name = _REPLACEMENT
+    } else {
+      self._token.name = c.lower()
+    }
+
+    self.state = 'doctype_name'
+  }
+
+  /**
+   * Reading a doctype's name.
+   */
+  _doctype_name_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self.state = 'after_doctype_name'
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      self._token.name += _REPLACEMENT
+      return
+    }
+
+    self._token.name += c.lower()
+  }
+
+  /**
+   * After a doctype's name, looking for `PUBLIC` or `SYSTEM`.
+   */
+  _after_doctype_name_state() {
+    var c = self._peek()
+
+    if c == nil {
+      self._consume()
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self._consume()
+      return
+    }
+
+    if c == '>' {
+      self._consume()
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if self._lookahead('PUBLIC', true) {
+      self._advance(6)
+      self.state = 'after_doctype_public_keyword'
+      return
+    }
+
+    if self._lookahead('SYSTEM', true) {
+      self._advance(6)
+      self.state = 'after_doctype_system_keyword'
+      return
+    }
+
+    self._error('invalid-character-sequence-after-doctype-name')
+    self._token.force_quirks = true
+    self.state = 'bogus_doctype'
+  }
+
+  /**
+   * Just after `PUBLIC` in a doctype.
+   */
+  _after_doctype_public_keyword_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self.state = 'before_doctype_public_identifier'
+      return
+    }
+
+    if c == '"' or c == '\'' {
+      self._error('missing-whitespace-after-doctype-public-keyword')
+      self._token.public_id = ''
+      self.state = _quoted_public_state(c)
+      return
+    }
+
+    if c == '>' {
+      self._error('missing-doctype-public-identifier')
+      self._token.force_quirks = true
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._error('missing-quote-before-doctype-public-identifier')
+    self._token.force_quirks = true
+    self._reconsume('bogus_doctype')
+  }
+
+  /**
+   * Skipping the whitespace before a doctype's public identifier.
+   */
+  _before_doctype_public_identifier_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '"' or c == '\'' {
+      self._token.public_id = ''
+      self.state = _quoted_public_state(c)
+      return
+    }
+
+    if c == '>' {
+      self._error('missing-doctype-public-identifier')
+      self._token.force_quirks = true
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._error('missing-quote-before-doctype-public-identifier')
+    self._token.force_quirks = true
+    self._reconsume('bogus_doctype')
+  }
+
+  /**
+   * Inside a `"..."` public identifier.
+   */
+  _doctype_public_identifier_double_quoted_state() {
+    self._doctype_identifier_step('"', 'public')
+  }
+
+  /**
+   * Inside a `'...'` public identifier.
+   */
+  _doctype_public_identifier_single_quoted_state() {
+    self._doctype_identifier_step('\'', 'public')
+  }
+
+  /**
+   * Inside a `"..."` system identifier.
+   */
+  _doctype_system_identifier_double_quoted_state() {
+    self._doctype_identifier_step('"', 'system')
+  }
+
+  /**
+   * Inside a `'...'` system identifier.
+   */
+  _doctype_system_identifier_single_quoted_state() {
+    self._doctype_identifier_step('\'', 'system')
+  }
+
+  /**
+   * The shared body of the four quoted doctype identifier states.
+   *
+   * @param string quote
+   * @param string which `'public'` or `'system'`.
+   */
+  _doctype_identifier_step(quote: string, which: string) {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == quote {
+      if which == 'public' {
+        self.state = 'after_doctype_public_identifier'
+      } else {
+        self.state = 'after_doctype_system_identifier'
+      }
+
+      return
+    }
+
+    if c == '>' {
+      if which == 'public' {
+        self._error('abrupt-doctype-public-identifier')
+      } else {
+        self._error('abrupt-doctype-system-identifier')
+      }
+
+      self._token.force_quirks = true
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+      c = _REPLACEMENT
+    }
+
+    if which == 'public' {
+      self._token.public_id += c
+    } else {
+      self._token.system_id += c
+    }
+  }
+
+  /**
+   * After a doctype's public identifier.
+   */
+  _after_doctype_public_identifier_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self.state = 'between_doctype_public_and_system_identifiers'
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == '"' or c == '\'' {
+      self._error('missing-whitespace-between-doctype-public-and-system-identifiers')
+      self._token.system_id = ''
+      self.state = _quoted_system_state(c)
+      return
+    }
+
+    self._error('missing-quote-before-doctype-system-identifier')
+    self._token.force_quirks = true
+    self._reconsume('bogus_doctype')
+  }
+
+  /**
+   * Between a doctype's two identifiers.
+   */
+  _between_doctype_public_and_system_identifiers_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == '"' or c == '\'' {
+      self._token.system_id = ''
+      self.state = _quoted_system_state(c)
+      return
+    }
+
+    self._error('missing-quote-before-doctype-system-identifier')
+    self._token.force_quirks = true
+    self._reconsume('bogus_doctype')
+  }
+
+  /**
+   * Just after `SYSTEM` in a doctype.
+   */
+  _after_doctype_system_keyword_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      self.state = 'before_doctype_system_identifier'
+      return
+    }
+
+    if c == '"' or c == '\'' {
+      self._error('missing-whitespace-after-doctype-system-keyword')
+      self._token.system_id = ''
+      self.state = _quoted_system_state(c)
+      return
+    }
+
+    if c == '>' {
+      self._error('missing-doctype-system-identifier')
+      self._token.force_quirks = true
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._error('missing-quote-before-doctype-system-identifier')
+    self._token.force_quirks = true
+    self._reconsume('bogus_doctype')
+  }
+
+  /**
+   * Skipping the whitespace before a doctype's system identifier.
+   */
+  _before_doctype_system_identifier_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '"' or c == '\'' {
+      self._token.system_id = ''
+      self.state = _quoted_system_state(c)
+      return
+    }
+
+    if c == '>' {
+      self._error('missing-doctype-system-identifier')
+      self._token.force_quirks = true
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._error('missing-quote-before-doctype-system-identifier')
+    self._token.force_quirks = true
+    self._reconsume('bogus_doctype')
+  }
+
+  /**
+   * After a doctype's system identifier, where only whitespace and
+   * `>` are legal.
+   */
+  _after_doctype_system_identifier_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-doctype')
+      self._token.force_quirks = true
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if _is_whitespace(c) {
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    self._error('unexpected-character-after-doctype-system-identifier')
+    self._reconsume('bogus_doctype')
+  }
+
+  /**
+   * Skipping the rest of a doctype this tokenizer could not read.
+   * Note that the token is still emitted; the tree builder needs it
+   * to decide quirks mode.
+   */
+  _bogus_doctype_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._emit_current()
+      self._emit_eof()
+      return
+    }
+
+    if c == '>' {
+      self.state = 'data'
+      self._emit_current()
+      return
+    }
+
+    if c == _NULL {
+      self._error('unexpected-null-character')
+    }
+  }
+
+  # ==========================================================
+  # CDATA sections
+  # ==========================================================
+
+  /**
+   * Inside a `<![CDATA[ ... ]]>` section, whose content is character
+   * data with no markup and no references.
+   */
+  _cdata_section_state() {
+    var c = self._consume()
+
+    if c == nil {
+      self._error('eof-in-cdata')
+      self._emit_eof()
+      return
+    }
+
+    if c == ']' {
+      self.state = 'cdata_section_bracket'
+      return
+    }
+
+    self._emit_character(c)
+  }
+
+  /**
+   * One `]` into a possible `]]>`.
+   */
+  _cdata_section_bracket_state() {
+    if self._peek() == ']' {
+      self._consume()
+      self.state = 'cdata_section_end'
+      return
+    }
+
+    self._emit_character(']')
+    self.state = 'cdata_section'
+  }
+
+  /**
+   * Two `]` into a possible `]]>`.
+   */
+  _cdata_section_end_state() {
+    var c = self._peek()
+
+    if c == ']' {
+      self._consume()
+      self._emit_character(']')
+      return
+    }
+
+    if c == '>' {
+      self._consume()
+      self.state = 'data'
+      return
+    }
+
+    self._emit_character(']')
+    self._emit_character(']')
+    self.state = 'cdata_section'
+  }
+}
+
+
+/**
+ * Which quoted-public-identifier state a given quote character leads
+ * to.
+ *
+ * @param string quote
+ * @returns string
+ */
+def _quoted_public_state(quote: string) {
+  if quote == '"' {
+    return 'doctype_public_identifier_double_quoted'
+  }
+
+  return 'doctype_public_identifier_single_quoted'
+}
+
+
+/**
+ * Which quoted-system-identifier state a given quote character leads
+ * to.
+ *
+ * @param string quote
+ * @returns string
+ */
+def _quoted_system_state(quote: string) {
+  if quote == '"' {
+    return 'doctype_system_identifier_double_quoted'
+  }
+
+  return 'doctype_system_identifier_single_quoted'
+}
+
+
+/**
+ * True when _c_ is one of the five characters HTML treats as
+ * whitespace between markup: tab, line feed, form feed, carriage
+ * return and space.
+ *
+ * Carriage return never actually reaches the state machine, since
+ * input preprocessing has already turned it into a line feed, but it
+ * is listed for the same reason the standard lists it.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_whitespace(c: string) {
+  return c == ' ' or c == '\n' or c == '\t' or
+    c == '\f' or c == '\r'
+}
+
+
+/**
+ * True when _c_ is an ASCII letter.
+ *
+ * @param string c
+ * @returns bool
+ */
+def _is_ascii_alpha(c: string) {
+  var n = c.ord()
+  return (n >= 65 and n <= 90) or (n >= 97 and n <= 122)
+}
+
+
+/**
+ * Applies the standard's input stream preprocessing and returns the
+ * source as a list of characters.
+ *
+ * Both `\r\n` and a lone `\r` become a single `\n`, so the rest of
+ * the tokenizer never has to think about carriage returns and line
+ * numbers come out right on files written on any platform. U+0000 is
+ * left in place: it is a parse error, but which replacement it gets
+ * depends on the state that meets it.
+ *
+ * @param string source
+ * @returns list
+ */
+def _preprocess(source: string) {
+  if !source.contains('\r') {
+    return source.to_list()
+  }
+
+  var chars = source.to_list()
+  var out = []
+  var i = 0
+
+  while i < chars.length() {
+    if chars[i] != '\r' {
+      out.append(chars[i])
+      i++
+      continue
+    }
+
+    out.append('\n')
+    i++
+
+    if i < chars.length() and chars[i] == '\n' {
+      i++
+    }
+  }
+
+  return out
+}
+
+
+/**
+ * Tokenizes _source_ and returns every token, ending with the `eof`
+ * token.
+ *
+ * This is the whole-document convenience over `Tokenizer`: it runs
+ * with `auto_content_state` on, so `<script>`, `<style>`, `<title>`,
+ * `<textarea>` and `<plaintext>` have their content tokenized as text
+ * exactly as a browser would, without a tree builder being involved.
+ *
+ * ```zuri-repl
+ * %> import html
+ * %> html.tokenize('<b>hi</b>')
+ * [<start-tag b>, <character 'hi'>, <end-tag b>, <eof>]
+ * ```
+ *
+ * _options_ takes `scripting` (default `false`), which decides
+ * whether `<noscript>` content is text or markup.
+ *
+ * @param string source
+ * @param ?dict options
+ * @returns list
+ */
+def tokenize(source: string, options: ?dict) {
+  var tokenizer = Tokenizer(source, options)
+  var out = []
+
+  while true {
+    var token = tokenizer.next_token()
+
+    if token == nil {
+      break
+    }
+
+    out.append(token)
+  }
+
+  return out
+}
