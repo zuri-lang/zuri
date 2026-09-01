@@ -1503,6 +1503,141 @@ raises('add_months() rejects a non-number', @() { date.Date(2024,1,1).add_months
 
 
 # ===========================================================================
+# 47b. Clock-built dates: arithmetic, round-tripping and sub-second parts
+# ===========================================================================
+# Everything in section 46 builds its dates with explicit fields and no
+# microseconds, which is the one shape where two real bugs were both
+# invisible: `to_time()` only returns a fractional value when there are
+# microseconds, and `year_day` only came from the platform (0-based,
+# `tm_yday`) rather than being computed 1-based when the date came from
+# the clock. A date from `date()` has both, so it has to be exercised
+# directly rather than assumed to behave like a hand-built one.
+section('47b. clock-built dates and sub-second arithmetic')
+
+var now = date()
+
+check('date() agrees with time() on the instant it represents',
+  (now.to_time() - time()).abs() < 2, true)
+
+var now_explicit = date.Date(now.year, now.month, now.day)
+
+check('a clock-built date and a hand-built one agree on year_day',
+  now.year_day, now_explicit.year_day)
+check('and therefore on to_ordinal()',
+  now.to_ordinal(), now_explicit.to_ordinal())
+check('year_day is 1-based, matching to_ordinal()\'s own contract',
+  date.Date(2024, 1, 1).year_day, 1)
+
+# The arithmetic invariant. Whatever the fields say, shifting by n
+# seconds has to move the instant by exactly n seconds.
+def shifts_by(label, moved, base, expected_delta) {
+  check(label, moved.to_time() - base.to_time(), expected_delta)
+}
+
+shifts_by('add_seconds() on a clock date moves the instant exactly',
+  now.add_seconds(90), now, 90)
+shifts_by('add_minutes() on a clock date moves the instant exactly',
+  now.add_minutes(5), now, 300)
+shifts_by('add_hours() on a clock date moves the instant exactly',
+  now.add_hours(20), now, 72000)
+shifts_by('add_days() on a clock date moves the instant exactly',
+  now.add_days(1), now, 86400)
+shifts_by('a negative shift moves the instant backwards exactly',
+  now.add_hours(-20), now, -72000)
+
+# A clock date carries microseconds, which used to make every one of
+# these raise from the Date constructor.
+check('add_hours() keeps the sub-second part rather than dropping it',
+  now.add_hours(1).microseconds, now.microseconds)
+check('add_days() keeps it too',
+  now.add_days(1).microseconds, now.microseconds)
+
+check('a shifted clock date keeps its gmt_offset', now.add_hours(20).gmt_offset,
+  now.gmt_offset)
+check('and its zone', now.add_hours(20).zone, now.zone)
+
+# ---------------------------------------------------------------------------
+# The same, pinned to fixed values so a failure says what went wrong.
+# ---------------------------------------------------------------------------
+var micro = date.Date(2026, 8, 31, 21, 40, 45, 783019)
+
+check('a date with microseconds survives add_hours() across a month end',
+  micro.add_hours(20).format('Y-m-d H:i:s'), '2026-09-01 17:40:45')
+check('and keeps its microseconds',
+  micro.add_hours(20).microseconds, 783019)
+check('add_hours() across a month end, three hours in',
+  micro.add_hours(3).format('Y-m-d H:i:s'), '2026-09-01 00:40:45')
+check('add_days() across a month end',
+  micro.add_days(1).format('Y-m-d H:i:s'), '2026-09-01 21:40:45')
+check('add_hours() backwards across a month end',
+  micro.add_hours(-22).format('Y-m-d H:i:s'), '2026-08-30 23:40:45')
+
+# The same date, but read as a local wall clock rather than UTC: this is
+# what `date()` produces, and what the shipped bug actually broke.
+var local_micro = date.Date(2026, 8, 31, 21, 40, 45, 783019)
+local_micro.gmt_offset = 3600
+local_micro.zone = 'WAT'
+
+check('an offset date shifts its wall clock, not its offset',
+  local_micro.add_hours(20).format('Y-m-d H:i:s'), '2026-09-01 17:40:45')
+check('an offset date keeps its offset across a shift',
+  local_micro.add_hours(20).gmt_offset, 3600)
+
+# ---------------------------------------------------------------------------
+# from_time() has to accept exactly what to_time() produces.
+# ---------------------------------------------------------------------------
+check('from_time() round-trips a fractional timestamp',
+  date.from_time(micro.to_time()).format('Y-m-d H:i:s'),
+  '2026-08-31 21:40:45')
+check('and recovers the microseconds from the fraction',
+  date.from_time(micro.to_time()).microseconds, 783019)
+check('from_time() still round-trips a whole-second timestamp',
+  date.from_time(1788212445).format('Y-m-d H:i:s'), '2026-08-31 21:40:45')
+check('from_time() reads a millisecond timestamp',
+  date.from_time(1788212445783).format('Y-m-d H:i:s'), '2026-08-31 21:40:45')
+check('and its milliseconds land in microseconds',
+  date.from_time(1788212445783).microseconds, 783000)
+check('from_time() reads a microsecond timestamp',
+  date.from_time(1788212445783019).format('Y-m-d H:i:s'), '2026-08-31 21:40:45')
+check('and keeps the full microsecond precision',
+  date.from_time(1788212445783019).microseconds, 783019)
+
+# ---------------------------------------------------------------------------
+# A sweep, so a future off-by-one anywhere in the chain has to survive
+# every month boundary rather than just the one a fixed case happens to
+# cross.
+# ---------------------------------------------------------------------------
+var drift = 0
+var probe = date.Date(2024, 1, 1, 12, 30, 15, 500000)
+
+iter var i = 0; i < 400; i++ {
+  var step = probe.add_days(i)
+
+  if step.to_time() - probe.to_time() != i * 86400 {
+    drift++
+  }
+
+  if step.microseconds != 500000 {
+    drift++
+  }
+}
+
+check('add_days() holds the exact instant and sub-second part over 400 days',
+  drift, 0)
+
+var hour_drift = 0
+
+iter var i = -200; i <= 200; i++ {
+  if probe.add_hours(i).to_time() - probe.to_time() != i * 3600 {
+    hour_drift++
+  }
+}
+
+check('add_hours() holds the exact instant across 400 hours either way',
+  hour_drift, 0)
+
+
+# ===========================================================================
 # 48. to_offset()
 # ===========================================================================
 section('48. to_offset()')

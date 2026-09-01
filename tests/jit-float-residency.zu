@@ -1,0 +1,158 @@
+# Registers on a float path get a second, `f64`-typed Cranelift
+# Variable so arithmetic stays in the vector register file instead of
+# bouncing through a `movq` on every operand. That only holds together
+# if converting a register's bits between the two views is exact in
+# both directions, and if a register that carries something OTHER than
+# a number on some path survives having a float view at all.
+#
+# Every loop here runs well past the JIT's warm-up and OSR thresholds,
+# so each one is checked interpreted, compiled, and across the tier
+# transition in between.
+
+echo 'special values through a hot accumulator loop:'
+
+# A NaN produced once, then carried through 50k iterations of float
+# arithmetic. `x != x` is the only thing true of a NaN, so this fails
+# loudly if the bit pattern is canonicalized or lost in transit.
+var nan = 0.0 / 0.0
+var i = 0
+while i < 50000 {
+  nan = nan + 1
+  i = i + 1
+}
+echo nan.is_nan()
+echo nan != nan
+
+# Negative zero has the same magnitude as +0.0 and differs only in its
+# sign bit, so dividing into it is what tells the two apart.
+var neg_zero = -0.0
+var j = 0
+while j < 50000 {
+  neg_zero = neg_zero * 1.0
+  j = j + 1
+}
+echo 1.0 / neg_zero
+echo neg_zero == 0.0
+
+var inf = 1.0 / 0.0
+var k = 0
+while k < 50000 {
+  inf = inf + 1.5
+  k = k + 1
+}
+echo inf
+echo (0 - inf)
+
+echo 'exactness across the tier transition:'
+
+# 2^53 is the last integer an f64 represents exactly; counting to it
+# and back catches a register that silently lost its low bits.
+var big = 9007199254740992
+var back = big
+var b = 0
+while b < 50000 {
+  back = back - 1
+  b = b + 1
+}
+echo back
+echo big - back
+
+# A loop-carried value whose exact result depends on every iteration's
+# rounding being preserved, not just its magnitude.
+var acc = 0.0
+var n = 1
+while n <= 100000 {
+  acc = acc + 1.0 / n
+  n = n + 1
+}
+echo acc
+
+echo 'a register that is not always a number:'
+
+# `slot` alternates between a float and a heap value inside a hot loop.
+# The float view of that register holds a tagged pointer on half the
+# iterations, so this is the case where a lossy round trip would hand
+# back a corrupted object rather than a wrong number.
+var slot = 0.0
+var total = 0
+var texts = 0
+var m = 0
+while m < 50000 {
+  if m % 2 == 0 {
+    slot = m * 1.5
+    total = total + slot
+  } else {
+    slot = 'not a number'
+    texts = texts + slot.length()
+  }
+  m = m + 1
+}
+echo total
+echo texts
+echo slot
+
+# Same idea one level up: the value crosses a real function boundary
+# each iteration, so it goes out through a return and back in as an
+# argument rather than staying in registers.
+def passthrough(x) {
+  return x
+}
+
+var mixed_sum = 0
+var p = 0
+while p < 50000 {
+  var got = passthrough(p * 0.25)
+  mixed_sum = mixed_sum + got
+  p = p + 1
+}
+echo mixed_sum
+
+echo 'floats live across allocation:'
+
+# Allocating in the loop forces a GC safepoint, which flushes live
+# registers to the VM register file and reloads them afterwards. A
+# float-resident register has to rebuild its integer view to be
+# flushed, and pick the reloaded value back up on the way out.
+var carried = 0.5
+var kept = []
+var q = 0
+while q < 20000 {
+  kept = [carried, q]
+  carried = carried + kept[1] * 0.001
+  q = q + 1
+}
+echo carried
+echo kept
+
+echo 'bitwise ops on a float-tracked register:'
+
+# The bitwise operators convert their operands out of `f64` into a
+# machine integer and the result back again, so they read and write
+# the same registers the arithmetic above does.
+var mask = 0
+var r = 0
+while r < 50000 {
+  mask = (mask ^ r) & 0xffff
+  mask = mask | (r >> 8)
+  r = r + 1
+}
+echo mask
+
+echo 'comparisons and truthiness:'
+
+# Comparison operands go through `fcmp`, but a comparison RESULT is a
+# boolean that shares the same register numbering; proving the two
+# never get confused needs both in one loop.
+var hits = 0
+var t = 0
+while t < 50000 {
+  var val = t * 0.5 - 12500.0
+  if val < 0 {
+    hits = hits + 1
+  }
+  if val {
+    hits = hits + 1
+  }
+  t = t + 1
+}
+echo hits

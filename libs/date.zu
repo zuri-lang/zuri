@@ -227,6 +227,11 @@ def _copy_zone(target, source) {
  * Returns a dictionary representing the current time without
  * timezone adjustment.
  *
+ * @note `year_day` here is the platform's own `tm_yday`, counting
+ *    Jan 1st as day 0. `Date.year_day` counts it as day 1; the two
+ *    differ by one on purpose, since this dictionary is the raw
+ *    reading and `Date` is the module's own representation.
+ *
  * Example,
  *
  * ```zuri-repl
@@ -361,6 +366,11 @@ class Date {
    * @note when the date fields are given, the timezone is always
    *    in UTC irrespective of the system timezone or if a
    *    gmt_offset is given or not.
+   * @note `year_day` on the resulting instance counts Jan 1st as day
+   *    1, which is what `to_ordinal()` and `format('z')` expect. The
+   *    raw dictionaries from `localtime()` and `gmtime()` are the one
+   *    place that differs: those carry the platform's own `tm_yday`,
+   *    which counts Jan 1st as day 0.
    * @param ?number year
    * @param ?number month
    * @param ?number day
@@ -429,7 +439,14 @@ class Date {
       self.minute = date.minute
       self.seconds = date.seconds
       self.week_day = date.week_day
-      self.year_day = date.year_day
+      # `localtime()` hands back C's `tm_yday`, which counts Jan 1st as
+      # day 0. Every other use of this field is 1-based: the branch
+      # above computes it that way, and `to_ordinal()` documents
+      # `date(1, 1, 1).to_ordinal() == 1`. Without the shift a date
+      # built from the clock reads back a whole day earlier than the
+      # one it prints, which is what made `add_hours()` appear to run
+      # backwards.
+      self.year_day = date.year_day + 1
       self.zone = date.zone
       self.is_dst = date.is_dst
       self.gmt_offset = date.gmt_offset
@@ -1210,13 +1227,36 @@ def from_time(time) {
     if time <= 9999999999999 {
       # its in milliseconds
       microseconds = (time % 1000) * 1000
-      time /= 1000
+      time //= 1000
     } else if time <= 9999999999999999 {
       # its in microseconds
       microseconds = time % 1000000
       time //= 1000000
     } else {
       raise RangeError('time out of range')
+    }
+  }
+
+  # A seconds value can still carry a sub-second fraction: `to_time()`
+  # returns one for any date with microseconds, so every `add_*()` call
+  # arrives here with one. Split it off into microseconds rather than
+  # letting it run through the divisions below, where it would leave
+  # `second` fractional and the `Date` constructor would reject it
+  # outright. Carrying it here also keeps the sub-second part alive
+  # across `add_seconds()` instead of quietly rounding it away.
+  var whole = time // 1
+  var fraction = time - whole
+  time = whole
+
+  if fraction != 0 {
+    microseconds += (fraction * 1000000).round()
+
+    # Rounding up from something like .9999996 lands exactly on a whole
+    # second, which belongs in the seconds field, not a 1000000
+    # microseconds one the constructor would reject.
+    if microseconds >= 1000000 {
+      microseconds -= 1000000
+      time += 1
     }
   }
 

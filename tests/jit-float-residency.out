@@ -1,0 +1,23 @@
+special values through a hot accumulator loop:
+true
+true
+-inf
+true
+inf
+-inf
+exactness across the tier transition:
+9007199254690992
+50000
+12.090146129863335
+a register that is not always a number:
+937462500
+300000
+not a number
+312493750
+floats live across allocation:
+199990.49999999997
+[199970.50099999996, 19999]
+bitwise ops on a float-tracked register:
+255
+comparisons and truthiness:
+49999
