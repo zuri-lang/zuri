@@ -7970,8 +7970,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       Instr::Jmp { offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
-        if offset < 0 && self.loop_has_allocations(target_ip, ip) {
-          self.emit_safepoint();
+        if offset < 0 {
+          if self.loop_has_allocations(target_ip, ip) {
+            self.emit_safepoint();
+          } else if crate::modules::os_util::signal::armed() {
+            self.emit_signal_safepoint();
+          }
         }
         let target_block = self.jump_target_block(ip, target_ip);
         self.fb.ins().jump(target_block, &[]);
@@ -7980,8 +7984,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::JmpIfFalse { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
         let target_block = self.jump_target_block(ip, target_ip);
-        if offset < 0 && self.loop_has_allocations(target_ip, ip) {
-          self.emit_safepoint();
+        if offset < 0 {
+          if self.loop_has_allocations(target_ip, ip) {
+            self.emit_safepoint();
+          } else if crate::modules::os_util::signal::armed() {
+            self.emit_signal_safepoint();
+          }
         }
         if self.bool_facts.is_bool(ip, cond) {
           let v = self.load_reg(cond);
@@ -8005,8 +8013,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::JmpIfTrue { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
         let target_block = self.jump_target_block(ip, target_ip);
-        if offset < 0 && self.loop_has_allocations(target_ip, ip) {
-          self.emit_safepoint();
+        if offset < 0 {
+          if self.loop_has_allocations(target_ip, ip) {
+            self.emit_safepoint();
+          } else if crate::modules::os_util::signal::armed() {
+            self.emit_signal_safepoint();
+          }
         }
         if self.bool_facts.is_bool(ip, cond) {
           let v = self.load_reg(cond);
@@ -8780,21 +8792,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// GC safepoint: see `runtime::zuri_jit_gc_safepoint`'s own docs.
-  /// Emitted at every loop back-edge and function/method call site,
-  /// matching the standard "safepoints at back-edges and calls"
-  /// baseline-JIT policy this project's design calls for.
-  ///
-  /// `Heap::needs_major_gc()`/`needs_minor_gc()` are each just a
-  /// threshold compare; inlined here (four loads + two compares, one
-  /// pair per generation) so the overwhelmingly common case (neither
-  /// generation near its threshold) costs that instead of an
-  /// unconditional FFI call at EVERY loop iteration and call site. The
-  /// real `zuri_jit_gc_safepoint` helper is only actually invoked on
-  /// the rare branch where a collection of some kind is about to
-  /// happen; it re-checks both thresholds itself too, so a stale read
-  /// here (never possible mid-single-threaded-execution anyway)
-  /// couldn't cause an incorrect collection either way.
+  /// Whether the instruction at `ip` can allocate, and so can leave a
+  /// collection owed. Only consulted through `loop_has_allocations`,
+  /// to decide how much of the safepoint a loop back-edge needs.
   fn is_allocating_instr(&self, ip: usize) -> bool {
     let instr = &self.proto.chunk.code[ip];
     match instr {
@@ -8829,30 +8829,126 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     (start..=end).any(|ip| self.is_allocating_instr(ip))
   }
 
+  /// A safepoint that asks about signals only, for a loop whose body
+  /// provably cannot allocate.
+  ///
+  /// `loop_has_allocations` rules out a collection becoming owed inside
+  /// such a loop, and that reasoning still holds. What it never covered
+  /// is the other thing a safepoint delivers: a `while true { }` with
+  /// nothing in it allocates nothing, so it got no safepoint at all,
+  /// and an `on_signal('INT', ...)` handler could never run once the
+  /// loop tiered up. Worse than the handler not firing, installing one
+  /// replaces the default terminate behaviour, so Ctrl+C stopped
+  /// working at all.
+  ///
+  /// Emitted ONLY when `signal::armed()` says this process has actually
+  /// installed a handler. That is what keeps the fix off the hot path:
+  /// a program that never calls `on_signal()` gets byte-identical code
+  /// on these edges to what it got before, and the tightest arithmetic
+  /// loop pays nothing for a feature it does not use.
+  fn emit_signal_safepoint(&mut self) {
+    self.emit_safepoint_inner(false);
+  }
+
+  /// The full safepoint: see `runtime::zuri_jit_safepoint`'s own docs.
+  /// Emitted at every function/method call site and at every loop
+  /// back-edge whose body can allocate.
+  ///
+  /// `Heap::needs_major_gc()`/`needs_minor_gc()` collapse to a single
+  /// precomputed byte (`Heap::jit_gc_needed`), and the signal flags to
+  /// a single hint byte, so the overwhelmingly common case (nothing
+  /// owed of either kind) costs two loads, an `or` and a branch rather
+  /// than an unconditional FFI call at every iteration and call site.
+  /// The helper is only actually invoked on the rare branch where
+  /// something really is owed, and it re-checks both itself, so a
+  /// stale read here can only ever cost one wasted call.
   fn emit_safepoint(&mut self) {
+    self.emit_safepoint_inner(true);
+  }
+
+  /// The shared body. `check_gc` selects whether the inline test covers
+  /// the GC flag as well as the signal hint; the helper it guards
+  /// re-checks both regardless, so omitting the GC half only ever costs
+  /// a missed collection opportunity in a loop that cannot allocate one
+  /// anyway.
+  ///
+  /// Everything to do with signals is conditional on `signal::armed()`,
+  /// read here at compile time. A process that never calls
+  /// `on_signal()` gets the exact instruction sequence this emitted
+  /// before signal delivery existed: one byte load, one compare, one
+  /// branch, and an unchecked helper call on the cold side. No extra
+  /// load, no extra `or`, and no status check; a collection cannot
+  /// raise, so there is nothing to check for when no handler can run.
+  fn emit_safepoint_inner(&mut self, check_gc: bool) {
+    let armed = crate::modules::os_util::signal::armed();
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    let needed = self
-      .fb
-      .ins()
-      .load(types::I8, flags, self.vm_param, HEAP_JIT_GC_NEEDED_OFFSET);
+
+    let gc_needed = if check_gc {
+      Some(
+        self
+          .fb
+          .ins()
+          .load(types::I8, flags, self.vm_param, HEAP_JIT_GC_NEEDED_OFFSET),
+      )
+    } else {
+      None
+    };
+
+    // The four real signal flags live in `os_util::signal`, too far
+    // apart to inline a scan of, so that module keeps a single-byte
+    // hint at a fixed address purely for this load. Its address is
+    // baked in as an immediate; a `static`'s address is fixed for the
+    // process, and a one-byte load needs no alignment guarantee.
+    let signal_pending = if armed {
+      let hint_ptr = self.i64c(crate::modules::os_util::signal::pending_hint_addr() as i64);
+      Some(self.fb.ins().load(types::I8, flags, hint_ptr, 0))
+    } else {
+      None
+    };
+
+    let tested = match (gc_needed, signal_pending) {
+      (Some(gc), Some(sig)) => self.fb.ins().bor(gc, sig),
+      (Some(gc), None) => gc,
+      (None, Some(sig)) => sig,
+      // `emit_signal_safepoint` is only ever reached when armed, and
+      // `emit_safepoint` always checks GC, so there is nothing to test.
+      (None, None) => return,
+    };
+
     let zero = self.fb.ins().iconst(types::I8, 0);
-    let needs_some_gc = self.fb.ins().icmp(IntCC::NotEqual, needed, zero);
+    let owed = self.fb.ins().icmp(IntCC::NotEqual, tested, zero);
 
-    let gc_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(needs_some_gc, gc_block, &[], done_block, &[]);
+    self.fb.ins().brif(owed, slow_block, &[], done_block, &[]);
 
-    self.fb.switch_to_block(gc_block);
+    self.fb.switch_to_block(slow_block);
     self.publish_ip();
     self.flush_live(self.current_ip);
-    self.call_helper_raw("zuri_jit_gc_safepoint", &[self.vm_param]);
+    let status = self.call_helper_raw("zuri_jit_safepoint", &[self.vm_param]);
     self.refresh_regs();
     self.reload_live(self.current_ip);
-    self.fb.ins().jump(done_block, &[]);
 
+    if armed {
+      // Only a signal callback can raise here; a collection cannot. So
+      // the status check exists exactly when a callback could run, and
+      // an unarmed process pays nothing for it. The unwind is the one
+      // `call_checked` uses: the error is already in
+      // `VM::jit_pending_error` for `VM::invoke_compiled` to pick up.
+      let zero64 = self.i64c(0);
+      let is_err = self.fb.ins().icmp(IntCC::NotEqual, status, zero64);
+      let err_block = self.fb.create_block();
+      let ok_block = self.fb.create_block();
+      self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
+
+      self.fb.switch_to_block(err_block);
+      let junk = self.i64c(0);
+      self.fb.ins().return_(&[junk]);
+
+      self.fb.switch_to_block(ok_block);
+    }
+
+    self.fb.ins().jump(done_block, &[]);
     self.fb.switch_to_block(done_block);
   }
 

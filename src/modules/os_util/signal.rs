@@ -43,6 +43,48 @@ static INSTALLED: [AtomicBool; 4] = [
   AtomicBool::new(false),
 ];
 
+/// A single byte, at a fixed process-wide address, that says "one of
+/// the `PENDING` flags might be set".
+///
+/// The interpreter can afford `any_pending()`'s four loads on every
+/// instruction; compiled code cannot, and it has no way to inline a
+/// four-element scan into its safepoint anyway. So it tests this one
+/// byte instead, reaching it through an address baked into the machine
+/// code (`pending_hint_addr`).
+///
+/// Deliberately only a HINT, never the authority. `PENDING` and
+/// `take_pending()` remain the only things that decide whether a
+/// signal really arrived, so this being spuriously set costs one
+/// wasted safepoint helper call and nothing else. What it must never
+/// be is spuriously CLEAR, since that is the direction that would lose
+/// a signal; `unix_handler` sets it only after the per-signal flag,
+/// and `take_pending` clears it only before rescanning them.
+pub static PENDING_HINT: AtomicBool = AtomicBool::new(false);
+
+/// Address of `PENDING_HINT`, for `jit::codegen::emit_safepoint` to
+/// bake into compiled code as an immediate. A `static`'s address is
+/// fixed for the life of the process, which is what makes baking it
+/// sound.
+pub fn pending_hint_addr() -> usize {
+  &raw const PENDING_HINT as usize
+}
+
+/// Whether this process has ever installed a signal handler.
+///
+/// Read at COMPILE time by `jit::codegen`, to decide whether a loop
+/// that provably cannot allocate needs a safepoint on its back edge at
+/// all. A program that never calls `on_signal()` is the overwhelmingly
+/// common case, and it gets exactly the code it always got: nothing on
+/// that edge. Only a program that actually asks to trap signals pays
+/// for the poll.
+static ARMED: AtomicBool = AtomicBool::new(false);
+
+/// Whether any signal handler has been installed yet.
+#[inline]
+pub fn armed() -> bool {
+  ARMED.load(Ordering::Relaxed)
+}
+
 /// Cheap fast-path check for the per-instruction safepoint: is
 /// anything pending at all? Four relaxed loads, no swap, no shared
 /// aggregate flag to fall out of sync with the per-signal ones.
@@ -55,6 +97,16 @@ pub fn any_pending() -> bool {
 /// Call in a loop (from the safepoint) until it returns `None` to
 /// drain everything that arrived since the last check.
 pub fn take_pending() -> Option<usize> {
+  // Cleared BEFORE the scan below, not after it. A signal that lands
+  // while this function is running stores its own `PENDING` flag first
+  // and the hint second, so clearing first means the worst case is a
+  // hint left set with nothing behind it (one wasted helper call on the
+  // next safepoint). Clearing after the scan would invert that into the
+  // one outcome that actually matters: a set `PENDING` flag with the
+  // hint cleared out from under it, which compiled code would never
+  // look at again.
+  PENDING_HINT.store(false, Ordering::SeqCst);
+
   for (idx, flag) in PENDING.iter().enumerate() {
     if flag.swap(false, Ordering::SeqCst) {
       return Some(idx);
@@ -74,6 +126,12 @@ pub fn install(name: &str) -> Result<usize, String> {
       return Err(e);
     }
   }
+
+  // From here on, functions compiled by the JIT poll for signals on
+  // back edges they would otherwise skip. Set after the platform
+  // handler is really in place, so a failed install never arms
+  // anything.
+  ARMED.store(true, Ordering::SeqCst);
   Ok(idx)
 }
 
@@ -81,6 +139,9 @@ pub fn install(name: &str) -> Result<usize, String> {
 extern "C" fn unix_handler(sig: libc::c_int) {
   if let Some(idx) = unix_signal_index(sig) {
     PENDING[idx].store(true, Ordering::SeqCst);
+    // Strictly after the flag above: see `PENDING_HINT`'s own docs on
+    // why this order is the one that cannot lose a signal.
+    PENDING_HINT.store(true, Ordering::SeqCst);
   }
 }
 
@@ -143,6 +204,9 @@ unsafe extern "system" fn windows_handler(ctrl_type: u32) -> windows_sys::Win32:
   match idx {
     Some(idx) => {
       PENDING[idx].store(true, Ordering::SeqCst);
+      // Strictly after the flag above, for the same reason the unix
+      // handler does it in that order.
+      PENDING_HINT.store(true, Ordering::SeqCst);
       1
     },
     None => 0,

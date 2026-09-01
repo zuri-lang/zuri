@@ -133,13 +133,39 @@ pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
 /// cached copy); so the collector's normal root scan already sees
 /// this frame correctly with no JIT-specific support needed, for
 /// either a major or a minor collection.
-pub unsafe extern "C" fn zuri_jit_gc_safepoint(vm_ptr: *mut VM) -> u64 {
+///
+/// Also delivers any pending OS signal, for the same reason and at the
+/// same point the interpreter's safepoint does: this is a place where
+/// the frame is consistent and it is safe to call back into Zuri code
+/// on the VM's own thread. That second job is why this returns a
+/// status at all. A collection raises nothing, but a signal callback
+/// is ordinary Zuri code and can raise or push frames, so the caller
+/// has to check the result rather than treating it as infallible.
+pub unsafe extern "C" fn zuri_jit_safepoint(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if vm.heap.needs_major_gc() {
     vm.collect_garbage();
   } else if vm.heap.needs_minor_gc() {
     vm.collect_minor();
   }
+
+  // Mirrors `VM::run_until`'s own signal block exactly, including the
+  // `has_signal_callbacks()` guard that keeps a VM which never called
+  // `on_signal()` (every isolate worker, ordinarily) from consuming a
+  // flag that belongs to the VM that did.
+  if vm.has_signal_callbacks() && crate::modules::os_util::signal::any_pending() {
+    while let Some(idx) = crate::modules::os_util::signal::take_pending() {
+      let callback = vm.signal_callback(idx);
+      if callback.is_nil() {
+        continue;
+      }
+
+      if let Err(e) = vm.call_value(callback, &[]) {
+        return fail(vm, e);
+      }
+    }
+  }
+
   OK
 }
 
@@ -2784,7 +2810,7 @@ macro_rules! spec9 {
 
 pub fn helper_table() -> Vec<HelperSpec> {
   vec![
-    spec1!(zuri_jit_gc_safepoint),
+    spec1!(zuri_jit_safepoint),
     spec2!(zuri_jit_deopt),
     spec3!(zuri_jit_is_falsey),
     spec3!(zuri_jit_print),

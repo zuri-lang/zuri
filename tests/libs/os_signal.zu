@@ -1,0 +1,207 @@
+/**
+ * os_signal.zu
+ *
+ * Test suite for `os.on_signal()` delivery, with particular attention
+ * to delivery from JIT-compiled code.
+ *
+ * A signal is delivered cooperatively, from a safepoint the VM reaches
+ * between instructions. The interpreter checks on every instruction;
+ * compiled code only checks where the compiler put a safepoint, and a
+ * loop whose body cannot allocate used to get none at all. So once a
+ * loop like `while true { }` tiered up, a handler could never run —
+ * and since installing one replaces the default terminate behaviour,
+ * Ctrl+C stopped working entirely.
+ *
+ * Catching that regression takes more care than it looks. The waiting
+ * loop has to be exactly the shape that used to break (no calls, no
+ * allocations in the body) AND already be running compiled when the
+ * signal lands. Two ways to accidentally test nothing:
+ *
+ * - Writing the wait as `while !fired() { }`. The call itself carries
+ *   a safepoint, and those always delivered signals fine.
+ * - Sending the signal to ourselves with `os.kill()` and only then
+ *   entering the loop. The call into the loop is a safepoint too, so
+ *   delivery happens before the first back edge is ever reached.
+ *
+ * So the signal is sent by a child process, on a delay, while this one
+ * is already spinning inside the compiled loop. That is the only
+ * arrangement that actually exercises a bare back edge.
+ *
+ * Every wait is bounded, so a regression fails the test rather than
+ * hanging it.
+ */
+
+import os
+
+var _passed = 0
+
+# Iterations for the warm-up runs: enough back edges to tier the spin
+# loops up, few enough to finish promptly.
+var WARM_SPINS = 3000000
+
+# Iterations a real wait is allowed before it gives up. Only a broken
+# build ever runs this to completion; a working one leaves the loop as
+# soon as the signal lands, so a generous bound costs nothing except
+# when the test is already failing.
+var WAIT_SPINS = 2000000000
+
+# How long a child process waits before signalling us, in seconds. Just
+# long enough that we are inside the compiled spin loop by then.
+var SIGNAL_DELAY = '0.2'
+
+var int_count = 0
+var term_count = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+/**
+ * Spins until `int_count` moves off `from`, or the limit runs out.
+ * Returns whether it moved.
+ *
+ * The body is deliberately nothing but a global read, a compare and an
+ * add: no call, no allocation, so the compiler emits a bare back edge
+ * and this is exactly the loop shape that used to swallow signals.
+ */
+def wait_for_int(from, limit) {
+  var spins = 0
+
+  while int_count == from and spins < limit {
+    spins = spins + 1
+  }
+
+  return int_count != from
+}
+
+/**
+ * The same, for `term_count`.
+ */
+def wait_for_term(from, limit) {
+  var spins = 0
+
+  while term_count == from and spins < limit {
+    spins = spins + 1
+  }
+
+  return term_count != from
+}
+
+/**
+ * Arranges for signal number `number` to arrive at this process after
+ * `SIGNAL_DELAY` seconds, and returns without waiting.
+ *
+ * Sending it from a child rather than with `os.kill()` on ourselves is
+ * the whole point: a self-sent signal would be delivered at the very
+ * next safepoint, which is the call into the waiting loop, long before
+ * that loop's own back edge runs.
+ */
+def signal_self_later(number) {
+  return os.spawn('sh', [
+    '-c',
+    'sleep ${SIGNAL_DELAY}; kill -${number} ${os.pid()}',
+  ], nil)
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os.on_signal — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+os.on_signal('INT', def {
+  int_count++
+})
+
+os.on_signal('TERM', def {
+  term_count++
+})
+
+assert int_count == 0, 'registering a handler must not run it'
+assert term_count == 0, 'and neither must registering a second one'
+ok('on_signal() registers without firing')
+
+# ---------------------------------------------------------------------------
+# Tier the waiting loops up before anything is delivered
+# ---------------------------------------------------------------------------
+# Both run to their limit with no signal pending, which is what gets
+# them compiled. Everything after this point is testing compiled code.
+assert !wait_for_int(0, WARM_SPINS), 'no signal has been sent yet, so this must time out'
+assert !wait_for_term(0, WARM_SPINS), 'the same for the other loop'
+ok('the waiting loops run to completion and tier up')
+
+# ---------------------------------------------------------------------------
+# Delivery from compiled code
+# ---------------------------------------------------------------------------
+var sender = signal_self_later(2)
+
+assert wait_for_int(0, WAIT_SPINS),
+  'SIGINT must be delivered while a compiled, allocation-free, call-free loop is running'
+assert int_count == 1, 'the handler must run exactly once per signal'
+sender.wait()
+ok('SIGINT is delivered from inside a JIT-compiled bare loop')
+
+sender = signal_self_later(15)
+
+assert wait_for_term(0, WAIT_SPINS), 'SIGTERM must be delivered the same way'
+assert term_count == 1, 'and exactly once'
+assert int_count == 1, 'delivering one signal must not fire another signal\'s handler'
+sender.wait()
+ok('SIGTERM is delivered, and signals do not cross wires')
+
+# ---------------------------------------------------------------------------
+# Repeat delivery
+# ---------------------------------------------------------------------------
+iter var round = 1; round <= 3; round++ {
+  os.kill(os.pid(), 2)
+
+  assert wait_for_int(round, WAIT_SPINS),
+    'signal ${round + 1} must be delivered like the first'
+  assert int_count == round + 1, 'each signal must fire the handler exactly once'
+}
+
+ok('repeated signals are each delivered exactly once')
+
+# ---------------------------------------------------------------------------
+# Replacing a handler
+# ---------------------------------------------------------------------------
+var replaced = 0
+var before = int_count
+
+os.on_signal('INT', def {
+  replaced++
+  int_count++
+})
+
+os.kill(os.pid(), 2)
+
+assert wait_for_int(before, WAIT_SPINS), 'the replacement handler must run'
+assert replaced == 1, 'and it must be the one that ran'
+assert int_count == before + 1, 'the handler it replaced must not run as well'
+ok('registering a second handler for a name replaces the first')
+
+# ---------------------------------------------------------------------------
+# Delivery from the interpreter, for completeness
+# ---------------------------------------------------------------------------
+var cold = 0
+
+os.on_signal('TERM', def {
+  cold++
+})
+
+os.kill(os.pid(), 15)
+
+var spins = 0
+while cold == 0 and spins < 1000000 {
+  spins = spins + 1
+}
+
+assert cold == 1, 'delivery must work in a short loop that never tiers up, too'
+ok('delivery works from interpreted code as well')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} signal checks passed.'
+echo '═══════════════════════════════════════════════════════'
