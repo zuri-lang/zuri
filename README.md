@@ -8,6 +8,7 @@ This project will also support more operating systems and more processor archite
 
 - [x] 100% compatibility with the original Zuri language
 - [x] Just-In-Time compiler
+- [ ] Package manager
 - [ ] Self-Hosted repository server
 - [ ] C and Rust compartible FFI Interop
 

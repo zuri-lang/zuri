@@ -2588,6 +2588,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         return false;
       }
     }
+    let rewritten = self
+      .proto
+      .chunk
+      .code
+      .iter()
+      .enumerate()
+      .any(|(i, instr)| i != ip && typeflow::any_dst(instr) == Some(dst));
+    if rewritten {
+      return false;
+    }
     !self
       .escape_analyze_one(ip, None, Some(&info.safety))
       .escapes
@@ -6796,6 +6806,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       {
         return false;
       }
+    }
+    let rewritten = self
+      .proto
+      .chunk
+      .code
+      .iter()
+      .enumerate()
+      .any(|(i, instr)| i != alloc_ip && typeflow::any_dst(instr) == Some(dst));
+    if rewritten {
+      return false;
     }
     !self.escape_analyze_one(alloc_ip, None, None).escapes
   }
