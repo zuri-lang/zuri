@@ -4,32 +4,26 @@
 //!
 //! The interpreter (`vm::vm::VM::run_until`) is a register machine over
 //! one flat `Vec<Value>` (`VM::registers`), sliced into per-frame
-//! windows. This JIT tier doesn't introduce a second representation of
-//! a function's local state; every VM register a compiled function
-//! touches is read and written through the same `VM::registers` memory
-//! the interpreter uses, via a raw pointer to the frame's own window
-//! (see `CompiledFunction`'s calling convention, below). That one
-//! decision is what keeps the harder requirements for this tier
-//! tractable without a second, parallel deoptimization/state-
-//! reconstruction machinery; the kind most JITs need because their
-//! compiled code keeps state in real machine registers or an SSA form
-//! that has to be reconstructed at every boundary:
+//! windows. The JIT compiler maps each bytecode register to a Cranelift
+//! SSA `Variable` (`reg_vars`) which Cranelift's backtracking register
+//! allocator places directly into physical CPU hardware registers during
+//! steady-state execution.
+//!
+//! When interacting across boundaries (runtime helper calls, GC
+//! safepoints, on-stack replacement, or deoptimization), live registers
+//! are synchronized to/from `VM::registers` via `flush_live`/`reload_live`.
 //!
 //! - **Mixed-mode execution** (compiled code calling an as-yet-uncompiled
 //!   function): the callee's frame is pushed with the same `base`
 //!   convention the interpreter already uses, so `VM::call_value` can
 //!   run it through `run_until` as if the caller were also interpreted.
 //!   See `vm::vm::VM::call_value`.
-//! - **GC safepoints**: since a register's value never lives anywhere
-//!   but `VM::registers` (no separate SSA copy to flush first), the
-//!   existing non-moving, root-scanning collector
-//!   (`VM::collect_garbage`) already sees a JIT frame's registers
-//!   correctly as long as that frame's `CallFrame` (base + function
-//!   pointer) is on `VM::frames` while compiled code runs, which it
-//!   always is (pushed before entry, popped after). Compiled code just
-//!   calls back into `VM::collect_garbage` at the same two kinds of
-//!   point the interpreter pauses at: loop back-edges and call sites
-//!   (see `codegen::FuncCompiler::emit_safepoint`).
+//! - **GC safepoints**: live registers are flushed to `VM::registers`
+//!   before safepoints (`emit_safepoint`), so the existing non-moving,
+//!   root-scanning collector (`VM::collect_garbage`) sees a JIT frame's
+//!   registers correctly as long as that frame's `CallFrame` is on
+//!   `VM::frames`. Compiled code calls back into `VM::collect_garbage`
+//!   at loop back-edges and call sites.
 //! - **On-stack replacement**: jumping into the middle of a compiled
 //!   function needs no value reconstruction either; the OSR entry
 //!   block is just another predecessor of the target loop header block

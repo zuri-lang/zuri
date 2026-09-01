@@ -162,15 +162,9 @@ fn compiler_loop(
     if shutdown.load(Ordering::Relaxed) {
       return;
     }
-    let job = match job_rx.recv_timeout(std::time::Duration::from_millis(50)) {
+    let job = match job_rx.recv() {
       Ok(job) => job,
-      Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-        if shutdown.load(Ordering::Relaxed) {
-          return;
-        }
-        continue;
-      },
-      Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+      Err(_) => return,
     };
 
     let proto = unsafe { &*job.proto.0 };

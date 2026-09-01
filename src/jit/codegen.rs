@@ -2,13 +2,12 @@
 //! for the overall design; the short version this file leans on
 //! throughout:
 //!
-//! - Every VM register is memory (`VM::registers`), addressed through a
-//!   pointer this function refreshes after any call that could resize
-//!   it; never a Cranelift SSA value/`Variable` of its own. This is
-//!   what makes on-stack replacement, GC safepoints, and mixed-mode
-//!   calls all trivial instead of needing real deoptimization
-//!   machinery (see `jit::runtime`'s module docs for the full
-//!   reasoning).
+//! - Every bytecode register maps to a Cranelift SSA `Variable` (`reg_vars`),
+//!   tracked via `use_var`/`def_var` across basic blocks and allocated to
+//!   physical CPU hardware registers by Cranelift's backtracking allocator
+//!   (`regalloc2`). Memory synchronization against `VM::registers`
+//!   (`flush_live`/`reload_live`) occurs strictly at FFI helper calls, GC
+//!   safepoints, deoptimizations, and function returns.
 //! - One Cranelift `Block` per bytecode instruction index, so a
 //!   backward/forward `Instr::Jmp`-family target is always just "the
 //!   block at that index"; no separate control-flow-graph

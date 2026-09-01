@@ -530,6 +530,7 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
     Instr::Add { dst, a, b }
     | Instr::Sub { dst, a, b }
     | Instr::Mul { dst, a, b }
+    | Instr::Floor { dst, a, b }
     | Instr::Mod { dst, a, b } => {
       out.set(dst, in_set.get(a) && in_set.get(b));
     },
