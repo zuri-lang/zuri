@@ -115,6 +115,43 @@ pub fn take_pending() -> Option<usize> {
   None
 }
 
+/// Does what the OS would have done for signal `idx` if no handler had
+/// been registered: terminates the process.
+///
+/// Reached when a registered callback returns a falsy value, which is
+/// how a handler says "I looked at it, but I am not taking
+/// responsibility for it". Trapping a signal otherwise means owning
+/// termination completely, and a handler that only logs would leave
+/// Ctrl+C unable to stop anything.
+///
+/// On Unix this restores `SIG_DFL` and re-raises, rather than calling
+/// `exit()`, so the process really does die *of the signal*: the exit
+/// status is the conventional 128 + signum and the parent sees
+/// `WIFSIGNALED`, exactly as it would have with no handler at all.
+/// The `exit()` below it is unreachable for the terminating signals
+/// this module traps, and is there for the ones a future platform
+/// might not terminate on.
+pub fn perform_default_action(idx: usize) -> ! {
+  // Buffered output written by the callback that just declined would
+  // otherwise be lost, since neither `raise` nor `exit` unwinds.
+  use std::io::Write;
+  let _ = std::io::stdout().flush();
+  let _ = std::io::stderr().flush();
+
+  #[cfg(unix)]
+  {
+    if let Some(sig) = NAMES.get(idx).and_then(|n| unix_signal_number(n)) {
+      unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        libc::raise(sig);
+      }
+      std::process::exit(128 + sig);
+    }
+  }
+
+  std::process::exit(1);
+}
+
 /// Installs the real OS handler for `name`, if it isn't already.
 /// Returns the pin-slot index `on_signal()`'s caller should store the
 /// Zuri callback at.

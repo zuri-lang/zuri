@@ -29,6 +29,12 @@
  *
  * Every wait is bounded, so a regression fails the test rather than
  * hanging it.
+ *
+ * Every handler here returns `true` on purpose. A callback that
+ * returns anything falsy is declining the signal, which hands it back
+ * to its default action and would terminate this test process; that
+ * contract gets its own coverage at the end, in a child process where
+ * dying is the expected result.
  */
 
 import os
@@ -113,10 +119,12 @@ echo '════════════════════════�
 # ---------------------------------------------------------------------------
 os.on_signal('INT', def {
   int_count++
+  return true
 })
 
 os.on_signal('TERM', def {
   term_count++
+  return true
 })
 
 assert int_count == 0, 'registering a handler must not run it'
@@ -173,6 +181,7 @@ var before = int_count
 os.on_signal('INT', def {
   replaced++
   int_count++
+  return true
 })
 
 os.kill(os.pid(), 2)
@@ -189,6 +198,7 @@ var cold = 0
 
 os.on_signal('TERM', def {
   cold++
+  return true
 })
 
 os.kill(os.pid(), 15)
@@ -200,6 +210,55 @@ while cold == 0 and spins < 1000000 {
 
 assert cold == 1, 'delivery must work in a short loop that never tiers up, too'
 ok('delivery works from interpreted code as well')
+
+# ---------------------------------------------------------------------------
+# What the callback's return value decides
+# ---------------------------------------------------------------------------
+# Declining is supposed to end the process, so both halves run in a
+# child. `os.args[0]` is the interpreter running this test, which keeps
+# these working whichever build the suite was launched from.
+def write_fixture(path, body) {
+  var handle = file(path, 'w')
+
+  handle.write(
+    'import os\n' +
+    '\n' +
+    'os.on_signal("INT", def {\n' +
+    '  echo "handler ran"\n' +
+    body +
+    '})\n' +
+    '\n' +
+    'os.kill(os.pid(), 2)\n' +
+    'echo "survived"\n'
+  )
+  handle.close()
+
+  return os.exec(os.args[0], path)
+}
+
+var declined = write_fixture('tmp/os_signal_decline_fixture.zu', '')
+
+assert declined.output.contains('handler ran'),
+  'a declining callback must still run'
+assert !declined.output.contains('survived'),
+  'declining must not let the program carry on'
+assert declined.exit_code == 130,
+  'declining must terminate the way an untrapped SIGINT would, with the conventional 128 + 2 status'
+ok('a falsy return lets the signal take its default action')
+
+var swallowed = write_fixture('tmp/os_signal_handled_fixture.zu', '  return true\n')
+
+assert swallowed.output.contains('handler ran'), 'a handling callback must run'
+assert swallowed.output.contains('survived'),
+  'a truthy return must swallow the signal and let the program carry on'
+assert swallowed.exit_code == 0, 'and the program must then exit normally'
+ok('a truthy return swallows the signal')
+
+var zero = write_fixture('tmp/os_signal_zero_fixture.zu', '  return 0\n')
+
+assert zero.exit_code == 130,
+  'truthiness is the language\'s own, so returning 0 declines just as false does'
+ok('the contract follows Zuri truthiness, not just true/false')
 
 echo ''
 echo '═══════════════════════════════════════════════════════'

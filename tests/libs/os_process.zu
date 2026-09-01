@@ -122,8 +122,15 @@ ok('kill() with signal 0 can probe that a process exists without disturbing it')
 # on_signal()
 # ---------------------------------------------------------------------------
 var signaled = false
+
+# `return true` is what claims the signal. Without it the callback
+# declines, the signal falls through to its default action, and this
+# test process is killed by the `os.kill()` below; see `on_signal()`'s
+# own docs, and `tests/libs/os_signal.zu` for that contract's own
+# coverage.
 os.on_signal('INT', @() {
   signaled = true
+  return true
 })
 os.kill(os.pid(), 2)
 

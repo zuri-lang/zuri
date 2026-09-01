@@ -74,14 +74,19 @@
  * ```
  *
  * `on_signal()` traps `SIGINT`/`SIGTERM`/etc. so a long-running
- * script can shut down cleanly instead of being torn down mid-work:
+ * script can shut down cleanly instead of being torn down mid-work.
+ * Falling off the end of the callback lets the signal do what it
+ * would have done anyway, so this cleans up and then exits:
  *
  * ```zuri
  * os.on_signal('INT', @() {
  *   echo 'shutting down...'
- *   exit(0)
+ *   flush_caches()
  * })
  * ```
+ *
+ * Return a truthy value instead to swallow the signal and keep
+ * running.
  *
  * ## The machine
  *

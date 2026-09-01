@@ -120,6 +120,40 @@ def kill(pid: int, signal: ?int) {
  * including raising, which propagates the same way an uncaught
  * error from any other code would.
  *
+ * ### What the callback returns decides what happens next
+ *
+ * Returning a truthy value means the callback has taken
+ * responsibility for the signal, and the program carries on:
+ *
+ * ```zuri
+ * os.on_signal('INT', def {
+ *   echo 'ignoring Ctrl+C, still working'
+ *   return true
+ * })
+ * ```
+ *
+ * Returning anything falsy means it hasn't, and the signal then gets
+ * the default action it would have had if nothing were registered —
+ * for `'INT'`, `'TERM'` and `'HUP'`, terminating the process with the
+ * conventional `128 + signal number` status. A callback that just
+ * cleans up and falls off the end returns `nil`, which is falsy, so
+ * it shuts down without needing to call `exit()`:
+ *
+ * ```zuri
+ * os.on_signal('INT', def {
+ *   echo 'shutting down...'
+ *   flush_caches()
+ * })
+ * ```
+ *
+ * That default is deliberate. A handler that only logged and always
+ * kept running would leave Ctrl+C unable to stop the program at all,
+ * which is a much worse thing to do by accident than to shut down.
+ *
+ * Truthiness here is the language's own, so `return 0` and
+ * `return ''` decline exactly as `return false` does. Call
+ * `os.exit()` when you want a specific exit status instead.
+ *
  * Supported signal names are `'INT'` (Ctrl+C), `'TERM'`, `'HUP'`
  * (Unix only), and `'BREAK'` (Windows only); names are matched
  * case-insensitively. Registering a new callback for a name that

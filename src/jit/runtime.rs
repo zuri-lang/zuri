@@ -155,12 +155,7 @@ pub unsafe extern "C" fn zuri_jit_safepoint(vm_ptr: *mut VM) -> u64 {
   // flag that belongs to the VM that did.
   if vm.has_signal_callbacks() && crate::modules::os_util::signal::any_pending() {
     while let Some(idx) = crate::modules::os_util::signal::take_pending() {
-      let callback = vm.signal_callback(idx);
-      if callback.is_nil() {
-        continue;
-      }
-
-      if let Err(e) = vm.call_value(callback, &[]) {
+      if let Err(e) = vm.deliver_signal(idx) {
         return fail(vm, e);
       }
     }

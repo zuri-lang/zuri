@@ -2202,6 +2202,36 @@ impl VM {
     self.signal_callbacks.get(idx).copied().unwrap_or(Value::nil())
   }
 
+  /// Runs the callback registered for signal `idx` and applies the
+  /// fallback when it declines.
+  ///
+  /// A callback that returns a truthy value has taken responsibility
+  /// for the signal and the program carries on. Anything falsy
+  /// (including the `nil` a callback with no `return` produces) means
+  /// it did not, so the signal gets the default action it would have
+  /// had if nothing were registered; otherwise a handler that only
+  /// logs would silently make Ctrl+C unable to stop the program.
+  ///
+  /// Truthiness is the language's own, so `return 0` and `return ''`
+  /// decline just as `return false` does.
+  ///
+  /// Does not return when the callback declines.
+  pub(crate) fn deliver_signal(&mut self, idx: usize) -> RunResult<()> {
+    let callback = self.signal_callback(idx);
+
+    if callback.is_nil() {
+      return Ok(());
+    }
+
+    let outcome = self.call_value(callback, &[])?;
+
+    if outcome.is_falsey() {
+      crate::modules::os_util::signal::perform_default_action(idx);
+    }
+
+    Ok(())
+  }
+
   /// Whether this VM has ever registered a signal callback at all;
   /// the per-instruction safepoint's cheap guard for skipping the
   /// rest of the signal-delivery check entirely on every VM that
@@ -3422,15 +3452,12 @@ impl VM {
       if self.has_signal_callbacks() {
         if crate::modules::os_util::signal::any_pending() {
           while let Some(idx) = crate::modules::os_util::signal::take_pending() {
-            let callback = self.signal_callback(idx);
-            if !callback.is_nil() {
-              // A callback raising is reported the same way an
-              // uncaught error from ordinary script code would be;
-              // it unwinds this run_until the normal way rather than
-              // being swallowed, so a broken handler is visible
-              // instead of silently doing nothing.
-              self.call_value(callback, &[])?;
-            }
+            // A callback raising is reported the same way an uncaught
+            // error from ordinary script code would be; it unwinds
+            // this run_until the normal way rather than being
+            // swallowed, so a broken handler is visible instead of
+            // silently doing nothing.
+            self.deliver_signal(idx)?;
           }
           closure_ptr = self.frames[frame_idx].closure;
         }
