@@ -62,6 +62,8 @@ pub struct SendPtr(pub *const ObjFunction);
 unsafe impl Send for SendPtr {}
 
 pub struct CompileJob {
+  /// The function to compile, or a null pointer when this job is the
+  /// wake-up `CompileJob::shutdown_signal()` sends.
   pub proto: SendPtr,
   /// Carried through purely for `VM::drain_jit_results`'s log line
   /// (see `codegen::compile`'s own docs on what this means).
@@ -75,6 +77,31 @@ pub struct CompileJob {
   /// `results_pending` flag is updated, allowing multiple VMs to share a single
   /// compiler queue.
   pub reply_to: Option<(Sender<CompileResult>, Arc<AtomicBool>)>,
+}
+
+impl CompileJob {
+  /// A job that carries no work, sent purely to wake the compiler
+  /// thread out of a blocking `recv()` so it can notice that the
+  /// shutdown flag is set.
+  ///
+  /// Dropping the sender would do the same job if the pool held the
+  /// only one, but it does not: every VM sharing this compiler keeps a
+  /// clone of it alive (see `VM::set_shared_jit_compiler`), so the
+  /// channel stays connected for as long as the isolate workers do.
+  /// Sending the wake-up is what makes shutdown independent of who
+  /// else is still holding a sender.
+  ///
+  /// `proto` is deliberately null. `compiler_loop` checks the shutdown
+  /// flag the moment `recv()` returns and never touches the job.
+  pub fn shutdown_signal() -> Self {
+    CompileJob {
+      proto: SendPtr(std::ptr::null()),
+      speculative_params: None,
+      speculative_regs: None,
+      facts: CompileFacts::default(),
+      reply_to: None,
+    }
+  }
 }
 
 pub struct CompileResult {
@@ -97,6 +124,13 @@ pub struct JitCompilerHandle {
 impl Drop for JitCompilerHandle {
   fn drop(&mut self) {
     self.shutdown.store(true, Ordering::Release);
+
+    // The flag alone cannot interrupt a blocking `recv()`, so the
+    // worker has to be sent something before it will look at it.
+    if let Some(job_tx) = self.job_tx.as_ref() {
+      let _ = job_tx.send(CompileJob::shutdown_signal());
+    }
+
     drop(self.job_tx.take());
     if let Some(thread) = self.thread.take() {
       let _ = thread.join();
@@ -166,6 +200,16 @@ fn compiler_loop(
       Ok(job) => job,
       Err(_) => return,
     };
+
+    // Re-checked here, not just at the top of the loop: this thread
+    // parks in `recv()` for as long as there is no work, so the flag
+    // can only have been noticed after something arrived; and the
+    // thing that arrived may well be the wake-up
+    // `CompileJob::shutdown_signal()` sent, which holds a null `proto`
+    // and must not be dereferenced.
+    if shutdown.load(Ordering::Relaxed) {
+      return;
+    }
 
     let proto = unsafe { &*job.proto.0 };
     let (outcome, osr_ids) = match engine.compile_function(

@@ -201,6 +201,14 @@ impl IsolatePool {
     let mut comp = lock(&self.compiler);
     if let Some(mut c) = comp.take() {
       c.shutdown.store(true, Ordering::Release);
+
+      // Every isolate VM that used this compiler kept a clone of the
+      // sender, so dropping ours does not disconnect the channel and
+      // would leave the worker parked in `recv()` forever. The wake-up
+      // is what actually gets it to look at the flag we just set.
+      let _ = c
+        .job_tx
+        .send(crate::jit::background::CompileJob::shutdown_signal());
       drop(c.job_tx);
       if let Some(thread) = c.thread.take() {
         let _ = thread.join();

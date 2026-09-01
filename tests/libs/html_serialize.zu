@@ -1,0 +1,271 @@
+/**
+ * html_serialize.zu
+ *
+ * Test suite for the `html.serialize` module: minify() and format(),
+ * their options, the elements whose whitespace they must not touch,
+ * and the guarantee that neither one modifies the tree it was given.
+ */
+
+import html
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  var raised = false
+
+  catch {
+    fn()
+  } as e {
+    raised = true
+  }
+
+  return raised
+}
+
+def small(source) {
+  return html.minify(source, { fragment: true })
+}
+
+def pretty(source) {
+  return html.format(source, { fragment: true })
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  html.serialize — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# minify(): whitespace
+# ---------------------------------------------------------------------------
+assert small('<p>  a   b  </p>') == '<p>a b</p>',
+  'runs of whitespace inside a block must collapse, and the edges must go'
+assert small('<p>a</p>\n<p>b</p>') == '<p>a</p><p>b</p>',
+  'whitespace between two block elements must be removed'
+assert small('<div>  <p>a   b</p>  </div>') == '<div><p>a b</p></div>',
+  'whitespace at the edges of a block must be removed'
+assert small('<p>a\n\n\nb</p>') == '<p>a b</p>',
+  'newlines count as whitespace and collapse like any other'
+assert small('<p>a\tb</p>') == '<p>a b</p>', 'so do tabs'
+ok('minify() collapses and trims whitespace in block context')
+
+assert small('<p>a <b> b </b> c</p>') == '<p>a <b> b </b> c</p>',
+  'whitespace next to an inline element separates words and must survive'
+assert small('<p>a  <b>x</b>  b</p>') == '<p>a <b>x</b> b</p>',
+  'but it still collapses to a single space'
+assert small('<span>  a  </span>') == '<span> a </span>',
+  'an inline element must keep the whitespace at its own edges'
+assert small('<div><span>a</span> <span>b</span></div>') ==
+  '<div><span>a</span> <span>b</span></div>',
+  'whitespace between two inline elements must survive'
+ok('minify() never removes whitespace that separates inline content')
+
+assert small('<pre>  a\n  b </pre>') == '<pre>  a\n  b </pre>',
+  'pre content must be untouched'
+assert small('<textarea>  a  </textarea>') == '<textarea>  a  </textarea>',
+  'textarea content must be untouched'
+assert small('<script>  var a = 1;  </script>') == '<script>  var a = 1;  </script>',
+  'script content must be untouched'
+assert small('<style>  a { b: c }  </style>') == '<style>  a { b: c }  </style>',
+  'style content must be untouched'
+assert small('<div>  <pre>  x  </pre>  </div>') == '<div><pre>  x  </pre></div>',
+  'the whitespace around a pre still goes, only the content inside is protected'
+ok('minify() leaves the whitespace-sensitive elements alone')
+
+assert small('<p>a</p>') == '<p>a</p>', 'markup with nothing to remove must be unchanged'
+assert small('') == '', 'an empty source must minify to an empty string'
+assert small('   ') == '', 'a whitespace-only source must minify away entirely'
+ok('minify() handles trivial input')
+
+# ---------------------------------------------------------------------------
+# minify(): comments
+# ---------------------------------------------------------------------------
+assert small('<div><!-- gone --></div>') == '<div></div>',
+  'comments must be removed by default'
+assert small('<p>a<!-- x -->b</p>') == '<p>ab</p>',
+  'a comment between text must go too'
+assert html.minify('<div><!-- kept --></div>', { fragment: true, comments: true }) ==
+  '<div><!-- kept --></div>',
+  'comments: true must keep them'
+assert html.minify('<div>  <!-- kept -->  </div>',
+  { fragment: true, comments: true }) == '<div><!-- kept --></div>',
+  'keeping a comment must not keep the whitespace around it'
+ok('minify() removes comments unless asked not to')
+
+# ---------------------------------------------------------------------------
+# minify(): options and inputs
+# ---------------------------------------------------------------------------
+assert html.minify('<p>  a  b  </p>',
+  { fragment: true, collapse_whitespace: false }) == '<p>  a  b  </p>',
+  'collapse_whitespace: false must leave whitespace alone'
+assert html.minify('<p>a</p><!-- x -->',
+  { fragment: true, collapse_whitespace: false }) == '<p>a</p>',
+  'and must still remove comments'
+ok('minify() honours collapse_whitespace')
+
+assert html.minify('<p>  a  </p>').contains('<html>'),
+  'a string source is a whole document by default, so the implied elements appear'
+assert html.minify('<!DOCTYPE html><html><head> <title> T </title> </head>' +
+  '<body> <p> x </p> </body></html>') ==
+  '<!DOCTYPE html><html><head><title>T</title></head><body><p>x</p></body></html>',
+  'a whole document must minify with its doctype intact'
+ok('minify() parses a string as a whole document unless told otherwise')
+
+var tree = html.parse('<body><div>  <p>  a  </p>  </div>')
+var before = tree.outer_html()
+
+assert html.minify(tree, nil) ==
+  '<html><head></head><body><div><p>a</p></div></body></html>',
+  'minify() must accept a node as well as a string'
+assert tree.outer_html() == before,
+  'minify() must not modify the tree it was given'
+ok('minify() accepts a node and never mutates it')
+
+assert html.minify(html.parse('<body><p>  a  </p>').query_selector('p'), nil) ==
+  '<p>a</p>', 'minifying a single element must return just that element'
+ok('minify() can be pointed at one element')
+
+# ---------------------------------------------------------------------------
+# minify(): what it must not change
+# ---------------------------------------------------------------------------
+assert small('<p class="  a  b  ">x</p>') == '<p class="  a  b  ">x</p>',
+  'attribute values must never be touched'
+assert small('<p b="2" a="1">x</p>') == '<p b="2" a="1">x</p>',
+  'attribute order must never be changed'
+assert small('<p>a &amp; b</p>') == '<p>a &amp; b</p>',
+  'escaping must be preserved'
+assert small('<IMG SRC="a">') == '<img src="a">',
+  'names are lowercased by the parser, which minify inherits'
+assert small('<svg><circle cx="1"/></svg>') == '<svg><circle cx="1"></circle></svg>',
+  'foreign content must survive minifying'
+ok('minify() changes whitespace and comments and nothing else')
+
+# ---------------------------------------------------------------------------
+# format(): structure
+# ---------------------------------------------------------------------------
+assert pretty('<ul><li>a<li>b</ul>') ==
+  '<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>',
+  'block children must each get their own indented line'
+assert pretty('<div><p>Hi <b>there</b></p></div>') ==
+  '<div>\n  <p>Hi <b>there</b></p>\n</div>',
+  'inline content must stay on one line with its parent'
+assert pretty('<div></div>') == '<div></div>',
+  'an empty element must stay on one line'
+assert pretty('<div><hr></div>') == '<div>\n  <hr>\n</div>',
+  'a block-level void element must go on its own line, with no closing tag'
+assert pretty('<div><br></div>') == '<div><br></div>',
+  'an inline void element stays on the line, since <br> is inline content'
+assert pretty('<p>just text</p>') == '<p>just text</p>',
+  'an element holding only text must stay on one line'
+assert pretty('') == '', 'an empty source must format to an empty string'
+ok('format() indents block structure and keeps inline content inline')
+
+assert pretty('<div><div><div>x</div></div></div>') ==
+  '<div>\n  <div>\n    <div>x</div>\n  </div>\n</div>',
+  'nesting must indent one level per depth'
+assert pretty('<p>a</p><p>b</p>') == '<p>a</p>\n<p>b</p>',
+  'siblings at the top level must each start a line'
+ok('format() handles nesting and top-level siblings')
+
+# ---------------------------------------------------------------------------
+# format(): options
+# ---------------------------------------------------------------------------
+assert html.format('<div><p>x</p></div>', { fragment: true, indent: 4 }) ==
+  '<div>\n    <p>x</p>\n</div>', 'a number must mean that many spaces'
+assert html.format('<div><p>x</p></div>', { fragment: true, indent: 0 }) ==
+  '<div>\n<p>x</p>\n</div>', 'zero must mean no indentation'
+assert html.format('<div><p>x</p></div>', { fragment: true, indent: '\t' }) ==
+  '<div>\n\t<p>x</p>\n</div>', 'a string must be used as the indent unit verbatim'
+assert html.format('<div><p>x</p></div>', { fragment: true, indent: '..' }) ==
+  '<div>\n..<p>x</p>\n</div>', 'any string must work as the indent unit'
+assert raises(@() { html.format('<p>x</p>', { fragment: true, indent: -1 }) }),
+  'a negative indent must be refused'
+assert raises(@() { html.format('<p>x</p>', { fragment: true, indent: true }) }),
+  'an indent that is neither a number nor a string must be refused'
+ok('format() honours the indent option in both its forms')
+
+assert pretty('<div><!-- note --><p>x</p></div>') ==
+  '<div>\n  <!-- note -->\n  <p>x</p>\n</div>',
+  'comments must be kept by default and put on their own line'
+assert html.format('<div><!-- note --><p>x</p></div>',
+  { fragment: true, comments: false }) == '<div>\n  <p>x</p>\n</div>',
+  'comments: false must drop them'
+ok('format() honours the comments option')
+
+# ---------------------------------------------------------------------------
+# format(): whitespace-sensitive content
+# ---------------------------------------------------------------------------
+assert pretty('<pre>a\n  b</pre>') == '<pre>a\n  b</pre>',
+  'pre content must be written out exactly, newlines and all'
+assert pretty('<div><pre>a\n  b</pre></div>') ==
+  '<div>\n  <pre>a\n  b</pre>\n</div>',
+  'a pre must be indented as a block but its content left alone'
+assert pretty('<script>if (a) {\n  b()\n}</script>') ==
+  '<script>if (a) {\n  b()\n}</script>',
+  'script content must be written out exactly'
+assert pretty('<textarea>  x  </textarea>') == '<textarea>  x  </textarea>',
+  'textarea content must be written out exactly'
+ok('format() never reflows whitespace-sensitive content')
+
+# ---------------------------------------------------------------------------
+# format(): documents and nodes
+# ---------------------------------------------------------------------------
+assert html.format('<!DOCTYPE html><html><head><title>T</title></head>' +
+  '<body><div><p>a</p><p>b</p></div></body></html>', nil) ==
+  '<!DOCTYPE html>\n<html>\n  <head>\n    <title>T</title>\n  </head>\n' +
+  '  <body>\n    <div>\n      <p>a</p>\n      <p>b</p>\n    </div>\n' +
+  '  </body>\n</html>',
+  'a whole document must format from the doctype down'
+ok('format() writes a whole document, doctype included')
+
+var untouched = html.parse('<body><div><p>a</p><p>b</p></div>')
+var snapshot = untouched.outer_html()
+
+assert html.format(untouched, nil).contains('<div>'),
+  'format() must accept a node as well as a string'
+assert untouched.outer_html() == snapshot,
+  'format() must not modify the tree it was given'
+ok('format() accepts a node and never mutates it')
+
+# ---------------------------------------------------------------------------
+# format(): escaping
+# ---------------------------------------------------------------------------
+assert pretty('<p>a &amp; b</p>') == '<p>a &amp; b</p>',
+  'text must stay escaped through formatting'
+assert pretty('<div><p>a &lt; b</p></div>') == '<div>\n  <p>a &lt; b</p>\n</div>',
+  'the same holds one level down'
+assert pretty('<p title=\'a"b\'>x</p>') == '<p title="a&quot;b">x</p>',
+  'attribute values must be escaped on the way out'
+ok('format() escapes text and attributes correctly')
+
+# ---------------------------------------------------------------------------
+# The two are re-parseable
+# ---------------------------------------------------------------------------
+var source = '<div class="a"><p>One <b>two</b> three</p><ul><li>x</li>' +
+  '<li>y</li></ul><pre>  keep  </pre></div>'
+
+assert html.parse_fragment(small(source), 'body', nil).text_content() ==
+  html.parse_fragment(source, 'body', nil).text_content(),
+  'this source has nothing collapsible outside its <pre>, so minifying must not change its text at all'
+assert html.parse_fragment(small(source), 'body', nil)
+  .query_selector_all('li').length() == 2,
+  'minified markup must re-parse to the same structure'
+assert html.parse_fragment(small(source), 'body', nil)
+  .query_selector('pre').text_content() == '  keep  ',
+  'and the whitespace-sensitive content must have survived'
+assert html.parse_fragment(pretty(source), 'body', nil)
+  .query_selector_all('li').length() == 2,
+  'formatted markup must re-parse to the same structure'
+assert html.parse_fragment(pretty(source), 'body', nil)
+  .query_selector('pre').text_content() == '  keep  ',
+  'and must not have disturbed the whitespace-sensitive content'
+ok('minified and formatted output both re-parse')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} serialization checks passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -92,10 +92,19 @@ var VOID_ELEMENTS = [
  * Elements whose text children are markup, not content: their text is
  * written out byte for byte and never escaped, because escaping it
  * would change what a stylesheet or a script means.
+ *
+ * The serialization algorithm also lists `noscript` here, but only
+ * when the scripting flag is enabled. This module parses with
+ * scripting disabled by default, and in that mode a `<noscript>`
+ * holds real elements rather than text, so leaving it out is right
+ * for the default and safe for the other case: the worst that happens
+ * to a document parsed with `scripting: true` is that its `<noscript>`
+ * text comes back escaped, whereas including it would let hand-built
+ * text inside a `<noscript>` serialize into live markup.
  */
 var RAW_TEXT_ELEMENTS = [
   'style', 'script', 'xmp', 'iframe', 'noembed', 'noframes',
-  'plaintext', 'noscript',
+  'plaintext',
 ]
 
 

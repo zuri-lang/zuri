@@ -19,9 +19,13 @@ import .namespaces { XLINK_NAMESPACE, XML_NAMESPACE, XMLNS_NAMESPACE }
 
 
 /**
- * The HTML elements the standard calls "special": the ones that end
- * an open paragraph, that the adoption agency algorithm stops at, and
- * that `:scope` checks treat as barriers.
+ * The HTML elements the standard calls "special": the ones a list item
+ * or definition term stops searching past, and the ones the adoption
+ * agency algorithm treats as a block boundary when it looks for the
+ * furthest block.
+ *
+ * Nothing to do with CSS. This is purely the tree construction
+ * algorithm's own category.
  */
 var SPECIAL_HTML = [
   'address', 'applet', 'area', 'article', 'aside', 'base',
@@ -60,8 +64,9 @@ var FORMATTING_ELEMENTS = [
 ]
 
 /**
- * The HTML elements that make up the "in scope" barrier used by most
- * scope checks.
+ * The HTML elements that make up the "in scope" barrier every scope
+ * check shares. The narrower checks (list item scope, button scope)
+ * add to this list rather than replacing it.
  */
 var SCOPE_HTML = [
   'applet', 'caption', 'html', 'table', 'td', 'th', 'marquee',

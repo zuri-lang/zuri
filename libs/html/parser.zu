@@ -304,7 +304,18 @@ class TreeBuilder {
       }
 
       self._merge_tokenizer_errors()
+
+      # `<pre>` and friends swallow a newline only if it is the very
+      # next token, so a flag set by an earlier token has to expire the
+      # moment anything else comes through.
+      var newline_pending = self._skip_leading_newline
+
       self._dispatch(token)
+      self._check_self_closing(token)
+
+      if newline_pending and token.type != 'character' {
+        self._skip_leading_newline = false
+      }
     }
 
     self._merge_tokenizer_errors()
@@ -1142,22 +1153,29 @@ class TreeBuilder {
    * @param Token token
    */
   _acknowledge_self_closing(token) {
-    # Nothing to record: the flag is only ever read to decide whether
-    # to raise `_unacknowledged_self_closing`, and every caller of
-    # this method is a site where the slash was meaningful. It exists
-    # so those sites read the way the standard describes them.
+    token.acknowledged_self_closing = true
   }
 
   /**
-   * Raises the parse error a stray `/>` deserves on an element that
-   * is neither void nor foreign.
+   * Raises the parse error a stray `/>` deserves on an element that is
+   * neither void nor foreign, and so had no business carrying one.
+   *
+   * Called once per start tag from `run()` rather than at each rule,
+   * so a rule only has to say when a slash *was* meaningful and
+   * anything it does not acknowledge is caught here.
    *
    * @param Token token
    */
-  _unacknowledged_self_closing(token) {
-    if token.self_closing {
-      self._error('non-void-html-element-start-tag-with-trailing-solidus', token)
+  _check_self_closing(token) {
+    if token.type != 'start-tag' or !token.self_closing {
+      return
     }
+
+    if token.acknowledged_self_closing {
+      return
+    }
+
+    self._error('non-void-html-element-start-tag-with-trailing-solidus', token)
   }
 
   /**
@@ -2315,7 +2333,6 @@ class TreeBuilder {
 
     self._reconstruct_formatting()
     self._insert_element(token, nil)
-    self._unacknowledged_self_closing(token)
   }
 
   /**
@@ -4060,16 +4077,23 @@ class TreeBuilder {
    */
   _foreign_end(token) {
     var at = self.open_elements.length() - 1
-    var current = self.open_elements[at]
 
-    if current.tag_name.lower() != token.name {
+    if at < 0 {
+      return
+    }
+
+    if self.open_elements[at].tag_name.lower() != token.name {
       self._error('unexpected-end-tag', token)
     }
 
-    while at > 0 {
-      var element = self.open_elements[at]
+    while true {
+      # The bottom of the stack is as far as this search goes; there is
+      # no enclosing element left that could have opened this tag.
+      if at == 0 {
+        return
+      }
 
-      if element.tag_name.lower() == token.name {
+      if self.open_elements[at].tag_name.lower() == token.name {
         while self.open_elements.length() > at {
           self._pop()
         }
@@ -4079,14 +4103,15 @@ class TreeBuilder {
 
       at--
 
+      # Walking out of the foreign subtree hands the token back to
+      # whichever insertion mode is current, without unwinding the
+      # stack first. That is why a stray `</p>` inside an `<svg>` still
+      # inserts its paragraph, and inserts it inside the SVG.
       if self.open_elements[at].namespace == HTML_NAMESPACE {
-        break
+        self._process(token)
+        return
       }
     }
-
-    # Nothing in the foreign subtree matched, so the HTML rules get a
-    # chance at it.
-    self._process(token)
   }
 }
 

@@ -222,15 +222,28 @@ assert annotated.query_selector('b').namespace == html.HTML_NAMESPACE,
   'an annotation-xml with an HTML encoding is an integration point'
 
 var unannotated = html.parse(
-  '<math><annotation-xml encoding="other"><b>x</b></annotation-xml></math>'
+  '<math><annotation-xml encoding="other"><mi>x</mi></annotation-xml></math>'
 )
-assert unannotated.query_selector('b').namespace == html.MATHML_NAMESPACE,
-  'without an HTML encoding it is not'
+assert unannotated.query_selector('mi').namespace == html.MATHML_NAMESPACE,
+  'without an HTML encoding it is not, so its children stay MathML'
+assert html.parse(
+  '<math><annotation-xml encoding="other"><b>x</b></annotation-xml></math>'
+).body().inner_html() ==
+  '<math><annotation-xml encoding="other"></annotation-xml></math><b>x</b>',
+  'and an HTML formatting element inside it breaks out of the subtree entirely'
 ok('MathML: namespace, and the annotation-xml integration point')
 
 assert html.parse('<math><mi><b>x</b></mi></math>').query_selector('b').namespace ==
   html.HTML_NAMESPACE, 'a MathML text integration point parses its children as HTML'
 ok('MathML text integration points')
+
+assert body('<svg><g></p></g></svg>') == '<svg><g><p></p></g></svg>',
+  'an end tag with no match in the foreign subtree falls through to the HTML rules, which insert at the current point'
+assert body('<svg><g></div></g></svg>') == '<svg><g></g></svg>',
+  'and an end tag the HTML rules also cannot place is discarded'
+assert body('<div><svg><g></g></div>after') == '<div><svg><g></g></svg></div>after',
+  'closing an HTML ancestor must close the foreign subtree inside it'
+ok('end tags in foreign content')
 
 assert body('<svg><p>x</p></svg>') == '<svg></svg><p>x</p>',
   'an HTML block element inside foreign content must break out of it'
@@ -272,6 +285,24 @@ assert body('<b>a') == '<b>a</b>', 'an element left open at end of file is close
 assert body('<div><div><div>x') == '<div><div><div>x</div></div></div>',
   'every element left open is closed, innermost first'
 ok('mismatched and stray end tags are recovered from')
+
+assert codes('<!DOCTYPE html><br/>') == [],
+  'a trailing slash on a void element is legitimate and must not be reported'
+assert codes('<!DOCTYPE html><input/>') == [],
+  'nor on any of the other void elements'
+assert codes('<!DOCTYPE html><svg><circle/></svg>') == [],
+  'nor on a foreign element, where it really does close the element'
+assert codes('<!DOCTYPE html><table><col/></table>') == [],
+  'nor on a <col>, which the table rules acknowledge'
+assert codes('<!DOCTYPE html><p/>').contains(
+  'non-void-html-element-start-tag-with-trailing-solidus'),
+  'but a trailing slash on an ordinary element must be reported'
+assert codes('<!DOCTYPE html><div/>').contains(
+  'non-void-html-element-start-tag-with-trailing-solidus'),
+  'the check must apply to every element the rules do not acknowledge'
+assert body('<p/>x') == '<p>x</p>',
+  'and the slash must be ignored, not treated as closing the element'
+ok('a trailing slash is accepted where it means something and reported where it does not')
 
 assert body('</br>x') == '<br>x', 'a </br> end tag is treated as a <br> start tag'
 assert body('<image src="a">') == '<img src="a">',
@@ -360,10 +391,12 @@ ok('framesets')
 # ---------------------------------------------------------------------------
 # Raw text elements
 # ---------------------------------------------------------------------------
-assert body('<script>if (a<b) { x("</p>") }</script>') ==
+assert html.parse('<script>x</script>').head().inner_html() == '<script>x</script>',
+  'a script written before any content belongs to the head'
+assert body('<body><script>if (a<b) { x("</p>") }</script>') ==
   '<script>if (a<b) { x("</p>") }</script>',
   'script content must survive verbatim and never be escaped'
-assert body('<style>a > b { c: "d" }</style>') ==
+assert body('<body><style>a > b { c: "d" }</style>') ==
   '<style>a > b { c: "d" }</style>',
   'stylesheet content must survive verbatim'
 assert html.parse('<script>x</script>').query_selector('script').children.length() == 1,
@@ -376,14 +409,21 @@ assert body('<pre>\nx</pre>') == '<pre>x</pre>',
   'a pre swallows one leading newline'
 assert body('<pre>\n\nx</pre>') == '<pre>\nx</pre>',
   'but only one'
+assert body('<pre><b>\nx</b></pre>') == '<pre><b>\nx</b></pre>',
+  'and only when the newline is the very next thing, not after an intervening tag'
+assert body('<listing>\nx</listing>') == '<listing>x</listing>',
+  'listing behaves the same way as pre'
 ok('raw text and escapable raw text elements')
 
-assert body('<noscript><b>x</b></noscript>') == '<noscript><b>x</b></noscript>',
+assert body('<body><noscript><b>x</b></noscript>') == '<noscript><b>x</b></noscript>',
   'with scripting off, noscript content is real markup'
-assert html.parse('<noscript><b>x</b></noscript>').query_selector('noscript b') != nil,
+assert html.parse('<body><noscript><b>x</b></noscript>')
+  .query_selector('noscript b') != nil,
   'and the elements inside it are real elements'
+assert body('<noscript><b>x</b></noscript>') == '<b>x</b>',
+  'a noscript before any content lands in the head, where "in head noscript" allows almost nothing, so the <b> pops it and starts the body'
 
-var scripted = html.parse('<noscript><b>x</b></noscript>', { scripting: true })
+var scripted = html.parse('<body><noscript><b>x</b></noscript>', { scripting: true })
 assert scripted.query_selector('noscript b') == nil,
   'with scripting on, noscript content is text'
 assert scripted.query_selector('noscript').text_content() == '<b>x</b>',
@@ -403,8 +443,15 @@ assert html.parse_fragment('<p>a<p>b', 'div', nil).inner_html() == '<p>a</p><p>b
   'the ordinary recovery rules apply inside a fragment'
 assert html.parse_fragment('a &amp; b', 'title', nil).inner_html() == 'a &amp; b',
   'a fragment parsed in a title context is RCDATA'
-assert html.parse_fragment('<b>x</b>', 'style', nil).inner_html() == '<b>x</b>',
-  'a fragment parsed in a style context is raw text'
+var styled = html.parse_fragment('<b>x</b>', 'style', nil)
+assert styled.children.length() == 1 and styled.first_child().is_text(),
+  'a fragment parsed in a style context is raw text, not markup'
+assert styled.text_content() == '<b>x</b>', 'and the text is what was written'
+
+var style_host = html.Element('style')
+style_host.set_inner_html('<b>x</b>')
+assert style_host.outer_html() == '<style><b>x</b></style>',
+  'once that text is inside a real style element it serializes unescaped again'
 assert html.parse_fragment('x', 'div', nil).is_fragment(),
   'parse_fragment() must return a DocumentFragment'
 assert html.parse_fragment('', 'div', nil).children.is_empty(),

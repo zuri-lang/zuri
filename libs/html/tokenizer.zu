@@ -125,6 +125,16 @@ class Token {
   var self_closing = false
 
   /**
+   * Set by the tree builder when it has taken `self_closing` into
+   * account, which only a void or foreign element can do. A start tag
+   * that reaches the end of tree construction with the slash still
+   * unacknowledged is a parse error, and this is what lets that be
+   * checked in one place rather than at every rule that handles a
+   * self-closing tag.
+   */
+  var acknowledged_self_closing = false
+
+  /**
    * A doctype's public identifier, or `nil` when it has none.
    */
   var public_id = nil

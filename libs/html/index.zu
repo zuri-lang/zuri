@@ -89,11 +89,16 @@
  * shaped for a particular audience, `minify()` strips what a browser
  * does not need and `format()` indents for a human:
  *
+ * A string is parsed as a whole document, so `<html>`, `<head>` and
+ * `<body>` show up in the output the way a browser would produce
+ * them. Pass `{ fragment: true }` when the input is a fragment and
+ * you want just that fragment back:
+ *
  * ```zuri-repl
  * %> import html
- * %> html.minify('<p>  a   b  </p>\\n<p>c</p>')
+ * %> html.minify('<p>  a   b  </p>\\n<p>c</p>', { fragment: true })
  * '<p>a b</p><p>c</p>'
- * %> echo html.format('<ul><li>a<li>b</ul>')
+ * %> echo html.format('<ul><li>a<li>b</ul>', { fragment: true })
  * <ul>
  *   <li>a</li>
  *   <li>b</li>
@@ -136,8 +141,12 @@
  * %> import html
  * %> var doc = html.parse('<p><b>x</p>')
  * %> for e in doc.errors { echo e.to_string() }
+ * missing-doctype at 1:1
  * unexpected-end-tag at 1:8
  * ```
+ *
+ * Each entry carries the standard's own error name, so you can look
+ * it up, plus the line and column where it was noticed.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
