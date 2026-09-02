@@ -641,7 +641,69 @@ struct FuncCompiler<'a, 'b> {
   /// One persistent Cranelift Variable per bytecode register, live
   /// for the whole compiled function.
   reg_vars: Vec<Variable>,
-  reg_f64: [Option<IrValue>; 256],
+  /// A SECOND persistent Variable per bytecode register, typed `F64`
+  /// instead of `I64`, holding the exact same 64 bits. Only allocated
+  /// for the registers `f64_tracked` marks (the ones some float
+  /// instruction actually reads or writes); the rest get a dummy that
+  /// is never defined or used.
+  ///
+  /// This exists because Cranelift lowers an `I64 <-> F64` `bitcast`
+  /// to a real cross-domain `movq` on x86-64 and has no rule anywhere
+  /// that cancels a `bitcast(bitcast(x))` pair. Since every bytecode
+  /// instruction gets its own Cranelift block here, a float value
+  /// living only in an `I64` Variable pays TWO of those moves per
+  /// arithmetic op (one to get into an xmm register, one to get back
+  /// out) and can never stay resident in the vector register file
+  /// across a loop. Keeping a parallel `F64` Variable lets the float
+  /// side of a register flow xmm-to-xmm with no move at all.
+  ///
+  /// Both Variables are defined at every definition site, so either
+  /// one may be read at any point; a register's two views can never
+  /// disagree. Where the `I64` view turns out to be dead, Cranelift's
+  /// own DCE drops its `bitcast` chain and the register becomes purely
+  /// float-resident; where it isn't, the cost is exactly what it was
+  /// before this existed.
+  reg_vars_f64: Vec<Variable>,
+  /// Registers that some float-path instruction reads or writes, found
+  /// by a plain syntactic scan of the bytecode. Purely a budget on how
+  /// many `reg_vars_f64` entries are worth materializing: a register
+  /// left out of this set just behaves exactly as it did before the
+  /// float Variables existed, so a miss here costs speed, never
+  /// correctness.
+  f64_tracked: Vec<bool>,
+  /// Each register's integer value exactly as the entry block
+  /// established it, before any body has run.
+  ///
+  /// `emit_entry_dispatch` needs the raw bits to build its
+  /// `is_number` guards from, and going through `load_reg` for that
+  /// would rebuild them out of the float view for a canonical
+  /// register: the entry block has just moved the value INTO an xmm
+  /// register, so the guard would move it straight back out again.
+  /// Two `vmovq`s per speculated parameter, on every single call.
+  /// These values dominate every dispatch block, so using them
+  /// directly is both cheaper and simpler.
+  entry_reg_values: Vec<IrValue>,
+  /// The subset of `f64_tracked` whose float Variable is the register's
+  /// ONLY definition, with the integer view rebuilt on demand at the
+  /// few places that still want one.
+  ///
+  /// Dual-defining is already never worse than the old integer-only
+  /// scheme, but it does leave one `bitcast` per definition alive
+  /// whenever anything downstream reads the integer view; for a loop
+  /// accumulator that read is usually a single `return` outside the
+  /// loop, and paying for it on every iteration is exactly backwards.
+  /// A register `type_facts` proves numeric everywhere it is live can
+  /// invert that trade safely: it never holds a tagged pointer, so its
+  /// integer view has no readers other than genuine boundaries (a
+  /// safepoint flush, a helper call, a return), and rebuilding it
+  /// there costs one `bitcast` on a path that was already leaving the
+  /// vector registers anyway.
+  ///
+  /// Recomputed for the specialized body, which proves strictly more
+  /// than the general one does; sound because the two bodies are
+  /// disjoint subgraphs that share no edge, and both are dominated by
+  /// the entry block, where every register gets both views seeded.
+  f64_canonical: Vec<bool>,
   global_vars: FxHashMap<i64, Variable>,
   /// The bytecode position emit_instruction is currently translating.
   current_ip: usize,
@@ -789,6 +851,155 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
     }
     out
+  }
+
+  /// Which registers are worth giving a parallel `F64` Variable to:
+  /// exactly those some instruction reads or writes through the float
+  /// path in `emit_instruction`, plus anything `Instr::Move` ties to
+  /// one of them.
+  ///
+  /// This mirrors `emit_instruction`'s own dispatch rather than
+  /// deriving anything, so it stays a cheap syntactic scan. It is
+  /// deliberately an over-approximation on both ends: it doesn't check
+  /// `type_facts`, so it also marks registers whose float path turns
+  /// out to be the guarded one (where the float view is still used,
+  /// just behind a branch), and a register it misses simply keeps the
+  /// pre-existing `I64`-only behavior. Neither direction can produce a
+  /// wrong answer, only a missed or wasted Variable.
+  ///
+  /// `Instr::Eq`/`Neq` are absent on purpose: those compare raw value
+  /// bits with an integer `icmp`, never `fcmp`, so their operands
+  /// genuinely have no float view to keep.
+  fn compute_f64_tracked(proto: &ObjFunction) -> Vec<bool> {
+    let n = proto.num_registers as usize;
+    let mut tracked = vec![false; n];
+    let mark = |t: &mut Vec<bool>, r: u8| {
+      if let Some(slot) = t.get_mut(r as usize) {
+        *slot = true;
+      }
+    };
+
+    for instr in &proto.chunk.code {
+      match *instr {
+        Instr::Add { dst, a, b }
+        | Instr::Sub { dst, a, b }
+        | Instr::Mul { dst, a, b }
+        | Instr::Div { dst, a, b }
+        | Instr::Pow { dst, a, b }
+        | Instr::Floor { dst, a, b }
+        | Instr::Mod { dst, a, b } => {
+          mark(&mut tracked, dst);
+          mark(&mut tracked, a);
+          mark(&mut tracked, b);
+        },
+        Instr::AddImm { dst, a, .. }
+        | Instr::SubImm { dst, a, .. }
+        | Instr::MulImm { dst, a, .. } => {
+          mark(&mut tracked, dst);
+          mark(&mut tracked, a);
+        },
+        Instr::Neg { dst, src } => {
+          mark(&mut tracked, dst);
+          mark(&mut tracked, src);
+        },
+        // The destination of a comparison is a boolean, never a
+        // number; only the operands go through `fcmp`. `Eq`/`Neq`
+        // belong here too: they take an `IntCC` but still lower to an
+        // `fcmp` once both sides are known numeric.
+        Instr::Lt { a, b, .. }
+        | Instr::Le { a, b, .. }
+        | Instr::Gt { a, b, .. }
+        | Instr::Ge { a, b, .. }
+        | Instr::Eq { a, b, .. }
+        | Instr::Neq { a, b, .. } => {
+          mark(&mut tracked, a);
+          mark(&mut tracked, b);
+        },
+        Instr::LtImm { a, .. }
+        | Instr::LeImm { a, .. }
+        | Instr::GtImm { a, .. }
+        | Instr::GeImm { a, .. }
+        | Instr::EqImm { a, .. }
+        | Instr::NeqImm { a, .. } => mark(&mut tracked, a),
+        // The bitwise ops are integer at the machine level but their
+        // operands still arrive as floats and convert through one.
+        Instr::BitAnd { dst, a, b }
+        | Instr::BitOr { dst, a, b }
+        | Instr::BitXor { dst, a, b }
+        | Instr::BitShl { dst, a, b }
+        | Instr::BitShr { dst, a, b }
+        | Instr::BitUshr { dst, a, b } => {
+          mark(&mut tracked, dst);
+          mark(&mut tracked, a);
+          mark(&mut tracked, b);
+        },
+        Instr::BitNot { dst, src } => {
+          mark(&mut tracked, dst);
+          mark(&mut tracked, src);
+        },
+        // A numeric branch condition is truth-tested with an `fcmp`
+        // against zero rather than a bit compare.
+        Instr::JmpIfFalse { cond, .. } | Instr::JmpIfTrue { cond, .. } => {
+          mark(&mut tracked, cond)
+        },
+        // Indexing converts through `f64` on its way to a machine
+        // integer, so the index register has a real float view even
+        // though the container doesn't.
+        Instr::GetIndex { idx, .. } => mark(&mut tracked, idx),
+        Instr::SetIndex { idx, .. } => mark(&mut tracked, idx),
+        Instr::LoadConst { dst, const_idx } => {
+          if proto.chunk.constants[const_idx as usize].is_number() {
+            mark(&mut tracked, dst);
+          }
+        },
+        _ => {},
+      }
+    }
+
+    // A `Move` between a tracked register and an untracked one would
+    // otherwise break the float chain right in the middle of an
+    // expression, which is exactly where the compiler emits them.
+    // Propagate across moves to a fixed point so both ends agree.
+    loop {
+      let mut changed = false;
+      for instr in &proto.chunk.code {
+        if let Instr::Move { dst, src } = *instr {
+          let (d, s) = (dst as usize, src as usize);
+          if d >= n || s >= n {
+            continue;
+          }
+          if tracked[d] != tracked[s] {
+            tracked[d] = true;
+            tracked[s] = true;
+            changed = true;
+          }
+        }
+      }
+      if !changed {
+        break;
+      }
+    }
+
+    tracked
+  }
+
+  /// Narrows `f64_tracked` to the registers whose float view can stand
+  /// alone: see `f64_canonical`. A register qualifies when `facts`
+  /// proves it numeric at every position it is live at, which is what
+  /// rules out the ones that only look float-ish, most obviously a
+  /// comparison result that `compute_f64_tracked` picked up from a
+  /// numeric `JmpIfFalse`.
+  fn compute_f64_canonical(&self, facts: &typeflow::TypeFacts) -> Vec<bool> {
+    let code_len = self.proto.chunk.code.len();
+    let mut canonical = self.f64_tracked.clone();
+    for (r, slot) in canonical.iter_mut().enumerate() {
+      if !*slot {
+        continue;
+      }
+      let r = r as u8;
+      *slot = (0..code_len).all(|ip| !self.liveness.is_live(ip, r) || facts.is_numeric(ip, r));
+    }
+    canonical
   }
 
   fn resolve_call_targets_from_snapshot(
@@ -970,7 +1181,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // placeholders here are never actually read before that, since
       // `run` always executes before any `emit_instruction` call.
       reg_vars: Vec::new(),
-      reg_f64: [None; 256],
+      reg_vars_f64: Vec::new(),
+      f64_tracked: Vec::new(),
+      f64_canonical: Vec::new(),
+      entry_reg_values: Vec::new(),
       global_vars: FxHashMap::default(),
       current_ip: 0,
       liveness,
@@ -1124,6 +1338,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.reg_vars = (0..num_regs)
       .map(|_| self.fb.declare_var(types::I64))
       .collect();
+    self.f64_tracked = Self::compute_f64_tracked(self.proto);
+    // Declared for every register, but only ever defined or used for
+    // the tracked ones; an untracked entry is inert.
+    self.reg_vars_f64 = (0..num_regs)
+      .map(|_| self.fb.declare_var(types::F64))
+      .collect();
     for r in 0..num_regs {
       let mem_v = self.load_reg_mem(r as u8);
       let v = if r < 4 && r < self.proto.arity as usize {
@@ -1131,8 +1351,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       } else {
         mem_v
       };
+      // Seeds BOTH views in the entry block, which dominates every
+      // other block in the function (the general body, the specialized
+      // body, and every OSR target alike). That's what lets any later
+      // block read either view without having to prove some
+      // intervening definition reached it, and it's why the two bodies
+      // can disagree about which registers are canonical. Deliberately
+      // not `def_reg_both`: this one place wants both views
+      // unconditionally, canonical or not.
       self.fb.def_var(self.reg_vars[r], v);
+      if self.f64_tracked[r] {
+        let f = self.fb.ins().bitcast(
+          types::F64,
+          cranelift_codegen::ir::MemFlagsData::new(),
+          v,
+        );
+        self.fb.def_var(self.reg_vars_f64[r], f);
+      }
+      self.entry_reg_values.push(v);
     }
+    self.f64_canonical = self.compute_f64_canonical(&self.type_facts);
 
     let flags_init = cranelift_codegen::ir::MemFlagsData::trusted();
     let slots_ptr_init = self.fb.ins().load(
@@ -1215,7 +1453,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
       }
       self.fb.switch_to_block(self.blocks[ip]);
-      self.reg_f64.fill(None);
       self.guarded_instances.clear();
       let instr = self.proto.chunk.code[ip];
       let terminated = self.emit_instruction(ip, instr);
@@ -1229,6 +1466,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Pass 2: the specialized body, if any.
     if let Some((spec_blocks, spec_facts)) = specialized {
       self.type_facts = spec_facts;
+      // The specialized facts prove strictly more than the general
+      // ones, so this body typically gets more canonical registers;
+      // recompute rather than carrying pass 1's answer over. See
+      // `f64_canonical` on why the two bodies are free to disagree.
+      self.f64_canonical = self.compute_f64_canonical(&self.type_facts);
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       let code_len = self.blocks.len();
       for ip in 0..code_len {
@@ -1238,7 +1480,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
         }
         self.fb.switch_to_block(self.blocks[ip]);
-        self.reg_f64.fill(None);
         self.guarded_instances.clear();
         let instr = self.proto.chunk.code[ip];
         let terminated = self.emit_instruction(ip, instr);
@@ -1413,7 +1654,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let mut guard: Option<IrValue> = None;
         for bit in 0..64u8 {
           if mask & (1u64 << bit) != 0 {
-            let v = self.load_reg(bit);
+            let v = self.entry_reg_values[bit as usize];
             let is_num = self.is_number(v);
             guard = Some(match guard {
               None => is_num,
@@ -1538,37 +1779,103 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .store(cranelift_codegen::ir::MemFlagsData::trusted(), v, addr, 0);
   }
 
+  #[inline]
+  fn is_f64_tracked(&self, r: u8) -> bool {
+    self.f64_tracked.get(r as usize).copied().unwrap_or(false)
+  }
+
+  /// Whether the float Variable is the ONLY definition `r` gets, with
+  /// the integer one materialized on demand instead of maintained in
+  /// parallel: see `f64_canonical`.
+  #[inline]
+  fn is_f64_canonical(&self, r: u8) -> bool {
+    self.f64_canonical.get(r as usize).copied().unwrap_or(false)
+  }
+
   fn load_reg(&mut self, r: u8) -> IrValue {
+    if self.is_f64_canonical(r) {
+      let f = self.fb.use_var(self.reg_vars_f64[r as usize]);
+      return self.from_f64(f);
+    }
     self.fb.use_var(self.reg_vars[r as usize])
   }
 
+  /// The register's bits viewed as an `f64`. For a tracked register
+  /// this is the float Variable itself, so a value produced by a float
+  /// instruction reaches the next one without ever leaving the vector
+  /// register file.
   fn load_reg_f64(&mut self, r: u8) -> IrValue {
-    if let Some(f) = self.reg_f64[r as usize] {
-      return f;
+    if self.is_f64_tracked(r) {
+      return self.fb.use_var(self.reg_vars_f64[r as usize]);
     }
     let v = self.load_reg(r);
-    let f = self.to_f64(v);
-    self.reg_f64[r as usize] = Some(f);
-    f
+    self.to_f64(v)
+  }
+
+  /// `load_reg_f64` for the fast arm of a RUNTIME-guarded instruction,
+  /// where the caller already loaded the register's `I64` value to
+  /// build the guard out of.
+  ///
+  /// Taking the Variable here rather than bitcasting `v` is worth real
+  /// time even though this arm sits behind a runtime guard: a guard
+  /// that passes is the common case for genuinely numeric code that
+  /// simply isn't statically provable, which is most of a hot loop
+  /// whose values come back from calls or element reads.
+  /// `spectral-norm.zu` is entirely this shape, and routing it through
+  /// a local bitcast instead gives up the whole win there.
+  ///
+  /// `v` has to still BE `r`'s current value at this point, since for
+  /// a tracked register this reads the float Variable as it stands now
+  /// and ignores `v` entirely. In practice that means calling this
+  /// before the instruction stores its result, which matters whenever
+  /// a destination register aliases an operand (`x = x + y`).
+  fn f64_view(&mut self, r: u8, v: IrValue) -> IrValue {
+    if self.is_f64_tracked(r) {
+      return self.fb.use_var(self.reg_vars_f64[r as usize]);
+    }
+    self.to_f64(v)
+  }
+
+  /// Defines `r` from an `I64` value. Every definition site has to go
+  /// through here (or `store_reg_f64`) so the register's two views can
+  /// never drift apart on some path.
+  fn def_reg_both(&mut self, r: u8, v: IrValue) {
+    if self.is_f64_tracked(r) {
+      let f = self.to_f64(v);
+      self.fb.def_var(self.reg_vars_f64[r as usize], f);
+      if self.is_f64_canonical(r) {
+        return;
+      }
+    }
+    self.fb.def_var(self.reg_vars[r as usize], v);
   }
 
   fn store_reg(&mut self, r: u8, v: IrValue) {
-    self.fb.def_var(self.reg_vars[r as usize], v);
-    self.reg_f64[r as usize] = None;
+    self.def_reg_both(r, v);
     self.scalar_lists.remove(&r);
     self.scalar_instances.remove(&r);
   }
 
+  /// The float-producing counterpart of `store_reg`. The `F64` view is
+  /// defined from `f` directly, with no bitcast at all; a canonical
+  /// register stops right there, and for the rest Cranelift's own DCE
+  /// still drops the integer view wherever nothing reads it.
   fn store_reg_f64(&mut self, r: u8, f: IrValue) {
-    let v = self.from_f64(f);
-    self.store_reg(r, v);
-    self.reg_f64[r as usize] = Some(f);
+    if self.is_f64_tracked(r) {
+      self.fb.def_var(self.reg_vars_f64[r as usize], f);
+    }
+    if !self.is_f64_canonical(r) {
+      let v = self.from_f64(f);
+      self.fb.def_var(self.reg_vars[r as usize], v);
+    }
+    self.scalar_lists.remove(&r);
+    self.scalar_instances.remove(&r);
   }
 
   fn flush_live(&mut self, ip: usize) {
     let live: Vec<u8> = self.liveness.live_regs_at(ip).collect();
     for r in live {
-      let v = self.fb.use_var(self.reg_vars[r as usize]);
+      let v = self.load_reg(r);
       self.store_reg_mem(r, v);
     }
     self.flush_globals();
@@ -1579,7 +1886,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let live: Vec<u8> = self.liveness.live_regs_at(ip).collect();
     for r in live {
       let v = self.load_reg_mem(r);
-      self.fb.def_var(self.reg_vars[r as usize], v);
+      self.def_reg_both(r, v);
     }
     self.reload_globals();
   }
@@ -1672,6 +1979,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn bake_const(&mut self, idx: u16) -> IrValue {
     let v = self.proto.chunk.constants[idx as usize];
     self.u64c(v.to_bits())
+  }
+
+  /// The numeric constant at `idx` as a real `F64` value. Distinct
+  /// from `bake_f64_bits`, which produces the same number as an `I64`
+  /// integer immediate: that form is what the slow-path helpers take,
+  /// but feeding it to an `fadd`/`fmul` would cost a `movq` across to
+  /// the vector side that `f64const` doesn't.
+  fn bake_f64(&mut self, r: u8, idx: u16) -> IrValue {
+    let v = self.proto.chunk.constants[idx as usize];
+    debug_assert!(v.is_number());
+    // Only worth the constant pool when `r` genuinely lives in the
+    // float domain. Otherwise its own value had to be bitcast into an
+    // xmm register to get here anyway, and a RIP-relative load for the
+    // constant just adds a second memory access where a `movabs`
+    // immediate would have done; the same trap `Instr::LoadConst` fell
+    // into, and worth ~5% on `pidigits.zu` between them.
+    if self.is_f64_tracked(r) {
+      return self.fb.ins().f64const(v.as_number());
+    }
+    let bits = self.u64c(v.as_number().to_bits());
+    self.to_f64(bits)
   }
 
   fn bake_f64_bits(&mut self, idx: u16) -> IrValue {
@@ -4383,12 +4711,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if slot >= 0 {
       if let Some(&var) = self.global_vars.get(&slot) {
         let v = self.fb.use_var(var);
-        if self.proven_numeric(ip, dst) {
-          let f = self.to_f64(v);
-          self.store_reg_f64(dst, f);
-        } else {
-          self.store_reg(dst, v);
-        }
+        self.store_reg(dst, v);
         return;
       }
       let slots_ptr = self.fb.ins().load(
@@ -4399,12 +4722,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       );
       let byte_off = (slot * 8) as i32;
       let v = self.fb.ins().load(types::I64, flags, slots_ptr, byte_off);
-      if self.proven_numeric(ip, dst) {
-        let f = self.to_f64(v);
-        self.store_reg_f64(dst, f);
-      } else {
-        self.store_reg(dst, v);
-      }
+      self.store_reg(dst, v);
       return;
     }
 
@@ -4432,12 +4750,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let byte_off = self.fb.ins().imul_imm_s(cached, 8);
     let addr = self.fb.ins().iadd(slots_ptr, byte_off);
     let v = self.fb.ins().load(types::I64, flags, addr, 0);
-    if self.proven_numeric(ip, dst) {
-      let f = self.to_f64(v);
-      self.store_reg_f64(dst, f);
-    } else {
-      self.store_reg(dst, v);
-    }
+    self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(miss_block);
@@ -5880,7 +6193,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let (ptr, as_int) = if proven_str {
       let ptr = self.obj_ptr(obj_val);
-      let f = self.to_f64(idx_val);
+      let f = self.f64_view(iidx, idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       if idx_proven_int {
         self.fb.ins().jump(resolve_block, &[]);
@@ -5924,7 +6237,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
       let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
 
-      let f = self.to_f64(idx_val);
+      let f = self.f64_view(iidx, idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       if idx_proven_int {
         self
@@ -6260,7 +6573,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // straight to the pointer; only the index still needs checking
       // here.
       let ptr = self.obj_ptr(obj_val);
-      let f = self.to_f64(idx_val);
+      let f = self.f64_view(iidx, idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       if idx_proven_int {
         // `iidx` is proven to be a genuine whole number (see
@@ -6321,7 +6634,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
       let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
 
-      let f = self.to_f64(idx_val);
+      let f = self.f64_view(iidx, idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       let check_str_block = self.fb.create_block();
       if idx_proven_int {
@@ -6421,8 +6734,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let b8 = self.fb.ins().load(types::I8, flags_b, byte_elem_addr, 0);
       let b8_u64 = self.fb.ins().uextend(types::I64, b8);
       let b_f = self.fb.ins().fcvt_from_uint(types::F64, b8_u64);
-      let b_val = self.from_f64(b_f);
-      self.store_reg(dst, b_val);
+      self.store_reg_f64(dst, b_f);
       self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(str_resolve_block);
@@ -6545,7 +6857,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let (ptr, as_int) = if proven_list {
       let ptr = self.obj_ptr(obj_val);
-      let f = self.to_f64(idx_val);
+      let f = self.f64_view(iidx, idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       if idx_proven_int {
         self.fb.ins().jump(resolve_block, &[]);
@@ -6589,7 +6901,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
       let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
 
-      let f = self.to_f64(idx_val);
+      let f = self.f64_view(iidx, idx_val);
       let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
       let check_bytes_set_block = self.fb.create_block();
       if idx_proven_int {
@@ -6916,7 +7228,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     self.fb.switch_to_block(checked_block);
-    let f = self.to_f64(idx_val);
+    let f = self.f64_view(iidx, idx_val);
     let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
 
     let len = self.i64c(count as i64);
@@ -7036,7 +7348,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     self.fb.switch_to_block(checked_block);
-    let f = self.to_f64(idx_val);
+    let f = self.f64_view(iidx, idx_val);
     let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
 
     let len = self.i64c(count as i64);
@@ -7281,7 +7593,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().band(oa, ob)
   }
 
+  /// If `v` is itself the result of a `bitcast` from `want`, the value
+  /// that bitcast started from; `None` otherwise.
+  ///
+  /// Cranelift has no rule anywhere that cancels a `bitcast` pair, and
+  /// on x86-64 each half is a real cross-domain `movq`, so a value that
+  /// gets converted and immediately converted back pays for a round
+  /// trip through the other register file for nothing. Plenty of code
+  /// here hands raw bits to a helper that wants a float (or the other
+  /// way round) without either side being in a position to know the
+  /// conversion is about to be undone, so it's cheaper to catch it in
+  /// one place than to thread the float form through every signature.
+  fn bitcast_source(&self, v: IrValue, want: types::Type) -> Option<IrValue> {
+    let dfg = &self.fb.func.dfg;
+    let cranelift_codegen::ir::ValueDef::Result(inst, 0) = dfg.value_def(v) else {
+      return None;
+    };
+    if dfg.insts[inst].opcode() != cranelift_codegen::ir::Opcode::Bitcast {
+      return None;
+    }
+    let src = dfg.inst_args(inst).first().copied()?;
+    (dfg.value_type(src) == want).then_some(src)
+  }
+
   fn to_f64(&mut self, bits: IrValue) -> IrValue {
+    if let Some(f) = self.bitcast_source(bits, types::F64) {
+      return f;
+    }
     self
       .fb
       .ins()
@@ -7289,6 +7627,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn from_f64(&mut self, f: IrValue) -> IrValue {
+    if let Some(bits) = self.bitcast_source(f, types::I64) {
+      return bits;
+    }
     self
       .fb
       .ins()
@@ -7328,8 +7669,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     if self.proven_numeric(self.current_ip, cond) {
-      let v = self.load_reg(cond);
-      let fv = self.to_f64(v);
+      let fv = self.load_reg_f64(cond);
       let zero_f = self.fb.ins().f64const(0.0);
       let le_zero = self.fb.ins().fcmp(
         cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
@@ -7447,12 +7787,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // re-reads it instead of trusting a stale `Variable`.
     match instr {
       Instr::LoadConst { dst, const_idx } => {
-        let v = self.bake_const(const_idx);
         let const_val = self.proto.chunk.constants[const_idx as usize];
-        if const_val.is_number() {
-          let f = self.to_f64(v);
+        // The `f64const` form is only worth it when the register
+        // actually has a float view to fill: it lands in the constant
+        // pool and loads RIP-relative, so for a register that is only
+        // ever read as raw bits it costs a load plus a `movq` back
+        // where a plain integer immediate would have done. That made
+        // `pidigits.zu`, whose hot registers hold bigints, measurably
+        // slower.
+        if const_val.is_number() && self.is_f64_tracked(dst) {
+          let f = self.fb.ins().f64const(const_val.as_number());
           self.store_reg_f64(dst, f);
         } else {
+          let v = self.bake_const(const_idx);
           self.store_reg(dst, v);
         }
         false
@@ -7472,7 +7819,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::Move { dst, src } => {
-        if let Some(f) = self.reg_f64[src as usize] {
+        if self.is_f64_tracked(src) && self.is_f64_tracked(dst) {
+          // `compute_f64_tracked` ties the two ends of a move
+          // together, so this is the normal case for anything on a
+          // float path: the float view copies across with no bitcast
+          // at all, and `store_reg_f64` decides whether the integer
+          // one is even worth maintaining.
+          let f = self.load_reg_f64(src);
           self.store_reg_f64(dst, f);
         } else {
           let v = self.load_reg(src);
@@ -7502,11 +7855,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             .brif(both_num, num_block, &[], not_num_block, &[]);
 
           self.fb.switch_to_block(num_block);
-          let fa = self.to_f64(va);
-          let fb_ = self.to_f64(vb);
+          let fa = self.f64_view(a, va);
+          let fb_ = self.f64_view(b, vb);
           let res_f = self.fb.ins().fadd(fa, fb_);
-          let res_v = self.from_f64(res_f);
-          self.store_reg(dst, res_v);
+          self.store_reg_f64(dst, res_f);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(not_num_block);
@@ -7600,8 +7952,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let done_block = self.fb.create_block();
 
         if self.both_proven_numeric(ip, a, b) {
-          let fa = self.to_f64(va);
-          let fb_ = self.to_f64(vb);
+          let fa = self.load_reg_f64(a);
+          let fb_ = self.load_reg_f64(b);
           let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
           let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
           let zero = self.i64c(0);
@@ -7642,14 +7994,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let rem_adj = self.fb.ins().iadd(rem, ib);
           let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
           let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
-          let res_val = self.from_f64(res_f);
-          self.store_reg(dst, res_val);
+          self.store_reg_f64(dst, res_f);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(fmod_block);
           let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
-          let fallback_val = self.from_f64(fallback);
-          self.store_reg(dst, fallback_val);
+          self.store_reg_f64(dst, fallback);
           self.fb.ins().jump(done_block, &[]);
         } else {
           let guard = self.combined_numeric_guard(ip, va, vb, a, b);
@@ -7659,8 +8009,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.fb.ins().brif(guard, num_block, &[], slow_block, &[]);
 
           self.fb.switch_to_block(num_block);
-          let fa = self.to_f64(va);
-          let fb_ = self.to_f64(vb);
+          let fa = self.f64_view(a, va);
+          let fb_ = self.f64_view(b, vb);
           let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
           let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
           let zero = self.i64c(0);
@@ -7701,14 +8051,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let rem_adj = self.fb.ins().iadd(rem, ib);
           let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
           let res_f = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
-          let res_val = self.from_f64(res_f);
-          self.store_reg(dst, res_val);
+          self.store_reg_f64(dst, res_f);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(fmod_block);
           let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
-          let fallback_val = self.from_f64(fallback);
-          self.store_reg(dst, fallback_val);
+          self.store_reg_f64(dst, fallback);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(slow_block);
@@ -7788,13 +8136,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::BitNot { dst, src } => {
         if self.proven_numeric(ip, src) {
-          let v = self.load_reg(src);
-          let f = self.to_f64(v);
+          let f = self.load_reg_f64(src);
           let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
           let inv = self.fb.ins().bnot(i);
           let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
-          let bits = self.from_f64(r);
-          self.store_reg(dst, bits);
+          self.store_reg_f64(dst, r);
         } else {
           let v = self.load_reg(src);
           let is_num = self.is_number(v);
@@ -7804,12 +8150,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.fb.ins().brif(is_num, fast_block, &[], slow_block, &[]);
 
           self.fb.switch_to_block(fast_block);
-          let f = self.to_f64(v);
+          let f = self.f64_view(src, v);
           let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
           let inv = self.fb.ins().bnot(i);
           let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
-          let bits = self.from_f64(r);
-          self.store_reg(dst, bits);
+          self.store_reg_f64(dst, r);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(slow_block);
@@ -7826,11 +8171,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Neg { dst, src } => {
         if self.proven_numeric(ip, src) {
-          let v = self.load_reg(src);
-          let f = self.to_f64(v);
+          let f = self.load_reg_f64(src);
           let neg = self.fb.ins().fneg(f);
-          let bits = self.from_f64(neg);
-          self.store_reg(dst, bits);
+          self.store_reg_f64(dst, neg);
         } else {
           let v = self.load_reg(src);
           let is_num = self.is_number(v);
@@ -7840,10 +8183,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.fb.ins().brif(is_num, fast_block, &[], slow_block, &[]);
 
           self.fb.switch_to_block(fast_block);
-          let f = self.to_f64(v);
+          let f = self.f64_view(src, v);
           let neg = self.fb.ins().fneg(f);
-          let bits = self.from_f64(neg);
-          self.store_reg(dst, bits);
+          self.store_reg_f64(dst, neg);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(slow_block);
@@ -9015,11 +9357,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.f64_view(a, va);
+    let fb_ = self.f64_view(b, vb);
     let fr = fast(self, fa, fb_);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -9045,14 +9386,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) {
     let va = self.load_reg(a);
     let vb = self.load_reg(b);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.f64_view(a, va);
+    let fb_ = self.f64_view(b, vb);
     let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
     let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
     let ir = fast(self.fb, ia, ib);
     let fr = self.fb.ins().fcvt_from_sint(types::F64, ir);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
   }
 
   fn emit_bitwise_guarded(
@@ -9073,14 +9413,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.f64_view(a, va);
+    let fb_ = self.f64_view(b, vb);
     let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
     let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
     let ir = fast(self.fb, ia, ib);
     let fr = self.fb.ins().fcvt_from_sint(types::F64, ir);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -9204,10 +9543,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// when `a`/`b` are PROVEN numeric, so the object/raw-bits cases can
   /// never apply.
   fn emit_compare_proven_numeric(&mut self, dst: u8, a: u8, b: u8, cc: IntCC) {
-    let va = self.load_reg(a);
-    let vb = self.load_reg(b);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.load_reg_f64(a);
+    let fb_ = self.load_reg_f64(b);
     let cmp = self.fb.ins().fcmp(to_float_cc(cc), fa, fb_);
     let bits = self.bool_value(cmp);
     self.store_reg(dst, bits);
@@ -9238,8 +9575,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(both_num, num_block, &[], check_obj_block, &[]);
 
     self.fb.switch_to_block(num_block);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.f64_view(a, va);
+    let fb_ = self.f64_view(b, vb);
     let cmp = self.fb.ins().fcmp(to_float_cc(cc), fa, fb_);
     let bits = self.bool_value(cmp);
     self.store_reg(dst, bits);
@@ -9278,10 +9615,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     b: u8,
     cc: cranelift_codegen::ir::condcodes::FloatCC,
   ) {
-    let va = self.load_reg(a);
-    let vb = self.load_reg(b);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.load_reg_f64(a);
+    let fb_ = self.load_reg_f64(b);
     let cmp = self.fb.ins().fcmp(cc, fa, fb_);
     let bits = self.bool_value(cmp);
     self.store_reg(dst, bits);
@@ -9304,8 +9639,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fb_ = self.to_f64(vb);
+    let fa = self.f64_view(a, va);
+    let fb_ = self.f64_view(b, vb);
     let cmp = self.fb.ins().fcmp(cc, fa, fb_);
     let bits = self.bool_value(cmp);
     self.store_reg(dst, bits);
@@ -9327,8 +9662,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_addimm_proven(&mut self, dst: u8, a: u8, imm_const: u16) {
     let fa = self.load_reg_f64(a);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
+    let fimm = self.bake_f64(a, imm_const);
     let fr = self.fb.ins().fadd(fa, fimm);
     self.store_reg_f64(dst, fr);
   }
@@ -9342,12 +9676,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
+    let fa = self.f64_view(a, va);
+    let fimm = self.bake_f64(a, imm_const);
     let fr = self.fb.ins().fadd(fa, fimm);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -9375,8 +9707,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     fast: impl FnOnce(&mut Self, IrValue, IrValue) -> IrValue,
   ) {
     let fa = self.load_reg_f64(a);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
+    let fimm = self.bake_f64(a, imm_const);
     let fr = fast(self, fa, fimm);
     self.store_reg_f64(dst, fr);
   }
@@ -9397,12 +9728,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
+    let fa = self.f64_view(a, va);
+    let fimm = self.bake_f64(a, imm_const);
     let fr = fast(self, fa, fimm);
-    let bits = self.from_f64(fr);
-    self.store_reg(dst, bits);
+    self.store_reg_f64(dst, fr);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -9427,8 +9756,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     cc: cranelift_codegen::ir::condcodes::FloatCC,
   ) {
     let fa = self.load_reg_f64(a);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
+    let fimm = self.bake_f64(a, imm_const);
     let cmp = self.fb.ins().fcmp(cc, fa, fimm);
     let bits = self.bool_value(cmp);
     self.store_reg(dst, bits);
@@ -9450,9 +9778,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(guard, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let fa = self.to_f64(va);
-    let fimm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(fimm_bits);
+    let fa = self.f64_view(a, va);
+    let fimm = self.bake_f64(a, imm_const);
     let cmp = self.fb.ins().fcmp(cc, fa, fimm);
     let bits = self.bool_value(cmp);
     self.store_reg(dst, bits);
@@ -9480,10 +9807,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_imm_eq`'s `num_block` path directly; valid only when `a`
   /// is PROVEN numeric.
   fn emit_imm_eq_proven(&mut self, dst: u8, a: u8, imm_const: u16, want_eq: bool) {
-    let va = self.load_reg(a);
-    let fa = self.to_f64(va);
-    let imm_bits = self.bake_f64_bits(imm_const);
-    let fimm = self.to_f64(imm_bits);
+    let fa = self.load_reg_f64(a);
+    let fimm = self.bake_f64(a, imm_const);
     let float_cc = if want_eq {
       cranelift_codegen::ir::condcodes::FloatCC::Equal
     } else {
@@ -9505,8 +9830,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_num, num_block, &[], raw_block, &[]);
 
     self.fb.switch_to_block(num_block);
-    let fa = self.to_f64(va);
-    let fimm = self.to_f64(imm_bits);
+    let fa = self.f64_view(a, va);
+    let fimm = self.bake_f64(a, imm_const);
     let float_cc = if want_eq {
       cranelift_codegen::ir::condcodes::FloatCC::Equal
     } else {
