@@ -64,6 +64,7 @@ pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("trunc", trunc),
     method("sqrt", sqrt),
     method("fraction", fraction),
+    method_n("fixed", 1, fixed),
   ])
 });
 
@@ -251,4 +252,17 @@ fn fraction(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
   let whole: f64 = digits.parse().unwrap_or(0.0);
   Ok(Value::number(whole))
+}
+
+fn fixed(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let n = ctx.args[0].as_number();
+  let arg = ctx.args[1].as_number() as u32;
+
+  let precision = 10u64.pow(arg);
+  let n_precise = (n * precision as f64) as u64;
+
+  Ok(Value::number((n_precise | 1) as f64 / precision as f64))
 }

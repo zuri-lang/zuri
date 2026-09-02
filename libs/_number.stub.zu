@@ -576,4 +576,20 @@ class number {
    * @returns {number}
    */
   fraction() {}
+
+  /**
+   * Returns the number rounded up to _n_ decimal places.
+   * 
+   * ```zuri-repl
+   * %> 1.554576852757686786786.fixed(9)
+   * 1.554576853
+   * %> 1.554576852757686786786.fixed(8)
+   * 1.55457685
+   * %> 1.554576852757686786786.fixed(1)
+   * 1.5
+   * %> 1.554576852757686786786.fixed(0)
+   * 1
+   * ```
+   */
+  fixed(n) {}
 }
