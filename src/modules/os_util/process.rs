@@ -86,7 +86,10 @@ struct Drain {
 
 fn spawn_drain(mut reader: impl Read + Send + 'static) -> Drain {
   let state = Arc::new((
-    Mutex::new(DrainState { data: Vec::new(), finished: false }),
+    Mutex::new(DrainState {
+      data: Vec::new(),
+      finished: false,
+    }),
     Condvar::new(),
   ));
   let state2 = Arc::clone(&state);
@@ -163,12 +166,20 @@ impl Process {
     let stdout = child.stdout.take().map(spawn_drain);
     let stderr = child.stderr.take().map(spawn_drain);
 
-    Ok(Process { child, stdin, stdout, stderr })
+    Ok(Process {
+      child,
+      stdin,
+      stdout,
+      stderr,
+    })
   }
 
   pub fn write_stdin(&mut self, data: &[u8]) -> Result<(), String> {
     match &mut self.stdin {
-      Some(w) => w.write_all(data).and_then(|_| w.flush()).map_err(|e| e.to_string()),
+      Some(w) => w
+        .write_all(data)
+        .and_then(|_| w.flush())
+        .map_err(|e| e.to_string()),
       None => Err("this process's stdin was not piped (or has already been closed)".to_string()),
     }
   }

@@ -47,7 +47,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   // filesystem
   members.push(("chown", native(vm, "chown", 3, false, chown_fn)));
   members.push(("umask", native(vm, "umask", 1, false, umask_fn)));
-  members.push(("is_symlink", native(vm, "is_symlink", 1, false, is_symlink_fn)));
+  members.push((
+    "is_symlink",
+    native(vm, "is_symlink", 1, false, is_symlink_fn),
+  ));
   members.push(("readlink", native(vm, "readlink", 1, false, readlink_fn)));
 
   // process
@@ -55,7 +58,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   members.push(("ppid", native(vm, "ppid", 0, false, ppid_fn)));
   members.push(("kill", native(vm, "kill", 2, false, kill_fn)));
   members.push(("on_signal", native(vm, "on_signal", 2, false, on_signal_fn)));
-  members.push(("spawn_process", native(vm, "spawn_process", 3, false, spawn_process)));
+  members.push((
+    "spawn_process",
+    native(vm, "spawn_process", 3, false, spawn_process),
+  ));
   members.push((
     "process_write_stdin",
     native(vm, "write_stdin", 2, false, process_write_stdin),
@@ -1035,7 +1041,14 @@ fn create_temp_file(ctx: &mut ZuriContext) -> Result<Value, String> {
       .create_new(true)
       .open(&candidate)
     {
-      Ok(_) => return Ok(ctx.vm.heap_mut().alloc_string(candidate.display().to_string())),
+      Ok(_) => {
+        return Ok(
+          ctx
+            .vm
+            .heap_mut()
+            .alloc_string(candidate.display().to_string()),
+        );
+      },
       Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
       Err(e) => return Err(format!("could not create a temp file: {}", e)),
     }
@@ -1055,7 +1068,14 @@ fn create_temp_dir(ctx: &mut ZuriContext) -> Result<Value, String> {
   for _ in 0..TEMP_NAME_ATTEMPTS {
     let candidate = dir.join(format!("{}{}", prefix, temp_name_suffix()));
     match fs::create_dir(&candidate) {
-      Ok(()) => return Ok(ctx.vm.heap_mut().alloc_string(candidate.display().to_string())),
+      Ok(()) => {
+        return Ok(
+          ctx
+            .vm
+            .heap_mut()
+            .alloc_string(candidate.display().to_string()),
+        );
+      },
       Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
       Err(e) => return Err(format!("could not create a temp directory: {}", e)),
     }

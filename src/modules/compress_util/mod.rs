@@ -576,7 +576,9 @@ impl fmt::Debug for DeflateDecoder {
 // Deflate/Inflate — kept as a near-mirror on purpose so the two are easy
 // to compare and the native bindings in compress.rs can register bzip2's
 // methods under the exact same names as gzip's.
-use bzip2::{Action, Compress, Compression as BzCompression, Decompress, Error as BzError, Status as BzStatus};
+use bzip2::{
+  Action, Compress, Compression as BzCompression, Decompress, Error as BzError, Status as BzStatus,
+};
 
 #[derive(Debug)]
 pub struct Bzip2Error(pub BzError);
@@ -662,7 +664,9 @@ impl Bzip2Encoder {
     loop {
       let before_out = self.compress.total_out();
 
-      let status = self.compress.compress(&[], &mut self.scratch, Action::Finish)?;
+      let status = self
+        .compress
+        .compress(&[], &mut self.scratch, Action::Finish)?;
 
       let produced = (self.compress.total_out() - before_out) as usize;
       self.append_scratch(produced);
@@ -725,7 +729,9 @@ impl Bzip2Encoder {
       let before_in = self.compress.total_in();
       let before_out = self.compress.total_out();
 
-      self.compress.compress(&self.input, &mut self.scratch, action)?;
+      self
+        .compress
+        .compress(&self.input, &mut self.scratch, action)?;
 
       let consumed = (self.compress.total_in() - before_in) as usize;
       let produced = (self.compress.total_out() - before_out) as usize;
@@ -796,9 +802,10 @@ impl Bzip2Decoder {
     let before_in = self.decompress.total_in();
     let before_out = self.decompress.total_out();
 
-    let status = self
-      .decompress
-      .decompress(&self.input[self.input_pos..], &mut self.scratch[..output_len])?;
+    let status = self.decompress.decompress(
+      &self.input[self.input_pos..],
+      &mut self.scratch[..output_len],
+    )?;
 
     let consumed = (self.decompress.total_in() - before_in) as usize;
     let produced = (self.decompress.total_out() - before_out) as usize;

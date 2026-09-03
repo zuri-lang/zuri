@@ -24,16 +24,34 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
     ("kind", native(vm, "kind", 1, false, kind_fn)),
-    ("pointer_type", native(vm, "pointer_type", 1, false, pointer_type_fn)),
-    ("function_info", native(vm, "function_info", 1, false, function_info_fn)),
-    ("class_info", native(vm, "class_info", 1, false, class_info_fn)),
-    ("module_info", native(vm, "module_info", 1, false, module_info_fn)),
+    (
+      "pointer_type",
+      native(vm, "pointer_type", 1, false, pointer_type_fn),
+    ),
+    (
+      "function_info",
+      native(vm, "function_info", 1, false, function_info_fn),
+    ),
+    (
+      "class_info",
+      native(vm, "class_info", 1, false, class_info_fn),
+    ),
+    (
+      "module_info",
+      native(vm, "module_info", 1, false, module_info_fn),
+    ),
     ("info", native(vm, "info", 1, false, info_fn)),
     ("has_prop", native(vm, "has_prop", 2, false, has_prop_fn)),
     ("get_prop", native(vm, "get_prop", 2, false, get_prop_fn)),
     ("get_props", native(vm, "get_props", 1, false, get_props_fn)),
-    ("has_method", native(vm, "has_method", 2, false, has_method_fn)),
-    ("get_method", native(vm, "get_method", 2, false, get_method_fn)),
+    (
+      "has_method",
+      native(vm, "has_method", 2, false, has_method_fn),
+    ),
+    (
+      "get_method",
+      native(vm, "get_method", 2, false, get_method_fn),
+    ),
     (
       "bind_method",
       native(vm, "bind_method", 2, false, bind_method_fn),
@@ -126,7 +144,14 @@ fn describe_function(ctx: &mut ZuriContext, value: Value) -> Result<Value, Strin
     return describe_function(ctx, value.as_bound_method().method);
   } else if value.is_native() {
     let n = value.as_native();
-    (n.name.to_string(), n.min_arity, n.variadic, n.is_method, None, None)
+    (
+      n.name.to_string(),
+      n.min_arity,
+      n.variadic,
+      n.is_method,
+      None,
+      None,
+    )
   } else {
     return Err(format!(
       "reflect.function_info() expects a function, got {}",
@@ -197,15 +222,10 @@ fn class_info_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let (name, superclass_name, method_entries, mut field_entries, mut static_entries) = {
     let class = value.as_class();
 
-    let superclass_name = class
-      .superclass
-      .map(|sc| sc.as_class().name.clone());
+    let superclass_name = class.superclass.map(|sc| sc.as_class().name.clone());
 
-    let method_entries: Vec<(String, Value)> = class
-      .methods
-      .iter()
-      .map(|(k, v)| (k.clone(), *v))
-      .collect();
+    let method_entries: Vec<(String, Value)> =
+      class.methods.iter().map(|(k, v)| (k.clone(), *v)).collect();
 
     let field_entries: Vec<(String, u16)> = class
       .field_slots
@@ -411,7 +431,13 @@ fn get_prop_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       None => Ok(Value::nil()),
     }
   } else if let Some(module) = resolve_module_value(object) {
-    Ok(module.as_module().namespace.get(name).unwrap_or(Value::nil()))
+    Ok(
+      module
+        .as_module()
+        .namespace
+        .get(name)
+        .unwrap_or(Value::nil()),
+    )
   } else {
     Ok(Value::nil())
   }

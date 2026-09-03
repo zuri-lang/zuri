@@ -28,7 +28,11 @@ pub fn hostname() -> Result<String, String> {
   // First call with no buffer just asks how big one needs to be.
   let mut len: u32 = 0;
   unsafe {
-    GetComputerNameExW(ComputerNamePhysicalDnsHostname, std::ptr::null_mut(), &mut len);
+    GetComputerNameExW(
+      ComputerNamePhysicalDnsHostname,
+      std::ptr::null_mut(),
+      &mut len,
+    );
   }
   if len == 0 {
     return Err("could not determine the machine's hostname".to_string());
@@ -71,7 +75,11 @@ pub fn uname() -> (String, String, String, String, String) {
 
 #[cfg(unix)]
 unsafe fn cstr_field(field: &[std::os::raw::c_char]) -> String {
-  let bytes: Vec<u8> = field.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
+  let bytes: Vec<u8> = field
+    .iter()
+    .take_while(|&&c| c != 0)
+    .map(|&c| c as u8)
+    .collect();
   String::from_utf8_lossy(&bytes).into_owned()
 }
 

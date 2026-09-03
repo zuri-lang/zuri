@@ -51,7 +51,28 @@ pub use crate::vm::list::ListStorage;
 /// variant is ever added that's meaningfully larger than the rest.
 #[repr(C, u8)]
 pub enum Obj {
-  Str(String) = 0,
+  /// A string, plus a lazily-computed note on whether it is pure
+  /// ASCII: `ASCII_UNKNOWN` until something asks, then `ASCII_YES` or
+  /// `ASCII_NO`.
+  ///
+  /// Indexing a Zuri string is by codepoint, but the bytes are UTF-8,
+  /// so byte offset `i` only holds codepoint `i` when every byte before
+  /// it is single-byte. Compiled code needs that fact in constant time
+  /// to index a string without a scan, and a scan is exactly what it is
+  /// trying to avoid; hence caching it here rather than recomputing.
+  ///
+  /// Deliberately lazy rather than filled in at allocation: building a
+  /// string by repeated concatenation allocates a fresh one each time,
+  /// and scanning every intermediate result would turn that loop
+  /// quadratic. Only code that actually indexes a string pays for it.
+  ///
+  /// The flag cannot go stale. `Obj::Str` holds no `RefCell`, so safe
+  /// code can never mutate one in place, and the single unsafe path
+  /// that does (`jit::codegen`'s in-place append) only ever appends a
+  /// one-BYTE string; a one-byte string is necessarily ASCII, since
+  /// every non-ASCII codepoint is two bytes or more in UTF-8, so an
+  /// ASCII string stays ASCII and a non-ASCII one stays non-ASCII.
+  Str(String, Cell<u8>) = 0,
   Bytes(RefCell<Vec<u8>>) = 1,
   BigInt(BigInt) = 2,
   /// A dynamically-sized list.
@@ -277,7 +298,10 @@ mod obj_repr_tests {
   /// edits `= N` on a variant without updating the matching constant.
   #[test]
   fn tags_match_discriminants() {
-    assert_eq!(Obj::Str(String::new()).tag(), OBJ_TAG_STR);
+    assert_eq!(
+      Obj::Str(String::new(), Cell::new(ASCII_UNKNOWN)).tag(),
+      OBJ_TAG_STR
+    );
     assert_eq!(Obj::Bytes(RefCell::new(Vec::new())).tag(), OBJ_TAG_BYTES);
     assert_eq!(Obj::BigInt(BigInt::from(0)).tag(), OBJ_TAG_BIGINT);
     assert_eq!(
@@ -1456,6 +1480,39 @@ pub fn obj_to_gcbox_remembered_offset() -> i32 {
   std::mem::offset_of!(GcBox, remembered) as i32 - std::mem::offset_of!(GcBox, obj) as i32
 }
 
+/// `Obj::Str`'s ASCII flag: nobody has asked yet.
+pub const ASCII_UNKNOWN: u8 = 0;
+
+/// `Obj::Str`'s ASCII flag: every byte is below 0x80, so a codepoint
+/// index is also a byte index.
+pub const ASCII_YES: u8 = 1;
+
+/// `Obj::Str`'s ASCII flag: at least one multi-byte codepoint, so a
+/// codepoint index says nothing about a byte offset.
+pub const ASCII_NO: u8 = 2;
+
+/// Byte offset from a proven-`Obj::Str` pointer to its cached ASCII
+/// flag, for compiled code to read directly.
+///
+/// Measured against a live probe rather than assumed, for the same
+/// reason `obj_str_data_offsets` measures: where the flag lands inside
+/// the variant depends on how `String` itself is laid out, which is not
+/// a language guarantee. Taken as the difference between the field's
+/// own address and the enum's, so it stays right whatever that layout
+/// turns out to be.
+pub fn obj_str_ascii_offset() -> i32 {
+  static OFFSET: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+  *OFFSET.get_or_init(|| {
+    let probe = Obj::Str(String::from("probe"), Cell::new(ASCII_UNKNOWN));
+    let base = &probe as *const Obj as usize;
+
+    match &probe {
+      Obj::Str(_, flag) => (flag as *const Cell<u8> as usize - base) as i32,
+      _ => unreachable!("the probe was just built as an Obj::Str"),
+    }
+  })
+}
+
 /// Byte offsets from a proven-`Obj::Str` pointer to that `String`'s
 /// heap data pointer and UTF-8 BYTE length (not the codepoint count
 /// `StringIntrinsic::Length` computes; that's a scan over these same
@@ -1490,7 +1547,7 @@ fn obj_str_data_offsets() -> (i32, i32, i32) {
     let want_cap = probe_string.capacity();
     debug_assert_ne!(want_len, want_cap);
 
-    let probe = Obj::Str(probe_string);
+    let probe = Obj::Str(probe_string, Cell::new(ASCII_UNKNOWN));
     let obj_bytes = unsafe {
       std::slice::from_raw_parts(
         &probe as *const Obj as *const u8,
@@ -1597,7 +1654,7 @@ mod gcbox_layout_tests {
     assert_eq!(Generation::Old as u8, GENERATION_OLD_BYTE);
 
     let mut heap = Heap::default();
-    let v = heap.alloc(Obj::Str(String::from("probe")));
+    let v = heap.alloc(Obj::Str(String::from("probe"), Cell::new(ASCII_UNKNOWN)));
     let obj = v.as_obj();
     let gen_addr = unsafe { (obj as *const u8).offset(obj_to_gcbox_generation_offset() as isize) };
     let rem_addr = unsafe { (obj as *const u8).offset(obj_to_gcbox_remembered_offset() as isize) };
@@ -2240,7 +2297,7 @@ impl Heap {
     use std::mem::size_of;
     size_of::<Obj>()
       + match obj {
-        Obj::Str(s) => s.len(),
+        Obj::Str(s, _) => s.len(),
         Obj::Bytes(b) => b.borrow().len(),
         Obj::BigInt(x) => size_of::<BigInt>() + x.bits() as usize,
         Obj::List(items) => items.borrow().len() * size_of::<Value>(),
@@ -2713,7 +2770,7 @@ impl Heap {
   }
 
   pub fn alloc_string(&mut self, s: impl Into<String>) -> Value {
-    self.alloc(Obj::Str(s.into()))
+    self.alloc(Obj::Str(s.into(), Cell::new(ASCII_UNKNOWN)))
   }
 
   /// Deliberately `alloc_old`, not `alloc`; for `Compiler`'s own
@@ -2753,7 +2810,7 @@ impl Heap {
       return existing;
     }
     let key: Box<str> = s.as_str().into();
-    let value = self.alloc_old(Obj::Str(s));
+    let value = self.alloc_old(Obj::Str(s, Cell::new(ASCII_UNKNOWN)));
     self.interned_strings.insert(key, value);
     value
   }

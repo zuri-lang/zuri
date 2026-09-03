@@ -939,9 +939,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         },
         // A numeric branch condition is truth-tested with an `fcmp`
         // against zero rather than a bit compare.
-        Instr::JmpIfFalse { cond, .. } | Instr::JmpIfTrue { cond, .. } => {
-          mark(&mut tracked, cond)
-        },
+        Instr::JmpIfFalse { cond, .. } | Instr::JmpIfTrue { cond, .. } => mark(&mut tracked, cond),
         // Indexing converts through `f64` on its way to a machine
         // integer, so the index register has a real float view even
         // though the container doesn't.
@@ -1361,11 +1359,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // unconditionally, canonical or not.
       self.fb.def_var(self.reg_vars[r], v);
       if self.f64_tracked[r] {
-        let f = self.fb.ins().bitcast(
-          types::F64,
-          cranelift_codegen::ir::MemFlagsData::new(),
-          v,
-        );
+        let f = self
+          .fb
+          .ins()
+          .bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), v);
         self.fb.def_var(self.reg_vars_f64[r], f);
       }
       self.entry_reg_values.push(v);
@@ -6174,6 +6171,32 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// resolving the list's data pointer still costs one small helper
   /// call while the bounds check and element load are real inline
   /// Cranelift code either way.
+  /// True when the string at `ptr` is known to hold nothing but ASCII,
+  /// which is exactly the condition under which a codepoint index may be
+  /// used as a byte offset into its data.
+  ///
+  /// Reads the flag cached on the string itself rather than inspecting
+  /// any bytes: one load and one compare, no scan, and no dependence on
+  /// the index. Checking only the byte that lands at the index instead
+  /// (which is what this code used to do) is NOT sound; in
+  /// `"'name': Alice"` written with a two-codepoint multi-byte name,
+  /// byte 8 is an ASCII `:` while codepoint 8 is `i`, so the check
+  /// passes and the wrong character is returned.
+  ///
+  /// The flag starts out unknown and is filled in the first time
+  /// anything indexes the string through `Value::str_is_ascii`, so a
+  /// freshly built string takes the slow path once and is fast after
+  /// that.
+  fn str_ascii_guard(&mut self, ptr: IrValue) -> IrValue {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let flag = self
+      .fb
+      .ins()
+      .load(types::I8, flags, ptr, object::obj_str_ascii_offset());
+    let yes = self.fb.ins().iconst(types::I8, object::ASCII_YES as i64);
+    self.fb.ins().icmp(IntCC::Equal, flag, yes)
+  }
+
   fn emit_str_get_index(
     &mut self,
     ip: usize,
@@ -6270,6 +6293,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .load(types::I64, flags, ptr, object::obj_str_len_offset());
+    // See `str_ascii_guard`: without this the byte length below is not
+    // the codepoint count, and the byte at the index is not the
+    // codepoint at the index.
+    let ascii_ok = self.str_ascii_guard(ptr);
+    let bounds_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(ascii_ok, bounds_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(bounds_block);
     let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
     let ascii_block = self.fb.create_block();
@@ -6282,16 +6316,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let byte_addr = self.fb.ins().iadd(data_ptr, as_int);
     let byte_val = self.fb.ins().load(types::I8, flags, byte_addr, 0);
     let byte_ext = self.fb.ins().uextend(types::I64, byte_val);
-    let is_ascii = self
-      .fb
-      .ins()
-      .icmp_imm_u(IntCC::UnsignedLessThan, byte_ext, 128);
 
     let fast_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(is_ascii, fast_block, &[], slow_block, &[]);
+    self.fb.ins().jump(fast_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let byte_off = self.fb.ins().imul_imm_s(byte_ext, 8);
@@ -6747,6 +6774,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .fb
         .ins()
         .load(types::I64, flags, ptr, object::obj_str_len_offset());
+      // A Zuri string is indexed by CODEPOINT but stored as UTF-8, so
+      // byte offset `i` only holds codepoint `i` when nothing before it
+      // is multi-byte. `str_ascii_guard` is that whole-string fact,
+      // which also makes the byte length below the codepoint count.
+      let str_ascii_ok = self.str_ascii_guard(ptr);
+      let str_bounds_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(str_ascii_ok, str_bounds_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(str_bounds_block);
       let str_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, str_len);
       let str_fast_block = self.fb.create_block();
       self
@@ -6758,16 +6797,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let byte_addr = self.fb.ins().iadd(str_data_ptr, as_int);
       let byte_val8 = self.fb.ins().load(types::I8, flags, byte_addr, 0);
       let byte_val64 = self.fb.ins().uextend(types::I64, byte_val8);
-      let c128 = self.i64c(128);
-      let is_ascii = self
-        .fb
-        .ins()
-        .icmp(IntCC::UnsignedLessThan, byte_val64, c128);
       let ascii_load_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(is_ascii, ascii_load_block, &[], slow_block, &[]);
+      self.fb.ins().jump(ascii_load_block, &[]);
 
       self.fb.switch_to_block(ascii_load_block);
       let interned_offset = self.fb.ins().imul_imm_s(byte_val64, 8);
@@ -7718,10 +7749,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(maybe_falsey, payload_block, &[], never_falsey_block, &[]);
 
     self.fb.switch_to_block(payload_block);
-    let base = self.base_param;
     let vm_p = self.vm_param;
-    let cond_i = self.idx(cond);
-    let falsey = self.call_helper_raw("zuri_jit_is_falsey", &[vm_p, base, cond_i]);
+    // The already-loaded value, not `cond`'s register index: this goes
+    // through `call_helper_raw`, which does not flush, so the register
+    // may still hold what it held before this instruction. See
+    // `zuri_jit_is_falsey`'s own docs.
+    let falsey = self.call_helper_raw("zuri_jit_is_falsey", &[vm_p, v]);
     self.fb.def_var(result_var, falsey);
     self.fb.ins().jump(merge_block, &[]);
 

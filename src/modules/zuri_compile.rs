@@ -69,7 +69,12 @@ fn compile_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   };
 
   let chunk = Box::new(Chunk::new());
-  let compiler = Compiler::new(decls, chunk, ctx.heap(), std::rc::Rc::from("<zuri.compile>"));
+  let compiler = Compiler::new(
+    decls,
+    chunk,
+    ctx.heap(),
+    std::rc::Rc::from("<zuri.compile>"),
+  );
 
   let top_fn = match compiler.compile() {
     Ok(f) => f,
@@ -95,7 +100,12 @@ fn opt_num(n: Option<u32>) -> Value {
   n.map(|n| Value::number(n as f64)).unwrap_or(Value::nil())
 }
 
-fn instr_node(ctx: &mut ZuriContext, op: &str, line: Option<u32>, fields: Vec<(Value, Value)>) -> Value {
+fn instr_node(
+  ctx: &mut ZuriContext,
+  op: &str,
+  line: Option<u32>,
+  fields: Vec<(Value, Value)>,
+) -> Value {
   let op_k = ctx.heap().alloc_string("op");
   let op_v = ctx.heap().alloc_string(op);
   let line_k = ctx.heap().alloc_string("line");
@@ -329,7 +339,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
     },
     Instr::JmpIfFalse { cond, offset } => jmp_cond_node(ctx, "JmpIfFalse", line, cond, offset),
     Instr::JmpIfTrue { cond, offset } => jmp_cond_node(ctx, "JmpIfTrue", line, cond, offset),
-    Instr::Call { dst, func, num_args } => {
+    Instr::Call {
+      dst,
+      func,
+      num_args,
+    } => {
       let f = vec![
         kv(ctx, "dst", Value::number(dst as f64)),
         kv(ctx, "func", Value::number(func as f64)),
@@ -415,7 +429,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "MakeDict", line, f)
     },
-    Instr::MakeClass { dst, name_const, superclass } => {
+    Instr::MakeClass {
+      dst,
+      name_const,
+      superclass,
+    } => {
       let resolved = resolve_const(ctx, chunk, name_const);
       let superclass_v = superclass
         .map(|r| Value::number(r as f64))
@@ -444,7 +462,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "SetFieldInit", line, f)
     },
-    Instr::SetMethod { class, name_const, src } => {
+    Instr::SetMethod {
+      class,
+      name_const,
+      src,
+    } => {
       let resolved = resolve_const(ctx, chunk, name_const);
       let f = vec![
         kv(ctx, "class_reg", Value::number(class as f64)),
@@ -454,7 +476,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "SetMethod", line, f)
     },
-    Instr::DeclareStatic { class, name_const, src } => {
+    Instr::DeclareStatic {
+      class,
+      name_const,
+      src,
+    } => {
       let resolved = resolve_const(ctx, chunk, name_const);
       let f = vec![
         kv(ctx, "class_reg", Value::number(class as f64)),
@@ -468,7 +494,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       let f = vec![kv(ctx, "class_reg", Value::number(class as f64))];
       instr_node(ctx, "FinalizeClass", line, f)
     },
-    Instr::GetField { dst, obj, name_const } => {
+    Instr::GetField {
+      dst,
+      obj,
+      name_const,
+    } => {
       let resolved = resolve_const(ctx, chunk, name_const);
       let f = vec![
         kv(ctx, "dst", Value::number(dst as f64)),
@@ -478,7 +508,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "GetField", line, f)
     },
-    Instr::SetField { obj, name_const, src } => {
+    Instr::SetField {
+      obj,
+      name_const,
+      src,
+    } => {
       let resolved = resolve_const(ctx, chunk, name_const);
       let f = vec![
         kv(ctx, "obj", Value::number(obj as f64)),
@@ -488,7 +522,12 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "SetField", line, f)
     },
-    Instr::Invoke { dst, obj, method_const, num_args } => {
+    Instr::Invoke {
+      dst,
+      obj,
+      method_const,
+      num_args,
+    } => {
       let resolved = resolve_const(ctx, chunk, method_const);
       let f = vec![
         kv(ctx, "dst", Value::number(dst as f64)),
@@ -499,7 +538,12 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "Invoke", line, f)
     },
-    Instr::InvokeSuper { dst, superclass, method_const, num_args } => {
+    Instr::InvokeSuper {
+      dst,
+      superclass,
+      method_const,
+      num_args,
+    } => {
       let resolved = resolve_const(ctx, chunk, method_const);
       let f = vec![
         kv(ctx, "dst", Value::number(dst as f64)),
@@ -510,7 +554,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "InvokeSuper", line, f)
     },
-    Instr::CallSuperCtor { dst, superclass, num_args } => {
+    Instr::CallSuperCtor {
+      dst,
+      superclass,
+      num_args,
+    } => {
       let f = vec![
         kv(ctx, "dst", Value::number(dst as f64)),
         kv(ctx, "superclass", Value::number(superclass as f64)),
@@ -518,7 +566,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "CallSuperCtor", line, f)
     },
-    Instr::Import { dst, path_const, importer_const } => {
+    Instr::Import {
+      dst,
+      path_const,
+      importer_const,
+    } => {
       let path_v = resolve_const(ctx, chunk, path_const);
       let importer_v = resolve_const(ctx, chunk, importer_const);
       let f = vec![
@@ -537,7 +589,11 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       ];
       instr_node(ctx, "ImportAll", line, f)
     },
-    Instr::MakePromoted { dst, module, name_const } => {
+    Instr::MakePromoted {
+      dst,
+      module,
+      name_const,
+    } => {
       let resolved = resolve_const(ctx, chunk, name_const);
       let f = vec![
         kv(ctx, "dst", Value::number(dst as f64)),
@@ -594,7 +650,9 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       instr_node(ctx, "Raise", line, f)
     },
     Instr::PushCatch { var_reg, offset } => {
-      let var_v = var_reg.map(|r| Value::number(r as f64)).unwrap_or(Value::nil());
+      let var_v = var_reg
+        .map(|r| Value::number(r as f64))
+        .unwrap_or(Value::nil());
       let f = vec![
         kv(ctx, "var_reg", var_v),
         kv(ctx, "offset", Value::number(offset as f64)),
@@ -640,7 +698,13 @@ fn unop_node(ctx: &mut ZuriContext, op: &str, line: Option<u32>, dst: u8, src: u
   instr_node(ctx, op, line, f)
 }
 
-fn jmp_cond_node(ctx: &mut ZuriContext, op: &str, line: Option<u32>, cond: u8, offset: i16) -> Value {
+fn jmp_cond_node(
+  ctx: &mut ZuriContext,
+  op: &str,
+  line: Option<u32>,
+  cond: u8,
+  offset: i16,
+) -> Value {
   let f = vec![
     kv(ctx, "cond", Value::number(cond as f64)),
     kv(ctx, "offset", Value::number(offset as f64)),

@@ -15,8 +15,7 @@ use x509_cert::ext::pkix::SubjectAltName;
 use x509_cert::ext::pkix::name::GeneralName;
 
 use crate::builtins::enforce::{
-  ArgType, enforce_method_arg_count, enforce_method_arg_type,
-  enforce_method_arg_type_any_of,
+  ArgType, enforce_method_arg_count, enforce_method_arg_type, enforce_method_arg_type_any_of,
 };
 use crate::enforce_arg_count;
 use crate::modules::net_tcp::{TCP_STREAM, TCP_STREAM_UPGRADED, ZuriTcp};
@@ -32,7 +31,10 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
 
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
-    ("tls_config_new", native(vm, "@new", 0, false, tls_config_new)),
+    (
+      "tls_config_new",
+      native(vm, "@new", 0, false, tls_config_new),
+    ),
     (
       "tls_config_set_root_store",
       native(vm, "set_root_store", 2, false, tls_config_set_root_store),
@@ -80,7 +82,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "tls_read_exact",
       native(vm, "read_exact", 2, false, tls_read_exact),
     ),
-    ("tls_read_all", native(vm, "read_all", 1, false, tls_read_all)),
+    (
+      "tls_read_all",
+      native(vm, "read_all", 1, false, tls_read_all),
+    ),
     (
       "tls_read_as_string",
       native(vm, "read_as_string", 1, false, tls_read_as_string),
@@ -91,7 +96,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       native(vm, "write_all", 2, true, tls_write_all),
     ),
     ("tls_flush", native(vm, "flush", 1, false, tls_flush)),
-    ("tls_shutdown", native(vm, "shutdown", 1, false, tls_shutdown)),
+    (
+      "tls_shutdown",
+      native(vm, "shutdown", 1, false, tls_shutdown),
+    ),
     ("tls_close", native(vm, "close", 1, false, tls_close)),
     (
       "tls_alpn_protocol",
@@ -99,7 +107,13 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     (
       "tls_peer_certificate_der",
-      native(vm, "peer_certificate_der", 1, false, tls_peer_certificate_der),
+      native(
+        vm,
+        "peer_certificate_der",
+        1,
+        false,
+        tls_peer_certificate_der,
+      ),
     ),
     (
       "tls_peer_certificate_subject",
@@ -123,7 +137,13 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     (
       "tls_peer_certificate_sans",
-      native(vm, "peer_certificate_sans", 1, false, tls_peer_certificate_sans),
+      native(
+        vm,
+        "peer_certificate_sans",
+        1,
+        false,
+        tls_peer_certificate_sans,
+      ),
     ),
     (
       "tls_peer_certificate_not_before",
@@ -232,12 +252,10 @@ impl ZuriTlsConfig {
         let mut store = RootCertStore::empty();
         let (added, _) = store.add_parsable_certificates(result.certs);
         if added == 0 {
-          return Err(
-            "tls: no usable certificates found in the OS-native trust store".to_string(),
-          );
+          return Err("tls: no usable certificates found in the OS-native trust store".to_string());
         }
         store
-      }
+      },
     };
     for pem in &self.extra_ca_pems {
       let certs = parse_cert_chain_pem(pem)?;
@@ -275,7 +293,7 @@ impl ZuriTlsConfig {
         builder
           .with_client_auth_cert(chain, key)
           .map_err(|e| format!("tls: invalid client certificate/key: {e}"))?
-      }
+      },
       _ => builder.with_no_client_auth(),
     };
     config.alpn_protocols = self.alpn.clone();
@@ -295,8 +313,7 @@ impl ZuriTlsConfig {
       .as_ref()
       .zip(self.key_pem.as_ref())
       .ok_or_else(|| {
-        "tls: a server needs set_cert_chain() called before it can accept connections"
-          .to_string()
+        "tls: a server needs set_cert_chain() called before it can accept connections".to_string()
       })?;
     let chain = parse_cert_chain_pem(chain_pem)?;
     let key = parse_private_key_pem(key_pem)?;
@@ -481,12 +498,12 @@ impl ZuriTlsStream {
         s.conn.send_close_notify();
         s.conn.complete_io(&mut s.sock).map_err(|e| e.to_string())?;
         Ok(())
-      }
+      },
       ZuriTlsStream::Server(s) => {
         s.conn.send_close_notify();
         s.conn.complete_io(&mut s.sock).map_err(|e| e.to_string())?;
         Ok(())
-      }
+      },
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
@@ -540,7 +557,7 @@ fn tls_config_set_root_store(ctx: &mut ZuriContext) -> Result<Value, String> {
       return Err(format!(
         "tls: unknown root store mode '{other}', expected 'bundled' or 'native'"
       ));
-    }
+    },
   };
   with_config_at(ctx, 0, |config| {
     config.root_store_mode = mode;
@@ -702,12 +719,11 @@ where
       Ok(_) => return Ok(()),
       Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
         std::thread::sleep(std::time::Duration::from_millis(1));
-      }
+      },
       Err(e) => return Err(e.to_string()),
     }
   }
 }
-
 
 fn tls_wrap_client(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 2);
@@ -716,8 +732,8 @@ fn tls_wrap_client(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_type!(ctx, 2, ArgType::String);
 
   let server_name = ctx.args[2].as_str().to_string();
-  let name = ServerName::try_from(server_name)
-    .map_err(|e| format!("tls: invalid server name: {e}"))?;
+  let name =
+    ServerName::try_from(server_name).map_err(|e| format!("tls: invalid server name: {e}"))?;
 
   let config = with_config_at(ctx, 1, |config| config.build_client_config())?;
   let tcp_stream = take_tcp_stream(ctx, 0)?;
@@ -897,13 +913,15 @@ fn peer_certificate(ctx: &mut ZuriContext) -> Result<Option<CertificateDer<'stat
   with_stream(ctx, |s| Ok(s.peer_certificate()))
 }
 
-fn parsed_peer_certificate(ctx: &mut ZuriContext) -> Result<Option<x509_cert::Certificate>, String> {
+fn parsed_peer_certificate(
+  ctx: &mut ZuriContext,
+) -> Result<Option<x509_cert::Certificate>, String> {
   match peer_certificate(ctx)? {
     Some(der) => {
       let cert = x509_cert::Certificate::from_der(der.as_ref())
         .map_err(|e| format!("tls: could not parse peer certificate: {e}"))?;
       Ok(Some(cert))
-    }
+    },
     None => Ok(None),
   }
 }
@@ -947,10 +965,10 @@ fn general_name_to_string(name: &GeneralName) -> Option<String> {
       4 => {
         let b = octets.as_bytes();
         Some(format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]))
-      }
-      16 => Some(
-        std::net::Ipv6Addr::from(<[u8; 16]>::try_from(octets.as_bytes()).ok()?).to_string(),
-      ),
+      },
+      16 => {
+        Some(std::net::Ipv6Addr::from(<[u8; 16]>::try_from(octets.as_bytes()).ok()?).to_string())
+      },
       _ => None,
     },
     _ => None,
@@ -973,7 +991,7 @@ fn tls_peer_certificate_sans(ctx: &mut ZuriContext) -> Result<Value, String> {
         None => Vec::new(),
       };
       Ok(ctx.heap().alloc_list(names))
-    }
+    },
     None => Ok(Value::nil()),
   }
 }

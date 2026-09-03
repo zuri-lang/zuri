@@ -892,7 +892,10 @@ impl VM {
       method_table_generation: Cell::new(0),
     };
     for b in 0u8..128 {
-      vm.interned_ascii[b as usize] = vm.heap.alloc_old(Obj::Str(String::from(b as char)));
+      vm.interned_ascii[b as usize] = vm.heap.alloc_old(Obj::Str(
+        String::from(b as char),
+        std::cell::Cell::new(crate::vm::object::ASCII_UNKNOWN),
+      ));
     }
     vm
   }
@@ -2199,7 +2202,11 @@ impl VM {
   /// common case of never having called `on_signal()` at all).
   #[inline]
   pub(crate) fn signal_callback(&self, idx: usize) -> Value {
-    self.signal_callbacks.get(idx).copied().unwrap_or(Value::nil())
+    self
+      .signal_callbacks
+      .get(idx)
+      .copied()
+      .unwrap_or(Value::nil())
   }
 
   /// Runs the callback registered for signal `idx` and applies the
@@ -3317,7 +3324,11 @@ impl VM {
     if raw >= 0 {
       let i = raw as usize;
       let bytes = receiver.as_str().as_bytes();
-      if i < bytes.len() && bytes[..=i].is_ascii() {
+      // `str_is_ascii` is asked first even though the prefix check
+      // alone would do, because it caches its answer on the string and
+      // that cached answer is what lets compiled code index this same
+      // string without any scan at all on later reads.
+      if i < bytes.len() && (receiver.str_is_ascii() || bytes[..=i].is_ascii()) {
         return Ok(bytes[i] as char);
       }
     }
@@ -3381,7 +3392,7 @@ impl VM {
           };
           return Ok(self.heap.alloc_bytes(items));
         },
-        Obj::Str(_) => {
+        Obj::Str(..) => {
           let chars: Vec<char> = receiver.as_str().chars().collect();
           let bounds = self.resolve_slice_bounds(lo, hi, chars.len())?;
           let s: String = match bounds {
@@ -5421,7 +5432,7 @@ impl VM {
           mark(p);
         }
       },
-      Obj::Str(_)
+      Obj::Str(..)
       | Obj::Bytes(_)
       | Obj::BigInt(_)
       | Obj::Native(_)
@@ -5530,7 +5541,7 @@ impl VM {
           relocate(p as *mut Value);
         }
       },
-      Obj::Str(_)
+      Obj::Str(..)
       | Obj::Bytes(_)
       | Obj::BigInt(_)
       | Obj::Native(_)

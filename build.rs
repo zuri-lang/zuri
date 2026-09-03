@@ -47,13 +47,48 @@ fn main() {
   println!("cargo:rerun-if-changed=Cargo.toml");
 
   let libs_dir = Path::new(&manifest_dir).join("libs");
-  copy_to_output("libs", &env::var("PROFILE").unwrap()).expect("Could not copy libs");
+  // Cleared first, because `copy_to_output` only ever writes files; it
+  // never removes one that has since been deleted from `libs/`. Without
+  // this, splitting `libs/log.zu` into `libs/log/` leaves the old flat
+  // file sitting in the output beside the new directory, and module
+  // resolution finds the stale copy. That is a silent and very
+  // confusing failure, because `libs/` on disk looks entirely correct
+  // and only the build output disagrees.
+  let profile = env::var("PROFILE").unwrap();
+  let out_libs = copy_output_dir(&profile).join("libs");
+  if out_libs.exists() {
+    fs::remove_dir_all(&out_libs).expect("Could not clear the copied libs directory");
+  }
+  copy_to_output("libs", &profile).expect("Could not copy libs");
   println!("cargo:rerun-if-changed={}", libs_dir.display());
 
   copy_to_output("LICENSE", &env::var("PROFILE").unwrap()).expect("Could not copy license file");
   println!("cargo:rerun-if-changed=LICENSE");
 
   generate_zu_conformance_tests(&manifest_dir);
+}
+
+/// Where `copy_to_output` puts things: the profile directory that holds
+/// the built binaries, which is what `libs/` is copied beside.
+///
+/// Derived by walking up from `OUT_DIR`
+/// (`<profile>/build/<pkg>-<hash>/out`) rather than by rebuilding
+/// `target/[{triple}/]{profile}` from parts, so a cross-compiled build's
+/// extra target-triple component is handled without having to detect it.
+/// Falls back to the relative path `copy_to_output` itself would use if
+/// `OUT_DIR` is ever missing or shaped unexpectedly.
+fn copy_output_dir(profile: &str) -> std::path::PathBuf {
+  if let Some(out_dir) = env::var_os("OUT_DIR") {
+    let path = Path::new(&out_dir);
+    // out -> <pkg>-<hash> -> build -> <profile>
+    if let Some(profile_dir) = path.ancestors().nth(3)
+      && profile_dir.file_name() == Some(std::ffi::OsStr::new(profile))
+    {
+      return profile_dir.to_path_buf();
+    }
+  }
+
+  Path::new("target").join(profile)
 }
 
 /// Generates one `#[test]` function per `tests/*.zu` fixture that has

@@ -173,10 +173,18 @@ pub unsafe extern "C" fn zuri_jit_safepoint(vm_ptr: *mut VM) -> u64 {
 /// written IR (see `value.rs`'s stable-bit-pattern-only inlining
 /// policy in `jit::codegen`); so the full check always goes through
 /// here rather than being partially inlined.
-pub unsafe extern "C" fn zuri_jit_is_falsey(vm_ptr: *mut VM, base: u64, src: u64) -> u64 {
-  let vm = unsafe { vm(vm_ptr) };
-  let v = vm.get_reg(base as usize, src as u8);
-  v.is_falsey() as u64
+///
+/// Takes the value itself, NOT a register to go and read. Its caller
+/// reaches it through `call_helper_raw`, which deliberately skips
+/// `flush_live` to keep the hottest check in the VM cheap; so a register
+/// this function looked up for itself could still be holding the value
+/// from before the current instruction wrote it. `libs/os/path.zu`'s
+/// `join_paths` hit exactly that: `arg = arg.trim()` leaves `arg` live
+/// only in a machine register, and the `if arg` that follows then read
+/// the pre-`trim` value, saw an empty string, skipped both appends and
+/// returned `''` for a perfectly ordinary path.
+pub unsafe extern "C" fn zuri_jit_is_falsey(_vm_ptr: *mut VM, value_bits: u64) -> u64 {
+  Value::from_bits(value_bits).is_falsey() as u64
 }
 
 pub unsafe extern "C" fn zuri_jit_print(vm_ptr: *mut VM, base: u64, src: u64) -> u64 {
@@ -447,7 +455,7 @@ pub unsafe extern "C" fn zuri_jit_str_add(
   let total_len = sa.len() + sb.len();
   if dst == a && va.is_obj() && crate::vm::object::Heap::is_young(va.as_obj()) {
     let obj_ptr = va.as_obj() as *mut crate::vm::object::Obj;
-    if let crate::vm::object::Obj::Str(s) = unsafe { &mut *obj_ptr } {
+    if let crate::vm::object::Obj::Str(s, _) = unsafe { &mut *obj_ptr } {
       if s.capacity() >= total_len {
         s.push_str(sb);
         return OK;
@@ -1283,7 +1291,12 @@ pub unsafe extern "C" fn zuri_jit_invoke(
       } else {
         receiver.as_module_binding().module
       };
-      let member = { module_val.as_module().namespace.get_public(method_name.as_str()) };
+      let member = {
+        module_val
+          .as_module()
+          .namespace
+          .get_public(method_name.as_str())
+      };
       match member {
         Some(v) => {
           vm.set_reg(base, obj + 1, v);
@@ -2807,7 +2820,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
   vec![
     spec1!(zuri_jit_safepoint),
     spec2!(zuri_jit_deopt),
-    spec3!(zuri_jit_is_falsey),
+    spec2!(zuri_jit_is_falsey),
     spec3!(zuri_jit_print),
     spec3!(zuri_jit_close_upvalues),
     spec4!(zuri_jit_bitnot_slow),

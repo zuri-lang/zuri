@@ -65,10 +65,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     ("dtls_new", native(vm, "@new", 0, false, dtls_new)),
     ("dtls_bind", native(vm, "bind", 2, false, dtls_bind)),
-    (
-      "dtls_connect",
-      native(vm, "connect", 3, true, dtls_connect),
-    ),
+    ("dtls_connect", native(vm, "connect", 3, true, dtls_connect)),
     ("dtls_accept", native(vm, "accept", 2, false, dtls_accept)),
     ("dtls_read", native(vm, "read", 2, false, dtls_read)),
     ("dtls_write", native(vm, "write", 2, true, dtls_write)),
@@ -196,7 +193,7 @@ fn normalize_to_pkcs8(key_der: PrivateKeyDer<'static>) -> Result<PrivateKeyDer<'
         "dtls: unsupported EC curve in private key (only P-256 and P-384 are supported)"
           .to_string(),
       )
-    }
+    },
     PrivateKeyDer::Pkcs1(pkcs1) => {
       let key = rsa::RsaPrivateKey::from_pkcs1_der(pkcs1.secret_pkcs1_der())
         .map_err(|e| format!("dtls: invalid RSA private key: {e}"))?;
@@ -204,7 +201,7 @@ fn normalize_to_pkcs8(key_der: PrivateKeyDer<'static>) -> Result<PrivateKeyDer<'
         .to_pkcs8_der()
         .map_err(|e| format!("dtls: could not re-encode private key: {e}"))?;
       Ok(PrivateKeyDer::Pkcs8(doc.as_bytes().to_vec().into()))
-    }
+    },
     _ => Err("dtls: unsupported private key encoding".to_string()),
   }
 }
@@ -245,7 +242,7 @@ impl ZuriDtlsConfig {
           );
         }
         store
-      }
+      },
     };
     for pem in &self.extra_ca_pems {
       let certs = parse_cert_chain_pem(pem)?;
@@ -285,8 +282,8 @@ impl ZuriDtlsConfig {
       // the literal "PRIVATE_KEY", which nothing produces), so the private
       // key is bridged through rcgen instead, the same conversion path
       // Certificate::from_pem itself would use if its tag check worked.
-      let key_pair =
-        rcgen::KeyPair::try_from(&key_der).map_err(|e| format!("dtls: invalid private key: {e}"))?;
+      let key_pair = rcgen::KeyPair::try_from(&key_der)
+        .map_err(|e| format!("dtls: invalid private key: {e}"))?;
       let private_key = rtc_dtls::crypto::CryptoPrivateKey::try_from(&key_pair)
         .map_err(|e| format!("dtls: invalid private key: {e}"))?;
       builder = builder.with_certificates(vec![DtlsCertificate {
@@ -345,29 +342,32 @@ fn make_server_cert_verifier(
   // always sets `insecure_skip_verify: true` to bypass that (WebRTC-
   // fingerprint-oriented) verifier in the first place. The real peer
   // certificates are the raw DER in the first parameter.
-  Arc::new(move |peer_certs: &[Vec<u8>], _already_verified_chain: &[CertificateDer<'static>]| {
-    let chain: Vec<CertificateDer<'static>> = peer_certs
-      .iter()
-      .map(|der| CertificateDer::from(der.clone()))
-      .collect();
-    let (end_entity, intermediates) = chain
-      .split_first()
-      .ok_or_else(|| dtls_error("no certificate presented"))?;
-    let parsed =
-      ParsedCertificate::try_from(end_entity).map_err(|e| dtls_error(&e.to_string()))?;
-    rustls::client::verify_server_cert_signed_by_trust_anchor(
-      &parsed,
-      &root_store,
-      intermediates,
-      UnixTime::now(),
-      provider.signature_verification_algorithms.all,
-    )
-    .map_err(|e| dtls_error(&e.to_string()))?;
-    if let Some(name) = &expected_name {
-      rustls::client::verify_server_name(&parsed, name).map_err(|e| dtls_error(&e.to_string()))?;
-    }
-    Ok(())
-  })
+  Arc::new(
+    move |peer_certs: &[Vec<u8>], _already_verified_chain: &[CertificateDer<'static>]| {
+      let chain: Vec<CertificateDer<'static>> = peer_certs
+        .iter()
+        .map(|der| CertificateDer::from(der.clone()))
+        .collect();
+      let (end_entity, intermediates) = chain
+        .split_first()
+        .ok_or_else(|| dtls_error("no certificate presented"))?;
+      let parsed =
+        ParsedCertificate::try_from(end_entity).map_err(|e| dtls_error(&e.to_string()))?;
+      rustls::client::verify_server_cert_signed_by_trust_anchor(
+        &parsed,
+        &root_store,
+        intermediates,
+        UnixTime::now(),
+        provider.signature_verification_algorithms.all,
+      )
+      .map_err(|e| dtls_error(&e.to_string()))?;
+      if let Some(name) = &expected_name {
+        rustls::client::verify_server_name(&parsed, name)
+          .map_err(|e| dtls_error(&e.to_string()))?;
+      }
+      Ok(())
+    },
+  )
 }
 
 /// Real CA-chain verification for the client's certificate, as seen
@@ -377,7 +377,9 @@ fn make_server_cert_verifier(
 /// correctly checks for client-authentication EKU (no hostname check,
 /// since a client certificate isn't verified against a name the way a
 /// server's is).
-fn make_client_cert_verifier(root_store: Arc<RootCertStore>) -> Result<VerifyPeerCertificateFn, String> {
+fn make_client_cert_verifier(
+  root_store: Arc<RootCertStore>,
+) -> Result<VerifyPeerCertificateFn, String> {
   let verifier = rustls::server::WebPkiClientVerifier::builder(root_store)
     .build()
     .map_err(|e| format!("dtls: could not build a client certificate verifier: {e}"))?;
@@ -448,24 +450,27 @@ impl SharedEndpoint {
         buf.truncate(n);
         let events = self
           .endpoint
-          .read(Instant::now(), from, None::<EcnCodepoint>, BytesMut::from(&buf[..]))
-          .map_err(|e| {
-            e.to_string()
-          })?;
+          .read(
+            Instant::now(),
+            from,
+            None::<EcnCodepoint>,
+            BytesMut::from(&buf[..]),
+          )
+          .map_err(|e| e.to_string())?;
         for event in events {
           match event {
             EndpointEvent::ApplicationData(data) => {
               self.pending.entry(from).or_default().push_back(data);
-            }
+            },
             EndpointEvent::HandshakeComplete => {
               if !self.accepted.contains(&from) {
                 self.completed_unaccepted.push_back(from);
               }
-            }
+            },
           }
         }
         self.pump_transmits()?;
-      }
+      },
       Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
         let remotes: Vec<SocketAddr> = self.endpoint.get_connections_keys().copied().collect();
         for remote in remotes {
@@ -475,7 +480,7 @@ impl SharedEndpoint {
           let _ = self.endpoint.handle_timeout(remote, Instant::now());
         }
         self.pump_transmits()?;
-      }
+      },
       Err(e) => return Err(e.to_string()),
     }
     Ok(())
@@ -544,7 +549,11 @@ impl ZuriDtls {
       .map_err(|e| e.to_string())?
       .next()
       .ok_or_else(|| format!("dtls: could not resolve '{address}'"))?;
-    let local_bind = if remote.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+    let local_bind = if remote.is_ipv4() {
+      "0.0.0.0:0"
+    } else {
+      "[::]:0"
+    };
     let socket = Self::bind_socket(local_bind)?;
     let local_addr = socket.local_addr().map_err(|e| e.to_string())?;
 
@@ -594,12 +603,16 @@ impl ZuriDtls {
 
     let handshake_config = config.build_handshake_config(false, None, None)?;
     {
-      let mut shared = shared.lock().map_err(|_| "dtls: lock poisoned".to_string())?;
+      let mut shared = shared
+        .lock()
+        .map_err(|_| "dtls: lock poisoned".to_string())?;
       shared.endpoint.set_server_config(Some(handshake_config));
     }
 
     loop {
-      let mut guard = shared.lock().map_err(|_| "dtls: lock poisoned".to_string())?;
+      let mut guard = shared
+        .lock()
+        .map_err(|_| "dtls: lock poisoned".to_string())?;
       if let Some(remote) = guard.completed_unaccepted.pop_front() {
         if guard.accepted.insert(remote) {
           drop(guard);
@@ -623,7 +636,9 @@ impl ZuriDtls {
       _ => return Err("dtls: not a connected socket".to_string()),
     };
     loop {
-      let mut guard = shared.lock().map_err(|_| "dtls: lock poisoned".to_string())?;
+      let mut guard = shared
+        .lock()
+        .map_err(|_| "dtls: lock poisoned".to_string())?;
       if let Some(queue) = guard.pending.get_mut(&remote)
         && let Some(mut message) = queue.pop_front()
       {
@@ -651,7 +666,9 @@ impl ZuriDtls {
       ZuriDtlsRole::Connected { shared, remote } => (shared.clone(), *remote),
       _ => return Err("dtls: not a connected socket".to_string()),
     };
-    let mut guard = shared.lock().map_err(|_| "dtls: lock poisoned".to_string())?;
+    let mut guard = shared
+      .lock()
+      .map_err(|_| "dtls: lock poisoned".to_string())?;
     guard
       .endpoint
       .write(remote, data)
@@ -663,9 +680,11 @@ impl ZuriDtls {
   fn local_address(&self) -> Result<SocketAddr, String> {
     match &self.role {
       ZuriDtlsRole::Listener(shared) | ZuriDtlsRole::Connected { shared, .. } => {
-        let guard = shared.lock().map_err(|_| "dtls: lock poisoned".to_string())?;
+        let guard = shared
+          .lock()
+          .map_err(|_| "dtls: lock poisoned".to_string())?;
         guard.socket.local_addr().map_err(|e| e.to_string())
-      }
+      },
       _ => Err("dtls: socket is not bound".to_string()),
     }
   }
@@ -680,14 +699,16 @@ impl ZuriDtls {
   fn peer_certificate(&self) -> Result<Option<Vec<u8>>, String> {
     match &self.role {
       ZuriDtlsRole::Connected { shared, remote } => {
-        let guard = shared.lock().map_err(|_| "dtls: lock poisoned".to_string())?;
+        let guard = shared
+          .lock()
+          .map_err(|_| "dtls: lock poisoned".to_string())?;
         Ok(
           guard
             .endpoint
             .get_connection_state(*remote)
             .and_then(|state| state.peer_certificates.first().cloned()),
         )
-      }
+      },
       _ => Ok(None),
     }
   }
@@ -729,7 +750,7 @@ fn dtls_config_set_root_store(ctx: &mut ZuriContext) -> Result<Value, String> {
       return Err(format!(
         "dtls: unknown root store mode '{other}', expected 'bundled' or 'native'"
       ));
-    }
+    },
   };
   with_dtls_config(ctx, |config| {
     config.root_store_mode = mode;
@@ -931,7 +952,9 @@ fn dtls_close(ctx: &mut ZuriContext) -> Result<Value, String> {
 // DER `rtc_dtls::state::State::peer_certificates` hands back.
 // ---------------------------------------------------------------------------
 
-fn parsed_peer_certificate(ctx: &mut ZuriContext) -> Result<Option<x509_cert::Certificate>, String> {
+fn parsed_peer_certificate(
+  ctx: &mut ZuriContext,
+) -> Result<Option<x509_cert::Certificate>, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(DTLS_SOCKET));
 
@@ -941,7 +964,7 @@ fn parsed_peer_certificate(ctx: &mut ZuriContext) -> Result<Option<x509_cert::Ce
       let cert = x509_cert::Certificate::from_der(&der)
         .map_err(|e| format!("dtls: could not parse peer certificate: {e}"))?;
       Ok(Some(cert))
-    }
+    },
     None => Ok(None),
   }
 }
@@ -989,10 +1012,10 @@ fn general_name_to_string(name: &GeneralName) -> Option<String> {
       4 => {
         let b = octets.as_bytes();
         Some(format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]))
-      }
-      16 => Some(
-        std::net::Ipv6Addr::from(<[u8; 16]>::try_from(octets.as_bytes()).ok()?).to_string(),
-      ),
+      },
+      16 => {
+        Some(std::net::Ipv6Addr::from(<[u8; 16]>::try_from(octets.as_bytes()).ok()?).to_string())
+      },
       _ => None,
     },
     _ => None,
@@ -1015,7 +1038,7 @@ fn dtls_peer_certificate_sans(ctx: &mut ZuriContext) -> Result<Value, String> {
         None => Vec::new(),
       };
       Ok(ctx.heap().alloc_list(names))
-    }
+    },
     None => Ok(Value::nil()),
   }
 }

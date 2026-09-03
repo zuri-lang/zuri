@@ -177,7 +177,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       native(vm, "argon2_verify", 2, false, argon2_verify_fn),
     ),
     // bcrypt (backs libs/bcrypt.zu, a separate top-level module)
-    ("bcrypt_hash", native(vm, "bcrypt_hash", 2, false, bcrypt_hash_fn)),
+    (
+      "bcrypt_hash",
+      native(vm, "bcrypt_hash", 2, false, bcrypt_hash_fn),
+    ),
     (
       "bcrypt_verify",
       native(vm, "bcrypt_verify", 2, false, bcrypt_verify_fn),

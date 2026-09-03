@@ -179,7 +179,11 @@ fn token_kind_value(ctx: &mut ZuriContext, kind: &TokenKind) -> Value {
   }
 }
 
-fn token_to_dict(ctx: &mut ZuriContext, source: &[char], token: &crate::compiler::token::Token) -> Value {
+fn token_to_dict(
+  ctx: &mut ZuriContext,
+  source: &[char],
+  token: &crate::compiler::token::Token,
+) -> Value {
   let kind_key = ctx.heap().alloc_string("kind");
   let kind_value = ctx.heap().alloc_string(token_kind_name(&token.kind));
 

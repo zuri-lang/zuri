@@ -319,21 +319,33 @@ fn expr_to_value(ctx: &mut ZuriContext, e: &Expr) -> Value {
       let op_v = ctx.heap().alloc_string(token_kind_name(op));
       let l_v = expr_to_value(ctx, l);
       let r_v = expr_to_value(ctx, r);
-      let f = vec![kv(ctx, "left", l_v), kv(ctx, "op", op_v), kv(ctx, "right", r_v)];
+      let f = vec![
+        kv(ctx, "left", l_v),
+        kv(ctx, "op", op_v),
+        kv(ctx, "right", r_v),
+      ];
       make_node(ctx, "Binary", pos, f)
     },
     Expr::Logical(l, op, r, _) => {
       let op_v = ctx.heap().alloc_string(token_kind_name(op));
       let l_v = expr_to_value(ctx, l);
       let r_v = expr_to_value(ctx, r);
-      let f = vec![kv(ctx, "left", l_v), kv(ctx, "op", op_v), kv(ctx, "right", r_v)];
+      let f = vec![
+        kv(ctx, "left", l_v),
+        kv(ctx, "op", op_v),
+        kv(ctx, "right", r_v),
+      ];
       make_node(ctx, "Logical", pos, f)
     },
     Expr::Circuit(l, op, r) => {
       let op_v = ctx.heap().alloc_string(token_kind_name(op));
       let l_v = expr_to_value(ctx, l);
       let r_v = expr_to_value(ctx, r);
-      let f = vec![kv(ctx, "left", l_v), kv(ctx, "op", op_v), kv(ctx, "right", r_v)];
+      let f = vec![
+        kv(ctx, "left", l_v),
+        kv(ctx, "op", op_v),
+        kv(ctx, "right", r_v),
+      ];
       make_node(ctx, "Circuit", pos, f)
     },
     Expr::Grouping(inner) => {
@@ -571,7 +583,11 @@ fn stmt_to_value(ctx: &mut ZuriContext, s: &Stmt) -> Value {
 /// node; both carry `{ text }`, the comment's own content, with the
 /// leading `#`/wrapping `/*`/`*/` already stripped off (same content
 /// the raw `Token` itself carries).
-fn trivia_to_value(ctx: &mut ZuriContext, tok: &Token, pos: (Option<usize>, Option<usize>)) -> Value {
+fn trivia_to_value(
+  ctx: &mut ZuriContext,
+  tok: &Token,
+  pos: (Option<usize>, Option<usize>),
+) -> Value {
   let (kind, text) = match &tok.kind {
     TokenKind::Comment(s) => ("Comment", s.clone()),
     TokenKind::DocBlock(s) => ("DocBlock", s.clone()),

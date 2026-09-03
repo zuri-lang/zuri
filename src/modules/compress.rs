@@ -1,6 +1,6 @@
 use std::io::{Cursor, Read, Write};
 
-use bzip2::{Error as BzError};
+use bzip2::Error as BzError;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use zlib_rs::{
   DeflateConfig, DeflateError, Inflate, InflateConfig, InflateError, InflateFlush, ReturnCode,
@@ -24,7 +24,7 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
 };
 
 use super::compress_util::{
-  Bzip2Decoder, Bzip2Encoder, Bzip2Error, BrotliDecoder, BrotliEncoder, DeflateDecoder,
+  BrotliDecoder, BrotliEncoder, Bzip2Decoder, Bzip2Encoder, Bzip2Error, DeflateDecoder,
   DeflateEncoder,
 };
 
@@ -195,13 +195,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     (
       "bzip2_decoder_read_as_string",
-      native(
-        vm,
-        "read_as_string",
-        1,
-        false,
-        bzip2_decoder_read_as_string,
-      ),
+      native(vm, "read_as_string", 1, false, bzip2_decoder_read_as_string),
     ),
     (
       "bzip2_decoder_available",
@@ -962,9 +956,7 @@ fn bzip2_decompress(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut decoder = Bzip2Decoder::new(data);
 
   let mut buffer = Vec::new();
-  decoder
-    .read_all(&mut buffer)
-    .map_err(parse_bzip2_error)?;
+  decoder.read_all(&mut buffer).map_err(parse_bzip2_error)?;
 
   Ok(ctx.heap().alloc_bytes(buffer))
 }
@@ -1099,7 +1091,9 @@ fn bzip2_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
   let length = ctx.args[1].as_number() as usize;
 
   let mut buffer = Vec::new();
-  decoder.read(&mut buffer, length).map_err(parse_bzip2_error)?;
+  decoder
+    .read(&mut buffer, length)
+    .map_err(parse_bzip2_error)?;
 
   Ok(ctx.heap().alloc_bytes(buffer))
 }
@@ -1777,7 +1771,9 @@ fn brotli_decoder_read(ctx: &mut ZuriContext) -> Result<Value, String> {
   let length = ctx.args[1].as_number() as usize;
 
   let mut buffer = Vec::new();
-  decoder.read(&mut buffer, length).map_err(|e| e.to_string())?;
+  decoder
+    .read(&mut buffer, length)
+    .map_err(|e| e.to_string())?;
 
   Ok(ctx.heap().alloc_bytes(buffer))
 }

@@ -87,7 +87,7 @@ impl Kind {
     // One dereference, one match, rather than a chain of is_string()/
     // is_list()/... checks each re-dereferencing the same pointer.
     match unsafe { &*v.as_obj() } {
-      Obj::Str(_) => Some(Kind::String),
+      Obj::Str(..) => Some(Kind::String),
       Obj::List(_) => Some(Kind::List),
       Obj::Dict(_) => Some(Kind::Dict),
       Obj::Bytes(_) => Some(Kind::Bytes),

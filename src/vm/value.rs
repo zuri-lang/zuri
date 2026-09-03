@@ -32,8 +32,8 @@ use itertools::Itertools;
 use num_bigint::BigInt;
 
 use crate::vm::object::{
-  FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance,
-  ObjModule, ObjModuleBinding, ObjPtr, UpvalueState, write_barrier,
+  ASCII_NO, ASCII_YES, FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure,
+  ObjFunction, ObjInstance, ObjModule, ObjModuleBinding, ObjPtr, UpvalueState, write_barrier,
 };
 
 #[cfg(not(debug_assertions))]
@@ -167,7 +167,39 @@ impl Value {
 
   #[inline]
   pub fn is_string(&self) -> bool {
-    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Str(_))
+    self.is_obj() && matches!(unsafe { &*self.as_obj() }, Obj::Str(..))
+  }
+
+  /// Whether this string holds nothing but ASCII, which is what makes a
+  /// codepoint index also a byte index.
+  ///
+  /// Answered from the flag cached on `Obj::Str` and computed on the
+  /// first ask, so a string being indexed in a loop is scanned once
+  /// rather than once per read. Compiled code reads the same flag
+  /// directly (`obj_str_ascii_offset`) instead of calling here, which is
+  /// what lets it index a string without a scan at all; it sees
+  /// `ASCII_UNKNOWN` until something has asked once, and takes its slow
+  /// path until then.
+  ///
+  /// `false` for anything that is not a string, so a caller that has not
+  /// already checked cannot be misled by the answer.
+  pub fn str_is_ascii(&self) -> bool {
+    if !self.is_obj() {
+      return false;
+    }
+
+    match unsafe { &*self.as_obj() } {
+      Obj::Str(text, ascii) => match ascii.get() {
+        ASCII_YES => true,
+        ASCII_NO => false,
+        _ => {
+          let known = text.as_bytes().is_ascii();
+          ascii.set(if known { ASCII_YES } else { ASCII_NO });
+          known
+        },
+      },
+      _ => false,
+    }
   }
 
   #[inline]
@@ -261,7 +293,7 @@ impl Value {
   pub fn as_str(&self) -> &str {
     debug_assert!(self.is_string());
     match unsafe { &*self.as_obj() } {
-      Obj::Str(s) => s.as_str(),
+      Obj::Str(s, _) => s.as_str(),
       _ => unreachable!("as_str() called on a non-string Value"),
     }
   }
@@ -658,7 +690,7 @@ impl Value {
     if self.is_obj() && other.is_obj() {
       unsafe {
         return match (&*self.as_obj(), &*other.as_obj()) {
-          (Obj::Str(a), Obj::Str(b)) => a == b,
+          (Obj::Str(a, _), Obj::Str(b, _)) => a == b,
           (Obj::BigInt(a), Obj::BigInt(b)) => a == b,
           (Obj::Bytes(a), Obj::Bytes(b)) => a.borrow().eq(&*b.borrow()),
           (Obj::Func(a), Obj::Func(b)) => std::ptr::eq(a, b),
@@ -716,7 +748,7 @@ impl Value {
     } else if self.is_obj() {
       unsafe {
         match &*self.as_obj() {
-          Obj::Str(_) => "string",
+          Obj::Str(..) => "string",
           Obj::Bytes(_) => "bytes",
           Obj::BigInt(_) => "bigint",
           Obj::List(_) => "list",
@@ -812,7 +844,7 @@ impl std::fmt::Display for Value {
     } else if self.is_obj() {
       unsafe {
         match &*self.as_obj() {
-          Obj::Str(s) => write!(f, "{}", s),
+          Obj::Str(s, _) => write!(f, "{}", s),
           Obj::Bytes(s) => write!(
             f,
             "({})",

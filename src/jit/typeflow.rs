@@ -2474,7 +2474,10 @@ mod ref_classify_tests {
 
   #[test]
   fn load_const_reflects_actual_constant_type() {
-    let string_val: &'static Obj = Box::leak(Box::new(Obj::Str("hello".to_string())));
+    let string_val: &'static Obj = Box::leak(Box::new(Obj::Str(
+      "hello".to_string(),
+      std::cell::Cell::new(0),
+    )));
     let string_val = Value::obj(string_val as *const Obj);
     let code = vec![
       Instr::LoadConst {
@@ -2539,7 +2542,8 @@ mod ref_classify_tests {
     // r0 comes from an unprovable GetGlobal; Add could hit the
     // bigint/string/list/operator-override path, so its result must
     // NOT be proven non-ref.
-    let name_val: &'static Obj = Box::leak(Box::new(Obj::Str("g".to_string())));
+    let name_val: &'static Obj =
+      Box::leak(Box::new(Obj::Str("g".to_string(), std::cell::Cell::new(0))));
     let name_val = Value::obj(name_val as *const Obj);
     let code = vec![
       Instr::GetGlobal {
@@ -2570,7 +2574,8 @@ mod ref_classify_tests {
 
   #[test]
   fn global_numeric_flow_proves_add_nonref() {
-    let name_val: &'static Obj = Box::leak(Box::new(Obj::Str("g".to_string())));
+    let name_val: &'static Obj =
+      Box::leak(Box::new(Obj::Str("g".to_string(), std::cell::Cell::new(0))));
     let name_val = Value::obj(name_val as *const Obj);
     let code = vec![
       Instr::LoadConst {
@@ -2607,9 +2612,15 @@ mod ref_classify_tests {
   fn eq_always_nonref_regardless_of_operand_types() {
     // Eq calls Value::equals directly, no operator-override hook --
     // provably non-ref even though neither operand is proven numeric.
-    let name_val0: &'static Obj = Box::leak(Box::new(Obj::Str("g0".to_string())));
+    let name_val0: &'static Obj = Box::leak(Box::new(Obj::Str(
+      "g0".to_string(),
+      std::cell::Cell::new(0),
+    )));
     let name_val0 = Value::obj(name_val0 as *const Obj);
-    let name_val1: &'static Obj = Box::leak(Box::new(Obj::Str("g1".to_string())));
+    let name_val1: &'static Obj = Box::leak(Box::new(Obj::Str(
+      "g1".to_string(),
+      std::cell::Cell::new(0),
+    )));
     let name_val1 = Value::obj(name_val1 as *const Obj);
     let code = vec![
       Instr::GetGlobal {

@@ -502,7 +502,12 @@ mod tty {
   /// run this codebase on) without it.
   #[cfg(unix)]
   fn iutf8_value() -> libc::tcflag_t {
-    if cfg!(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios")) {
+    if cfg!(any(
+      target_os = "linux",
+      target_os = "android",
+      target_os = "macos",
+      target_os = "ios"
+    )) {
       0x00004000
     } else {
       0
@@ -598,12 +603,7 @@ mod tty {
 
     let dict_pairs = pairs
       .into_iter()
-      .map(|(name, value)| {
-        (
-          ctx.heap().alloc_string(name),
-          Value::number(value as f64),
-        )
-      })
+      .map(|(name, value)| (ctx.heap().alloc_string(name), Value::number(value as f64)))
       .collect();
     Ok(ctx.heap().alloc_dict(dict_pairs))
   }
@@ -643,20 +643,65 @@ mod tty {
     let dict_pairs = [
       // the wire-protocol group indices are real and meaningful even
       // here, so they carry their true value rather than 0
-      ("TTY_IFLAG", 0i64), ("TTY_OFLAG", 1), ("TTY_CFLAG", 2), ("TTY_LFLAG", 3),
-      ("TTY_ISPEED", 4), ("TTY_OSPEED", 5), ("TTY_CC", 6),
+      ("TTY_IFLAG", 0i64),
+      ("TTY_OFLAG", 1),
+      ("TTY_CFLAG", 2),
+      ("TTY_LFLAG", 3),
+      ("TTY_ISPEED", 4),
+      ("TTY_OSPEED", 5),
+      ("TTY_CC", 6),
       // everything below is a real termios value with no non-unix
       // equivalent: tcgetattr/tcsetattr above already refuse to run
       // at all here, so these never do anything real either way
-      ("TCSANOW", 0), ("TCSADRAIN", 0), ("TCSAFLUSH", 0),
-      ("IGNBRK", 0), ("BRKINT", 0), ("IGNPAR", 0), ("PARMRK", 0), ("INPCK", 0),
-      ("ISTRIP", 0), ("INLCR", 0), ("IGNCR", 0), ("ICRNL", 0), ("IXON", 0), ("IXOFF", 0),
-      ("IXANY", 0), ("IUTF8", 0), ("OPOST", 0), ("ONLCR", 0), ("CSIZE", 0), ("CS5", 0),
-      ("CS6", 0), ("CS7", 0), ("CS8", 0), ("CSTOPB", 0), ("CREAD", 0), ("PARENB", 0),
-      ("PARODD", 0), ("HUPCL", 0), ("CLOCAL", 0), ("ECHOE", 0), ("ECHOK", 0), ("ECHO", 0),
-      ("ECHONL", 0), ("ISIG", 0), ("ICANON", 0), ("IEXTEN", 0), ("TOSTOP", 0), ("NOFLSH", 0),
-      ("VEOF", 0), ("VEOL", 0), ("VERASE", 0), ("VKILL", 0), ("VINTR", 0), ("VQUIT", 0),
-      ("VSUSP", 0), ("VSTART", 0), ("VSTOP", 0), ("VMIN", 0), ("VTIME", 0),
+      ("TCSANOW", 0),
+      ("TCSADRAIN", 0),
+      ("TCSAFLUSH", 0),
+      ("IGNBRK", 0),
+      ("BRKINT", 0),
+      ("IGNPAR", 0),
+      ("PARMRK", 0),
+      ("INPCK", 0),
+      ("ISTRIP", 0),
+      ("INLCR", 0),
+      ("IGNCR", 0),
+      ("ICRNL", 0),
+      ("IXON", 0),
+      ("IXOFF", 0),
+      ("IXANY", 0),
+      ("IUTF8", 0),
+      ("OPOST", 0),
+      ("ONLCR", 0),
+      ("CSIZE", 0),
+      ("CS5", 0),
+      ("CS6", 0),
+      ("CS7", 0),
+      ("CS8", 0),
+      ("CSTOPB", 0),
+      ("CREAD", 0),
+      ("PARENB", 0),
+      ("PARODD", 0),
+      ("HUPCL", 0),
+      ("CLOCAL", 0),
+      ("ECHOE", 0),
+      ("ECHOK", 0),
+      ("ECHO", 0),
+      ("ECHONL", 0),
+      ("ISIG", 0),
+      ("ICANON", 0),
+      ("IEXTEN", 0),
+      ("TOSTOP", 0),
+      ("NOFLSH", 0),
+      ("VEOF", 0),
+      ("VEOL", 0),
+      ("VERASE", 0),
+      ("VKILL", 0),
+      ("VINTR", 0),
+      ("VQUIT", 0),
+      ("VSUSP", 0),
+      ("VSTART", 0),
+      ("VSTOP", 0),
+      ("VMIN", 0),
+      ("VTIME", 0),
     ]
     .into_iter()
     .map(|(name, value)| (ctx.heap().alloc_string(name), Value::number(value as f64)))

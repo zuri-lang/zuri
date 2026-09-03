@@ -249,7 +249,13 @@ pub struct Token {
 impl Token {
   #[inline]
   pub fn new(kind: TokenKind, line: usize, column: usize, start: usize, end: usize) -> Self {
-    Self { kind, line, column, start, end }
+    Self {
+      kind,
+      line,
+      column,
+      start,
+      end,
+    }
   }
 
   #[inline]
