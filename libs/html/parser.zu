@@ -1056,6 +1056,9 @@ class TreeBuilder {
 
     var element = node.Element(name, namespace, {})
 
+    element.source_line = token.line
+    element.source_column = token.column
+
     for attribute_name, value in attributes {
       var foreign = elements.FOREIGN_ATTRIBUTES.get(attribute_name, nil)
 

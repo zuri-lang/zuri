@@ -1,0 +1,29 @@
+═══════════════════════════════════════════════════════
+  wire.render — test suite
+═══════════════════════════════════════════════════════
+  [PASS] a template is emitted as what it was written as, page or fragment
+  [PASS] serialization follows the HTML rules
+  [PASS] comments
+  [PASS] x-if and x-not
+  [PASS] x-elif and x-else chains
+  [PASS] a broken chain is refused at compile time
+  [PASS] x-for over every kind of sequence
+  [PASS] loop metadata
+  [PASS] x-for combined with x-if and inside a table
+  [PASS] x-for refuses what it cannot do
+  [PASS] the template carrier
+  [PASS] x-text, x-html and x-attr
+  [PASS] x-attr refuses what it cannot write
+  [PASS] Wire owns the x- prefix and says so
+  [PASS] text escaping
+  [PASS] attribute escaping
+  [PASS] URL attributes are checked as URLs, not merely escaped
+  [PASS] the URL list attributes
+  [PASS] the URL scheme allowlist is configurable
+  [PASS] script and style escaping
+  [PASS] compact output
+  [PASS] errors carry the template and the position
+
+═══════════════════════════════════════════════════════
+  All 22 render checks passed.
+═══════════════════════════════════════════════════════

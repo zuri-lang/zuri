@@ -1,0 +1,1378 @@
+/**
+ * @module wire.filters
+ *
+ * The filters every Wire template starts with.
+ *
+ * A filter takes the value on the left of the `|` as its first
+ * argument and whatever the template passed as the rest, so the one
+ * written `price|round(2)` is called as `round(price, 2)`. An argument
+ * a template leaves out arrives as `nil`, which is why nearly every
+ * filter here states its default in its own doc block rather than
+ * insisting the template spell it out.
+ *
+ * `Wire.register_filter()` adds to this set and can replace anything in
+ * it, so an application that wants `date` to mean its own thing is free
+ * to say so.
+ *
+ * ### On escaping
+ *
+ * Almost every filter here returns a plain string, which Wire then
+ * escapes for wherever it is going. The three that return markup
+ * instead are `raw`, `nl2br` and `json_script`, and each of them says
+ * so and says what it does about the text it was given. A filter that
+ * returns markup built out of untrusted input is how a template engine
+ * becomes a security hole, so the two that build markup escape their
+ * input first.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import html
+import json as _json
+import url as _url
+import date as _date
+
+import .escape
+import .values {
+  Safe, compare, is_empty, is_safe, safe, stringify, strip, truthy,
+  type_name, unwrap,
+}
+
+
+# --------------------------------------------------------------------
+# Escaping
+# --------------------------------------------------------------------
+
+/**
+ * Marks a value as markup so Wire writes it out without escaping it.
+ *
+ * This is the only way to get live HTML out of a variable, and it is a
+ * promise that the value is safe where it lands. Applying it to
+ * anything a user supplied is a cross-site scripting hole; applying it
+ * to markup your own code built is exactly what it is for.
+ *
+ * ```wire
+ * <div class="body">{{ article.rendered_html|raw }}</div>
+ * ```
+ *
+ * @param any value
+ * @returns Safe
+ */
+def raw(value) {
+  return safe(value)
+}
+
+/**
+ * Escapes a value for a context other than the one it is being written
+ * into, or escapes a value that was already marked safe.
+ *
+ * Wire escapes for the right context on its own, so this is only needed
+ * when a value has to carry escaping it would not otherwise get: a URL
+ * built into an ordinary attribute, say, or markup that reached the
+ * template as `Safe` but should be shown rather than rendered.
+ *
+ * _context_ is `'text'`, `'attribute'`, `'url'`, `'script'` or
+ * `'style'` and defaults to `'text'`.
+ *
+ * ```wire
+ * <code>{{ snippet|escape }}</code>
+ * <a data-target="{{ link|escape('url') }}">go</a>
+ * ```
+ *
+ * @param any value
+ * @param ?string context
+ * @returns Safe
+ * @throws ArgumentError when _context_ is not one Wire knows.
+ */
+def escape_value(value, context) {
+  var wanted = escape.CONTEXT_TEXT
+  if context != nil {
+    wanted = stringify(context)
+  }
+
+  var known = [
+    escape.CONTEXT_TEXT, escape.CONTEXT_ATTRIBUTE, escape.CONTEXT_URL,
+    escape.CONTEXT_SCRIPT, escape.CONTEXT_STYLE,
+  ]
+
+  if !known.contains(wanted) {
+    raise ArgumentError('"${wanted}" is not an escaping context')
+  }
+
+  # Escaping a value that is already marked safe has to see through the
+  # marker, or asking for it would be a no-op exactly when it matters.
+  return safe(escape.escape(unwrap(value), wanted, nil))
+}
+
+
+# --------------------------------------------------------------------
+# Text
+# --------------------------------------------------------------------
+
+/**
+ * The value in upper case.
+ *
+ * ```wire
+ * {{ code|upper }}
+ * ```
+ *
+ * @param any value
+ * @returns string
+ */
+def upper(value) {
+  return stringify(unwrap(value)).upper()
+}
+
+/**
+ * The value in lower case.
+ *
+ * @param any value
+ * @returns string
+ */
+def lower(value) {
+  return stringify(unwrap(value)).lower()
+}
+
+/**
+ * The value with the first letter of every word in upper case and the
+ * rest in lower case.
+ *
+ * Words are separated by whitespace, so `o'brien` becomes `O'brien`
+ * rather than `O'Brien`. Names are harder than a filter can be.
+ *
+ * ```wire
+ * {{ 'jane IS here'|title }}   {# Jane Is Here #}
+ * ```
+ *
+ * @param any value
+ * @returns string
+ */
+def title(value) {
+  var out = []
+  var starting = true
+
+  for character in stringify(unwrap(value)) {
+    if character.match('/\\s/') != false {
+      out.append(character)
+      starting = true
+      continue
+    }
+
+    if starting {
+      out.append(character.upper())
+      starting = false
+      continue
+    }
+
+    out.append(character.lower())
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * The value with its first letter in upper case and the rest left
+ * alone.
+ *
+ * Unlike `title` this touches nothing but the first character, which is
+ * what a sentence wants.
+ *
+ * ```wire
+ * {{ 'hello THERE'|capitalize }}   {# Hello THERE #}
+ * ```
+ *
+ * @param any value
+ * @returns string
+ */
+def capitalize(value) {
+  var text = stringify(unwrap(value))
+
+  if text.is_empty() {
+    return text
+  }
+
+  return text[0].upper() + text[1,]
+}
+
+/**
+ * The value with leading and trailing whitespace removed.
+ *
+ * @param any value
+ * @returns string
+ */
+def trim(value) {
+  return strip(stringify(unwrap(value)))
+}
+
+/**
+ * The value cut down to _length_ characters, with _suffix_ put on the
+ * end when anything was actually cut.
+ *
+ * _length_ counts the characters kept, not including the suffix.
+ * _suffix_ defaults to a single ellipsis. A value already short enough
+ * is returned untouched, suffix and all left off.
+ *
+ * ```wire
+ * {{ article.summary|truncate(80) }}
+ * {{ article.summary|truncate(80, ' [more]') }}
+ * ```
+ *
+ * @param any value
+ * @param number length
+ * @param ?string suffix
+ * @returns string
+ * @throws ArgumentError when _length_ is missing or negative.
+ */
+def truncate(value, length, suffix) {
+  if !is_number(length) or length < 0 {
+    raise ArgumentError('"truncate" needs a length of zero or more')
+  }
+
+  var text = stringify(unwrap(value))
+
+  if text.length() <= length {
+    return text
+  }
+
+  var tail = '…'
+  if suffix != nil {
+    tail = stringify(suffix)
+  }
+
+  return text[0, length] + tail
+}
+
+/**
+ * The value with every occurrence of _search_ replaced by
+ * _replacement_.
+ *
+ * _search_ is matched literally, never as a regular expression, so a
+ * value full of punctuation cannot turn into a pattern by accident.
+ * _replacement_ defaults to an empty string, which makes
+ * `|replace(',')` a way to strip something out.
+ *
+ * @param any value
+ * @param string search
+ * @param ?string replacement
+ * @returns string
+ * @throws ArgumentError when _search_ is missing or empty.
+ */
+def replace(value, search, replacement) {
+  if search == nil or stringify(search).is_empty() {
+    raise ArgumentError('"replace" needs something to search for')
+  }
+
+  var into = ''
+  if replacement != nil {
+    into = stringify(replacement)
+  }
+
+  return stringify(unwrap(value)).replace(stringify(search), into, false)
+}
+
+/**
+ * The value padded on the left with _fill_ until it is _width_
+ * characters long.
+ *
+ * _fill_ defaults to a space. A value already at least _width_ long is
+ * returned untouched.
+ *
+ * @param any value
+ * @param number width
+ * @param ?string fill
+ * @returns string
+ * @throws ArgumentError when _width_ is missing or not a number.
+ */
+def lpad(value, width, fill) {
+  return stringify(unwrap(value)).lpad(_pad_width('lpad', width), _pad_fill(fill))
+}
+
+/**
+ * The value padded on the right with _fill_ until it is _width_
+ * characters long.
+ *
+ * @param any value
+ * @param number width
+ * @param ?string fill
+ * @returns string
+ * @throws ArgumentError when _width_ is missing or not a number.
+ */
+def rpad(value, width, fill) {
+  return stringify(unwrap(value)).rpad(_pad_width('rpad', width), _pad_fill(fill))
+}
+
+/**
+ * The value repeated _count_ times.
+ *
+ * A _count_ of zero gives an empty string.
+ *
+ * @param any value
+ * @param number count
+ * @returns string
+ * @throws ArgumentError when _count_ is missing or negative.
+ */
+def repeat(value, count) {
+  if !is_number(count) or count < 0 {
+    raise ArgumentError('"repeat" needs a count of zero or more')
+  }
+
+  var text = stringify(unwrap(value))
+  var out = []
+
+  iter var i = 0; i < count; i++ {
+    out.append(text)
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * The value with its line breaks turned into `<br>` elements.
+ *
+ * The text is escaped first and the result is marked as markup, so this
+ * is safe on anything a user typed. Both `\n` and `\r\n` count as a
+ * line break.
+ *
+ * ```wire
+ * <p>{{ comment.body|nl2br }}</p>
+ * ```
+ *
+ * @param any value
+ * @returns Safe
+ */
+def nl2br(value) {
+  var text = html.escape_text(stringify(unwrap(value)))
+  return Safe(text.replace('/\\r\\n|\\r|\\n/', '<br>'))
+}
+
+/**
+ * The value with every HTML tag removed, leaving only its text.
+ *
+ * The markup is really parsed rather than pattern-matched away, so
+ * `<p title="a>b">x</p>` gives `x` and not `b">x`. The result is plain
+ * text and is escaped like anything else when it is written out.
+ *
+ * ```wire
+ * <meta name="description" content="{{ article.body|strip_tags|truncate(150) }}">
+ * ```
+ *
+ * @param any value
+ * @returns string
+ */
+def strip_tags(value) {
+  return html.parse_fragment(stringify(unwrap(value)), nil).text_content()
+}
+
+/**
+ * The value as a lowercase, hyphen separated slug.
+ *
+ * Runs of anything that is not a letter or a digit become a single
+ * hyphen, and hyphens at either end are trimmed. Non-ASCII letters are
+ * kept, so a slug can still be readable in a language that needs them.
+ *
+ * ```wire
+ * <a href="/posts/{{ post.title|slug }}">{{ post.title }}</a>
+ * ```
+ *
+ * @param any value
+ * @returns string
+ */
+def slug(value) {
+  var text = stringify(unwrap(value)).lower()
+  return text.replace('/[^\\p{L}\\p{N}]+/u', '-').replace('/^-+|-+$/', '')
+}
+
+/**
+ * The value percent encoded for use inside a URL.
+ *
+ * @param any value
+ * @returns string
+ */
+def url_encode(value) {
+  return _url.encode(stringify(unwrap(value)))
+}
+
+/**
+ * The value as JSON.
+ *
+ * The result is plain text, so writing it into a page escapes it like
+ * anything else. Inside a `<script>` Wire already encodes every
+ * interpolation as JSON, which makes this filter unnecessary there.
+ *
+ * @param any value
+ * @returns string
+ */
+def json(value) {
+  return _json.encode(unwrap(value))
+}
+
+/**
+ * The value as JSON wrapped in a `<script type="application/json">`
+ * element, ready to be read back by a script on the page.
+ *
+ * _id_ becomes the element's id so the script can find it, and defaults
+ * to leaving the id off. This is the safe way to hand data to the
+ * browser: the JSON never touches an executable context, so no value in
+ * it can become code.
+ *
+ * ```wire
+ * {{ initial_state|json_script('state') }}
+ * <script>
+ *   var state = JSON.parse(document.getElementById('state').textContent)
+ * </script>
+ * ```
+ *
+ * @param any value
+ * @param ?string id
+ * @returns Safe
+ */
+def json_script(value, id) {
+  var attributes = ' type="application/json"'
+
+  if id != nil {
+    attributes = ' id="${html.escape_attribute(stringify(id))}"' + attributes
+  }
+
+  return Safe(
+    '<script${attributes}>' + escape.script(unwrap(value)) + '</script>'
+  )
+}
+
+
+# --------------------------------------------------------------------
+# Numbers
+# --------------------------------------------------------------------
+
+/**
+ * The value without its sign.
+ *
+ * @param any value
+ * @returns number
+ * @throws TypeError when the value is not a number.
+ */
+def abs(value) {
+  return _number('abs', value).abs()
+}
+
+/**
+ * The value rounded to _places_ decimal places.
+ *
+ * _places_ defaults to `0`, which rounds to a whole number. Halves
+ * round away from zero, so `2.5` becomes `3` and `-2.5` becomes `-3`.
+ *
+ * ```wire
+ * {{ order.total|round(2) }}
+ * ```
+ *
+ * @param any value
+ * @param ?number places
+ * @returns number
+ * @throws TypeError when the value is not a number.
+ */
+def round(value, places) {
+  var number = _number('round', value)
+  var digits = 0
+
+  if places != nil {
+    if !is_number(places) or places < 0 {
+      raise ArgumentError('"round" needs a number of places of zero or more')
+    }
+
+    digits = places
+  }
+
+  return number.fixed(digits)
+}
+
+/**
+ * The largest whole number at or below the value.
+ *
+ * @param any value
+ * @returns number
+ * @throws TypeError when the value is not a number.
+ */
+def floor(value) {
+  return _number('floor', value).floor()
+}
+
+/**
+ * The smallest whole number at or above the value.
+ *
+ * @param any value
+ * @returns number
+ * @throws TypeError when the value is not a number.
+ */
+def ceil(value) {
+  return _number('ceil', value).ceil()
+}
+
+/**
+ * The value written out with thousands separated and a fixed number of
+ * decimal places.
+ *
+ * _places_ defaults to `0`, _point_ to `'.'` and _separator_ to `','`,
+ * which is the convention most of the English speaking world uses.
+ * Passing the other two the other way round gives the European one.
+ *
+ * ```wire
+ * {{ 1234567.891|number_format(2) }}          {# 1,234,567.89 #}
+ * {{ 1234567.891|number_format(2, ',', '.') }} {# 1.234.567,89 #}
+ * ```
+ *
+ * @param any value
+ * @param ?number places
+ * @param ?string point
+ * @param ?string separator
+ * @returns string
+ * @throws TypeError when the value is not a number.
+ */
+def number_format(value, places, point, separator) {
+  var digits = 0
+  if places != nil {
+    if !is_number(places) or places < 0 {
+      raise ArgumentError('"number_format" needs a number of places of zero or more')
+    }
+
+    digits = places
+  }
+
+  var decimal_point = '.'
+  if point != nil {
+    decimal_point = stringify(point)
+  }
+
+  var group = ','
+  if separator != nil {
+    group = stringify(separator)
+  }
+
+  var number = _number('number_format', value)
+  var negative = number < 0
+
+  var pieces = _decimals(number.abs(), digits)
+  var whole = pieces[0]
+  var groups = []
+
+  # Walk the whole part from the right so the leftmost group is the one
+  # that ends up short, which is what makes 1234 read as 1,234.
+  var at = whole.length()
+  while at > 3 {
+    groups.insert(whole[at - 3, at], 0)
+    at -= 3
+  }
+  groups.insert(whole[0, at], 0)
+
+  var out = group.join(groups)
+
+  if !pieces[1].is_empty() {
+    out += decimal_point + pieces[1]
+  }
+
+  if negative {
+    return '-' + out
+  }
+
+  return out
+}
+
+/**
+ * A byte count written the way a person reads it.
+ *
+ * _binary_ chooses the units: left out or `false` gives the decimal
+ * ones a disk is sold in (kB of 1000 bytes), `true` gives the binary
+ * ones memory is measured in (KiB of 1024). Values below a kilobyte are
+ * written as a plain count of bytes.
+ *
+ * ```wire
+ * {{ upload.size|filesize }}        {# 1.4 MB  #}
+ * {{ upload.size|filesize(true) }}  {# 1.3 MiB #}
+ * ```
+ *
+ * @param any value
+ * @param ?bool binary
+ * @returns string
+ * @throws TypeError when the value is not a number.
+ */
+def filesize(value, binary) {
+  var bytes = _number('filesize', value)
+  var step = 1000
+  var units = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB']
+
+  if binary == true {
+    step = 1024
+    units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB']
+  }
+
+  if bytes.abs() < step {
+    return '${bytes} B'
+  }
+
+  var scaled = bytes
+  var unit = units[0]
+
+  for name in units {
+    scaled /= step
+    unit = name
+
+    if scaled.abs() < step {
+      break
+    }
+  }
+
+  var pieces = _decimals(scaled, 1)
+  return '${pieces[0]}.${pieces[1]} ${unit}'
+}
+
+
+# --------------------------------------------------------------------
+# Collections
+# --------------------------------------------------------------------
+
+/**
+ * How many entries the value has.
+ *
+ * Works on a string, a list, a dictionary or a byte string. `nil` has a
+ * length of zero rather than being an error, so `x-if="items|length"`
+ * reads correctly for a variable that was never supplied.
+ *
+ * @param any value
+ * @returns number
+ * @throws TypeError when the value is not something with a length.
+ */
+def length(value) {
+  var subject = unwrap(value)
+
+  if subject == nil {
+    return 0
+  }
+
+  if is_string(subject) or is_list(subject) or is_dict(subject) or
+    is_bytes(subject) {
+    return subject.length()
+  }
+
+  raise TypeError('"length" cannot measure ${type_name(value)}')
+}
+
+/**
+ * The first entry, or `nil` when there is none.
+ *
+ * @param any value
+ * @returns any
+ * @throws TypeError when the value cannot be indexed.
+ */
+def first(value) {
+  var items = _sequence('first', value)
+
+  if items.is_empty() {
+    return nil
+  }
+
+  return items[0]
+}
+
+/**
+ * The last entry, or `nil` when there is none.
+ *
+ * @param any value
+ * @returns any
+ * @throws TypeError when the value cannot be indexed.
+ */
+def last(value) {
+  var items = _sequence('last', value)
+
+  if items.is_empty() {
+    return nil
+  }
+
+  return items[-1]
+}
+
+/**
+ * The entries joined into one string with _glue_ between them.
+ *
+ * _glue_ defaults to an empty string. Each entry is rendered the way it
+ * would be if it were written on its own, so a list of numbers joins
+ * without any ceremony.
+ *
+ * ```wire
+ * {{ tags|join(', ') }}
+ * ```
+ *
+ * @param any value
+ * @param ?string glue
+ * @returns string
+ * @throws TypeError when the value is not a sequence.
+ */
+def join(value, glue) {
+  var between = ''
+  if glue != nil {
+    between = stringify(glue)
+  }
+
+  return between.join(_sequence('join', value).map(@(item) {
+    return stringify(unwrap(item))
+  }))
+}
+
+/**
+ * The entries in ascending order.
+ *
+ * _key_ names a field to sort by, for a list of dictionaries or
+ * instances; leaving it out sorts the entries themselves. Sorting is
+ * stable, and the original is not changed.
+ *
+ * ```wire
+ * <li x-for="users|sort('name')" x-value="user">{{ user.name }}</li>
+ * ```
+ *
+ * @param any value
+ * @param ?string key
+ * @returns list
+ * @throws TypeError when the value is not a sequence.
+ */
+def sort(value, key) {
+  var items = _sequence('sort', value).clone()
+
+  if key == nil {
+    items.sort()
+    return items
+  }
+
+  return _sort_by(items, stringify(key))
+}
+
+/**
+ * The entries in the opposite order, or a string backwards.
+ *
+ * @param any value
+ * @returns any
+ * @throws TypeError when the value is not a sequence.
+ */
+def reverse(value) {
+  var subject = unwrap(value)
+
+  if is_string(subject) {
+    return ''.join(subject.to_list().reverse())
+  }
+
+  return _sequence('reverse', value).clone().reverse()
+}
+
+/**
+ * The entries with later duplicates removed, keeping the first of each.
+ *
+ * @param any value
+ * @returns list
+ * @throws TypeError when the value is not a sequence.
+ */
+def unique(value) {
+  return _sequence('unique', value).unique()
+}
+
+/**
+ * A dictionary's keys, in insertion order.
+ *
+ * @param any value
+ * @returns list
+ * @throws TypeError when the value is not a dictionary.
+ */
+def keys(value) {
+  return _dictionary('keys', value).keys()
+}
+
+/**
+ * A dictionary's values, in insertion order.
+ *
+ * @param any value
+ * @returns list
+ * @throws TypeError when the value is not a dictionary.
+ */
+def values(value) {
+  return _dictionary('values', value).values()
+}
+
+/**
+ * The entries from _start_ up to but not including _end_.
+ *
+ * _end_ defaults to the end of the sequence. A negative position counts
+ * back from the end, and a range that falls outside the sequence gives
+ * back whatever part of it does overlap rather than raising.
+ *
+ * ```wire
+ * <li x-for="posts|slice(0, 5)" x-value="post">{{ post.title }}</li>
+ * ```
+ *
+ * @param any value
+ * @param number start
+ * @param ?number end
+ * @returns any
+ * @throws TypeError when the value is not a sequence.
+ */
+def slice(value, start, end) {
+  var subject = unwrap(value)
+
+  if !is_number(start) {
+    raise ArgumentError('"slice" needs a start position')
+  }
+
+  var items = subject
+  if !is_string(subject) {
+    items = _sequence('slice', value)
+  }
+
+  var size = items.length()
+  var from = _clamp(_wrap(start, size), 0, size)
+  var to = size
+
+  if end != nil {
+    if !is_number(end) {
+      raise ArgumentError('"slice" needs a number for its end position')
+    }
+
+    to = _clamp(_wrap(end, size), 0, size)
+  }
+
+  if from >= to {
+    if is_string(items) {
+      return ''
+    }
+
+    return []
+  }
+
+  return items[from, to]
+}
+
+/**
+ * The entries added together.
+ *
+ * _key_ names a field to add up, for a list of dictionaries or
+ * instances. An empty sequence sums to `0`.
+ *
+ * ```wire
+ * <p>Total: {{ items|sum('price')|number_format(2) }}</p>
+ * ```
+ *
+ * @param any value
+ * @param ?string key
+ * @returns number
+ * @throws TypeError when an entry is not a number.
+ */
+def sum(value, key) {
+  var total = 0
+
+  for item in _sequence('sum', value) {
+    var entry = item
+
+    if key != nil {
+      entry = _field(item, stringify(key))
+    }
+
+    if entry == nil {
+      continue
+    }
+
+    if !is_number(entry) and !is_bigint(entry) {
+      raise TypeError('"sum" cannot add ${type_name(entry)}')
+    }
+
+    total += entry
+  }
+
+  return total
+}
+
+/**
+ * The value split into a list on _separator_.
+ *
+ * _separator_ is matched literally and defaults to whitespace, which
+ * splits on any run of it.
+ *
+ * @param any value
+ * @param ?string separator
+ * @returns list
+ */
+def split(value, separator) {
+  var text = stringify(unwrap(value))
+
+  if separator == nil {
+    return text.split('/\\s+/').filter(@(piece) {
+      return !piece.is_empty()
+    })
+  }
+
+  var between = stringify(separator)
+
+  if between.is_empty() {
+    return text.to_list()
+  }
+
+  return text.split(between)
+}
+
+
+# --------------------------------------------------------------------
+# Choice and comparison
+# --------------------------------------------------------------------
+
+/**
+ * _fallback_ when the value is falsy, otherwise the value.
+ *
+ * Falsy here is Wire's falsy: `nil`, `false`, zero, an empty string and
+ * an empty collection. A negative number is not falsy and is kept. Use
+ * `??` in an expression when only a missing value should fall back and
+ * a zero should stand.
+ *
+ * ```wire
+ * <p>{{ user.nickname|default('friend') }}</p>
+ * ```
+ *
+ * @param any value
+ * @param any fallback
+ * @returns any
+ */
+def default_to(value, fallback) {
+  if truthy(value) {
+    return value
+  }
+
+  return fallback
+}
+
+/**
+ * Whether the value has nothing in it.
+ *
+ * `nil` is empty, an empty string and an empty collection are empty,
+ * and a number never is. That last part is what separates this from
+ * plain falsiness: `0|empty` is `false` where `0` on its own is falsy.
+ *
+ * ```wire
+ * <p x-if="results|empty">Nothing found.</p>
+ * ```
+ *
+ * @param any value
+ * @returns bool
+ */
+def empty(value) {
+  return is_empty(value)
+}
+
+/**
+ * Whether the value equals _expected_.
+ *
+ * Kept from the first version of Wire, where it was the only way to
+ * compare anything. `x-if="status == 'active'"` says the same thing and
+ * reads better, so prefer that in new templates.
+ *
+ * @param any value
+ * @param any expected
+ * @returns bool
+ */
+def is(value, expected) {
+  return unwrap(value) == unwrap(expected)
+}
+
+/**
+ * Whether the value differs from _expected_.
+ *
+ * @param any value
+ * @param any expected
+ * @returns bool
+ */
+def not(value, expected) {
+  return unwrap(value) != unwrap(expected)
+}
+
+
+# --------------------------------------------------------------------
+# Dates
+# --------------------------------------------------------------------
+
+/**
+ * A date written out with the given _format_.
+ *
+ * The value may be a `date.Date`, a Unix timestamp in seconds, or a
+ * string in any of the formats `date.parse()` understands. _format_
+ * uses the same directives as `Date.format()` and defaults to
+ * `'Y-m-d H:i:s'`.
+ *
+ * ```wire
+ * <time datetime="{{ post.created|date('Y-m-d') }}">
+ *   {{ post.created|date('jS F Y') }}
+ * </time>
+ * ```
+ *
+ * @param any value
+ * @param ?string format
+ * @returns string
+ * @throws TypeError when the value is not something Wire can read as a
+ *    date.
+ */
+def date(value, format) {
+  var pattern = 'Y-m-d H:i:s'
+  if format != nil {
+    pattern = stringify(format)
+  }
+
+  return _as_date(value).format(pattern)
+}
+
+
+# --------------------------------------------------------------------
+# Helpers
+# --------------------------------------------------------------------
+
+/**
+ * Every filter Wire starts with, keyed by the name a template calls it
+ * by.
+ *
+ * Two of them are spelled differently here than the function is: Zuri
+ * already has `escape` and `default` on other things, so the functions
+ * carry longer names and the template-facing names live here.
+ */
+var BUILTIN = {
+  # Escaping
+  raw,
+  escape: escape_value,
+  e: escape_value,
+
+  # Text
+  upper,
+  lower,
+  title,
+  capitalize,
+  trim,
+  truncate,
+  replace,
+  lpad,
+  rpad,
+  repeat,
+  nl2br,
+  line_breaks: nl2br,
+  strip_tags,
+  slug,
+  url_encode,
+  json,
+  json_script,
+
+  # Numbers
+  abs,
+  round,
+  floor,
+  ceil,
+  number_format,
+  filesize,
+
+  # Collections
+  length,
+  first,
+  last,
+  join,
+  sort,
+  reverse,
+  unique,
+  keys,
+  values,
+  slice,
+  sum,
+  split,
+
+  # Choice
+  'default': default_to,
+  alt: default_to,
+  empty,
+  is,
+  not,
+
+  # Dates
+  date,
+}
+
+
+/**
+ * _number_ rounded to _digits_ decimal places, split into its whole and
+ * fractional halves with the fraction padded out to the full width.
+ *
+ * `Number.to_string()` drops a trailing zero, so `1234.5` at two places
+ * comes back as `1234.5` and has to be padded to `1234.50` here. The
+ * fraction is an empty string when _digits_ is zero.
+ *
+ * @param number value
+ * @param number digits
+ * @returns list
+ */
+def _decimals(value: number, digits: number) {
+  var rounded = value.fixed(digits)
+  var pieces = rounded.to_string().split('.')
+  var whole = pieces[0]
+
+  if digits == 0 {
+    return [whole, '']
+  }
+
+  var fraction = ''
+  if pieces.length() > 1 {
+    fraction = pieces[1]
+  }
+
+  return [whole, fraction.rpad(digits, '0')]
+}
+
+/**
+ * _value_ as a number, or a readable complaint naming the filter that
+ * wanted one.
+ *
+ * @param string filter
+ * @param any value
+ * @returns number
+ * @throws TypeError
+ */
+def _number(filter: string, value) {
+  var subject = unwrap(value)
+
+  if is_number(subject) {
+    return subject
+  }
+
+  # A number that arrived as text, which is what a form field or a query
+  # string always gives, is worth reading rather than refusing.
+  if is_string(subject) and strip(subject).match('/^-?\\d+(\\.\\d+)?$/') != false {
+    return strip(subject).to_number()
+  }
+
+  raise TypeError('"${filter}" needs a number, got ${type_name(value)}')
+}
+
+/**
+ * _value_ as a list of entries, whatever kind of sequence it arrived
+ * as. A dictionary contributes its values, and `nil` an empty list.
+ *
+ * @param string filter
+ * @param any value
+ * @returns list
+ * @throws TypeError
+ */
+def _sequence(filter: string, value) {
+  var subject = unwrap(value)
+
+  if subject == nil {
+    return []
+  }
+
+  if is_list(subject) {
+    return subject
+  }
+
+  if is_string(subject) {
+    return subject.to_list()
+  }
+
+  if is_dict(subject) {
+    return subject.values()
+  }
+
+  if is_iterable(subject) {
+    var out = []
+
+    for entry in subject {
+      out.append(entry)
+    }
+
+    return out
+  }
+
+  raise TypeError('"${filter}" needs a sequence, got ${type_name(value)}')
+}
+
+/**
+ * _value_ as a dictionary.
+ *
+ * @param string filter
+ * @param any value
+ * @returns dict
+ * @throws TypeError
+ */
+def _dictionary(filter: string, value) {
+  var subject = unwrap(value)
+
+  if subject == nil {
+    return {}
+  }
+
+  if is_dict(subject) {
+    return subject
+  }
+
+  raise TypeError('"${filter}" needs a dictionary, got ${type_name(value)}')
+}
+
+/**
+ * _value_ as a date.
+ *
+ * @param any value
+ * @returns Date
+ * @throws TypeError
+ */
+def _as_date(value) {
+  var subject = unwrap(value)
+
+  if is_instance(subject) and instance_of(subject, _date.Date) {
+    return subject
+  }
+
+  if is_number(subject) {
+    return _date.from_time(subject)
+  }
+
+  if is_string(subject) {
+    return _date.parse(subject)
+  }
+
+  raise TypeError('"date" cannot read ${type_name(value)} as a date')
+}
+
+/**
+ * The field _name_ of _item_, for the filters that sort or total a list
+ * of records.
+ *
+ * @param any item
+ * @param string name
+ * @returns any
+ */
+def _field(item, name: string) {
+  if is_dict(item) {
+    return item.get(name, nil)
+  }
+
+  if is_instance(item) and hasprop(item, name) {
+    return getprop(item, name)
+  }
+
+  return nil
+}
+
+/**
+ * _items_ ordered by each entry's _name_ field.
+ *
+ * A merge sort, because Zuri's own `sort()` takes no comparison
+ * function and this needs one, and because a merge sort is stable:
+ * records that tie on the key keep the order they arrived in, which is
+ * what makes sorting a table by one column and then another do what the
+ * person clicking expects.
+ *
+ * @param list items
+ * @param string name
+ * @returns list
+ */
+def _sort_by(items: list, name: string) {
+  if items.length() < 2 {
+    return items
+  }
+
+  var middle = (items.length() / 2).floor()
+  var left = _sort_by(items[0, middle], name)
+  var right = _sort_by(items[middle, items.length()], name)
+
+  var out = []
+  var a = 0
+  var b = 0
+
+  while a < left.length() and b < right.length() {
+    # Only strictly-greater moves the right side first, which is what
+    # keeps equal entries in their original order.
+    if compare(_field(right[b], name), _field(left[a], name)) < 0 {
+      out.append(right[b])
+      b++
+      continue
+    }
+
+    out.append(left[a])
+    a++
+  }
+
+  while a < left.length() {
+    out.append(left[a])
+    a++
+  }
+
+  while b < right.length() {
+    out.append(right[b])
+    b++
+  }
+
+  return out
+}
+
+/**
+ * A padding width, checked and named after the filter that wanted it.
+ *
+ * @param string filter
+ * @param any width
+ * @returns number
+ * @throws ArgumentError
+ */
+def _pad_width(filter: string, width) {
+  if !is_number(width) or width < 0 {
+    raise ArgumentError('"${filter}" needs a width of zero or more')
+  }
+
+  return width
+}
+
+/**
+ * A padding character, defaulting to a space.
+ *
+ * @param any fill
+ * @returns string
+ * @throws ArgumentError when it is not exactly one character.
+ */
+def _pad_fill(fill) {
+  if fill == nil {
+    return ' '
+  }
+
+  var character = stringify(fill)
+
+  if character.length() != 1 {
+    raise ArgumentError('padding needs a single character to pad with')
+  }
+
+  return character
+}
+
+/**
+ * A position that may count from the end, turned into one that counts
+ * from the start.
+ *
+ * @param number at
+ * @param number size
+ * @returns number
+ */
+def _wrap(at: number, size: number) {
+  if at < 0 {
+    return size + at
+  }
+
+  return at
+}
+
+/**
+ * _at_ held between _low_ and _high_.
+ *
+ * @param number at
+ * @param number low
+ * @param number high
+ * @returns number
+ */
+def _clamp(at: number, low: number, high: number) {
+  if at < low {
+    return low
+  }
+
+  if at > high {
+    return high
+  }
+
+  return at
+}

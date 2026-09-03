@@ -1662,6 +1662,23 @@ class Element < Node {
   var attribute_namespaces = nil
 
   /**
+   * The line in the source where this element's start tag began,
+   * counting from 1, or `0` for an element that was built by hand
+   * rather than parsed.
+   *
+   * Tooling that reports problems against the original markup needs
+   * somewhere to point, and the token carries the position anyway, so
+   * the parser hands it on. Nothing in this module reads it.
+   */
+  var source_line = 0
+
+  /**
+   * The column in the source where this element's start tag began,
+   * counting from 1, or `0` for an element that was not parsed.
+   */
+  var source_column = 0
+
+  /**
    * For a `<template>` element, the `DocumentFragment` holding its
    * content. `nil` for every other element.
    *
@@ -2027,9 +2044,9 @@ class Element < Node {
   }
 
   /**
-   * A copy of this element carrying its tag name, namespace and
-   * attributes. A `<template>`'s content fragment is copied too when
-   * the clone is deep.
+   * A copy of this element carrying its tag name, namespace,
+   * attributes and source position. A `<template>`'s content fragment
+   * is copied too when the clone is deep.
    *
    * @returns Element
    */
@@ -2039,6 +2056,9 @@ class Element < Node {
     if self.attribute_namespaces != nil {
       copy.attribute_namespaces = self.attribute_namespaces.clone()
     }
+
+    copy.source_line = self.source_line
+    copy.source_column = self.source_column
 
     return copy
   }

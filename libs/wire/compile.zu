@@ -1,0 +1,1705 @@
+/**
+ * @module wire.compile
+ *
+ * Turning a parsed template into the instruction tree the renderer
+ * walks.
+ *
+ * Wire compiles rather than substitutes. A template is parsed once,
+ * every expression in it is parsed once, every directive is resolved
+ * once, and what comes out is a tree of plain instructions that holds no
+ * reference back to the document it came from. Rendering that tree is
+ * then a walk with no parsing in it at all, which is what lets the same
+ * page be rendered thousands of times from one compile, and what lets
+ * the renderer know the exact escaping context of every interpolation
+ * instead of guessing at it.
+ *
+ * Compiling is also where a template's mistakes are found. An unknown
+ * directive, an expression that does not parse, an `x-else` with no
+ * `x-if` in front of it, the same region defined twice: all of them are
+ * reported here, once, rather than on the request that happens to reach
+ * them.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import html
+
+import .constants { * }
+import .errors { TemplateSyntaxError }
+import .escape
+import .expression
+import .normalize
+import .values { is_blank, strip }
+
+
+# --------------------------------------------------------------------
+# Instructions
+# --------------------------------------------------------------------
+
+/**
+ * One piece of a run of text or of an attribute value: either literal
+ * characters or an expression to evaluate.
+ */
+class Segment {
+
+  /**
+   * The literal characters, or `nil` when this is an expression.
+   */
+  var text = nil
+
+  /**
+   * The expression, or `nil` when this is literal text.
+   */
+  var value = nil
+
+  /**
+   * @param ?string text
+   * @param ?Expression value
+   * @constructor
+   */
+  @new(text, value) {
+    self.text = text
+    self.value = value
+  }
+}
+
+
+/**
+ * The base of every instruction, carrying the kind the renderer
+ * switches on and the place in the source it came from.
+ */
+class Instruction {
+
+  /**
+   * What kind of instruction this is.
+   */
+  var kind = ''
+
+  /**
+   * The line of the tag it came from, or `0`.
+   */
+  var line = 0
+
+  /**
+   * The column of that tag, or `0`.
+   */
+  var column = 0
+
+  /**
+   * @param string kind
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(kind: string, line: number, column: number) {
+    self.kind = kind
+    self.line = line
+    self.column = column
+  }
+}
+
+
+/**
+ * A run of text, possibly with interpolations in it.
+ */
+class Text < Instruction {
+
+  /**
+   * The literal and interpolated pieces, in order.
+   */
+  var segments = []
+
+  /**
+   * The escaping context every interpolation in this run needs.
+   */
+  var context = escape.CONTEXT_TEXT
+
+  /**
+   * True when the literal pieces are written out unchanged, which is
+   * the case inside a `<script>` or a `<style>` where the text is the
+   * markup and escaping it would corrupt it.
+   */
+  var raw_literal = false
+
+  /**
+   * @param list segments
+   * @param string context
+   * @param bool raw_literal
+   * @constructor
+   */
+  @new(segments: list, context: string, raw_literal: bool) {
+    parent('text', 0, 0)
+
+    self.segments = segments
+    self.context = context
+    self.raw_literal = raw_literal
+  }
+}
+
+
+/**
+ * Characters written out exactly as they are, used for the doctype.
+ */
+class Raw < Instruction {
+
+  /**
+   * The characters.
+   */
+  var text = ''
+
+  /**
+   * @param string text
+   * @constructor
+   */
+  @new(text: string) {
+    parent('raw', 0, 0)
+    self.text = text
+  }
+}
+
+
+/**
+ * An HTML comment that survived into the output.
+ */
+class Comment < Instruction {
+
+  /**
+   * The text between the delimiters.
+   */
+  var data = ''
+
+  /**
+   * @param string data
+   * @constructor
+   */
+  @new(data: string) {
+    parent('comment', 0, 0)
+    self.data = data
+  }
+}
+
+
+/**
+ * One attribute of an element.
+ */
+class Attribute {
+
+  /**
+   * The attribute's name.
+   */
+  var name = ''
+
+  /**
+   * The literal and interpolated pieces of its value.
+   */
+  var segments = []
+
+  /**
+   * The escaping context its interpolations need, decided by the
+   * attribute's name.
+   */
+  var context = escape.CONTEXT_ATTRIBUTE
+
+  /**
+   * True when the attribute holds several URLs rather than one, so each
+   * has to be checked on its own.
+   */
+  var url_list = false
+
+  /**
+   * True when each URL in the list may be followed by a descriptor, as
+   * `srcset` allows and `ping` does not.
+   */
+  var url_descriptors = false
+
+  /**
+   * @param string name
+   * @param list segments
+   * @constructor
+   */
+  @new(name: string, segments: list) {
+    self.name = name
+    self.segments = segments
+    self.context = escape.attribute_context(name)
+    self.url_list = escape.is_url_list_attribute(name)
+    self.url_descriptors = escape.uses_descriptors(name)
+  }
+}
+
+
+/**
+ * An element, with everything about it already worked out.
+ */
+class Element < Instruction {
+
+  /**
+   * The tag name, as it will be written.
+   */
+  var tag = ''
+
+  /**
+   * The attributes written literally on the element.
+   */
+  var attributes = []
+
+  /**
+   * Expressions giving further attributes, from `x-attr`, applied after
+   * the literal ones so a computed value wins.
+   */
+  var spreads = []
+
+  /**
+   * The instructions for the element's children.
+   */
+  var children = []
+
+  /**
+   * True for an element written without a closing tag.
+   */
+  var void = false
+
+  /**
+   * An expression replacing the element's children, from `x-text` or
+   * `x-html`, or `nil`.
+   */
+  var content = nil
+
+  /**
+   * True when `content` came from `x-html` and must not be escaped.
+   */
+  var content_raw = false
+
+  /**
+   * @param string tag
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(tag: string, line: number, column: number) {
+    parent('element', line, column)
+
+    self.tag = tag
+    self.attributes = []
+    self.spreads = []
+    self.children = []
+    self.void = html.VOID_ELEMENTS.contains(tag)
+  }
+}
+
+
+/**
+ * A run of instructions with nothing of its own, which is what a
+ * `<template>` carrying a directive leaves behind.
+ */
+class Group < Instruction {
+
+  /**
+   * The instructions.
+   */
+  var children = []
+
+  /**
+   * @param list children
+   * @constructor
+   */
+  @new(children: list) {
+    parent('group', 0, 0)
+    self.children = children
+  }
+}
+
+
+/**
+ * One arm of a conditional chain.
+ */
+class Branch {
+
+  /**
+   * The expression being tested, or `nil` for the final `x-else`.
+   */
+  var test = nil
+
+  /**
+   * True when the arm renders on a falsy test, which is what `x-not`
+   * means.
+   */
+  var negate = false
+
+  /**
+   * The instruction to render when the arm is taken.
+   */
+  var body = nil
+
+  /**
+   * @param ?Expression test
+   * @param bool negate
+   * @param Instruction body
+   * @constructor
+   */
+  @new(test, negate: bool, body) {
+    self.test = test
+    self.negate = negate
+    self.body = body
+  }
+}
+
+
+/**
+ * A chain of `x-if`, `x-elif` and `x-else`, or a lone `x-if`.
+ */
+class Conditional < Instruction {
+
+  /**
+   * The arms, in the order they were written. The first whose test
+   * passes is the one that renders.
+   */
+  var branches = []
+
+  /**
+   * @param list branches
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(branches: list, line: number, column: number) {
+    parent('conditional', line, column)
+    self.branches = branches
+  }
+}
+
+
+/**
+ * A repetition, from `x-for`.
+ */
+class Loop < Instruction {
+
+  /**
+   * The expression giving the thing to iterate.
+   */
+  var sequence = nil
+
+  /**
+   * The name each value is bound to, or `nil`.
+   */
+  var value_name = nil
+
+  /**
+   * The name each key or index is bound to, or `nil`.
+   */
+  var key_name = nil
+
+  /**
+   * The name the loop's own metadata is published under.
+   */
+  var loop_name = DEFAULT_LOOP_NAME
+
+  /**
+   * The instruction rendered once per entry.
+   */
+  var body = nil
+
+  /**
+   * @param Expression sequence
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(sequence, line: number, column: number) {
+    parent('loop', line, column)
+    self.sequence = sequence
+  }
+}
+
+
+/**
+ * Another template rendered in this instruction's place.
+ */
+class Include < Instruction {
+
+  /**
+   * The literal and interpolated pieces of the path.
+   */
+  var path = []
+
+  /**
+   * The element the include sits inside, so a partial holding table
+   * rows is parsed knowing that, or `nil` for a plain flow position.
+   */
+  var context = nil
+
+  /**
+   * An expression giving further variables for the included template,
+   * from `x-with`, or `nil`.
+   */
+  var variables = nil
+
+  /**
+   * True when the included template sees only what `x-with` gave it.
+   */
+  var only = false
+
+  /**
+   * The instructions for the include's own children, which the included
+   * template can place with `x-slot="content"`.
+   */
+  var body = []
+
+  /**
+   * @param list path
+   * @param ?string context
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(path: list, context, line: number, column: number) {
+    parent('include', line, column)
+
+    self.path = path
+    self.context = context
+    self.body = []
+  }
+}
+
+
+/**
+ * A region an extending template may replace, from `x-slot`.
+ */
+class Slot < Instruction {
+
+  /**
+   * The region's name.
+   */
+  var name = ''
+
+  /**
+   * The instructions rendered when nothing has replaced it.
+   */
+  var body = []
+
+  /**
+   * @param string name
+   * @param list body
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(name: string, body: list, line: number, column: number) {
+    parent('slot', line, column)
+
+    self.name = name
+    self.body = body
+  }
+}
+
+
+/**
+ * The definition this one replaces, from `x-super`.
+ */
+class Super < Instruction {
+
+  /**
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(line: number, column: number) {
+    parent('super', line, column)
+  }
+}
+
+
+/**
+ * A compiled template, ready to render as many times as you like.
+ *
+ * Nothing here changes while a render is running, so one of these can
+ * be shared.
+ */
+class Template {
+
+  /**
+   * The file it was compiled from, or the source name given for a
+   * template compiled from a string.
+   */
+  var path = '<source>'
+
+  /**
+   * The instructions making up the template's own output. Empty for a
+   * template that only extends another.
+   */
+  var body = []
+
+  /**
+   * The regions this template defines, keyed by name, from `x-define`.
+   */
+  var blocks = {}
+
+  /**
+   * The literal and interpolated pieces of the base template's path, or
+   * `nil` when this template extends nothing.
+   */
+  var extends = nil
+
+  /**
+   * The element this template was compiled to sit inside, or `nil` when
+   * it was compiled on its own.
+   */
+  var context = nil
+
+  /**
+   * What the file looked like when it was read, so a cached template can
+   * tell whether the file has changed underneath it. `nil` for a
+   * template compiled from a string.
+   */
+  var fingerprint = nil
+
+  /**
+   * The parse errors the HTML parser found in the source.
+   *
+   * HTML has no fatal errors, so these never stop a template from
+   * rendering. They are worth looking at when a template renders into a
+   * shape you did not expect, because a browser would have made the same
+   * corrections the parser did.
+   */
+  var errors = []
+
+  /**
+   * @param string path
+   * @param ?string context
+   * @constructor
+   */
+  @new(path: string, context) {
+    self.path = path
+    self.context = context
+    self.body = []
+    self.blocks = {}
+    self.errors = []
+  }
+}
+
+
+# --------------------------------------------------------------------
+# Compiler
+# --------------------------------------------------------------------
+
+/**
+ * Compiles one template's source.
+ *
+ * There is one of these per compile and it is thrown away afterwards;
+ * the `Template` it produces holds nothing that points back at it.
+ */
+class Compiler {
+
+  /**
+   * The template being compiled, for error messages.
+   */
+  var path = '<source>'
+
+  /**
+   * Whether whitespace-only text is dropped.
+   */
+  var compact = false
+
+  /**
+   * Whether comments survive into the output.
+   */
+  var comments = false
+
+  /**
+   * @param string path
+   * @param ?dict options
+   * @constructor
+   */
+  @new(path: string, options: ?dict) {
+    self.path = path
+
+    var settings = {}
+    if options != nil {
+      settings = options
+    }
+
+    self.compact = settings.get('compact', false)
+    self.comments = settings.get('comments', false)
+  }
+
+  /**
+   * Compiles _source_ as a template that will sit inside _context_, or
+   * on its own when _context_ is `nil`.
+   *
+   * @param string source
+   * @param ?string context
+   * @returns Template
+   * @throws TemplateSyntaxError
+   */
+  compile(source: string, context) {
+    var parsed = normalize.parse(source, context)
+    var template = Template(self.path, context)
+
+    template.errors = parsed.errors
+
+    var nodes = parsed.root.children
+    if parsed.document {
+      nodes = self._document_nodes(parsed)
+    }
+
+    var extend = self._find_extend(nodes)
+
+    if extend != nil {
+      template.extends = self.path_segments(
+        _directive(extend, EXTEND_ATTR), extend
+      )
+      template.blocks = self._definitions(extend)
+
+      self._check_nothing_else(nodes, extend)
+      return template
+    }
+
+    template.body = self.children(nodes)
+    return template
+  }
+
+  /**
+   * The nodes of a document parse, with the `<html>`, `<head>` and
+   * `<body>` the parser supplied unwrapped.
+   *
+   * The tree construction algorithm builds all three whether the source
+   * had them or not, so emitting them unconditionally would wrap every
+   * partial in a whole page. The normalizer watched the token stream go
+   * past and knows which ones the author really wrote; the rest are
+   * replaced by their contents.
+   *
+   * Unwrapping does not reorder anything. The parser only ever moves a
+   * node forward into `<head>`, so reading `<head>` and then `<body>`
+   * gives the source order back.
+   *
+   * @param dict parsed
+   * @returns list
+   */
+  _document_nodes(parsed: dict) {
+    var out = []
+
+    for child in parsed.root.children {
+      if child.is_doctype() {
+        if parsed.saw_doctype {
+          out.append(child)
+        }
+
+        continue
+      }
+
+      if !child.is_element() or child.tag_name != 'html' {
+        out.append(child)
+        continue
+      }
+
+      if parsed.saw_html {
+        out.append(child)
+        continue
+      }
+
+      for section in child.children {
+        var implied = section.is_element() and
+          (section.tag_name == 'head' or section.tag_name == 'body')
+
+        var written = parsed.saw_head
+        if implied and section.tag_name == 'body' {
+          written = parsed.saw_body
+        }
+
+        if implied and !written {
+          out.extend(section.children)
+          continue
+        }
+
+        out.append(section)
+      }
+    }
+
+    return out
+  }
+
+  /**
+   * The one element carrying `x-extend`, or `nil`.
+   *
+   * @param list nodes
+   * @returns ?Element
+   * @throws TemplateSyntaxError when there is more than one.
+   */
+  _find_extend(nodes: list) {
+    var found = nil
+
+    for node in nodes {
+      for element in _descendants(node) {
+        if !_has_directive(element, EXTEND_ATTR) {
+          continue
+        }
+
+        if found != nil {
+          raise TemplateSyntaxError(
+            'a template can extend only one base',
+            self.path, element.source_line, element.source_column
+          )
+        }
+
+        found = element
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * The regions an extending template defines, keyed by name.
+   *
+   * Every element child of the `x-extend` has to carry an `x-define`,
+   * because anything else in there would have nowhere to go: the base
+   * template decides the structure, and a child template contributes
+   * only the pieces the base asked for.
+   *
+   * @param Element extend
+   * @returns dict
+   * @throws TemplateSyntaxError
+   */
+  _definitions(extend) {
+    var blocks = {}
+
+    for node in _children_of(extend) {
+      if !node.is_element() {
+        self._check_stray(node, extend)
+        continue
+      }
+
+      if !_has_directive(node, DEFINE_ATTR) {
+        raise TemplateSyntaxError(
+          '<${node.tag_name}> is not allowed directly inside an extending ' +
+          'template, since the base decides the structure; put it in an ' +
+          'x-define',
+          self.path, node.source_line, node.source_column
+        )
+      }
+
+      var name = self.name_of(node, DEFINE_ATTR)
+
+      # Defining the same region twice in one template is nearly always
+      # two people editing the same file rather than a deliberate
+      # replacement, so it has to be said out loud with x-override.
+      if blocks.contains(name) and !_has_directive(node, OVERRIDE_ATTR) {
+        raise TemplateSyntaxError(
+          '"${name}" is defined twice; add x-override to the second one to ' +
+          'replace the first on purpose',
+          self.path, node.source_line, node.source_column
+        )
+      }
+
+      blocks[name] = self.children(_children_of(node))
+    }
+
+    return blocks
+  }
+
+  /**
+   * Rejects anything outside the `x-extend` that would have no way to
+   * reach the page.
+   *
+   * @param list nodes
+   * @param Element extend
+   * @throws TemplateSyntaxError
+   */
+  _check_nothing_else(nodes: list, extend) {
+    for node in nodes {
+      if node.is_element() and id(node) == id(extend) {
+        continue
+      }
+
+      if node.is_element() {
+        var holds_extend = false
+
+        for element in _descendants(node) {
+          if id(element) == id(extend) {
+            holds_extend = true
+            break
+          }
+        }
+
+        if holds_extend {
+          continue
+        }
+
+        raise TemplateSyntaxError(
+          '<${node.tag_name}> is outside the x-extend and would never be ' +
+          'rendered; the base template decides what surrounds a definition',
+          self.path, node.source_line, node.source_column
+        )
+      }
+
+      self._check_stray(node, extend)
+    }
+  }
+
+  /**
+   * Rejects text that is doing nothing but is not whitespace either.
+   *
+   * @param Node node
+   * @param Element extend
+   * @throws TemplateSyntaxError
+   */
+  _check_stray(node, extend) {
+    if node.is_comment() or node.is_doctype() {
+      return
+    }
+
+    if node.is_text() and is_blank(node.data) {
+      return
+    }
+
+    raise TemplateSyntaxError(
+      'text in an extending template would never be rendered; put it in an ' +
+      'x-define',
+      self.path, extend.source_line, extend.source_column
+    )
+  }
+
+  /**
+   * Compiles a list of sibling nodes, tying conditional chains together
+   * as it goes.
+   *
+   * @param list nodes
+   * @returns list
+   * @throws TemplateSyntaxError
+   */
+  children(nodes: list) {
+    var out = []
+    var at = 0
+
+    while at < nodes.length() {
+      var node = nodes[at]
+
+      if !node.is_element() {
+        var compiled = self.other(node)
+
+        if compiled != nil {
+          out.append(compiled)
+        }
+
+        at++
+        continue
+      }
+
+      self._check_directives(node)
+
+      if _has_directive(node, ELIF_ATTR) or _has_directive(node, ELSE_ATTR) {
+        var which = ELIF_ATTR
+        if _has_directive(node, ELSE_ATTR) {
+          which = ELSE_ATTR
+        }
+
+        raise TemplateSyntaxError(
+          '${which} has no x-if in front of it',
+          self.path, node.source_line, node.source_column
+        )
+      }
+
+      if _has_directive(node, IF_ATTR) or _has_directive(node, NOT_ATTR) {
+        var chain = self._chain(nodes, at)
+        out.append(chain[0])
+        at = chain[1]
+        continue
+      }
+
+      out.append(self.element(node))
+      at++
+    }
+
+    return out
+  }
+
+  /**
+   * Compiles the conditional chain beginning at _at_, returning the
+   * instruction and the position just past the chain.
+   *
+   * An `x-for` on the opening element makes the condition part of each
+   * iteration rather than a choice between siblings, so a chain cannot
+   * be continued from there.
+   *
+   * @param list nodes
+   * @param number at
+   * @returns list
+   * @throws TemplateSyntaxError
+   */
+  _chain(nodes: list, at: number) {
+    var opener = nodes[at]
+    var next = at + 1
+
+    # A repeated element's condition belongs inside the repetition, or it
+    # could not read the very variables the repetition binds. That also
+    # settles the chain: there is nothing for a sibling x-else to be an
+    # alternative to once the condition is asked once per pass.
+    if _has_directive(opener, FOR_ATTR) {
+      var repeated = Conditional(
+        [self._branch(opener, false)],
+        opener.source_line, opener.source_column
+      )
+
+      return [self._loop(opener, repeated), next]
+    }
+
+    var branches = [self._branch(opener, true)]
+    var closed = false
+
+    while next < nodes.length() {
+      var skipped = self._skip_gap(nodes, next)
+
+      if skipped >= nodes.length() {
+        break
+      }
+
+      var candidate = nodes[skipped]
+
+      if !candidate.is_element() {
+        break
+      }
+
+      if _has_directive(candidate, ELIF_ATTR) {
+        if closed {
+          raise TemplateSyntaxError(
+            'x-elif comes after the x-else that closed the chain',
+            self.path, candidate.source_line, candidate.source_column
+          )
+        }
+
+        self._check_directives(candidate)
+        branches.append(self._branch(candidate, true))
+        next = skipped + 1
+        continue
+      }
+
+      if _has_directive(candidate, ELSE_ATTR) {
+        self._check_directives(candidate)
+        branches.append(Branch(nil, false, self.element(candidate)))
+        next = skipped + 1
+        closed = true
+        continue
+      }
+
+      break
+    }
+
+    return [Conditional(branches, opener.source_line, opener.source_column), next]
+  }
+
+  /**
+   * One arm of a chain, built from the element carrying its condition.
+   *
+   * _wrap_ is false for an element whose repetition is being applied
+   * around the chain rather than inside it, so that the body is compiled
+   * without the loop it would otherwise carry.
+   *
+   * @param Element node
+   * @param bool wrap
+   * @returns Branch
+   */
+  _branch(node, wrap: bool) {
+    var which = IF_ATTR
+    var negate = false
+
+    if _has_directive(node, NOT_ATTR) {
+      which = NOT_ATTR
+      negate = true
+    } else if _has_directive(node, ELIF_ATTR) {
+      which = ELIF_ATTR
+    }
+
+    var body = self._body(node)
+    if wrap {
+      body = self.element(node)
+    }
+
+    return Branch(self.expression_of(node, which), negate, body)
+  }
+
+  /**
+   * The position of the next node that could continue a chain, stepping
+   * over the whitespace and comments between two arms.
+   *
+   * @param list nodes
+   * @param number at
+   * @returns number
+   */
+  _skip_gap(nodes: list, at: number) {
+    var next = at
+
+    while next < nodes.length() {
+      var node = nodes[next]
+
+      if node.is_comment() {
+        next++
+        continue
+      }
+
+      if node.is_text() and is_blank(node.data) {
+        next++
+        continue
+      }
+
+      break
+    }
+
+    return next
+  }
+
+  /**
+   * Compiles a node that is not an element, or returns `nil` when it
+   * contributes nothing.
+   *
+   * @param Node node
+   * @returns ?Instruction
+   */
+  other(node) {
+    if node.is_text() {
+      if self.compact and is_blank(node.data) {
+        return nil
+      }
+
+      return self.text(node)
+    }
+
+    if node.is_comment() {
+      # Comments are server-side notes unless asked for, which is what
+      # lets a template be annotated without the annotations shipping.
+      if !self.comments {
+        return nil
+      }
+
+      return Comment(node.data)
+    }
+
+    if node.is_doctype() {
+      return Raw(node.outer_html())
+    }
+
+    return nil
+  }
+
+  /**
+   * Compiles a text node, working out its escaping context from the
+   * element it sits in.
+   *
+   * @param Text node
+   * @returns Text
+   */
+  text(node) {
+    var tag = ''
+    if node.parent_node != nil and node.parent_node.is_element() {
+      tag = node.parent_node.tag_name
+    }
+
+    var context = escape.text_context(tag)
+    var raw_literal = html.RAW_TEXT_ELEMENTS.contains(tag)
+
+    return Text(
+      self.segments(node.data, context, node.parent_node), context, raw_literal
+    )
+  }
+
+  /**
+   * Compiles an element, wrapping it in whatever its directives ask
+   * for.
+   *
+   * The wrapping runs outside in: a repetition holds a condition, a
+   * condition holds an include, and the element itself is innermost.
+   * That order is what lets an `x-if` on a repeated element see the
+   * loop's own variables.
+   *
+   * @param Element node
+   * @returns Instruction
+   * @throws TemplateSyntaxError
+   */
+  element(node) {
+    var inner = self._body(node)
+
+    if _has_directive(node, FOR_ATTR) {
+      inner = self._loop(node, inner)
+    }
+
+    return inner
+  }
+
+  /**
+   * The element itself, once repetition has been dealt with: either an
+   * include, or a real element, or the bare contents of a carrier.
+   *
+   * @param Element node
+   * @returns Instruction
+   */
+  _body(node) {
+    if _has_directive(node, INCLUDE_ATTR) {
+      return self._include(node)
+    }
+
+    if _has_directive(node, SLOT_ATTR) {
+      return Slot(
+        self.name_of(node, SLOT_ATTR),
+        self.children(_children_of(node)),
+        node.source_line, node.source_column
+      )
+    }
+
+    if _has_directive(node, SUPER_ATTR) {
+      return Super(node.source_line, node.source_column)
+    }
+
+    if _has_directive(node, DEFINE_ATTR) {
+      raise TemplateSyntaxError(
+        'x-define is only meaningful directly inside an x-extend',
+        self.path, node.source_line, node.source_column
+      )
+    }
+
+    # A <template> carrying a directive is Wire's own scaffolding and
+    # leaves nothing behind. One carrying no directive is an ordinary
+    # element that a script on the page will use, and is written out.
+    if node.tag_name == CARRIER_TAG and _is_carrier(node) {
+      return Group(self.children(_children_of(node)))
+    }
+
+    return self._real_element(node)
+  }
+
+  /**
+   * Compiles an element that will actually be written out.
+   *
+   * @param Element node
+   * @returns Element
+   */
+  _real_element(node) {
+    var out = Element(node.tag_name, node.source_line, node.source_column)
+
+    for name, value in node.attributes {
+      if name.starts_with(DIRECTIVE_PREFIX) {
+        continue
+      }
+
+      out.attributes.append(
+        Attribute(name, self.segments(value, escape.attribute_context(name), node))
+      )
+    }
+
+    if _has_directive(node, ATTR_ATTR) {
+      out.spreads.append(self.expression_of(node, ATTR_ATTR))
+    }
+
+    if _has_directive(node, TEXT_ATTR) {
+      out.content = self.expression_of(node, TEXT_ATTR)
+    } else if _has_directive(node, HTML_ATTR) {
+      out.content = self.expression_of(node, HTML_ATTR)
+      out.content_raw = true
+    }
+
+    if out.content == nil and !out.void {
+      out.children = self.children(_children_of(node))
+    }
+
+    return out
+  }
+
+  /**
+   * Compiles an `x-include`.
+   *
+   * @param Element node
+   * @returns Include
+   */
+  _include(node) {
+    var context = nil
+
+    # The element the include sits inside decides how its partial is
+    # parsed, so a file holding `<tr>` keeps its rows when it lands in a
+    # table and loses nothing when it lands in a div.
+    if node.parent_node != nil and node.parent_node.is_element() {
+      context = node.parent_node.tag_name
+    }
+
+    var include = Include(
+      self.path_segments(_directive(node, INCLUDE_ATTR), node),
+      context, node.source_line, node.source_column
+    )
+
+    if _has_directive(node, WITH_ATTR) {
+      include.variables = self.expression_of(node, WITH_ATTR)
+    }
+
+    include.only = _has_directive(node, ONLY_ATTR)
+    include.body = self.children(_children_of(node))
+
+    return include
+  }
+
+  /**
+   * Wraps _body_ in the repetition its element asks for.
+   *
+   * @param Element node
+   * @param Instruction body
+   * @returns Loop
+   * @throws TemplateSyntaxError
+   */
+  _loop(node, body) {
+    var loop = Loop(
+      self.expression_of(node, FOR_ATTR),
+      node.source_line, node.source_column
+    )
+
+    if _has_directive(node, VALUE_ATTR) {
+      loop.value_name = self.name_of(node, VALUE_ATTR)
+    }
+
+    if _has_directive(node, KEY_ATTR) {
+      loop.key_name = self.name_of(node, KEY_ATTR)
+    }
+
+    if _has_directive(node, LOOP_ATTR) {
+      loop.loop_name = self.name_of(node, LOOP_ATTR)
+    }
+
+    loop.body = body
+    return loop
+  }
+
+  /**
+   * Rejects an `x-` attribute Wire does not know, and a directive whose
+   * value is missing when it needs one.
+   *
+   * Wire owns the `x-` prefix, so a name it does not recognize is
+   * almost certainly a typo, and a typo that quietly does nothing is
+   * the worst kind.
+   *
+   * @param Element node
+   * @throws TemplateSyntaxError
+   */
+  _check_directives(node) {
+    for name, value in node.attributes {
+      if !name.starts_with(DIRECTIVE_PREFIX) {
+        continue
+      }
+
+      if !DIRECTIVES.contains(name) {
+        raise TemplateSyntaxError(
+          '"${name}" is not a Wire directive',
+          self.path, node.source_line, node.source_column
+        )
+      }
+
+      var needs_value = EXPRESSION_DIRECTIVES.contains(name) or
+        NAME_DIRECTIVES.contains(name) or PATH_DIRECTIVES.contains(name)
+
+      if needs_value and is_blank(value) {
+        raise TemplateSyntaxError(
+          '${name} needs a value',
+          self.path, node.source_line, node.source_column
+        )
+      }
+    }
+  }
+
+  /**
+   * Parses the expression a directive carries.
+   *
+   * @param Element node
+   * @param string directive
+   * @returns Expression
+   * @throws TemplateSyntaxError
+   */
+  expression_of(node, directive: string) {
+    return expression.parse(
+      _directive(node, directive), self.path,
+      node.source_line, node.source_column
+    )
+  }
+
+  /**
+   * Reads the bare identifier a naming directive carries.
+   *
+   * @param Element node
+   * @param string directive
+   * @returns string
+   * @throws TemplateSyntaxError when it is not a plain name.
+   */
+  name_of(node, directive: string) {
+    var name = strip(_directive(node, directive))
+
+    if name.match('/^[A-Za-z_][A-Za-z0-9_\\-]*$/') == false {
+      raise TemplateSyntaxError(
+        '${directive} needs a plain name, not "${name}"',
+        self.path, node.source_line, node.source_column
+      )
+    }
+
+    if name.starts_with('_') {
+      raise TemplateSyntaxError(
+        '"${name}" cannot start with an underscore',
+        self.path, node.source_line, node.source_column
+      )
+    }
+
+    return name
+  }
+
+  /**
+   * Splits a template path into its literal and interpolated pieces.
+   *
+   * A path is read as text rather than as an expression, so
+   * `x-include="header.html"` names a file instead of reading a `html`
+   * key off a `header` variable. Use `{{ }}` where part of it is
+   * computed.
+   *
+   * @param string value
+   * @param Element node
+   * @returns list
+   * @throws TemplateSyntaxError
+   */
+  path_segments(value: string, node) {
+    if is_blank(value) {
+      raise TemplateSyntaxError(
+        'a template path cannot be empty',
+        self.path, node.source_line, node.source_column
+      )
+    }
+
+    return self.segments(value, escape.CONTEXT_TEXT, node)
+  }
+
+  /**
+   * Splits text into its literal and interpolated pieces.
+   *
+   * @param string value
+   * @param string context
+   * @param ?Node host: The node the text belongs to, for error
+   *    positions.
+   * @returns list
+   * @throws TemplateSyntaxError
+   */
+  segments(value: string, context: string, host) {
+    var line = 0
+    var column = 0
+
+    if host != nil and host.is_element() {
+      line = host.source_line
+      column = host.source_column
+    }
+
+    return _split(value, self.path, line, column)
+  }
+}
+
+
+# --------------------------------------------------------------------
+# Interpolation
+# --------------------------------------------------------------------
+
+/**
+ * Splits _value_ into literal and interpolated segments.
+ *
+ * `{{ }}` holds an expression and `{! !}` calls a template function of
+ * that name with no arguments. Either can be written literally by
+ * putting a `%` in front of the opening brace.
+ *
+ * The scan tracks quotes and nesting, so an expression can hold a `}}`
+ * inside a string and a dictionary literal can close its own braces
+ * without ending the interpolation early.
+ *
+ * @param string value
+ * @param string path
+ * @param number line
+ * @param number column
+ * @returns list
+ * @throws TemplateSyntaxError when an interpolation is never closed.
+ */
+def _split(value: string, path: string, line: number, column: number) {
+  var characters = value.to_list()
+  var segments = []
+  var literal = []
+  var at = 0
+
+  while at < characters.length() {
+    var here = _peek(characters, at, 2)
+
+    if characters[at] == ESCAPE_CHAR {
+      var escaped = _peek(characters, at + 1, 2)
+
+      if escaped == VAR_OPEN or escaped == CALL_OPEN {
+        literal.append(escaped)
+        at += 3
+        continue
+      }
+    }
+
+    if here == VAR_OPEN or here == CALL_OPEN {
+      var closing = VAR_CLOSE
+      if here == CALL_OPEN {
+        closing = CALL_CLOSE
+      }
+
+      var end = _find_close(characters, at + 2, closing)
+
+      if end < 0 {
+        raise TemplateSyntaxError(
+          '"${here}" was never closed with "${closing}"', path, line, column
+        )
+      }
+
+      if !literal.is_empty() {
+        segments.append(Segment(''.join(literal), nil))
+        literal = []
+      }
+
+      var source = strip(''.join(characters[at + 2, end]))
+
+      if here == CALL_OPEN {
+        # `{! name !}` is the older spelling of `{{ name() }}`, and is
+        # kept because it reads well for a function taking nothing.
+        source = _call_source(source, closing, path, line, column)
+      }
+
+      segments.append(
+        Segment(nil, expression.parse(source, path, line, column))
+      )
+
+      at = end + 2
+      continue
+    }
+
+    literal.append(characters[at])
+    at++
+  }
+
+  if !literal.is_empty() {
+    segments.append(Segment(''.join(literal), nil))
+  }
+
+  return segments
+}
+
+
+/**
+ * `{! name !}` rewritten as the call it stands for.
+ *
+ * @param string source
+ * @param string closing
+ * @param string path
+ * @param number line
+ * @param number column
+ * @returns string
+ * @throws TemplateSyntaxError when it is not a bare name.
+ */
+def _call_source(source: string, closing: string, path: string, line: number,
+  column: number) {
+
+  if source.match('/^[A-Za-z_][A-Za-z0-9_]*$/') == false {
+    raise TemplateSyntaxError(
+      '"${CALL_OPEN} ${CALL_CLOSE}" calls a function by name; write ' +
+      '"${VAR_OPEN} ${source} ${VAR_CLOSE}" for anything else',
+      path, line, column
+    )
+  }
+
+  return '${source}()'
+}
+
+
+/**
+ * Where the interpolation opened at _from_ closes, or `-1`.
+ *
+ * Quotes and nesting are tracked so that a closing delimiter inside a
+ * string, or the inner brace of a dictionary literal, does not end the
+ * interpolation.
+ *
+ * @param list characters
+ * @param number from
+ * @param string closing
+ * @returns number
+ */
+def _find_close(characters: list, from: number, closing: string) {
+  var at = from
+  var depth = 0
+  var quote = nil
+
+  while at < characters.length() {
+    var character = characters[at]
+
+    if quote != nil {
+      if character == '\\' {
+        at += 2
+        continue
+      }
+
+      if character == quote {
+        quote = nil
+      }
+
+      at++
+      continue
+    }
+
+    if character == '\'' or character == '"' {
+      quote = character
+      at++
+      continue
+    }
+
+    if character == '(' or character == '[' or character == '{' {
+      depth++
+      at++
+      continue
+    }
+
+    if character == ')' or character == ']' or character == '}' {
+      if depth > 0 {
+        depth--
+        at++
+        continue
+      }
+    }
+
+    if depth == 0 and _peek(characters, at, 2) == closing {
+      return at
+    }
+
+    at++
+  }
+
+  return -1
+}
+
+
+/**
+ * The _count_ characters starting at _at_, or as many as there are.
+ *
+ * @param list characters
+ * @param number at
+ * @param number count
+ * @returns string
+ */
+def _peek(characters: list, at: number, count: number) {
+  var end = at + count
+
+  if end > characters.length() {
+    end = characters.length()
+  }
+
+  if at >= end {
+    return ''
+  }
+
+  return ''.join(characters[at, end])
+}
+
+
+# --------------------------------------------------------------------
+# Tree helpers
+# --------------------------------------------------------------------
+
+/**
+ * The nodes _element_ holds.
+ *
+ * A `<template>` keeps its content in a separate fragment rather than
+ * among its children, which is what stops it from disturbing the tree
+ * around it, so that is where Wire has to look.
+ *
+ * @param Node element
+ * @returns list
+ */
+def _children_of(element) {
+  if element.is_element() and element.content != nil {
+    return element.content.children
+  }
+
+  return element.children
+}
+
+
+/**
+ * Every element at or beneath _node_, including any inside a
+ * `<template>`'s content fragment.
+ *
+ * @param Node node
+ * @returns list
+ */
+def _descendants(node) {
+  var out = []
+
+  if node.is_element() {
+    out.append(node)
+  }
+
+  for child in _children_of(node) {
+    out.extend(_descendants(child))
+  }
+
+  return out
+}
+
+
+/**
+ * Whether _element_ carries the directive _name_.
+ *
+ * @param Element element
+ * @param string name
+ * @returns bool
+ */
+def _has_directive(element, name: string) {
+  return element.is_element() and element.attributes.contains(name)
+}
+
+
+/**
+ * The value of _element_'s _name_ directive.
+ *
+ * @param Element element
+ * @param string name
+ * @returns string
+ */
+def _directive(element, name: string) {
+  return element.attributes.get(name, '')
+}
+
+
+/**
+ * Whether _element_ carries any Wire directive at all.
+ *
+ * @param Element element
+ * @returns bool
+ */
+def _is_carrier(element) {
+  for name, value in element.attributes {
+    if name.starts_with(DIRECTIVE_PREFIX) {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+/**
+ * Compiles _source_ into a `Template`.
+ *
+ * _context_ names the element the result will sit inside, and should be
+ * `nil` for a template rendered on its own. _options_ takes `compact`
+ * (drop whitespace-only text, default `false`) and `comments` (keep
+ * HTML comments, default `false`).
+ *
+ * ```zuri
+ * import wire
+ *
+ * var template = wire.compile.compile(
+ *   '<p x-if="user">Hello {{ user.name }}</p>', 'greeting.html', nil, nil
+ * )
+ * ```
+ *
+ * @param string source
+ * @param string path
+ * @param ?string context
+ * @param ?dict options
+ * @returns Template
+ * @throws TemplateSyntaxError
+ */
+def compile(source: string, path: string, context, options: ?dict) {
+  return Compiler(path, options).compile(source, context)
+}

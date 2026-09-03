@@ -1,0 +1,33 @@
+═══════════════════════════════════════════════════════
+  wire composition — test suite
+═══════════════════════════════════════════════════════
+  [PASS] rendering from a file
+  [PASS] the template extension
+  [PASS] every path resolves inside the root and nowhere else
+  [PASS] the error a missing template raises
+  [PASS] including
+  [PASS] the variables an include can see
+  [PASS] a computed include path
+  [PASS] an include with children is a component
+  [PASS] an include is parsed in the context it lands in
+  [PASS] extending a base template
+  [PASS] extend and define in their directive spelling
+  [PASS] x-super
+  [PASS] inheritance more than one level deep
+  [PASS] a region defined twice
+  [PASS] an extending template is checked
+  [PASS] cycles are caught rather than run until the process dies
+  [PASS] the compile cache and auto reload
+  [PASS] compiling without rendering
+  [PASS] an error inside an include points at the include
+  [PASS] register_filter
+  [PASS] register_global
+  [PASS] register_element
+  [PASS] registration checks its arguments
+  [PASS] configuring a Wire in one place
+  [PASS] create_root
+  [PASS] the module-level shortcuts
+
+═══════════════════════════════════════════════════════
+  All 26 composition checks passed.
+═══════════════════════════════════════════════════════

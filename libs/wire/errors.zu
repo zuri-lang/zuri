@@ -1,0 +1,195 @@
+/**
+ * @module wire.errors
+ *
+ * The errors Wire raises, and the location information they carry.
+ *
+ * Every one of them knows which template it came from and, where the
+ * problem can be traced to a specific tag, which line and column that
+ * tag started at. A template engine that can only say "something is
+ * wrong" is not much use once a layout hierarchy is a few files deep,
+ * so the location travels with the error rather than being reassembled
+ * by whoever catches it.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+/**
+ * The base class of every error Wire raises.
+ *
+ * Catching this catches all of them, which is what a web handler
+ * wanting to turn any template failure into a 500 page should do.
+ *
+ * ```zuri
+ * import wire
+ *
+ * catch {
+ *   echo wire.render('dashboard')
+ * } as e {
+ *   if instance_of(e, wire.WireError) {
+ *     echo 'template problem in ${e.path}: ${e.reason}'
+ *   }
+ * }
+ * ```
+ */
+class WireError < Error {
+
+  /**
+   * The template the problem was found in: a file path for a template
+   * read from disk, or whatever was passed as the source name for one
+   * rendered from a string, which defaults to `<source>`.
+   */
+  var path = '<source>'
+
+  /**
+   * The line the offending tag started on, counting from 1, or `0`
+   * when the problem cannot be tied to one place in the source.
+   */
+  var line = 0
+
+  /**
+   * The column the offending tag started at, counting from 1, or `0`.
+   */
+  var column = 0
+
+  /**
+   * The problem on its own, without the location that `message` glues
+   * onto the end of it.
+   */
+  var reason = ''
+
+  /**
+   * @param string reason: What went wrong, phrased without any
+   *    location; the location is appended for you.
+   * @param ?string path: The template the problem is in. Defaults to
+   *    `<source>`.
+   * @param ?number line: The line, counting from 1. Omit or pass `0`
+   *    when there is no meaningful line.
+   * @param ?number column: The column, counting from 1.
+   * @constructor
+   */
+  @new(reason: string, path: ?string, line: ?number, column: ?number) {
+    self.path = '<source>'
+    if path != nil {
+      self.path = path
+    }
+
+    self.line = 0
+    if line != nil {
+      self.line = line
+    }
+
+    self.column = 0
+    if column != nil {
+      self.column = column
+    }
+
+    self.reason = reason
+
+    parent(_describe(reason, self.path, self.line, self.column))
+  }
+
+  /**
+   * Where the problem is, as `path[line,column]`, or just the path when
+   * no line was recorded.
+   *
+   * @returns string
+   */
+  location() {
+    if self.line == 0 {
+      return self.path
+    }
+
+    return '${self.path}[${self.line},${self.column}]'
+  }
+}
+
+
+/**
+ * Raised when a template file cannot be found, or when it resolves to
+ * somewhere outside the root directory.
+ *
+ * A path that climbs out of the root with `..` is reported as not found
+ * rather than as a permission problem, so a template cannot be used to
+ * probe the filesystem for what does and does not exist.
+ */
+class TemplateNotFoundError < WireError {
+
+  /**
+   * @param string reason
+   * @param ?string path
+   * @param ?number line
+   * @param ?number column
+   * @constructor
+   */
+  @new(reason: string, path: ?string, line: ?number, column: ?number) {
+    parent(reason, path, line, column)
+  }
+}
+
+
+/**
+ * Raised while compiling a template, for anything Wire can tell is
+ * wrong without rendering: an unknown directive, an expression that
+ * does not parse, an `x-elif` with no `x-if` in front of it, a region
+ * defined twice.
+ *
+ * Compilation happens once per template rather than once per render, so
+ * these surface the first time a template is used and not on every
+ * request after that.
+ */
+class TemplateSyntaxError < WireError {
+
+  /**
+   * @param string reason
+   * @param ?string path
+   * @param ?number line
+   * @param ?number column
+   * @constructor
+   */
+  @new(reason: string, path: ?string, line: ?number, column: ?number) {
+    parent(reason, path, line, column)
+  }
+}
+
+
+/**
+ * Raised while rendering, for anything that depends on the values a
+ * template was given: iterating something that cannot be iterated, a
+ * filter that rejects its input, an include hierarchy that never
+ * bottoms out.
+ *
+ * A variable that was simply not supplied is not one of these. Missing
+ * variables render as empty and test as falsy, which is what makes
+ * optional sections readable.
+ */
+class RenderError < WireError {
+
+  /**
+   * @param string reason
+   * @param ?string path
+   * @param ?number line
+   * @param ?number column
+   * @constructor
+   */
+  @new(reason: string, path: ?string, line: ?number, column: ?number) {
+    parent(reason, path, line, column)
+  }
+}
+
+
+/**
+ * Glues a reason and a location into the message the error carries.
+ *
+ * @param string reason
+ * @param string path
+ * @param number line
+ * @param number column
+ * @returns string
+ */
+def _describe(reason: string, path: string, line: number, column: number) {
+  if line == 0 {
+    return '${reason} in ${path}'
+  }
+
+  return '${reason} at ${path}[${line},${column}]'
+}

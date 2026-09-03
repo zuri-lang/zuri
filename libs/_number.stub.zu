@@ -578,17 +578,24 @@ class number {
   fraction() {}
 
   /**
-   * Returns the number rounded up to _n_ decimal places.
-   * 
+   * Returns the number rounded to _n_ decimal places, with a half
+   * rounding away from zero the same way `round()` does.
+   *
+   * A number already shorter than _n_ places is returned unchanged, and
+   * so are `NaN` and the infinities. Beyond 17 places an `f64` has no
+   * digits left to round, so a larger _n_ behaves as 17.
+   *
    * ```zuri-repl
    * %> 1.554576852757686786786.fixed(9)
    * 1.554576853
    * %> 1.554576852757686786786.fixed(8)
    * 1.55457685
    * %> 1.554576852757686786786.fixed(1)
-   * 1.5
+   * 1.6
    * %> 1.554576852757686786786.fixed(0)
-   * 1
+   * 2
+   * %> (-2.5).fixed(0)
+   * -3
    * ```
    */
   fixed(n) {}

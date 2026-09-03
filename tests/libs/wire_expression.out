@@ -1,0 +1,27 @@
+═══════════════════════════════════════════════════════
+  wire.expression — test suite
+═══════════════════════════════════════════════════════
+  [PASS] literals
+  [PASS] lookup, including the chains that go nowhere
+  [PASS] private names are refused
+  [PASS] arithmetic
+  [PASS] comparison, for numbers and for strings
+  [PASS] the in operator
+  [PASS] operators refuse what they cannot answer
+  [PASS] Wire truthiness, where it differs from Zuri and where it does not
+  [PASS] logical operators, and the difference between or and ??
+  [PASS] list and dictionary literals
+  [PASS] function calls, in both spellings
+  [PASS] filter application
+  [PASS] the text filters
+  [PASS] the number filters
+  [PASS] the collection filters
+  [PASS] the choice filters
+  [PASS] the date filter
+  [PASS] filters report what they cannot do
+  [PASS] malformed expressions are refused at compile time
+  [PASS] the interpolation scanner handles quoting and nesting
+
+═══════════════════════════════════════════════════════
+  All 20 expression checks passed.
+═══════════════════════════════════════════════════════

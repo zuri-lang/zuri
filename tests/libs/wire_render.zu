@@ -1,0 +1,345 @@
+/**
+ * wire_render.zu
+ *
+ * Test suite for what Wire writes out: the directives, the shape of the
+ * document it produces, and the contextual escaping that decides what a
+ * value is allowed to become on the way to the page.
+ */
+
+import wire
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  var raised = false
+
+  catch {
+    fn()
+  } as e {
+    raised = true
+  }
+
+  return raised
+}
+
+var view = wire.wire()
+
+def render(source, variables) {
+  return view.render_string(source, variables, nil)
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  wire.render — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Document shape
+# ---------------------------------------------------------------------------
+assert render('<p>Hello</p>', nil) == '<p>Hello</p>',
+  'a fragment comes back as a fragment, with no page wrapped around it'
+assert render('<meta charset="utf-8">', nil) == '<meta charset="utf-8">',
+  'markup that belongs in a head does not drag a head along with it'
+assert render('<tr><td>x</td></tr>', nil) == 'x',
+  'a row with no table around it loses its cell, exactly as a browser would'
+
+var page = render(
+  '<!DOCTYPE html><html><head><title>T</title></head><body><p>x</p></body></html>', nil
+)
+assert page == '<!DOCTYPE html><html><head><title>T</title></head><body><p>x</p></body></html>',
+  'a whole document round-trips with its doctype and structure intact'
+ok('a template is emitted as what it was written as, page or fragment')
+
+assert render('<br>', nil) == '<br>', 'a void element has no closing tag'
+assert render('<p title="a&amp;b">x &lt; y</p>', nil) == '<p title="a&amp;b">x &lt; y</p>',
+  'text and attributes are escaped again on the way out'
+assert render('<style>a > b { c: "d" }</style>', nil) == '<style>a > b { c: "d" }</style>',
+  'the contents of a raw text element are never escaped'
+ok('serialization follows the HTML rules')
+
+# ---------------------------------------------------------------------------
+# Comments
+# ---------------------------------------------------------------------------
+assert render('<!-- note --><p>x</p>', nil) == '<p>x</p>',
+  'a comment is a server-side note and does not reach the page'
+assert render('<!-- {{ secret }} --><p>x</p>', { secret: 'shh' }) == '<p>x</p>',
+  'nothing inside a comment is evaluated'
+assert render('<!--\n  several\n  lines\n--><p>x</p>', nil) == '<p>x</p>',
+  'a comment spanning lines goes too'
+
+var keeps = wire.wire({ comments: true })
+assert keeps.render_string('<!-- note --><p>x</p>', nil, nil) == '<!-- note --><p>x</p>',
+  'set_comments(true) keeps them'
+ok('comments')
+
+# ---------------------------------------------------------------------------
+# x-if, x-not and the chain
+# ---------------------------------------------------------------------------
+assert render('<p x-if="a">y</p>', { a: true }) == '<p>y</p>',
+  'x-if renders the element and drops its own attribute'
+assert render('<p x-if="a">y</p>', { a: false }) == '',
+  'a falsy x-if drops the element and everything in it'
+assert render('<p x-if="a">y</p>', nil) == '', 'a missing name is falsy'
+assert render('<div x-if="a"><b>deep</b></div>', { a: false }) == '',
+  'x-if takes the children with it'
+assert render('<p x-not="a">y</p>', { a: false }) == '<p>y</p>', 'x-not is the inverse'
+assert render('<p x-not="a">y</p>', { a: true }) == '', 'and the other way'
+assert render('<p x-if="items|length">y</p>', { items: [] }) == '',
+  'x-if takes a whole expression, filters and all'
+ok('x-if and x-not')
+
+var chain = '<p x-if="n > 5">big</p>\n<p x-elif="n > 2">mid</p>\n<p x-else>small</p>'
+assert render(chain, { n: 9 }) == '<p>big</p>', 'the first arm of a chain'
+assert render(chain, { n: 3 }) == '<p>mid</p>', 'a middle arm'
+assert render(chain, { n: 1 }) == '<p>small</p>', 'the final arm'
+assert render('<p x-if="a">y</p><p x-else>n</p>', { a: false }) == '<p>n</p>',
+  'a chain with no whitespace between the arms'
+assert render('<p x-if="a">y</p>\n<!-- c -->\n<p x-else>n</p>', { a: false }) == '<p>n</p>',
+  'a comment between two arms does not break the chain'
+assert raises(@() { render('<p x-if="a">y</p>text<p x-else>n</p>', { a: false }) }),
+  'real text between two arms ends the chain, leaving the x-else with nothing ' +
+  'to attach to'
+ok('x-elif and x-else chains')
+
+assert raises(@() { render('<p x-elif="a">y</p>', nil) }),
+  'an x-elif with no x-if in front of it is refused'
+assert raises(@() { render('<p x-else>y</p>', nil) }),
+  'an x-else with no x-if in front of it is refused'
+assert raises(@() {
+  render('<p x-if="a">y</p><p x-else>n</p><p x-elif="b">m</p>', nil)
+}), 'an x-elif after the x-else that closed the chain is refused'
+ok('a broken chain is refused at compile time')
+
+# ---------------------------------------------------------------------------
+# x-for
+# ---------------------------------------------------------------------------
+assert render('<li x-for="v" x-value="i">{{ i }}</li>', { v: ['a', 'b'] }) ==
+  '<li>a</li><li>b</li>', 'the element repeats, not just its children'
+assert render('<li x-for="v">x</li>', { v: [1, 2, 3] }) == '<li>x</li><li>x</li><li>x</li>',
+  'a loop needs no binding at all'
+assert render('<li x-for="v" x-key="k" x-value="i">{{ k }}={{ i }}</li>',
+  { v: { a: 1, b: 2 } }) == '<li>a=1</li><li>b=2</li>',
+  'a dictionary binds its keys'
+assert render('<li x-for="v" x-key="k" x-value="i">{{ k }}{{ i }}</li>',
+  { v: ['x'] }) == '<li>0x</li>', 'a list binds positions'
+assert render('<s x-for="v" x-value="c">{{ c }}</s>', { v: 'hi' }) ==
+  '<s>h</s><s>i</s>', 'a string iterates by character'
+assert render('<s x-for="0..3" x-value="n">{{ n }}</s>', nil) ==
+  '<s>0</s><s>1</s><s>2</s>', 'a range iterates'
+assert render('<li x-for="v">x</li>', { v: [] }) == '', 'an empty list renders nothing'
+assert render('<li x-for="v">x</li>', nil) == '',
+  'a name that was never supplied renders nothing rather than raising'
+ok('x-for over every kind of sequence')
+
+assert render(
+  '<i x-for="v" x-value="c">{{ loop.index }}/{{ loop.length }}</i>', { v: ['a', 'b'] }
+) == '<i>1/2</i><i>2/2</i>', 'loop.index counts from one and loop.length is the total'
+assert render('<i x-for="v">{{ loop.index0 }}</i>', { v: ['a', 'b'] }) ==
+  '<i>0</i><i>1</i>', 'loop.index0 counts from zero'
+assert render('<i x-for="v">{{ loop.first }}{{ loop.last }}</i>', { v: ['a', 'b'] }) ==
+  '<i>truefalse</i><i>falsetrue</i>', 'loop.first and loop.last'
+assert render('<i x-for="v">{{ loop.odd }}</i>', { v: ['a', 'b'] }) ==
+  '<i>true</i><i>false</i>', 'loop.odd is true on the first pass'
+assert render('<i x-for="v" x-key="k">{{ loop.key }}{{ loop.value }}</i>',
+  { v: { a: 1 } }) == '<i>a1</i>', 'loop.key and loop.value are there without binding'
+assert render(
+  '<i x-for="rows" x-loop="row"><b x-for="row.value">{{ row.index }}{{ loop.index }}</b></i>',
+  { rows: [[1, 2]] }
+) == '<i><b>11</b><b>12</b></i>', 'x-loop renames the metadata so two loops can nest'
+assert render(
+  '<i x-for="rows" x-value="r"><b x-for="r">{{ loop.parent.index }}{{ loop.index }}</b></i>',
+  { rows: [['x', 'y']] }
+) == '<i><b>11</b><b>12</b></i>', 'loop.parent reaches the enclosing loop'
+ok('loop metadata')
+
+assert render('<li x-for="v" x-value="i" x-if="i > 1">{{ i }}</li>', { v: [1, 2, 3] }) ==
+  '<li>2</li><li>3</li>',
+  'an x-if on a repeated element is asked once per pass and sees the loop variables'
+assert render(
+  '<table><tbody><tr x-for="v" x-value="r"><td>{{ r }}</td></tr></tbody></table>',
+  { v: [1, 2] }
+) == '<table><tbody><tr><td>1</td></tr><tr><td>2</td></tr></tbody></table>',
+  'a loop inside a table keeps its rows in the table'
+ok('x-for combined with x-if and inside a table')
+
+assert raises(@() { render('<li x-for="v">x</li>', { v: 12 }) }),
+  'iterating a number is refused'
+assert raises(@() { render('<li x-for="v" x-value="1bad">x</li>', { v: [] }) }),
+  'a binding that is not a plain name is refused'
+ok('x-for refuses what it cannot do')
+
+# ---------------------------------------------------------------------------
+# The carrier
+# ---------------------------------------------------------------------------
+assert render('<template x-for="v" x-value="i"><b>{{ i }}</b></template>', { v: [1, 2] }) ==
+  '<b>1</b><b>2</b>', 'a template carrying a directive leaves nothing behind'
+assert render('<template x-if="a">y</template>', { a: true }) == 'y',
+  'the same for a condition'
+assert render('<template><b>x</b></template>', nil) == '<template><b>x</b></template>',
+  'a template carrying no directive is an ordinary element and is written out'
+assert render(
+  '<select><template x-for="v" x-value="o"><option>{{ o }}</option></template></select>',
+  { v: ['a'] }
+) == '<select><option>a</option></select>',
+  'a carrier survives inside a select, where an unknown element would be dropped'
+ok('the template carrier')
+
+# ---------------------------------------------------------------------------
+# x-text, x-html and x-attr
+# ---------------------------------------------------------------------------
+assert render('<p x-text="v">ignored</p>', { v: '<b>' }) == '<p>&lt;b&gt;</p>',
+  'x-text replaces the children and escapes what it writes'
+assert render('<p x-html="v">ignored</p>', { v: '<b>x</b>' }) == '<p><b>x</b></p>',
+  'x-html replaces the children and does not escape'
+assert render('<input x-attr="v">', { v: { type: 'text', name: 'a' } }) ==
+  '<input type="text" name="a">', 'x-attr spreads a dictionary'
+assert render('<input x-attr="v">', { v: { disabled: true } }) == '<input disabled>',
+  'a true value gives a valueless attribute'
+assert render('<input x-attr="v">', { v: { disabled: false, hidden: nil } }) == '<input>',
+  'false and nil leave the attribute off'
+assert render('<i class="a" x-attr="v"></i>', { v: { 'class': 'b' } }) == '<i class="b"></i>',
+  'a computed attribute replaces one written on the element'
+assert render('<i x-attr="v"></i>', { v: nil }) == '<i></i>',
+  'x-attr given nothing adds nothing'
+ok('x-text, x-html and x-attr')
+
+assert raises(@() { render('<i x-attr="v"></i>', { v: 'text' }) }),
+  'x-attr given something that is not a dictionary is refused'
+assert raises(@() { render('<i x-attr="v"></i>', { v: { 'a b': 'c' } }) }),
+  'an attribute name that could not be written back out is refused'
+ok('x-attr refuses what it cannot write')
+
+# ---------------------------------------------------------------------------
+# Unknown directives
+# ---------------------------------------------------------------------------
+assert raises(@() { render('<p x-fi="a">y</p>', nil) }),
+  'an x- attribute Wire does not know is a typo, not a passthrough'
+assert raises(@() { render('<p x-if="">y</p>', nil) }),
+  'a directive with an empty value is refused'
+assert render('<p data-x="1" id="a">y</p>', nil) == '<p data-x="1" id="a">y</p>',
+  'attributes outside the x- prefix are left entirely alone'
+ok('Wire owns the x- prefix and says so')
+
+# ---------------------------------------------------------------------------
+# Escaping: text
+# ---------------------------------------------------------------------------
+assert render('<p>{{ v }}</p>', { v: '<script>alert(1)</script>' }) ==
+  '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>', 'a tag in text cannot become a tag'
+assert render('<p>{{ v }}</p>', { v: 'a & b' }) == '<p>a &amp; b</p>', 'an ampersand'
+assert render('<p>{{ v|raw }}</p>', { v: '<b>x</b>' }) == '<p><b>x</b></p>',
+  'the raw filter is how markup gets through'
+assert render('<p>{{ v }}</p>', { v: wire.safe('<b>x</b>') }) == '<p><b>x</b></p>',
+  'a value that arrives already marked safe gets through too'
+assert render('<p>{{ v|escape }}</p>', { v: wire.safe('<b>') }) == '<p>&lt;b&gt;</p>',
+  'the escape filter sees through the safe marker'
+ok('text escaping')
+
+# ---------------------------------------------------------------------------
+# Escaping: attributes
+# ---------------------------------------------------------------------------
+assert render('<i title="{{ v }}"></i>', { v: 'a"b' }) == '<i title="a&quot;b"></i>',
+  'a quote cannot end an attribute'
+assert render('<i title="x{{ v }}y"></i>', { v: '&' }) == '<i title="x&amp;y"></i>',
+  'an interpolation sits inside literal text in an attribute'
+assert render('<i title="{{ v }}"></i>', { v: '"><script>' }) ==
+  '<i title="&quot;><script>"></i>',
+  'the quote that would end the attribute is escaped, which is what keeps ' +
+  'the rest inert; a < inside a quoted attribute value means nothing to the ' +
+  'parser and the HTML serialization algorithm leaves it alone'
+ok('attribute escaping')
+
+# ---------------------------------------------------------------------------
+# Escaping: URLs
+# ---------------------------------------------------------------------------
+assert render('<a href="{{ v }}">x</a>', { v: 'https://example.com' }) ==
+  '<a href="https://example.com">x</a>', 'an allowed scheme goes through'
+assert render('<a href="{{ v }}">x</a>', { v: '/relative?a=b' }) ==
+  '<a href="/relative?a=b">x</a>', 'a URL with no scheme is always allowed'
+assert render('<a href="{{ v }}">x</a>', { v: 'javascript:alert(1)' }) ==
+  '<a href="about:blank">x</a>', 'a javascript URL is blocked'
+assert render('<a href="{{ v }}">x</a>', { v: 'JaVaScRiPt:alert(1)' }) ==
+  '<a href="about:blank">x</a>', 'the scheme comparison folds case'
+assert render('<a href="{{ v }}">x</a>', { v: 'java\tscript:alert(1)' }) ==
+  '<a href="about:blank">x</a>',
+  'whitespace inside the scheme is ignored, the way a browser ignores it'
+assert render('<a href="java{{ v }}">x</a>', { v: 'script:alert(1)' }) ==
+  '<a href="about:blank">x</a>',
+  'a scheme split between literal text and a value is still caught'
+assert render('<a href="{{ v|raw }}">x</a>', { v: 'javascript:alert(1)' }) ==
+  '<a href="about:blank">x</a>',
+  'raw is about escaping and does not license a dangerous scheme'
+assert render('<img src="{{ v }}">', { v: 'data:text/html,<b>' }) ==
+  '<img src="about:blank">', 'a data URL is blocked'
+ok('URL attributes are checked as URLs, not merely escaped')
+
+assert render('<img srcset="{{ a }} 2x, {{ b }} 1x">', { a: 'javascript:x', b: '/ok.png' }) ==
+  '<img srcset="about:blank 2x, /ok.png 1x">',
+  'srcset checks each URL and keeps its descriptors and separators'
+assert render('<a ping="{{ v }}">x</a>', { v: 'javascript:x /ok' }) ==
+  '<a ping="about:blank /ok">x</a>', 'ping checks every token'
+ok('the URL list attributes')
+
+var permissive = wire.wire({ url_schemes: ['https', 'app'] })
+assert permissive.render_string('<a href="{{ v }}">x</a>', { v: 'app://open' }, nil) ==
+  '<a href="app://open">x</a>', 'set_url_schemes widens the allowlist'
+assert permissive.render_string('<a href="{{ v }}">x</a>', { v: 'http://x' }, nil) ==
+  '<a href="about:blank">x</a>', 'and narrows it'
+ok('the URL scheme allowlist is configurable')
+
+# ---------------------------------------------------------------------------
+# Escaping: scripts and styles
+# ---------------------------------------------------------------------------
+assert render('<script>var a = {{ v }};</script>', { v: 'Ada' }) ==
+  '<script>var a = "Ada";</script>',
+  'a value in a script is encoded as JSON, quotes and all'
+assert render('<script>var a = {{ v }};</script>', { v: '</script><b>' }) ==
+  '<script>var a = "\\u003c/script\\u003e\\u003cb\\u003e";</script>',
+  'a script cannot be ended from inside a value'
+assert render('<script>var a = {{ v }};</script>', { v: { n: 1 } }) ==
+  '<script>var a = {"n":1};</script>', 'a whole structure can be handed to a script'
+assert render('<button onclick="go({{ v }})">x</button>', { v: '");alert(1);//' }) ==
+  '<button onclick="go(&quot;\\&quot;);alert(1);//&quot;)">x</button>',
+  'an event handler is a script context and an attribute at the same time'
+assert render('<style>.a { color: {{ v }} }</style>', { v: 'red' }) ==
+  '<style>.a { color: red }</style>', 'a plain value goes into a stylesheet unchanged'
+assert render('<style>.a { color: {{ v }} }</style>', { v: '</style><script>' })
+  .index_of('<script>') < 0, 'a stylesheet cannot be ended from inside a value'
+ok('script and style escaping')
+
+# ---------------------------------------------------------------------------
+# Compact output
+# ---------------------------------------------------------------------------
+var tight = wire.wire({ compact: true })
+assert tight.render_string('<div>\n  <p>a</p>\n  <p>b</p>\n</div>', nil, nil) ==
+  '<div><p>a</p><p>b</p></div>', 'compact drops whitespace-only text'
+assert tight.render_string('<p>keep  this</p>', nil, nil) == '<p>keep  this</p>',
+  'compact leaves text that is not only whitespace exactly as it is'
+ok('compact output')
+
+# ---------------------------------------------------------------------------
+# Errors carry a position
+# ---------------------------------------------------------------------------
+var reported = nil
+
+catch {
+  view.render_string('<p>ok</p>\n<p x-if="a +">bad</p>', nil, 'page.html')
+} as e {
+  reported = e
+}
+
+assert reported != nil, 'a malformed expression raises'
+assert instance_of(reported, wire.TemplateSyntaxError), 'and it is a syntax error'
+assert instance_of(reported, wire.WireError), 'which is a WireError'
+assert reported.path == 'page.html', 'the error names the template'
+assert reported.line == 2, 'and the line of the tag at fault'
+assert reported.location() == 'page.html[2,1]', 'location() renders both'
+ok('errors carry the template and the position')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} render checks passed.'
+echo '═══════════════════════════════════════════════════════'

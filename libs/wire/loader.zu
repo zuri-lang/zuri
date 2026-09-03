@@ -1,0 +1,189 @@
+/**
+ * @module wire.loader
+ *
+ * Turning the path written in an `x-include` into a file on disk, and
+ * refusing to when it points somewhere it should not.
+ *
+ * ### The root is a boundary, not a starting point
+ *
+ * Every template path resolves inside the root directory and nowhere
+ * else. A path that climbs out of it with `..`, and an absolute path
+ * that names somewhere else entirely, are both refused rather than
+ * followed.
+ *
+ * That matters because template paths are not always written by the
+ * person who wrote the template. The moment a path is built out of
+ * anything a request supplied, as `x-include="themes/{{ theme }}/head"`
+ * does, an unbounded loader turns an include into a way to read any file
+ * the process can reach. Wire treats the root as a boundary so that the
+ * worst a hostile value can do is fail to find a template.
+ *
+ * Symbolic links are followed and then checked, so a link inside the
+ * root pointing outside it is refused too.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import os
+
+import .constants { DEFAULT_EXTENSION }
+import .errors { TemplateNotFoundError }
+import .values { strip }
+
+
+/**
+ * Finds template files under one root directory.
+ */
+class Loader {
+
+  /**
+   * The directory every path resolves inside.
+   */
+  var root = ''
+
+  /**
+   * The extension tried when the path as written names no file.
+   */
+  var extension = DEFAULT_EXTENSION
+
+  /**
+   * @param string root
+   * @param ?string extension
+   * @constructor
+   */
+  @new(root: string, extension: ?string) {
+    self.root = os.abs_path(root)
+
+    self.extension = DEFAULT_EXTENSION
+    if extension != nil {
+      self.extension = extension
+    }
+  }
+
+  /**
+   * The file _path_ names, as an absolute path.
+   *
+   * The path is tried as written first and then with the configured
+   * extension appended, so `render('home')` finds `home.html` while
+   * `render('home.txt')` finds exactly that.
+   *
+   * _from_ and _line_ and _column_ describe where the include was
+   * written and are only used to place the error.
+   *
+   * @param string path
+   * @param ?string from
+   * @param ?number line
+   * @param ?number column
+   * @returns string
+   * @throws TemplateNotFoundError when there is no such file, or when
+   *    the path resolves outside the root.
+   */
+  resolve(path: string, from: ?string, line: ?number, column: ?number) {
+    var wanted = strip(path)
+
+    if wanted.is_empty() {
+      raise TemplateNotFoundError(
+        'a template path cannot be empty', from, line, column
+      )
+    }
+
+    for candidate in self._candidates(wanted) {
+      var full = os.abs_path(os.join_paths(self.root, candidate))
+
+      if !os.path_contains(self.root, full) {
+        raise TemplateNotFoundError(
+          'template "${path}" is outside the template root', from, line, column
+        )
+      }
+
+      if !file(full).exists() {
+        continue
+      }
+
+      # Resolved only once the file is known to exist, since a link can
+      # only be followed to something real. A link inside the root that
+      # points outside it is still an escape and is refused here.
+      if !os.path_contains(self.root, _canonical(full)) {
+        raise TemplateNotFoundError(
+          'template "${path}" links outside the template root',
+          from, line, column
+        )
+      }
+
+      return full
+    }
+
+    raise TemplateNotFoundError(
+      'template "${path}" was not found under ${self.root}',
+      from, line, column
+    )
+  }
+
+  /**
+   * The contents of the file at _full_.
+   *
+   * @param string full
+   * @returns string
+   * @throws TemplateNotFoundError when the file cannot be read.
+   */
+  read(full: string) {
+    catch {
+      return file(full).read()
+    } as e {
+      raise TemplateNotFoundError(
+        'template "${full}" could not be read: ${e.message}', full, 0, 0
+      )
+    }
+  }
+
+  /**
+   * What the file at _full_ looks like now, for telling a cached
+   * template apart from a changed one.
+   *
+   * Both the modification time and the size are used, because a file
+   * rewritten within the same second still almost always changes length.
+   * A file that cannot be stated fingerprints as `nil`, which makes the
+   * cache treat it as changed and read it again.
+   *
+   * @param string full
+   * @returns ?string
+   */
+  fingerprint(full: string) {
+    catch {
+      var stats = file(full).stats()
+      return '${stats.mtime}:${stats.size}'
+    } as e {
+      return nil
+    }
+  }
+
+  /**
+   * The paths to try for _wanted_, in order.
+   *
+   * @param string wanted
+   * @returns list
+   */
+  _candidates(wanted: string) {
+    if wanted.ends_with(self.extension) {
+      return [wanted]
+    }
+
+    return [wanted, wanted + self.extension]
+  }
+}
+
+
+/**
+ * _path_ with every symbolic link in it followed, or _path_ itself when
+ * it cannot be resolved.
+ *
+ * @param string path
+ * @returns string
+ */
+def _canonical(path: string) {
+  catch {
+    return os.real_path(path)
+  } as e {
+    return path
+  }
+}

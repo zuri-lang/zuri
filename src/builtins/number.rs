@@ -254,15 +254,25 @@ fn fraction(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(whole))
 }
 
+/// Rounds to `n` decimal places, half away from zero, matching what
+/// `round()` does at a scale.
+///
+/// Everything stays in `f64`. The obvious integer version has to cast
+/// through `u64`, which cannot hold a negative number, panics once the
+/// scale passes `10^19`, and quietly loses every non-finite input.
 fn fixed(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
 
   let n = ctx.args[0].as_number();
-  let arg = ctx.args[1].as_number() as u32;
+  if !n.is_finite() {
+    return Ok(Value::number(n));
+  }
 
-  let precision = 10u64.pow(arg);
-  let n_precise = (n * precision as f64) as u64;
+  // Past 17 places an f64 has no digits left to round, so the scaling
+  // would only introduce noise.
+  let places = ctx.args[1].as_number().clamp(0.0, 17.0) as i32;
+  let precision = 10f64.powi(places);
 
-  Ok(Value::number((n_precise | 1) as f64 / precision as f64))
+  Ok(Value::number((n * precision).round() / precision))
 }

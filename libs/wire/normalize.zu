@@ -1,0 +1,339 @@
+/**
+ * @module wire.normalize
+ *
+ * Rewriting Wire's pseudo elements into something HTML's own tree
+ * construction will not move, drop or reshape.
+ *
+ * ### Why this exists
+ *
+ * `<include>`, `<extend>`, `<declare>` and `<define>` are not HTML
+ * elements, and a standards-following parser has firm opinions about
+ * elements it does not know. Inside `<head>` one is pushed out into
+ * `<body>`. Inside a table one is foster parented out in front of the
+ * table. Inside a `<select>` one is dropped on the floor. And written
+ * as `<include path="x" />`, the trailing slash means nothing on an
+ * unknown element, so it swallows the whole rest of the document as its
+ * children.
+ *
+ * All four of those are places a template genuinely wants an include: a
+ * shared block of `<meta>` tags, a partial holding table rows, a
+ * partial holding options. So Wire does not hand its own tag names to
+ * the parser at all. While the source is being tokenized, every pseudo
+ * element is turned into a `<template>` carrying the directive it means,
+ * and `<template>` is the one element the standard lets through
+ * untouched everywhere.
+ *
+ * The rewrite happens on the token stream rather than on the text, so it
+ * inherits the tokenizer's own understanding of comments, of raw text
+ * inside `<script>` and `<style>`, and of quoting. A `<include>` written
+ * inside a comment or inside a script stays exactly where it was.
+ *
+ * ### What else it notices
+ *
+ * A template may be a whole page or a fragment of one, and the tree
+ * builder gives you `<html>`, `<head>` and `<body>` either way. Telling
+ * the two apart afterwards is guesswork, so the flags are collected here
+ * while the real tokens go past: whether the source actually spelled a
+ * doctype, an `<html>`, a `<head>` or a `<body>`. The compiler emits
+ * each of those only when the author wrote it.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import html
+
+import .constants { CARRIER_TAG, PSEUDO_ELEMENTS, PSEUDO_FLAGS }
+
+
+/**
+ * A tokenizer that rewrites Wire's pseudo elements on the way past.
+ *
+ * This stands where a `html.Tokenizer` normally stands and answers
+ * everything the tree builder asks of one, so `html.TreeBuilder` cannot
+ * tell the difference.
+ */
+class Normalizer {
+
+  /**
+   * Whether the tree builder will accept a CDATA section at the current
+   * insertion point. The tree builder writes this before every token
+   * and it is passed straight through.
+   */
+  var cdata_ok = false
+
+  /**
+   * The parse errors the underlying tokenizer has collected. This is the
+   * tokenizer's own list rather than a copy, so the tree builder reading
+   * it sees everything.
+   */
+  var errors = []
+
+  /**
+   * True once a `<!DOCTYPE>` has gone past.
+   */
+  var saw_doctype = false
+
+  /**
+   * True once an `<html>` start tag has gone past.
+   */
+  var saw_html = false
+
+  /**
+   * True once a `<head>` start tag has gone past.
+   */
+  var saw_head = false
+
+  /**
+   * True once a `<body>` start tag has gone past.
+   */
+  var saw_body = false
+
+  /**
+   * The tokenizer doing the actual work.
+   */
+  var _source = nil
+
+  /**
+   * The end tag a self-closing pseudo element still owes, held back
+   * until the next call.
+   */
+  var _pending = nil
+
+  /**
+   * @param Tokenizer source
+   * @constructor
+   */
+  @new(source) {
+    self._source = source
+    self._pending = nil
+
+    # Shared rather than copied: the tokenizer keeps appending to this
+    # list as it goes, and the tree builder reads it as it goes.
+    self.errors = source.errors
+  }
+
+  /**
+   * The next token, rewritten when it names a pseudo element.
+   *
+   * @returns Token
+   */
+  next_token() {
+    if self._pending != nil {
+      var owed = self._pending
+      self._pending = nil
+      return owed
+    }
+
+    self._source.cdata_ok = self.cdata_ok
+    var token = self._source.next_token()
+
+    if token.type == 'doctype' {
+      self.saw_doctype = true
+      return token
+    }
+
+    if token.type == 'start-tag' {
+      return self._rewrite_start(token)
+    }
+
+    if token.type == 'end-tag' and PSEUDO_ELEMENTS.contains(token.name) {
+      token.name = CARRIER_TAG
+    }
+
+    return token
+  }
+
+  /**
+   * Passes the tree builder's tokenizer state change along.
+   *
+   * @param string state
+   */
+  set_state(state: string) {
+    self._source.set_state(state)
+  }
+
+  /**
+   * Passes the tree builder's record of the last start tag along, which
+   * is how the tokenizer knows whether a `</script>` it is looking at
+   * closes the script it is inside.
+   *
+   * @param string name
+   */
+  set_last_start_tag(name: string) {
+    self._source.set_last_start_tag(name)
+  }
+
+  /**
+   * Notes a start tag and rewrites it when it is one of Wire's.
+   *
+   * @param Token token
+   * @returns Token
+   */
+  _rewrite_start(token) {
+    if token.name == 'html' {
+      self.saw_html = true
+    } else if token.name == 'head' {
+      self.saw_head = true
+    } else if token.name == 'body' {
+      self.saw_body = true
+    }
+
+    var pseudo = PSEUDO_ELEMENTS.get(token.name, nil)
+
+    if pseudo == nil {
+      return token
+    }
+
+    token.attributes = _translate(token.attributes, pseudo)
+    token.name = CARRIER_TAG
+
+    # `<template/>` is not self-closing in HTML any more than
+    # `<include/>` was, so the end tag the author meant has to be made
+    # rather than hoped for. Clearing the flag as well keeps the tree
+    # builder from reporting a trailing slash it never acknowledged.
+    if token.self_closing {
+      token.self_closing = false
+      self._pending = _end_tag(token)
+    }
+
+    return token
+  }
+}
+
+
+/**
+ * A pseudo element's attributes, with the one that carries its value
+ * turned into the directive it means.
+ *
+ * Every other attribute is kept as it was, so an `<include>` can carry
+ * an `x-if` or an `x-with` alongside its path.
+ *
+ * @param dict attributes
+ * @param dict pseudo: The entry from `PSEUDO_ELEMENTS`.
+ * @returns dict
+ */
+def _translate(attributes: dict, pseudo: dict) {
+  var out = {}
+  var carrier = pseudo.attribute
+
+  # The directive goes on first so it reads first in any dump of the
+  # tree, and so an empty one is still present for the compiler to
+  # complain about by name.
+  if carrier != nil {
+    out[pseudo.directive] = attributes.get(carrier, '')
+  } else {
+    out[pseudo.directive] = ''
+  }
+
+  for name, value in attributes {
+    if name == carrier {
+      continue
+    }
+
+    var flag = PSEUDO_FLAGS.get(name, nil)
+
+    if flag != nil {
+      out[flag] = ''
+      continue
+    }
+
+    out[name] = value
+  }
+
+  return out
+}
+
+
+/**
+ * The end tag a self-closing pseudo element implies, positioned where
+ * the start tag was so an error inside it still points somewhere real.
+ *
+ * @param Token start
+ * @returns Token
+ */
+def _end_tag(start) {
+  var token = html.Token('end-tag')
+
+  token.name = CARRIER_TAG
+  token.line = start.line
+  token.column = start.column
+
+  return token
+}
+
+
+/**
+ * Parses _source_ into a tree with Wire's pseudo elements already
+ * rewritten.
+ *
+ * _context_ names the element the source is being parsed inside. Pass
+ * `nil` to parse it as a whole document, which is what a template being
+ * rendered on its own is; pass a tag name to parse it as a fragment, so
+ * that a partial holding table rows keeps its rows when it is included
+ * inside a table.
+ *
+ * Returns a dictionary of:
+ *
+ * - `root` — the `Document` for a document parse, or the
+ *   `DocumentFragment` holding the parsed nodes for a fragment parse.
+ * - `document` — true when the parse was a document parse.
+ * - `saw_doctype`, `saw_html`, `saw_head`, `saw_body` — whether the
+ *   source really contained each, as opposed to the parser having
+ *   supplied it.
+ * - `errors` — the parse errors the tokenizer and tree builder found.
+ *
+ * ```zuri
+ * import wire
+ *
+ * var parsed = wire.normalize.parse('<include path="nav.html" />', nil)
+ * echo parsed.root.body().inner_html()
+ * # <template x-include="nav.html"></template>
+ * ```
+ *
+ * @param string source
+ * @param ?string context
+ * @returns dict
+ */
+def parse(source: string, context: ?string) {
+  var stream = Normalizer(html.Tokenizer(source, {
+    scripting: false,
+    auto_content_state: false,
+  }))
+
+  var builder = html.TreeBuilder(stream, { scripting: false })
+
+  if context == nil {
+    var document = builder.run()
+
+    return {
+      root: document,
+      document: true,
+      saw_doctype: stream.saw_doctype,
+      saw_html: stream.saw_html,
+      saw_head: stream.saw_head,
+      saw_body: stream.saw_body,
+      errors: document.errors,
+    }
+  }
+
+  var host = builder.prepare_fragment(
+    html.Element(context.lower(), html.HTML_NAMESPACE, {})
+  )
+
+  var document = builder.run()
+  var fragment = html.DocumentFragment()
+
+  for child in host.children.clone() {
+    fragment.append_child(child)
+  }
+
+  return {
+    root: fragment,
+    document: false,
+    saw_doctype: stream.saw_doctype,
+    saw_html: stream.saw_html,
+    saw_head: stream.saw_head,
+    saw_body: stream.saw_body,
+    errors: document.errors,
+  }
+}

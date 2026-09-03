@@ -1,0 +1,492 @@
+/**
+ * @module wire.values
+ *
+ * How Wire reads the values a template is given: what counts as true,
+ * what a value looks like once it reaches the page, and how a string
+ * says that it is already markup and must not be escaped again.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+/**
+ * A string that is already markup and must be written out as it is.
+ *
+ * Wire escapes everything it interpolates. That is the right default
+ * and it is not negotiable per-variable from the outside, so the only
+ * way to get live markup into a page is to say so explicitly, either
+ * with the `raw` filter in a template or by handing Wire one of these
+ * from Zuri code.
+ *
+ * ```zuri
+ * import wire
+ *
+ * var tpl = wire.wire()
+ *
+ * # Escaped, because that is the default.
+ * echo tpl.render_string('{{ note }}', { note: '<b>hi</b>' })
+ * # &lt;b&gt;hi&lt;/b&gt;
+ *
+ * # Not escaped, because the value says it is markup.
+ * echo tpl.render_string('{{ note }}', { note: wire.safe('<b>hi</b>') })
+ * # <b>hi</b>
+ * ```
+ *
+ * Wrapping a value is a promise that it is safe in an HTML context.
+ * Wrapping something that came from a user is how a template engine
+ * becomes a cross-site scripting hole, so wrap the markup you built,
+ * never the input you received.
+ *
+ * @printable
+ */
+class Safe {
+
+  /**
+   * The markup this value carries.
+   */
+  var value = ''
+
+  /**
+   * @param string value
+   * @constructor
+   */
+  @new(value: string) {
+    self.value = value
+  }
+
+  /**
+   * The markup, unchanged.
+   *
+   * @returns string
+   */
+  to_string() {
+    return self.value
+  }
+
+  @to_string() {
+    return self.value
+  }
+}
+
+
+/**
+ * Marks _value_ as markup that Wire must not escape.
+ *
+ * A `Safe` passed back in is returned unchanged rather than wrapped
+ * twice. Anything that is not already a string is rendered with
+ * `stringify()` first, so `safe(nil)` is an empty string rather than
+ * the word "nil".
+ *
+ * @param any value
+ * @returns Safe
+ */
+def safe(value) {
+  if is_safe(value) {
+    return value
+  }
+
+  return Safe(stringify(value))
+}
+
+
+/**
+ * True when _value_ is a `Safe`.
+ *
+ * @param any value
+ * @returns bool
+ */
+def is_safe(value) {
+  return is_instance(value) and instance_of(value, Safe)
+}
+
+
+/**
+ * Strips the `Safe` wrapper off _value_, leaving anything else alone.
+ *
+ * Filters work on plain values, so this runs on the way into one and
+ * the filter decides for itself whether its result is markup.
+ *
+ * @param any value
+ * @returns any
+ */
+def unwrap(value) {
+  if is_safe(value) {
+    return value.value
+  }
+
+  return value
+}
+
+
+/**
+ * What _value_ looks like once it reaches the page, before escaping.
+ *
+ * `nil` renders as an empty string rather than as the word "nil",
+ * which is what lets an optional variable be dropped into a page
+ * without a guard around it. Everything else is rendered by its own
+ * `to_string()`.
+ *
+ * @param any value
+ * @returns string
+ */
+def stringify(value) {
+  if value == nil {
+    return ''
+  }
+
+  if is_string(value) {
+    return value
+  }
+
+  return value.to_string()
+}
+
+
+/**
+ * Whether _value_ counts as true in an `x-if`, an `x-not`, or a
+ * boolean operator inside an expression.
+ *
+ * Wire deliberately does not reuse Zuri's own truthiness here, because
+ * two of Zuri's answers are wrong for a template:
+ *
+ * - Zuri treats every number at or below zero as false, so a
+ *   temperature of `-5` or a balance of `-1` would disappear from the
+ *   page. Wire treats any number other than zero as true, negative
+ *   ones included.
+ * - Zuri treats an empty list and an empty dictionary as true, so
+ *   `x-if="items"` would render a section for a search that found
+ *   nothing. Wire treats an empty collection as false.
+ *
+ * The rest reads as you would expect: `nil` and `false` are false, an
+ * empty string is false, `NaN` is false, and anything Wire has no
+ * special knowledge of (an instance, a function, a range) is true.
+ *
+ * A variable that was never supplied arrives here as `nil`, which is
+ * why an optional section can be written as `x-if="user"` with nothing
+ * else around it.
+ *
+ * @param any value
+ * @returns bool
+ */
+def truthy(value) {
+  if value == nil or value == false {
+    return false
+  }
+
+  if value == true {
+    return true
+  }
+
+  if is_number(value) {
+    # NaN is the one number that is not equal to itself, and it should
+    # no more render a section than a zero should.
+    if value != value {
+      return false
+    }
+
+    return value != 0
+  }
+
+  if is_bigint(value) {
+    # A bigint zero does not compare equal to a number zero, so this
+    # has to be asked in the bigint's own terms.
+    return value != 0n
+  }
+
+  if is_safe(value) {
+    return !value.value.is_empty()
+  }
+
+  if is_string(value) or is_bytes(value) or is_list(value) or is_dict(value) {
+    return value.length() > 0
+  }
+
+  return true
+}
+
+
+/**
+ * Whether _value_ has nothing in it, for the `empty` filter and for
+ * anything else that wants the question asked of a collection rather
+ * than of a value in general.
+ *
+ * `nil` is empty. A number is never empty, not even zero; that is a
+ * question about truthiness, not about emptiness.
+ *
+ * @param any value
+ * @returns bool
+ */
+def is_empty(value) {
+  if value == nil {
+    return true
+  }
+
+  if is_safe(value) {
+    return value.value.is_empty()
+  }
+
+  if is_string(value) or is_bytes(value) or is_list(value) or is_dict(value) {
+    return value.length() == 0
+  }
+
+  return false
+}
+
+
+/**
+ * _text_ with leading and trailing whitespace removed.
+ *
+ * Zuri's own `trim()` removes one repeated character, a space unless
+ * told otherwise, so it leaves a newline or a tab exactly where it was.
+ * Templates are full of both, and every question Wire asks about
+ * surrounding whitespace means all of it.
+ *
+ * @param string text
+ * @returns string
+ */
+def strip(text: string) {
+  return text.replace('/^\\s+|\\s+$/', '')
+}
+
+
+/**
+ * Whether _text_ is empty or is nothing but whitespace.
+ *
+ * @param string text
+ * @returns bool
+ */
+def is_blank(text: string) {
+  return text.is_empty() or text.is_space()
+}
+
+
+/**
+ * Orders _a_ before, with or after _b_, returning `-1`, `0` or `1`.
+ *
+ * Zuri's ordering operators only take numbers, so anything a template
+ * sorts or compares that is not one has to be ordered here. Strings are
+ * compared a character at a time by code point, which puts them in the
+ * order a person expects for one alphabet and in a defined order for
+ * everything else. Two values of different kinds are ordered by how
+ * they render, which is arbitrary but stable, and stable is what a sort
+ * actually needs.
+ *
+ * `nil` sorts before everything, so a record missing the field being
+ * sorted on still appears rather than dropping out of the list.
+ *
+ * @param any a
+ * @param any b
+ * @returns number
+ */
+def compare(a, b) {
+  var left = unwrap(a)
+  var right = unwrap(b)
+
+  if left == nil and right == nil {
+    return 0
+  }
+
+  if left == nil {
+    return -1
+  }
+
+  if right == nil {
+    return 1
+  }
+
+  var numeric = (is_number(left) or is_bigint(left)) and
+    (is_number(right) or is_bigint(right))
+
+  if numeric {
+    if left < right {
+      return -1
+    }
+
+    if left > right {
+      return 1
+    }
+
+    return 0
+  }
+
+  if left == true or left == false or right == true or right == false {
+    return _order(_boolean_rank(left), _boolean_rank(right))
+  }
+
+  return _compare_strings(stringify(left), stringify(right))
+}
+
+
+/**
+ * Where a value sits when booleans are being ordered: false first, then
+ * true, then anything that is neither.
+ *
+ * @param any value
+ * @returns number
+ */
+def _boolean_rank(value) {
+  if value == false {
+    return 0
+  }
+
+  if value == true {
+    return 1
+  }
+
+  return 2
+}
+
+
+/**
+ * Two strings ordered by code point.
+ *
+ * @param string a
+ * @param string b
+ * @returns number
+ */
+def _compare_strings(a: string, b: string) {
+  var left = a.to_list()
+  var right = b.to_list()
+  var shared = left.length()
+
+  if right.length() < shared {
+    shared = right.length()
+  }
+
+  iter var i = 0; i < shared; i++ {
+    var order = _order(left[i].ord(), right[i].ord())
+
+    if order != 0 {
+      return order
+    }
+  }
+
+  # Everything they share matches, so the shorter one comes first.
+  return _order(left.length(), right.length())
+}
+
+
+/**
+ * Two numbers ordered.
+ *
+ * @param number a
+ * @param number b
+ * @returns number
+ */
+def _order(a: number, b: number) {
+  if a < b {
+    return -1
+  }
+
+  if a > b {
+    return 1
+  }
+
+  return 0
+}
+
+
+/**
+ * The most arguments a filter or a template function can be called
+ * with.
+ *
+ * Zuri has no way to spread a list into a call, so an argument list
+ * built at render time has to be handed over one position at a time and
+ * the positions have to be written out. Eight is far past what any
+ * filter has ever wanted and stops the dispatch below from growing
+ * without end.
+ */
+var MAX_ARGUMENTS = 8
+
+
+/**
+ * Calls _target_ with _arguments_ spread into its parameters.
+ *
+ * Passing fewer arguments than the function declares leaves the rest
+ * `nil`, which is how a filter written as `def round(value, places)`
+ * can be used as a bare `|round`.
+ *
+ * @param callable target
+ * @param list arguments
+ * @returns any
+ * @throws ArgumentError when there are more than `MAX_ARGUMENTS`.
+ */
+def invoke(target, arguments: list) {
+  var count = arguments.length()
+
+  if count == 0 {
+    return target()
+  }
+
+  if count == 1 {
+    return target(arguments[0])
+  }
+
+  if count == 2 {
+    return target(arguments[0], arguments[1])
+  }
+
+  if count == 3 {
+    return target(arguments[0], arguments[1], arguments[2])
+  }
+
+  if count == 4 {
+    return target(arguments[0], arguments[1], arguments[2], arguments[3])
+  }
+
+  if count == 5 {
+    return target(
+      arguments[0], arguments[1], arguments[2], arguments[3],
+      arguments[4]
+    )
+  }
+
+  if count == 6 {
+    return target(
+      arguments[0], arguments[1], arguments[2], arguments[3],
+      arguments[4], arguments[5]
+    )
+  }
+
+  if count == 7 {
+    return target(
+      arguments[0], arguments[1], arguments[2], arguments[3],
+      arguments[4], arguments[5], arguments[6]
+    )
+  }
+
+  if count == 8 {
+    return target(
+      arguments[0], arguments[1], arguments[2], arguments[3],
+      arguments[4], arguments[5], arguments[6], arguments[7]
+    )
+  }
+
+  raise ArgumentError(
+    'a template call takes at most ${MAX_ARGUMENTS} arguments, got ${count}'
+  )
+}
+
+
+/**
+ * Wire's name for _value_'s type, used in error messages so that a
+ * complaint reads "expected a list, got a number" rather than naming
+ * an internal class.
+ *
+ * @param any value
+ * @returns string
+ */
+def type_name(value) {
+  if value == nil {
+    return 'nil'
+  }
+
+  if is_safe(value) {
+    return 'markup'
+  }
+
+  if is_bigint(value) {
+    return 'bigint'
+  }
+
+  return typeof(value)
+}

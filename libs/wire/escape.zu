@@ -1,0 +1,490 @@
+/**
+ * @module wire.escape
+ *
+ * Turning a value into something safe to write at a particular place in
+ * a page.
+ *
+ * Escaping HTML is not one operation, it is five. The same string that
+ * is harmless between two tags will end a `<script>` early, or turn an
+ * `href` into a code execution, or break out of a stylesheet. Wire
+ * knows which of those places every interpolation sits in, because it
+ * compiles a real parsed tree rather than substituting into text, so it
+ * applies the escaping that place actually needs instead of one
+ * approximation everywhere.
+ *
+ * Nothing here is optional or discoverable at render time. A template
+ * that wants unescaped output has to say so with the `raw` filter, or
+ * hand Wire a `Safe` value.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import html
+import json
+
+import .values { Safe, is_blank, is_safe, stringify, unwrap }
+
+
+/**
+ * Text between tags.
+ */
+var CONTEXT_TEXT = 'text'
+
+/**
+ * An ordinary attribute value.
+ */
+var CONTEXT_ATTRIBUTE = 'attribute'
+
+/**
+ * An attribute the browser resolves as a URL.
+ */
+var CONTEXT_URL = 'url'
+
+/**
+ * A place the browser reads as JavaScript: the body of a `<script>`, or
+ * the value of an `on*` handler attribute.
+ */
+var CONTEXT_SCRIPT = 'script'
+
+/**
+ * The body of a `<style>` element.
+ */
+var CONTEXT_STYLE = 'style'
+
+
+/**
+ * The attributes whose value a browser resolves as a URL, and which
+ * therefore have to be checked for a dangerous scheme rather than
+ * merely escaped.
+ *
+ * `srcset` and `ping` hold several URLs separated by commas or spaces
+ * and are checked entry by entry.
+ */
+var URL_ATTRIBUTES = [
+  'action', 'background', 'cite', 'classid', 'codebase', 'data',
+  'formaction', 'href', 'icon', 'longdesc', 'manifest', 'poster',
+  'profile', 'src', 'usemap', 'xlink:href',
+]
+
+/**
+ * URL attributes holding a list of URLs rather than a single one.
+ */
+var URL_LIST_ATTRIBUTES = ['ping', 'srcset']
+
+/**
+ * The URL schemes Wire lets through by default.
+ *
+ * A URL with no scheme at all is always allowed, which covers every
+ * relative link, every absolute path and every protocol-relative URL.
+ * A scheme outside this list is replaced with `about:blank`, because
+ * `javascript:` and `vbscript:` in an `href` are script execution
+ * dressed as a link, and a `data:` document inherits the origin of the
+ * page that opened it.
+ *
+ * `Wire.set_url_schemes()` replaces this list when an application
+ * genuinely needs another one, `app:` or `mailto+`-style custom
+ * handlers being the usual reason.
+ */
+var DEFAULT_URL_SCHEMES = [
+  'http', 'https', 'mailto', 'tel', 'sms', 'ftp', 'ftps', 'geo',
+  'callto', 'bitcoin', 'magnet', 'news', 'nntp', 'sip', 'sips', 'xmpp',
+]
+
+/**
+ * What a blocked URL is replaced with. A blocked link stays a link so
+ * the page does not fall apart, but it goes nowhere.
+ */
+var BLOCKED_URL = 'about:blank'
+
+/**
+ * The characters a value may contain inside a `<style>` body.
+ *
+ * Everything else is dropped rather than escaped, because a stylesheet
+ * has no escape syntax that would make a `<` harmless: the tokenizer
+ * that finds `</style>` runs before CSS is ever parsed.
+ */
+var STYLE_SAFE = '/[^-a-zA-Z0-9 \\t\\n\\r#%.,()_\\/:;+*!@]/'
+
+
+/**
+ * Escapes _value_ for the given _context_.
+ *
+ * A `Safe` value is written out unchanged in every context. That is the
+ * whole point of it, and it is why `raw` must only ever be applied to
+ * markup you built yourself.
+ *
+ * _schemes_ is the URL scheme allowlist, and is only consulted for
+ * `CONTEXT_URL`. Passing `nil` uses `DEFAULT_URL_SCHEMES`.
+ *
+ * @param any value
+ * @param string context: One of the `CONTEXT_*` constants.
+ * @param ?list schemes
+ * @returns string
+ */
+def escape(value, context: string, schemes: ?list) {
+  if is_safe(value) {
+    return value.value
+  }
+
+  if context == CONTEXT_SCRIPT {
+    return script(value)
+  }
+
+  if context == CONTEXT_STYLE {
+    return style(value)
+  }
+
+  if context == CONTEXT_URL {
+    return url(value, schemes)
+  }
+
+  if context == CONTEXT_ATTRIBUTE {
+    return attribute(value)
+  }
+
+  return text(value)
+}
+
+
+/**
+ * Escapes _value_ for text between tags, turning `&`, `<` and `>` into
+ * character references.
+ *
+ * @param any value
+ * @returns string
+ */
+def text(value) {
+  return html.escape_text(stringify(value))
+}
+
+
+/**
+ * Escapes _value_ for a double quoted attribute value, turning `&` and
+ * `"` into character references.
+ *
+ * A `<` needs no escaping inside an attribute and is left alone, which
+ * is what the HTML serialization algorithm does too.
+ *
+ * @param any value
+ * @returns string
+ */
+def attribute(value) {
+  return html.escape_attribute(stringify(value))
+}
+
+
+/**
+ * Escapes _value_ for a place the browser reads as JavaScript, by
+ * encoding it as JSON and then hiding the characters that would end the
+ * surrounding element or start a comment.
+ *
+ * The result carries its own quotes when the value is a string, so an
+ * interpolation in a script must not be quoted by hand:
+ *
+ * ```wire
+ * <script>
+ *   var user = {{ name }};    // right: renders as "Ada"
+ *   var user = '{{ name }}';  // wrong: renders as '"Ada"'
+ * </script>
+ * ```
+ *
+ * `U+2028` and `U+2029` are escaped as well. They are legal inside a
+ * JSON string but end a line in JavaScript, and an unescaped one turns
+ * a valid script into a syntax error.
+ *
+ * @param any value
+ * @returns string
+ */
+def script(value) {
+  var encoded = json.encode(unwrap(value))
+
+  # JSON leaves these alone, and every one of them can end the script
+  # element or open a comment from inside a string literal.
+  encoded = encoded.replace('<', '\\u003c', false)
+  encoded = encoded.replace('>', '\\u003e', false)
+  encoded = encoded.replace('&', '\\u0026', false)
+  encoded = encoded.replace('\u2028', '\\u2028', false)
+  encoded = encoded.replace('\u2029', '\\u2029', false)
+
+  return encoded
+}
+
+
+/**
+ * Escapes _value_ for the body of a `<style>` element by dropping every
+ * character outside a conservative CSS-safe set.
+ *
+ * Dropping rather than escaping is deliberate. There is no escape
+ * sequence that stops a `<` inside a stylesheet from being found by the
+ * HTML tokenizer looking for `</style>`, so the only safe answer is for
+ * the character not to be there.
+ *
+ * @param any value
+ * @returns string
+ */
+def style(value) {
+  return stringify(value).replace(STYLE_SAFE, '')
+}
+
+
+/**
+ * Escapes _value_ for an attribute the browser resolves as a URL,
+ * replacing it with `about:blank` when its scheme is not in _schemes_.
+ *
+ * The scheme is read the way a browser reads it: leading and embedded
+ * whitespace and control characters are ignored, and the comparison
+ * folds case, so `Java\tscript:alert(1)` is caught along with the plain
+ * spelling.
+ *
+ * @param any value
+ * @param ?list schemes: The allowlist. `nil` means
+ *    `DEFAULT_URL_SCHEMES`.
+ * @returns string
+ */
+def url(value, schemes: ?list) {
+  var allowed = DEFAULT_URL_SCHEMES
+  if schemes != nil {
+    allowed = schemes
+  }
+
+  return html.escape_attribute(_sanitize_url(stringify(value), allowed))
+}
+
+
+/**
+ * Escapes _value_ for an attribute holding several URLs, checking each
+ * entry's scheme on its own.
+ *
+ * The two attributes that hold a list spell it differently. `ping` is
+ * whitespace separated and every token in it is a URL. `srcset` is comma
+ * separated and only the first token of each entry is a URL; what
+ * follows is a descriptor such as `2x` or `640w` and is left alone.
+ * _descriptors_ picks between them.
+ *
+ * Every separator is preserved exactly as it was written, since a
+ * `srcset` whose spaces went missing is no longer a `srcset`.
+ *
+ * @param any value
+ * @param ?list schemes
+ * @param bool descriptors: True for `srcset`, false for `ping`.
+ * @returns string
+ */
+def url_list(value, schemes: ?list, descriptors: bool) {
+  var allowed = DEFAULT_URL_SCHEMES
+  if schemes != nil {
+    allowed = schemes
+  }
+
+  var out = []
+  var token = []
+
+  # Every entry begins in URL position; in a `srcset` it leaves that
+  # position after its first token and returns to it at the next comma.
+  var in_url = true
+
+  for character in stringify(value) {
+    if character != ',' and character.match('/\\s/') == false {
+      token.append(character)
+      continue
+    }
+
+    if !token.is_empty() {
+      out.append(_list_entry(''.join(token), allowed, in_url))
+      token = []
+
+      if descriptors {
+        in_url = false
+      }
+    }
+
+    out.append(character)
+
+    if character == ',' {
+      in_url = true
+    }
+  }
+
+  if !token.is_empty() {
+    out.append(_list_entry(''.join(token), allowed, in_url))
+  }
+
+  return html.escape_attribute(''.join(out))
+}
+
+
+/**
+ * One token of a URL list: checked when it is a URL, kept as it is when
+ * it is a descriptor.
+ *
+ * @param string token
+ * @param list allowed
+ * @param bool is_url
+ * @returns string
+ */
+def _list_entry(token: string, allowed: list, is_url: bool) {
+  if !is_url {
+    return token
+  }
+
+  return _sanitize_url(token, allowed)
+}
+
+
+/**
+ * Whether _name_ is an attribute the browser resolves as a single URL.
+ *
+ * @param string name
+ * @returns bool
+ */
+def is_url_attribute(name: string) {
+  return URL_ATTRIBUTES.contains(name.lower())
+}
+
+
+/**
+ * Whether _name_ is an attribute holding a list of URLs.
+ *
+ * @param string name
+ * @returns bool
+ */
+def is_url_list_attribute(name: string) {
+  return URL_LIST_ATTRIBUTES.contains(name.lower())
+}
+
+
+/**
+ * Whether a URL list attribute allows a descriptor after each URL, which
+ * `srcset` does and `ping` does not.
+ *
+ * @param string name
+ * @returns bool
+ */
+def uses_descriptors(name: string) {
+  return name.lower() == 'srcset'
+}
+
+
+/**
+ * Whether _name_ is an event handler attribute, whose value a browser
+ * reads as JavaScript.
+ *
+ * Every one of them starts with `on`, and treating the whole prefix as
+ * script rather than keeping a list means a handler HTML gains next
+ * year is covered the day it ships.
+ *
+ * @param string name
+ * @returns bool
+ */
+def is_script_attribute(name: string) {
+  return name.lower().starts_with('on')
+}
+
+
+/**
+ * The escaping context an attribute named _name_ calls for.
+ *
+ * @param string name
+ * @returns string
+ */
+def attribute_context(name: string) {
+  if is_script_attribute(name) {
+    return CONTEXT_SCRIPT
+  }
+
+  if is_url_attribute(name) or is_url_list_attribute(name) {
+    return CONTEXT_URL
+  }
+
+  return CONTEXT_ATTRIBUTE
+}
+
+
+/**
+ * The escaping context text inside an element named _tag_ calls for.
+ *
+ * @param string tag
+ * @returns string
+ */
+def text_context(tag: string) {
+  if tag == 'script' {
+    return CONTEXT_SCRIPT
+  }
+
+  if tag == 'style' {
+    return CONTEXT_STYLE
+  }
+
+  return CONTEXT_TEXT
+}
+
+
+/**
+ * Replaces _value_ with `about:blank` when the scheme it starts with is
+ * not in _allowed_.
+ *
+ * @param string value
+ * @param list allowed
+ * @returns string
+ */
+def _sanitize_url(value: string, allowed: list) {
+  var scheme = _url_scheme(value)
+
+  # No scheme at all is every relative link, every absolute path and
+  # every protocol-relative URL, none of which can name a handler.
+  if scheme == nil {
+    return value
+  }
+
+  if allowed.contains(scheme) {
+    return value
+  }
+
+  return BLOCKED_URL
+}
+
+
+/**
+ * The scheme _value_ begins with, folded to lower case, or `nil` when
+ * it has none.
+ *
+ * Characters a browser ignores while looking for the scheme separator
+ * are ignored here too: everything at or below `U+0020`, plus the
+ * delete character. A `:` that only turns up after a `/`, `?` or `#`
+ * belongs to a path, a query or a fragment and is not a scheme.
+ *
+ * @param string value
+ * @returns ?string
+ */
+def _url_scheme(value: string) {
+  var name = []
+
+  for character in value {
+    var code = character.ord()
+
+    if code <= 32 or code == 127 {
+      continue
+    }
+
+    if character == ':' {
+      if name.is_empty() {
+        return nil
+      }
+
+      return ''.join(name).lower()
+    }
+
+    if character == '/' or character == '?' or character == '#' {
+      return nil
+    }
+
+    # A scheme is letters, digits and these three, and nothing else can
+    # appear before the colon of a real one.
+    if character.match('/[A-Za-z0-9+.\\-]/') == false {
+      return nil
+    }
+
+    name.append(character)
+  }
+
+  return nil
+}

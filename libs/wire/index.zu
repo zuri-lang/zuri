@@ -1,0 +1,1128 @@
+/**
+ * @module wire
+ *
+ * Wire, an HTML template engine.
+ *
+ * A Wire template is an HTML document. Not a document with a templating
+ * language sprinkled through it, and not a string that happens to end up
+ * looking like HTML: the source is parsed by the same
+ * [WHATWG](https://html.spec.whatwg.org/multipage/) parser the `html`
+ * module uses, and every valid HTML5 document is already a valid Wire
+ * template. What Wire adds are attributes on ordinary elements and
+ * values written between `{{` and `}}`.
+ *
+ * Parsing rather than substituting is what makes the rest possible. Wire
+ * knows that one interpolation sits in a paragraph, another in an
+ * `href`, another in a `<script>`, and it escapes each of them for where
+ * it actually is. A value can never turn into structure.
+ *
+ * ```zuri
+ * import wire
+ *
+ * echo wire.render_string(
+ *   '<p>Hello {{ name }}</p>',
+ *   { name: '<b>Ada</b>' }
+ * )
+ * # <p>Hello &lt;b&gt;Ada&lt;/b&gt;</p>
+ * ```
+ *
+ * ---
+ *
+ * ### Templates from files
+ *
+ * `render_string()` is convenient for a one-off and for reading
+ * documentation. Real templates live in files under a root directory,
+ * which is `templates` beside the working directory unless you say
+ * otherwise:
+ *
+ * ```zuri
+ * import wire
+ *
+ * var view = wire.wire()
+ * view.set_root('./views')
+ *
+ * echo view.render('pages/home', { user })
+ * ```
+ *
+ * The `.html` extension is added when the path as written names no file,
+ * so `'pages/home'` finds `pages/home.html`. `set_extension()` changes
+ * that.
+ *
+ * Every path resolves **inside** the root and nowhere else. One that
+ * climbs out with `..`, or names an absolute path elsewhere, is refused.
+ * That matters the moment a path is built from anything a request
+ * supplied.
+ *
+ * ---
+ *
+ * ### Values
+ *
+ * Anything between `{{` and `}}` is an expression. The full language is
+ * in `wire.expression`; in practice it reads the way you would guess:
+ *
+ * ```wire
+ * <h1>{{ post.title }}</h1>
+ * <p>{{ post.author.name|upper }}</p>
+ * <p>{{ post.tags|join(', ') }}</p>
+ * <p>{{ post.views > 1000 ? 'popular' : 'quiet' }}</p>
+ * <p>{{ user.nickname ?? user.name }}</p>
+ * ```
+ *
+ * A name that was never supplied is `nil`, and so is a key read off it,
+ * so `{{ user.address.city }}` on a request with no user renders as
+ * nothing rather than failing. Ask with `x-if` when the difference
+ * matters.
+ *
+ * Writing `{{` literally is `%{{`.
+ *
+ * #### Filters
+ *
+ * A value passed through `|` goes through a filter. They chain, and they
+ * take arguments:
+ *
+ * ```wire
+ * {{ name|trim|title }}
+ * {{ total|number_format(2) }}
+ * {{ summary|truncate(80, '…') }}
+ * ```
+ *
+ * `wire.filters` lists the forty-odd that ship with Wire, and
+ * `register_filter()` adds your own.
+ *
+ * ---
+ *
+ * ### Escaping, and why there is no way to turn it off
+ *
+ * Every interpolation is escaped for the place it lands in:
+ *
+ * | Where it is             | What happens                              |
+ * | ----------------------- | ----------------------------------------- |
+ * | text between tags       | `&`, `<` and `>` become references         |
+ * | an attribute value      | `&` and `"` become references              |
+ * | `href`, `src`, `action` | the URL's scheme is checked as well        |
+ * | `<script>`, `onclick`   | the value is encoded as JSON               |
+ * | `<style>`               | anything outside a CSS-safe set is dropped |
+ *
+ * A `javascript:` URL in an `href` becomes `about:blank`.
+ * `set_url_schemes()` changes the allowlist when an application really
+ * does need another scheme.
+ *
+ * Inside a `<script>` the value carries its own quotes, so do not add
+ * any:
+ *
+ * ```wire
+ * <script>
+ *   var user = {{ name }};    // right, renders as "Ada"
+ *   var user = '{{ name }}';  // wrong, renders as '"Ada"'
+ * </script>
+ * ```
+ *
+ * Markup you built yourself and want rendered as markup goes through the
+ * `raw` filter, or arrives already wrapped in `wire.safe()`:
+ *
+ * ```wire
+ * <div class="body">{{ article.rendered_html|raw }}</div>
+ * ```
+ *
+ * `raw` is a promise that the value is safe where it lands. Applying it
+ * to anything a user supplied is how a template engine becomes a
+ * cross-site scripting hole.
+ *
+ * ---
+ *
+ * ### Directives
+ *
+ * Wire's own attributes all begin with `x-`. Wire owns that prefix
+ * outright: an `x-` attribute it does not recognize is an error rather
+ * than something that quietly does nothing, so `x-fi` is caught the
+ * first time the template compiles.
+ *
+ * A directive can go on any element, and the element it goes on is part
+ * of what it controls. Put it on `<template>` when you want the control
+ * without an element in the output; `<template>` is the one element HTML
+ * lets through untouched anywhere, including inside `<head>`, a table
+ * and a `<select>`, and Wire removes it.
+ *
+ * #### Choosing
+ *
+ * ```wire
+ * <p x-if="user.is_admin">Admin</p>
+ * <p x-elif="user.is_staff">Staff</p>
+ * <p x-else>Member</p>
+ * ```
+ *
+ * `x-elif` and `x-else` attach to the element sibling in front of them,
+ * with only whitespace and comments allowed in between. `x-not` is the
+ * inverse of `x-if` and takes no chain.
+ *
+ * #### Repeating
+ *
+ * ```wire
+ * <li x-for="items" x-value="item" x-key="index">
+ *   {{ index }}: {{ item.name }}
+ * </li>
+ * ```
+ *
+ * The element repeats, not just its children. Lists, dictionaries,
+ * strings and ranges all iterate; a list binds `x-key` to the position
+ * and a dictionary to the key.
+ *
+ * Every iteration also publishes a `loop` variable:
+ *
+ * | Field                | Is                                     |
+ * | -------------------- | -------------------------------------- |
+ * | `loop.index`         | the position counting from 1           |
+ * | `loop.index0`        | the position counting from 0           |
+ * | `loop.first`         | true on the first pass                 |
+ * | `loop.last`          | true on the last                       |
+ * | `loop.length`        | how many entries there are             |
+ * | `loop.even`, `.odd`  | whether the position is even or odd    |
+ * | `loop.key`, `.value` | this entry, whether or not it is bound |
+ * | `loop.parent`        | the enclosing loop's own `loop`        |
+ *
+ * `x-loop="row"` renames it, which is how two nested loops can both be
+ * read without going through `parent`.
+ *
+ * An `x-if` on a repeated element is asked once per iteration, so it can
+ * read the loop's variables. It cannot be continued with `x-elif` there.
+ *
+ * #### Content
+ *
+ * ```wire
+ * <p x-text="summary"></p>
+ * <div x-html="article.body|raw"></div>
+ * <a x-attr="{ href: post.url, rel: post.external ? 'nofollow' : nil }">…</a>
+ * ```
+ *
+ * `x-text` and `x-html` replace an element's children. `x-attr` spreads
+ * a dictionary onto it, where `true` gives a valueless attribute and
+ * `false` or `nil` leaves the attribute off.
+ *
+ * ---
+ *
+ * ### Composition
+ *
+ * #### Including
+ *
+ * ```wire
+ * <include path="partials/header.html" />
+ * <template x-include="partials/header.html"></template>
+ * ```
+ *
+ * Those two are the same thing. `<include>`, `<extend>`, `<declare>`,
+ * `<define>` and `<super>` are sugar, rewritten into the directive form
+ * while the source is being tokenized, which is why they work inside a
+ * `<head>` or a table where an unknown element would be moved or
+ * dropped.
+ *
+ * A path is read as text, not as an expression, so it can be written
+ * plainly and computed where it needs to be:
+ *
+ * ```wire
+ * <include path="themes/{{ theme }}/header.html" />
+ * ```
+ *
+ * An include sees the variables around it. `x-with` adds to them and
+ * `x-only` withholds everything else, which is what turns a partial into
+ * a component with a real interface:
+ *
+ * ```wire
+ * <include path="components/badge" x-with="{ label: 'New', tone: 'green' }" only />
+ * ```
+ *
+ * Anything written inside an include is handed to it as the region
+ * called `content`, so a partial can wrap what it was given:
+ *
+ * ```wire
+ * <!-- components/card.html -->
+ * <div class="card">
+ *   <h3>{{ title }}</h3>
+ *   <declare name="content"></declare>
+ * </div>
+ *
+ * <!-- the page -->
+ * <include path="components/card" x-with="{ title: 'Totals' }">
+ *   <p>{{ orders|length }} orders</p>
+ * </include>
+ * ```
+ *
+ * #### Inheriting
+ *
+ * A base template marks the regions a page may replace:
+ *
+ * ```wire
+ * <!-- layouts/page.html -->
+ * <!DOCTYPE html>
+ * <html>
+ *   <head>
+ *     <title>{{ title }}</title>
+ *     <declare name="head"></declare>
+ *   </head>
+ *   <body>
+ *     <main>
+ *       <declare name="content"></declare>
+ *     </main>
+ *     <footer>
+ *       <declare name="footer">
+ *         <p>&copy; {{ year }}</p>
+ *       </declare>
+ *     </footer>
+ *   </body>
+ * </html>
+ * ```
+ *
+ * A page fills them in:
+ *
+ * ```wire
+ * <!-- pages/home.html -->
+ * <extend base="layouts/page.html">
+ *   <define name="content">
+ *     <h1>Hello {{ user.name }}</h1>
+ *   </define>
+ *   <define name="footer">
+ *     <super />
+ *     <p>All rights reserved.</p>
+ *   </define>
+ * </extend>
+ * ```
+ *
+ * A region nobody defines renders whatever the base put inside it.
+ * `<super />` renders the definition this one replaces, so a page can
+ * add to a footer instead of restating it. Inheritance nests as deep as
+ * you like, and a middle template can declare regions of its own.
+ *
+ * One template extends one base, and everything in an extending template
+ * has to be inside a `<define>`, because the base is what decides the
+ * structure. Defining the same region twice needs `override` said out
+ * loud:
+ *
+ * ```wire
+ * <define name="content" override>…</define>
+ * ```
+ *
+ * ---
+ *
+ * ### Extending Wire from Zuri
+ *
+ * ```zuri
+ * import wire
+ *
+ * var view = wire.wire()
+ *
+ * # A filter: the value comes first, then whatever the template passed.
+ * view.register_filter('excerpt', @(value, words) {
+ *   var count = words ?? 25
+ *   return ' '.join(value.split('/\\s+/').take(count)) + '…'
+ * })
+ *
+ * # A value every template can see without being handed it.
+ * view.register_global('site_name', 'Example')
+ *
+ * # A function a template calls.
+ * view.register_global('route', @(name) {
+ *   return '/' + name
+ * })
+ * ```
+ *
+ * Used as:
+ *
+ * ```wire
+ * <p>{{ post.body|excerpt(40) }}</p>
+ * <a href="{{ route('about') }}">{{ site_name }}</a>
+ * ```
+ *
+ * `register_element()` claims a tag name outright and hands every one of
+ * them to a function, which is the escape hatch for anything the
+ * directives cannot express.
+ *
+ * ---
+ *
+ * ### Compiling and caching
+ *
+ * A template is parsed once, not once per render. `render()` compiles on
+ * first use and keeps the result, checking the file's modification time
+ * and size before reusing it.
+ *
+ * That check is one `stat` per template per render, which is what you
+ * want while writing templates and not what you want under load.
+ * `set_auto_reload(false)` turns it off, and `clear_cache()` is how a
+ * long-running process picks up a deployment.
+ *
+ * ---
+ *
+ * ### Comments
+ *
+ * HTML comments are server-side notes and do not reach the page:
+ *
+ * ```wire
+ * <!-- This never ships, and neither does {{ secret }}. -->
+ * ```
+ *
+ * Nothing inside one is evaluated. `set_comments(true)` keeps them when
+ * a comment is genuinely meant for the browser, as a conditional comment
+ * or a build marker is.
+ *
+ * ---
+ *
+ * ### When something is wrong
+ *
+ * Everything Wire raises is a `WireError` and carries the template and
+ * the line and column of the tag at fault. `TemplateSyntaxError` comes
+ * from compiling, `RenderError` from rendering, and
+ * `TemplateNotFoundError` from a path that goes nowhere.
+ *
+ * ```zuri
+ * catch {
+ *   echo view.render('pages/home', { user })
+ * } as e {
+ *   if instance_of(e, wire.WireError) {
+ *     echo 'template ${e.location()}: ${e.reason}'
+ *   }
+ * }
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import os
+
+import @.values { Safe, safe, is_safe, stringify, truthy }
+import @.errors {
+  WireError, TemplateNotFoundError, TemplateSyntaxError, RenderError,
+}
+
+import @.constants
+import @.escape
+import @.expression
+import @.filters
+import @.normalize
+import @.compile as _compile
+import @.loader as _loader
+import @.render as _render
+
+
+/**
+ * A template engine: a root directory, a set of filters, and a cache of
+ * everything compiled so far.
+ *
+ * One of these is normally built at startup, configured once, and used
+ * for the life of the process. Rendering does not change it, so it is
+ * safe to render from several places at once.
+ *
+ * ```zuri
+ * import wire
+ *
+ * var view = wire.wire()
+ * view.set_root('./views')
+ * view.register_global('site_name', 'Example')
+ *
+ * echo view.render('pages/home', { user })
+ * ```
+ */
+class Wire {
+
+  /**
+   * Values every template can read without being handed them.
+   *
+   * A variable passed to `render()` of the same name wins, so a global
+   * is a default rather than an override.
+   */
+  var globals = {}
+
+  /**
+   * The URL schemes allowed in an `href` and its relatives. Anything
+   * else is replaced with `about:blank`.
+   */
+  var url_schemes = []
+
+  /**
+   * The directory template paths resolve inside.
+   */
+  var _root = ''
+
+  /**
+   * The extension tried when a path names no file as written.
+   */
+  var _extension = constants.DEFAULT_EXTENSION
+
+  /**
+   * The filters templates can use, keyed by name.
+   */
+  var _filters = {}
+
+  /**
+   * The tag names handed to a function instead of being written out.
+   */
+  var _elements = {}
+
+  /**
+   * Compiled templates, keyed by the file and the context they were
+   * compiled for.
+   */
+  var _cache = {}
+
+  /**
+   * Whether a cached template is checked against the file before reuse.
+   */
+  var _auto_reload = true
+
+  /**
+   * Whether whitespace-only text is dropped from the output.
+   */
+  var _compact = false
+
+  /**
+   * Whether HTML comments reach the output.
+   */
+  var _comments = false
+
+  /**
+   * The loader, rebuilt whenever the root or the extension changes.
+   */
+  var _loader_instance = nil
+
+  /**
+   * @param ?dict options: Any of `root`, `extension`, `compact`,
+   *    `comments`, `auto_reload` and `url_schemes`, each the same as the
+   *    matching `set_` method.
+   * @constructor
+   * @throws ArgumentError when an option is not of the type it should
+   *    be.
+   */
+  @new(options: ?dict) {
+    self.globals = {}
+    self.url_schemes = escape.DEFAULT_URL_SCHEMES.clone()
+
+    self._root = os.join_paths(os.cwd(), constants.DEFAULT_ROOT)
+    self._extension = constants.DEFAULT_EXTENSION
+    self._filters = filters.BUILTIN.clone()
+    self._elements = {}
+    self._cache = {}
+    self._auto_reload = true
+    self._compact = false
+    self._comments = false
+    self._loader_instance = nil
+
+    if options == nil {
+      return
+    }
+
+    if !is_dict(options) {
+      raise ArgumentError('dictionary expected in argument 1 (options)')
+    }
+
+    if options.contains('root') {
+      self.set_root(options.root)
+    }
+
+    if options.contains('extension') {
+      self.set_extension(options.extension)
+    }
+
+    if options.contains('compact') {
+      self.set_compact(options.compact)
+    }
+
+    if options.contains('comments') {
+      self.set_comments(options.comments)
+    }
+
+    if options.contains('auto_reload') {
+      self.set_auto_reload(options.auto_reload)
+    }
+
+    if options.contains('url_schemes') {
+      self.set_url_schemes(options.url_schemes)
+    }
+  }
+
+  # ------------------------------------------------------------------
+  # Configuration
+  # ------------------------------------------------------------------
+
+  /**
+   * Sets the directory template paths resolve inside.
+   *
+   * A relative path is taken from the working directory. The directory
+   * does not have to exist yet; a path under one that does not is
+   * reported as not found like any other.
+   *
+   * Changing the root empties the cache, since the same path can now
+   * mean a different file.
+   *
+   * @param string path
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  set_root(path: string) {
+    self._root = os.abs_path(path)
+    self._loader_instance = nil
+    self.clear_cache()
+
+    return self
+  }
+
+  /**
+   * The directory template paths resolve inside, as an absolute path.
+   *
+   * @returns string
+   */
+  root() {
+    return self._root
+  }
+
+  /**
+   * Creates the root directory when it does not exist, and reports
+   * whether it had to.
+   *
+   * Wire never does this on its own. Creating directories is not a
+   * template engine's business, and a typo in a root should read as a
+   * missing template rather than quietly produce an empty directory.
+   *
+   * @returns bool
+   * @throws Error when the directory cannot be created.
+   */
+  create_root() {
+    if os.dir_exists(self._root) {
+      return false
+    }
+
+    os.create_dir(self._root)
+    return true
+  }
+
+  /**
+   * Sets the extension tried when a path names no file as written.
+   *
+   * It has to begin with a dot. `render('home')` then looks for `home`
+   * and then for `home` plus this.
+   *
+   * @param string extension
+   * @returns Wire
+   * @throws ArgumentError when it does not begin with a dot.
+   */
+  set_extension(extension: string) {
+    if !extension.starts_with('.') {
+      raise ArgumentError('a template extension has to begin with "."')
+    }
+
+    self._extension = extension
+    self._loader_instance = nil
+    self.clear_cache()
+
+    return self
+  }
+
+  /**
+   * Drops whitespace-only text from the output when _compact_ is true.
+   *
+   * This is the cheap kind of minification: the indentation between tags
+   * goes, and nothing else is touched. Whitespace inside a `<pre>` is
+   * whitespace-only only when the whole run is, so this can still change
+   * how preformatted text reads; leave it off where that matters and
+   * reach for `html.minify()` instead, which knows the difference.
+   *
+   * @param bool compact
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  set_compact(compact: bool) {
+    self._compact = compact
+    self.clear_cache()
+
+    return self
+  }
+
+  /**
+   * Keeps HTML comments in the output when _comments_ is true.
+   *
+   * Comments are dropped by default, which is what makes an HTML comment
+   * a server-side note. Nothing inside one is ever evaluated either way.
+   *
+   * @param bool comments
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  set_comments(comments: bool) {
+    self._comments = comments
+    self.clear_cache()
+
+    return self
+  }
+
+  /**
+   * Checks a cached template against its file before reusing it when
+   * _reload_ is true, which is the default.
+   *
+   * The check is one `stat` per template per render. Leave it on while
+   * templates are being written and turn it off where throughput
+   * matters, remembering that `clear_cache()` is then the only way a
+   * running process notices a deployment.
+   *
+   * @param bool reload
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  set_auto_reload(reload: bool) {
+    self._auto_reload = reload
+    return self
+  }
+
+  /**
+   * Replaces the URL schemes allowed in an `href` and its relatives.
+   *
+   * A URL with no scheme is always allowed, so every relative link keeps
+   * working whatever this is set to. A URL whose scheme is not listed is
+   * replaced with `about:blank`.
+   *
+   * The default is in `escape.DEFAULT_URL_SCHEMES` and deliberately
+   * leaves out `javascript`, `vbscript`, `data` and `file`.
+   *
+   * ```zuri
+   * view.set_url_schemes(escape.DEFAULT_URL_SCHEMES + ['app'])
+   * ```
+   *
+   * @param list schemes: Scheme names without the colon, in lower case.
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  set_url_schemes(schemes: list) {
+    var out = []
+
+    for scheme in schemes {
+      if !is_string(scheme) {
+        raise ArgumentError('a URL scheme has to be a string')
+      }
+
+      out.append(scheme.lower())
+    }
+
+    self.url_schemes = out
+    return self
+  }
+
+  # ------------------------------------------------------------------
+  # Registration
+  # ------------------------------------------------------------------
+
+  /**
+   * Registers a filter templates can use after a `|`.
+   *
+   * The value being filtered arrives as the first argument and whatever
+   * the template passed follows it. An argument the template left out
+   * arrives as `nil`, so give it a default rather than insisting.
+   *
+   * Registering a name that already exists replaces it, which is how an
+   * application makes `date` mean its own thing.
+   *
+   * ```zuri
+   * view.register_filter('excerpt', @(value, words) {
+   *   var count = words ?? 25
+   *   return ' '.join(value.split('/\\s+/').take(count)) + '…'
+   * })
+   * ```
+   *
+   * A filter returning a plain string has its result escaped like any
+   * other value. One that genuinely produces markup returns
+   * `wire.safe()`, and is then responsible for what is inside it.
+   *
+   * @param string name
+   * @param callable handler
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  register_filter(name: string, handler) {
+    self._check_name('filter', name)
+
+    if !is_callable(handler) {
+      raise ArgumentError('a filter has to be callable')
+    }
+
+    self._filters[name] = handler
+    return self
+  }
+
+  /**
+   * Claims a tag name and hands every element of that name to _handler_
+   * instead of writing it out.
+   *
+   * The handler is called with the `Wire` and a dictionary describing
+   * the element:
+   *
+   * | Key          | Is                                              |
+   * | ------------ | ----------------------------------------------- |
+   * | `name`       | the tag name                                    |
+   * | `attributes` | its attributes, with every value already rendered and escaped |
+   * | `content`    | its children, already rendered                  |
+   * | `variables`  | the scope it was written in                     |
+   *
+   * Return `wire.safe(markup)` to write markup, any other value to write
+   * it as escaped text, or `nil` to write nothing at all.
+   *
+   * ```zuri
+   * view.register_element('icon', @(view, element) {
+   *   var name = element.attributes.get('name', 'dot')
+   *   return wire.safe('<svg class="icon"><use href="#${name}"></use></svg>')
+   * })
+   * ```
+   *
+   * Directives still work on a claimed element, so `<icon x-if="…" />`
+   * behaves the way it reads. Reach for this only where the directives
+   * genuinely cannot express something; a partial and `x-include` is
+   * easier to read and does not need Zuri code to follow it.
+   *
+   * @param string name
+   * @param callable handler
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  register_element(name: string, handler) {
+    self._check_name('element', name)
+
+    if !is_callable(handler) {
+      raise ArgumentError('an element handler has to be callable')
+    }
+
+    self._elements[name.lower()] = handler
+    return self
+  }
+
+  /**
+   * Makes _value_ readable from every template by _name_.
+   *
+   * A variable of the same name passed to `render()` wins, so a global
+   * is a default rather than an override. A callable global is a
+   * function a template can call.
+   *
+   * @param string name
+   * @param any value
+   * @returns Wire
+   * @throws ArgumentError
+   */
+  register_global(name: string, value) {
+    self._check_name('global', name)
+
+    self.globals[name] = value
+    return self
+  }
+
+  # ------------------------------------------------------------------
+  # Rendering
+  # ------------------------------------------------------------------
+
+  /**
+   * Renders the template at _path_ and returns the page.
+   *
+   * _path_ is relative to the root and may leave off the extension.
+   * _variables_ is what the template can read, and defaults to nothing
+   * at all.
+   *
+   * ```zuri
+   * echo view.render('pages/home', { user, posts })
+   * ```
+   *
+   * @param string path
+   * @param ?dict variables
+   * @returns string
+   * @throws TemplateNotFoundError when the template does not exist or is
+   *    outside the root.
+   * @throws TemplateSyntaxError when it does not compile.
+   * @throws RenderError when rendering it fails.
+   */
+  render(path: string, variables: ?dict) {
+    var template = self.load(path, nil, nil, 0, 0)
+    return _render.Renderer(self).run(template, _variables(variables))
+  }
+
+  /**
+   * Renders _source_ as a template and returns the page.
+   *
+   * _path_ names the source in any error raised and defaults to
+   * `<source>`. Includes and extends inside the source still resolve
+   * against the root.
+   *
+   * The result is not cached, since there is no file to key it on. Use
+   * `render()` for anything rendered more than once.
+   *
+   * ```zuri
+   * echo view.render_string('<p>{{ greeting }}</p>', { greeting: 'Hi' })
+   * ```
+   *
+   * @param string source
+   * @param ?dict variables
+   * @param ?string path
+   * @returns string
+   * @throws TemplateSyntaxError
+   * @throws RenderError
+   */
+  render_string(source: string, variables: ?dict, path: ?string) {
+    var name = '<source>'
+    if path != nil {
+      name = path
+    }
+
+    var template = _compile.compile(source, name, nil, self._options())
+    return _render.Renderer(self).run(template, _variables(variables))
+  }
+
+  /**
+   * Compiles the template at _path_ without rendering it, and returns
+   * it.
+   *
+   * Useful for checking a directory of templates at build or startup
+   * time, so that a syntax error is found then rather than on the
+   * request that reaches it.
+   *
+   * ```zuri
+   * for name in os.list_dir('./views') {
+   *   view.compile(name)
+   * }
+   * ```
+   *
+   * @param string path
+   * @returns Template
+   * @throws TemplateNotFoundError
+   * @throws TemplateSyntaxError
+   */
+  compile(path: string) {
+    return self.load(path, nil, nil, 0, 0)
+  }
+
+  /**
+   * Forgets every compiled template.
+   *
+   * A long-running process with `set_auto_reload(false)` needs this to
+   * notice a deployment.
+   *
+   * @returns Wire
+   */
+  clear_cache() {
+    self._cache = {}
+    return self
+  }
+
+  # ------------------------------------------------------------------
+  # Used by the renderer
+  # ------------------------------------------------------------------
+
+  /**
+   * The compiled template at _path_, from the cache when it is there and
+   * still current.
+   *
+   * _context_ names the element the template will sit inside, so that a
+   * partial holding table rows is parsed knowing it is going into a
+   * table. _from_, _line_ and _column_ describe where the include was
+   * written, for the error when the path goes nowhere.
+   *
+   * The renderer calls this; there is rarely a reason to call it
+   * directly.
+   *
+   * @param string path
+   * @param ?string context
+   * @param ?string from
+   * @param ?number line
+   * @param ?number column
+   * @returns Template
+   * @throws TemplateNotFoundError
+   * @throws TemplateSyntaxError
+   */
+  load(path: string, context, from: ?string, line: ?number, column: ?number) {
+    var full = self._loader().resolve(path, from, line, column)
+    var key = '${context}\n${full}'
+    var cached = self._cache.get(key, nil)
+
+    if cached != nil {
+      if !self._auto_reload {
+        return cached.template
+      }
+
+      if cached.fingerprint != nil and
+        cached.fingerprint == self._loader().fingerprint(full) {
+        return cached.template
+      }
+    }
+
+    # Taken before the read, so a file rewritten between the two is seen
+    # as stale next time rather than being cached as though it were the
+    # version that was read.
+    var fingerprint = self._loader().fingerprint(full)
+    var source = self._loader().read(full)
+
+    var template = _compile.compile(source, full, context, self._options())
+    template.fingerprint = fingerprint
+
+    self._cache[key] = { template, fingerprint }
+    return template
+  }
+
+  /**
+   * The filter called _name_, or `nil`.
+   *
+   * @param string name
+   * @returns ?callable
+   */
+  filter(name: string) {
+    return self._filters.get(name, nil)
+  }
+
+  /**
+   * The handler registered for the tag _name_, or `nil`.
+   *
+   * @param string name
+   * @returns ?callable
+   */
+  element(name: string) {
+    if self._elements.is_empty() {
+      return nil
+    }
+
+    return self._elements.get(name, nil)
+  }
+
+  # ------------------------------------------------------------------
+  # Internals
+  # ------------------------------------------------------------------
+
+  /**
+   * The loader, built on demand so that changing the root or the
+   * extension is just a matter of dropping the old one.
+   *
+   * @returns Loader
+   */
+  _loader() {
+    if self._loader_instance == nil {
+      self._loader_instance = _loader.Loader(self._root, self._extension)
+    }
+
+    return self._loader_instance
+  }
+
+  /**
+   * The options the compiler needs.
+   *
+   * @returns dict
+   */
+  _options() {
+    return {
+      compact: self._compact,
+      comments: self._comments,
+    }
+  }
+
+  /**
+   * Rejects a name that could never be written in a template.
+   *
+   * @param string kind
+   * @param string name
+   * @throws ArgumentError
+   */
+  _check_name(kind: string, name: string) {
+    if name.match('/^[A-Za-z_][A-Za-z0-9_\\-]*$/') == false {
+      raise ArgumentError(
+        'a ${kind} name has to be a plain name, not "${name}"'
+      )
+    }
+
+    if name.starts_with('_') {
+      raise ArgumentError(
+        'a ${kind} name cannot start with an underscore, since a template ' +
+        'cannot read one'
+      )
+    }
+  }
+}
+
+
+/**
+ * A new `Wire`.
+ *
+ * _options_ takes any of `root`, `extension`, `compact`, `comments`,
+ * `auto_reload` and `url_schemes`, each the same as the matching `set_`
+ * method, so a whole configuration can be written in one place.
+ *
+ * ```zuri
+ * import wire
+ *
+ * var view = wire.wire({
+ *   root: './views',
+ *   auto_reload: false,
+ * })
+ * ```
+ *
+ * @param ?dict options
+ * @returns Wire
+ * @default
+ */
+def wire(options: ?dict) {
+  return Wire(options)
+}
+
+
+/**
+ * The `Wire` the module-level `render()` and `render_string()` use.
+ */
+var _shared = Wire()
+
+
+/**
+ * The `Wire` behind the module-level `render()` and `render_string()`.
+ *
+ * Configure this to use those without building your own, which is worth
+ * doing for a small program and not worth doing for anything that wants
+ * two different roots.
+ *
+ * ```zuri
+ * import wire
+ *
+ * wire.shared().set_root('./views')
+ * echo wire.render('pages/home', { user })
+ * ```
+ *
+ * @returns Wire
+ */
+def shared() {
+  return _shared
+}
+
+
+/**
+ * Renders the template at _path_ using the shared `Wire`.
+ *
+ * @param string path
+ * @param ?dict variables
+ * @returns string
+ * @throws WireError
+ */
+def render(path: string, variables: ?dict) {
+  return _shared.render(path, variables)
+}
+
+
+/**
+ * Renders _source_ using the shared `Wire`.
+ *
+ * @param string source
+ * @param ?dict variables
+ * @param ?string path
+ * @returns string
+ * @throws WireError
+ */
+def render_string(source: string, variables: ?dict, path: ?string) {
+  return _shared.render_string(source, variables, path)
+}
+
+
+/**
+ * The variables a render was given, defaulting to none.
+ *
+ * @param ?dict variables
+ * @returns dict
+ * @throws ArgumentError
+ */
+def _variables(variables: ?dict) {
+  if variables == nil {
+    return {}
+  }
+
+  return variables.clone()
+}

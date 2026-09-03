@@ -1,0 +1,1058 @@
+/**
+ * @module wire.render
+ *
+ * Walking a compiled template and writing the page out.
+ *
+ * Nothing is parsed here and no markup is reassembled from text. The
+ * compiler already decided what every instruction is and what escaping
+ * every interpolation needs, so rendering is a walk that evaluates
+ * expressions and appends strings, and a value can never turn into
+ * structure on its way to the page.
+ *
+ * The renderer is also the scope an expression is evaluated against: it
+ * is what answers what a name is bound to, what a filter does, and where
+ * to point when something goes wrong.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import html
+
+import .constants { DEFAULT_LOOP_NAME, MAX_DEPTH }
+import .errors { RenderError, WireError }
+import .escape
+import .values { invoke, is_safe, stringify, truthy, type_name, unwrap }
+
+
+/**
+ * One level of variables, pointing at the level around it.
+ *
+ * A loop pushes one of these rather than copying everything it can see,
+ * so iterating a long list costs one small dictionary per iteration
+ * instead of a copy of the whole page's variables.
+ */
+class Frame {
+
+  /**
+   * The variables bound at this level.
+   */
+  var variables = {}
+
+  /**
+   * The level around this one, or `nil` at the outermost.
+   */
+  var outer = nil
+
+  /**
+   * @param dict variables
+   * @param ?Frame outer
+   * @constructor
+   */
+  @new(variables: dict, outer) {
+    self.variables = variables
+    self.outer = outer
+  }
+
+  /**
+   * What _name_ is bound to at this level or any level around it, or
+   * `nil` when nothing binds it.
+   *
+   * @param string name
+   * @returns any
+   */
+  lookup(name: string) {
+    var frame = self
+
+    while frame != nil {
+      if frame.variables.contains(name) {
+        return frame.variables[name]
+      }
+
+      frame = frame.outer
+    }
+
+    return nil
+  }
+}
+
+
+/**
+ * One definition of a region, and what to render it against.
+ *
+ * A region's body does not always belong to the template placing it. An
+ * extending template's `x-define` is written against the same variables
+ * the base is, so it renders in whatever scope is current. An include's
+ * children are written at the call site and have to render in the scope
+ * they were written in, or `<include path="card"><p>{{ orders|length }}
+ * </p></include>` would be asking the card about the caller's orders and
+ * getting nothing.
+ */
+class Definition {
+
+  /**
+   * The instructions to render.
+   */
+  var body = []
+
+  /**
+   * The scope to render them in, or `nil` to use whatever is current.
+   */
+  var frame = nil
+
+  /**
+   * The template the body was written in, for error messages.
+   */
+  var path = '<source>'
+
+  /**
+   * @param list body
+   * @param ?Frame frame
+   * @param string path
+   * @constructor
+   */
+  @new(body: list, frame, path: string) {
+    self.body = body
+    self.frame = frame
+    self.path = path
+  }
+}
+
+
+/**
+ * Renders compiled templates.
+ *
+ * One of these is built per render and thrown away afterwards, so a
+ * compiled template can be rendered from several places at once without
+ * them treading on each other.
+ */
+class Renderer {
+
+  /**
+   * The `Wire` the render belongs to, which owns the filters, the
+   * registered elements, the loader and the compile cache.
+   */
+  var environment = nil
+
+  /**
+   * The template currently being rendered, for error messages.
+   */
+  var path = '<source>'
+
+  /**
+   * The pieces of the page so far, joined at the end.
+   */
+  var pieces = []
+
+  /**
+   * The variables in scope right now.
+   */
+  var frame = nil
+
+  /**
+   * The regions an extending template supplied, keyed by name. Each
+   * value is the list of definitions for that name, most derived first,
+   * ending with the base template's own default.
+   */
+  var blocks = {}
+
+  /**
+   * The definitions an `x-super` would reach, while a region is being
+   * rendered.
+   */
+  var overridden = []
+
+  /**
+   * How many includes and extends deep the render is.
+   */
+  var depth = 0
+
+  /**
+   * The line of the instruction being rendered, for error messages.
+   */
+  var line = 0
+
+  /**
+   * The column of that instruction.
+   */
+  var column = 0
+
+  /**
+   * @param Wire environment
+   * @constructor
+   */
+  @new(environment) {
+    self.environment = environment
+    self.pieces = []
+    self.blocks = {}
+    self.overridden = []
+  }
+
+  /**
+   * Renders _template_ with _variables_ and returns the page.
+   *
+   * @param Template template
+   * @param dict variables
+   * @returns string
+   * @throws WireError
+   */
+  run(template, variables: dict) {
+    self.template(template, variables, {}, 0)
+    return ''.join(self.pieces)
+  }
+
+  /**
+   * Renders _template_, following whatever it extends and placing the
+   * regions it and its children define.
+   *
+   * _supplied_ holds regions coming from outside the inheritance chain,
+   * which is how an include hands its own children to the template it is
+   * including.
+   *
+   * @param Template template
+   * @param dict variables
+   * @param dict supplied
+   * @param number depth
+   * @throws WireError
+   */
+  template(template, variables: dict, supplied: dict, depth: number) {
+    if depth > MAX_DEPTH {
+      raise RenderError(
+        'templates nest more than ${MAX_DEPTH} deep, which is almost ' +
+        'certainly a cycle',
+        template.path, 0, 0
+      )
+    }
+
+    var chain = self._chain(template, variables, depth)
+
+    # The base is what actually gets rendered; everything in front of it
+    # in the chain contributes definitions and nothing else.
+    var base = chain[-1]
+
+    var was_path = self.path
+    var was_frame = self.frame
+    var was_blocks = self.blocks
+    var was_overridden = self.overridden
+    var was_depth = self.depth
+
+    self.path = base.path
+    self.frame = Frame(variables, nil)
+    self.blocks = _collect_blocks(chain, supplied)
+    self.overridden = []
+    self.depth = depth
+
+    self.nodes(base.body)
+
+    self.path = was_path
+    self.frame = was_frame
+    self.blocks = was_blocks
+    self.overridden = was_overridden
+    self.depth = was_depth
+  }
+
+  /**
+   * The inheritance chain starting at _template_, most derived first.
+   *
+   * @param Template template
+   * @param dict variables
+   * @param number depth
+   * @returns list
+   * @throws RenderError when the chain never bottoms out.
+   */
+  _chain(template, variables: dict, depth: number) {
+    var chain = [template]
+    var current = template
+
+    var was_frame = self.frame
+    var was_path = self.path
+    self.frame = Frame(variables, nil)
+
+    while current.extends != nil {
+      self.path = current.path
+
+      var base = self.environment.load(
+        self.plain(current.extends), nil, current.path, self.line, self.column
+      )
+
+      if chain.length() > MAX_DEPTH {
+        raise RenderError(
+          'templates extend more than ${MAX_DEPTH} deep, which is almost ' +
+          'certainly a cycle',
+          current.path, 0, 0
+        )
+      }
+
+      chain.append(base)
+      current = base
+    }
+
+    self.frame = was_frame
+    self.path = was_path
+
+    return chain
+  }
+
+  /**
+   * Renders a list of instructions in order.
+   *
+   * @param list nodes
+   */
+  nodes(nodes: list) {
+    for node in nodes {
+      self.node(node)
+    }
+  }
+
+  /**
+   * Renders one instruction.
+   *
+   * @param Instruction node
+   */
+  node(node) {
+    var kind = node.kind
+
+    if kind == 'text' {
+      self._text(node)
+      return
+    }
+
+    if kind == 'element' {
+      self._element(node)
+      return
+    }
+
+    if kind == 'group' {
+      self.nodes(node.children)
+      return
+    }
+
+    if kind == 'conditional' {
+      self._conditional(node)
+      return
+    }
+
+    if kind == 'loop' {
+      self._loop(node)
+      return
+    }
+
+    if kind == 'include' {
+      self._include(node)
+      return
+    }
+
+    if kind == 'slot' {
+      self._slot(node)
+      return
+    }
+
+    if kind == 'super' {
+      self._super(node)
+      return
+    }
+
+    if kind == 'raw' {
+      self.pieces.append(node.text)
+      return
+    }
+
+    if kind == 'comment' {
+      self.pieces.append('<!--')
+      self.pieces.append(node.data)
+      self.pieces.append('-->')
+    }
+  }
+
+  /**
+   * Renders a run of text.
+   *
+   * @param Text node
+   */
+  _text(node) {
+    for segment in node.segments {
+      if segment.text != nil {
+        # Inside a script or a stylesheet the text is the markup, so it
+        # goes out exactly as it came in. Anywhere else it was decoded
+        # while parsing and has to be escaped again.
+        if node.raw_literal {
+          self.pieces.append(segment.text)
+        } else {
+          self.pieces.append(html.escape_text(segment.text))
+        }
+
+        continue
+      }
+
+      self.pieces.append(
+        escape.escape(
+          segment.value.evaluate(self), node.context,
+          self.environment.url_schemes
+        )
+      )
+    }
+  }
+
+  /**
+   * Renders an element, its attributes and whatever is inside it.
+   *
+   * @param Element node
+   */
+  _element(node) {
+    self.line = node.line
+    self.column = node.column
+
+    var custom = self.environment.element(node.tag)
+
+    if custom != nil {
+      self._custom(node, custom)
+      return
+    }
+
+    self.pieces.append('<')
+    self.pieces.append(node.tag)
+
+    for attribute in self._attributes(node) {
+      self.pieces.append(' ')
+      self.pieces.append(attribute[0])
+
+      if attribute[1] != nil {
+        self.pieces.append('="')
+        self.pieces.append(attribute[1])
+        self.pieces.append('"')
+      }
+    }
+
+    self.pieces.append('>')
+
+    if node.void {
+      return
+    }
+
+    if node.content != nil {
+      self._content(node)
+    } else {
+      self.nodes(node.children)
+    }
+
+    self.pieces.append('</')
+    self.pieces.append(node.tag)
+    self.pieces.append('>')
+  }
+
+  /**
+   * The element's attributes, as `[name, value]` pairs with the value
+   * already escaped, or `nil` for a valueless one.
+   *
+   * A name written on the element and a name coming from `x-attr` are
+   * the same attribute, and the computed one wins.
+   *
+   * @param Element node
+   * @returns list
+   */
+  _attributes(node) {
+    var out = []
+    var positions = {}
+
+    for attribute in node.attributes {
+      positions[attribute.name] = out.length()
+      out.append([attribute.name, self._attribute_value(attribute)])
+    }
+
+    for spread in node.spreads {
+      var computed = spread.evaluate(self)
+
+      if computed == nil {
+        continue
+      }
+
+      if !is_dict(computed) {
+        self.fail(
+          'x-attr needs a dictionary of attributes, got ${type_name(computed)}'
+        )
+      }
+
+      for name, value in computed {
+        var pair = self._computed_attribute(name, value)
+
+        if pair == nil {
+          continue
+        }
+
+        if positions.contains(name) {
+          out[positions[name]] = pair
+          continue
+        }
+
+        positions[name] = out.length()
+        out.append(pair)
+      }
+    }
+
+    return out
+  }
+
+  /**
+   * One attribute from an `x-attr` dictionary, or `nil` when it should
+   * not be written at all.
+   *
+   * `true` gives a valueless attribute and `false` or `nil` leaves it
+   * off entirely, which is what makes `x-attr="{ disabled: !in_stock }"`
+   * behave the way the markup reads.
+   *
+   * @param string name
+   * @param any value
+   * @returns ?list
+   */
+  _computed_attribute(name: string, value) {
+    if value == nil or value == false {
+      return nil
+    }
+
+    if name.is_empty() or name.match('/[\\s"\'>\\/=]/') != false {
+      self.fail('"${name}" cannot be written as an attribute name')
+    }
+
+    if value == true {
+      return [name, nil]
+    }
+
+    var context = escape.attribute_context(name)
+
+    if escape.is_url_list_attribute(name) {
+      return [name, escape.url_list(
+        value, self.environment.url_schemes, escape.uses_descriptors(name)
+      )]
+    }
+
+    return [name, escape.escape(value, context, self.environment.url_schemes)]
+  }
+
+  /**
+   * An attribute's value, escaped for what the attribute means.
+   *
+   * A URL is assembled whole before it is checked, since a scheme can be
+   * spread across a literal and an interpolation and neither half looks
+   * dangerous alone. Everything else is escaped piece by piece so that
+   * the literal parts of, say, an `onclick` stay intact around the
+   * values dropped into them.
+   *
+   * @param Attribute attribute
+   * @returns string
+   */
+  _attribute_value(attribute) {
+    if attribute.context == escape.CONTEXT_URL {
+      var assembled = []
+
+      for segment in attribute.segments {
+        if segment.text != nil {
+          assembled.append(segment.text)
+          continue
+        }
+
+        assembled.append(stringify(unwrap(segment.value.evaluate(self))))
+      }
+
+      var whole = ''.join(assembled)
+
+      if attribute.url_list {
+        return escape.url_list(
+          whole, self.environment.url_schemes, attribute.url_descriptors
+        )
+      }
+
+      return escape.url(whole, self.environment.url_schemes)
+    }
+
+    var out = []
+
+    for segment in attribute.segments {
+      if segment.text != nil {
+        out.append(html.escape_attribute(segment.text))
+        continue
+      }
+
+      var value = escape.escape(
+        segment.value.evaluate(self), attribute.context,
+        self.environment.url_schemes
+      )
+
+      # A script context escapes for JavaScript, which says nothing
+      # about the quotes of the attribute holding it.
+      if attribute.context == escape.CONTEXT_SCRIPT {
+        value = html.escape_attribute(value)
+      }
+
+      out.append(value)
+    }
+
+    return ''.join(out)
+  }
+
+  /**
+   * Renders the children an `x-text` or `x-html` replaced.
+   *
+   * @param Element node
+   */
+  _content(node) {
+    var value = node.content.evaluate(self)
+
+    if node.content_raw {
+      self.pieces.append(stringify(unwrap(value)))
+      return
+    }
+
+    self.pieces.append(
+      escape.escape(
+        value, escape.text_context(node.tag), self.environment.url_schemes
+      )
+    )
+  }
+
+  /**
+   * Hands an element to the function registered for its tag and renders
+   * what comes back.
+   *
+   * @param Element node
+   * @param callable handler
+   */
+  _custom(node, handler) {
+    var attributes = {}
+
+    for pair in self._attributes(node) {
+      var value = pair[1]
+
+      if value == nil {
+        value = ''
+      }
+
+      attributes[pair[0]] = value
+    }
+
+    var inner = Renderer(self.environment)
+    inner.path = self.path
+    inner.frame = self.frame
+    inner.blocks = self.blocks
+    inner.depth = self.depth
+    inner.nodes(node.children)
+
+    var produced = invoke(handler, [
+      self.environment, {
+        name: node.tag,
+        attributes,
+        content: ''.join(inner.pieces),
+        variables: self.frame,
+      },
+    ])
+
+    if produced == nil {
+      return
+    }
+
+    # Markup a handler built is written out as it is; anything else is
+    # a value and is escaped, so a handler returning a number or a name
+    # cannot accidentally inject structure.
+    if is_safe(produced) {
+      self.pieces.append(produced.value)
+      return
+    }
+
+    self.pieces.append(html.escape_text(stringify(produced)))
+  }
+
+  /**
+   * Renders the first arm of a chain whose test passes.
+   *
+   * @param Conditional node
+   */
+  _conditional(node) {
+    self.line = node.line
+    self.column = node.column
+
+    for branch in node.branches {
+      if branch.test == nil {
+        self.node(branch.body)
+        return
+      }
+
+      var passed = truthy(branch.test.evaluate(self))
+
+      if branch.negate {
+        passed = !passed
+      }
+
+      if passed {
+        self.node(branch.body)
+        return
+      }
+    }
+  }
+
+  /**
+   * Renders a repetition once per entry.
+   *
+   * @param Loop node
+   */
+  _loop(node) {
+    self.line = node.line
+    self.column = node.column
+
+    var entries = self._entries(node.sequence.evaluate(self))
+    var total = entries.length()
+
+    if total == 0 {
+      return
+    }
+
+    var outer = self.frame
+    var enclosing = outer.lookup(node.loop_name)
+
+    iter var at = 0; at < total; at++ {
+      var variables = {}
+      var key = entries[at][0]
+      var value = entries[at][1]
+
+      if node.value_name != nil {
+        variables[node.value_name] = value
+      }
+
+      if node.key_name != nil {
+        variables[node.key_name] = key
+      }
+
+      variables[node.loop_name] = {
+        index: at + 1,
+        index0: at,
+        first: at == 0,
+        last: at == total - 1,
+        length: total,
+        even: at % 2 == 1,
+        odd: at % 2 == 0,
+        key,
+        value,
+        'parent': enclosing,
+      }
+
+      self.frame = Frame(variables, outer)
+      self.node(node.body)
+    }
+
+    self.frame = outer
+  }
+
+  /**
+   * _value_ as a list of `[key, value]` pairs.
+   *
+   * A list keeps its positions as keys and a dictionary its own, which
+   * is what lets one `x-for` read either. Anything with no entries at
+   * all, `nil` included, gives an empty list so that a loop over a
+   * variable that was never supplied renders nothing rather than
+   * raising.
+   *
+   * @param any value
+   * @returns list
+   * @throws RenderError when the value cannot be iterated.
+   */
+  _entries(value) {
+    var subject = unwrap(value)
+
+    if subject == nil {
+      return []
+    }
+
+    if is_list(subject) {
+      var out = []
+
+      iter var at = 0; at < subject.length(); at++ {
+        out.append([at, subject[at]])
+      }
+
+      return out
+    }
+
+    if is_dict(subject) {
+      var out = []
+
+      for key, entry in subject {
+        out.append([key, entry])
+      }
+
+      return out
+    }
+
+    if is_string(subject) or is_bytes(subject) or is_iterable(subject) {
+      var out = []
+
+      for key, entry in subject {
+        out.append([key, entry])
+      }
+
+      return out
+    }
+
+    self.fail('x-for cannot iterate ${type_name(value)}')
+  }
+
+  /**
+   * Renders another template in place of this instruction.
+   *
+   * @param Include node
+   */
+  _include(node) {
+    self.line = node.line
+    self.column = node.column
+
+    var template = self.environment.load(
+      self.plain(node.path), node.context, self.path, node.line, node.column
+    )
+
+    var variables = {}
+
+    if !node.only {
+      # A plain include sees what the page around it sees, which is what
+      # makes a header partial able to read the same `user` without
+      # being handed it. `x-only` is how a partial says it wants a
+      # clean slate.
+      variables = _flatten(self.frame)
+    }
+
+    if node.variables != nil {
+      var extra = node.variables.evaluate(self)
+
+      if !is_dict(extra) {
+        self.fail(
+          'x-with needs a dictionary of variables, got ${type_name(extra)}'
+        )
+      }
+
+      for name, value in extra {
+        variables[name] = value
+      }
+    }
+
+    var supplied = {}
+
+    if !node.body.is_empty() {
+      # An include's own children are handed over as a region, so a
+      # partial can place them with x-slot="content" and be a component.
+      # They keep the scope they were written in, which is the page's and
+      # not the partial's.
+      supplied['content'] = [Definition(node.body, self.frame, self.path)]
+    }
+
+    self.template(template, variables, supplied, self.depth + 1)
+  }
+
+  /**
+   * Renders a region: whichever definition is most derived, or the
+   * template's own default when nothing replaced it.
+   *
+   * @param Slot node
+   */
+  _slot(node) {
+    self.line = node.line
+    self.column = node.column
+
+    var definitions = self.blocks.get(node.name, nil)
+
+    if definitions == nil or definitions.is_empty() {
+      self.nodes(node.body)
+      return
+    }
+
+    var was = self.overridden
+
+    # Everything after the one being rendered is what an x-super inside
+    # it would reach, ending with this slot's own default.
+    self.overridden = definitions[1, definitions.length()] +
+      [Definition(node.body, nil, self.path)]
+
+    self.definition(definitions[0])
+    self.overridden = was
+  }
+
+  /**
+   * Renders one definition of a region, in its own scope when it has
+   * one.
+   *
+   * @param Definition definition
+   */
+  definition(definition) {
+    if definition.frame == nil {
+      self.nodes(definition.body)
+      return
+    }
+
+    var was_frame = self.frame
+    var was_path = self.path
+
+    self.frame = definition.frame
+    self.path = definition.path
+
+    self.nodes(definition.body)
+
+    self.frame = was_frame
+    self.path = was_path
+  }
+
+  /**
+   * Renders the definition the surrounding one replaced.
+   *
+   * @param Super node
+   */
+  _super(node) {
+    self.line = node.line
+    self.column = node.column
+
+    if self.overridden.is_empty() {
+      self.fail('x-super has nothing to fall back to here')
+    }
+
+    var was = self.overridden
+    self.overridden = was[1, was.length()]
+    self.definition(was[0])
+    self.overridden = was
+  }
+
+  /**
+   * A run of segments joined with no escaping at all, for a template
+   * path.
+   *
+   * @param list segments
+   * @returns string
+   */
+  plain(segments: list) {
+    var out = []
+
+    for segment in segments {
+      if segment.text != nil {
+        out.append(segment.text)
+        continue
+      }
+
+      out.append(stringify(unwrap(segment.value.evaluate(self))))
+    }
+
+    return ''.join(out)
+  }
+
+  /**
+   * What _name_ is bound to, for an expression being evaluated.
+   *
+   * @param string name
+   * @returns any
+   */
+  lookup(name: string) {
+    var found = self.frame.lookup(name)
+
+    if found != nil {
+      return found
+    }
+
+    # A global is only reached when nothing nearer binds the name, so a
+    # variable passed to render() always wins over one registered on the
+    # Wire itself.
+    return self.environment.globals.get(name, nil)
+  }
+
+  /**
+   * Runs the filter _name_ over _value_, for an expression being
+   * evaluated.
+   *
+   * @param string name
+   * @param any value
+   * @param list arguments
+   * @returns any
+   * @throws RenderError when there is no such filter, or when the
+   *    filter rejects what it was given.
+   */
+  apply_filter(name: string, value, arguments: list) {
+    var handler = self.environment.filter(name)
+
+    if handler == nil {
+      self.fail('there is no filter called "${name}"')
+    }
+
+    catch {
+      return invoke(handler, [value] + arguments)
+    } as e {
+      # A filter reports a plain problem with its input; the position of
+      # the tag it was written on is what turns that into something
+      # findable.
+      if instance_of(e, WireError) {
+        raise e
+      }
+
+      self.fail('${name}: ${e.message}')
+    }
+  }
+
+  /**
+   * Stops the render, pointing at the instruction currently being
+   * rendered.
+   *
+   * @param string reason
+   * @throws RenderError
+   */
+  fail(reason: string) {
+    raise RenderError(reason, self.path, self.line, self.column)
+  }
+}
+
+
+/**
+ * Every region an inheritance chain defines, keyed by name, with the
+ * most derived definition first.
+ *
+ * _supplied_ comes from outside the chain, from an include handing over
+ * its children, and outranks everything in it.
+ *
+ * @param list chain: The templates, most derived first.
+ * @param dict supplied
+ * @returns dict
+ */
+def _collect_blocks(chain: list, supplied: dict) {
+  var blocks = {}
+
+  for name, definitions in supplied {
+    blocks[name] = definitions.clone()
+  }
+
+  for template in chain {
+    for name, body in template.blocks {
+      if !blocks.contains(name) {
+        blocks[name] = []
+      }
+
+      blocks[name].append(Definition(body, nil, template.path))
+    }
+  }
+
+  return blocks
+}
+
+
+/**
+ * Every variable a frame chain can see, flattened into one dictionary.
+ *
+ * An include starts a new chain rather than extending this one, since
+ * what it does to its own variables must not leak back out, so the
+ * variables it inherits have to be copied across.
+ *
+ * @param Frame frame
+ * @returns dict
+ */
+def _flatten(frame) {
+  if frame == nil {
+    return {}
+  }
+
+  # Built from the outside in so that a nearer binding overwrites a
+  # further one, which is the same answer `lookup()` gives.
+  var out = _flatten(frame.outer)
+
+  for name, value in frame.variables {
+    out[name] = value
+  }
+
+  return out
+}

@@ -1,0 +1,1904 @@
+/**
+ * @module wire.expression
+ *
+ * Wire's expression language: the thing that sits between `{{` and
+ * `}}`, and the thing an `x-if` or an `x-for` is given.
+ *
+ * It is deliberately a small language rather than an embedded Zuri.
+ * There is no assignment, no statement, no way to define anything and
+ * no way to reach a global, because a template is a description of a
+ * page and everything else belongs in the code that renders it. What
+ * is here is what reading a value out of a dictionary and deciding
+ * whether to show a section actually needs:
+ *
+ * | Kind        | Written as                                     |
+ * | ----------- | ---------------------------------------------- |
+ * | literals    | `12`, `1.5`, `'text'`, `"text"`, `true`, `false`, `nil` |
+ * | collections | `[1, 2]`, `{ id: 1, name }`                    |
+ * | lookup      | `user.address.city`, `items.0`, `items[index]` |
+ * | calls       | `route('home')`, `user.display_name()`         |
+ * | arithmetic  | `+`, `-`, `*`, `/`, `%`                        |
+ * | comparison  | `==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not in` |
+ * | logic       | `and`, `or`, `not` (also `&&`, `||`, `!`)      |
+ * | choice      | `stock > 0 ? 'in stock' : 'sold out'`          |
+ * | default     | `nickname ?? name`                             |
+ * | ranges      | `0..pages`, `1..10`                            |
+ * | filters     | `name|upper`, `price|round(2)`, `name|is='Ada'` |
+ *
+ * Truthiness is Wire's, not Zuri's: an empty list is false and a
+ * negative number is true. `wire.values` explains why, and it matters
+ * for every `and`, `or`, `not` and `?` here.
+ *
+ * ### Missing values
+ *
+ * Reading a name that was never supplied gives `nil` rather than
+ * raising, and so does reading a key off it. `{{ user.address.city }}`
+ * on a request with no user renders as nothing at all instead of
+ * failing three levels down, which is what makes an optional section
+ * readable. Ask with `x-if` when the difference matters.
+ *
+ * Names beginning with an underscore cannot be read. Those are private
+ * in Zuri, and a template has no business reaching into them.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import zuri
+
+import .errors { TemplateSyntaxError }
+import .values {
+  compare, invoke, is_blank, stringify, truthy, type_name, unwrap,
+}
+
+
+/**
+ * The words that are part of the language rather than names a template
+ * can bind.
+ */
+var KEYWORDS = ['and', 'or', 'not', 'in', 'true', 'false', 'nil']
+
+/**
+ * Operators made of more than one character, longest first so that
+ * `<=` is never read as `<` followed by `=`.
+ */
+var LONG_OPERATORS = ['==', '!=', '<=', '>=', '&&', '||', '??', '..']
+
+/**
+ * Operators made of a single character.
+ */
+var SHORT_OPERATORS = [
+  '?', ':', '.', ',', '(', ')', '[', ']', '{', '}',
+  '|', '=', '+', '-', '*', '/', '%', '<', '>', '!',
+]
+
+
+# --------------------------------------------------------------------
+# Syntax tree
+# --------------------------------------------------------------------
+
+/**
+ * The base of every node in a parsed expression.
+ *
+ * Nodes are built once, when a template is compiled, and evaluated once
+ * per render. They hold no state of their own, so the same compiled
+ * template can be rendered from several places at once.
+ */
+class Expression {
+
+  /**
+   * Works out this node's value.
+   *
+   * _scope_ is supplied by the renderer and answers the three questions
+   * an expression cannot answer for itself: what a name is bound to,
+   * what a filter does, and how to report a failure with the position
+   * of the tag the expression came from.
+   *
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    return nil
+  }
+}
+
+
+/**
+ * A number, a string, or one of `true`, `false` and `nil`.
+ */
+class Literal < Expression {
+
+  /**
+   * The value, ready to use.
+   */
+  var value = nil
+
+  /**
+   * @param any value
+   * @constructor
+   */
+  @new(value) {
+    self.value = value
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    return self.value
+  }
+}
+
+
+/**
+ * A bare name, looked up in the variables the template was rendered
+ * with.
+ */
+class Variable < Expression {
+
+  /**
+   * The name being read.
+   */
+  var name = ''
+
+  /**
+   * @param string name
+   * @constructor
+   */
+  @new(name: string) {
+    self.name = name
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    return scope.lookup(self.name)
+  }
+}
+
+
+/**
+ * A dotted lookup, as in `user.name`.
+ */
+class Member < Expression {
+
+  /**
+   * The expression being read from.
+   */
+  var target = nil
+
+  /**
+   * The key, field or method name.
+   */
+  var name = ''
+
+  /**
+   * @param Expression target
+   * @param string name
+   * @constructor
+   */
+  @new(target, name: string) {
+    self.target = target
+    self.name = name
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    return _read(scope, self.target.evaluate(scope), self.name)
+  }
+}
+
+
+/**
+ * A bracketed lookup, as in `items[index]`, where the key is itself an
+ * expression.
+ */
+class Index < Expression {
+
+  /**
+   * The expression being read from.
+   */
+  var target = nil
+
+  /**
+   * The expression giving the key.
+   */
+  var key = nil
+
+  /**
+   * @param Expression target
+   * @param Expression key
+   * @constructor
+   */
+  @new(target, key) {
+    self.target = target
+    self.key = key
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    return _read(scope, self.target.evaluate(scope), self.key.evaluate(scope))
+  }
+}
+
+
+/**
+ * A call, as in `route('home')` or `user.display_name()`.
+ */
+class Call < Expression {
+
+  /**
+   * The expression giving the thing to call.
+   */
+  var callee = nil
+
+  /**
+   * The argument expressions, in order.
+   */
+  var arguments = []
+
+  /**
+   * How the callee was written, for the error message when it turns out
+   * not to be callable.
+   */
+  var label = ''
+
+  /**
+   * @param Expression callee
+   * @param list arguments
+   * @param string label
+   * @constructor
+   */
+  @new(callee, arguments: list, label: string) {
+    self.callee = callee
+    self.arguments = arguments
+    self.label = label
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    var target = self.callee.evaluate(scope)
+
+    if !is_callable(target) {
+      scope.fail('"${self.label}" is ${type_name(target)} and cannot be called')
+    }
+
+    var values = []
+
+    for argument in self.arguments {
+      values.append(argument.evaluate(scope))
+    }
+
+    return invoke(target, values)
+  }
+}
+
+
+/**
+ * A list literal.
+ */
+class ListLiteral < Expression {
+
+  /**
+   * The item expressions, in order.
+   */
+  var items = []
+
+  /**
+   * @param list items
+   * @constructor
+   */
+  @new(items: list) {
+    self.items = items
+  }
+
+  /**
+   * @param Scope scope
+   * @returns list
+   */
+  evaluate(scope) {
+    var out = []
+
+    for item in self.items {
+      out.append(item.evaluate(scope))
+    }
+
+    return out
+  }
+}
+
+
+/**
+ * A dictionary literal.
+ */
+class DictLiteral < Expression {
+
+  /**
+   * The entries, as a list of `[key, value]` expression pairs. A list
+   * rather than a dictionary so that a duplicate key behaves the way it
+   * would in Zuri, with the last one winning.
+   */
+  var entries = []
+
+  /**
+   * @param list entries
+   * @constructor
+   */
+  @new(entries: list) {
+    self.entries = entries
+  }
+
+  /**
+   * @param Scope scope
+   * @returns dict
+   */
+  evaluate(scope) {
+    var out = {}
+
+    for entry in self.entries {
+      out[stringify(entry[0].evaluate(scope))] = entry[1].evaluate(scope)
+    }
+
+    return out
+  }
+}
+
+
+/**
+ * `not x`, `!x` or `-x`.
+ */
+class Unary < Expression {
+
+  /**
+   * The operator: `not` or `-`.
+   */
+  var operator = ''
+
+  /**
+   * The expression it applies to.
+   */
+  var operand = nil
+
+  /**
+   * @param string operator
+   * @param Expression operand
+   * @constructor
+   */
+  @new(operator: string, operand) {
+    self.operator = operator
+    self.operand = operand
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    var value = self.operand.evaluate(scope)
+
+    if self.operator == 'not' {
+      return !truthy(value)
+    }
+
+    if !is_number(value) and !is_bigint(value) {
+      scope.fail('cannot negate ${type_name(value)}')
+    }
+
+    return -value
+  }
+}
+
+
+/**
+ * An arithmetic or comparison operator.
+ */
+class Binary < Expression {
+
+  /**
+   * The operator.
+   */
+  var operator = ''
+
+  /**
+   * The left operand.
+   */
+  var left = nil
+
+  /**
+   * The right operand.
+   */
+  var right = nil
+
+  /**
+   * @param string operator
+   * @param Expression left
+   * @param Expression right
+   * @constructor
+   */
+  @new(operator: string, left, right) {
+    self.operator = operator
+    self.left = left
+    self.right = right
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    var a = self.left.evaluate(scope)
+    var b = self.right.evaluate(scope)
+
+    if self.operator == '==' {
+      return _equal(a, b)
+    }
+
+    if self.operator == '!=' {
+      return !_equal(a, b)
+    }
+
+    if self.operator == 'in' {
+      return _contains(scope, b, a)
+    }
+
+    if self.operator == 'not in' {
+      return !_contains(scope, b, a)
+    }
+
+    if self.operator == '..' {
+      return _range(scope, a, b)
+    }
+
+    if self.operator == '+' {
+      # A string on either side means concatenation, which is what a
+      # template almost always wants and what saves writing a filter
+      # just to glue a label onto a number.
+      if is_string(a) or is_string(b) {
+        return stringify(unwrap(a)) + stringify(unwrap(b))
+      }
+
+      if is_list(a) and is_list(b) {
+        return a + b
+      }
+    }
+
+    return _arithmetic(scope, self.operator, a, b)
+  }
+}
+
+
+/**
+ * `and`, `or` or `??`, each of which decides whether to evaluate its
+ * right side after looking at its left.
+ */
+class Logical < Expression {
+
+  /**
+   * The operator: `and`, `or` or `??`.
+   */
+  var operator = ''
+
+  /**
+   * The left operand.
+   */
+  var left = nil
+
+  /**
+   * The right operand.
+   */
+  var right = nil
+
+  /**
+   * @param string operator
+   * @param Expression left
+   * @param Expression right
+   * @constructor
+   */
+  @new(operator: string, left, right) {
+    self.operator = operator
+    self.left = left
+    self.right = right
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    var value = self.left.evaluate(scope)
+
+    # `??` asks whether a value is there at all, where `or` asks whether
+    # it is worth showing. That is the difference between a quantity of
+    # zero keeping its zero and a quantity of zero falling back.
+    if self.operator == '??' {
+      if value == nil {
+        return self.right.evaluate(scope)
+      }
+
+      return value
+    }
+
+    if self.operator == 'and' {
+      if !truthy(value) {
+        return value
+      }
+
+      return self.right.evaluate(scope)
+    }
+
+    if truthy(value) {
+      return value
+    }
+
+    return self.right.evaluate(scope)
+  }
+}
+
+
+/**
+ * `condition ? consequence : alternative`.
+ */
+class Conditional < Expression {
+
+  /**
+   * The expression being tested.
+   */
+  var condition = nil
+
+  /**
+   * The value when the test passes.
+   */
+  var consequence = nil
+
+  /**
+   * The value when it does not.
+   */
+  var alternative = nil
+
+  /**
+   * @param Expression condition
+   * @param Expression consequence
+   * @param Expression alternative
+   * @constructor
+   */
+  @new(condition, consequence, alternative) {
+    self.condition = condition
+    self.consequence = consequence
+    self.alternative = alternative
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    if truthy(self.condition.evaluate(scope)) {
+      return self.consequence.evaluate(scope)
+    }
+
+    return self.alternative.evaluate(scope)
+  }
+}
+
+
+/**
+ * A value passed through a filter, as in `name|upper`.
+ */
+class Filter < Expression {
+
+  /**
+   * The expression giving the value being filtered.
+   */
+  var target = nil
+
+  /**
+   * The filter's name.
+   */
+  var name = ''
+
+  /**
+   * The argument expressions, in order, after the value itself.
+   */
+  var arguments = []
+
+  /**
+   * @param Expression target
+   * @param string name
+   * @param list arguments
+   * @constructor
+   */
+  @new(target, name: string, arguments: list) {
+    self.target = target
+    self.name = name
+    self.arguments = arguments
+  }
+
+  /**
+   * @param Scope scope
+   * @returns any
+   */
+  evaluate(scope) {
+    var value = self.target.evaluate(scope)
+    var values = []
+
+    for argument in self.arguments {
+      values.append(argument.evaluate(scope))
+    }
+
+    return scope.apply_filter(self.name, value, values)
+  }
+}
+
+
+# --------------------------------------------------------------------
+# Shared evaluation helpers
+# --------------------------------------------------------------------
+
+/**
+ * Reads _key_ off _target_, for both `a.b` and `a[b]`.
+ *
+ * A dictionary is asked for the key, a list or a string for the index,
+ * and an instance for the field or method of that name. Reading off
+ * `nil` gives `nil`, so a chain through a variable that was never
+ * supplied stops quietly instead of raising partway down.
+ *
+ * A negative index counts from the end, as it does everywhere else in
+ * Zuri, and an index past either end gives `nil` rather than raising.
+ *
+ * @param Scope scope
+ * @param any target
+ * @param any key
+ * @returns any
+ */
+def _read(scope, target, key) {
+  if target == nil {
+    return nil
+  }
+
+  var name = stringify(key)
+
+  if name.starts_with('_') {
+    scope.fail('"${name}" is private and cannot be read from a template')
+  }
+
+  if is_dict(target) {
+    if target.contains(name) {
+      return target[name]
+    }
+
+    # A dictionary keyed by number is still worth answering for, since
+    # `{{ counts[year] }}` is a perfectly ordinary thing to write.
+    if is_number(key) and target.contains(key) {
+      return target[key]
+    }
+
+    return nil
+  }
+
+  if is_list(target) or is_string(target) or is_bytes(target) {
+    var at = _as_index(key)
+
+    if at == nil {
+      # `items.length` reads better than `items|length` at the end of a
+      # chain, so the two collection properties a template asks for by
+      # name are answered rather than refused.
+      if name == 'length' {
+        return target.length()
+      }
+
+      return nil
+    }
+
+    if at < 0 {
+      at += target.length()
+    }
+
+    if at < 0 or at >= target.length() {
+      return nil
+    }
+
+    return target[at]
+  }
+
+  if is_instance(target) {
+    if zuri.reflect.has_method(target, name) {
+      return zuri.reflect.bind_method(target, name)
+    }
+
+    if zuri.reflect.has_prop(target, name) {
+      return zuri.reflect.get_prop(target, name)
+    }
+
+    return nil
+  }
+
+  return nil
+}
+
+
+/**
+ * _key_ as a list index, or `nil` when it is not one.
+ *
+ * A string of digits counts, so `items.0` written in a template reads
+ * the same as `items[0]` written in Zuri.
+ *
+ * @param any key
+ * @returns ?number
+ */
+def _as_index(key) {
+  if is_number(key) {
+    if key != key or key % 1 != 0 {
+      return nil
+    }
+
+    return key
+  }
+
+  if is_string(key) and key.match('/^-?\\d+$/') != false {
+    return key.to_number()
+  }
+
+  return nil
+}
+
+
+/**
+ * Whether _a_ and _b_ are the same value, with markup compared by the
+ * text it carries so that a filtered value still equals the string it
+ * came from.
+ *
+ * @param any a
+ * @param any b
+ * @returns bool
+ */
+def _equal(a, b) {
+  return unwrap(a) == unwrap(b)
+}
+
+
+/**
+ * Whether _needle_ is in _haystack_, for the `in` operator.
+ *
+ * A dictionary is searched by key, a string by substring, and a list or
+ * a range by value.
+ *
+ * @param Scope scope
+ * @param any haystack
+ * @param any needle
+ * @returns bool
+ */
+def _contains(scope, haystack, needle) {
+  if haystack == nil {
+    return false
+  }
+
+  if is_dict(haystack) {
+    return haystack.contains(stringify(unwrap(needle)))
+  }
+
+  if is_string(haystack) {
+    return haystack.index_of(stringify(unwrap(needle))) >= 0
+  }
+
+  if is_list(haystack) {
+    return haystack.contains(unwrap(needle))
+  }
+
+  if is_iterable(haystack) {
+    for entry in haystack {
+      if entry == unwrap(needle) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  scope.fail('cannot look inside ${type_name(haystack)} with "in"')
+}
+
+
+/**
+ * Applies an arithmetic or ordering operator to two values.
+ *
+ * Both sides have to be numbers, apart from ordering two strings, which
+ * compares them the way Zuri does.
+ *
+ * @param Scope scope
+ * @param string operator
+ * @param any a
+ * @param any b
+ * @returns any
+ */
+def _arithmetic(scope, operator: string, a, b) {
+  var left = unwrap(a)
+  var right = unwrap(b)
+
+  var ordering = ['<', '<=', '>', '>=']
+
+  if ordering.contains(operator) {
+    # Ordering is answered for strings as well as numbers, since sorting
+    # a name against a name is an ordinary thing for a template to ask.
+    if !_numeric(left) or !_numeric(right) {
+      if !is_string(left) or !is_string(right) {
+        scope.fail(
+          'cannot order ${type_name(a)} against ${type_name(b)}'
+        )
+      }
+    }
+
+    return _ordered(operator, compare(left, right))
+  }
+
+  if !_numeric(left) or !_numeric(right) {
+    scope.fail(
+      'cannot apply "${operator}" to ${type_name(a)} and ${type_name(b)}'
+    )
+  }
+
+  if operator == '+' {
+    return left + right
+  }
+
+  if operator == '-' {
+    return left - right
+  }
+
+  if operator == '*' {
+    return left * right
+  }
+
+  if operator == '/' {
+    if right == 0 {
+      scope.fail('division by zero')
+    }
+
+    return left / right
+  }
+
+  if right == 0 {
+    scope.fail('remainder by zero')
+  }
+
+  return left % right
+}
+
+
+/**
+ * Turns the `-1`, `0` or `1` an ordering gives into the answer one of
+ * the four ordering operators wanted.
+ *
+ * @param string operator
+ * @param number order
+ * @returns bool
+ */
+def _ordered(operator: string, order: number) {
+  if operator == '<' {
+    return order < 0
+  }
+
+  if operator == '<=' {
+    return order <= 0
+  }
+
+  if operator == '>' {
+    return order > 0
+  }
+
+  return order >= 0
+}
+
+
+/**
+ * The range from _a_ up to but not including _b_.
+ *
+ * @param Scope scope
+ * @param any a
+ * @param any b
+ * @returns range
+ * @throws through `scope.fail` when either end is not a whole number.
+ */
+def _range(scope, a, b) {
+  var from = unwrap(a)
+  var to = unwrap(b)
+
+  if !is_number(from) or !is_number(to) or from % 1 != 0 or to % 1 != 0 {
+    scope.fail(
+      'a range needs two whole numbers, got ${type_name(a)} and ${type_name(b)}'
+    )
+  }
+
+  return from..to
+}
+
+
+/**
+ * Whether _value_ is something arithmetic can be done with.
+ *
+ * @param any value
+ * @returns bool
+ */
+def _numeric(value) {
+  return is_number(value) or is_bigint(value)
+}
+
+
+# --------------------------------------------------------------------
+# Lexer
+# --------------------------------------------------------------------
+
+/**
+ * One piece of an expression's source: its kind, its value, and where
+ * in the expression it started.
+ */
+class Token {
+
+  /**
+   * `'name'`, `'number'`, `'string'`, `'operator'` or `'end'`.
+   */
+  var type = 'end'
+
+  /**
+   * The token's text, or for a string or number its decoded value.
+   */
+  var value = nil
+
+  /**
+   * How far into the expression the token started, counting from 0.
+   */
+  var offset = 0
+
+  /**
+   * @param string type
+   * @param any value
+   * @param number offset
+   * @constructor
+   */
+  @new(type: string, value, offset: number) {
+    self.type = type
+    self.value = value
+    self.offset = offset
+  }
+}
+
+
+/**
+ * Splits _source_ into tokens.
+ *
+ * _path_, _line_ and _column_ are only used to place the error when the
+ * source does not lex, and name the tag the expression was written on
+ * rather than anything inside the expression.
+ *
+ * @param string source
+ * @param string path
+ * @param number line
+ * @param number column
+ * @returns list
+ * @throws TemplateSyntaxError
+ */
+def tokenize(source: string, path: string, line: number, column: number) {
+  var tokens = []
+  var characters = source.to_list()
+  var at = 0
+
+  while at < characters.length() {
+    var character = characters[at]
+
+    if character.match('/\\s/') != false {
+      at++
+      continue
+    }
+
+    if character == '\'' or character == '"' {
+      var scanned = _scan_string(characters, at, source, path, line, column)
+      tokens.append(Token('string', scanned[0], at))
+      at = scanned[1]
+      continue
+    }
+
+    if character.match('/[0-9]/') != false {
+      var scanned = _scan_number(characters, at)
+      tokens.append(Token('number', scanned[0], at))
+      at = scanned[1]
+      continue
+    }
+
+    if character.match('/[A-Za-z_]/') != false {
+      var scanned = _scan_name(characters, at)
+      tokens.append(Token('name', scanned[0], at))
+      at = scanned[1]
+      continue
+    }
+
+    var pair = ''
+    if at + 1 < characters.length() {
+      pair = character + characters[at + 1]
+    }
+
+    if LONG_OPERATORS.contains(pair) {
+      tokens.append(Token('operator', pair, at))
+      at += 2
+      continue
+    }
+
+    if SHORT_OPERATORS.contains(character) {
+      tokens.append(Token('operator', character, at))
+      at++
+      continue
+    }
+
+    raise TemplateSyntaxError(
+      'unexpected "${character}" in expression "${source}"',
+      path, line, column
+    )
+  }
+
+  tokens.append(Token('end', nil, characters.length()))
+  return tokens
+}
+
+
+/**
+ * Reads a quoted string starting at _at_, returning its value and the
+ * offset just past the closing quote.
+ *
+ * @param list characters
+ * @param number at
+ * @param string source
+ * @param string path
+ * @param number line
+ * @param number column
+ * @returns list
+ * @throws TemplateSyntaxError
+ */
+def _scan_string(characters: list, at: number, source: string, path: string,
+  line: number, column: number) {
+
+  var quote = characters[at]
+  var out = []
+  var index = at + 1
+
+  while index < characters.length() {
+    var character = characters[index]
+
+    if character == '\\' and index + 1 < characters.length() {
+      out.append(_unescape(characters[index + 1]))
+      index += 2
+      continue
+    }
+
+    if character == quote {
+      return [''.join(out), index + 1]
+    }
+
+    out.append(character)
+    index++
+  }
+
+  raise TemplateSyntaxError(
+    'unterminated string in expression "${source}"',
+    path, line, column
+  )
+}
+
+
+/**
+ * What a backslash escape stands for. Anything not listed stands for
+ * itself, which is what makes `\\'` and `\\\\` work without needing a
+ * table entry each.
+ *
+ * @param string character
+ * @returns string
+ */
+def _unescape(character: string) {
+  if character == 'n' {
+    return '\n'
+  }
+
+  if character == 't' {
+    return '\t'
+  }
+
+  if character == 'r' {
+    return '\r'
+  }
+
+  return character
+}
+
+
+/**
+ * Reads a number starting at _at_, returning its value and the offset
+ * just past it.
+ *
+ * @param list characters
+ * @param number at
+ * @returns list
+ */
+def _scan_number(characters: list, at: number) {
+  var out = []
+  var index = at
+  var seen_dot = false
+
+  while index < characters.length() {
+    var character = characters[index]
+
+    if character.match('/[0-9]/') != false {
+      out.append(character)
+      index++
+      continue
+    }
+
+    # Only the first dot belongs to the number. A second one is a member
+    # lookup on the result, as in `1.5.to_string`, which is nonsense but
+    # is the parser's business to reject rather than the lexer's.
+    if character == '.' and !seen_dot and index + 1 < characters.length() and
+      characters[index + 1].match('/[0-9]/') != false {
+      seen_dot = true
+      out.append(character)
+      index++
+      continue
+    }
+
+    break
+  }
+
+  return [''.join(out).to_number(), index]
+}
+
+
+/**
+ * Reads a name starting at _at_, returning it and the offset just past
+ * it.
+ *
+ * @param list characters
+ * @param number at
+ * @returns list
+ */
+def _scan_name(characters: list, at: number) {
+  var out = []
+  var index = at
+
+  while index < characters.length() and
+    characters[index].match('/[A-Za-z0-9_]/') != false {
+    out.append(characters[index])
+    index++
+  }
+
+  return [''.join(out), index]
+}
+
+
+# --------------------------------------------------------------------
+# Parser
+# --------------------------------------------------------------------
+
+/**
+ * Builds a syntax tree from an expression's tokens.
+ *
+ * There is one of these per expression compiled, and it is thrown away
+ * once the tree is built.
+ */
+class Parser {
+
+  /**
+   * The tokens left to read.
+   */
+  var tokens = []
+
+  /**
+   * How far through them the parser is.
+   */
+  var at = 0
+
+  /**
+   * The expression's source, for error messages.
+   */
+  var source = ''
+
+  /**
+   * The template the expression came from.
+   */
+  var path = '<source>'
+
+  /**
+   * The line of the tag the expression was written on.
+   */
+  var line = 0
+
+  /**
+   * The column of that tag.
+   */
+  var column = 0
+
+  /**
+   * @param string source
+   * @param string path
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(source: string, path: string, line: number, column: number) {
+    self.source = source
+    self.path = path
+    self.line = line
+    self.column = column
+    self.at = 0
+    self.tokens = tokenize(source, path, line, column)
+  }
+
+  /**
+   * Parses the whole expression and insists that nothing is left over.
+   *
+   * @returns Expression
+   * @throws TemplateSyntaxError
+   */
+  parse() {
+    var node = self.parse_ternary()
+
+    if self.peek().type != 'end' {
+      self.fail('unexpected "${self.describe(self.peek())}"')
+    }
+
+    return node
+  }
+
+  /**
+   * `condition ? consequence : alternative`, which is the loosest
+   * binding thing in the language.
+   *
+   * @returns Expression
+   */
+  parse_ternary() {
+    var condition = self.parse_coalesce()
+
+    if !self.take_operator('?') {
+      return condition
+    }
+
+    var consequence = self.parse_ternary()
+    self.expect_operator(':')
+
+    return Conditional(condition, consequence, self.parse_ternary())
+  }
+
+  /**
+   * `a ?? b`.
+   *
+   * @returns Expression
+   */
+  parse_coalesce() {
+    var node = self.parse_range()
+
+    while self.take_operator('??') {
+      node = Logical('??', node, self.parse_range())
+    }
+
+    return node
+  }
+
+  /**
+   * `a..b`, the same range Zuri writes the same way.
+   *
+   * Ranges do not chain, since `1..2..3` means nothing.
+   *
+   * @returns Expression
+   */
+  parse_range() {
+    var node = self.parse_or()
+
+    if self.take_operator('..') {
+      return Binary('..', node, self.parse_or())
+    }
+
+    return node
+  }
+
+  /**
+   * `a or b`, also spelled `a || b`.
+   *
+   * @returns Expression
+   */
+  parse_or() {
+    var node = self.parse_and()
+
+    while self.take_operator('||') or self.take_keyword('or') {
+      node = Logical('or', node, self.parse_and())
+    }
+
+    return node
+  }
+
+  /**
+   * `a and b`, also spelled `a && b`.
+   *
+   * @returns Expression
+   */
+  parse_and() {
+    var node = self.parse_equality()
+
+    while self.take_operator('&&') or self.take_keyword('and') {
+      node = Logical('and', node, self.parse_equality())
+    }
+
+    return node
+  }
+
+  /**
+   * `a == b` and `a != b`.
+   *
+   * @returns Expression
+   */
+  parse_equality() {
+    var node = self.parse_comparison()
+
+    while true {
+      if self.take_operator('==') {
+        node = Binary('==', node, self.parse_comparison())
+        continue
+      }
+
+      if self.take_operator('!=') {
+        node = Binary('!=', node, self.parse_comparison())
+        continue
+      }
+
+      break
+    }
+
+    return node
+  }
+
+  /**
+   * The ordering operators, plus `in` and `not in`.
+   *
+   * @returns Expression
+   */
+  parse_comparison() {
+    var node = self.parse_additive()
+
+    while true {
+      var operator = self.take_any_operator(['<=', '>=', '<', '>'])
+
+      if operator != nil {
+        node = Binary(operator, node, self.parse_additive())
+        continue
+      }
+
+      if self.take_keyword('in') {
+        node = Binary('in', node, self.parse_additive())
+        continue
+      }
+
+      # `not` only continues the chain when an `in` follows it, so that
+      # `a != not b` still reaches the unary parser below.
+      if self.peek_keyword('not') and self.peek_keyword_at(1, 'in') {
+        self.at += 2
+        node = Binary('not in', node, self.parse_additive())
+        continue
+      }
+
+      break
+    }
+
+    return node
+  }
+
+  /**
+   * `a + b` and `a - b`.
+   *
+   * @returns Expression
+   */
+  parse_additive() {
+    var node = self.parse_multiplicative()
+
+    while true {
+      var operator = self.take_any_operator(['+', '-'])
+
+      if operator == nil {
+        break
+      }
+
+      node = Binary(operator, node, self.parse_multiplicative())
+    }
+
+    return node
+  }
+
+  /**
+   * `a * b`, `a / b` and `a % b`.
+   *
+   * @returns Expression
+   */
+  parse_multiplicative() {
+    var node = self.parse_unary()
+
+    while true {
+      var operator = self.take_any_operator(['*', '/', '%'])
+
+      if operator == nil {
+        break
+      }
+
+      node = Binary(operator, node, self.parse_unary())
+    }
+
+    return node
+  }
+
+  /**
+   * `not a`, `!a` and `-a`.
+   *
+   * @returns Expression
+   */
+  parse_unary() {
+    if self.take_operator('!') or self.take_keyword('not') {
+      return Unary('not', self.parse_unary())
+    }
+
+    if self.take_operator('-') {
+      return Unary('-', self.parse_unary())
+    }
+
+    return self.parse_filtered()
+  }
+
+  /**
+   * A value with any filters applied to it.
+   *
+   * Filters bind tighter than every operator, so `items|length > 3`
+   * compares the length rather than filtering the comparison.
+   *
+   * @returns Expression
+   */
+  parse_filtered() {
+    var node = self.parse_postfix()
+
+    while self.take_operator('|') {
+      node = self.parse_filter(node)
+    }
+
+    return node
+  }
+
+  /**
+   * One filter application, in either of the two forms it can take.
+   *
+   * @param Expression target
+   * @returns Filter
+   */
+  parse_filter(target) {
+    var token = self.peek()
+
+    if token.type != 'name' {
+      self.fail('expected a filter name after "|"')
+    }
+
+    self.at++
+    var name = token.value
+    var arguments = []
+
+    if self.take_operator('(') {
+      arguments = self.parse_arguments()
+    } else if self.take_operator('=') {
+      # The shorthand a single argument gets, kept from the first
+      # version of Wire: `name|is='Ada'` rather than `name|is('Ada')`.
+      arguments.append(self.parse_primary())
+    }
+
+    return Filter(target, name, arguments)
+  }
+
+  /**
+   * A value with any lookups and calls applied to it.
+   *
+   * @returns Expression
+   */
+  parse_postfix() {
+    var node = self.parse_primary()
+    var label = self.describe_span()
+
+    while true {
+      if self.take_operator('.') {
+        var token = self.peek()
+
+        # A number after the dot is an index written the readable way,
+        # as in `items.0`.
+        if token.type == 'number' {
+          self.at++
+          node = Index(node, Literal(token.value))
+          continue
+        }
+
+        if token.type != 'name' {
+          self.fail('expected a name after "."')
+        }
+
+        self.at++
+        node = Member(node, token.value)
+        continue
+      }
+
+      if self.take_operator('[') {
+        node = Index(node, self.parse_ternary())
+        self.expect_operator(']')
+        continue
+      }
+
+      if self.take_operator('(') {
+        node = Call(node, self.parse_arguments(), label)
+        continue
+      }
+
+      break
+    }
+
+    return node
+  }
+
+  /**
+   * A comma separated argument list, up to and including its closing
+   * parenthesis.
+   *
+   * @returns list
+   */
+  parse_arguments() {
+    var arguments = []
+
+    if self.take_operator(')') {
+      return arguments
+    }
+
+    while true {
+      arguments.append(self.parse_ternary())
+
+      if self.take_operator(',') {
+        continue
+      }
+
+      self.expect_operator(')')
+      break
+    }
+
+    return arguments
+  }
+
+  /**
+   * A literal, a name, a bracketed expression, or a list or dictionary
+   * literal.
+   *
+   * @returns Expression
+   */
+  parse_primary() {
+    var token = self.peek()
+
+    if token.type == 'number' or token.type == 'string' {
+      self.at++
+      return Literal(token.value)
+    }
+
+    if token.type == 'name' {
+      self.at++
+
+      if token.value == 'true' {
+        return Literal(true)
+      }
+
+      if token.value == 'false' {
+        return Literal(false)
+      }
+
+      if token.value == 'nil' {
+        return Literal(nil)
+      }
+
+      if KEYWORDS.contains(token.value) {
+        self.fail('"${token.value}" cannot be used as a name')
+      }
+
+      if token.value.starts_with('_') {
+        self.fail('"${token.value}" is private and cannot be read from a template')
+      }
+
+      return Variable(token.value)
+    }
+
+    if token.type == 'operator' {
+      if token.value == '(' {
+        self.at++
+        var node = self.parse_ternary()
+        self.expect_operator(')')
+        return node
+      }
+
+      if token.value == '[' {
+        self.at++
+        return self.parse_list()
+      }
+
+      if token.value == '{' {
+        self.at++
+        return self.parse_dict()
+      }
+    }
+
+    self.fail('expected a value but found "${self.describe(token)}"')
+  }
+
+  /**
+   * A list literal, with the opening bracket already consumed.
+   *
+   * @returns ListLiteral
+   */
+  parse_list() {
+    var items = []
+
+    if self.take_operator(']') {
+      return ListLiteral(items)
+    }
+
+    while true {
+      items.append(self.parse_ternary())
+
+      if self.take_operator(',') {
+        # A trailing comma is allowed, since a list written over several
+        # lines is easier to edit with one.
+        if self.take_operator(']') {
+          break
+        }
+
+        continue
+      }
+
+      self.expect_operator(']')
+      break
+    }
+
+    return ListLiteral(items)
+  }
+
+  /**
+   * A dictionary literal, with the opening brace already consumed.
+   *
+   * A key may be a bare name, a quoted string or a bracketed
+   * expression. An entry written as a bare name on its own is the
+   * shorthand Zuri uses: `{ user }` means `{ user: user }`.
+   *
+   * @returns DictLiteral
+   */
+  parse_dict() {
+    var entries = []
+
+    if self.take_operator('}') {
+      return DictLiteral(entries)
+    }
+
+    while true {
+      entries.append(self.parse_dict_entry())
+
+      if self.take_operator(',') {
+        if self.take_operator('}') {
+          break
+        }
+
+        continue
+      }
+
+      self.expect_operator('}')
+      break
+    }
+
+    return DictLiteral(entries)
+  }
+
+  /**
+   * One `key: value` pair, or the bare name shorthand.
+   *
+   * @returns list
+   */
+  parse_dict_entry() {
+    var token = self.peek()
+
+    if self.take_operator('[') {
+      var key = self.parse_ternary()
+      self.expect_operator(']')
+      self.expect_operator(':')
+
+      return [key, self.parse_ternary()]
+    }
+
+    if token.type != 'name' and token.type != 'string' {
+      self.fail('expected a key but found "${self.describe(token)}"')
+    }
+
+    self.at++
+
+    if !self.take_operator(':') {
+      if token.type != 'name' {
+        self.fail('expected ":" after the key "${token.value}"')
+      }
+
+      return [Literal(token.value), Variable(token.value)]
+    }
+
+    return [Literal(token.value), self.parse_ternary()]
+  }
+
+  /**
+   * The token the parser is looking at.
+   *
+   * @returns Token
+   */
+  peek() {
+    return self.tokens[self.at]
+  }
+
+  /**
+   * Consumes the current token when it is the operator _value_.
+   *
+   * @param string value
+   * @returns bool
+   */
+  take_operator(value: string) {
+    var token = self.peek()
+
+    if token.type == 'operator' and token.value == value {
+      self.at++
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * Consumes the current token when it is any of _values_, returning
+   * which one it was or `nil`.
+   *
+   * @param list values
+   * @returns ?string
+   */
+  take_any_operator(values: list) {
+    var token = self.peek()
+
+    if token.type == 'operator' and values.contains(token.value) {
+      self.at++
+      return token.value
+    }
+
+    return nil
+  }
+
+  /**
+   * Consumes the current token when it is the keyword _word_.
+   *
+   * @param string word
+   * @returns bool
+   */
+  take_keyword(word: string) {
+    if self.peek_keyword(word) {
+      self.at++
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * Whether the current token is the keyword _word_.
+   *
+   * @param string word
+   * @returns bool
+   */
+  peek_keyword(word: string) {
+    var token = self.peek()
+    return token.type == 'name' and token.value == word
+  }
+
+  /**
+   * Whether the token _ahead_ places further on is the keyword _word_.
+   *
+   * @param number ahead
+   * @param string word
+   * @returns bool
+   */
+  peek_keyword_at(ahead: number, word: string) {
+    if self.at + ahead >= self.tokens.length() {
+      return false
+    }
+
+    var token = self.tokens[self.at + ahead]
+    return token.type == 'name' and token.value == word
+  }
+
+  /**
+   * Consumes the operator _value_ or reports what was there instead.
+   *
+   * @param string value
+   * @throws TemplateSyntaxError
+   */
+  expect_operator(value: string) {
+    if !self.take_operator(value) {
+      self.fail('expected "${value}" but found "${self.describe(self.peek())}"')
+    }
+  }
+
+  /**
+   * How the source read from the start of the value just parsed, used
+   * to name a callee that turned out not to be callable.
+   *
+   * @returns string
+   */
+  describe_span() {
+    if self.at == 0 {
+      return self.source
+    }
+
+    return self.describe(self.tokens[self.at - 1])
+  }
+
+  /**
+   * A readable rendering of _token_ for an error message.
+   *
+   * @param Token token
+   * @returns string
+   */
+  describe(token) {
+    if token.type == 'end' {
+      return 'the end of the expression'
+    }
+
+    return stringify(token.value)
+  }
+
+  /**
+   * Raises a syntax error naming the expression it happened in.
+   *
+   * @param string reason
+   * @throws TemplateSyntaxError
+   */
+  fail(reason: string) {
+    raise TemplateSyntaxError(
+      '${reason} in expression "${self.source}"',
+      self.path, self.line, self.column
+    )
+  }
+}
+
+
+/**
+ * Compiles _source_ into a syntax tree.
+ *
+ * _path_, _line_ and _column_ describe the tag the expression was
+ * written on and are only used to place a syntax error.
+ *
+ * ```zuri
+ * import wire
+ *
+ * var tree = wire.expression.parse('price * quantity', '<source>', 0, 0)
+ * ```
+ *
+ * @param string source
+ * @param string path
+ * @param number line
+ * @param number column
+ * @returns Expression
+ * @throws TemplateSyntaxError when _source_ is not a valid expression.
+ */
+def parse(source: string, path: string, line: number, column: number) {
+  if is_blank(source) {
+    raise TemplateSyntaxError('empty expression', path, line, column)
+  }
+
+  return Parser(source, path, line, column).parse()
+}

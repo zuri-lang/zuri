@@ -1,0 +1,285 @@
+/**
+ * @module wire.constants
+ *
+ * The names Wire reserves: its directive attributes, the pseudo
+ * elements that are sugar for them, and the handful of defaults the
+ * `Wire` class starts out with.
+ *
+ * Everything a template author can type that Wire treats specially is
+ * named here rather than spelled inline, so the answer to "is this
+ * attribute mine?" only ever has one place to live.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+/**
+ * The prefix every Wire directive attribute carries.
+ *
+ * Wire owns this prefix outright: an attribute starting with `x-` that
+ * Wire does not recognize is a compile error rather than a passthrough,
+ * which is what turns a typo like `x-fi` into a message instead of a
+ * silently missing section. Markup that genuinely needs an `x-` prefixed
+ * attribute in the output can emit one through `x-attr`.
+ */
+var DIRECTIVE_PREFIX = 'x-'
+
+/**
+ * The element Wire uses to carry a directive without emitting anything
+ * of its own.
+ *
+ * `<template>` is the only HTML element the tree construction algorithm
+ * lets through untouched everywhere: inside `<head>`, inside a table,
+ * inside a `<select>`. Every other name would be relocated or dropped
+ * by the parser before Wire ever saw it, which is why Wire's own
+ * pseudo elements are rewritten into this one while the source is being
+ * tokenized.
+ */
+var CARRIER_TAG = 'template'
+
+
+# --------------------------------------------------------------------
+# Directive attributes
+# --------------------------------------------------------------------
+
+/**
+ * Renders the element only when the expression is truthy.
+ */
+var IF_ATTR = 'x-if'
+
+/**
+ * Continues an `x-if` chain on the next element sibling.
+ */
+var ELIF_ATTR = 'x-elif'
+
+/**
+ * Closes an `x-if` chain on the next element sibling. Valueless.
+ */
+var ELSE_ATTR = 'x-else'
+
+/**
+ * Renders the element only when the expression is falsy, the inverse of
+ * `x-if`.
+ */
+var NOT_ATTR = 'x-not'
+
+/**
+ * Repeats the element once per entry of the expression's value.
+ */
+var FOR_ATTR = 'x-for'
+
+/**
+ * Names the variable each `x-for` iteration binds its value to.
+ */
+var VALUE_ATTR = 'x-value'
+
+/**
+ * Names the variable each `x-for` iteration binds its key or index to.
+ */
+var KEY_ATTR = 'x-key'
+
+/**
+ * Renames the loop metadata variable an `x-for` publishes, which is
+ * called `loop` unless this says otherwise.
+ */
+var LOOP_ATTR = 'x-loop'
+
+/**
+ * Replaces the element's children with the expression's value as text.
+ */
+var TEXT_ATTR = 'x-text'
+
+/**
+ * Replaces the element's children with the expression's value as
+ * markup, without escaping it.
+ */
+var HTML_ATTR = 'x-html'
+
+/**
+ * Spreads a dictionary of name/value pairs onto the element as
+ * attributes.
+ */
+var ATTR_ATTR = 'x-attr'
+
+/**
+ * Renders another template in this element's place.
+ */
+var INCLUDE_ATTR = 'x-include'
+
+/**
+ * Supplies the variables an `x-include` or a component is rendered
+ * with.
+ */
+var WITH_ATTR = 'x-with'
+
+/**
+ * Withholds the surrounding scope from an `x-include` or a component,
+ * leaving it only what `x-with` passes. Valueless.
+ */
+var ONLY_ATTR = 'x-only'
+
+/**
+ * Marks this template as extending the base template named by the
+ * value.
+ */
+var EXTEND_ATTR = 'x-extend'
+
+/**
+ * Declares a region an extending template may replace.
+ */
+var SLOT_ATTR = 'x-slot'
+
+/**
+ * Replaces the base template's region of the same name.
+ */
+var DEFINE_ATTR = 'x-define'
+
+/**
+ * Permits an `x-define` to replace a definition of the same name made
+ * earlier in the same template. Valueless.
+ */
+var OVERRIDE_ATTR = 'x-override'
+
+/**
+ * Renders the definition this one replaces. Valueless.
+ */
+var SUPER_ATTR = 'x-super'
+
+/**
+ * Every directive attribute Wire understands.
+ *
+ * A template carrying an `x-` prefixed attribute outside this list is
+ * rejected at compile time.
+ */
+var DIRECTIVES = [
+  IF_ATTR, ELIF_ATTR, ELSE_ATTR, NOT_ATTR,
+  FOR_ATTR, VALUE_ATTR, KEY_ATTR, LOOP_ATTR,
+  TEXT_ATTR, HTML_ATTR, ATTR_ATTR,
+  INCLUDE_ATTR, WITH_ATTR, ONLY_ATTR,
+  EXTEND_ATTR, SLOT_ATTR, DEFINE_ATTR, OVERRIDE_ATTR, SUPER_ATTR,
+]
+
+/**
+ * The directives whose value is a Wire expression.
+ */
+var EXPRESSION_DIRECTIVES = [
+  IF_ATTR, ELIF_ATTR, NOT_ATTR, FOR_ATTR,
+  TEXT_ATTR, HTML_ATTR, ATTR_ATTR, WITH_ATTR,
+]
+
+/**
+ * The directives whose value names a variable or a region, and is read
+ * as a bare identifier rather than evaluated.
+ */
+var NAME_DIRECTIVES = [
+  VALUE_ATTR, KEY_ATTR, LOOP_ATTR, SLOT_ATTR, DEFINE_ATTR,
+]
+
+/**
+ * The directives whose value is a template path, read as literal text
+ * with `{{ }}` interpolation allowed inside it.
+ */
+var PATH_DIRECTIVES = [INCLUDE_ATTR, EXTEND_ATTR]
+
+/**
+ * The directives that take no value at all.
+ */
+var FLAG_DIRECTIVES = [ELSE_ATTR, ONLY_ATTR, OVERRIDE_ATTR, SUPER_ATTR]
+
+
+# --------------------------------------------------------------------
+# Pseudo elements
+# --------------------------------------------------------------------
+
+/**
+ * The pseudo elements Wire accepts as sugar, each mapped to the
+ * directive it becomes and the attribute that carries the directive's
+ * value.
+ *
+ * These are rewritten into `<template>` while the source is being
+ * tokenized, so by the time a tree exists there is only one form left
+ * to compile. `attribute` is `nil` for a pseudo element that takes no
+ * value of its own.
+ */
+var PSEUDO_ELEMENTS = {
+  include: { directive: INCLUDE_ATTR, attribute: 'path' },
+  extend: { directive: EXTEND_ATTR, attribute: 'base' },
+  declare: { directive: SLOT_ATTR, attribute: 'name' },
+  define: { directive: DEFINE_ATTR, attribute: 'name' },
+  super: { directive: SUPER_ATTR, attribute: nil },
+}
+
+/**
+ * Attributes a pseudo element may carry that become valueless
+ * directives rather than the directive its name maps to.
+ *
+ * Only `<define name="x" override>` uses this today, which is why the
+ * mapping is a single entry rather than a per-element table.
+ */
+var PSEUDO_FLAGS = {
+  override: OVERRIDE_ATTR,
+  only: ONLY_ATTR,
+}
+
+
+# --------------------------------------------------------------------
+# Interpolation
+# --------------------------------------------------------------------
+
+/**
+ * Opens an interpolation.
+ */
+var VAR_OPEN = '{{'
+
+/**
+ * Closes an interpolation.
+ */
+var VAR_CLOSE = '}}'
+
+/**
+ * Opens a template function call.
+ */
+var CALL_OPEN = '{!'
+
+/**
+ * Closes a template function call.
+ */
+var CALL_CLOSE = '!}'
+
+/**
+ * The character that escapes an interpolation, making Wire emit the
+ * braces literally instead of reading what is between them.
+ */
+var ESCAPE_CHAR = '%'
+
+
+# --------------------------------------------------------------------
+# Defaults
+# --------------------------------------------------------------------
+
+/**
+ * The extension `render()` appends when the path it was given does not
+ * name an existing file and carries no extension of its own.
+ */
+var DEFAULT_EXTENSION = '.html'
+
+/**
+ * The directory `render()` resolves template paths against until
+ * `set_root()` says otherwise, which is a `templates` directory beside
+ * the current working directory.
+ */
+var DEFAULT_ROOT = 'templates'
+
+/**
+ * The variable an `x-for` publishes its loop metadata under.
+ */
+var DEFAULT_LOOP_NAME = 'loop'
+
+/**
+ * How deep `x-include` and `x-extend` may nest before Wire calls it a
+ * cycle.
+ *
+ * A template that includes itself would otherwise recurse until the
+ * process died, and the depth a legitimate layout hierarchy reaches is
+ * nowhere near this.
+ */
+var MAX_DEPTH = 64
