@@ -1561,6 +1561,86 @@ impl VM {
     numeric_fields
   }
 
+  fn resolve_all_numeric_fields(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
+    let mut seen_numeric = rustc_hash::FxHashSet::default();
+    let mut seen_non_numeric = rustc_hash::FxHashSet::default();
+
+    let mut inspect_instance = |inst: &crate::vm::object::ObjInstance| {
+      let class = inst.class.as_class();
+      for (name, &slot) in &class.field_slots {
+        if let Some(cell) = inst.fields.get(slot as usize) {
+          let v = cell.get();
+          if v.is_number() {
+            seen_numeric.insert(name.clone());
+          } else if !v.is_nil() {
+            seen_non_numeric.insert(name.clone());
+          }
+        }
+      }
+    };
+
+    let mut inspect_value = |v: Value| {
+      if v.is_instance() {
+        inspect_instance(v.as_instance());
+      } else if v.is_obj() {
+        unsafe {
+          if let crate::vm::object::Obj::List(l) = &*v.as_obj() {
+            let list = l.borrow();
+            for i in 0..list.len() {
+              if let Some(elem) = list.get(i) {
+                if elem.is_instance() {
+                  inspect_instance(elem.as_instance());
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    for cell in &self.global_slots {
+      inspect_value(cell.get());
+    }
+
+    if let Some(mval) = proto.globals_module {
+      if mval.is_module() {
+        for cell in &mval.as_module().namespace.slots {
+          inspect_value(cell.get());
+        }
+      }
+    }
+
+    for val in &self.registers {
+      inspect_value(*val);
+    }
+
+    seen_numeric
+      .into_iter()
+      .filter(|name| !seen_non_numeric.contains(name))
+      .collect()
+  }
+
+  fn snapshot_global_lists(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
+    let mut out = rustc_hash::FxHashSet::default();
+    for instr in &proto.chunk.code {
+      if let crate::vm::chunk::Instr::GetGlobal { name_const, .. } = instr
+        && let Some(v) = proto.chunk.constants.get(*name_const as usize)
+        && v.is_string()
+      {
+        let s = v.as_str();
+        if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, s) {
+          let resolved = self.read_resolved(proto.globals_module, is_root, slot);
+          if resolved.is_obj()
+            && unsafe { matches!(&*resolved.as_obj(), crate::vm::object::Obj::List(_)) }
+          {
+            out.insert(s.to_string());
+          }
+        }
+      }
+    }
+    out
+  }
+
   /// Resolves the class a method's `self` is guaranteed to be an instance
   /// of, then maps every field name safe to read/write on it directly (no
   /// `BoundMethod`-wrapping risk) to its slot index. `None` for a
@@ -1941,9 +2021,11 @@ impl VM {
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
       self_numeric_fields: self.resolve_self_numeric_fields(proto),
+      numeric_fields: self.resolve_all_numeric_fields(proto),
       param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
       globals_snapshot: self.snapshot_globals(proto),
+      global_lists: self.snapshot_global_lists(proto),
       speculative_lists,
     };
 

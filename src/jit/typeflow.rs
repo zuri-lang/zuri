@@ -321,6 +321,7 @@ pub fn analyze(
   speculative_params: Option<u64>,
   speculative_regs: Option<SpeculativeRegs>,
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
+  numeric_fields: &rustc_hash::FxHashSet<String>,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -422,6 +423,7 @@ pub fn analyze(
         &global_indices,
         &mutable_globals,
         self_numeric_fields,
+        numeric_fields,
       )
     })
     .collect();
@@ -461,6 +463,7 @@ pub fn analyze(
         &global_indices,
         &mutable_globals,
         self_numeric_fields,
+        numeric_fields,
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -738,11 +741,32 @@ impl ListFacts {
   }
 }
 
-fn transfer_list(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
+fn transfer_list(
+  in_set: &RegSet,
+  instr: &Instr,
+  proto: &ObjFunction,
+  global_lists: &rustc_hash::FxHashSet<String>,
+) -> RegSet {
   let mut out = in_set.clone();
   match *instr {
     Instr::MakeList { dst, .. } => out.set(dst, true),
     Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+
+    Instr::GetGlobal { dst, name_const } => {
+      let is_list = proto
+        .chunk
+        .constants
+        .get(name_const as usize)
+        .and_then(|v| {
+          if v.is_string() {
+            Some(global_lists.contains(v.as_str()))
+          } else {
+            None
+          }
+        })
+        .unwrap_or(false);
+      out.set(dst, is_list);
+    },
 
     // `[x] * n` (list-repeat); the ONLY other instruction that can
     // produce a list, and only when its left operand already is one;
@@ -921,17 +945,27 @@ pub fn analyze_list(
   proto: &ObjFunction,
   preds: &[Vec<usize>],
   speculative_lists: Option<u64>,
+  global_lists: &rustc_hash::FxHashSet<String>,
 ) -> ListFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
 
   let has_speculative = speculative_lists.map_or(false, |m| m != 0);
   let has_list_source = has_speculative
+    || !global_lists.is_empty()
     || code.iter().any(|i| match i {
       Instr::MakeList { .. } => true,
       Instr::CheckParamType { check_idx, .. } => {
         let check = &proto.chunk.param_checks[*check_idx as usize];
         !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::List)
+      },
+      Instr::GetGlobal { name_const, .. } => {
+        proto
+          .chunk
+          .constants
+          .get(*name_const as usize)
+          .and_then(|v| if v.is_string() { Some(global_lists.contains(v.as_str())) } else { None })
+          .unwrap_or(false)
       },
       _ => false,
     });
@@ -964,7 +998,7 @@ pub fn analyze_list(
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
-    .map(|ip| transfer_list(&entry[ip], &code[ip], proto))
+    .map(|ip| transfer_list(&entry[ip], &code[ip], proto, global_lists))
     .collect();
 
   while let Some(ip) = worklist.pop() {
@@ -985,7 +1019,7 @@ pub fn analyze_list(
 
     if new_in != entry[ip] {
       entry[ip] = new_in;
-      out[ip] = transfer_list(&entry[ip], &code[ip], proto);
+      out[ip] = transfer_list(&entry[ip], &code[ip], proto, global_lists);
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
@@ -1605,6 +1639,7 @@ fn transfer(
   global_indices: &rustc_hash::FxHashMap<u16, usize>,
   mutable_globals: &rustc_hash::FxHashSet<usize>,
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
+  numeric_fields: &rustc_hash::FxHashSet<String>,
 ) -> RegSet {
   let mut out = in_set.clone();
   match *instr {
@@ -1749,22 +1784,22 @@ fn transfer(
       obj,
       name_const,
     } => {
-      let is_numeric_field = if obj == 0 && proto.is_method {
-        proto
-          .chunk
-          .constants
-          .get(name_const as usize)
-          .and_then(|v| {
-            if v.is_string() {
-              Some(self_numeric_fields.contains(v.as_str()))
-            } else {
-              None
-            }
-          })
-          .unwrap_or(false)
-      } else {
-        false
-      };
+      let is_numeric_field = proto
+        .chunk
+        .constants
+        .get(name_const as usize)
+        .and_then(|v| {
+          if v.is_string() {
+            let name = v.as_str();
+            Some(
+              (obj == 0 && proto.is_method && self_numeric_fields.contains(name))
+                || numeric_fields.contains(name),
+            )
+          } else {
+            None
+          }
+        })
+        .unwrap_or(false);
       let speculated = dst < 64 && (spec_regs >> dst) & 1 != 0;
       out.set(dst, is_numeric_field || speculated);
     },
@@ -2478,6 +2513,7 @@ mod ref_classify_tests {
       None,
       None,
       &rustc_hash::FxHashSet::default(),
+      &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);
     assert!(refs.is_never_ref(2, 0));
@@ -2508,6 +2544,7 @@ mod ref_classify_tests {
       &build_predecessors(&f),
       None,
       None,
+      &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);
@@ -2540,6 +2577,7 @@ mod ref_classify_tests {
       &build_predecessors(&f),
       None,
       None,
+      &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);
@@ -2576,6 +2614,7 @@ mod ref_classify_tests {
       None,
       None,
       &rustc_hash::FxHashSet::default(),
+      &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);
     assert!(
@@ -2611,6 +2650,7 @@ mod ref_classify_tests {
       &build_predecessors(&f),
       None,
       None,
+      &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);
@@ -2653,6 +2693,7 @@ mod ref_classify_tests {
       None,
       None,
       &rustc_hash::FxHashSet::default(),
+      &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);
     assert!(
@@ -2679,6 +2720,7 @@ mod ref_classify_tests {
       None,
       None,
       &rustc_hash::FxHashSet::default(),
+      &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);
     assert!(!refs.is_never_ref(2, 0), "MakeList always allocates a ref");
@@ -2701,6 +2743,7 @@ mod ref_classify_tests {
       &build_predecessors(&f),
       None,
       None,
+      &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
     );
     let refs = classify_refs(&f, &types);

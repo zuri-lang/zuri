@@ -800,7 +800,10 @@ struct FuncCompiler<'a, 'b> {
   /// struct's other per-body state), so it's identical for both the
   /// general and specialized body if this compile has one.
   proven_param_shapes: FxHashMap<u8, ParamShape>,
-  guarded_instances: FxHashMap<u8, (IrValue, IrValue)>,
+  numeric_fields: rustc_hash::FxHashSet<String>,
+  global_lists: rustc_hash::FxHashSet<String>,
+  guarded_instance_vars: FxHashMap<u8, (Variable, Variable, Variable)>,
+  active_guarded: rustc_hash::FxHashSet<u8>,
   shutdown: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
@@ -1152,9 +1155,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // re-checks every bet against the actual value and deopts on a
     // mismatch.
     let no_self_numeric_fields = rustc_hash::FxHashSet::default();
-    let type_facts = typeflow::analyze(proto, &preds, None, None, &no_self_numeric_fields);
+    let type_facts = typeflow::analyze(
+      proto,
+      &preds,
+      None,
+      None,
+      &no_self_numeric_fields,
+      &facts.numeric_fields,
+    );
     let int_facts = typeflow::analyze_int(proto, &preds);
-    let list_facts = typeflow::analyze_list(proto, &preds, None);
+    let list_facts = typeflow::analyze_list(proto, &preds, None, &facts.global_lists);
     let string_facts = typeflow::analyze_string(proto, &preds);
     let bool_facts = typeflow::analyze_bool(proto, &preds);
     let const_facts = typeflow::analyze_const(proto, &preds);
@@ -1200,6 +1210,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       liveness,
       self_field_slots: facts.self_field_slots,
       self_numeric_fields: facts.self_numeric_fields,
+      numeric_fields: facts.numeric_fields,
+      global_lists: facts.global_lists,
       param_field_slots: facts.param_field_slots,
       own_func_id,
       self_class_bits: facts.self_class_bits,
@@ -1213,7 +1225,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .iter()
         .any(|i| matches!(i, Instr::Closure { .. })),
       proven_param_shapes: Self::compute_proven_shapes(proto),
-      guarded_instances: FxHashMap::default(),
+      guarded_instance_vars: FxHashMap::default(),
+      active_guarded: rustc_hash::FxHashSet::default(),
       shutdown,
     }
   }
@@ -1256,6 +1269,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   #[inline]
   fn both_proven_int(&self, ip: usize, a: u8, b: u8) -> bool {
     self.proven_int(ip, a) && self.proven_int(ip, b)
+  }
+
+  fn maybe_clear_guarded_instances(&mut self, ip: usize) {
+    if ip == 0 || self.preds[ip].len() != 1 || self.preds[ip][0] != ip - 1 {
+      self.active_guarded.clear();
+      return;
+    }
+    let prev = self.proto.chunk.code[ip - 1];
+    if matches!(
+      prev,
+      Instr::Call { .. }
+        | Instr::InvokeSuper { .. }
+        | Instr::Return { .. }
+    ) {
+      self.active_guarded.clear();
+      return;
+    }
+    if let Instr::Invoke { method_const, .. } = prev {
+      let name = self.method_name(method_const);
+      if NumberIntrinsic::of(name).is_none() {
+        self.active_guarded.clear();
+        return;
+      }
+    }
+    if let Some(dst) = typeflow::any_dst(&prev) {
+      self.active_guarded.remove(&dst);
+    }
   }
 
   /// `Instr::Div { dst, a, b }`'s strength-reduction check: is `b`'s
@@ -1379,6 +1419,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
       self.entry_reg_values.push(v);
     }
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    for r in 0..num_regs as u8 {
+      let ptr_v = self.fb.declare_var(types::I64);
+      let f_ptr_v = self.fb.declare_var(types::I64);
+      let cls_v = self.fb.declare_var(types::I64);
+      self.fb.def_var(ptr_v, zero);
+      self.fb.def_var(f_ptr_v, zero);
+      self.fb.def_var(cls_v, zero);
+      self.guarded_instance_vars.insert(r, (ptr_v, f_ptr_v, cls_v));
+    }
     self.f64_canonical = self.compute_f64_canonical(&self.type_facts);
 
     let flags_init = cranelift_codegen::ir::MemFlagsData::trusted();
@@ -1421,6 +1471,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         || self.speculative_regs.is_some()
         || self.speculative_lists.is_some()
         || !self.self_numeric_fields.is_empty()
+        || !self.numeric_fields.is_empty()
       {
         let blocks = (0..self.blocks.len())
           .map(|_| self.fb.create_block())
@@ -1431,6 +1482,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.speculative_params,
           self.speculative_regs,
           &self.self_numeric_fields,
+          &self.numeric_fields,
         );
         Some((blocks, facts))
       } else {
@@ -1456,6 +1508,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
 
     // Pass 1: the general body.
+    self.active_guarded.clear();
     for ip in 0..self.blocks.len() {
       if let Some(shutdown) = self.shutdown {
         if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1463,7 +1516,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
       }
       self.fb.switch_to_block(self.blocks[ip]);
-      self.guarded_instances.clear();
+      self.maybe_clear_guarded_instances(ip);
       let instr = self.proto.chunk.code[ip];
       let terminated = self.emit_instruction(ip, instr);
       if !terminated {
@@ -1476,7 +1529,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Pass 2: the specialized body, if any.
     if let Some((spec_blocks, spec_facts)) = specialized {
       self.type_facts = spec_facts;
-      self.list_facts = typeflow::analyze_list(self.proto, &self.preds, self.speculative_lists);
+      self.list_facts = typeflow::analyze_list(
+        self.proto,
+        &self.preds,
+        self.speculative_lists,
+        &self.global_lists,
+      );
       // The specialized facts prove strictly more than the general
       // ones, so this body typically gets more canonical registers;
       // recompute rather than carrying pass 1's answer over. See
@@ -1484,6 +1542,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.f64_canonical = self.compute_f64_canonical(&self.type_facts);
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       let code_len = self.blocks.len();
+      self.active_guarded.clear();
       for ip in 0..code_len {
         if let Some(shutdown) = self.shutdown {
           if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1491,7 +1550,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
         }
         self.fb.switch_to_block(self.blocks[ip]);
-        self.guarded_instances.clear();
+        self.maybe_clear_guarded_instances(ip);
         let instr = self.proto.chunk.code[ip];
         let terminated = self.emit_instruction(ip, instr);
         if terminated {
@@ -5228,14 +5287,56 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// cache for the next time round.
   fn emit_ic_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, cache: IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-    if let Some(&(_ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
+    if self.active_guarded.contains(&obj) {
+      let (_ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
+      let fields_ptr = self.fb.use_var(fields_ptr_var);
+      let guarded_class = self.fb.use_var(class_var);
+      let cached_class = self.fb.ins().load(types::I64, flags, cache, 0);
+      let not_zero = self.fb.ins().icmp_imm_u(IntCC::NotEqual, guarded_class, 0);
+      let same_class = self.fb.ins().icmp(IntCC::Equal, guarded_class, cached_class);
+      let guard_ok = self.fb.ins().band(not_zero, same_class);
+
+      let slow_block = self.fb.create_block();
+      let done_block = self.fb.create_block();
+      let hit_block = self.fb.create_block();
+      self.fb.ins().brif(guard_ok, hit_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(hit_block);
       let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
       let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
       let v = self.fb.ins().load(types::I64, flags, addr, 0);
+
+      if self.proven_numeric(ip, dst) {
+        let is_num = self.is_number(v);
+        let num_ok_block = self.fb.create_block();
+        self.fb.ins().brif(is_num, num_ok_block, &[], slow_block, &[]);
+        self.fb.switch_to_block(num_ok_block);
+      }
       self.store_reg(dst, v);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(slow_block);
+      let zero = self.i64c(0);
+      self.fb.def_var(class_var, zero);
+      let base = self.base_param;
+      let dst_i = self.idx(dst);
+      let obj_i = self.idx(obj);
+      let name = self.bake_const(name_const);
+      let func_ptr = self.func_ptr_const();
+      let ip_c = self.u64c(ip as u64);
+      self.call_checked(
+        "zuri_jit_get_field",
+        &[self.vm_param, base, dst_i, obj_i, name, func_ptr, ip_c],
+      );
+      self.resync_dst_from_memory(dst);
+      self.resync_receiver_from_memory(obj);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(done_block);
       return;
     }
 
+    let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
     let recv = self.load_reg(obj);
 
     let slow_block = self.fb.create_block();
@@ -5243,13 +5344,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
     let fields_ptr = self.load_instance_fields_ptr(ptr);
-    self.guarded_instances.insert(obj, (ptr, fields_ptr));
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
+    self.fb.def_var(ptr_var, ptr);
+    self.fb.def_var(fields_ptr_var, fields_ptr);
+    self.fb.def_var(class_var, class_bits);
+
     let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
     let v = self.fb.ins().load(types::I64, flags, addr, 0);
+
+    if self.proven_numeric(ip, dst) {
+      let is_num = self.is_number(v);
+      let num_ok_block = self.fb.create_block();
+      self.fb.ins().brif(is_num, num_ok_block, &[], slow_block, &[]);
+      self.fb.switch_to_block(num_ok_block);
+    }
     self.store_reg(dst, v);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
+    let zero = self.i64c(0);
+    self.fb.def_var(class_var, zero);
     let base = self.base_param;
     let dst_i = self.idx(dst);
     let obj_i = self.idx(obj);
@@ -5265,6 +5380,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.active_guarded.insert(obj);
   }
 
   /// Re-reads a fast-path field access's RECEIVER register from memory
@@ -5301,7 +5417,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let src_val = self.load_reg(src);
 
-    if let Some(&(ptr, fields_ptr)) = self.guarded_instances.get(&obj) {
+    if self.active_guarded.contains(&obj) {
+      let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
+      let ptr = self.fb.use_var(ptr_var);
+      let fields_ptr = self.fb.use_var(fields_ptr_var);
+      let guarded_class = self.fb.use_var(class_var);
+      let cached_class = self.fb.ins().load(types::I64, flags, cache, 0);
+      let not_zero = self.fb.ins().icmp_imm_u(IntCC::NotEqual, guarded_class, 0);
+      let same_class = self.fb.ins().icmp(IntCC::Equal, guarded_class, cached_class);
+      let guard_ok = self.fb.ins().band(not_zero, same_class);
+
+      let slow_block = self.fb.create_block();
+      let done_block = self.fb.create_block();
+      let hit_block = self.fb.create_block();
+      self.fb.ins().brif(guard_ok, hit_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(hit_block);
       let byte_offset = self.fb.ins().load(types::I64, flags, cache, 8);
       let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
       self.fb.ins().store(flags, src_val, addr, 0);
@@ -5318,9 +5449,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.fb.ins().jump(pass_block, &[]);
         self.fb.switch_to_block(pass_block);
       }
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(slow_block);
+      let zero = self.i64c(0);
+      self.fb.def_var(class_var, zero);
+      let base = self.base_param;
+      let obj_i = self.idx(obj);
+      let name = self.bake_const(name_const);
+      let src_i = self.idx(src);
+      let func_ptr = self.func_ptr_const();
+      let ip_c = self.u64c(ip as u64);
+      self.call_checked(
+        "zuri_jit_set_field",
+        &[self.vm_param, base, obj_i, name, src_i, func_ptr, ip_c],
+      );
+      self.resync_receiver_from_memory(obj);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(done_block);
       return;
     }
 
+    let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
     let recv = self.load_reg(obj);
 
     let slow_block = self.fb.create_block();
@@ -5328,7 +5479,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let (ptr, byte_offset) = self.emit_ic_guard(obj, recv, cache, slow_block);
     let fields_ptr = self.load_instance_fields_ptr(ptr);
-    self.guarded_instances.insert(obj, (ptr, fields_ptr));
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
+    self.fb.def_var(ptr_var, ptr);
+    self.fb.def_var(fields_ptr_var, fields_ptr);
+    self.fb.def_var(class_var, class_bits);
+
     let addr = self.fb.ins().iadd(fields_ptr, byte_offset);
     self.fb.ins().store(flags, src_val, addr, 0);
     if !self.proven_numeric(ip, src) {
@@ -5347,6 +5503,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
+    let zero = self.i64c(0);
+    self.fb.def_var(class_var, zero);
     let base = self.base_param;
     let obj_i = self.idx(obj);
     let name = self.bake_const(name_const);
@@ -5361,6 +5519,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+    self.active_guarded.insert(obj);
   }
 
   /// `Instr::Invoke`'s ordinary codegen: the compiled-method fast call

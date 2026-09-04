@@ -321,9 +321,11 @@ pub enum ResolvedGlobal {
 pub struct CompileFacts {
   pub self_field_slots: FxHashMap<String, u16>,
   pub self_numeric_fields: rustc_hash::FxHashSet<String>,
+  pub numeric_fields: rustc_hash::FxHashSet<String>,
   pub param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
   pub self_class_bits: Option<(u64, u64)>,
   pub globals_snapshot: FxHashMap<String, ResolvedGlobal>,
+  pub global_lists: rustc_hash::FxHashSet<String>,
   pub speculative_lists: Option<u64>,
 }
 
