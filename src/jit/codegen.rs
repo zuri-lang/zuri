@@ -3415,14 +3415,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .declare_func_in_func(self.own_func_id, self.fb.func);
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
-    self.flush_live(self.current_ip);
+    let is_alloc_free = self.is_self_allocation_free();
+    if !is_alloc_free {
+      self.flush_live(self.current_ip);
+    }
     let call = self.fb.ins().call(
       func_ref,
       &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3],
     );
     let ret_bits = self.fb.inst_results(call)[0];
-    self.reload_live(self.current_ip);
-    self.refresh_regs();
+    if !is_alloc_free {
+      self.reload_live(self.current_ip);
+      self.refresh_regs();
+    }
     self.emit_inline_frame_finish(dst, new_base, ret_bits);
     self.fb.ins().jump(done_block, &[]);
 
@@ -4685,14 +4690,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .declare_func_in_func(self.own_func_id, self.fb.func);
       let neg1 = self.fb.ins().iconst(types::I32, -1);
       let [a0, a1, a2, a3] = self.load_call_arg_values(obj + 1, num_args + 1);
-      self.flush_live(ip);
+      let is_alloc_free = self.is_self_allocation_free();
+      if !is_alloc_free {
+        self.flush_live(ip);
+      }
       let call = self.fb.ins().call(
         func_ref,
         &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3],
       );
       let ret_bits = self.fb.inst_results(call)[0];
-      self.reload_live(ip);
-      self.refresh_regs();
+      if !is_alloc_free {
+        self.reload_live(ip);
+        self.refresh_regs();
+      }
       self.emit_inline_frame_finish(dst, new_base, ret_bits);
       self.fb.ins().jump(done_block, &[]);
     }
@@ -9234,6 +9244,66 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let start = target_ip.min(current_ip);
     let end = target_ip.max(current_ip);
     (start..=end).any(|ip| self.is_allocating_instr(ip))
+  }
+
+  /// Whether this function's body is completely allocation-free and GC-free:
+  /// it allocates no heap objects, accesses no globals, performs no I/O,
+  /// raises no errors, and only ever makes self-calls back to this function.
+  /// When this holds, native self-invocations can safely skip flushing and
+  /// reloading live registers to/from `VM::registers`, because GC will never
+  /// inspect the caller's frame and Cranelift preserves SSA variables across
+  /// native calls.
+  fn is_self_allocation_free(&self) -> bool {
+    if !self.proto.upvalues.is_empty() {
+      return false;
+    }
+    for (ip, instr) in self.proto.chunk.code.iter().enumerate() {
+      match instr {
+        Instr::MakeList { .. }
+        | Instr::MakeDict { .. }
+        | Instr::MakeClass { .. }
+        | Instr::Closure { .. }
+        | Instr::Concat { .. }
+        | Instr::Import { .. }
+        | Instr::ImportAll { .. }
+        | Instr::MakeRange { .. }
+        | Instr::GetSlice { .. }
+        | Instr::MakePromoted { .. }
+        | Instr::InvokeSuper { .. }
+        | Instr::CallSuperCtor { .. }
+        | Instr::SetGlobal { .. }
+        | Instr::AssignGlobal { .. }
+        | Instr::GetGlobal { .. }
+        | Instr::Print { .. }
+        | Instr::Raise { .. } => return false,
+        Instr::LoadConst { const_idx, .. } => {
+          if let Some(c) = self.proto.chunk.constants.get(*const_idx as usize) {
+            if !c.is_number() && !c.is_nil() && !c.is_bool() {
+              return false;
+            }
+          }
+        },
+        Instr::Call { .. } => {
+          match self.call_targets.get(&ip) {
+            Some(CallTarget::SelfRecursive) => continue,
+            Some(CallTarget::Known { proto_ptr, .. }) => {
+              if *proto_ptr as *const ObjFunction == self.proto as *const ObjFunction {
+                continue;
+              }
+            }
+            _ => {},
+          }
+          return false;
+        },
+        Instr::Invoke { method_const, .. } => {
+          if self.self_invoke_target(*method_const).is_none() {
+            return false;
+          }
+        },
+        _ => {},
+      }
+    }
+    true
   }
 
   /// A safepoint that asks about signals only, for a loop whose body
