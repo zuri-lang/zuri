@@ -939,7 +939,13 @@ fn transfer_bool(in_set: &RegSet, instr: &Instr) -> RegSet {
     | Instr::Lt { dst, .. }
     | Instr::Le { dst, .. }
     | Instr::Gt { dst, .. }
-    | Instr::Ge { dst, .. } => out.set(dst, true),
+    | Instr::Ge { dst, .. }
+    | Instr::EqImm { dst, .. }
+    | Instr::NeqImm { dst, .. }
+    | Instr::LtImm { dst, .. }
+    | Instr::LeImm { dst, .. }
+    | Instr::GtImm { dst, .. }
+    | Instr::GeImm { dst, .. } => out.set(dst, true),
 
     Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
 
