@@ -974,6 +974,11 @@ impl FieldStorage {
     }
   }
 
+  #[inline]
+  pub fn is_inline(&self) -> bool {
+    self.ptr.is_null()
+  }
+
   pub fn as_fields_ptr(&self) -> *const Cell<Value> {
     if self.ptr.is_null() {
       self.inline.as_ptr()
@@ -2736,6 +2741,14 @@ impl Heap {
     for chunk in self.nursery_chunks.iter_mut() {
       for gcbox in chunk.slots.iter_mut() {
         if !gcbox.marked.get() {
+          if let Obj::Instance(instance) = &gcbox.obj
+            && instance.fields.is_inline()
+          {
+            freed_bytes += std::mem::size_of::<Obj>()
+              + (instance.fields.len as usize) * std::mem::size_of::<Cell<Value>>();
+            freed_count += 1;
+            continue;
+          }
           freed_bytes += Self::approx_size(&gcbox.obj);
           // SAFETY: never forwarded (checked above), so `obj` was
           // never moved out before now; this is its one and only

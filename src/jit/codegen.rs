@@ -3014,6 +3014,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// re-resolves everything itself and is still correct.
   fn emit_construct_known(
     &mut self,
+    ip: usize,
     dst: u8,
     func: u8,
     num_args: u8,
@@ -3089,6 +3090,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // SAFETY: `proto_ptr` names a live, old-generation `ObjFunction` --
     // see `CallTarget::ConstructKnown::proto_ptr`'s own docs.
     let ctor_proto = unsafe { &*(proto_ptr as *const ObjFunction) };
+    let simple_ctor_param_slots = self
+      .construct_info
+      .get(&ip)
+      .and_then(|info| info.simple_ctor_param_slots.clone());
     if ctor_proto.variadic || (num_args as u16 + 1) != ctor_proto.arity as u16 {
       let prepare = self.call_helper(
         "zuri_jit_construct_prepare",
@@ -3134,6 +3139,32 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.refresh_regs();
       self.call_checked("zuri_jit_new_finish", &[vm_p, base, dst_i, new_base]);
       self.resync_dst_from_memory(dst);
+      self.fb.ins().jump(done_block, &[]);
+    } else if let Some(param_slots) = simple_ctor_param_slots {
+      let instance_val = self.call_helper_raw(
+        "zuri_jit_alloc_instance_fast",
+        &[vm_p, target_class, field_count_v],
+      );
+      let instance_ptr = self.obj_ptr(instance_val);
+      let fields_ptr = if field_count <= object::INLINE_FIELDS as u16 {
+        self
+          .fb
+          .ins()
+          .iadd_imm_s(instance_ptr, object::obj_instance_fields_inline_offset() as i64)
+      } else {
+        self.load_instance_fields_ptr(instance_ptr)
+      };
+      let trusted = cranelift_codegen::ir::MemFlagsData::trusted();
+      for (param, &field_slot) in param_slots.iter().enumerate() {
+        if param < num_args as usize {
+          let arg_val = self.load_reg(func + 1 + param as u8);
+          self
+            .fb
+            .ins()
+            .store(trusted, arg_val, fields_ptr, (field_slot as i32) * 8);
+        }
+      }
+      self.store_reg(dst, instance_val);
       self.fb.ins().jump(done_block, &[]);
     } else {
       // Fully-inline path: see `emit_inline_construct`'s own docs.
@@ -8465,6 +8496,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               return false;
             }
             self.emit_construct_known(
+              ip,
               dst,
               func,
               num_args,
