@@ -322,6 +322,7 @@ pub fn analyze(
   speculative_regs: Option<SpeculativeRegs>,
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
   numeric_fields: &rustc_hash::FxHashSet<String>,
+  int_facts: Option<&IntFacts>,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -416,6 +417,7 @@ pub fn analyze(
     .map(|ip| {
       transfer(
         &entry[ip],
+        ip,
         &code[ip],
         proto,
         spec_regs,
@@ -424,6 +426,7 @@ pub fn analyze(
         &mutable_globals,
         self_numeric_fields,
         numeric_fields,
+        int_facts,
       )
     })
     .collect();
@@ -456,6 +459,7 @@ pub fn analyze(
       entry[ip] = new_in;
       out[ip] = transfer(
         &entry[ip],
+        ip,
         &code[ip],
         proto,
         spec_regs,
@@ -464,6 +468,7 @@ pub fn analyze(
         &mutable_globals,
         self_numeric_fields,
         numeric_fields,
+        int_facts,
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -509,6 +514,7 @@ pub fn analyze(
 /// runtime fallback is needed anywhere here for soundness.
 pub struct IntFacts {
   entry: Vec<RegSet>,
+  list_entry: Vec<RegSet>,
 }
 
 impl IntFacts {
@@ -516,26 +522,54 @@ impl IntFacts {
   pub fn is_int(&self, ip: usize, r: u8) -> bool {
     self.entry[ip].get(r)
   }
+
+  #[inline]
+  pub fn is_int_list(&self, ip: usize, r: u8) -> bool {
+    self.list_entry[ip].get(r)
+  }
 }
 
-fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
-  let mut out = in_set.clone();
+fn transfer_int(
+  in_int: &RegSet,
+  in_list: &RegSet,
+  instr: &Instr,
+  proto: &ObjFunction,
+) -> (RegSet, RegSet) {
+  let mut out_int = in_int.clone();
+  let mut out_list = in_list.clone();
+
   match *instr {
     Instr::LoadConst { dst, const_idx } => {
       let c = &proto.chunk.constants[const_idx as usize];
-      out.set(dst, c.is_number() && c.as_number().fract() == 0.0);
+      out_int.set(dst, c.is_number() && c.as_number().fract() == 0.0);
+      out_list.set(dst, false);
     },
-    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
-    Instr::Neg { dst, src } => out.set(dst, in_set.get(src)),
+    Instr::Move { dst, src } => {
+      out_int.set(dst, in_int.get(src));
+      out_list.set(dst, in_list.get(src));
+    },
+    Instr::Neg { dst, src } => {
+      out_int.set(dst, in_int.get(src));
+      out_list.set(dst, false);
+    },
 
     // See `IntFacts`'s own docs: sound at every magnitude, no overflow
     // check needed.
+    Instr::Mul { dst, a, b } => {
+      if in_list.get(a) {
+        out_list.set(dst, true);
+        out_int.set(dst, false);
+      } else {
+        out_int.set(dst, in_int.get(a) && in_int.get(b));
+        out_list.set(dst, false);
+      }
+    },
     Instr::Add { dst, a, b }
     | Instr::Sub { dst, a, b }
-    | Instr::Mul { dst, a, b }
     | Instr::Floor { dst, a, b }
     | Instr::Mod { dst, a, b } => {
-      out.set(dst, in_set.get(a) && in_set.get(b));
+      out_int.set(dst, in_int.get(a) && in_int.get(b));
+      out_list.set(dst, false);
     },
     Instr::AddImm { dst, a, imm_const }
     | Instr::SubImm { dst, a, imm_const }
@@ -544,7 +578,8 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
         .as_number()
         .fract()
         == 0.0;
-      out.set(dst, imm_is_int && in_set.get(a));
+      out_int.set(dst, imm_is_int && in_int.get(a));
+      out_list.set(dst, false);
     },
 
     // A bitwise op's result is a whole number BY DEFINITION of what
@@ -559,7 +594,10 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
     | Instr::BitShl { dst, .. }
     | Instr::BitShr { dst, .. }
     | Instr::BitUshr { dst, .. }
-    | Instr::BitNot { dst, .. } => out.set(dst, true),
+    | Instr::BitNot { dst, .. } => {
+      out_int.set(dst, true);
+      out_list.set(dst, false);
+    },
 
     // A parameter checked as EXACTLY `int` (not the wider `number`,
     // which also admits fractional values) is provably whole on every
@@ -568,34 +606,82 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
       let check = &proto.chunk.param_checks[check_idx as usize];
       let all_int =
         !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Int);
-      out.set(reg, all_int);
+      out_int.set(reg, all_int);
+      out_list.set(reg, false);
     },
 
-    // Everything else that writes a register either never produces a
-    // number at all (comparisons, `Concat`, `LoadNil`/`LoadBool`, ...)
-    // or isn't provably whole even when it IS numeric (`Div`/`Pow`/
-    // `Floor`/`Mod`, a `Call`/`GetField`/`GetIndex` result, ...); same
-    // conservative treatment `transfer`'s own numeric analysis gives
-    // these, just narrower since "numeric" doesn't imply "whole".
-    //
-    // `any_dst`, not `conservative_dst`/`comparison_or_never_numeric_dst`
-    //; those two are each a curated SUBSET (originally written to
-    // cover only the arms this match already handles explicitly above),
-    // so any instruction outside both lists AND outside this match's own
-    // explicit arms (e.g. `Div`, or a plain `LoadConst` of a fractional
-    // number) fell through doing nothing at all, leaving `out[dst]`
-    // holding whatever it was BEFORE this instruction overwrote the
-    // register; a real "must" analysis unsoundness whenever the
-    // register allocator reuses a whole-number-proven register for one
-    // of these. `any_dst` is a genuine superset covering every `Instr`
-    // that writes a register at all, so nothing can slip through here.
+    Instr::MakeList { dst, start, count } => {
+      out_int.set(dst, false);
+      let all_int = count > 0 && (0..count).all(|offset| in_int.get(start + offset));
+      out_list.set(dst, all_int);
+    },
+
+    Instr::SetIndex { obj, idx: _, src } => {
+      if !in_int.get(src) {
+        out_list.set(obj, false);
+      }
+    },
+
+    Instr::GetIndex { dst, obj, .. } => {
+      out_int.set(dst, in_list.get(obj));
+      out_list.set(dst, false);
+    },
+
+    Instr::SetGlobal { src, .. }
+    | Instr::AssignGlobal { src, .. }
+    | Instr::SetUpval { src, .. } => {
+      if in_list.get(src) {
+        out_list.set(src, false);
+      }
+    },
+
+    Instr::Invoke {
+      dst,
+      obj,
+      method_const,
+      num_args,
+    } => {
+      let method_name = proto
+        .chunk
+        .constants
+        .get(method_const as usize)
+        .and_then(|v| if v.is_string() { Some(v.as_str()) } else { None })
+        .unwrap_or("");
+      if (method_name == "max" || method_name == "min") && num_args == 1 {
+        let arg_reg = obj + 2;
+        out_int.set(dst, in_int.get(obj) && in_int.get(arg_reg));
+      } else {
+        out_int.set(dst, false);
+        if !matches!(
+          method_name,
+          "abs" | "sign" | "floor" | "ceil" | "trunc" | "round" | "sqrt" | "to_number"
+        ) {
+          for w in &mut out_list.words {
+            *w = 0;
+          }
+        }
+      }
+      out_list.set(dst, false);
+    },
+
+    Instr::Call { dst, .. }
+    | Instr::InvokeSuper { dst, .. }
+    | Instr::CallSuperCtor { dst, .. } => {
+      out_int.set(dst, false);
+      for w in &mut out_list.words {
+        *w = 0;
+      }
+      out_list.set(dst, false);
+    },
+
     _ => {
       if let Some(dst) = any_dst(instr) {
-        out.set(dst, false);
+        out_int.set(dst, false);
+        out_list.set(dst, false);
       }
     },
   }
-  out
+  (out_int, out_list)
 }
 
 /// Runs the whole-number analysis: see `IntFacts`'s own docs. No
@@ -609,18 +695,6 @@ fn transfer_int(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
 /// re-verification this whole analysis exists to avoid paying for).
 /// `preds`: see `analyze`'s own docs on why this takes it as a
 /// parameter instead of computing it fresh.
-///
-/// Short-circuits before the worklist the same way `analyze_list`
-/// does, and for the identical reason: if the function has no
-/// whole-number `LoadConst`, no `CheckParamType(Int)`, and no bitwise
-/// op anywhere (the only instructions `transfer_int` ever seeds
-/// `true` from; `Add`/`Sub`/`Mul`/`*Imm`/`Move` only ever PROPAGATE
-/// an existing proof, never originate one), no register can ever be
-/// proven whole on any path, so the real fixed point is trivially
-/// "nothing, anywhere". Less likely to fire than `analyze_list`'s own
-/// skip; a bare integer literal is common; but real for method
-/// bodies that are pure dispatch/field access with no arithmetic of
-/// their own at all.
 pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -654,6 +728,7 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
   if !has_int_source {
     return IntFacts {
       entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
+      list_entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
     };
   }
 
@@ -669,31 +744,46 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
     })
     .collect();
 
+  let mut list_entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
-  let mut out: Vec<RegSet> = (0..code_len)
-    .map(|ip| transfer_int(&entry[ip], &code[ip], proto))
+  let mut out: Vec<(RegSet, RegSet)> = (0..code_len)
+    .map(|ip| transfer_int(&entry[ip], &list_entry[ip], &code[ip], proto))
     .collect();
 
   while let Some(ip) = worklist.pop() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
+    let mut new_list_in = RegSet::full(num_registers);
     let mut any_pred = false;
     for &p in &preds[ip] {
-      new_in.and_assign(&out[p]);
+      new_in.and_assign(&out[p].0);
+      new_list_in.and_assign(&out[p].1);
       any_pred = true;
     }
     if !any_pred {
       new_in = RegSet::full(num_registers);
+      new_list_in = RegSet::full(num_registers);
     }
     if ip == 0 {
       new_in = RegSet::empty(num_registers);
+      new_list_in = RegSet::empty(num_registers);
     }
 
-    if new_in != entry[ip] {
+    if new_in != entry[ip] || new_list_in != list_entry[ip] {
       entry[ip] = new_in;
-      out[ip] = transfer_int(&entry[ip], &code[ip], proto);
+      list_entry[ip] = new_list_in;
+      out[ip] = transfer_int(&entry[ip], &list_entry[ip], &code[ip], proto);
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
@@ -703,7 +793,7 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
     }
   }
 
-  IntFacts { entry }
+  IntFacts { entry, list_entry }
 }
 
 //-----------------------------------------------------------------------------------
@@ -1632,6 +1722,7 @@ fn ref_transfer(
 /// says so: see `SpeculativeRegs`'s own docs.
 fn transfer(
   in_set: &RegSet,
+  ip: usize,
   instr: &Instr,
   proto: &ObjFunction,
   spec_regs: u64,
@@ -1640,6 +1731,7 @@ fn transfer(
   mutable_globals: &rustc_hash::FxHashSet<usize>,
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
   numeric_fields: &rustc_hash::FxHashSet<String>,
+  int_facts: Option<&IntFacts>,
 ) -> RegSet {
   let mut out = in_set.clone();
   match *instr {
@@ -1766,6 +1858,11 @@ fn transfer(
       }
     },
 
+    Instr::GetIndex { dst, obj, .. } => {
+      let speculated = dst < 64 && (spec_regs >> dst) & 1 != 0;
+      let from_int_list = int_facts.map(|f| f.is_int_list(ip, obj)).unwrap_or(false);
+      out.set(dst, from_int_list || speculated);
+    },
     Instr::Closure { dst, .. }
     | Instr::GetUpval { dst, .. }
     | Instr::MakeList { dst, .. }
@@ -1773,7 +1870,6 @@ fn transfer(
     | Instr::MakeClass { dst, .. }
     | Instr::Import { dst, .. }
     | Instr::MakePromoted { dst, .. }
-    | Instr::GetIndex { dst, .. }
     | Instr::GetSlice { dst, .. }
     | Instr::MakeRange { dst, .. } => {
       let speculated = dst < 64 && (spec_regs >> dst) & 1 != 0;
@@ -2514,6 +2610,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(refs.is_never_ref(2, 0));
@@ -2546,6 +2643,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(refs.is_never_ref(2, 0), "numeric constant is never a ref");
@@ -2579,6 +2677,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(
@@ -2615,6 +2714,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(
@@ -2652,6 +2752,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(
@@ -2694,6 +2795,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(
@@ -2721,6 +2823,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(!refs.is_never_ref(2, 0), "MakeList always allocates a ref");
@@ -2745,6 +2848,7 @@ mod ref_classify_tests {
       None,
       &rustc_hash::FxHashSet::default(),
       &rustc_hash::FxHashSet::default(),
+      None,
     );
     let refs = classify_refs(&f, &types);
     assert!(

@@ -281,6 +281,10 @@ enum NumberIntrinsic {
   /// `n.int()`; Rust's `as i64` cast is saturating with NaN mapping
   /// to zero, which is precisely `fcvt_to_sint_sat`'s own definition.
   Int,
+  /// `a.max(b)` inlined into Cranelift fmax.
+  Max,
+  /// `a.min(b)` inlined into Cranelift fmin.
+  Min,
   /// A direct call to the named `jit::runtime` helper: `(vm, bits)` for
   /// `arity` 0, `(vm, recv_bits, arg_bits)` for `arity` 1.
   Call { helper: &'static str, arity: u8 },
@@ -317,6 +321,7 @@ impl NumberIntrinsic {
   fn arity(self) -> u8 {
     match self {
       NumberIntrinsic::Call { arity, .. } => arity,
+      NumberIntrinsic::Max | NumberIntrinsic::Min => 1,
       _ => 0,
     }
   }
@@ -339,6 +344,8 @@ impl NumberIntrinsic {
 
       "sign" => Sign,
       "int" => Int,
+      "max" => Max,
+      "min" => Min,
 
       "sin" => Call {
         helper: "zuri_jit_num_sin",
@@ -421,14 +428,6 @@ impl NumberIntrinsic {
         arity: 0,
       },
 
-      "max" => Call {
-        helper: "zuri_jit_num_max",
-        arity: 1,
-      },
-      "min" => Call {
-        helper: "zuri_jit_num_min",
-        arity: 1,
-      },
       "atan2" => Call {
         helper: "zuri_jit_num_atan2",
         arity: 1,
@@ -804,6 +803,8 @@ struct FuncCompiler<'a, 'b> {
   global_lists: rustc_hash::FxHashSet<String>,
   guarded_instance_vars: FxHashMap<u8, (Variable, Variable, Variable)>,
   active_guarded: rustc_hash::FxHashSet<u8>,
+  guarded_list_vars: FxHashMap<u8, (Variable, Variable)>,
+  active_guarded_lists: rustc_hash::FxHashSet<u8>,
   known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
   is_specialized_pass: bool,
   active_guarded_classes: FxHashMap<u8, u64>,
@@ -1012,7 +1013,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         continue;
       }
       let r = r as u8;
-      *slot = (0..code_len).all(|ip| !self.liveness.is_live(ip, r) || facts.is_numeric(ip, r));
+      *slot = (0..code_len)
+        .all(|ip| !self.liveness.is_live(ip, r) || facts.is_numeric(ip, r) || self.int_facts.is_int(ip, r));
     }
     canonical
   }
@@ -1158,6 +1160,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // re-checks every bet against the actual value and deopts on a
     // mismatch.
     let no_self_numeric_fields = rustc_hash::FxHashSet::default();
+    let int_facts = typeflow::analyze_int(proto, &preds);
     let type_facts = typeflow::analyze(
       proto,
       &preds,
@@ -1165,8 +1168,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       None,
       &no_self_numeric_fields,
       &facts.numeric_fields,
+      Some(&int_facts),
     );
-    let int_facts = typeflow::analyze_int(proto, &preds);
     let list_facts = typeflow::analyze_list(proto, &preds, None, &facts.global_lists);
     let string_facts = typeflow::analyze_string(proto, &preds);
     let bool_facts = typeflow::analyze_bool(proto, &preds);
@@ -1230,6 +1233,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       proven_param_shapes: Self::compute_proven_shapes(proto),
       guarded_instance_vars: FxHashMap::default(),
       active_guarded: rustc_hash::FxHashSet::default(),
+      guarded_list_vars: FxHashMap::default(),
+      active_guarded_lists: rustc_hash::FxHashSet::default(),
       known_classes: facts.known_classes,
       is_specialized_pass: false,
       active_guarded_classes: FxHashMap::default(),
@@ -1239,12 +1244,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   #[inline]
   fn proven_numeric(&self, ip: usize, r: u8) -> bool {
-    self.type_facts.is_numeric(ip, r)
+    self.type_facts.is_numeric(ip, r) || self.int_facts.is_int(ip, r)
   }
 
   #[inline]
   fn proven_int(&self, ip: usize, r: u8) -> bool {
     self.int_facts.is_int(ip, r)
+  }
+
+  #[inline]
+  fn proven_int_list(&self, ip: usize, r: u8) -> bool {
+    self.int_facts.is_int_list(ip, r)
   }
 
   #[inline]
@@ -1305,6 +1315,34 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if let Some(dst) = typeflow::any_dst(&prev) {
       self.active_guarded.remove(&dst);
       self.active_guarded_classes.remove(&dst);
+    }
+  }
+
+  fn maybe_clear_guarded_lists(&mut self, ip: usize) {
+    if ip == 0 || self.preds[ip].len() != 1 || self.preds[ip][0] != ip - 1 {
+      self.active_guarded_lists.clear();
+      return;
+    }
+    let prev = self.proto.chunk.code[ip - 1];
+    if matches!(
+      prev,
+      Instr::Call { .. }
+        | Instr::InvokeSuper { .. }
+        | Instr::CallSuperCtor { .. }
+        | Instr::Return { .. }
+    ) {
+      self.active_guarded_lists.clear();
+      return;
+    }
+    if let Instr::Invoke { method_const, .. } = prev {
+      let name = self.method_name(method_const);
+      if NumberIntrinsic::of(name).is_none() {
+        self.active_guarded_lists.clear();
+        return;
+      }
+    }
+    if let Some(dst) = typeflow::any_dst(&prev) {
+      self.active_guarded_lists.remove(&dst);
     }
   }
 
@@ -1493,6 +1531,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.speculative_regs,
           &self.self_numeric_fields,
           &self.numeric_fields,
+          Some(&self.int_facts),
         );
         Some((blocks, facts))
       } else {
@@ -1825,6 +1864,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // special-cased escape hatch.
     if let Instr::MakeList { dst: list_dst, .. } = instr
       && self.scalar_lists.contains_key(&list_dst)
+    {
+      return false;
+    }
+    if let Instr::GetIndex { obj, .. } = instr
+      && self.int_facts.is_int_list(ip, obj)
     {
       return false;
     }
@@ -5928,6 +5972,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let f = self.to_f64(recv);
         let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
         let r = self.fb.ins().fcvt_from_sint(types::F64, i);
+        self.from_f64(r)
+      },
+      NumberIntrinsic::Max => {
+        let f1 = self.to_f64(recv);
+        let f2 = self.to_f64(arg.expect("max takes 1 arg"));
+        let r = self.fb.ins().fmax(f1, f2);
+        self.from_f64(r)
+      },
+      NumberIntrinsic::Min => {
+        let f1 = self.to_f64(recv);
+        let f2 = self.to_f64(arg.expect("min takes 1 arg"));
+        let r = self.fb.ins().fmin(f1, f2);
         self.from_f64(r)
       },
       NumberIntrinsic::Call { helper, .. } => {
