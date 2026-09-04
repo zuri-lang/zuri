@@ -917,18 +917,24 @@ pub fn analyze_bool(proto: &ObjFunction, preds: &[Vec<usize>]) -> BoolFacts {
   BoolFacts { entry }
 }
 
-pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
+pub fn analyze_list(
+  proto: &ObjFunction,
+  preds: &[Vec<usize>],
+  speculative_lists: Option<u64>,
+) -> ListFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
 
-  let has_list_source = code.iter().any(|i| match i {
-    Instr::MakeList { .. } => true,
-    Instr::CheckParamType { check_idx, .. } => {
-      let check = &proto.chunk.param_checks[*check_idx as usize];
-      !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::List)
-    },
-    _ => false,
-  });
+  let has_speculative = speculative_lists.map_or(false, |m| m != 0);
+  let has_list_source = has_speculative
+    || code.iter().any(|i| match i {
+      Instr::MakeList { .. } => true,
+      Instr::CheckParamType { check_idx, .. } => {
+        let check = &proto.chunk.param_checks[*check_idx as usize];
+        !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::List)
+      },
+      _ => false,
+    });
   if !has_list_source {
     return ListFacts {
       entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
@@ -940,7 +946,15 @@ pub fn analyze_list(proto: &ObjFunction, preds: &[Vec<usize>]) -> ListFacts {
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
-        RegSet::empty(num_registers)
+        let mut set = RegSet::empty(num_registers);
+        if let Some(mask) = speculative_lists {
+          for r in 0..num_registers.min(64) {
+            if (mask & (1u64 << r)) != 0 {
+              set.set(r as u8, true);
+            }
+          }
+        }
+        set
       } else {
         RegSet::full(num_registers)
       }
@@ -1257,12 +1271,10 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
   let code_len = code.len();
   let num_registers = proto.num_registers as usize;
 
-  let has_div = code.iter().any(|i| matches!(i, Instr::Div { .. }));
-  let has_numeric_const = has_div
-    && code.iter().any(|i| match i {
-      Instr::LoadConst { const_idx, .. } => proto.chunk.constants[*const_idx as usize].is_number(),
-      _ => false,
-    });
+  let has_numeric_const = code.iter().any(|i| match i {
+    Instr::LoadConst { const_idx, .. } => proto.chunk.constants[*const_idx as usize].is_number(),
+    _ => false,
+  });
   if !has_numeric_const {
     return ConstFacts {
       entry: vec![vec![ConstFact::Bottom; num_registers]; code_len],

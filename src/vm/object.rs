@@ -638,6 +638,9 @@ pub struct JitInfo {
   /// has this field to look at. Read at compile-enqueue time instead of
   /// a one-shot single-call sample: see `VM::combined_param_feedback`.
   pub numeric_feedback: Cell<u64>,
+  /// Argument-type feedback accumulated across calls for List parameters;
+  /// bit `i` is set if parameter `i` was observed to be an `Obj::List`.
+  pub list_feedback: Cell<u64>,
   /// Number of calls that have contributed to `numeric_feedback` so
   /// far. Needed because `numeric_feedback` alone can't distinguish
   /// "every call observed had numeric args" from "no call has been
@@ -675,6 +678,7 @@ impl JitInfo {
       osr_counts: RefCell::new(FxHashMap::default()),
       compiling: Cell::new(false),
       numeric_feedback: Cell::new(!0u64),
+      list_feedback: Cell::new(!0u64),
       feedback_samples: Cell::new(0),
       global_slot_cache: vec![Cell::new(-1i64); code_len].into_boxed_slice(),
     }
@@ -1775,6 +1779,41 @@ mod gcbox_layout_tests {
     let slot = unsafe { (obj as *const u8).add(obj_closure_function_offset()) as *const Value };
     assert_eq!(unsafe { *slot }.to_bits(), proto.to_bits());
   }
+
+  #[test]
+  fn inline_list_layout_matches_alloc_list() {
+    assert_eq!(std::mem::size_of::<GcBox>(), 64);
+    assert_eq!(std::mem::offset_of!(GcBox, obj), 16);
+    assert_eq!(obj_list_storage_offset(), 16);
+    assert_eq!(obj_list_ptr_offset(), 16);
+    assert_eq!(obj_list_len_offset(), 24);
+    assert_eq!(obj_list_cap_offset(), 28);
+    assert_eq!(obj_list_inline_offset(), 32);
+
+    let mut heap = Heap::default();
+    let v0 = Value::number(100.0);
+    let v1 = Value::number(200.0);
+    let list_val = heap.alloc_list(vec![v0, v1]);
+    let obj = list_val.as_obj();
+    let gcbox_ptr = Heap::gcbox_of(obj) as *const u64;
+
+    // Word 0 (bytes 0..7): live=1, marked=0, gen=Young(0), remembered=0, chunk_idx=0
+    assert_eq!(unsafe { *gcbox_ptr.add(0) }, 1u64);
+    // Word 1 (bytes 8..15): list_next = null
+    assert_eq!(unsafe { *gcbox_ptr.add(1) }, 0u64);
+    // Word 2 (bytes 16..23): Obj tag = OBJ_TAG_LIST (3)
+    assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_LIST);
+    // Word 3 (bytes 24..31): RefCell borrow counter = 0
+    assert_eq!(unsafe { *gcbox_ptr.add(3) }, 0u64);
+    // Word 4 (bytes 32..39): ListStorage::ptr = null (inline elements)
+    assert_eq!(unsafe { *gcbox_ptr.add(4) }, 0u64);
+    // Word 5 (bytes 40..47): len=2 (u32), cap=0 (u32)
+    assert_eq!(unsafe { *gcbox_ptr.add(5) }, 2u64);
+    // Word 6 (bytes 48..55): inline[0] = v0
+    assert_eq!(unsafe { *gcbox_ptr.add(6) }, v0.to_bits());
+    // Word 7 (bytes 56..63): inline[1] = v1
+    assert_eq!(unsafe { *gcbox_ptr.add(7) }, v1.to_bits());
+  }
 }
 
 /// Wraps every heap object with an inline GC mark bit so marking is a
@@ -2092,6 +2131,14 @@ impl FieldStoragePool {
 /// `needs_major_gc()`'s check directly instead of an FFI call at every
 /// safepoint. See `vm::VM_HEAP_OFFSET`'s own docs for why this is sound.
 pub(crate) const HEAP_JIT_GC_NEEDED_OFFSET: usize = std::mem::offset_of!(Heap, jit_gc_needed);
+pub(crate) const HEAP_NURSERY_CUR_OFFSET: usize = std::mem::offset_of!(Heap, nursery_cur);
+pub(crate) const HEAP_NURSERY_END_OFFSET: usize = std::mem::offset_of!(Heap, nursery_end);
+pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
+  std::mem::offset_of!(Heap, young_bytes_allocated);
+pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize =
+  std::mem::offset_of!(Heap, bytes_allocated);
+pub(crate) const HEAP_LIVE_COUNT_OFFSET: usize =
+  std::mem::offset_of!(Heap, live_count);
 
 /// Frees every buffer still sitting in `field_storage_pool` when the
 /// `Heap` itself is torn down (process exit; there's exactly one
@@ -2778,7 +2825,7 @@ impl Heap {
     self.nursery_cur = std::ptr::null_mut();
     self.nursery_end = std::ptr::null_mut();
     self.bytes_allocated = self.bytes_allocated.saturating_sub(freed_bytes);
-    self.live_count -= freed_count;
+    self.live_count = self.live_count.saturating_sub(freed_count);
     self.young_bytes_allocated = 0;
   }
 

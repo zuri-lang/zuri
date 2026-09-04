@@ -324,6 +324,7 @@ pub struct CompileFacts {
   pub param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
   pub self_class_bits: Option<(u64, u64)>,
   pub globals_snapshot: FxHashMap<String, ResolvedGlobal>,
+  pub speculative_lists: Option<u64>,
 }
 
 /// One construction site's compile-time view of the class it builds.

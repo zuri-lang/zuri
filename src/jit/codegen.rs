@@ -99,6 +99,16 @@ const PROTO_JIT_ENTRY_OFFSET: i32 = object::obj_function_jit_entry_offset() as i
 /// (of either kind) is really about to happen.
 const HEAP_JIT_GC_NEEDED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_JIT_GC_NEEDED_OFFSET) as i32;
+const HEAP_NURSERY_CUR_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_CUR_OFFSET) as i32;
+const HEAP_NURSERY_END_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_END_OFFSET) as i32;
+const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
+const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
+const HEAP_LIVE_COUNT_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
 
 /// Compiles `proto`'s bytecode into `fb`'s function body. Returns the
 /// bytecode-ip -> osr-id map (`CompiledFunction::osr_ids`) on success,
@@ -632,6 +642,7 @@ struct FuncCompiler<'a, 'b> {
   /// number); `None` after filtering out an all-zero sample. See
   /// `compile`'s own docs and `emit_entry_dispatch`.
   speculative_params: Option<u64>,
+  speculative_lists: Option<u64>,
   /// A ONE-SHOT, WHOLE-FRAME type sample taken at the same moment as
   /// `speculative_params`, but covering every register in the
   /// triggering frame rather than only the fixed-arity parameters --
@@ -1143,7 +1154,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let no_self_numeric_fields = rustc_hash::FxHashSet::default();
     let type_facts = typeflow::analyze(proto, &preds, None, None, &no_self_numeric_fields);
     let int_facts = typeflow::analyze_int(proto, &preds);
-    let list_facts = typeflow::analyze_list(proto, &preds);
+    let list_facts = typeflow::analyze_list(proto, &preds, None);
     let string_facts = typeflow::analyze_string(proto, &preds);
     let bool_facts = typeflow::analyze_bool(proto, &preds);
     let const_facts = typeflow::analyze_const(proto, &preds);
@@ -1174,6 +1185,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self_ref_facts: std::cell::OnceCell::new(),
       self_summary: std::cell::OnceCell::new(),
       speculative_params,
+      speculative_lists: facts.speculative_lists.filter(|&m| m != 0),
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available; empty
       // placeholders here are never actually read before that, since
@@ -1407,6 +1419,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> =
       if self.speculative_params.is_some()
         || self.speculative_regs.is_some()
+        || self.speculative_lists.is_some()
         || !self.self_numeric_fields.is_empty()
       {
         let blocks = (0..self.blocks.len())
@@ -1463,6 +1476,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Pass 2: the specialized body, if any.
     if let Some((spec_blocks, spec_facts)) = specialized {
       self.type_facts = spec_facts;
+      self.list_facts = typeflow::analyze_list(self.proto, &self.preds, self.speculative_lists);
       // The specialized facts prove strictly more than the general
       // ones, so this body typically gets more canonical registers;
       // recompute rather than carrying pass 1's answer over. See
@@ -1620,28 +1634,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       for (route_block, ip) in routes {
         self.fb.switch_to_block(route_block);
         self.emit_osr_scalar_list_init(ip);
-        let mask = spec_facts.numeric_mask_at(ip);
-        if mask == 0 {
+        let num_mask = spec_facts.numeric_mask_at(ip);
+        let list_mask = if ip == 0 {
+          self.speculative_lists.unwrap_or(0)
+        } else {
+          0
+        };
+        if num_mask == 0 && list_mask == 0 {
           if self.speculative_regs.is_some() || !self.self_numeric_fields.is_empty() {
-            // Nothing is proven AT this exact entry point, but the
-            // specialized body may still contain its own, INDEPENDENT
-            // mid-function speculative guards further along (see
-            // `emit_speculative_guard`); route into it unconditionally
-            // rather than skipping straight to general, so ordinary
-            // (non-OSR) execution still reaches them. A straight-line
-            // method whose only speculation is a `self.field` numeric
-            // guess (no loop, no OSR target, entry mask always 0) is
-            // exactly this case: the guess only becomes checkable AFTER
-            // `Instr::GetField` runs, never at entry itself, so entry
-            // must still hand off to the specialized body for the
-            // mid-function guard to ever run at all. When only
-            // parameter speculation is in play (`speculative_regs` is
-            // `None` AND `self_numeric_fields` is empty), `spec_blocks[ip]`
-            // onward is behaviorally identical to `self.blocks[ip]` in
-            // this case; exactly the reasoning that already justified
-            // the unconditional
-            // general jump below, still applies whenever there's no
-            // OTHER kind of speculation that could benefit downstream.
             self.fb.ins().jump(spec_blocks[ip], &[]);
           } else {
             self.fb.ins().jump(self.blocks[ip], &[]);
@@ -1650,7 +1650,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         let mut guard: Option<IrValue> = None;
         for bit in 0..64u8 {
-          if mask & (1u64 << bit) != 0 {
+          if num_mask & (1u64 << bit) != 0 {
             let v = self.entry_reg_values[bit as usize];
             let is_num = self.is_number(v);
             guard = Some(match guard {
@@ -1659,11 +1659,40 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             });
           }
         }
-        let guard = guard.expect("mask != 0 always sets at least one bit");
-        self
-          .fb
-          .ins()
-          .brif(guard, spec_blocks[ip], &[], self.blocks[ip], &[]);
+        if let Some(g) = guard {
+          let num_passed_block = self.fb.create_block();
+          self
+            .fb
+            .ins()
+            .brif(g, num_passed_block, &[], self.blocks[ip], &[]);
+          self.fb.switch_to_block(num_passed_block);
+        }
+        if list_mask != 0 {
+          for bit in 0..64u8 {
+            if list_mask & (1u64 << bit) != 0 {
+              let v = self.entry_reg_values[bit as usize];
+              let is_obj = self.is_obj(v);
+              let obj_passed_block = self.fb.create_block();
+              self
+                .fb
+                .ins()
+                .brif(is_obj, obj_passed_block, &[], self.blocks[ip], &[]);
+              self.fb.switch_to_block(obj_passed_block);
+
+              let ptr = self.obj_ptr(v);
+              let tag = self.obj_tag(ptr);
+              let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+              let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+              let list_passed_block = self.fb.create_block();
+              self
+                .fb
+                .ins()
+                .brif(is_list, list_passed_block, &[], self.blocks[ip], &[]);
+              self.fb.switch_to_block(list_passed_block);
+            }
+          }
+        }
+        self.fb.ins().jump(spec_blocks[ip], &[]);
       }
     } else {
       for (route_block, ip) in routes {
@@ -6661,6 +6690,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     let resolve_block = self.fb.create_block();
 
+    let proven_const_idx = self
+      .proven_const(ip, iidx)
+      .filter(|c| c.fract() == 0.0 && *c >= 0.0 && *c <= i64::MAX as f64);
+
     // `proven_list` is a compile-time fact; exactly one of these two
     // arms is ever actually emitted for a given `Instr::GetIndex` site,
     // never both, so `ptr`/`as_int` dominate `resolve_block` either way
@@ -6671,15 +6704,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // straight to the pointer; only the index still needs checking
       // here.
       let ptr = self.obj_ptr(obj_val);
-      let f = self.f64_view(iidx, idx_val);
-      let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-      if idx_proven_int {
+      let (as_int, needs_check) = if let Some(c) = proven_const_idx {
+        (self.fb.ins().iconst(types::I64, c as i64), false)
+      } else {
+        let f = self.f64_view(iidx, idx_val);
+        let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        (as_int, !idx_proven_int)
+      };
+      if !needs_check {
         // `iidx` is proven to be a genuine whole number (see
-        // `typeflow::IntFacts`'s own docs); there's nothing left for
-        // this guard to prove, so there's no guard: straight through
-        // to `resolve_block`, not even a branch.
+        // `typeflow::IntFacts`'s own docs) or compile-time constant;
+        // there's nothing left for this guard to prove, so there's no
+        // guard: straight through to `resolve_block`, not even a branch.
         self.fb.ins().jump(resolve_block, &[]);
       } else {
+        let f = self.f64_view(iidx, idx_val);
         let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
         let is_int = self.fb.ins().fcmp(
           cranelift_codegen::ir::condcodes::FloatCC::Equal,
@@ -7273,6 +7312,134 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
     let count_c = self.u64c(count as u64);
     self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+  }
+
+  fn emit_inline_make_list(&mut self, _ip: usize, dst: u8, start: u8, count: u8) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let vm = self.vm_param;
+
+    let cur = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_NURSERY_CUR_OFFSET);
+    let end = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_NURSERY_END_OFFSET);
+    let is_full = self.fb.ins().icmp(IntCC::Equal, cur, end);
+
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    self.fb.ins().brif(is_full, slow_block, &[], fast_block, &[]);
+
+    // Fast path: inline nursery bump-allocation
+    self.fb.switch_to_block(fast_block);
+    let next_cur = self.fb.ins().iadd_imm_s(cur, 64);
+    self
+      .fb
+      .ins()
+      .store(flags, next_cur, vm, HEAP_NURSERY_CUR_OFFSET);
+
+    // Update live_count
+    let live = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_LIVE_COUNT_OFFSET);
+    let next_live = self.fb.ins().iadd_imm_s(live, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, next_live, vm, HEAP_LIVE_COUNT_OFFSET);
+
+    // Update young_bytes_allocated and bytes_allocated
+    let size_bytes = 48 + (count as i64) * 8;
+    let young = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    let next_young = self.fb.ins().iadd_imm_s(young, size_bytes);
+    self
+      .fb
+      .ins()
+      .store(flags, next_young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+
+    let total = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_BYTES_ALLOCATED_OFFSET);
+    let next_total = self.fb.ins().iadd_imm_s(total, size_bytes);
+    self
+      .fb
+      .ins()
+      .store(flags, next_total, vm, HEAP_BYTES_ALLOCATED_OFFSET);
+
+    // Update jit_gc_needed if young exceeded YOUNG_NEXT_GC
+    let young_limit = self.i64c(object::Heap::YOUNG_NEXT_GC as i64);
+    let need_gc = self.fb.ins().icmp(IntCC::UnsignedGreaterThan, next_young, young_limit);
+    let curr_gc = self.fb.ins().load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    let need_gc_u8 = self.fb.ins().uextend(types::I8, need_gc);
+    let combined_gc = self.fb.ins().bor(curr_gc, need_gc_u8);
+    self.fb.ins().store(flags, combined_gc, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+
+    // GcBox header (16 bytes at cur):
+    // Word 0 (offset 0): live=1, marked=0, gen=Young(0), remembered=0, chunk_idx=0 -> 1u64
+    let one64 = self.i64c(1);
+    let zero64 = self.i64c(0);
+    self.fb.ins().store(flags, one64, cur, 0);
+    // Word 1 (offset 8): list_next = null -> 0u64
+    self.fb.ins().store(flags, zero64, cur, 8);
+
+    // Obj::List payload (48 bytes starting at cur + 16):
+    // Word 2 (offset 16): Obj tag = OBJ_TAG_LIST (3) -> 3u64
+    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+    self.fb.ins().store(flags, tag_list, cur, 16);
+    // Word 3 (offset 24): RefCell borrow flag = 0
+    self.fb.ins().store(flags, zero64, cur, 24);
+    // Word 4 (offset 32): ListStorage::ptr = null (inline elements)
+    self.fb.ins().store(flags, zero64, cur, 32);
+    // Word 5 (offset 40): len (u32) and cap=0 (u32)
+    let len_cap = self.i64c(count as i64);
+    self.fb.ins().store(flags, len_cap, cur, 40);
+
+    // Load items BEFORE storing to dst (in case start or start+1 == dst)
+    let item0 = if count >= 1 {
+      self.load_reg(start)
+    } else {
+      self.u64c(value::NIL_VAL)
+    };
+    let item1 = if count >= 2 {
+      self.load_reg(start + 1)
+    } else {
+      self.u64c(value::NIL_VAL)
+    };
+    // Word 6 (offset 48): inline[0]
+    self.fb.ins().store(flags, item0, cur, 48);
+    // Word 7 (offset 56): inline[1]
+    self.fb.ins().store(flags, item1, cur, 56);
+
+    // Tagged pointer: (cur + 16) | (QNAN | SIGN_BIT)
+    let obj_ptr = self.fb.ins().iadd_imm_s(cur, 16);
+    let tag_mask = self.u64c(value::QNAN | value::SIGN_BIT);
+    let list_val = self.fb.ins().bor(obj_ptr, tag_mask);
+    self.store_reg(dst, list_val);
+    self.fb.ins().jump(done_block, &[]);
+
+    // Slow path: out-of-line chunk refill / full allocation
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    let start_i = self.idx(start);
+    let count_i = self.idx(count);
+    self.call_checked(
+      "zuri_jit_make_list",
+      &[vm, base, dst_i, start_i, count_i],
+    );
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
   }
 
   /// `Instr::GetIndex`'s fast path when `obj` is a scalar-replaced
@@ -8612,6 +8779,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::MakeList { dst, start, count } => {
         if self.scalar_replace_eligible(ip, dst, count) {
           self.emit_scalar_make_list(dst, start, count);
+          return false;
+        }
+        if count <= 2 {
+          self.emit_inline_make_list(ip, dst, start, count);
           return false;
         }
         let base = self.base_param;

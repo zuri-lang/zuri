@@ -1911,10 +1911,14 @@ impl VM {
   /// performing any whole-function dataflow analyses on the main VM thread,
   /// then hands the job to the background compiler thread.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
-    let (speculative_params, speculative_regs) = if self.no_jit_specialization {
-      (None, None)
+    let (speculative_params, speculative_regs, speculative_lists) = if self.no_jit_specialization {
+      (None, None, None)
     } else {
-      (self.combined_param_feedback(proto), None)
+      (
+        self.combined_param_feedback(proto),
+        None,
+        self.combined_list_feedback(proto),
+      )
     };
     for (ip, instr) in proto.chunk.code.iter().enumerate() {
       let name_const = match instr {
@@ -1940,6 +1944,7 @@ impl VM {
       param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
       globals_snapshot: self.snapshot_globals(proto),
+      speculative_lists,
     };
 
     proto.jit.compiling.set(true);
@@ -2095,6 +2100,29 @@ impl VM {
     Some(mask)
   }
 
+  fn sample_param_list_types(&self, proto: &ObjFunction) -> Option<u64> {
+    let frame = self.frames.last()?;
+    if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
+      return None;
+    }
+    let required = if proto.variadic {
+      proto.arity.saturating_sub(1)
+    } else {
+      proto.arity
+    };
+    let base = frame.base;
+    let mut mask: u64 = 0;
+    for i in 0..(required as usize).min(64) {
+      let Some(v) = self.registers.get(base + i) else {
+        break;
+      };
+      if v.is_obj() && unsafe { matches!(&*v.as_obj(), Obj::List(_)) } {
+        mask |= 1u64 << i;
+      }
+    }
+    Some(mask)
+  }
+
   /// Folds one call's argument types into `proto`'s running
   /// `numeric_feedback` accumulator via bitwise AND, so a parameter's bit
   /// only survives to compile time if it was numeric on every call seen so
@@ -2113,6 +2141,12 @@ impl VM {
       .jit
       .numeric_feedback
       .set(proto.jit.numeric_feedback.get() & mask);
+    if let Some(list_mask) = self.sample_param_list_types(proto) {
+      proto
+        .jit
+        .list_feedback
+        .set(proto.jit.list_feedback.get() & list_mask);
+    }
     proto
       .jit
       .feedback_samples
@@ -2129,6 +2163,14 @@ impl VM {
       Some(proto.jit.numeric_feedback.get())
     } else {
       self.sample_param_types(proto)
+    }
+  }
+
+  fn combined_list_feedback(&self, proto: &ObjFunction) -> Option<u64> {
+    if proto.jit.feedback_samples.get() > 0 {
+      Some(proto.jit.list_feedback.get())
+    } else {
+      self.sample_param_list_types(proto)
     }
   }
 
