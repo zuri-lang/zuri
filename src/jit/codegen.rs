@@ -7718,12 +7718,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .store(flags, next_total, vm, HEAP_BYTES_ALLOCATED_OFFSET);
 
-    // Update jit_gc_needed if young exceeded YOUNG_NEXT_GC
+    // Update jit_gc_needed if young exceeded YOUNG_NEXT_GC. `icmp`
+    // already yields i8 (see every other icmp-derived value in this
+    // file, which only ever gets uextended UP to i64, never to i8);
+    // extending it to its own type is a genuine Cranelift type error,
+    // caught by the verifier in debug builds ("arg 0 with type i8
+    // failed to satisfy type set") but silently accepted downstream
+    // in release, where the verifier is off (see `JitEngine::new`).
     let young_limit = self.i64c(object::Heap::YOUNG_NEXT_GC as i64);
     let need_gc = self.fb.ins().icmp(IntCC::UnsignedGreaterThan, next_young, young_limit);
     let curr_gc = self.fb.ins().load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
-    let need_gc_u8 = self.fb.ins().uextend(types::I8, need_gc);
-    let combined_gc = self.fb.ins().bor(curr_gc, need_gc_u8);
+    let combined_gc = self.fb.ins().bor(curr_gc, need_gc);
     self.fb.ins().store(flags, combined_gc, vm, HEAP_JIT_GC_NEEDED_OFFSET);
 
     // GcBox header (16 bytes at cur):
