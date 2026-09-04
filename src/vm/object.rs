@@ -2976,20 +2976,113 @@ impl Heap {
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
     let fields = self.take_field_storage(field_count);
-    // Exactly what `approx_size` would return for this object --
-    // its `size_of::<Obj>()` BASE plus the `Obj::Instance` arm --
-    // just computed from a count the caller already has instead of
-    // re-derived by matching the variant.
-    //
-    // The base term is not optional. Dropping it under-reports every
-    // instance's true cost, so `young_bytes_allocated` (which drives
-    // `needs_minor_gc`) lets the nursery grow far larger than intended
-    // before a collection fires; and since a `GcBox` costs real
-    // memory the accounting never sees, peak RSS balloons on
-    // allocation-heavy workloads while the byte counter still looks
-    // normal.
     let size = std::mem::size_of::<Obj>() + field_count * size_of::<Cell<Value>>();
     self.alloc_sized(Obj::Instance(ObjInstance { class, fields }), size)
+  }
+
+  #[inline(always)]
+  pub fn alloc_instance_fast_0(&mut self, class: Value) -> Value {
+    if self.nursery_cur == self.nursery_end {
+      self.refill_nursery();
+    }
+    let slot = self.nursery_cur;
+    self.nursery_cur = unsafe { slot.add(1) };
+    let size = std::mem::size_of::<Obj>();
+    self.bytes_allocated += size;
+    self.young_bytes_allocated += size;
+    self.live_count += 1;
+    self.update_jit_gc_needed();
+
+    let fields = FieldStorage {
+      ptr: std::ptr::null_mut(),
+      len: 0,
+      inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
+    };
+    unsafe {
+      std::ptr::write(
+        slot,
+        GcBox {
+          live: Cell::new(true),
+          marked: Cell::new(false),
+          obj: Obj::Instance(ObjInstance { class, fields }),
+          generation: Cell::new(Generation::Young),
+          remembered: Cell::new(false),
+          list_next: Cell::new(std::ptr::null()),
+          chunk_idx: 0,
+        },
+      );
+      Value::obj(&(*slot).obj as *const Obj)
+    }
+  }
+
+  #[inline(always)]
+  pub fn alloc_instance_fast_1(&mut self, class: Value, f0: Value) -> Value {
+    if self.nursery_cur == self.nursery_end {
+      self.refill_nursery();
+    }
+    let slot = self.nursery_cur;
+    self.nursery_cur = unsafe { slot.add(1) };
+    let size = std::mem::size_of::<Obj>() + std::mem::size_of::<Cell<Value>>();
+    self.bytes_allocated += size;
+    self.young_bytes_allocated += size;
+    self.live_count += 1;
+    self.update_jit_gc_needed();
+
+    let fields = FieldStorage {
+      ptr: std::ptr::null_mut(),
+      len: 1,
+      inline: [Cell::new(f0), Cell::new(Value::nil())],
+    };
+    unsafe {
+      std::ptr::write(
+        slot,
+        GcBox {
+          live: Cell::new(true),
+          marked: Cell::new(false),
+          obj: Obj::Instance(ObjInstance { class, fields }),
+          generation: Cell::new(Generation::Young),
+          remembered: Cell::new(false),
+          list_next: Cell::new(std::ptr::null()),
+          chunk_idx: 0,
+        },
+      );
+      Value::obj(&(*slot).obj as *const Obj)
+    }
+  }
+
+  #[inline(always)]
+  pub fn alloc_instance_fast_2(&mut self, class: Value, f0: Value, f1: Value) -> Value {
+    if self.nursery_cur == self.nursery_end {
+      self.refill_nursery();
+    }
+    let slot = self.nursery_cur;
+    self.nursery_cur = unsafe { slot.add(1) };
+    let size = std::mem::size_of::<Obj>() + 2 * std::mem::size_of::<Cell<Value>>();
+    self.bytes_allocated += size;
+    self.young_bytes_allocated += size;
+    self.live_count += 1;
+    self.update_jit_gc_needed();
+
+    let fields = FieldStorage {
+      ptr: std::ptr::null_mut(),
+      len: 2,
+      inline: [Cell::new(f0), Cell::new(f1)],
+    };
+    unsafe {
+      std::ptr::write(
+        slot,
+        GcBox {
+          live: Cell::new(true),
+          marked: Cell::new(false),
+          obj: Obj::Instance(ObjInstance { class, fields }),
+          generation: Cell::new(Generation::Young),
+          remembered: Cell::new(false),
+          list_next: Cell::new(std::ptr::null()),
+          chunk_idx: 0,
+        },
+      );
+      Value::obj(&(*slot).obj as *const Obj)
+    }
   }
 
   /// Pops a recycled buffer of exactly `len` cells off

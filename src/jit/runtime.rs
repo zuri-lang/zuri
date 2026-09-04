@@ -982,6 +982,39 @@ pub unsafe extern "C" fn zuri_jit_alloc_instance_fast(
   vm.heap.alloc_instance(class, field_count as usize).to_bits()
 }
 
+pub unsafe extern "C" fn zuri_jit_alloc_instance_fast_0(
+  vm_ptr: *mut VM,
+  class_bits: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let class = Value::from_bits(class_bits);
+  vm.heap.alloc_instance_fast_0(class).to_bits()
+}
+
+pub unsafe extern "C" fn zuri_jit_alloc_instance_fast_1(
+  vm_ptr: *mut VM,
+  class_bits: u64,
+  f0_bits: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let class = Value::from_bits(class_bits);
+  let f0 = Value::from_bits(f0_bits);
+  vm.heap.alloc_instance_fast_1(class, f0).to_bits()
+}
+
+pub unsafe extern "C" fn zuri_jit_alloc_instance_fast_2(
+  vm_ptr: *mut VM,
+  class_bits: u64,
+  f0_bits: u64,
+  f1_bits: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let class = Value::from_bits(class_bits);
+  let f0 = Value::from_bits(f0_bits);
+  let f1 = Value::from_bits(f1_bits);
+  vm.heap.alloc_instance_fast_2(class, f0, f1).to_bits()
+}
+
 /// `jit::codegen`'s inline construct fast path's other mandatory real
 /// call, alongside `zuri_jit_alloc_and_pin_instance`: releasing the
 /// `gc_pins` entry that call pushed. Unlike `Instr::CloseUpvalues`
@@ -2873,6 +2906,9 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec9!(zuri_jit_construct_prepare),
     spec4!(zuri_jit_alloc_and_pin_instance),
     spec3!(zuri_jit_alloc_instance_fast),
+    spec2!(zuri_jit_alloc_instance_fast_0),
+    spec3!(zuri_jit_alloc_instance_fast_1),
+    spec4!(zuri_jit_alloc_instance_fast_2),
     spec1!(zuri_jit_take_constructed_instance),
     spec4!(zuri_jit_new_finish),
     spec9!(zuri_jit_invoke_prepare),

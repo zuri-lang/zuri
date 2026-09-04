@@ -3141,29 +3141,59 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.resync_dst_from_memory(dst);
       self.fb.ins().jump(done_block, &[]);
     } else if let Some(param_slots) = simple_ctor_param_slots {
-      let instance_val = self.call_helper_raw(
-        "zuri_jit_alloc_instance_fast",
-        &[vm_p, target_class, field_count_v],
-      );
-      let instance_ptr = self.obj_ptr(instance_val);
-      let fields_ptr = if field_count <= object::INLINE_FIELDS as u16 {
-        self
-          .fb
-          .ins()
-          .iadd_imm_s(instance_ptr, object::obj_instance_fields_inline_offset() as i64)
+      let instance_val = if field_count == 2
+        && param_slots.len() == 2
+        && param_slots[0] == 0
+        && param_slots[1] == 1
+        && num_args == 2
+      {
+        let a0 = self.load_reg(func + 1);
+        let a1 = self.load_reg(func + 2);
+        self.call_helper_raw(
+          "zuri_jit_alloc_instance_fast_2",
+          &[vm_p, target_class, a0, a1],
+        )
+      } else if field_count == 1
+        && param_slots.len() == 1
+        && param_slots[0] == 0
+        && num_args == 1
+      {
+        let a0 = self.load_reg(func + 1);
+        self.call_helper_raw(
+          "zuri_jit_alloc_instance_fast_1",
+          &[vm_p, target_class, a0],
+        )
+      } else if field_count == 0 && num_args == 0 {
+        self.call_helper_raw(
+          "zuri_jit_alloc_instance_fast_0",
+          &[vm_p, target_class],
+        )
       } else {
-        self.load_instance_fields_ptr(instance_ptr)
-      };
-      let trusted = cranelift_codegen::ir::MemFlagsData::trusted();
-      for (param, &field_slot) in param_slots.iter().enumerate() {
-        if param < num_args as usize {
-          let arg_val = self.load_reg(func + 1 + param as u8);
+        let instance_val = self.call_helper_raw(
+          "zuri_jit_alloc_instance_fast",
+          &[vm_p, target_class, field_count_v],
+        );
+        let instance_ptr = self.obj_ptr(instance_val);
+        let fields_ptr = if field_count <= object::INLINE_FIELDS as u16 {
           self
             .fb
             .ins()
-            .store(trusted, arg_val, fields_ptr, (field_slot as i32) * 8);
+            .iadd_imm_s(instance_ptr, object::obj_instance_fields_inline_offset() as i64)
+        } else {
+          self.load_instance_fields_ptr(instance_ptr)
+        };
+        let trusted = cranelift_codegen::ir::MemFlagsData::trusted();
+        for (param, &field_slot) in param_slots.iter().enumerate() {
+          if param < num_args as usize {
+            let arg_val = self.load_reg(func + 1 + param as u8);
+            self
+              .fb
+              .ins()
+              .store(trusted, arg_val, fields_ptr, (field_slot as i32) * 8);
+          }
         }
-      }
+        instance_val
+      };
       self.store_reg(dst, instance_val);
       self.fb.ins().jump(done_block, &[]);
     } else {
