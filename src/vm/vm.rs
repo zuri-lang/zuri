@@ -1641,6 +1641,66 @@ impl VM {
     out
   }
 
+  fn resolve_known_classes(
+    &self,
+    proto: &ObjFunction,
+  ) -> FxHashMap<u64, FxHashMap<String, u16>> {
+    let mut out = FxHashMap::default();
+
+    let mut add_class = |class_val: Value| {
+      if class_val.is_class() {
+        let class = class_val.as_class();
+        let slots: FxHashMap<String, u16> = class
+          .field_slots
+          .iter()
+          .filter(|(name, _)| !class.methods.contains_key(*name))
+          .map(|(name, &slot)| (name.clone(), slot))
+          .collect();
+        out.insert(class_val.to_bits(), slots);
+      }
+    };
+
+    for cell in &self.global_slots {
+      add_class(cell.get());
+    }
+
+    if let Some(mval) = proto.globals_module {
+      if mval.is_module() {
+        for cell in &mval.as_module().namespace.slots {
+          add_class(cell.get());
+        }
+      }
+    }
+
+    for instr in &proto.chunk.code {
+      if let crate::vm::chunk::Instr::GetGlobal { name_const, .. } = instr
+        && let Some(v) = proto.chunk.constants.get(*name_const as usize)
+        && v.is_string()
+      {
+        let s = v.as_str();
+        if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, s) {
+          let resolved = self.read_resolved(proto.globals_module, is_root, slot);
+          if resolved.is_obj() {
+            unsafe {
+              if let crate::vm::object::Obj::List(l) = &*resolved.as_obj() {
+                let list = l.borrow();
+                for i in 0..list.len() {
+                  if let Some(elem) = list.get(i) {
+                    if elem.is_instance() {
+                      add_class(elem.as_instance().class);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    out
+  }
+
   /// Resolves the class a method's `self` is guaranteed to be an instance
   /// of, then maps every field name safe to read/write on it directly (no
   /// `BoundMethod`-wrapping risk) to its slot index. `None` for a
@@ -2027,6 +2087,7 @@ impl VM {
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),
       speculative_lists,
+      known_classes: self.resolve_known_classes(proto),
     };
 
     proto.jit.compiling.set(true);

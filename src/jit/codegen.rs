@@ -804,6 +804,9 @@ struct FuncCompiler<'a, 'b> {
   global_lists: rustc_hash::FxHashSet<String>,
   guarded_instance_vars: FxHashMap<u8, (Variable, Variable, Variable)>,
   active_guarded: rustc_hash::FxHashSet<u8>,
+  known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
+  is_specialized_pass: bool,
+  active_guarded_classes: FxHashMap<u8, u64>,
   shutdown: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
@@ -1227,6 +1230,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       proven_param_shapes: Self::compute_proven_shapes(proto),
       guarded_instance_vars: FxHashMap::default(),
       active_guarded: rustc_hash::FxHashSet::default(),
+      known_classes: facts.known_classes,
+      is_specialized_pass: false,
+      active_guarded_classes: FxHashMap::default(),
       shutdown,
     }
   }
@@ -1274,6 +1280,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn maybe_clear_guarded_instances(&mut self, ip: usize) {
     if ip == 0 || self.preds[ip].len() != 1 || self.preds[ip][0] != ip - 1 {
       self.active_guarded.clear();
+      self.active_guarded_classes.clear();
       return;
     }
     let prev = self.proto.chunk.code[ip - 1];
@@ -1284,17 +1291,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         | Instr::Return { .. }
     ) {
       self.active_guarded.clear();
+      self.active_guarded_classes.clear();
       return;
     }
     if let Instr::Invoke { method_const, .. } = prev {
       let name = self.method_name(method_const);
       if NumberIntrinsic::of(name).is_none() {
         self.active_guarded.clear();
+        self.active_guarded_classes.clear();
         return;
       }
     }
     if let Some(dst) = typeflow::any_dst(&prev) {
       self.active_guarded.remove(&dst);
+      self.active_guarded_classes.remove(&dst);
     }
   }
 
@@ -1508,7 +1518,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
 
     // Pass 1: the general body.
+    self.is_specialized_pass = false;
     self.active_guarded.clear();
+    self.active_guarded_classes.clear();
     for ip in 0..self.blocks.len() {
       if let Some(shutdown) = self.shutdown {
         if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1542,7 +1554,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.f64_canonical = self.compute_f64_canonical(&self.type_facts);
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       let code_len = self.blocks.len();
+      self.is_specialized_pass = true;
       self.active_guarded.clear();
+      self.active_guarded_classes.clear();
       for ip in 0..code_len {
         if let Some(shutdown) = self.shutdown {
           if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1700,7 +1714,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           0
         };
         if num_mask == 0 && list_mask == 0 {
-          if self.speculative_regs.is_some() || !self.self_numeric_fields.is_empty() {
+          if self.speculative_regs.is_some()
+            || !self.self_numeric_fields.is_empty()
+            || !self.known_classes.is_empty()
+          {
             self.fb.ins().jump(spec_blocks[ip], &[]);
           } else {
             self.fb.ins().jump(self.blocks[ip], &[]);
@@ -4981,6 +4998,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.param_field_slots.get(&obj).map(|&(bits, _)| bits)
   }
 
+  fn find_unique_known_class_for_field(&self, name: &str) -> Option<(u64, u16)> {
+    let mut found: Option<(u64, u16)> = None;
+    for (&class_bits, slots) in &self.known_classes {
+      if let Some(&slot) = slots.get(name) {
+        if found.is_some() {
+          return None;
+        }
+        found = Some((class_bits, slot));
+      }
+    }
+    found
+  }
+
+  fn target_class_for_field(&self, ip: usize, name: &str) -> Option<(u64, u16)> {
+    if let Some(cell) = self.proto.chunk.field_cache_cell(ip) {
+      let c_bits = cell.class_bits.get();
+      if c_bits != 0 {
+        if let Some(slots) = self.known_classes.get(&c_bits) {
+          if let Some(&slot) = slots.get(name) {
+            return Some((c_bits, slot));
+          }
+        }
+      }
+    }
+    self.find_unique_known_class_for_field(name)
+  }
+
   /// `self.field` read fast path for a field PROVEN (see
   /// `self_field_slot`/`param_field_slot`) to live at a fixed slot on
   /// the receiver's own class, with no `BoundMethod`-wrapping risk. No
@@ -5287,6 +5331,80 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// cache for the next time round.
   fn emit_ic_get_field(&mut self, ip: usize, dst: u8, obj: u8, name_const: u16, cache: IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let name_val = self.proto.chunk.constants[name_const as usize];
+    let name = name_val.as_str();
+
+    if self.is_specialized_pass {
+      if let Some(&guarded_class) = self.active_guarded_classes.get(&obj) {
+        if let Some(&slot) = self
+          .known_classes
+          .get(&guarded_class)
+          .and_then(|m| m.get(name))
+        {
+          let (_ptr_var, fields_ptr_var, _class_var) = self.guarded_instance_vars[&obj];
+          let fields_ptr = self.fb.use_var(fields_ptr_var);
+          let v = self.fb.ins().load(types::I64, flags, fields_ptr, (slot as i32) * 8);
+          self.store_reg(dst, v);
+          if dst == obj {
+            self.active_guarded.remove(&obj);
+            self.active_guarded_classes.remove(&obj);
+          }
+          return;
+        }
+      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, name) {
+        let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
+        let recv = self.load_reg(obj);
+
+        let deopt_block = self.fb.create_block();
+        let hit_block = self.fb.create_block();
+
+        let proven_instance = self.proven_param_shapes.get(&obj) == Some(&ParamShape::Instance);
+        let ptr = if proven_instance {
+          self.obj_ptr(recv)
+        } else {
+          let obj_block = self.fb.create_block();
+          let inst_block = self.fb.create_block();
+          let is_obj = self.is_obj(recv);
+          self.fb.ins().brif(is_obj, obj_block, &[], deopt_block, &[]);
+
+          self.fb.switch_to_block(obj_block);
+          let ptr = self.obj_ptr(recv);
+          let tag = self.obj_tag(ptr);
+          let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+          let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+          self.fb.ins().brif(is_instance, inst_block, &[], deopt_block, &[]);
+
+          self.fb.switch_to_block(inst_block);
+          ptr
+        };
+
+        let class_off = object::obj_instance_class_offset() as i32;
+        let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
+        let expected_class = self.u64c(target_class_bits);
+        let same_class = self.fb.ins().icmp(IntCC::Equal, class_bits, expected_class);
+        self.fb.ins().brif(same_class, hit_block, &[], deopt_block, &[]);
+
+        self.fb.switch_to_block(deopt_block);
+        self.emit_deopt(ip);
+
+        self.fb.switch_to_block(hit_block);
+        let fields_ptr = self.load_instance_fields_ptr(ptr);
+        self.fb.def_var(ptr_var, ptr);
+        self.fb.def_var(fields_ptr_var, fields_ptr);
+        self.fb.def_var(class_var, class_bits);
+        self.active_guarded.insert(obj);
+        self.active_guarded_classes.insert(obj, target_class_bits);
+
+        let v = self.fb.ins().load(types::I64, flags, fields_ptr, (slot as i32) * 8);
+        self.store_reg(dst, v);
+        if dst == obj {
+          self.active_guarded.remove(&obj);
+          self.active_guarded_classes.remove(&obj);
+        }
+        return;
+      }
+    }
+
     if self.active_guarded.contains(&obj) {
       let (_ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
       let fields_ptr = self.fb.use_var(fields_ptr_var);
@@ -5416,6 +5534,72 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn emit_ic_set_field(&mut self, ip: usize, obj: u8, name_const: u16, src: u8, cache: IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let src_val = self.load_reg(src);
+    let name_val = self.proto.chunk.constants[name_const as usize];
+    let name = name_val.as_str();
+
+    if self.is_specialized_pass {
+      if let Some(&guarded_class) = self.active_guarded_classes.get(&obj) {
+        if let Some(&slot) = self
+          .known_classes
+          .get(&guarded_class)
+          .and_then(|m| m.get(name))
+        {
+          let (ptr_var, fields_ptr_var, _class_var) = self.guarded_instance_vars[&obj];
+          let ptr = self.fb.use_var(ptr_var);
+          let fields_ptr = self.fb.use_var(fields_ptr_var);
+          self.fb.ins().store(flags, src_val, fields_ptr, (slot as i32) * 8);
+          self.emit_write_barrier_for_store(ip, src, src_val, ptr);
+          return;
+        }
+      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, name) {
+        let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
+        let recv = self.load_reg(obj);
+
+        let deopt_block = self.fb.create_block();
+        let hit_block = self.fb.create_block();
+
+        let proven_instance = self.proven_param_shapes.get(&obj) == Some(&ParamShape::Instance);
+        let ptr = if proven_instance {
+          self.obj_ptr(recv)
+        } else {
+          let obj_block = self.fb.create_block();
+          let inst_block = self.fb.create_block();
+          let is_obj = self.is_obj(recv);
+          self.fb.ins().brif(is_obj, obj_block, &[], deopt_block, &[]);
+
+          self.fb.switch_to_block(obj_block);
+          let ptr = self.obj_ptr(recv);
+          let tag = self.obj_tag(ptr);
+          let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+          let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+          self.fb.ins().brif(is_instance, inst_block, &[], deopt_block, &[]);
+
+          self.fb.switch_to_block(inst_block);
+          ptr
+        };
+
+        let class_off = object::obj_instance_class_offset() as i32;
+        let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
+        let expected_class = self.u64c(target_class_bits);
+        let same_class = self.fb.ins().icmp(IntCC::Equal, class_bits, expected_class);
+        self.fb.ins().brif(same_class, hit_block, &[], deopt_block, &[]);
+
+        self.fb.switch_to_block(deopt_block);
+        self.emit_deopt(ip);
+
+        self.fb.switch_to_block(hit_block);
+        let fields_ptr = self.load_instance_fields_ptr(ptr);
+        self.fb.def_var(ptr_var, ptr);
+        self.fb.def_var(fields_ptr_var, fields_ptr);
+        self.fb.def_var(class_var, class_bits);
+        self.active_guarded.insert(obj);
+        self.active_guarded_classes.insert(obj, target_class_bits);
+
+        self.fb.ins().store(flags, src_val, fields_ptr, (slot as i32) * 8);
+        self.emit_write_barrier_for_store(ip, src, src_val, ptr);
+        return;
+      }
+    }
 
     if self.active_guarded.contains(&obj) {
       let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];

@@ -327,6 +327,7 @@ pub struct CompileFacts {
   pub globals_snapshot: FxHashMap<String, ResolvedGlobal>,
   pub global_lists: rustc_hash::FxHashSet<String>,
   pub speculative_lists: Option<u64>,
+  pub known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
 }
 
 /// One construction site's compile-time view of the class it builds.
