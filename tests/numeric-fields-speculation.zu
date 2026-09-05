@@ -1,0 +1,32 @@
+# Regression test: ensure numeric_fields speculative facts do not reach
+# Pass 1 (the general/unguarded compiled body), where speculative guards
+# and deopt are not emitted.
+#
+# Warm a function accessing a field on an instance with numeric arguments,
+# establishing a numeric_fields fact. Then invoke it such that an entry guard
+# fails and execution falls back to Pass 1 with an instance whose field holds a string.
+# In Pass 1, string concatenation (+) must work correctly rather than performing
+# unchecked machine float arithmetic on the string pointer.
+
+class Box {
+  var val
+
+  @new(x) {
+    self.val = x
+  }
+}
+
+def add_box(dummy, b) {
+  return b.val + 1
+}
+
+var b1 = Box(10)
+var warm_result = 0
+iter var i = 0; i < 200_000; i++ {
+  warm_result = add_box(1, b1)
+}
+echo 'warm result: ${warm_result}'
+
+var b2 = Box('str_')
+echo 'poly result: ${add_box("not_num", b2)}'
+

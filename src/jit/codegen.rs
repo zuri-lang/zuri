@@ -1153,15 +1153,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let preds = typeflow::build_predecessors(proto);
-    // The general body gets NO self-field numeric facts at all, not
-    // `facts.self_numeric_fields`: those are a one-shot sample of a
-    // single instance (see `VM::resolve_self_numeric_fields`'s own
-    // docs), and this body has no guard mechanism to re-validate them.
-    // The real set still reaches the specialized body below, through
-    // `self.self_numeric_fields`, where `emit_speculative_guard`
-    // re-checks every bet against the actual value and deopts on a
-    // mismatch.
+    // The general body gets NO self-field or numeric field facts at all,
+    // neither `facts.self_numeric_fields` nor `facts.numeric_fields`:
+    // those are speculative samples (see `VM::resolve_self_numeric_fields`
+    // and `VM::resolve_all_numeric_fields`), and this body has no guard
+    // mechanism to re-validate them. The real sets still reach the
+    // specialized body below, through `self.self_numeric_fields` and
+    // `self.numeric_fields`, where `emit_speculative_guard` re-checks
+    // every bet against the actual value and deopts on a mismatch.
     let no_self_numeric_fields = rustc_hash::FxHashSet::default();
+    let no_numeric_fields = rustc_hash::FxHashSet::default();
     let speculative_ints = facts.speculative_ints.filter(|&m| m != 0);
     let int_facts = typeflow::analyze_int(proto, &preds, None);
     let spec_int_facts = speculative_ints.map(|si| {
@@ -1173,7 +1174,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       None,
       None,
       &no_self_numeric_fields,
-      &facts.numeric_fields,
+      &no_numeric_fields,
       Some(&int_facts),
     );
     let list_facts = typeflow::analyze_list(proto, &preds, None, &facts.global_lists);
@@ -1778,6 +1779,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           if self.speculative_regs.is_some()
             || self.speculative_ints.is_some()
             || !self.self_numeric_fields.is_empty()
+            || !self.numeric_fields.is_empty()
             || !self.known_classes.is_empty()
           {
             self.fb.ins().jump(spec_blocks[ip], &[]);
