@@ -3817,7 +3817,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(slow_block);
     self.emit_safepoint();
-    self.emit_generic_call(dst, func, num_args);
+    self.emit_generic_call_cold(dst, func, num_args);
     // The two arms disagree about `dst` the same way every other
     // guarded instruction's do; the inlined arm defines it in its
     // `Variable` and writes no memory, the call arm writes memory and
@@ -4345,7 +4345,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(slow_block);
     self.emit_safepoint();
-    self.emit_generic_call(dst, func, num_args);
+    self.emit_generic_call_cold(dst, func, num_args);
     self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
@@ -4622,11 +4622,45 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// `Instr::Call`'s fully general codegen; guards on a compiled JIT closure
-  /// to execute directly with inline frame push/pop, falling back to the
-  /// resolver-driven `zuri_jit_call_prepare` fast call whenever the callee
-  /// is not yet compiled, variadic, or not a plain closure.
+  /// `Instr::Call`'s fully general codegen, for a site where nothing
+  /// stronger was proven about the callee and this is therefore the
+  /// real dispatch path every call actually takes. Guards inline on a
+  /// compiled JIT closure and executes it directly with inline frame
+  /// push/pop, falling back to the resolver-driven
+  /// `zuri_jit_call_prepare` fast call whenever the callee is not yet
+  /// compiled, variadic, or not a plain closure. Worth its size here:
+  /// a megamorphic site (a callee read out of a list or a field, so no
+  /// resolver fact can pin it down) would otherwise pay a full helper
+  /// round trip on every single call.
   fn emit_generic_call(&mut self, dst: u8, func: u8, num_args: u8) {
+    self.emit_generic_call_inner(dst, func, num_args, false);
+  }
+
+  /// The same call, emitted for a site that only runs when some
+  /// enclosing guard has already missed: an inlined callee whose
+  /// identity check failed, or a known-native site whose target moved.
+  ///
+  /// Identical semantics, deliberately smaller code. The inline
+  /// dispatch chain above is a dozen-odd blocks of loads, tag checks
+  /// and frame construction, and emitting it here buys nothing (this
+  /// path is cold by construction) while charging the ENCLOSING
+  /// function for it anyway: Cranelift's register allocator reasons
+  /// over the whole CFG, so blocks that never execute still shape the
+  /// allocation and scheduling decisions made on the hot path beside
+  /// them. A guarded fast path exists precisely so its own fallback
+  /// stays rare, so the fallback should stay compact and let the
+  /// helper do the work.
+  fn emit_generic_call_cold(&mut self, dst: u8, func: u8, num_args: u8) {
+    self.emit_generic_call_inner(dst, func, num_args, true);
+  }
+
+  fn emit_generic_call_inner(
+    &mut self,
+    dst: u8,
+    func: u8,
+    num_args: u8,
+    cold_fallback: bool,
+  ) {
     let base = self.base_param;
     let vm_p = self.vm_param;
     let func_i = self.idx(func);
@@ -4634,7 +4668,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let dst_i = self.idx(dst);
     let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
 
-    if num_args > 4 {
+    // Over four arguments the inline path cannot pass them in the
+    // entry signature's register slots anyway, so it has nothing left
+    // to offer; a cold fallback declines it for its own reasons (see
+    // `emit_generic_call_cold`).
+    if num_args > 4 || cold_fallback {
       self.emit_fast_call(
         "zuri_jit_call_prepare",
         &[vm_p, base, func_i, num_args_i, dst_i],
