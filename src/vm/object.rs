@@ -641,6 +641,9 @@ pub struct JitInfo {
   /// Argument-type feedback accumulated across calls for List parameters;
   /// bit `i` is set if parameter `i` was observed to be an `Obj::List`.
   pub list_feedback: Cell<u64>,
+  /// Argument-type feedback accumulated across calls for whole-number (Int) parameters;
+  /// bit `i` is set if parameter `i` was observed to be a whole number.
+  pub int_feedback: Cell<u64>,
   /// Number of calls that have contributed to `numeric_feedback` so
   /// far. Needed because `numeric_feedback` alone can't distinguish
   /// "every call observed had numeric args" from "no call has been
@@ -679,6 +682,7 @@ impl JitInfo {
       compiling: Cell::new(false),
       numeric_feedback: Cell::new(!0u64),
       list_feedback: Cell::new(!0u64),
+      int_feedback: Cell::new(!0u64),
       feedback_samples: Cell::new(0),
       global_slot_cache: vec![Cell::new(-1i64); code_len].into_boxed_slice(),
     }

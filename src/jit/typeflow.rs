@@ -513,8 +513,8 @@ pub fn analyze(
 /// precision" might suggest, no overflow-checked arithmetic or
 /// runtime fallback is needed anywhere here for soundness.
 pub struct IntFacts {
-  entry: Vec<RegSet>,
-  list_entry: Vec<RegSet>,
+  pub(crate) entry: Vec<RegSet>,
+  pub(crate) list_entry: Vec<RegSet>,
 }
 
 impl IntFacts {
@@ -556,7 +556,7 @@ fn transfer_int(
     // See `IntFacts`'s own docs: sound at every magnitude, no overflow
     // check needed.
     Instr::Mul { dst, a, b } => {
-      if in_list.get(a) {
+      if in_list.get(a) || in_list.get(b) {
         out_list.set(dst, true);
         out_int.set(dst, false);
       } else {
@@ -695,36 +695,42 @@ fn transfer_int(
 /// re-verification this whole analysis exists to avoid paying for).
 /// `preds`: see `analyze`'s own docs on why this takes it as a
 /// parameter instead of computing it fresh.
-pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
+pub fn analyze_int(
+  proto: &ObjFunction,
+  preds: &[Vec<usize>],
+  speculative_params: Option<u64>,
+) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
 
-  let has_int_source = code.iter().any(|i| match i {
-    Instr::LoadConst { const_idx, .. } => {
-      let c = &proto.chunk.constants[*const_idx as usize];
-      c.is_number() && c.as_number().fract() == 0.0
-    },
-    Instr::AddImm { imm_const, .. }
-    | Instr::SubImm { imm_const, .. }
-    | Instr::MulImm { imm_const, .. } => {
-      proto.chunk.constants[*imm_const as usize]
-        .as_number()
-        .fract()
-        == 0.0
-    },
-    Instr::CheckParamType { check_idx, .. } => {
-      let check = &proto.chunk.param_checks[*check_idx as usize];
-      !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Int)
-    },
-    Instr::BitAnd { .. }
-    | Instr::BitOr { .. }
-    | Instr::BitXor { .. }
-    | Instr::BitShl { .. }
-    | Instr::BitShr { .. }
-    | Instr::BitUshr { .. }
-    | Instr::BitNot { .. } => true,
-    _ => false,
-  });
+  let has_speculative = speculative_params.map_or(false, |m| m != 0);
+  let has_int_source = has_speculative
+    || code.iter().any(|i| match i {
+      Instr::LoadConst { const_idx, .. } => {
+        let c = &proto.chunk.constants[*const_idx as usize];
+        c.is_number() && c.as_number().fract() == 0.0
+      },
+      Instr::AddImm { imm_const, .. }
+      | Instr::SubImm { imm_const, .. }
+      | Instr::MulImm { imm_const, .. } => {
+        proto.chunk.constants[*imm_const as usize]
+          .as_number()
+          .fract()
+          == 0.0
+      },
+      Instr::CheckParamType { check_idx, .. } => {
+        let check = &proto.chunk.param_checks[*check_idx as usize];
+        !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Int)
+      },
+      Instr::BitAnd { .. }
+      | Instr::BitOr { .. }
+      | Instr::BitXor { .. }
+      | Instr::BitShl { .. }
+      | Instr::BitShr { .. }
+      | Instr::BitUshr { .. }
+      | Instr::BitNot { .. } => true,
+      _ => false,
+    });
   if !has_int_source {
     return IntFacts {
       entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
@@ -734,10 +740,25 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
 
   let num_registers = proto.num_registers as usize;
 
+  let seed: Option<RegSet> = speculative_params.map(|mask| {
+    let mut s = RegSet::empty(num_registers);
+    let required = if proto.variadic {
+      proto.arity.saturating_sub(1)
+    } else {
+      proto.arity
+    };
+    for r in 0..(required as usize).min(64) {
+      if (mask & (1u64 << r)) != 0 {
+        s.set(r as u8, true);
+      }
+    }
+    s
+  });
+
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
-        RegSet::empty(num_registers)
+        seed.clone().unwrap_or_else(|| RegSet::empty(num_registers))
       } else {
         RegSet::full(num_registers)
       }
@@ -776,7 +797,7 @@ pub fn analyze_int(proto: &ObjFunction, preds: &[Vec<usize>]) -> IntFacts {
       new_list_in = RegSet::full(num_registers);
     }
     if ip == 0 {
-      new_in = RegSet::empty(num_registers);
+      new_in = seed.clone().unwrap_or_else(|| RegSet::empty(num_registers));
       new_list_in = RegSet::empty(num_registers);
     }
 

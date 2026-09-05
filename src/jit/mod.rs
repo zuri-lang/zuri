@@ -327,6 +327,7 @@ pub struct CompileFacts {
   pub globals_snapshot: FxHashMap<String, ResolvedGlobal>,
   pub global_lists: rustc_hash::FxHashSet<String>,
   pub speculative_lists: Option<u64>,
+  pub speculative_ints: Option<u64>,
   pub known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
 }
 

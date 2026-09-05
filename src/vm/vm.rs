@@ -2051,13 +2051,14 @@ impl VM {
   /// performing any whole-function dataflow analyses on the main VM thread,
   /// then hands the job to the background compiler thread.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
-    let (speculative_params, speculative_regs, speculative_lists) = if self.no_jit_specialization {
-      (None, None, None)
+    let (speculative_params, speculative_regs, speculative_lists, speculative_ints) = if self.no_jit_specialization {
+      (None, None, None, None)
     } else {
       (
         self.combined_param_feedback(proto),
         None,
         self.combined_list_feedback(proto),
+        self.combined_int_feedback(proto),
       )
     };
     for (ip, instr) in proto.chunk.code.iter().enumerate() {
@@ -2087,6 +2088,7 @@ impl VM {
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),
       speculative_lists,
+      speculative_ints,
       known_classes: self.resolve_known_classes(proto),
     };
 
@@ -2266,6 +2268,32 @@ impl VM {
     Some(mask)
   }
 
+  fn sample_param_int_types(&self, proto: &ObjFunction) -> Option<u64> {
+    let frame = self.frames.last()?;
+    if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
+      return None;
+    }
+    let required = if proto.variadic {
+      proto.arity.saturating_sub(1)
+    } else {
+      proto.arity
+    };
+    let base = frame.base;
+    let mut mask: u64 = 0;
+    for i in 0..(required as usize).min(64) {
+      let Some(v) = self.registers.get(base + i) else {
+        break;
+      };
+      if v.is_number() {
+        let num = v.as_number();
+        if num.fract() == 0.0 && num >= (i64::MIN as f64) && num <= (i64::MAX as f64) {
+          mask |= 1u64 << i;
+        }
+      }
+    }
+    Some(mask)
+  }
+
   /// Folds one call's argument types into `proto`'s running
   /// `numeric_feedback` accumulator via bitwise AND, so a parameter's bit
   /// only survives to compile time if it was numeric on every call seen so
@@ -2289,6 +2317,12 @@ impl VM {
         .jit
         .list_feedback
         .set(proto.jit.list_feedback.get() & list_mask);
+    }
+    if let Some(int_mask) = self.sample_param_int_types(proto) {
+      proto
+        .jit
+        .int_feedback
+        .set(proto.jit.int_feedback.get() & int_mask);
     }
     proto
       .jit
@@ -2314,6 +2348,14 @@ impl VM {
       Some(proto.jit.list_feedback.get())
     } else {
       self.sample_param_list_types(proto)
+    }
+  }
+
+  fn combined_int_feedback(&self, proto: &ObjFunction) -> Option<u64> {
+    if proto.jit.feedback_samples.get() > 0 {
+      Some(proto.jit.int_feedback.get())
+    } else {
+      self.sample_param_int_types(proto)
     }
   }
 
