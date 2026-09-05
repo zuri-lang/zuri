@@ -285,6 +285,8 @@ enum NumberIntrinsic {
   Max,
   /// `a.min(b)` inlined into Cranelift fmin.
   Min,
+  /// `n.round()`; round half away from zero, matching `f64::round` exactly.
+  Round,
   /// A direct call to the named `jit::runtime` helper: `(vm, bits)` for
   /// `arity` 0, `(vm, recv_bits, arg_bits)` for `arity` 1.
   Call { helper: &'static str, arity: u8 },
@@ -423,10 +425,7 @@ impl NumberIntrinsic {
         helper: "zuri_jit_num_cbrt",
         arity: 0,
       },
-      "round" => Call {
-        helper: "zuri_jit_num_round",
-        arity: 0,
-      },
+      "round" => Round,
 
       "atan2" => Call {
         helper: "zuri_jit_num_atan2",
@@ -540,6 +539,22 @@ impl StringIntrinsic {
       "is_empty" => StringIntrinsic::IsEmpty,
       _ => return None,
     })
+  }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum IterableIntrinsic {
+  Key,
+  Value,
+}
+
+impl IterableIntrinsic {
+  fn of(name: &str) -> Option<IterableIntrinsic> {
+    match name {
+      "@key" => Some(IterableIntrinsic::Key),
+      "@value" => Some(IterableIntrinsic::Value),
+      _ => None,
+    }
   }
 }
 
@@ -2463,6 +2478,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     callee_num_registers: u8,
     slow_block: Block,
   ) -> (IrValue, IrValue) {
+    let num_regs = self.i64c(callee_num_registers as i64);
+    self.emit_call_checks_dyn(new_base, num_regs, slow_block)
+  }
+
+  fn emit_call_checks_dyn(
+    &mut self,
+    new_base: IrValue,
+    callee_num_registers: IrValue,
+    slow_block: Block,
+  ) -> (IrValue, IrValue) {
     let vm = self.vm_param;
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
 
@@ -2492,7 +2517,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let needed = self
       .fb
       .ins()
-      .iadd_imm_s(new_base, callee_num_registers as i64);
+      .iadd(new_base, callee_num_registers);
     let regs_ok = self
       .fb
       .ins()
@@ -2531,8 +2556,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     slow_block: Block,
   ) {
     let (depth, frames_len) = self.emit_call_checks(new_base, callee_num_registers, slow_block);
+    let proto_c = self.u64c(proto_bits);
     self.emit_frame_construction(
-      proto_bits,
+      proto_c,
       dst,
       new_base,
       closure_ptr,
@@ -2551,7 +2577,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// here.
   fn emit_frame_construction(
     &mut self,
-    proto_bits: u64,
+    proto_bits: IrValue,
     dst: u8,
     new_base: IrValue,
     closure_ptr: IrValue,
@@ -2566,11 +2592,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let frame_off = self.fb.ins().imul_imm_s(frames_len, CALL_FRAME_SIZE);
     let frame_addr = self.fb.ins().iadd(frames_ptr, frame_off);
 
-    let proto_c = self.u64c(proto_bits);
     self
       .fb
       .ins()
-      .store(flags, proto_c, frame_addr, CALL_FRAME_FUNCTION_OFFSET);
+      .store(flags, proto_bits, frame_addr, CALL_FRAME_FUNCTION_OFFSET);
     self
       .fb
       .ins()
@@ -2927,7 +2952,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let closure_c = self.u64c(ctor_bits);
     let closure_ptr = self.obj_ptr(closure_c);
     self.emit_frame_construction(
-      proto_bits,
+      proto_c,
       dst,
       new_base,
       closure_ptr,
@@ -4597,9 +4622,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
-  /// `Instr::Call`'s fully general codegen; the resolver-driven
-  /// `zuri_jit_call_prepare` fast call, used whenever nothing stronger
-  /// was proven about the callee.
+  /// `Instr::Call`'s fully general codegen; guards on a compiled JIT closure
+  /// to execute directly with inline frame push/pop, falling back to the
+  /// resolver-driven `zuri_jit_call_prepare` fast call whenever the callee
+  /// is not yet compiled, variadic, or not a plain closure.
   fn emit_generic_call(&mut self, dst: u8, func: u8, num_args: u8) {
     let base = self.base_param;
     let vm_p = self.vm_param;
@@ -4607,6 +4633,143 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let num_args_i = self.idx(num_args);
     let dst_i = self.idx(dst);
     let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
+
+    if num_args > 4 {
+      self.emit_fast_call(
+        "zuri_jit_call_prepare",
+        &[vm_p, base, func_i, num_args_i, dst_i],
+        new_base,
+        dst,
+        func + 1,
+        num_args,
+        "zuri_jit_call",
+        &[vm_p, base, func_i, num_args_i, dst_i],
+      );
+      return;
+    }
+
+    let callee_val = self.load_reg(func);
+    let slow_block = self.fb.create_block();
+    let direct_call_block = self.fb.create_block();
+    let join_block = self.fb.create_block();
+
+    let is_obj = self.is_obj(callee_val);
+    let obj_block = self.fb.create_block();
+    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let closure_ptr = self.obj_ptr(callee_val);
+    let tag = self.obj_tag(closure_ptr);
+    let is_closure = self.fb.ins().icmp_imm_s(IntCC::Equal, tag, object::OBJ_TAG_CLOSURE as i64);
+    let closure_block = self.fb.create_block();
+    self.fb.ins().brif(is_closure, closure_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(closure_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let func_val = self.fb.ins().load(
+      types::I64,
+      flags,
+      closure_ptr,
+      object::obj_closure_function_offset() as i32,
+    );
+    let func_is_obj = self.is_obj(func_val);
+    let func_obj_block = self.fb.create_block();
+    self.fb.ins().brif(func_is_obj, func_obj_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(func_obj_block);
+    let func_obj_ptr = self.obj_ptr(func_val);
+    let func_tag = self.obj_tag(func_obj_ptr);
+    let is_func = self.fb.ins().icmp_imm_s(IntCC::Equal, func_tag, object::OBJ_TAG_FUNC as i64);
+    let check_proto_block = self.fb.create_block();
+    self.fb.ins().brif(is_func, check_proto_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(check_proto_block);
+    let proto_ptr = self.fb.ins().load(
+      types::I64,
+      flags,
+      func_obj_ptr,
+      object::obj_func_proto_offset() as i32,
+    );
+
+    let entry_addr = self.fb.ins().load(
+      types::I64,
+      flags,
+      proto_ptr,
+      object::obj_function_jit_entry_offset() as i32,
+    );
+    let zero = self.i64c(0);
+    let has_entry = self.fb.ins().icmp(IntCC::NotEqual, entry_addr, zero);
+    let entry_block = self.fb.create_block();
+    self.fb.ins().brif(has_entry, entry_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(entry_block);
+    let arity = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto_ptr,
+      object::obj_function_arity_offset() as i32,
+    );
+    let arity_ok = self.fb.ins().icmp_imm_s(IntCC::Equal, arity, num_args as i64);
+
+    let variadic = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto_ptr,
+      object::obj_function_variadic_offset() as i32,
+    );
+    let not_variadic = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
+
+    let is_method = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto_ptr,
+      object::obj_function_is_method_offset() as i32,
+    );
+    let not_method = self.fb.ins().icmp_imm_s(IntCC::Equal, is_method, 0);
+
+    let sig_part = self.fb.ins().band(arity_ok, not_variadic);
+    let sig_ok = self.fb.ins().band(sig_part, not_method);
+    let frame_block = self.fb.create_block();
+    self.fb.ins().brif(sig_ok, frame_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(frame_block);
+    let callee_num_regs8 = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto_ptr,
+      object::obj_function_num_registers_offset() as i32,
+    );
+    let callee_num_regs = self.fb.ins().uextend(types::I64, callee_num_regs8);
+    let (depth, frames_len) = self.emit_call_checks_dyn(new_base, callee_num_regs, slow_block);
+
+    self.emit_frame_construction(
+      proto_ptr,
+      dst,
+      new_base,
+      closure_ptr,
+      callee_val,
+      depth,
+      frames_len,
+    );
+    self.fb.ins().jump(direct_call_block, &[]);
+
+    self.fb.switch_to_block(direct_call_block);
+    let sig = self.entry_sig_ref();
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
+    self.flush_live(self.current_ip);
+    let call = self.fb.ins().call_indirect(
+      sig,
+      entry_addr,
+      &[vm_p, new_base, callee_val, neg1, a0, a1, a2, a3],
+    );
+    let ret_bits = self.fb.inst_results(call)[0];
+    self.reload_live(self.current_ip);
+    self.refresh_regs();
+    self.emit_inline_frame_finish(dst, new_base, ret_bits);
+    self.fb.ins().jump(join_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
     self.emit_fast_call(
       "zuri_jit_call_prepare",
       &[vm_p, base, func_i, num_args_i, dst_i],
@@ -4617,6 +4780,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       "zuri_jit_call",
       &[vm_p, base, func_i, num_args_i, dst_i],
     );
+    self.fb.ins().jump(join_block, &[]);
+
+    self.fb.switch_to_block(join_block);
+    self.resync_dst_from_memory(dst);
   }
 
   fn emit_known_call(
@@ -6083,6 +6250,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let r = self.fb.ins().fmin(f1, f2);
         self.from_f64(r)
       },
+      NumberIntrinsic::Round => {
+        let f = self.to_f64(recv);
+        let half = self.fb.ins().f64const(0.5);
+        let abs_f = self.fb.ins().fabs(f);
+        let sum = self.fb.ins().fadd(abs_f, half);
+        let fl = self.fb.ins().floor(sum);
+        let r = self.fb.ins().fcopysign(fl, f);
+        self.from_f64(r)
+      },
       NumberIntrinsic::Call { helper, .. } => {
         let vm = self.vm_param;
         match arg {
@@ -6466,6 +6642,411 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.from_f64(count_f)
       },
     }
+  }
+
+  fn emit_iterable_key_common(
+    &mut self,
+    dst: u8,
+    arg: IrValue,
+    len: IrValue,
+    slow_block: Block,
+    done_block: Block,
+  ) {
+    let zero = self.i64c(0);
+    let nil_val = self.u64c(value::NIL_VAL);
+    let zero_f64 = self.fb.ins().f64const(0.0);
+    let zero_val = self.from_f64(zero_f64);
+
+    let is_nil = self.fb.ins().icmp(IntCC::Equal, arg, nil_val);
+    let is_num = self.is_number(arg);
+    let valid_arg = self.fb.ins().bor(is_nil, is_num);
+    let key_fast_block = self.fb.create_block();
+    self.fb.ins().brif(valid_arg, key_fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(key_fast_block);
+    let len_zero = self.fb.ins().icmp(IntCC::Equal, len, zero);
+    let nil_res = self.fb.ins().select(len_zero, nil_val, zero_val);
+
+    let f = self.to_f64(arg);
+    let idx = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let limit = self.fb.ins().iadd_imm_s(len, -1);
+    let in_range = self.fb.ins().icmp(IntCC::SignedLessThan, idx, limit);
+    let ge_zero = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, idx, zero);
+    let valid_idx = self.fb.ins().band(ge_zero, in_range);
+    let next_idx = self.fb.ins().iadd_imm_s(idx, 1);
+    let next_f = self.fb.ins().fcvt_from_sint(types::F64, next_idx);
+    let next_val = self.from_f64(next_f);
+    let num_res = self.fb.ins().select(valid_idx, next_val, nil_val);
+
+    let res = self.fb.ins().select(is_nil, nil_res, num_res);
+    self.store_reg(dst, res);
+    self.fb.ins().jump(done_block, &[]);
+  }
+
+  fn emit_iterable_list(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    op: IterableIntrinsic,
+    _recv: IrValue,
+    arg: IrValue,
+    ptr: IrValue,
+    slow_block: Block,
+    done_block: Block,
+  ) {
+    let (data_ptr, len) = self.load_list_ptr_len(ptr);
+    match op {
+      IterableIntrinsic::Key => {
+        self.emit_iterable_key_common(dst, arg, len, slow_block, done_block);
+      },
+      IterableIntrinsic::Value => {
+        let is_num = self.is_number(arg);
+        let val_fast_block = self.fb.create_block();
+        self.fb.ins().brif(is_num, val_fast_block, &[], slow_block, &[]);
+
+        self.fb.switch_to_block(val_fast_block);
+        let zero_f64 = self.fb.ins().f64const(0.0);
+        let f = self.to_f64(arg);
+        let idx = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        let f_ge_zero = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero_f64);
+        let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, idx, len);
+        let ok_bounds = self.fb.ins().band(f_ge_zero, in_bounds);
+
+        let load_block = self.fb.create_block();
+        let nil_block = self.fb.create_block();
+        self.fb.ins().brif(ok_bounds, load_block, &[], nil_block, &[]);
+
+        self.fb.switch_to_block(load_block);
+        let byte_off = self.fb.ins().imul_imm_s(idx, 8);
+        let elem_addr = self.fb.ins().iadd(data_ptr, byte_off);
+        let elem = self.fb.ins().load(
+          types::I64,
+          cranelift_codegen::ir::MemFlagsData::trusted(),
+          elem_addr,
+          0,
+        );
+        self.store_reg(dst, elem);
+        let seeds_int = self.int_tracked[dst as usize]
+          && (self.proven_int_list(ip, obj)
+            || (ip + 1 < self.proto.chunk.code.len() && self.int_facts.is_int(ip + 1, dst)));
+        if seeds_int {
+          let ef = self.to_f64(elem);
+          let iv = self.fb.ins().fcvt_to_sint_sat(types::I64, ef);
+          self.fb.def_var(self.reg_vars_int[dst as usize], iv);
+        }
+        self.fb.ins().jump(done_block, &[]);
+
+        self.fb.switch_to_block(nil_block);
+        let nil_val = self.u64c(value::NIL_VAL);
+        self.store_reg(dst, nil_val);
+        self.fb.ins().jump(done_block, &[]);
+      },
+    }
+  }
+
+  fn emit_iterable_bytes(
+    &mut self,
+    _ip: usize,
+    dst: u8,
+    _obj: u8,
+    op: IterableIntrinsic,
+    _recv: IrValue,
+    arg: IrValue,
+    ptr: IrValue,
+    slow_block: Block,
+    done_block: Block,
+  ) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let bytes_data_ptr = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_bytes_ptr_offset());
+    let bytes_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_bytes_len_offset());
+
+    match op {
+      IterableIntrinsic::Key => {
+        self.emit_iterable_key_common(dst, arg, bytes_len, slow_block, done_block);
+      },
+      IterableIntrinsic::Value => {
+        let is_num = self.is_number(arg);
+        let val_fast_block = self.fb.create_block();
+        self.fb.ins().brif(is_num, val_fast_block, &[], slow_block, &[]);
+
+        self.fb.switch_to_block(val_fast_block);
+        let zero_f64 = self.fb.ins().f64const(0.0);
+        let f = self.to_f64(arg);
+        let idx = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        let f_ge_zero = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero_f64);
+        let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, idx, bytes_len);
+        let ok_bounds = self.fb.ins().band(f_ge_zero, in_bounds);
+
+        let load_block = self.fb.create_block();
+        let nil_block = self.fb.create_block();
+        self.fb.ins().brif(ok_bounds, load_block, &[], nil_block, &[]);
+
+        self.fb.switch_to_block(load_block);
+        let elem_addr = self.fb.ins().iadd(bytes_data_ptr, idx);
+        let b8 = self.fb.ins().load(types::I8, flags, elem_addr, 0);
+        let b64 = self.fb.ins().uextend(types::I64, b8);
+        let bf = self.fb.ins().fcvt_from_uint(types::F64, b64);
+        let bval = self.from_f64(bf);
+        self.store_reg(dst, bval);
+        self.fb.ins().jump(done_block, &[]);
+
+        self.fb.switch_to_block(nil_block);
+        let nil_val = self.u64c(value::NIL_VAL);
+        self.store_reg(dst, nil_val);
+        self.fb.ins().jump(done_block, &[]);
+      },
+    }
+  }
+
+  fn emit_iterable_range(
+    &mut self,
+    _ip: usize,
+    dst: u8,
+    _obj: u8,
+    op: IterableIntrinsic,
+    _recv: IrValue,
+    arg: IrValue,
+    ptr: IrValue,
+    slow_block: Block,
+    done_block: Block,
+  ) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let lower = self
+      .fb
+      .ins()
+      .load(types::F64, flags, ptr, object::obj_range_lower_offset());
+    let upper = self
+      .fb
+      .ins()
+      .load(types::F64, flags, ptr, object::obj_range_upper_offset());
+    let step = self
+      .fb
+      .ins()
+      .load(types::F64, flags, ptr, object::obj_range_step_offset());
+
+    let zero_f = self.fb.ins().f64const(0.0);
+    let one_f = self.fb.ins().f64const(1.0);
+    let step_pos = self.fb.ins().fcmp(FloatCC::GreaterThan, step, zero_f);
+    let actual_step = self.fb.ins().select(step_pos, step, one_f);
+
+    let diff = self.fb.ins().fsub(upper, lower);
+    let width = self.fb.ins().fabs(diff);
+    let raw_count = self.fb.ins().fdiv(width, actual_step);
+    let ceil_count = self.fb.ins().ceil(raw_count);
+    let count = self.fb.ins().fcvt_to_sint_sat(types::I64, ceil_count);
+
+    match op {
+      IterableIntrinsic::Key => {
+        self.emit_iterable_key_common(dst, arg, count, slow_block, done_block);
+      },
+      IterableIntrinsic::Value => {
+        let is_num = self.is_number(arg);
+        let val_fast_block = self.fb.create_block();
+        self.fb.ins().brif(is_num, val_fast_block, &[], slow_block, &[]);
+
+        self.fb.switch_to_block(val_fast_block);
+        let nil_val = self.u64c(value::NIL_VAL);
+        let f_idx = self.to_f64(arg);
+        let ge_zero = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f_idx, zero_f);
+        let lt_count = self.fb.ins().fcmp(FloatCC::LessThan, f_idx, ceil_count);
+        let in_range = self.fb.ins().band(ge_zero, lt_count);
+
+        let forward = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, upper, lower);
+        let delta = self.fb.ins().fmul(f_idx, actual_step);
+        let fwd_val = self.fb.ins().fadd(lower, delta);
+        let bwd_val = self.fb.ins().fsub(lower, delta);
+        let val_f = self.fb.ins().select(forward, fwd_val, bwd_val);
+        let val = self.from_f64(val_f);
+        let res = self.fb.ins().select(in_range, val, nil_val);
+        self.store_reg(dst, res);
+        self.fb.ins().jump(done_block, &[]);
+      },
+    }
+  }
+
+  fn emit_iterable_string(
+    &mut self,
+    _ip: usize,
+    dst: u8,
+    _obj: u8,
+    op: IterableIntrinsic,
+    _recv: IrValue,
+    arg: IrValue,
+    ptr: IrValue,
+    slow_block: Block,
+    done_block: Block,
+  ) {
+    let is_ascii = self.str_ascii_guard(ptr);
+    let ascii_block = self.fb.create_block();
+    self.fb.ins().brif(is_ascii, ascii_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(ascii_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let str_data_ptr = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_str_ptr_offset());
+    let str_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_str_len_offset());
+
+    match op {
+      IterableIntrinsic::Key => {
+        self.emit_iterable_key_common(dst, arg, str_len, slow_block, done_block);
+      },
+      IterableIntrinsic::Value => {
+        let is_num = self.is_number(arg);
+        let val_fast_block = self.fb.create_block();
+        self.fb.ins().brif(is_num, val_fast_block, &[], slow_block, &[]);
+
+        self.fb.switch_to_block(val_fast_block);
+        let zero_f64 = self.fb.ins().f64const(0.0);
+        let f = self.to_f64(arg);
+        let idx = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        let f_ge_zero = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero_f64);
+        let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, idx, str_len);
+        let ok_bounds = self.fb.ins().band(f_ge_zero, in_bounds);
+
+        let load_block = self.fb.create_block();
+        let nil_block = self.fb.create_block();
+        self.fb.ins().brif(ok_bounds, load_block, &[], nil_block, &[]);
+
+        self.fb.switch_to_block(load_block);
+        let byte_addr = self.fb.ins().iadd(str_data_ptr, idx);
+        let b8 = self.fb.ins().load(types::I8, flags, byte_addr, 0);
+        let b64 = self.fb.ins().uextend(types::I64, b8);
+        let interned_offset = self.fb.ins().imul_imm_s(b64, 8);
+        let interned_table = self
+          .fb
+          .ins()
+          .iadd_imm_s(self.vm_param, INTERNED_ASCII_OFFSET as i64);
+        let char_addr = self.fb.ins().iadd(interned_table, interned_offset);
+        let char_val = self.fb.ins().load(types::I64, flags, char_addr, 0);
+        self.store_reg(dst, char_val);
+        self.fb.ins().jump(done_block, &[]);
+
+        self.fb.switch_to_block(nil_block);
+        let nil_val = self.u64c(value::NIL_VAL);
+        self.store_reg(dst, nil_val);
+        self.fb.ins().jump(done_block, &[]);
+      },
+    }
+  }
+
+  fn emit_iterable_slow(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    slow_block: Block,
+    done_block: Block,
+  ) {
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_invoke(ip, dst, obj, method_const, 1);
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+  }
+
+  fn emit_iterable_intrinsic(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    op: IterableIntrinsic,
+  ) {
+    let recv = self.load_reg(obj);
+    let arg = self.load_reg(obj + 2);
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    if self.proven_list(ip, obj) {
+      let ptr = self.obj_ptr(recv);
+      self.emit_iterable_list(ip, dst, obj, op, recv, arg, ptr, slow_block, done_block);
+      self.emit_iterable_slow(ip, dst, obj, method_const, slow_block, done_block);
+      self.fb.switch_to_block(done_block);
+      return;
+    }
+
+    if self.proven_string(ip, obj) {
+      let ptr = self.obj_ptr(recv);
+      self.emit_iterable_string(ip, dst, obj, op, recv, arg, ptr, slow_block, done_block);
+      self.emit_iterable_slow(ip, dst, obj, method_const, slow_block, done_block);
+      self.fb.switch_to_block(done_block);
+      return;
+    }
+
+    let is_obj = self.is_obj(recv);
+    let check_tag_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_obj, check_tag_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(check_tag_block);
+    let ptr = self.obj_ptr(recv);
+    let tag = self.obj_tag(ptr);
+
+    let list_block = self.fb.create_block();
+    let check_bytes_block = self.fb.create_block();
+    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+    self
+      .fb
+      .ins()
+      .brif(is_list, list_block, &[], check_bytes_block, &[]);
+
+    self.fb.switch_to_block(list_block);
+    self.emit_iterable_list(ip, dst, obj, op, recv, arg, ptr, slow_block, done_block);
+
+    self.fb.switch_to_block(check_bytes_block);
+    let bytes_block = self.fb.create_block();
+    let check_range_block = self.fb.create_block();
+    let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
+    let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
+    self
+      .fb
+      .ins()
+      .brif(is_bytes, bytes_block, &[], check_range_block, &[]);
+
+    self.fb.switch_to_block(bytes_block);
+    self.emit_iterable_bytes(ip, dst, obj, op, recv, arg, ptr, slow_block, done_block);
+
+    self.fb.switch_to_block(check_range_block);
+    let range_block = self.fb.create_block();
+    let check_str_block = self.fb.create_block();
+    let tag_range = self.i64c(object::OBJ_TAG_RANGE as i64);
+    let is_range = self.fb.ins().icmp(IntCC::Equal, tag, tag_range);
+    self
+      .fb
+      .ins()
+      .brif(is_range, range_block, &[], check_str_block, &[]);
+
+    self.fb.switch_to_block(range_block);
+    self.emit_iterable_range(ip, dst, obj, op, recv, arg, ptr, slow_block, done_block);
+
+    self.fb.switch_to_block(check_str_block);
+    let str_block = self.fb.create_block();
+    let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+    let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
+    self.fb.ins().brif(is_str, str_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(str_block);
+    self.emit_iterable_string(ip, dst, obj, op, recv, arg, ptr, slow_block, done_block);
+
+    self.emit_iterable_slow(ip, dst, obj, method_const, slow_block, done_block);
+    self.fb.switch_to_block(done_block);
   }
 
   /// `object::write_barrier`'s own guard, inlined; owed after EVERY
@@ -7188,7 +7769,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let proven_const_idx = self
       .proven_const(ip, iidx)
-      .filter(|c| c.fract() == 0.0 && *c >= 0.0 && *c <= i64::MAX as f64);
+      .filter(|c| c.fract() == 0.0 && *c >= i64::MIN as f64 && *c <= i64::MAX as f64);
     let idx_proven_int = idx_proven_int || proven_const_idx.is_some();
 
     // `proven_list` is a compile-time fact; exactly one of these two
@@ -7369,10 +7950,34 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .ins()
         .icmp(IntCC::UnsignedLessThan, as_int, bytes_len);
       let bytes_fast_block = self.fb.create_block();
+      let bytes_check_neg_block = self.fb.create_block();
       self
         .fb
         .ins()
-        .brif(bytes_in_bounds, bytes_fast_block, &[], slow_block, &[]);
+        .brif(bytes_in_bounds, bytes_fast_block, &[], bytes_check_neg_block, &[]);
+
+      self.fb.switch_to_block(bytes_check_neg_block);
+      let zero = self.i64c(0);
+      let bytes_is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+      let bytes_neg_block = self.fb.create_block();
+      self.fb.ins().brif(bytes_is_neg, bytes_neg_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(bytes_neg_block);
+      let bytes_adjusted = self.fb.ins().iadd(bytes_len, as_int);
+      let bytes_neg_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, bytes_adjusted, bytes_len);
+      let bytes_neg_fast_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(bytes_neg_in_bounds, bytes_neg_fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(bytes_neg_fast_block);
+      let byte_elem_addr_neg = self.fb.ins().iadd(bytes_data_ptr, bytes_adjusted);
+      let b8_neg = self.fb.ins().load(types::I8, flags_b, byte_elem_addr_neg, 0);
+      let b8_u64_neg = self.fb.ins().uextend(types::I64, b8_neg);
+      let b_f_neg = self.fb.ins().fcvt_from_uint(types::F64, b8_u64_neg);
+      self.store_reg_f64(dst, b_f_neg);
+      self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(bytes_fast_block);
       let byte_elem_addr = self.fb.ins().iadd(bytes_data_ptr, as_int);
@@ -7406,10 +8011,45 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.switch_to_block(str_bounds_block);
       let str_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, str_len);
       let str_fast_block = self.fb.create_block();
+      let str_check_neg_block = self.fb.create_block();
       self
         .fb
         .ins()
-        .brif(str_in_bounds, str_fast_block, &[], slow_block, &[]);
+        .brif(str_in_bounds, str_fast_block, &[], str_check_neg_block, &[]);
+
+      self.fb.switch_to_block(str_check_neg_block);
+      let zero = self.i64c(0);
+      let str_is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+      let str_neg_block = self.fb.create_block();
+      self.fb.ins().brif(str_is_neg, str_neg_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(str_neg_block);
+      let str_adjusted = self.fb.ins().iadd(str_len, as_int);
+      let str_neg_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, str_adjusted, str_len);
+      let str_neg_fast_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(str_neg_in_bounds, str_neg_fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(str_neg_fast_block);
+      let byte_addr_neg = self.fb.ins().iadd(str_data_ptr, str_adjusted);
+      let byte_val8_neg = self.fb.ins().load(types::I8, flags, byte_addr_neg, 0);
+      let byte_val64_neg = self.fb.ins().uextend(types::I64, byte_val8_neg);
+      let ascii_load_block_neg = self.fb.create_block();
+      self.fb.ins().jump(ascii_load_block_neg, &[]);
+
+      self.fb.switch_to_block(ascii_load_block_neg);
+      let interned_offset_neg = self.fb.ins().imul_imm_s(byte_val64_neg, 8);
+      let vm_base = self.vm_param;
+      let interned_table_addr_neg = self
+        .fb
+        .ins()
+        .iadd_imm_s(vm_base, INTERNED_ASCII_OFFSET as i64);
+      let elem_addr_neg = self.fb.ins().iadd(interned_table_addr_neg, interned_offset_neg);
+      let char_val_neg = self.fb.ins().load(types::I64, flags, elem_addr_neg, 0);
+      self.store_reg(dst, char_val_neg);
+      self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(str_fast_block);
       let byte_addr = self.fb.ins().iadd(str_data_ptr, as_int);
@@ -7437,10 +8077,46 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
     let fast_block = self.fb.create_block();
+    let check_neg_block = self.fb.create_block();
     self
       .fb
       .ins()
-      .brif(in_bounds, fast_block, &[], slow_block, &[]);
+      .brif(in_bounds, fast_block, &[], check_neg_block, &[]);
+
+    self.fb.switch_to_block(check_neg_block);
+    let zero = self.i64c(0);
+    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+    let neg_block = self.fb.create_block();
+    self.fb.ins().brif(is_neg, neg_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(neg_block);
+    let adjusted = self.fb.ins().iadd(len, as_int);
+    let neg_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, adjusted, len);
+    let neg_fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(neg_in_bounds, neg_fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(neg_fast_block);
+    let byte_off_neg = self.fb.ins().imul_imm_s(adjusted, 8);
+    let elem_addr_neg = self.fb.ins().iadd(data_ptr, byte_off_neg);
+    let v_neg = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      elem_addr_neg,
+      0,
+    );
+    self.store_reg(dst, v_neg);
+    let seeds_int = self.int_tracked[dst as usize]
+      && (self.proven_int_list(ip, obj)
+        || (ip + 1 < self.proto.chunk.code.len() && self.int_facts.is_int(ip + 1, dst)));
+    if seeds_int {
+      let f = self.to_f64(v_neg);
+      let iv = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+      self.fb.def_var(self.reg_vars_int[dst as usize], iv);
+    }
+    self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let byte_off = self.fb.ins().imul_imm_s(as_int, 8);
@@ -7452,9 +8128,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       0,
     );
     self.store_reg(dst, v);
-    let seeds_int = self.int_tracked[dst as usize]
-      && (self.proven_int_list(ip, obj)
-        || (ip + 1 < self.proto.chunk.code.len() && self.int_facts.is_int(ip + 1, dst)));
     if seeds_int {
       let f = self.to_f64(v);
       let iv = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
@@ -7515,7 +8188,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let proven_list = self.proven_list(ip, obj);
     let proven_const_idx = self
       .proven_const(ip, iidx)
-      .filter(|c| c.fract() == 0.0 && *c >= 0.0 && *c <= i64::MAX as f64);
+      .filter(|c| c.fract() == 0.0 && *c >= i64::MIN as f64 && *c <= i64::MAX as f64);
     let idx_proven_int = idx_proven_int || proven_const_idx.is_some();
 
     let slow_block = self.fb.create_block();
@@ -7646,10 +8319,34 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .ins()
         .icmp(IntCC::UnsignedLessThan, as_int, bytes_len);
       let bytes_fast_block = self.fb.create_block();
+      let bytes_check_neg_block = self.fb.create_block();
       self
         .fb
         .ins()
-        .brif(bytes_in_bounds, bytes_fast_block, &[], slow_block, &[]);
+        .brif(bytes_in_bounds, bytes_fast_block, &[], bytes_check_neg_block, &[]);
+
+      self.fb.switch_to_block(bytes_check_neg_block);
+      let zero = self.i64c(0);
+      let bytes_is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+      let bytes_neg_block = self.fb.create_block();
+      self.fb.ins().brif(bytes_is_neg, bytes_neg_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(bytes_neg_block);
+      let bytes_adjusted = self.fb.ins().iadd(bytes_len, as_int);
+      let bytes_neg_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, bytes_adjusted, bytes_len);
+      let bytes_neg_fast_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(bytes_neg_in_bounds, bytes_neg_fast_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(bytes_neg_fast_block);
+      let byte_elem_addr_neg = self.fb.ins().iadd(bytes_data_ptr, bytes_adjusted);
+      let f_src_neg = self.to_f64(src_val);
+      let i_src_neg = self.fb.ins().fcvt_to_sint_sat(types::I64, f_src_neg);
+      let u8_src_neg = self.fb.ins().ireduce(types::I8, i_src_neg);
+      self.fb.ins().store(flags_set, u8_src_neg, byte_elem_addr_neg, 0);
+      self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(bytes_fast_block);
       let byte_elem_addr = self.fb.ins().iadd(bytes_data_ptr, as_int);
@@ -7666,10 +8363,38 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
     let fast_block = self.fb.create_block();
+    let check_neg_block = self.fb.create_block();
     self
       .fb
       .ins()
-      .brif(in_bounds, fast_block, &[], slow_block, &[]);
+      .brif(in_bounds, fast_block, &[], check_neg_block, &[]);
+
+    self.fb.switch_to_block(check_neg_block);
+    let zero = self.i64c(0);
+    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+    let neg_block = self.fb.create_block();
+    self.fb.ins().brif(is_neg, neg_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(neg_block);
+    let adjusted = self.fb.ins().iadd(len, as_int);
+    let neg_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, adjusted, len);
+    let neg_fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(neg_in_bounds, neg_fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(neg_fast_block);
+    let byte_off_neg = self.fb.ins().imul_imm_s(adjusted, 8);
+    let elem_addr_neg = self.fb.ins().iadd(data_ptr, byte_off_neg);
+    self.fb.ins().store(
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      src_val,
+      elem_addr_neg,
+      0,
+    );
+    self.emit_write_barrier_for_store(ip, src, src_val, ptr);
+    self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let byte_off = self.fb.ins().imul_imm_s(as_int, 8);
@@ -9613,6 +10338,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         method_const,
         num_args,
       } => {
+        if num_args == 1 {
+          if let Some(op) = IterableIntrinsic::of(self.method_name(method_const)) {
+            self.emit_iterable_intrinsic(ip, dst, obj, method_const, op);
+            return false;
+          }
+        }
         // Checked before `NumberIntrinsic`/`ListIntrinsic`: those two
         // match purely on METHOD NAME, not receiver type, so a proven
         // string calling e.g. `.length()` (a `ListIntrinsic` name too)

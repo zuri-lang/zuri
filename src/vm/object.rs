@@ -1442,6 +1442,26 @@ pub const fn obj_function_jit_entry_offset() -> usize {
   std::mem::offset_of!(ObjFunction, jit) + std::mem::offset_of!(JitInfo, entry)
 }
 
+pub fn obj_func_proto_offset() -> usize {
+  obj_payload_offset()
+}
+
+pub const fn obj_function_arity_offset() -> usize {
+  std::mem::offset_of!(ObjFunction, arity)
+}
+
+pub const fn obj_function_variadic_offset() -> usize {
+  std::mem::offset_of!(ObjFunction, variadic)
+}
+
+pub const fn obj_function_num_registers_offset() -> usize {
+  std::mem::offset_of!(ObjFunction, num_registers)
+}
+
+pub const fn obj_function_is_method_offset() -> usize {
+  std::mem::offset_of!(ObjFunction, is_method)
+}
+
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be
 /// `Obj::List` to the start of its `ListStorage`.
 ///
@@ -1652,6 +1672,42 @@ pub fn obj_bytes_len_offset() -> i32 {
   obj_bytes_data_offsets().1
 }
 
+fn obj_range_data_offsets() -> (i32, i32, i32) {
+  static OFFSETS: std::sync::OnceLock<(i32, i32, i32)> = std::sync::OnceLock::new();
+  *OFFSETS.get_or_init(|| {
+    let probe = Obj::Range {
+      lower: 1.0,
+      upper: 2.0,
+      step: std::cell::Cell::new(3.0),
+    };
+    let obj_addr = &probe as *const Obj as usize;
+    match &probe {
+      Obj::Range { lower, upper, step } => {
+        let lo_off = (lower as *const f64 as usize) - obj_addr;
+        let hi_off = (upper as *const f64 as usize) - obj_addr;
+        let step_off = (step.as_ptr() as usize) - obj_addr;
+        (lo_off as i32, hi_off as i32, step_off as i32)
+      },
+      _ => unreachable!(),
+    }
+  })
+}
+
+/// Byte offset from a proven-`Obj::Range` pointer to its lower bound (f64).
+pub fn obj_range_lower_offset() -> i32 {
+  obj_range_data_offsets().0
+}
+
+/// Byte offset from a proven-`Obj::Range` pointer to its upper bound (f64).
+pub fn obj_range_upper_offset() -> i32 {
+  obj_range_data_offsets().1
+}
+
+/// Byte offset from a proven-`Obj::Range` pointer to its step cell (f64).
+pub fn obj_range_step_offset() -> i32 {
+  obj_range_data_offsets().2
+}
+
 #[cfg(test)]
 mod gcbox_layout_tests {
   use super::*;
@@ -1782,6 +1838,15 @@ mod gcbox_layout_tests {
     assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_CLOSURE);
     let slot = unsafe { (obj as *const u8).add(obj_closure_function_offset()) as *const Value };
     assert_eq!(unsafe { *slot }.to_bits(), proto.to_bits());
+
+    let proto_obj = proto.as_obj();
+    assert_eq!(unsafe { (*proto_obj).tag() }, OBJ_TAG_FUNC);
+    let raw_proto_ptr = unsafe { *((proto_obj as *const u8).add(obj_func_proto_offset()) as *const *const ObjFunction) };
+    assert_eq!(raw_proto_ptr, proto.as_func() as *const ObjFunction);
+    let arity = unsafe { *((raw_proto_ptr as *const u8).add(obj_function_arity_offset())) };
+    assert_eq!(arity, 0);
+    let num_regs = unsafe { *((raw_proto_ptr as *const u8).add(obj_function_num_registers_offset())) };
+    assert_eq!(num_regs, 1);
   }
 
   #[test]
@@ -1817,6 +1882,24 @@ mod gcbox_layout_tests {
     assert_eq!(unsafe { *gcbox_ptr.add(6) }, v0.to_bits());
     // Word 7 (bytes 56..63): inline[1] = v1
     assert_eq!(unsafe { *gcbox_ptr.add(7) }, v1.to_bits());
+  }
+
+  #[test]
+  fn range_layout_matches_offsets() {
+    let mut heap = Heap::default();
+    let v = heap.alloc(Obj::Range {
+      lower: 12.5,
+      upper: 99.5,
+      step: Cell::new(2.5),
+    });
+    let obj = v.as_obj();
+    assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_RANGE);
+    let lo_ptr = unsafe { (obj as *const u8).offset(obj_range_lower_offset() as isize) as *const f64 };
+    let hi_ptr = unsafe { (obj as *const u8).offset(obj_range_upper_offset() as isize) as *const f64 };
+    let step_ptr = unsafe { (obj as *const u8).offset(obj_range_step_offset() as isize) as *const f64 };
+    assert_eq!(unsafe { *lo_ptr }, 12.5);
+    assert_eq!(unsafe { *hi_ptr }, 99.5);
+    assert_eq!(unsafe { *step_ptr }, 2.5);
   }
 }
 

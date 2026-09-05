@@ -199,7 +199,7 @@ pub struct CompiledFunction {
 ///   the instant a minor collection relocated it, silently disabling
 ///   the fast path for the rest of the process: see `alloc_class`'s
 ///   own docs.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum CallTarget {
   SelfRecursive,
   Known {
