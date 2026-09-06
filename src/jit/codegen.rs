@@ -634,6 +634,9 @@ struct FuncCompiler<'a, 'b> {
   /// String receiver can never satisfy. Same lifetime/scope as
   /// `type_facts`/`int_facts`/`list_facts`.
   string_facts: typeflow::StringFacts,
+  /// Which registers hold a `bytes` at each bytecode position; the
+  /// bytes sibling of `list_facts`/`string_facts`.
+  bytes_facts: typeflow::BytesFacts,
   bool_facts: typeflow::BoolFacts,
   /// Which registers are PROVEN to hold one exact, statically-known
   /// `f64` constant at each bytecode position: see `jit::typeflow::
@@ -1179,9 +1182,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let no_self_numeric_fields = rustc_hash::FxHashSet::default();
     let no_numeric_fields = rustc_hash::FxHashSet::default();
     let speculative_ints = facts.speculative_ints.filter(|&m| m != 0);
-    let int_facts = typeflow::analyze_int(proto, &preds, None);
+    let bytes_facts = typeflow::analyze_bytes(proto, &preds);
+    let int_facts = typeflow::analyze_int(proto, &preds, None, &bytes_facts);
     let spec_int_facts = speculative_ints.map(|si| {
-      typeflow::analyze_int(proto, &preds, Some(si))
+      typeflow::analyze_int(proto, &preds, Some(si), &bytes_facts)
     });
     let type_facts = typeflow::analyze(
       proto,
@@ -1217,6 +1221,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       int_facts,
       list_facts,
       string_facts,
+      bytes_facts,
       bool_facts,
       const_facts,
       preds,
@@ -1289,6 +1294,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   #[inline]
   fn proven_string(&self, ip: usize, r: u8) -> bool {
     self.string_facts.is_string(ip, r)
+  }
+
+  #[inline]
+  fn proven_bytes(&self, ip: usize, r: u8) -> bool {
+    self.bytes_facts.is_bytes(ip, r)
   }
 
   #[inline]
@@ -8022,16 +8032,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let byte_elem_addr_neg = self.fb.ins().iadd(bytes_data_ptr, bytes_adjusted);
       let b8_neg = self.fb.ins().load(types::I8, flags_b, byte_elem_addr_neg, 0);
       let b8_u64_neg = self.fb.ins().uextend(types::I64, b8_neg);
-      let b_f_neg = self.fb.ins().fcvt_from_uint(types::F64, b8_u64_neg);
-      self.store_reg_f64(dst, b_f_neg);
+      // A byte is a whole number in 0..=255, so this lands in the
+      // destination's integer register (when it has one; see
+      // `typeflow::transfer_int`'s `GetIndex` arm). Anything consuming
+      // it as an index then takes the integer straight out instead of
+      // converting back and re-proving it was whole, and the float view
+      // `store_reg_int` keeps in step falls to DCE where nothing reads
+      // it.
+      self.store_reg_int(dst, b8_u64_neg);
       self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(bytes_fast_block);
       let byte_elem_addr = self.fb.ins().iadd(bytes_data_ptr, as_int);
       let b8 = self.fb.ins().load(types::I8, flags_b, byte_elem_addr, 0);
       let b8_u64 = self.fb.ins().uextend(types::I64, b8);
-      let b_f = self.fb.ins().fcvt_from_uint(types::F64, b8_u64);
-      self.store_reg_f64(dst, b_f);
+      self.store_reg_int(dst, b8_u64);
       self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(str_resolve_block);

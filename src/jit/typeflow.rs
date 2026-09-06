@@ -532,6 +532,7 @@ impl IntFacts {
 fn transfer_int(
   in_int: &RegSet,
   in_list: &RegSet,
+  in_bytes: &RegSet,
   instr: &Instr,
   proto: &ObjFunction,
 ) -> (RegSet, RegSet) {
@@ -622,8 +623,11 @@ fn transfer_int(
       }
     },
 
+    // An element of an int list is an integer, and so is an element of
+    // a byte stream: every byte is a whole number in 0..=255, so the
+    // read cannot produce a fraction whatever the index.
     Instr::GetIndex { dst, obj, .. } => {
-      out_int.set(dst, in_list.get(obj));
+      out_int.set(dst, in_list.get(obj) || in_bytes.get(obj));
       out_list.set(dst, false);
     },
 
@@ -699,6 +703,7 @@ pub fn analyze_int(
   proto: &ObjFunction,
   preds: &[Vec<usize>],
   speculative_params: Option<u64>,
+  bytes_facts: &BytesFacts,
 ) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -778,7 +783,7 @@ pub fn analyze_int(
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<(RegSet, RegSet)> = (0..code_len)
-    .map(|ip| transfer_int(&entry[ip], &list_entry[ip], &code[ip], proto))
+    .map(|ip| transfer_int(&entry[ip], &list_entry[ip], bytes_facts.entry_set(ip), &code[ip], proto))
     .collect();
 
   while let Some(ip) = worklist.pop() {
@@ -804,7 +809,7 @@ pub fn analyze_int(
     if new_in != entry[ip] || new_list_in != list_entry[ip] {
       entry[ip] = new_in;
       list_entry[ip] = new_list_in;
-      out[ip] = transfer_int(&entry[ip], &list_entry[ip], &code[ip], proto);
+      out[ip] = transfer_int(&entry[ip], &list_entry[ip], bytes_facts.entry_set(ip), &code[ip], proto);
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
@@ -1170,6 +1175,136 @@ pub fn analyze_list(
 /// straight to `zuri_jit_invoke_string`, bypassing the wasted
 /// `zuri_jit_invoke_prepare` attempt (that helper's very first check is
 /// `receiver.is_instance()`, which a String can never be).
+/// Which registers hold a `bytes` at each bytecode position.
+///
+/// The bytes counterpart to `ListFacts`/`StringFacts`, and seeded from
+/// the same place: a parameter declared exactly `bytes`. There is no
+/// literal syntax for a byte stream and no instruction that builds one
+/// (`bytes(n)` and `s.to_bytes()` are ordinary calls, whose results
+/// this shape-only pass cannot claim), so an annotated parameter and
+/// whatever it flows into through `Move` is the whole source of truth.
+///
+/// Worth the pass on its own for skipping the runtime tag dispatch on
+/// an indexed read, but the real payoff is `transfer_int`: an element
+/// of a byte stream is always a whole number in 0..=255, so a proven
+/// bytes receiver makes `GetIndex`'s destination provably an integer,
+/// which keeps it in an integer register instead of round-tripping
+/// through a float.
+pub struct BytesFacts {
+  entry: Vec<RegSet>,
+}
+
+impl BytesFacts {
+  #[inline]
+  pub fn is_bytes(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+
+  #[inline]
+  pub(crate) fn entry_set(&self, ip: usize) -> &RegSet {
+    &self.entry[ip]
+  }
+}
+
+fn transfer_bytes(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
+  let mut out = in_set.clone();
+  match *instr {
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+
+    // A parameter checked as EXACTLY `bytes` (not a union, not
+    // nullable) is provably a byte stream everywhere past this
+    // instruction; the same reasoning `transfer_list` and
+    // `transfer_string` use for their own arms.
+    Instr::CheckParamType { reg, check_idx } => {
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      let all_bytes =
+        !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Bytes);
+      out.set(reg, all_bytes);
+    },
+
+    // Same catch-all as the sibling passes: any other write to a
+    // register clears whatever proof it used to carry, so a reused
+    // register can't keep a stale one.
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        out.set(dst, false);
+      }
+    },
+  }
+  out
+}
+
+/// Runs the bytes-shape analysis: see `BytesFacts`'s own docs.
+///
+/// Short-circuits when the function declares no `bytes` parameter at
+/// all, which is the only thing `transfer_bytes` ever seeds `true`
+/// from; without one the fixed point is empty and the worklist is
+/// pointless.
+pub fn analyze_bytes(proto: &ObjFunction, preds: &[Vec<usize>]) -> BytesFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let has_bytes_param = code.iter().any(|i| match i {
+    Instr::CheckParamType { check_idx, .. } => {
+      let check = &proto.chunk.param_checks[*check_idx as usize];
+      !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Bytes)
+    },
+    _ => false,
+  });
+  if !has_bytes_param {
+    return BytesFacts {
+      entry: vec![RegSet::empty(num_registers); code_len],
+    };
+  }
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer_bytes(&entry[ip], &code[ip], proto))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_bytes(&entry[ip], &code[ip], proto);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  BytesFacts { entry }
+}
+
 pub struct StringFacts {
   entry: Vec<RegSet>,
 }

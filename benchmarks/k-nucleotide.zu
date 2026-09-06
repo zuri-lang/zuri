@@ -67,7 +67,7 @@ def build_codes() {
  * The buffer is sized against the raw section, so it has a little
  * slack where the line breaks used to be.
  */
-def read_sequence(codes) {
+def read_sequence(codes: bytes) {
   var data = bytes(0)
 
   while true {
@@ -129,7 +129,7 @@ def read_sequence(codes) {
  * rolling code means each position costs one shift and one mask
  * rather than re-reading k bases.
  */
-def count_frame(seq, length, k) {
+def count_frame(seq: bytes, length, k) {
   var counts = {}
   var mask = (1 << (2 * k)) - 1
   var code = 0
@@ -169,7 +169,7 @@ def decode(code, k) {
 /**
  * Packs a base string into the same 2 bit code the counters use.
  */
-def encode(sequence, codes) {
+def encode(sequence, codes: bytes) {
   var code = 0
 
   iter var i = 0; i < sequence.length(); i++ {

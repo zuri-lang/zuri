@@ -69,7 +69,7 @@ def build_table() {
  * cursor that lands on a line break steps over it, which is what
  * keeps the original 60 column layout intact.
  */
-def reverse_complement(data, table) {
+def reverse_complement(data: bytes, table: bytes) {
   var size = data.length()
   var pos = 0
 
