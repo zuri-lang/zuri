@@ -1,0 +1,49 @@
+# A byte stream only accepts a whole number in 0..=255. The compiled
+# tier used to truncate instead of raising, and only after the loop
+# went hot, so these all run hot enough to reach compiled code.
+
+def store_one(b, v) {
+  b[0] = v
+}
+
+def show(label, v) {
+  var b = bytes(4)
+  # warm the call site so the store is compiled before the real test
+  iter var i = 0; i < 300; i++ {
+    store_one(b, 65)
+  }
+  catch {
+    store_one(b, v)
+    echo '${label}: stored ${b[0]}'
+  } as e {
+    echo '${label}: raised ${e.message}'
+  }
+}
+
+show('0', 0)
+show('255', 255)
+show('256', 256)
+show('300', 300)
+show('-1', -1)
+show('1.5', 1.5)
+show('1e9', 1000000000)
+show('nan', 0 / 0)
+show('string', 'x')
+
+# a value read out of another byte stream is always in range, so this
+# shape needs no check at all and must still be correct
+def copy_across(dst, src, n) {
+  var i = 0
+  while i < n {
+    dst[i % 4] = src[i % 4]
+    i++
+  }
+  return dst[0] + dst[1] + dst[2] + dst[3]
+}
+var a = bytes(4)
+var c = bytes(4)
+a[0] = 10
+a[1] = 20
+a[2] = 30
+a[3] = 40
+echo copy_across(c, a, 100000)

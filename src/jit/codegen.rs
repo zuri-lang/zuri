@@ -686,6 +686,9 @@ struct FuncCompiler<'a, 'b> {
   /// Which registers hold a dict; seeded by `MakeDict` the way
   /// `list_facts` is by `MakeList`.
   dict_facts: typeflow::DictFacts,
+  /// Which registers provably hold a whole number in 0..=255, so a
+  /// byte store can skip checking.
+  byte_value_facts: typeflow::ByteValueFacts,
   bool_facts: typeflow::BoolFacts,
   /// Which registers are PROVEN to hold one exact, statically-known
   /// `f64` constant at each bytecode position: see `jit::typeflow::
@@ -1233,6 +1236,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let speculative_ints = facts.speculative_ints.filter(|&m| m != 0);
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
     let dict_facts = typeflow::analyze_dict(proto, &preds);
+    let byte_value_facts = typeflow::analyze_byte_value(proto, &preds, &bytes_facts);
     let int_facts = typeflow::analyze_int(proto, &preds, None, &bytes_facts);
     let spec_int_facts = speculative_ints.map(|si| {
       typeflow::analyze_int(proto, &preds, Some(si), &bytes_facts)
@@ -1273,6 +1277,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       string_facts,
       bytes_facts,
       dict_facts,
+      byte_value_facts,
       bool_facts,
       const_facts,
       preds,
@@ -1355,6 +1360,54 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   #[inline]
   fn proven_dict(&self, ip: usize, r: u8) -> bool {
     self.dict_facts.is_dict(ip, r)
+  }
+
+  /// Is `r` provably a value a byte stream will accept, so a store
+  /// into one needs no check? Either the analysis proved it, or it is
+  /// a constant already in range.
+  fn proven_byte_value(&self, ip: usize, r: u8) -> bool {
+    if self.byte_value_facts.is_byte_value(ip, r) {
+      return true;
+    }
+    self
+      .proven_const(ip, r)
+      .is_some_and(|c| c.fract() == 0.0 && (0.0..=255.0).contains(&c))
+  }
+
+  /// Emits the check `builtins`/`VM::index_set` make before storing
+  /// into a byte stream: a number, whole, and within 0..=255. Branches
+  /// to `ok_block` when it holds and `slow_block` when it does not, so
+  /// the real error stays the interpreter's to raise.
+  ///
+  /// Skipped entirely when `proven_byte_value` already settles it.
+  fn emit_byte_value_guard(
+    &mut self,
+    ip: usize,
+    src: u8,
+    src_val: IrValue,
+    ok_block: cranelift_codegen::ir::Block,
+    slow_block: cranelift_codegen::ir::Block,
+  ) {
+    use cranelift_codegen::ir::condcodes::FloatCC;
+    let f = self.f64_view(src, src_val);
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    // Catches a fraction and a NaN in one test: NaN never compares
+    // equal, so it takes the slow path and raises there.
+    let whole = self.fb.ins().fcmp(FloatCC::Equal, f, roundtrip);
+    let zero = self.i64c(0);
+    let max = self.i64c(255);
+    let ge0 = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, as_int, zero);
+    let le255 = self.fb.ins().icmp(IntCC::SignedLessThanOrEqual, as_int, max);
+    let in_range = self.fb.ins().band(ge0, le255);
+    let whole_and_range = self.fb.ins().band(whole, in_range);
+    let ok = if self.proven_numeric(ip, src) {
+      whole_and_range
+    } else {
+      let is_num = self.is_number(src_val);
+      self.fb.ins().band(is_num, whole_and_range)
+    };
+    self.fb.ins().brif(ok, ok_block, &[], slow_block, &[]);
   }
 
   #[inline]
@@ -8987,7 +9040,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .ins()
         .brif(bytes_neg_in_bounds, bytes_neg_fast_block, &[], slow_block, &[]);
 
+      // A byte stream only accepts a whole number in 0..=255, and
+      // `VM::index_set` raises otherwise. Without this the compiled
+      // store truncated instead: `b[0] = 300` quietly wrote 44, and
+      // only once the loop had gone hot, so the same code raised
+      // while interpreted and corrupted after compiling.
       self.fb.switch_to_block(bytes_neg_fast_block);
+      if !self.proven_byte_value(ip, src) {
+        let neg_store_block = self.fb.create_block();
+        self.emit_byte_value_guard(ip, src, src_val, neg_store_block, slow_block);
+        self.fb.switch_to_block(neg_store_block);
+      }
       let byte_elem_addr_neg = self.fb.ins().iadd(bytes_data_ptr, bytes_adjusted);
       let f_src_neg = self.to_f64(src_val);
       let i_src_neg = self.fb.ins().fcvt_to_sint_sat(types::I64, f_src_neg);
@@ -8996,6 +9059,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.ins().jump(done_block, &[]);
 
       self.fb.switch_to_block(bytes_fast_block);
+      if !self.proven_byte_value(ip, src) {
+        let pos_store_block = self.fb.create_block();
+        self.emit_byte_value_guard(ip, src, src_val, pos_store_block, slow_block);
+        self.fb.switch_to_block(pos_store_block);
+      }
       let byte_elem_addr = self.fb.ins().iadd(bytes_data_ptr, as_int);
       let f_src = self.to_f64(src_val);
       let i_src = self.fb.ins().fcvt_to_sint_sat(types::I64, f_src);

@@ -1,0 +1,10 @@
+0: stored 0
+255: stored 255
+256: raised bytes element must be an integer in 0..=255, got 256
+300: raised bytes element must be an integer in 0..=255, got 300
+-1: raised bytes element must be an integer in 0..=255, got -1
+1.5: raised bytes element must be an integer in 0..=255, got 1.5
+1e9: raised bytes element must be an integer in 0..=255, got 1000000000
+nan: raised bytes element must be an integer in 0..=255, got NaN
+string: raised bytes element must be a number, got string
+100

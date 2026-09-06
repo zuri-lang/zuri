@@ -1175,6 +1175,128 @@ pub fn analyze_list(
 /// straight to `zuri_jit_invoke_string`, bypassing the wasted
 /// `zuri_jit_invoke_prepare` attempt (that helper's very first check is
 /// `receiver.is_instance()`, which a String can never be).
+/// Which registers provably hold a whole number in 0..=255 at each
+/// bytecode position, i.e. a value a byte stream will accept without
+/// complaint.
+///
+/// Exists to let `Instr::SetIndex` skip the range check a byte store
+/// otherwise has to make. Two things seed it and both are common in
+/// byte-shuffling code: a literal that is already in range, and an
+/// element read out of another byte stream, which cannot be anything
+/// else. `data[i] = table[j]` is the shape that matters, and it proves
+/// through both.
+pub struct ByteValueFacts {
+  entry: Vec<RegSet>,
+}
+
+impl ByteValueFacts {
+  #[inline]
+  pub fn is_byte_value(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+}
+
+fn const_is_byte(proto: &ObjFunction, const_idx: u16) -> bool {
+  let c = &proto.chunk.constants[const_idx as usize];
+  if !c.is_number() {
+    return false;
+  }
+  let n = c.as_number();
+  n.fract() == 0.0 && (0.0..=255.0).contains(&n)
+}
+
+fn transfer_byte_value(
+  in_set: &RegSet,
+  in_bytes: &RegSet,
+  instr: &Instr,
+  proto: &ObjFunction,
+) -> RegSet {
+  let mut out = in_set.clone();
+  match *instr {
+    Instr::LoadConst { dst, const_idx } => out.set(dst, const_is_byte(proto, const_idx)),
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+
+    // An element of a byte stream is a whole number in 0..=255 by
+    // construction, whatever the index turns out to be.
+    Instr::GetIndex { dst, obj, .. } => out.set(dst, in_bytes.get(obj)),
+
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        out.set(dst, false);
+      }
+    },
+  }
+  out
+}
+
+/// Runs the byte-value analysis: see `ByteValueFacts`'s own docs.
+pub fn analyze_byte_value(
+  proto: &ObjFunction,
+  preds: &[Vec<usize>],
+  bytes_facts: &BytesFacts,
+) -> ByteValueFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let has_source = code.iter().any(|i| match i {
+    Instr::LoadConst { const_idx, .. } => const_is_byte(proto, *const_idx),
+    Instr::GetIndex { .. } => true,
+    _ => false,
+  });
+  if !has_source {
+    return ByteValueFacts {
+      entry: vec![RegSet::empty(num_registers); code_len],
+    };
+  }
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer_byte_value(&entry[ip], bytes_facts.entry_set(ip), &code[ip], proto))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_byte_value(&entry[ip], bytes_facts.entry_set(ip), &code[ip], proto);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  ByteValueFacts { entry }
+}
+
 /// Which registers hold a dict at each bytecode position.
 ///
 /// `MakeDict` is the seed that matters, exactly as `MakeList` is for
