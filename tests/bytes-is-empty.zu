@@ -16,10 +16,13 @@ b.pop()
 echo b.is_empty()
 echo b.length()
 
-# run it hot so the compiled tier answers too
+# Run it hot so the compiled tier answers too. Compilation happens on a
+# background thread, so the count has to be large enough for the compiled
+# entry to actually be installed while the loop is still going; a few
+# hundred iterations finish first and only ever test the interpreter.
 def hot(x) {
   var n = 0
-  iter var i = 0; i < 500; i++ {
+  iter var i = 0; i < 200000; i++ {
     if x.is_empty() {
       n++
     }

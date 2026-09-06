@@ -55,31 +55,34 @@ show('[].get(0, fb)', @() { return [].get(0, 'fb') })
 show('bytes(0).get(0)', @() { return bytes(0).get(0) })
 show('{}.get(k)', @() { return {}.get('k') })
 
+# Hot, so the compiled tier answers too. The counts are large on purpose:
+# compilation runs on a background thread, so a short loop exits before
+# the compiled entry is installed and would only test the interpreter.
 echo '-- hot, so the compiled tier answers too --'
 def hot_list(x) {
   var n = 0
-  iter var i = 0; i < 400; i++ {
+  iter var i = 0; i < 200000; i++ {
     n += x.get(i % 3)
   }
   return n
 }
 def hot_list_fb(x) {
   var n = 0
-  iter var i = 0; i < 400; i++ {
+  iter var i = 0; i < 200000; i++ {
     n += x.get(99, 7)
   }
   return n
 }
 def hot_bytes(x) {
   var n = 0
-  iter var i = 0; i < 400; i++ {
+  iter var i = 0; i < 200000; i++ {
     n += x.get(i % 3)
   }
   return n
 }
 def hot_dict(x) {
   var n = 0
-  iter var i = 0; i < 400; i++ {
+  iter var i = 0; i < 200000; i++ {
     n += x.get('a', 0)
   }
   return n
@@ -89,12 +92,19 @@ echo hot_list_fb(l)
 echo hot_bytes(b)
 echo hot_dict(d)
 
-# a hot loop that raises must still raise from compiled code
-def hot_raise(x) {
+# A hot loop that raises must still raise from compiled code. The bad
+# index only appears once the loop is well past the point where the
+# compiled entry took over, so the raise genuinely comes from there and
+# not from the interpreter on the way in.
+def hot_raise(x, bad) {
   var n = 0
-  iter var i = 0; i < 400; i++ {
-    n += x.get(50)
+  iter var i = 0; i < 200000; i++ {
+    var k = 0
+    if i >= bad {
+      k = 50
+    }
+    n += x.get(k)
   }
   return n
 }
-show('hot out-of-range', @() { return hot_raise(l) })
+show('hot out-of-range', @() { return hot_raise(l, 150000) })

@@ -571,6 +571,12 @@ enum StringIntrinsic {
   /// any valid UTF-8 string (an empty byte sequence has no codepoints
   /// and vice versa); so unlike `Length`, this needs no loop at all.
   IsEmpty,
+  /// The codepoint of a one-character string. Unlike the other two this
+  /// one can legitimately fail (`builtins::string::ord` raises unless
+  /// the receiver is exactly one character), so it carries its own
+  /// guard and slow arm rather than going through
+  /// `emit_string_intrinsic_value`.
+  Ord,
 }
 
 impl StringIntrinsic {
@@ -583,6 +589,7 @@ impl StringIntrinsic {
     Some(match name {
       "length" => StringIntrinsic::Length,
       "is_empty" => StringIntrinsic::IsEmpty,
+      "ord" => StringIntrinsic::Ord,
       _ => return None,
     })
   }
@@ -7247,9 +7254,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     num_args: u8,
     op: StringIntrinsic,
   ) {
+    // `Ord` is the one variant that can still raise on a genuine string
+    // receiver, so it owns its whole shape below instead of sharing the
+    // no-fallback one the other two use.
+    if op == StringIntrinsic::Ord {
+      self.emit_string_ord(ip, dst, obj, method_const, num_args);
+      return;
+    }
+
     // No `emit_safepoint` on the fast arm: see `StringIntrinsic`'s
-    // own docs: neither variant allocates or can raise for a genuine
-    // string receiver.
+    // own docs: neither remaining variant allocates or can raise for a
+    // genuine string receiver.
     let recv = self.load_reg(obj);
 
     if self.proven_string(ip, obj) {
@@ -7290,6 +7305,85 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `s.ord()`, inlined down to a single byte load.
+  ///
+  /// The whole method rests on one property of UTF-8: a string whose
+  /// BYTE length is 1 is necessarily a single ASCII character, because
+  /// any codepoint above U+007F encodes as a lead byte plus at least one
+  /// continuation byte. So `byte_len == 1` proves both halves of what
+  /// `builtins::string::ord` checks the slow way (`chars().count() == 1`)
+  /// and computes (`chars().nth(0)`), and the byte IS the codepoint.
+  ///
+  /// Everything else; the empty string, a multi-character string, and a
+  /// genuine one-character non-ASCII string like `'é'`; fails the length
+  /// test and goes to the real builtin, which raises or answers as it
+  /// always did.
+  fn emit_string_ord(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+  ) {
+    let recv = self.load_reg(obj);
+
+    let len_block = self.fb.create_block();
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    let ptr = if self.proven_string(ip, obj) {
+      let ptr = self.obj_ptr(recv);
+      self.fb.ins().jump(len_block, &[]);
+      ptr
+    } else {
+      let is_obj = self.is_obj(recv);
+      let checked_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(is_obj, checked_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(checked_block);
+      let ptr = self.obj_ptr(recv);
+      let tag = self.obj_tag(ptr);
+      let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+      let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
+      self.fb.ins().brif(is_str, len_block, &[], slow_block, &[]);
+      ptr
+    };
+
+    self.fb.switch_to_block(len_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let byte_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_str_len_offset());
+    let one = self.i64c(1);
+    let single = self.fb.ins().icmp(IntCC::Equal, byte_len, one);
+    self.fb.ins().brif(single, fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    let data_ptr = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_str_ptr_offset());
+    let byte = self.fb.ins().load(types::I8, flags, data_ptr, 0);
+    let code = self.fb.ins().uextend(types::I64, byte);
+    self.store_reg_int(dst, code);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
   /// The intrinsic itself, on a receiver already known to be a string
   ///; no branching, no register bookkeeping, just the value.
   /// `is_empty` is one comparison off the string's raw byte length
@@ -7314,6 +7408,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .load(types::I64, flags, ptr, object::obj_str_len_offset());
 
     match op {
+      // Diverted in `emit_string_intrinsic` before it ever gets here.
+      StringIntrinsic::Ord => unreachable!(),
       StringIntrinsic::IsEmpty => {
         let zero = self.fb.ins().iconst(types::I64, 0);
         let is_empty = self.fb.ins().icmp(IntCC::Equal, byte_len, zero);

@@ -1,0 +1,152 @@
+# `s.ord()` has a JIT fast path that leans on a UTF-8 property: a string
+# whose byte length is 1 must be a single ASCII character. Everything
+# else has to fall back to the builtin, so the fixture walks both sides
+# of that line.
+#
+# The loop counts below are deliberately large. Compilation happens on a
+# background thread, so a loop that finishes quickly exits before the
+# compiled entry is ever installed and the fixture would only ever
+# exercise the interpreter. A hundred thousand iterations is enough for
+# the compile to land with room to spare, and still runs in well under a
+# second in a debug build.
+
+echo '-- ascii --'
+echo 'a'.ord()
+echo 'A'.ord()
+echo '0'.ord()
+echo ' '.ord()
+echo '\n'.ord()
+
+# The two boundaries of the one-byte encoding.
+echo (0).chr().ord()
+echo (127).chr().ord()
+
+echo '-- non-ascii --'
+# One character each, but two, three and four bytes; the length test
+# fails and the builtin answers instead.
+echo (128).chr().ord()
+echo 'é'.ord()
+echo '€'.ord()
+echo '日'.ord()
+echo '😀'.ord()
+
+echo '-- indexed --'
+var s = 'hello'
+var i = 0
+var acc = 0
+while i < s.length() {
+  acc += s[i].ord()
+  i++
+}
+echo acc
+
+# Indexing a non-ASCII string still yields whole characters, so their
+# codepoints have to survive the round trip too.
+var u = 'héllo'
+echo u[1].ord()
+echo u[0].ord()
+
+echo '-- errors --'
+catch {
+  echo ''.ord()
+} as e {
+  echo 'empty: ${e.message}'
+}
+
+catch {
+  echo 'ab'.ord()
+} as e {
+  echo 'multi: ${e.message}'
+}
+
+catch {
+  echo 'héllo'.ord()
+} as e {
+  echo 'multi non-ascii: ${e.message}'
+}
+
+catch {
+  echo 'a'.ord(1)
+} as e {
+  echo 'arity: ${e.message}'
+}
+
+echo '-- hot loop, proven receiver --'
+
+# Typed parameter, so `StringFacts` proves the receiver and the fast
+# path is emitted with no tag guard at all.
+def sum_ord(text: string, n) {
+  var total = 0
+  var k = 0
+  while k < n {
+    var j = 0
+    while j < text.length() {
+      total += text[j].ord()
+      j++
+    }
+    k++
+  }
+  return total
+}
+
+echo sum_ord('abc', 1)
+echo sum_ord('abc', 100000)
+
+echo '-- hot loop, unproven receiver --'
+
+# No annotation, so `StringFacts` cannot prove the receiver and the
+# guarded shape runs instead: is_obj, then a string tag check, then the
+# same length test. The list mixes ASCII and non-ASCII so both arms are
+# taken at the one call site.
+#
+# Nothing here uses `catch`, deliberately: a function containing one is
+# JIT-ineligible outright, so a hot loop wrapped in error handling would
+# only ever measure the interpreter.
+def ord_of(v) {
+  return v.ord()
+}
+
+var chars = ['a', 'Z', '0', 'é', '€', '~']
+var total = 0
+var r = 0
+while r < 100000 {
+  var m = 0
+  while m < chars.length() {
+    total += ord_of(chars[m])
+    m++
+  }
+  r++
+}
+echo total
+
+# The same compiled call site still has to reject a non-string.
+catch {
+  echo ord_of(1)
+} as e {
+  echo 'non-string: ${e.message}'
+}
+
+catch {
+  echo ord_of([1])
+} as e {
+  echo 'list: ${e.message}'
+}
+
+echo '-- hot loop, mid-run non-ascii --'
+
+# The fast path is taken for a while, then the same call site sees a
+# multi-byte character. It must switch to the builtin, not keep
+# reading the lead byte.
+def scan(text: string, n) {
+  var total = 0
+  var k = 0
+  while k < n {
+    total += text[0].ord()
+    k++
+  }
+  return total
+}
+
+echo scan('a', 300000)
+echo scan('é', 300000)
+echo scan('a', 300000)

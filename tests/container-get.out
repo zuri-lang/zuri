@@ -34,8 +34,8 @@ l.get(1e18, fb): fb
 bytes(0).get(0): raised bytes index 0 out of range at get()
 {}.get(k): nil
 -- hot, so the compiled tier answers too --
-7990
-2800
-26399
-400
+3999990
+1400000
+13199999
+200000
 hot out-of-range: raised list index 50 out of range at get()
