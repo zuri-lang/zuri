@@ -1,0 +1,28 @@
+-- reads, literal args --
+350000
+-- reads, variable args --
+550000
+-- field writes into a scalar instance --
+99999
+-- a field holding a heap value --
+[49999, 50000]
+-- construct inside the loop, fresh each time --
+2500000000
+-- escaping: returned --
+7 8
+-- escaping: stored in a list --
+2000
+-- escaping: passed to a function --
+250000
+-- aliased by a Move --
+450000
+-- identity is still observable --
+50000
+-- two classes, two registers --
+500000
+-- method call on a constructed local --
+1500000
+-- register reused after the construct --
+500003
+-- missing field still raises --
+raised: undefined property 'nope' on instance of 'P'

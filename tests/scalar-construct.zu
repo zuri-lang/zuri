@@ -1,0 +1,203 @@
+# `var p = Point(1, 2)` compiles to a class load into the very register
+# the result lands in, which used to disqualify the site from scalar
+# replacement. Now that it does not, these cover the cases where the
+# object must still behave like a real object.
+
+class P {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+  sum() {
+    return self.x + self.y
+  }
+}
+
+class Q {
+  @new(a) {
+    self.a = a
+  }
+}
+
+def hot(n, f) {
+  var i = 0, acc = 0
+  while i < n {
+    acc += f()
+    i++
+  }
+  return acc
+}
+
+echo '-- reads, literal args --'
+def read_lit(n) {
+  var p = P(3, 4)
+  var i = 0, a = 0
+  while i < n {
+    a += p.x + p.y
+    i++
+  }
+  return a
+}
+echo read_lit(50000)
+
+echo '-- reads, variable args --'
+def read_var(n, u, v) {
+  var p = P(u, v)
+  var i = 0, a = 0
+  while i < n {
+    a += p.x + p.y
+    i++
+  }
+  return a
+}
+echo read_var(50000, 5, 6)
+
+echo '-- field writes into a scalar instance --'
+def write_fields(n) {
+  var p = P(0, 0)
+  var i = 0
+  while i < n {
+    p.x = i
+    p.y = i + 1
+    i++
+  }
+  return p.x + p.y
+}
+echo write_fields(50000)
+
+echo '-- a field holding a heap value --'
+def heap_field(n) {
+  var p = P(0, 0)
+  var i = 0
+  while i < n {
+    p.x = [i, i + 1]
+    i++
+  }
+  return p.x
+}
+echo heap_field(50000)
+
+echo '-- construct inside the loop, fresh each time --'
+def fresh(n) {
+  var i = 0, a = 0
+  while i < n {
+    var p = P(i, i + 1)
+    a += p.x + p.y
+    i++
+  }
+  return a
+}
+echo fresh(50000)
+
+echo '-- escaping: returned --'
+def escapes_return(n) {
+  var p = P(n, n + 1)
+  return p
+}
+var e = escapes_return(7)
+echo '${e.x} ${e.y}'
+
+echo '-- escaping: stored in a list --'
+def escapes_list(n) {
+  var out = []
+  var i = 0
+  while i < n {
+    var p = P(i, i)
+    out.append(p)
+    i++
+  }
+  return out.length()
+}
+echo escapes_list(2000)
+
+echo '-- escaping: passed to a function --'
+def takes(p) {
+  return p.x + p.y
+}
+def escapes_call(n) {
+  var p = P(2, 3)
+  var i = 0, a = 0
+  while i < n {
+    a += takes(p)
+    i++
+  }
+  return a
+}
+echo escapes_call(50000)
+
+echo '-- aliased by a Move --'
+def aliased(n) {
+  var p = P(4, 5)
+  var q = p
+  var i = 0, a = 0
+  while i < n {
+    a += q.x + p.y
+    i++
+  }
+  return a
+}
+echo aliased(50000)
+
+echo '-- identity is still observable --'
+def identity(n) {
+  var p = P(1, 2)
+  var i = 0, same = 0
+  while i < n {
+    if p == p {
+      same++
+    }
+    i++
+  }
+  return same
+}
+echo identity(50000)
+
+echo '-- two classes, two registers --'
+def two_classes(n) {
+  var p = P(1, 2)
+  var q = Q(9)
+  var i = 0, a = 0
+  while i < n {
+    a += p.x + q.a
+    i++
+  }
+  return a
+}
+echo two_classes(50000)
+
+echo '-- method call on a constructed local --'
+def with_method(n) {
+  var p = P(10, 20)
+  var i = 0, a = 0
+  while i < n {
+    a += p.sum()
+    i++
+  }
+  return a
+}
+echo with_method(50000)
+
+echo '-- register reused after the construct --'
+def reused(n) {
+  var p = P(1, 2)
+  var a = p.x + p.y
+  p = P(10, 20)
+  var i = 0
+  while i < n {
+    a += p.x
+    i++
+  }
+  return a
+}
+echo reused(50000)
+
+echo '-- missing field still raises --'
+def missing() {
+  var p = P(1, 2)
+  return p.nope
+}
+catch {
+  echo missing()
+} as err {
+  echo 'raised: ${err.message}'
+}

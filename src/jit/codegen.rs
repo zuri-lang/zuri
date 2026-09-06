@@ -807,6 +807,13 @@ struct FuncCompiler<'a, 'b> {
   /// `self_field_slots`' counterpart for a typed, non-`self` parameter
   /// register: see `jit::CompileFacts::param_field_slots`'s own docs.
   param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
+  /// Register -> (construct ip, class bits, field slots) for an
+  /// instance built in this very function, where the construct is the
+  /// last write to that register. An instance cannot change class, so
+  /// this is as firm a fact as a type annotation; the class is still
+  /// checked once at the access, which is what makes it sound on a
+  /// path that somehow skipped the construct.
+  construct_field_slots: FxHashMap<u8, (usize, u64, FxHashMap<String, u16>)>,
   /// This compiled function's OWN `FuncId` in `module`; known before
   /// codegen starts (the caller, `JitEngine::build_ir`, always declares
   /// it first). Lets `emit_call_instr`'s self-recursive case emit a
@@ -848,6 +855,13 @@ struct FuncCompiler<'a, 'b> {
   /// for a register `escape::analyze_one` already proved never leaves
   /// this function, and any ordinary write to that register removes it.
   scalar_instances: FxHashMap<u8, (StackSlot, usize)>,
+  /// The scalar-construct sites decided before any code is emitted,
+  /// with their stack slots. Separate from `scalar_instances` because
+  /// that one is deliberately invalidated by any write to the register
+  /// (`store_reg`), and the construct idiom writes the register once
+  /// before the call to load the class. The plan has to outlive that;
+  /// the OSR entry paths are built from it.
+  planned_scalar_instances: FxHashMap<u8, (StackSlot, usize)>,
   /// Can any upvalue ever be OPEN over this frame's own registers?
   ///
   /// Only `Instr::Closure` opens one (it is the sole caller of
@@ -1098,9 +1112,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ) -> (
     FxHashMap<usize, CallTarget>,
     FxHashMap<usize, crate::jit::ConstructInfo>,
+    FxHashMap<u8, (usize, u64, FxHashMap<String, u16>)>,
   ) {
     let mut targets = FxHashMap::default();
     let mut construct_info = FxHashMap::default();
+    let mut construct_slots: FxHashMap<u8, (usize, u64, FxHashMap<String, u16>)> = FxHashMap::default();
 
     let self_facts = escape::self_reference_facts_with_preds(proto, preds);
     if globals.is_empty() {
@@ -1111,7 +1127,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           targets.insert(ip, CallTarget::SelfRecursive);
         }
       }
-      return (targets, construct_info);
+      return (targets, construct_info, construct_slots);
     }
 
     let named_facts: Vec<(&String, Vec<escape::MustSet>)> = globals
@@ -1159,6 +1175,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
                 simple_ctor_param_slots: simple_ctor_param_slots.clone(),
               },
             );
+            // `var p = Point(1, 2)` fixes p's class for good: an
+            // instance never changes class, so every later read of
+            // this register is a read of a Point. Recorded when the
+            // construct is the LAST thing to write the register; the
+            // idiom writes it twice (the class global, then the
+            // result), so "written once" would never hold.
+            if let Instr::Call { dst, .. } = instr {
+              let written_later = proto
+                .chunk
+                .code
+                .iter()
+                .enumerate()
+                .any(|(k, i)| k > ip && crate::jit::typeflow::any_dst(i) == Some(*dst));
+              if !written_later {
+                construct_slots
+                  .entry(*dst)
+                  .or_insert_with(|| (ip, *guard_bits, field_slots.clone()));
+              }
+            }
             targets.insert(
               ip,
               CallTarget::ConstructKnown {
@@ -1206,7 +1241,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
       }
     }
-    (targets, construct_info)
+    (targets, construct_info, construct_slots)
   }
 
   fn new(
@@ -1255,7 +1290,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let bool_facts = typeflow::analyze_bool(proto, &preds);
     let const_facts = typeflow::analyze_const(proto, &preds);
     let liveness = typeflow::liveness(proto, &preds);
-    let (call_targets, construct_info) =
+    let (call_targets, construct_info, construct_slots) =
       Self::resolve_call_targets_from_snapshot(proto, &preds, &facts.globals_snapshot);
     FuncCompiler {
       fb,
@@ -1306,11 +1341,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       numeric_fields: facts.numeric_fields,
       global_lists: facts.global_lists,
       param_field_slots: facts.param_field_slots,
+      construct_field_slots: construct_slots,
       own_func_id,
       self_class_bits: facts.self_class_bits,
       call_targets,
       construct_info,
       scalar_instances: FxHashMap::default(),
+      planned_scalar_instances: FxHashMap::default(),
       scalar_lists: FxHashMap::default(),
       frame_can_open_upvalues: proto
         .chunk
@@ -1700,6 +1737,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
     }
 
+    // Scalar-replaced instances are registered here, alongside the
+    // lists, and NOT where the construct is emitted. `emit_entry_
+    // dispatch` below writes the OSR entry paths, and those have to
+    // refill every scalar slot from the real object; a slot that only
+    // came into existence later in the body would be invisible to
+    // them, and entering past the construct would then read an
+    // unwritten slot.
+    for (ip, instr) in self.proto.chunk.code.iter().enumerate() {
+      if let Instr::Call { dst, .. } = *instr
+        && self.scalar_construct_eligible(ip, dst)
+        && !self.planned_scalar_instances.contains_key(&dst)
+        && let Some(info) = self.construct_info.get(&ip)
+      {
+        let s = self.fb.create_sized_stack_slot(StackSlotData::new(
+          StackSlotKind::ExplicitSlot,
+          info.field_count as u32 * 8,
+          3,
+        ));
+        self.planned_scalar_instances.insert(dst, (s, ip));
+      }
+    }
+
     self.emit_entry_dispatch(
       osr_param,
       specialized.as_ref().map(|(b, f)| (b.as_slice(), f)),
@@ -1825,7 +1884,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// skips the guard and routes straight to the general body: the
   /// specialized block there would be behaviorally identical anyway.
   fn emit_osr_scalar_list_init(&mut self, ip: usize) {
-    if ip == 0 || self.scalar_lists.is_empty() {
+    if ip == 0 {
       return;
     }
     let lists: Vec<(u8, StackSlot, u8)> = self
@@ -1839,6 +1898,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let count_c = self.u64c(count as u64);
       self.call_helper(
         "zuri_jit_init_osr_scalar_list",
+        &[self.vm_param, self.base_param, dst_c, slot_addr, count_c],
+      );
+    }
+
+    // Same treatment for scalar-replaced instances. Entering past the
+    // construct leaves its stack slot unwritten, so the fields come
+    // from the real instance the interpreter already built.
+    let instances: Vec<(u8, StackSlot, u16)> = self
+      .planned_scalar_instances
+      .iter()
+      .filter_map(|(&dst, &(slot, site))| {
+        let count = self.construct_info.get(&site)?.field_count;
+        Some((dst, slot, count))
+      })
+      .collect();
+    for (dst, slot, count) in instances {
+      let slot_addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+      let dst_c = self.u64c(dst as u64);
+      let count_c = self.u64c(count as u64);
+      self.call_helper(
+        "zuri_jit_init_osr_scalar_instance",
         &[self.vm_param, self.base_param, dst_c, slot_addr, count_c],
       );
     }
@@ -3272,7 +3352,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .code
       .iter()
       .enumerate()
-      .any(|(i, instr)| i != ip && typeflow::any_dst(instr) == Some(dst));
+      .any(|(i, instr)| i > ip && typeflow::any_dst(instr) == Some(dst));
     if rewritten {
       return false;
     }
@@ -3303,11 +3383,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       )
     };
 
-    let slot = self.fb.create_sized_stack_slot(StackSlotData::new(
-      StackSlotKind::ExplicitSlot,
-      field_count as u32 * 8,
-      3,
-    ));
+    // The slot was allocated in the pre-pass before `emit_entry_
+    // dispatch`, so the OSR paths already know to refill it. It is
+    // always present here: this is only reached when
+    // `scalar_construct_eligible` held, and that forbids any other
+    // write to `dst`, so a register has at most one such site.
+    let &(slot, site) = self
+      .planned_scalar_instances
+      .get(&dst)
+      .expect("scalar construct slot registered in the pre-pass");
+    debug_assert_eq!(site, ip, "one scalar construct site per register");
 
     let nil = self.u64c(crate::vm::value::Value::nil().to_bits());
     for i in 0..field_count {
@@ -3342,6 +3427,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// must go the general way).
   fn scalar_instance_slot(&self, obj: u8, name_const: u16) -> Option<(StackSlot, u16)> {
     let (slot, site) = *self.scalar_instances.get(&obj)?;
+    if crate::jit::log_enabled() {
+      eprintln!("[sis] {} obj=r{} site=ip{} slot_ok={}", self.proto.name, obj, site,
+        self.construct_info.contains_key(&site));
+    }
     let info = self.construct_info.get(&site)?;
     let name = self.proto.chunk.constants.get(name_const as usize)?;
     if !name.is_string() {
@@ -5428,6 +5517,85 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// this matters: without it, an `Instance`-typed parameter's check
   /// unconditionally calls the general helper, which for a hot function
   /// can cost more than the field-access savings ever recover.
+  /// `(class bits, slot)` for `obj.name` when `obj` holds an instance
+  /// built by a construct earlier in this function. Only past the
+  /// construct: before it the register holds the class global itself.
+  fn construct_field_slot(&self, ip: usize, obj: u8, name_const: u16) -> Option<(u64, u16)> {
+    let (construct_ip, bits, slots) = self.construct_field_slots.get(&obj)?;
+    if ip <= *construct_ip {
+      return None;
+    }
+    let name = self.proto.chunk.constants[name_const as usize];
+    slots.get(name.as_str()).copied().map(|slot| (*bits, slot))
+  }
+
+  /// `obj.field` where the class is known from a construct: one
+  /// compare against the class, then a load at a constant slot.
+  ///
+  /// Cheaper than the inline cache it replaces, which has to load the
+  /// cached class AND the cached slot out of memory before it can do
+  /// the same load. The class compare stays because the register could
+  /// in principle be read on a path that never ran the construct; a
+  /// mismatch simply takes the general path.
+  fn emit_construct_field(
+    &mut self,
+    ip: usize,
+    dst: Option<u8>,
+    obj: u8,
+    name_const: u16,
+    src: Option<u8>,
+    class_bits: u64,
+    slot: u16,
+  ) {
+    let obj_val = self.load_reg(obj);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let _ = name_const;
+
+    // Deopt rather than a slow-path call, exactly as the inline cache
+    // does: the construct that fixed this class is in this very
+    // function, so a mismatch means control reached the access without
+    // running the construct, and bailing to the interpreter for that
+    // is both correct and far less code than a second call site.
+    let obj_block = self.fb.create_block();
+    let fast_block = self.fb.create_block();
+    let deopt_block = self.fb.create_block();
+    let is_obj = self.is_obj(obj_val);
+    self.fb.ins().brif(is_obj, obj_block, &[], deopt_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(obj_val);
+    let cls = self.fb.ins().load(
+      types::I64,
+      flags,
+      ptr,
+      object::obj_instance_class_offset() as i32,
+    );
+    let want = self.u64c(class_bits);
+    let same = self.fb.ins().icmp(IntCC::Equal, cls, want);
+    self.fb.ins().brif(same, fast_block, &[], deopt_block, &[]);
+
+    self.fb.switch_to_block(deopt_block);
+    self.emit_deopt(ip);
+
+    self.fb.switch_to_block(fast_block);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+    match (dst, src) {
+      (Some(d), None) => {
+        let v = self
+          .fb
+          .ins()
+          .load(types::I64, flags, fields_ptr, (slot as i32) * 8);
+        self.store_reg(d, v);
+      },
+      (None, Some(sr)) => {
+        let v = self.load_reg(sr);
+        self.fb.ins().store(flags, v, fields_ptr, (slot as i32) * 8);
+        self.emit_write_barrier_for_store(ip, sr, v, ptr);
+      },
+      _ => unreachable!("emit_construct_field takes exactly one of dst/src"),
+    }
+  }
+
   fn param_class_bits(&self, obj: u8) -> Option<u64> {
     self.param_field_slots.get(&obj).map(|&(bits, _)| bits)
   }
@@ -11108,6 +11276,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         if let Some(slot) = self.param_field_slot(obj, name_const) {
           self.emit_self_get_field(ip, dst, obj, name_const, slot, true);
+          return false;
+        }
+        if let Some((bits, slot)) = self.construct_field_slot(ip, obj, name_const) {
+          self.emit_construct_field(ip, Some(dst), obj, name_const, None, bits, slot);
           return false;
         }
         if let Some(cache) = self.field_cache_addr(ip) {

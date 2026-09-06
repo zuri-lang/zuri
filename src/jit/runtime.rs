@@ -3073,11 +3073,42 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec6!(zuri_jit_assign_global),
     spec6!(zuri_jit_get_slice),
     spec5!(zuri_jit_init_osr_scalar_list),
+    spec5!(zuri_jit_init_osr_scalar_instance),
     spec7!(zuri_jit_make_class),
   ]
 }
 
 #[inline(always)]
+/// The scalar-INSTANCE counterpart of `zuri_jit_init_osr_scalar_list`,
+/// and needed for exactly the same reason.
+///
+/// A scalar-replaced instance's fields live in a Cranelift stack slot
+/// that only gets written where the construct itself was emitted. Enter
+/// the compiled body through an OSR target PAST that construct and the
+/// slot was never filled, so every field read returns whatever happened
+/// to be in that stack memory. The real instance is still sitting in
+/// `VM::registers`, having been built by the interpreter before the
+/// loop went hot, so the fix is to copy its fields across on entry.
+pub unsafe extern "C" fn zuri_jit_init_osr_scalar_instance(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  slot_addr: u64,
+  count: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let reg = vm.get_reg(base as usize, dst as u8);
+  if reg.is_instance() {
+    let inst = reg.as_instance();
+    let slot_ptr = slot_addr as *mut Value;
+    for i in 0..count as usize {
+      let v = inst.fields.get(i).map(|c| c.get()).unwrap_or(Value::nil());
+      unsafe { *slot_ptr.add(i) = v };
+    }
+  }
+  0
+}
+
 pub unsafe extern "C" fn zuri_jit_init_osr_scalar_list(
   vm_ptr: *mut VM,
   base: u64,
