@@ -6521,7 +6521,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     {
       let ptr = self.obj_ptr(recv);
       let tag = self.obj_tag(ptr);
-      self.emit_sequence_get(dst, obj, num_args, ptr, tag, slow_block, done_block);
+      let pl = self.proven_list(ip, obj);
+      let pb = self.proven_bytes(ip, obj);
+      self.emit_sequence_get(dst, obj, num_args, ptr, tag, pl, pb, slow_block, done_block);
 
       self.fb.switch_to_block(slow_block);
       self.emit_safepoint();
@@ -6562,7 +6564,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     if let Some(seq_block) = sequence_block {
       self.fb.switch_to_block(seq_block);
-      self.emit_sequence_get(dst, obj, num_args, ptr, tag, slow_block, done_block);
+      let pl = self.proven_list(ip, obj);
+      let pb = self.proven_bytes(ip, obj);
+      self.emit_sequence_get(dst, obj, num_args, ptr, tag, pl, pb, slow_block, done_block);
     }
 
     self.fb.switch_to_block(fast_block);
@@ -6637,6 +6641,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     num_args: u8,
     ptr: IrValue,
     tag: IrValue,
+    proven_list: bool,
+    proven_bytes: bool,
     slow_block: cranelift_codegen::ir::Block,
     done_block: cranelift_codegen::ir::Block,
   ) {
@@ -6658,14 +6664,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
     let idx = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
 
+    // With the receiver's kind already proven there is only ever one
+    // arm worth emitting; the others are unreachable blocks that cost
+    // register allocation across the whole function.
     let list_block = self.fb.create_block();
     let check_bytes_block = self.fb.create_block();
-    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
-    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
-    self
-      .fb
-      .ins()
-      .brif(is_list, list_block, &[], check_bytes_block, &[]);
+    match (proven_list, proven_bytes) {
+      (true, _) => {
+        self.fb.ins().jump(list_block, &[]);
+      },
+      (_, true) => {
+        self.fb.ins().jump(check_bytes_block, &[]);
+      },
+      _ => {
+        let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+        let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+        self
+          .fb
+          .ins()
+          .brif(is_list, list_block, &[], check_bytes_block, &[]);
+      },
+    }
 
     // A miss with a fallback answers with it; without one, the raise
     // belongs to the generic path.
@@ -6707,12 +6726,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.ins().jump(slow_block, &[]);
     } else {
       let bytes_block = self.fb.create_block();
-      let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
-      let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
-      self
-        .fb
-        .ins()
-        .brif(is_bytes, bytes_block, &[], slow_block, &[]);
+      if proven_bytes {
+        self.fb.ins().jump(bytes_block, &[]);
+      } else {
+        let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
+        let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
+        self
+          .fb
+          .ins()
+          .brif(is_bytes, bytes_block, &[], slow_block, &[]);
+      }
 
       self.fb.switch_to_block(bytes_block);
       let flags = cranelift_codegen::ir::MemFlagsData::trusted();
@@ -6768,6 +6791,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let v = self.emit_list_intrinsic_value(op, recv);
       self.store_reg(dst, v);
       return;
+    }
+
+    // A proven byte stream answers `length`/`is_empty` from one field,
+    // with no guard and no chain. Worth its own arm rather than
+    // falling into the tag chain below: those extra blocks are dead
+    // weight on a call site that cannot reach them, and enough of them
+    // measurably worsens register allocation for the whole function,
+    // hot loop included.
+    if matches!(op, ListIntrinsic::Length | ListIntrinsic::IsEmpty) {
+      if self.proven_bytes(ip, obj) {
+        let ptr = self.obj_ptr(recv);
+        let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+        let blen = self
+          .fb
+          .ins()
+          .load(types::I64, flags, ptr, object::obj_bytes_len_offset());
+        let v = self.emit_count_value(op, blen);
+        self.store_reg(dst, v);
+        return;
+      }
+      if self.proven_dict(ip, obj) {
+        let vm_p = self.vm_param;
+        let dlen = self.call_helper_raw("zuri_jit_dict_len", &[vm_p, recv]);
+        let v = self.emit_count_value(op, dlen);
+        self.store_reg(dst, v);
+        return;
+      }
     }
 
     let is_obj = self.is_obj(recv);
