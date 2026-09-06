@@ -1076,7 +1076,25 @@ impl Hash for DictKey {
   fn hash<H: Hasher>(&self, state: &mut H) {
     if self.0.is_number() {
       0u8.hash(state);
-      self.0.as_number().to_bits().hash(state);
+      let n = self.0.as_number();
+      // Integer keys are the common case: indices, ids, packed codes.
+      // Their f64 bit patterns all carry zeroes low down, because the
+      // value sits up in the exponent and the top of the mantissa, and
+      // FxHash's multiply only carries entropy upward. hashbrown picks
+      // its bucket from the low bits, so a table keyed on small
+      // integers collapses into a handful of buckets and every lookup
+      // walks a long probe chain comparing keys. Hashing the integer
+      // value puts the entropy where the table reads it.
+      //
+      // Equal numbers are the same f64 and so always take the same
+      // branch, which is what keeps this consistent with `DictKey`'s
+      // `PartialEq`. Non-integral values, NaN and the infinities all
+      // fall through to the bits, where they were already fine.
+      if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+        (n as i64).hash(state);
+      } else {
+        n.to_bits().hash(state);
+      }
     } else if self.0.is_nil() {
       1u8.hash(state);
     } else if self.0.is_bool() {

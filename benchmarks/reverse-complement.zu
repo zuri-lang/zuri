@@ -3,12 +3,15 @@
 #
 # contributed by Richard Ore
 #
-# The whole input is slurped once and every sequence is reversed in
-# place: a 256 entry complement table, and two cursors walking towards
-# each other over each sequence body. Because the line breaks are left
-# exactly where they are, the reversal only has to permute the bases
-# that sit between them, so there is no second buffer and no
-# re-wrapping pass.
+# The task asks for the data to be grown buffered-read by
+# buffered-read rather than sized up front and allocated once, so the
+# input arrives in fixed chunks and the buffer grows as it goes.
+#
+# Every sequence is then reversed in place: a 256 entry complement
+# table, and two cursors walking towards each other over each sequence
+# body. Because the line breaks are left exactly where they are, the
+# reversal only has to permute the bases that sit between them, so
+# there is no second buffer and no re-wrapping pass.
 #
 # The very fastest entries on the site go further, pairing SIMD with a
 # 16 bit lookup table and splitting the work across threads. This is
@@ -28,6 +31,10 @@ const HEADER = '>'.ord()
 # IUPAC codes paired with their complements. Output is upper case no
 # matter how the input was cased, so both spellings of a base map to
 # the same upper-case complement.
+# Size of each read from stdin. Big enough that the syscall overhead
+# disappears against the copying, small enough to stay cache friendly.
+const CHUNK = 64 * 1024
+
 const CODES = 'ACGTUMRWSYKVHDBN'
 const COMPLEMENTS = 'TGCAAKYWSRMBDHVN'
 
@@ -68,16 +75,17 @@ def reverse_complement(data, table) {
 
   while pos < size {
     # The header line is copied through untouched.
-    while pos < size and data[pos] != LINE_FEED {
-      pos++
+    var newline = data.index_of(LINE_FEED, pos)
+    if newline < 0 {
+      break
     }
 
-    var lo = pos + 1
-    var tail = lo
+    var lo = newline + 1
 
     # A sequence runs until the next header, or the end of input.
-    while tail < size and data[tail] != HEADER {
-      tail++
+    var tail = data.index_of(HEADER, lo)
+    if tail < 0 {
+      tail = size
     }
 
     var hi = tail - 1
@@ -113,8 +121,29 @@ def reverse_complement(data, table) {
   }
 }
 
+/**
+ * Pulls stdin in one chunk at a time, growing the buffer as it goes.
+ * A short read is not end of input, so only a zero length read stops
+ * the loop.
+ */
+def read_input() {
+  var data = bytes(0)
+
+  while true {
+    var chunk = io.stdin.read(CHUNK)
+
+    if chunk.length() == 0 {
+      break
+    }
+
+    data.extend(chunk)
+  }
+
+  return data
+}
+
 def main() {
-  var data = io.stdin.read()
+  var data = read_input()
 
   reverse_complement(data, build_table())
   io.stdout.write(data)

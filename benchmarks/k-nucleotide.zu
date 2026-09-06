@@ -5,9 +5,13 @@
 #
 # Every base is packed down to a 2 bit code as the input is read, so
 # a k-nucleotide becomes a plain integer that can be rolled forward
-# one base at a time. Short reading frames count into a flat array
-# indexed by that integer; the 12 and 18 base frames have far too
-# large a code space for that and go through a hash table instead.
+# one base at a time, and a reading frame becomes an integer keyed
+# hashtable.
+#
+# The task asks for one procedure updating one hashtable, grown from a
+# small default size, used for every reading frame including the 1 and
+# 2 base ones. A flat 4^k array would be quicker for the short frames
+# but is not the algorithm being measured.
 #
 # The faster entries on the site split the reading frames across
 # threads. This one stays single threaded.
@@ -36,10 +40,8 @@ const TARGETS = [
   'GGTATTTTAATTTATAGT'
 ]
 
-# Largest frame still worth giving a flat array of counters. 4^8 is
-# 65536 slots, which is cheaper to allocate than a single rehash of a
-# dict that size.
-const FLAT_LIMIT = 8
+# Size of each read from stdin.
+const CHUNK = 64 * 1024
 
 /**
  * Byte lookup turning an ASCII base into its 2 bit code. Both cases
@@ -66,25 +68,43 @@ def build_codes() {
  * slack where the line breaks used to be.
  */
 def read_sequence(codes) {
-  var data = io.stdin.read()
+  var data = bytes(0)
+
+  while true {
+    var chunk = io.stdin.read(CHUNK)
+
+    if chunk.length() == 0 {
+      break
+    }
+
+    data.extend(chunk)
+  }
+
   var size = data.length()
   var pos = 0
 
   # THREE is the last section of the input. Everything past its
   # header line is sequence.
-  while pos + 2 < size {
-    if data[pos] == HEADER and data[pos + 1] == THREE_T and data[pos + 2] == THREE_H {
+  while pos < size {
+    pos = data.index_of(HEADER, pos)
+
+    if pos < 0 {
+      return [bytes(0), 0]
+    }
+
+    if pos + 2 < size and data[pos + 1] == THREE_T and data[pos + 2] == THREE_H {
       break
     }
 
     pos++
   }
 
-  while pos < size and data[pos] != LINE_FEED {
-    pos++
+  var newline = data.index_of(LINE_FEED, pos)
+  if newline < 0 {
+    return [bytes(0), 0]
   }
 
-  pos++
+  pos = newline + 1
 
   var seq = bytes(size - pos)
   var length = 0
@@ -104,41 +124,19 @@ def read_sequence(codes) {
 }
 
 /**
- * Counts every k-mer into a flat array of 4^k counters, one slot per
- * possible code. Direct indexing, no hashing.
+ * Updates a hashtable of k-nucleotide codes to counts for one reading
+ * frame. The table starts empty and grows as new k-mers turn up; the
+ * rolling code means each position costs one shift and one mask
+ * rather than re-reading k bases.
  */
-def count_flat(seq, length, k) {
-  var counts = [0] * (1 << (2 * k))
-  var mask = counts.length() - 1
-  var code = 0
-  var i = 0
-
-  # Prime the rolling code with the first k - 1 bases so that the
-  # counting loop below can stay branch free.
-  while i < k - 1 {
-    code = (code << 2) | seq[i]
-    i++
-  }
-
-  while i < length {
-    code = ((code << 2) | seq[i]) & mask
-    counts[code] = counts[code] + 1
-    i++
-  }
-
-  return counts
-}
-
-/**
- * Same rolling count, but keyed into a dict. Used for the frames
- * whose code space is too wide to allocate outright.
- */
-def count_hashed(seq, length, k) {
+def count_frame(seq, length, k) {
   var counts = {}
   var mask = (1 << (2 * k)) - 1
   var code = 0
   var i = 0
 
+  # Prime the rolling code with the first k - 1 bases so the counting
+  # loop below can stay branch free.
   while i < k - 1 {
     code = (code << 2) | seq[i]
     i++
@@ -228,14 +226,9 @@ def report_frequencies(counts, k) {
   var entries = []
   var total = 0
 
-  iter var code = 0; code < counts.length(); code++ {
-    var count = counts[code]
-
+  for code, count in counts {
     total += count
-
-    if count > 0 {
-      entries.append([count, decode(code, k)])
-    }
+    entries.append([count, decode(code, k)])
   }
 
   sort_entries(entries)
@@ -253,21 +246,13 @@ def main() {
   var seq = loaded[0]
   var length = loaded[1]
 
-  report_frequencies(count_flat(seq, length, 1), 1)
-  report_frequencies(count_flat(seq, length, 2), 2)
+  report_frequencies(count_frame(seq, length, 1), 1)
+  report_frequencies(count_frame(seq, length, 2), 2)
 
   for target in TARGETS {
-    var k = target.length()
-    var code = encode(target, codes)
-    var count = 0
+    var counts = count_frame(seq, length, target.length())
 
-    if k <= FLAT_LIMIT {
-      count = count_flat(seq, length, k)[code]
-    } else {
-      count = count_hashed(seq, length, k).get(code, 0)
-    }
-
-    echo '${count}\t${target}'
+    echo '${counts.get(encode(target, codes), 0)}\t${target}'
   }
 }
 
