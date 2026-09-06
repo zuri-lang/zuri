@@ -1,0 +1,86 @@
+# proven-dict SetIndex must behave exactly as the interpreter does,
+# including on keys of every kind and on overwrite
+def build(n) {
+  var d = {}
+  var i = 0
+  while i < n {
+    d[i & 63] = i
+    i++
+  }
+  return d
+}
+var d = build(50000)
+echo d.length()
+echo d[0]
+echo d[63]
+
+def mixed(n) {
+  var d = {}
+  var i = 0
+  while i < n {
+    d['k'] = i
+    d[i & 3] = i
+    d[true] = i
+    d[nil] = i
+    i++
+  }
+  return d
+}
+var m = mixed(50000)
+echo m.length()
+echo '${m['k']} ${m[0]} ${m[true]} ${m[nil]}'
+
+# an old dict taking a fresh young value: the barrier must still fire
+def barrier(n) {
+  var d = {}
+  var i = 0
+  while i < n {
+    d[i & 7] = [i, i + 1]
+    i++
+  }
+  return d
+}
+var b = barrier(50000)
+echo b.length()
+echo b[0]
+
+# reads through a proven dict, and the missing-key error, both hot
+def read_hot(d, n) {
+  var i = 0, acc = 0
+  while i < n {
+    acc += d[i & 63]
+    i++
+  }
+  return acc
+}
+echo read_hot(build(50000), 100000)
+
+def miss_at_end(n) {
+  var d = {}
+  d[1] = 'one'
+  var i = 0
+  while i < n {
+    if i == n - 1 {
+      return d[999]
+    }
+    i++
+  }
+}
+catch {
+  echo miss_at_end(100000)
+} as e {
+  echo 'miss raised: ${e.message}'
+}
+
+# a key that is present but holds nil must read back as nil, not raise
+def nil_valued(n) {
+  var d = {}
+  d[7] = nil
+  var i = 0, last = 'x'
+  while i < n {
+    last = d[7]
+    i++
+  }
+  return last
+}
+echo nil_valued(100000)

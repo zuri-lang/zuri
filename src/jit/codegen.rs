@@ -8870,6 +8870,126 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// including why `reg_cache` needs a hard reset before `slow_block`
   /// (two independent `call_helper` sites: `zuri_jit_list_data` here,
   /// `zuri_jit_set_index` there).
+  /// `x[i] = v` when `x` is already proven a byte stream; the store
+  /// counterpart of `emit_proven_bytes_get_index`, and it drops the
+  /// same object-shape guard for the same reason.
+  ///
+  /// No write barrier: a byte stream holds no references, so an old
+  /// one can never come to point at a young object through this.
+  fn emit_proven_bytes_set_index(
+    &mut self,
+    ip: usize,
+    obj: u8,
+    iidx: u8,
+    src: u8,
+    idx_proven_numeric: bool,
+    idx_proven_int: bool,
+  ) {
+    let obj_val = self.load_reg(obj);
+    let idx_val = self.load_reg(iidx);
+    let src_val = self.load_reg(src);
+    let ptr = self.obj_ptr(obj_val);
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let resolve_block = self.fb.create_block();
+
+    let f = self.f64_view(iidx, idx_val);
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    if idx_proven_int {
+      self.fb.ins().jump(resolve_block, &[]);
+    } else {
+      let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+      let is_int = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::Equal,
+        f,
+        roundtrip,
+      );
+      let idx_ok = if idx_proven_numeric {
+        is_int
+      } else {
+        let is_num = self.is_number(idx_val);
+        self.fb.ins().band(is_num, is_int)
+      };
+      self
+        .fb
+        .ins()
+        .brif(idx_ok, resolve_block, &[], slow_block, &[]);
+    }
+
+    self.fb.switch_to_block(resolve_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let data_ptr = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_bytes_ptr_offset());
+    let len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, ptr, object::obj_bytes_len_offset());
+    let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
+    let fast_block = self.fb.create_block();
+    let check_neg_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(in_bounds, fast_block, &[], check_neg_block, &[]);
+
+    self.fb.switch_to_block(check_neg_block);
+    let zero = self.i64c(0);
+    let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, as_int, zero);
+    let neg_block = self.fb.create_block();
+    self.fb.ins().brif(is_neg, neg_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(neg_block);
+    let adjusted = self.fb.ins().iadd(len, as_int);
+    let neg_in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, adjusted, len);
+    let neg_fast_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(neg_in_bounds, neg_fast_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(neg_fast_block);
+    if !self.proven_byte_value(ip, src) {
+      let b = self.fb.create_block();
+      self.emit_byte_value_guard(ip, src, src_val, b, slow_block);
+      self.fb.switch_to_block(b);
+    }
+    let addr_neg = self.fb.ins().iadd(data_ptr, adjusted);
+    let fn_neg = self.to_f64(src_val);
+    let in_neg = self.fb.ins().fcvt_to_sint_sat(types::I64, fn_neg);
+    let u8_neg = self.fb.ins().ireduce(types::I8, in_neg);
+    self.fb.ins().store(flags, u8_neg, addr_neg, 0);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    if !self.proven_byte_value(ip, src) {
+      let b = self.fb.create_block();
+      self.emit_byte_value_guard(ip, src, src_val, b, slow_block);
+      self.fb.switch_to_block(b);
+    }
+    let addr = self.fb.ins().iadd(data_ptr, as_int);
+    let fnum = self.to_f64(src_val);
+    let inum = self.fb.ins().fcvt_to_sint_sat(types::I64, fnum);
+    let u8v = self.fb.ins().ireduce(types::I8, inum);
+    self.fb.ins().store(flags, u8v, addr, 0);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    let base = self.base_param;
+    let obj_i = self.idx(obj);
+    let idx_i = self.idx(iidx);
+    let src_i = self.idx(src);
+    self.call_checked(
+      "zuri_jit_set_index",
+      &[self.vm_param, base, obj_i, idx_i, src_i],
+    );
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
   fn emit_list_set_index(
     &mut self,
     ip: usize,
@@ -11220,6 +11340,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           );
           return false;
         }
+        // A dict lookup is a hash probe whichever way it is reached,
+        // so there is nothing to inline; what a proven receiver buys
+        // is skipping the kind dispatch in front of it. The helper
+        // raises the missing-key error itself, matching
+        // `VM::index_get`.
+        if self.proven_dict(ip, obj) {
+          let base = self.base_param;
+          let dst_i = self.idx(dst);
+          let obj_i = self.idx(obj);
+          let idx_i = self.idx(iidx);
+          self.call_checked(
+            "zuri_jit_dict_index_get",
+            &[self.vm_param, base, dst_i, obj_i, idx_i],
+          );
+          self.resync_dst_from_memory(dst);
+          return false;
+        }
         if self.proven_bytes(ip, obj) {
           self.emit_proven_bytes_get_index(
             ip,
@@ -11250,6 +11387,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_scalar_list_set(
             slot,
             count,
+            iidx,
+            src,
+            self.proven_numeric(ip, iidx),
+            self.proven_int(ip, iidx),
+          );
+          return false;
+        }
+        // A dict takes any key and any value and cannot raise, so a
+        // proven dict needs no guard whatsoever: straight to the same
+        // lean helper `DictIntrinsic::Set` uses. `counts[k] = ...` on
+        // a `MakeDict` local is the shape this is for.
+        if self.proven_dict(ip, obj) {
+          let recv = self.load_reg(obj);
+          let key = self.load_reg(iidx);
+          let value = self.load_reg(src);
+          let vm_p = self.vm_param;
+          self.call_helper_raw("zuri_jit_dict_set", &[vm_p, recv, key, value]);
+          return false;
+        }
+        if self.proven_bytes(ip, obj) {
+          self.emit_proven_bytes_set_index(
+            ip,
+            obj,
             iidx,
             src,
             self.proven_numeric(ip, iidx),

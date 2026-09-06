@@ -527,12 +527,42 @@ pub unsafe extern "C" fn zuri_jit_dict_set(
   value_bits: u64,
 ) -> u64 {
   let recv = Value::from_bits(recv_bits);
+  // `Value::dict_set` fires the write barrier itself, so an old dict
+  // holding a young value is already remembered; adding another here
+  // would just enter it in the remembered set twice.
   recv.dict_set(Value::from_bits(key_bits), Value::from_bits(value_bits));
-  // `builtins::dict::set` reaches this through `with_dict_mut`; the
-  // barrier is not optional, an old dict holding a young value has to
-  // be remembered.
-  crate::vm::object::write_barrier(recv.as_obj());
   Value::nil().to_bits()
+}
+
+/// `d[k]` on a dict receiver: the hash index answers it directly, so
+/// none of the generic path's kind dispatch is needed.
+///
+/// A miss is an error here, unlike `d.get(k)`, so this raises the same
+/// `PropertyError` `VM::index_get` does rather than yielding nil. That
+/// is also why it takes register indices and a status code instead of
+/// plain values: it has to be able to fail.
+pub unsafe extern "C" fn zuri_jit_dict_index_get(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  obj: u64,
+  idx: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
+  let recv = vm.get_reg(base, obj as u8);
+  let key = vm.get_reg(base, idx as u8);
+  match recv.dict_get(&key) {
+    Some(v) => {
+      vm.set_reg(base, dst as u8, v);
+      OK
+    },
+    None => {
+      let msg = format!("undefined key '{}' in dict", key);
+      let e = vm.raise("PropertyError", msg);
+      fail(vm, e)
+    },
+  }
 }
 
 /// Entry count of a dict, as a raw integer rather than a Value, so
@@ -2933,6 +2963,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec2!(zuri_jit_is_falsey),
     spec4!(zuri_jit_dict_get),
     spec4!(zuri_jit_dict_set),
+    spec5!(zuri_jit_dict_index_get),
     spec3!(zuri_jit_dict_contains),
     spec2!(zuri_jit_dict_len),
     spec3!(zuri_jit_print),
