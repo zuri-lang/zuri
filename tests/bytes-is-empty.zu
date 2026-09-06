@@ -1,0 +1,30 @@
+# bytes gained is_empty() to match every other container; the JIT
+# answers it inline, so it needs checking on both tiers.
+echo bytes(0).is_empty()
+echo bytes(3).is_empty()
+echo 'hi'.to_bytes().is_empty()
+
+# a stream of zero bytes still holds bytes
+echo bytes(4).length()
+echo bytes(4).is_empty()
+
+var b = 'abc'.to_bytes()
+echo b.is_empty()
+b.pop()
+b.pop()
+b.pop()
+echo b.is_empty()
+echo b.length()
+
+# run it hot so the compiled tier answers too
+def hot(x) {
+  var n = 0
+  iter var i = 0; i < 500; i++ {
+    if x.is_empty() {
+      n++
+    }
+  }
+  return n
+}
+echo hot(bytes(0))
+echo hot(bytes(2))

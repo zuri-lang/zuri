@@ -1,0 +1,41 @@
+-- list --
+l.get(0): 10
+l.get(2): 30
+l.get(3): raised list index 3 out of range at get()
+l.get(-1): raised list index -1 out of range at get()
+l.get(3, fb): fb
+l.get(-1, fb): fb
+l.get(1.7): 20
+l.get("x"): raised 'get' expects argument 1 to be a number, got string
+l.get("x", fb): raised 'get' expects argument 1 to be a number, got string
+-- dict --
+d.get(a): 1
+d.get(b): nil
+d.get(zz): nil
+d.get(zz, fb): fb
+d.get(b, fb): nil
+-- bytes --
+b.get(0): 65
+b.get(2): 67
+b.get(3): raised bytes index 3 out of range at get()
+b.get(-1): raised bytes index -1 out of range at get()
+b.get(0, fb): raised 'get' expects 1 argument, got 2
+-- odd indices --
+l.get(nan): 10
+l.get(nan, fb): 10
+b.get(nan): 65
+l.get(-0.5): raised list index 0 out of range at get()
+l.get(2.9): 30
+l.get(1e18): raised list index 1000000000000000000 out of range at get()
+l.get(1e18, fb): fb
+-- empty containers --
+[].get(0): raised list index 0 out of range at get()
+[].get(0, fb): fb
+bytes(0).get(0): raised bytes index 0 out of range at get()
+{}.get(k): nil
+-- hot, so the compiled tier answers too --
+7990
+2800
+26399
+400
+hot out-of-range: raised list index 50 out of range at get()

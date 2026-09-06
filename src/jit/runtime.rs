@@ -487,6 +487,73 @@ pub unsafe extern "C" fn zuri_jit_concat(
   OK
 }
 
+/// `d.get(key, fallback)` on a dict receiver, answered straight out of
+/// the hash index.
+///
+/// Takes the three values directly rather than register indices, so
+/// there is no `CallArgs` to build, no method lookup, no arity check
+/// and no `ZuriContext`; the generic invoke path walks all of that to
+/// reach the same one-line answer. Cannot allocate, cannot re-enter
+/// the VM and cannot collect, which is what lets its call site skip
+/// the register flush every ordinary helper call pays for.
+///
+/// The receiver is guaranteed a dict by the tag check its caller
+/// emits, so a missing key is the only case left to handle.
+pub unsafe extern "C" fn zuri_jit_dict_get(
+  _vm_ptr: *mut VM,
+  recv_bits: u64,
+  key_bits: u64,
+  fallback_bits: u64,
+) -> u64 {
+  let recv = Value::from_bits(recv_bits);
+  let key = Value::from_bits(key_bits);
+  match recv.dict_get(&key) {
+    Some(v) => v.to_bits(),
+    None => fallback_bits,
+  }
+}
+
+/// `d.set(key, value)` (and `d.add(...)`, which is the same function)
+/// on a dict receiver.
+///
+/// Mirrors `builtins::dict::set` exactly, write barrier included, and
+/// yields nil the way that one does. Growing the table allocates on
+/// Rust's heap but never runs the collector and never re-enters the
+/// VM, so like `zuri_jit_dict_get` this needs no register flush.
+pub unsafe extern "C" fn zuri_jit_dict_set(
+  _vm_ptr: *mut VM,
+  recv_bits: u64,
+  key_bits: u64,
+  value_bits: u64,
+) -> u64 {
+  let recv = Value::from_bits(recv_bits);
+  recv.dict_set(Value::from_bits(key_bits), Value::from_bits(value_bits));
+  // `builtins::dict::set` reaches this through `with_dict_mut`; the
+  // barrier is not optional, an old dict holding a young value has to
+  // be remembered.
+  crate::vm::object::write_barrier(recv.as_obj());
+  Value::nil().to_bits()
+}
+
+/// Entry count of a dict, as a raw integer rather than a Value, so
+/// the caller can shape it into either a length or an emptiness test
+/// without a second call. Reads one field; cannot allocate or collect.
+pub unsafe extern "C" fn zuri_jit_dict_len(_vm_ptr: *mut VM, recv_bits: u64) -> u64 {
+  Value::from_bits(recv_bits).dict_len() as u64
+}
+
+/// `d.contains(key)` on a dict receiver; the hash index answers it, so
+/// there is nothing to walk and nothing to allocate.
+pub unsafe extern "C" fn zuri_jit_dict_contains(
+  _vm_ptr: *mut VM,
+  recv_bits: u64,
+  key_bits: u64,
+) -> u64 {
+  let recv = Value::from_bits(recv_bits);
+  let key = Value::from_bits(key_bits);
+  Value::bool(recv.dict_get(&key).is_some()).to_bits()
+}
+
 pub unsafe extern "C" fn zuri_jit_bitnot_slow(
   vm_ptr: *mut VM,
   base: u64,
@@ -2864,6 +2931,10 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec1!(zuri_jit_safepoint),
     spec2!(zuri_jit_deopt),
     spec2!(zuri_jit_is_falsey),
+    spec4!(zuri_jit_dict_get),
+    spec4!(zuri_jit_dict_set),
+    spec3!(zuri_jit_dict_contains),
+    spec2!(zuri_jit_dict_len),
     spec3!(zuri_jit_print),
     spec3!(zuri_jit_close_upvalues),
     spec4!(zuri_jit_bitnot_slow),

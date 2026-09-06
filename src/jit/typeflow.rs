@@ -1175,6 +1175,118 @@ pub fn analyze_list(
 /// straight to `zuri_jit_invoke_string`, bypassing the wasted
 /// `zuri_jit_invoke_prepare` attempt (that helper's very first check is
 /// `receiver.is_instance()`, which a String can never be).
+/// Which registers hold a dict at each bytecode position.
+///
+/// `MakeDict` is the seed that matters, exactly as `MakeList` is for
+/// `ListFacts`: a dict built in the function is a dict for the rest of
+/// it, so `var counts = {}` followed by a loop of `counts.get(...)`
+/// needs no runtime tag check at all. A parameter declared exactly
+/// `dict` seeds it too.
+pub struct DictFacts {
+  entry: Vec<RegSet>,
+}
+
+impl DictFacts {
+  #[inline]
+  pub fn is_dict(&self, ip: usize, r: u8) -> bool {
+    self.entry[ip].get(r)
+  }
+}
+
+fn transfer_dict(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSet {
+  let mut out = in_set.clone();
+  match *instr {
+    Instr::MakeDict { dst, .. } => out.set(dst, true),
+    Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
+
+    Instr::CheckParamType { reg, check_idx } => {
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      let all_dict =
+        !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Dict);
+      out.set(reg, all_dict);
+    },
+
+    // Same catch-all the sibling passes use: any other write clears
+    // the proof, so a reused register cannot carry a stale one.
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        out.set(dst, false);
+      }
+    },
+  }
+  out
+}
+
+/// Runs the dict-shape analysis: see `DictFacts`'s own docs.
+///
+/// Short-circuits when the function neither builds a dict nor declares
+/// a `dict` parameter, the only two things `transfer_dict` seeds from.
+pub fn analyze_dict(proto: &ObjFunction, preds: &[Vec<usize>]) -> DictFacts {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let has_dict_source = code.iter().any(|i| match i {
+    Instr::MakeDict { .. } => true,
+    Instr::CheckParamType { check_idx, .. } => {
+      let check = &proto.chunk.param_checks[*check_idx as usize];
+      !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Dict)
+    },
+    _ => false,
+  });
+  if !has_dict_source {
+    return DictFacts {
+      entry: vec![RegSet::empty(num_registers); code_len],
+    };
+  }
+
+  let mut entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        RegSet::empty(num_registers)
+      } else {
+        RegSet::full(num_registers)
+      }
+    })
+    .collect();
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+  let mut out: Vec<RegSet> = (0..code_len)
+    .map(|ip| transfer_dict(&entry[ip], &code[ip], proto))
+    .collect();
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut new_in = RegSet::full(num_registers);
+    let mut any_pred = false;
+    for &p in &preds[ip] {
+      new_in.and_assign(&out[p]);
+      any_pred = true;
+    }
+    if !any_pred {
+      new_in = RegSet::full(num_registers);
+    }
+    if ip == 0 {
+      new_in = RegSet::empty(num_registers);
+    }
+
+    if new_in != entry[ip] {
+      entry[ip] = new_in;
+      out[ip] = transfer_dict(&entry[ip], &code[ip], proto);
+      for &s in &successors(ip, &code[ip], proto) {
+        if s < code_len && !in_worklist[s] {
+          in_worklist[s] = true;
+          worklist.push(s);
+        }
+      }
+    }
+  }
+
+  DictFacts { entry }
+}
+
 /// Which registers hold a `bytes` at each bytecode position.
 ///
 /// The bytes counterpart to `ListFacts`/`StringFacts`, and seeded from

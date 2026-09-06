@@ -29,6 +29,7 @@ pub static BYTES_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     // `builtins::mod`.
     method("to_string", bytes_to_string),
     method("length", length),
+    method("is_empty", is_empty),
     method_n("append", 1, append),
     method("clone", clone_bytes),
     method_n("extend", 1, extend),
@@ -93,6 +94,11 @@ fn expect_byte(ctx: &ZuriContext, idx: usize) -> Result<u8, String> {
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   Ok(Value::number(ctx.args[0].bytes_len() as f64))
+}
+
+fn is_empty(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  Ok(Value::bool(ctx.args[0].bytes_len() == 0))
 }
 
 fn append(ctx: &mut ZuriContext) -> Result<Value, String> {

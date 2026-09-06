@@ -1,0 +1,100 @@
+# `get` means something different on each container, and the JIT now
+# answers all three inline. Every arm below must agree with what the
+# interpreter does, including the ones that raise.
+
+def show(label, f) {
+  catch {
+    echo '${label}: ${f()}'
+  } as e {
+    echo '${label}: raised ${e.message}'
+  }
+}
+
+var l = [10, 20, 30]
+var d = { a: 1, b: nil }
+var b = 'ABC'.to_bytes()
+
+echo '-- list --'
+show('l.get(0)', @() { return l.get(0) })
+show('l.get(2)', @() { return l.get(2) })
+show('l.get(3)', @() { return l.get(3) })
+show('l.get(-1)', @() { return l.get(-1) })
+show('l.get(3, fb)', @() { return l.get(3, 'fb') })
+show('l.get(-1, fb)', @() { return l.get(-1, 'fb') })
+show('l.get(1.7)', @() { return l.get(1.7) })
+show('l.get("x")', @() { return l.get('x') })
+show('l.get("x", fb)', @() { return l.get('x', 'fb') })
+
+echo '-- dict --'
+show('d.get(a)', @() { return d.get('a') })
+show('d.get(b)', @() { return d.get('b') })
+show('d.get(zz)', @() { return d.get('zz') })
+show('d.get(zz, fb)', @() { return d.get('zz', 'fb') })
+show('d.get(b, fb)', @() { return d.get('b', 'fb') })
+
+echo '-- bytes --'
+show('b.get(0)', @() { return b.get(0) })
+show('b.get(2)', @() { return b.get(2) })
+show('b.get(3)', @() { return b.get(3) })
+show('b.get(-1)', @() { return b.get(-1) })
+show('b.get(0, fb)', @() { return b.get(0, 'fb') })
+
+echo '-- odd indices --'
+var nan = 0 / 0
+show('l.get(nan)', @() { return l.get(nan) })
+show('l.get(nan, fb)', @() { return l.get(nan, 'fb') })
+show('b.get(nan)', @() { return b.get(nan) })
+show('l.get(-0.5)', @() { return l.get(-0.5) })
+show('l.get(2.9)', @() { return l.get(2.9) })
+show('l.get(1e18)', @() { return l.get(1e18) })
+show('l.get(1e18, fb)', @() { return l.get(1e18, 'fb') })
+
+echo '-- empty containers --'
+show('[].get(0)', @() { return [].get(0) })
+show('[].get(0, fb)', @() { return [].get(0, 'fb') })
+show('bytes(0).get(0)', @() { return bytes(0).get(0) })
+show('{}.get(k)', @() { return {}.get('k') })
+
+echo '-- hot, so the compiled tier answers too --'
+def hot_list(x) {
+  var n = 0
+  iter var i = 0; i < 400; i++ {
+    n += x.get(i % 3)
+  }
+  return n
+}
+def hot_list_fb(x) {
+  var n = 0
+  iter var i = 0; i < 400; i++ {
+    n += x.get(99, 7)
+  }
+  return n
+}
+def hot_bytes(x) {
+  var n = 0
+  iter var i = 0; i < 400; i++ {
+    n += x.get(i % 3)
+  }
+  return n
+}
+def hot_dict(x) {
+  var n = 0
+  iter var i = 0; i < 400; i++ {
+    n += x.get('a', 0)
+  }
+  return n
+}
+echo hot_list(l)
+echo hot_list_fb(l)
+echo hot_bytes(b)
+echo hot_dict(d)
+
+# a hot loop that raises must still raise from compiled code
+def hot_raise(x) {
+  var n = 0
+  iter var i = 0; i < 400; i++ {
+    n += x.get(50)
+  }
+  return n
+}
+show('hot out-of-range', @() { return hot_raise(l) })

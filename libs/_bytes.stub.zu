@@ -131,6 +131,25 @@ class bytes {
    */
   length() {}
 
+   /**
+   * Returns `true` if the byte stream holds no bytes at all, and
+   * `false` otherwise. Equivalent to testing `length() == 0`, and
+   * unaffected by whatever the bytes happen to contain: a stream of
+   * zero bytes is not empty.
+   *
+   * ```zuri-repl
+   * %> bytes(0).is_empty()
+   * true
+   * %> bytes(3).is_empty()
+   * false
+   * %> 'hi'.to_bytes().is_empty()
+   * false
+   * ```
+   *
+   * @returns {boolean}
+   */
+  is_empty() {}
+
 
   /**
    * Adds an item to the top of a byte stream.

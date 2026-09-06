@@ -463,6 +463,52 @@ impl InlineOp {
 /// `NumberIntrinsic::Call`; if a List method ever needs a real helper
 /// call (`.append()`, say), it'd need its own variant the same way
 /// `NumberIntrinsic::Call` earns its keep for the transcendentals.
+/// Dict methods the JIT recognises by name at compile time and
+/// dispatches itself, the dict counterpart to `ListIntrinsic`.
+///
+/// `get` earns its place on measurement: `d.get(k, fallback)` is how
+/// any counting loop reads a running total, and taking it through the
+/// generic invoke path costs about as much again as the dict lookup
+/// itself (~36ns against ~93ns for the equivalent indexing
+/// instructions, most of a third of such a loop).
+#[derive(Clone, Copy, PartialEq, Eq)]
+///
+/// `length`/`is_empty` are handled by `emit_list_intrinsic`'s own tag
+/// chain instead, because `ListIntrinsic` claims those names earlier
+/// in the dispatch order.
+enum DictIntrinsic {
+  /// `x.get(key)` and `x.get(key, fallback)`. Not dict-only despite
+  /// living here: lists and byte streams answer `get` too, so
+  /// `emit_dict_intrinsic` tag-chains all three. See its own docs for
+  /// how far their meanings diverge.
+  Get,
+  /// `d.set(key, value)`, and `d.add(key, value)`, which
+  /// `builtins::dict` implements as the very same function.
+  Set,
+  Contains,
+}
+
+impl DictIntrinsic {
+  /// `get` is legal with or without a fallback, so arity alone does
+  /// not settle a match the way it does for the other intrinsics.
+  fn accepts_arity(self, num_args: u8) -> bool {
+    match self {
+      DictIntrinsic::Get => num_args == 1 || num_args == 2,
+      DictIntrinsic::Contains => num_args == 1,
+      DictIntrinsic::Set => num_args == 2,
+    }
+  }
+
+  fn of(name: &str) -> Option<DictIntrinsic> {
+    Some(match name {
+      "get" => DictIntrinsic::Get,
+      "set" | "add" => DictIntrinsic::Set,
+      "contains" => DictIntrinsic::Contains,
+      _ => return None,
+    })
+  }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ListIntrinsic {
   Length,
@@ -637,6 +683,9 @@ struct FuncCompiler<'a, 'b> {
   /// Which registers hold a `bytes` at each bytecode position; the
   /// bytes sibling of `list_facts`/`string_facts`.
   bytes_facts: typeflow::BytesFacts,
+  /// Which registers hold a dict; seeded by `MakeDict` the way
+  /// `list_facts` is by `MakeList`.
+  dict_facts: typeflow::DictFacts,
   bool_facts: typeflow::BoolFacts,
   /// Which registers are PROVEN to hold one exact, statically-known
   /// `f64` constant at each bytecode position: see `jit::typeflow::
@@ -1183,6 +1232,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let no_numeric_fields = rustc_hash::FxHashSet::default();
     let speculative_ints = facts.speculative_ints.filter(|&m| m != 0);
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
+    let dict_facts = typeflow::analyze_dict(proto, &preds);
     let int_facts = typeflow::analyze_int(proto, &preds, None, &bytes_facts);
     let spec_int_facts = speculative_ints.map(|si| {
       typeflow::analyze_int(proto, &preds, Some(si), &bytes_facts)
@@ -1222,6 +1272,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       list_facts,
       string_facts,
       bytes_facts,
+      dict_facts,
       bool_facts,
       const_facts,
       preds,
@@ -1299,6 +1350,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   #[inline]
   fn proven_bytes(&self, ip: usize, r: u8) -> bool {
     self.bytes_facts.is_bytes(ip, r)
+  }
+
+  #[inline]
+  fn proven_dict(&self, ip: usize, r: u8) -> bool {
+    self.dict_facts.is_dict(ip, r)
   }
 
   #[inline]
@@ -6413,6 +6469,288 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `Instr::Invoke` of a `DictIntrinsic`, laid out the same way
+  /// `emit_list_intrinsic` is: guard the receiver's tag, answer inline
+  /// on the fast path, fall back to the generic invoke otherwise.
+  ///
+  /// No `emit_safepoint`, for the reason `emit_list_intrinsic` gives:
+  /// nothing on the fast path can allocate. That is also why the
+  /// helper goes through `call_helper_raw`; it cannot collect or
+  /// re-enter the VM, so the register flush an ordinary helper call
+  /// pays for would be waste, and skipping it is most of the point.
+  fn emit_dict_intrinsic(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+    op: DictIntrinsic,
+  ) {
+    let recv = self.load_reg(obj);
+
+    let is_obj = self.is_obj(recv);
+    let checked_block = self.fb.create_block();
+    let fast_block = self.fb.create_block();
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+
+    // `var counts = {}` proves itself through `MakeDict`, so the
+    // overwhelmingly common shape (build a dict, then update it in a
+    // loop) pays no tag check at all.
+    if self.proven_dict(ip, obj) {
+      self.fb.ins().jump(fast_block, &[]);
+      self.fb.switch_to_block(fast_block);
+      let vm_p = self.vm_param;
+      let v = self.emit_dict_intrinsic_value(op, num_args, recv, obj, vm_p);
+      self.store_reg(dst, v);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(slow_block);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(done_block);
+      return;
+    }
+
+    // A receiver already proven a list or a byte stream cannot be the
+    // dict this emitter is named for, so it skips the whole tag chain
+    // and goes straight to the arm that can answer it.
+    if matches!(op, DictIntrinsic::Get)
+      && (self.proven_list(ip, obj) || self.proven_bytes(ip, obj))
+    {
+      let ptr = self.obj_ptr(recv);
+      let tag = self.obj_tag(ptr);
+      self.emit_sequence_get(dst, obj, num_args, ptr, tag, slow_block, done_block);
+
+      self.fb.switch_to_block(slow_block);
+      self.emit_safepoint();
+      self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
+      self.resync_dst_from_memory(dst);
+      self.resync_receiver_from_memory(obj);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(done_block);
+      return;
+    }
+
+    self
+      .fb
+      .ins()
+      .brif(is_obj, checked_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(checked_block);
+    let ptr = self.obj_ptr(recv);
+    let tag = self.obj_tag(ptr);
+    let tag_dict = self.i64c(object::OBJ_TAG_DICT as i64);
+    let is_dict = self.fb.ins().icmp(IntCC::Equal, tag, tag_dict);
+
+    // `get` is not a dict-only method: lists and byte streams answer it
+    // too, so a non-dict receiver gets one more chance before the
+    // generic path.
+    let sequence_block = if matches!(op, DictIntrinsic::Get) {
+      let b = self.fb.create_block();
+      self.fb.ins().brif(is_dict, fast_block, &[], b, &[]);
+      Some(b)
+    } else {
+      self
+        .fb
+        .ins()
+        .brif(is_dict, fast_block, &[], slow_block, &[]);
+      None
+    };
+
+    if let Some(seq_block) = sequence_block {
+      self.fb.switch_to_block(seq_block);
+      self.emit_sequence_get(dst, obj, num_args, ptr, tag, slow_block, done_block);
+    }
+
+    self.fb.switch_to_block(fast_block);
+    let vm_p = self.vm_param;
+    let v = self.emit_dict_intrinsic_value(op, num_args, recv, obj, vm_p);
+    self.store_reg(dst, v);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_safepoint();
+    self.emit_generic_invoke(ip, dst, obj, method_const, num_args);
+    self.resync_dst_from_memory(dst);
+    self.resync_receiver_from_memory(obj);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+  }
+
+  /// The dict answer itself, once the receiver is known to be one.
+  fn emit_dict_intrinsic_value(
+    &mut self,
+    op: DictIntrinsic,
+    num_args: u8,
+    recv: IrValue,
+    obj: u8,
+    vm_p: IrValue,
+  ) -> IrValue {
+    match op {
+      DictIntrinsic::Get => {
+        let key = self.load_reg(obj + 2);
+        // The no-fallback form is documented to yield nil on a miss,
+        // which is exactly a fallback of nil.
+        let fallback = if num_args == 2 {
+          self.load_reg(obj + 3)
+        } else {
+          self.u64c(value::NIL_VAL)
+        };
+        self.call_helper_raw("zuri_jit_dict_get", &[vm_p, recv, key, fallback])
+      },
+      DictIntrinsic::Set => {
+        let key = self.load_reg(obj + 2);
+        let value = self.load_reg(obj + 3);
+        self.call_helper_raw("zuri_jit_dict_set", &[vm_p, recv, key, value])
+      },
+      DictIntrinsic::Contains => {
+        let key = self.load_reg(obj + 2);
+        self.call_helper_raw("zuri_jit_dict_contains", &[vm_p, recv, key])
+      },
+    }
+  }
+
+  /// `l.get(i)` / `l.get(i, fallback)` on a list, and `b.get(i)` on a
+  /// byte stream; the non-dict half of `emit_dict_intrinsic`'s `get`.
+  ///
+  /// Only the cases whose answer is unambiguous are inlined. A hit
+  /// returns the element. A miss returns the fallback, but only in the
+  /// two-argument form: with no fallback both kinds RAISE, and the
+  /// message is theirs to phrase, so that goes to the generic path.
+  /// So does a non-numeric index, which is a `TypeError` rather than a
+  /// miss, and `b.get(i, fallback)`, which byte streams do not accept
+  /// at all.
+  ///
+  /// Note the index rule these two share and `Instr::GetIndex` does
+  /// not: `get` has NO negative indexing. A negative index is simply
+  /// out of range, and the fraction of a non-integral one is dropped
+  /// rather than rejected, matching `builtins::list::get`'s own
+  /// `idx < 0.0 || idx as usize >= len`.
+  fn emit_sequence_get(
+    &mut self,
+    dst: u8,
+    obj: u8,
+    num_args: u8,
+    ptr: IrValue,
+    tag: IrValue,
+    slow_block: cranelift_codegen::ir::Block,
+    done_block: cranelift_codegen::ir::Block,
+  ) {
+    let key = self.load_reg(obj + 2);
+    let is_num = self.is_number(key);
+    let numeric_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_num, numeric_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(numeric_block);
+    let f = self.to_f64(key);
+    let zero_f = self.fb.ins().f64const(0.0);
+    let is_neg = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::LessThan,
+      f,
+      zero_f,
+    );
+    let idx = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+
+    let list_block = self.fb.create_block();
+    let check_bytes_block = self.fb.create_block();
+    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+    self
+      .fb
+      .ins()
+      .brif(is_list, list_block, &[], check_bytes_block, &[]);
+
+    // A miss with a fallback answers with it; without one, the raise
+    // belongs to the generic path.
+    let miss_block = self.fb.create_block();
+
+    self.fb.switch_to_block(list_block);
+    let (data_ptr, len) = self.load_list_ptr_len(ptr);
+    let in_range = self.fb.ins().icmp(IntCC::SignedLessThan, idx, len);
+    // Negating the `< 0` test rather than asking `>= 0` directly, so a
+    // NaN index keeps the meaning `builtins::list::get` gives it:
+    // `NaN < 0.0` is false there too, and the cast lands on 0, so a
+    // non-empty list answers with its first element. `>= 0.0` would be
+    // false for NaN and turn that into a miss.
+    let not_neg = self.fb.ins().bxor_imm_u(is_neg, 1);
+    let ok = self.fb.ins().band(in_range, not_neg);
+    let list_hit_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(ok, list_hit_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(list_hit_block);
+    let eight = self.fb.ins().iconst(types::I64, 8);
+    let off = self.fb.ins().imul(idx, eight);
+    let addr = self.fb.ins().iadd(data_ptr, off);
+    let elem = self.fb.ins().load(
+      types::I64,
+      cranelift_codegen::ir::MemFlagsData::trusted(),
+      addr,
+      0,
+    );
+    self.store_reg(dst, elem);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(check_bytes_block);
+    // `builtins::bytes::get` takes the index and nothing else, so the
+    // two-argument form has to reach the generic path to be rejected.
+    if num_args != 1 {
+      self.fb.ins().jump(slow_block, &[]);
+    } else {
+      let bytes_block = self.fb.create_block();
+      let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
+      let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
+      self
+        .fb
+        .ins()
+        .brif(is_bytes, bytes_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(bytes_block);
+      let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+      let blen = self
+        .fb
+        .ins()
+        .load(types::I64, flags, ptr, object::obj_bytes_len_offset());
+      let b_in_range = self.fb.ins().icmp(IntCC::SignedLessThan, idx, blen);
+      let b_not_neg = self.fb.ins().bxor_imm_u(is_neg, 1);
+      let b_ok = self.fb.ins().band(b_in_range, b_not_neg);
+      let bytes_hit_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(b_ok, bytes_hit_block, &[], miss_block, &[]);
+
+      self.fb.switch_to_block(bytes_hit_block);
+      let bdata = self
+        .fb
+        .ins()
+        .load(types::I64, flags, ptr, object::obj_bytes_ptr_offset());
+      let baddr = self.fb.ins().iadd(bdata, idx);
+      let b8 = self.fb.ins().load(types::I8, flags, baddr, 0);
+      let b64 = self.fb.ins().uextend(types::I64, b8);
+      self.store_reg_int(dst, b64);
+      self.fb.ins().jump(done_block, &[]);
+    }
+
+    self.fb.switch_to_block(miss_block);
+    if num_args == 2 {
+      let fallback = self.load_reg(obj + 3);
+      self.store_reg(dst, fallback);
+      self.fb.ins().jump(done_block, &[]);
+    } else {
+      self.fb.ins().jump(slow_block, &[]);
+    }
+  }
+
   fn emit_list_intrinsic(
     &mut self,
     ip: usize,
@@ -6449,10 +6787,64 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let tag = self.obj_tag(ptr);
     let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
     let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
-    self
-      .fb
-      .ins()
-      .brif(is_list, fast_block, &[], slow_block, &[]);
+
+    // `length`/`is_empty` are not list-only questions. Every container
+    // answers them, and until this chain existed a bytes or dict
+    // receiver fell all the way through to the generic invoke: three
+    // and a half times the cost of the list answer, for a single field
+    // read. The other variants really are list-shaped, so they keep
+    // the plain two-way branch.
+    let counts_any_container = matches!(op, ListIntrinsic::Length | ListIntrinsic::IsEmpty);
+    let other_container_block = if counts_any_container {
+      let b = self.fb.create_block();
+      self.fb.ins().brif(is_list, fast_block, &[], b, &[]);
+      Some(b)
+    } else {
+      self
+        .fb
+        .ins()
+        .brif(is_list, fast_block, &[], slow_block, &[]);
+      None
+    };
+
+    if let Some(other_block) = other_container_block {
+      self.fb.switch_to_block(other_block);
+      let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+      let check_dict_block = self.fb.create_block();
+
+      let bytes_block = self.fb.create_block();
+      let tag_bytes = self.i64c(object::OBJ_TAG_BYTES as i64);
+      let is_bytes = self.fb.ins().icmp(IntCC::Equal, tag, tag_bytes);
+      self
+        .fb
+        .ins()
+        .brif(is_bytes, bytes_block, &[], check_dict_block, &[]);
+
+      self.fb.switch_to_block(bytes_block);
+      let blen = self
+        .fb
+        .ins()
+        .load(types::I64, flags, ptr, object::obj_bytes_len_offset());
+      let bv = self.emit_count_value(op, blen);
+      self.store_reg(dst, bv);
+      self.fb.ins().jump(done_block, &[]);
+
+      self.fb.switch_to_block(check_dict_block);
+      let dict_block = self.fb.create_block();
+      let tag_dict = self.i64c(object::OBJ_TAG_DICT as i64);
+      let is_dict = self.fb.ins().icmp(IntCC::Equal, tag, tag_dict);
+      self
+        .fb
+        .ins()
+        .brif(is_dict, dict_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(dict_block);
+      let vm_p = self.vm_param;
+      let dlen = self.call_helper_raw("zuri_jit_dict_len", &[vm_p, recv]);
+      let dv = self.emit_count_value(op, dlen);
+      self.store_reg(dst, dv);
+      self.fb.ins().jump(done_block, &[]);
+    }
 
     self.fb.switch_to_block(fast_block);
     let v = self.emit_list_intrinsic_value(op, recv);
@@ -6476,6 +6868,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// no branching, no register bookkeeping, just the value. `recv`'s
   /// own bit pattern (not a re-derived one) is what `obj_ptr` masks,
   /// matching every other intrinsic/guard site in this file.
+  /// Shapes an already-loaded element count into whichever of
+  /// `length`/`is_empty` was asked for, so every container kind can
+  /// share one place that knows what those two mean.
+  fn emit_count_value(&mut self, op: ListIntrinsic, len: IrValue) -> IrValue {
+    match op {
+      ListIntrinsic::IsEmpty => {
+        let zero = self.fb.ins().iconst(types::I64, 0);
+        let is_empty = self.fb.ins().icmp(IntCC::Equal, len, zero);
+        self.bool_value(is_empty)
+      },
+      _ => {
+        let len_f = self.fb.ins().fcvt_from_sint(types::F64, len);
+        self.from_f64(len_f)
+      },
+    }
+  }
+
   fn emit_list_intrinsic_value(&mut self, op: ListIntrinsic, recv: IrValue) -> IrValue {
     let ptr = self.obj_ptr(recv);
     let (data_ptr, len) = self.load_list_ptr_len(ptr);
@@ -10446,6 +10855,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           && op.arity() == num_args
         {
           self.emit_string_intrinsic(ip, dst, obj, method_const, num_args, op);
+          return false;
+        }
+        if let Some(op) = DictIntrinsic::of(self.method_name(method_const))
+          && op.accepts_arity(num_args)
+        {
+          self.emit_dict_intrinsic(ip, dst, obj, method_const, num_args, op);
           return false;
         }
         self.emit_safepoint();
