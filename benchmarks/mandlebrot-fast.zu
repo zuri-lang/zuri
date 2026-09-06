@@ -12,6 +12,7 @@
  *    case.
  */
 
+import io
 import os
 
 
@@ -63,4 +64,4 @@ iter var y = 0; y < h; y++ {
   print(row)
 }
 
-echo 'Time taken = ${time() - start}s'
+io.stderr.write('Time taken = ${time() - start}s\n')

@@ -6,6 +6,8 @@
  * contributed by Stefan Krause
  * slightly modified by Chad Whipkey
  */
+import io
+
 const BUFFER_SIZE = 8_192
 
 class Mandelbrot {
@@ -75,5 +77,4 @@ class Mandelbrot {
 
 var start = time()
 Mandelbrot(16_000).compute()
-
-echo '\nTotal time taken = ${time() - start}s'
+io.stderr.write('Time taken: ${time() - start}s\n')

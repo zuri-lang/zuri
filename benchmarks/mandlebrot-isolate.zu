@@ -16,6 +16,7 @@
  * parallelized by Richard Ore
  */
 
+import io
 import isolate
 
 # `Mandelbrot` only holds the pure per-row math, with no reference to
@@ -104,4 +105,4 @@ def compute(size)
 var start = time()
 compute(16_000)
 
-echo '\nTotal time taken = ${time() - start}s'
+io.stderr.write('Total time taken = ${time() - start}s\n')
