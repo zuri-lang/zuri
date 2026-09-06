@@ -855,6 +855,40 @@ impl Value {
 /// gives `+0`. That was the only discrepancy the differential test
 /// found, and this is what closes it.
 #[inline]
+/// Narrows a number to `i64` for the bitwise operators, modularly.
+///
+/// `as i64` saturates, which collapses every value at or above `2^63`
+/// onto `i64::MAX` and loses the low bits the operators are asking
+/// about: `16000000000000000000 & 255` is mathematically `0`, and
+/// saturating answers `255`. Reducing modulo `2^64` keeps all 64 low
+/// bits, so a mask or shift below that width stays exact. This is also
+/// what an `i64`-width version of ECMAScript's `ToInt32` does, and what
+/// the compiled tier gets for free from wrapping integer arithmetic.
+///
+/// A non-finite operand has no low bits to keep and narrows to `0`.
+pub fn num_to_wrapped_i64(v: f64) -> i64 {
+  /// `2^63`, exactly representable.
+  const I64_SPAN: f64 = 9223372036854775808.0;
+  /// `2^64`, likewise.
+  const U64_SPAN: f64 = 18446744073709551616.0;
+
+  if !v.is_finite() {
+    return 0;
+  }
+  let t = v.trunc();
+  if t >= -I64_SPAN && t < I64_SPAN {
+    return t as i64;
+  }
+  // `rem_euclid` on a power of two is exact for every finite input, and
+  // so is the shift back into signed range below it.
+  let m = t.rem_euclid(U64_SPAN);
+  if m >= I64_SPAN {
+    (m - U64_SPAN) as i64
+  } else {
+    m as i64
+  }
+}
+
 pub fn num_rem(a: f64, b: f64) -> f64 {
   /// `2^63`, exactly representable, so the comparison is exact.
   const I64_LIMIT: f64 = 9223372036854775808.0;

@@ -4224,8 +4224,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
           *numeric.get_mut(dst as usize)? = true;
         },
-        Instr::Mod { dst, a, b } => {
+        Instr::Mod { dst, a, b }
+        | Instr::BitAnd { dst, a, b }
+        | Instr::BitOr { dst, a, b }
+        | Instr::BitXor { dst, a, b }
+        | Instr::BitShl { dst, a, b }
+        | Instr::BitShr { dst, a, b }
+        | Instr::BitUshr { dst, a, b } => {
           if !is_num(&numeric, a) || !is_num(&numeric, b) {
+            return None;
+          }
+          *numeric.get_mut(dst as usize)? = true;
+        },
+        Instr::BitNot { dst, src } => {
+          if !is_num(&numeric, src) {
             return None;
           }
           *numeric.get_mut(dst as usize)? = true;
@@ -4393,7 +4405,51 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let b = bake(self, imm_const);
           regs[dst as usize] = self.fb.ins().fmul(regs[a as usize], b)
         },
+        // Bitwise operands narrow with a SATURATING conversion, which
+        // is what `bitwise_numeric`'s `as i64` does; the result always
+        // fits `i64`, so it also seeds the integer view.
+        Instr::BitAnd { dst, a, b }
+        | Instr::BitOr { dst, a, b }
+        | Instr::BitXor { dst, a, b }
+        | Instr::BitShl { dst, a, b }
+        | Instr::BitShr { dst, a, b }
+        | Instr::BitUshr { dst, a, b } => {
+          let ia = match int_view[a as usize] {
+            Some(v) => v,
+            None => self.emit_narrow_to_i64(regs[a as usize]),
+          };
+          let ib = match int_view[b as usize] {
+            Some(v) => v,
+            None => self.emit_narrow_to_i64(regs[b as usize]),
+          };
+          let ir = match instr {
+            Instr::BitAnd { .. } => self.fb.ins().band(ia, ib),
+            Instr::BitOr { .. } => self.fb.ins().bor(ia, ib),
+            Instr::BitXor { .. } => self.fb.ins().bxor(ia, ib),
+            Instr::BitShl { .. } => Self::shift_left(self.fb, ia, ib),
+            Instr::BitShr { .. } => Self::shift_right(self.fb, ia, ib),
+            _ => Self::shift_right_unsigned(self.fb, ia, ib),
+          };
+          integral[dst as usize] = true;
+          pos_const[dst as usize] = false;
+          int_view[dst as usize] = Some(ir);
+          regs[dst as usize] = self.fb.ins().fcvt_from_sint(types::F64, ir);
+        },
+        Instr::BitNot { dst, src } => {
+          let is = match int_view[src as usize] {
+            Some(v) => v,
+            None => self.emit_narrow_to_i64(regs[src as usize]),
+          };
+          let inv = self.fb.ins().bnot(is);
+          integral[dst as usize] = true;
+          pos_const[dst as usize] = false;
+          int_view[dst as usize] = Some(inv);
+          regs[dst as usize] = self.fb.ins().fcvt_from_sint(types::F64, inv);
+        },
         Instr::Neg { dst, src } => {
+          integral[dst as usize] = false;
+          pos_const[dst as usize] = false;
+          int_view[dst as usize] = None;
           regs[dst as usize] = self.fb.ins().fneg(regs[src as usize]);
         },
         Instr::Mod { dst, a, b } => {
@@ -10640,10 +10696,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       Instr::Add { dst, a, b } => {
         if self.both_proven_int(ip, a, b) {
-          let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-          let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
-          let ir = self.fb.ins().iadd(ia, ib);
-          self.store_reg_int(dst, ir);
+          // The float result is the value; the integer variable is only
+          // a cache for instructions wanting an `i64` operand, and is
+          // filled only when one reads it. Taking the result from the
+          // integer op instead would wrap past `i64`.
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
+          if self.int_tracked[dst as usize] {
+            let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
+            let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
+            let ir = self.fb.ins().iadd(ia, ib);
+            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+          }
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
         } else if self.both_proven_string(ip, a, b) {
@@ -10679,10 +10742,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Sub { dst, a, b } => {
         if self.both_proven_int(ip, a, b) {
-          let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-          let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
-          let ir = self.fb.ins().isub(ia, ib);
-          self.store_reg_int(dst, ir);
+          // The float result is the value; the integer variable is only
+          // a cache for instructions wanting an `i64` operand, and is
+          // filled only when one reads it. Taking the result from the
+          // integer op instead would wrap past `i64`.
+          self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
+          if self.int_tracked[dst as usize] {
+            let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
+            let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
+            let ir = self.fb.ins().isub(ia, ib);
+            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+          }
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
         } else {
@@ -10810,26 +10880,42 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let rem_block = self.fb.create_block();
           let fmod_block = self.fb.create_block();
 
-          if self.both_proven_int(ip, a, b) {
-            self
-              .fb
-              .ins()
-              .brif(is_pos_denom, rem_block, &[], fmod_block, &[]);
-          } else {
-            let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
-            let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
-            let is_int_a =
-              self
-                .fb
-                .ins()
-                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
-            let is_int_b =
-              self
-                .fb
-                .ins()
-                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
-            let both_int = self.fb.ins().band(is_int_a, is_int_b);
-            let can_fast = self.fb.ins().band(both_int, is_pos_denom);
+          {
+            // `srem` here produces the VALUE, so the integer operands
+            // have to be the same numbers as the floats. A register can
+            // be a proven int and still hold an integer too large for
+            // `i64`, in which case its integer view is not that number.
+            // The round trip catches that, and is only emitted for an
+            // operand whose value is not already pinned to an in-range
+            // integer by `ConstFacts`.
+            let mut can_fast = is_pos_denom;
+            for (reg, ival, fval) in [(a, ia, fa), (b, ib, fb_)] {
+              if self.const_facts.const_value(ip, reg).is_some_and(|n| {
+                n.fract() == 0.0 && n >= (i64::MIN as f64) && n <= (i64::MAX as f64)
+              }) {
+                continue;
+              }
+              let ok = if self.proven_int(ip, reg) {
+                // Integrality is already established, so only the range
+                // is in question. Testing the magnitude reads the float
+                // alone, which keeps the check off the dependency chain
+                // the divide is waiting on.
+                let mag = self.fb.ins().fabs(fval);
+                let limit = self.fb.ins().f64const(9223372036854775808.0);
+                self.fb.ins().fcmp(
+                  cranelift_codegen::ir::condcodes::FloatCC::LessThan,
+                  mag,
+                  limit,
+                )
+              } else {
+                let rt = self.fb.ins().fcvt_from_sint(types::F64, ival);
+                self
+                  .fb
+                  .ins()
+                  .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fval, rt)
+              };
+              can_fast = self.fb.ins().band(can_fast, ok);
+            }
             self
               .fb
               .ins()
@@ -10878,26 +10964,42 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let rem_block = self.fb.create_block();
           let fmod_block = self.fb.create_block();
 
-          if self.both_proven_int(ip, a, b) {
-            self
-              .fb
-              .ins()
-              .brif(is_pos_denom, rem_block, &[], fmod_block, &[]);
-          } else {
-            let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
-            let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
-            let is_int_a =
-              self
-                .fb
-                .ins()
-                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
-            let is_int_b =
-              self
-                .fb
-                .ins()
-                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
-            let both_int = self.fb.ins().band(is_int_a, is_int_b);
-            let can_fast = self.fb.ins().band(both_int, is_pos_denom);
+          {
+            // `srem` here produces the VALUE, so the integer operands
+            // have to be the same numbers as the floats. A register can
+            // be a proven int and still hold an integer too large for
+            // `i64`, in which case its integer view is not that number.
+            // The round trip catches that, and is only emitted for an
+            // operand whose value is not already pinned to an in-range
+            // integer by `ConstFacts`.
+            let mut can_fast = is_pos_denom;
+            for (reg, ival, fval) in [(a, ia, fa), (b, ib, fb_)] {
+              if self.const_facts.const_value(ip, reg).is_some_and(|n| {
+                n.fract() == 0.0 && n >= (i64::MIN as f64) && n <= (i64::MAX as f64)
+              }) {
+                continue;
+              }
+              let ok = if self.proven_int(ip, reg) {
+                // Integrality is already established, so only the range
+                // is in question. Testing the magnitude reads the float
+                // alone, which keeps the check off the dependency chain
+                // the divide is waiting on.
+                let mag = self.fb.ins().fabs(fval);
+                let limit = self.fb.ins().f64const(9223372036854775808.0);
+                self.fb.ins().fcmp(
+                  cranelift_codegen::ir::condcodes::FloatCC::LessThan,
+                  mag,
+                  limit,
+                )
+              } else {
+                let rt = self.fb.ins().fcvt_from_sint(types::F64, ival);
+                self
+                  .fb
+                  .ins()
+                  .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fval, rt)
+              };
+              can_fast = self.fb.ins().band(can_fast, ok);
+            }
             self
               .fb
               .ins()
@@ -11017,7 +11119,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.store_reg_int(dst, inv);
         } else if self.proven_numeric(ip, src) {
           let f = self.load_reg_f64(src);
-          let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+          let i = self.emit_narrow_to_i64(f);
           let inv = self.fb.ins().bnot(i);
           let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
           self.store_reg_f64(dst, r);
@@ -11067,10 +11169,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           // Float negation is the value. `ineg` has no negative zero,
           // which a source-level `-0.0` needs, and no answer for
           // `i64::MIN`; it only fills the integer cache.
-          let is = self.fb.use_var(self.reg_vars_int[src as usize]);
-          let fs = self.fb.ins().fcvt_from_sint(types::F64, is);
+          let fs = self.load_reg_f64(src);
           let neg = self.fb.ins().fneg(fs);
           if self.int_tracked[dst as usize] {
+            let is = self.fb.use_var(self.reg_vars_int[src as usize]);
             let ir = self.fb.ins().ineg(is);
             self.fb.def_var(self.reg_vars_int[dst as usize], ir);
           }
@@ -11973,9 +12075,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::AddImm { dst, a, imm_const } => {
         let imm_val = self.proto.chunk.constants[imm_const as usize].as_number();
         if self.proven_int(ip, a) && imm_val.fract() == 0.0 && imm_val > (i64::MIN as f64) && imm_val <= (i64::MAX as f64) {
-          let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-          let ir = self.fb.ins().iadd_imm_s(ia, imm_val as i64);
-          self.store_reg_int(dst, ir);
+          // The float result is the value; the integer variable is only
+          // a cache for instructions wanting an `i64` operand, and is
+          // filled only when one reads it. Taking the result from the
+          // integer op instead would wrap past `i64`.
+          self.emit_addimm_proven(dst, a, imm_const);
+          if self.int_tracked[dst as usize] {
+            let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
+            let ir = self.fb.ins().iadd_imm_s(ia, imm_val as i64);
+            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+          }
         } else if self.proven_numeric(ip, a) {
           self.emit_addimm_proven(dst, a, imm_const);
         } else {
@@ -11986,9 +12095,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::SubImm { dst, a, imm_const } => {
         let imm_val = self.proto.chunk.constants[imm_const as usize].as_number();
         if self.proven_int(ip, a) && imm_val.fract() == 0.0 && imm_val > (i64::MIN as f64) && imm_val <= (i64::MAX as f64) {
-          let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-          let ir = self.fb.ins().iadd_imm_s(ia, -(imm_val as i64));
-          self.store_reg_int(dst, ir);
+          // The float result is the value; the integer variable is only
+          // a cache for instructions wanting an `i64` operand, and is
+          // filled only when one reads it. Taking the result from the
+          // integer op instead would wrap past `i64`.
+          self
+            .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
+          if self.int_tracked[dst as usize] {
+            let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
+            let ir = self.fb.ins().iadd_imm_s(ia, -(imm_val as i64));
+            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+          }
         } else if self.proven_numeric(ip, a) {
           self
             .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
@@ -12435,25 +12552,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_binary_numeric_proven`'s docs.
   fn emit_bitwise_proven(
     &mut self,
-    ip: usize,
+    _ip: usize,
     dst: u8,
     a: u8,
     b: u8,
     fast: impl FnOnce(&mut FunctionBuilder, IrValue, IrValue) -> IrValue,
   ) {
-    let ia = if self.proven_int(ip, a) {
+    // A proven int is read straight out of the integer cache: the cache
+    // is filled by wrapping integer arithmetic, which is exactly the
+    // narrowing these operators want. Anything else is narrowed from the
+    // float. The result always fits `i64`, so it can seed the cache.
+    let ia = if self.proven_int(_ip, a) {
       self.fb.use_var(self.reg_vars_int[a as usize])
     } else {
       let va = self.load_reg(a);
       let fa = self.f64_view(a, va);
-      self.fb.ins().fcvt_to_sint_sat(types::I64, fa)
+      self.emit_narrow_to_i64(fa)
     };
-    let ib = if self.proven_int(ip, b) {
+    let ib = if self.proven_int(_ip, b) {
       self.fb.use_var(self.reg_vars_int[b as usize])
     } else {
       let vb = self.load_reg(b);
       let fb_ = self.f64_view(b, vb);
-      self.fb.ins().fcvt_to_sint_sat(types::I64, fb_)
+      self.emit_narrow_to_i64(fb_)
     };
     let ir = fast(self.fb, ia, ib);
     self.store_reg_int(dst, ir);
@@ -12513,6 +12634,94 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// them with is exactly the cost worth removing here. The helpers
   /// speak raw bits, which for a number are its `f64` bits, so the
   /// conversions either side are bitcasts.
+  /// The constant behind `v` when it is an `f64const` this compile
+  /// emitted, so a narrowing of it can be folded at compile time.
+  fn bitcast_source_f64_const(&self, v: IrValue) -> Option<f64> {
+    match self.fb.func.dfg.value_def(v) {
+      cranelift_codegen::ir::ValueDef::Result(inst, _) => {
+        match self.fb.func.dfg.insts[inst] {
+          cranelift_codegen::ir::InstructionData::UnaryIeee64 { imm, .. } => {
+            Some(f64::from_bits(imm.bits()))
+          },
+          _ => None,
+        }
+      },
+      _ => None,
+    }
+  }
+
+  /// Narrows a number to `i64` the way the bitwise operators need it:
+  /// modulo `2^64`, matching `value::num_to_wrapped_i64`.
+  ///
+  /// `fcvt_to_sint_sat` agrees with that for every operand inside
+  /// `i64` and saturates outside it, so the inline sequence handles the
+  /// whole representable range and only a value past `2^63` reaches the
+  /// helper. That branch is never taken by ordinary code, so the cost
+  /// here is the magnitude test.
+  fn emit_narrow_to_i64(&mut self, f: IrValue) -> IrValue {
+    if let Some(c) = self.bitcast_source_f64_const(f) {
+      return self.i64c(crate::vm::value::num_to_wrapped_i64(c));
+    }
+    let sat = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let mag = self.fb.ins().fabs(f);
+    let limit = self.fb.ins().f64const(9223372036854775808.0);
+    let in_range =
+      self
+        .fb
+        .ins()
+        .fcmp(cranelift_codegen::ir::condcodes::FloatCC::LessThan, mag, limit);
+
+    let fast_block = self.fb.create_block();
+    let wrap_block = self.fb.create_block();
+    let join_block = self.fb.create_block();
+    self.fb.append_block_param(join_block, types::I64);
+    self
+      .fb
+      .ins()
+      .brif(in_range, fast_block, &[], wrap_block, &[]);
+
+    self.fb.switch_to_block(fast_block);
+    self.fb.ins().jump(join_block, &[sat.into()]);
+
+    // Reduction modulo 2^64, entirely in floats and entirely exact.
+    // Dividing and multiplying by a power of two only moves the
+    // exponent, `trunc` is a single rounding, and the final subtraction
+    // has operands within a factor of two of each other, so no step
+    // rounds. The result lands inside `i64`, where the conversion is
+    // exact too.
+    //
+    // An infinity falls out as `inf - inf`, which is NaN, and a NaN
+    // converts to zero; that is what a non-finite operand narrows to.
+    self.fb.switch_to_block(wrap_block);
+    let span = self.fb.ins().f64const(18446744073709551616.0);
+    let inv_span = self.fb.ins().f64const(5.421010862427522e-20);
+    let neg_limit = self.fb.ins().f64const(-9223372036854775808.0);
+    let truncated = self.fb.ins().trunc(f);
+    let scaled = self.fb.ins().fmul(truncated, inv_span);
+    let quotient = self.fb.ins().trunc(scaled);
+    let carried = self.fb.ins().fmul(quotient, span);
+    let rem = self.fb.ins().fsub(truncated, carried);
+    let above =
+      self
+        .fb
+        .ins()
+        .fcmp(cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual, rem, limit);
+    let lowered = self.fb.ins().fsub(rem, span);
+    let folded = self.fb.ins().select(above, lowered, rem);
+    let below =
+      self
+        .fb
+        .ins()
+        .fcmp(cranelift_codegen::ir::condcodes::FloatCC::LessThan, folded, neg_limit);
+    let raised = self.fb.ins().fadd(folded, span);
+    let signed = self.fb.ins().select(below, raised, folded);
+    let wrapped = self.fb.ins().fcvt_to_sint_sat(types::I64, signed);
+    self.fb.ins().jump(join_block, &[wrapped.into()]);
+
+    self.fb.switch_to_block(join_block);
+    self.fb.block_params(join_block)[0]
+  }
+
   fn call_f64_intrinsic(&mut self, helper: &'static str, fa: IrValue, fb_: IrValue) -> IrValue {
     let a_bits = self.from_f64(fa);
     let b_bits = self.from_f64(fb_);

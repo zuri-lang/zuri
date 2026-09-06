@@ -19,7 +19,7 @@ use crate::vm::object::{
   Heap, ListStorage, NativeFunction, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding,
   UpvalueDescriptor, UpvalueState, ZuriContext, write_barrier,
 };
-use crate::vm::value::Value;
+use crate::vm::value::{Value, num_rem, num_to_wrapped_i64};
 
 /// Interpreted recursion never touches the native stack, only heap-bounded
 /// register windows, but a call into compiled code is a real native call.
@@ -3767,7 +3767,7 @@ impl VM {
           },
           Instr::Mod { dst, a, b } => {
             tri!(
-              self.binary_numeric(base, dst, a, b, "%", "@mod", crate::vm::value::num_rem, |x, y| &x % &y),
+              self.binary_numeric(base, dst, a, b, "%", "@mod", num_rem, |x, y| &x % &y),
               'step
             );
           },
@@ -3832,7 +3832,8 @@ impl VM {
           Instr::BitNot { dst, src } => {
             let v = self.get_reg(base, src);
             if v.is_number() {
-              self.set_reg(base, dst, Value::number((!(v.as_number() as i64)) as f64));
+              let narrowed = num_to_wrapped_i64(v.as_number());
+              self.set_reg(base, dst, Value::number((!narrowed) as f64));
             } else if let Some(result) = tri!(self.try_operator_override(v, "@not", &[]), 'step) {
               self.set_reg(base, dst, result);
             } else {
@@ -5050,7 +5051,10 @@ impl VM {
       return Ok(self.set_reg(
         base,
         dst,
-        Value::number(op(va.as_number() as i64, vb.as_number() as i64) as f64),
+        Value::number(op(
+          num_to_wrapped_i64(va.as_number()),
+          num_to_wrapped_i64(vb.as_number()),
+        ) as f64),
       ));
     } else if va.is_bigint() && vb.is_bigint() {
       let v = self

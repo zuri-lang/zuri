@@ -139,6 +139,102 @@ echo got.length()
 echo sign_of_zero(got[0])
 echo sign_of_zero(got[299999])
 
+echo '-- bitwise narrows modulo 2^64 --'
+# The operators work on the low 64 bits, so a value past i64 keeps them
+# rather than collapsing: 16000000000000000000 & 255 is 0, not 255.
+# Saturating would answer 255 and lose every low bit.
+def band_of(a, b) {
+  return a & b
+}
+def bor_of(a, b) {
+  return a | b
+}
+def shr_of(a, b) {
+  return a >> b
+}
+def bnot_of(a) {
+  return ~a
+}
+
+def big(n) {
+  var s = 0
+  var i = 0
+  while i < n {
+    s = 4000000000 * 4000000000
+    i++
+  }
+  return s
+}
+var huge = big(300000)
+echo band_of(huge, 255)
+echo bor_of(huge, 1)
+echo shr_of(huge, 8)
+echo bnot_of(huge)
+
+# ordinary operands are unaffected
+echo band_of(255, 15)
+echo bor_of(8, 1)
+echo shr_of(-16, 2)
+echo bnot_of(5)
+echo band_of(-1, 255)
+
+# a non-finite operand has no low bits and narrows to zero
+echo band_of(1 / 0, 255)
+echo band_of(0 / 0, 255)
+echo band_of(-1 / 0, 255)
+
+echo '-- narrowing an operand that is not a proven int --'
+# `x: number` is proven numeric but not proven int, so the operand is
+# narrowed from the float rather than read out of the integer cache.
+# Both routes have to agree, across the whole representable range.
+def mask_big(x: number, m: number) {
+  var t = 0
+  t = t + 1
+  t = t + 2
+  t = t + 3
+  t = t + 4
+  t = t + 5
+  t = t + 6
+  t = t + 7
+  t = t + 8
+  t = t + 9
+  t = t + 10
+  t = t + 11
+  t = t + 12
+  t = t + 13
+  t = t + 14
+  t = t + 15
+  t = t + 16
+  t = t + 17
+  t = t + 18
+  t = t + 19
+  t = t + 20
+  if t < 0 {
+    return t
+  }
+  return x & m
+}
+
+var warm_sum = 0
+iter var i = 0; i < 400000; i++ {
+  warm_sum = warm_sum + mask_big(i, 255)
+}
+
+var operands = [
+  0, 1, -1, 255,
+  9223372036854775807.0, -9223372036854775808.0,
+  9223372036854775808.0, -9223372036854775809.0,
+  18446744073709551616.0, -18446744073709551616.0,
+  27670116110564327424.0,
+  1e19, -1e19, 1e30, -1e30, 1e308,
+  1 / 0, -1 / 0, 0 / 0,
+  2.5, -2.5, -0.0
+]
+iter var k = 0; k < operands.length(); k++ {
+  echo mask_big(operands[k], 255)
+  echo mask_big(operands[k], -1)
+}
+
 echo '-- printed form --'
 echo -0.0
 echo 0.0
