@@ -90,19 +90,23 @@ def reverse_complement(data, table) {
 
     var hi = tail - 1
 
+    # Each base is read once and kept. Reading again after the line
+    # break check would cost a second load: the loop writes into this
+    # same buffer, so the compiler cannot prove the two reads alike.
     while lo < hi {
-      if data[lo] == LINE_FEED {
+      var left = data[lo]
+
+      if left == LINE_FEED {
         lo++
         continue
       }
 
-      if data[hi] == LINE_FEED {
+      var right = data[hi]
+
+      if right == LINE_FEED {
         hi--
         continue
       }
-
-      var left = data[lo]
-      var right = data[hi]
 
       data[lo] = table[right]
       data[hi] = table[left]
