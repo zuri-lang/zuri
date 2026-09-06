@@ -115,7 +115,7 @@ fn get_data(args: &[Value]) -> Vec<u8> {
   if value.is_string() {
     value.as_str().as_bytes().to_vec()
   } else {
-    value.as_bytes().to_vec()
+    value.with_bytes(|b| b.to_vec())
   }
 }
 

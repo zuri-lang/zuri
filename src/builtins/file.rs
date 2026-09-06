@@ -169,11 +169,24 @@ fn do_read(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
   }
 
   if binary {
-    Ok(ctx.vm.heap_mut().alloc_bytes(bytes_read))
-  } else {
-    let s = String::from_utf8_lossy(&bytes_read).into_owned();
-    Ok(ctx.vm.heap_mut().alloc_string(s))
+    return Ok(ctx.vm.heap_mut().alloc_bytes(bytes_read));
   }
+
+  // Text mode decodes strictly. The old lossy decode turned every
+  // undecodable byte into U+FFFD without saying so, which silently
+  // corrupted any non-UTF-8 file read through the default mode and
+  // left no way to tell that from a file that genuinely contained
+  // replacement characters.
+  let path = ctx.args[0].as_file_cell().borrow().path.clone();
+  let text = String::from_utf8(bytes_read).map_err(|e| {
+    format!(
+      "cannot read '{}' as text: invalid UTF-8 at byte {}; open it in binary mode ('rb') to read the raw bytes",
+      path,
+      e.utf8_error().valid_up_to()
+    )
+  })?;
+
+  Ok(ctx.vm.heap_mut().alloc_string(text))
 }
 
 fn read(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -192,7 +205,7 @@ fn do_write(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
   let data: Vec<u8> = if ctx.args[1].is_string() {
     ctx.args[1].as_str().as_bytes().to_vec()
   } else {
-    ctx.args[1].as_bytes()
+    ctx.args[1].with_bytes(|b| b.to_vec())
   };
 
   let mut is_stream = false;

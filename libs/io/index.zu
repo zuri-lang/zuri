@@ -65,9 +65,28 @@ var SEEK_END = 2
 # Standard I/O streams
 #------------------------------------------------------------------------------------------------
 
-/** 
+/**
  * Stdin is a file handle to the standard input file of the
  * system.
+ *
+ * It is opened in binary mode (`'rb'`), so `stdin.read()` and
+ * `stdin.gets()` return `bytes`, never a string. Whatever is piped
+ * into a program is arbitrary data, and decoding it as text before
+ * the program has asked for text can only lose information.
+ *
+ * Call `.to_string()` on the result when the input really is text:
+ *
+ * ```zuri
+ * import io
+ *
+ * var raw = io.stdin.read()          # bytes
+ * var text = raw.to_string()         # decoded, replacing bad bytes
+ * ```
+ *
+ * `to_string()` substitutes U+FFFD for undecodable bytes rather than
+ * raising. To reject malformed input instead, inspect the bytes
+ * yourself before decoding.
+ *
  * @type file
  */
 var stdin = _io.stdin
@@ -75,6 +94,10 @@ var stdin = _io.stdin
 /**
  * Stdout is a file handle to the standard output file of the
  * system.
+ *
+ * Writes accept either a string or `bytes`, so unlike `stdin` there
+ * is no text/binary distinction to make here.
+ *
  * @type file
  */
 var stdout = _io.stdout
@@ -138,10 +161,14 @@ def putc(c) {
 }
 
 /**
- * Reads character(s) from standard input
+ * Reads character(s) from standard input.
  *
  * When length is given, gets `length` number of characters else,
- * gets a single character
+ * gets a single character.
+ *
+ * `length` counts bytes, not codepoints, so asking for fewer bytes
+ * than a multi-byte character occupies yields a replacement
+ * character rather than half of one.
  *
  * @returns char|string
  */
@@ -152,7 +179,8 @@ def getc(length) {
   if !is_number(length) or length < 0
     raise TypeError('non-negative number expected in argument 1 (length)')
 
-  var input = stdin.read(length)
+  # stdin is binary, so decode here: this is a character-level API.
+  var input = stdin.read(length).to_string()
 
   # Clear the input buffer to prevent unwanted characters from being read in subsequent calls
   stdin.flush()

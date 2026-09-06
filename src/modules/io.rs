@@ -12,7 +12,7 @@ use crate::vm::vm::VM;
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef { name: "_io", build };
 
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
-  let stdin_val = vm.heap_mut().alloc_file(std_file(0, "<stdin>", "r"));
+  let stdin_val = vm.heap_mut().alloc_file(std_file(0, "<stdin>", "rb"));
   let stdout_val = vm.heap_mut().alloc_file(std_file(1, "<stdout>", "w"));
   let stderr_val = vm.heap_mut().alloc_file(std_file(2, "<stderr>", "w"));
 
@@ -68,6 +68,14 @@ fn build_tty_submodule(vm: &mut VM) -> Value {
 /// DUPLICATES the fd first, so a Zuri-side `.close()`; or this
 /// object simply being GC'd and dropped; closes only the
 /// duplicate, never the process's real stdin/stdout/stderr.
+///
+/// `binary` comes off the mode string exactly as it does for a
+/// user-built `file(path, mode)`, so the two agree on what `b` means.
+/// stdin is opened `"rb"`: whatever is piped in is arbitrary bytes,
+/// and decoding it as text before the script has said it wants text
+/// can only lose information. stdout/stderr stay `"w"` because a write
+/// accepts a string or a bytes either way, so the flag would not
+/// change anything for them.
 #[cfg(unix)]
 fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
   use std::os::unix::io::FromRawFd;
@@ -80,7 +88,7 @@ fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
   FileHandle {
     path: path.to_string(),
     mode: mode.to_string(),
-    binary: false,
+    binary: mode.to_lowercase().contains('b'),
     is_stream: true,
     handle,
   }
@@ -91,7 +99,7 @@ fn std_file(_fd: i32, path: &str, mode: &str) -> FileHandle {
   FileHandle {
     path: path.to_string(),
     mode: mode.to_string(),
-    binary: false,
+    binary: mode.to_lowercase().contains('b'),
     is_stream: true,
     handle: None,
   }

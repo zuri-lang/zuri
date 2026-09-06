@@ -478,20 +478,47 @@ fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_type!(ctx, 1, ArgType::String);
   enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
 
-  let haystack: Vec<char> = ctx.args[0].as_str().chars().collect();
-  let needle: Vec<char> = ctx.args[1].as_str().chars().collect();
   let start = optional_offset(ctx, 2)?;
+  let ascii = ctx.args[0].str_is_ascii();
 
-  if needle.is_empty() || start + needle.len() > haystack.len() {
+  let haystack = ctx.args[0].as_str();
+  let needle = ctx.args[1].as_str();
+
+  if needle.is_empty() {
     return Ok(Value::number(-1.0));
   }
 
-  for i in start..=haystack.len() - needle.len() {
-    if haystack[i..i + needle.len()] == needle[..] {
-      return Ok(Value::number(i as f64));
+  // `start` and the result are both codepoint counts, but the search
+  // itself works on bytes. For an all-ASCII haystack the two indexings
+  // coincide, so the conversions collapse; otherwise each costs one
+  // linear walk, which still beats materialising the whole string as a
+  // `Vec<char>` the way this used to.
+  let byte_start = if ascii {
+    if start > haystack.len() {
+      return Ok(Value::number(-1.0));
     }
+    start
+  } else {
+    match haystack.char_indices().nth(start) {
+      Some((offset, _)) => offset,
+      // `start` sitting exactly at the end can still only match an
+      // empty needle, which is already handled above.
+      None => return Ok(Value::number(-1.0)),
+    }
+  };
+
+  match haystack[byte_start..].find(needle) {
+    Some(offset) => {
+      let found = byte_start + offset;
+      let index = if ascii {
+        found
+      } else {
+        haystack[..found].chars().count()
+      };
+      Ok(Value::number(index as f64))
+    },
+    None => Ok(Value::number(-1.0)),
   }
-  Ok(Value::number(-1.0))
 }
 
 fn starts_with(ctx: &mut ZuriContext) -> Result<Value, String> {

@@ -33,8 +33,8 @@ fn encode_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_type!(ctx, 0, ArgType::Bytes);
 
-  let data = ctx.args[0].as_bytes();
-  let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
+  let encoded = ctx.args[0]
+    .with_bytes(|data| base64::engine::general_purpose::STANDARD.encode(data));
   Ok(ctx.heap().alloc_string(encoded))
 }
 

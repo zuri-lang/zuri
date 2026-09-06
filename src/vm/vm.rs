@@ -5151,14 +5151,14 @@ impl VM {
       let s = format!("{}{}", va, vb);
       return Ok(self.heap.alloc_string(s));
     } else if va.is_list() || vb.is_list() {
-      let mut value = Vec::new();
-      value.extend(va.as_list().iter().cloned());
-      value.extend(vb.as_list().iter().cloned());
+      // Built before allocating: `alloc_list` can run the GC, which
+      // must not find either operand's storage still borrowed.
+      let mut value = va.with_list(|a| a.to_vec());
+      vb.with_list(|b| value.extend_from_slice(b));
       return Ok(self.heap.alloc_list(value));
     } else if va.is_bytes() || vb.is_bytes() {
-      let mut value = Vec::new();
-      value.extend(va.as_bytes().iter().cloned());
-      value.extend(vb.as_bytes().iter().cloned());
+      let mut value = va.with_bytes(|a| a.to_vec());
+      vb.with_bytes(|b| value.extend_from_slice(b));
       return Ok(self.heap.alloc_bytes(value));
     }
 

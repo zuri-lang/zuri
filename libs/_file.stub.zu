@@ -179,6 +179,11 @@ class file {
    * opened in the binary mode. If the length is not specified,
    * the file will be read to the end.
    *
+   * In text mode the bytes read must be valid UTF-8; anything else
+   * raises rather than being silently replaced. Open the file in a
+   * binary mode (`'rb'`) to read arbitrary bytes instead. Note that
+   * `io.stdin` is already binary.
+   *
    * This method requires that the file be opened in the read
    * mode (default mode) or a mode that supports reading. If you
    * aren't reading the full length of the file, you'll need to

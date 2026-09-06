@@ -29,11 +29,12 @@
 use std::cell::{Cell, RefCell};
 
 use itertools::Itertools;
-use num_bigint::BigInt;
+use num_bigint::{BigInt, Sign};
 
 use crate::vm::object::{
-  ASCII_NO, ASCII_YES, FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass, ObjClosure,
-  ObjFunction, ObjInstance, ObjModule, ObjModuleBinding, ObjPtr, UpvalueState, write_barrier,
+  ASCII_NO, ASCII_YES, DictStorage, FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass,
+  ObjClosure, ObjFunction, ObjInstance, ObjModule, ObjModuleBinding, ObjPtr, UpvalueState,
+  write_barrier,
 };
 
 #[cfg(not(debug_assertions))]
@@ -333,6 +334,42 @@ impl Value {
   /// Number of bytes; `Instr::GetIndex`/`SetIndex`/`GetSlice`'s
   /// bounds-checking entry point for a `bytes` receiver; avoids
   /// `as_bytes()`'s full clone just to check a length.
+  /// Run `f` with read-only access to a bytes value's storage.
+  ///
+  /// The counterpart to `as_bytes` for callers that only read: that
+  /// one hands back a full clone, which on a large buffer costs more
+  /// than whatever the caller was going to do with it. Allocating
+  /// while the borrow is live would risk the GC re-entering the same
+  /// `RefCell`, so callers that build a new object collect first and
+  /// allocate after.
+  pub fn with_bytes<R>(&self, f: impl FnOnce(&[u8]) -> R) -> R {
+    debug_assert!(self.is_bytes());
+    match unsafe { &*self.as_obj() } {
+      Obj::Bytes(b) => f(&b.borrow()),
+      _ => unreachable!("with_bytes() called on a non-bytes Value"),
+    }
+  }
+
+  /// `with_bytes`'s list counterpart; see its docs.
+  pub fn with_list<R>(&self, f: impl FnOnce(&[Value]) -> R) -> R {
+    debug_assert!(self.is_list());
+    match unsafe { &*self.as_obj() } {
+      Obj::List(items) => f(&items.borrow()),
+      _ => unreachable!("with_list() called on a non-list Value"),
+    }
+  }
+
+  /// `with_bytes`'s dict counterpart; hands over the storage itself
+  /// rather than a slice, since callers want `entries` and the hash
+  /// index both. See `with_bytes`'s docs.
+  pub fn with_dict<R>(&self, f: impl FnOnce(&DictStorage) -> R) -> R {
+    debug_assert!(self.is_dict());
+    match unsafe { &*self.as_obj() } {
+      Obj::Dict(storage) => f(&storage.borrow()),
+      _ => unreachable!("with_dict() called on a non-dict Value"),
+    }
+  }
+
   pub fn bytes_len(&self) -> usize {
     debug_assert!(self.is_bytes());
     match unsafe { &*self.as_obj() } {
@@ -678,9 +715,11 @@ impl Value {
     self.is_nil()
       || (self.is_bool() && !self.as_bool())
       || (self.is_number() && self.as_number() <= 0.0)
-      || (self.is_bigint() && self.as_bigint() <= &BigInt::from(0))
+      // `<= 0` via the sign, so a truthiness test doesn't allocate a
+      // throwaway BigInt zero to compare against every time.
+      || (self.is_bigint() && self.as_bigint().sign() != Sign::Plus)
       || (self.is_string() && self.as_str().is_empty())
-      || (self.is_bytes() && self.as_bytes().is_empty())
+      || (self.is_bytes() && self.bytes_len() == 0)
   }
 
   pub fn equals(&self, other: &Value) -> bool {

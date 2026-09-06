@@ -130,14 +130,15 @@ fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
     None => 0,
   };
 
-  let bytes = ctx.args[0].as_bytes();
-  if start >= bytes.len() {
-    return Ok(Value::number(-1.0));
-  }
-  match bytes[start..].iter().position(|&b| b == target) {
-    Some(pos) => Ok(Value::number((start + pos) as f64)),
-    None => Ok(Value::number(-1.0)),
-  }
+  ctx.args[0].with_bytes(|bytes| {
+    if start >= bytes.len() {
+      return Ok(Value::number(-1.0));
+    }
+    match bytes[start..].iter().position(|&b| b == target) {
+      Some(pos) => Ok(Value::number((start + pos) as f64)),
+      None => Ok(Value::number(-1.0)),
+    }
+  })
 }
 
 fn pop(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -221,13 +222,14 @@ fn take(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
 
-  let items = ctx.args[0].as_bytes();
-  let len = items.len() as i64;
   let n = ctx.args[1].as_number() as i64;
 
-  let take_count = if n < 0 { (len + n).max(0) } else { n.min(len) };
+  let result = ctx.args[0].with_bytes(|items| {
+    let len = items.len() as i64;
+    let take_count = if n < 0 { (len + n).max(0) } else { n.min(len) };
+    items[..take_count as usize].to_vec()
+  });
 
-  let result: Vec<u8> = items.into_iter().take(take_count as usize).collect();
   Ok(ctx.vm.heap_mut().alloc_bytes(result))
 }
 
@@ -241,27 +243,30 @@ fn split(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Bytes);
 
-  let data = ctx.args[0].as_bytes();
-  let delim = ctx.args[1].as_bytes();
-
-  let parts: Vec<Vec<u8>> = if delim.is_empty() {
-    data.iter().map(|&b| vec![b]).collect()
-  } else {
-    let mut parts = Vec::new();
-    let mut start = 0usize;
-    let mut i = 0usize;
-    while i + delim.len() <= data.len() {
-      if data[i..i + delim.len()] == delim[..] {
-        parts.push(data[start..i].to_vec());
-        i += delim.len();
-        start = i;
-      } else {
-        i += 1;
+  // Both borrows are shared, so `b.split(b)` is fine. They are dropped
+  // before the allocations below.
+  let parts: Vec<Vec<u8>> = ctx.args[0].with_bytes(|data| {
+    ctx.args[1].with_bytes(|delim| {
+      if delim.is_empty() {
+        return data.iter().map(|&b| vec![b]).collect();
       }
-    }
-    parts.push(data[start..].to_vec());
-    parts
-  };
+
+      let mut parts = Vec::new();
+      let mut start = 0usize;
+      let mut i = 0usize;
+      while i + delim.len() <= data.len() {
+        if data[i..i + delim.len()] == *delim {
+          parts.push(data[start..i].to_vec());
+          i += delim.len();
+          start = i;
+        } else {
+          i += 1;
+        }
+      }
+      parts.push(data[start..].to_vec());
+      parts
+    })
+  });
 
   let items: Vec<Value> = parts
     .into_iter()
@@ -272,52 +277,46 @@ fn split(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn is_alpha(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let b = ctx.args[0].as_bytes();
-  Ok(Value::bool(
-    !b.is_empty() && b.iter().all(|c| c.is_ascii_alphabetic()),
-  ))
+  Ok(Value::bool(ctx.args[0].with_bytes(|b| {
+    !b.is_empty() && b.iter().all(|c| c.is_ascii_alphabetic())
+  })))
 }
 
 fn is_alnum(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let b = ctx.args[0].as_bytes();
-  Ok(Value::bool(
-    !b.is_empty() && b.iter().all(|c| c.is_ascii_alphanumeric()),
-  ))
+  Ok(Value::bool(ctx.args[0].with_bytes(|b| {
+    !b.is_empty() && b.iter().all(|c| c.is_ascii_alphanumeric())
+  })))
 }
 
 fn is_number(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let b = ctx.args[0].as_bytes();
-  Ok(Value::bool(
-    !b.is_empty() && b.iter().all(|c| c.is_ascii_digit()),
-  ))
+  Ok(Value::bool(ctx.args[0].with_bytes(|b| {
+    !b.is_empty() && b.iter().all(|c| c.is_ascii_digit())
+  })))
 }
 
 fn is_lower(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let b = ctx.args[0].as_bytes();
-  let cased: Vec<&u8> = b.iter().filter(|c| c.is_ascii_alphabetic()).collect();
-  Ok(Value::bool(
-    !cased.is_empty() && cased.iter().all(|c| c.is_ascii_lowercase()),
-  ))
+  Ok(Value::bool(ctx.args[0].with_bytes(|b| {
+    let mut cased = b.iter().filter(|c| c.is_ascii_alphabetic()).peekable();
+    cased.peek().is_some() && cased.all(|c| c.is_ascii_lowercase())
+  })))
 }
 
 fn is_upper(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let b = ctx.args[0].as_bytes();
-  let cased: Vec<&u8> = b.iter().filter(|c| c.is_ascii_alphabetic()).collect();
-  Ok(Value::bool(
-    !cased.is_empty() && cased.iter().all(|c| c.is_ascii_uppercase()),
-  ))
+  Ok(Value::bool(ctx.args[0].with_bytes(|b| {
+    let mut cased = b.iter().filter(|c| c.is_ascii_alphabetic()).peekable();
+    cased.peek().is_some() && cased.all(|c| c.is_ascii_uppercase())
+  })))
 }
 
 fn is_space(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let b = ctx.args[0].as_bytes();
-  Ok(Value::bool(
-    !b.is_empty() && b.iter().all(|c| c.is_ascii_whitespace()),
-  ))
+  Ok(Value::bool(ctx.args[0].with_bytes(|b| {
+    !b.is_empty() && b.iter().all(|c| c.is_ascii_whitespace())
+  })))
 }
 
 /// Resets and empties the byte stream; manual memory management, per
@@ -333,18 +332,15 @@ fn dispose(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let items: Vec<Value> = ctx.args[0]
-    .as_bytes()
-    .into_iter()
-    .map(|b| Value::number(b as f64))
-    .collect();
+  let items: Vec<Value> = ctx.args[0].with_bytes(|b| {
+    b.iter().map(|&b| Value::number(b as f64)).collect()
+  });
   Ok(ctx.vm.heap_mut().alloc_list(items))
 }
 
 fn bytes_to_string(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let bytes = ctx.args[0].as_bytes();
-  let s = String::from_utf8_lossy(&bytes).into_owned();
+  let s = ctx.args[0].with_bytes(|b| String::from_utf8_lossy(b).into_owned());
   Ok(ctx.vm.heap_mut().alloc_string(s))
 }
 

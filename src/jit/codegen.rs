@@ -7376,16 +7376,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().select(is_inline, inline_ptr, heap_ptr)
   }
 
-  /// `Instr::GetIndex`'s fast path for `list[i]` with a plain, already
-  /// in-bounds integer index. Falls back to the general
-  /// `zuri_jit_get_index` helper for everything else it doesn't prove
-  /// inline: a non-list receiver (Bytes/String/Dict indexing all still
-  /// go through the general path), a non-numeric or non-integer index,
-  /// or a genuinely out-of-bounds index (needs the general path's real
-  /// `RangeError` message). See `zuri_jit_list_data`'s own docs for why
-  /// resolving the list's data pointer still costs one small helper
-  /// call while the bounds check and element load are real inline
-  /// Cranelift code either way.
   /// True when the string at `ptr` is known to hold nothing but ASCII,
   /// which is exactly the condition under which a codepoint index may be
   /// used as a byte offset into its data.
@@ -7788,6 +7778,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
   }
 
+  /// `Instr::GetIndex`'s fast path for `x[i]` with an integer index.
+  /// When the receiver isn't already proven, this walks a tag chain and
+  /// has an inline arm for each of list, string and bytes; a string
+  /// additionally needs its ASCII flag set before a codepoint index can
+  /// be used as a byte offset (see `str_ascii_guard`). Negative indices
+  /// are folded inline against the length rather than punted.
+  ///
+  /// What still falls back to the general `zuri_jit_get_index` helper:
+  /// a dict receiver (no inline arm), anything that isn't a list,
+  /// string or bytes, a non-numeric or non-integer index, a non-ASCII
+  /// string, or a genuinely out-of-bounds index, which needs the
+  /// general path's real `RangeError` message.
+  ///
+  /// See `zuri_jit_list_data`'s own docs for why resolving a list's
+  /// data pointer still costs one small helper call while the bounds
+  /// check and element load are real inline Cranelift code either way.
+  /// Strings and bytes carry their data pointer and length in the
+  /// object header, so their arms load both directly and need no
+  /// helper at all.
   fn emit_list_get_index(
     &mut self,
     ip: usize,

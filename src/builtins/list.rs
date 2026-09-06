@@ -112,11 +112,9 @@ fn clone_list(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   let target = ctx.args[1];
-  let n = ctx.args[0]
-    .as_list()
-    .iter()
-    .filter(|v| v.equals(&target))
-    .count();
+  let n = ctx.args[0].with_list(|items| {
+    items.iter().filter(|v| v.equals(&target)).count()
+  });
   Ok(Value::number(n as f64))
 }
 
@@ -138,17 +136,18 @@ fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
     None => 0,
   };
 
-  let items = ctx.args[0].as_list();
-  if start >= items.len() {
-    return Ok(Value::number(-1.0));
-  }
-
-  for (i, item) in items.iter().enumerate().skip(start) {
-    if item.equals(&target) {
-      return Ok(Value::number(i as f64));
+  ctx.args[0].with_list(|items| {
+    if start >= items.len() {
+      return Ok(Value::number(-1.0));
     }
-  }
-  Ok(Value::number(-1.0))
+
+    for (i, item) in items.iter().enumerate().skip(start) {
+      if item.equals(&target) {
+        return Ok(Value::number(i as f64));
+      }
+    }
+    Ok(Value::number(-1.0))
+  })
 }
 
 fn insert(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -334,7 +333,7 @@ fn sort(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn contains(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   let target = ctx.args[1];
-  let found = ctx.args[0].as_list().iter().any(|v| v.equals(&target));
+  let found = ctx.args[0].with_list(|items| items.iter().any(|v| v.equals(&target)));
   Ok(Value::bool(found))
 }
 
@@ -387,13 +386,14 @@ fn take(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
 
-  let items = ctx.args[0].as_list();
-  let len = items.len() as i64;
   let n = ctx.args[1].as_number() as i64;
 
-  let take_count = if n < 0 { (len + n).max(0) } else { n.min(len) };
+  let result = ctx.args[0].with_list(|items| {
+    let len = items.len() as i64;
+    let take_count = if n < 0 { (len + n).max(0) } else { n.min(len) };
+    items[..take_count as usize].to_vec()
+  });
 
-  let result: Vec<Value> = items.into_iter().take(take_count as usize).collect();
   Ok(ctx.vm.heap_mut().alloc_list(result))
 }
 

@@ -130,19 +130,16 @@ fn clone_dict(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn compact(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let pairs: Vec<(Value, Value)> = ctx.args[0]
-    .as_dict()
-    .into_iter()
-    .filter(|(_, v)| !v.is_nil())
-    .collect();
+  let pairs: Vec<(Value, Value)> = ctx.args[0].with_dict(|s| {
+    s.entries.iter().filter(|(_, v)| !v.is_nil()).copied().collect()
+  });
   Ok(ctx.vm.heap_mut().alloc_dict(pairs))
 }
 
 fn contains(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   let target = ctx.args[1];
-  let found = ctx.args[0].as_dict().iter().any(|(k, _)| k.equals(&target));
-  Ok(Value::bool(found))
+  Ok(Value::bool(ctx.args[0].dict_get(&target).is_some()))
 }
 
 /// Adds all key-value pairs from `x` into this dict, in-place;
@@ -170,13 +167,15 @@ fn get(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn keys(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let ks: Vec<Value> = ctx.args[0].as_dict().into_iter().map(|(k, _)| k).collect();
+  let ks: Vec<Value> =
+    ctx.args[0].with_dict(|s| s.entries.iter().map(|(k, _)| *k).collect());
   Ok(ctx.vm.heap_mut().alloc_list(ks))
 }
 
 fn values(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let vs: Vec<Value> = ctx.args[0].as_dict().into_iter().map(|(_, v)| v).collect();
+  let vs: Vec<Value> =
+    ctx.args[0].with_dict(|s| s.entries.iter().map(|(_, v)| *v).collect());
   Ok(ctx.vm.heap_mut().alloc_list(vs))
 }
 
@@ -203,19 +202,22 @@ fn is_empty(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn find_key(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   let target = ctx.args[1];
-  for (k, v) in ctx.args[0].as_dict() {
-    if v.equals(&target) {
-      return Ok(k);
-    }
-  }
-  Ok(Value::nil())
+  let found = ctx.args[0].with_dict(|s| {
+    s.entries
+      .iter()
+      .find(|(_, v)| v.equals(&target))
+      .map(|(k, _)| *k)
+  });
+  Ok(found.unwrap_or(Value::nil()))
 }
 
 fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let pairs = ctx.args[0].as_dict();
-  let keys: Vec<Value> = pairs.iter().map(|(k, _)| *k).collect();
-  let values: Vec<Value> = pairs.iter().map(|(_, v)| *v).collect();
+  let (keys, values) = ctx.args[0].with_dict(|s| {
+    let keys: Vec<Value> = s.entries.iter().map(|(k, _)| *k).collect();
+    let values: Vec<Value> = s.entries.iter().map(|(_, v)| *v).collect();
+    (keys, values)
+  });
   let keys_list = ctx.vm.heap_mut().alloc_list(keys);
   let values_list = ctx.vm.heap_mut().alloc_list(values);
   Ok(ctx.vm.heap_mut().alloc_list(vec![keys_list, values_list]))

@@ -1,0 +1,125 @@
+# The Computer Language Benchmarks Game
+# https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
+#
+# contributed by Richard Ore
+#
+# The whole input is slurped once and every sequence is reversed in
+# place: a 256 entry complement table, and two cursors walking towards
+# each other over each sequence body. Because the line breaks are left
+# exactly where they are, the reversal only has to permute the bases
+# that sit between them, so there is no second buffer and no
+# re-wrapping pass.
+#
+# The very fastest entries on the site go further, pairing SIMD with a
+# 16 bit lookup table and splitting the work across threads. This is
+# the fastest shape that stays single threaded and portable.
+#
+# That does mean the output keeps whatever line layout the input had.
+# For fasta input, where every line but the last of a section is
+# exactly 60 columns, this is identical to re-wrapping at 60.
+#
+# Timing goes to stderr so that stdout stays a clean fasta stream.
+
+import io
+
+const LINE_FEED = '\n'.ord()
+const HEADER = '>'.ord()
+
+# IUPAC codes paired with their complements. Output is upper case no
+# matter how the input was cased, so both spellings of a base map to
+# the same upper-case complement.
+const CODES = 'ACGTUMRWSYKVHDBN'
+const COMPLEMENTS = 'TGCAAKYWSRMBDHVN'
+
+/**
+ * Builds the 256 entry byte lookup used by the inner loop. Codes we
+ * don't recognise map to themselves so a stray character survives the
+ * round trip instead of silently turning into a null byte.
+ */
+def build_table() {
+  var table = bytes(256)
+
+  iter var i = 0; i < 256; i++ {
+    table[i] = i
+  }
+
+  iter var i = 0; i < CODES.length(); i++ {
+    var code = CODES[i].ord()
+    var complement = COMPLEMENTS[i].ord()
+
+    table[code] = complement
+
+    # The lower-case spelling sits 32 codes up in ASCII.
+    table[code + 32] = complement
+  }
+
+  return table
+}
+
+/**
+ * Reverses and complements every sequence in `data` in place. Each
+ * section is walked by two cursors moving towards each other; a
+ * cursor that lands on a line break steps over it, which is what
+ * keeps the original 60 column layout intact.
+ */
+def reverse_complement(data, table) {
+  var size = data.length()
+  var pos = 0
+
+  while pos < size {
+    # The header line is copied through untouched.
+    while pos < size and data[pos] != LINE_FEED {
+      pos++
+    }
+
+    var lo = pos + 1
+    var tail = lo
+
+    # A sequence runs until the next header, or the end of input.
+    while tail < size and data[tail] != HEADER {
+      tail++
+    }
+
+    var hi = tail - 1
+
+    while lo < hi {
+      if data[lo] == LINE_FEED {
+        lo++
+        continue
+      }
+
+      if data[hi] == LINE_FEED {
+        hi--
+        continue
+      }
+
+      var left = data[lo]
+      var right = data[hi]
+
+      data[lo] = table[right]
+      data[hi] = table[left]
+
+      lo++
+      hi--
+    }
+
+    # An odd base count leaves one base sitting on its own in the
+    # middle, still needing its complement.
+    if lo == hi and data[lo] != LINE_FEED {
+      data[lo] = table[data[lo]]
+    }
+
+    pos = tail
+  }
+}
+
+def main() {
+  var data = io.stdin.read()
+
+  reverse_complement(data, build_table())
+  io.stdout.write(data)
+}
+
+var start = time()
+main()
+io.stderr.write('Time taken: ${time() - start}s\n')

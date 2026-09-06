@@ -1,0 +1,109 @@
+# Scanning and prefix methods across the container kinds. These all
+# used to copy the whole container before looking at it; the point of
+# the fixture is that the observable behaviour did not move when that
+# copying went away, edge cases included.
+
+echo '-- string.index_of --'
+echo 'hello world'.index_of('world')
+echo 'hello world'.index_of('o')
+echo 'hello world'.index_of('o', 5)
+echo 'hello world'.index_of('hello')
+echo 'hello'.index_of('z')
+echo 'hello'.index_of('')
+echo 'hello'.index_of('l', 99)
+echo 'hello'.index_of('o', 4)
+echo 'aaa'.index_of('aa', 1)
+echo ''.index_of('a')
+
+# Offsets and results are counted in codepoints, not bytes.
+echo 'héllo wörld'.index_of('wörld')
+echo 'héllo'.index_of('llo')
+echo '日本語テスト'.index_of('テスト')
+echo '日本語テスト'.index_of('本', 0)
+echo '日本語'.index_of('語', 2)
+echo '日本語'.index_of('語', 3)
+
+# Two codepoints spanning eight bytes: the answers are 0, 1 and -1,
+# never a byte offset.
+echo '😀😃'.length()
+echo '😀😃'.index_of('😀')
+echo '😀😃'.index_of('😃')
+echo '😀😃'.index_of('a')
+echo '😀😃'.index_of('😀', 1)
+echo '😀😃'.index_of('😃', 1)
+
+echo '-- bytes.index_of --'
+var b = 'hello world'.to_bytes()
+echo b.index_of(111)
+echo b.index_of(111, 5)
+echo b.index_of(122)
+echo b.index_of(104, 99)
+
+echo '-- bytes.take --'
+echo b.take(5).to_string()
+echo b.take(-6).to_string()
+echo b.take(0).to_string()
+echo b.take(99).to_string()
+
+echo '-- bytes.split --'
+var parts = 'a,b,,c'.to_bytes().split(','.to_bytes())
+echo parts.length()
+
+for p in parts {
+  echo p.to_string()
+}
+
+echo 'ab'.to_bytes().split(bytes(0)).length()
+echo 'nodelim'.to_bytes().split('|'.to_bytes()).length()
+
+echo '-- bytes predicates --'
+echo 'abc'.to_bytes().is_alpha()
+echo 'ab1'.to_bytes().is_alpha()
+echo 'abc1'.to_bytes().is_alnum()
+echo '123'.to_bytes().is_number()
+echo 'abc'.to_bytes().is_lower()
+echo 'a1'.to_bytes().is_lower()
+echo '123'.to_bytes().is_lower()
+echo 'ABC'.to_bytes().is_upper()
+echo 'AbC'.to_bytes().is_upper()
+echo bytes(0).is_alpha()
+echo '  '.to_bytes().is_space()
+
+echo '-- bytes conversions --'
+echo 'hi'.to_bytes().to_list()
+echo 'hi'.to_bytes().to_string()
+
+echo '-- list --'
+var l = [1, 2, 3, 2, 1]
+echo l.index_of(2)
+echo l.index_of(2, 2)
+echo l.index_of(9)
+echo l.index_of(1, 99)
+echo l.contains(3)
+echo l.contains(9)
+echo l.count(1)
+echo l.count(9)
+echo l.take(2)
+echo l.take(-2)
+echo l.take(0)
+echo l.take(99)
+
+echo '-- dict --'
+var d = { a: 1, b: 2, c: nil }
+echo d.contains('a')
+echo d.contains('c')
+echo d.contains('z')
+echo d.keys()
+echo d.values()
+echo d.find_key(2)
+echo d.find_key(99)
+echo d.to_list()
+echo d.compact()
+
+# Numeric keys hash by value, so lookup must not fall back to identity.
+var n = {}
+n[42] = 'x'
+n[1 << 36] = 'y'
+echo n.contains(42)
+echo n.contains(1 << 36)
+echo n.contains(43)

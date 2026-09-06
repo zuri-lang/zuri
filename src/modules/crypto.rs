@@ -305,10 +305,14 @@ fn aes_gcm_encrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let key = ctx.args[0].as_bytes();
   let iv = ctx.args[1].as_bytes();
-  let pt = ctx.args[2].as_bytes();
   let aad = read_aad(ctx, 3)?;
 
-  let ct = aes_gcm_seal(&key, &iv, &pt, &aad)?;
+  // Only the payload is unbounded here; keys, IVs and nonces are a
+  // handful of bytes, so they stay plain copies rather than nesting a
+  // closure each. The borrow ends at the closure boundary, before the
+  // `ctx.heap()` allocation below: a collection can move an object out
+  // from under a live borrow, so one must never span the other.
+  let ct = ctx.args[2].with_bytes(|pt| aes_gcm_seal(&key, &iv, pt, &aad))?;
   Ok(ctx.heap().alloc_bytes(ct))
 }
 
@@ -320,10 +324,9 @@ fn aes_gcm_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let key = ctx.args[0].as_bytes();
   let iv = ctx.args[1].as_bytes();
-  let ct = ctx.args[2].as_bytes();
   let aad = read_aad(ctx, 3)?;
 
-  let pt = aes_gcm_open(&key, &iv, &ct, &aad)?;
+  let pt = ctx.args[2].with_bytes(|ct| aes_gcm_open(&key, &iv, ct, &aad))?;
   Ok(ctx.heap().alloc_bytes(pt))
 }
 
@@ -424,8 +427,7 @@ fn aes_cbc_encrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let key = ctx.args[0].as_bytes();
   let iv = ctx.args[1].as_bytes();
-  let pt = ctx.args[2].as_bytes();
-  let ct = aes_cbc_encrypt_bytes(&key, &iv, &pt)?;
+  let ct = ctx.args[2].with_bytes(|pt| aes_cbc_encrypt_bytes(&key, &iv, pt))?;
   Ok(ctx.heap().alloc_bytes(ct))
 }
 
@@ -437,8 +439,7 @@ fn aes_cbc_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let key = ctx.args[0].as_bytes();
   let iv = ctx.args[1].as_bytes();
-  let ct = ctx.args[2].as_bytes();
-  let pt = aes_cbc_decrypt_bytes(&key, &iv, &ct)?;
+  let pt = ctx.args[2].with_bytes(|ct| aes_cbc_decrypt_bytes(&key, &iv, ct))?;
   Ok(ctx.heap().alloc_bytes(pt))
 }
 
@@ -565,10 +566,8 @@ fn rsa_encrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let pub_key = RsaPublicKey::from_public_key_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid public key", e))?;
-  let pt = ctx.args[1].as_bytes();
-
-  let ct = pub_key
-    .encrypt(&mut OsRng, Oaep::new::<Sha256>(), &pt)
+  let ct = ctx.args[1]
+    .with_bytes(|pt| pub_key.encrypt(&mut OsRng, Oaep::new::<Sha256>(), pt))
     .map_err(|e| crypto_err("encryption failed", e))?;
   Ok(ctx.heap().alloc_bytes(ct))
 }
@@ -583,10 +582,8 @@ fn rsa_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let priv_key = RsaPrivateKey::from_pkcs8_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid private key", e))?;
-  let ct = ctx.args[1].as_bytes();
-
-  let pt = priv_key
-    .decrypt(Oaep::new::<Sha256>(), &ct)
+  let pt = ctx.args[1]
+    .with_bytes(|ct| priv_key.decrypt(Oaep::new::<Sha256>(), ct))
     .map_err(|e| crypto_err("decryption failed", e))?;
   Ok(ctx.heap().alloc_bytes(pt))
 }
@@ -636,13 +633,11 @@ fn rsa_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let priv_key = RsaPrivateKey::from_pkcs8_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid private key", e))?;
-  let message = ctx.args[1].as_bytes();
-
-  let sig = match hash {
-    "sha384" => SigningKey::<Sha384>::new(priv_key).sign_with_rng(&mut OsRng, &message),
-    "sha512" => SigningKey::<Sha512>::new(priv_key).sign_with_rng(&mut OsRng, &message),
-    _ => SigningKey::<Sha256>::new(priv_key).sign_with_rng(&mut OsRng, &message),
-  };
+  let sig = ctx.args[1].with_bytes(|message| match hash {
+    "sha384" => SigningKey::<Sha384>::new(priv_key).sign_with_rng(&mut OsRng, message),
+    "sha512" => SigningKey::<Sha512>::new(priv_key).sign_with_rng(&mut OsRng, message),
+    _ => SigningKey::<Sha256>::new(priv_key).sign_with_rng(&mut OsRng, message),
+  });
   Ok(ctx.heap().alloc_bytes(sig.to_vec()))
 }
 
@@ -928,9 +923,7 @@ fn ed25519_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let signing_key = SigningKey::from_pkcs8_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid private key", e))?;
-  let message = ctx.args[1].as_bytes();
-
-  let sig = signing_key.sign(&message);
+  let sig = ctx.args[1].with_bytes(|message| signing_key.sign(message));
   Ok(ctx.heap().alloc_bytes(sig.to_bytes().to_vec()))
 }
 
@@ -1191,7 +1184,6 @@ fn hkdf_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 2, ArgType::Bytes);
   enforce_arg_type!(ctx, 3, ArgType::Number);
 
-  let ikm = ctx.args[0].as_bytes();
   let salt = ctx.args[1].as_bytes();
   let info = ctx.args[2].as_bytes();
   let length = ctx.args[3].as_number();
@@ -1200,9 +1192,11 @@ fn hkdf_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     return Err("hkdf(): length must be an integer between 1 and 8160".to_string());
   }
 
-  let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
   let mut okm = vec![0u8; length as usize];
-  hk.expand(&info, &mut okm)
-    .map_err(|_| "hkdf(): requested length is too large for this PRF".to_string())?;
+  ctx.args[0].with_bytes(|ikm| {
+    let hk = Hkdf::<Sha256>::new(Some(&salt), ikm);
+    hk.expand(&info, &mut okm)
+  })
+  .map_err(|_| "hkdf(): requested length is too large for this PRF".to_string())?;
   Ok(ctx.heap().alloc_bytes(okm))
 }

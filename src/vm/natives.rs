@@ -320,8 +320,8 @@ fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
     for v in ctx.args.iter() {
       if v.is_bytes() {
-        let raw = v.as_bytes();
-        stdout.write_all(&raw).map_err(|e| e.to_string())?;
+        v.with_bytes(|raw| stdout.write_all(raw))
+          .map_err(|e| e.to_string())?;
       } else if v.is_string() {
         let s = v.as_str();
         stdout.write_all(s.as_bytes()).map_err(|e| e.to_string())?;

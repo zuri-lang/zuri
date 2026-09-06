@@ -1,0 +1,82 @@
+-- string.index_of --
+6
+4
+7
+0
+-1
+-1
+-1
+4
+1
+-1
+6
+2
+3
+1
+2
+-1
+2
+0
+1
+-1
+-1
+1
+-- bytes.index_of --
+4
+7
+-1
+-1
+-- bytes.take --
+hello
+hello
+
+hello world
+-- bytes.split --
+4
+a
+b
+
+c
+2
+1
+-- bytes predicates --
+true
+false
+true
+true
+true
+true
+false
+true
+false
+false
+true
+-- bytes conversions --
+[104, 105]
+hi
+-- list --
+1
+3
+-1
+-1
+true
+false
+2
+0
+[1, 2]
+[1, 2, 3]
+[]
+[1, 2, 3, 2, 1]
+-- dict --
+true
+true
+false
+[a, b, c]
+[1, 2, nil]
+b
+nil
+[[a, b, c], [1, 2, nil]]
+{a: 1, b: 2}
+true
+true
+false

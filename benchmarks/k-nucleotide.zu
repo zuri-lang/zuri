@@ -1,0 +1,276 @@
+# The Computer Language Benchmarks Game
+# https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
+#
+# contributed by Richard Ore
+#
+# Every base is packed down to a 2 bit code as the input is read, so
+# a k-nucleotide becomes a plain integer that can be rolled forward
+# one base at a time. Short reading frames count into a flat array
+# indexed by that integer; the 12 and 18 base frames have far too
+# large a code space for that and go through a hash table instead.
+#
+# The faster entries on the site split the reading frames across
+# threads. This one stays single threaded.
+#
+# Timing goes to stderr so stdout stays comparable with the reference
+# output.
+
+import io
+
+const HEADER = '>'.ord()
+const LINE_FEED = '\n'.ord()
+
+# Enough of ">THREE" to tell it apart from ">TWO", which shares its
+# first letter.
+const THREE_T = 'T'.ord()
+const THREE_H = 'H'.ord()
+
+const BASES = 'ACGT'
+
+# The reading frames reported as raw counts rather than frequencies.
+const TARGETS = [
+  'GGT',
+  'GGTA',
+  'GGTATT',
+  'GGTATTTTAATT',
+  'GGTATTTTAATTTATAGT'
+]
+
+# Largest frame still worth giving a flat array of counters. 4^8 is
+# 65536 slots, which is cheaper to allocate than a single rehash of a
+# dict that size.
+const FLAT_LIMIT = 8
+
+/**
+ * Byte lookup turning an ASCII base into its 2 bit code. Both cases
+ * map to the same code. Anything else stays at zero, which is fine
+ * here because the fasta input only ever holds a, c, g and t.
+ */
+def build_codes() {
+  var codes = bytes(256)
+
+  iter var i = 0; i < BASES.length(); i++ {
+    var base = BASES[i].ord()
+
+    codes[base] = i
+    codes[base + 32] = i
+  }
+
+  return codes
+}
+
+/**
+ * Reads all of stdin and returns the THREE sequence as a bytes buffer
+ * of 2 bit codes, paired with the number of bases actually written.
+ * The buffer is sized against the raw section, so it has a little
+ * slack where the line breaks used to be.
+ */
+def read_sequence(codes) {
+  var data = io.stdin.read()
+  var size = data.length()
+  var pos = 0
+
+  # THREE is the last section of the input. Everything past its
+  # header line is sequence.
+  while pos + 2 < size {
+    if data[pos] == HEADER and data[pos + 1] == THREE_T and data[pos + 2] == THREE_H {
+      break
+    }
+
+    pos++
+  }
+
+  while pos < size and data[pos] != LINE_FEED {
+    pos++
+  }
+
+  pos++
+
+  var seq = bytes(size - pos)
+  var length = 0
+
+  while pos < size {
+    var c = data[pos]
+
+    if c != LINE_FEED {
+      seq[length] = codes[c]
+      length++
+    }
+
+    pos++
+  }
+
+  return [seq, length]
+}
+
+/**
+ * Counts every k-mer into a flat array of 4^k counters, one slot per
+ * possible code. Direct indexing, no hashing.
+ */
+def count_flat(seq, length, k) {
+  var counts = [0] * (1 << (2 * k))
+  var mask = counts.length() - 1
+  var code = 0
+  var i = 0
+
+  # Prime the rolling code with the first k - 1 bases so that the
+  # counting loop below can stay branch free.
+  while i < k - 1 {
+    code = (code << 2) | seq[i]
+    i++
+  }
+
+  while i < length {
+    code = ((code << 2) | seq[i]) & mask
+    counts[code] = counts[code] + 1
+    i++
+  }
+
+  return counts
+}
+
+/**
+ * Same rolling count, but keyed into a dict. Used for the frames
+ * whose code space is too wide to allocate outright.
+ */
+def count_hashed(seq, length, k) {
+  var counts = {}
+  var mask = (1 << (2 * k)) - 1
+  var code = 0
+  var i = 0
+
+  while i < k - 1 {
+    code = (code << 2) | seq[i]
+    i++
+  }
+
+  while i < length {
+    code = ((code << 2) | seq[i]) & mask
+    counts[code] = counts.get(code, 0) + 1
+    i++
+  }
+
+  return counts
+}
+
+/**
+ * Turns a packed code back into its base letters.
+ */
+def decode(code, k) {
+  var out = ''
+  var shift = 2 * (k - 1)
+
+  while shift >= 0 {
+    out += BASES[(code >> shift) & 3]
+    shift -= 2
+  }
+
+  return out
+}
+
+/**
+ * Packs a base string into the same 2 bit code the counters use.
+ */
+def encode(sequence, codes) {
+  var code = 0
+
+  iter var i = 0; i < sequence.length(); i++ {
+    code = (code << 2) | codes[sequence[i].ord()]
+  }
+
+  return code
+}
+
+/**
+ * Formats `count / total` as a percentage with exactly three decimal
+ * places. `fixed()` hands back a number, so trailing zeros would be
+ * lost on the way to a string; the digits are assembled by hand.
+ */
+def percent(count, total) {
+  var scaled = (count * 100000 / total).round()
+  var whole = (scaled / 1000).floor()
+  var fraction = scaled - whole * 1000
+
+  return '${whole}.${fraction.to_string().lpad(3, '0')}'
+}
+
+/**
+ * True when `a` belongs after `b` in the report: descending count,
+ * then ascending nucleotide.
+ */
+def ranks_after(a, b) {
+  if a[0] != b[0] {
+    return a[0] < b[0]
+  }
+
+  return a[1] > b[1]
+}
+
+/**
+ * Insertion sort. These tables hold 4 or 16 rows, so anything more
+ * elaborate would cost more than it saves.
+ */
+def sort_entries(entries) {
+  iter var i = 1; i < entries.length(); i++ {
+    var current = entries[i]
+    var j = i - 1
+
+    while j >= 0 and ranks_after(entries[j], current) {
+      entries[j + 1] = entries[j]
+      j--
+    }
+
+    entries[j + 1] = current
+  }
+}
+
+def report_frequencies(counts, k) {
+  var entries = []
+  var total = 0
+
+  iter var code = 0; code < counts.length(); code++ {
+    var count = counts[code]
+
+    total += count
+
+    if count > 0 {
+      entries.append([count, decode(code, k)])
+    }
+  }
+
+  sort_entries(entries)
+
+  for entry in entries {
+    echo '${entry[1]} ${percent(entry[0], total)}'
+  }
+
+  echo ''
+}
+
+def main() {
+  var codes = build_codes()
+  var loaded = read_sequence(codes)
+  var seq = loaded[0]
+  var length = loaded[1]
+
+  report_frequencies(count_flat(seq, length, 1), 1)
+  report_frequencies(count_flat(seq, length, 2), 2)
+
+  for target in TARGETS {
+    var k = target.length()
+    var code = encode(target, codes)
+    var count = 0
+
+    if k <= FLAT_LIMIT {
+      count = count_flat(seq, length, k)[code]
+    } else {
+      count = count_hashed(seq, length, k).get(code, 0)
+    }
+
+    echo '${count}\t${target}'
+  }
+}
+
+var start = time()
+main()
+io.stderr.write('Time taken: ${time() - start}s\n')
