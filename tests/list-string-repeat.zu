@@ -1,0 +1,41 @@
+# `[x] * n` and `'s' * n` are how sized lists and repeated strings get
+# built; both go through MulImm for a literal count, which the shape
+# analyses have to recognise or every such value stays unproven.
+
+var l = [0] * 5
+echo l
+echo l.length()
+l[2] = 9
+echo l
+
+var nested = [[1, 2]] * 3
+echo nested
+echo nested.length()
+
+var s = 'ab' * 3
+echo s
+echo s.length()
+echo s[2]
+
+# non-literal counts take the plain Mul path
+var n = 4
+echo ([7] * n)
+echo ('z' * n)
+
+# repeat of something that is not a list or string must be unaffected
+echo 6 * 7
+var f = 1.5 * 2
+echo f
+
+# hot, so the compiled tier answers too
+def hot(n) {
+  var a = 0
+  var i = 0
+  while i < n {
+    var t = [3] * 4
+    a += t[i & 3]
+    i++
+  }
+  return a
+}
+echo hot(50000)

@@ -889,7 +889,12 @@ fn transfer_list(
     // `binary_mult`'s own list-repeat semantics never turn a NON-list
     // `a` into a list result, so `false` is exactly right when `a`
     // isn't already proven.
-    Instr::Mul { dst, a, .. } => out.set(dst, in_set.get(a)),
+    //
+    // `MulImm` matters as much as `Mul` and was missing: a literal
+    // repeat count is the usual way to write this, so `[0] * 64`
+    // compiles to `MulImm` and every list built that way went
+    // unproven. `transfer_int` already handled both.
+    Instr::Mul { dst, a, .. } | Instr::MulImm { dst, a, .. } => out.set(dst, in_set.get(a)),
 
     // A parameter checked as EXACTLY `list` (not a union) is provably
     // a list on every path past this instruction; it just raised
@@ -1559,6 +1564,11 @@ fn transfer_string(in_set: &RegSet, instr: &Instr, proto: &ObjFunction) -> RegSe
     },
     Instr::Move { dst, src } => out.set(dst, in_set.get(src)),
     Instr::Concat { dst, .. } => out.set(dst, true),
+
+    // `'x' * n` (string-repeat), the string mirror of `transfer_list`'s
+    // own `Mul`/`MulImm` arm and true under the same condition: repeat
+    // never turns a non-string into one.
+    Instr::Mul { dst, a, .. } | Instr::MulImm { dst, a, .. } => out.set(dst, in_set.get(a)),
 
     // `a + b` where BOTH sides are already proven strings: see this
     // struct's own docs for why that's unconditionally a fresh string,
