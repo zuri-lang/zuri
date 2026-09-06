@@ -533,9 +533,18 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_type!(ctx, 1, ArgType::Function);
 
   let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
-  let callback = ctx.vm.pinned(mark + 1);
 
   for i in 0..count {
+    // Both of these have to be re-read from the pin stack on EVERY
+    // iteration, exactly as `map_fn` and the rest of this file's
+    // iterate-and-call-back natives do. The pin stack is what the
+    // moving collector rewrites when it relocates an object; a `Value`
+    // lifted into a Rust local before the loop is a private copy it
+    // cannot see. Hoisting the callback out meant that the first
+    // collection triggered from inside a callback left every later
+    // iteration calling the closure's old address, which surfaces as
+    // whatever tag the freed memory now looks like.
+    let callback = ctx.vm.pinned(mark + 1);
     let item = ctx.vm.pinned(mark + 2 + i);
     ctx
       .vm
