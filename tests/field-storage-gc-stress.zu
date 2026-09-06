@@ -6,7 +6,9 @@ class Point {
 }
 
 var kept = nil
-iter var i = 0; i < 20000; i++ {
+# See the note in gc-write-barrier-stress: the count has to outlast the
+# background compile, or the JIT's field-slot stores never run.
+iter var i = 0; i < 100000; i++ {
   var p = Point(i, i * 2)
   if i % 5000 == 0 {
     kept = p

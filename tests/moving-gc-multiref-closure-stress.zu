@@ -39,7 +39,12 @@ var holder = Holder(counter)
 StaticHolder.held = counter
 var local_ref = counter
 
-var n = 30000
+# Large enough that the background compile actually lands and is
+# installed while the loop is still running: at 30000 the whole script
+# finished first, so the compiled entry (and with it
+# `ensure_stable_for_compiled_entry`'s JIT-entry promotion, half of what
+# this fixture is checking) never ran at all.
+var n = 100000
 var errors = 0
 var expected = 0
 

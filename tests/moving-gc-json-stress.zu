@@ -9,7 +9,9 @@ class Box {
   }
 }
 
-var n = 6000
+# Raised so the loop outlasts the background compile; at the old count
+# the script exited before the compiled entry was ever installed.
+var n = 60000
 var items = []
 iter var i = 0; i < n; i++ {
   items.append(Box(i))

@@ -15,4 +15,6 @@ def run(n) {
   echo 'ok, checked ${n} iterations'
 }
 
-run(50000)
+# Raised so the loop outlasts the background compile; at the old count
+# the script exited before the compiled entry was ever installed.
+run(500000)

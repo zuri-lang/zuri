@@ -4026,7 +4026,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     self.emit_callee_proto_guard(callee_val, guard_bits, slow_block);
 
-    let result = self.emit_inlined_body(callee, &plan, func);
+    let result = self.emit_inlined_body(ip, callee, &plan, func);
     self.store_reg(dst, result);
     self.fb.ins().jump(done_block, &[]);
 
@@ -4282,6 +4282,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// there is nothing for Cranelift's SSA construction to merge.
   fn emit_inlined_body(
     &mut self,
+    ip: usize,
     callee: &ObjFunction,
     plan: &[(usize, Instr)],
     func: u8,
@@ -4290,9 +4291,53 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let zero = self.fb.ins().f64const(0.0);
     regs.resize(callee.num_registers as usize, zero);
 
+    // Which callee registers hold a value already known to be an
+    // integer in `i64` range. Seeded from the CALLER's own
+    // `typeflow::IntFacts` for the argument registers, which is the
+    // same evidence the out-of-line `Instr::Mod` trusts via
+    // `both_proven_int`. Deliberately not propagated through
+    // arithmetic: a sum or product of two in-range integers can leave
+    // `i64` range, and the range half of the guarantee is exactly what
+    // `Instr::Mod`'s round-trip check is there to establish.
+    let mut integral = vec![false; callee.num_registers as usize];
+    // A stronger property than `integral` for the DIVISOR specifically:
+    // a known-positive integer constant makes the divisor guard
+    // statically true, which removes the branch rather than just
+    // predicting it well. `% 0` and `i64::MIN % -1` are the two cases
+    // that guard exists for, and a positive constant rules out both.
+    let mut pos_const = vec![false; callee.num_registers as usize];
+    // The caller already maintains an `i64` view of any register it
+    // tracks as an int (`store_reg_int` defines `reg_vars_int` at every
+    // write when `int_tracked` says so), which is the same thing the
+    // out-of-line `Instr::Mod` reaches for. Borrowing it here lets an
+    // integer op inside the inlined body work on the integer directly
+    // instead of round-tripping the f64 through a SATURATING
+    // conversion, which is several instructions, not one.
+    //
+    // Only values that arrive from the caller (or are integral
+    // constants, or copies of either) get a view: anything computed by
+    // the body itself is f64 arithmetic, and maintaining a parallel
+    // integer result for it would cost more than the conversion saves.
+    let mut int_view: Vec<Option<IrValue>> = vec![None; callee.num_registers as usize];
+    let is_pos_int_const =
+      |n: f64| n.fract() == 0.0 && n > 0.0 && n < 9223372036854775808.0;
     for i in 0..callee.arity {
-      let v = self.load_reg(func + 1 + i);
+      let src = func + 1 + i;
+      let v = self.load_reg(src);
       regs[i as usize] = self.to_f64(v);
+      integral[i as usize] = self.proven_int(ip, src);
+      if integral[i as usize] {
+        int_view[i as usize] = Some(self.fb.use_var(self.reg_vars_int[src as usize]));
+      }
+      if let Some(n) = self.const_facts.const_value(ip, src)
+        && is_pos_int_const(n)
+      {
+        integral[i as usize] = true;
+        if int_view[i as usize].is_none() {
+          int_view[i as usize] = Some(self.i64c(n as i64));
+        }
+        pos_const[i as usize] = true;
+      }
     }
 
     let bake = |fc: &mut Self, idx: u16| -> IrValue {
@@ -4306,8 +4351,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let f = regs[src as usize];
           return self.from_f64(f);
         },
-        Instr::LoadConst { dst, const_idx } => regs[dst as usize] = bake(self, const_idx),
-        Instr::Move { dst, src } => regs[dst as usize] = regs[src as usize],
+        Instr::LoadConst { dst, const_idx } => {
+          let n = callee.chunk.constants[const_idx as usize].as_number();
+          integral[dst as usize] =
+            n.fract() == 0.0 && n.abs() < 9223372036854775808.0;
+          pos_const[dst as usize] = is_pos_int_const(n);
+          int_view[dst as usize] = if integral[dst as usize] {
+            Some(self.i64c(n as i64))
+          } else {
+            None
+          };
+          regs[dst as usize] = bake(self, const_idx)
+        },
+        Instr::Move { dst, src } => {
+          integral[dst as usize] = integral[src as usize];
+          pos_const[dst as usize] = pos_const[src as usize];
+          int_view[dst as usize] = int_view[src as usize];
+          regs[dst as usize] = regs[src as usize]
+        },
         Instr::Add { dst, a, b } => {
           regs[dst as usize] = self.fb.ins().fadd(regs[a as usize], regs[b as usize])
         },
@@ -4336,16 +4397,89 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           regs[dst as usize] = self.fb.ins().fneg(regs[src as usize]);
         },
         Instr::Mod { dst, a, b } => {
+          // Same shape as the out-of-line `Instr::Mod`, which this used
+          // to skip entirely: it fed both operands straight to `srem`
+          // with no guards, so a fractional operand silently lost its
+          // fraction, a negative divisor came back mangled, and `x % 0`
+          // took the process down with SIGFPE where the interpreter
+          // answers NaN. The integer path is only entered when both
+          // operands are integral and the divisor is positive; a
+          // positive divisor also rules out the `i64::MIN % -1`
+          // overflow trap.
           let fa = regs[a as usize];
           let fb_ = regs[b as usize];
-          let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
-          let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+          let ia = match int_view[a as usize] {
+            Some(v) => v,
+            None => self.fb.ins().fcvt_to_sint_sat(types::I64, fa),
+          };
+          let ib = match int_view[b as usize] {
+            Some(v) => v,
+            None => self.fb.ins().fcvt_to_sint_sat(types::I64, fb_),
+          };
+
+          // Nothing left to test: an integral dividend and a positive
+          // constant divisor satisfy the guard outright, so this drops
+          // to the bare divide with no branch and no merge at all.
+          if integral[a as usize] && pos_const[b as usize] {
+            let rem = self.fb.ins().srem(ia, ib);
+            let rem_f = self.fb.ins().fcvt_from_sint(types::F64, rem);
+            integral[dst as usize] = true;
+            int_view[dst as usize] = Some(rem);
+            regs[dst as usize] = self.fb.ins().fcopysign(rem_f, fa);
+            continue;
+          }
+
           let zero = self.i64c(0);
+          let is_pos_denom = self.fb.ins().icmp(IntCC::SignedGreaterThan, ib, zero);
+          // The round-trip test proves BOTH integrality and `i64` range
+          // (the conversion saturates), so it is only skippable for an
+          // operand the caller already proved an int. A literal divisor
+          // then folds `is_pos_denom` away too, leaving the bare `srem`.
+          let mut can_fast = is_pos_denom;
+          if !integral[a as usize] {
+            let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
+            let is_int_a =
+              self
+                .fb
+                .ins()
+                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
+            can_fast = self.fb.ins().band(can_fast, is_int_a);
+          }
+          if !integral[b as usize] {
+            let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
+            let is_int_b =
+              self
+                .fb
+                .ins()
+                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
+            can_fast = self.fb.ins().band(can_fast, is_int_b);
+          }
+
+          let rem_block = self.fb.create_block();
+          let fmod_block = self.fb.create_block();
+          let join_block = self.fb.create_block();
+          self.fb.append_block_param(join_block, types::F64);
+          self
+            .fb
+            .ins()
+            .brif(can_fast, rem_block, &[], fmod_block, &[]);
+
+          self.fb.switch_to_block(rem_block);
           let rem = self.fb.ins().srem(ia, ib);
-          let is_neg = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
-          let rem_adj = self.fb.ins().iadd(rem, ib);
-          let final_rem = self.fb.ins().select(is_neg, rem_adj, rem);
-          regs[dst as usize] = self.fb.ins().fcvt_from_sint(types::F64, final_rem);
+          let rem_f = self.fb.ins().fcvt_from_sint(types::F64, rem);
+          let signed = self.fb.ins().fcopysign(rem_f, fa);
+          self.fb.ins().jump(join_block, &[signed.into()]);
+
+          self.fb.switch_to_block(fmod_block);
+          let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
+          self.fb.ins().jump(join_block, &[fallback.into()]);
+
+          self.fb.switch_to_block(join_block);
+          integral[dst as usize] = integral[a as usize] && integral[b as usize];
+          // The merge can carry an `fmod` result, so there is no integer
+          // value that is valid on both edges.
+          int_view[dst as usize] = None;
+          regs[dst as usize] = self.fb.block_params(join_block)[0];
         },
         Instr::GetGlobal { dst, .. } => {
           let slot = callee.jit.global_slot_cache[orig_ip].get();
@@ -10688,11 +10822,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
 
           self.fb.switch_to_block(rem_block);
+          // `value::num_rem` is a TRUNCATED remainder carrying the
+          // DIVIDEND's sign, and that is exactly what `srem` computes.
+          // The floored adjustment that used to sit here (`rem < 0 ?
+          // rem + ib : rem`) made every negative dividend wrong, so
+          // `-17 % 5` came back 3 instead of -2; dropping it is both
+          // correct and three instructions cheaper.
+          //
+          // `srem` carries the dividend's sign for every non-zero
+          // result, so the only case it gets wrong is a zero remainder
+          // from a negative dividend, where `num_rem`'s `copysign`
+          // yields `-0` (`echo -4 % 2`). Applying it unconditionally is
+          // cheaper than branching to skip it: it is a single SSE
+          // bitwise op against a hardware divide already in flight,
+          // whereas testing `rem == 0` first costs a compare and a
+          // branch to save it.
           let rem = self.fb.ins().srem(ia, ib);
-          let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
-          let rem_adj = self.fb.ins().iadd(rem, ib);
-          let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
-          self.store_reg_int(dst, final_rem);
+          let rem_f = self.fb.ins().fcvt_from_sint(types::F64, rem);
+          let signed = self.fb.ins().fcopysign(rem_f, fa);
+          if self.int_tracked[dst as usize] {
+            self.fb.def_var(self.reg_vars_int[dst as usize], rem);
+          }
+          self.store_reg_f64(dst, signed);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(fmod_block);
@@ -10748,11 +10899,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
 
           self.fb.switch_to_block(rem_block);
+          // `value::num_rem` is a TRUNCATED remainder carrying the
+          // DIVIDEND's sign, and that is exactly what `srem` computes.
+          // The floored adjustment that used to sit here (`rem < 0 ?
+          // rem + ib : rem`) made every negative dividend wrong, so
+          // `-17 % 5` came back 3 instead of -2; dropping it is both
+          // correct and three instructions cheaper.
+          //
+          // `srem` carries the dividend's sign for every non-zero
+          // result, so the only case it gets wrong is a zero remainder
+          // from a negative dividend, where `num_rem`'s `copysign`
+          // yields `-0` (`echo -4 % 2`). Applying it unconditionally is
+          // cheaper than branching to skip it: it is a single SSE
+          // bitwise op against a hardware divide already in flight,
+          // whereas testing `rem == 0` first costs a compare and a
+          // branch to save it.
           let rem = self.fb.ins().srem(ia, ib);
-          let is_neg_rem = self.fb.ins().icmp(IntCC::SignedLessThan, rem, zero);
-          let rem_adj = self.fb.ins().iadd(rem, ib);
-          let final_rem = self.fb.ins().select(is_neg_rem, rem_adj, rem);
-          self.store_reg_int(dst, final_rem);
+          let rem_f = self.fb.ins().fcvt_from_sint(types::F64, rem);
+          let signed = self.fb.ins().fcopysign(rem_f, fa);
+          if self.int_tracked[dst as usize] {
+            self.fb.def_var(self.reg_vars_int[dst as usize], rem);
+          }
+          self.store_reg_f64(dst, signed);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(fmod_block);

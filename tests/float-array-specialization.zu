@@ -1,12 +1,28 @@
-var float_list = []
-iter var i = 0; i < 50; i++ {
-  float_list.append(i * 1.25)
+def build_floats(n) {
+  var out = []
+  iter var i = 0; i < n; i++ {
+    out.append(i * 1.25)
+  }
+  return out
 }
 
+def bump_and_sum(lst) {
+  var s = 0.0
+  iter var j = 0; j < lst.length(); j++ {
+    lst[j] = lst[j] + 0.5
+    s = s + lst[j]
+  }
+  return s
+}
+
+# Run hot so the float-list reads and writes below are answered by the
+# compiled tier. Each round starts from a fresh list, so the printed
+# numbers are the same whatever the round count is.
+var float_list = []
 var sum = 0.0
-iter var j = 0; j < float_list.length(); j++ {
-  float_list[j] = float_list[j] + 0.5
-  sum = sum + float_list[j]
+iter var r = 0; r < 40000; r++ {
+  float_list = build_floats(50)
+  sum = bump_and_sum(float_list)
 }
 
 echo "Float list length: ${float_list.length()}"

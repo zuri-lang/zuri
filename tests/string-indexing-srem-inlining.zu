@@ -1,9 +1,20 @@
 var message = "antigravity"
 var len = message.length()
 
+def collect_chars(text) {
+  var out = []
+  iter var i = 0; i < text.length(); i++ {
+    out.append(text[i])
+  }
+  return out
+}
+
+# Run hot so the compiled tier's string indexing is what fills the list.
+# Every round rebuilds from the same string, so the result does not depend
+# on how many rounds run; only on `message`.
 var char_codes = []
-iter var i = 0; i < len; i++ {
-  char_codes.append(message[i])
+iter var r = 0; r < 100000; r++ {
+  char_codes = collect_chars(message)
 }
 
 # Hardware srem test (including negative values)
@@ -19,7 +30,9 @@ def leaf_increment(step) {
   return global_counter
 }
 
-iter var k = 0; k < 10; k++ {
+# Ten calls never reached the compiled tier, so the leaf-call inlining
+# this fixture is named for went unexercised.
+iter var k = 0; k < 200000; k++ {
   leaf_increment(k)
 }
 

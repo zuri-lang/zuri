@@ -1,4 +1,6 @@
-var s = "100"
+# Raised so the loop outlasts the background compile; at the old count
+# the script exited before the compiled entry was ever installed.
+var s = "200000"
 var num = s.to_number()
 
 var text = "sample_string_data"

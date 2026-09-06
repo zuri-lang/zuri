@@ -74,7 +74,11 @@ var setter = pair[1]
 
 var i = 0
 var errors = 0
-var n = 15000
+# Large enough for the background compile to land and be installed
+# while the loop is still running: at 15000 the script finished first,
+# so the JIT's own field-store write-barrier fast paths (the thing this
+# fixture exists to stress) never executed at all.
+var n = 100000
 
 while i < n {
   # Churn throwaway garbage between mutations; forces many minor

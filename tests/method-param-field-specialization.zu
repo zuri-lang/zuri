@@ -22,6 +22,9 @@ class Calculator {
 }
 
 var calc = Calculator(2.5, 10.0)
-calc.runLoop(200)
+# 200 rounds never reached the compiled tier, which left the whole point
+# of this fixture (self.field access specialization inside a compiled
+# method) untested.
+calc.runLoop(200000)
 
 echo "Calculated sum: ${calc.resultSum}"

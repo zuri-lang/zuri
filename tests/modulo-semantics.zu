@@ -1,0 +1,113 @@
+# `%` in Zuri is a TRUNCATED remainder that carries the sign of the
+# dividend (see value::num_rem), not a floored modulo. The JIT used to
+# apply a floored correction on top of Cranelift's `srem`, so every
+# negative dividend came back wrong once the code was compiled, and the
+# inlined copy of the same operation had no guards at all: a fractional
+# operand lost its fraction, a negative divisor came back mangled, and
+# a zero divisor killed the process with SIGFPE.
+#
+# The loops below are large on purpose. Compilation happens on a
+# background thread, and none of this reproduces until the compiled
+# entry is actually installed.
+
+def m(a, b) {
+  return a % b
+}
+
+# Padded past the inline budget so the out-of-line Mod path is exercised
+# too; the inlined and non-inlined paths are separate pieces of codegen
+# and both had the bug.
+def m_big(a, b) {
+  var t = 0
+  t = t + 1
+  t = t + 2
+  t = t + 3
+  t = t + 4
+  t = t + 5
+  t = t + 6
+  t = t + 7
+  t = t + 8
+  t = t + 9
+  t = t + 10
+  t = t + 11
+  t = t + 12
+  t = t + 13
+  t = t + 14
+  t = t + 15
+  t = t + 16
+  t = t + 17
+  t = t + 18
+  t = t + 19
+  t = t + 20
+  if t < 0 {
+    return t
+  }
+  return a % b
+}
+
+# Warm both shapes with ordinary positive integers, the way real code
+# reaches the compiled tier, before asking any of the hard questions.
+var sink = 0
+iter var i = 0; i < 200000; i++ {
+  sink = sink + m(i, 7) + m_big(i, 7)
+}
+
+echo '-- inlined --'
+echo m(17, 5)
+echo m(-17, 5)
+echo m(17, -5)
+echo m(-17, -5)
+echo m(-1, 3)
+echo m(-6, 4)
+echo m(6, 4)
+echo m(0, 5)
+# NOTE: a `-0.0` DIVIDEND is deliberately not tested here. Negative zero
+# loses its sign under the JIT before `%` is ever reached (`-1.0 * 0.0`
+# alone prints `0` compiled and `-0` interpreted), so a case built on one
+# would be testing that separate defect rather than this one. A zero
+# RESULT from a negative dividend is covered below, and does hold.
+
+echo '-- out of line --'
+echo m_big(17, 5)
+echo m_big(-17, 5)
+echo m_big(17, -5)
+echo m_big(-17, -5)
+echo m_big(-1, 3)
+echo m_big(-6, 4)
+echo m_big(6, 4)
+
+echo '-- sign of zero --'
+# A zero remainder carries the DIVIDEND's sign, which is the one case
+# plain `srem` cannot express, so these two are not the same value.
+echo m(-4, 2)
+echo m(4, 2)
+echo m_big(-4, 2)
+echo m_big(4, 2)
+echo m(-9, 3)
+echo m(9, 3)
+
+echo '-- fractional operands --'
+# The integer fast path must not claim these; the fraction has to survive.
+echo m(-2.5, 2)
+echo m(2.5, 2)
+echo m(5.5, 2.5)
+echo m(-5.5, 2.5)
+echo m_big(-2.5, 2)
+echo m_big(2.5, 2)
+
+echo '-- zero divisor is NaN, not a crash --'
+echo m(5, 0)
+echo m(-5, 0)
+echo m(0, 0)
+echo m_big(5, 0)
+echo m_big(-5, 0)
+
+echo '-- literal folding at top level --'
+echo 17 % 5
+echo -17 % 5
+echo -17 % -5
+echo -6 % 4
+
+echo '-- large magnitudes --'
+echo m(9007199254740993, 10)
+echo m(-9007199254740993, 10)

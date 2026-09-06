@@ -6,7 +6,9 @@ class Box {
 
 var d = {}
 var keys = []
-var n = 20000
+# Raised so the loop outlasts the background compile; at the old count
+# the script exited before the compiled entry was ever installed.
+var n = 200000
 
 iter var i = 0; i < n; i++ {
   var k = Box(i)

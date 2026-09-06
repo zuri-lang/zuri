@@ -13,7 +13,16 @@ class Box {
   }
 }
 
-var n = 8000
+# This one is deliberately NOT raised to the point where `@.script`
+# itself gets compiled. Doing so trips a separate, pre-existing bug: at
+# n=100000 the top-level `iter` loop below dies with "cannot call object
+# of type range" under the JIT while the interpreter runs it fine, and
+# the same failure reproduces on binaries predating this fixture's last
+# change. Until that is fixed, raising the count here would just turn
+# this fixture red for a reason that has nothing to do with what it
+# tests. The callback natives it targets are still exercised; it is only
+# the compiled-`@.script` variant that is out of reach.
+var n = 50000
 var errors = 0
 
 # --- list ---
