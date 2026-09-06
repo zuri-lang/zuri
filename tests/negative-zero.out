@@ -1,0 +1,29 @@
+-- negation --
+-0
+-0
+-0
+-5
+-0
+-0
++0
+-5
+5
+-- division and remainder --
+-0
++0
+-0
+-0
++0
+-- addition and subtraction follow IEEE --
++0
++0
+-0
+-0
+-- surviving list storage --
+300000
+-0
+-0
+-- printed form --
+-0
+0
+-0

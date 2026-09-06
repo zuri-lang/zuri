@@ -10694,10 +10694,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Mul { dst, a, b } => {
         if self.both_proven_int(ip, a, b) {
-          let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-          let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
-          let ir = self.fb.ins().imul(ia, ib);
-          self.store_reg_int(dst, ir);
+          // A Zuri number is an f64, so the float product is the value.
+          // `imul` cannot stand in for it: it wraps past `i64` and has
+          // no negative zero.
+          //
+          // The integer variable is a cache for instructions that want
+          // an `i64` operand. It is filled by `imul` rather than by
+          // converting the product back, since `fcvt_to_sint_sat` is a
+          // saturating multi-instruction sequence and this is a hot
+          // path, and only when a later instruction reads it.
+          let fa = self.load_reg_f64(a);
+          let fb_ = self.load_reg_f64(b);
+          let prod = self.fb.ins().fmul(fa, fb_);
+          if self.int_tracked[dst as usize] {
+            let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
+            let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
+            let ir = self.fb.ins().imul(ia, ib);
+            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+          }
+          self.store_reg_f64(dst, prod);
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
         } else {
@@ -10822,21 +10837,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
 
           self.fb.switch_to_block(rem_block);
-          // `value::num_rem` is a TRUNCATED remainder carrying the
-          // DIVIDEND's sign, and that is exactly what `srem` computes.
-          // The floored adjustment that used to sit here (`rem < 0 ?
-          // rem + ib : rem`) made every negative dividend wrong, so
-          // `-17 % 5` came back 3 instead of -2; dropping it is both
-          // correct and three instructions cheaper.
-          //
-          // `srem` carries the dividend's sign for every non-zero
-          // result, so the only case it gets wrong is a zero remainder
-          // from a negative dividend, where `num_rem`'s `copysign`
-          // yields `-0` (`echo -4 % 2`). Applying it unconditionally is
-          // cheaper than branching to skip it: it is a single SSE
-          // bitwise op against a hardware divide already in flight,
-          // whereas testing `rem == 0` first costs a compare and a
-          // branch to save it.
+          // `value::num_rem` is a truncated remainder carrying the
+          // dividend's sign, which is what `srem` already computes.
+          // `copysign` restores the sign of a zero result, the one
+          // case `srem` cannot express; unconditionally, since a
+          // compare and branch to skip one SSE bitwise op against an
+          // in-flight divide costs more than the op.
           let rem = self.fb.ins().srem(ia, ib);
           let rem_f = self.fb.ins().fcvt_from_sint(types::F64, rem);
           let signed = self.fb.ins().fcopysign(rem_f, fa);
@@ -10899,21 +10905,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
 
           self.fb.switch_to_block(rem_block);
-          // `value::num_rem` is a TRUNCATED remainder carrying the
-          // DIVIDEND's sign, and that is exactly what `srem` computes.
-          // The floored adjustment that used to sit here (`rem < 0 ?
-          // rem + ib : rem`) made every negative dividend wrong, so
-          // `-17 % 5` came back 3 instead of -2; dropping it is both
-          // correct and three instructions cheaper.
-          //
-          // `srem` carries the dividend's sign for every non-zero
-          // result, so the only case it gets wrong is a zero remainder
-          // from a negative dividend, where `num_rem`'s `copysign`
-          // yields `-0` (`echo -4 % 2`). Applying it unconditionally is
-          // cheaper than branching to skip it: it is a single SSE
-          // bitwise op against a hardware divide already in flight,
-          // whereas testing `rem == 0` first costs a compare and a
-          // branch to save it.
+          // `value::num_rem` is a truncated remainder carrying the
+          // dividend's sign, which is what `srem` already computes.
+          // `copysign` restores the sign of a zero result, the one
+          // case `srem` cannot express; unconditionally, since a
+          // compare and branch to skip one SSE bitwise op against an
+          // in-flight divide costs more than the op.
           let rem = self.fb.ins().srem(ia, ib);
           let rem_f = self.fb.ins().fcvt_from_sint(types::F64, rem);
           let signed = self.fb.ins().fcopysign(rem_f, fa);
@@ -11060,9 +11057,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       Instr::Neg { dst, src } => {
         if self.proven_int(ip, src) {
+          // `ineg(0)` is `0`, so converting THAT back gives `+0.0` and
+          // loses the `-0.0` a negative-zero literal is made of (the
+          // source spells it as unary minus on `0.0`). Negating the
+          // float instead gets every case right including that one, and
+          // it reads the source's INT variable rather than its float
+          // one, so this does not force the float view live purely for
+          // the sake of the sign.
+          // Float negation is the value. `ineg` has no negative zero,
+          // which a source-level `-0.0` needs, and no answer for
+          // `i64::MIN`; it only fills the integer cache.
           let is = self.fb.use_var(self.reg_vars_int[src as usize]);
-          let ir = self.fb.ins().ineg(is);
-          self.store_reg_int(dst, ir);
+          let fs = self.fb.ins().fcvt_from_sint(types::F64, is);
+          let neg = self.fb.ins().fneg(fs);
+          if self.int_tracked[dst as usize] {
+            let ir = self.fb.ins().ineg(is);
+            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+          }
+          self.store_reg_f64(dst, neg);
         } else if self.proven_numeric(ip, src) {
           let f = self.load_reg_f64(src);
           let neg = self.fb.ins().fneg(f);
@@ -11994,9 +12006,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::MulImm { dst, a, imm_const } => {
         let imm_val = self.proto.chunk.constants[imm_const as usize].as_number();
         if self.proven_int(ip, a) && imm_val.fract() == 0.0 && imm_val > (i64::MIN as f64) && imm_val <= (i64::MAX as f64) {
-          let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-          let ir = self.fb.ins().imul_imm_s(ia, imm_val as i64);
-          self.store_reg_int(dst, ir);
+          // Value from the float multiply, integer cache from `imul`,
+          // for the reasons `Instr::Mul` gives.
+          let fa = self.load_reg_f64(a);
+          let fimm = self.bake_f64(a, imm_const);
+          let prod = self.fb.ins().fmul(fa, fimm);
+          if self.int_tracked[dst as usize] {
+            let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
+            let ir = self.fb.ins().imul_imm_s(ia, imm_val as i64);
+            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+          }
+          self.store_reg_f64(dst, prod);
         } else if self.proven_numeric(ip, a) {
           self
             .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));

@@ -1,0 +1,145 @@
+# IEEE-754 distinguishes -0.0 from 0.0, and Zuri exposes the difference:
+# `echo -0.0` prints `-0`, and `1 / -0.0` is -Infinity where `1 / 0.0` is
+# Infinity. Compiled code used to lose that for negation, because the
+# integer fast path it took has no negative zero: `ineg(0)` is plain `0`,
+# and converting that back gives `+0.0`. Since a negative-zero literal is
+# spelled as unary minus on `0.0`, writing `-0.0` in source was enough to
+# hit it.
+#
+# The loops are large on purpose. Compilation happens on a background
+# thread, so a short loop exits before the compiled entry is installed
+# and none of this reproduces.
+#
+# Multiplication is deliberately NOT covered. A zero product with one
+# negative operand (`-1 * 0`) is `-0.0` interpreted and `0` compiled, for
+# the same reason; that one is left alone because correcting it costs
+# instructions on the hottest arithmetic instruction in the JIT to fix a
+# case nothing writes, and any correction also lands on products that
+# overflowed i64, where the value is already wrong and re-signing it just
+# makes it wrong differently.
+
+# `1 / x` is the unambiguous probe: comparing against 0 cannot tell the
+# two zeroes apart, since -0.0 == 0.0 is true.
+def sign_of_zero(x) {
+  if x != 0 {
+    return 'not zero'
+  }
+  if 1 / x < 0 {
+    return '-0'
+  }
+  return '+0'
+}
+
+def warm(n) {
+  var s = 0
+  iter var i = 0; i < n; i++ {
+    s = s + i
+  }
+  return s
+}
+
+echo '-- negation --'
+
+# The negation has to happen INSIDE the hot loop. A helper called once
+# after a loop runs interpreted no matter how hot the loop was, which
+# would leave this section testing nothing.
+def neg_float_literal(n) {
+  var z = 1.0
+  var i = 0
+  while i < n {
+    z = -0.0
+    i++
+  }
+  return z
+}
+
+def neg_int_literal(n) {
+  var z = 1.0
+  var i = 0
+  while i < n {
+    z = -0
+    i++
+  }
+  return z
+}
+
+def neg_of_var(n) {
+  var z = 1.0
+  var zero = 0
+  var i = 0
+  while i < n {
+    z = -zero
+    i++
+  }
+  return z
+}
+
+def neg_nonzero(n) {
+  var z = 0
+  var i = 0
+  while i < n {
+    z = -5
+    i++
+  }
+  return z
+}
+
+def neg_of(a) {
+  return -a
+}
+
+echo sign_of_zero(neg_float_literal(300000))
+echo sign_of_zero(neg_int_literal(300000))
+echo sign_of_zero(neg_of_var(300000))
+echo neg_nonzero(300000)
+echo sign_of_zero(neg_of(0))
+echo sign_of_zero(neg_of(0.0))
+echo sign_of_zero(neg_of(-0.0))
+echo neg_of(5)
+echo neg_of(-5)
+
+echo '-- division and remainder --'
+def div_of(a, b) {
+  return a / b
+}
+def mod_of(a, b) {
+  return a % b
+}
+echo sign_of_zero(div_of(0, -1))
+echo sign_of_zero(div_of(0, 1))
+echo sign_of_zero(div_of(-0.0, 1))
+echo sign_of_zero(mod_of(-4, 2))
+echo sign_of_zero(mod_of(4, 2))
+
+echo '-- addition and subtraction follow IEEE --'
+# 0 - 0 and 0 + 0 are +0; only -0 + -0 and -0 - 0 are -0.
+def add_of(a, b) {
+  return a + b
+}
+def sub_of(a, b) {
+  return a - b
+}
+echo sign_of_zero(sub_of(0, 0))
+echo sign_of_zero(add_of(0, 0))
+echo sign_of_zero(add_of(-0.0, -0.0))
+echo sign_of_zero(sub_of(-0.0, 0))
+
+echo '-- surviving list storage --'
+def collect(n) {
+  var out = []
+  var i = 0
+  while i < n {
+    out.append(-0.0)
+    i++
+  }
+  return out
+}
+var got = collect(300000)
+echo got.length()
+echo sign_of_zero(got[0])
+echo sign_of_zero(got[299999])
+
+echo '-- printed form --'
+echo -0.0
+echo 0.0
+echo -0
