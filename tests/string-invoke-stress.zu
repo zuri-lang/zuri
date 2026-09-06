@@ -54,7 +54,13 @@ def reused_register_length(flag) {
   return s.length()
 }
 
-var rounds = 5000
+/* Compilation runs on a background thread, so `rounds` has to buy
+ * enough wall-clock time for all four functions to come back compiled,
+ * not merely enough calls to cross the warm-up threshold. At 5000 the
+ * queue only drained for the first two, and under a parallel test run
+ * it drained for none, which quietly reduced this whole fixture to an
+ * interpreter test. */
+var rounds = 20000
 
 var s1 = 0
 iter var k = 0; k < rounds; k += 1 {

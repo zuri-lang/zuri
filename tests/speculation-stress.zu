@@ -1,3 +1,9 @@
+# The warm-up loops below are large on purpose. `f` and `h` are tiny, so
+# the call-count threshold alone is already ~280, and compilation then
+# runs on a background thread: a couple of hundred calls finish long
+# before the compiled entry is installed, which left this whole fixture
+# testing nothing but the interpreter.
+#
 # f gets warmed up and JIT-compiled while called ONLY with numbers,
 # so try_compile's one-shot sample should bet on `n` being numeric and
 # build a specialized body for it. Then we call it with a STRING,
@@ -9,7 +15,7 @@ def f(n) {
 }
 
 var i = 0
-while i < 200 {
+while i < 200000 {
   f(i)
   i = i + 1
 }
@@ -28,7 +34,7 @@ def g(n) {
 }
 
 var j = 0
-while j < 50 {
+while j < 5000 {
   g(10)
   j = j + 1
 }
@@ -50,7 +56,7 @@ def h(a, b) {
   return a + b
 }
 var k = 0
-while k < 200 {
+while k < 200000 {
   h(k, k)
   k = k + 1
 }
