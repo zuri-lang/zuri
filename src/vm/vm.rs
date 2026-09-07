@@ -1537,7 +1537,11 @@ impl VM {
   /// general/shared body's facts, since that body has no guard
   /// mechanism at all and would treat the bet as an unconditional truth
   /// instead of the guess it actually is.
-  fn resolve_self_numeric_fields(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
+  fn resolve_self_numeric_fields(
+    &self,
+    proto: &ObjFunction,
+    disproved: &rustc_hash::FxHashSet<String>,
+  ) -> rustc_hash::FxHashSet<String> {
     let mut numeric_fields = rustc_hash::FxHashSet::default();
     let Some(frame) = self.frames.last() else {
       return numeric_fields;
@@ -1554,6 +1558,9 @@ impl VM {
     let inst = self_val.as_instance();
     let class = inst.class.as_class();
     for (name, &slot) in &class.field_slots {
+      if disproved.contains(name) {
+        continue;
+      }
       if let Some(cell) = inst.fields.get(slot as usize) {
         if cell.get().is_number() {
           numeric_fields.insert(name.clone());
@@ -1563,8 +1570,19 @@ impl VM {
     numeric_fields
   }
 
-  fn resolve_all_numeric_fields(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
-    let mut seen_numeric = rustc_hash::FxHashSet::default();
+  /// Returns the fields every reachable instance agrees are numeric, along
+  /// with the fields that disproved themselves. A field that was ever seen
+  /// holding `nil` counts as disproof: `self.hash = nil` in a constructor
+  /// followed by a numeric write later is the common shape, and speculating
+  /// numeric on it means every read before that write deoptimizes.
+  fn resolve_all_numeric_fields(
+    &self,
+    proto: &ObjFunction,
+  ) -> (
+    rustc_hash::FxHashSet<String>,
+    rustc_hash::FxHashSet<String>,
+  ) {
+    let mut seen_numeric: rustc_hash::FxHashSet<String> = rustc_hash::FxHashSet::default();
     let mut seen_non_numeric = rustc_hash::FxHashSet::default();
 
     let mut inspect_instance = |inst: &crate::vm::object::ObjInstance| {
@@ -1574,7 +1592,7 @@ impl VM {
           let v = cell.get();
           if v.is_number() {
             seen_numeric.insert(name.clone());
-          } else if !v.is_nil() {
+          } else {
             seen_non_numeric.insert(name.clone());
           }
         }
@@ -1616,10 +1634,8 @@ impl VM {
       inspect_value(*val);
     }
 
-    seen_numeric
-      .into_iter()
-      .filter(|name| !seen_non_numeric.contains(name))
-      .collect()
+    seen_numeric.retain(|name| !seen_non_numeric.contains(name));
+    (seen_numeric, seen_non_numeric)
   }
 
   fn snapshot_global_lists(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
@@ -2081,10 +2097,11 @@ impl VM {
         }
       }
     }
+    let (all_numeric_fields, disproved_numeric_fields) = self.resolve_all_numeric_fields(proto);
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
-      self_numeric_fields: self.resolve_self_numeric_fields(proto),
-      numeric_fields: self.resolve_all_numeric_fields(proto),
+      self_numeric_fields: self.resolve_self_numeric_fields(proto, &disproved_numeric_fields),
+      numeric_fields: all_numeric_fields,
       param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
       globals_snapshot: self.snapshot_globals(proto),
@@ -2186,6 +2203,15 @@ impl VM {
       {
         self.pending_jit_compiles.swap_remove(pos);
       }
+    }
+  }
+
+  /// Name of the function whose frame is currently on top, for the JIT's
+  /// deopt logging. Only ever called behind `ZURI_JIT_LOG`.
+  pub(crate) fn current_function_name(&self) -> &str {
+    match self.frames.last() {
+      Some(frame) => unsafe { &*frame.function }.name.as_str(),
+      None => "<none>",
     }
   }
 

@@ -115,7 +115,7 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
-    eprintln!("[jit] deopt at ip {}", ip);
+    eprintln!("[jit] deopt in '{}' at ip {}", vm.current_function_name(), ip);
   }
   vm.pending_deopt_ip.set(ip as i64);
   OK
