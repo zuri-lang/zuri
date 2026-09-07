@@ -6779,6 +6779,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         Instr::Jmp { offset } | Instr::JmpIfFalse { offset, .. } => offset,
         _ => continue,
       };
+      // Offsets are signed: a negative one is a loop back edge, which this
+      // inliner deliberately does not handle (it emits no safepoint, and
+      // its path-cloning walk assumes a DAG). Rejecting it here also keeps
+      // the `as usize` below from sign-extending into a huge value.
+      if offset < 0 {
+        return false;
+      }
       let target = i + 1 + offset as usize;
       if target <= i || target >= code.len() {
         return false;
@@ -7086,10 +7093,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           consts[dst as usize] = None;
         },
         Instr::Jmp { offset } => {
+          // `invoke_inline_eligible` already rejected every negative offset.
+          debug_assert!(offset >= 0, "invoke inliner reached a backward jump");
           pc = pc + 1 + offset as usize;
           continue;
         },
         Instr::JmpIfFalse { cond, offset } => {
+          debug_assert!(offset >= 0, "invoke inliner reached a backward jump");
           let taken = pc + 1 + offset as usize;
           let fallthrough = pc + 1;
 

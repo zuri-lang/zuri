@@ -35,6 +35,29 @@ class Node {
     }
     return total
   }
+
+  # A method with a loop, i.e. a backward jump. The inliner must turn this
+  # away rather than trying to walk it: it emits no safepoint and its
+  # path-cloning walk assumes a DAG. Jump offsets are signed, so a back edge
+  # also has to be rejected before it is widened to an index.
+  looped_hash(times) {
+    var total = 0
+    iter var i = 0; i < times; i++ {
+      total += self.get_hash()
+    }
+    return total
+  }
+
+  # Calls the looping method from a HOT site, which is what actually offers
+  # `looped_hash` to the inliner: the caller has to tier up before the
+  # inliner is ever consulted about its callees.
+  drive_loop(times) {
+    var total = 0
+    iter var i = 0; i < times; i++ {
+      total += self.looped_hash(2)
+    }
+    return total
+  }
 }
 
 class Doubled < Node {
@@ -93,3 +116,7 @@ def mixed(nodes, times) {
 }
 
 echo 'mixed total: ${mixed([unset, set, sub], 100_000)}'
+
+# A callee containing a loop must be refused by the inliner, not walked.
+echo 'looped unset: ${unset.drive_loop(150_000)}'
+echo 'looped set: ${set.drive_loop(150_000)}'

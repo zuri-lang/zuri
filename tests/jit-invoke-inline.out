@@ -7,3 +7,5 @@ subclass unset: -2
 subclass set: 100
 subclass sum: 20000000
 mixed total: 14000000
+looped unset: -300000
+looped set: 12300000

@@ -38,7 +38,6 @@ use crate::vm::object::{
   write_barrier,
 };
 
-#[cfg(not(debug_assertions))]
 use crate::vm::object::ListStorage;
 
 // Visible at `pub(crate)` (not just private) because the Cranelift JIT
@@ -374,15 +373,34 @@ impl Value {
   pub fn bytes_len(&self) -> usize {
     debug_assert!(self.is_bytes());
     match unsafe { &*self.as_obj() } {
-      Obj::Bytes(b) => b.borrow().len(),
+      Obj::Bytes(b) => {
+        // SAFETY: nothing in this VM holds a live Ref/RefMut on a bytes
+        // object across a re-entrant call into anything that could touch
+        // the SAME object, and execution is single-threaded, so bypassing
+        // RefCell's runtime flag cannot observe real aliasing. The
+        // `debug_assert` keeps that invariant honest without letting the
+        // two build profiles run different code.
+        debug_assert!(b.try_borrow().is_ok(), "bytes_len over a live borrow");
+        let vec_ref: &Vec<u8> = unsafe { &*b.as_ptr() };
+        vec_ref.len()
+      },
       _ => unreachable!("bytes_len() called on a non-bytes Value"),
     }
   }
 
+  /// The bytes counterpart of `list_get`, and released from `RefCell`'s
+  /// runtime flag for the same reason and under the same conditions: a
+  /// borrow-flag check and its branch per byte is real cost on any loop
+  /// walking a buffer, and there is no aliasing for the flag to catch.
   pub fn bytes_get(&self, index: usize) -> Option<u8> {
     debug_assert!(self.is_bytes());
     match unsafe { &*self.as_obj() } {
-      Obj::Bytes(b) => b.borrow().get(index).copied(),
+      Obj::Bytes(b) => {
+        // SAFETY: see `bytes_len`.
+        debug_assert!(b.try_borrow().is_ok(), "bytes_get over a live borrow");
+        let vec_ref: &Vec<u8> = unsafe { &*b.as_ptr() };
+        vec_ref.get(index).copied()
+      },
       _ => unreachable!("bytes_get() called on a non-bytes Value"),
     }
   }
@@ -394,12 +412,20 @@ impl Value {
   pub fn bytes_set(&self, index: usize, value: u8) -> bool {
     debug_assert!(self.is_bytes());
     match unsafe { &*self.as_obj() } {
-      Obj::Bytes(b) => match b.borrow_mut().get_mut(index) {
-        Some(slot) => {
-          *slot = value;
-          true
-        },
-        None => false,
+      Obj::Bytes(b) => {
+        // SAFETY: see `bytes_len`.
+        debug_assert!(
+          b.try_borrow_mut().is_ok(),
+          "bytes_set over a live borrow"
+        );
+        let vec_ref: &mut Vec<u8> = unsafe { &mut *b.as_ptr() };
+        match vec_ref.get_mut(index) {
+          Some(slot) => {
+            *slot = value;
+            true
+          },
+          None => false,
+        }
       },
       _ => unreachable!("bytes_set() called on a non-bytes Value"),
     }
@@ -425,20 +451,15 @@ impl Value {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
       Obj::List(items) => {
-        #[cfg(debug_assertions)]
-        {
-          items.borrow().len()
-        }
-        #[cfg(not(debug_assertions))]
         // SAFETY: nothing in this VM holds a live Ref/RefMut on a List
         // across a re-entrant call into anything that could touch the
         // SAME list, and execution is single-threaded, so bypassing
-        // RefCell's runtime flag can't observe real aliasing. Checked
-        // via the ordinary borrow() above in debug builds.
-        {
-          let vec_ref: &ListStorage = unsafe { &*items.as_ptr() };
-          vec_ref.len()
-        }
+        // RefCell's runtime flag cannot observe real aliasing. The
+        // `debug_assert` keeps that invariant honest without letting the
+        // two build profiles run different code.
+        debug_assert!(items.try_borrow().is_ok(), "list_len over a live borrow");
+        let vec_ref: &ListStorage = unsafe { &*items.as_ptr() };
+        vec_ref.len()
       },
       _ => unreachable!("list_len() called on a non-list Value"),
     }
@@ -448,15 +469,10 @@ impl Value {
     debug_assert!(self.is_list());
     match unsafe { &*self.as_obj() } {
       Obj::List(items) => {
-        #[cfg(debug_assertions)]
-        {
-          items.borrow().get(index).copied()
-        }
-        #[cfg(not(debug_assertions))]
-        {
-          let vec_ref: &ListStorage = unsafe { &*items.as_ptr() };
-          vec_ref.get(index).copied()
-        }
+        // SAFETY: see `list_len`.
+        debug_assert!(items.try_borrow().is_ok(), "list_get over a live borrow");
+        let vec_ref: &ListStorage = unsafe { &*items.as_ptr() };
+        vec_ref.get(index).copied()
       },
       _ => unreachable!("list_get() called on a non-list Value"),
     }
@@ -466,26 +482,18 @@ impl Value {
     debug_assert!(self.is_list());
     let ok = match unsafe { &*self.as_obj() } {
       Obj::List(items) => {
-        #[cfg(debug_assertions)]
-        {
-          match items.borrow_mut().get_mut(index) {
-            Some(slot) => {
-              *slot = value;
-              true
-            },
-            None => false,
-          }
-        }
-        #[cfg(not(debug_assertions))]
-        {
-          let vec_ref: &mut ListStorage = unsafe { &mut *items.as_ptr() };
-          match vec_ref.get_mut(index) {
-            Some(slot) => {
-              *slot = value;
-              true
-            },
-            None => false,
-          }
+        // SAFETY: see `list_len`.
+        debug_assert!(
+          items.try_borrow_mut().is_ok(),
+          "list_set over a live borrow"
+        );
+        let vec_ref: &mut ListStorage = unsafe { &mut *items.as_ptr() };
+        match vec_ref.get_mut(index) {
+          Some(slot) => {
+            *slot = value;
+            true
+          },
+          None => false,
         }
       },
       _ => unreachable!("list_set() called on a non-list Value"),
