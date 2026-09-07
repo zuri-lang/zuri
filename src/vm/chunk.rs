@@ -578,6 +578,15 @@ pub struct FieldCacheCell {
 pub struct InvokeCacheCell {
   pub key: Cell<u64>,
   pub payload: Cell<u64>,
+  /// The callee's compiled entry point, or `0` when it has none yet.
+  ///
+  /// Carrying it here is what lets generated code skip
+  /// `zuri_jit_invoke_prepare` altogether on a hit: with the class key,
+  /// the resolved closure and its entry all readable from one cell, the
+  /// only thing left to call is the lean frame setup. `repr(C)` above is
+  /// load-bearing for that; `jit::codegen` addresses these three fields by
+  /// fixed offset.
+  pub entry: Cell<u64>,
 }
 
 /// One shape an `Instr::CheckParamType` may demand; deliberately a

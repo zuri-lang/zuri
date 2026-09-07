@@ -6667,6 +6667,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       return;
     }
 
+    if self.emit_invoke_ic(ip, dst, obj, method_const, num_args) {
+      return;
+    }
+
     self.emit_invoke_helper(ip, dst, obj, method_const, num_args);
   }
 
@@ -6674,6 +6678,135 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `zuri_jit_invoke_prepare` attempt, falling back to the full
   /// `zuri_jit_invoke` resolver. Also the guard-miss arm of
   /// `emit_invoke_inline`.
+  /// The whole point of `chunk::InvokeCacheCell` carrying an entry: once a
+  /// call site has been prepared once, generated code can take the call
+  /// itself instead of going back through `zuri_jit_invoke_prepare` on
+  /// every single invoke.
+  ///
+  /// Emits, inline: receiver is an `Obj::Instance`, its class is bit-equal
+  /// to the cell's key, and the cell holds a compiled entry. On a hit the
+  /// only call left is `zuri_jit_direct_call_prepare`, which just checks
+  /// depth and sets up the frame; the resolution, the shape checks, the
+  /// stabilization and the closure/proto/entry chase all disappear. Any
+  /// miss falls through to `emit_invoke_helper`, which resolves for real
+  /// and repopulates the cell.
+  ///
+  /// The class-key check is exactly the one `zuri_jit_invoke_prepare`
+  /// already performs, so this moves that test rather than weakening it;
+  /// `Chunk::invoke_cache`'s own docs cover the relocation hazard the key
+  /// carries, unchanged either way. Reading `payload` is safe because
+  /// `invoke_prepare` now writes the cell only after
+  /// `ensure_stable_for_compiled_entry` has promoted the closure out of
+  /// the nursery.
+  ///
+  /// Returns `false` when the chunk has no cell for this position, leaving
+  /// the caller to emit the ordinary path alone.
+  fn emit_invoke_ic(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+  ) -> bool {
+    let Some(cell) = self.proto.chunk.invoke_cache_cell(ip) else {
+      return false;
+    };
+    let cell_addr = cell as *const _ as u64;
+
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let vm_p = self.vm_param;
+    let base = self.base_param;
+    let receiver = self.load_reg(obj + 1);
+    let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
+    let cell_ptr = self.u64c(cell_addr);
+
+    let miss_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let obj_block = self.fb.create_block();
+    let inst_block = self.fb.create_block();
+    let key_block = self.fb.create_block();
+    let entry_block = self.fb.create_block();
+
+    let is_obj = self.is_obj(receiver);
+    self.fb.ins().brif(is_obj, obj_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(receiver);
+    let tag = self.obj_tag(ptr);
+    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+    self
+      .fb
+      .ins()
+      .brif(is_instance, inst_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(inst_block);
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_val = self.fb.ins().load(types::I64, flags, ptr, class_off);
+    let key = self.fb.ins().load(types::I64, flags, cell_ptr, 0);
+    let key_hit = self.fb.ins().icmp(IntCC::Equal, class_val, key);
+    self.fb.ins().brif(key_hit, key_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(key_block);
+    let entry = self.fb.ins().load(types::I64, flags, cell_ptr, 16);
+    let zero = self.i64c(0);
+    let has_entry = self.fb.ins().icmp(IntCC::NotEqual, entry, zero);
+    self
+      .fb
+      .ins()
+      .brif(has_entry, entry_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(entry_block);
+    let method_bits = self.fb.ins().load(types::I64, flags, cell_ptr, 8);
+    // `1 + num_args`: the receiver occupies the callee's register 0, the
+    // same convention `zuri_jit_invoke_prepare` uses.
+    let direct_num_args = self.i64c(num_args as i64 + 1);
+    let dst_i = self.idx(dst);
+    let ok = self.call_helper(
+      "zuri_jit_direct_call_prepare",
+      &[vm_p, method_bits, new_base, direct_num_args, dst_i],
+    );
+    self.refresh_regs();
+    let prepared = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
+    let call_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(prepared, call_block, &[], miss_block, &[]);
+
+    self.fb.switch_to_block(call_block);
+    let neg1 = self.fb.ins().iconst(types::I32, -1);
+    let sig = self.entry_sig_ref();
+    let [a0, a1, a2, a3] = self.load_call_arg_values(obj + 1, num_args + 1);
+    self.flush_live(ip);
+    let call = self.fb.ins().call_indirect(
+      sig,
+      entry,
+      &[vm_p, new_base, method_bits, neg1, a0, a1, a2, a3],
+    );
+    let ret_bits = self.fb.inst_results(call)[0];
+    self.reload_live(ip);
+    self.refresh_regs();
+    let base = self.base_param;
+    let dst_i = self.idx(dst);
+    self.call_checked(
+      "zuri_jit_call_finish",
+      &[self.vm_param, base, dst_i, new_base, ret_bits],
+    );
+    self.resync_dst_from_memory(dst);
+    self.fb.ins().jump(done_block, &[]);
+
+    // Cold: first execution of this site, a receiver of a different class,
+    // or a callee not compiled yet. Resolves for real and refills the cell.
+    self.fb.switch_to_block(miss_block);
+    self.emit_invoke_helper(ip, dst, obj, method_const, num_args);
+    self.fb.ins().jump(done_block, &[]);
+
+    self.fb.switch_to_block(done_block);
+    true
+  }
+
   fn emit_invoke_helper(&mut self, ip: usize, dst: u8, obj: u8, method_const: u16, num_args: u8) {
     let base = self.base_param;
     let vm_p = self.vm_param;

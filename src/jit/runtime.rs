@@ -910,17 +910,13 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
     .filter(|c| c.key.get() == class_bits)
     .map(|c| Value::from_bits(c.payload.get()));
 
-  let method = if let Some(m) = cached {
-    Some(m)
-  } else {
-    let method_name = Value::from_bits(method_name_bits);
-    let class = inst.class.as_class();
-    let resolved = class.methods.get(method_name.as_str()).copied();
-    if let (Some(m), Some(c)) = (resolved, cell) {
-      c.key.set(class_bits);
-      c.payload.set(m.to_bits());
-    }
-    resolved
+  let (method, was_cached) = match cached {
+    Some(m) => (Some(m), true),
+    None => {
+      let method_name = Value::from_bits(method_name_bits);
+      let class = inst.class.as_class();
+      (class.methods.get(method_name.as_str()).copied(), false)
+    },
   };
   let Some(method) = method else {
     return 0;
@@ -931,11 +927,27 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   // See `zuri_jit_call_prepare`'s identical call for why this must
   // happen before `closure`/`proto` are derived.
   let method = vm.ensure_stable_for_compiled_entry(method);
+
   let closure = method.as_closure();
   let proto = closure.function.as_func();
   let Some(entry) = proto.jit.entry.get() else {
     return 0;
   };
+
+  // Populated only AFTER stabilization, and with the stabilized bits.
+  // `ensure_stable_for_compiled_entry` promotes a young closure by pinning
+  // it and running a real minor collection, which relocates it; a cell
+  // written before that call keeps the pre-move address, and the cell is
+  // not a GC root, so nothing ever updates it. Every later hit would then
+  // hand generated code a dangling closure pointer.
+  //
+  // The entry goes in alongside, which is what lets generated code take
+  // the whole call without coming back through here at all.
+  if !was_cached && let Some(c) = cell {
+    c.key.set(class_bits);
+    c.payload.set(method.to_bits());
+    c.entry.set(entry as usize as u64);
+  }
   // `1 + num_args`: the receiver the compiler already duplicated into
   // `obj + 1` occupies the callee's own register 0 ("self"): see
   // `Instr::Invoke`'s own doc comment in chunk.rs, and
