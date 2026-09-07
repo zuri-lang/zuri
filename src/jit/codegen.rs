@@ -899,6 +899,8 @@ struct FuncCompiler<'a, 'b> {
   guarded_instance_vars: FxHashMap<u8, (Variable, Variable, Variable)>,
   active_guarded: rustc_hash::FxHashSet<u8>,
   known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
+  /// See `jit::CompileFacts::self_method_protos`.
+  self_method_protos: FxHashMap<String, usize>,
   is_specialized_pass: bool,
   active_guarded_classes: FxHashMap<u8, u64>,
   shutdown: Option<&'a std::sync::atomic::AtomicBool>,
@@ -1365,6 +1367,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       guarded_instance_vars: FxHashMap::default(),
       active_guarded: rustc_hash::FxHashSet::default(),
       known_classes: facts.known_classes,
+      self_method_protos: facts.self_method_protos,
       is_specialized_pass: false,
       active_guarded_classes: FxHashMap::default(),
       shutdown,
@@ -6646,6 +6649,32 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       return;
     }
 
+    // A small accessor on the compiling function's own class becomes its
+    // own body rather than a call: see `invoke_inline_target`.
+    if let Some((class_bits, generation)) = self.self_class_bits
+      && let Some(callee) = self.invoke_inline_target(method_const, num_args)
+    {
+      self.emit_invoke_inline(
+        ip,
+        dst,
+        obj,
+        method_const,
+        num_args,
+        class_bits,
+        generation,
+        callee,
+      );
+      return;
+    }
+
+    self.emit_invoke_helper(ip, dst, obj, method_const, num_args);
+  }
+
+  /// `Instr::Invoke`'s ordinary out-of-line path: the inline-cache-style
+  /// `zuri_jit_invoke_prepare` attempt, falling back to the full
+  /// `zuri_jit_invoke` resolver. Also the guard-miss arm of
+  /// `emit_invoke_inline`.
+  fn emit_invoke_helper(&mut self, ip: usize, dst: u8, obj: u8, method_const: u16, num_args: u8) {
     let base = self.base_param;
     let vm_p = self.vm_param;
     let obj_i = self.idx(obj);
@@ -6666,6 +6695,433 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       "zuri_jit_invoke",
       &[vm_p, base, obj_i, num_args_i, dst_i, name, cache],
     );
+  }
+
+
+  /// How many bytecode ops an invoke-inlined accessor may have, and how
+  /// many branch points it may fork on. The body is emitted once per path,
+  /// so the fork budget is what bounds code growth.
+  const MAX_INVOKE_INLINE_OPS: usize = 16;
+  const MAX_INVOKE_INLINE_FORKS: u32 = 3;
+
+  /// Decides whether the method `method_const` names on the compiling
+  /// function's own class is a small enough accessor to emit inline at an
+  /// `Instr::Invoke` site instead of calling it.
+  ///
+  /// A deliberately separate judgement from `inline_plan`, which inlines
+  /// straight-line NUMERIC expressions and threads callee registers as
+  /// `f64` SSA values. An accessor like `get_hash()` is neither: it reads a
+  /// field of unknown type, compares it against `nil`, and branches. So
+  /// this works entirely in tagged `Value` bits and permits forward
+  /// branches, at the cost of admitting no arithmetic at all. Keeping the
+  /// two apart is also what stops this from perturbing the numeric
+  /// inlining `spectral-norm`'s `eval_A` depends on.
+  ///
+  /// The rules hold up three guarantees the emitter depends on:
+  ///
+  /// - **Cannot allocate, cannot call.** Every admitted opcode loads a
+  ///   scalar constant, copies a register, reads a field slot the class
+  ///   guard already proved, or compares against `nil`. None has a slow
+  ///   path, so no safepoint is owed and no collection can happen mid-body.
+  /// - **No back edges.** Every jump goes strictly forward, so the body is
+  ///   a DAG the emitter walks by cloning register state down each path.
+  /// - **Every path returns.** Nothing falls out of the body, which is what
+  ///   removes the need for phi nodes over callee registers; the only merge
+  ///   is the single result block.
+  fn invoke_inline_target(&self, method_const: u16, num_args: u8) -> Option<&'static ObjFunction> {
+    let name = self.proto.chunk.constants[method_const as usize];
+    if !name.is_string() {
+      return None;
+    }
+    let proto_ptr = *self.self_method_protos.get(name.as_str())?;
+    // SAFETY: `resolve_self_method_protos` read this off a live class on
+    // the VM thread, and an `ObjFunction` never moves or is freed while a
+    // compile referencing it is in flight; the same guarantee
+    // `try_emit_inlined_call` relies on for its own `proto_ptr`.
+    let callee: &'static ObjFunction = unsafe { &*(proto_ptr as *const ObjFunction) };
+
+    // The receiver occupies the callee's own register 0, so the real
+    // argument count is `1 + num_args`.
+    if callee.variadic
+      || callee.arity as usize != num_args as usize + 1
+      || !callee.upvalues.is_empty()
+      || callee.chunk.code.len() > Self::MAX_INVOKE_INLINE_OPS
+    {
+      return None;
+    }
+
+    if self.invoke_inline_eligible(callee) {
+      Some(callee)
+    } else {
+      if crate::jit::log_enabled() {
+        eprintln!(
+          "[jit] invoke-inline '{}' rejected: unsupported body",
+          callee.name
+        );
+      }
+      None
+    }
+  }
+
+  /// The opcode/CFG half of `invoke_inline_target`'s judgement.
+  fn invoke_inline_eligible(&self, callee: &ObjFunction) -> bool {
+    let code = &callee.chunk.code;
+    if !matches!(code.last(), Some(Instr::Return { .. })) {
+      return false;
+    }
+
+    // Collected first so the nil-comparison rule below can insist its
+    // `LoadNil` really does reach the compare, rather than merely sitting
+    // in front of it in the listing.
+    let mut is_target = vec![false; code.len()];
+    for (i, instr) in code.iter().enumerate() {
+      let offset = match *instr {
+        Instr::Jmp { offset } | Instr::JmpIfFalse { offset, .. } => offset,
+        _ => continue,
+      };
+      let target = i + 1 + offset as usize;
+      if target <= i || target >= code.len() {
+        return false;
+      }
+      is_target[target] = true;
+    }
+
+    // Registers proven to hold a bool, so a `JmpIfFalse` on one is a plain
+    // bit test rather than Zuri's general truthiness (under which a
+    // negative number is falsy; getting that wrong would silently change
+    // behaviour).
+    let mut is_bool = vec![false; callee.num_registers as usize];
+    // Registers holding a number known at compile time, which is what lets
+    // `Neg` be folded rather than needing a numeric guard of its own.
+    // `return -1` compiles to `LoadConst 1; Neg`, so without this every
+    // accessor with a negative literal would be turned away.
+    let mut const_num = vec![false; callee.num_registers as usize];
+    let mut forks = 0u32;
+
+    for (i, instr) in code.iter().enumerate() {
+      match *instr {
+        Instr::Return { .. } | Instr::Jmp { .. } => {},
+        Instr::LoadNil { dst } => {
+          let Some(b) = is_bool.get_mut(dst as usize) else {
+            return false;
+          };
+          *b = false;
+          const_num[dst as usize] = false;
+        },
+        Instr::LoadConst { dst, const_idx } => {
+          // A heap constant's bits are a pointer into the young
+          // generation, which relocates; only scalars are safe to bake.
+          let c = callee.chunk.constants[const_idx as usize];
+          if c.is_obj() {
+            return false;
+          }
+          let Some(b) = is_bool.get_mut(dst as usize) else {
+            return false;
+          };
+          *b = c.is_bool();
+          const_num[dst as usize] = c.is_number();
+        },
+        Instr::LoadBool { dst, .. } => {
+          let Some(b) = is_bool.get_mut(dst as usize) else {
+            return false;
+          };
+          *b = true;
+          const_num[dst as usize] = false;
+        },
+        Instr::Move { dst, src } => {
+          let v = *is_bool.get(src as usize).unwrap_or(&false);
+          let n = const_num[src as usize];
+          let Some(b) = is_bool.get_mut(dst as usize) else {
+            return false;
+          };
+          *b = v;
+          const_num[dst as usize] = n;
+        },
+        // Folded at compile time, so no numeric guard and no slow path.
+        Instr::Neg { dst, src } => {
+          if !const_num[src as usize] {
+            return false;
+          }
+          const_num[dst as usize] = true;
+          is_bool[dst as usize] = false;
+        },
+        // Only against `nil`, where tagged equality is a bit compare. Any
+        // other pair would need `Value::equals`, which is a call. The
+        // `LoadNil` has to be the instruction immediately before, and that
+        // instruction must not be reachable by a jump, so it genuinely
+        // dominates this compare on every path.
+        Instr::Eq { dst, a, b } | Instr::Neq { dst, a, b } => {
+          if i == 0 || is_target[i] || is_target[i - 1] {
+            return false;
+          }
+          let nil_reg = match code[i - 1] {
+            Instr::LoadNil { dst: n } => n,
+            _ => return false,
+          };
+          if nil_reg != a && nil_reg != b {
+            return false;
+          }
+          let Some(flag) = is_bool.get_mut(dst as usize) else {
+            return false;
+          };
+          *flag = true;
+          const_num[dst as usize] = false;
+        },
+        // Reading a field of the receiver, whose class the call site's
+        // guard has already pinned to the compiling function's own.
+        Instr::GetField {
+          dst,
+          obj,
+          name_const,
+        } => {
+          if obj != 0 {
+            return false;
+          }
+          let name = callee.chunk.constants[name_const as usize];
+          if !name.is_string() || !self.self_field_slots.contains_key(name.as_str()) {
+            return false;
+          }
+          let Some(b) = is_bool.get_mut(dst as usize) else {
+            return false;
+          };
+          *b = false;
+          const_num[dst as usize] = false;
+        },
+        Instr::JmpIfFalse { cond, .. } => {
+          if !*is_bool.get(cond as usize).unwrap_or(&false) {
+            return false;
+          }
+          forks += 1;
+          if forks > Self::MAX_INVOKE_INLINE_FORKS {
+            return false;
+          }
+        },
+        _ => return false,
+      }
+    }
+
+    true
+  }
+
+  /// `Instr::Invoke` emitted as the callee's own body, behind the same
+  /// receiver-class + method-table-generation guard `emit_self_invoke`
+  /// uses. See `invoke_inline_target` for what makes a callee eligible.
+  ///
+  /// The guard is what licenses everything the body then assumes: that the
+  /// receiver is an `Obj::Instance`, that its class resolves this name to
+  /// exactly `callee`, and that `self_field_slots` describes its layout. A
+  /// miss falls through to the ordinary helper path, which resolves for
+  /// real.
+  #[allow(clippy::too_many_arguments)]
+  fn emit_invoke_inline(
+    &mut self,
+    ip: usize,
+    dst: u8,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+    class_bits: u64,
+    generation: u64,
+    callee: &'static ObjFunction,
+  ) {
+    if crate::jit::log_enabled() {
+      eprintln!(
+        "[jit] invoke-inlined '{}' ({} ops) into '{}' at ip {}",
+        callee.name,
+        callee.chunk.code.len(),
+        self.proto.name,
+        ip
+      );
+    }
+
+    let vm_p = self.vm_param;
+    // The bytecode compiler already duplicated the receiver into `obj + 1`,
+    // which is the callee's own register 0.
+    let receiver = self.load_reg(obj + 1);
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.append_block_param(done_block, types::I64);
+
+    let obj_block = self.fb.create_block();
+    let class_check_block = self.fb.create_block();
+    let is_obj = self.is_obj(receiver);
+    self.fb.ins().brif(is_obj, obj_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(receiver);
+    let tag = self.obj_tag(ptr);
+    let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+    let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+    self
+      .fb
+      .ins()
+      .brif(is_instance, class_check_block, &[], slow_block, &[]);
+
+    self.fb.switch_to_block(class_check_block);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_val = self.fb.ins().load(types::I64, flags, ptr, class_off);
+    let target_class = self.u64c(class_bits);
+    let class_hit = self.fb.ins().icmp(IntCC::Equal, class_val, target_class);
+    let gen_check_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(class_hit, gen_check_block, &[], slow_block, &[]);
+
+    // A class can be monkey-patched after the fact; without this the baked
+    // method would outlive the resolution that justified it. Same reasoning
+    // as `emit_self_invoke`'s own generation check.
+    self.fb.switch_to_block(gen_check_block);
+    let cur_gen = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm_p, METHOD_TABLE_GENERATION_OFFSET);
+    let target_gen = self.u64c(generation);
+    let gen_hit = self.fb.ins().icmp(IntCC::Equal, cur_gen, target_gen);
+    let body_block = self.fb.create_block();
+    self.fb.ins().brif(gen_hit, body_block, &[], slow_block, &[]);
+
+    // Computed once here, in a block that dominates every path the body
+    // forks into.
+    self.fb.switch_to_block(body_block);
+    let fields_ptr = self.load_instance_fields_ptr(ptr);
+
+    let mut regs: Vec<IrValue> = Vec::with_capacity(callee.num_registers as usize);
+    let nil = self.u64c(crate::vm::value::NIL_VAL);
+    regs.resize(callee.num_registers as usize, nil);
+    regs[0] = receiver;
+    for i in 0..num_args {
+      regs[1 + i as usize] = self.load_reg(obj + 2 + i);
+    }
+
+    let consts = vec![None; callee.num_registers as usize];
+    self.emit_invoke_inline_path(callee, fields_ptr, regs, consts, 0, done_block);
+
+    self.fb.switch_to_block(slow_block);
+    self.emit_invoke_helper(ip, dst, obj, method_const, num_args);
+    let slow_result = self.load_reg(dst);
+    self.fb.ins().jump(done_block, &[slow_result.into()]);
+
+    self.fb.switch_to_block(done_block);
+    let result = self.fb.block_params(done_block)[0];
+    self.store_reg(dst, result);
+  }
+
+  /// Emits one straight-line path of an invoke-inlined body, forking into
+  /// two recursive calls at each `JmpIfFalse`. Register state is a plain
+  /// `Vec` of tagged `Value` bits cloned down each fork, which is sound
+  /// precisely because `invoke_inline_eligible` guarantees paths never
+  /// rejoin: nothing merges, so nothing needs a phi.
+  fn emit_invoke_inline_path(
+    &mut self,
+    callee: &'static ObjFunction,
+    fields_ptr: IrValue,
+    mut regs: Vec<IrValue>,
+    mut consts: Vec<Option<f64>>,
+    mut pc: usize,
+    done_block: Block,
+  ) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+
+    loop {
+      match callee.chunk.code[pc] {
+        Instr::Return { src } => {
+          let v = regs[src as usize];
+          self.fb.ins().jump(done_block, &[v.into()]);
+          return;
+        },
+        Instr::LoadNil { dst } => {
+          regs[dst as usize] = self.u64c(crate::vm::value::NIL_VAL);
+          consts[dst as usize] = None;
+        },
+        Instr::LoadBool { dst, val } => {
+          let bits = if val {
+            crate::vm::value::TRUE_VAL
+          } else {
+            crate::vm::value::FALSE_VAL
+          };
+          regs[dst as usize] = self.u64c(bits);
+          consts[dst as usize] = None;
+        },
+        Instr::LoadConst { dst, const_idx } => {
+          let c = callee.chunk.constants[const_idx as usize];
+          regs[dst as usize] = self.u64c(c.to_bits());
+          consts[dst as usize] = c.is_number().then(|| c.as_number());
+        },
+        Instr::Move { dst, src } => {
+          regs[dst as usize] = regs[src as usize];
+          consts[dst as usize] = consts[src as usize];
+        },
+        // `invoke_inline_eligible` only admits this on a register it
+        // already proved holds a compile-time number, so the negation
+        // happens here rather than at runtime.
+        Instr::Neg { dst, src } => {
+          let n = -consts[src as usize].expect("invoke_inline_eligible proved this constant");
+          regs[dst as usize] = self.u64c(crate::vm::value::Value::number(n).to_bits());
+          consts[dst as usize] = Some(n);
+        },
+        Instr::GetField { dst, name_const, .. } => {
+          let name = callee.chunk.constants[name_const as usize];
+          let slot = self.self_field_slots[name.as_str()];
+          regs[dst as usize] =
+            self
+              .fb
+              .ins()
+              .load(types::I64, flags, fields_ptr, (slot as i32) * 8);
+          consts[dst as usize] = None;
+        },
+        Instr::Eq { dst, a, b } | Instr::Neq { dst, a, b } => {
+          let negate = matches!(callee.chunk.code[pc], Instr::Neq { .. });
+          let cc = if negate {
+            IntCC::NotEqual
+          } else {
+            IntCC::Equal
+          };
+          let cmp = self.fb.ins().icmp(cc, regs[a as usize], regs[b as usize]);
+          let t = self.u64c(crate::vm::value::TRUE_VAL);
+          let f = self.u64c(crate::vm::value::FALSE_VAL);
+          regs[dst as usize] = self.fb.ins().select(cmp, t, f);
+          consts[dst as usize] = None;
+        },
+        Instr::Jmp { offset } => {
+          pc = pc + 1 + offset as usize;
+          continue;
+        },
+        Instr::JmpIfFalse { cond, offset } => {
+          let taken = pc + 1 + offset as usize;
+          let fallthrough = pc + 1;
+
+          let true_block = self.fb.create_block();
+          let false_block = self.fb.create_block();
+          let t = self.u64c(crate::vm::value::TRUE_VAL);
+          // `cond` is proven bool, so this is a bit test, not Zuri
+          // truthiness.
+          let is_true = self.fb.ins().icmp(IntCC::Equal, regs[cond as usize], t);
+          self
+            .fb
+            .ins()
+            .brif(is_true, true_block, &[], false_block, &[]);
+
+          self.fb.switch_to_block(true_block);
+          self.emit_invoke_inline_path(
+            callee,
+            fields_ptr,
+            regs.clone(),
+            consts.clone(),
+            fallthrough,
+            done_block,
+          );
+
+          self.fb.switch_to_block(false_block);
+          self.emit_invoke_inline_path(callee, fields_ptr, regs, consts, taken, done_block);
+          return;
+        },
+        _ => unreachable!("invoke_inline_eligible admitted an unsupported instruction"),
+      }
+      pc += 1;
+    }
   }
 
   /// `Instr::Invoke` when `typeflow::StringFacts` proves `obj` is

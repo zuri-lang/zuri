@@ -1,0 +1,9 @@
+unset hash: -1
+unset sum: -200000
+set hash: 41
+set sum: 8200000
+flipping total: 9999900000
+subclass unset: -2
+subclass set: 100
+subclass sum: 20000000
+mixed total: 14000000

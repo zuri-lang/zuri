@@ -1845,6 +1845,30 @@ impl VM {
   /// `proto` itself. Codegen uses this so any `Invoke` of this method,
   /// wherever the receiver register came from, can guard on the receiver's
   /// actual class matching this bit pattern at the call site.
+  /// Every method the compiling function's own class resolves, as
+  /// `name -> *const ObjFunction`. Safe to bake into compiled code only
+  /// behind the same class+method-table-generation guard `resolve_self_class`
+  /// backs, which is exactly what the invoke inliner puts in front of it.
+  fn resolve_self_method_protos(&self, proto: &ObjFunction) -> FxHashMap<String, usize> {
+    let mut out = FxHashMap::default();
+    let Some(class_name) = proto.owning_class_name.as_ref() else {
+      return out;
+    };
+    let Some((is_root, slot)) = self.resolve_global(proto.globals_module, class_name) else {
+      return out;
+    };
+    let class_val = self.read_resolved(proto.globals_module, is_root, slot);
+    if !class_val.is_class() {
+      return out;
+    }
+    for (name, m) in &class_val.as_class().methods {
+      if m.is_closure() {
+        out.insert(name.clone(), m.as_closure().function.as_func() as *const ObjFunction as usize);
+      }
+    }
+    out
+  }
+
   fn resolve_self_class(&self, proto: &ObjFunction) -> Option<(u64, u64)> {
     let class_name = proto.owning_class_name.as_ref()?;
     let (is_root, slot) = self.resolve_global(proto.globals_module, class_name)?;
@@ -2104,6 +2128,7 @@ impl VM {
       numeric_fields: all_numeric_fields,
       param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
+      self_method_protos: self.resolve_self_method_protos(proto),
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),
       speculative_lists,

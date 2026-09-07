@@ -1,0 +1,95 @@
+# Exercises the JIT's invoke inliner: a small accessor with a forward
+# branch, called from a method of the same class, far past the tier-up
+# threshold so the inlined body is what actually runs.
+#
+# The guards are the risky part, so this deliberately feeds the same call
+# site receivers of a subclass, and mutates the method table underneath a
+# hot loop, to make sure a guard miss falls back rather than returning the
+# baked answer.
+
+class Node {
+  @new(value) {
+    self.hash = nil
+    self.value = value
+  }
+
+  # The shape the inliner targets: GetField, nil compare, forward branch,
+  # a negative literal on one arm and a field read on the other.
+  get_hash() {
+    if self.hash == nil {
+      return -1
+    }
+    return self.hash
+  }
+
+  set_hash(h) {
+    self.hash = h
+  }
+
+  # Reads its own accessor in a hot loop, which is the call site that gets
+  # the inlined body.
+  sum_over(times) {
+    var total = 0
+    iter var i = 0; i < times; i++ {
+      total += self.get_hash()
+    }
+    return total
+  }
+}
+
+class Doubled < Node {
+  @new(value) {
+    parent(value)
+  }
+
+  get_hash() {
+    if self.hash == nil {
+      return -2
+    }
+    return self.hash * 2
+  }
+}
+
+var unset = Node(nil)
+echo 'unset hash: ${unset.get_hash()}'
+echo 'unset sum: ${unset.sum_over(200_000)}'
+
+var set = Node(7)
+set.set_hash(41)
+echo 'set hash: ${set.get_hash()}'
+echo 'set sum: ${set.sum_over(200_000)}'
+
+# The accessor flips answers mid-loop; the inlined body reads the field
+# each time rather than caching what it saw at compile time.
+var flipping = Node(0)
+var running = 0
+iter var i = 0; i < 200_000; i++ {
+  if i % 2 == 0 {
+    flipping.hash = nil
+  } else {
+    flipping.hash = i
+  }
+  running += flipping.get_hash()
+}
+echo 'flipping total: ${running}'
+
+# A subclass overrides get_hash, so the same call site must miss its class
+# guard and dispatch for real.
+var sub = Doubled(nil)
+echo 'subclass unset: ${sub.get_hash()}'
+sub.set_hash(50)
+echo 'subclass set: ${sub.get_hash()}'
+echo 'subclass sum: ${sub.sum_over(200_000)}'
+
+# Mixed receivers through the one hot call site.
+def mixed(nodes, times) {
+  var total = 0
+  iter var i = 0; i < times; i++ {
+    for n in nodes {
+      total += n.get_hash()
+    }
+  }
+  return total
+}
+
+echo 'mixed total: ${mixed([unset, set, sub], 100_000)}'

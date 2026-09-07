@@ -329,6 +329,15 @@ pub struct CompileFacts {
   pub speculative_lists: Option<u64>,
   pub speculative_ints: Option<u64>,
   pub known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
+  /// Method name -> the `ObjFunction` the COMPILING function's own class
+  /// resolves it to, for every method that class has. Only meaningful
+  /// alongside `self_class_bits`, whose class+generation guard is what
+  /// makes the mapping safe to bake in; see `emit_invoke_inline`.
+  ///
+  /// The pointer is to an `ObjFunction`, which never moves, so it stays
+  /// valid for the whole compile. The closure wrapping it is deliberately
+  /// not recorded: closures are young allocations that relocate.
+  pub self_method_protos: FxHashMap<String, usize>,
 }
 
 /// One construction site's compile-time view of the class it builds.
