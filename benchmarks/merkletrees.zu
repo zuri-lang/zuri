@@ -1,0 +1,105 @@
+/* The Computer Language Benchmarks Game
+ * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
+ *
+ * merkletrees Zuri #1 program
+ *
+ * contributed by Richard Ore
+ *
+ * A binary-trees variant that also hashes the tree it just allocated.
+ * Every leaf carries the value 1 and every branch caches the sum of its
+ * two children, so the root hash of a perfect tree of depth d is 2^d.
+ * The allocation profile is the same as binary-trees; the extra pass
+ * over the tree is what separates the two.
+ */
+
+class Node {
+  @new(value, left, right) {
+    self.hash = nil
+    self.value = value
+    self.left = left
+    self.right = right
+  }
+
+  /* Fill in this subtree's cached hash. Leaves hash to their own value,
+   * branches to the sum of their children. Already-hashed nodes are left
+   * alone so a long lived tree is only ever walked once. */
+  cal_hash() {
+    if self.hash != nil {
+      return
+    }
+
+    if self.value != nil {
+      self.hash = self.value
+      return
+    }
+
+    self.left.cal_hash()
+    self.right.cal_hash()
+    self.hash = self.left.get_hash() + self.right.get_hash()
+  }
+
+  get_hash() {
+    if self.hash == nil {
+      return -1
+    }
+    return self.hash
+  }
+
+  /* True when every node below this one has a cached hash. */
+  check() {
+    if self.hash == nil {
+      return false
+    }
+
+    if self.value != nil {
+      return true
+    }
+    return self.left.check() and self.right.check()
+  }
+}
+
+def create(depth) {
+  if depth > 0 {
+    var d = depth - 1
+    return Node(nil, create(d), create(d))
+  }
+  return Node(1, nil, nil)
+}
+
+var MIN_DEPTH = 4
+
+def main(n) {
+  var max_depth = n.max(MIN_DEPTH + 2)
+  var stretch_depth = max_depth + 1
+
+  var stretch_tree = create(stretch_depth)
+  stretch_tree.cal_hash()
+  echo 'stretch tree of depth ${stretch_depth}\t root hash: ' +
+    '${stretch_tree.get_hash()} check: ${stretch_tree.check()}'
+
+  var long_lived_tree = create(max_depth)
+
+  iter var depth = MIN_DEPTH; depth <= max_depth; depth += 2 {
+    var iterations = 1 << (max_depth - depth + MIN_DEPTH)
+    var sum = 0
+
+    iter var i = 0; i < iterations; i++ {
+      var tree = create(depth)
+      tree.cal_hash()
+      sum += tree.get_hash()
+    }
+
+    echo '${iterations}\t trees of depth ${depth}\t root hash sum: ${sum}'
+  }
+
+  long_lived_tree.cal_hash()
+  echo 'long lived tree of depth ${max_depth}\t root hash: ' +
+    '${long_lived_tree.get_hash()} check: ${long_lived_tree.check()}'
+}
+
+# 17 is the largest input the upstream merkletrees benchmark is configured
+# with. Depth 21, which binary-trees uses, takes minutes here.
+var start = time()
+main(17)
+
+echo '\nTotal time taken: ${time() - start}s'

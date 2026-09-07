@@ -1,0 +1,45 @@
+# '**' used to fall through to a placeholder that multiplied its operands,
+# the division-flavoured operators took the whole process down on a zero
+# divisor, '//' truncated instead of flooring, and to_string() handed back
+# the 'n'-suffixed repr rather than the plain digits.
+
+echo 2n ** 10n
+echo 10n ** 3n
+echo 2n ** 64n
+echo 0n ** 0n
+echo (-3n) ** 3n
+
+echo 7n // 2n
+echo (-7n) // 2n
+echo 7n // (-2n)
+echo (-8n) // 2n
+
+echo 7n / 2n
+echo (-7n) / 2n
+echo 7n % 3n
+
+def failure(fn) {
+  catch {
+    fn()
+    return 'no error raised'
+  } as e {
+    return e.message
+  }
+}
+
+echo failure(@{ return 1n / 0n })
+echo failure(@{ return 1n // 0n })
+echo failure(@{ return 1n % 0n })
+echo failure(@{ return 2n ** -1n })
+
+echo (123n).to_string()
+echo (-123n).to_string()
+echo (10n ** 30n).to_string()
+echo (10n ** 30n).to_string().length()
+
+# and the conversion back the other way, which had no counterpart before
+echo (12345).to_bigint()
+echo (-42).to_bigint()
+echo (0).to_bigint()
+echo failure(@{ return (3.5).to_bigint() })
+echo (2).to_bigint() ** (100).to_bigint()

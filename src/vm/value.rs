@@ -30,6 +30,7 @@ use std::cell::{Cell, RefCell};
 
 use itertools::Itertools;
 use num_bigint::{BigInt, Sign};
+use num_traits::{Signed, ToPrimitive, Zero};
 
 use crate::vm::object::{
   ASCII_NO, ASCII_YES, DictStorage, FileHandle, NativeFunction, Obj, ObjBoundMethod, ObjClass,
@@ -886,6 +887,52 @@ pub fn num_to_wrapped_i64(v: f64) -> i64 {
     (m - U64_SPAN) as i64
   } else {
     m as i64
+  }
+}
+
+/// `num-bigint` panics outright when handed a zero divisor, which would
+/// take the whole process down instead of surfacing as a catchable Zuri
+/// error. The division-flavoured bigint operators go through these so the
+/// VM can raise a `RangeError` the same way a script can handle it.
+pub fn big_div(a: BigInt, b: BigInt) -> Result<BigInt, String> {
+  if b.is_zero() {
+    return Err("bigint division by zero".to_string());
+  }
+  Ok(a / b)
+}
+
+/// Floor division, matching what `//` does for plain numbers. `num-bigint`
+/// truncates towards zero, so a negative result that did not divide evenly
+/// needs to be nudged down by one.
+pub fn big_floordiv(a: BigInt, b: BigInt) -> Result<BigInt, String> {
+  if b.is_zero() {
+    return Err("bigint division by zero".to_string());
+  }
+  let (q, r) = (&a / &b, &a % &b);
+  if !r.is_zero() && (r.is_negative() != b.is_negative()) {
+    return Ok(q - 1);
+  }
+  Ok(q)
+}
+
+pub fn big_rem(a: BigInt, b: BigInt) -> Result<BigInt, String> {
+  if b.is_zero() {
+    return Err("bigint modulo by zero".to_string());
+  }
+  Ok(a % b)
+}
+
+/// Exponentiation. The exponent has to fit in a `u32` because that is what
+/// `num-bigint`'s binary exponentiation takes, and anything bigger would not
+/// fit in memory anyway. A negative exponent has no integral answer, so it is
+/// rejected rather than silently truncated to zero.
+pub fn big_pow(a: BigInt, b: BigInt) -> Result<BigInt, String> {
+  match b.to_u32() {
+    Some(exp) => Ok(a.pow(exp)),
+    None if b.is_negative() => {
+      Err("bigint '**' does not accept a negative exponent".to_string())
+    },
+    None => Err("bigint '**' exponent is too large".to_string()),
   }
 }
 

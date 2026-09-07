@@ -1,0 +1,83 @@
+def failure(fn) {
+  catch {
+    fn()
+    return 'no error raised'
+  } as e {
+    return e.message
+  }
+}
+
+# conversions
+echo (255n).to_string()
+echo (255n).to_string(16)
+echo (-255n).to_string(16)
+echo (5n).to_string(36)
+echo (12345678901234567890n).to_number()
+echo (10n ** 400n).to_number()
+echo (-(10n ** 400n)).to_number()
+echo (5n).to_bool()
+echo (0n).to_bool()
+echo (-5n).to_bool()
+echo (255n).bin()
+echo (255n).hex()
+echo (255n).oct()
+echo (258n).to_bytes()
+echo (258n).to_bytes('little')
+echo (-1n).to_bytes()
+echo (0n).to_bytes()
+
+# sign and comparison
+echo (-5n).abs()
+echo (-9n).sign()
+echo (0n).sign()
+echo (9n).sign()
+echo (3n).max(7n)
+echo (3n).min(7n)
+
+# arithmetic
+echo (2n).pow(100)
+echo (2n).pow(100n)
+echo (144n).sqrt()
+echo (145n).sqrt()
+echo (-27n).cbrt()
+echo (1000000n).nth_root(3)
+echo (48n).gcd(18n)
+echo (-48n).gcd(18n)
+echo (0n).gcd(0n)
+echo (48n).lcm(18n)
+echo (48n).lcm(0n)
+echo (4n).modpow(13n, 497n)
+echo (-6n).modpow(3n, 7n)
+echo (6n).modpow(-1n, 7n)
+echo (3n).modinv(11n)
+echo (5n).modinv(-11n)
+echo (4n).modinv(8n)
+
+# bits
+echo (255n).bits()
+echo (0n).bits()
+echo (5n).bit(0)
+echo (5n).bit(1)
+echo (-5n).bit(3)
+echo (5n).set_bit(1, true)
+echo (40n).trailing_zeros()
+echo (0n).trailing_zeros()
+
+# predicates
+echo (0n).is_zero()
+echo (4n).is_even()
+echo (0n).is_even()
+echo (5n).is_odd()
+
+# rejections
+echo failure(@{ return (-4n).sqrt() })
+echo failure(@{ return (5n).to_string(1) })
+echo failure(@{ return (5n).to_bytes('sideways') })
+echo failure(@{ return (5n).modpow(2n, 0n) })
+echo failure(@{ return (5n).modinv(0n) })
+echo failure(@{ return (4n).modpow(-1n, 8n) })
+echo failure(@{ return (-16n).nth_root(2) })
+echo failure(@{ return (5n).nth_root(0) })
+echo failure(@{ return (2n).pow(-1) })
+echo failure(@{ return (5n).bit(-1) })
+echo failure(@{ return (5n).max(5) })

@@ -76,6 +76,29 @@ class number {
 
 
   /**
+   * Converts the number to a `bigint`, the counterpart to
+   * `bigint.to_number()`.
+   *
+   * ```zuri-repl
+   * %> (12345).to_bigint()
+   * 12345n
+   * %> (2).to_bigint() ** (100).to_bigint()
+   * 1267650600228229401496703205376n
+   * ```
+   *
+   * @note Only an exact integer has a `bigint` form, so a
+   *    fractional number, `Infinity` and `NaN` all raise rather
+   *    than being rounded or clamped. Numbers above `2^53` are
+   *    already imprecise as doubles, so converting one yields the
+   *    exact integer the double holds, not the decimal literal it
+   *    was written as.
+   * @returns {bigint}
+   * @raises {RangeError} if the number is not an exact integer.
+   */
+  to_bigint() {}
+
+
+  /**
    * Returns the absolute value of the number.
    *
    * ```zuri-repl

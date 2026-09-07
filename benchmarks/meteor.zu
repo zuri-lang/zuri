@@ -1,0 +1,434 @@
+/* The Computer Language Benchmarks Game
+ * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
+ *
+ * meteor-contest Zuri #1 program
+ *
+ * contributed by Richard Ore
+ *
+ * Solves the Meteor puzzle: ten five-cell pieces onto a hexagonal board of
+ * ten rows by five columns. The piece shapes and their numbering are the
+ * ones the benchmark's reference programs use, so the solution count and the
+ * two boards printed below match the published answer.
+ *
+ * The board is a 50-bit occupancy mask, but it is carried as two 25-bit
+ * halves rather than one integer. Zuri could hold all fifty bits in a single
+ * number; the split is there so the same program can be written against
+ * engines whose bitwise operators are 32-bit, and so the Node counterpart
+ * this is compared against does exactly the same amount of work.
+ */
+
+var ROWS = 10
+var COLS = 5
+var CELLS = ROWS * COLS
+
+# Bits 0..24 of a board live in the low half, bits 25..49 in the high half.
+var HALF = 25
+var FULL = (1 << HALF) - 1
+
+# Directions on the hex grid. Odd rows sit half a cell to the right of even
+# ones, which is why the diagonal steps depend on the row's parity.
+var EAST = 0
+var WEST = 1
+var NE = 2
+var NW = 3
+var SE = 4
+var SW = 5
+
+# A quarter turn of the board sends each direction to the next one round.
+var ROTATE = [SE, NW, EAST, NE, SW, WEST]
+
+# Mirroring the board leaves east and west alone and swaps the diagonals.
+var FLIP = [EAST, WEST, SE, SW, NE, NW]
+
+# Each piece is a walk: start on some cell, then step in these directions.
+# Piece 4 doubles back over a cell it has already covered, which is why the
+# walk can be five steps long and still cover only five cells.
+var PIECES = [
+  [EAST, EAST, EAST, SE],
+  [NE, EAST, NE, NW],
+  [NW, NE, EAST, EAST],
+  [EAST, EAST, SW, SE],
+  [NE, NW, SE, EAST, SE],
+  [EAST, NE, SE, NE],
+  [EAST, SW, SW, SE],
+  [NE, SE, EAST, NE],
+  [SE, SE, EAST, SE],
+  [SE, SE, SE, WEST],
+]
+
+var PIECE_COUNT = PIECES.length()
+var PIECE_CELLS = 5
+
+def step_row(row, col, direction) {
+  if direction == EAST or direction == WEST {
+    return row
+  }
+
+  if direction == NE or direction == NW {
+    return row - 1
+  }
+
+  return row + 1
+}
+
+def step_col(row, col, direction) {
+  if direction == EAST {
+    return col + 1
+  }
+
+  if direction == WEST {
+    return col - 1
+  }
+
+  var odd = row % 2
+
+  if direction == NE or direction == SE {
+    return col + odd
+  }
+
+  return col - 1 + odd
+}
+
+# The twelve ways to lay a piece down: six rotations, then six more after
+# mirroring it. Symmetric pieces repeat themselves here, which is why the
+# masks are deduplicated further down.
+def orientations_of(directions) {
+  var result = []
+  var current = directions
+
+  iter var flip = 0; flip < 2; flip++ {
+    var rotated = current
+
+    iter var turn = 0; turn < 6; turn++ {
+      result.append(rotated)
+
+      var next = []
+      iter var i = 0; i < rotated.length(); i++ {
+        next.append(ROTATE[rotated[i]])
+      }
+      rotated = next
+    }
+
+    var mirrored = []
+    iter var i = 0; i < current.length(); i++ {
+      mirrored.append(FLIP[current[i]])
+    }
+    current = mirrored
+  }
+
+  return result
+}
+
+# Walks one orientation from a starting cell and returns the cells it covers,
+# sorted, or nil when it runs off the board or folds onto itself too often.
+def cells_of(directions, start_row, start_col) {
+  var cells = [start_row * COLS + start_col]
+  var row = start_row
+  var col = start_col
+
+  iter var i = 0; i < directions.length(); i++ {
+    var direction = directions[i]
+    var next_row = step_row(row, col, direction)
+    var next_col = step_col(row, col, direction)
+
+    row = next_row
+    col = next_col
+
+    if row < 0 or row >= ROWS or col < 0 or col >= COLS {
+      return nil
+    }
+
+    var cell = row * COLS + col
+    if !cells.contains(cell) {
+      cells.append(cell)
+    }
+  }
+
+  if cells.length() != PIECE_CELLS {
+    return nil
+  }
+
+  cells.sort()
+  return cells
+}
+
+# MASK_LO[piece][cell] and MASK_HI[piece][cell] hold every placement of that
+# piece whose lowest covered cell is `cell`. Indexing by the lowest cell is
+# what lets the search fill the board strictly front to back.
+var MASK_LO = []
+var MASK_HI = []
+
+def build_masks() {
+  iter var p = 0; p < PIECE_COUNT; p++ {
+    var lo_rows = []
+    var hi_rows = []
+
+    iter var cell = 0; cell < CELLS; cell++ {
+      lo_rows.append([])
+      hi_rows.append([])
+    }
+
+    var orientations = orientations_of(PIECES[p])
+
+    iter var o = 0; o < orientations.length(); o++ {
+      var directions = orientations[o]
+
+      iter var row = 0; row < ROWS; row++ {
+        iter var col = 0; col < COLS; col++ {
+          var cells = cells_of(directions, row, col)
+          if cells == nil {
+            continue
+          }
+
+          var lo = 0
+          var hi = 0
+
+          iter var i = 0; i < cells.length(); i++ {
+            var cell = cells[i]
+            if cell < HALF {
+              lo = lo | (1 << cell)
+            } else {
+              hi = hi | (1 << (cell - HALF))
+            }
+          }
+
+          var anchor = cells[0]
+          var existing_lo = lo_rows[anchor]
+          var existing_hi = hi_rows[anchor]
+          var seen = false
+
+          iter var i = 0; i < existing_lo.length(); i++ {
+            if existing_lo[i] == lo and existing_hi[i] == hi {
+              seen = true
+              break
+            }
+          }
+
+          if !seen {
+            existing_lo.append(lo)
+            existing_hi.append(hi)
+          }
+        }
+      }
+    }
+
+    MASK_LO.append(lo_rows)
+    MASK_HI.append(hi_rows)
+  }
+}
+
+# NEIGHBOURS[cell] lists the cells touching it, which the island check walks.
+var NEIGHBOURS = []
+
+def build_neighbours() {
+  iter var row = 0; row < ROWS; row++ {
+    iter var col = 0; col < COLS; col++ {
+      var adjacent = []
+
+      iter var direction = 0; direction < 6; direction++ {
+        var next_row = step_row(row, col, direction)
+        var next_col = step_col(row, col, direction)
+
+        if next_row >= 0 and next_row < ROWS and next_col >= 0 and next_col < COLS {
+          adjacent.append(next_row * COLS + next_col)
+        }
+      }
+
+      NEIGHBOURS.append(adjacent)
+    }
+  }
+}
+
+var STACK = [0] * CELLS
+
+# Every piece covers five cells, so a pocket of empty cells whose size is not
+# a multiple of five can never be filled. Finding one early is what keeps the
+# search from exploring a dead board all the way to the bottom.
+def prunable(board_lo, board_hi) {
+  var seen_lo = board_lo
+  var seen_hi = board_hi
+
+  iter var start = 0; start < CELLS; start++ {
+    if start < HALF {
+      if ((seen_lo >> start) & 1) == 1 {
+        continue
+      }
+      seen_lo = seen_lo | (1 << start)
+    } else {
+      if ((seen_hi >> (start - HALF)) & 1) == 1 {
+        continue
+      }
+      seen_hi = seen_hi | (1 << (start - HALF))
+    }
+
+    STACK[0] = start
+    var top = 1
+    var size = 0
+
+    while top > 0 {
+      top--
+      var cell = STACK[top]
+      size++
+
+      var adjacent = NEIGHBOURS[cell]
+
+      iter var i = 0; i < adjacent.length(); i++ {
+        var next = adjacent[i]
+
+        if next < HALF {
+          var bit = 1 << next
+          if (seen_lo & bit) == 0 {
+            seen_lo = seen_lo | bit
+            STACK[top] = next
+            top++
+          }
+        } else {
+          var bit = 1 << (next - HALF)
+          if (seen_hi & bit) == 0 {
+            seen_hi = seen_hi | bit
+            STACK[top] = next
+            top++
+          }
+        }
+      }
+    }
+
+    if size % PIECE_CELLS != 0 {
+      return true
+    }
+  }
+
+  return false
+}
+
+var PLACED_LO = [0] * PIECE_COUNT
+var PLACED_HI = [0] * PIECE_COUNT
+var LABELS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+
+var solutions_found = 0
+var min_board = '9' * CELLS
+var max_board = '0' * CELLS
+var stop_count = 0
+var stopped = false
+
+# Renders the current placement as one character per cell, read left to right
+# and top to bottom, and keeps it if it is the new lowest or highest.
+def record_solution() {
+  var cells = [' '] * CELLS
+
+  iter var p = 0; p < PIECE_COUNT; p++ {
+    var lo = PLACED_LO[p]
+    var hi = PLACED_HI[p]
+    var label = LABELS[p]
+
+    iter var i = 0; i < HALF; i++ {
+      if ((lo >> i) & 1) == 1 {
+        cells[i] = label
+      }
+    }
+
+    iter var i = 0; i < HALF; i++ {
+      if ((hi >> i) & 1) == 1 {
+        cells[i + HALF] = label
+      }
+    }
+  }
+
+  var board = ''.join(cells)
+  solutions_found++
+
+  if board.compare(min_board) < 0 {
+    min_board = board
+  }
+
+  if board.compare(max_board) > 0 {
+    max_board = board
+  }
+
+  if solutions_found >= stop_count {
+    stopped = true
+  }
+}
+
+def search(board_lo, board_hi, used, first) {
+  while first < CELLS {
+    if first < HALF {
+      if ((board_lo >> first) & 1) == 0 {
+        break
+      }
+    } else {
+      if ((board_hi >> (first - HALF)) & 1) == 0 {
+        break
+      }
+    }
+
+    first++
+  }
+
+  iter var p = 0; p < PIECE_COUNT; p++ {
+    if ((used >> p) & 1) == 1 {
+      continue
+    }
+
+    var lo_masks = MASK_LO[p][first]
+    var hi_masks = MASK_HI[p][first]
+
+    iter var i = 0; i < lo_masks.length(); i++ {
+      var lo = lo_masks[i]
+      var hi = hi_masks[i]
+
+      if (lo & board_lo) != 0 or (hi & board_hi) != 0 {
+        continue
+      }
+
+      PLACED_LO[p] = lo
+      PLACED_HI[p] = hi
+
+      var next_lo = board_lo | lo
+      var next_hi = board_hi | hi
+
+      if next_lo == FULL and next_hi == FULL {
+        record_solution()
+      } else if !prunable(next_lo, next_hi) {
+        search(next_lo, next_hi, used | (1 << p), first + 1)
+      }
+
+      if stopped {
+        return
+      }
+    }
+  }
+}
+
+# Ten rows of five, with the odd rows nudged right to show the hex offset.
+def print_board(board) {
+  iter var row = 0; row < ROWS; row++ {
+    var line = row % 2 == 1 ? ' ' : ''
+
+    iter var col = 0; col < COLS; col++ {
+      line += board[row * COLS + col] + ' '
+    }
+
+    echo line
+  }
+}
+
+def main(n) {
+  stop_count = n
+
+  build_neighbours()
+  build_masks()
+
+  search(0, 0, 0, 0)
+
+  echo '${solutions_found} solutions found\n'
+  print_board(min_board)
+  echo ''
+  print_board(max_board)
+}
+
+# 2098 is the full set: every solution the puzzle has.
+var start = time()
+main(2098)
+
+echo '\nTotal time taken: ${time() - start}s'

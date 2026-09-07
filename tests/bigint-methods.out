@@ -1,0 +1,63 @@
+255
+ff
+-ff
+5
+12345678901234567000
+inf
+-inf
+true
+true
+false
+11111111
+ff
+377
+(01 02)
+(02 01)
+(ff)
+(00)
+5n
+-1
+0
+1
+7n
+3n
+1267650600228229401496703205376n
+1267650600228229401496703205376n
+12n
+12n
+-3n
+100n
+6n
+6n
+0n
+144n
+0n
+445n
+1n
+6n
+4n
+-2n
+nil
+8
+0
+true
+false
+true
+7n
+3
+nil
+true
+true
+true
+true
+cannot take the square root of a negative bigint
+radix must be a integer from 2 to 36, 1 given
+byte order must be 'big' or 'little', 'sideways' given
+bigint modpow modulus cannot be zero
+bigint modinv modulus cannot be zero
+bigint modpow with a negative exponent needs a receiver that is invertible modulo the modulus
+cannot take an even root of a negative bigint
+the zeroth root of a bigint is not defined
+exponent must be a integer ranged 0..=4294967295
+bit index must be a non-negative integer, -1 given
+'max' expects argument 1 to be a bigint, got number

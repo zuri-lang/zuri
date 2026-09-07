@@ -233,7 +233,7 @@ binary_slow!(
   "-",
   "@sub",
   |x: f64, y: f64| x - y,
-  |x, y| &x - &y
+  |x, y| Ok(&x - &y)
 );
 binary_slow!(
   zuri_jit_div_slow,
@@ -241,7 +241,7 @@ binary_slow!(
   "/",
   "@div",
   |x: f64, y: f64| x / y,
-  |x, y| &x / &y
+  crate::vm::value::big_div
 );
 binary_slow!(
   zuri_jit_pow,
@@ -249,7 +249,7 @@ binary_slow!(
   "**",
   "@pow",
   |x: f64, y: f64| x.powf(y),
-  |x, y| &x * &y
+  crate::vm::value::big_pow
 );
 binary_slow!(
   zuri_jit_mod,
@@ -257,7 +257,7 @@ binary_slow!(
   "%",
   "@mod",
   |x: f64, y: f64| crate::vm::value::num_rem(x, y),
-  |x, y| &x % &y
+  crate::vm::value::big_rem
 );
 binary_slow!(
   zuri_jit_floordiv,
@@ -265,7 +265,7 @@ binary_slow!(
   "//",
   "@floordiv",
   |x: f64, y: f64| (x / y).floor(),
-  |x, y| &x / &y
+  crate::vm::value::big_floordiv
 );
 
 binary_slow!(

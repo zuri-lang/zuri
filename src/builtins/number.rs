@@ -1,5 +1,8 @@
 use std::sync::LazyLock;
 
+use num_bigint::BigInt;
+use num_traits::FromPrimitive;
+
 use crate::{
   builtins::{
     MethodTable, build,
@@ -25,6 +28,7 @@ pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     // methods
     method("to_string", to_string),
     method("to_bool", to_bool),
+    method("to_bigint", to_bigint),
     method("abs", abs),
     method("chr", chr),
     method("bin", bin),
@@ -71,6 +75,20 @@ pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
 fn to_bool(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   Ok(Value::bool(ctx.args[0].as_number() >= 0.0))
+}
+
+/// The counterpart to `bigint.to_number()`. Only an exact integer has a
+/// bigint form, so anything fractional, infinite or NaN is rejected rather
+/// than quietly rounded; that keeps the conversion lossless in both
+/// directions.
+fn to_bigint(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+
+  let n = ctx.args[0].as_number();
+  match BigInt::from_f64(n) {
+    Some(big) if n.fract() == 0.0 => Ok(ctx.vm.heap_mut().alloc_bigint(big)),
+    _ => Err(format!("cannot convert {} to a bigint, it is not an integer", n)),
+  }
 }
 
 fn abs(ctx: &mut ZuriContext) -> Result<Value, String> {

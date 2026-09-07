@@ -19,7 +19,9 @@ use crate::vm::object::{
   Heap, ListStorage, NativeFunction, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding,
   UpvalueDescriptor, UpvalueState, ZuriContext, write_barrier,
 };
-use crate::vm::value::{Value, num_rem, num_to_wrapped_i64};
+use crate::vm::value::{
+  Value, big_div, big_floordiv, big_pow, big_rem, num_rem, num_to_wrapped_i64,
+};
 
 /// Interpreted recursion never touches the native stack, only heap-bounded
 /// register windows, but a call into compiled code is a real native call.
@@ -3742,7 +3744,7 @@ impl VM {
           },
           Instr::Sub { dst, a, b } => {
             tri!(
-              self.binary_numeric(base, dst, a, b, "-", "@sub", |x, y| x - y, |x, y| &x - &y),
+              self.binary_numeric(base, dst, a, b, "-", "@sub", |x, y| x - y, |x, y| Ok(&x - &y)),
               'step
             );
           },
@@ -3751,7 +3753,7 @@ impl VM {
           },
           Instr::Div { dst, a, b } => {
             tri!(
-              self.binary_numeric(base, dst, a, b, "/", "@div", |x, y| x / y, |x, y| &x / &y),
+              self.binary_numeric(base, dst, a, b, "/", "@div", |x, y| x / y, big_div),
               'step
             );
           },
@@ -3760,14 +3762,14 @@ impl VM {
               self.binary_numeric(
                 base, dst, a, b, "**", "@pow",
                 |x, y| x.powf(y),
-                |x, y| &x * &y,
+                big_pow,
               ),
               'step
             );
           },
           Instr::Mod { dst, a, b } => {
             tri!(
-              self.binary_numeric(base, dst, a, b, "%", "@mod", num_rem, |x, y| &x % &y),
+              self.binary_numeric(base, dst, a, b, "%", "@mod", num_rem, big_rem),
               'step
             );
           },
@@ -3776,7 +3778,7 @@ impl VM {
               self.binary_numeric(
                 base, dst, a, b, "//", "@floordiv",
                 |x, y| (x / y).floor(),
-                |x, y| &x / &y,
+                big_floordiv,
               ),
               'step
             );
@@ -5091,7 +5093,7 @@ impl VM {
   ) -> RunResult<()>
   where
     F: Fn(f64, f64) -> f64,
-    G: Fn(BigInt, BigInt) -> BigInt,
+    G: Fn(BigInt, BigInt) -> Result<BigInt, String>,
   {
     let va = self.get_reg(base, a);
     let vb = self.get_reg(base, b);
@@ -5099,9 +5101,11 @@ impl VM {
     if va.is_number() && vb.is_number() {
       return Ok(self.set_reg(base, dst, Value::number(op(va.as_number(), vb.as_number()))));
     } else if va.is_bigint() && vb.is_bigint() {
-      let v = self
-        .heap
-        .alloc_bigint(big_op(va.as_bigint().clone(), vb.as_bigint().clone()));
+      let big = match big_op(va.as_bigint().clone(), vb.as_bigint().clone()) {
+        Ok(big) => big,
+        Err(msg) => return Err(self.raise("RangeError", msg)),
+      };
+      let v = self.heap.alloc_bigint(big);
       return Ok(self.set_reg(base, dst, v));
     }
 

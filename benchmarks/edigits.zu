@@ -1,0 +1,96 @@
+/* The Computer Language Benchmarks Game
+ * https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
+ *
+ * edigits Zuri #1 program
+ *
+ * contributed by Richard Ore
+ *
+ * Prints the first n digits of e. The series 1/0! + 1/1! + 1/2! + ...
+ * is summed exactly with binary splitting, which leaves a single
+ * rational p/q; scaling that by 10^(n-1) and dividing once gives every
+ * digit in one shot. Almost all of the work is bigint multiplication of
+ * progressively larger operands, so this measures the bigint layer far
+ * more than it measures the interpreter.
+ */
+
+import math
+
+var ONE = 1n
+var TWO = 2n
+
+var LN_TAU = (2 * math.PI).log()
+var LN_10 = (10).log()
+
+/* Stirling's approximation of log10(k!), good enough to pick a term
+ * count: 50 guard digits absorb the approximation error and the
+ * truncated tail of the series. */
+def test_k(n, k) {
+  if k <= 0 {
+    return false
+  }
+
+  var ln_k_factorial = k * (k.log() - 1) + 0.5 * LN_TAU
+  return ln_k_factorial / LN_10 >= n + 50
+}
+
+/* Smallest k whose factorial carries the digits we need. Doubles until
+ * it overshoots, then bisects. */
+def binary_search(n) {
+  var a = 0
+  var b = 1
+
+  while !test_k(n, b) {
+    a = b
+    b *= 2
+  }
+
+  while b - a > 1 {
+    var m = (a + b) // 2
+    if test_k(n, m) {
+      b = m
+    } else {
+      a = m
+    }
+  }
+
+  return b
+}
+
+/* Binary splitting over the half-open range [a, b). Returns the pair
+ * (p, q) with p/q holding that slice of the series, kept as an exact
+ * fraction so nothing rounds until the very last division. */
+def sum_terms(a, b) {
+  if b == a + ONE {
+    return [ONE, b]
+  }
+
+  var mid = (a + b) / TWO
+  var left = sum_terms(a, mid)
+  var right = sum_terms(mid, b)
+
+  return [left[0] * right[1] + right[0], left[1] * right[1]]
+}
+
+def main(n) {
+  var k = binary_search(n)
+
+  var terms = sum_terms(0n, (k - 1).to_bigint())
+  var p = terms[0] + terms[1]
+  var q = terms[1]
+
+  var digits = (p * (10n ** (n - 1).to_bigint()) / q).to_string()
+
+  iter var i = 0; i < n; i += 10 {
+    if i + 10 <= n {
+      echo '${digits[i, i + 10]}\t:${i + 10}'
+    } else {
+      echo '${digits[i, n].rpad(10)}\t:${n}'
+    }
+  }
+}
+
+# 250001 is the largest input the upstream edigits benchmark is configured with.
+var start = time()
+main(250_001)
+
+echo '\nTotal time taken: ${time() - start}s'
