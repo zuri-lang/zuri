@@ -1506,13 +1506,31 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
 
+  /// Which registers get an `i64` Variable maintained alongside their
+  /// float one.
+  ///
+  /// Being an integer somewhere is not reason enough. The integer view
+  /// costs a second value to compute and keep live at every write, so it
+  /// is only worth maintaining where an instruction genuinely READS an
+  /// `i64` operand: the remainder, the bitwise operators, and an index.
+  /// An accumulator that is only ever added to and returned wants none
+  /// of it, and paying for one there means running the loop's arithmetic
+  /// twice, once per domain.
+  ///
+  /// Demand flows backwards out of those readers through the operations
+  /// that merely forward the view, to a fixed point. Missing a reader is
+  /// safe: `proven_int` then reads false and the instruction takes its
+  /// float path, which is slower but never wrong.
   fn compute_int_tracked(&self) -> Vec<bool> {
     let n = self.proto.num_registers as usize;
-    let mut tracked = vec![false; n];
+
+    // Nothing outside the analysis's own set can carry an integer view,
+    // whatever the demand says.
+    let mut ever_int = vec![false; n];
     for set in &self.int_facts.entry {
       for r in 0..n {
         if set.get(r as u8) {
-          tracked[r] = true;
+          ever_int[r] = true;
         }
       }
     }
@@ -1520,12 +1538,87 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       for set in &spec.entry {
         for r in 0..n {
           if set.get(r as u8) {
-            tracked[r] = true;
+            ever_int[r] = true;
           }
         }
       }
     }
-    tracked
+
+    let mut needed = vec![false; n];
+    let mut mark = |needed: &mut Vec<bool>, r: u8| -> bool {
+      let i = r as usize;
+      if i < n && !needed[i] {
+        needed[i] = true;
+        return true;
+      }
+      false
+    };
+
+    for instr in &self.proto.chunk.code {
+      match *instr {
+        Instr::Mod { a, b, .. }
+        | Instr::BitAnd { a, b, .. }
+        | Instr::BitOr { a, b, .. }
+        | Instr::BitXor { a, b, .. }
+        | Instr::BitShl { a, b, .. }
+        | Instr::BitShr { a, b, .. }
+        | Instr::BitUshr { a, b, .. } => {
+          mark(&mut needed, a);
+          mark(&mut needed, b);
+        },
+        Instr::BitNot { src, .. } => {
+          mark(&mut needed, src);
+        },
+        Instr::GetIndex { idx, .. } | Instr::SetIndex { idx, .. } => {
+          mark(&mut needed, idx);
+        },
+        // An inlined callee reads the CALLER's integer view for its
+        // arguments, and the instruction that consumes it lives in the
+        // callee where this scan cannot see it. Arguments therefore
+        // count as read.
+        Instr::Call { func, num_args, .. } => {
+          for i in 0..num_args {
+            mark(&mut needed, func + 1 + i);
+          }
+        },
+        _ => {},
+      }
+    }
+
+    loop {
+      let mut changed = false;
+      for instr in &self.proto.chunk.code {
+        match *instr {
+          Instr::Add { dst, a, b } | Instr::Sub { dst, a, b } | Instr::Mul { dst, a, b } => {
+            if needed[dst as usize] {
+              changed |= mark(&mut needed, a);
+              changed |= mark(&mut needed, b);
+            }
+          },
+          Instr::AddImm { dst, a, .. }
+          | Instr::SubImm { dst, a, .. }
+          | Instr::MulImm { dst, a, .. } => {
+            if needed[dst as usize] {
+              changed |= mark(&mut needed, a);
+            }
+          },
+          Instr::Neg { dst, src } | Instr::Move { dst, src } | Instr::BitNot { dst, src } => {
+            if needed[dst as usize] {
+              changed |= mark(&mut needed, src);
+            }
+          },
+          _ => {},
+        }
+      }
+      if !changed {
+        break;
+      }
+    }
+
+    for r in 0..n {
+      needed[r] = needed[r] && ever_int[r];
+    }
+    needed
   }
 
   /// `Instr::Div { dst, a, b }`'s strength-reduction check: is `b`'s
