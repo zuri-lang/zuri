@@ -3673,13 +3673,34 @@ impl VM {
           return Ok(self.heap.alloc_bytes(items));
         },
         Obj::Str(..) => {
-          let chars: Vec<char> = receiver.as_str().chars().collect();
-          let bounds = self.resolve_slice_bounds(lo, hi, chars.len())?;
-          let s: String = match bounds {
-            Some((lo, hi)) => chars[lo..hi].iter().collect(),
+          // Same reasoning as `string_char_at`, which already has this fast
+          // path for `s[i]`: materializing the whole string as a `Vec<char>`
+          // to take a slice out of it makes `s[a, b]` cost O(len(s)) rather
+          // than O(b - a), so a loop slicing its way through a large string
+          // is quadratic. On an ASCII string character offsets ARE byte
+          // offsets, so the slice is a direct borrow and no scan happens at
+          // all; `str_is_ascii` caches its answer on the string, so the
+          // check itself is paid once.
+          let text = receiver.as_str();
+          if receiver.str_is_ascii() {
+            let bounds = self.resolve_slice_bounds(lo, hi, text.len())?;
+            let out = match bounds {
+              Some((lo, hi)) => text[lo..hi].to_string(),
+              None => String::new(),
+            };
+            return Ok(self.heap.alloc_string(out));
+          }
+
+          // Non-ASCII still has to count characters, but walking the
+          // iterator twice is far cheaper than building a 4-bytes-per-
+          // character vector of the entire string to index into once.
+          let char_len = text.chars().count();
+          let bounds = self.resolve_slice_bounds(lo, hi, char_len)?;
+          let out: String = match bounds {
+            Some((lo, hi)) => receiver.as_str().chars().skip(lo).take(hi - lo).collect(),
             None => String::new(),
           };
-          return Ok(self.heap.alloc_string(s));
+          return Ok(self.heap.alloc_string(out));
         },
         _ => {},
       }
