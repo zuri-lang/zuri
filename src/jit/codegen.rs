@@ -6709,8 +6709,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     method_const: u16,
     num_args: u8,
   ) -> bool {
-    // Over four arguments the entry signature has no register slots left,
-    // exactly as `emit_generic_call_inner` bails for its own.
     if num_args as usize + 1 > 4 {
       return false;
     }
@@ -6722,7 +6720,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let vm_p = self.vm_param;
     let base = self.base_param;
-    let receiver = self.load_reg(obj + 1);
+    // Register `obj`, not `obj + 1`: the guard has to inspect the same
+    // receiver `zuri_jit_invoke_prepare` and `emit_self_invoke` do.
+    let receiver = self.load_reg(obj);
     let new_base = self.fb.ins().iadd_imm_s(base, obj as i64 + 1);
     let cell_ptr = self.u64c(cell_addr);
 
@@ -6763,12 +6763,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .brif(has_entry, entry_block, &[], miss_block, &[]);
 
     // From here the sequence is `emit_generic_call_inner`'s, which takes an
-    // `Instr::Call` with no helper call at all: shape-check the callee,
-    // push the frame inline, `call_indirect`, pop it inline. The only
-    // differences are that the callee arrives from the cache rather than a
-    // register, and that an INVOKED callee is of course a method, so the
-    // `not_method` half of that path's signature check is deliberately
-    // absent here.
+    // `Instr::Call` with no helper call at all. The only differences: the
+    // callee arrives from the cache rather than a register, and an INVOKED
+    // callee is of course a method, so that path's `not_method` check is
+    // deliberately absent.
     self.fb.switch_to_block(entry_block);
     let method_bits = self.fb.ins().load(types::I64, flags, cell_ptr, 8);
     let closure_ptr = self.obj_ptr(method_bits);
@@ -6778,11 +6776,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       closure_ptr,
       object::obj_closure_function_offset() as i32,
     );
-    let proto_ptr = self.obj_ptr(func_val);
+    // Two hops, as `emit_generic_call_inner` does: `obj_ptr` reaches the
+    // `Obj::Func` wrapper, and the prototype itself lives one load further
+    // in. Stopping at the wrapper reads arity and variadic out of the wrong
+    // object.
+    let func_obj_ptr = self.obj_ptr(func_val);
+    let proto_ptr = self.fb.ins().load(
+      types::I64,
+      flags,
+      func_obj_ptr,
+      object::obj_func_proto_offset() as i32,
+    );
 
-    // The receiver occupies the callee's register 0, so the real argument
-    // count is `1 + num_args`; same convention `zuri_jit_invoke_prepare`
-    // uses.
     let arity = self.fb.ins().load(
       types::I8,
       flags,
