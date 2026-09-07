@@ -1545,7 +1545,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     let mut needed = vec![false; n];
-    let mut mark = |needed: &mut Vec<bool>, r: u8| -> bool {
+    let mark = |needed: &mut Vec<bool>, r: u8| -> bool {
       let i = r as usize;
       if i < n && !needed[i] {
         needed[i] = true;
@@ -1572,13 +1572,45 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         Instr::GetIndex { idx, .. } | Instr::SetIndex { idx, .. } => {
           mark(&mut needed, idx);
         },
+        // Comparisons take the integer route when both sides have a
+        // view, which is what a loop condition rides on.
+        Instr::Eq { a, b, .. }
+        | Instr::Neq { a, b, .. }
+        | Instr::Lt { a, b, .. }
+        | Instr::Le { a, b, .. }
+        | Instr::Gt { a, b, .. }
+        | Instr::Ge { a, b, .. } => {
+          mark(&mut needed, a);
+          mark(&mut needed, b);
+        },
+        Instr::EqImm { a, .. }
+        | Instr::NeqImm { a, .. }
+        | Instr::LtImm { a, .. }
+        | Instr::LeImm { a, .. }
+        | Instr::GtImm { a, .. }
+        | Instr::GeImm { a, .. } => {
+          mark(&mut needed, a);
+        },
+        Instr::GetSlice { lo, hi, .. } => {
+          mark(&mut needed, lo);
+          mark(&mut needed, hi);
+        },
         // An inlined callee reads the CALLER's integer view for its
         // arguments, and the instruction that consumes it lives in the
         // callee where this scan cannot see it. Arguments therefore
-        // count as read.
+        // count as read. `Invoke` additionally hands its receiver and
+        // argument to the integer form of `min`/`max`.
         Instr::Call { func, num_args, .. } => {
           for i in 0..num_args {
             mark(&mut needed, func + 1 + i);
+          }
+        },
+        Instr::Invoke {
+          obj, num_args, ..
+        } => {
+          mark(&mut needed, obj);
+          for i in 0..num_args {
+            mark(&mut needed, obj + 2 + i);
           }
         },
         _ => {},
