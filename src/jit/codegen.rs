@@ -6709,6 +6709,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     method_const: u16,
     num_args: u8,
   ) -> bool {
+    // Over four arguments the entry signature has no register slots left,
+    // exactly as `emit_generic_call_inner` bails for its own.
+    if num_args as usize + 1 > 4 {
+      return false;
+    }
     let Some(cell) = self.proto.chunk.invoke_cache_cell(ip) else {
       return false;
     };
@@ -6757,25 +6762,67 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .brif(has_entry, entry_block, &[], miss_block, &[]);
 
+    // From here the sequence is `emit_generic_call_inner`'s, which takes an
+    // `Instr::Call` with no helper call at all: shape-check the callee,
+    // push the frame inline, `call_indirect`, pop it inline. The only
+    // differences are that the callee arrives from the cache rather than a
+    // register, and that an INVOKED callee is of course a method, so the
+    // `not_method` half of that path's signature check is deliberately
+    // absent here.
     self.fb.switch_to_block(entry_block);
     let method_bits = self.fb.ins().load(types::I64, flags, cell_ptr, 8);
-    // `1 + num_args`: the receiver occupies the callee's register 0, the
-    // same convention `zuri_jit_invoke_prepare` uses.
-    let direct_num_args = self.i64c(num_args as i64 + 1);
-    let dst_i = self.idx(dst);
-    let ok = self.call_helper(
-      "zuri_jit_direct_call_prepare",
-      &[vm_p, method_bits, new_base, direct_num_args, dst_i],
+    let closure_ptr = self.obj_ptr(method_bits);
+    let func_val = self.fb.ins().load(
+      types::I64,
+      flags,
+      closure_ptr,
+      object::obj_closure_function_offset() as i32,
     );
-    self.refresh_regs();
-    let prepared = self.fb.ins().icmp(IntCC::NotEqual, ok, zero);
-    let call_block = self.fb.create_block();
-    self
+    let proto_ptr = self.obj_ptr(func_val);
+
+    // The receiver occupies the callee's register 0, so the real argument
+    // count is `1 + num_args`; same convention `zuri_jit_invoke_prepare`
+    // uses.
+    let arity = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto_ptr,
+      object::obj_function_arity_offset() as i32,
+    );
+    let arity_ok = self
       .fb
       .ins()
-      .brif(prepared, call_block, &[], miss_block, &[]);
+      .icmp_imm_s(IntCC::Equal, arity, num_args as i64 + 1);
+    let variadic = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto_ptr,
+      object::obj_function_variadic_offset() as i32,
+    );
+    let not_variadic = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
+    let sig_ok = self.fb.ins().band(arity_ok, not_variadic);
+    let frame_block = self.fb.create_block();
+    self.fb.ins().brif(sig_ok, frame_block, &[], miss_block, &[]);
 
-    self.fb.switch_to_block(call_block);
+    self.fb.switch_to_block(frame_block);
+    let callee_num_regs8 = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto_ptr,
+      object::obj_function_num_registers_offset() as i32,
+    );
+    let callee_num_regs = self.fb.ins().uextend(types::I64, callee_num_regs8);
+    let (depth, frames_len) = self.emit_call_checks_dyn(new_base, callee_num_regs, miss_block);
+    self.emit_frame_construction(
+      proto_ptr,
+      dst,
+      new_base,
+      closure_ptr,
+      method_bits,
+      depth,
+      frames_len,
+    );
+
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let sig = self.entry_sig_ref();
     let [a0, a1, a2, a3] = self.load_call_arg_values(obj + 1, num_args + 1);
@@ -6788,13 +6835,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ret_bits = self.fb.inst_results(call)[0];
     self.reload_live(ip);
     self.refresh_regs();
-    let base = self.base_param;
-    let dst_i = self.idx(dst);
-    self.call_checked(
-      "zuri_jit_call_finish",
-      &[self.vm_param, base, dst_i, new_base, ret_bits],
-    );
-    self.resync_dst_from_memory(dst);
+    self.emit_inline_frame_finish(dst, new_base, ret_bits);
     self.fb.ins().jump(done_block, &[]);
 
     // Cold: first execution of this site, a receiver of a different class,
