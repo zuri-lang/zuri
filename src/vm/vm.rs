@@ -1630,7 +1630,10 @@ impl VM {
       }
     }
 
-    for val in &self.registers {
+    // Bounded to the live window: scanning the whole vector reads stale
+    // `Value`s from returned frames, and `is_instance()` on those
+    // dereferences whatever bits happen to be sitting there.
+    for val in self.live_registers() {
       inspect_value(*val);
     }
 
@@ -5096,6 +5099,24 @@ impl VM {
   }
 
   #[inline(always)]
+  /// The register range the active frame can actually reach.
+  ///
+  /// The register stack is never shrunk, so everything above this is a
+  /// leftover `Value` from a call that has already returned: bits that no
+  /// longer name a live object, or that were never a pointer at all. The
+  /// major collector bounds its root scan here so it does not pin garbage
+  /// forever, and anything walking registers to gather compile-time facts
+  /// has to bound itself the same way or it will dereference stale bits.
+  fn live_registers(&self) -> &[Value] {
+    let top = self
+      .frames
+      .last()
+      .map(|f| f.base + unsafe { &*f.function }.num_registers as usize)
+      .unwrap_or(0)
+      .min(self.registers.len());
+    &self.registers[..top]
+  }
+
   pub(crate) fn set_reg_abs(&mut self, abs: usize, v: Value) {
     debug_assert!(abs < self.registers.len());
     unsafe {
@@ -5440,17 +5461,8 @@ impl VM {
     let mut worklist: Vec<*const Obj> = Vec::new();
 
     // Only the register range within reach of the active frame can hold
-    // live data; registers past its window are leftovers from returned
-    // calls (the register stack is never shrunk), so scanning them would
-    // just pin down garbage forever.
-    let regs_top = self
-      .frames
-      .last()
-      .map(|f| f.base + unsafe { &*f.function }.num_registers as usize)
-      .unwrap_or(0)
-      .min(self.registers.len());
-
-    for v in &self.registers[..regs_top] {
+    // live data; see `live_registers`.
+    for v in self.live_registers() {
       Self::mark_root(*v, &mut worklist);
     }
     for cell in &self.global_slots {
