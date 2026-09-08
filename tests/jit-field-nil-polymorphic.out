@@ -1,0 +1,5 @@
+satisfied: 900000
+unsatisfied: 600000
+forward sum: 1200000
+fallback sum: -600000
+weight: 1800000

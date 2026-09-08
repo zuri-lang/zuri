@@ -1641,7 +1641,7 @@ impl VM {
   fn snapshot_global_lists(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
     let mut out = rustc_hash::FxHashSet::default();
     for instr in &proto.chunk.code {
-      if let crate::vm::chunk::Instr::GetGlobal { name_const, .. } = instr
+      if let Instr::GetGlobal { name_const, .. } = instr
         && let Some(v) = proto.chunk.constants.get(*name_const as usize)
         && v.is_string()
       {
@@ -1688,7 +1688,7 @@ impl VM {
     }
 
     for instr in &proto.chunk.code {
-      if let crate::vm::chunk::Instr::GetGlobal { name_const, .. } = instr
+      if let Instr::GetGlobal { name_const, .. } = instr
         && let Some(v) = proto.chunk.constants.get(*name_const as usize)
         && v.is_string()
       {
@@ -1867,6 +1867,81 @@ impl VM {
       }
     }
     out
+  }
+
+  /// Disproves numeric fields from the class's own bytecode rather than from
+  /// whatever the heap happens to hold right now.
+  ///
+  /// `resolve_self_numeric_fields` decides from a single live instance, so a
+  /// field that is nil in the constructor and numeric later looks numeric
+  /// whenever compilation is requested from a method that only runs in the
+  /// numeric state. `resolve_all_numeric_fields` is supposed to catch that,
+  /// but it only reaches instances parked in a global or a global list; a
+  /// constraint held inside a `Vector` inside a `Planner` is two hops past
+  /// where it looks. deltablue's `direction` field is exactly that shape and
+  /// cost 354k deopts.
+  ///
+  /// A literal store of nil, a bool, or a non-numeric constant into
+  /// `self.<field>` is proof the field is polymorphic no matter what the heap
+  /// looks like, so match that pattern directly. Only the loader immediately
+  /// preceding the store is considered, which is what the compiler emits for
+  /// `self.x = nil`; missing a more roundabout store just leaves the field
+  /// where it already was.
+  fn disprove_numeric_fields_statically(
+    &self,
+    proto: &ObjFunction,
+    out: &mut rustc_hash::FxHashSet<String>,
+  ) {
+    let Some(class_name) = proto.owning_class_name.as_ref() else {
+      return;
+    };
+    let Some((is_root, slot)) = self.resolve_global(proto.globals_module, class_name) else {
+      return;
+    };
+    let class_val = self.read_resolved(proto.globals_module, is_root, slot);
+    if !class_val.is_class() {
+      return;
+    }
+
+    for method in class_val.as_class().methods.values() {
+      if !method.is_closure() {
+        continue;
+      }
+      let chunk = &method.as_closure().function.as_func().chunk;
+      for (ip, instr) in chunk.code.iter().enumerate() {
+        // `obj: 0` is `self`: register 0 of a method frame. A store through
+        // any other register says nothing about which class owns the field.
+        let Instr::SetField {
+          obj: 0,
+          name_const,
+          src,
+        } = *instr
+        else {
+          continue;
+        };
+        if ip == 0 {
+          continue;
+        }
+        let non_numeric = match chunk.code[ip - 1] {
+          Instr::LoadNil { dst } => dst == src,
+          Instr::LoadBool { dst, .. } => dst == src,
+          Instr::LoadConst { dst, const_idx } => {
+            dst == src
+              && chunk
+                .constants
+                .get(const_idx as usize)
+                .is_some_and(|v| !v.is_number())
+          },
+          _ => false,
+        };
+        if non_numeric
+          && let Some(name) = chunk.constants.get(name_const as usize)
+          && name.is_string()
+        {
+          out.insert(name.as_str().to_string());
+        }
+      }
+    }
   }
 
   fn resolve_self_class(&self, proto: &ObjFunction) -> Option<(u64, u64)> {
@@ -2060,9 +2135,9 @@ impl VM {
         let callee_proto = resolved.as_closure().function.as_func();
         for (cip, cinstr) in callee_proto.chunk.code.iter().enumerate() {
           let name_const = match cinstr {
-            crate::vm::chunk::Instr::GetGlobal { name_const, .. }
-            | crate::vm::chunk::Instr::SetGlobal { name_const, .. }
-            | crate::vm::chunk::Instr::AssignGlobal { name_const, .. } => *name_const,
+            Instr::GetGlobal { name_const, .. }
+            | Instr::SetGlobal { name_const, .. }
+            | Instr::AssignGlobal { name_const, .. } => *name_const,
             _ => continue,
           };
           if let Some(name_val) = callee_proto.chunk.constants.get(name_const as usize)
@@ -2106,9 +2181,9 @@ impl VM {
       };
     for (ip, instr) in proto.chunk.code.iter().enumerate() {
       let name_const = match instr {
-        crate::vm::chunk::Instr::GetGlobal { name_const, .. }
-        | crate::vm::chunk::Instr::SetGlobal { name_const, .. }
-        | crate::vm::chunk::Instr::AssignGlobal { name_const, .. } => *name_const,
+        Instr::GetGlobal { name_const, .. }
+        | Instr::SetGlobal { name_const, .. }
+        | Instr::AssignGlobal { name_const, .. } => *name_const,
         _ => continue,
       };
       if let Some(name_val) = proto.chunk.constants.get(name_const as usize)
@@ -2122,7 +2197,10 @@ impl VM {
         }
       }
     }
-    let (all_numeric_fields, disproved_numeric_fields) = self.resolve_all_numeric_fields(proto);
+    let (mut all_numeric_fields, mut disproved_numeric_fields) =
+      self.resolve_all_numeric_fields(proto);
+    self.disprove_numeric_fields_statically(proto, &mut disproved_numeric_fields);
+    all_numeric_fields.retain(|name| !disproved_numeric_fields.contains(name));
     let facts = CompileFacts {
       self_field_slots: self.resolve_self_field_slots(proto).unwrap_or_default(),
       self_numeric_fields: self.resolve_self_numeric_fields(proto, &disproved_numeric_fields),

@@ -1,0 +1,130 @@
+# A field that is nil in the constructor and numeric later must keep working
+# when the JIT decides whether to speculate on it.
+#
+# The interesting part is where the instances live. The heap scan that
+# disproves numeric speculation only reaches instances parked in a global or
+# a global list, so these are deliberately held in a list inside another
+# instance, two hops further in. That shape is what let `direction` in
+# deltablue get speculated numeric and deoptimize on every nil read.
+#
+# Runs well past the tier-up threshold and reads the field in all three
+# states, so a wrong speculation shows up as a wrong answer rather than only
+# as lost speed.
+
+var FORWARD = 1
+var BACKWARD = 2
+
+class Constraint {
+  @new() {
+    self.direction = nil
+    self.weight = 3
+  }
+
+  is_satisfied() {
+    return self.direction != nil
+  }
+
+  direction_or(fallback) {
+    if self.direction == nil {
+      return fallback
+    }
+    return self.direction
+  }
+
+  satisfy(d) {
+    self.direction = d
+  }
+
+  reset() {
+    self.direction = nil
+  }
+}
+
+class Planner {
+  @new() {
+    self.constraints = []
+  }
+
+  add(c) {
+    self.constraints.append(c)
+  }
+
+  count_satisfied() {
+    var n = 0
+    iter var i = 0; i < self.constraints.length(); i++ {
+      if self.constraints[i].is_satisfied() {
+        n = n + 1
+      }
+    }
+    return n
+  }
+
+  # `weight` really is numeric on every instance, so speculating on it is
+  # correct; this makes sure the static disproof of `direction` does not
+  # sweep up its neighbours.
+  total_weight() {
+    var w = 0
+    iter var i = 0; i < self.constraints.length(); i++ {
+      w = w + self.constraints[i].weight
+    }
+    return w
+  }
+
+  sum_directions(fallback) {
+    var s = 0
+    iter var i = 0; i < self.constraints.length(); i++ {
+      s = s + self.constraints[i].direction_or(fallback)
+    }
+    return s
+  }
+}
+
+def run(rounds) {
+  var p = Planner()
+  var i = 0
+  while i < 200 {
+    p.add(Constraint())
+    i = i + 1
+  }
+
+  var satisfied = 0
+  var unsatisfied = 0
+  var forward_sum = 0
+  var fallback_sum = 0
+  var weight = 0
+
+  var r = 0
+  while r < rounds {
+    # All numeric.
+    iter var j = 0; j < 200; j++ {
+      p.constraints[j].satisfy(FORWARD)
+    }
+    satisfied = satisfied + p.count_satisfied()
+    forward_sum = forward_sum + p.sum_directions(-1)
+
+    # All nil.
+    iter var j = 0; j < 200; j++ {
+      p.constraints[j].reset()
+    }
+    unsatisfied = unsatisfied + (200 - p.count_satisfied())
+    fallback_sum = fallback_sum + p.sum_directions(-1)
+
+    # Half and half, so the same site sees both on every round.
+    iter var j = 0; j < 200; j += 2 {
+      p.constraints[j].satisfy(BACKWARD)
+    }
+    satisfied = satisfied + p.count_satisfied()
+    forward_sum = forward_sum + p.sum_directions(0)
+
+    weight = weight + p.total_weight()
+    r = r + 1
+  }
+
+  echo 'satisfied: ${satisfied}'
+  echo 'unsatisfied: ${unsatisfied}'
+  echo 'forward sum: ${forward_sum}'
+  echo 'fallback sum: ${fallback_sum}'
+  echo 'weight: ${weight}'
+}
+
+run(3000)
