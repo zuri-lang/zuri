@@ -12,7 +12,23 @@
 //! background-thread context, and never touches another isolate's
 //! independent VM/Heap.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+  io::{Write, stderr, stdout},
+  process,
+  sync::atomic::{AtomicBool, Ordering},
+};
+
+#[cfg(windows)]
+use windows_sys::Win32::{
+  Foundation::BOOL,
+  System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT, SetConsoleCtrlHandler},
+};
+
+#[cfg(unix)]
+use libc::{SIG_DFL, SIG_ERR, SIGHUP, SIGINT, SIGTERM, c_int, raise, signal};
+
+#[cfg(windows)]
+static WINDOWS_HANDLER_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 /// Every signal name this module knows how to trap. Order fixes each
 /// name's flag/pin-slot index everywhere else in this file (and in
@@ -134,22 +150,21 @@ pub fn take_pending() -> Option<usize> {
 pub fn perform_default_action(idx: usize) -> ! {
   // Buffered output written by the callback that just declined would
   // otherwise be lost, since neither `raise` nor `exit` unwinds.
-  use std::io::Write;
-  let _ = std::io::stdout().flush();
-  let _ = std::io::stderr().flush();
+  let _ = stdout().flush();
+  let _ = stderr().flush();
 
   #[cfg(unix)]
   {
     if let Some(sig) = NAMES.get(idx).and_then(|n| unix_signal_number(n)) {
       unsafe {
-        libc::signal(sig, libc::SIG_DFL);
-        libc::raise(sig);
+        signal(sig, SIG_DFL);
+        raise(sig);
       }
-      std::process::exit(128 + sig);
+      process::exit(128 + sig);
     }
   }
 
-  std::process::exit(1);
+  process::exit(1);
 }
 
 /// Installs the real OS handler for `name`, if it isn't already.
@@ -173,7 +188,7 @@ pub fn install(name: &str) -> Result<usize, String> {
 }
 
 #[cfg(unix)]
-extern "C" fn unix_handler(sig: libc::c_int) {
+extern "C" fn unix_handler(sig: c_int) {
   if let Some(idx) = unix_signal_index(sig) {
     PENDING[idx].store(true, Ordering::SeqCst);
     // Strictly after the flag above: see `PENDING_HINT`'s own docs on
@@ -183,21 +198,21 @@ extern "C" fn unix_handler(sig: libc::c_int) {
 }
 
 #[cfg(unix)]
-fn unix_signal_index(sig: libc::c_int) -> Option<usize> {
+fn unix_signal_index(sig: c_int) -> Option<usize> {
   match sig {
-    libc::SIGINT => Some(0),
-    libc::SIGTERM => Some(1),
-    libc::SIGHUP => Some(2),
+    SIGINT => Some(0),
+    SIGTERM => Some(1),
+    SIGHUP => Some(2),
     _ => None,
   }
 }
 
 #[cfg(unix)]
-fn unix_signal_number(name: &str) -> Option<libc::c_int> {
+fn unix_signal_number(name: &str) -> Option<c_int> {
   match name {
-    "INT" => Some(libc::SIGINT),
-    "TERM" => Some(libc::SIGTERM),
-    "HUP" => Some(libc::SIGHUP),
+    "INT" => Some(SIGINT),
+    "TERM" => Some(SIGTERM),
+    "HUP" => Some(SIGHUP),
     _ => None,
   }
 }
@@ -206,19 +221,15 @@ fn unix_signal_number(name: &str) -> Option<libc::c_int> {
 fn install_platform(name: &str, _idx: usize) -> Result<(), String> {
   let sig = unix_signal_number(name)
     .ok_or_else(|| format!("signal '{}' is not supported on this platform", name))?;
-  let prev = unsafe { libc::signal(sig, unix_handler as *const () as usize) };
-  if prev == libc::SIG_ERR {
+  let prev = unsafe { signal(sig, unix_handler as *const () as usize) };
+  if prev == SIG_ERR {
     return Err(format!("could not install a handler for signal '{}'", name));
   }
   Ok(())
 }
 
 #[cfg(windows)]
-static WINDOWS_HANDLER_INSTALLED: AtomicBool = AtomicBool::new(false);
-
-#[cfg(windows)]
 fn windows_ctrl_type(name: &str) -> Option<u32> {
-  use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT};
   match name {
     "INT" => Some(CTRL_C_EVENT),
     "BREAK" => Some(CTRL_BREAK_EVENT),
@@ -230,8 +241,7 @@ fn windows_ctrl_type(name: &str) -> Option<u32> {
 }
 
 #[cfg(windows)]
-unsafe extern "system" fn windows_handler(ctrl_type: u32) -> windows_sys::Win32::Foundation::BOOL {
-  use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT};
+unsafe extern "system" fn windows_handler(ctrl_type: u32) -> BOOL {
   let idx = match ctrl_type {
     CTRL_C_EVENT => Some(0),
     CTRL_CLOSE_EVENT => Some(1),
@@ -255,7 +265,6 @@ fn install_platform(name: &str, _idx: usize) -> Result<(), String> {
   windows_ctrl_type(name)
     .ok_or_else(|| format!("signal '{}' is not supported on this platform", name))?;
   if !WINDOWS_HANDLER_INSTALLED.swap(true, Ordering::SeqCst) {
-    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
     let ok = unsafe { SetConsoleCtrlHandler(Some(windows_handler), 1) };
     if ok == 0 {
       WINDOWS_HANDLER_INSTALLED.store(false, Ordering::SeqCst);

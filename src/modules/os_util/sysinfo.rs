@@ -6,6 +6,18 @@
 //! standard `uname` shelled out to a whole subprocess just to read
 //! static facts, which is what this replaces it with.
 
+#[cfg(windows)]
+use windows_sys::Win32::System::{
+  Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+  },
+  Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+  SystemInformation::{
+    ComputerNamePhysicalDnsHostname, GetComputerNameExW, GetTickCount64, GlobalMemoryStatusEx,
+    MEMORYSTATUSEX,
+  },
+};
+
 // --- hostname ---------------------------------------------------------
 
 #[cfg(unix)]
@@ -21,10 +33,6 @@ pub fn hostname() -> Result<String, String> {
 
 #[cfg(windows)]
 pub fn hostname() -> Result<String, String> {
-  use windows_sys::Win32::System::SystemInformation::{
-    ComputerNamePhysicalDnsHostname, GetComputerNameExW,
-  };
-
   // First call with no buffer just asks how big one needs to be.
   let mut len: u32 = 0;
   unsafe {
@@ -205,8 +213,6 @@ fn macos_sysctl_u64(mib: &mut [libc::c_int]) -> Result<u64, String> {
 
 #[cfg(windows)]
 pub fn memory() -> Result<(u64, u64), String> {
-  use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
-
   let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
   status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
   let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
@@ -263,7 +269,6 @@ pub fn uptime() -> Result<f64, String> {
 
 #[cfg(windows)]
 pub fn uptime() -> Result<f64, String> {
-  use windows_sys::Win32::System::SystemInformation::GetTickCount64;
   Ok(unsafe { GetTickCount64() } as f64 / 1000.0)
 }
 
@@ -284,16 +289,11 @@ pub fn ppid() -> u32 {
 /// that matches this process, then reading ITS `th32ParentProcessID`.
 #[cfg(windows)]
 pub fn ppid() -> u32 {
-  use windows_sys::Win32::Foundation::CloseHandle;
-  use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
-  };
-
   let current_pid = std::process::id();
 
   unsafe {
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if snapshot.is_null() || snapshot == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+    if snapshot.is_null() || snapshot == INVALID_HANDLE_VALUE {
       return 0;
     }
 
