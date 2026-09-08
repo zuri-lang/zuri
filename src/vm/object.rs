@@ -2321,7 +2321,18 @@ impl Heap {
   /// the cost a young generation exists to avoid paying. 128MB gives
   /// real headroom for that same recursive pattern's smaller, genuinely
   /// short-lived calls to die for free.
-  pub(crate) const YOUNG_NEXT_GC: usize = 128 * 1024 * 1024;
+  /// Bumped from 128MB: `binary-tree-2.zu`'s own profile
+  /// (`perf record` against a release build) showed `collect_minor`/
+  /// `approx_size`/`reclaim_dead_obj`/`sweep` together eating roughly a
+  /// fifth of its total runtime, on a workload that is nothing BUT
+  /// short-lived recursive allocation (`make_tree`'s two-element list
+  /// nodes). Doubling the nursery budget halves how often that whole
+  /// minor-collection machinery runs for the exact same total bytes
+  /// allocated, at the cost of a larger worst-case pause and higher
+  /// peak RSS between cycles; a trade this workload's shape (allocate
+  /// heavily, most of it dies almost immediately) is squarely in favor
+  /// of taking.
+  pub(crate) const YOUNG_NEXT_GC: usize = 256 * 1024 * 1024;
 
   /// Upper bound on how many nursery chunk buffers `reset_nursery`
   /// keeps allocated (emptied, not dropped) between cycles for
