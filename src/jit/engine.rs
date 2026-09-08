@@ -30,6 +30,26 @@ pub struct PendingCompile {
   pub osr_ids: FxHashMap<usize, i32>,
 }
 
+/// Bytecode length at or above which a function is compiled through
+/// `JitEngine::isa_hot` (`opt_level = "speed"`) instead of the default
+/// `isa` (`opt_level = "speed_and_size"`).
+///
+/// Calibrated against this project's own benchmark suite, not picked
+/// blind: `richards`/`spectral-norm`/`fannkuch-redux`/`mandelbrot`'s hot
+/// functions (their own `ZURI_JIT_LOG` output shows bytecode lengths of
+/// 9-197 ops) measurably benefited from `speed` there (as much as +46%
+/// on richards), while `dispatch.zu` compiles well over a thousand
+/// nearly-identical 18-bytecode-op anonymous closures and got measurably
+/// WORSE (-14%) under a blanket `speed` switch, purely from paying extra
+/// backtracking-regalloc compile time on every one of them for no
+/// runtime benefit; each only runs a handful of times total. 64 sits
+/// comfortably above dispatch's 18-op closures and below every hot
+/// function that benefited in the benchmarks above, so the split
+/// tracks "does this function's body do enough real work per call to
+/// make the extra compile-time investment pay for itself" reasonably
+/// well without needing per-function profiling to decide.
+const HOT_TIER_BYTECODE_THRESHOLD: usize = 64;
+
 pub struct JitEngine {
   module: JITModule,
   builder_ctx: FunctionBuilderContext,
@@ -41,6 +61,18 @@ pub struct JitEngine {
   /// allocation/encoding step) with no access to `module` at all, no
   /// locking needed. See `isa_handle`.
   isa: Arc<dyn TargetIsa>,
+  /// A second, independently-built `TargetIsa` sharing every setting
+  /// `isa` has except `opt_level`, which is `"speed"` here instead of
+  /// `"speed_and_size"`. Used by `compile_function` for any function
+  /// whose bytecode clears `HOT_TIER_BYTECODE_THRESHOLD`: see that
+  /// constant's own docs for the benchmark evidence behind the split.
+  /// `cranelift_codegen::Context::compile` takes its `TargetIsa` as a
+  /// plain borrowed argument, entirely separate from whatever ISA
+  /// `module` itself was built with (that one only matters for
+  /// relocations/linking, done later in `install_compiled`), so
+  /// picking between two fully-built ISAs per call needs nothing more
+  /// than this one extra field.
+  isa_hot: Arc<dyn TargetIsa>,
   /// Every `jit::runtime` helper's `FuncId`, keyed by its registered
   /// name; declared once, up front, and reused (via
   /// `Module::declare_func_in_func`) by every subsequent function this
@@ -88,12 +120,39 @@ impl JitEngine {
       .set("regalloc_algorithm", "backtracking")
       .unwrap();
 
+    // A second flag set, identical except for `opt_level`, for
+    // `isa_hot`: see that field's own docs and `HOT_TIER_BYTECODE_
+    // THRESHOLD`'s for why this split earns its keep. Cranelift's
+    // `Flags` has no cheap clone-and-tweak-one-setting API, so this
+    // just repeats the same three `set` calls against a fresh builder
+    // rather than trying to derive one from the other.
+    let mut hot_flag_builder = settings::builder();
+    hot_flag_builder
+      .set("use_colocated_libcalls", "false")
+      .unwrap();
+    hot_flag_builder.set("is_pic", "false").unwrap();
+    hot_flag_builder
+      .set("enable_alias_analysis", "true")
+      .unwrap();
+    #[cfg(not(debug_assertions))]
+    hot_flag_builder.set("enable_verifier", "false").unwrap();
+    hot_flag_builder.set("opt_level", "speed").unwrap();
+    hot_flag_builder
+      .set("regalloc_algorithm", "backtracking")
+      .unwrap();
+
     let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
       panic!("zuri: host machine is not supported by the JIT backend: {msg}")
     });
     let isa = isa_builder
       .finish(settings::Flags::new(flag_builder))
       .expect("zuri: failed to build a target ISA for the JIT");
+    let isa_hot_builder = cranelift_native::builder().unwrap_or_else(|msg| {
+      panic!("zuri: host machine is not supported by the JIT backend: {msg}")
+    });
+    let isa_hot = isa_hot_builder
+      .finish(settings::Flags::new(hot_flag_builder))
+      .expect("zuri: failed to build the hot-tier target ISA for the JIT");
     // Kept alongside (not just inside) `module`: see `isa`'s own
     // field docs on why `jit::background` needs an independent handle
     // to the same target config.
@@ -124,6 +183,7 @@ impl JitEngine {
     JitEngine {
       module,
       isa,
+      isa_hot,
       builder_ctx: FunctionBuilderContext::new(),
       helper_ids,
       next_id: 0,
