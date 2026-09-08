@@ -338,9 +338,8 @@ fn dispose(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let items: Vec<Value> = ctx.args[0].with_bytes(|b| {
-    b.iter().map(|&b| Value::number(b as f64)).collect()
-  });
+  let items: Vec<Value> =
+    ctx.args[0].with_bytes(|b| b.iter().map(|&b| Value::number(b as f64)).collect());
   Ok(ctx.vm.heap_mut().alloc_list(items))
 }
 

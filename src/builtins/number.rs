@@ -87,7 +87,10 @@ fn to_bigint(ctx: &mut ZuriContext) -> Result<Value, String> {
   let n = ctx.args[0].as_number();
   match BigInt::from_f64(n) {
     Some(big) if n.fract() == 0.0 => Ok(ctx.vm.heap_mut().alloc_bigint(big)),
-    _ => Err(format!("cannot convert {} to a bigint, it is not an integer", n)),
+    _ => Err(format!(
+      "cannot convert {} to a bigint, it is not an integer",
+      n
+    )),
   }
 }
 

@@ -379,7 +379,10 @@ fn greatest_common_divisor(mut a: BigInt, mut b: BigInt) -> BigInt {
 
 fn expect_radix(radix: f64) -> Result<u32, String> {
   if radix.fract() != 0.0 || !(2.0..=36.0).contains(&radix) {
-    return Err(format!("radix must be a integer from 2 to 36, {} given", radix));
+    return Err(format!(
+      "radix must be a integer from 2 to 36, {} given",
+      radix
+    ));
   }
 
   Ok(radix as u32)
@@ -387,7 +390,10 @@ fn expect_radix(radix: f64) -> Result<u32, String> {
 
 fn expect_bit_index(index: f64) -> Result<u64, String> {
   if index.fract() != 0.0 || index < 0.0 || index > u64::MAX as f64 {
-    return Err(format!("bit index must be a non-negative integer, {} given", index));
+    return Err(format!(
+      "bit index must be a non-negative integer, {} given",
+      index
+    ));
   }
 
   Ok(index as u64)

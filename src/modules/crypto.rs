@@ -1193,10 +1193,11 @@ fn hkdf_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   let mut okm = vec![0u8; length as usize];
-  ctx.args[0].with_bytes(|ikm| {
-    let hk = Hkdf::<Sha256>::new(Some(&salt), ikm);
-    hk.expand(&info, &mut okm)
-  })
-  .map_err(|_| "hkdf(): requested length is too large for this PRF".to_string())?;
+  ctx.args[0]
+    .with_bytes(|ikm| {
+      let hk = Hkdf::<Sha256>::new(Some(&salt), ikm);
+      hk.expand(&info, &mut okm)
+    })
+    .map_err(|_| "hkdf(): requested length is too large for this PRF".to_string())?;
   Ok(ctx.heap().alloc_bytes(okm))
 }

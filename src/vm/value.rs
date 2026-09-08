@@ -414,10 +414,7 @@ impl Value {
     match unsafe { &*self.as_obj() } {
       Obj::Bytes(b) => {
         // SAFETY: see `bytes_len`.
-        debug_assert!(
-          b.try_borrow_mut().is_ok(),
-          "bytes_set over a live borrow"
-        );
+        debug_assert!(b.try_borrow_mut().is_ok(), "bytes_set over a live borrow");
         let vec_ref: &mut Vec<u8> = unsafe { &mut *b.as_ptr() };
         match vec_ref.get_mut(index) {
           Some(slot) => {
@@ -937,9 +934,7 @@ pub fn big_rem(a: BigInt, b: BigInt) -> Result<BigInt, String> {
 pub fn big_pow(a: BigInt, b: BigInt) -> Result<BigInt, String> {
   match b.to_u32() {
     Some(exp) => Ok(a.pow(exp)),
-    None if b.is_negative() => {
-      Err("bigint '**' does not accept a negative exponent".to_string())
-    },
+    None if b.is_negative() => Err("bigint '**' does not accept a negative exponent".to_string()),
     None => Err("bigint '**' exponent is too large".to_string()),
   }
 }

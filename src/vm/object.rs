@@ -1859,11 +1859,14 @@ mod gcbox_layout_tests {
 
     let proto_obj = proto.as_obj();
     assert_eq!(unsafe { (*proto_obj).tag() }, OBJ_TAG_FUNC);
-    let raw_proto_ptr = unsafe { *((proto_obj as *const u8).add(obj_func_proto_offset()) as *const *const ObjFunction) };
+    let raw_proto_ptr = unsafe {
+      *((proto_obj as *const u8).add(obj_func_proto_offset()) as *const *const ObjFunction)
+    };
     assert_eq!(raw_proto_ptr, proto.as_func() as *const ObjFunction);
     let arity = unsafe { *((raw_proto_ptr as *const u8).add(obj_function_arity_offset())) };
     assert_eq!(arity, 0);
-    let num_regs = unsafe { *((raw_proto_ptr as *const u8).add(obj_function_num_registers_offset())) };
+    let num_regs =
+      unsafe { *((raw_proto_ptr as *const u8).add(obj_function_num_registers_offset())) };
     assert_eq!(num_regs, 1);
   }
 
@@ -1912,9 +1915,12 @@ mod gcbox_layout_tests {
     });
     let obj = v.as_obj();
     assert_eq!(unsafe { (*obj).tag() }, OBJ_TAG_RANGE);
-    let lo_ptr = unsafe { (obj as *const u8).offset(obj_range_lower_offset() as isize) as *const f64 };
-    let hi_ptr = unsafe { (obj as *const u8).offset(obj_range_upper_offset() as isize) as *const f64 };
-    let step_ptr = unsafe { (obj as *const u8).offset(obj_range_step_offset() as isize) as *const f64 };
+    let lo_ptr =
+      unsafe { (obj as *const u8).offset(obj_range_lower_offset() as isize) as *const f64 };
+    let hi_ptr =
+      unsafe { (obj as *const u8).offset(obj_range_upper_offset() as isize) as *const f64 };
+    let step_ptr =
+      unsafe { (obj as *const u8).offset(obj_range_step_offset() as isize) as *const f64 };
     assert_eq!(unsafe { *lo_ptr }, 12.5);
     assert_eq!(unsafe { *hi_ptr }, 99.5);
     assert_eq!(unsafe { *step_ptr }, 2.5);
@@ -2240,10 +2246,8 @@ pub(crate) const HEAP_NURSERY_CUR_OFFSET: usize = std::mem::offset_of!(Heap, nur
 pub(crate) const HEAP_NURSERY_END_OFFSET: usize = std::mem::offset_of!(Heap, nursery_end);
 pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
   std::mem::offset_of!(Heap, young_bytes_allocated);
-pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize =
-  std::mem::offset_of!(Heap, bytes_allocated);
-pub(crate) const HEAP_LIVE_COUNT_OFFSET: usize =
-  std::mem::offset_of!(Heap, live_count);
+pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize = std::mem::offset_of!(Heap, bytes_allocated);
+pub(crate) const HEAP_LIVE_COUNT_OFFSET: usize = std::mem::offset_of!(Heap, live_count);
 
 /// Frees every buffer still sitting in `field_storage_pool` when the
 /// `Heap` itself is torn down (process exit; there's exactly one

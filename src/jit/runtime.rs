@@ -115,7 +115,11 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
-    eprintln!("[jit] deopt in '{}' at ip {}", vm.current_function_name(), ip);
+    eprintln!(
+      "[jit] deopt in '{}' at ip {}",
+      vm.current_function_name(),
+      ip
+    );
   }
   vm.pending_deopt_ip.set(ip as i64);
   OK
@@ -1088,13 +1092,12 @@ pub unsafe extern "C" fn zuri_jit_alloc_instance_fast(
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let class = Value::from_bits(class_bits);
-  vm.heap.alloc_instance(class, field_count as usize).to_bits()
+  vm.heap
+    .alloc_instance(class, field_count as usize)
+    .to_bits()
 }
 
-pub unsafe extern "C" fn zuri_jit_alloc_instance_fast_0(
-  vm_ptr: *mut VM,
-  class_bits: u64,
-) -> u64 {
+pub unsafe extern "C" fn zuri_jit_alloc_instance_fast_0(vm_ptr: *mut VM, class_bits: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let class = Value::from_bits(class_bits);
   vm.heap.alloc_instance_fast_0(class).to_bits()

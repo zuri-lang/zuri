@@ -112,9 +112,7 @@ fn clone_list(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   let target = ctx.args[1];
-  let n = ctx.args[0].with_list(|items| {
-    items.iter().filter(|v| v.equals(&target)).count()
-  });
+  let n = ctx.args[0].with_list(|items| items.iter().filter(|v| v.equals(&target)).count());
   Ok(Value::number(n as f64))
 }
 

@@ -649,7 +649,13 @@ fn transfer_int(
         .chunk
         .constants
         .get(method_const as usize)
-        .and_then(|v| if v.is_string() { Some(v.as_str()) } else { None })
+        .and_then(|v| {
+          if v.is_string() {
+            Some(v.as_str())
+          } else {
+            None
+          }
+        })
         .unwrap_or("");
       if (method_name == "max" || method_name == "min") && num_args == 1 {
         let arg_reg = obj + 2;
@@ -668,9 +674,7 @@ fn transfer_int(
       out_list.set(dst, false);
     },
 
-    Instr::Call { dst, .. }
-    | Instr::InvokeSuper { dst, .. }
-    | Instr::CallSuperCtor { dst, .. } => {
+    Instr::Call { dst, .. } | Instr::InvokeSuper { dst, .. } | Instr::CallSuperCtor { dst, .. } => {
       out_int.set(dst, false);
       for w in &mut out_list.words {
         *w = 0;
@@ -783,7 +787,15 @@ pub fn analyze_int(
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<(RegSet, RegSet)> = (0..code_len)
-    .map(|ip| transfer_int(&entry[ip], &list_entry[ip], bytes_facts.entry_set(ip), &code[ip], proto))
+    .map(|ip| {
+      transfer_int(
+        &entry[ip],
+        &list_entry[ip],
+        bytes_facts.entry_set(ip),
+        &code[ip],
+        proto,
+      )
+    })
     .collect();
 
   while let Some(ip) = worklist.pop() {
@@ -809,7 +821,13 @@ pub fn analyze_int(
     if new_in != entry[ip] || new_list_in != list_entry[ip] {
       entry[ip] = new_in;
       list_entry[ip] = new_list_in;
-      out[ip] = transfer_int(&entry[ip], &list_entry[ip], bytes_facts.entry_set(ip), &code[ip], proto);
+      out[ip] = transfer_int(
+        &entry[ip],
+        &list_entry[ip],
+        bytes_facts.entry_set(ip),
+        &code[ip],
+        proto,
+      );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
@@ -1086,14 +1104,18 @@ pub fn analyze_list(
         let check = &proto.chunk.param_checks[*check_idx as usize];
         !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::List)
       },
-      Instr::GetGlobal { name_const, .. } => {
-        proto
-          .chunk
-          .constants
-          .get(*name_const as usize)
-          .and_then(|v| if v.is_string() { Some(global_lists.contains(v.as_str())) } else { None })
-          .unwrap_or(false)
-      },
+      Instr::GetGlobal { name_const, .. } => proto
+        .chunk
+        .constants
+        .get(*name_const as usize)
+        .and_then(|v| {
+          if v.is_string() {
+            Some(global_lists.contains(v.as_str()))
+          } else {
+            None
+          }
+        })
+        .unwrap_or(false),
       _ => false,
     });
   if !has_list_source {

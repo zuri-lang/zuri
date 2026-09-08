@@ -1578,10 +1578,7 @@ impl VM {
   fn resolve_all_numeric_fields(
     &self,
     proto: &ObjFunction,
-  ) -> (
-    rustc_hash::FxHashSet<String>,
-    rustc_hash::FxHashSet<String>,
-  ) {
+  ) -> (rustc_hash::FxHashSet<String>, rustc_hash::FxHashSet<String>) {
     let mut seen_numeric: rustc_hash::FxHashSet<String> = rustc_hash::FxHashSet::default();
     let mut seen_non_numeric = rustc_hash::FxHashSet::default();
 
@@ -1662,10 +1659,7 @@ impl VM {
     out
   }
 
-  fn resolve_known_classes(
-    &self,
-    proto: &ObjFunction,
-  ) -> FxHashMap<u64, FxHashMap<String, u16>> {
+  fn resolve_known_classes(&self, proto: &ObjFunction) -> FxHashMap<u64, FxHashMap<String, u16>> {
     let mut out = FxHashMap::default();
 
     let mut add_class = |class_val: Value| {
@@ -1866,7 +1860,10 @@ impl VM {
     }
     for (name, m) in &class_val.as_class().methods {
       if m.is_closure() {
-        out.insert(name.clone(), m.as_closure().function.as_func() as *const ObjFunction as usize);
+        out.insert(
+          name.clone(),
+          m.as_closure().function.as_func() as *const ObjFunction as usize,
+        );
       }
     }
     out
@@ -2096,16 +2093,17 @@ impl VM {
   /// performing any whole-function dataflow analyses on the main VM thread,
   /// then hands the job to the background compiler thread.
   fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
-    let (speculative_params, speculative_regs, speculative_lists, speculative_ints) = if self.no_jit_specialization {
-      (None, None, None, None)
-    } else {
-      (
-        self.combined_param_feedback(proto),
-        None,
-        self.combined_list_feedback(proto),
-        self.combined_int_feedback(proto),
-      )
-    };
+    let (speculative_params, speculative_regs, speculative_lists, speculative_ints) =
+      if self.no_jit_specialization {
+        (None, None, None, None)
+      } else {
+        (
+          self.combined_param_feedback(proto),
+          None,
+          self.combined_list_feedback(proto),
+          self.combined_int_feedback(proto),
+        )
+      };
     for (ip, instr) in proto.chunk.code.iter().enumerate() {
       let name_const = match instr {
         crate::vm::chunk::Instr::GetGlobal { name_const, .. }

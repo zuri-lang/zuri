@@ -131,7 +131,11 @@ fn clone_dict(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn compact(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   let pairs: Vec<(Value, Value)> = ctx.args[0].with_dict(|s| {
-    s.entries.iter().filter(|(_, v)| !v.is_nil()).copied().collect()
+    s.entries
+      .iter()
+      .filter(|(_, v)| !v.is_nil())
+      .copied()
+      .collect()
   });
   Ok(ctx.vm.heap_mut().alloc_dict(pairs))
 }
@@ -167,15 +171,13 @@ fn get(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn keys(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let ks: Vec<Value> =
-    ctx.args[0].with_dict(|s| s.entries.iter().map(|(k, _)| *k).collect());
+  let ks: Vec<Value> = ctx.args[0].with_dict(|s| s.entries.iter().map(|(k, _)| *k).collect());
   Ok(ctx.vm.heap_mut().alloc_list(ks))
 }
 
 fn values(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  let vs: Vec<Value> =
-    ctx.args[0].with_dict(|s| s.entries.iter().map(|(_, v)| *v).collect());
+  let vs: Vec<Value> = ctx.args[0].with_dict(|s| s.entries.iter().map(|(_, v)| *v).collect());
   Ok(ctx.vm.heap_mut().alloc_list(vs))
 }
 
