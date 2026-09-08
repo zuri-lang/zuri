@@ -1,0 +1,48 @@
+# `transfer_list` seeds list-ness for a global straight from the heap reading
+# taken when compilation was requested, and the proven-list arm of a list index
+# masks the value and dereferences it with no tag check. Nothing stops the
+# binding changing in between, so reassigning the global to a number after the
+# reader is hot used to turn that number into a list pointer and segfault.
+#
+# The catch has to sit around the CALL: a function containing catch is never
+# JIT-eligible, so putting it inside sum_it would mean nothing gets compiled
+# and the guard under test never runs.
+
+var DATA = [1, 2, 3, 4, 5]
+
+def sum_it(n) {
+  var acc = 0
+  var i = 0
+  while i < n {
+    acc = acc + DATA[i % 5]
+    i = i + 1
+  }
+  return acc
+}
+
+# Well past the tier-up threshold, so DATA is proven a list in compiled code.
+echo 'hot: ${sum_it(300_000)}'
+
+DATA = 7
+
+catch {
+  sum_it(3)
+  echo 'number: no error raised'
+} as e {
+  echo 'number: ${e.message}'
+}
+
+# A list again, and the compiled code has to go back to working normally
+# rather than staying wedged on the deopt path.
+DATA = [10, 20, 30, 40, 50]
+echo 'relisted: ${sum_it(300_000)}'
+
+# A string is indexable but is not a list, so this must not take the list
+# path either.
+DATA = 'abcde'
+
+catch {
+  echo 'string: ${sum_it(5)}'
+} as e {
+  echo 'string: ${e.message}'
+}

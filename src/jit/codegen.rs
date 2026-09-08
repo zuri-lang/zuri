@@ -26,7 +26,8 @@ use cranelift_codegen::ir::{
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::atomic::AtomicBool;
 
 use crate::jit::{CallTarget, CompileFacts, escape, typeflow};
 use crate::vm::chunk::{Instr, ParamType};
@@ -133,7 +134,7 @@ pub fn compile(
   speculative_params: Option<u64>,
   speculative_regs: Option<typeflow::SpeculativeRegs>,
   facts: CompileFacts,
-  shutdown: Option<&std::sync::atomic::AtomicBool>,
+  shutdown: Option<&AtomicBool>,
 ) -> Result<FxHashMap<usize, i32>, String> {
   // A function that establishes a CATCH handler is still never compiled:
   // `PushCatch`/`PopCatch` maintain unwind state the interpreter owns,
@@ -807,7 +808,7 @@ struct FuncCompiler<'a, 'b> {
   /// general helper path in that case, identical to before this field
   /// existed.
   self_field_slots: FxHashMap<String, u16>,
-  self_numeric_fields: rustc_hash::FxHashSet<String>,
+  self_numeric_fields: FxHashSet<String>,
   /// `self_field_slots`' counterpart for a typed, non-`self` parameter
   /// register: see `jit::CompileFacts::param_field_slots`'s own docs.
   param_field_slots: FxHashMap<u8, (u64, FxHashMap<String, u16>)>,
@@ -891,16 +892,16 @@ struct FuncCompiler<'a, 'b> {
   /// struct's other per-body state), so it's identical for both the
   /// general and specialized body if this compile has one.
   proven_param_shapes: FxHashMap<u8, ParamShape>,
-  numeric_fields: rustc_hash::FxHashSet<String>,
-  global_lists: rustc_hash::FxHashSet<String>,
+  numeric_fields: FxHashSet<String>,
+  global_lists: FxHashSet<String>,
   guarded_instance_vars: FxHashMap<u8, (Variable, Variable, Variable)>,
-  active_guarded: rustc_hash::FxHashSet<u8>,
+  active_guarded: FxHashSet<u8>,
   known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
   /// See `jit::CompileFacts::self_method_protos`.
   self_method_protos: FxHashMap<String, usize>,
   is_specialized_pass: bool,
   active_guarded_classes: FxHashMap<u8, u64>,
-  shutdown: Option<&'a std::sync::atomic::AtomicBool>,
+  shutdown: Option<&'a AtomicBool>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -1262,7 +1263,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
     facts: CompileFacts,
-    shutdown: Option<&'a std::sync::atomic::AtomicBool>,
+    shutdown: Option<&'a AtomicBool>,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let preds = typeflow::build_predecessors(proto);
@@ -1274,8 +1275,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // specialized body below, through `self.self_numeric_fields` and
     // `self.numeric_fields`, where `emit_speculative_guard` re-checks
     // every bet against the actual value and deopts on a mismatch.
-    let no_self_numeric_fields = rustc_hash::FxHashSet::default();
-    let no_numeric_fields = rustc_hash::FxHashSet::default();
+    let no_self_numeric_fields = FxHashSet::default();
+    let no_numeric_fields = FxHashSet::default();
     let speculative_ints = facts.speculative_ints.filter(|&m| m != 0);
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
     let dict_facts = typeflow::analyze_dict(proto, &preds);
@@ -1363,7 +1364,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .any(|i| matches!(i, Instr::Closure { .. })),
       proven_param_shapes: Self::compute_proven_shapes(proto),
       guarded_instance_vars: FxHashMap::default(),
-      active_guarded: rustc_hash::FxHashSet::default(),
+      active_guarded: FxHashSet::default(),
       known_classes: facts.known_classes,
       self_method_protos: facts.self_method_protos,
       is_specialized_pass: false,
@@ -1806,7 +1807,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.vm_param,
       GLOBAL_SLOTS_PTR_CACHE_OFFSET,
     );
-    let mut unique_slots: rustc_hash::FxHashSet<i64> = rustc_hash::FxHashSet::default();
+    let mut unique_slots: FxHashSet<i64> = FxHashSet::default();
     for slot_cell in &self.proto.jit.global_slot_cache {
       let slot = slot_cell.get();
       if slot >= 0 {
@@ -5736,6 +5737,62 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `emit_safepoint`'s `gc_block` does; avoiding a second, redundant
   /// flush/stale-mark from `call_helper`'s own automatic wrapping.
   fn emit_get_global(&mut self, ip: usize, dst: u8, name_const: u16) {
+    self.emit_get_global_load(ip, dst, name_const);
+    self.guard_snapshot_list_global(ip, dst, name_const);
+  }
+
+  /// The runtime check that makes `transfer_list`'s `GetGlobal` arm safe.
+  ///
+  /// That arm seeds list-ness straight from `VM::snapshot_global_lists`, a
+  /// reading of the heap taken when compilation was requested. Nothing stops
+  /// the binding changing afterwards, and `emit_list_get_index`'s proven arm
+  /// masks the value and dereferences it with no tag check at all, so
+  /// `DATA = [1, 2]` ... `DATA = 7` after the reader is hot turned the number
+  /// 7 into a list pointer and segfaulted.
+  ///
+  /// Only emitted where the fact is actually consumed: if nothing downstream
+  /// treats `dst` as a list there is nothing to keep honest, and a global read
+  /// in a hot loop should not pay for a fact no one asked for.
+  fn guard_snapshot_list_global(&mut self, ip: usize, dst: u8, name_const: u16) {
+    if ip + 1 >= self.proto.chunk.code.len() || !self.list_facts.is_list(ip + 1, dst) {
+      return;
+    }
+    let Some(name) = self.proto.chunk.constants.get(name_const as usize) else {
+      return;
+    };
+    if !name.is_string() || !self.global_lists.contains(name.as_str()) {
+      return;
+    }
+
+    let v = self.load_reg(dst);
+    let is_obj = self.is_obj(v);
+    let tagged_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    let deopt_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_obj, tagged_block, &[], deopt_block, &[]);
+
+    // Tag load waits until `is_obj` holds, the same discipline every other
+    // unproven-receiver arm in this file follows.
+    self.fb.switch_to_block(tagged_block);
+    let ptr = self.obj_ptr(v);
+    let tag = self.obj_tag(ptr);
+    let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
+    let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
+    self
+      .fb
+      .ins()
+      .brif(is_list, ok_block, &[], deopt_block, &[]);
+
+    self.fb.switch_to_block(deopt_block);
+    self.emit_deopt(ip);
+
+    self.fb.switch_to_block(ok_block);
+  }
+
+  fn emit_get_global_load(&mut self, ip: usize, dst: u8, name_const: u16) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let slot = self.proto.jit.global_slot_cache[ip].get();
     if slot >= 0 {

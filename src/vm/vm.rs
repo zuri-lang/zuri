@@ -1601,7 +1601,7 @@ impl VM {
         inspect_instance(v.as_instance());
       } else if v.is_obj() {
         unsafe {
-          if let crate::vm::object::Obj::List(l) = &*v.as_obj() {
+          if let Obj::List(l) = &*v.as_obj() {
             let list = l.borrow();
             for i in 0..list.len() {
               if let Some(elem) = list.get(i) {
@@ -1649,7 +1649,7 @@ impl VM {
         if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, s) {
           let resolved = self.read_resolved(proto.globals_module, is_root, slot);
           if resolved.is_obj()
-            && unsafe { matches!(&*resolved.as_obj(), crate::vm::object::Obj::List(_)) }
+            && unsafe { matches!(&*resolved.as_obj(), Obj::List(_)) }
           {
             out.insert(s.to_string());
           }
@@ -1697,7 +1697,7 @@ impl VM {
           let resolved = self.read_resolved(proto.globals_module, is_root, slot);
           if resolved.is_obj() {
             unsafe {
-              if let crate::vm::object::Obj::List(l) = &*resolved.as_obj() {
+              if let Obj::List(l) = &*resolved.as_obj() {
                 let list = l.borrow();
                 for i in 0..list.len() {
                   if let Some(elem) = list.get(i) {
